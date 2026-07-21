@@ -9,3 +9,4 @@ publish = false
 [dependencies]
 adocweave.workspace = true
 adocweave-wasm.workspace = true
+unicode-normalization.workspace = true

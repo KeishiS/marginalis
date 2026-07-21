@@ -10,3 +10,4 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 adocweave = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "72ad5a677e179448b4de7f524710f4e455aa163d", package = "adocweave" }
 adocweave-wasm = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "72ad5a677e179448b4de7f524710f4e455aa163d", package = "adocweave-wasm" }
+unicode-normalization = "0.1.25"
