@@ -133,6 +133,8 @@ pub struct NoteProfileError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NoteProfileErrorCode {
+    MissingTitle,
+    TitleTooLong,
     MissingAttribute,
     DuplicateAttribute,
     UnsetAttribute,
@@ -148,6 +150,8 @@ pub enum NoteProfileErrorCode {
 impl NoteProfileErrorCode {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::MissingTitle => "missing-note-title",
+            Self::TitleTooLong => "note-title-too-long",
             Self::MissingAttribute => "missing-note-attribute",
             Self::DuplicateAttribute => "duplicate-note-attribute",
             Self::UnsetAttribute => "unset-note-attribute",
@@ -175,12 +179,23 @@ pub fn validate_note_metadata(
         .iter()
         .find_map(|block| match block {
             AstBlock::Heading(heading) if heading.kind == HeadingKind::DocumentTitle => {
-                Some(heading.text.clone())
+                Some((heading.text.clone(), heading.text_range))
             }
             _ => None,
-        })
-        .unwrap_or_default();
+        });
     let mut errors = Vec::new();
+
+    match &title {
+        None => errors.push(NoteProfileError {
+            code: NoteProfileErrorCode::MissingTitle,
+            range: TextRange::new(TextSize::ZERO, TextSize::ZERO).expect("empty range"),
+        }),
+        Some((value, range)) if value.chars().count() > 200 => errors.push(NoteProfileError {
+            code: NoteProfileErrorCode::TitleTooLong,
+            range: *range,
+        }),
+        Some(_) => {}
+    }
 
     let note_id = required_attribute(analysis.ast().attributes(), "note-id", &mut errors);
     let creator_id = required_attribute(analysis.ast().attributes(), "creator-id", &mut errors);
@@ -228,7 +243,7 @@ pub fn validate_note_metadata(
     }
 
     Ok(NoteMetadata {
-        title,
+        title: title.expect("validated note title").0,
         note_id: note_id
             .expect("validated required attribute")
             .raw_value
@@ -468,5 +483,38 @@ mod tests {
         assert!(codes.contains(&NoteProfileErrorCode::InvalidCreatorId));
         assert!(codes.contains(&NoteProfileErrorCode::InvalidUpdatedAt));
         assert!(codes.contains(&NoteProfileErrorCode::InvalidTags));
+    }
+
+    #[test]
+    fn rejects_missing_or_overlong_document_titles() {
+        let source = format!(
+            "= {}\n\
+             :note-id: 01800000-0000-7000-8000-000000000001\n\
+             :creator-id: 01800000-0000-7000-8000-000000000002\n\
+             :created-at: 2026-07-21T00:00:00.000Z\n\
+             :updated-at: 2026-07-21T00:00:00.000Z\n\
+             :tags: \n",
+            "題".repeat(201)
+        );
+        let analysis = Engine::new(Default::default())
+            .analyze(&source)
+            .expect("recoverable AsciiDoc");
+
+        let errors = validate_note_metadata(&analysis).expect_err("title must be rejected");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteProfileErrorCode::TitleTooLong)
+        );
+
+        let analysis = Engine::new(Default::default())
+            .analyze(":note-id: 01800000-0000-7000-8000-000000000001\n")
+            .expect("recoverable AsciiDoc");
+        let errors = validate_note_metadata(&analysis).expect_err("title must be required");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteProfileErrorCode::MissingTitle)
+        );
     }
 }
