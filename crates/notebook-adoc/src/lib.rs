@@ -7,6 +7,7 @@ use core::fmt;
 use std::collections::BTreeMap;
 
 use adocweave::attributes::{AttributeOperation, DocumentAttribute};
+use adocweave::inline::ReferenceDestination;
 use adocweave::limits::SyntaxMode;
 use adocweave::parser::{AstBlock, HeadingKind};
 use adocweave::source::{TextRange, TextSize};
@@ -145,6 +146,79 @@ pub enum NoteProfileErrorCode {
     InvalidTags,
     TooManyTags,
     TagTooLong,
+}
+
+/// 本アプリのノートを参照する、未解決のxref。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteReference {
+    /// `xref:note:...[]`マクロ全体のUTF-8 byte range。
+    pub range: TextRange,
+    pub note_id: String,
+    pub anchor: Option<String>,
+}
+
+/// ノートxrefに限定した位置付き診断。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteReferenceError {
+    pub code: NoteReferenceErrorCode,
+    pub range: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteReferenceErrorCode {
+    InvalidNoteId,
+}
+
+impl NoteReferenceErrorCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidNoteId => "invalid-note-uuid",
+        }
+    }
+}
+
+/// 標準xrefのうち、`note:`スキームを使う参照だけを抽出する。
+///
+/// この関数はDB照会やACL確認を行わない。対象の実在確認、アンカー確認およびhref生成は
+/// `ReferenceResolver`を実装するサーバ側で行う。
+pub fn extract_note_references(
+    analysis: &adocweave::Analysis,
+) -> Result<Vec<NoteReference>, Vec<NoteReferenceError>> {
+    let mut references = Vec::new();
+    let mut errors = Vec::new();
+    for reference in analysis.references() {
+        let ReferenceDestination::Scheme {
+            scheme,
+            locator,
+            locator_range,
+            anchor,
+            ..
+        } = &reference.destination
+        else {
+            continue;
+        };
+        if !scheme.eq_ignore_ascii_case("note") {
+            continue;
+        }
+        if !is_uuid_v7(locator) {
+            errors.push(NoteReferenceError {
+                code: NoteReferenceErrorCode::InvalidNoteId,
+                range: *locator_range,
+            });
+            continue;
+        }
+        references.push(NoteReference {
+            range: reference.range,
+            note_id: locator.clone(),
+            anchor: anchor.clone(),
+        });
+    }
+    errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.as_str()));
+    if errors.is_empty() {
+        Ok(references)
+    } else {
+        Err(errors)
+    }
 }
 
 impl NoteProfileErrorCode {
@@ -418,8 +492,8 @@ mod tests {
     use adocweave::Engine;
 
     use super::{
-        ADOCWEAVE_SOURCE_REVISION, NoteProfileErrorCode, PINNED_CONTRACTS, validate_note_metadata,
-        verify_runtime_contracts,
+        ADOCWEAVE_SOURCE_REVISION, NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_CONTRACTS,
+        extract_note_references, validate_note_metadata, verify_runtime_contracts,
     };
 
     #[test]
@@ -516,5 +590,40 @@ mod tests {
                 .iter()
                 .any(|error| error.code == NoteProfileErrorCode::MissingTitle)
         );
+    }
+
+    #[test]
+    fn extracts_note_scheme_xrefs_without_resolving_them() {
+        let analysis = Engine::new(Default::default())
+            .analyze(
+                "xref:note:01800000-0000-7000-8000-000000000001[ノート]\n\n\
+                 xref:note:01800000-0000-7000-8000-000000000002#stable[節]\n\n\
+                 xref:other:example[別のスキーム]\n",
+            )
+            .expect("valid AsciiDoc");
+
+        let references = extract_note_references(&analysis).expect("valid note references");
+        assert_eq!(references.len(), 2);
+        assert_eq!(
+            references[0].note_id,
+            "01800000-0000-7000-8000-000000000001"
+        );
+        assert_eq!(references[0].anchor, None);
+        assert_eq!(
+            references[1].note_id,
+            "01800000-0000-7000-8000-000000000002"
+        );
+        assert_eq!(references[1].anchor.as_deref(), Some("stable"));
+    }
+
+    #[test]
+    fn rejects_invalid_note_uuid_without_rejecting_other_schemes() {
+        let analysis = Engine::new(Default::default())
+            .analyze("xref:note:not-a-uuid[不正] xref:other:not-a-uuid[許可]\n")
+            .expect("recoverable AsciiDoc");
+
+        let errors = extract_note_references(&analysis).expect_err("invalid note UUID");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, NoteReferenceErrorCode::InvalidNoteId);
     }
 }
