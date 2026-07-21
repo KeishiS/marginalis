@@ -9,6 +9,13 @@ use sqlx::{
 };
 use tokio::sync::Mutex;
 
+use adocweave::{
+    reference::{ResolutionFailureKind, ResolvedReference, ResolverFailure},
+    render::RenderInputs,
+    source::TextRange,
+};
+use notebook_adoc::{NoteReferenceError, extract_note_references};
+
 /// ノート参照を解決する利用者の認可済み文脈。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Viewer {
@@ -75,6 +82,47 @@ pub enum NoteReferenceResolution {
     AnchorFallback { href: String },
     /// 対象不在と権限なしを区別せず、対象の存在を秘匿する。
     NotFound,
+}
+
+/// 一つの解析revisionに対応する、描画へ渡す参照解決結果。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedNoteReferences {
+    pub render_inputs: RenderInputs,
+    /// アンカーが存在せずノート先頭へ遷移する参照の位置。
+    pub anchor_fallbacks: Vec<TextRange>,
+}
+
+/// AsciiDoc上の形式検証とSQLite照会を分離する参照解決エラー。
+#[derive(Debug)]
+pub enum ResolveReferencesError {
+    InvalidReferences(Vec<NoteReferenceError>),
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for ResolveReferencesError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidReferences(_) => formatter.write_str("invalid note reference"),
+            Self::Database(error) => {
+                write!(formatter, "SQLite reference resolution failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ResolveReferencesError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidReferences(_) => None,
+            Self::Database(error) => Some(error),
+        }
+    }
+}
+
+impl From<sqlx::Error> for ResolveReferencesError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
 }
 
 /// SQLite上のノート投影ストア。
@@ -233,10 +281,59 @@ impl NotebookStore {
             })
         }
     }
+
+    /// 解析済みAsciiDocの`xref:note:`を同一revisionの描画入力へ変換する。
+    pub async fn resolve_render_inputs(
+        &self,
+        analysis: &adocweave::Analysis,
+        viewer: &Viewer,
+        urls: &NoteUrlBase,
+    ) -> Result<ResolvedNoteReferences, ResolveReferencesError> {
+        let references =
+            extract_note_references(analysis).map_err(ResolveReferencesError::InvalidReferences)?;
+        let mut render_references = Vec::with_capacity(references.len());
+        let mut anchor_fallbacks = Vec::new();
+        for reference in references {
+            match self
+                .resolve_note_reference(
+                    viewer,
+                    urls,
+                    &reference.note_id,
+                    reference.anchor.as_deref(),
+                )
+                .await?
+            {
+                NoteReferenceResolution::Resolved { href } => {
+                    render_references.push(ResolvedReference::resolved(reference.range, href));
+                }
+                NoteReferenceResolution::AnchorFallback { href } => {
+                    anchor_fallbacks.push(reference.range);
+                    render_references.push(ResolvedReference::resolved(reference.range, href));
+                }
+                NoteReferenceResolution::NotFound => {
+                    render_references.push(ResolvedReference::failed(
+                        reference.range,
+                        ResolverFailure {
+                            kind: ResolutionFailureKind::MissingTarget,
+                            message: "note reference unavailable".into(),
+                        },
+                    ));
+                }
+            }
+        }
+        Ok(ResolvedNoteReferences {
+            render_inputs: RenderInputs::new(render_references, Vec::new()),
+            anchor_fallbacks,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use adocweave::{
+        Engine,
+        reference::{ResolutionFailureKind, ResolutionOutcome, ResolverFailure},
+    };
     use sqlx::Row;
 
     use super::{NoteReferenceResolution, NoteUrlBase, NotebookStore, StoredNoteReference, Viewer};
@@ -337,6 +434,52 @@ mod tests {
                 .expect("valid root base path")
                 .note_href("visible", None),
             "/notes/visible"
+        );
+    }
+
+    #[tokio::test]
+    async fn creates_render_inputs_without_disclosing_forbidden_targets() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let visible = "01800000-0000-7000-8000-000000000001";
+        let private = "01800000-0000-7000-8000-000000000002";
+        insert_note(&store, visible).await;
+        insert_note(&store, private).await;
+        sqlx::query("INSERT INTO note_acl(note_id, user_id, permission) VALUES (?, 'reader', 1)")
+            .bind(visible)
+            .execute(store.pool())
+            .await
+            .expect("grant reader");
+        let analysis = Engine::new(Default::default())
+            .analyze(&format!(
+                "xref:note:{visible}#missing[先頭へ] xref:note:{private}[秘匿]\n"
+            ))
+            .expect("valid AsciiDoc");
+        let viewer = Viewer {
+            user_id: "reader".into(),
+            is_root: false,
+        };
+        let urls = NoteUrlBase::new("/app").expect("valid base path");
+
+        let result = store
+            .resolve_render_inputs(&analysis, &viewer, &urls)
+            .await
+            .expect("resolve inputs");
+        assert_eq!(result.anchor_fallbacks.len(), 1);
+        assert_eq!(result.render_inputs.references().len(), 2);
+        assert_eq!(
+            result.render_inputs.references()[0].outcome,
+            ResolutionOutcome::Resolved {
+                href: format!("/app/notes/{visible}")
+            }
+        );
+        assert_eq!(
+            result.render_inputs.references()[1].outcome,
+            ResolutionOutcome::Failed(ResolverFailure {
+                kind: ResolutionFailureKind::MissingTarget,
+                message: "note reference unavailable".into(),
+            })
         );
     }
 }
