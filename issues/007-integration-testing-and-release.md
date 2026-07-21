@@ -14,7 +14,7 @@ AdocWeave拡張を含むAsciiDoc処理全体の安全性、決定性および互
 
 ## 完了条件
 
-- テストに、メタデータ、`note:`／`xref:note:`、リンク切れ、ACL、LaTeX、コード、
+- テストに、メタデータ、`xref:note:`、リンク切れ、ACL、LaTeX、コード、
   危険URL、raw HTML、深い入れ子および巨大入力が含まれる。
 - 任意UTF-8入力と不正バイト列が、プロセス異常終了や機密情報のログ出力を引き起こさない。
 - CIが依存固定、Rust test、WASM適合試験、browser smoke test、fuzz/property testおよび

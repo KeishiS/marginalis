@@ -222,8 +222,8 @@ AIエージェントがMCPを介してノートを操作できるようにする
 - ノート間の有向エッジは、AsciiDoc本文中に次のインラインマクロとして記述する。
 
   ```asciidoc
-  note:<target-note-uid>[<label>]
-  note:<target-note-uid>#<anchor-id>[<label>]
+  xref:note:<target-note-uid>[<label>]
+  xref:note:<target-note-uid>#<anchor-id>[<label>]
   ```
 
 - マクロを記述したノートを始点、`target-note-uid` のノートを終点とする。

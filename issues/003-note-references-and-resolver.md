@@ -8,8 +8,6 @@ AsciiDoc本文からノート間の有向辺を抽出し、ACLを考慮して安
 
 - 内部表現をAdocWeaveの`ReferenceQuery`／`ReferenceEdge`へ統一する。
 - 正式表記を`xref:note:<note-uuid>#<anchor-id>[<label>]`とする。
-- 既存要件の`note:<note-uuid>#<anchor-id>[<label>]`も受理し、同じ参照表現へ正規化する
-  糖衣構文をAdocWeave拡張として実装する。
 - UUID、任意アンカー、空ラベルおよび不完全入力を検証する。
 - SQLiteから参照先ノート、アンカーおよび閲覧権限を解決する`ReferenceResolver`を実装する。
 - 対象不在、アンカー不在、権限なし、形式不正および内部障害を安定した診断コードへ分ける。
