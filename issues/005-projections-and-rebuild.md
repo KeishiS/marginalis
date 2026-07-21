@@ -9,7 +9,7 @@
 - 文書タイトル、タグ、本文、コード、LaTeXソース、アンカーおよび参照を抽出する。
 - AdocWeaveの汎用`DocumentProjection`を再解析せずに利用し、数式とノート属性だけを
   ホスト側で補完する。
-- ノートごとの検索projection、参照位置、グラフ辺、逆参照をSQLiteへ保存する。
+- `sqlx`を通じて、ノートごとの検索projection、参照位置、グラフ辺、逆参照をSQLiteへ保存する。
 - AsciiDocファイルだけからノード情報と有向グラフを再構成する処理を実装する。
 - AdocWeave契約version、構文設定、URL policy、Resolver結果、ACLおよび対象文書versionに応じて、
   必要なcache／projectionだけを無効化する。
