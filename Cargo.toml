@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/notebook-adoc"]
+members = ["crates/notebook-adoc", "crates/notebook-store"]
 resolver = "2"
 
 [workspace.package]
@@ -11,3 +11,5 @@ license = "MIT OR Apache-2.0"
 adocweave = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "72ad5a677e179448b4de7f524710f4e455aa163d", package = "adocweave" }
 adocweave-wasm = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "72ad5a677e179448b4de7f524710f4e455aa163d", package = "adocweave-wasm" }
 unicode-normalization = "0.1.25"
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
+tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "sync"] }
