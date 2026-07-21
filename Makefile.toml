@@ -1,0 +1,72 @@
+[config]
+default_to_workspace = false
+skip_core_tasks = true
+
+[tasks.default]
+alias = "verify"
+
+[tasks.fmt]
+description = "Format Rust and Nix source files"
+dependencies = ["fmt-rust", "fmt-nix"]
+
+[tasks.format]
+alias = "fmt"
+
+[tasks.fmt-rust]
+description = "Format Rust source files"
+command = "cargo"
+args = ["fmt", "--all"]
+
+[tasks.fmt-nix]
+description = "Format the Nix flake"
+command = "nixfmt"
+args = ["flake.nix"]
+
+[tasks.fmt-check]
+description = "Check Rust and Nix formatting without modifying files"
+dependencies = ["fmt-check-rust", "fmt-check-nix"]
+
+[tasks.format-check]
+alias = "fmt-check"
+
+[tasks.fmt-check-rust]
+description = "Check Rust formatting without modifying files"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.fmt-check-nix]
+description = "Check Nix formatting without modifying files"
+command = "nixfmt"
+args = ["--check", "flake.nix"]
+
+[tasks.check]
+description = "Type-check all workspace targets and features"
+command = "cargo"
+args = ["check", "--workspace", "--all-targets", "--all-features"]
+
+[tasks.clippy]
+description = "Run Clippy with warnings denied"
+command = "cargo"
+args = ["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[tasks.lint]
+alias = "clippy"
+
+[tasks.test]
+description = "Run all workspace tests"
+command = "cargo"
+args = ["test", "--workspace", "--all-features"]
+
+[tasks.build]
+description = "Build all workspace targets and features"
+command = "cargo"
+args = ["build", "--workspace", "--all-targets", "--all-features"]
+
+[tasks.flake-check]
+description = "Evaluate the Nix flake without building every output"
+command = "nix"
+args = ["flake", "check", "--no-build"]
+
+[tasks.verify]
+description = "Run formatting, static analysis, tests, and flake evaluation"
+dependencies = ["fmt-check", "check", "clippy", "test", "flake-check"]

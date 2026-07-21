@@ -1,0 +1,11 @@
+[package]
+name = "notebook-adoc"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+adocweave.workspace = true
+adocweave-wasm.workspace = true
