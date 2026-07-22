@@ -5,6 +5,9 @@
 `/api/v1/notes`以下の操作は、OIDC loginで発行した`marginalis_session` Cookieを必要とする。
 sessionがないか、期限切れまたは失効済みなら`401 authentication-required`を返す。
 
+login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`POST`、`PUT`およびlogoutは、
+同値を`X-CSRF-Token` headerへ付けなければならない。不在または不一致は`403`で拒否する。
+
 ## ノート正本
 
 正本はUTF-8のAsciiDocであり、SQLiteは検索・ACL・参照の投影である。HTTP handlerはSQLiteへ
