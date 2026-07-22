@@ -9,8 +9,8 @@ use marginalis_application::{
 use marginalis_domain::{OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
 use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
-    EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
-    TokenResponse,
+    EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl,
+    RequestTokenError, Scope, TokenResponse,
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
@@ -270,7 +270,26 @@ impl OidcAuthentication {
             .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
             .request_async(&self.http_client)
             .await
-            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?;
+            .map_err(|error| {
+                match error {
+                    RequestTokenError::ServerResponse(response) => {
+                        eprintln!(
+                            "OIDC token endpoint rejected code exchange: {}",
+                            response.error()
+                        );
+                    }
+                    RequestTokenError::Request(_) => {
+                        eprintln!("OIDC token endpoint request failed");
+                    }
+                    RequestTokenError::Parse(_, _) => {
+                        eprintln!("OIDC token endpoint returned an unparseable response");
+                    }
+                    RequestTokenError::Other(_) => {
+                        eprintln!("OIDC token endpoint returned an unexpected response");
+                    }
+                }
+                OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange)
+            })?;
         let id_token = token.id_token().ok_or(OidcCallbackError::Rejected(
             OidcCallbackRejection::MissingIdToken,
         ))?;
