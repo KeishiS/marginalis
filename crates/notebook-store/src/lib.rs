@@ -10,6 +10,7 @@ use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
+use time::{Duration as TimeDuration, OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::Mutex;
 use url::Url;
 use uuid::Uuid;
@@ -177,6 +178,91 @@ impl ConsumedOidcLogin {
 #[derive(Debug)]
 pub enum OidcLoginError {
     Database(sqlx::Error),
+}
+
+/// サーバ側Webセッションの無操作・絶対有効期限。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WebSessionLifetime {
+    pub idle: TimeDuration,
+    pub absolute: TimeDuration,
+}
+
+impl WebSessionLifetime {
+    pub const GENERAL_USER: Self = Self {
+        idle: TimeDuration::hours(24),
+        absolute: TimeDuration::days(7),
+    };
+
+    pub const ROOT: Self = Self {
+        idle: TimeDuration::minutes(30),
+        absolute: TimeDuration::hours(8),
+    };
+
+    pub fn is_valid(self) -> bool {
+        self.idle.is_positive() && self.absolute.is_positive() && self.idle <= self.absolute
+    }
+}
+
+/// 発行直後だけブラウザへ渡すセッションIDとCSRFトークン。
+///
+/// SQLiteには両方のハッシュだけを保存する。ログ出力を避けるため`Debug`を実装しない。
+pub struct IssuedWebSession {
+    session_id: String,
+    csrf_token: String,
+}
+
+impl IssuedWebSession {
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    pub fn csrf_token(&self) -> &str {
+        &self.csrf_token
+    }
+}
+
+/// 有効なWebセッションから得た認可済みの利用者文脈。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WebSessionActor {
+    pub viewer: Viewer,
+    pub csrf_token_valid: bool,
+}
+
+/// Webセッション操作のエラー。
+#[derive(Debug)]
+pub enum WebSessionError {
+    InvalidLifetime,
+    InvalidStoredExpiration,
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for WebSessionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidLifetime => formatter.write_str("web session lifetime is invalid"),
+            Self::InvalidStoredExpiration => {
+                formatter.write_str("stored session expiration is invalid")
+            }
+            Self::Database(error) => {
+                write!(formatter, "SQLite web session operation failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for WebSessionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::InvalidLifetime | Self::InvalidStoredExpiration => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for WebSessionError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
 }
 
 impl fmt::Display for OidcLoginError {
@@ -545,6 +631,14 @@ fn hash_opaque_token(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
 }
 
+fn format_timestamp(value: OffsetDateTime) -> Result<String, WebSessionError> {
+    value
+        .replace_nanosecond(value.nanosecond() / 1_000_000 * 1_000_000)
+        .map_err(|_| WebSessionError::InvalidStoredExpiration)?
+        .format(&Rfc3339)
+        .map_err(|_| WebSessionError::InvalidStoredExpiration)
+}
+
 /// SQLite上のノート投影ストア。
 #[derive(Clone, Debug)]
 pub struct NotebookStore {
@@ -610,6 +704,24 @@ impl NotebookStore {
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS web_sessions (
+                session_id_hash BLOB PRIMARY KEY NOT NULL,
+                csrf_token_hash BLOB NOT NULL,
+                user_id TEXT NOT NULL REFERENCES users(user_id),
+                idle_timeout_seconds INTEGER NOT NULL CHECK (idle_timeout_seconds > 0),
+                issued_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                idle_expires_at TEXT NOT NULL,
+                absolute_expires_at TEXT NOT NULL,
+                revoked_at TEXT
+            ) STRICT",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS web_sessions_user_idx ON web_sessions(user_id)")
+            .execute(&self.pool)
+            .await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS notes (
                 note_id TEXT PRIMARY KEY NOT NULL,
@@ -732,6 +844,145 @@ impl NotebookStore {
             })
             .transpose()
             .map_err(OidcLoginError::from)
+    }
+
+    /// 有効な内部ユーザーへ新しいサーバ側Webセッションを発行する。
+    pub async fn create_web_session(
+        &self,
+        user_id: &str,
+        lifetime: WebSessionLifetime,
+    ) -> Result<Option<IssuedWebSession>, WebSessionError> {
+        self.create_web_session_at(user_id, lifetime, OffsetDateTime::now_utc())
+            .await
+    }
+
+    /// テスト可能な時刻指定版のWebセッション発行。
+    pub async fn create_web_session_at(
+        &self,
+        user_id: &str,
+        lifetime: WebSessionLifetime,
+        now: OffsetDateTime,
+    ) -> Result<Option<IssuedWebSession>, WebSessionError> {
+        if !lifetime.is_valid() {
+            return Err(WebSessionError::InvalidLifetime);
+        }
+        let _write_guard = self.write_lock.lock().await;
+        let active = sqlx::query("SELECT 1 FROM users WHERE user_id = ? AND status = 'active'")
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .is_some();
+        if !active {
+            return Ok(None);
+        }
+        let session = IssuedWebSession {
+            session_id: random_opaque_token(),
+            csrf_token: random_opaque_token(),
+        };
+        let issued_at = format_timestamp(now)?;
+        let idle_expires_at = format_timestamp(now + lifetime.idle)?;
+        let absolute_expires_at = format_timestamp(now + lifetime.absolute)?;
+        sqlx::query(
+            "INSERT INTO web_sessions
+             (session_id_hash, csrf_token_hash, user_id, idle_timeout_seconds, issued_at,
+              last_seen_at, idle_expires_at, absolute_expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(hash_opaque_token(&session.session_id).to_vec())
+        .bind(hash_opaque_token(&session.csrf_token).to_vec())
+        .bind(user_id)
+        .bind(lifetime.idle.whole_seconds())
+        .bind(&issued_at)
+        .bind(&issued_at)
+        .bind(idle_expires_at)
+        .bind(absolute_expires_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(Some(session))
+    }
+
+    /// セッションIDとCSRF tokenを検証し、無操作期限を絶対期限の範囲内で延長する。
+    pub async fn authenticate_web_session(
+        &self,
+        session_id: &str,
+        csrf_token: Option<&str>,
+    ) -> Result<Option<WebSessionActor>, WebSessionError> {
+        self.authenticate_web_session_at(session_id, csrf_token, OffsetDateTime::now_utc())
+            .await
+    }
+
+    /// テスト可能な時刻指定版のセッション認証。
+    pub async fn authenticate_web_session_at(
+        &self,
+        session_id: &str,
+        csrf_token: Option<&str>,
+        now: OffsetDateTime,
+    ) -> Result<Option<WebSessionActor>, WebSessionError> {
+        let now = format_timestamp(now)?;
+        let session_hash = hash_opaque_token(session_id).to_vec();
+        let _write_guard = self.write_lock.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        let session = sqlx::query(
+            "SELECT users.user_id, users.authentication_kind, web_sessions.csrf_token_hash,
+                    web_sessions.idle_timeout_seconds, web_sessions.absolute_expires_at
+             FROM web_sessions JOIN users ON users.user_id = web_sessions.user_id
+             WHERE web_sessions.session_id_hash = ?
+               AND web_sessions.revoked_at IS NULL
+               AND web_sessions.idle_expires_at > ?
+               AND web_sessions.absolute_expires_at > ?
+               AND users.status = 'active'",
+        )
+        .bind(&session_hash)
+        .bind(&now)
+        .bind(&now)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let Some(session) = session else {
+            transaction.commit().await?;
+            return Ok(None);
+        };
+        let absolute_expires_at: String = session.try_get("absolute_expires_at")?;
+        let absolute_expires_at = OffsetDateTime::parse(&absolute_expires_at, &Rfc3339)
+            .map_err(|_| WebSessionError::InvalidStoredExpiration)?;
+        let idle_timeout_seconds: i64 = session.try_get("idle_timeout_seconds")?;
+        let current_time = OffsetDateTime::parse(&now, &Rfc3339)
+            .map_err(|_| WebSessionError::InvalidStoredExpiration)?;
+        let desired_idle_expiry = current_time + TimeDuration::seconds(idle_timeout_seconds);
+        let idle_expires_at = format_timestamp(if desired_idle_expiry < absolute_expires_at {
+            desired_idle_expiry
+        } else {
+            absolute_expires_at
+        })?;
+        sqlx::query(
+            "UPDATE web_sessions SET last_seen_at = ?, idle_expires_at = ? WHERE session_id_hash = ?",
+        )
+        .bind(&now)
+        .bind(idle_expires_at)
+        .bind(session_hash)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        let csrf_hash: Vec<u8> = session.try_get("csrf_token_hash")?;
+        let authentication_kind: String = session.try_get("authentication_kind")?;
+        Ok(Some(WebSessionActor {
+            viewer: Viewer {
+                user_id: session.try_get("user_id")?,
+                is_root: authentication_kind == "root",
+            },
+            csrf_token_valid: csrf_token
+                .is_some_and(|token| csrf_hash == hash_opaque_token(token).as_slice()),
+        }))
+    }
+
+    /// 一つのWebセッションを即時失効させる。存在しない識別子も成功として扱う。
+    pub async fn revoke_web_session(&self, session_id: &str) -> Result<(), WebSessionError> {
+        let _write_guard = self.write_lock.lock().await;
+        sqlx::query("UPDATE web_sessions SET revoked_at = ? WHERE session_id_hash = ?")
+            .bind(format_timestamp(OffsetDateTime::now_utc())?)
+            .bind(hash_opaque_token(session_id).to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// 検証済みOIDC identityを既存ユーザーへ対応付け、初回だけ登録ポリシーを適用する。
@@ -1183,6 +1434,7 @@ mod tests {
         render::RenderInputs,
     };
     use sqlx::Row;
+    use time::{Duration as TimeDuration, OffsetDateTime};
 
     use super::{
         NotePermission, NoteReferenceResolution, NoteUrlBase, NotebookStore, OidcIdentity,
@@ -1338,6 +1590,105 @@ mod tests {
             .expect("count attempts")
             .get("count");
         assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn web_session_stores_only_hashes_and_extends_idle_expiration() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let user = store
+            .register_or_lookup_oidc_user(
+                &OidcIdentity {
+                    issuer: "https://id.sandi05.com".into(),
+                    subject: "session-user".into(),
+                    display_name: "Session user".into(),
+                },
+                RegistrationPolicy::Open,
+                "2026-07-22T00:00:00.000Z",
+            )
+            .await
+            .expect("create user");
+        let OidcLoginResult::Active(user) = user else {
+            panic!("open registration must activate the user");
+        };
+        let now = OffsetDateTime::UNIX_EPOCH + TimeDuration::days(20_000);
+        let session = store
+            .create_web_session_at(
+                &user.user_id,
+                super::WebSessionLifetime {
+                    idle: TimeDuration::minutes(10),
+                    absolute: TimeDuration::hours(1),
+                },
+                now,
+            )
+            .await
+            .expect("create session")
+            .expect("active user receives a session");
+        let stored_hash: Vec<u8> = sqlx::query("SELECT session_id_hash FROM web_sessions")
+            .fetch_one(store.pool())
+            .await
+            .expect("read session hash")
+            .get("session_id_hash");
+        assert_ne!(stored_hash, session.session_id().as_bytes());
+
+        let authenticated = store
+            .authenticate_web_session_at(
+                session.session_id(),
+                Some(session.csrf_token()),
+                now + TimeDuration::minutes(9),
+            )
+            .await
+            .expect("authenticate session")
+            .expect("session remains active");
+        assert_eq!(authenticated.viewer.user_id, user.user_id);
+        assert!(!authenticated.viewer.is_root);
+        assert!(authenticated.csrf_token_valid);
+
+        assert!(
+            store
+                .authenticate_web_session_at(
+                    session.session_id(),
+                    None,
+                    now + TimeDuration::hours(1),
+                )
+                .await
+                .expect("check absolute expiry")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_user_cannot_receive_web_session() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let user = store
+            .register_or_lookup_oidc_user(
+                &OidcIdentity {
+                    issuer: "https://id.sandi05.com".into(),
+                    subject: "pending-session-user".into(),
+                    display_name: "Pending user".into(),
+                },
+                RegistrationPolicy::Approval,
+                "2026-07-22T00:00:00.000Z",
+            )
+            .await
+            .expect("create user");
+        let OidcLoginResult::PendingApproval(user) = user else {
+            panic!("approval registration must create a pending user");
+        };
+        assert!(
+            store
+                .create_web_session_at(
+                    &user.user_id,
+                    super::WebSessionLifetime::GENERAL_USER,
+                    OffsetDateTime::UNIX_EPOCH,
+                )
+                .await
+                .expect("try create session")
+                .is_none()
+        );
     }
 
     async fn insert_note(store: &NotebookStore, note_id: &str) {

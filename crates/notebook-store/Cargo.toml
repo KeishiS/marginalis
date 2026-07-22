@@ -13,6 +13,7 @@ notebook-adoc = { path = "../notebook-adoc" }
 rand.workspace = true
 sqlx.workspace = true
 sha2.workspace = true
+time.workspace = true
 tokio.workspace = true
 url.workspace = true
 uuid.workspace = true
