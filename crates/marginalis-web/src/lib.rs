@@ -3,7 +3,7 @@
 //! 認証、Web UIおよびMCPはこのcrateのHTTP adapterとして追加する。ノートの検証、ACLおよび
 //! 永続化の業務判断は`marginalis-application`のユースケースへ委譲する。
 
-use std::{env, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -112,7 +112,6 @@ pub struct OidcConfiguration {
 /// OIDC設定を起動できない理由。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OidcConfigurationError {
-    MissingEnvironment(&'static str),
     InvalidIssuerUrl,
     InvalidBaseUrl,
 }
@@ -120,12 +119,6 @@ pub enum OidcConfigurationError {
 impl fmt::Display for OidcConfigurationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingEnvironment(variable) => {
-                write!(
-                    formatter,
-                    "required environment variable {variable} is not set"
-                )
-            }
             Self::InvalidIssuerUrl => formatter.write_str("OIDC issuer URL is invalid"),
             Self::InvalidBaseUrl => formatter.write_str("Base URL must be an absolute HTTPS URL"),
         }
@@ -135,18 +128,6 @@ impl fmt::Display for OidcConfigurationError {
 impl std::error::Error for OidcConfigurationError {}
 
 impl OidcConfiguration {
-    /// `OIDC_ISSUER_URL`、`OIDC_CLIENT_ID`および`OIDC_CLIENT_SECRET`を読み込む。
-    ///
-    /// callback URLはBase URLのサブパスを保った`/auth/oidc/callback`に固定する。
-    pub fn from_environment(base_url: &str) -> Result<Self, OidcConfigurationError> {
-        Self::new(
-            required_environment("OIDC_ISSUER_URL")?,
-            required_environment("OIDC_CLIENT_ID")?,
-            required_environment("OIDC_CLIENT_SECRET")?,
-            base_url,
-        )
-    }
-
     pub fn new(
         issuer_url: String,
         client_id: String,
@@ -311,10 +292,6 @@ pub enum OidcLoginStartError {
 enum OidcCallbackError {
     Rejected,
     Unavailable,
-}
-
-fn required_environment(variable: &'static str) -> Result<String, OidcConfigurationError> {
-    env::var(variable).map_err(|_| OidcConfigurationError::MissingEnvironment(variable))
 }
 
 fn oidc_callback_url(base_url: &str) -> Result<RedirectUrl, OidcConfigurationError> {
