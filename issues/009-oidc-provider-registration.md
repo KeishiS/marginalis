@@ -8,9 +8,10 @@ Discovery、Authorization Code Flow with PKCE、ID Token検証およびサーバ
 
 ## 利用者または運用者が用意する情報
 
-- アプリケーションの確定したBase URL。サブパスを含む場合は末尾の`/`までを確定する。
-- IdPへ登録するredirect URI: `<Base URL>/auth/oidc/callback`
-- IdPが発行するClient ID。
+- アプリケーションのBase URLは`https://marginalis.sandi05.com`とする。
+- IdPへ登録するredirect URIは
+  `https://marginalis.sandi05.com/auth/oidc/callback`とする。
+- Client IDは`marginalis`とする。
 - IdPが発行するClient Secret。これはチャット、Git、SQLite、設定ファイルおよびログへ
   保存しない。
 
@@ -18,7 +19,7 @@ Client Secretはデプロイ環境でのみ次の環境変数へ設定する。
 
 ```text
 OIDC_ISSUER_URL=https://id.sandi05.com
-OIDC_CLIENT_ID=<issued-client-id>
+OIDC_CLIENT_ID=marginalis
 OIDC_CLIENT_SECRET=<issued-client-secret>
 ```
 
