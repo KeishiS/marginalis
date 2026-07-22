@@ -10,11 +10,11 @@ use axum::{
     extract::{Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Redirect, Response},
-    routing::get,
+    routing::{get, post},
 };
 use marginalis_application::{
     Clock, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random,
-    SessionLifetime, WebSessionService,
+    SessionLifetime, WebSessionService, WebSessionStore,
 };
 pub use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
 use marginalis_domain::{Actor, OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
@@ -299,6 +299,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/health", get(health))
         .route("/auth/oidc/login", get(begin_oidc_login))
         .route("/auth/oidc/callback", get(complete_oidc_login))
+        .route("/auth/logout", post(logout))
         .with_state(state)
 }
 
@@ -402,6 +403,59 @@ async fn complete_oidc_login(
         Redirect::to(&format!("{}/", oidc.cookie_path.trim_end_matches('/'))),
     )
         .into_response())
+}
+
+/// Cookie sessionをapplication actorへ変換する唯一のHTTP境界。
+async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> Result<Actor, ApiError> {
+    let session_id = cookie_value(headers, "marginalis_session").ok_or(ApiError::new(
+        ApiErrorCode::AuthenticationRequired,
+        "authentication is required",
+    ))?;
+    let session = state
+        .database
+        .web_session_store()
+        .lookup(session_id, SystemClock.now())
+        .await
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?
+        .ok_or(ApiError::new(
+            ApiErrorCode::AuthenticationRequired,
+            "authentication is required",
+        ))?;
+    Ok(session.actor)
+}
+
+async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> Result<Response, ApiError> {
+    let _actor = authenticated_actor(&headers, &state).await?;
+    let session_id = cookie_value(&headers, "marginalis_session").ok_or(ApiError::new(
+        ApiErrorCode::AuthenticationRequired,
+        "authentication is required",
+    ))?;
+    state
+        .database
+        .web_session_store()
+        .revoke(session_id, SystemClock.now())
+        .await
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        HeaderValue::from_static(
+            "marginalis_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax",
+        ),
+    );
+    Ok(response)
+}
+
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(header::COOKIE)?
+        .to_str()
+        .ok()?
+        .split(';')
+        .find_map(|pair| {
+            let (key, value) = pair.trim().split_once('=')?;
+            (key == name && !value.is_empty()).then(|| value.to_owned())
+        })
 }
 
 #[cfg(test)]
