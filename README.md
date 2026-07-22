@@ -3,6 +3,17 @@
 Marginalisは、研究ノート、引用、断片的なアイディアを収集し、ノート間の参照として整理する
 セルフホスト型の研究ノート環境である。
 
+## 開発時の検証
+
+`nix develop`の環境で、頻繁な作業は`cargo make`から実行する。
+
+```text
+cargo make format
+cargo make lint
+cargo make test
+cargo make verify
+```
+
 ## 起動時の環境変数
 
 | 変数 | 必須 | 説明 |

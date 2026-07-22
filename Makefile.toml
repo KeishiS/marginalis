@@ -20,7 +20,7 @@ args = ["fmt", "--all"]
 [tasks.fmt-nix]
 description = "Format the Nix flake"
 command = "nixfmt"
-args = ["flake.nix"]
+args = ["flake.nix", "nix/module.nix"]
 
 [tasks.fmt-check]
 description = "Check Rust and Nix formatting without modifying files"
@@ -37,7 +37,7 @@ args = ["fmt", "--all", "--", "--check"]
 [tasks.fmt-check-nix]
 description = "Check Nix formatting without modifying files"
 command = "nixfmt"
-args = ["--check", "flake.nix"]
+args = ["--check", "flake.nix", "nix/module.nix"]
 
 [tasks.check]
 description = "Type-check all workspace targets and features"
