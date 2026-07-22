@@ -1064,6 +1064,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
+name = "marginalis-adoc"
+version = "0.1.0"
+dependencies = [
+ "adocweave",
+ "adocweave-wasm",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "marginalis-store"
+version = "0.1.0"
+dependencies = [
+ "adocweave",
+ "argon2",
+ "base64 0.22.1",
+ "marginalis-adoc",
+ "rand",
+ "sha2",
+ "sqlx",
+ "time",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "marginalis-web"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "marginalis-store",
+ "openidconnect",
+ "serde",
+ "time",
+ "tokio",
+ "tower",
+ "url",
+]
+
+[[package]]
 name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1090,46 +1130,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "notebook-adoc"
-version = "0.1.0"
-dependencies = [
- "adocweave",
- "adocweave-wasm",
- "unicode-normalization",
-]
-
-[[package]]
-name = "notebook-store"
-version = "0.1.0"
-dependencies = [
- "adocweave",
- "argon2",
- "base64 0.22.1",
- "notebook-adoc",
- "rand",
- "sha2",
- "sqlx",
- "time",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "notebook-web"
-version = "0.1.0"
-dependencies = [
- "axum",
- "notebook-store",
- "openidconnect",
- "serde",
- "time",
- "tokio",
- "tower",
- "url",
 ]
 
 [[package]]

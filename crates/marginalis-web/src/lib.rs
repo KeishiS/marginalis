@@ -1,7 +1,7 @@
-//! Web APIのHTTP境界。
+//! MarginalisのWeb APIにおけるHTTP境界。
 //!
 //! 認証、Web UIおよびMCPは将来このcrateのアダプタとして追加する。ノートの検証、ACLおよび
-//! 永続化の業務判断は`notebook-store`以下のアプリケーションサービスへ委譲する。
+//! 永続化の業務判断は`marginalis-store`以下のアプリケーションサービスへ委譲する。
 
 use std::{env, fmt, sync::Arc};
 
@@ -12,7 +12,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
-use notebook_store::{
+use marginalis_store::{
     NotebookStore, OidcIdentity, OidcLoginResult, RegistrationPolicy, Viewer, WebSessionLifetime,
 };
 use openidconnect::{
@@ -497,7 +497,7 @@ async fn complete_oidc_login(
             "authentication failed",
         ))?;
     let cookie = format!(
-        "notebook_session={}; Path={}; Secure; HttpOnly; SameSite=Lax",
+        "marginalis_session={}; Path={}; Secure; HttpOnly; SameSite=Lax",
         session.session_id(),
         oidc.cookie_path
     );
@@ -531,21 +531,21 @@ mod tests {
     fn oidc_configuration_preserves_the_base_url_subpath_in_its_callback() {
         let configuration = OidcConfiguration::new(
             "https://identity.example.edu".into(),
-            "notebook".into(),
+            "marginalis".into(),
             "secret".into(),
-            "https://example.edu/notebook/",
+            "https://example.edu/marginalis/",
         )
         .expect("valid OIDC configuration");
 
         assert_eq!(
             configuration.redirect_url().as_str(),
-            "https://example.edu/notebook/auth/oidc/callback"
+            "https://example.edu/marginalis/auth/oidc/callback"
         );
         assert_eq!(
             configuration.issuer_url().as_str(),
             "https://identity.example.edu"
         );
-        assert_eq!(configuration.client_id().as_str(), "notebook");
+        assert_eq!(configuration.client_id().as_str(), "marginalis");
     }
 
     #[test]
@@ -553,7 +553,7 @@ mod tests {
         for base_url in ["http://localhost:3000/", "https://user@example.edu/"] {
             let result = OidcConfiguration::new(
                 "https://identity.example.edu".into(),
-                "notebook".into(),
+                "marginalis".into(),
                 "secret".into(),
                 base_url,
             );
@@ -566,7 +566,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_endpoint_is_available_under_the_versioned_api_prefix() {
-        let store = notebook_store::NotebookStore::connect("sqlite::memory:")
+        let store = marginalis_store::NotebookStore::connect("sqlite::memory:")
             .await
             .expect("open store");
         let response = router(ApiState::new(store))

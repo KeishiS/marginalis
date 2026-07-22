@@ -36,7 +36,7 @@ use adocweave::{
     render::RenderInputs,
     source::TextRange,
 };
-use notebook_adoc::{
+use marginalis_adoc::{
     DEFAULT_SOURCE_LANGUAGES, NoteContentError, NoteProfileError, NoteReferenceError,
     extract_note_references, validate_note_content_profile, validate_note_metadata,
 };

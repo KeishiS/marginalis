@@ -1,5 +1,5 @@
 {
-  description = "Development environment for the notebook application";
+  description = "Development environment for Marginalis";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

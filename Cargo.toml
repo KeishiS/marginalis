@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/notebook-adoc", "crates/notebook-store", "crates/notebook-web"]
+members = ["crates/marginalis-adoc", "crates/marginalis-store", "crates/marginalis-web"]
 resolver = "2"
 
 [workspace.package]
