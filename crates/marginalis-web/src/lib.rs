@@ -3,7 +3,7 @@
 //! 認証、Web UIおよびMCPはこのcrateのHTTP adapterとして追加する。ノートの検証、ACLおよび
 //! 永続化の業務判断は`marginalis-application`のユースケースへ委譲する。
 
-use std::{fmt, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -14,200 +14,20 @@ use axum::{
 };
 use marginalis_application::{
     Clock, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteWriteService,
-    OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random, SessionLifetime,
-    WebSessionService, WebSessionStore,
+    SessionLifetime, WebSessionService, WebSessionStore,
 };
 pub use marginalis_auth_oidc::{
     OidcAuthentication, OidcCallbackError, OidcConfiguration, OidcConfigurationError,
     OidcDiscoveryError, OidcLoginStartError,
 };
-use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, OidcIdentity, OidcLoginResult, RegistrationPolicy,
-    UnixMillis, UserId,
-};
+use marginalis_domain::{Actor, EntityId, NoteId, NotePermission, OidcLoginResult, UserId};
 use marginalis_files::FileNoteStore;
 use marginalis_server::{SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
-use openidconnect::{
-    AuthorizationCode, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, Nonce,
-    PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse,
-    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
-    reqwest,
-};
 use serde::{Deserialize, Serialize};
 
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
-
-/// Discovery済みの外部OIDCクライアント。
-pub type DiscoveredOidcClient = CoreClient<
-    EndpointSet,
-    EndpointNotSet,
-    EndpointNotSet,
-    EndpointNotSet,
-    EndpointMaybeSet,
-    EndpointMaybeSet,
->;
-
-/// Discovery済みOIDCクライアントと、redirectを追跡しないHTTPクライアント。
-///
-/// issuerは起動設定で固定される。Discovery応答に含まれるURLを任意のredirect経由で追わない
-/// ことで、設定されたIdP以外への意図しないリクエストを防ぐ。
-#[allow(dead_code)]
-#[derive(Clone)]
-struct LegacyOidcAuthentication {
-    client: DiscoveredOidcClient,
-    http_client: reqwest::Client,
-    cookie_path: String,
-}
-
-/// OIDC Discoveryの起動時エラー。詳細な応答本文やsecretは公開しない。
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LegacyOidcDiscoveryError {
-    HttpClient,
-    Discovery,
-}
-
-impl fmt::Display for LegacyOidcDiscoveryError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::HttpClient => formatter.write_str("OIDC HTTP client could not be initialized"),
-            Self::Discovery => formatter.write_str("OIDC Discovery failed"),
-        }
-    }
-}
-
-impl std::error::Error for LegacyOidcDiscoveryError {}
-
-#[allow(dead_code)]
-impl LegacyOidcAuthentication {
-    /// 起動時に一度だけDiscoveryとJWKS取得を行う。
-    pub async fn discover(
-        configuration: &OidcConfiguration,
-    ) -> Result<Self, LegacyOidcDiscoveryError> {
-        let http_client = reqwest::ClientBuilder::new()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| LegacyOidcDiscoveryError::HttpClient)?;
-        let metadata =
-            CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
-                .await
-                .map_err(|_| LegacyOidcDiscoveryError::Discovery)?;
-        Ok(Self {
-            client: CoreClient::from_provider_metadata(
-                metadata,
-                configuration.client_id().clone(),
-                Some(configuration.client_secret().clone()),
-            )
-            .set_redirect_uri(configuration.redirect_url().clone()),
-            http_client,
-            cookie_path: configuration.cookie_path().into(),
-        })
-    }
-
-    pub fn client(&self) -> &DiscoveredOidcClient {
-        &self.client
-    }
-
-    pub fn http_client(&self) -> &reqwest::Client {
-        &self.http_client
-    }
-
-    /// state、nonceおよびPKCE verifierを保存し、IdPへ転送する認可URLを作る。
-    pub async fn begin_login(
-        &self,
-        database: &SqliteDatabase,
-    ) -> Result<String, LegacyOidcLoginStartError> {
-        let clock = SystemClock;
-        let random = SystemRandom;
-        let now = clock.now();
-        let pending = OidcLoginAttempt {
-            state: random.opaque_token(),
-            nonce: random.opaque_token(),
-            pkce_verifier: random.opaque_token(),
-            expires_at: UnixMillis::new(now.get() + 10 * 60 * 1_000),
-        };
-        database
-            .oidc_login_attempt_store()
-            .issue(pending.clone())
-            .await
-            .map_err(|_| LegacyOidcLoginStartError::Store)?;
-        let verifier = PkceCodeVerifier::new(pending.pkce_verifier);
-        let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
-        let state = pending.state;
-        let nonce = pending.nonce;
-        let (url, _, _) = self
-            .client
-            .authorize_url(
-                CoreAuthenticationFlow::AuthorizationCode,
-                move || CsrfToken::new(state),
-                move || Nonce::new(nonce),
-            )
-            .set_pkce_challenge(challenge)
-            .add_scope(Scope::new("profile".into()))
-            .add_scope(Scope::new("email".into()))
-            .url();
-        Ok(url.into())
-    }
-
-    async fn complete_login(
-        &self,
-        database: &SqliteDatabase,
-        code: &str,
-        state: &str,
-    ) -> Result<OidcLoginResult, LegacyOidcCallbackError> {
-        let clock = SystemClock;
-        let random = SystemRandom;
-        let now = clock.now();
-        let pending = database
-            .oidc_login_attempt_store()
-            .consume(state.to_owned(), now)
-            .await
-            .map_err(|_| LegacyOidcCallbackError::Unavailable)?
-            .ok_or(LegacyOidcCallbackError::Rejected)?;
-        let token = self
-            .client
-            .exchange_code(AuthorizationCode::new(code.to_owned()))
-            .map_err(|_| LegacyOidcCallbackError::Rejected)?
-            .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
-            .request_async(&self.http_client)
-            .await
-            .map_err(|_| LegacyOidcCallbackError::Rejected)?;
-        let id_token = token.id_token().ok_or(LegacyOidcCallbackError::Rejected)?;
-        let claims = id_token
-            .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
-            .map_err(|_| LegacyOidcCallbackError::Rejected)?;
-        let subject = claims.subject().as_str().to_owned();
-        let display_name = claims
-            .name()
-            .and_then(|value| value.get(None))
-            .map(|value| value.as_str())
-            .or_else(|| claims.preferred_username().map(|value| value.as_str()))
-            .or_else(|| claims.email().map(|value| value.as_str()))
-            .unwrap_or(&subject)
-            .to_owned();
-        let identity = OidcIdentity::new(claims.issuer().as_str(), subject, display_name)
-            .map_err(|_| LegacyOidcCallbackError::Rejected)?;
-        OidcRegistrationService::new(&database.oidc_identity_store(), &random)
-            .register_or_lookup(identity, RegistrationPolicy::default(), now)
-            .await
-            .map_err(|_| LegacyOidcCallbackError::Unavailable)
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LegacyOidcLoginStartError {
-    Store,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LegacyOidcCallbackError {
-    Rejected,
-    Unavailable,
-}
 
 /// HTTPハンドラーが利用する共有状態。
 #[derive(Clone)]

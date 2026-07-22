@@ -15,9 +15,6 @@ marginalis-domain = { path = "../marginalis-domain" }
 marginalis-files = { path = "../marginalis-files" }
 marginalis-server = { path = "../marginalis-server" }
 marginalis-sqlite = { path = "../marginalis-sqlite" }
-openidconnect.workspace = true
-base64.workspace = true
-rand.workspace = true
 serde.workspace = true
 time.workspace = true
 tokio.workspace = true
