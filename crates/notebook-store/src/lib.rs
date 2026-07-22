@@ -79,6 +79,23 @@ pub struct StoredNoteReference {
     pub target_anchor: Option<String>,
 }
 
+/// 一つの解析revisionから、SQLiteへ保存する位置付き参照投影を作る。
+pub fn extract_stored_note_references(
+    analysis: &adocweave::Analysis,
+) -> Result<Vec<StoredNoteReference>, Vec<NoteReferenceError>> {
+    extract_note_references(analysis).map(|references| {
+        references
+            .into_iter()
+            .map(|reference| StoredNoteReference {
+                source_start: i64::from(reference.range.start().to_u32()),
+                source_end: i64::from(reference.range.end().to_u32()),
+                target_note_id: reference.note_id,
+                target_anchor: reference.anchor,
+            })
+            .collect()
+    })
+}
+
 /// ACLを適用したノート参照の解決結果。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NoteReferenceResolution {
@@ -459,7 +476,7 @@ mod tests {
 
     use super::{
         NoteReferenceResolution, NoteUrlBase, NotebookStore, ReferenceFailureDetail,
-        StoredNoteReference, Viewer, render_note_html,
+        StoredNoteReference, Viewer, extract_stored_note_references, render_note_html,
     };
 
     async fn insert_note(store: &NotebookStore, note_id: &str) {
@@ -504,6 +521,23 @@ mod tests {
             .expect("count positions")
             .get("count");
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn preserves_note_reference_byte_ranges_for_storage() {
+        let target = "01800000-0000-7000-8000-000000000001";
+        let source = format!("xref:note:{target}[first] xref:note:{target}#part[second]\n");
+        let analysis = Engine::new(Default::default())
+            .analyze(&source)
+            .expect("valid AsciiDoc");
+
+        let references = extract_stored_note_references(&analysis).expect("valid references");
+        assert_eq!(references.len(), 2);
+        assert_eq!(references[0].source_start, 0);
+        assert!(references[0].source_end > references[0].source_start);
+        assert_eq!(references[0].target_note_id, target);
+        assert_eq!(references[0].target_anchor, None);
+        assert_eq!(references[1].target_anchor.as_deref(), Some("part"));
     }
 
     #[tokio::test]
