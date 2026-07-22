@@ -1,5 +1,7 @@
 # 011: アーキテクチャ再基線化
 
+状態: 完了（Web UIおよびMCPは初期公開の範囲から除外し、後続issueで扱う）。
+
 `docs/architecture.md`の目標構成へ、公開前に破壊的移行する。
 
 ## 作業順序
@@ -20,3 +22,9 @@
 - migration、空DB、復旧、ファイルと投影の一貫性をintegration testで検証する。
 - NixOS moduleが`ServerConfig`とsecret contractだけを介して起動する。
 - 旧`NotebookStore`中心の実装を削除する。
+
+## 検証
+
+- `cargo make verify`（format、Nix format、check、clippy、全workspace test、flake評価）
+- `nix flake check --no-build`
+- NixOS VM test（systemd credentialによるOIDC secretとデータ領域の再起動後保持）
