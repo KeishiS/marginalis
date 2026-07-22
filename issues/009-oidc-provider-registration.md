@@ -35,6 +35,8 @@ https://id.sandi05.com/oauth2/openid/marginalis/.well-known/openid-configuration
 - `state`、`nonce`およびPKCE verifierを一回限り・有効期限付きで保存する。
 - callbackでcodeを交換し、ID Tokenの署名、issuer、audience、期限、発行時刻およびnonceを
   検証する。
+- Kanidmの`client_secret_post`を用いてtoken endpointへclient secretを送る。reverse proxyの
+  `Authorization` header転送には依存しない。
 - `(issuer, subject)`を内部ユーザーUUIDへ対応付ける。
 - 成功時だけSecure、HttpOnly、SameSite=LaxかつBase URLのサブパスをPathとする
   サーバ側セッションCookieを発行する。

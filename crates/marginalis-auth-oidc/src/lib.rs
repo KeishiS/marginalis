@@ -8,9 +8,9 @@ use marginalis_application::{
 };
 use marginalis_domain::{OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
 use openidconnect::{
-    AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
-    EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl,
-    RequestTokenError, Scope, TokenResponse,
+    AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
+    EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
+    RedirectUrl, RequestTokenError, Scope, TokenResponse,
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
@@ -193,6 +193,7 @@ impl OidcAuthentication {
                 configuration.client_id().clone(),
                 Some(configuration.client_secret().clone()),
             )
+            .set_auth_type(AuthType::RequestBody)
             .set_redirect_uri(configuration.redirect_url().clone()),
             http_client,
             cookie_path: configuration.cookie_path().into(),
