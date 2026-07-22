@@ -1123,23 +1123,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "marginalis-store"
-version = "0.1.0"
-dependencies = [
- "adocweave",
- "argon2",
- "base64 0.22.1",
- "marginalis-adoc",
- "rand",
- "sha2",
- "sqlx",
- "time",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "marginalis-web"
 version = "0.1.0"
 dependencies = [

@@ -6,7 +6,6 @@ members = [
     "crates/marginalis-files",
     "crates/marginalis-server",
     "crates/marginalis-sqlite",
-    "crates/marginalis-store",
     "crates/marginalis-web",
 ]
 resolver = "2"

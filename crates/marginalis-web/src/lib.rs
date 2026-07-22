@@ -1,7 +1,7 @@
 //! MarginalisのWeb APIにおけるHTTP境界。
 //!
-//! 認証、Web UIおよびMCPは将来このcrateのアダプタとして追加する。ノートの検証、ACLおよび
-//! 永続化の業務判断は`marginalis-store`以下のアプリケーションサービスへ委譲する。
+//! 認証、Web UIおよびMCPはこのcrateのHTTP adapterとして追加する。ノートの検証、ACLおよび
+//! 永続化の業務判断は`marginalis-application`のユースケースへ委譲する。
 
 use std::{env, fmt, sync::Arc};
 
