@@ -7,6 +7,7 @@ use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
 
 use adocweave::attributes::{AttributeOperation, DocumentAttribute};
+use adocweave::html::RenderPolicy;
 use adocweave::inline::{Inline, MathLanguage, ReferenceDestination};
 use adocweave::limits::SyntaxMode;
 use adocweave::parser::{AstBlock, DelimitedContent, HeadingKind};
@@ -214,6 +215,7 @@ pub enum NoteContentErrorCode {
     InlinePassthrough,
     BlockPassthrough,
     DuplicateAnchor,
+    InvalidUrlScheme,
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
 }
@@ -225,6 +227,7 @@ impl NoteContentErrorCode {
             Self::InlinePassthrough => "inline-passthrough-disabled",
             Self::BlockPassthrough => "block-passthrough-disabled",
             Self::DuplicateAnchor => "duplicate-anchor",
+            Self::InvalidUrlScheme => "invalid-url-scheme",
             Self::UnsupportedMathLanguage => "unsupported-math-language",
             Self::UnsupportedSourceLanguage => "unsupported-source-language",
         }
@@ -313,6 +316,7 @@ pub fn validate_note_content_profile_with(
     analysis: &adocweave::Analysis,
     profile: &NoteContentProfile,
 ) -> Vec<NoteContentError> {
+    let render_policy = RenderPolicy::default();
     let mut errors = discover_includes(analysis.source())
         .expect("analysis source must have a representable byte length")
         .into_iter()
@@ -359,6 +363,12 @@ pub fn validate_note_content_profile_with(
                     range: source.language_range.unwrap_or(source.attribute_range),
                 });
             }
+        }
+        SemanticNode::Inline(Inline::Link(link)) if !render_policy.allows_url(&link.target) => {
+            errors.push(NoteContentError {
+                code: NoteContentErrorCode::InvalidUrlScheme,
+                range: link.target_range,
+            });
         }
         _ => {}
     });
@@ -844,6 +854,20 @@ mod tests {
             errors
                 .iter()
                 .any(|error| error.code == NoteContentErrorCode::DuplicateAnchor)
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_external_link_schemes() {
+        let analysis = Engine::new(Default::default())
+            .analyze("https://example.com[allowed] javascript:alert(1)[blocked]\n")
+            .expect("recoverable AsciiDoc");
+
+        let errors = validate_note_content_profile(&analysis);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteContentErrorCode::InvalidUrlScheme)
         );
     }
 
