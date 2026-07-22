@@ -10,6 +10,7 @@ publish = false
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 sqlx.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

@@ -1083,6 +1083,7 @@ dependencies = [
 name = "marginalis-domain"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "sha2",
  "uuid",
 ]
@@ -1093,7 +1094,10 @@ version = "0.1.0"
 dependencies = [
  "marginalis-application",
  "marginalis-domain",
+ "marginalis-sqlite",
  "sha2",
+ "sqlx",
+ "tokio",
  "uuid",
 ]
 
@@ -1110,6 +1114,7 @@ version = "0.1.0"
 dependencies = [
  "marginalis-application",
  "marginalis-domain",
+ "serde_json",
  "sqlx",
  "tokio",
 ]
@@ -2332,6 +2337,7 @@ checksum = "bf3923a6f5c4c6382e0b653c4117f48d631ea17f38ed86e2a828e6f7412f5239"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 

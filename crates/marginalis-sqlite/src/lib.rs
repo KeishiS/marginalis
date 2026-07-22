@@ -3,12 +3,12 @@
 use std::{fmt, future::Future, str::FromStr, time::Duration};
 
 use marginalis_application::{
-    JournalEntry, NoteOperationKind, OidcIdentityStore, OperationId, OperationJournal,
-    OperationState,
+    JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore, OperationId,
+    OperationJournal, OperationState,
 };
 use marginalis_domain::{
-    EntityId, NoteId, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision,
-    UnixMillis, UserId, UserStatus,
+    EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy,
+    SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sqlx::{
     Row, SqlitePool,
@@ -32,6 +32,37 @@ pub struct SqliteOperationJournal {
 #[derive(Clone, Debug)]
 pub struct SqliteOidcIdentityStore {
     pool: SqlitePool,
+}
+
+/// ノート検索投影のSQLite実装。
+#[derive(Clone, Debug)]
+pub struct SqliteNoteProjectionStore {
+    pool: SqlitePool,
+}
+
+#[derive(Debug)]
+pub enum NoteProjectionError {
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for NoteProjectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("note projection query failed")
+    }
+}
+
+impl std::error::Error for NoteProjectionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+        }
+    }
+}
+
+impl From<sqlx::Error> for NoteProjectionError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
 }
 
 #[derive(Debug)]
@@ -133,6 +164,77 @@ impl SqliteDatabase {
             pool: self.pool.clone(),
         }
     }
+
+    pub fn note_projection_store(&self) -> SqliteNoteProjectionStore {
+        SqliteNoteProjectionStore {
+            pool: self.pool.clone(),
+        }
+    }
+}
+
+impl NoteProjectionStore for SqliteNoteProjectionStore {
+    type Error = NoteProjectionError;
+
+    fn replace_projection(
+        &self,
+        projection: NoteProjection,
+        revision: SourceRevision,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let mut transaction = pool.begin().await?;
+            sqlx::query(
+                "INSERT INTO notes (note_id, relative_path, title, source_revision, deleted_at_ms)
+                 VALUES (?, ?, ?, ?, NULL)
+                 ON CONFLICT(note_id) DO UPDATE SET
+                   title = excluded.title, source_revision = excluded.source_revision, deleted_at_ms = NULL",
+            )
+            .bind(projection.note_id.to_string())
+            .bind(format!("notes/{}.adoc", projection.note_id))
+            .bind(&projection.title)
+            .bind(revision.bytes().to_vec())
+            .execute(&mut *transaction).await?;
+            sqlx::query(
+                "INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)
+                 ON CONFLICT(note_id, user_id) DO NOTHING",
+            )
+            .bind(projection.note_id.to_string())
+            .bind(projection.owner_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query("DELETE FROM note_anchors WHERE note_id = ?")
+                .bind(projection.note_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+            sqlx::query("DELETE FROM note_references WHERE source_note_id = ?")
+                .bind(projection.note_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+            for anchor in projection.anchors {
+                sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
+                    .bind(projection.note_id.to_string())
+                    .bind(anchor)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+            for reference in projection.references {
+                sqlx::query(
+                    "INSERT INTO note_references
+                     (source_note_id, source_start, source_end, target_note_id, target_anchor)
+                     VALUES (?, ?, ?, ?, ?)",
+                )
+                .bind(projection.note_id.to_string())
+                .bind(i64::from(reference.source_start))
+                .bind(i64::from(reference.source_end))
+                .bind(reference.target_note_id)
+                .bind(reference.target_anchor)
+                .execute(&mut *transaction)
+                .await?;
+            }
+            transaction.commit().await?;
+            Ok(())
+        }
+    }
 }
 
 impl OidcIdentityStore for SqliteOidcIdentityStore {
@@ -229,8 +331,8 @@ impl OperationJournal for SqliteOperationJournal {
             }
             sqlx::query(
                 "INSERT INTO operation_journal
-                 (operation_id, kind, state, note_id, source_revision, created_at_ms, updated_at_ms)
-                 VALUES (?, ?, 'prepared', ?, ?, ?, ?)",
+                 (operation_id, kind, state, note_id, source_revision, projection_payload, created_at_ms, updated_at_ms)
+                 VALUES (?, ?, 'prepared', ?, ?, ?, ?, ?)",
             )
             .bind(entry.operation_id.0.to_string())
             .bind(operation_kind(entry.kind))
@@ -240,6 +342,7 @@ impl OperationJournal for SqliteOperationJournal {
                     .source_revision
                     .map(|revision| revision.bytes().to_vec()),
             )
+            .bind(entry.projection.map(|projection| serde_json::to_string(&projection)).transpose().map_err(|_| JournalError::CorruptEntry)?)
             .bind(entry.created_at.get())
             .bind(entry.updated_at.get())
             .execute(&pool)
@@ -298,7 +401,7 @@ impl OperationJournal for SqliteOperationJournal {
         let pool = self.pool.clone();
         async move {
             let rows = sqlx::query(
-                "SELECT operation_id, kind, state, note_id, source_revision, created_at_ms, updated_at_ms
+                "SELECT operation_id, kind, state, note_id, source_revision, projection_payload, created_at_ms, updated_at_ms
                  FROM operation_journal WHERE state <> 'completed' ORDER BY created_at_ms",
             )
             .fetch_all(&pool)
@@ -346,6 +449,10 @@ fn entry_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<JournalEntry, Journal
         .try_get::<Option<Vec<u8>>, _>("source_revision")?
         .map(|value| SourceRevision::from_bytes(&value).ok_or(JournalError::CorruptEntry))
         .transpose()?;
+    let projection = row
+        .try_get::<Option<String>, _>("projection_payload")?
+        .map(|payload| serde_json::from_str(&payload).map_err(|_| JournalError::CorruptEntry))
+        .transpose()?;
     Ok(JournalEntry {
         operation_id: OperationId(
             EntityId::from_str(&operation_id).map_err(|_| JournalError::CorruptEntry)?,
@@ -354,6 +461,7 @@ fn entry_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<JournalEntry, Journal
         kind,
         state,
         source_revision,
+        projection,
         created_at: UnixMillis::new(row.try_get("created_at_ms")?),
         updated_at: UnixMillis::new(row.try_get("updated_at_ms")?),
     })
@@ -398,11 +506,12 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::{
-        JournalEntry, NoteOperationKind, OidcIdentityStore, OperationId, OperationJournal,
-        OperationState,
+        JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore, OperationId,
+        OperationJournal, OperationState,
     };
     use marginalis_domain::{
-        EntityId, NoteId, OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis, UserId,
+        EntityId, NoteId, NoteProjection, NoteReference, OidcIdentity, OidcLoginResult,
+        RegistrationPolicy, SourceRevision, UnixMillis, UserId,
     };
     use sqlx::Row;
 
@@ -442,6 +551,7 @@ mod tests {
                 kind: NoteOperationKind::Update,
                 state: OperationState::Prepared,
                 source_revision: None,
+                projection: None,
                 created_at: UnixMillis::new(1),
                 updated_at: UnixMillis::new(1),
             })
@@ -499,5 +609,55 @@ mod tests {
         };
         assert_eq!(second.user_id, first.user_id);
         assert_eq!(second.display_name, "Renamed");
+    }
+
+    #[tokio::test]
+    async fn projection_replaces_anchors_and_positioned_references() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("migration succeeds");
+        let note_id = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000010").expect("UUIDv7 note ID"),
+        );
+        let owner_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000011").expect("UUIDv7 user ID"),
+        );
+        // The owner is normally created by OIDC/root initialization before note creation.
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'Owner', 0, 0)",
+        )
+        .bind(owner_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("insert owner");
+        database
+            .note_projection_store()
+            .replace_projection(
+                NoteProjection {
+                    note_id,
+                    owner_id,
+                    title: "Projection".into(),
+                    anchors: vec!["section".into()],
+                    references: vec![NoteReference {
+                        source_start: 3,
+                        source_end: 12,
+                        target_note_id: "01800000-0000-7000-8000-000000000012".into(),
+                        target_anchor: Some("target".into()),
+                    }],
+                },
+                SourceRevision::from_source(b"= Projection\n"),
+            )
+            .await
+            .expect("store projection");
+        let count: i64 =
+            sqlx::query("SELECT COUNT(*) AS count FROM note_references WHERE source_note_id = ?")
+                .bind(note_id.to_string())
+                .fetch_one(database.pool())
+                .await
+                .expect("read references")
+                .try_get("count")
+                .expect("count");
+        assert_eq!(count, 1);
     }
 }

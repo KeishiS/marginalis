@@ -79,6 +79,7 @@ CREATE TABLE operation_journal (
     state TEXT NOT NULL CHECK (state IN ('prepared', 'source_applied', 'completed')),
     note_id TEXT NOT NULL,
     source_revision BLOB,
+    projection_payload TEXT,
     created_at_ms INTEGER NOT NULL,
     updated_at_ms INTEGER NOT NULL
 ) STRICT;

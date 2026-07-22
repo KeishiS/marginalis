@@ -2,11 +2,12 @@
 
 use core::{fmt, str::FromStr};
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 /// UTC epoch millisecondsで表すアプリケーション時刻。
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct UnixMillis(i64);
 
 impl UnixMillis {
@@ -38,7 +39,8 @@ impl SourceRevision {
 }
 
 /// Marginalisが生成したUUIDv7だけを受け入れるID。
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
 pub struct EntityId(Uuid);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,10 +88,12 @@ impl fmt::Display for EntityId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
 pub struct UserId(EntityId);
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
 pub struct NoteId(EntityId);
 
 macro_rules! entity_id {
@@ -114,6 +118,26 @@ macro_rules! entity_id {
 
 entity_id!(UserId);
 entity_id!(NoteId);
+
+/// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。
+///
+/// `title`、anchorおよび参照はAsciiDoc adapterが検証してから渡す。domainは構文木を持たない。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NoteProjection {
+    pub note_id: NoteId,
+    pub owner_id: UserId,
+    pub title: String,
+    pub anchors: Vec<String>,
+    pub references: Vec<NoteReference>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NoteReference {
+    pub source_start: u32,
+    pub source_end: u32,
+    pub target_note_id: String,
+    pub target_anchor: Option<String>,
+}
 
 /// 認証済み主体。rootは通常ユーザーのACLを管理できる。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

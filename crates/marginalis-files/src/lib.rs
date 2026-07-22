@@ -138,8 +138,10 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use marginalis_application::OperationId;
-    use marginalis_domain::EntityId;
+    use marginalis_application::{Clock, NoteOperationKind, NoteWriteService, OperationId, Random};
+    use marginalis_domain::{EntityId, NoteProjection, UnixMillis, UserId};
+    use marginalis_sqlite::SqliteDatabase;
+    use sqlx::Row;
     use uuid::Uuid;
 
     use super::*;
@@ -156,6 +158,26 @@ mod tests {
         NoteId::new(EntityId::from_uuid_v7(Uuid::from_u128(value | (7 << 76))))
     }
 
+    struct FixedClock;
+
+    impl Clock for FixedClock {
+        fn now(&self) -> UnixMillis {
+            UnixMillis::new(100)
+        }
+    }
+
+    struct FixedRandom;
+
+    impl Random for FixedRandom {
+        fn uuid_v7(&self) -> EntityId {
+            note(3).entity_id()
+        }
+
+        fn opaque_token(&self) -> String {
+            "unused".into()
+        }
+    }
+
     #[test]
     fn atomically_replaces_only_the_note_path_for_typed_ids() {
         let directory = test_directory();
@@ -170,6 +192,66 @@ mod tests {
             Some(b"= first\n".to_vec())
         );
         assert_eq!(revision, SourceRevision::from_source(b"= first\n"));
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[tokio::test]
+    async fn write_service_updates_source_projection_and_journal() {
+        let directory = test_directory();
+        let sources = FileNoteStore::open(&directory).expect("open file store");
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let note_id = note(1);
+        let owner_id = UserId::new(note(2).entity_id());
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'Owner', 0, 0)",
+        )
+        .bind(owner_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("insert owner");
+        let projection = NoteProjection {
+            note_id,
+            owner_id,
+            title: "First note".into(),
+            anchors: vec!["start".into()],
+            references: Vec::new(),
+        };
+        let journal = database.operation_journal();
+        let projections = database.note_projection_store();
+        let service =
+            NoteWriteService::new(&sources, &projections, &journal, &FixedRandom, &FixedClock);
+        service
+            .replace(
+                NoteOperationKind::Create,
+                projection,
+                b"= First note\n".to_vec(),
+            )
+            .await
+            .expect("write note");
+        assert_eq!(
+            sources.read(note_id).expect("read source"),
+            Some(b"= First note\n".to_vec())
+        );
+        let title: String = sqlx::query("SELECT title FROM notes WHERE note_id = ?")
+            .bind(note_id.to_string())
+            .fetch_one(database.pool())
+            .await
+            .expect("read projection")
+            .try_get("title")
+            .expect("title");
+        assert_eq!(title, "First note");
+        let incomplete: i64 = sqlx::query(
+            "SELECT COUNT(*) AS count FROM operation_journal WHERE state <> 'completed'",
+        )
+        .fetch_one(database.pool())
+        .await
+        .expect("read journal")
+        .try_get("count")
+        .expect("count");
+        assert_eq!(incomplete, 0);
         fs::remove_dir_all(directory).expect("remove test directory");
     }
 }
