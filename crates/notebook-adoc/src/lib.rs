@@ -213,6 +213,7 @@ pub enum NoteContentErrorCode {
     IncludeDirective,
     InlinePassthrough,
     BlockPassthrough,
+    DuplicateAnchor,
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
 }
@@ -223,6 +224,7 @@ impl NoteContentErrorCode {
             Self::IncludeDirective => "include-directive-disabled",
             Self::InlinePassthrough => "inline-passthrough-disabled",
             Self::BlockPassthrough => "block-passthrough-disabled",
+            Self::DuplicateAnchor => "duplicate-anchor",
             Self::UnsupportedMathLanguage => "unsupported-math-language",
             Self::UnsupportedSourceLanguage => "unsupported-source-language",
         }
@@ -360,6 +362,15 @@ pub fn validate_note_content_profile_with(
         }
         _ => {}
     });
+    let mut seen_anchor_ids = BTreeSet::new();
+    for target in analysis.reference_targets() {
+        if !seen_anchor_ids.insert(&target.id) {
+            errors.push(NoteContentError {
+                code: NoteContentErrorCode::DuplicateAnchor,
+                range: target.id_range,
+            });
+        }
+    }
     errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.as_str()));
     errors
 }
@@ -820,6 +831,20 @@ mod tests {
         assert!(codes.contains(&NoteContentErrorCode::IncludeDirective));
         assert!(codes.contains(&NoteContentErrorCode::InlinePassthrough));
         assert!(codes.contains(&NoteContentErrorCode::BlockPassthrough));
+    }
+
+    #[test]
+    fn rejects_duplicate_anchor_ids() {
+        let analysis = Engine::new(Default::default())
+            .analyze("[[same]]\n== First\n\n[[same]]\n== Second\n")
+            .expect("recoverable AsciiDoc");
+
+        let errors = validate_note_content_profile(&analysis);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteContentErrorCode::DuplicateAnchor)
+        );
     }
 
     #[test]
