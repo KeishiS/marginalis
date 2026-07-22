@@ -8,6 +8,14 @@ self:
 
 let
   cfg = config.services.marginalis;
+  listenPort =
+    let
+      matched = builtins.match ".*:([0-9]+)$" cfg.listenAddress;
+    in
+    if matched == null then
+      throw "services.marginalis.listenAddress must end with a TCP port"
+    else
+      lib.toInt (builtins.elemAt matched 0);
   inherit (lib)
     mkEnableOption
     mkIf
@@ -31,6 +39,12 @@ in
       type = types.str;
       default = "127.0.0.1:3000";
       description = "Socket address on which Marginalis accepts HTTP requests.";
+    };
+
+    openFirewall = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Whether to allow the TCP port in listenAddress through the NixOS firewall. This does not make a loopback-only listenAddress externally reachable.";
     };
 
     baseUrl = mkOption {
@@ -110,6 +124,8 @@ in
     };
 
     systemd.tmpfiles.rules = [ "d ${cfg.dataDir} 0750 marginalis marginalis -" ];
+
+    networking.firewall.allowedTCPPorts = optionals cfg.openFirewall [ listenPort ];
 
     systemd.services.marginalis = {
       description = "Marginalis research-note server";

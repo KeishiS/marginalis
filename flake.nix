@@ -64,6 +64,7 @@
                     system.stateVersion = "25.11";
                     services.marginalis = {
                       enable = true;
+                      openFirewall = true;
                       baseUrl = "https://marginalis.example.test";
                       oidc = {
                         issuerUrl = "https://id.example.test";
@@ -75,6 +76,7 @@
                 ];
               };
             in
+            assert evaluated.config.networking.firewall.allowedTCPPorts == [ 3000 ];
             pkgs.writeText "marginalis-nixos-module-evaluation" evaluated.config.systemd.services.marginalis.serviceConfig.ExecStart;
 
           nixos-module-vm =

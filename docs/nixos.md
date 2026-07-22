@@ -11,8 +11,10 @@
       modules = [
         marginalis.nixosModules.default
         {
-          services.marginalis = {
-            enable = true;
+  services.marginalis = {
+    enable = true;
+    # reverse proxyを使わず直接待受けを公開する場合だけ有効にする。
+    openFirewall = false;
             baseUrl = "https://marginalis.sandi05.com";
             listenAddress = "127.0.0.1:3000";
             oidc = {
