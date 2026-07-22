@@ -1083,7 +1083,10 @@ name = "notebook-store"
 version = "0.1.0"
 dependencies = [
  "adocweave",
+ "base64 0.22.1",
  "notebook-adoc",
+ "rand",
+ "sha2",
  "sqlx",
  "tokio",
  "url",

@@ -3,6 +3,9 @@
 use core::fmt;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use rand::{RngCore, rngs::OsRng};
+use sha2::{Digest, Sha256};
 use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
@@ -128,6 +131,76 @@ pub enum OidcLoginResult {
     PendingApproval(OidcUser),
     RegistrationDenied,
     Disabled(OidcUser),
+}
+
+/// OIDC認可要求とcallbackを結び付ける一回限りの情報。
+///
+/// `state`はブラウザ経由で往復し、`nonce`と`pkce_verifier`はcallbackでだけ使う。いずれも
+/// `Debug`を実装せず、ログへ出力しない。
+pub struct PendingOidcLogin {
+    state: String,
+    nonce: String,
+    pkce_verifier: String,
+}
+
+impl PendingOidcLogin {
+    pub fn state(&self) -> &str {
+        &self.state
+    }
+
+    pub fn nonce(&self) -> &str {
+        &self.nonce
+    }
+
+    pub fn pkce_verifier(&self) -> &str {
+        &self.pkce_verifier
+    }
+}
+
+/// callbackでstateを一度だけ検証した後に使用できるOIDC情報。
+pub struct ConsumedOidcLogin {
+    nonce: String,
+    pkce_verifier: String,
+}
+
+impl ConsumedOidcLogin {
+    pub fn nonce(&self) -> &str {
+        &self.nonce
+    }
+
+    pub fn pkce_verifier(&self) -> &str {
+        &self.pkce_verifier
+    }
+}
+
+/// OIDC認可要求の保存・消費に関するエラー。
+#[derive(Debug)]
+pub enum OidcLoginError {
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for OidcLoginError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Database(error) => {
+                write!(formatter, "SQLite OIDC login operation failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for OidcLoginError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+        }
+    }
+}
+
+impl From<sqlx::Error> for OidcLoginError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
 }
 
 /// OIDC identityとアプリケーションユーザーの対応を処理するときのエラー。
@@ -462,6 +535,16 @@ fn oidc_user_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<OidcUser, OidcUse
     })
 }
 
+fn random_opaque_token() -> String {
+    let mut bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn hash_opaque_token(token: &str) -> [u8; 32] {
+    Sha256::digest(token.as_bytes()).into()
+}
+
 /// SQLite上のノート投影ストア。
 #[derive(Clone, Debug)]
 pub struct NotebookStore {
@@ -513,6 +596,16 @@ impl NotebookStore {
                 user_id TEXT NOT NULL REFERENCES users(user_id),
                 PRIMARY KEY (issuer, subject),
                 UNIQUE (user_id)
+            ) STRICT",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS oidc_login_attempts (
+                state_hash BLOB PRIMARY KEY NOT NULL,
+                nonce TEXT NOT NULL,
+                pkce_verifier TEXT NOT NULL,
+                expires_at TEXT NOT NULL
             ) STRICT",
         )
         .execute(&self.pool)
@@ -577,6 +670,68 @@ impl NotebookStore {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// 新しいOIDC認可要求を保存する。
+    ///
+    /// `state`はDBへハッシュだけを保存する。PKCE verifierはtoken endpointで一度使うまで必要な
+    /// ため、短期の一回限り情報として保存し、消費時に必ず削除する。
+    pub async fn begin_oidc_login(
+        &self,
+        expires_at: &str,
+    ) -> Result<PendingOidcLogin, OidcLoginError> {
+        let pending = PendingOidcLogin {
+            state: random_opaque_token(),
+            nonce: random_opaque_token(),
+            pkce_verifier: random_opaque_token(),
+        };
+        let _write_guard = self.write_lock.lock().await;
+        sqlx::query(
+            "INSERT INTO oidc_login_attempts (state_hash, nonce, pkce_verifier, expires_at)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(hash_opaque_token(&pending.state).to_vec())
+        .bind(&pending.nonce)
+        .bind(&pending.pkce_verifier)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(pending)
+    }
+
+    /// callbackのstateを有効期限内に一度だけ消費する。
+    ///
+    /// state不一致と期限切れは同じ`None`で扱い、外部へログイン試行の存在を示さない。
+    pub async fn consume_oidc_login(
+        &self,
+        state: &str,
+        now: &str,
+    ) -> Result<Option<ConsumedOidcLogin>, OidcLoginError> {
+        let state_hash = hash_opaque_token(state).to_vec();
+        let _write_guard = self.write_lock.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        let attempt = sqlx::query(
+            "SELECT nonce, pkce_verifier FROM oidc_login_attempts
+             WHERE state_hash = ? AND expires_at > ?",
+        )
+        .bind(&state_hash)
+        .bind(now)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        sqlx::query("DELETE FROM oidc_login_attempts WHERE state_hash = ?")
+            .bind(state_hash)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        attempt
+            .map(|row| -> Result<ConsumedOidcLogin, sqlx::Error> {
+                Ok(ConsumedOidcLogin {
+                    nonce: row.try_get("nonce")?,
+                    pkce_verifier: row.try_get("pkce_verifier")?,
+                })
+            })
+            .transpose()
+            .map_err(OidcLoginError::from)
     }
 
     /// 検証済みOIDC identityを既存ユーザーへ対応付け、初回だけ登録ポリシーを適用する。
@@ -1126,6 +1281,63 @@ mod tests {
             .expect("count users")
             .get("count");
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn oidc_login_state_is_hashed_and_can_only_be_consumed_once() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let pending = store
+            .begin_oidc_login("2026-07-22T00:05:00.000Z")
+            .await
+            .expect("begin OIDC login");
+        let stored_hash: Vec<u8> = sqlx::query("SELECT state_hash FROM oidc_login_attempts")
+            .fetch_one(store.pool())
+            .await
+            .expect("read stored state hash")
+            .get("state_hash");
+        assert_ne!(stored_hash, pending.state().as_bytes());
+
+        let consumed = store
+            .consume_oidc_login(pending.state(), "2026-07-22T00:01:00.000Z")
+            .await
+            .expect("consume login")
+            .expect("state must exist once");
+        assert_eq!(consumed.nonce(), pending.nonce());
+        assert_eq!(consumed.pkce_verifier(), pending.pkce_verifier());
+        assert!(
+            store
+                .consume_oidc_login(pending.state(), "2026-07-22T00:01:00.000Z")
+                .await
+                .expect("repeat callback")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn expired_oidc_login_state_is_not_accepted_and_is_removed() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let pending = store
+            .begin_oidc_login("2026-07-22T00:00:00.000Z")
+            .await
+            .expect("begin OIDC login");
+
+        assert!(
+            store
+                .consume_oidc_login(pending.state(), "2026-07-22T00:00:00.000Z")
+                .await
+                .expect("consume expired state")
+                .is_none()
+        );
+        let count: i64 = sqlx::query("SELECT COUNT(*) AS count FROM oidc_login_attempts")
+            .fetch_one(store.pool())
+            .await
+            .expect("count attempts")
+            .get("count");
+        assert_eq!(count, 0);
     }
 
     async fn insert_note(store: &NotebookStore, note_id: &str) {
