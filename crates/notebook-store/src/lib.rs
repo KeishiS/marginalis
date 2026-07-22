@@ -3,6 +3,10 @@
 use core::fmt;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
+use argon2::{
+    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{SaltString, rand_core::OsRng as PasswordOsRng},
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
@@ -234,6 +238,45 @@ pub enum WebSessionError {
     InvalidLifetime,
     InvalidStoredExpiration,
     Database(sqlx::Error),
+}
+
+/// 緊急管理者`root`の初期化・認証エラー。
+#[derive(Debug)]
+pub enum RootAccountError {
+    EmptyPassword,
+    PasswordHash,
+    InvalidStoredPasswordHash,
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for RootAccountError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyPassword => formatter.write_str("root password must not be empty"),
+            Self::PasswordHash => formatter.write_str("root password could not be hashed"),
+            Self::InvalidStoredPasswordHash => {
+                formatter.write_str("stored root password hash is invalid")
+            }
+            Self::Database(error) => {
+                write!(formatter, "SQLite root account operation failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RootAccountError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::EmptyPassword | Self::PasswordHash | Self::InvalidStoredPasswordHash => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for RootAccountError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
 }
 
 impl fmt::Display for WebSessionError {
@@ -719,6 +762,14 @@ impl NotebookStore {
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS root_credentials (
+                user_id TEXT PRIMARY KEY NOT NULL REFERENCES users(user_id),
+                password_hash TEXT NOT NULL
+            ) STRICT",
+        )
+        .execute(&self.pool)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS web_sessions_user_idx ON web_sessions(user_id)")
             .execute(&self.pool)
             .await?;
@@ -782,6 +833,82 @@ impl NotebookStore {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// 未初期化のDBへ、OIDCと独立した緊急管理者`root`を一度だけ作成する。
+    ///
+    /// パスワードはArgon2idでハッシュ化し、二度目以降の呼出しでは既存のhashを変更しない。
+    pub async fn initialize_root(
+        &self,
+        password: &str,
+        now: &str,
+    ) -> Result<bool, RootAccountError> {
+        if password.is_empty() {
+            return Err(RootAccountError::EmptyPassword);
+        }
+        let salt = SaltString::generate(&mut PasswordOsRng);
+        let password_hash = Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|_| RootAccountError::PasswordHash)?
+            .to_string();
+        let _write_guard = self.write_lock.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        if sqlx::query("SELECT 1 FROM root_credentials LIMIT 1")
+            .fetch_optional(&mut *transaction)
+            .await?
+            .is_some()
+        {
+            transaction.commit().await?;
+            return Ok(false);
+        }
+        let user_id = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO users
+             (user_id, authentication_kind, status, display_name, created_at, updated_at)
+             VALUES (?, 'root', 'active', 'root', ?, ?)",
+        )
+        .bind(&user_id)
+        .bind(now)
+        .bind(now)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query("INSERT INTO root_credentials (user_id, password_hash) VALUES (?, ?)")
+            .bind(user_id)
+            .bind(password_hash)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(true)
+    }
+
+    /// `root`のパスワードを検証し、成功時だけrootのViewerを返す。
+    pub async fn authenticate_root(
+        &self,
+        password: &str,
+    ) -> Result<Option<Viewer>, RootAccountError> {
+        let row = sqlx::query(
+            "SELECT users.user_id, root_credentials.password_hash
+             FROM root_credentials JOIN users ON users.user_id = root_credentials.user_id
+             WHERE users.authentication_kind = 'root' AND users.status = 'active'",
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let password_hash: String = row.try_get("password_hash")?;
+        let parsed = PasswordHash::new(&password_hash)
+            .map_err(|_| RootAccountError::InvalidStoredPasswordHash)?;
+        if Argon2::default()
+            .verify_password(password.as_bytes(), &parsed)
+            .is_err()
+        {
+            return Ok(None);
+        }
+        Ok(Some(Viewer {
+            user_id: row.try_get("user_id")?,
+            is_root: true,
+        }))
     }
 
     /// 新しいOIDC認可要求を保存する。
@@ -1687,6 +1814,46 @@ mod tests {
                 )
                 .await
                 .expect("try create session")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn initializes_root_once_with_a_non_plaintext_password_hash() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        assert!(
+            store
+                .initialize_root("correct horse battery staple", "2026-07-22T00:00:00.000Z")
+                .await
+                .expect("initialize root")
+        );
+        assert!(
+            !store
+                .initialize_root("replacement password", "2026-07-22T00:01:00.000Z")
+                .await
+                .expect("do not replace root")
+        );
+        let password_hash: String = sqlx::query("SELECT password_hash FROM root_credentials")
+            .fetch_one(store.pool())
+            .await
+            .expect("read hash")
+            .get("password_hash");
+        assert_ne!(password_hash, "correct horse battery staple");
+        assert!(password_hash.starts_with("$argon2id$"));
+        assert!(
+            store
+                .authenticate_root("correct horse battery staple")
+                .await
+                .expect("authenticate root")
+                .is_some()
+        );
+        assert!(
+            store
+                .authenticate_root("incorrect password")
+                .await
+                .expect("reject bad password")
                 .is_none()
         );
     }
