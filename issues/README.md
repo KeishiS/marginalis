@@ -20,6 +20,9 @@
 `006`は編集体験を改善するが、サーバ側の検証を置き換えない。`007`は全Issueの完了条件を
 継続的に検証する。
 
+上流AsciiDocライブラリに提案する汎用APIのIssue本文は、[upstream](upstream/README.md)に分けて
+管理する。アプリ固有のUUID、ACL、SQLiteおよびBase URL決定は、上流提案へ含めない。
+
 ## 実装原則
 
 - AdocWeaveコアはファイル、DB、ネットワーク、時刻および認証情報へアクセスさせない。

@@ -28,12 +28,13 @@ xref:note:01800000-0000-7000-8000-000000000001#definition[定義]
 | 担当 | 処理 |
 | --- | --- |
 | AsciiDocライブラリ | 標準`xref`として、`scheme = note`、`locator = 01800000-0000-7000-8000-000000000001`、`anchor = definition`、labelおよび原文範囲をASTへ格納する。DBやURLを参照しない。 |
-| 本アプリのアダプタ | UUIDv7を検証し、現在の利用者のACLで対象とアンカーを照会する。許可された場合は`<Base URL>/notes/01800000-0000-7000-8000-000000000001#definition`を解決結果として作る。 |
+| 本アプリのアダプタ | UUIDv7を検証し、現在の利用者のACLで対象とアンカーを照会する。許可された場合は`<Base URL>/note/01800000-0000-7000-8000-000000000001#definition`を解決結果として作る。 |
 | AsciiDocライブラリ | 入力された解決結果だけを用いて`<a href="…">定義</a>`を描画する。 |
 
 対象が閲覧不能または不在なら、アダプタは同じ一般的な「未解決」結果を返す。ライブラリはhrefを
 出力せず、対象ID、タイトル、ACL状態を新たに表示しない。アンカーだけが不在なら、アダプタは
-`<Base URL>/notes/<UUID>`を解決結果として返し、アプリはフォールバック状態を記録する。
+`<Base URL>/note/<UUID>`を解決結果として返し、アプリはフォールバック状態と閲覧用warningを
+記録する。空labelは許可された解決先のタイトルへ置換し、未解決時にはノートIDを表示しない。
 
 ### 外部リンク
 
@@ -69,8 +70,8 @@ let answer = 42;
 | --- | --- | --- |
 | 解析 | 文書ヘッダ、属性、ブロック、インライン、アンカーおよびUTF-8 byte rangeを持つAST・診断 | `note-id`等をAST後に検証し、保存時strict／編集時permissiveの診断へ変換する。 |
 | 参照 | `xref`の参照先をscheme、locator、anchorに分解し、範囲付きで列挙するAPI | schemeが`note`である参照だけをUUIDv7検証し、各位置を投影へ保存する。 |
-| 参照解決 | 参照先の解決結果または失敗を、解析と別に描画へ渡すResolver／render input API | SQLiteとACLで解決し、`<Base URL>/notes/<uuid>`を渡す。権限なしは対象不在と同じ失敗へ畳み込む。 |
-| URL policy | scheme allowlist、control文字・難読化拒否、root-relative URLを許可できる安全なポリシー | `http`／`https`と、アプリが生成した`/…/notes/<uuid>`だけを許可する。入力からroot-relative URLを一般許可しない。 |
+| 参照解決 | 参照先の解決結果または失敗を、解析と別に描画へ渡すResolver／render input API | SQLiteとACLで解決し、`<Base URL>/note/<uuid>`、Resolver由来の表示ラベルおよびnoticeを渡す。権限なしは対象不在と同じ失敗へ畳み込む。 |
+| URL policy | scheme allowlist、control文字・難読化拒否、入力URLとResolver出力URLを区別できる安全なポリシー | 入力には`http`／`https`だけを許可し、Resolver出力には検証済みの絶対HTTPS URLだけを許可する。 |
 | HTML描画 | HTML allowlist、属性のエスケープ、リンク属性の固定または描画フック | 外部リンクだけへ`target="_blank" rel="noopener noreferrer"`を固定し、内部リンクには付けない。raw HTML、style、event handler、SVGを出力させない。 |
 | リソース | `include`、画像、添付および外部リソースを構文・解決段階で無効化する設定 | include、外部画像、添付参照および代理取得を無効化し、解析中のI/Oを発生させない。 |
 | STEM | 標準`stem`構文をASTまたは安全にエスケープされた出力へ保持するAPI | `:stem: latexmath`だけを許可し、KaTeX等は別のサニタイズ済み表示境界で処理する。 |
@@ -84,9 +85,9 @@ let answer = 42;
 - `xref:note:`の意味づけはResolverに置く。パーサーへ`note`専用マクロを追加しない。
 - HTMLは、同一解析revisionに対応する解決結果だけを入力として描画する。文字列置換による
   HTML後処理でリンク意味を実装しない。
-- root-relative URL許可や外部リンク固定属性が公開APIで不足する場合は、最小の一般機能として
-  上流へ提案する。上流対応までの一時実装も、アプリ固有の文法変更ではなく、明示的な
-  描画アダプタに限定する。
+- Resolver出力用URL policy、外部リンク固定属性、表示ラベル・noticeが公開APIで不足する場合は、
+  最小の一般機能として上流へ提案する。上流対応までの一時実装も、アプリ固有の文法変更ではなく、
+  明示的な描画アダプタに限定する。
 
 ## 範囲外
 
