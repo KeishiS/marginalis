@@ -137,6 +137,79 @@ pub enum UserStatus {
     Disabled,
 }
 
+impl UserStatus {
+    pub const fn as_storage(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    pub fn from_storage(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(Self::Pending),
+            "active" => Some(Self::Active),
+            "disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+/// OIDCの検証済みID tokenから抽出した、本人同定と表示のための情報。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OidcIdentity {
+    pub issuer: String,
+    pub subject: String,
+    pub display_name: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidOidcIdentity;
+
+impl fmt::Display for InvalidOidcIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OIDC issuer and subject must not be empty")
+    }
+}
+
+impl std::error::Error for InvalidOidcIdentity {}
+
+impl OidcIdentity {
+    pub fn new(
+        issuer: impl Into<String>,
+        subject: impl Into<String>,
+        display_name: impl Into<String>,
+    ) -> Result<Self, InvalidOidcIdentity> {
+        let identity = Self {
+            issuer: issuer.into(),
+            subject: subject.into(),
+            display_name: display_name.into(),
+        };
+        if identity.issuer.trim().is_empty() || identity.subject.trim().is_empty() {
+            Err(InvalidOidcIdentity)
+        } else {
+            Ok(identity)
+        }
+    }
+}
+
+/// OIDC identityに紐付く内部ユーザー。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OidcUser {
+    pub user_id: UserId,
+    pub status: UserStatus,
+    pub display_name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OidcLoginResult {
+    Active(OidcUser),
+    PendingApproval(OidcUser),
+    RegistrationDenied,
+    Disabled(OidcUser),
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum NotePermission {
     Read,

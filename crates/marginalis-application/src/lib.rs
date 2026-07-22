@@ -1,6 +1,9 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
-use marginalis_domain::{EntityId, NoteId, SourceRevision, UnixMillis};
+use marginalis_domain::{
+    EntityId, NoteId, OidcIdentity, OidcLoginResult, RegistrationPolicy, SourceRevision,
+    UnixMillis, UserId,
+};
 use std::future::Future;
 
 /// 時刻取得を外部化し、期限・journal復旧を決定的に試験できるようにする。
@@ -14,6 +17,45 @@ pub trait Clock: Send + Sync {
 pub trait Random: Send + Sync {
     fn uuid_v7(&self) -> EntityId;
     fn opaque_token(&self) -> String;
+}
+
+/// OIDC identityと内部ユーザーの原子的な対応付けを担うport。
+pub trait OidcIdentityStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn register_or_lookup(
+        &self,
+        identity: OidcIdentity,
+        policy: RegistrationPolicy,
+        new_user_id: UserId,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<OidcLoginResult, Self::Error>> + Send;
+}
+
+/// OIDC callback adapterが呼ぶ登録ユースケース。
+pub struct OidcRegistrationService<'a, Store, Entropy> {
+    store: &'a Store,
+    entropy: &'a Entropy,
+}
+
+impl<'a, Store, Entropy> OidcRegistrationService<'a, Store, Entropy>
+where
+    Store: OidcIdentityStore,
+    Entropy: Random,
+{
+    pub const fn new(store: &'a Store, entropy: &'a Entropy) -> Self {
+        Self { store, entropy }
+    }
+
+    pub fn register_or_lookup(
+        &self,
+        identity: OidcIdentity,
+        policy: RegistrationPolicy,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<OidcLoginResult, Store::Error>> + Send + '_ {
+        self.store
+            .register_or_lookup(identity, policy, UserId::new(self.entropy.uuid_v7()), now)
+    }
 }
 
 /// 一連のファイル・投影更新を復旧可能にする操作ジャーナルの識別子。

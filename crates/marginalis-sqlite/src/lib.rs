@@ -3,9 +3,13 @@
 use std::{fmt, future::Future, str::FromStr, time::Duration};
 
 use marginalis_application::{
-    JournalEntry, NoteOperationKind, OperationId, OperationJournal, OperationState,
+    JournalEntry, NoteOperationKind, OidcIdentityStore, OperationId, OperationJournal,
+    OperationState,
 };
-use marginalis_domain::{EntityId, NoteId, SourceRevision, UnixMillis};
+use marginalis_domain::{
+    EntityId, NoteId, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision,
+    UnixMillis, UserId, UserStatus,
+};
 use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
@@ -22,6 +26,44 @@ pub struct SqliteDatabase {
 #[derive(Clone, Debug)]
 pub struct SqliteOperationJournal {
     pool: SqlitePool,
+}
+
+/// OIDC identityを内部ユーザーへ永続対応付けするSQLite adapter。
+#[derive(Clone, Debug)]
+pub struct SqliteOidcIdentityStore {
+    pool: SqlitePool,
+}
+
+#[derive(Debug)]
+pub enum OidcIdentityStoreError {
+    Database(sqlx::Error),
+    CorruptUser,
+}
+
+impl fmt::Display for OidcIdentityStoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Database(error) => write!(formatter, "OIDC identity query failed: {error}"),
+            Self::CorruptUser => {
+                formatter.write_str("OIDC identity store contains an invalid user")
+            }
+        }
+    }
+}
+
+impl std::error::Error for OidcIdentityStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::CorruptUser => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for OidcIdentityStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
 }
 
 #[derive(Debug)]
@@ -83,6 +125,95 @@ impl SqliteDatabase {
     pub fn operation_journal(&self) -> SqliteOperationJournal {
         SqliteOperationJournal {
             pool: self.pool.clone(),
+        }
+    }
+
+    pub fn oidc_identity_store(&self) -> SqliteOidcIdentityStore {
+        SqliteOidcIdentityStore {
+            pool: self.pool.clone(),
+        }
+    }
+}
+
+impl OidcIdentityStore for SqliteOidcIdentityStore {
+    type Error = OidcIdentityStoreError;
+
+    fn register_or_lookup(
+        &self,
+        identity: OidcIdentity,
+        policy: RegistrationPolicy,
+        new_user_id: UserId,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<OidcLoginResult, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let mut transaction = pool.begin().await?;
+            let existing = sqlx::query(
+                "SELECT users.user_id, users.status, users.display_name
+                 FROM oidc_identities JOIN users ON users.user_id = oidc_identities.user_id
+                 WHERE oidc_identities.issuer = ? AND oidc_identities.subject = ?",
+            )
+            .bind(&identity.issuer)
+            .bind(&identity.subject)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            let user = if let Some(row) = existing {
+                let user = oidc_user_from_row(&row)?;
+                sqlx::query(
+                    "UPDATE users SET display_name = ?, updated_at_ms = ? WHERE user_id = ?",
+                )
+                .bind(&identity.display_name)
+                .bind(now.get())
+                .bind(user.user_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+                OidcUser {
+                    display_name: identity.display_name,
+                    ..user
+                }
+            } else {
+                if policy == RegistrationPolicy::InviteOnly {
+                    transaction.commit().await?;
+                    return Ok(OidcLoginResult::RegistrationDenied);
+                }
+                let status = match policy {
+                    RegistrationPolicy::Open => UserStatus::Active,
+                    RegistrationPolicy::Approval => UserStatus::Pending,
+                    RegistrationPolicy::InviteOnly => unreachable!("handled above"),
+                };
+                let user = OidcUser {
+                    user_id: new_user_id,
+                    status,
+                    display_name: identity.display_name,
+                };
+                sqlx::query(
+                    "INSERT INTO users
+                     (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+                     VALUES (?, 'oidc', ?, ?, ?, ?)",
+                )
+                .bind(user.user_id.to_string())
+                .bind(status.as_storage())
+                .bind(&user.display_name)
+                .bind(now.get())
+                .bind(now.get())
+                .execute(&mut *transaction)
+                .await?;
+                sqlx::query(
+                    "INSERT INTO oidc_identities (issuer, subject, user_id) VALUES (?, ?, ?)",
+                )
+                .bind(&identity.issuer)
+                .bind(&identity.subject)
+                .bind(user.user_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+                user
+            };
+            transaction.commit().await?;
+            Ok(match user.status {
+                UserStatus::Active => OidcLoginResult::Active(user),
+                UserStatus::Pending => OidcLoginResult::PendingApproval(user),
+                UserStatus::Disabled => OidcLoginResult::Disabled(user),
+            })
         }
     }
 }
@@ -185,6 +316,18 @@ fn operation_kind(kind: NoteOperationKind) -> &'static str {
     }
 }
 
+fn oidc_user_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<OidcUser, OidcIdentityStoreError> {
+    let user_id = row.try_get::<String, _>("user_id")?;
+    let status = row.try_get::<String, _>("status")?;
+    Ok(OidcUser {
+        user_id: UserId::new(
+            EntityId::from_str(&user_id).map_err(|_| OidcIdentityStoreError::CorruptUser)?,
+        ),
+        status: UserStatus::from_storage(&status).ok_or(OidcIdentityStoreError::CorruptUser)?,
+        display_name: row.try_get("display_name")?,
+    })
+}
+
 fn entry_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<JournalEntry, JournalError> {
     let operation_id = row.try_get::<String, _>("operation_id")?;
     let note_id = row.try_get::<String, _>("note_id")?;
@@ -255,9 +398,12 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::{
-        JournalEntry, NoteOperationKind, OperationId, OperationJournal, OperationState,
+        JournalEntry, NoteOperationKind, OidcIdentityStore, OperationId, OperationJournal,
+        OperationState,
     };
-    use marginalis_domain::{EntityId, NoteId, UnixMillis};
+    use marginalis_domain::{
+        EntityId, NoteId, OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis, UserId,
+    };
     use sqlx::Row;
 
     use super::*;
@@ -311,5 +457,47 @@ mod tests {
             .await
             .expect("complete journal");
         assert!(journal.incomplete().await.expect("read journal").is_empty());
+    }
+
+    #[tokio::test]
+    async fn oidc_identity_is_stable_while_display_name_is_refreshed() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("migration succeeds");
+        let store = database.oidc_identity_store();
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000003").expect("UUIDv7 user ID"),
+        );
+        let first = store
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "subject", "First name")
+                    .expect("valid identity"),
+                RegistrationPolicy::Open,
+                user_id,
+                UnixMillis::new(1),
+            )
+            .await
+            .expect("register identity");
+        let OidcLoginResult::Active(first) = first else {
+            panic!("open registration activates user");
+        };
+        let second = store
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "subject", "Renamed")
+                    .expect("valid identity"),
+                RegistrationPolicy::Approval,
+                UserId::new(
+                    EntityId::from_str("01800000-0000-7000-8000-000000000004")
+                        .expect("UUIDv7 unused ID"),
+                ),
+                UnixMillis::new(2),
+            )
+            .await
+            .expect("look up identity");
+        let OidcLoginResult::Active(second) = second else {
+            panic!("existing active user remains active");
+        };
+        assert_eq!(second.user_id, first.user_id);
+        assert_eq!(second.display_name, "Renamed");
     }
 }
