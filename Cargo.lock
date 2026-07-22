@@ -1064,20 +1064,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
-name = "marginalis-adoc"
+name = "marginalis-application"
+version = "0.1.0"
+dependencies = [
+ "marginalis-domain",
+]
+
+[[package]]
+name = "marginalis-asciidoc"
 version = "0.1.0"
 dependencies = [
  "adocweave",
  "adocweave-wasm",
  "marginalis-domain",
  "unicode-normalization",
-]
-
-[[package]]
-name = "marginalis-application"
-version = "0.1.0"
-dependencies = [
- "marginalis-domain",
 ]
 
 [[package]]

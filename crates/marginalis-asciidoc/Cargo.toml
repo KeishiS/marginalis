@@ -1,5 +1,5 @@
 [package]
-name = "marginalis-adoc"
+name = "marginalis-asciidoc"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true

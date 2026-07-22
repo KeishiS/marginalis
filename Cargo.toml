@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/marginalis-adoc",
+    "crates/marginalis-asciidoc",
     "crates/marginalis-application",
     "crates/marginalis-domain",
     "crates/marginalis-files",
