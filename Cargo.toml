@@ -20,7 +20,7 @@ base64 = "0.22.1"
 rand = "0.8.5"
 sha2 = "0.10.9"
 time = { version = "0.3.54", features = ["formatting", "macros", "parsing"] }
-axum = { version = "0.8.8", default-features = false, features = ["http1", "json", "tokio"] }
+axum = { version = "0.8.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
 openidconnect = { version = "4.0.1", default-features = false, features = ["reqwest"] }
 serde = { version = "1.0.219", features = ["derive"] }
 tower = { version = "0.5.2", features = ["util"] }

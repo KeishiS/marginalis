@@ -7,20 +7,22 @@ use std::{env, fmt, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::State,
-    http::StatusCode,
+    extract::{Query, State},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
-use notebook_store::{NotebookStore, Viewer};
+use notebook_store::{
+    NotebookStore, OidcIdentity, OidcLoginResult, RegistrationPolicy, Viewer, WebSessionLifetime,
+};
 use openidconnect::{
-    ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl,
-    Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl,
+    AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
+    EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, TokenResponse,
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
-use serde::Serialize;
-use time::Duration;
+use serde::{Deserialize, Serialize};
+use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
 use url::Url;
 
 /// 公開REST APIの現在のバージョン。
@@ -44,6 +46,7 @@ pub type DiscoveredOidcClient = CoreClient<
 pub struct OidcAuthentication {
     client: DiscoveredOidcClient,
     http_client: reqwest::Client,
+    cookie_path: String,
 }
 
 /// OIDC Discoveryの起動時エラー。詳細な応答本文やsecretは公開しない。
@@ -74,6 +77,7 @@ pub struct OidcConfiguration {
     client_id: ClientId,
     client_secret: ClientSecret,
     redirect_url: RedirectUrl,
+    cookie_path: String,
 }
 
 /// OIDC設定を起動できない理由。
@@ -123,11 +127,13 @@ impl OidcConfiguration {
         let issuer_url =
             IssuerUrl::new(issuer_url).map_err(|_| OidcConfigurationError::InvalidIssuerUrl)?;
         let redirect_url = oidc_callback_url(base_url)?;
+        let cookie_path = base_cookie_path(base_url)?;
         Ok(Self {
             issuer_url,
             client_id: ClientId::new(client_id),
             client_secret: ClientSecret::new(client_secret),
             redirect_url,
+            cookie_path,
         })
     }
 
@@ -173,6 +179,7 @@ impl OidcAuthentication {
         Ok(Self {
             client: configuration.client_from_discovery(metadata),
             http_client,
+            cookie_path: configuration.cookie_path.clone(),
         })
     }
 
@@ -205,11 +212,69 @@ impl OidcAuthentication {
             .url();
         Ok(url.into())
     }
+
+    async fn complete_login(
+        &self,
+        store: &NotebookStore,
+        code: &str,
+        state: &str,
+    ) -> Result<OidcLoginResult, OidcCallbackError> {
+        let now = OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .map_err(|_| OidcCallbackError::Unavailable)?;
+        let pending = store
+            .consume_oidc_login(state, &now)
+            .await
+            .map_err(|_| OidcCallbackError::Unavailable)?
+            .ok_or(OidcCallbackError::Rejected)?;
+        let token = self
+            .client
+            .exchange_code(AuthorizationCode::new(code.to_owned()))
+            .map_err(|_| OidcCallbackError::Rejected)?
+            .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier().to_owned()))
+            .request_async(&self.http_client)
+            .await
+            .map_err(|_| OidcCallbackError::Rejected)?;
+        let id_token = token.id_token().ok_or(OidcCallbackError::Rejected)?;
+        let claims = id_token
+            .claims(
+                &self.client.id_token_verifier(),
+                &Nonce::new(pending.nonce().to_owned()),
+            )
+            .map_err(|_| OidcCallbackError::Rejected)?;
+        let subject = claims.subject().as_str().to_owned();
+        let display_name = claims
+            .name()
+            .and_then(|value| value.get(None))
+            .map(|value| value.as_str())
+            .or_else(|| claims.preferred_username().map(|value| value.as_str()))
+            .or_else(|| claims.email().map(|value| value.as_str()))
+            .unwrap_or(&subject)
+            .to_owned();
+        store
+            .register_or_lookup_oidc_user(
+                &OidcIdentity {
+                    issuer: claims.issuer().as_str().to_owned(),
+                    subject,
+                    display_name,
+                },
+                RegistrationPolicy::default(),
+                &now,
+            )
+            .await
+            .map_err(|_| OidcCallbackError::Unavailable)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OidcLoginStartError {
     Store,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OidcCallbackError {
+    Rejected,
+    Unavailable,
 }
 
 fn required_environment(variable: &'static str) -> Result<String, OidcConfigurationError> {
@@ -230,6 +295,16 @@ fn oidc_callback_url(base_url: &str) -> Result<RedirectUrl, OidcConfigurationErr
     let base_path = url.path().trim_end_matches('/');
     url.set_path(&format!("{base_path}/auth/oidc/callback"));
     RedirectUrl::new(url.into()).map_err(|_| OidcConfigurationError::InvalidBaseUrl)
+}
+
+fn base_cookie_path(base_url: &str) -> Result<String, OidcConfigurationError> {
+    let url = Url::parse(base_url).map_err(|_| OidcConfigurationError::InvalidBaseUrl)?;
+    let path = url.path().trim_end_matches('/');
+    Ok(if path.is_empty() {
+        "/".into()
+    } else {
+        path.into()
+    })
 }
 
 /// HTTPハンドラーが利用する共有状態。
@@ -333,6 +408,7 @@ pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
         .route("/auth/oidc/login", get(begin_oidc_login))
+        .route("/auth/oidc/callback", get(complete_oidc_login))
         .with_state(state)
 }
 
@@ -359,6 +435,78 @@ async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, Api
         .await
         .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
     Ok(Redirect::temporary(&destination))
+}
+
+#[derive(Deserialize)]
+struct OidcCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+async fn complete_oidc_login(
+    State(state): State<ApiState>,
+    Query(query): Query<OidcCallbackQuery>,
+) -> Result<Response, ApiError> {
+    let oidc = state.oidc.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::Internal,
+        "authentication is not configured",
+    ))?;
+    if query.error.is_some() {
+        return Err(ApiError::new(
+            ApiErrorCode::AuthenticationRequired,
+            "authentication failed",
+        ));
+    }
+    let (Some(code), Some(state_token)) = (query.code.as_deref(), query.state.as_deref()) else {
+        return Err(ApiError::new(
+            ApiErrorCode::AuthenticationRequired,
+            "authentication failed",
+        ));
+    };
+    let OidcLoginResult::Active(user) = oidc
+        .complete_login(&state.store, code, state_token)
+        .await
+        .map_err(|error| match error {
+            OidcCallbackError::Rejected => ApiError::new(
+                ApiErrorCode::AuthenticationRequired,
+                "authentication failed",
+            ),
+            OidcCallbackError::Unavailable => {
+                ApiError::new(ApiErrorCode::Internal, "authentication is unavailable")
+            }
+        })?
+    else {
+        return Err(ApiError::new(
+            ApiErrorCode::AuthenticationRequired,
+            "authentication failed",
+        ));
+    };
+    let session = state
+        .store
+        .create_web_session(&user.user_id, WebSessionLifetime::GENERAL_USER)
+        .await
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?
+        .ok_or(ApiError::new(
+            ApiErrorCode::AuthenticationRequired,
+            "authentication failed",
+        ))?;
+    let cookie = format!(
+        "notebook_session={}; Path={}; Secure; HttpOnly; SameSite=Lax",
+        session.session_id(),
+        oidc.cookie_path
+    );
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&cookie)
+            .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
+    );
+    Ok((
+        headers,
+        Redirect::to(&format!("{}/", oidc.cookie_path.trim_end_matches('/'))),
+    )
+        .into_response())
 }
 
 #[cfg(test)]
