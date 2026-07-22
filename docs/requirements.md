@@ -86,6 +86,7 @@ AIエージェントがMCPを介してノートを操作できるようにする
 - 未承認の保留ユーザは完全削除できる。
 - 保留ユーザを削除した場合も、招待およびログイン試行等の監査ログを維持する。
 - 初期バージョンで設定できるOIDCプロバイダは一つとする。
+- 外部OIDCクライアントにはRustの`openidconnect`ライブラリを使用する。
 - OIDC設定として、少なくとも `OIDC_ISSUER_URL`、`OIDC_CLIENT_ID` および
   `OIDC_CLIENT_SECRET` を環境変数から受け取る。
 - `OIDC_CLIENT_SECRET` をDBおよびログへ保存・出力しない。

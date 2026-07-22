@@ -9,7 +9,9 @@ publish = false
 [dependencies]
 axum.workspace = true
 notebook-store = { path = "../notebook-store" }
+openidconnect.workspace = true
 serde.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
