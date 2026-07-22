@@ -159,6 +159,7 @@ impl FileNoteStore {
 mod tests {
     use std::{
         fs,
+        sync::atomic::{AtomicUsize, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -198,6 +199,19 @@ mod tests {
     impl Random for FixedRandom {
         fn uuid_v7(&self) -> EntityId {
             note(3).entity_id()
+        }
+
+        fn opaque_token(&self) -> String {
+            "unused".into()
+        }
+    }
+
+    struct SequenceRandom;
+
+    impl Random for SequenceRandom {
+        fn uuid_v7(&self) -> EntityId {
+            static NEXT: AtomicUsize = AtomicUsize::new(100);
+            note(NEXT.fetch_add(1, Ordering::Relaxed) as u128).entity_id()
         }
 
         fn opaque_token(&self) -> String {
@@ -266,8 +280,13 @@ mod tests {
         };
         let journal = database.operation_journal();
         let projections = database.note_projection_store();
-        let service =
-            NoteWriteService::new(&sources, &projections, &journal, &FixedRandom, &FixedClock);
+        let service = NoteWriteService::new(
+            &sources,
+            &projections,
+            &journal,
+            &SequenceRandom,
+            &FixedClock,
+        );
         service
             .replace(
                 NoteOperationKind::Create,
@@ -297,6 +316,61 @@ mod tests {
         .try_get("count")
         .expect("count");
         assert_eq!(incomplete, 0);
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[tokio::test]
+    async fn write_service_physically_deletes_source_and_projection() {
+        let directory = test_directory();
+        let sources = FileNoteStore::open(&directory).expect("open file store");
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let note_id = note(21);
+        let owner_id = UserId::new(note(22).entity_id());
+        sqlx::query("INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms) VALUES (?, 'oidc', 'active', 'Owner', 0, 0)")
+            .bind(owner_id.to_string()).execute(database.pool()).await.expect("owner");
+        let journal = database.operation_journal();
+        let projections = database.note_projection_store();
+        let service = NoteWriteService::new(
+            &sources,
+            &projections,
+            &journal,
+            &SequenceRandom,
+            &FixedClock,
+        );
+        service
+            .replace(
+                NoteOperationKind::Create,
+                NoteProjection {
+                    note_id,
+                    owner_id,
+                    title: "Disposable".into(),
+                    anchors: Vec::new(),
+                    references: Vec::new(),
+                },
+                b"= Disposable\n".to_vec(),
+            )
+            .await
+            .expect("create");
+        service.delete(note_id).await.expect("delete");
+        assert_eq!(sources.read(note_id).expect("source"), None);
+        let notes: i64 = sqlx::query("SELECT COUNT(*) AS count FROM notes WHERE note_id = ?")
+            .bind(note_id.to_string())
+            .fetch_one(database.pool())
+            .await
+            .expect("notes")
+            .try_get("count")
+            .expect("count");
+        let acl: i64 = sqlx::query("SELECT COUNT(*) AS count FROM note_acl WHERE note_id = ?")
+            .bind(note_id.to_string())
+            .fetch_one(database.pool())
+            .await
+            .expect("acl")
+            .try_get("count")
+            .expect("count");
+        assert_eq!((notes, acl), (0, 0));
+        assert!(journal.incomplete().await.expect("journal").is_empty());
         fs::remove_dir_all(directory).expect("remove test directory");
     }
 
