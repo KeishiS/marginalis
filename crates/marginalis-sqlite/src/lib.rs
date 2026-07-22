@@ -18,7 +18,10 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("../migrations/0001_initial.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, include_str!("../migrations/0001_initial.sql")),
+    (2, include_str!("../migrations/0002_live_notes_index.sql")),
+];
 
 #[derive(Clone, Debug)]
 pub struct SqliteDatabase {
@@ -821,6 +824,42 @@ mod tests {
         .await
         .expect("journal table exists");
         assert_eq!(row.get::<String, _>("name"), "operation_journal");
+    }
+
+    #[tokio::test]
+    async fn upgrades_a_database_at_the_previous_schema_version() {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        sqlx::raw_sql(include_str!("../migrations/0001_initial.sql"))
+            .execute(&pool)
+            .await
+            .expect("initial schema");
+        sqlx::query(
+            "CREATE TABLE _marginalis_migrations (version INTEGER PRIMARY KEY NOT NULL, applied_at_ms INTEGER NOT NULL) STRICT",
+        ).execute(&pool).await.expect("migration table");
+        sqlx::query("INSERT INTO _marginalis_migrations (version, applied_at_ms) VALUES (1, 0)")
+            .execute(&pool)
+            .await
+            .expect("initial version");
+        migrate(&pool).await.expect("upgrade");
+        let version: i64 =
+            sqlx::query("SELECT MAX(version) AS version FROM _marginalis_migrations")
+                .fetch_one(&pool)
+                .await
+                .expect("versions")
+                .try_get("version")
+                .expect("version");
+        assert_eq!(version, 2);
+        let index: String = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("index")
+        .try_get("name")
+        .expect("name");
+        assert_eq!(index, "notes_live_title_idx");
     }
 
     #[tokio::test]
