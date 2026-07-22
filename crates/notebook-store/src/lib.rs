@@ -25,8 +25,8 @@ use adocweave::{
     source::TextRange,
 };
 use notebook_adoc::{
-    DEFAULT_SOURCE_LANGUAGES, NoteContentError, NoteReferenceError, extract_note_references,
-    validate_note_content_profile,
+    DEFAULT_SOURCE_LANGUAGES, NoteContentError, NoteProfileError, NoteReferenceError,
+    extract_note_references, validate_note_content_profile, validate_note_metadata,
 };
 
 /// ノート表示に固定するAdocWeaveの汎用描画policy。
@@ -203,6 +203,41 @@ pub struct ResolvedNoteReferences {
 pub enum ResolveReferencesError {
     InvalidReferences(Vec<NoteReferenceError>),
     Database(sqlx::Error),
+}
+
+/// 一つのAsciiDoc解析revisionをSQLite投影へ反映するときのエラー。
+#[derive(Debug)]
+pub enum PersistNoteProjectionError {
+    Metadata(Vec<NoteProfileError>),
+    Content(Vec<NoteContentError>),
+    References(Vec<NoteReferenceError>),
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for PersistNoteProjectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Metadata(_) => formatter.write_str("invalid note metadata"),
+            Self::Content(_) => formatter.write_str("invalid note content"),
+            Self::References(_) => formatter.write_str("invalid note references"),
+            Self::Database(error) => write!(formatter, "SQLite projection update failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for PersistNoteProjectionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::Metadata(_) | Self::Content(_) | Self::References(_) => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for PersistNoteProjectionError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
 }
 
 impl fmt::Display for ResolveReferencesError {
@@ -463,6 +498,67 @@ impl NotebookStore {
             .await?;
         }
         transaction.commit().await
+    }
+
+    /// 保存可能なノートを検証し、同じ解析revisionから得たSQLite投影を原子的に更新する。
+    ///
+    /// この境界はファイル書込みを行わない。呼び出し側は、AsciiDoc正本のアトミックな置換と
+    /// 成功後のこの投影更新を調停する。
+    pub async fn persist_note_projection(
+        &self,
+        analysis: &adocweave::Analysis,
+    ) -> Result<(), PersistNoteProjectionError> {
+        let metadata =
+            validate_note_metadata(analysis).map_err(PersistNoteProjectionError::Metadata)?;
+        let content_errors = validate_note_content_profile(analysis);
+        if !content_errors.is_empty() {
+            return Err(PersistNoteProjectionError::Content(content_errors));
+        }
+        let references = extract_stored_note_references(analysis)
+            .map_err(PersistNoteProjectionError::References)?;
+        let anchors = extract_stored_note_anchors(analysis);
+
+        let _write_guard = self.write_lock.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            "INSERT INTO notes(note_id, title) VALUES (?, ?) \
+             ON CONFLICT(note_id) DO UPDATE SET title = excluded.title",
+        )
+        .bind(&metadata.note_id)
+        .bind(&metadata.title)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query("DELETE FROM note_anchors WHERE note_id = ?")
+            .bind(&metadata.note_id)
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("DELETE FROM note_references WHERE source_note_id = ?")
+            .bind(&metadata.note_id)
+            .execute(&mut *transaction)
+            .await?;
+        for anchor in &anchors {
+            sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
+                .bind(&metadata.note_id)
+                .bind(&anchor.anchor_id)
+                .execute(&mut *transaction)
+                .await?;
+        }
+        for reference in &references {
+            sqlx::query(
+                "INSERT INTO note_references \
+                 (source_note_id, source_start, source_end, target_note_id, target_anchor) \
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(&metadata.note_id)
+            .bind(reference.source_start)
+            .bind(reference.source_end)
+            .bind(&reference.target_note_id)
+            .bind(&reference.target_anchor)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(())
     }
 
     /// 対象不在とACL拒否を同じ結果に畳み込み、存在を推測できないようにする。
@@ -754,6 +850,56 @@ mod tests {
         .expect("count references")
         .get("count");
         assert_eq!(anchor_count, 1);
+        assert_eq!(reference_count, 1);
+    }
+
+    #[tokio::test]
+    async fn persists_validated_metadata_and_link_projection_together() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let note_id = "01800000-0000-7000-8000-000000000001";
+        let target_id = "01800000-0000-7000-8000-000000000002";
+        let source = format!(
+            "= Initial title\n\
+             :note-id: {note_id}\n\
+             :creator-id: 01800000-0000-7000-8000-000000000003\n\
+             :created-at: 2026-07-21T00:00:00.000Z\n\
+             :updated-at: 2026-07-22T00:00:00.000Z\n\
+             :tags: integration\n\n\
+             [[stable]]\n== Section\n\n\
+             xref:note:{target_id}[]\n"
+        );
+        let analysis = Engine::new(Default::default())
+            .analyze(&source)
+            .expect("valid note");
+
+        store
+            .persist_note_projection(&analysis)
+            .await
+            .expect("persist projection");
+        let title: String = sqlx::query("SELECT title FROM notes WHERE note_id = ?")
+            .bind(note_id)
+            .fetch_one(store.pool())
+            .await
+            .expect("read title")
+            .get("title");
+        assert_eq!(title, "Initial title");
+        let anchor_count: i64 =
+            sqlx::query("SELECT COUNT(*) AS count FROM note_anchors WHERE note_id = ?")
+                .bind(note_id)
+                .fetch_one(store.pool())
+                .await
+                .expect("count anchors")
+                .get("count");
+        let reference_count: i64 =
+            sqlx::query("SELECT COUNT(*) AS count FROM note_references WHERE source_note_id = ?")
+                .bind(note_id)
+                .fetch_one(store.pool())
+                .await
+                .expect("count references")
+                .get("count");
+        assert_eq!(anchor_count, 2);
         assert_eq!(reference_count, 1);
     }
 
