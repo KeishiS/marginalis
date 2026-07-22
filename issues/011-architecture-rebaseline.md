@@ -11,8 +11,8 @@
 5. 確定した`ServerConfig`を用いて、010の最小NixOS moduleとhealth checkを並行して実装する。
 6. ファイル正本・操作ジャーナル・ノートCRUDを実装する。
 7. OIDC、session、ACL、HTML表示を新application use caseへ移す。
-8. 旧crateを削除し、REST、Web UI、MCPを新server境界へ載せる。NixOS moduleにはOIDC secret
-   contractと永続化のVM testを追加する。
+8. 旧crateを削除し、RESTを新server境界へ載せる。初期公開ではWeb UIを提供せず、Web UIとMCPは
+   後続段階とする。NixOS moduleにはOIDC secret contractと永続化のVM testを追加する。
 
 ## 完了条件
 

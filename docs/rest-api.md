@@ -1,5 +1,7 @@
 # REST API（初期境界）
 
+初期公開ではWeb UIを提供せず、このREST APIを利用境界とする。
+
 ## 認証
 
 `/api/v1/notes`以下の操作は、OIDC loginで発行した`marginalis_session` Cookieを必要とする。

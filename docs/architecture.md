@@ -79,3 +79,9 @@ session期限を含める。secretは別の`SecretConfig`で受け、NixOSでは
 5. Axumを新use caseへ接続し、OIDC、Cookie、CSRF、RESTをadapterへ限定する。NixOS VM testをここで
    OIDC secret contractまで拡張する。
 6. Web UI、WASM preview、MCP OAuthを同じapplication portに追加する。
+
+### 初期公開のHTTP方針
+
+初期公開ではREST APIを先行し、サーバー生成Web UIは提供しない。ノート一覧、閲覧、編集および
+ACL管理のUI、WASM preview、MCP OAuthは後続段階とする。REST APIもHTTP adapterに留まり、同じ
+application use caseを経由して正本・SQLite投影・ACLを扱う。
