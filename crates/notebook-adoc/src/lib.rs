@@ -168,6 +168,21 @@ pub struct NoteReferenceError {
     pub range: TextRange,
 }
 
+/// 同一解析revisionから抽出したLaTeX数式。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteMathProjection {
+    pub range: TextRange,
+    pub content_range: TextRange,
+    pub display: NoteMathDisplay,
+    pub source: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteMathDisplay {
+    Inline,
+    Block,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NoteReferenceErrorCode {
     InvalidNoteId,
@@ -295,6 +310,34 @@ pub fn validate_note_content_profile(analysis: &adocweave::Analysis) -> Vec<Note
     });
     errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.as_str()));
     errors
+}
+
+/// AdocWeaveのASTから、検索・安全な数式表示に使うLaTeX数式を抽出する。
+pub fn extract_note_math(analysis: &adocweave::Analysis) -> Vec<NoteMathProjection> {
+    let mut math = Vec::new();
+    walk(analysis.ast(), |node| match node {
+        SemanticNode::Inline(Inline::Formula(formula))
+            if formula.language == MathLanguage::Latex =>
+        {
+            math.push(NoteMathProjection {
+                range: formula.range,
+                content_range: formula.content_range,
+                display: NoteMathDisplay::Inline,
+                source: formula.value.clone(),
+            });
+        }
+        SemanticNode::Block(AstBlock::Math(block)) if block.language == MathLanguage::Latex => {
+            math.push(NoteMathProjection {
+                range: block.range,
+                content_range: block.content_range,
+                display: NoteMathDisplay::Block,
+                source: block.value.clone(),
+            });
+        }
+        _ => {}
+    });
+    math.sort_by_key(|projection| (projection.range.start(), projection.range.end()));
+    math
 }
 
 impl NoteProfileErrorCode {
@@ -568,8 +611,8 @@ mod tests {
     use adocweave::Engine;
 
     use super::{
-        ADOCWEAVE_SOURCE_REVISION, NoteContentErrorCode, NoteProfileErrorCode,
-        NoteReferenceErrorCode, PINNED_CONTRACTS, extract_note_references,
+        ADOCWEAVE_SOURCE_REVISION, NoteContentErrorCode, NoteMathDisplay, NoteProfileErrorCode,
+        NoteReferenceErrorCode, PINNED_CONTRACTS, extract_note_math, extract_note_references,
         validate_note_content_profile, validate_note_metadata, verify_runtime_contracts,
     };
 
@@ -724,5 +767,23 @@ mod tests {
         assert!(codes.contains(&NoteContentErrorCode::IncludeDirective));
         assert!(codes.contains(&NoteContentErrorCode::InlinePassthrough));
         assert!(codes.contains(&NoteContentErrorCode::BlockPassthrough));
+    }
+
+    #[test]
+    fn extracts_inline_and_block_latex_math() {
+        let analysis = Engine::new(Default::default())
+            .analyze(
+                ":stem: latexmath\n\n\
+                 inline stem:[x^2]\n\n\
+                 [stem]\n++++\n\\sum_{i=1}^{n} i\n++++\n",
+            )
+            .expect("valid AsciiDoc");
+
+        let math = extract_note_math(&analysis);
+        assert_eq!(math.len(), 2);
+        assert_eq!(math[0].display, NoteMathDisplay::Inline);
+        assert_eq!(math[0].source, "x^2");
+        assert_eq!(math[1].display, NoteMathDisplay::Block);
+        assert_eq!(math[1].source, "\\sum_{i=1}^{n} i\n");
     }
 }
