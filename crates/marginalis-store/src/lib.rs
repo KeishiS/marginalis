@@ -721,6 +721,14 @@ impl NotebookStore {
         &self.pool
     }
 
+    /// 緊急管理者`root`が初期化済みかどうかを返す。
+    pub async fn root_is_initialized(&self) -> Result<bool, sqlx::Error> {
+        Ok(sqlx::query("SELECT 1 FROM root_credentials LIMIT 1")
+            .fetch_optional(&self.pool)
+            .await?
+            .is_some())
+    }
+
     /// SQLiteの参照投影に必要な最小スキーマを作成する。
     pub async fn migrate(&self) -> Result<(), sqlx::Error> {
         sqlx::query(

@@ -17,7 +17,8 @@ use marginalis_store::{
 };
 use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
-    EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, TokenResponse,
+    EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
+    TokenResponse,
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
@@ -209,6 +210,8 @@ impl OidcAuthentication {
                 move || Nonce::new(nonce),
             )
             .set_pkce_challenge(challenge)
+            .add_scope(Scope::new("profile".into()))
+            .add_scope(Scope::new("email".into()))
             .url();
         Ok(url.into())
     }

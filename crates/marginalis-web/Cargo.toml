@@ -12,8 +12,8 @@ marginalis-store = { path = "../marginalis-store" }
 openidconnect.workspace = true
 serde.workspace = true
 time.workspace = true
+tokio.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
 tower.workspace = true
