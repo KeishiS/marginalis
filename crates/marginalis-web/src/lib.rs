@@ -3,21 +3,25 @@
 //! 認証、Web UIおよびMCPはこのcrateのHTTP adapterとして追加する。ノートの検証、ACLおよび
 //! 永続化の業務判断は`marginalis-application`のユースケースへ委譲する。
 
-use std::{fmt, sync::Arc};
+use std::{fmt, str::FromStr, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use marginalis_application::{
-    Clock, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random,
+    Clock, NoteAclStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random,
     SessionLifetime, WebSessionService, WebSessionStore,
 };
 pub use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
-use marginalis_domain::{Actor, OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
+use marginalis_domain::{
+    Actor, EntityId, NoteId, NotePermission, OidcIdentity, OidcLoginResult, RegistrationPolicy,
+    UnixMillis,
+};
+use marginalis_files::FileNoteStore;
 use marginalis_server::{SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use openidconnect::{
@@ -198,20 +202,27 @@ enum OidcCallbackError {
 #[derive(Clone)]
 pub struct ApiState {
     pub database: SqliteDatabase,
+    pub sources: FileNoteStore,
     pub oidc: Option<Arc<OidcAuthentication>>,
 }
 
 impl ApiState {
-    pub fn new(database: SqliteDatabase) -> Self {
+    pub fn new(database: SqliteDatabase, sources: FileNoteStore) -> Self {
         Self {
             database,
+            sources,
             oidc: None,
         }
     }
 
-    pub fn with_oidc(database: SqliteDatabase, oidc: OidcAuthentication) -> Self {
+    pub fn with_oidc(
+        database: SqliteDatabase,
+        sources: FileNoteStore,
+        oidc: OidcAuthentication,
+    ) -> Self {
         Self {
             database,
+            sources,
             oidc: Some(Arc::new(oidc)),
         }
     }
@@ -297,6 +308,7 @@ impl IntoResponse for ApiError {
 pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
+        .route("/api/v1/notes/{note_id}/source", get(note_source))
         .route("/auth/oidc/login", get(begin_oidc_login))
         .route("/auth/oidc/callback", get(complete_oidc_login))
         .route("/auth/logout", post(logout))
@@ -314,6 +326,38 @@ async fn health() -> Json<HealthResponse> {
         status: "ok",
         api_version: API_VERSION,
     })
+}
+
+async fn note_source(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Vec<u8>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let note_id = NoteId::new(
+        EntityId::from_str(&note_id)
+            .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
+    );
+    let permission = state
+        .database
+        .note_acl_store()
+        .permission_for(actor, note_id)
+        .await
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note lookup is unavailable"))?;
+    if !matches!(permission, Some(value) if value.permits(NotePermission::Read)) {
+        return Err(ApiError::new(
+            ApiErrorCode::NotFound,
+            "note is not available",
+        ));
+    }
+    state
+        .sources
+        .read(note_id)
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note lookup is unavailable"))?
+        .ok_or(ApiError::new(
+            ApiErrorCode::NotFound,
+            "note is not available",
+        ))
 }
 
 async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, ApiError> {
@@ -513,7 +557,9 @@ mod tests {
         let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("open store");
-        let response = router(ApiState::new(database))
+        let directory = std::env::temp_dir().join("marginalis-web-health-test");
+        let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
+        let response = router(ApiState::new(database, sources))
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/health")

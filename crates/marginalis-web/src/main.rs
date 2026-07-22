@@ -38,6 +38,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let oidc = OidcAuthentication::discover(&oidc_configuration).await?;
     let listener = tokio::net::TcpListener::bind(configuration.listen_address).await?;
-    axum::serve(listener, router(ApiState::with_oidc(database, oidc))).await?;
+    axum::serve(
+        listener,
+        router(ApiState::with_oidc(database, sources, oidc)),
+    )
+    .await?;
     Ok(())
 }
