@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 use url::Url;
 
 use adocweave::{
+    html::{HtmlOutput, RenderPolicy, render_with_inputs},
     reference::{ResolutionFailureKind, ResolvedReference, ResolverFailure},
     render::RenderInputs,
     source::TextRange,
@@ -150,6 +151,47 @@ impl std::error::Error for ResolveReferencesError {
 impl From<sqlx::Error> for ResolveReferencesError {
     fn from(error: sqlx::Error) -> Self {
         Self::Database(error)
+    }
+}
+
+/// 解決済みノート参照を使ってHTMLを描画し、フォールバック警告を安全に追記する。
+///
+/// 警告はアプリが生成したplain textだけを出力する。Resolver由来の表示ラベルをxref本文へ
+/// 差し込むAPIは現在のAdocWeave契約にはないため、この関数はその置換を行わない。
+pub fn render_note_html(
+    analysis: &adocweave::Analysis,
+    resolved: &ResolvedNoteReferences,
+) -> HtmlOutput {
+    let mut output = render_with_inputs(
+        analysis.ast(),
+        &RenderPolicy::default(),
+        &resolved.render_inputs,
+    );
+    for presentation in resolved.presentations.values() {
+        let Some(warning) = &presentation.warning else {
+            continue;
+        };
+        output
+            .html
+            .push_str("<aside class=\"note-reference-warning\" role=\"status\" data-code=\"");
+        escape_html_into(&mut output.html, warning.code);
+        output.html.push_str("\">");
+        escape_html_into(&mut output.html, &warning.message);
+        output.html.push_str("</aside>\n");
+    }
+    output
+}
+
+fn escape_html_into(output: &mut String, value: &str) {
+    for character in value.chars() {
+        match character {
+            '&' => output.push_str("&amp;"),
+            '<' => output.push_str("&lt;"),
+            '>' => output.push_str("&gt;"),
+            '"' => output.push_str("&quot;"),
+            '\'' => output.push_str("&#39;"),
+            _ => output.push(character),
+        }
     }
 }
 
@@ -410,7 +452,7 @@ mod tests {
 
     use super::{
         NoteReferenceResolution, NoteUrlBase, NotebookStore, ReferenceFailureDetail,
-        StoredNoteReference, Viewer,
+        StoredNoteReference, Viewer, render_note_html,
     };
 
     async fn insert_note(store: &NotebookStore, note_id: &str) {
@@ -589,5 +631,12 @@ mod tests {
                 message: "note reference unavailable".into(),
             })
         );
+        let html = render_note_html(&analysis, &result);
+        assert!(
+            html.html
+                .contains(&format!("https://notebook.example/app/note/{visible}"))
+        );
+        assert!(html.html.contains("note-reference-warning"));
+        assert!(html.html.contains("missing-reference-anchor"));
     }
 }
