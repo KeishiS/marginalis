@@ -1153,6 +1153,7 @@ dependencies = [
  "openidconnect",
  "rand",
  "serde",
+ "sqlx",
  "time",
  "tokio",
  "tower",

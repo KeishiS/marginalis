@@ -696,6 +696,9 @@ mod tests {
         http::{Request, StatusCode},
         response::IntoResponse,
     };
+    use marginalis_application::{WebSession, WebSessionStore};
+    use marginalis_domain::{Actor, EntityId, UnixMillis, UserId};
+    use std::str::FromStr;
     use tower::ServiceExt;
 
     use super::{
@@ -776,6 +779,49 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn note_creation_requires_a_matching_csrf_token() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000041").expect("UUIDv7"),
+        );
+        sqlx::query("INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms) VALUES (?, 'oidc', 'active', 'User', 0, 0)")
+            .bind(user_id.to_string()).execute(database.pool()).await.expect("user");
+        database
+            .web_session_store()
+            .issue(
+                WebSession {
+                    session_id: "session".into(),
+                    csrf_token: "csrf".into(),
+                    actor: Actor {
+                        user_id,
+                        is_root: false,
+                    },
+                    idle_expires_at: UnixMillis::new(4_000_000_000_000),
+                    absolute_expires_at: UnixMillis::new(4_000_000_000_000),
+                },
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("session");
+        let directory = std::env::temp_dir().join("marginalis-web-csrf-test");
+        let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
+        let response = router(ApiState::new(database, sources))
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/notes")
+                    .header("cookie", "marginalis_session=session")
+                    .body(Body::from("invalid source"))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[test]
