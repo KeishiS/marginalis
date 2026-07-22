@@ -14,16 +14,38 @@ or other display text.
 
 ## Requested API
 
-Allow a resolved reference to supply an optional escaped-as-text display override. Allow a failed
-reference to supply a safe fallback display string that is used only when the authored label is
-empty. The renderer must never interpret either string as HTML or inline AsciiDoc.
+Add an optional plain-text `display_text` field to successful generic reference resolutions.
+
+```rust
+ResolutionOutcome::Resolved {
+    href: String,
+    display_text: Option<String>,
+    notices: Vec<ResolutionNotice>,
+}
+```
+
+The equivalent WASM field is `displayText`. Do not add application schemes, UUID validation, or
+title lookup to AdocWeave.
+
+The renderer must apply these rules in order:
+
+1. An authored non-empty label wins.
+2. For an empty label, use resolver `display_text` when supplied.
+3. Otherwise retain the current target-text fallback.
+4. On failure, never use `display_text`; apply `UnresolvedReferencePresentation` instead.
+
+`display_text` is plain text: HTML-escape it and never parse it as HTML or inline AsciiDoc.
 
 ## Acceptance criteria
 
 - An empty-label xref can render resolver-provided text.
+- An authored non-empty label remains unchanged even when `display_text` is supplied.
+- A failed reference cannot render a successful resolver's `display_text`.
 - A host can use a generic non-identifying fallback for unresolved references.
 - Explicit authored labels retain existing behavior.
-- Override and fallback strings are HTML-escaped in native and WASM output.
+- `display_text` is HTML-escaped in native and WASM output.
+- Native, WASM, and projection preserve the same successful display-text resolution without
+  exposing it for failed resolutions.
 
 ## Out of scope
 

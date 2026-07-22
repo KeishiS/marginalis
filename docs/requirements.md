@@ -290,7 +290,9 @@ AIエージェントがMCPを介してノートを操作できるようにする
 - AdocWeave RC.3では、Resolver出力用URL policy、外部リンクの固定属性、typed notice、
   source/STEM/resource policyおよびnative/WASMの描画ポリシー整合を公開APIとして利用する。
   Resolver由来の表示ラベルは未提供のため、空labelを解決先タイトルへ置換する要件は引き続き
-  上流提案として管理する。暫定的に、閲覧不能な参照はpolicyにより完全に非表示にする。
+  `ResolutionOutcome::Resolved.display_text`という最小の上流提案として管理する。表示規則は、
+  明示label、成功したResolverの`display_text`、既存target fallbackの順とする。失敗時には
+  `display_text`を使用せず、暫定的に閲覧不能な参照をpolicyにより完全に非表示にする。
 
 例えば、`xref:note:<UUID>[label]`に対してライブラリは`xref`のscheme、UUID、labelおよび
 原文範囲を解析する。本アプリの参照解決アダプタがUUID形式、SQLite上の参照先、アンカーおよび
