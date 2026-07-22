@@ -1116,6 +1116,7 @@ dependencies = [
  "argon2",
  "marginalis-application",
  "marginalis-domain",
+ "rand",
  "serde_json",
  "sha2",
  "sqlx",
