@@ -665,6 +665,25 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    #[tokio::test]
+    async fn note_source_requires_an_authenticated_session() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let directory = std::env::temp_dir().join("marginalis-web-note-auth-test");
+        let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
+        let response = router(ApiState::new(database, sources))
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/notes/01800000-0000-7000-8000-000000000001/source")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
     #[test]
     fn api_errors_have_stable_http_statuses() {
         let response =
