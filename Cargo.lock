@@ -1116,6 +1116,7 @@ dependencies = [
  "marginalis-application",
  "marginalis-domain",
  "serde_json",
+ "sha2",
  "sqlx",
  "tokio",
 ]

@@ -3,13 +3,14 @@
 use std::{fmt, future::Future, str::FromStr, time::Duration};
 
 use marginalis_application::{
-    JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore, OperationId,
-    OperationJournal, OperationState,
+    AuthenticatedSession, JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore,
+    OperationId, OperationJournal, OperationState, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy,
-    SourceRevision, UnixMillis, UserId, UserStatus,
+    Actor, EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, OidcUser,
+    RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
 };
+use sha2::{Digest, Sha256};
 use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
@@ -38,6 +39,36 @@ pub struct SqliteOidcIdentityStore {
 #[derive(Clone, Debug)]
 pub struct SqliteNoteProjectionStore {
     pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SqliteWebSessionStore {
+    pool: SqlitePool,
+}
+
+#[derive(Debug)]
+pub enum WebSessionStoreError {
+    Database(sqlx::Error),
+    CorruptSession,
+}
+
+impl fmt::Display for WebSessionStoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("web session query failed")
+    }
+}
+impl std::error::Error for WebSessionStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::CorruptSession => None,
+        }
+    }
+}
+impl From<sqlx::Error> for WebSessionStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
 }
 
 #[derive(Debug)]
@@ -170,6 +201,81 @@ impl SqliteDatabase {
             pool: self.pool.clone(),
         }
     }
+
+    pub fn web_session_store(&self) -> SqliteWebSessionStore {
+        SqliteWebSessionStore {
+            pool: self.pool.clone(),
+        }
+    }
+}
+
+impl WebSessionStore for SqliteWebSessionStore {
+    type Error = WebSessionStoreError;
+    fn issue(
+        &self,
+        session: WebSession,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            sqlx::query("INSERT INTO web_sessions (session_id_hash, csrf_token_hash, user_id, idle_timeout_ms, issued_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                .bind(hash_token(&session.session_id)).bind(hash_token(&session.csrf_token))
+                .bind(session.actor.user_id.to_string()).bind(session.idle_expires_at.get() - now.get())
+                .bind(now.get()).bind(now.get()).bind(session.idle_expires_at.get()).bind(session.absolute_expires_at.get())
+                .execute(&pool).await?;
+            Ok(())
+        }
+    }
+    fn lookup(
+        &self,
+        session_id: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<AuthenticatedSession>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let hash = hash_token(&session_id);
+            let row = sqlx::query("SELECT web_sessions.user_id, users.authentication_kind, idle_timeout_ms, idle_expires_at_ms, absolute_expires_at_ms FROM web_sessions JOIN users ON users.user_id = web_sessions.user_id WHERE session_id_hash = ? AND revoked_at_ms IS NULL")
+                .bind(&hash).fetch_optional(&pool).await?;
+            let Some(row) = row else { return Ok(None) };
+            let idle: i64 = row.try_get("idle_expires_at_ms")?;
+            let absolute: i64 = row.try_get("absolute_expires_at_ms")?;
+            if now.get() >= idle || now.get() >= absolute {
+                return Ok(None);
+            }
+            let timeout: i64 = row.try_get("idle_timeout_ms")?;
+            let next_idle = (now.get() + timeout).min(absolute);
+            sqlx::query("UPDATE web_sessions SET last_seen_at_ms = ?, idle_expires_at_ms = ? WHERE session_id_hash = ?")
+                .bind(now.get()).bind(next_idle).bind(hash).execute(&pool).await?;
+            let user_id: String = row.try_get("user_id")?;
+            let authentication_kind: String = row.try_get("authentication_kind")?;
+            Ok(Some(AuthenticatedSession {
+                actor: Actor {
+                    user_id: UserId::new(
+                        EntityId::from_str(&user_id)
+                            .map_err(|_| WebSessionStoreError::CorruptSession)?,
+                    ),
+                    is_root: authentication_kind == "root",
+                },
+                idle_expires_at: UnixMillis::new(next_idle),
+                absolute_expires_at: UnixMillis::new(absolute),
+            }))
+        }
+    }
+    fn revoke(
+        &self,
+        session_id: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            sqlx::query("UPDATE web_sessions SET revoked_at_ms = ? WHERE session_id_hash = ? AND revoked_at_ms IS NULL").bind(now.get()).bind(hash_token(&session_id)).execute(&pool).await?;
+            Ok(())
+        }
+    }
+}
+
+fn hash_token(token: &str) -> Vec<u8> {
+    Sha256::digest(token.as_bytes()).to_vec()
 }
 
 impl NoteProjectionStore for SqliteNoteProjectionStore {

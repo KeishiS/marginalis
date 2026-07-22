@@ -1,7 +1,7 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, RegistrationPolicy,
+    Actor, EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, RegistrationPolicy,
     SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
@@ -30,6 +30,113 @@ pub trait OidcIdentityStore: Send + Sync {
         new_user_id: UserId,
         now: UnixMillis,
     ) -> impl Future<Output = Result<OidcLoginResult, Self::Error>> + Send;
+}
+
+/// OIDC認可リクエストに一度だけ対応するstate、nonceおよびPKCE verifier。
+///
+/// 値はDB adapterでは平文保存してはならない。applicationではcallbackとの対応だけを表す。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OidcLoginAttempt {
+    pub state: String,
+    pub nonce: String,
+    pub pkce_verifier: String,
+    pub expires_at: UnixMillis,
+}
+
+pub trait OidcLoginAttemptStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn issue(
+        &self,
+        attempt: OidcLoginAttempt,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn consume(
+        &self,
+        state: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<OidcLoginAttempt>, Self::Error>> + Send;
+}
+
+/// HTTP Cookieに入れる不透明なsession IDと、同一セッションのCSRF token。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WebSession {
+    pub session_id: String,
+    pub csrf_token: String,
+    pub actor: Actor,
+    pub idle_expires_at: UnixMillis,
+    pub absolute_expires_at: UnixMillis,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedSession {
+    pub actor: Actor,
+    pub idle_expires_at: UnixMillis,
+    pub absolute_expires_at: UnixMillis,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionLifetime {
+    pub idle_timeout_ms: i64,
+    pub absolute_timeout_ms: i64,
+}
+
+pub trait WebSessionStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn issue(
+        &self,
+        session: WebSession,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn lookup(
+        &self,
+        session_id: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<AuthenticatedSession>, Self::Error>> + Send;
+    fn revoke(
+        &self,
+        session_id: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
+
+/// sessionの有効期限と秘密値を一箇所で決めるユースケース。
+pub struct WebSessionService<'a, Store, Entropy, Time> {
+    store: &'a Store,
+    entropy: &'a Entropy,
+    clock: &'a Time,
+}
+
+impl<'a, Store, Entropy, Time> WebSessionService<'a, Store, Entropy, Time>
+where
+    Store: WebSessionStore,
+    Entropy: Random,
+    Time: Clock,
+{
+    pub const fn new(store: &'a Store, entropy: &'a Entropy, clock: &'a Time) -> Self {
+        Self {
+            store,
+            entropy,
+            clock,
+        }
+    }
+
+    pub async fn issue(
+        &self,
+        actor: Actor,
+        lifetime: SessionLifetime,
+    ) -> Result<WebSession, Store::Error> {
+        let now = self.clock.now();
+        let session = WebSession {
+            session_id: self.entropy.opaque_token(),
+            csrf_token: self.entropy.opaque_token(),
+            actor,
+            idle_expires_at: UnixMillis::new(now.get() + lifetime.idle_timeout_ms),
+            absolute_expires_at: UnixMillis::new(now.get() + lifetime.absolute_timeout_ms),
+        };
+        self.store.issue(session.clone(), now).await?;
+        Ok(session)
+    }
 }
 
 /// OIDC callback adapterが呼ぶ登録ユースケース。
