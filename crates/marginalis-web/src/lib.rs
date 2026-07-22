@@ -13,14 +13,14 @@ use axum::{
     routing::{get, post, put},
 };
 use marginalis_application::{
-    Clock, NoteAclStore, NoteOperationKind, NoteWriteService, OidcLoginAttempt,
-    OidcLoginAttemptStore, OidcRegistrationService, Random, SessionLifetime, WebSessionService,
-    WebSessionStore,
+    Clock, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteWriteService,
+    OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random, SessionLifetime,
+    WebSessionService, WebSessionStore,
 };
 pub use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePermission, OidcIdentity, OidcLoginResult, RegistrationPolicy,
-    UnixMillis,
+    UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_server::{SystemClock, SystemRandom};
@@ -312,6 +312,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/notes/{note_id}/source", get(note_source))
         .route("/api/v1/notes/{note_id}/source", put(update_note_source))
         .route("/api/v1/notes", post(create_note))
+        .route(
+            "/api/v1/notes/{note_id}/acl/{user_id}",
+            put(update_note_acl),
+        )
         .route("/auth/oidc/login", get(begin_oidc_login))
         .route("/auth/oidc/callback", get(complete_oidc_login))
         .route("/auth/logout", post(logout))
@@ -451,6 +455,53 @@ async fn create_note(
             .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note creation is unavailable"))?,
     );
     Ok((StatusCode::CREATED, headers).into_response())
+}
+
+#[derive(Deserialize)]
+struct AclUpdateRequest {
+    permission: Option<String>,
+}
+
+async fn update_note_acl(
+    State(state): State<ApiState>,
+    Path((note_id, user_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(request): Json<AclUpdateRequest>,
+) -> Result<StatusCode, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let note_id = NoteId::new(
+        EntityId::from_str(&note_id)
+            .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
+    );
+    let user_id = UserId::new(
+        EntityId::from_str(&user_id)
+            .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "user ID is invalid"))?,
+    );
+    let permission = match request.permission.as_deref() {
+        Some("read") => Some(NotePermission::Read),
+        Some("write") => Some(NotePermission::Write),
+        Some("admin") => Some(NotePermission::Admin),
+        None => None,
+        Some(_) => {
+            return Err(ApiError::new(
+                ApiErrorCode::ValidationFailed,
+                "permission is invalid",
+            ));
+        }
+    };
+    NoteAclService::new(&state.database.note_acl_store())
+        .set_permission(actor, note_id, user_id, permission)
+        .await
+        .map_err(|error| match error {
+            NoteAclServiceError::Forbidden => ApiError::new(
+                ApiErrorCode::Forbidden,
+                "note administration is not permitted",
+            ),
+            NoteAclServiceError::Store(_) => {
+                ApiError::new(ApiErrorCode::Conflict, "note ACL update was rejected")
+            }
+        })?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, ApiError> {
