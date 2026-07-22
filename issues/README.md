@@ -23,6 +23,9 @@
 上流AsciiDocライブラリに提案する汎用APIのIssue本文は、[upstream](upstream/README.md)に分けて
 管理する。アプリ固有のUUID、ACL、SQLiteおよびBase URL決定は、上流提案へ含めない。
 
+アプリケーション全体の認証・運用上の前提は[009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
+で管理する。
+
 ## 実装原則
 
 - AdocWeaveコアはファイル、DB、ネットワーク、時刻および認証情報へアクセスさせない。
