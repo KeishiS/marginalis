@@ -571,6 +571,7 @@ dependencies = [
  "notebook-adoc",
  "sqlx",
  "tokio",
+ "url",
 ]
 
 [[package]]

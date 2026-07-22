@@ -13,3 +13,4 @@ adocweave-wasm = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "72ad
 unicode-normalization = "0.1.25"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "sync"] }
+url = "2.5.8"

@@ -11,5 +11,6 @@ adocweave.workspace = true
 notebook-adoc = { path = "../notebook-adoc" }
 sqlx.workspace = true
 tokio.workspace = true
+url.workspace = true
 
 [dev-dependencies]

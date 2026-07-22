@@ -8,6 +8,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 use tokio::sync::Mutex;
+use url::Url;
 
 use adocweave::{
     reference::{ResolutionFailureKind, ResolvedReference, ResolverFailure},
@@ -23,44 +24,46 @@ pub struct Viewer {
     pub is_root: bool,
 }
 
-/// Base URLから得たアプリ内ノートURLの生成規則。
-///
-/// ここで保持するのは公開URLのpath部分だけである。スキームとホストはHTTP層が扱い、
-/// HTMLには同一オリジンの絶対パスを渡す。
+/// 絶対HTTPS Base URLから得たアプリ内ノートURLの生成規則。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteUrlBase(String);
+pub struct NoteUrlBase(Url);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InvalidNoteUrlBase;
 
 impl fmt::Display for InvalidNoteUrlBase {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Base URL path must start with '/' and contain no query or fragment")
+        formatter.write_str(
+            "Base URL must be an absolute HTTPS URL without credentials, query, or fragment",
+        )
     }
 }
 
 impl std::error::Error for InvalidNoteUrlBase {}
 
 impl NoteUrlBase {
-    pub fn new(path: impl Into<String>) -> Result<Self, InvalidNoteUrlBase> {
-        let mut path = path.into();
-        if !path.starts_with('/') || path.contains('?') || path.contains('#') {
+    pub fn new(value: impl AsRef<str>) -> Result<Self, InvalidNoteUrlBase> {
+        let mut url = Url::parse(value.as_ref()).map_err(|_| InvalidNoteUrlBase)?;
+        if url.scheme() != "https"
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
             return Err(InvalidNoteUrlBase);
         }
-        while path.len() > 1 && path.ends_with('/') {
-            path.pop();
-        }
-        Ok(Self(path))
+        let path = url.path().trim_end_matches('/').to_owned();
+        url.set_path(&path);
+        Ok(Self(url))
     }
 
     pub fn note_href(&self, note_id: &str, anchor: Option<&str>) -> String {
-        let prefix = if self.0 == "/" { "" } else { &self.0 };
-        let mut href = format!("{prefix}/notes/{note_id}");
-        if let Some(anchor) = anchor {
-            href.push('#');
-            href.push_str(anchor);
-        }
-        href
+        let mut url = self.0.clone();
+        let base_path = url.path().trim_end_matches('/').to_owned();
+        url.set_path(&format!("{base_path}/note/{note_id}"));
+        url.set_fragment(anchor);
+        url.into()
     }
 }
 
@@ -402,7 +405,7 @@ mod tests {
             user_id: "reader".into(),
             is_root: false,
         };
-        let urls = NoteUrlBase::new("/app/").expect("valid base path");
+        let urls = NoteUrlBase::new("https://notebook.example/app/").expect("valid Base URL");
 
         assert_eq!(
             store
@@ -417,7 +420,7 @@ mod tests {
                 .await
                 .expect("resolve missing anchor"),
             NoteReferenceResolution::AnchorFallback {
-                href: "/app/notes/visible".into()
+                href: "https://notebook.example/app/note/visible".into()
             }
         );
         assert_eq!(
@@ -426,15 +429,17 @@ mod tests {
                 .await
                 .expect("resolve known anchor"),
             NoteReferenceResolution::Resolved {
-                href: "/app/notes/visible#known".into()
+                href: "https://notebook.example/app/note/visible#known".into()
             }
         );
         assert_eq!(
-            NoteUrlBase::new("/")
-                .expect("valid root base path")
+            NoteUrlBase::new("https://notebook.example")
+                .expect("valid root Base URL")
                 .note_href("visible", None),
-            "/notes/visible"
+            "https://notebook.example/note/visible"
         );
+        assert!(NoteUrlBase::new("http://notebook.example").is_err());
+        assert!(NoteUrlBase::new("https://notebook.example/app?debug=true").is_err());
     }
 
     #[tokio::test]
@@ -460,7 +465,7 @@ mod tests {
             user_id: "reader".into(),
             is_root: false,
         };
-        let urls = NoteUrlBase::new("/app").expect("valid base path");
+        let urls = NoteUrlBase::new("https://notebook.example/app").expect("valid Base URL");
 
         let result = store
             .resolve_render_inputs(&analysis, &viewer, &urls)
@@ -471,7 +476,7 @@ mod tests {
         assert_eq!(
             result.render_inputs.references()[0].outcome,
             ResolutionOutcome::Resolved {
-                href: format!("/app/notes/{visible}")
+                href: format!("https://notebook.example/app/note/{visible}")
             }
         );
         assert_eq!(
