@@ -15,6 +15,7 @@ use notebook_store::{NotebookStore, Viewer};
 use openidconnect::{
     ClientId, ClientSecret, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, RedirectUrl,
     core::{CoreClient, CoreProviderMetadata},
+    reqwest,
 };
 use serde::Serialize;
 use url::Url;
@@ -31,6 +32,34 @@ pub type DiscoveredOidcClient = CoreClient<
     EndpointMaybeSet,
     EndpointMaybeSet,
 >;
+
+/// Discovery済みOIDCクライアントと、redirectを追跡しないHTTPクライアント。
+///
+/// issuerは起動設定で固定される。Discovery応答に含まれるURLを任意のredirect経由で追わない
+/// ことで、設定されたIdP以外への意図しないリクエストを防ぐ。
+#[derive(Clone)]
+pub struct OidcAuthentication {
+    client: DiscoveredOidcClient,
+    http_client: reqwest::Client,
+}
+
+/// OIDC Discoveryの起動時エラー。詳細な応答本文やsecretは公開しない。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OidcDiscoveryError {
+    HttpClient,
+    Discovery,
+}
+
+impl fmt::Display for OidcDiscoveryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::HttpClient => formatter.write_str("OIDC HTTP client could not be initialized"),
+            Self::Discovery => formatter.write_str("OIDC Discovery failed"),
+        }
+    }
+}
+
+impl std::error::Error for OidcDiscoveryError {}
 
 /// 外部OIDCプロバイダへ接続するための起動時設定。
 ///
@@ -124,6 +153,32 @@ impl OidcConfiguration {
             Some(self.client_secret.clone()),
         )
         .set_redirect_uri(self.redirect_url.clone())
+    }
+}
+
+impl OidcAuthentication {
+    /// 起動時に一度だけDiscoveryとJWKS取得を行う。
+    pub async fn discover(configuration: &OidcConfiguration) -> Result<Self, OidcDiscoveryError> {
+        let http_client = reqwest::ClientBuilder::new()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| OidcDiscoveryError::HttpClient)?;
+        let metadata =
+            CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
+                .await
+                .map_err(|_| OidcDiscoveryError::Discovery)?;
+        Ok(Self {
+            client: configuration.client_from_discovery(metadata),
+            http_client,
+        })
+    }
+
+    pub fn client(&self) -> &DiscoveredOidcClient {
+        &self.client
+    }
+
+    pub fn http_client(&self) -> &reqwest::Client {
+        &self.http_client
     }
 }
 
