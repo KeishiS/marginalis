@@ -181,6 +181,7 @@ impl ConsumedOidcLogin {
 /// OIDC認可要求の保存・消費に関するエラー。
 #[derive(Debug)]
 pub enum OidcLoginError {
+    InvalidLifetime,
     Database(sqlx::Error),
 }
 
@@ -311,6 +312,7 @@ impl From<sqlx::Error> for WebSessionError {
 impl fmt::Display for OidcLoginError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidLifetime => formatter.write_str("OIDC login lifetime is invalid"),
             Self::Database(error) => {
                 write!(formatter, "SQLite OIDC login operation failed: {error}")
             }
@@ -321,6 +323,7 @@ impl fmt::Display for OidcLoginError {
 impl std::error::Error for OidcLoginError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::InvalidLifetime => None,
             Self::Database(error) => Some(error),
         }
     }
@@ -936,6 +939,19 @@ impl NotebookStore {
         .execute(&self.pool)
         .await?;
         Ok(pending)
+    }
+
+    /// 現在時刻から指定時間だけ有効なOIDC認可要求を作る。
+    pub async fn begin_oidc_login_for(
+        &self,
+        lifetime: TimeDuration,
+    ) -> Result<PendingOidcLogin, OidcLoginError> {
+        if !lifetime.is_positive() {
+            return Err(OidcLoginError::InvalidLifetime);
+        }
+        let expires_at = format_timestamp(OffsetDateTime::now_utc() + lifetime)
+            .map_err(|_| OidcLoginError::InvalidLifetime)?;
+        self.begin_oidc_login(&expires_at).await
     }
 
     /// callbackのstateを有効期限内に一度だけ消費する。

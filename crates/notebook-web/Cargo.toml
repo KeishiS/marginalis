@@ -11,6 +11,7 @@ axum.workspace = true
 notebook-store = { path = "../notebook-store" }
 openidconnect.workspace = true
 serde.workspace = true
+time.workspace = true
 url.workspace = true
 
 [dev-dependencies]

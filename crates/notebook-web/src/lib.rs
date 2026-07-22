@@ -3,21 +3,24 @@
 //! 認証、Web UIおよびMCPは将来このcrateのアダプタとして追加する。ノートの検証、ACLおよび
 //! 永続化の業務判断は`notebook-store`以下のアプリケーションサービスへ委譲する。
 
-use std::{env, fmt};
+use std::{env, fmt, sync::Arc};
 
 use axum::{
     Json, Router,
+    extract::State,
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     routing::get,
 };
 use notebook_store::{NotebookStore, Viewer};
 use openidconnect::{
-    ClientId, ClientSecret, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, RedirectUrl,
-    core::{CoreClient, CoreProviderMetadata},
+    ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl,
+    Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl,
+    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
 use serde::Serialize;
+use time::Duration;
 use url::Url;
 
 /// 公開REST APIの現在のバージョン。
@@ -180,6 +183,33 @@ impl OidcAuthentication {
     pub fn http_client(&self) -> &reqwest::Client {
         &self.http_client
     }
+
+    /// state、nonceおよびPKCE verifierを保存し、IdPへ転送する認可URLを作る。
+    pub async fn begin_login(&self, store: &NotebookStore) -> Result<String, OidcLoginStartError> {
+        let pending = store
+            .begin_oidc_login_for(Duration::minutes(10))
+            .await
+            .map_err(|_| OidcLoginStartError::Store)?;
+        let verifier = PkceCodeVerifier::new(pending.pkce_verifier().to_owned());
+        let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
+        let state = pending.state().to_owned();
+        let nonce = pending.nonce().to_owned();
+        let (url, _, _) = self
+            .client
+            .authorize_url(
+                CoreAuthenticationFlow::AuthorizationCode,
+                move || CsrfToken::new(state),
+                move || Nonce::new(nonce),
+            )
+            .set_pkce_challenge(challenge)
+            .url();
+        Ok(url.into())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OidcLoginStartError {
+    Store,
 }
 
 fn required_environment(variable: &'static str) -> Result<String, OidcConfigurationError> {
@@ -203,9 +233,23 @@ fn oidc_callback_url(base_url: &str) -> Result<RedirectUrl, OidcConfigurationErr
 }
 
 /// HTTPハンドラーが利用する共有状態。
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ApiState {
     pub store: NotebookStore,
+    pub oidc: Option<Arc<OidcAuthentication>>,
+}
+
+impl ApiState {
+    pub fn new(store: NotebookStore) -> Self {
+        Self { store, oidc: None }
+    }
+
+    pub fn with_oidc(store: NotebookStore, oidc: OidcAuthentication) -> Self {
+        Self {
+            store,
+            oidc: Some(Arc::new(oidc)),
+        }
+    }
 }
 
 /// 認証アダプタだけが生成する、リクエストに結び付いた利用者文脈。
@@ -288,6 +332,7 @@ impl IntoResponse for ApiError {
 pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
+        .route("/auth/oidc/login", get(begin_oidc_login))
         .with_state(state)
 }
 
@@ -302,6 +347,18 @@ async fn health() -> Json<HealthResponse> {
         status: "ok",
         api_version: API_VERSION,
     })
+}
+
+async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, ApiError> {
+    let oidc = state.oidc.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::Internal,
+        "authentication is not configured",
+    ))?;
+    let destination = oidc
+        .begin_login(&state.store)
+        .await
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
+    Ok(Redirect::temporary(&destination))
 }
 
 #[cfg(test)]
@@ -359,7 +416,7 @@ mod tests {
         let store = notebook_store::NotebookStore::connect("sqlite::memory:")
             .await
             .expect("open store");
-        let response = router(ApiState { store })
+        let response = router(ApiState::new(store))
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/health")
