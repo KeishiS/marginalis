@@ -1,10 +1,10 @@
 //! SQLite上のアプリ固有投影と参照解決を扱う永続化境界。
 
 use core::fmt;
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use sqlx::{
-    SqlitePool,
+    Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 use tokio::sync::Mutex;
@@ -80,19 +80,44 @@ pub struct StoredNoteReference {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NoteReferenceResolution {
     /// 参照先とアンカーを閲覧できる。
-    Resolved { href: String },
+    Resolved { href: String, title: String },
     /// 参照先は閲覧できるがアンカーがないため、ノート先頭へフォールバックした。
-    AnchorFallback { href: String },
+    AnchorFallback { href: String, title: String },
     /// 対象不在と権限なしを区別せず、対象の存在を秘匿する。
-    NotFound,
+    NotFound {
+        /// `root`だけが受け取る詳細。通常利用者には常に`None`を返す。
+        detail: Option<ReferenceFailureDetail>,
+    },
+}
+
+/// 権限を持つ運用文脈だけに返す未解決参照の詳細。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReferenceFailureDetail {
+    MissingTarget,
+}
+
+/// HTML表示へ渡す前の、アプリ固有で位置付きの参照表示情報。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReferencePresentation {
+    pub range: TextRange,
+    /// 空labelの標準xrefに使う、閲覧権限確認済みの解決先タイトル。
+    pub display_label: Option<String>,
+    /// 解決には成功したが利用者へ伝えるべき警告。
+    pub warning: Option<ReferenceWarning>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReferenceWarning {
+    pub code: &'static str,
+    pub message: String,
 }
 
 /// 一つの解析revisionに対応する、描画へ渡す参照解決結果。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedNoteReferences {
     pub render_inputs: RenderInputs,
-    /// アンカーが存在せずノート先頭へ遷移する参照の位置。
-    pub anchor_fallbacks: Vec<TextRange>,
+    /// `RenderInputs`の公開契約にはまだ含まれない、アプリ側の表示情報。
+    pub presentations: BTreeMap<TextRange, ReferencePresentation>,
 }
 
 /// AsciiDoc上の形式検証とSQLite照会を分離する参照解決エラー。
@@ -163,11 +188,25 @@ impl NotebookStore {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS notes (
                 note_id TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
                 deleted_at TEXT
             ) STRICT",
         )
         .execute(&self.pool)
         .await?;
+        let note_columns = sqlx::query("PRAGMA table_info(notes)")
+            .fetch_all(&self.pool)
+            .await?;
+        let has_title = note_columns.iter().any(|column| {
+            column
+                .try_get::<String, _>("name")
+                .is_ok_and(|name| name == "title")
+        });
+        if !has_title {
+            sqlx::query("ALTER TABLE notes ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+                .execute(&self.pool)
+                .await?;
+        }
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS note_acl (
                 note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
@@ -246,7 +285,7 @@ impl NotebookStore {
         anchor: Option<&str>,
     ) -> Result<NoteReferenceResolution, sqlx::Error> {
         let accessible = sqlx::query(
-            "SELECT note_id FROM notes
+            "SELECT note_id, title FROM notes
              WHERE note_id = ? AND deleted_at IS NULL
              AND (? = 1 OR EXISTS (
                  SELECT 1 FROM note_acl
@@ -259,12 +298,18 @@ impl NotebookStore {
         .bind(&viewer.user_id)
         .fetch_optional(&self.pool)
         .await?;
-        if accessible.is_none() {
-            return Ok(NoteReferenceResolution::NotFound);
-        }
+        let Some(accessible) = accessible else {
+            return Ok(NoteReferenceResolution::NotFound {
+                detail: viewer
+                    .is_root
+                    .then_some(ReferenceFailureDetail::MissingTarget),
+            });
+        };
+        let title: String = accessible.try_get("title")?;
         let Some(anchor) = anchor else {
             return Ok(NoteReferenceResolution::Resolved {
                 href: urls.note_href(note_id, None),
+                title,
             });
         };
         let anchor_exists =
@@ -277,10 +322,12 @@ impl NotebookStore {
         if anchor_exists {
             Ok(NoteReferenceResolution::Resolved {
                 href: urls.note_href(note_id, Some(anchor)),
+                title,
             })
         } else {
             Ok(NoteReferenceResolution::AnchorFallback {
                 href: urls.note_href(note_id, None),
+                title,
             })
         }
     }
@@ -295,7 +342,7 @@ impl NotebookStore {
         let references =
             extract_note_references(analysis).map_err(ResolveReferencesError::InvalidReferences)?;
         let mut render_references = Vec::with_capacity(references.len());
-        let mut anchor_fallbacks = Vec::new();
+        let mut presentations = BTreeMap::new();
         for reference in references {
             match self
                 .resolve_note_reference(
@@ -306,14 +353,36 @@ impl NotebookStore {
                 )
                 .await?
             {
-                NoteReferenceResolution::Resolved { href } => {
+                NoteReferenceResolution::Resolved { href, title } => {
+                    if reference.label_is_empty {
+                        presentations.insert(
+                            reference.range,
+                            ReferencePresentation {
+                                range: reference.range,
+                                display_label: Some(title),
+                                warning: None,
+                            },
+                        );
+                    }
                     render_references.push(ResolvedReference::resolved(reference.range, href));
                 }
-                NoteReferenceResolution::AnchorFallback { href } => {
-                    anchor_fallbacks.push(reference.range);
+                NoteReferenceResolution::AnchorFallback { href, title } => {
+                    presentations.insert(
+                        reference.range,
+                        ReferencePresentation {
+                            range: reference.range,
+                            display_label: reference.label_is_empty.then_some(title),
+                            warning: Some(ReferenceWarning {
+                                code: "missing-reference-anchor",
+                                message:
+                                    "参照先アンカーが見つからないため、ノート先頭を表示します。"
+                                        .into(),
+                            }),
+                        },
+                    );
                     render_references.push(ResolvedReference::resolved(reference.range, href));
                 }
-                NoteReferenceResolution::NotFound => {
+                NoteReferenceResolution::NotFound { .. } => {
                     render_references.push(ResolvedReference::failed(
                         reference.range,
                         ResolverFailure {
@@ -326,7 +395,7 @@ impl NotebookStore {
         }
         Ok(ResolvedNoteReferences {
             render_inputs: RenderInputs::new(render_references, Vec::new()),
-            anchor_fallbacks,
+            presentations,
         })
     }
 }
@@ -339,11 +408,15 @@ mod tests {
     };
     use sqlx::Row;
 
-    use super::{NoteReferenceResolution, NoteUrlBase, NotebookStore, StoredNoteReference, Viewer};
+    use super::{
+        NoteReferenceResolution, NoteUrlBase, NotebookStore, ReferenceFailureDetail,
+        StoredNoteReference, Viewer,
+    };
 
     async fn insert_note(store: &NotebookStore, note_id: &str) {
-        sqlx::query("INSERT INTO notes(note_id) VALUES (?)")
+        sqlx::query("INSERT INTO notes(note_id, title) VALUES (?, ?)")
             .bind(note_id)
+            .bind(format!("title:{note_id}"))
             .execute(store.pool())
             .await
             .expect("insert note");
@@ -412,7 +485,7 @@ mod tests {
                 .resolve_note_reference(&viewer, &urls, "private", None)
                 .await
                 .expect("resolve private"),
-            NoteReferenceResolution::NotFound
+            NoteReferenceResolution::NotFound { detail: None }
         );
         assert_eq!(
             store
@@ -420,7 +493,8 @@ mod tests {
                 .await
                 .expect("resolve missing anchor"),
             NoteReferenceResolution::AnchorFallback {
-                href: "https://notebook.example/app/note/visible".into()
+                href: "https://notebook.example/app/note/visible".into(),
+                title: "title:visible".into(),
             }
         );
         assert_eq!(
@@ -429,7 +503,8 @@ mod tests {
                 .await
                 .expect("resolve known anchor"),
             NoteReferenceResolution::Resolved {
-                href: "https://notebook.example/app/note/visible#known".into()
+                href: "https://notebook.example/app/note/visible#known".into(),
+                title: "title:visible".into(),
             }
         );
         assert_eq!(
@@ -440,6 +515,20 @@ mod tests {
         );
         assert!(NoteUrlBase::new("http://notebook.example").is_err());
         assert!(NoteUrlBase::new("https://notebook.example/app?debug=true").is_err());
+
+        let root = Viewer {
+            user_id: "root".into(),
+            is_root: true,
+        };
+        assert_eq!(
+            store
+                .resolve_note_reference(&root, &urls, "missing", None)
+                .await
+                .expect("resolve missing as root"),
+            NoteReferenceResolution::NotFound {
+                detail: Some(ReferenceFailureDetail::MissingTarget),
+            }
+        );
     }
 
     #[tokio::test]
@@ -458,7 +547,7 @@ mod tests {
             .expect("grant reader");
         let analysis = Engine::new(Default::default())
             .analyze(&format!(
-                "xref:note:{visible}#missing[先頭へ] xref:note:{private}[秘匿]\n"
+                "xref:note:{visible}#missing[] xref:note:{private}[秘匿]\n"
             ))
             .expect("valid AsciiDoc");
         let viewer = Viewer {
@@ -471,7 +560,21 @@ mod tests {
             .resolve_render_inputs(&analysis, &viewer, &urls)
             .await
             .expect("resolve inputs");
-        assert_eq!(result.anchor_fallbacks.len(), 1);
+        assert_eq!(result.presentations.len(), 1);
+        let presentation = result
+            .presentations
+            .values()
+            .next()
+            .expect("fallback presentation");
+        let expected_title = format!("title:{visible}");
+        assert_eq!(
+            presentation.display_label.as_deref(),
+            Some(expected_title.as_str())
+        );
+        assert_eq!(
+            presentation.warning.as_ref().map(|warning| warning.code),
+            Some("missing-reference-anchor")
+        );
         assert_eq!(result.render_inputs.references().len(), 2);
         assert_eq!(
             result.render_inputs.references()[0].outcome,

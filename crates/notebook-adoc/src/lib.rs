@@ -155,6 +155,8 @@ pub struct NoteReference {
     pub range: TextRange,
     pub note_id: String,
     pub anchor: Option<String>,
+    /// 明示labelがなく、Resolver由来の表示ラベルを使うべきかを示す。
+    pub label_is_empty: bool,
 }
 
 /// ノートxrefに限定した位置付き診断。
@@ -211,6 +213,7 @@ pub fn extract_note_references(
             range: reference.range,
             note_id: locator.clone(),
             anchor: anchor.clone(),
+            label_is_empty: reference.label.is_empty(),
         });
     }
     errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.as_str()));
@@ -596,7 +599,7 @@ mod tests {
     fn extracts_note_scheme_xrefs_without_resolving_them() {
         let analysis = Engine::new(Default::default())
             .analyze(
-                "xref:note:01800000-0000-7000-8000-000000000001[ノート]\n\n\
+                "xref:note:01800000-0000-7000-8000-000000000001[]\n\n\
                  xref:note:01800000-0000-7000-8000-000000000002#stable[節]\n\n\
                  xref:other:example[別のスキーム]\n",
             )
@@ -609,11 +612,13 @@ mod tests {
             "01800000-0000-7000-8000-000000000001"
         );
         assert_eq!(references[0].anchor, None);
+        assert!(references[0].label_is_empty);
         assert_eq!(
             references[1].note_id,
             "01800000-0000-7000-8000-000000000002"
         );
         assert_eq!(references[1].anchor.as_deref(), Some("stable"));
+        assert!(!references[1].label_is_empty);
     }
 
     #[test]
