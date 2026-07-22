@@ -222,6 +222,24 @@ mod tests {
         fs::remove_dir_all(directory).expect("remove test directory");
     }
 
+    #[test]
+    fn physically_deletes_the_note_path_idempotently() {
+        let directory = test_directory();
+        let store = FileNoteStore::open(&directory).expect("open file store");
+        let note_id = note(1);
+        store
+            .replace(note_id, OperationId(note(2).entity_id()), b"= first\n")
+            .expect("write source");
+        store
+            .delete(note_id, OperationId(note(3).entity_id()))
+            .expect("delete source");
+        assert_eq!(store.read(note_id).expect("read source"), None);
+        store
+            .delete(note_id, OperationId(note(3).entity_id()))
+            .expect("idempotent delete");
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
     #[tokio::test]
     async fn write_service_updates_source_projection_and_journal() {
         let directory = test_directory();
