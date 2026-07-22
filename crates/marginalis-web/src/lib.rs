@@ -25,6 +25,9 @@ use marginalis_files::FileNoteStore;
 use marginalis_server::{SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use serde::{Deserialize, Serialize};
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
+use tracing::Level;
+use tracing::info_span;
 
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
@@ -150,6 +153,17 @@ pub fn router(state: ApiState) -> Router {
         .route("/auth/oidc/login", get(begin_oidc_login))
         .route("/auth/oidc/callback", get(complete_oidc_login))
         .route("/auth/logout", post(logout))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        path = request.uri().path(),
+                    )
+                })
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .with_state(state)
 }
 
@@ -426,14 +440,14 @@ async fn complete_oidc_login(
         "authentication is not configured",
     ))?;
     if query.error.is_some() {
-        eprintln!("OIDC callback rejected by authorization server");
+        tracing::warn!("OIDC callback rejected by authorization server");
         return Err(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication failed",
         ));
     }
     let (Some(code), Some(state_token)) = (query.code.as_deref(), query.state.as_deref()) else {
-        eprintln!("OIDC callback rejected: missing authorization response parameters");
+        tracing::warn!("OIDC callback rejected: missing authorization response parameters");
         return Err(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication failed",
@@ -451,7 +465,7 @@ async fn complete_oidc_login(
         .await
         .map_err(|error| match error {
             OidcCallbackError::Rejected(_) => {
-                eprintln!("OIDC callback rejected at {}", error.diagnostic_stage());
+                tracing::warn!(stage = error.diagnostic_stage(), "OIDC callback rejected");
                 ApiError::new(
                     ApiErrorCode::AuthenticationRequired,
                     "authentication failed",
@@ -462,7 +476,7 @@ async fn complete_oidc_login(
             }
         })?
     else {
-        eprintln!("OIDC callback rejected: user is not authorized");
+        tracing::warn!("OIDC callback rejected: user is not authorized");
         return Err(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication failed",

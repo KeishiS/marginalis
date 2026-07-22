@@ -274,19 +274,22 @@ impl OidcAuthentication {
             .map_err(|error| {
                 match error {
                     RequestTokenError::ServerResponse(response) => {
-                        eprintln!(
-                            "OIDC token endpoint rejected code exchange: {}",
-                            response.error()
+                        tracing::warn!(
+                            error = %response.error(),
+                            "OIDC token endpoint rejected code exchange"
                         );
                     }
                     RequestTokenError::Request(_) => {
-                        eprintln!("OIDC token endpoint request failed");
+                        tracing::warn!("OIDC token endpoint request failed");
                     }
                     RequestTokenError::Parse(_, _) => {
-                        eprintln!("OIDC token endpoint returned an unparseable response");
+                        tracing::warn!("OIDC token endpoint returned an unparseable response");
                     }
                     RequestTokenError::Other(reason) => {
-                        eprintln!("OIDC token endpoint returned an unexpected response: {reason}");
+                        tracing::warn!(
+                            reason,
+                            "OIDC token endpoint returned an unexpected response"
+                        );
                     }
                 }
                 OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange)

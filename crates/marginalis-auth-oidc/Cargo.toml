@@ -10,4 +10,5 @@ publish = false
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 openidconnect.workspace = true
+tracing.workspace = true
 url.workspace = true

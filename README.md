@@ -26,6 +26,7 @@ cargo make verify
 | `OIDC_CLIENT_ID` | 必須 | OIDC Client ID。現在は`marginalis`。 |
 | `OIDC_CLIENT_SECRET` | 必須 | OIDC Client Secret。secret管理機構から環境変数へ注入する。 |
 | `OIDC_CLIENT_SECRET_FILE` | 代替 | `OIDC_CLIENT_SECRET`の代わりに、secretだけを含むファイルを指定する。 |
+| `RUST_LOG` | 任意 | 構造化ログの粒度。未指定時は`info`。例: `RUST_LOG=debug`。 |
 | `ROOT_PASSWORD` | 初回のみ必須 | 未初期化DBへ緊急管理者`root`を作るパスワード。 |
 | `ROOT_PASSWORD_FILE` | 代替 | `ROOT_PASSWORD`の代わりに、初期化用password fileを指定する。 |
 
