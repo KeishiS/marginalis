@@ -1083,6 +1083,17 @@ dependencies = [
 name = "marginalis-domain"
 version = "0.1.0"
 dependencies = [
+ "sha2",
+ "uuid",
+]
+
+[[package]]
+name = "marginalis-files"
+version = "0.1.0"
+dependencies = [
+ "marginalis-application",
+ "marginalis-domain",
+ "sha2",
  "uuid",
 ]
 

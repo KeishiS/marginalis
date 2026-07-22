@@ -3,6 +3,7 @@ members = [
     "crates/marginalis-adoc",
     "crates/marginalis-application",
     "crates/marginalis-domain",
+    "crates/marginalis-files",
     "crates/marginalis-server",
     "crates/marginalis-sqlite",
     "crates/marginalis-store",

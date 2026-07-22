@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 /// UTC epoch millisecondsで表すアプリケーション時刻。
@@ -14,6 +15,20 @@ impl UnixMillis {
     }
 
     pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
+/// AsciiDoc正本から算出するSHA-256 revision。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SourceRevision([u8; 32]);
+
+impl SourceRevision {
+    pub fn from_source(source: &[u8]) -> Self {
+        Self(Sha256::digest(source).into())
+    }
+
+    pub const fn bytes(self) -> [u8; 32] {
         self.0
     }
 }
