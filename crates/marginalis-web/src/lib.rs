@@ -374,6 +374,7 @@ async fn update_note_source(
     source: String,
 ) -> Result<StatusCode, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
     let note_id = NoteId::new(
         EntityId::from_str(&note_id)
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
@@ -419,6 +420,7 @@ async fn create_note(
     source: String,
 ) -> Result<Response, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
     let projection = marginalis_asciidoc::parse_note_projection(&source)
         .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "note source is invalid"))?;
     if projection.owner_id != actor.user_id {
@@ -469,6 +471,7 @@ async fn update_note_acl(
     Json(request): Json<AclUpdateRequest>,
 ) -> Result<StatusCode, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
     let note_id = NoteId::new(
         EntityId::from_str(&note_id)
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
@@ -586,6 +589,15 @@ async fn complete_oidc_login(
         HeaderValue::from_str(&cookie)
             .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
     );
+    let csrf_cookie = format!(
+        "marginalis_csrf={}; Path={}; Secure; SameSite=Lax",
+        session.csrf_token, oidc.cookie_path
+    );
+    headers.append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&csrf_cookie)
+            .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
+    );
     Ok((
         headers,
         Redirect::to(&format!("{}/", oidc.cookie_path.trim_end_matches('/'))),
@@ -612,8 +624,39 @@ async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> Result<Ac
     Ok(session.actor)
 }
 
+async fn require_csrf(headers: &HeaderMap, state: &ApiState) -> Result<(), ApiError> {
+    let session_id = cookie_value(headers, "marginalis_session").ok_or(ApiError::new(
+        ApiErrorCode::AuthenticationRequired,
+        "authentication is required",
+    ))?;
+    let csrf_token = headers
+        .get("x-csrf-token")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or(ApiError::new(
+            ApiErrorCode::Forbidden,
+            "CSRF token is required",
+        ))?;
+    let valid = state
+        .database
+        .web_session_store()
+        .verify_csrf(session_id, csrf_token, SystemClock.now())
+        .await
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
+    if valid {
+        Ok(())
+    } else {
+        Err(ApiError::new(
+            ApiErrorCode::Forbidden,
+            "CSRF token is invalid",
+        ))
+    }
+}
+
 async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> Result<Response, ApiError> {
     let _actor = authenticated_actor(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
     let session_id = cookie_value(&headers, "marginalis_session").ok_or(ApiError::new(
         ApiErrorCode::AuthenticationRequired,
         "authentication is required",

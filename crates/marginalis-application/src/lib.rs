@@ -140,6 +140,12 @@ pub trait WebSessionStore: Send + Sync {
         session_id: String,
         now: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn verify_csrf(
+        &self,
+        session_id: String,
+        csrf_token: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 }
 
 /// sessionの有効期限と秘密値を一箇所で決めるユースケース。

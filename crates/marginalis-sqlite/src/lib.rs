@@ -577,6 +577,29 @@ impl WebSessionStore for SqliteWebSessionStore {
             Ok(())
         }
     }
+
+    fn verify_csrf(
+        &self,
+        session_id: String,
+        csrf_token: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let valid = sqlx::query(
+                "SELECT 1 FROM web_sessions WHERE session_id_hash = ? AND csrf_token_hash = ?
+                 AND revoked_at_ms IS NULL AND idle_expires_at_ms > ? AND absolute_expires_at_ms > ?",
+            )
+            .bind(hash_token(&session_id))
+            .bind(hash_token(&csrf_token))
+            .bind(now.get())
+            .bind(now.get())
+            .fetch_optional(&pool)
+            .await?
+            .is_some();
+            Ok(valid)
+        }
+    }
 }
 
 fn hash_token(token: &str) -> Vec<u8> {
