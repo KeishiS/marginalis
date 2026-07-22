@@ -34,6 +34,7 @@ pub enum ConfigurationError {
     InvalidListenAddress,
     EmptyClientId,
     EmptyDataDirectory,
+    UnreadableSecretFile(&'static str),
 }
 
 impl fmt::Display for ConfigurationError {
@@ -52,6 +53,9 @@ impl fmt::Display for ConfigurationError {
             Self::EmptyClientId => formatter.write_str("OIDC_CLIENT_ID must not be empty"),
             Self::EmptyDataDirectory => {
                 formatter.write_str("MARGINALIS_DATA_DIR must not be empty")
+            }
+            Self::UnreadableSecretFile(name) => {
+                write!(formatter, "secret file for {name} could not be read")
             }
         }
     }
@@ -85,13 +89,30 @@ impl ServerConfig {
             },
         };
         let secrets = SecretConfig {
-            oidc_client_secret: required("OIDC_CLIENT_SECRET")?,
-            initial_root_password: env::var("ROOT_PASSWORD")
-                .ok()
-                .filter(|value| !value.is_empty()),
+            oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
+            initial_root_password: optional_secret("ROOT_PASSWORD")?,
         };
         Ok((configuration, secrets))
     }
+}
+
+fn required_secret(name: &'static str) -> Result<String, ConfigurationError> {
+    optional_secret(name)?.ok_or(ConfigurationError::MissingEnvironment(name))
+}
+
+fn optional_secret(name: &'static str) -> Result<Option<String>, ConfigurationError> {
+    let file_variable = format!("{name}_FILE");
+    if let Some(path) = env::var_os(file_variable) {
+        let value = std::fs::read_to_string(path)
+            .map_err(|_| ConfigurationError::UnreadableSecretFile(name))?
+            .trim_end_matches(['\r', '\n'])
+            .to_owned();
+        return (!value.is_empty())
+            .then_some(value)
+            .ok_or(ConfigurationError::MissingEnvironment(name))
+            .map(Some);
+    }
+    Ok(env::var(name).ok().filter(|value| !value.is_empty()))
 }
 
 fn required(name: &'static str) -> Result<String, ConfigurationError> {

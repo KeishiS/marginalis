@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 axum.workspace = true
 marginalis-store = { path = "../marginalis-store" }
+marginalis-server = { path = "../marginalis-server" }
 openidconnect.workspace = true
 serde.workspace = true
 time.workspace = true

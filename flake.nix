@@ -4,7 +4,7 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
       systems = [
         "aarch64-darwin"
@@ -16,6 +16,67 @@
       pkgsFor = system: import nixpkgs { inherit system; };
     in
     {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          default = pkgs.rustPlatform.buildRustPackage {
+            pname = "marginalis";
+            version = "0.1.0";
+            src = ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              outputHashes = {
+                "adocweave-0.1.0-rc.3" = "sha256-DvIaIEdTr7e0I9pRrm8W0bwtCceLGxwHbouxhbwibDY=";
+              };
+            };
+            cargoBuildFlags = [
+              "--package"
+              "marginalis-web"
+            ];
+            doCheck = false;
+            installPhase = ''
+              install -Dm755 target/release/marginalis-web $out/bin/marginalis
+            '';
+          };
+        }
+      );
+
+      nixosModules.default = import ./nix/module.nix self;
+
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          nixos-module =
+            let
+              evaluated = nixpkgs.lib.nixosSystem {
+                inherit system;
+                modules = [
+                  self.nixosModules.default
+                  {
+                    system.stateVersion = "25.11";
+                    services.marginalis = {
+                      enable = true;
+                      baseUrl = "https://marginalis.example.test";
+                      oidc = {
+                        issuerUrl = "https://id.example.test";
+                        clientId = "marginalis";
+                        clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
+                      };
+                    };
+                  }
+                ];
+              };
+            in
+            pkgs.writeText "marginalis-nixos-module-evaluation" evaluated.config.systemd.services.marginalis.serviceConfig.ExecStart;
+        }
+      );
+
       devShells = forAllSystems (
         system:
         let
