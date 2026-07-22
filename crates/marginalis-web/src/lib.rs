@@ -12,9 +12,15 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
-use marginalis_store::{
-    NotebookStore, OidcIdentity, OidcLoginResult, RegistrationPolicy, Viewer, WebSessionLifetime,
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use marginalis_application::{
+    Clock, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random,
+    SessionLifetime, WebSessionService,
 };
+use marginalis_domain::{
+    Actor, EntityId, OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis,
+};
+use marginalis_sqlite::SqliteDatabase;
 use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
     EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
@@ -23,11 +29,33 @@ use openidconnect::{
     reqwest,
 };
 use serde::{Deserialize, Serialize};
-use time::{Duration, OffsetDateTime, UtcOffset, macros::format_description};
+use time::OffsetDateTime;
 use url::Url;
+use uuid::Uuid;
 
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
+
+struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> UnixMillis {
+        UnixMillis::new(OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000)
+    }
+}
+
+struct SystemRandom;
+
+impl Random for SystemRandom {
+    fn uuid_v7(&self) -> EntityId {
+        EntityId::from_uuid_v7(Uuid::now_v7())
+    }
+
+    fn opaque_token(&self) -> String {
+        let bytes: [u8; 32] = rand::random();
+        URL_SAFE_NO_PAD.encode(bytes)
+    }
+}
 
 /// Discovery済みの外部OIDCクライアント。
 pub type DiscoveredOidcClient = CoreClient<
@@ -193,15 +221,28 @@ impl OidcAuthentication {
     }
 
     /// state、nonceおよびPKCE verifierを保存し、IdPへ転送する認可URLを作る。
-    pub async fn begin_login(&self, store: &NotebookStore) -> Result<String, OidcLoginStartError> {
-        let pending = store
-            .begin_oidc_login_for(Duration::minutes(10))
+    pub async fn begin_login(
+        &self,
+        database: &SqliteDatabase,
+    ) -> Result<String, OidcLoginStartError> {
+        let clock = SystemClock;
+        let random = SystemRandom;
+        let now = clock.now();
+        let pending = OidcLoginAttempt {
+            state: random.opaque_token(),
+            nonce: random.opaque_token(),
+            pkce_verifier: random.opaque_token(),
+            expires_at: UnixMillis::new(now.get() + 10 * 60 * 1_000),
+        };
+        database
+            .oidc_login_attempt_store()
+            .issue(pending.clone())
             .await
             .map_err(|_| OidcLoginStartError::Store)?;
-        let verifier = PkceCodeVerifier::new(pending.pkce_verifier().to_owned());
+        let verifier = PkceCodeVerifier::new(pending.pkce_verifier);
         let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
-        let state = pending.state().to_owned();
-        let nonce = pending.nonce().to_owned();
+        let state = pending.state;
+        let nonce = pending.nonce;
         let (url, _, _) = self
             .client
             .authorize_url(
@@ -218,20 +259,16 @@ impl OidcAuthentication {
 
     async fn complete_login(
         &self,
-        store: &NotebookStore,
+        database: &SqliteDatabase,
         code: &str,
         state: &str,
     ) -> Result<OidcLoginResult, OidcCallbackError> {
-        let now = OffsetDateTime::now_utc()
-            .to_offset(UtcOffset::UTC)
-            .replace_nanosecond(OffsetDateTime::now_utc().nanosecond() / 1_000_000 * 1_000_000)
-            .map_err(|_| OidcCallbackError::Unavailable)?
-            .format(format_description!(
-                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
-            ))
-            .map_err(|_| OidcCallbackError::Unavailable)?;
-        let pending = store
-            .consume_oidc_login(state, &now)
+        let clock = SystemClock;
+        let random = SystemRandom;
+        let now = clock.now();
+        let pending = database
+            .oidc_login_attempt_store()
+            .consume(state.to_owned(), now)
             .await
             .map_err(|_| OidcCallbackError::Unavailable)?
             .ok_or(OidcCallbackError::Rejected)?;
@@ -239,16 +276,13 @@ impl OidcAuthentication {
             .client
             .exchange_code(AuthorizationCode::new(code.to_owned()))
             .map_err(|_| OidcCallbackError::Rejected)?
-            .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier().to_owned()))
+            .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
             .request_async(&self.http_client)
             .await
             .map_err(|_| OidcCallbackError::Rejected)?;
         let id_token = token.id_token().ok_or(OidcCallbackError::Rejected)?;
         let claims = id_token
-            .claims(
-                &self.client.id_token_verifier(),
-                &Nonce::new(pending.nonce().to_owned()),
-            )
+            .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
             .map_err(|_| OidcCallbackError::Rejected)?;
         let subject = claims.subject().as_str().to_owned();
         let display_name = claims
@@ -259,16 +293,10 @@ impl OidcAuthentication {
             .or_else(|| claims.email().map(|value| value.as_str()))
             .unwrap_or(&subject)
             .to_owned();
-        store
-            .register_or_lookup_oidc_user(
-                &OidcIdentity {
-                    issuer: claims.issuer().as_str().to_owned(),
-                    subject,
-                    display_name,
-                },
-                RegistrationPolicy::default(),
-                &now,
-            )
+        let identity = OidcIdentity::new(claims.issuer().as_str(), subject, display_name)
+            .map_err(|_| OidcCallbackError::Rejected)?;
+        OidcRegistrationService::new(&database.oidc_identity_store(), &random)
+            .register_or_lookup(identity, RegistrationPolicy::default(), now)
             .await
             .map_err(|_| OidcCallbackError::Unavailable)
     }
@@ -318,18 +346,21 @@ fn base_cookie_path(base_url: &str) -> Result<String, OidcConfigurationError> {
 /// HTTPハンドラーが利用する共有状態。
 #[derive(Clone)]
 pub struct ApiState {
-    pub store: NotebookStore,
+    pub database: SqliteDatabase,
     pub oidc: Option<Arc<OidcAuthentication>>,
 }
 
 impl ApiState {
-    pub fn new(store: NotebookStore) -> Self {
-        Self { store, oidc: None }
+    pub fn new(database: SqliteDatabase) -> Self {
+        Self {
+            database,
+            oidc: None,
+        }
     }
 
-    pub fn with_oidc(store: NotebookStore, oidc: OidcAuthentication) -> Self {
+    pub fn with_oidc(database: SqliteDatabase, oidc: OidcAuthentication) -> Self {
         Self {
-            store,
+            database,
             oidc: Some(Arc::new(oidc)),
         }
     }
@@ -340,7 +371,7 @@ impl ApiState {
 /// OAuth、Cookie sessionおよび将来のMCP tokenは異なるが、ACL判定に渡す値はこの型へ統一する。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthenticatedActor {
-    pub viewer: Viewer,
+    pub actor: Actor,
 }
 
 /// HTTP APIの安定したエラーコード。
@@ -439,7 +470,7 @@ async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, Api
         "authentication is not configured",
     ))?;
     let destination = oidc
-        .begin_login(&state.store)
+        .begin_login(&state.database)
         .await
         .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
     Ok(Redirect::temporary(&destination))
@@ -473,7 +504,7 @@ async fn complete_oidc_login(
         ));
     };
     let OidcLoginResult::Active(user) = oidc
-        .complete_login(&state.store, code, state_token)
+        .complete_login(&state.database, code, state_token)
         .await
         .map_err(|error| match error {
             OidcCallbackError::Rejected => ApiError::new(
@@ -490,19 +521,24 @@ async fn complete_oidc_login(
             "authentication failed",
         ));
     };
-    let session = state
-        .store
-        .create_web_session(&user.user_id, WebSessionLifetime::GENERAL_USER)
+    let clock = SystemClock;
+    let random = SystemRandom;
+    let session = WebSessionService::new(&state.database.web_session_store(), &random, &clock)
+        .issue(
+            Actor {
+                user_id: user.user_id,
+                is_root: false,
+            },
+            SessionLifetime {
+                idle_timeout_ms: 8 * 60 * 60 * 1_000,
+                absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
+            },
+        )
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?
-        .ok_or(ApiError::new(
-            ApiErrorCode::AuthenticationRequired,
-            "authentication failed",
-        ))?;
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
     let cookie = format!(
         "marginalis_session={}; Path={}; Secure; HttpOnly; SameSite=Lax",
-        session.session_id(),
-        oidc.cookie_path
+        session.session_id, oidc.cookie_path
     );
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -569,10 +605,10 @@ mod tests {
 
     #[tokio::test]
     async fn health_endpoint_is_available_under_the_versioned_api_prefix() {
-        let store = marginalis_store::NotebookStore::connect("sqlite::memory:")
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("open store");
-        let response = router(ApiState::new(store))
+        let response = router(ApiState::new(database))
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/health")

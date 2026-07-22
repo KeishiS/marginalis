@@ -1143,14 +1143,19 @@ name = "marginalis-web"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
+ "marginalis-application",
+ "marginalis-domain",
  "marginalis-server",
- "marginalis-store",
+ "marginalis-sqlite",
  "openidconnect",
+ "rand",
  "serde",
  "time",
  "tokio",
  "tower",
  "url",
+ "uuid",
 ]
 
 [[package]]
