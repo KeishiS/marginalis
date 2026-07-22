@@ -284,8 +284,8 @@ impl OidcAuthentication {
                     RequestTokenError::Parse(_, _) => {
                         eprintln!("OIDC token endpoint returned an unparseable response");
                     }
-                    RequestTokenError::Other(_) => {
-                        eprintln!("OIDC token endpoint returned an unexpected response");
+                    RequestTokenError::Other(reason) => {
+                        eprintln!("OIDC token endpoint returned an unexpected response: {reason}");
                     }
                 }
                 OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange)
