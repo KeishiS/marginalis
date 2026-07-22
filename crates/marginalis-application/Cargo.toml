@@ -1,0 +1,10 @@
+[package]
+name = "marginalis-application"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+marginalis-domain = { path = "../marginalis-domain" }

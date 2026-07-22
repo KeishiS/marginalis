@@ -1,5 +1,13 @@
 [workspace]
-members = ["crates/marginalis-adoc", "crates/marginalis-store", "crates/marginalis-web"]
+members = [
+    "crates/marginalis-adoc",
+    "crates/marginalis-application",
+    "crates/marginalis-domain",
+    "crates/marginalis-server",
+    "crates/marginalis-sqlite",
+    "crates/marginalis-store",
+    "crates/marginalis-web",
+]
 resolver = "2"
 
 [workspace.package]

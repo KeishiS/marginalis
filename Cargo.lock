@@ -1073,6 +1073,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "marginalis-application"
+version = "0.1.0"
+dependencies = [
+ "marginalis-domain",
+]
+
+[[package]]
+name = "marginalis-domain"
+version = "0.1.0"
+dependencies = [
+ "uuid",
+]
+
+[[package]]
+name = "marginalis-server"
+version = "0.1.0"
+dependencies = [
+ "url",
+]
+
+[[package]]
+name = "marginalis-sqlite"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "marginalis-store"
 version = "0.1.0"
 dependencies = [
