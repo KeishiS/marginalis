@@ -12,5 +12,6 @@ notebook-adoc = { path = "../notebook-adoc" }
 sqlx.workspace = true
 tokio.workspace = true
 url.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]

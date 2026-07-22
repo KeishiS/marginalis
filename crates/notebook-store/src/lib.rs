@@ -9,6 +9,7 @@ use sqlx::{
 };
 use tokio::sync::Mutex;
 use url::Url;
+use uuid::Uuid;
 
 use adocweave::{
     html::{
@@ -63,6 +64,107 @@ fn note_render_policy() -> RenderPolicy {
 pub struct Viewer {
     pub user_id: String,
     pub is_root: bool,
+}
+
+/// 初回OIDCログイン時に適用する登録ポリシー。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RegistrationPolicy {
+    Open,
+    #[default]
+    Approval,
+    InviteOnly,
+}
+
+/// アプリケーション内部のユーザー状態。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UserStatus {
+    Pending,
+    Active,
+    Disabled,
+}
+
+impl UserStatus {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(Self::Pending),
+            "active" => Some(Self::Active),
+            "disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+/// OIDCの検証済みID Tokenから得た、永続化に必要な最小の本人情報。
+///
+/// `issuer`と`subject`だけが本人同定に使われる。`display_name`は表示用の可変属性であり、
+/// メールアドレスを含めても同一性判定には使用しない。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OidcIdentity {
+    pub issuer: String,
+    pub subject: String,
+    pub display_name: String,
+}
+
+/// OIDC identityに対応するアプリケーション内ユーザー。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OidcUser {
+    pub user_id: String,
+    pub status: UserStatus,
+    pub display_name: String,
+}
+
+/// OIDCログイン後にブラウザセッションを発行できるかどうか。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OidcLoginResult {
+    Active(OidcUser),
+    PendingApproval(OidcUser),
+    RegistrationDenied,
+    Disabled(OidcUser),
+}
+
+/// OIDC identityとアプリケーションユーザーの対応を処理するときのエラー。
+#[derive(Debug)]
+pub enum OidcUserError {
+    InvalidIdentity,
+    InvalidStoredStatus,
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for OidcUserError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidIdentity => {
+                formatter.write_str("OIDC issuer and subject must not be empty")
+            }
+            Self::InvalidStoredStatus => formatter.write_str("stored user status is invalid"),
+            Self::Database(error) => {
+                write!(formatter, "SQLite OIDC user operation failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for OidcUserError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::InvalidIdentity | Self::InvalidStoredStatus => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for OidcUserError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
 }
 
 /// ノートへ直接付与する権限。
@@ -351,6 +453,15 @@ fn escape_html_into(output: &mut String, value: &str) {
     }
 }
 
+fn oidc_user_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<OidcUser, OidcUserError> {
+    let status: String = row.try_get("status")?;
+    Ok(OidcUser {
+        user_id: row.try_get("user_id")?,
+        status: UserStatus::parse(&status).ok_or(OidcUserError::InvalidStoredStatus)?,
+        display_name: row.try_get("display_name")?,
+    })
+}
+
 /// SQLite上のノート投影ストア。
 #[derive(Clone, Debug)]
 pub struct NotebookStore {
@@ -383,6 +494,29 @@ impl NotebookStore {
 
     /// SQLiteの参照投影に必要な最小スキーマを作成する。
     pub async fn migrate(&self) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY NOT NULL,
+                authentication_kind TEXT NOT NULL CHECK (authentication_kind IN ('oidc', 'root')),
+                status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'disabled')),
+                display_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            ) STRICT",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS oidc_identities (
+                issuer TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                user_id TEXT NOT NULL REFERENCES users(user_id),
+                PRIMARY KEY (issuer, subject),
+                UNIQUE (user_id)
+            ) STRICT",
+        )
+        .execute(&self.pool)
+        .await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS notes (
                 note_id TEXT PRIMARY KEY NOT NULL,
@@ -443,6 +577,86 @@ impl NotebookStore {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// 検証済みOIDC identityを既存ユーザーへ対応付け、初回だけ登録ポリシーを適用する。
+    ///
+    /// identity対応は削除・再利用しないため、同じ`(issuer, subject)`を別ユーザーへ割り当てる
+    /// ことはできない。`now`はUTC RFC 3339・ミリ秒精度の時刻を呼び出し側から渡す。
+    pub async fn register_or_lookup_oidc_user(
+        &self,
+        identity: &OidcIdentity,
+        policy: RegistrationPolicy,
+        now: &str,
+    ) -> Result<OidcLoginResult, OidcUserError> {
+        if identity.issuer.trim().is_empty() || identity.subject.trim().is_empty() {
+            return Err(OidcUserError::InvalidIdentity);
+        }
+        let _write_guard = self.write_lock.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        let existing = sqlx::query(
+            "SELECT users.user_id, users.status, users.display_name
+             FROM oidc_identities
+             JOIN users ON users.user_id = oidc_identities.user_id
+             WHERE oidc_identities.issuer = ? AND oidc_identities.subject = ?",
+        )
+        .bind(&identity.issuer)
+        .bind(&identity.subject)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let user = if let Some(row) = existing {
+            let user = oidc_user_from_row(&row)?;
+            sqlx::query("UPDATE users SET display_name = ?, updated_at = ? WHERE user_id = ?")
+                .bind(&identity.display_name)
+                .bind(now)
+                .bind(&user.user_id)
+                .execute(&mut *transaction)
+                .await?;
+            OidcUser {
+                display_name: identity.display_name.clone(),
+                ..user
+            }
+        } else {
+            if policy == RegistrationPolicy::InviteOnly {
+                transaction.rollback().await?;
+                return Ok(OidcLoginResult::RegistrationDenied);
+            }
+            let status = match policy {
+                RegistrationPolicy::Open => UserStatus::Active,
+                RegistrationPolicy::Approval => UserStatus::Pending,
+                RegistrationPolicy::InviteOnly => unreachable!("handled before user creation"),
+            };
+            let user = OidcUser {
+                user_id: Uuid::now_v7().to_string(),
+                status,
+                display_name: identity.display_name.clone(),
+            };
+            sqlx::query(
+                "INSERT INTO users
+                 (user_id, authentication_kind, status, display_name, created_at, updated_at)
+                 VALUES (?, 'oidc', ?, ?, ?, ?)",
+            )
+            .bind(&user.user_id)
+            .bind(status.as_str())
+            .bind(&user.display_name)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query("INSERT INTO oidc_identities (issuer, subject, user_id) VALUES (?, ?, ?)")
+                .bind(&identity.issuer)
+                .bind(&identity.subject)
+                .bind(&user.user_id)
+                .execute(&mut *transaction)
+                .await?;
+            user
+        };
+        transaction.commit().await?;
+        Ok(match user.status {
+            UserStatus::Active => OidcLoginResult::Active(user),
+            UserStatus::Pending => OidcLoginResult::PendingApproval(user),
+            UserStatus::Disabled => OidcLoginResult::Disabled(user),
+        })
     }
 
     /// 同じノートに属する参照位置をトランザクションで全置換する。
@@ -816,10 +1030,103 @@ mod tests {
     use sqlx::Row;
 
     use super::{
-        NotePermission, NoteReferenceResolution, NoteUrlBase, NotebookStore,
-        ReferenceFailureDetail, StoredNoteAnchor, StoredNoteReference, UpdateNoteAclError, Viewer,
-        extract_stored_note_anchors, extract_stored_note_references, render_note_html,
+        NotePermission, NoteReferenceResolution, NoteUrlBase, NotebookStore, OidcIdentity,
+        OidcLoginResult, ReferenceFailureDetail, RegistrationPolicy, StoredNoteAnchor,
+        StoredNoteReference, UpdateNoteAclError, UserStatus, Viewer, extract_stored_note_anchors,
+        extract_stored_note_references, render_note_html,
     };
+
+    #[tokio::test]
+    async fn oidc_identity_uses_issuer_and_subject_not_mutable_display_claims() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let first = store
+            .register_or_lookup_oidc_user(
+                &OidcIdentity {
+                    issuer: "https://id.sandi05.com".into(),
+                    subject: "user-123".into(),
+                    display_name: "First name".into(),
+                },
+                RegistrationPolicy::Open,
+                "2026-07-22T00:00:00.000Z",
+            )
+            .await
+            .expect("register user");
+        let OidcLoginResult::Active(first) = first else {
+            panic!("open registration must activate the user");
+        };
+
+        let second = store
+            .register_or_lookup_oidc_user(
+                &OidcIdentity {
+                    issuer: "https://id.sandi05.com".into(),
+                    subject: "user-123".into(),
+                    display_name: "Renamed user".into(),
+                },
+                RegistrationPolicy::Approval,
+                "2026-07-22T00:01:00.000Z",
+            )
+            .await
+            .expect("look up user");
+        let OidcLoginResult::Active(second) = second else {
+            panic!("existing active user must remain active");
+        };
+
+        assert_eq!(second.user_id, first.user_id);
+        assert_eq!(second.display_name, "Renamed user");
+        assert_eq!(second.status, UserStatus::Active);
+        assert!(second.user_id.contains("-"));
+        let identity_count: i64 = sqlx::query("SELECT COUNT(*) AS count FROM oidc_identities")
+            .fetch_one(store.pool())
+            .await
+            .expect("count identities")
+            .get("count");
+        assert_eq!(identity_count, 1);
+    }
+
+    #[tokio::test]
+    async fn approval_creates_pending_user_and_invite_only_does_not_create_one() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let pending = store
+            .register_or_lookup_oidc_user(
+                &OidcIdentity {
+                    issuer: "https://id.sandi05.com".into(),
+                    subject: "pending-user".into(),
+                    display_name: "Pending".into(),
+                },
+                RegistrationPolicy::Approval,
+                "2026-07-22T00:00:00.000Z",
+            )
+            .await
+            .expect("create pending user");
+        assert!(matches!(
+            pending,
+            OidcLoginResult::PendingApproval(ref user) if user.status == UserStatus::Pending
+        ));
+
+        let denied = store
+            .register_or_lookup_oidc_user(
+                &OidcIdentity {
+                    issuer: "https://id.sandi05.com".into(),
+                    subject: "uninvited-user".into(),
+                    display_name: "Uninvited".into(),
+                },
+                RegistrationPolicy::InviteOnly,
+                "2026-07-22T00:00:00.000Z",
+            )
+            .await
+            .expect("deny uninvited user");
+        assert_eq!(denied, OidcLoginResult::RegistrationDenied);
+        let count: i64 = sqlx::query("SELECT COUNT(*) AS count FROM users")
+            .fetch_one(store.pool())
+            .await
+            .expect("count users")
+            .get("count");
+        assert_eq!(count, 1);
+    }
 
     async fn insert_note(store: &NotebookStore, note_id: &str) {
         sqlx::query("INSERT INTO notes(note_id, title) VALUES (?, ?)")
