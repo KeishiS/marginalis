@@ -65,6 +65,15 @@ pub struct Viewer {
     pub is_root: bool,
 }
 
+/// ノートへ直接付与する権限。
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(i64)]
+pub enum NotePermission {
+    Read = 1,
+    Write = 2,
+    Admin = 3,
+}
+
 /// 絶対HTTPS Base URLから得たアプリ内ノートURLの生成規則。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteUrlBase(Url);
@@ -520,6 +529,11 @@ impl NotebookStore {
 
         let _write_guard = self.write_lock.lock().await;
         let mut transaction = self.pool.begin().await?;
+        let note_exists = sqlx::query("SELECT 1 FROM notes WHERE note_id = ?")
+            .bind(&metadata.note_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .is_some();
         sqlx::query(
             "INSERT INTO notes(note_id, title) VALUES (?, ?) \
              ON CONFLICT(note_id) DO UPDATE SET title = excluded.title",
@@ -528,6 +542,14 @@ impl NotebookStore {
         .bind(&metadata.title)
         .execute(&mut *transaction)
         .await?;
+        if !note_exists {
+            sqlx::query("INSERT INTO note_acl(note_id, user_id, permission) VALUES (?, ?, ?)")
+                .bind(&metadata.note_id)
+                .bind(&metadata.creator_id)
+                .bind(NotePermission::Admin as i64)
+                .execute(&mut *transaction)
+                .await?;
+        }
         sqlx::query("DELETE FROM note_anchors WHERE note_id = ?")
             .bind(&metadata.note_id)
             .execute(&mut *transaction)
@@ -704,9 +726,9 @@ mod tests {
     use sqlx::Row;
 
     use super::{
-        NoteReferenceResolution, NoteUrlBase, NotebookStore, ReferenceFailureDetail,
-        StoredNoteAnchor, StoredNoteReference, Viewer, extract_stored_note_anchors,
-        extract_stored_note_references, render_note_html,
+        NotePermission, NoteReferenceResolution, NoteUrlBase, NotebookStore,
+        ReferenceFailureDetail, StoredNoteAnchor, StoredNoteReference, Viewer,
+        extract_stored_note_anchors, extract_stored_note_references, render_note_html,
     };
 
     async fn insert_note(store: &NotebookStore, note_id: &str) {
@@ -885,6 +907,15 @@ mod tests {
             .expect("read title")
             .get("title");
         assert_eq!(title, "Initial title");
+        let creator_permission: i64 =
+            sqlx::query("SELECT permission FROM note_acl WHERE note_id = ? AND user_id = ?")
+                .bind(note_id)
+                .bind("01800000-0000-7000-8000-000000000003")
+                .fetch_one(store.pool())
+                .await
+                .expect("read creator permission")
+                .get("permission");
+        assert_eq!(creator_permission, NotePermission::Admin as i64);
         let anchor_count: i64 =
             sqlx::query("SELECT COUNT(*) AS count FROM note_anchors WHERE note_id = ?")
                 .bind(note_id)
