@@ -311,6 +311,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/health", get(health))
         .route("/api/v1/notes/{note_id}/source", get(note_source))
         .route("/api/v1/notes/{note_id}/source", put(update_note_source))
+        .route("/api/v1/notes", post(create_note))
         .route("/auth/oidc/login", get(begin_oidc_login))
         .route("/auth/oidc/callback", get(complete_oidc_login))
         .route("/auth/logout", post(logout))
@@ -406,6 +407,50 @@ async fn update_note_source(
     .await
     .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn create_note(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    source: String,
+) -> Result<Response, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let projection = marginalis_asciidoc::parse_note_projection(&source)
+        .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "note source is invalid"))?;
+    if projection.owner_id != actor.user_id {
+        return Err(ApiError::new(
+            ApiErrorCode::Forbidden,
+            "note creator does not match the authenticated user",
+        ));
+    }
+    if state
+        .sources
+        .read(projection.note_id)
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note creation is unavailable"))?
+        .is_some()
+    {
+        return Err(ApiError::new(ApiErrorCode::Conflict, "note already exists"));
+    }
+    let note_id = projection.note_id.to_string();
+    let projections = state.database.note_projection_store();
+    let journal = state.database.operation_journal();
+    NoteWriteService::new(
+        &state.sources,
+        &projections,
+        &journal,
+        &SystemRandom,
+        &SystemClock,
+    )
+    .replace(NoteOperationKind::Create, projection, source.into_bytes())
+    .await
+    .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note creation is unavailable"))?;
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::LOCATION,
+        HeaderValue::from_str(&format!("/api/v1/notes/{note_id}/source"))
+            .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note creation is unavailable"))?,
+    );
+    Ok((StatusCode::CREATED, headers).into_response())
 }
 
 async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, ApiError> {
