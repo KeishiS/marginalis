@@ -2,7 +2,18 @@
 
 use core::fmt;
 
-use openidconnect::{ClientId, ClientSecret, IssuerUrl, RedirectUrl};
+use marginalis_application::{
+    Clock, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService,
+    Random,
+};
+use marginalis_domain::{OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
+use openidconnect::{
+    AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
+    EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
+    TokenResponse,
+    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    reqwest,
+};
 use url::Url;
 
 #[derive(Clone)]
@@ -92,6 +103,171 @@ fn cookie_path(base_url: &str) -> Result<String, OidcConfigurationError> {
     } else {
         path.into()
     })
+}
+
+/// Discovery済みの外部OIDCクライアント。
+pub type DiscoveredOidcClient = CoreClient<
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>;
+
+/// OIDC providerとの通信を担うadapter。
+///
+/// SQLiteやHTTP frameworkには依存せず、login attemptとidentityの永続化はapplication portを
+/// 通じて行う。
+#[derive(Clone)]
+pub struct OidcAuthentication {
+    client: DiscoveredOidcClient,
+    http_client: reqwest::Client,
+    cookie_path: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OidcDiscoveryError {
+    HttpClient,
+    Discovery,
+}
+
+impl fmt::Display for OidcDiscoveryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::HttpClient => formatter.write_str("OIDC HTTP client could not be initialized"),
+            Self::Discovery => formatter.write_str("OIDC Discovery failed"),
+        }
+    }
+}
+
+impl std::error::Error for OidcDiscoveryError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OidcLoginStartError {
+    Store,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OidcCallbackError {
+    Rejected,
+    Unavailable,
+}
+
+impl OidcAuthentication {
+    pub async fn discover(configuration: &OidcConfiguration) -> Result<Self, OidcDiscoveryError> {
+        let http_client = reqwest::ClientBuilder::new()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| OidcDiscoveryError::HttpClient)?;
+        let metadata =
+            CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
+                .await
+                .map_err(|_| OidcDiscoveryError::Discovery)?;
+        Ok(Self {
+            client: CoreClient::from_provider_metadata(
+                metadata,
+                configuration.client_id().clone(),
+                Some(configuration.client_secret().clone()),
+            )
+            .set_redirect_uri(configuration.redirect_url().clone()),
+            http_client,
+            cookie_path: configuration.cookie_path().into(),
+        })
+    }
+
+    pub fn cookie_path(&self) -> &str {
+        &self.cookie_path
+    }
+
+    pub async fn begin_login<Attempts, Entropy, Time>(
+        &self,
+        attempts: &Attempts,
+        entropy: &Entropy,
+        clock: &Time,
+    ) -> Result<String, OidcLoginStartError>
+    where
+        Attempts: OidcLoginAttemptStore,
+        Entropy: Random,
+        Time: Clock,
+    {
+        let now = clock.now();
+        let pending = OidcLoginAttempt {
+            state: entropy.opaque_token(),
+            nonce: entropy.opaque_token(),
+            pkce_verifier: entropy.opaque_token(),
+            expires_at: UnixMillis::new(now.get() + 10 * 60 * 1_000),
+        };
+        attempts
+            .issue(pending.clone())
+            .await
+            .map_err(|_| OidcLoginStartError::Store)?;
+        let verifier = PkceCodeVerifier::new(pending.pkce_verifier);
+        let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
+        let state = pending.state;
+        let nonce = pending.nonce;
+        let (url, _, _) = self
+            .client
+            .authorize_url(
+                CoreAuthenticationFlow::AuthorizationCode,
+                move || CsrfToken::new(state),
+                move || Nonce::new(nonce),
+            )
+            .set_pkce_challenge(challenge)
+            .add_scope(Scope::new("profile".into()))
+            .add_scope(Scope::new("email".into()))
+            .url();
+        Ok(url.into())
+    }
+
+    pub async fn complete_login<Attempts, Identities, Entropy, Time>(
+        &self,
+        attempts: &Attempts,
+        identities: &Identities,
+        entropy: &Entropy,
+        clock: &Time,
+        code: &str,
+        state: &str,
+    ) -> Result<OidcLoginResult, OidcCallbackError>
+    where
+        Attempts: OidcLoginAttemptStore,
+        Identities: OidcIdentityStore,
+        Entropy: Random,
+        Time: Clock,
+    {
+        let pending = attempts
+            .consume(state.to_owned(), clock.now())
+            .await
+            .map_err(|_| OidcCallbackError::Unavailable)?
+            .ok_or(OidcCallbackError::Rejected)?;
+        let token = self
+            .client
+            .exchange_code(AuthorizationCode::new(code.to_owned()))
+            .map_err(|_| OidcCallbackError::Rejected)?
+            .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
+            .request_async(&self.http_client)
+            .await
+            .map_err(|_| OidcCallbackError::Rejected)?;
+        let id_token = token.id_token().ok_or(OidcCallbackError::Rejected)?;
+        let claims = id_token
+            .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
+            .map_err(|_| OidcCallbackError::Rejected)?;
+        let subject = claims.subject().as_str().to_owned();
+        let display_name = claims
+            .name()
+            .and_then(|value| value.get(None))
+            .map(|value| value.as_str())
+            .or_else(|| claims.preferred_username().map(|value| value.as_str()))
+            .or_else(|| claims.email().map(|value| value.as_str()))
+            .unwrap_or(&subject)
+            .to_owned();
+        let identity = OidcIdentity::new(claims.issuer().as_str(), subject, display_name)
+            .map_err(|_| OidcCallbackError::Rejected)?;
+        OidcRegistrationService::new(identities, entropy)
+            .register_or_lookup(identity, RegistrationPolicy::default(), clock.now())
+            .await
+            .map_err(|_| OidcCallbackError::Unavailable)
+    }
 }
 
 #[cfg(test)]

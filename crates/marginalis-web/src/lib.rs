@@ -17,7 +17,10 @@ use marginalis_application::{
     OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random, SessionLifetime,
     WebSessionService, WebSessionStore,
 };
-pub use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
+pub use marginalis_auth_oidc::{
+    OidcAuthentication, OidcCallbackError, OidcConfiguration, OidcConfigurationError,
+    OidcDiscoveryError, OidcLoginStartError,
+};
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePermission, OidcIdentity, OidcLoginResult, RegistrationPolicy,
     UnixMillis, UserId,
@@ -50,21 +53,23 @@ pub type DiscoveredOidcClient = CoreClient<
 ///
 /// issuerは起動設定で固定される。Discovery応答に含まれるURLを任意のredirect経由で追わない
 /// ことで、設定されたIdP以外への意図しないリクエストを防ぐ。
+#[allow(dead_code)]
 #[derive(Clone)]
-pub struct OidcAuthentication {
+struct LegacyOidcAuthentication {
     client: DiscoveredOidcClient,
     http_client: reqwest::Client,
     cookie_path: String,
 }
 
 /// OIDC Discoveryの起動時エラー。詳細な応答本文やsecretは公開しない。
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OidcDiscoveryError {
+enum LegacyOidcDiscoveryError {
     HttpClient,
     Discovery,
 }
 
-impl fmt::Display for OidcDiscoveryError {
+impl fmt::Display for LegacyOidcDiscoveryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::HttpClient => formatter.write_str("OIDC HTTP client could not be initialized"),
@@ -73,19 +78,22 @@ impl fmt::Display for OidcDiscoveryError {
     }
 }
 
-impl std::error::Error for OidcDiscoveryError {}
+impl std::error::Error for LegacyOidcDiscoveryError {}
 
-impl OidcAuthentication {
+#[allow(dead_code)]
+impl LegacyOidcAuthentication {
     /// 起動時に一度だけDiscoveryとJWKS取得を行う。
-    pub async fn discover(configuration: &OidcConfiguration) -> Result<Self, OidcDiscoveryError> {
+    pub async fn discover(
+        configuration: &OidcConfiguration,
+    ) -> Result<Self, LegacyOidcDiscoveryError> {
         let http_client = reqwest::ClientBuilder::new()
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|_| OidcDiscoveryError::HttpClient)?;
+            .map_err(|_| LegacyOidcDiscoveryError::HttpClient)?;
         let metadata =
             CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
                 .await
-                .map_err(|_| OidcDiscoveryError::Discovery)?;
+                .map_err(|_| LegacyOidcDiscoveryError::Discovery)?;
         Ok(Self {
             client: CoreClient::from_provider_metadata(
                 metadata,
@@ -110,7 +118,7 @@ impl OidcAuthentication {
     pub async fn begin_login(
         &self,
         database: &SqliteDatabase,
-    ) -> Result<String, OidcLoginStartError> {
+    ) -> Result<String, LegacyOidcLoginStartError> {
         let clock = SystemClock;
         let random = SystemRandom;
         let now = clock.now();
@@ -124,7 +132,7 @@ impl OidcAuthentication {
             .oidc_login_attempt_store()
             .issue(pending.clone())
             .await
-            .map_err(|_| OidcLoginStartError::Store)?;
+            .map_err(|_| LegacyOidcLoginStartError::Store)?;
         let verifier = PkceCodeVerifier::new(pending.pkce_verifier);
         let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
         let state = pending.state;
@@ -148,7 +156,7 @@ impl OidcAuthentication {
         database: &SqliteDatabase,
         code: &str,
         state: &str,
-    ) -> Result<OidcLoginResult, OidcCallbackError> {
+    ) -> Result<OidcLoginResult, LegacyOidcCallbackError> {
         let clock = SystemClock;
         let random = SystemRandom;
         let now = clock.now();
@@ -156,20 +164,20 @@ impl OidcAuthentication {
             .oidc_login_attempt_store()
             .consume(state.to_owned(), now)
             .await
-            .map_err(|_| OidcCallbackError::Unavailable)?
-            .ok_or(OidcCallbackError::Rejected)?;
+            .map_err(|_| LegacyOidcCallbackError::Unavailable)?
+            .ok_or(LegacyOidcCallbackError::Rejected)?;
         let token = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_owned()))
-            .map_err(|_| OidcCallbackError::Rejected)?
+            .map_err(|_| LegacyOidcCallbackError::Rejected)?
             .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
             .request_async(&self.http_client)
             .await
-            .map_err(|_| OidcCallbackError::Rejected)?;
-        let id_token = token.id_token().ok_or(OidcCallbackError::Rejected)?;
+            .map_err(|_| LegacyOidcCallbackError::Rejected)?;
+        let id_token = token.id_token().ok_or(LegacyOidcCallbackError::Rejected)?;
         let claims = id_token
             .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
-            .map_err(|_| OidcCallbackError::Rejected)?;
+            .map_err(|_| LegacyOidcCallbackError::Rejected)?;
         let subject = claims.subject().as_str().to_owned();
         let display_name = claims
             .name()
@@ -180,21 +188,23 @@ impl OidcAuthentication {
             .unwrap_or(&subject)
             .to_owned();
         let identity = OidcIdentity::new(claims.issuer().as_str(), subject, display_name)
-            .map_err(|_| OidcCallbackError::Rejected)?;
+            .map_err(|_| LegacyOidcCallbackError::Rejected)?;
         OidcRegistrationService::new(&database.oidc_identity_store(), &random)
             .register_or_lookup(identity, RegistrationPolicy::default(), now)
             .await
-            .map_err(|_| OidcCallbackError::Unavailable)
+            .map_err(|_| LegacyOidcCallbackError::Unavailable)
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OidcLoginStartError {
+enum LegacyOidcLoginStartError {
     Store,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OidcCallbackError {
+enum LegacyOidcCallbackError {
     Rejected,
     Unavailable,
 }
@@ -531,7 +541,11 @@ async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, Api
         "authentication is not configured",
     ))?;
     let destination = oidc
-        .begin_login(&state.database)
+        .begin_login(
+            &state.database.oidc_login_attempt_store(),
+            &SystemRandom,
+            &SystemClock,
+        )
         .await
         .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
     Ok(Redirect::temporary(&destination))
@@ -565,7 +579,14 @@ async fn complete_oidc_login(
         ));
     };
     let OidcLoginResult::Active(user) = oidc
-        .complete_login(&state.database, code, state_token)
+        .complete_login(
+            &state.database.oidc_login_attempt_store(),
+            &state.database.oidc_identity_store(),
+            &SystemRandom,
+            &SystemClock,
+            code,
+            state_token,
+        )
         .await
         .map_err(|error| match error {
             OidcCallbackError::Rejected => ApiError::new(
@@ -599,7 +620,8 @@ async fn complete_oidc_login(
         .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
     let cookie = format!(
         "marginalis_session={}; Path={}; Secure; HttpOnly; SameSite=Lax",
-        session.session_id, oidc.cookie_path
+        session.session_id,
+        oidc.cookie_path()
     );
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -609,7 +631,8 @@ async fn complete_oidc_login(
     );
     let csrf_cookie = format!(
         "marginalis_csrf={}; Path={}; Secure; SameSite=Lax",
-        session.csrf_token, oidc.cookie_path
+        session.csrf_token,
+        oidc.cookie_path()
     );
     headers.append(
         header::SET_COOKIE,
@@ -618,7 +641,7 @@ async fn complete_oidc_login(
     );
     Ok((
         headers,
-        Redirect::to(&format!("{}/", oidc.cookie_path.trim_end_matches('/'))),
+        Redirect::to(&format!("{}/", oidc.cookie_path().trim_end_matches('/'))),
     )
         .into_response())
 }

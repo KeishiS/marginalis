@@ -1084,6 +1084,8 @@ dependencies = [
 name = "marginalis-auth-oidc"
 version = "0.1.0"
 dependencies = [
+ "marginalis-application",
+ "marginalis-domain",
  "openidconnect",
  "url",
 ]
