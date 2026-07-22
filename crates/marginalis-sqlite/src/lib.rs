@@ -917,9 +917,9 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::{
-        JournalEntry, NoteAclStore, NoteOperationKind, NoteProjectionStore, OidcIdentityStore,
-        OidcLoginAttempt, OidcLoginAttemptStore, OperationId, OperationJournal, OperationState,
-        RootCredentialStore,
+        JournalEntry, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind,
+        NoteProjectionStore, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore,
+        OperationId, OperationJournal, OperationState, RootCredentialStore,
     };
     use marginalis_domain::{
         Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteReference, OidcIdentity,
@@ -1195,8 +1195,13 @@ mod tests {
         let owner_id = UserId::new(
             EntityId::from_str("01800000-0000-7000-8000-000000000031").expect("UUIDv7"),
         );
+        let other_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000032").expect("UUIDv7"),
+        );
         sqlx::query("INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms) VALUES (?, 'oidc', 'active', 'User', 0, 0)")
             .bind(owner_id.to_string()).execute(database.pool()).await.expect("owner");
+        sqlx::query("INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms) VALUES (?, 'oidc', 'active', 'User', 0, 0)")
+            .bind(other_id.to_string()).execute(database.pool()).await.expect("other user");
         database
             .note_projection_store()
             .replace_projection(
@@ -1227,6 +1232,20 @@ mod tests {
         assert!(matches!(
             acl.set_permission(note_id, owner_id, None).await,
             Err(NoteAclStoreError::LastAdmin)
+        ));
+        assert!(matches!(
+            NoteAclService::new(&acl)
+                .set_permission(
+                    Actor {
+                        user_id: other_id,
+                        is_root: false
+                    },
+                    note_id,
+                    other_id,
+                    Some(NotePermission::Read),
+                )
+                .await,
+            Err(NoteAclServiceError::Forbidden)
         ));
         assert_eq!(
             acl.permission_for(

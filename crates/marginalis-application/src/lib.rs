@@ -303,6 +303,65 @@ pub trait NoteAclStore: Send + Sync {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
+#[derive(Debug)]
+pub enum NoteAclServiceError {
+    Forbidden,
+    Store(Box<dyn std::error::Error + Send + Sync>),
+}
+
+impl std::fmt::Display for NoteAclServiceError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Forbidden => formatter.write_str("note administration is not permitted"),
+            Self::Store(_) => formatter.write_str("note ACL storage failed"),
+        }
+    }
+}
+
+impl std::error::Error for NoteAclServiceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Forbidden => None,
+            Self::Store(error) => Some(error.as_ref()),
+        }
+    }
+}
+
+/// ACL更新の認可を、HTTPやSQLiteから独立して適用するユースケース。
+pub struct NoteAclService<'a, Store> {
+    store: &'a Store,
+}
+
+impl<'a, Store> NoteAclService<'a, Store>
+where
+    Store: NoteAclStore,
+{
+    pub const fn new(store: &'a Store) -> Self {
+        Self { store }
+    }
+
+    pub async fn set_permission(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        user_id: UserId,
+        permission: Option<NotePermission>,
+    ) -> Result<(), NoteAclServiceError> {
+        let current = self
+            .store
+            .permission_for(actor, note_id)
+            .await
+            .map_err(|error| NoteAclServiceError::Store(Box::new(error)))?;
+        if !actor.is_root && !matches!(current, Some(NotePermission::Admin)) {
+            return Err(NoteAclServiceError::Forbidden);
+        }
+        self.store
+            .set_permission(note_id, user_id, permission)
+            .await
+            .map_err(|error| NoteAclServiceError::Store(Box::new(error)))
+    }
+}
+
 /// ファイル正本、SQLite投影、操作journalを一貫して更新するユースケース。
 pub struct NoteWriteService<'a, Sources, Projections, Journal, Entropy, Time> {
     sources: &'a Sources,
