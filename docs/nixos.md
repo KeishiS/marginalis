@@ -16,7 +16,7 @@
             baseUrl = "https://marginalis.sandi05.com";
             listenAddress = "127.0.0.1:3000";
             oidc = {
-              issuerUrl = "https://id.sandi05.com";
+              issuerUrl = "https://id.sandi05.com/oauth2/openid/marginalis";
               clientId = "marginalis";
               clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
             };

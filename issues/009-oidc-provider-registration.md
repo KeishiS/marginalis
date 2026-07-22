@@ -2,7 +2,7 @@
 
 ## 目的
 
-外部OIDCプロバイダ `https://id.sandi05.com` を用いた、実運用環境でのログインを有効化し、
+KanidmのclientごとのOIDC issuer `https://id.sandi05.com/oauth2/openid/marginalis` を用いた、実運用環境でのログインを有効化し、
 Discovery、Authorization Code Flow with PKCE、ID Token検証およびサーバ側セッションを
 結合試験する。
 
@@ -18,9 +18,15 @@ Discovery、Authorization Code Flow with PKCE、ID Token検証およびサーバ
 Client Secretはデプロイ環境でのみ次の環境変数へ設定する。
 
 ```text
-OIDC_ISSUER_URL=https://id.sandi05.com
+OIDC_ISSUER_URL=https://id.sandi05.com/oauth2/openid/marginalis
 OIDC_CLIENT_ID=marginalis
 OIDC_CLIENT_SECRET=<issued-client-secret>
+```
+
+KanidmのDiscovery URLはissuerの末尾に付加する。
+
+```text
+https://id.sandi05.com/oauth2/openid/marginalis/.well-known/openid-configuration
 ```
 
 ## アプリケーション側の作業
@@ -35,7 +41,7 @@ OIDC_CLIENT_SECRET=<issued-client-secret>
 
 ## 完了条件
 
-- `https://id.sandi05.com`で登録したClientからログインとログアウトができる。
+- `https://id.sandi05.com/oauth2/openid/marginalis`で登録したClientからログインとログアウトができる。
 - Base URLがサブパスを含む場合もredirect URIとCookie Pathが一致する。
 - `open`、`approval`および`invite-only`の各登録ポリシーで期待どおりに扱われる。
 - token、secret、authorization code、state、nonce、PKCE verifierがログまたはSQLiteの

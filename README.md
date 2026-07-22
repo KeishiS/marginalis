@@ -22,7 +22,7 @@ cargo make verify
 | `MARGINALIS_BASE_URL` | 必須 | 公開Base URL。現在は`https://marginalis.sandi05.com`。 |
 | `MARGINALIS_LISTEN_ADDR` | 必須 | HTTP待受アドレス。例: `127.0.0.1:3000`。 |
 | `MARGINALIS_DATA_DIR` | 必須 | AsciiDoc正本とSQLite DBを置く永続ディレクトリ。 |
-| `OIDC_ISSUER_URL` | 必須 | OIDC issuer。現在は`https://id.sandi05.com`。 |
+| `OIDC_ISSUER_URL` | 必須 | OIDC issuer。Kanidmのclientごとのissuerとして`https://id.sandi05.com/oauth2/openid/marginalis`を設定する。 |
 | `OIDC_CLIENT_ID` | 必須 | OIDC Client ID。現在は`marginalis`。 |
 | `OIDC_CLIENT_SECRET` | 必須 | OIDC Client Secret。secret管理機構から環境変数へ注入する。 |
 | `OIDC_CLIENT_SECRET_FILE` | 代替 | `OIDC_CLIENT_SECRET`の代わりに、secretだけを含むファイルを指定する。 |

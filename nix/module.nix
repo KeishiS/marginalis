@@ -56,7 +56,7 @@ in
       issuerUrl = mkOption {
         type = types.nullOr types.str;
         default = null;
-        example = "https://id.sandi05.com";
+        example = "https://id.sandi05.com/oauth2/openid/marginalis";
         description = "OIDC issuer URL.";
       };
 
