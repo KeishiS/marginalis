@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "adocweave"
-version = "0.1.0-rc.1"
-source = "git+https://github.com/KeishiS/AdocWeave.git?rev=72ad5a677e179448b4de7f524710f4e455aa163d#72ad5a677e179448b4de7f524710f4e455aa163d"
+version = "0.1.0-rc.3"
+source = "git+https://github.com/KeishiS/AdocWeave.git?rev=f4ef9f995b909833b43e7e33d686c4de5319165b#f4ef9f995b909833b43e7e33d686c4de5319165b"
 dependencies = [
  "serde",
  "serde_json",
@@ -14,8 +14,8 @@ dependencies = [
 
 [[package]]
 name = "adocweave-wasm"
-version = "0.1.0-rc.1"
-source = "git+https://github.com/KeishiS/AdocWeave.git?rev=72ad5a677e179448b4de7f524710f4e455aa163d#72ad5a677e179448b4de7f524710f4e455aa163d"
+version = "0.1.0-rc.3"
+source = "git+https://github.com/KeishiS/AdocWeave.git?rev=f4ef9f995b909833b43e7e33d686c4de5319165b#f4ef9f995b909833b43e7e33d686c4de5319165b"
 dependencies = [
  "adocweave",
  "js-sys",

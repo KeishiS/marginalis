@@ -8,8 +8,8 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-adocweave = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "72ad5a677e179448b4de7f524710f4e455aa163d", package = "adocweave" }
-adocweave-wasm = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "72ad5a677e179448b4de7f524710f4e455aa163d", package = "adocweave-wasm" }
+adocweave = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "f4ef9f995b909833b43e7e33d686c4de5319165b", package = "adocweave" }
+adocweave-wasm = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "f4ef9f995b909833b43e7e33d686c4de5319165b", package = "adocweave-wasm" }
 unicode-normalization = "0.1.25"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "sync"] }

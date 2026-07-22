@@ -1,5 +1,11 @@
 # Proposal: successful reference resolutions with structured notices
 
+## Status
+
+AdocWeave RC.3 provides `ResolutionNoticeKind::Fallback` on successful resolved references and
+preserves it across native/WASM rendering and projection. Notice messages remain host-owned, so
+this draft's requested host-supplied message field is no longer required for the application.
+
 ## Problem
 
 Some hosts resolve a reference successfully with a safe fallback, for example by linking to a

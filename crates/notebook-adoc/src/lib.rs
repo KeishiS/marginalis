@@ -12,12 +12,15 @@ use adocweave::inline::{Inline, MathLanguage, ReferenceDestination};
 use adocweave::limits::SyntaxMode;
 use adocweave::parser::{AstBlock, DelimitedContent, HeadingKind};
 use adocweave::preprocessor::discover_includes;
+use adocweave::projection::{FormulaKind, project};
+use adocweave::render::RenderInputs;
 use adocweave::source::{TextRange, TextSize};
+use adocweave::url::UrlContext;
 use adocweave::walker::{SemanticNode, walk};
 use unicode_normalization::UnicodeNormalization;
 
 /// 採用したAdocWeaveソースcommit。
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "72ad5a677e179448b4de7f524710f4e455aa163d";
+pub const ADOCWEAVE_SOURCE_REVISION: &str = "f4ef9f995b909833b43e7e33d686c4de5319165b";
 
 /// 初期リリースでシンタックスハイライト対象として受理するsource block言語。
 pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
@@ -46,11 +49,11 @@ pub struct AdocWeaveContracts {
 /// 現在固定しているAdocWeaveリリース契約。
 pub const PINNED_CONTRACTS: AdocWeaveContracts = AdocWeaveContracts {
     core_profile: 1,
-    core_api: 1,
-    html: 1,
-    projection: 1,
-    conformance: 1,
-    wasm_api: 1,
+    core_api: 2,
+    html: 2,
+    projection: 2,
+    conformance: 2,
+    wasm_api: 2,
 };
 
 /// 実際にlinkされたAdocWeaveの契約。
@@ -216,6 +219,7 @@ pub enum NoteContentErrorCode {
     BlockPassthrough,
     DuplicateAnchor,
     InvalidUrlScheme,
+    ResourceDisabled,
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
 }
@@ -228,6 +232,7 @@ impl NoteContentErrorCode {
             Self::BlockPassthrough => "block-passthrough-disabled",
             Self::DuplicateAnchor => "duplicate-anchor",
             Self::InvalidUrlScheme => "invalid-url-scheme",
+            Self::ResourceDisabled => "resource-disabled",
             Self::UnsupportedMathLanguage => "unsupported-math-language",
             Self::UnsupportedSourceLanguage => "unsupported-source-language",
         }
@@ -325,6 +330,15 @@ pub fn validate_note_content_profile_with(
             range: request.range,
         })
         .collect::<Vec<_>>();
+    errors.extend(
+        analysis
+            .resource_queries()
+            .into_iter()
+            .map(|query| NoteContentError {
+                code: NoteContentErrorCode::ResourceDisabled,
+                range: query.reference.range,
+            }),
+    );
     walk(analysis.ast(), |node| match node {
         SemanticNode::Inline(Inline::Passthrough { range, .. }) => errors.push(NoteContentError {
             code: NoteContentErrorCode::InlinePassthrough,
@@ -364,7 +378,9 @@ pub fn validate_note_content_profile_with(
                 });
             }
         }
-        SemanticNode::Inline(Inline::Link(link)) if !render_policy.allows_url(&link.target) => {
+        SemanticNode::Inline(Inline::Link(link))
+            if !render_policy.allows_url(&link.target, UrlContext::AuthoredLink) =>
+        {
             errors.push(NoteContentError {
                 code: NoteContentErrorCode::InvalidUrlScheme,
                 range: link.target_range,
@@ -385,32 +401,22 @@ pub fn validate_note_content_profile_with(
     errors
 }
 
-/// AdocWeaveのASTから、検索・安全な数式表示に使うLaTeX数式を抽出する。
+/// AdocWeaveの標準projectionから、検索・安全な数式表示に使うLaTeX数式を抽出する。
 pub fn extract_note_math(analysis: &adocweave::Analysis) -> Vec<NoteMathProjection> {
-    let mut math = Vec::new();
-    walk(analysis.ast(), |node| match node {
-        SemanticNode::Inline(Inline::Formula(formula))
-            if formula.language == MathLanguage::Latex =>
-        {
-            math.push(NoteMathProjection {
-                range: formula.range,
-                content_range: formula.content_range,
-                display: NoteMathDisplay::Inline,
-                source: formula.value.clone(),
-            });
-        }
-        SemanticNode::Block(AstBlock::Math(block)) if block.language == MathLanguage::Latex => {
-            math.push(NoteMathProjection {
-                range: block.range,
-                content_range: block.content_range,
-                display: NoteMathDisplay::Block,
-                source: block.value.clone(),
-            });
-        }
-        _ => {}
-    });
-    math.sort_by_key(|projection| (projection.range.start(), projection.range.end()));
-    math
+    project(analysis, &RenderInputs::default())
+        .formulas
+        .into_iter()
+        .filter(|formula| formula.language == MathLanguage::Latex)
+        .map(|formula| NoteMathProjection {
+            range: formula.source_range,
+            content_range: formula.content_range,
+            display: match formula.kind {
+                FormulaKind::Inline => NoteMathDisplay::Inline,
+                FormulaKind::Block => NoteMathDisplay::Block,
+            },
+            source: formula.source,
+        })
+        .collect()
 }
 
 impl NoteProfileErrorCode {
@@ -868,6 +874,20 @@ mod tests {
         assert!(codes.contains(&NoteContentErrorCode::IncludeDirective));
         assert!(codes.contains(&NoteContentErrorCode::InlinePassthrough));
         assert!(codes.contains(&NoteContentErrorCode::BlockPassthrough));
+    }
+
+    #[test]
+    fn rejects_resource_macros() {
+        let analysis = Engine::new(Default::default())
+            .analyze("image::https://example.com/private.png[]\n")
+            .expect("recoverable AsciiDoc");
+
+        let errors = validate_note_content_profile(&analysis);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteContentErrorCode::ResourceDisabled)
+        );
     }
 
     #[test]

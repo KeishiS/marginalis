@@ -31,10 +31,12 @@ xref:note:01800000-0000-7000-8000-000000000001#definition[定義]
 | 本アプリのアダプタ | UUIDv7を検証し、現在の利用者のACLで対象とアンカーを照会する。許可された場合は`<Base URL>/note/01800000-0000-7000-8000-000000000001#definition`を解決結果として作る。 |
 | AsciiDocライブラリ | 入力された解決結果だけを用いて`<a href="…">定義</a>`を描画する。 |
 
-対象が閲覧不能または不在なら、アダプタは同じ一般的な「未解決」結果を返す。ライブラリはhrefを
-出力せず、対象ID、タイトル、ACL状態を新たに表示しない。アンカーだけが不在なら、アダプタは
+対象が閲覧不能または不在なら、アダプタは同じ一般的な「未解決」結果を返す。RC.3の
+`UnresolvedReferencePresentation::Hidden`により、ライブラリはhref、対象ID、タイトルおよび
+ACL状態を出力しない。アンカーだけが不在なら、アダプタは
 `<Base URL>/note/<UUID>`を解決結果として返し、アプリはフォールバック状態と閲覧用warningを
-記録する。空labelは許可された解決先のタイトルへ置換し、未解決時にはノートIDを表示しない。
+記録する。空labelを許可された解決先のタイトルへ置換する表示上書きは、RC.3には未提供であり、
+上流提案として残す。未解決時にはノートIDを表示しない。
 
 ### 外部リンク
 
@@ -70,13 +72,13 @@ let answer = 42;
 | --- | --- | --- |
 | 解析 | 文書ヘッダ、属性、ブロック、インライン、アンカーおよびUTF-8 byte rangeを持つAST・診断 | `note-id`等をAST後に検証し、保存時strict／編集時permissiveの診断へ変換する。 |
 | 参照 | `xref`の参照先をscheme、locator、anchorに分解し、範囲付きで列挙するAPI | schemeが`note`である参照だけをUUIDv7検証し、各位置を投影へ保存する。 |
-| 参照解決 | 参照先の解決結果または失敗を、解析と別に描画へ渡すResolver／render input API | SQLiteとACLで解決し、`<Base URL>/note/<uuid>`、Resolver由来の表示ラベルおよびnoticeを渡す。権限なしは対象不在と同じ失敗へ畳み込む。 |
+| 参照解決 | 参照先の解決結果または失敗を、解析と別に描画へ渡すResolver／render input API | SQLiteとACLで解決し、`<Base URL>/note/<uuid>`とtyped noticeを渡す。権限なしは対象不在と同じ失敗へ畳み込む。表示ラベル上書きは未提供。 |
 | URL policy | scheme allowlist、control文字・難読化拒否、入力URLとResolver出力URLを区別できる安全なポリシー | 入力には`http`／`https`だけを許可し、Resolver出力には検証済みの絶対HTTPS URLだけを許可する。 |
-| HTML描画 | HTML allowlist、属性のエスケープ、リンク属性の固定または描画フック | 外部リンクだけへ`target="_blank" rel="noopener noreferrer"`を固定し、内部リンクには付けない。raw HTML、style、event handler、SVGを出力させない。 |
-| リソース | `include`、画像、添付および外部リソースを構文・解決段階で無効化する設定 | include、外部画像、添付参照および代理取得を無効化し、解析中のI/Oを発生させない。 |
-| STEM | 標準`stem`構文をASTまたは安全にエスケープされた出力へ保持するAPI | `:stem: latexmath`だけを許可し、KaTeX等は別のサニタイズ済み表示境界で処理する。 |
-| ソースコード | source blockの言語と内容を分離し、言語classを制限できる描画API | `rust`、`typescript`、`javascript`、`json`、`yaml`、`toml`、`bash`、`sql`および`text`だけをハイライターへ渡す。言語なしはプレーンテキストとし、コードを実行しない。 |
-| 投影 | 可読テキスト、見出し、コード、数式、参照を同一解析revisionから取得するAPI | 検索、グラフ、逆参照を再解析なしでSQLiteへ保存する。 |
+| HTML描画 | HTML allowlist、属性のエスケープ、リンク属性の固定または描画フック | `ExternalLinkPresentation`により外部リンクだけへ`target="_blank" rel="noopener noreferrer"`を固定する。raw HTML、style、event handler、SVGを出力させない。 |
+| リソース | `ResourceCapabilities`および構文・解決段階で無効化する設定 | include、画像、添付参照および代理取得を無効化し、解析中のI/Oを発生させない。 |
+| STEM | 標準`stem`構文をASTまたは安全にエスケープされた出力へ保持するAPI | `MathLanguagePolicy`で`latexmath`だけを許可し、KaTeX等は別のサニタイズ済み表示境界で処理する。 |
+| ソースコード | source blockの言語と内容を分離し、言語classを制限できる描画API | `SourceLanguagePolicy`で`rust`、`typescript`、`javascript`、`json`、`yaml`、`toml`、`bash`、`sql`および`text`だけをハイライターへ渡す。言語なしはプレーンテキストとし、コードを実行しない。 |
+| 投影 | 可読テキスト、見出し、コード、数式、参照を同一解析revisionから取得するAPI | `DocumentProjection`から検索、グラフ、逆参照を再解析なしでSQLiteへ保存する。 |
 | 整形・LSP・WASM | Formatter、位置変換、同一プロファイルで動くLSP/WASM境界 | 保存検証、編集診断、ブラウザプレビューで同じ規則とfixtureを使う。 |
 
 ## 実装方針

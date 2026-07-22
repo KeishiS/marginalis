@@ -11,14 +11,52 @@ use tokio::sync::Mutex;
 use url::Url;
 
 use adocweave::{
-    html::{HtmlOutput, RenderPolicy, render_with_inputs},
-    reference::{ResolutionFailureKind, ResolvedReference, ResolverFailure},
+    html::{
+        ExternalLinkPresentation, HtmlOutput, MathLanguagePolicy, RenderPolicy,
+        ResourceCapabilities, SourceLanguagePolicy, UnknownSourceLanguage,
+        UnresolvedReferencePresentation, render_with_inputs,
+    },
+    inline::MathLanguage,
+    reference::{
+        ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind, ResolvedReference,
+        ResolverFailure,
+    },
     render::RenderInputs,
     source::TextRange,
 };
 use notebook_adoc::{
-    NoteContentError, NoteReferenceError, extract_note_references, validate_note_content_profile,
+    DEFAULT_SOURCE_LANGUAGES, NoteContentError, NoteReferenceError, extract_note_references,
+    validate_note_content_profile,
 };
+
+/// ノート表示に固定するAdocWeaveの汎用描画policy。
+///
+/// ここで許可するのは標準AsciiDocの表示上の選択だけであり、UUID、ACL、Base URLなどの
+/// アプリ固有の判断はこの外側のResolverが担う。
+fn note_render_policy() -> RenderPolicy {
+    RenderPolicy {
+        external_links: ExternalLinkPresentation::NewContext { noreferrer: true },
+        source_languages: SourceLanguagePolicy {
+            allowed: Some(
+                DEFAULT_SOURCE_LANGUAGES
+                    .iter()
+                    .map(|language| (*language).to_owned())
+                    .collect(),
+            ),
+            unknown: UnknownSourceLanguage::Diagnostic,
+        },
+        math_languages: MathLanguagePolicy {
+            allowed: [MathLanguage::Latex].into_iter().collect(),
+        },
+        // 権限なしと対象不在では、xref本文・labelともに出力しない。
+        unresolved_references: UnresolvedReferencePresentation::Hidden,
+        resources: ResourceCapabilities {
+            images: false,
+            media: false,
+        },
+        ..RenderPolicy::default()
+    }
+}
 
 /// ノート参照を解決する利用者の認可済み文脈。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -207,7 +245,7 @@ pub fn render_note_html(
     }
     let mut output = render_with_inputs(
         analysis.ast(),
-        &RenderPolicy::default(),
+        &note_render_policy(),
         &resolved.render_inputs,
     );
     for presentation in resolved.presentations.values() {
@@ -531,7 +569,13 @@ impl NotebookStore {
                             }),
                         },
                     );
-                    render_references.push(ResolvedReference::resolved(reference.range, href));
+                    render_references.push(ResolvedReference::resolved_with_notices(
+                        reference.range,
+                        href,
+                        vec![ResolutionNotice {
+                            kind: ResolutionNoticeKind::Fallback,
+                        }],
+                    ));
                 }
                 NoteReferenceResolution::NotFound { .. } => {
                     render_references.push(ResolvedReference::failed(
@@ -555,7 +599,10 @@ impl NotebookStore {
 mod tests {
     use adocweave::{
         Engine,
-        reference::{ResolutionFailureKind, ResolutionOutcome, ResolverFailure},
+        reference::{
+            ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind, ResolutionOutcome,
+            ResolverFailure,
+        },
         render::RenderInputs,
     };
     use sqlx::Row;
@@ -800,7 +847,8 @@ mod tests {
             .expect("grant reader");
         let analysis = Engine::new(Default::default())
             .analyze(&format!(
-                "xref:note:{visible}#missing[] xref:note:{private}[秘匿]\n"
+                "xref:note:{visible}#missing[] xref:note:{private}[秘匿]\n\n\
+                 https://example.com[external]\n"
             ))
             .expect("valid AsciiDoc");
         let viewer = Viewer {
@@ -832,7 +880,10 @@ mod tests {
         assert_eq!(
             result.render_inputs.references()[0].outcome,
             ResolutionOutcome::Resolved {
-                href: format!("https://notebook.example/app/note/{visible}")
+                href: format!("https://notebook.example/app/note/{visible}"),
+                notices: vec![ResolutionNotice {
+                    kind: ResolutionNoticeKind::Fallback,
+                }],
             }
         );
         assert_eq!(
@@ -849,6 +900,9 @@ mod tests {
         );
         assert!(html.html.contains("note-reference-warning"));
         assert!(html.html.contains("missing-reference-anchor"));
+        assert!(!html.html.contains(private));
+        assert!(html.html.contains("target=\"_blank\""));
+        assert!(html.html.contains("rel=\"noopener noreferrer\""));
     }
 
     #[test]

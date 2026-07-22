@@ -1,5 +1,11 @@
 # Proposal: resolver-provided display text and safe unresolved fallback
 
+## Status
+
+AdocWeave RC.3 adds `UnresolvedReferencePresentation` (`Target`、`LabelOnly`、`Hidden`) and
+therefore provides a safe non-disclosing fallback policy. Resolver-provided display text for an
+empty authored label remains unavailable; this proposal is retained for that part only.
+
 ## Problem
 
 When an `xref` has an empty label, rendering the raw scheme locator can disclose an internal
