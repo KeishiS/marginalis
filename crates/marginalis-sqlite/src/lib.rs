@@ -4,13 +4,13 @@ use std::{fmt, future::Future, str::FromStr, time::Duration};
 
 use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use marginalis_application::{
-    AuthenticatedSession, JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore,
-    OidcLoginAttempt, OidcLoginAttemptStore, OperationId, OperationJournal, OperationState,
-    RootCredentialStore, WebSession, WebSessionStore,
+    AuthenticatedSession, JournalEntry, NoteAclStore, NoteOperationKind, NoteProjectionStore,
+    OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OperationId, OperationJournal,
+    OperationState, RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, OidcUser,
-    RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, OidcIdentity, OidcLoginResult,
+    OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -44,6 +44,36 @@ pub struct SqliteOidcIdentityStore {
 #[derive(Clone, Debug)]
 pub struct SqliteNoteProjectionStore {
     pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SqliteNoteAclStore {
+    pool: SqlitePool,
+}
+
+#[derive(Debug)]
+pub enum NoteAclStoreError {
+    Database(sqlx::Error),
+    InvalidPermission,
+    LastAdmin,
+}
+impl fmt::Display for NoteAclStoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("note ACL query failed")
+    }
+}
+impl std::error::Error for NoteAclStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+impl From<sqlx::Error> for NoteAclStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -266,6 +296,12 @@ impl SqliteDatabase {
         }
     }
 
+    pub fn note_acl_store(&self) -> SqliteNoteAclStore {
+        SqliteNoteAclStore {
+            pool: self.pool.clone(),
+        }
+    }
+
     pub fn web_session_store(&self) -> SqliteWebSessionStore {
         SqliteWebSessionStore {
             pool: self.pool.clone(),
@@ -282,6 +318,86 @@ impl SqliteDatabase {
         SqliteRootCredentialStore {
             pool: self.pool.clone(),
         }
+    }
+}
+
+impl NoteAclStore for SqliteNoteAclStore {
+    type Error = NoteAclStoreError;
+    fn permission_for(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> impl Future<Output = Result<Option<NotePermission>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            if actor.is_root {
+                return Ok(Some(NotePermission::Admin));
+            }
+            let value =
+                sqlx::query("SELECT permission FROM note_acl WHERE note_id = ? AND user_id = ?")
+                    .bind(note_id.to_string())
+                    .bind(actor.user_id.to_string())
+                    .fetch_optional(&pool)
+                    .await?
+                    .map(|row| row.try_get::<i64, _>("permission"))
+                    .transpose()?;
+            value.map(permission_from_storage).transpose()
+        }
+    }
+    fn set_permission(
+        &self,
+        note_id: NoteId,
+        user_id: UserId,
+        permission: Option<NotePermission>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let mut transaction = pool.begin().await?;
+            let current =
+                sqlx::query("SELECT permission FROM note_acl WHERE note_id = ? AND user_id = ?")
+                    .bind(note_id.to_string())
+                    .bind(user_id.to_string())
+                    .fetch_optional(&mut *transaction)
+                    .await?
+                    .map(|row| row.try_get::<i64, _>("permission"))
+                    .transpose()?;
+            if current == Some(3) && permission != Some(NotePermission::Admin) {
+                let count: i64 = sqlx::query(
+                    "SELECT COUNT(*) AS count FROM note_acl WHERE note_id = ? AND permission = 3",
+                )
+                .bind(note_id.to_string())
+                .fetch_one(&mut *transaction)
+                .await?
+                .try_get("count")?;
+                if count <= 1 {
+                    return Err(NoteAclStoreError::LastAdmin);
+                }
+            }
+            match permission {
+                Some(value) => sqlx::query("INSERT INTO note_acl(note_id, user_id, permission) VALUES (?, ?, ?) ON CONFLICT(note_id, user_id) DO UPDATE SET permission = excluded.permission")
+                    .bind(note_id.to_string()).bind(user_id.to_string()).bind(permission_to_storage(value)).execute(&mut *transaction).await?,
+                None => sqlx::query("DELETE FROM note_acl WHERE note_id = ? AND user_id = ?")
+                    .bind(note_id.to_string()).bind(user_id.to_string()).execute(&mut *transaction).await?,
+            };
+            transaction.commit().await?;
+            Ok(())
+        }
+    }
+}
+
+fn permission_to_storage(value: NotePermission) -> i64 {
+    match value {
+        NotePermission::Read => 1,
+        NotePermission::Write => 2,
+        NotePermission::Admin => 3,
+    }
+}
+fn permission_from_storage(value: i64) -> Result<NotePermission, NoteAclStoreError> {
+    match value {
+        1 => Ok(NotePermission::Read),
+        2 => Ok(NotePermission::Write),
+        3 => Ok(NotePermission::Admin),
+        _ => Err(NoteAclStoreError::InvalidPermission),
     }
 }
 
@@ -801,12 +917,13 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::{
-        JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore, OidcLoginAttempt,
-        OidcLoginAttemptStore, OperationId, OperationJournal, OperationState, RootCredentialStore,
+        JournalEntry, NoteAclStore, NoteOperationKind, NoteProjectionStore, OidcIdentityStore,
+        OidcLoginAttempt, OidcLoginAttemptStore, OperationId, OperationJournal, OperationState,
+        RootCredentialStore,
     };
     use marginalis_domain::{
-        EntityId, NoteId, NoteProjection, NoteReference, OidcIdentity, OidcLoginResult,
-        RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+        Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteReference, OidcIdentity,
+        OidcLoginResult, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
     };
     use sqlx::Row;
 
@@ -1065,5 +1182,63 @@ mod tests {
             .try_get("password_hash")
             .expect("hash");
         assert_ne!(hash, "not-a-hash");
+    }
+
+    #[tokio::test]
+    async fn acl_keeps_the_last_administrator_and_bypasses_for_root() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let note_id = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000030").expect("UUIDv7"),
+        );
+        let owner_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000031").expect("UUIDv7"),
+        );
+        sqlx::query("INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms) VALUES (?, 'oidc', 'active', 'User', 0, 0)")
+            .bind(owner_id.to_string()).execute(database.pool()).await.expect("owner");
+        database
+            .note_projection_store()
+            .replace_projection(
+                NoteProjection {
+                    note_id,
+                    owner_id,
+                    title: "ACL".into(),
+                    anchors: Vec::new(),
+                    references: Vec::new(),
+                },
+                SourceRevision::from_source(b"= ACL\n"),
+            )
+            .await
+            .expect("note");
+        let acl = database.note_acl_store();
+        assert_eq!(
+            acl.permission_for(
+                Actor {
+                    user_id: owner_id,
+                    is_root: false
+                },
+                note_id
+            )
+            .await
+            .expect("permission"),
+            Some(NotePermission::Admin)
+        );
+        assert!(matches!(
+            acl.set_permission(note_id, owner_id, None).await,
+            Err(NoteAclStoreError::LastAdmin)
+        ));
+        assert_eq!(
+            acl.permission_for(
+                Actor {
+                    user_id: owner_id,
+                    is_root: true
+                },
+                note_id
+            )
+            .await
+            .expect("root"),
+            Some(NotePermission::Admin)
+        );
     }
 }

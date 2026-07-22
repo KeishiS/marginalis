@@ -1,8 +1,8 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, RegistrationPolicy,
-    SourceRevision, UnixMillis, UserId,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, OidcIdentity, OidcLoginResult,
+    RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
@@ -282,6 +282,24 @@ pub trait NoteProjectionStore: Send + Sync {
         &self,
         projection: NoteProjection,
         revision: SourceRevision,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
+
+/// ノートACLの永続化境界。HTTPはこのportを介してのみ権限を問い合わせる。
+pub trait NoteAclStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn permission_for(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> impl Future<Output = Result<Option<NotePermission>, Self::Error>> + Send;
+
+    fn set_permission(
+        &self,
+        note_id: NoteId,
+        user_id: UserId,
+        permission: Option<NotePermission>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
