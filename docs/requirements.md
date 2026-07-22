@@ -89,6 +89,10 @@ AIエージェントがMCPを介してノートを操作できるようにする
 - 外部OIDCクライアントにはRustの`openidconnect`ライブラリを使用する。
 - OIDC設定として、少なくとも `OIDC_ISSUER_URL`、`OIDC_CLIENT_ID` および
   `OIDC_CLIENT_SECRET` を環境変数から受け取る。
+- `OIDC_ISSUER_URL` には運用者が許可したissuerを完全一致で設定する。現在の想定値は
+  `https://id.sandi05.com` とする。
+- IdPへ登録するredirect URIは、Base URLおよびサブパスから得る
+  `<Base URL>/auth/oidc/callback` とする。
 - `OIDC_CLIENT_SECRET` をDBおよびログへ保存・出力しない。
 - OpenID Connect Discoveryを使用して、認可、トークンおよびJWKS等の
   エンドポイントを取得する。
