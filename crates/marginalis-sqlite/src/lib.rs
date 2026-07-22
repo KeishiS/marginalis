@@ -263,6 +263,7 @@ impl SqliteDatabase {
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
         let options = database_url
             .parse::<SqliteConnectOptions>()?
+            .create_if_missing(true)
             .foreign_keys(true)
             .journal_mode(SqliteJournalMode::Wal)
             .busy_timeout(Duration::from_secs(5));
