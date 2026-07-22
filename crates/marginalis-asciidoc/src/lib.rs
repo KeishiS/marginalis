@@ -380,6 +380,14 @@ pub fn build_note_projection(
     })
 }
 
+/// UTF-8のAsciiDoc正本を解析し、保存用投影へ変換する便利なadapter入口。
+pub fn parse_note_projection(source: &str) -> Result<NoteProjection, Vec<NoteProjectionError>> {
+    let analysis = adocweave::Engine::new(Default::default())
+        .analyze(source)
+        .map_err(|_| Vec::new())?;
+    build_note_projection(&analysis)
+}
+
 /// アプリの保存プロファイルで許可しない、I/Oおよびraw HTML経路を検証する。
 ///
 /// include検出はAdocWeaveの公開preprocessor APIを使い、ファイルやネットワークへはアクセスしない。

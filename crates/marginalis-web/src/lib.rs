@@ -10,11 +10,12 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use marginalis_application::{
-    Clock, NoteAclStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random,
-    SessionLifetime, WebSessionService, WebSessionStore,
+    Clock, NoteAclStore, NoteOperationKind, NoteWriteService, OidcLoginAttempt,
+    OidcLoginAttemptStore, OidcRegistrationService, Random, SessionLifetime, WebSessionService,
+    WebSessionStore,
 };
 pub use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
 use marginalis_domain::{
@@ -309,6 +310,7 @@ pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/api/v1/health", get(health))
         .route("/api/v1/notes/{note_id}/source", get(note_source))
+        .route("/api/v1/notes/{note_id}/source", put(update_note_source))
         .route("/auth/oidc/login", get(begin_oidc_login))
         .route("/auth/oidc/callback", get(complete_oidc_login))
         .route("/auth/logout", post(logout))
@@ -358,6 +360,52 @@ async fn note_source(
             ApiErrorCode::NotFound,
             "note is not available",
         ))
+}
+
+async fn update_note_source(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+    source: String,
+) -> Result<StatusCode, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let note_id = NoteId::new(
+        EntityId::from_str(&note_id)
+            .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
+    );
+    let permission = state
+        .database
+        .note_acl_store()
+        .permission_for(actor, note_id)
+        .await
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
+    if !matches!(permission, Some(value) if value.permits(NotePermission::Write)) {
+        return Err(ApiError::new(
+            ApiErrorCode::NotFound,
+            "note is not available",
+        ));
+    }
+    let projection = marginalis_asciidoc::parse_note_projection(&source)
+        .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "note source is invalid"))?;
+    if projection.note_id != note_id {
+        return Err(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "note source does not match the requested note",
+        ));
+    }
+    let projections = state.database.note_projection_store();
+    let journal = state.database.operation_journal();
+    NoteWriteService::new(
+        &state.sources,
+        &projections,
+        &journal,
+        &SystemRandom,
+        &SystemClock,
+    )
+    .replace(NoteOperationKind::Update, projection, source.into_bytes())
+    .await
+    .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, ApiError> {

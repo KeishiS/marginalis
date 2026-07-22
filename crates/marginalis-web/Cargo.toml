@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 axum.workspace = true
 marginalis-application = { path = "../marginalis-application" }
+marginalis-asciidoc = { path = "../marginalis-asciidoc" }
 marginalis-auth-oidc = { path = "../marginalis-auth-oidc" }
 marginalis-domain = { path = "../marginalis-domain" }
 marginalis-files = { path = "../marginalis-files" }
