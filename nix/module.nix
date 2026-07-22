@@ -147,6 +147,12 @@ in
         ProtectHome = true;
         ProtectSystem = "strict";
         ReadWritePaths = [ cfg.dataDir ];
+      }
+      // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
+        # 既定の永続領域はservice開始前にsystemd自身が作成する。手動削除後も
+        # ReadWritePathsのmount namespace構築より先に復元される。
+        StateDirectory = "marginalis";
+        StateDirectoryMode = "0750";
       };
     };
   };
