@@ -1106,7 +1106,13 @@ dependencies = [
 name = "marginalis-server"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "marginalis-application",
+ "marginalis-domain",
+ "rand",
+ "time",
  "url",
+ "uuid",
 ]
 
 [[package]]

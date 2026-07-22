@@ -1,28 +1,8 @@
-use marginalis_application::{
-    Clock, NoteWriteService, Random, RootCredentialStore, RootInitializationService,
-};
-use marginalis_domain::{EntityId, UnixMillis};
+use marginalis_application::{NoteWriteService, RootCredentialStore, RootInitializationService};
 use marginalis_files::FileNoteStore;
-use marginalis_server::ServerConfig;
+use marginalis_server::{ServerConfig, SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::{ApiState, OidcAuthentication, OidcConfiguration, router};
-use uuid::Uuid;
-
-struct ClockImpl;
-impl Clock for ClockImpl {
-    fn now(&self) -> UnixMillis {
-        UnixMillis::new(time::OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000)
-    }
-}
-struct RandomImpl;
-impl Random for RandomImpl {
-    fn uuid_v7(&self) -> EntityId {
-        EntityId::from_uuid_v7(Uuid::now_v7())
-    }
-    fn opaque_token(&self) -> String {
-        String::new()
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,15 +12,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sources = FileNoteStore::open(&configuration.data_dir)?;
     let projections = database.note_projection_store();
     let journal = database.operation_journal();
-    NoteWriteService::new(&sources, &projections, &journal, &RandomImpl, &ClockImpl)
-        .recover()
-        .await?;
+    NoteWriteService::new(
+        &sources,
+        &projections,
+        &journal,
+        &SystemRandom,
+        &SystemClock,
+    )
+    .recover()
+    .await?;
     let root_store = database.root_credential_store();
     if !root_store.is_initialized().await? {
         let password = secrets.initial_root_password.ok_or(
             "ROOT_PASSWORD or ROOT_PASSWORD_FILE is required for an uninitialized database",
         )?;
-        RootInitializationService::new(&root_store, &RandomImpl, &ClockImpl)
+        RootInitializationService::new(&root_store, &SystemRandom, &SystemClock)
             .initialize_if_missing(password)
             .await?;
     }

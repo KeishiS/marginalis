@@ -12,14 +12,12 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     Clock, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random,
     SessionLifetime, WebSessionService,
 };
-use marginalis_domain::{
-    Actor, EntityId, OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis,
-};
+use marginalis_domain::{Actor, OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
+use marginalis_server::{SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
@@ -29,33 +27,10 @@ use openidconnect::{
     reqwest,
 };
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 use url::Url;
-use uuid::Uuid;
 
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
-
-struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> UnixMillis {
-        UnixMillis::new(OffsetDateTime::now_utc().unix_timestamp_nanos() as i64 / 1_000_000)
-    }
-}
-
-struct SystemRandom;
-
-impl Random for SystemRandom {
-    fn uuid_v7(&self) -> EntityId {
-        EntityId::from_uuid_v7(Uuid::now_v7())
-    }
-
-    fn opaque_token(&self) -> String {
-        let bytes: [u8; 32] = rand::random();
-        URL_SAFE_NO_PAD.encode(bytes)
-    }
-}
 
 /// Discovery済みの外部OIDCクライアント。
 pub type DiscoveredOidcClient = CoreClient<

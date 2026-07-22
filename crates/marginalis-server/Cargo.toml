@@ -7,4 +7,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
+base64.workspace = true
+marginalis-application = { path = "../marginalis-application" }
+marginalis-domain = { path = "../marginalis-domain" }
+rand.workspace = true
+time.workspace = true
 url.workspace = true
+uuid.workspace = true
