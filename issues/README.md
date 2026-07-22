@@ -26,6 +26,9 @@
 アプリケーション全体の認証・運用上の前提は[009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
 で管理する。
 
+公開用NixOS moduleとパッケージングは[010: NixOS moduleと公開パッケージ](010-nixos-module-and-release-packaging.md)
+で管理する。
+
 ## 実装原則
 
 - AdocWeaveコアはファイル、DB、ネットワーク、時刻および認証情報へアクセスさせない。
