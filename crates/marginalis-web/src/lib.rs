@@ -16,18 +16,17 @@ use marginalis_application::{
     Clock, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService, Random,
     SessionLifetime, WebSessionService,
 };
+pub use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
 use marginalis_domain::{Actor, OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
 use marginalis_server::{SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use openidconnect::{
-    AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet, EndpointNotSet,
-    EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
-    TokenResponse,
+    AuthorizationCode, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, Nonce,
+    PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse,
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
@@ -71,85 +70,6 @@ impl fmt::Display for OidcDiscoveryError {
 
 impl std::error::Error for OidcDiscoveryError {}
 
-/// 外部OIDCプロバイダへ接続するための起動時設定。
-///
-/// secretはこの型の外へ文字列として公開せず、DBとログへ保存しない。Discovery、認可要求、
-/// callback検証はこの設定を受け取る認証アダプタだけが行う。
-#[derive(Clone)]
-pub struct OidcConfiguration {
-    issuer_url: IssuerUrl,
-    client_id: ClientId,
-    client_secret: ClientSecret,
-    redirect_url: RedirectUrl,
-    cookie_path: String,
-}
-
-/// OIDC設定を起動できない理由。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OidcConfigurationError {
-    InvalidIssuerUrl,
-    InvalidBaseUrl,
-}
-
-impl fmt::Display for OidcConfigurationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidIssuerUrl => formatter.write_str("OIDC issuer URL is invalid"),
-            Self::InvalidBaseUrl => formatter.write_str("Base URL must be an absolute HTTPS URL"),
-        }
-    }
-}
-
-impl std::error::Error for OidcConfigurationError {}
-
-impl OidcConfiguration {
-    pub fn new(
-        issuer_url: String,
-        client_id: String,
-        client_secret: String,
-        base_url: &str,
-    ) -> Result<Self, OidcConfigurationError> {
-        let issuer_url =
-            IssuerUrl::new(issuer_url).map_err(|_| OidcConfigurationError::InvalidIssuerUrl)?;
-        let redirect_url = oidc_callback_url(base_url)?;
-        let cookie_path = base_cookie_path(base_url)?;
-        Ok(Self {
-            issuer_url,
-            client_id: ClientId::new(client_id),
-            client_secret: ClientSecret::new(client_secret),
-            redirect_url,
-            cookie_path,
-        })
-    }
-
-    pub fn issuer_url(&self) -> &IssuerUrl {
-        &self.issuer_url
-    }
-
-    pub fn client_id(&self) -> &ClientId {
-        &self.client_id
-    }
-
-    pub fn redirect_url(&self) -> &RedirectUrl {
-        &self.redirect_url
-    }
-
-    /// Discovery結果と結合し、認可要求およびcallback検証に使用するクライアントを作る。
-    ///
-    /// client secretは戻り値の内部にだけ移し、ログ用の文字列へ変換しない。
-    pub fn client_from_discovery(
-        &self,
-        provider_metadata: CoreProviderMetadata,
-    ) -> DiscoveredOidcClient {
-        CoreClient::from_provider_metadata(
-            provider_metadata,
-            self.client_id.clone(),
-            Some(self.client_secret.clone()),
-        )
-        .set_redirect_uri(self.redirect_url.clone())
-    }
-}
-
 impl OidcAuthentication {
     /// 起動時に一度だけDiscoveryとJWKS取得を行う。
     pub async fn discover(configuration: &OidcConfiguration) -> Result<Self, OidcDiscoveryError> {
@@ -162,9 +82,14 @@ impl OidcAuthentication {
                 .await
                 .map_err(|_| OidcDiscoveryError::Discovery)?;
         Ok(Self {
-            client: configuration.client_from_discovery(metadata),
+            client: CoreClient::from_provider_metadata(
+                metadata,
+                configuration.client_id().clone(),
+                Some(configuration.client_secret().clone()),
+            )
+            .set_redirect_uri(configuration.redirect_url().clone()),
             http_client,
-            cookie_path: configuration.cookie_path.clone(),
+            cookie_path: configuration.cookie_path().into(),
         })
     }
 
@@ -267,32 +192,6 @@ pub enum OidcLoginStartError {
 enum OidcCallbackError {
     Rejected,
     Unavailable,
-}
-
-fn oidc_callback_url(base_url: &str) -> Result<RedirectUrl, OidcConfigurationError> {
-    let mut url = Url::parse(base_url).map_err(|_| OidcConfigurationError::InvalidBaseUrl)?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(OidcConfigurationError::InvalidBaseUrl);
-    }
-    let base_path = url.path().trim_end_matches('/');
-    url.set_path(&format!("{base_path}/auth/oidc/callback"));
-    RedirectUrl::new(url.into()).map_err(|_| OidcConfigurationError::InvalidBaseUrl)
-}
-
-fn base_cookie_path(base_url: &str) -> Result<String, OidcConfigurationError> {
-    let url = Url::parse(base_url).map_err(|_| OidcConfigurationError::InvalidBaseUrl)?;
-    let path = url.path().trim_end_matches('/');
-    Ok(if path.is_empty() {
-        "/".into()
-    } else {
-        path.into()
-    })
 }
 
 /// HTTPハンドラーが利用する共有状態。

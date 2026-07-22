@@ -1081,6 +1081,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "marginalis-auth-oidc"
+version = "0.1.0"
+dependencies = [
+ "openidconnect",
+ "url",
+]
+
+[[package]]
 name = "marginalis-domain"
 version = "0.1.0"
 dependencies = [
@@ -1136,6 +1144,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "marginalis-application",
+ "marginalis-auth-oidc",
  "marginalis-domain",
  "marginalis-files",
  "marginalis-server",

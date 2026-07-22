@@ -1,0 +1,11 @@
+[package]
+name = "marginalis-auth-oidc"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+openidconnect.workspace = true
+url.workspace = true
