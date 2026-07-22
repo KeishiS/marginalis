@@ -4,7 +4,8 @@ use std::{fmt, future::Future, str::FromStr, time::Duration};
 
 use marginalis_application::{
     AuthenticatedSession, JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore,
-    OperationId, OperationJournal, OperationState, WebSession, WebSessionStore,
+    OidcLoginAttempt, OidcLoginAttemptStore, OperationId, OperationJournal, OperationState,
+    WebSession, WebSessionStore,
 };
 use marginalis_domain::{
     Actor, EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, OidcUser,
@@ -44,6 +45,36 @@ pub struct SqliteNoteProjectionStore {
 #[derive(Clone, Debug)]
 pub struct SqliteWebSessionStore {
     pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SqliteOidcLoginAttemptStore {
+    pool: SqlitePool,
+}
+
+#[derive(Debug)]
+pub enum OidcLoginAttemptStoreError {
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for OidcLoginAttemptStoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OIDC login attempt query failed")
+    }
+}
+
+impl std::error::Error for OidcLoginAttemptStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+        }
+    }
+}
+
+impl From<sqlx::Error> for OidcLoginAttemptStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
 }
 
 #[derive(Debug)]
@@ -205,6 +236,74 @@ impl SqliteDatabase {
     pub fn web_session_store(&self) -> SqliteWebSessionStore {
         SqliteWebSessionStore {
             pool: self.pool.clone(),
+        }
+    }
+
+    pub fn oidc_login_attempt_store(&self) -> SqliteOidcLoginAttemptStore {
+        SqliteOidcLoginAttemptStore {
+            pool: self.pool.clone(),
+        }
+    }
+}
+
+impl OidcLoginAttemptStore for SqliteOidcLoginAttemptStore {
+    type Error = OidcLoginAttemptStoreError;
+
+    fn issue(
+        &self,
+        attempt: OidcLoginAttempt,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO oidc_login_attempts (state_hash, nonce, pkce_verifier, expires_at_ms)
+                 VALUES (?, ?, ?, ?)",
+            )
+            .bind(hash_token(&attempt.state))
+            .bind(attempt.nonce)
+            .bind(attempt.pkce_verifier)
+            .bind(attempt.expires_at.get())
+            .execute(&pool)
+            .await?;
+            Ok(())
+        }
+    }
+
+    fn consume(
+        &self,
+        state: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<OidcLoginAttempt>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let state_hash = hash_token(&state);
+            let mut transaction = pool.begin().await?;
+            let row = sqlx::query(
+                "DELETE FROM oidc_login_attempts
+                 WHERE state_hash = ? AND expires_at_ms > ?
+                 RETURNING nonce, pkce_verifier, expires_at_ms",
+            )
+            .bind(&state_hash)
+            .bind(now.get())
+            .fetch_optional(&mut *transaction)
+            .await?;
+            // Expired attempts are also removed, without revealing whether they existed.
+            sqlx::query("DELETE FROM oidc_login_attempts WHERE state_hash = ?")
+                .bind(state_hash)
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+            row.map(
+                |row| -> Result<OidcLoginAttempt, OidcLoginAttemptStoreError> {
+                    Ok(OidcLoginAttempt {
+                        state,
+                        nonce: row.try_get("nonce")?,
+                        pkce_verifier: row.try_get("pkce_verifier")?,
+                        expires_at: UnixMillis::new(row.try_get("expires_at_ms")?),
+                    })
+                },
+            )
+            .transpose()
         }
     }
 }
@@ -612,8 +711,8 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::{
-        JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore, OperationId,
-        OperationJournal, OperationState,
+        JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore, OidcLoginAttempt,
+        OidcLoginAttemptStore, OperationId, OperationJournal, OperationState,
     };
     use marginalis_domain::{
         EntityId, NoteId, NoteProjection, NoteReference, OidcIdentity, OidcLoginResult,
@@ -765,5 +864,42 @@ mod tests {
                 .try_get("count")
                 .expect("count");
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn oidc_login_state_is_hashed_expiring_and_single_use() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let store = database.oidc_login_attempt_store();
+        store
+            .issue(OidcLoginAttempt {
+                state: "state-secret".into(),
+                nonce: "nonce".into(),
+                pkce_verifier: "verifier".into(),
+                expires_at: UnixMillis::new(20),
+            })
+            .await
+            .expect("issue");
+        let stored: Vec<u8> = sqlx::query("SELECT state_hash FROM oidc_login_attempts")
+            .fetch_one(database.pool())
+            .await
+            .expect("stored attempt")
+            .try_get("state_hash")
+            .expect("hash");
+        assert_ne!(stored, b"state-secret");
+        let attempt = store
+            .consume("state-secret".into(), UnixMillis::new(10))
+            .await
+            .expect("consume")
+            .expect("attempt");
+        assert_eq!(attempt.nonce, "nonce");
+        assert!(
+            store
+                .consume("state-secret".into(), UnixMillis::new(10))
+                .await
+                .expect("consume again")
+                .is_none()
+        );
     }
 }
