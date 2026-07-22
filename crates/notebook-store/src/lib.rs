@@ -16,7 +16,9 @@ use adocweave::{
     render::RenderInputs,
     source::TextRange,
 };
-use notebook_adoc::{NoteReferenceError, extract_note_references};
+use notebook_adoc::{
+    NoteContentError, NoteReferenceError, extract_note_references, validate_note_content_profile,
+};
 
 /// ノート参照を解決する利用者の認可済み文脈。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -161,7 +163,11 @@ impl From<sqlx::Error> for ResolveReferencesError {
 pub fn render_note_html(
     analysis: &adocweave::Analysis,
     resolved: &ResolvedNoteReferences,
-) -> HtmlOutput {
+) -> Result<HtmlOutput, Vec<NoteContentError>> {
+    let content_errors = validate_note_content_profile(analysis);
+    if !content_errors.is_empty() {
+        return Err(content_errors);
+    }
     let mut output = render_with_inputs(
         analysis.ast(),
         &RenderPolicy::default(),
@@ -179,7 +185,7 @@ pub fn render_note_html(
         escape_html_into(&mut output.html, &warning.message);
         output.html.push_str("</aside>\n");
     }
-    output
+    Ok(output)
 }
 
 fn escape_html_into(output: &mut String, value: &str) {
@@ -447,6 +453,7 @@ mod tests {
     use adocweave::{
         Engine,
         reference::{ResolutionFailureKind, ResolutionOutcome, ResolverFailure},
+        render::RenderInputs,
     };
     use sqlx::Row;
 
@@ -631,12 +638,25 @@ mod tests {
                 message: "note reference unavailable".into(),
             })
         );
-        let html = render_note_html(&analysis, &result);
+        let html = render_note_html(&analysis, &result).expect("safe note HTML");
         assert!(
             html.html
                 .contains(&format!("https://notebook.example/app/note/{visible}"))
         );
         assert!(html.html.contains("note-reference-warning"));
         assert!(html.html.contains("missing-reference-anchor"));
+    }
+
+    #[test]
+    fn refuses_to_render_unsafe_note_content() {
+        let analysis = Engine::new(Default::default())
+            .analyze("++++\n<script>alert(1)</script>\n++++\n")
+            .expect("recoverable AsciiDoc");
+        let resolved = super::ResolvedNoteReferences {
+            render_inputs: RenderInputs::default(),
+            presentations: Default::default(),
+        };
+
+        assert!(render_note_html(&analysis, &resolved).is_err());
     }
 }
