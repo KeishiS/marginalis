@@ -7,7 +7,7 @@ use core::fmt;
 use std::collections::BTreeMap;
 
 use adocweave::attributes::{AttributeOperation, DocumentAttribute};
-use adocweave::inline::{Inline, ReferenceDestination};
+use adocweave::inline::{Inline, MathLanguage, ReferenceDestination};
 use adocweave::limits::SyntaxMode;
 use adocweave::parser::{AstBlock, DelimitedContent, HeadingKind};
 use adocweave::preprocessor::discover_includes;
@@ -185,6 +185,7 @@ pub enum NoteContentErrorCode {
     IncludeDirective,
     InlinePassthrough,
     BlockPassthrough,
+    UnsupportedMathLanguage,
 }
 
 impl NoteContentErrorCode {
@@ -193,6 +194,7 @@ impl NoteContentErrorCode {
             Self::IncludeDirective => "include-directive-disabled",
             Self::InlinePassthrough => "inline-passthrough-disabled",
             Self::BlockPassthrough => "block-passthrough-disabled",
+            Self::UnsupportedMathLanguage => "unsupported-math-language",
         }
     }
 }
@@ -273,6 +275,20 @@ pub fn validate_note_content_profile(analysis: &adocweave::Analysis) -> Vec<Note
             errors.push(NoteContentError {
                 code: NoteContentErrorCode::BlockPassthrough,
                 range: block.range,
+            });
+        }
+        SemanticNode::Inline(Inline::Formula(formula))
+            if formula.language != MathLanguage::Latex =>
+        {
+            errors.push(NoteContentError {
+                code: NoteContentErrorCode::UnsupportedMathLanguage,
+                range: formula.range,
+            });
+        }
+        SemanticNode::Block(AstBlock::Math(math)) if math.language != MathLanguage::Latex => {
+            errors.push(NoteContentError {
+                code: NoteContentErrorCode::UnsupportedMathLanguage,
+                range: math.range,
             });
         }
         _ => {}
