@@ -3,7 +3,7 @@
 //! このcrateはAdocWeaveの公開APIだけに依存し、アプリ固有のプロファイル、参照解決、
 //! 描画ポリシーを段階的に追加する。
 
-use core::fmt;
+use core::{fmt, str::FromStr};
 use std::collections::{BTreeMap, BTreeSet};
 
 use adocweave::attributes::{AttributeOperation, DocumentAttribute};
@@ -17,6 +17,9 @@ use adocweave::render::RenderInputs;
 use adocweave::source::{TextRange, TextSize};
 use adocweave::url::UrlContext;
 use adocweave::walker::{SemanticNode, walk};
+use marginalis_domain::{
+    EntityId, NoteId, NoteProjection, NoteReference as ProjectionReference, UserId,
+};
 use unicode_normalization::UnicodeNormalization;
 
 /// 採用したAdocWeaveソースcommit。
@@ -185,6 +188,13 @@ pub struct NoteReferenceError {
     pub range: TextRange,
 }
 
+/// 保存前に返す、アプリケーション層へ渡せる統一した位置付き検証エラー。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteProjectionError {
+    pub code: String,
+    pub range: TextRange,
+}
+
 /// 同一解析revisionから抽出したLaTeX数式。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteMathProjection {
@@ -307,6 +317,67 @@ pub fn extract_note_references(
     } else {
         Err(errors)
     }
+}
+
+/// AdocWeave解析を、SQLite adapterが必要とする型付きノート投影へ変換する。
+///
+/// この境界は構文検証のみを担当し、DB検索・ACL判定・ファイルI/Oは行わない。
+pub fn build_note_projection(
+    analysis: &adocweave::Analysis,
+) -> Result<NoteProjection, Vec<NoteProjectionError>> {
+    let metadata = validate_note_metadata(analysis);
+    let references = extract_note_references(analysis);
+    let content_errors = validate_note_content_profile(analysis);
+    let mut errors = Vec::new();
+    if let Err(metadata_errors) = &metadata {
+        errors.extend(metadata_errors.iter().map(|error| NoteProjectionError {
+            code: error.code.as_str().into(),
+            range: error.range,
+        }));
+    }
+    if let Err(reference_errors) = &references {
+        errors.extend(reference_errors.iter().map(|error| NoteProjectionError {
+            code: error.code.as_str().into(),
+            range: error.range,
+        }));
+    }
+    errors.extend(content_errors.into_iter().map(|error| NoteProjectionError {
+        code: error.code.as_str().into(),
+        range: error.range,
+    }));
+    errors.sort_by(|left, right| {
+        (left.range.start(), left.range.end(), &left.code).cmp(&(
+            right.range.start(),
+            right.range.end(),
+            &right.code,
+        ))
+    });
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    let metadata = metadata.expect("validated metadata");
+    let references = references.expect("validated references");
+    let note_id = NoteId::new(EntityId::from_str(&metadata.note_id).expect("validated UUIDv7"));
+    let owner_id = UserId::new(EntityId::from_str(&metadata.creator_id).expect("validated UUIDv7"));
+    Ok(NoteProjection {
+        note_id,
+        owner_id,
+        title: metadata.title,
+        anchors: analysis
+            .reference_targets()
+            .iter()
+            .map(|target| target.id.clone())
+            .collect(),
+        references: references
+            .into_iter()
+            .map(|reference| ProjectionReference {
+                source_start: reference.range.start().to_u32(),
+                source_end: reference.range.end().to_u32(),
+                target_note_id: reference.note_id,
+                target_anchor: reference.anchor,
+            })
+            .collect(),
+    })
 }
 
 /// アプリの保存プロファイルで許可しない、I/Oおよびraw HTML経路を検証する。
@@ -694,9 +765,9 @@ mod tests {
 
     use super::{
         ADOCWEAVE_SOURCE_REVISION, DEFAULT_SOURCE_LANGUAGES, NoteContentErrorCode, NoteMathDisplay,
-        NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_CONTRACTS, extract_note_math,
-        extract_note_references, validate_note_content_profile, validate_note_metadata,
-        verify_runtime_contracts,
+        NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_CONTRACTS, build_note_projection,
+        extract_note_math, extract_note_references, validate_note_content_profile,
+        validate_note_metadata, verify_runtime_contracts,
     };
 
     #[test]
@@ -759,6 +830,27 @@ mod tests {
         assert_eq!(metadata.tags[0].display, "Research");
         assert_eq!(metadata.tags[0].key, "research");
         assert_eq!(metadata.tags[1].display, "数学");
+    }
+
+    #[test]
+    fn builds_a_typed_projection_from_validated_asciidoc() {
+        let analysis = Engine::new(Default::default())
+            .analyze(
+                "= Typed note\n\
+                 :note-id: 01800000-0000-7000-8000-000000000001\n\
+                 :creator-id: 01800000-0000-7000-8000-000000000002\n\
+                 :created-at: 2026-07-21T00:00:00.000Z\n\
+                 :updated-at: 2026-07-22T01:02:03.004Z\n\
+                 :tags: research\n\n\
+                 [[start]]\n\
+                 xref:note:01800000-0000-7000-8000-000000000003[target]\n",
+            )
+            .expect("valid AsciiDoc");
+        let projection = build_note_projection(&analysis).expect("valid note projection");
+        assert_eq!(projection.title, "Typed note");
+        assert!(projection.anchors.iter().any(|anchor| anchor == "start"));
+        assert_eq!(projection.references.len(), 1);
+        assert!(projection.references[0].source_end > projection.references[0].source_start);
     }
 
     #[test]
