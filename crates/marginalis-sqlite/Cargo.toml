@@ -7,6 +7,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
+marginalis-application = { path = "../marginalis-application" }
+marginalis-domain = { path = "../marginalis-domain" }
 sqlx.workspace = true
 tokio.workspace = true
 

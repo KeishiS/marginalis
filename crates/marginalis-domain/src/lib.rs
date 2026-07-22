@@ -1,6 +1,6 @@
 //! Marginalisの永続化方式から独立した業務モデル。
 
-use core::fmt;
+use core::{fmt, str::FromStr};
 
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -30,6 +30,10 @@ impl SourceRevision {
 
     pub const fn bytes(self) -> [u8; 32] {
         self.0
+    }
+
+    pub fn from_bytes(value: &[u8]) -> Option<Self> {
+        value.try_into().ok().map(Self)
     }
 }
 
@@ -63,6 +67,16 @@ impl EntityId {
 
     pub const fn as_uuid(self) -> Uuid {
         self.0
+    }
+}
+
+impl FromStr for EntityId {
+    type Err = InvalidEntityId;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Uuid::parse_str(value)
+            .map_err(|_| InvalidEntityId)
+            .and_then(Self::try_from_uuid)
     }
 }
 

@@ -76,8 +76,9 @@ CREATE INDEX note_references_target_idx ON note_references(target_note_id, targe
 CREATE TABLE operation_journal (
     operation_id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('prepared', 'applied', 'completed')),
-    note_id TEXT REFERENCES notes(note_id),
+    state TEXT NOT NULL CHECK (state IN ('prepared', 'source_applied', 'completed')),
+    note_id TEXT NOT NULL,
+    source_revision BLOB,
     created_at_ms INTEGER NOT NULL,
     updated_at_ms INTEGER NOT NULL
 ) STRICT;

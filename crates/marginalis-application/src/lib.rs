@@ -24,20 +24,45 @@ pub struct OperationId(pub EntityId);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OperationState {
     Prepared,
-    Applied,
+    SourceApplied,
     Completed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteOperationKind {
+    Create,
+    Update,
+    Delete,
+}
+
+/// SQLiteとファイルをまたぐノート更新の復旧に必要な最小情報。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JournalEntry {
+    pub operation_id: OperationId,
+    pub note_id: NoteId,
+    pub kind: NoteOperationKind,
+    pub state: OperationState,
+    pub source_revision: Option<SourceRevision>,
+    pub created_at: UnixMillis,
+    pub updated_at: UnixMillis,
 }
 
 /// adapterが実装する操作ジャーナル境界。
 pub trait OperationJournal: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn record(
+    fn prepare(&self, entry: JournalEntry) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn mark_source_applied(
         &self,
-        operation: OperationId,
-        state: OperationState,
+        operation_id: OperationId,
+        updated_at: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    fn incomplete(&self) -> impl Future<Output = Result<Vec<OperationId>, Self::Error>> + Send;
+    fn complete(
+        &self,
+        operation_id: OperationId,
+        updated_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn incomplete(&self) -> impl Future<Output = Result<Vec<JournalEntry>, Self::Error>> + Send;
 }
 
 /// AsciiDoc正本を扱うport。HTTP・SQLite・filesystem adapterはこれを実装する。
