@@ -2,10 +2,14 @@
 
 use std::{fmt, future::Future, str::FromStr, time::Duration};
 
+use argon2::{
+    Argon2, PasswordHasher,
+    password_hash::{SaltString, rand_core::OsRng},
+};
 use marginalis_application::{
     AuthenticatedSession, JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore,
     OidcLoginAttempt, OidcLoginAttemptStore, OperationId, OperationJournal, OperationState,
-    WebSession, WebSessionStore,
+    RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
     Actor, EntityId, NoteId, NoteProjection, OidcIdentity, OidcLoginResult, OidcUser,
@@ -50,6 +54,35 @@ pub struct SqliteWebSessionStore {
 #[derive(Clone, Debug)]
 pub struct SqliteOidcLoginAttemptStore {
     pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SqliteRootCredentialStore {
+    pool: SqlitePool,
+}
+
+#[derive(Debug)]
+pub enum RootCredentialStoreError {
+    Database(sqlx::Error),
+    PasswordHash,
+}
+impl fmt::Display for RootCredentialStoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("root credential initialization failed")
+    }
+}
+impl std::error::Error for RootCredentialStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(e) => Some(e),
+            Self::PasswordHash => None,
+        }
+    }
+}
+impl From<sqlx::Error> for RootCredentialStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
 }
 
 #[derive(Debug)]
@@ -242,6 +275,53 @@ impl SqliteDatabase {
     pub fn oidc_login_attempt_store(&self) -> SqliteOidcLoginAttemptStore {
         SqliteOidcLoginAttemptStore {
             pool: self.pool.clone(),
+        }
+    }
+
+    pub fn root_credential_store(&self) -> SqliteRootCredentialStore {
+        SqliteRootCredentialStore {
+            pool: self.pool.clone(),
+        }
+    }
+}
+
+impl RootCredentialStore for SqliteRootCredentialStore {
+    type Error = RootCredentialStoreError;
+
+    fn initialize_if_missing(
+        &self,
+        password: String,
+        user_id: UserId,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            if password.is_empty() {
+                return Err(RootCredentialStoreError::PasswordHash);
+            }
+            let salt = SaltString::generate(&mut OsRng);
+            let password_hash = Argon2::default()
+                .hash_password(password.as_bytes(), &salt)
+                .map_err(|_| RootCredentialStoreError::PasswordHash)?
+                .to_string();
+            let mut transaction = pool.begin().await?;
+            if sqlx::query("SELECT 1 FROM root_credentials LIMIT 1")
+                .fetch_optional(&mut *transaction)
+                .await?
+                .is_some()
+            {
+                transaction.commit().await?;
+                return Ok(false);
+            }
+            sqlx::query("INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms) VALUES (?, 'root', 'active', 'root', ?, ?)")
+                .bind(user_id.to_string()).bind(now.get()).bind(now.get()).execute(&mut *transaction).await?;
+            sqlx::query("INSERT INTO root_credentials (user_id, password_hash) VALUES (?, ?)")
+                .bind(user_id.to_string())
+                .bind(password_hash)
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+            Ok(true)
         }
     }
 }

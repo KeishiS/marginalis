@@ -32,6 +32,47 @@ pub trait OidcIdentityStore: Send + Sync {
     ) -> impl Future<Output = Result<OidcLoginResult, Self::Error>> + Send;
 }
 
+/// 緊急用root accountの初期化を扱うport。平文passwordは保持しない。
+pub trait RootCredentialStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn initialize_if_missing(
+        &self,
+        password: String,
+        user_id: UserId,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+}
+
+pub struct RootInitializationService<'a, Store, Entropy, Time> {
+    store: &'a Store,
+    entropy: &'a Entropy,
+    clock: &'a Time,
+}
+
+impl<'a, Store, Entropy, Time> RootInitializationService<'a, Store, Entropy, Time>
+where
+    Store: RootCredentialStore,
+    Entropy: Random,
+    Time: Clock,
+{
+    pub const fn new(store: &'a Store, entropy: &'a Entropy, clock: &'a Time) -> Self {
+        Self {
+            store,
+            entropy,
+            clock,
+        }
+    }
+    pub async fn initialize_if_missing(&self, password: String) -> Result<bool, Store::Error> {
+        self.store
+            .initialize_if_missing(
+                password,
+                UserId::new(self.entropy.uuid_v7()),
+                self.clock.now(),
+            )
+            .await
+    }
+}
+
 /// OIDC認可リクエストに一度だけ対応するstate、nonceおよびPKCE verifier。
 ///
 /// 値はDB adapterでは平文保存してはならない。applicationではcallbackとの対応だけを表す。

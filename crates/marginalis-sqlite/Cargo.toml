@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
+argon2.workspace = true
 sqlx.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
