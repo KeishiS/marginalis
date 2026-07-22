@@ -426,12 +426,14 @@ async fn complete_oidc_login(
         "authentication is not configured",
     ))?;
     if query.error.is_some() {
+        eprintln!("OIDC callback rejected by authorization server");
         return Err(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication failed",
         ));
     }
     let (Some(code), Some(state_token)) = (query.code.as_deref(), query.state.as_deref()) else {
+        eprintln!("OIDC callback rejected: missing authorization response parameters");
         return Err(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication failed",
@@ -460,6 +462,7 @@ async fn complete_oidc_login(
             }
         })?
     else {
+        eprintln!("OIDC callback rejected: user is not authorized");
         return Err(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication failed",
