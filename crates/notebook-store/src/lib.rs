@@ -74,6 +74,37 @@ pub enum NotePermission {
     Admin = 3,
 }
 
+/// ノートACLの直接変更で守る不変条件に関するエラー。
+#[derive(Debug)]
+pub enum UpdateNoteAclError {
+    LastAdmin,
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for UpdateNoteAclError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LastAdmin => formatter.write_str("cannot remove the last note administrator"),
+            Self::Database(error) => write!(formatter, "SQLite ACL update failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for UpdateNoteAclError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::LastAdmin => None,
+            Self::Database(error) => Some(error),
+        }
+    }
+}
+
+impl From<sqlx::Error> for UpdateNoteAclError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
+}
+
 /// 絶対HTTPS Base URLから得たアプリ内ノートURLの生成規則。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteUrlBase(Url);
@@ -583,6 +614,65 @@ impl NotebookStore {
         Ok(())
     }
 
+    /// 一人の利用者へノートの直接権限を設定または解除する。
+    ///
+    /// 認可（呼び出し元が管理者またはrootであること）の確認はアプリケーションサービス層が
+    /// 行う。この層では、最後の直接管理者を解除・降格できない不変条件だけを原子的に守る。
+    pub async fn update_note_acl(
+        &self,
+        note_id: &str,
+        user_id: &str,
+        permission: Option<NotePermission>,
+    ) -> Result<(), UpdateNoteAclError> {
+        let _write_guard = self.write_lock.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        let current_permission =
+            sqlx::query("SELECT permission FROM note_acl WHERE note_id = ? AND user_id = ?")
+                .bind(note_id)
+                .bind(user_id)
+                .fetch_optional(&mut *transaction)
+                .await?
+                .map(|row| row.try_get::<i64, _>("permission"))
+                .transpose()?;
+        let removes_admin = current_permission == Some(NotePermission::Admin as i64)
+            && permission != Some(NotePermission::Admin);
+        if removes_admin {
+            let admin_count: i64 = sqlx::query(
+                "SELECT COUNT(*) AS count FROM note_acl WHERE note_id = ? AND permission = ?",
+            )
+            .bind(note_id)
+            .bind(NotePermission::Admin as i64)
+            .fetch_one(&mut *transaction)
+            .await?
+            .try_get("count")?;
+            if admin_count <= 1 {
+                return Err(UpdateNoteAclError::LastAdmin);
+            }
+        }
+        match permission {
+            Some(permission) => {
+                sqlx::query(
+                    "INSERT INTO note_acl(note_id, user_id, permission) VALUES (?, ?, ?) \
+                     ON CONFLICT(note_id, user_id) DO UPDATE SET permission = excluded.permission",
+                )
+                .bind(note_id)
+                .bind(user_id)
+                .bind(permission as i64)
+                .execute(&mut *transaction)
+                .await?;
+            }
+            None => {
+                sqlx::query("DELETE FROM note_acl WHERE note_id = ? AND user_id = ?")
+                    .bind(note_id)
+                    .bind(user_id)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
     /// 対象不在とACL拒否を同じ結果に畳み込み、存在を推測できないようにする。
     pub async fn resolve_note_reference(
         &self,
@@ -727,7 +817,7 @@ mod tests {
 
     use super::{
         NotePermission, NoteReferenceResolution, NoteUrlBase, NotebookStore,
-        ReferenceFailureDetail, StoredNoteAnchor, StoredNoteReference, Viewer,
+        ReferenceFailureDetail, StoredNoteAnchor, StoredNoteReference, UpdateNoteAclError, Viewer,
         extract_stored_note_anchors, extract_stored_note_references, render_note_html,
     };
 
@@ -932,6 +1022,38 @@ mod tests {
                 .get("count");
         assert_eq!(anchor_count, 2);
         assert_eq!(reference_count, 1);
+    }
+
+    #[tokio::test]
+    async fn prevents_removing_or_demoting_the_last_note_admin() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        insert_note(&store, "note").await;
+        store
+            .update_note_acl("note", "owner", Some(NotePermission::Admin))
+            .await
+            .expect("grant initial admin");
+
+        assert!(matches!(
+            store
+                .update_note_acl("note", "owner", Some(NotePermission::Write))
+                .await,
+            Err(UpdateNoteAclError::LastAdmin)
+        ));
+        assert!(matches!(
+            store.update_note_acl("note", "owner", None).await,
+            Err(UpdateNoteAclError::LastAdmin)
+        ));
+
+        store
+            .update_note_acl("note", "second-admin", Some(NotePermission::Admin))
+            .await
+            .expect("grant second admin");
+        store
+            .update_note_acl("note", "owner", None)
+            .await
+            .expect("remove non-final admin");
     }
 
     #[tokio::test]
