@@ -8,6 +8,9 @@ AdocWeave拡張を含むAsciiDoc処理全体の安全性、決定性および互
 
 - ノート用プロファイルの正常系、異常系、境界値、回復およびセキュリティfixtureを整備する。
 - native Rust、WASM Worker、Web APIおよびMCPが同じ解析・診断・投影規則を使うことを検証する。
+- 初期段階では、同じ入力と既定policyに対するnative HTMLとWASM HTMLの一致をRustテストで
+  固定する。Resolver URL policyおよび表示上書きは、対応する上流APIが提供された後に同じ
+  fixtureへ追加する。
 - パーサー、属性検証、参照解決、URL policy、HTML、位置変換およびFormatterのproperty testとfuzzingを行う。
 - `format(format(x)) == format(x)`と、整形前後の意味同値性を検証する。
 - 上流AdocWeave更新時に、契約version、golden HTML、projection、DB再構築およびブラウザ資産を検証する。

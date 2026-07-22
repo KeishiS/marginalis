@@ -681,7 +681,10 @@ fn days_in_month(year: u16, month: u16) -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use adocweave::Engine;
+    use adocweave::{Engine, NeverCancel, html::render};
+    use adocweave_wasm::{
+        WASM_API_VERSION, WasmOptions, WasmRenderInputs, WasmRequest, process_request,
+    };
 
     use super::{
         ADOCWEAVE_SOURCE_REVISION, DEFAULT_SOURCE_LANGUAGES, NoteContentErrorCode, NoteMathDisplay,
@@ -704,6 +707,30 @@ mod tests {
     fn linked_contracts_match_the_pinned_contracts() {
         assert_eq!(PINNED_CONTRACTS.core_profile, 1);
         verify_runtime_contracts().expect("pinned AdocWeave contracts must match");
+    }
+
+    #[test]
+    fn default_wasm_rendering_matches_native_html() {
+        let source = "= Preview\n\n== Section\n\nhttps://example.com[external]\n";
+        let native = Engine::new(Default::default())
+            .analyze(source)
+            .expect("valid AsciiDoc");
+        let native_html = render(native.ast(), &Default::default()).html;
+        let wasm = process_request(
+            WasmRequest {
+                api_version: WASM_API_VERSION,
+                source_id: None,
+                version: 1,
+                generation: 1,
+                source: source.into(),
+                render_inputs: WasmRenderInputs::default(),
+                options: WasmOptions::default(),
+            },
+            &NeverCancel,
+        )
+        .expect("WASM request succeeds");
+
+        assert_eq!(wasm.html, native_html);
     }
 
     #[test]
