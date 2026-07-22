@@ -75,7 +75,7 @@ let answer = 42;
 | HTML描画 | HTML allowlist、属性のエスケープ、リンク属性の固定または描画フック | 外部リンクだけへ`target="_blank" rel="noopener noreferrer"`を固定し、内部リンクには付けない。raw HTML、style、event handler、SVGを出力させない。 |
 | リソース | `include`、画像、添付および外部リソースを構文・解決段階で無効化する設定 | include、外部画像、添付参照および代理取得を無効化し、解析中のI/Oを発生させない。 |
 | STEM | 標準`stem`構文をASTまたは安全にエスケープされた出力へ保持するAPI | `:stem: latexmath`だけを許可し、KaTeX等は別のサニタイズ済み表示境界で処理する。 |
-| ソースコード | source blockの言語と内容を分離し、言語classを制限できる描画API | 許可した言語classだけをハイライターへ渡し、コードを実行しない。 |
+| ソースコード | source blockの言語と内容を分離し、言語classを制限できる描画API | `rust`、`typescript`、`javascript`、`json`、`yaml`、`toml`、`bash`、`sql`および`text`だけをハイライターへ渡す。言語なしはプレーンテキストとし、コードを実行しない。 |
 | 投影 | 可読テキスト、見出し、コード、数式、参照を同一解析revisionから取得するAPI | 検索、グラフ、逆参照を再解析なしでSQLiteへ保存する。 |
 | 整形・LSP・WASM | Formatter、位置変換、同一プロファイルで動くLSP/WASM境界 | 保存検証、編集診断、ブラウザプレビューで同じ規則とfixtureを使う。 |
 
