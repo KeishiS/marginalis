@@ -799,7 +799,7 @@ mod tests {
 
     use marginalis_application::{
         JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore, OidcLoginAttempt,
-        OidcLoginAttemptStore, OperationId, OperationJournal, OperationState,
+        OidcLoginAttemptStore, OperationId, OperationJournal, OperationState, RootCredentialStore,
     };
     use marginalis_domain::{
         EntityId, NoteId, NoteProjection, NoteReference, OidcIdentity, OidcLoginResult,
@@ -988,5 +988,43 @@ mod tests {
                 .expect("consume again")
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn root_credential_is_initialized_once_without_storing_plaintext() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let store = database.root_credential_store();
+        assert!(!store.is_initialized().await.expect("initial state"));
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000020").expect("UUIDv7"),
+        );
+        assert!(
+            store
+                .initialize_if_missing("not-a-hash".into(), user_id, UnixMillis::new(1))
+                .await
+                .expect("initialize")
+        );
+        assert!(store.is_initialized().await.expect("initialized"));
+        assert!(
+            !store
+                .initialize_if_missing(
+                    "other-password".into(),
+                    UserId::new(
+                        EntityId::from_str("01800000-0000-7000-8000-000000000021").expect("UUIDv7"),
+                    ),
+                    UnixMillis::new(2),
+                )
+                .await
+                .expect("second initialization")
+        );
+        let hash: String = sqlx::query("SELECT password_hash FROM root_credentials")
+            .fetch_one(database.pool())
+            .await
+            .expect("credential")
+            .try_get("password_hash")
+            .expect("hash");
+        assert_ne!(hash, "not-a-hash");
     }
 }
