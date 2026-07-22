@@ -138,7 +138,10 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use marginalis_application::{Clock, NoteOperationKind, NoteWriteService, OperationId, Random};
+    use marginalis_application::{
+        Clock, JournalEntry, NoteOperationKind, NoteWriteService, OperationId, OperationJournal,
+        OperationState, Random,
+    };
     use marginalis_domain::{EntityId, NoteProjection, UnixMillis, UserId};
     use marginalis_sqlite::SqliteDatabase;
     use sqlx::Row;
@@ -252,6 +255,67 @@ mod tests {
         .try_get("count")
         .expect("count");
         assert_eq!(incomplete, 0);
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[tokio::test]
+    async fn recovery_replays_a_source_applied_operation() {
+        let directory = test_directory();
+        let sources = FileNoteStore::open(&directory).expect("open file store");
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let note_id = note(11);
+        let owner_id = UserId::new(note(12).entity_id());
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'Owner', 0, 0)",
+        ).bind(owner_id.to_string()).execute(database.pool()).await.expect("owner");
+        let projection = NoteProjection {
+            note_id,
+            owner_id,
+            title: "Recovered".into(),
+            anchors: Vec::new(),
+            references: Vec::new(),
+        };
+        let operation = OperationId(note(13).entity_id());
+        let source = b"= Recovered\n".to_vec();
+        let revision = SourceRevision::from_source(&source);
+        let journal = database.operation_journal();
+        journal
+            .prepare(JournalEntry {
+                operation_id: operation,
+                note_id,
+                kind: NoteOperationKind::Create,
+                state: OperationState::Prepared,
+                source_revision: Some(revision),
+                projection: Some(projection),
+                created_at: UnixMillis::new(1),
+                updated_at: UnixMillis::new(1),
+            })
+            .await
+            .expect("prepare");
+        sources
+            .replace(note_id, operation, &source)
+            .expect("write source");
+        journal
+            .mark_source_applied(operation, UnixMillis::new(2))
+            .await
+            .expect("mark source");
+        let projections = database.note_projection_store();
+        NoteWriteService::new(&sources, &projections, &journal, &FixedRandom, &FixedClock)
+            .recover()
+            .await
+            .expect("recover");
+        let title: String = sqlx::query("SELECT title FROM notes WHERE note_id = ?")
+            .bind(note_id.to_string())
+            .fetch_one(database.pool())
+            .await
+            .expect("projection")
+            .try_get("title")
+            .expect("title");
+        assert_eq!(title, "Recovered");
+        assert!(journal.incomplete().await.expect("journal").is_empty());
         fs::remove_dir_all(directory).expect("remove test directory");
     }
 }

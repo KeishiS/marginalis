@@ -2,10 +2,7 @@
 
 use std::{fmt, future::Future, str::FromStr, time::Duration};
 
-use argon2::{
-    Argon2, PasswordHasher,
-    password_hash::{SaltString, rand_core::OsRng},
-};
+use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use marginalis_application::{
     AuthenticatedSession, JournalEntry, NoteOperationKind, NoteProjectionStore, OidcIdentityStore,
     OidcLoginAttempt, OidcLoginAttemptStore, OperationId, OperationJournal, OperationState,
@@ -309,7 +306,7 @@ impl RootCredentialStore for SqliteRootCredentialStore {
             if password.is_empty() {
                 return Err(RootCredentialStoreError::PasswordHash);
             }
-            let salt = SaltString::generate(&mut OsRng);
+            let salt = SaltString::generate(&mut rand::thread_rng());
             let password_hash = Argon2::default()
                 .hash_password(password.as_bytes(), &salt)
                 .map_err(|_| RootCredentialStoreError::PasswordHash)?
