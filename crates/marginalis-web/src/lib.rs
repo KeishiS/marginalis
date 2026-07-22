@@ -399,6 +399,24 @@ async fn update_note_source(
             "note source does not match the requested note",
         ));
     }
+    let previous_source = state
+        .sources
+        .read(note_id)
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?
+        .ok_or(ApiError::new(
+            ApiErrorCode::NotFound,
+            "note is not available",
+        ))?;
+    let previous_source = std::str::from_utf8(&previous_source)
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
+    let previous_projection = marginalis_asciidoc::parse_note_projection(previous_source)
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
+    if projection.owner_id != previous_projection.owner_id {
+        return Err(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "note creator cannot be changed",
+        ));
+    }
     let projections = state.database.note_projection_store();
     let journal = state.database.operation_journal();
     NoteWriteService::new(
