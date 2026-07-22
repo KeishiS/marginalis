@@ -669,6 +669,20 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
             Ok(())
         }
     }
+
+    fn delete_projection(
+        &self,
+        note_id: NoteId,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            sqlx::query("DELETE FROM notes WHERE note_id = ?")
+                .bind(note_id.to_string())
+                .execute(&pool)
+                .await?;
+            Ok(())
+        }
+    }
 }
 
 impl OidcIdentityStore for SqliteOidcIdentityStore {

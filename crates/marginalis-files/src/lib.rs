@@ -33,6 +33,14 @@ impl NoteSourceStore for FileNoteStore {
     ) -> impl std::future::Future<Output = Result<SourceRevision, Self::Error>> + Send {
         std::future::ready(FileNoteStore::replace(self, note_id, operation, &source))
     }
+
+    fn delete(
+        &self,
+        note_id: NoteId,
+        operation: OperationId,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
+        std::future::ready(FileNoteStore::delete(self, note_id, operation))
+    }
 }
 
 impl fmt::Display for FileStoreError {
@@ -101,6 +109,22 @@ impl FileNoteStore {
         fs::rename(&temporary, target)?;
         self.sync_notes_directory()?;
         Ok(SourceRevision::from_source(source))
+    }
+
+    /// 正本を物理削除し、directory entryを同期する。既にない場合も復旧時に成功として扱う。
+    pub fn delete(
+        &self,
+        note_id: NoteId,
+        _operation_id: OperationId,
+    ) -> Result<(), FileStoreError> {
+        match fs::remove_file(self.note_path(note_id)) {
+            Ok(()) => {
+                self.sync_notes_directory()?;
+                Ok(())
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// 復旧処理だけが呼ぶ、未完了操作のtemp file除去。

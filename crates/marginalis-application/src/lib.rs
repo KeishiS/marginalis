@@ -278,6 +278,12 @@ pub trait NoteSourceStore: Send + Sync {
         operation: OperationId,
         source: Vec<u8>,
     ) -> impl Future<Output = Result<SourceRevision, Self::Error>> + Send;
+
+    fn delete(
+        &self,
+        note_id: NoteId,
+        operation: OperationId,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
 /// SQLiteなどの検索用投影を、正本更新後に置換するport。
@@ -288,6 +294,11 @@ pub trait NoteProjectionStore: Send + Sync {
         &self,
         projection: NoteProjection,
         revision: SourceRevision,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn delete_projection(
+        &self,
+        note_id: NoteId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
@@ -472,6 +483,42 @@ where
         Ok(revision)
     }
 
+    /// 正本を物理削除してから投影を削除する。投影処理が止まってもjournalにより再実行できる。
+    pub async fn delete(&self, note_id: NoteId) -> Result<(), NoteWriteError> {
+        let operation_id = OperationId(self.entropy.uuid_v7());
+        let now = self.clock.now();
+        self.journal
+            .prepare(JournalEntry {
+                operation_id,
+                note_id,
+                kind: NoteOperationKind::Delete,
+                state: OperationState::Prepared,
+                source_revision: None,
+                projection: None,
+                created_at: now,
+                updated_at: now,
+            })
+            .await
+            .map_err(|error| NoteWriteError::Journal(Box::new(error)))?;
+        self.sources
+            .delete(note_id, operation_id)
+            .await
+            .map_err(|error| NoteWriteError::Source(Box::new(error)))?;
+        self.journal
+            .mark_source_applied(operation_id, self.clock.now())
+            .await
+            .map_err(|error| NoteWriteError::Journal(Box::new(error)))?;
+        self.projections
+            .delete_projection(note_id)
+            .await
+            .map_err(|error| NoteWriteError::Projection(Box::new(error)))?;
+        self.journal
+            .complete(operation_id, self.clock.now())
+            .await
+            .map_err(|error| NoteWriteError::Journal(Box::new(error)))?;
+        Ok(())
+    }
+
     /// sourceを書込み済みで止まった操作だけを再投影する。preparedは正本変更前なので残す。
     pub async fn recover(&self) -> Result<(), NoteWriteError> {
         for entry in self
@@ -481,6 +528,26 @@ where
             .map_err(|error| NoteWriteError::Journal(Box::new(error)))?
         {
             if entry.state != OperationState::SourceApplied {
+                continue;
+            }
+            if entry.kind == NoteOperationKind::Delete {
+                if self
+                    .sources
+                    .read(entry.note_id)
+                    .await
+                    .map_err(|error| NoteWriteError::Source(Box::new(error)))?
+                    .is_some()
+                {
+                    continue;
+                }
+                self.projections
+                    .delete_projection(entry.note_id)
+                    .await
+                    .map_err(|error| NoteWriteError::Projection(Box::new(error)))?;
+                self.journal
+                    .complete(entry.operation_id, self.clock.now())
+                    .await
+                    .map_err(|error| NoteWriteError::Journal(Box::new(error)))?;
                 continue;
             }
             let Some(projection) = entry.projection else {

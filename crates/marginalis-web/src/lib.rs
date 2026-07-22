@@ -10,7 +10,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 use marginalis_application::{
     Clock, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteWriteService,
@@ -141,6 +141,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/health", get(health))
         .route("/api/v1/notes/{note_id}/source", get(note_source))
         .route("/api/v1/notes/{note_id}/source", put(update_note_source))
+        .route("/api/v1/notes/{note_id}", delete(delete_note))
         .route("/api/v1/notes", post(create_note))
         .route(
             "/api/v1/notes/{note_id}/acl/{user_id}",
@@ -259,6 +260,44 @@ async fn update_note_source(
     .replace(NoteOperationKind::Update, projection, source.into_bytes())
     .await
     .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_note(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
+    let note_id = NoteId::new(
+        EntityId::from_str(&note_id)
+            .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
+    );
+    let permission = state
+        .database
+        .note_acl_store()
+        .permission_for(actor, note_id)
+        .await
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note deletion is unavailable"))?;
+    if !matches!(permission, Some(value) if value.permits(NotePermission::Admin)) {
+        return Err(ApiError::new(
+            ApiErrorCode::NotFound,
+            "note is not available",
+        ));
+    }
+    let projections = state.database.note_projection_store();
+    let journal = state.database.operation_journal();
+    NoteWriteService::new(
+        &state.sources,
+        &projections,
+        &journal,
+        &SystemRandom,
+        &SystemClock,
+    )
+    .delete(note_id)
+    .await
+    .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note deletion is unavailable"))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
