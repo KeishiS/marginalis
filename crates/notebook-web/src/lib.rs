@@ -22,7 +22,7 @@ use openidconnect::{
     reqwest,
 };
 use serde::{Deserialize, Serialize};
-use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
+use time::{Duration, OffsetDateTime, UtcOffset, macros::format_description};
 use url::Url;
 
 /// 公開REST APIの現在のバージョン。
@@ -220,7 +220,12 @@ impl OidcAuthentication {
         state: &str,
     ) -> Result<OidcLoginResult, OidcCallbackError> {
         let now = OffsetDateTime::now_utc()
-            .format(&Rfc3339)
+            .to_offset(UtcOffset::UTC)
+            .replace_nanosecond(OffsetDateTime::now_utc().nanosecond() / 1_000_000 * 1_000_000)
+            .map_err(|_| OidcCallbackError::Unavailable)?
+            .format(format_description!(
+                "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+            ))
             .map_err(|_| OidcCallbackError::Unavailable)?;
         let pending = store
             .consume_oidc_login(state, &now)

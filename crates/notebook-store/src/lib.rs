@@ -14,7 +14,10 @@ use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
-use time::{Duration as TimeDuration, OffsetDateTime, format_description::well_known::Rfc3339};
+use time::{
+    Duration as TimeDuration, OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339,
+    macros::format_description,
+};
 use tokio::sync::Mutex;
 use url::Url;
 use uuid::Uuid;
@@ -679,9 +682,12 @@ fn hash_opaque_token(token: &str) -> [u8; 32] {
 
 fn format_timestamp(value: OffsetDateTime) -> Result<String, WebSessionError> {
     value
+        .to_offset(UtcOffset::UTC)
         .replace_nanosecond(value.nanosecond() / 1_000_000 * 1_000_000)
         .map_err(|_| WebSessionError::InvalidStoredExpiration)?
-        .format(&Rfc3339)
+        .format(format_description!(
+            "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+        ))
         .map_err(|_| WebSessionError::InvalidStoredExpiration)
 }
 
