@@ -150,8 +150,31 @@ pub enum OidcLoginStartError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OidcCallbackError {
-    Rejected,
+    Rejected(OidcCallbackRejection),
     Unavailable,
+}
+
+/// OAuth callbackの安全に記録できる失敗段階。token、code、stateなどの値は含めない。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OidcCallbackRejection {
+    State,
+    CodeExchange,
+    MissingIdToken,
+    Claims,
+    Identity,
+}
+
+impl OidcCallbackError {
+    pub const fn diagnostic_stage(self) -> &'static str {
+        match self {
+            Self::Rejected(OidcCallbackRejection::State) => "state",
+            Self::Rejected(OidcCallbackRejection::CodeExchange) => "code-exchange",
+            Self::Rejected(OidcCallbackRejection::MissingIdToken) => "missing-id-token",
+            Self::Rejected(OidcCallbackRejection::Claims) => "id-token-claims",
+            Self::Rejected(OidcCallbackRejection::Identity) => "identity",
+            Self::Unavailable => "storage",
+        }
+    }
 }
 
 impl OidcAuthentication {
@@ -239,19 +262,21 @@ impl OidcAuthentication {
             .consume(state.to_owned(), clock.now())
             .await
             .map_err(|_| OidcCallbackError::Unavailable)?
-            .ok_or(OidcCallbackError::Rejected)?;
+            .ok_or(OidcCallbackError::Rejected(OidcCallbackRejection::State))?;
         let token = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_owned()))
-            .map_err(|_| OidcCallbackError::Rejected)?
+            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?
             .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
             .request_async(&self.http_client)
             .await
-            .map_err(|_| OidcCallbackError::Rejected)?;
-        let id_token = token.id_token().ok_or(OidcCallbackError::Rejected)?;
+            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?;
+        let id_token = token.id_token().ok_or(OidcCallbackError::Rejected(
+            OidcCallbackRejection::MissingIdToken,
+        ))?;
         let claims = id_token
             .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
-            .map_err(|_| OidcCallbackError::Rejected)?;
+            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Claims))?;
         let subject = claims.subject().as_str().to_owned();
         let display_name = claims
             .name()
@@ -262,7 +287,7 @@ impl OidcAuthentication {
             .unwrap_or(&subject)
             .to_owned();
         let identity = OidcIdentity::new(claims.issuer().as_str(), subject, display_name)
-            .map_err(|_| OidcCallbackError::Rejected)?;
+            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Identity))?;
         OidcRegistrationService::new(identities, entropy)
             .register_or_lookup(identity, RegistrationPolicy::default(), clock.now())
             .await

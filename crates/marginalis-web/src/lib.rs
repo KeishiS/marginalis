@@ -17,8 +17,8 @@ use marginalis_application::{
     SessionLifetime, WebSessionService, WebSessionStore,
 };
 pub use marginalis_auth_oidc::{
-    OidcAuthentication, OidcCallbackError, OidcConfiguration, OidcConfigurationError,
-    OidcDiscoveryError, OidcLoginStartError,
+    OidcAuthentication, OidcCallbackError, OidcCallbackRejection, OidcConfiguration,
+    OidcConfigurationError, OidcDiscoveryError, OidcLoginStartError,
 };
 use marginalis_domain::{Actor, EntityId, NoteId, NotePermission, OidcLoginResult, UserId};
 use marginalis_files::FileNoteStore;
@@ -448,10 +448,13 @@ async fn complete_oidc_login(
         )
         .await
         .map_err(|error| match error {
-            OidcCallbackError::Rejected => ApiError::new(
-                ApiErrorCode::AuthenticationRequired,
-                "authentication failed",
-            ),
+            OidcCallbackError::Rejected(_) => {
+                eprintln!("OIDC callback rejected at {}", error.diagnostic_stage());
+                ApiError::new(
+                    ApiErrorCode::AuthenticationRequired,
+                    "authentication failed",
+                )
+            }
             OidcCallbackError::Unavailable => {
                 ApiError::new(ApiErrorCode::Internal, "authentication is unavailable")
             }
