@@ -74,6 +74,47 @@
               };
             in
             pkgs.writeText "marginalis-nixos-module-evaluation" evaluated.config.systemd.services.marginalis.serviceConfig.ExecStart;
+
+          nixos-module-vm =
+            let
+              probeServer = pkgs.writeShellApplication {
+                name = "marginalis";
+                text = ''
+                  test -s "$OIDC_CLIENT_SECRET_FILE"
+                  test -d "$MARGINALIS_DATA_DIR"
+                  touch "$MARGINALIS_DATA_DIR/service-started"
+                  exec sleep infinity
+                '';
+              };
+            in
+            pkgs.testers.nixosTest {
+              name = "marginalis-nixos-module";
+              nodes.machine = {
+                imports = [ self.nixosModules.default ];
+                system.stateVersion = "25.11";
+
+                environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
+
+                services.marginalis = {
+                  enable = true;
+                  package = probeServer;
+                  baseUrl = "https://marginalis.example.test";
+                  oidc = {
+                    issuerUrl = "https://id.example.test";
+                    clientId = "marginalis";
+                    clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
+                  };
+                };
+              };
+
+              testScript = ''
+                machine.wait_for_unit("marginalis.service")
+                machine.succeed("test -f /var/lib/marginalis/service-started")
+                machine.succeed("systemctl restart marginalis.service")
+                machine.wait_for_unit("marginalis.service")
+                machine.succeed("test -f /var/lib/marginalis/service-started")
+              '';
+            };
         }
       );
 
