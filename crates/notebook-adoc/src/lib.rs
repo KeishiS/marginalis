@@ -7,10 +7,12 @@ use core::fmt;
 use std::collections::BTreeMap;
 
 use adocweave::attributes::{AttributeOperation, DocumentAttribute};
-use adocweave::inline::ReferenceDestination;
+use adocweave::inline::{Inline, ReferenceDestination};
 use adocweave::limits::SyntaxMode;
-use adocweave::parser::{AstBlock, HeadingKind};
+use adocweave::parser::{AstBlock, DelimitedContent, HeadingKind};
+use adocweave::preprocessor::discover_includes;
 use adocweave::source::{TextRange, TextSize};
+use adocweave::walker::{SemanticNode, walk};
 use unicode_normalization::UnicodeNormalization;
 
 /// 採用したAdocWeaveソースcommit。
@@ -171,6 +173,30 @@ pub enum NoteReferenceErrorCode {
     InvalidNoteId,
 }
 
+/// 保存時に拒否する、ノート本文の危険な構文。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteContentError {
+    pub code: NoteContentErrorCode,
+    pub range: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteContentErrorCode {
+    IncludeDirective,
+    InlinePassthrough,
+    BlockPassthrough,
+}
+
+impl NoteContentErrorCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::IncludeDirective => "include-directive-disabled",
+            Self::InlinePassthrough => "inline-passthrough-disabled",
+            Self::BlockPassthrough => "block-passthrough-disabled",
+        }
+    }
+}
+
 impl NoteReferenceErrorCode {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -222,6 +248,37 @@ pub fn extract_note_references(
     } else {
         Err(errors)
     }
+}
+
+/// アプリの保存プロファイルで許可しない、I/Oおよびraw HTML経路を検証する。
+///
+/// include検出はAdocWeaveの公開preprocessor APIを使い、ファイルやネットワークへはアクセスしない。
+pub fn validate_note_content_profile(analysis: &adocweave::Analysis) -> Vec<NoteContentError> {
+    let mut errors = discover_includes(analysis.source())
+        .expect("analysis source must have a representable byte length")
+        .into_iter()
+        .map(|request| NoteContentError {
+            code: NoteContentErrorCode::IncludeDirective,
+            range: request.range,
+        })
+        .collect::<Vec<_>>();
+    walk(analysis.ast(), |node| match node {
+        SemanticNode::Inline(Inline::Passthrough { range, .. }) => errors.push(NoteContentError {
+            code: NoteContentErrorCode::InlinePassthrough,
+            range: *range,
+        }),
+        SemanticNode::Block(AstBlock::Delimited(block))
+            if matches!(block.content, DelimitedContent::Passthrough(_)) =>
+        {
+            errors.push(NoteContentError {
+                code: NoteContentErrorCode::BlockPassthrough,
+                range: block.range,
+            });
+        }
+        _ => {}
+    });
+    errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.as_str()));
+    errors
 }
 
 impl NoteProfileErrorCode {
@@ -495,8 +552,9 @@ mod tests {
     use adocweave::Engine;
 
     use super::{
-        ADOCWEAVE_SOURCE_REVISION, NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_CONTRACTS,
-        extract_note_references, validate_note_metadata, verify_runtime_contracts,
+        ADOCWEAVE_SOURCE_REVISION, NoteContentErrorCode, NoteProfileErrorCode,
+        NoteReferenceErrorCode, PINNED_CONTRACTS, extract_note_references,
+        validate_note_content_profile, validate_note_metadata, verify_runtime_contracts,
     };
 
     #[test]
@@ -630,5 +688,25 @@ mod tests {
         let errors = extract_note_references(&analysis).expect_err("invalid note UUID");
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].code, NoteReferenceErrorCode::InvalidNoteId);
+    }
+
+    #[test]
+    fn rejects_include_and_passthrough_constructs() {
+        let analysis = Engine::new(Default::default())
+            .analyze(
+                "include::secret.adoc[]\n\n\
+                 +++<script>alert(1)</script>+++\n\n\
+                 ++++\n<div>raw</div>\n++++\n",
+            )
+            .expect("recoverable AsciiDoc");
+
+        let errors = validate_note_content_profile(&analysis);
+        let codes = errors
+            .into_iter()
+            .map(|error| error.code)
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&NoteContentErrorCode::IncludeDirective));
+        assert!(codes.contains(&NoteContentErrorCode::InlinePassthrough));
+        assert!(codes.contains(&NoteContentErrorCode::BlockPassthrough));
     }
 }
