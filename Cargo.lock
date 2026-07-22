@@ -1069,6 +1069,7 @@ version = "0.1.0"
 dependencies = [
  "adocweave",
  "adocweave-wasm",
+ "marginalis-domain",
  "unicode-normalization",
 ]
 
