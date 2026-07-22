@@ -1,5 +1,8 @@
-use marginalis_application::{Clock, Random, RootCredentialStore, RootInitializationService};
+use marginalis_application::{
+    Clock, NoteWriteService, Random, RootCredentialStore, RootInitializationService,
+};
 use marginalis_domain::{EntityId, UnixMillis};
+use marginalis_files::FileNoteStore;
 use marginalis_server::ServerConfig;
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::{ApiState, OidcAuthentication, OidcConfiguration, router};
@@ -26,6 +29,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (configuration, secrets) = ServerConfig::from_environment()?;
     std::fs::create_dir_all(&configuration.data_dir)?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
+    let sources = FileNoteStore::open(&configuration.data_dir)?;
+    let projections = database.note_projection_store();
+    let journal = database.operation_journal();
+    NoteWriteService::new(&sources, &projections, &journal, &RandomImpl, &ClockImpl)
+        .recover()
+        .await?;
     let root_store = database.root_credential_store();
     if !root_store.is_initialized().await? {
         let password = secrets.initial_root_password.ok_or(

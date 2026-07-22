@@ -1130,6 +1130,7 @@ dependencies = [
  "base64 0.22.1",
  "marginalis-application",
  "marginalis-domain",
+ "marginalis-files",
  "marginalis-server",
  "marginalis-sqlite",
  "openidconnect",

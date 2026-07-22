@@ -10,6 +10,7 @@ publish = false
 axum.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
+marginalis-files = { path = "../marginalis-files" }
 marginalis-server = { path = "../marginalis-server" }
 marginalis-sqlite = { path = "../marginalis-sqlite" }
 openidconnect.workspace = true
