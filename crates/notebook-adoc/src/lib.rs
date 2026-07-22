@@ -4,7 +4,7 @@
 //! 描画ポリシーを段階的に追加する。
 
 use core::fmt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use adocweave::attributes::{AttributeOperation, DocumentAttribute};
 use adocweave::inline::{Inline, MathLanguage, ReferenceDestination};
@@ -17,6 +17,19 @@ use unicode_normalization::UnicodeNormalization;
 
 /// 採用したAdocWeaveソースcommit。
 pub const ADOCWEAVE_SOURCE_REVISION: &str = "72ad5a677e179448b4de7f524710f4e455aa163d";
+
+/// 初期リリースでシンタックスハイライト対象として受理するsource block言語。
+pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
+    "rust",
+    "typescript",
+    "javascript",
+    "json",
+    "yaml",
+    "toml",
+    "bash",
+    "sql",
+    "text",
+];
 
 /// アプリが受理するAdocWeave公開契約の組。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -201,6 +214,7 @@ pub enum NoteContentErrorCode {
     InlinePassthrough,
     BlockPassthrough,
     UnsupportedMathLanguage,
+    UnsupportedSourceLanguage,
 }
 
 impl NoteContentErrorCode {
@@ -210,6 +224,24 @@ impl NoteContentErrorCode {
             Self::InlinePassthrough => "inline-passthrough-disabled",
             Self::BlockPassthrough => "block-passthrough-disabled",
             Self::UnsupportedMathLanguage => "unsupported-math-language",
+            Self::UnsupportedSourceLanguage => "unsupported-source-language",
+        }
+    }
+}
+
+/// ノート本文で許可する標準AsciiDoc構文のホスト側プロファイル。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteContentProfile {
+    pub allowed_source_languages: BTreeSet<String>,
+}
+
+impl Default for NoteContentProfile {
+    fn default() -> Self {
+        Self {
+            allowed_source_languages: DEFAULT_SOURCE_LANGUAGES
+                .iter()
+                .map(|language| (*language).to_owned())
+                .collect(),
         }
     }
 }
@@ -271,6 +303,14 @@ pub fn extract_note_references(
 ///
 /// include検出はAdocWeaveの公開preprocessor APIを使い、ファイルやネットワークへはアクセスしない。
 pub fn validate_note_content_profile(analysis: &adocweave::Analysis) -> Vec<NoteContentError> {
+    validate_note_content_profile_with(analysis, &NoteContentProfile::default())
+}
+
+/// 指定したホスト側プロファイルで、I/O、raw HTMLおよび未許可の表示経路を検証する。
+pub fn validate_note_content_profile_with(
+    analysis: &adocweave::Analysis,
+    profile: &NoteContentProfile,
+) -> Vec<NoteContentError> {
     let mut errors = discover_includes(analysis.source())
         .expect("analysis source must have a representable byte length")
         .into_iter()
@@ -305,6 +345,18 @@ pub fn validate_note_content_profile(analysis: &adocweave::Analysis) -> Vec<Note
                 code: NoteContentErrorCode::UnsupportedMathLanguage,
                 range: math.range,
             });
+        }
+        SemanticNode::Block(AstBlock::Source(source)) => {
+            let Some(language) = source.language.as_deref() else {
+                return;
+            };
+            let normalized = language.to_ascii_lowercase();
+            if !profile.allowed_source_languages.contains(&normalized) {
+                errors.push(NoteContentError {
+                    code: NoteContentErrorCode::UnsupportedSourceLanguage,
+                    range: source.language_range.unwrap_or(source.attribute_range),
+                });
+            }
         }
         _ => {}
     });
@@ -611,9 +663,10 @@ mod tests {
     use adocweave::Engine;
 
     use super::{
-        ADOCWEAVE_SOURCE_REVISION, NoteContentErrorCode, NoteMathDisplay, NoteProfileErrorCode,
-        NoteReferenceErrorCode, PINNED_CONTRACTS, extract_note_math, extract_note_references,
-        validate_note_content_profile, validate_note_metadata, verify_runtime_contracts,
+        ADOCWEAVE_SOURCE_REVISION, DEFAULT_SOURCE_LANGUAGES, NoteContentErrorCode, NoteMathDisplay,
+        NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_CONTRACTS, extract_note_math,
+        extract_note_references, validate_note_content_profile, validate_note_metadata,
+        verify_runtime_contracts,
     };
 
     #[test]
@@ -785,5 +838,24 @@ mod tests {
         assert_eq!(math[0].source, "x^2");
         assert_eq!(math[1].display, NoteMathDisplay::Block);
         assert_eq!(math[1].source, "\\sum_{i=1}^{n} i\n");
+    }
+
+    #[test]
+    fn accepts_configured_source_languages_and_rejects_unknown_ones() {
+        let analysis = Engine::new(Default::default())
+            .analyze(
+                "[source,rust]\n----\nlet value = 1;\n----\n\n\
+                 [source,python]\n----\nvalue = 1\n----\n\n\
+                 [source]\n----\nplain text\n----\n",
+            )
+            .expect("valid AsciiDoc");
+
+        assert!(DEFAULT_SOURCE_LANGUAGES.contains(&"rust"));
+        let errors = validate_note_content_profile(&analysis);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].code,
+            NoteContentErrorCode::UnsupportedSourceLanguage
+        );
     }
 }
