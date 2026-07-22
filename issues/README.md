@@ -29,6 +29,9 @@
 公開用NixOS moduleとパッケージングは[010: NixOS moduleと公開パッケージ](010-nixos-module-and-release-packaging.md)
 で管理する。
 
+公開前の破壊的な責務分割と基盤再設計は[011: アーキテクチャ再基線化](011-architecture-rebaseline.md)
+で管理する。010の最小moduleは、011で定める設定・server境界を先に確定した直後から並行して実装する。
+
 ## 実装原則
 
 - AdocWeaveコアはファイル、DB、ネットワーク、時刻および認証情報へアクセスさせない。
