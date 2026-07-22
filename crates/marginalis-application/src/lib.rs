@@ -35,6 +35,7 @@ pub trait OidcIdentityStore: Send + Sync {
 /// 緊急用root accountの初期化を扱うport。平文passwordは保持しない。
 pub trait RootCredentialStore: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
+    fn is_initialized(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send;
     fn initialize_if_missing(
         &self,
         password: String,

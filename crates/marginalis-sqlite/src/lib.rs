@@ -288,6 +288,16 @@ impl SqliteDatabase {
 impl RootCredentialStore for SqliteRootCredentialStore {
     type Error = RootCredentialStoreError;
 
+    fn is_initialized(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            Ok(sqlx::query("SELECT 1 FROM root_credentials LIMIT 1")
+                .fetch_optional(&pool)
+                .await?
+                .is_some())
+        }
+    }
+
     fn initialize_if_missing(
         &self,
         password: String,

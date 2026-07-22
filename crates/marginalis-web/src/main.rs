@@ -1,4 +1,4 @@
-use marginalis_application::{Clock, Random, RootInitializationService};
+use marginalis_application::{Clock, Random, RootCredentialStore, RootInitializationService};
 use marginalis_domain::{EntityId, UnixMillis};
 use marginalis_server::ServerConfig;
 use marginalis_sqlite::SqliteDatabase;
@@ -26,12 +26,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (configuration, secrets) = ServerConfig::from_environment()?;
     std::fs::create_dir_all(&configuration.data_dir)?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
-    let password = secrets
-        .initial_root_password
-        .ok_or("ROOT_PASSWORD or ROOT_PASSWORD_FILE is required for an uninitialized database")?;
-    RootInitializationService::new(&database.root_credential_store(), &RandomImpl, &ClockImpl)
-        .initialize_if_missing(password)
-        .await?;
+    let root_store = database.root_credential_store();
+    if !root_store.is_initialized().await? {
+        let password = secrets.initial_root_password.ok_or(
+            "ROOT_PASSWORD or ROOT_PASSWORD_FILE is required for an uninitialized database",
+        )?;
+        RootInitializationService::new(&root_store, &RandomImpl, &ClockImpl)
+            .initialize_if_missing(password)
+            .await?;
+    }
     let oidc_configuration = OidcConfiguration::new(
         configuration.oidc.issuer_url.to_string(),
         configuration.oidc.client_id,
