@@ -79,6 +79,26 @@ pub struct StoredNoteReference {
     pub target_anchor: Option<String>,
 }
 
+/// 一つの解析revisionから得た、参照解決用のアンカー投影。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoredNoteAnchor {
+    pub anchor_id: String,
+}
+
+/// 同一解析revisionから、SQLiteへ保存する参照先アンカー投影を作る。
+///
+/// 明示アンカーだけでなく、AdocWeaveが生成する見出しIDも含める。これによりxrefの
+/// `#anchor`解決は、HTMLレンダラーが出力するIDと同じ集合を参照する。
+pub fn extract_stored_note_anchors(analysis: &adocweave::Analysis) -> Vec<StoredNoteAnchor> {
+    analysis
+        .reference_targets()
+        .iter()
+        .map(|target| StoredNoteAnchor {
+            anchor_id: target.id.clone(),
+        })
+        .collect()
+}
+
 /// 一つの解析revisionから、SQLiteへ保存する位置付き参照投影を作る。
 pub fn extract_stored_note_references(
     analysis: &adocweave::Analysis,
@@ -341,6 +361,72 @@ impl NotebookStore {
         transaction.commit().await
     }
 
+    /// 同じノートに属するアンカーをトランザクションで全置換する。
+    pub async fn replace_anchors(
+        &self,
+        note_id: &str,
+        anchors: &[StoredNoteAnchor],
+    ) -> Result<(), sqlx::Error> {
+        let _write_guard = self.write_lock.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query("DELETE FROM note_anchors WHERE note_id = ?")
+            .bind(note_id)
+            .execute(&mut *transaction)
+            .await?;
+        for anchor in anchors {
+            sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
+                .bind(note_id)
+                .bind(&anchor.anchor_id)
+                .execute(&mut *transaction)
+                .await?;
+        }
+        transaction.commit().await
+    }
+
+    /// 同一解析revisionから得たアンカーと参照位置を、一つのトランザクションで置換する。
+    ///
+    /// 通常のノート保存・投影再構築ではこのメソッドを使う。個別の置換メソッドは、段階的な
+    /// 移行や保守操作のために残す。
+    pub async fn replace_note_link_projection(
+        &self,
+        note_id: &str,
+        anchors: &[StoredNoteAnchor],
+        references: &[StoredNoteReference],
+    ) -> Result<(), sqlx::Error> {
+        let _write_guard = self.write_lock.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query("DELETE FROM note_anchors WHERE note_id = ?")
+            .bind(note_id)
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("DELETE FROM note_references WHERE source_note_id = ?")
+            .bind(note_id)
+            .execute(&mut *transaction)
+            .await?;
+        for anchor in anchors {
+            sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
+                .bind(note_id)
+                .bind(&anchor.anchor_id)
+                .execute(&mut *transaction)
+                .await?;
+        }
+        for reference in references {
+            sqlx::query(
+                "INSERT INTO note_references \
+                 (source_note_id, source_start, source_end, target_note_id, target_anchor) \
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(note_id)
+            .bind(reference.source_start)
+            .bind(reference.source_end)
+            .bind(&reference.target_note_id)
+            .bind(&reference.target_anchor)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await
+    }
+
     /// 対象不在とACL拒否を同じ結果に畳み込み、存在を推測できないようにする。
     pub async fn resolve_note_reference(
         &self,
@@ -476,7 +562,8 @@ mod tests {
 
     use super::{
         NoteReferenceResolution, NoteUrlBase, NotebookStore, ReferenceFailureDetail,
-        StoredNoteReference, Viewer, extract_stored_note_references, render_note_html,
+        StoredNoteAnchor, StoredNoteReference, Viewer, extract_stored_note_anchors,
+        extract_stored_note_references, render_note_html,
     };
 
     async fn insert_note(store: &NotebookStore, note_id: &str) {
@@ -538,6 +625,89 @@ mod tests {
         assert_eq!(references[0].target_note_id, target);
         assert_eq!(references[0].target_anchor, None);
         assert_eq!(references[1].target_anchor.as_deref(), Some("part"));
+    }
+
+    #[tokio::test]
+    async fn rebuilds_generated_and_explicit_anchors() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        insert_note(&store, "source").await;
+        let analysis = Engine::new(Default::default())
+            .analyze("== Generated heading\n\n[[stable]]\n== Explicit heading\n")
+            .expect("valid AsciiDoc");
+        let anchors = extract_stored_note_anchors(&analysis);
+        assert!(
+            anchors
+                .iter()
+                .any(|anchor| anchor.anchor_id == "_generated_heading")
+        );
+        assert!(anchors.iter().any(|anchor| anchor.anchor_id == "stable"));
+
+        store
+            .replace_anchors("source", &anchors)
+            .await
+            .expect("store anchors");
+        let count: i64 =
+            sqlx::query("SELECT COUNT(*) AS count FROM note_anchors WHERE note_id = 'source'")
+                .fetch_one(store.pool())
+                .await
+                .expect("count anchors")
+                .get("count");
+        assert_eq!(count, anchors.len() as i64);
+
+        store
+            .replace_anchors(
+                "source",
+                &[StoredNoteAnchor {
+                    anchor_id: "replacement".into(),
+                }],
+            )
+            .await
+            .expect("replace anchors");
+        let replaced: String =
+            sqlx::query("SELECT anchor_id FROM note_anchors WHERE note_id = 'source'")
+                .fetch_one(store.pool())
+                .await
+                .expect("read replacement")
+                .get("anchor_id");
+        assert_eq!(replaced, "replacement");
+    }
+
+    #[tokio::test]
+    async fn replaces_anchors_and_references_from_one_revision() {
+        let store = NotebookStore::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        insert_note(&store, "source").await;
+        let target = "01800000-0000-7000-8000-000000000001";
+        let analysis = Engine::new(Default::default())
+            .analyze(&format!("== Target\n\nxref:note:{target}[]\n"))
+            .expect("valid AsciiDoc");
+
+        store
+            .replace_note_link_projection(
+                "source",
+                &extract_stored_note_anchors(&analysis),
+                &extract_stored_note_references(&analysis).expect("valid references"),
+            )
+            .await
+            .expect("replace link projection");
+        let anchor_count: i64 =
+            sqlx::query("SELECT COUNT(*) AS count FROM note_anchors WHERE note_id = 'source'")
+                .fetch_one(store.pool())
+                .await
+                .expect("count anchors")
+                .get("count");
+        let reference_count: i64 = sqlx::query(
+            "SELECT COUNT(*) AS count FROM note_references WHERE source_note_id = 'source'",
+        )
+        .fetch_one(store.pool())
+        .await
+        .expect("count references")
+        .get("count");
+        assert_eq!(anchor_count, 1);
+        assert_eq!(reference_count, 1);
     }
 
     #[tokio::test]
