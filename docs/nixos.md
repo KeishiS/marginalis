@@ -17,6 +17,8 @@
             openFirewall = false;
             baseUrl = "https://marginalis.sandi05.com";
             listenAddress = "127.0.0.1:3000";
+            # 新規SQLite DBにだけ適用する。既存DBのroot設定は上書きしない。
+            initialRegistrationPolicy = "approval";
             oidc = {
               issuerUrl = "https://id.sandi05.com/oauth2/openid/marginalis";
               clientId = "marginalis";
@@ -41,6 +43,8 @@ moduleはsystemd `LoadCredential`でsecretを渡し、unitの環境変数にはs
 
 初回起動時だけ`initialRootPasswordFile`が必要である。root初期化後はこのoptionを削除できる。
 SQLite DBと将来のAsciiDoc正本は`dataDir`（既定値は`/var/lib/marginalis`）に永続化される。
+`initialRegistrationPolicy`は新規DBにだけ`open`または`approval`を設定する。既存DBではroot APIから
+変更した現在の登録policyを保持するため、NixOS再適用で上書きされない。
 
 `openFirewall`は`listenAddress`のTCP portをNixOS firewallで許可するだけである。既定の
 `127.0.0.1:3000`は外部から到達不能なままであり、公開には同一Base URLを終端するreverse proxyが必要である。

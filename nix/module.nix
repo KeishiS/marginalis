@@ -66,6 +66,15 @@ in
       description = "SQLite connection URL. Defaults to a database below dataDir.";
     };
 
+    initialRegistrationPolicy = mkOption {
+      type = types.enum [
+        "open"
+        "approval"
+      ];
+      default = "approval";
+      description = "Registration policy written only when Marginalis creates a new database. Later root API changes are preserved.";
+    };
+
     oidc = {
       issuerUrl = mkOption {
         type = types.nullOr types.str;
@@ -153,6 +162,7 @@ in
         MARGINALIS_DATA_DIR = cfg.dataDir;
         MARGINALIS_DATABASE_URL =
           if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
+        MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
         OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
         OIDC_CLIENT_ID = cfg.oidc.clientId;
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
@@ -200,6 +210,7 @@ in
         MARGINALIS_DATA_DIR = cfg.dataDir;
         MARGINALIS_DATABASE_URL =
           if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
+        MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
         OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
         OIDC_CLIENT_ID = cfg.oidc.clientId;
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";

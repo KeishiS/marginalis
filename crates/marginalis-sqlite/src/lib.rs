@@ -419,6 +419,18 @@ impl From<sqlx::Error> for JournalError {
 impl SqliteDatabase {
     /// 接続設定とmigrationを一箇所に集約する。
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
+        Self::connect_with_initial_registration_policy(database_url, RegistrationPolicy::Approval)
+            .await
+    }
+
+    /// 初回作成時だけ登録policyを設定して接続する。
+    ///
+    /// migration済みDBでは現在値を一切上書きしない。これによりNixOSの初期設定とrootによる運用時変更を
+    /// 区別する。
+    pub async fn connect_with_initial_registration_policy(
+        database_url: &str,
+        initial_registration_policy: RegistrationPolicy,
+    ) -> Result<Self, sqlx::Error> {
         let options = database_url
             .parse::<SqliteConnectOptions>()?
             .create_if_missing(true)
@@ -429,8 +441,20 @@ impl SqliteDatabase {
             .max_connections(5)
             .connect_with(options)
             .await?;
+        let is_new_database = sqlx::query(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_marginalis_migrations'",
+        )
+        .fetch_optional(&pool)
+        .await?
+        .is_none();
         migrate(&pool).await?;
-        Ok(Self { pool })
+        let database = Self { pool };
+        if is_new_database {
+            database
+                .set_registration_policy(initial_registration_policy)
+                .await?;
+        }
+        Ok(database)
     }
 
     pub fn pool(&self) -> &SqlitePool {
@@ -2083,6 +2107,43 @@ mod tests {
         .await
         .expect("journal table exists");
         assert_eq!(row.get::<String, _>("name"), "operation_journal");
+    }
+
+    #[tokio::test]
+    async fn initial_registration_policy_is_applied_only_to_a_new_database() {
+        let suffix: u64 = rand::random();
+        let path = std::env::temp_dir().join(format!("marginalis-policy-{suffix}.sqlite"));
+        let url = format!("sqlite:{}", path.display());
+        let database = SqliteDatabase::connect_with_initial_registration_policy(
+            &url,
+            RegistrationPolicy::Open,
+        )
+        .await
+        .expect("new database");
+        assert_eq!(
+            database.registration_policy().await.expect("policy"),
+            RegistrationPolicy::Open
+        );
+        database
+            .set_registration_policy(RegistrationPolicy::Approval)
+            .await
+            .expect("change policy");
+        drop(database);
+        let database = SqliteDatabase::connect_with_initial_registration_policy(
+            &url,
+            RegistrationPolicy::Open,
+        )
+        .await
+        .expect("existing database");
+        assert_eq!(
+            database
+                .registration_policy()
+                .await
+                .expect("preserved policy"),
+            RegistrationPolicy::Approval
+        );
+        drop(database);
+        std::fs::remove_file(path).expect("remove database");
     }
 
     #[tokio::test]

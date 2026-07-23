@@ -30,7 +30,11 @@ async fn main() {
 async fn rebuild_projections() -> Result<(), Box<dyn std::error::Error>> {
     let (configuration, _) = ServerConfig::from_environment()?;
     std::fs::create_dir_all(&configuration.data_dir)?;
-    let database = SqliteDatabase::connect(&configuration.database_url).await?;
+    let database = SqliteDatabase::connect_with_initial_registration_policy(
+        &configuration.database_url,
+        configuration.initial_registration_policy,
+    )
+    .await?;
     let sources = FileNoteStore::open(&configuration.data_dir)?;
     let notes = ServerNoteUseCases::new(database, sources);
     notes.recover().await?;
@@ -52,7 +56,11 @@ fn initialize_tracing() {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (configuration, secrets) = ServerConfig::from_environment()?;
     std::fs::create_dir_all(&configuration.data_dir)?;
-    let database = SqliteDatabase::connect(&configuration.database_url).await?;
+    let database = SqliteDatabase::connect_with_initial_registration_policy(
+        &configuration.database_url,
+        configuration.initial_registration_policy,
+    )
+    .await?;
     // root監査は365日保持する。古い行だけを起動時に掃除し、通常のHTTP APIからは公開しない。
     let retention_ms = 365_i64 * 24 * 60 * 60 * 1_000;
     let cutoff = UnixMillis::new(SystemClock.now().get().saturating_sub(retention_ms));

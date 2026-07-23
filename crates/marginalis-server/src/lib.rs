@@ -1270,6 +1270,7 @@ pub struct ServerConfig {
     pub listen_address: SocketAddr,
     pub data_dir: PathBuf,
     pub database_url: String,
+    pub initial_registration_policy: RegistrationPolicy,
     pub oidc: OidcPublicConfig,
     pub mcp_enabled: bool,
     pub mcp_client_metadata_allowed_hosts: Vec<String>,
@@ -1297,6 +1298,7 @@ pub enum ConfigurationError {
     EmptyDataDirectory,
     UnreadableSecretFile(&'static str),
     InvalidMcpEnable,
+    InvalidInitialRegistrationPolicy,
 }
 
 impl fmt::Display for ConfigurationError {
@@ -1322,6 +1324,8 @@ impl fmt::Display for ConfigurationError {
             Self::InvalidMcpEnable => {
                 formatter.write_str("MARGINALIS_MCP_ENABLE must be `true` or `false`")
             }
+            Self::InvalidInitialRegistrationPolicy => formatter
+                .write_str("MARGINALIS_INITIAL_REGISTRATION_POLICY must be `open` or `approval`"),
         }
     }
 }
@@ -1348,6 +1352,7 @@ impl ServerConfig {
             listen_address,
             data_dir,
             database_url: required("MARGINALIS_DATABASE_URL")?,
+            initial_registration_policy: optional_initial_registration_policy()?,
             oidc: OidcPublicConfig {
                 issuer_url,
                 client_id,
@@ -1362,6 +1367,20 @@ impl ServerConfig {
             initial_root_password: optional_secret("ROOT_PASSWORD")?,
         };
         Ok((configuration, secrets))
+    }
+}
+
+fn optional_initial_registration_policy() -> Result<RegistrationPolicy, ConfigurationError> {
+    match env::var("MARGINALIS_INITIAL_REGISTRATION_POLICY") {
+        Ok(value) => match value.as_str() {
+            "open" => Ok(RegistrationPolicy::Open),
+            "approval" | "" => Ok(RegistrationPolicy::Approval),
+            _ => Err(ConfigurationError::InvalidInitialRegistrationPolicy),
+        },
+        Err(env::VarError::NotPresent) => Ok(RegistrationPolicy::Approval),
+        Err(env::VarError::NotUnicode(_)) => {
+            Err(ConfigurationError::InvalidInitialRegistrationPolicy)
+        }
     }
 }
 

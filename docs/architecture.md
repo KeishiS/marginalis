@@ -90,8 +90,9 @@ HTTP REST       MCP transport       maintenance CLI
 ## 設定と起動
 
 `ServerConfig`を一箇所で検証し、環境変数、NixOS moduleおよび将来のCLIはこの型へ変換する。
-設定にはBase URL、listen address、data directory、SQLite URL、OIDC公開設定、登録ポリシー、
+設定にはBase URL、listen address、data directory、SQLite URL、OIDC公開設定、新規DB専用の登録ポリシー、
 session期限を含める。secretは別の`SecretConfig`で受け、NixOSではsystemd credentialから渡す。
+運用中の登録policyはSQLiteを正本とし、root APIで変更する。NixOS設定は既存DBへ再適用しない。
 
 起動順は、設定検証、migration、datadir検証、root初期化、未完了ジャーナル復旧、OIDC client
 初期化、HTTP listenとする。OIDC一時障害時の起動可否は、root緊急ログインと通常ログインの
