@@ -210,6 +210,21 @@ pub trait WebAuthenticationUseCases: Send + Sync {
     fn cookie_path(&self) -> &str;
 }
 
+/// MCP access tokenを検証済みの一般Actorへ変換する永続化境界。
+///
+/// token自体はこの境界を越えて保存しない。adapterはhash、resource audience、scope、期限および
+/// ユーザー状態を同じ照会で検証する。
+pub trait McpAccessTokenStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn authenticate_read(
+        &self,
+        token: String,
+        resource_uri: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<Actor>, Self::Error>> + Send;
+}
+
 /// sessionの有効期限と秘密値を一箇所で決めるユースケース。
 pub struct WebSessionService<'a, Store, Entropy, Time> {
     store: &'a Store,

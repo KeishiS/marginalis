@@ -25,6 +25,7 @@ use marginalis_domain::{
     Actor, EntityId, NoteId, NotePage, NotePermission, NoteSummary, OidcLoginResult, OidcUser,
     SourceRevision, UserId,
 };
+use marginalis_mcp::{JsonRpcRequest, McpAuthenticationError, McpAuthenticator, McpTools};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
@@ -38,6 +39,15 @@ pub const API_VERSION: &str = "v1";
 pub struct ApiState {
     pub notes: Arc<dyn NoteUseCases>,
     pub authentication: Arc<dyn WebAuthenticationUseCases>,
+    pub mcp: Option<Arc<McpEndpoint>>,
+}
+
+pub struct McpEndpoint {
+    pub tools: McpTools,
+    pub authenticator: Arc<dyn McpAuthenticator>,
+    pub resource_uri: String,
+    pub metadata_uri: String,
+    pub allowed_origin: String,
 }
 
 impl ApiState {
@@ -48,7 +58,13 @@ impl ApiState {
         Self {
             notes,
             authentication,
+            mcp: None,
         }
+    }
+
+    pub fn with_mcp(mut self, mcp: McpEndpoint) -> Self {
+        self.mcp = Some(Arc::new(mcp));
+        self
     }
 
     #[cfg(test)]
@@ -185,6 +201,11 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/notes/{note_id}", delete(delete_note))
         .route("/api/v1/notes", get(list_notes).post(create_note))
         .route("/api/v1/search", get(search_notes))
+        .route("/mcp", get(mcp_get).post(mcp_post))
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(mcp_protected_resource_metadata),
+        )
         .route(
             "/api/v1/notes/{note_id}/acl/{user_id}",
             put(update_note_acl),
@@ -223,6 +244,68 @@ async fn health() -> Json<HealthResponse> {
         status: "ok",
         api_version: API_VERSION,
     })
+}
+
+async fn mcp_get() -> StatusCode {
+    // 初期実装はserver-to-client notification streamを持たない。
+    StatusCode::METHOD_NOT_ALLOWED
+}
+
+async fn mcp_protected_resource_metadata(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    Ok(Json(serde_json::json!({
+        "resource": endpoint.resource_uri,
+        "authorization_servers": [endpoint.resource_uri.trim_end_matches("/mcp")],
+        "bearer_methods_supported": ["header"],
+        "scopes_supported": ["notes:read", "notes:write", "notes:delete"]
+    })))
+}
+
+async fn mcp_post(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<JsonRpcRequest>,
+) -> Result<Response, ApiError> {
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    if let Some(origin) = headers.get(header::ORIGIN).and_then(|value| value.to_str().ok())
+        && origin != endpoint.allowed_origin
+    {
+        return Err(ApiError::new(ApiErrorCode::Forbidden, "MCP origin is not allowed"));
+    }
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let Some(token) = token else {
+        return Ok(mcp_unauthorized(endpoint));
+    };
+    let actor = match endpoint.authenticator.authenticate_read(token).await {
+        Ok(actor) => actor,
+        Err(McpAuthenticationError::MissingOrInvalid | McpAuthenticationError::InsufficientScope) => {
+            return Ok(mcp_unauthorized(endpoint));
+        }
+        Err(McpAuthenticationError::Unavailable) => {
+            return Err(ApiError::new(ApiErrorCode::Internal, "MCP authentication is unavailable"));
+        }
+    };
+    Ok(Json(endpoint.tools.handle(actor, request).await).into_response())
+}
+
+fn mcp_unauthorized(endpoint: &McpEndpoint) -> Response {
+    let mut response = StatusCode::UNAUTHORIZED.into_response();
+    let value = format!("Bearer resource_metadata=\"{}\"", endpoint.metadata_uri);
+    if let Ok(value) = HeaderValue::from_str(&value) {
+        response.headers_mut().insert(header::WWW_AUTHENTICATE, value);
+    }
+    response
 }
 
 /// Web UI公開前のBase URL到達先。OIDC callback後のredirect先としても用いる。

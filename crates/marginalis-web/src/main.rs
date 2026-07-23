@@ -1,10 +1,11 @@
 use marginalis_application::{RootCredentialStore, RootInitializationService};
 use marginalis_files::FileNoteStore;
 use marginalis_server::{
-    ServerConfig, ServerNoteUseCases, ServerWebAuthenticationUseCases, SystemClock, SystemRandom,
+    ServerConfig, ServerMcpAuthenticator, ServerNoteUseCases, ServerWebAuthenticationUseCases,
+    SystemClock, SystemRandom,
 };
 use marginalis_sqlite::SqliteDatabase;
-use marginalis_web::{ApiState, OidcAuthentication, OidcConfiguration, router};
+use marginalis_web::{ApiState, McpEndpoint, OidcAuthentication, OidcConfiguration, router};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -49,14 +50,34 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         configuration.base_url.as_str(),
     )?;
     let oidc = OidcAuthentication::discover(&oidc_configuration).await?;
+    let mcp_resource_url = configuration.base_url.join("mcp")?;
+    let mcp_metadata_url = configuration
+        .base_url
+        .join(".well-known/oauth-protected-resource/mcp")?;
+    let mcp_origin = configuration.base_url.origin().ascii_serialization();
     let listener = tokio::net::TcpListener::bind(configuration.listen_address).await?;
     tracing::info!(address = %configuration.listen_address, "Marginalis server listening");
     axum::serve(
         listener,
-        router(ApiState::new(
-            std::sync::Arc::new(notes),
-            std::sync::Arc::new(ServerWebAuthenticationUseCases::with_oidc(database, oidc)),
-        )),
+        router(
+            ApiState::new(
+                std::sync::Arc::new(notes.clone()),
+                std::sync::Arc::new(ServerWebAuthenticationUseCases::with_oidc(
+                    database.clone(),
+                    oidc,
+                )),
+            )
+            .with_mcp(McpEndpoint {
+                tools: marginalis_mcp::McpTools::new(std::sync::Arc::new(notes)),
+                authenticator: std::sync::Arc::new(ServerMcpAuthenticator::new(
+                    database,
+                    mcp_resource_url.to_string(),
+                )),
+                resource_uri: mcp_resource_url.to_string(),
+                metadata_uri: mcp_metadata_url.to_string(),
+                allowed_origin: mcp_origin,
+            }),
+        ),
     )
     .await?;
     Ok(())

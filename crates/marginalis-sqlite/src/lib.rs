@@ -7,10 +7,10 @@ use argon2::{
     password_hash::{PasswordHash, SaltString},
 };
 use marginalis_application::{
-    AuthenticatedSession, JournalEntry, NoteAclStore, NoteOperationKind, NoteProjectionStore,
-    NoteQueryStore, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore,
-    OidcUserAdministrationStore, OperationId, OperationJournal, OperationState,
-    RootCredentialStore, WebSession, WebSessionStore,
+    AuthenticatedSession, JournalEntry, McpAccessTokenStore, NoteAclStore, NoteOperationKind,
+    NoteProjectionStore, NoteQueryStore, OidcIdentityStore, OidcLoginAttempt,
+    OidcLoginAttemptStore, OidcUserAdministrationStore, OperationId, OperationJournal,
+    OperationState, RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity,
@@ -26,6 +26,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/0001_initial.sql")),
     (2, include_str!("../migrations/0002_live_notes_index.sql")),
     (3, include_str!("../migrations/0003_note_search.sql")),
+    (4, include_str!("../migrations/0004_mcp_access_tokens.sql")),
 ];
 
 #[derive(Clone, Debug)]
@@ -59,6 +60,38 @@ pub struct SqliteNoteQueryStore {
 #[derive(Clone, Debug)]
 pub struct SqliteNoteAclStore {
     pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SqliteMcpAccessTokenStore {
+    pool: SqlitePool,
+}
+
+#[derive(Debug)]
+pub enum McpAccessTokenStoreError {
+    Database(sqlx::Error),
+    CorruptUser,
+}
+
+impl fmt::Display for McpAccessTokenStoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MCP access token query failed")
+    }
+}
+
+impl std::error::Error for McpAccessTokenStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::CorruptUser => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for McpAccessTokenStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
 }
 
 #[derive(Debug)]
@@ -368,6 +401,12 @@ impl SqliteDatabase {
 
     pub fn note_acl_store(&self) -> SqliteNoteAclStore {
         SqliteNoteAclStore {
+            pool: self.pool.clone(),
+        }
+    }
+
+    pub fn mcp_access_token_store(&self) -> SqliteMcpAccessTokenStore {
+        SqliteMcpAccessTokenStore {
             pool: self.pool.clone(),
         }
     }
@@ -751,6 +790,47 @@ impl WebSessionStore for SqliteWebSessionStore {
 
 fn hash_token(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
+}
+
+impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
+    type Error = McpAccessTokenStoreError;
+
+    fn authenticate_read(
+        &self,
+        token: String,
+        resource_uri: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<Actor>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let row = sqlx::query(
+                "SELECT mcp_access_tokens.user_id
+                 FROM mcp_access_tokens JOIN users ON users.user_id = mcp_access_tokens.user_id
+                 WHERE mcp_access_tokens.token_hash = ?
+                   AND mcp_access_tokens.resource_uri = ?
+                   AND mcp_access_tokens.revoked_at_ms IS NULL
+                   AND mcp_access_tokens.expires_at_ms > ?
+                   AND instr(' ' || mcp_access_tokens.scopes || ' ', ' notes:read ') > 0
+                   AND users.status = 'active'
+                   AND users.authentication_kind <> 'root'",
+            )
+            .bind(hash_token(&token))
+            .bind(resource_uri)
+            .bind(now.get())
+            .fetch_optional(&pool)
+            .await?;
+            row.map(|row| {
+                let user_id: String = row.try_get("user_id")?;
+                let entity_id = EntityId::from_str(&user_id)
+                    .map_err(|_| McpAccessTokenStoreError::CorruptUser)?;
+                Ok(Actor {
+                    user_id: UserId::new(entity_id),
+                    is_root: false,
+                })
+            })
+            .transpose()
+        }
+    }
 }
 
 impl NoteProjectionStore for SqliteNoteProjectionStore {
@@ -1215,10 +1295,10 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::{
-        JournalEntry, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind,
-        NoteProjectionStore, NoteQueryStore, OidcIdentityStore, OidcLoginAttempt,
-        OidcLoginAttemptStore, OidcUserAdministrationStore, OperationId, OperationJournal,
-        OperationState, RootCredentialStore,
+        JournalEntry, McpAccessTokenStore, NoteAclService, NoteAclServiceError, NoteAclStore,
+        NoteOperationKind, NoteProjectionStore, NoteQueryStore, OidcIdentityStore,
+        OidcLoginAttempt, OidcLoginAttemptStore, OidcUserAdministrationStore, OperationId,
+        OperationJournal, OperationState, RootCredentialStore,
     };
     use marginalis_domain::{
         Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteReference, OidcIdentity,
@@ -1267,7 +1347,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -1286,6 +1366,15 @@ mod tests {
         .try_get("name")
         .expect("name");
         assert_eq!(search_table, "note_search");
+        let token_table: String = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'mcp_access_tokens'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("MCP token table")
+        .try_get("name")
+        .expect("table name");
+        assert_eq!(token_table, "mcp_access_tokens");
     }
 
     #[tokio::test]
@@ -1710,5 +1799,61 @@ mod tests {
             .await
             .expect("other search");
         assert!(other_results.notes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mcp_access_token_requires_matching_resource_scope_and_active_user() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000071").expect("user ID"),
+        );
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'User', 0, 0)",
+        )
+        .bind(user_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("user");
+        sqlx::query(
+            "INSERT INTO mcp_access_tokens (token_hash, user_id, resource_uri, scopes, expires_at_ms)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(hash_token("opaque-token"))
+        .bind(user_id.to_string())
+        .bind("https://example.test/mcp")
+        .bind("notes:read")
+        .bind(1_000_i64)
+        .execute(database.pool())
+        .await
+        .expect("token");
+        let store = database.mcp_access_token_store();
+        assert_eq!(
+            store
+                .authenticate_read(
+                    "opaque-token".into(),
+                    "https://example.test/mcp".into(),
+                    UnixMillis::new(1),
+                )
+                .await
+                .expect("authentication"),
+            Some(Actor {
+                user_id,
+                is_root: false,
+            })
+        );
+        assert!(
+            store
+                .authenticate_read(
+                    "opaque-token".into(),
+                    "https://other.test/mcp".into(),
+                    UnixMillis::new(1),
+                )
+                .await
+                .expect("authentication")
+                .is_none()
+        );
     }
 }

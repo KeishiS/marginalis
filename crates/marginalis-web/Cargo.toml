@@ -14,9 +14,11 @@ marginalis-asciidoc = { path = "../marginalis-asciidoc" }
 marginalis-auth-oidc = { path = "../marginalis-auth-oidc" }
 marginalis-domain = { path = "../marginalis-domain" }
 marginalis-files = { path = "../marginalis-files" }
+marginalis-mcp = { path = "../marginalis-mcp" }
 marginalis-server = { path = "../marginalis-server" }
 marginalis-sqlite = { path = "../marginalis-sqlite" }
 serde.workspace = true
+serde_json.workspace = true
 time.workspace = true
 tokio.workspace = true
 tower-http.workspace = true

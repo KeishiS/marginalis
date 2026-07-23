@@ -7,11 +7,12 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, Clock, NoteAclService, NoteAclServiceError, NoteAclStore,
-    NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases, NoteWriteService,
-    OidcUserAdministrationStore, Random, RootCredentialStore, SessionLifetime,
-    WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
+    McpAccessTokenStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases,
+    NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore,
+    SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
+use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePage, NotePermission, NoteSource, OidcLoginResult, SourceRevision,
     UnixMillis, UserId,
@@ -58,6 +59,35 @@ pub struct ServerNoteUseCases {
 pub struct ServerWebAuthenticationUseCases {
     database: SqliteDatabase,
     oidc: Option<OidcAuthentication>,
+}
+
+/// MCP bearer tokenのresource audienceとscopeを検証するserver adapter。
+#[derive(Clone)]
+pub struct ServerMcpAuthenticator {
+    database: SqliteDatabase,
+    resource_uri: String,
+}
+
+impl ServerMcpAuthenticator {
+    pub fn new(database: SqliteDatabase, resource_uri: String) -> Self {
+        Self { database, resource_uri }
+    }
+}
+
+#[async_trait]
+impl McpAuthenticator for ServerMcpAuthenticator {
+    async fn authenticate_read(&self, bearer_token: &str) -> Result<Actor, McpAuthenticationError> {
+        self.database
+            .mcp_access_token_store()
+            .authenticate_read(
+                bearer_token.into(),
+                self.resource_uri.clone(),
+                SystemClock.now(),
+            )
+            .await
+            .map_err(|_| McpAuthenticationError::Unavailable)?
+            .ok_or(McpAuthenticationError::MissingOrInvalid)
+    }
 }
 
 impl ServerWebAuthenticationUseCases {
