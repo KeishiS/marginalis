@@ -35,6 +35,9 @@
 ノート変更を検索用中間表現へ反映し、ACLを守ったMCP曖昧検索を実現するための調査は
 [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)で管理する。
 
+rootのローカル認証、OIDC保留ユーザーの承認および最小管理UIは
+[013: root管理・OIDCユーザー承認・最小管理UI](013-root-administration-and-approval.md)で管理する。
+
 ## 実装原則
 
 - AdocWeaveコアはファイル、DB、ネットワーク、時刻および認証情報へアクセスさせない。
