@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 axum.workspace = true
 marginalis-application = { path = "../marginalis-application" }
+marginalis-asciidoc = { path = "../marginalis-asciidoc" }
 marginalis-domain = { path = "../marginalis-domain" }
 marginalis-files = { path = "../marginalis-files" }
 marginalis-mcp = { path = "../marginalis-mcp" }
@@ -19,3 +20,6 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true

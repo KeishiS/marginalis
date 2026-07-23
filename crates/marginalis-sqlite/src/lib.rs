@@ -1,6 +1,6 @@
 //! MarginalisのSQLite adapterと、version管理されたschema migration。
 
-use std::{collections::HashSet, fmt, future::Future, str::FromStr, time::Duration};
+use std::{collections::HashSet, fmt, future::Future, path::Path, str::FromStr, time::Duration};
 
 use argon2::{
     Argon2, PasswordHasher, PasswordVerifier,
@@ -474,6 +474,32 @@ impl SqliteDatabase {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// migrationや書込みを行わずに、backup SQLite fileの整合性を確認する。
+    pub async fn validate_backup_file(path: &Path) -> Result<(), sqlx::Error> {
+        let path = path.to_str().ok_or_else(|| {
+            sqlx::Error::Protocol("database backup path is not valid UTF-8".into())
+        })?;
+        let options = format!("sqlite:{path}")
+            .parse::<SqliteConnectOptions>()?
+            .read_only(true)
+            .foreign_keys(true)
+            .busy_timeout(Duration::from_secs(5));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await?;
+        let checks = sqlx::query_scalar::<_, String>("PRAGMA integrity_check")
+            .fetch_all(&pool)
+            .await?;
+        if checks.len() == 1 && checks[0] == "ok" {
+            Ok(())
+        } else {
+            Err(sqlx::Error::Protocol(
+                "SQLite integrity_check failed".into(),
+            ))
+        }
     }
 
     pub fn operation_journal(&self) -> SqliteOperationJournal {
@@ -2147,6 +2173,9 @@ mod tests {
             .await
             .expect("backup");
         drop(database);
+        SqliteDatabase::validate_backup_file(&backup_path)
+            .await
+            .expect("validate backup");
 
         let backup_url = format!("sqlite:{}", backup_path.display());
         let backup = SqliteDatabase::connect(&backup_url)

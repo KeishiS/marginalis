@@ -88,6 +88,8 @@ HTTP REST       MCP transport       maintenance CLI
 - `backup`保守操作はHTTP service停止中にSQLiteをcheckpointしてbackup fileへ出力し、検証済みの
   AsciiDoc正本だけを同じ出力directoryへ複製する。既存backupは上書きせず、完了markerのある一組だけを
   復元候補とする。
+- `restore`保守操作はbackup SQLiteの`integrity_check`と全正本を検証してから、既存dataDirを変更せず
+  新しいdataDir候補を作る。実際のdataDir切替・旧データ削除は運用者が明示して行う。
 - 時刻はUTC epoch milliseconds、IDは型付きUUIDv7、外部入力は境界で検証する。
 
 ## 設定と起動

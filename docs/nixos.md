@@ -130,10 +130,15 @@ sudo systemctl start marginalis.service
 のないdirectoryを復元に使用してはならない。個別の出力pathを指定する手動実行には
 `marginalis backup --output /absolute/path`を使う。
 
-復元は既存dataDirを置換する破壊的操作であるため、moduleに自動コマンドは設けない。まずserviceを停止し、
-現在のdataDirを別名で退避してから、`COMPLETE`を確認済みのbackupからSQLiteと`notes/`を同じ所有者・
-modeで戻す。最後に`marginalis-rebuild-projections.service`を実行して正本を検証し、`marginalis.service`
-を起動する。復元先と退避の確定はデータ損失に直結するため、実施時に対象pathを明示して判断する。
+復元時は、まず`marginalis restore --input <COMPLETEのあるbackup> --output <存在しない絶対path>`で、
+SQLiteの`integrity_check`、全正本のUTF-8・ノートprofile・ファイル名とのnote ID一致を確認する。この
+commandは既存`dataDir`を変更せず、検証済みSQLiteと正本を新しい出力directoryへ複製して`RESTORED`
+markerを作る。
+
+実際にどの`dataDir`へ切り替えるかは、旧dataDirを保持してrollback可能にする運用判断である。出力を採用する
+場合だけ、`services.marginalis.dataDir`（必要なら`databaseUrl`）をその出力へ変更し、
+`marginalis-rebuild-projections.service`、続けて`marginalis.service`を起動する。既存dataDirの削除や
+in-place上書きは、この確認後に対象pathを明示して別途実施する。
 
 ## MCPの公開
 
