@@ -1,90 +1,103 @@
-# 実環境受入確認
+# 実環境での受入確認
 
-この手順は、NixOS VM・unit testとは別に、実際のreverse proxy、KanidmおよびMCP clientを通す確認である。
-password、Cookie、OIDC code、MCP access/refresh tokenをコマンド履歴、issue、ログまたは共有画面に
-貼り付けない。
+この手順は、NixOS VM テストやユニットテストとは別に、実際のリバースプロキシ・Kanidm・
+MCP クライアントを通して行う確認です。
+
+パスワード、Cookie、OIDC コード、MCP のアクセストークン・リフレッシュトークンを、コマンド
+履歴・Issue・ログ・画面共有に残さないでください。API クライアントのシークレットストアか
+一時的な Cookie jar を使い、確認後に削除します。
 
 ## 事前条件
 
-1. `GET /api/v1/health`が`200`、`GET /api/v1/readiness`がOIDC `available`として`200`を返す。
-2. `services.marginalis.mcp.enable = true`とする場合、reverse proxyが`/mcp`、`/oauth/`および
-   `/.well-known/`を同じoriginへ転送する。
-3. `approval`登録policyの場合、rootが対象OIDC userを有効化済みである。root操作は
-   [REST API](rest-api.md#root管理)のCSRF要件に従う。
+1. `GET /api/v1/health` が `200` を、`GET /api/v1/readiness` が OIDC `available` として
+   `200` を返す。
+2. `services.marginalis.mcp.enable = true` とする場合、リバースプロキシが `/mcp`・
+   `/oauth/`・`/.well-known/` を同じオリジンへ転送している。
+3. 登録ポリシーが `approval` の場合、root が対象の OIDC ユーザーを有効化済みである。
+   root 操作は [REST API リファレンス](rest-api.md#root-管理)の CSRF 要件に従う。
 
-## 段階1: OIDC利用者によるREST
+## 段階 1: OIDC 利用者による REST の確認
 
-1. ブラウザで`/auth/oidc/login`へ移動し、Kanidm login後に`GET /api/v1/session`が`200`かつ
-   `is_root: false`を返すことを確認する。
-2. Cookie jarとCSRF cookieを管理できるAPI clientで、`POST /api/v1/notes`へ有効なAsciiDoc正本を送る。
-   必須header属性は含めるが、`note-id`、`creator-id`、`created-at`、`updated-at`はserverが置換する。
-   `201`とsource URLを記録し、取得したsourceがserver値になっていることを確認する。
-3. `GET` sourceの`ETag`を取得し、その値を`If-Match`と`X-CSRF-Token`に付けて`PUT`する。`204`後に
-   `GET /api/v1/search?q=<固有語>`が作成ノートだけを返すことを確認する。
-4. 同じ`ETag`で二度更新して`409`となることを確認する。更新後の`ETag`で削除準備を行い、返された
-   confirmation tokenで削除を確定して`204`となることを確認する。削除後はsource取得が`404`であり、
-   一覧・検索の`200`応答には対象ノートが含まれないことを確認する。
+1. ブラウザで `/auth/oidc/login` へ移動し、Kanidm ログイン後に `GET /api/v1/session` が
+   `200` かつ `is_root: false` を返すことを確認します。
+2. Cookie jar と CSRF Cookie を扱える API クライアントで、`POST /api/v1/notes` へ有効な
+   AsciiDoc 正本を送ります。必須のヘッダー属性は含めますが、`note-id`・`creator-id`・
+   `created-at`・`updated-at` の値はサーバーが置き換えます。`201` と `Location` を記録し、
+   取得した正本がサーバー値になっていることを確認します。
+3. 正本取得時の `ETag` を `If-Match` と `X-CSRF-Token` に付けて `PUT` します。`204` の後、
+   `GET /api/v1/search?q=<固有語>` が作成したノートだけを返すことを確認します。
+4. 同じ `ETag` でもう一度更新して `409` になることを確認します。最新の `ETag` で削除準備を
+   行い、返された確認トークンで削除を確定して `204` になることを確認します。削除後は正本
+   取得が `404` になり、一覧・検索の `200` 応答に対象ノートが含まれないことを確認します。
 
-`marginalis_session`や`marginalis_csrf`をshellの引数・履歴へ貼り付けない。API clientのsecret storeまたは
-一時的なCookie jarを用い、確認後に削除する。
+### 最小 Web UI による手動確認
 
-### 最小Web UIによる手動確認
+OIDC ログイン後に `/acceptance` を開くと、JavaScript を使わずに作成・取得・更新・検索・削除を
+順に操作できます。この画面は同一オリジンの HTML フォームで CSRF トークンを送るため、
+Marginalis が全応答に付与する厳格な CSP（`default-src 'none'`、`form-action 'self'`、
+`frame-ancestors 'none'`）を緩める必要はありません。ただし、HTTP ステータスやヘッダーを含む
+REST 契約そのものの確認は、この画面ではなく次の外部 API クライアント手順で行います。
 
-OIDC login後に`/acceptance`を開くと、JavaScriptを使わずに作成、取得、更新、検索、削除を順に操作できる。
-この画面は同一originのHTML formでCSRF tokenを送るため、Marginalisが全応答へ付与するstrict CSP
-（`default-src 'none'`、`form-action 'self'`、`frame-ancestors 'none'`）を緩めない。HTTPの`201`、`204`、`409`やREST APIのrequest/response contractそのものは、この画面ではなく次の
-外部API client手順で確認する。
+### 外部 API クライアントによる確認例
 
-### 外部API clientによるREST確認例
+Cookie jar と CSRF Cookie を保持できる外部 API クライアントを使います。クライアント自身の
+ブラウザログインで OIDC セッションを確立し、同じ Cookie jar で次のリクエストを実行します。
+クライアントが `marginalis_csrf` Cookie を `X-CSRF-Token` へ展開できない場合は、REST 受入の
+自動化対象から外し、Issue 030 の E2E 基盤で扱います。
 
-productionではCookie jarとCSRF Cookieを保持できる外部API clientを使う。そのclient自身のbrowser loginで
-OIDC sessionを確立し、同じcookie jarで以下のrequestを実行する。clientが`marginalis_csrf` Cookieを
-`X-CSRF-Token`へ展開できない場合は、REST受入の自動化対象から外し、Issue 030のE2E基盤で扱う。
-
-| 順序 | request | 必須設定 | 期待結果 |
+| 順序 | リクエスト | 必須設定 | 期待結果 |
 | --- | --- | --- | --- |
-| 1 | `POST /api/v1/notes` | UTF-8 AsciiDoc body、`Content-Type: text/plain; charset=utf-8`、`X-CSRF-Token` | `201`、`Location` |
+| 1 | `POST /api/v1/notes` | UTF-8 AsciiDoc ボディ、`Content-Type: text/plain; charset=utf-8`、`X-CSRF-Token` | `201`、`Location` |
 | 2 | `GET {Location}` | Cookie jar | `200`、`ETag` |
-| 3 | `PUT {Location}` | 更新済みbody、`If-Match: <ETag>`、`X-CSRF-Token` | `204` |
-| 4 | 同じ`If-Match`で再度`PUT` | 同上 | `409` |
+| 3 | `PUT {Location}` | 更新済みボディ、`If-Match: <ETag>`、`X-CSRF-Token` | `204` |
+| 4 | 同じ `If-Match` で再度 `PUT` | 同上 | `409` |
 | 5 | `GET /api/v1/search?q=<固有語>` | Cookie jar | `200`、作成ノートだけを含む |
-| 6 | `POST /api/v1/notes/{note_id}/delete-preparations` | `If-Match: <最新ETag>`、`X-CSRF-Token` | `200`、`confirmation_token` |
-| 7 | `POST /api/v1/notes/delete-confirmations` | JSON body `{"confirmation_token":"..."}`、`X-CSRF-Token` | `204` |
+| 6 | `POST /api/v1/notes/{note_id}/delete-preparations` | `If-Match: <最新 ETag>`、`X-CSRF-Token` | `200`、`confirmation_token` |
+| 7 | `POST /api/v1/notes/delete-confirmations` | JSON ボディ `{"confirmation_token":"..."}`、`X-CSRF-Token` | `204` |
 
-## 段階2: 実MCP client
+## 段階 2: 実 MCP クライアント
 
-1. clientのStreamable HTTP endpointを`https://marginalis.sandi05.com/mcp`に設定する。
-2. Protected Resource MetadataからOAuth authorization endpointへ進み、Kanidm login後、通常userとして
-   scopeを確認して許可する。root sessionはMCP clientを認可できない。
-3. `search_notes`、`create_note`、`get_note`、`update_note`、`prepare_delete_note`、`delete_note`を順に実行する。
-   RESTで作ったノートはMCP検索でも、MCPで作ったノートはREST検索でも同じACL結果になることを確認する。
-4. RESTの`DELETE /api/v1/mcp-authorizations?client_id=...`で認可を取消し、既存access tokenによる`/mcp`が
-   `401`になることを確認する。
+1. クライアントの Streamable HTTP エンドポイントを `https://marginalis.sandi05.com/mcp` に
+   設定します。
+2. Protected Resource Metadata から OAuth 認可エンドポイントへ進み、Kanidm ログインの後、
+   一般ユーザーとしてスコープを確認して許可します。root セッションでは MCP クライアントを
+   認可できません。
+3. `search_notes`・`create_note`・`get_note`・`update_note`・`prepare_delete_note`・
+   `delete_note` を順に実行します。REST で作ったノートが MCP 検索でも、MCP で作ったノートが
+   REST 検索でも、同じ ACL 判定の結果になることを確認します。
+4. REST の `DELETE /api/v1/mcp-authorizations?client_id=...` で認可を取り消し、既存の
+   アクセストークンによる `/mcp` が `401` になることを確認します。
 
-unknown clientを使う場合はClient ID Metadata Documentのhostを`clientMetadataAllowedHosts`へ追加する。
-metadataを持たないclientは、rootが事前登録してから試す。
+未知のクライアントを使う場合は、Client ID Metadata Document のホストを
+`clientMetadataAllowedHosts` に追加します。メタデータを持たないクライアントは、root が
+事前登録してから試してください。
 
-## 段階3: 運用確認
+## 段階 3: 運用の確認
 
-1. root監査を読み取り専用で確認する。
+1. root 監査ログを読み取り専用で確認します。
 
    ```sh
    sudo -u marginalis sqlite3 /var/lib/marginalis/marginalis.sqlite \
      'SELECT action, occurred_at_ms FROM root_audit_log ORDER BY audit_id DESC LIMIT 100;'
    ```
 
-2. 永続backup storageと保持世代を決め、`backupDirectory`を設定する。`marginalis-backup.service`を起動後、
-   新しいgenerationに`FORMAT`、`MANIFEST`、`COMPLETE`、`marginalis.sqlite`、`notes/`があることを確認する。
-3. 本番dataDirを切り替えず、`marginalis restore --input <generation> --output <新しい絶対path>`を実行する。
-   `RESTORED` marker、SQLiteおよび正本が作られることを確認する。実際のdataDir切替は、旧データを
-   保持する場所とrollback手順を決めてから行う。
-4. `marginalis-rebuild-projections.service`を実行し、main serviceを再起動してhealth/readinessを再確認する。
-5. `systemctl status marginalis-prune-audit.timer`で、root監査の365日保持と期限切れ認証補助データのcleanupを
-   行うtimerが有効であることを確認する。
-6. `curl -fsS https://marginalis.sandi05.com/api/v1/openapi.json | jq -e '.openapi == "3.1.0"'`で、実行中binaryが
-   公開contractを返すことを確認する。RC.2では、このdocumentとの差分がrelease blocker修正だけであることを確認する。
+2. 永続バックアップの保存先と保持世代を決めて `backupDirectory` を設定します。
+   `marginalis-backup.service` の実行後、新しい世代に `FORMAT`・`MANIFEST`・`COMPLETE`・
+   `marginalis.sqlite`・`notes/` が揃っていることを確認します。
+3. 本番の `dataDir` は切り替えずに
+   `marginalis restore --input <世代> --output <新しい絶対パス>` を実行し、`RESTORED`
+   マーカー・SQLite・正本が作られることを確認します。実際の切り替えは、旧データの保管場所と
+   ロールバック手順を決めてから行います。
+4. `marginalis-rebuild-projections.service` を実行し、本体サービスを再起動して
+   health / readiness を再確認します。
+5. `systemctl status marginalis-prune-audit.timer` で、監査ログの 365 日保持と期限切れ認証
+   データの掃除を行うタイマーが有効であることを確認します。
+6. `curl -fsS https://marginalis.sandi05.com/api/v1/openapi.json | jq -e '.openapi == "3.1.0"'`
+   で、実行中のバイナリが公開契約を返すことを確認します。RC.2 では、このドキュメントとの
+   差分がリリースブロッカー修正だけであることを確認します。
 
-v0.1.0でAPI versionをfreezeした後に破壊的変更が必要になった場合は、新しいversion pathを追加し、既存versionに
-deprecation告知・移行手順・少なくとも一つのrelease周期を設ける。
+v0.1.0 で API バージョンを凍結した後に破壊的変更が必要になった場合は、新しいバージョンパスを
+追加し、既存バージョンには非推奨告知・移行手順・少なくとも 1 リリース周期の猶予を設けます。
 
-各段階で、失敗時は`X-Request-Id`と`journalctl -u marginalis.service -b --no-pager`を対応付ける。
+いずれの段階でも、失敗時には応答の `X-Request-Id` と
+`journalctl -u marginalis.service -b --no-pager` を対応付けて調査します。

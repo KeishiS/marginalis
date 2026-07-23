@@ -1,6 +1,8 @@
-# NixOSによるMarginalisの運用
+# NixOS での運用
 
-公開時にはGitHubのflake inputからNixOS moduleを取り込む。
+## セットアップ
+
+GitHub の flake input から NixOS モジュールを取り込みます。
 
 ```nix
 {
@@ -13,13 +15,13 @@
         {
           services.marginalis = {
             enable = true;
-            # reverse proxyを使わず直接待受けを公開する場合だけ有効にする。
+            # リバースプロキシを使わず、待ち受けを直接公開する場合だけ有効にする。
             openFirewall = false;
-            # journalctlで観測するtracing filter。
+            # journalctl で観測する tracing フィルター。
             logFilter = "info,marginalis_auth_oidc=info";
             baseUrl = "https://marginalis.sandi05.com";
             listenAddress = "127.0.0.1:3000";
-            # 新規SQLite DBにだけ適用する。既存DBのroot設定は上書きしない。
+            # 新規 SQLite DB にだけ適用される。既存 DB の設定は上書きしない。
             initialRegistrationPolicy = "approval";
             oidc = {
               issuerUrl = "https://id.sandi05.com/oauth2/openid/marginalis";
@@ -39,37 +41,53 @@
 }
 ```
 
-`clientSecretFile`と`initialRootPasswordFile`は実行時の絶対パスである。Nix storeへsecret値を
-書き込んではならない。sops-nixまたはagenixを使う場合は、復号後のruntime fileのpathを指定する。
-moduleはsystemd `LoadCredential`でsecretを渡し、unitの環境変数にはsecret自体を置かない。
+### シークレットの扱い
 
-初回起動時だけ`initialRootPasswordFile`が必要である。root初期化後はこのoptionを削除できる。
-SQLite DBと将来のAsciiDoc正本は`dataDir`（既定値は`/var/lib/marginalis`）に永続化される。
-`initialRegistrationPolicy`は新規DBにだけ`open`または`approval`を設定する。既存DBではroot APIから
-変更した現在の登録policyを保持するため、NixOS再適用で上書きされない。
+`clientSecretFile` と `initialRootPasswordFile` には、実行時に読めるファイルの絶対パスを
+指定します。シークレットの値そのものを Nix ストアに書き込んではいけません。sops-nix や
+agenix を使う場合は、復号後のランタイムファイルのパスを指定してください。モジュールは
+systemd の `LoadCredential` でシークレットを渡すため、ユニットの環境変数にシークレットが
+現れることはありません。
 
-`openFirewall`は`listenAddress`のTCP portをNixOS firewallで許可するだけである。既定の
-`127.0.0.1:3000`は外部から到達不能なままであり、公開には同一Base URLを終端するreverse proxyが必要である。
-reverse proxyは`/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/`を同じoriginへ転送する。TLSはproxyで
-終端してよいが、`baseUrl`には外部から見えるHTTPS URLを設定する。
+`initialRootPasswordFile` が必要なのは初回起動時だけです。root の初期化が済んだら、この
+オプションは設定から削除できます。
 
-Marginalis自身は全応答に`Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'self';
-frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`を付与する。
-proxyはこれらを削除・緩和してはならない。
+### データの永続化
 
-root loginの接続元rate limitは、Marginalis内ではTCP peer addressだけを使う補助制限である。proxy配下で
-利用者ごとの粗い制限を行う場合は、proxy側で実施する。Marginalisは`X-Forwarded-For`、`Forwarded`などの
-client IP headerを信頼しない。Cookieを伴うREST変更操作は、公開originと`Origin`・`Sec-Fetch-Site`を照合するため、
-proxyはこれらのbrowser headerを削除・書換えしてはならない。
+SQLite データベースと AsciiDoc 正本は `dataDir`（既定値 `/var/lib/marginalis`）に永続化
+されます。`initialRegistrationPolicy` は新規データベースの作成時にだけ `open` または
+`approval` を書き込みます。既存データベースでは、root API から変更した現在の登録ポリシーが
+優先され、`nixos-rebuild` で上書きされることはありません。
 
-公開proxyでは、root loginに加え、未認証OIDC開始（`/auth/oidc/login`と`/oauth/authorize`）を利用者IP単位で
-制限する。たとえばNginxでは、server外側の`http`節へ次を置く。
+## リバースプロキシとの関係
+
+`openFirewall` は `listenAddress` の TCP ポートをファイアウォールで許可するだけです。既定の
+`127.0.0.1:3000` は外部から到達できないため、公開にはベース URL を終端するリバースプロキシが
+必要です。
+
+- プロキシは `/auth/`・`/api/`・`/mcp`・`/.well-known/`・`/oauth/` を同じオリジンへ転送
+  します。TLS はプロキシで終端して構いませんが、`baseUrl` には外部から見える HTTPS URL を
+  設定します。
+- Marginalis 自身が全応答に `Content-Security-Policy: default-src 'none'; base-uri 'none';
+  form-action 'self'; frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、
+  `Referrer-Policy: no-referrer` を付与します。プロキシでこれらを削除・緩和しないでください。
+- Cookie を伴う変更操作では `Origin` と `Sec-Fetch-Site` を検証するため、プロキシでこれらの
+  ブラウザ由来ヘッダーを削除・書き換えしないでください。
+- Marginalis は `X-Forwarded-For` や `Forwarded` などのクライアント IP ヘッダーを信頼せず、
+  認可判断にも使いません。
+
+### プロキシ側のレート制限
+
+root ログインの接続元レート制限は、Marginalis 内では TCP ピアアドレスだけを使う補助的な
+制限です。プロキシ配下で利用者ごとの制限を行う場合は、プロキシ側で設定します。root ログインに
+加えて、未認証で開始できる `/auth/oidc/login` と `/oauth/authorize` にも利用者 IP 単位の
+制限を掛けてください。Nginx の例を示します。`http` ブロックで:
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=marginalis_login:10m rate=10r/m;
 ```
 
-該当locationには、burstを小さくして次を設定する。
+`/auth/root/login`・`/auth/oidc/login`・`/oauth/authorize` の各 location で:
 
 ```nginx
 limit_req zone=marginalis_login burst=5 nodelay;
@@ -78,51 +96,65 @@ proxy_set_header Host $host;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
-この設定は`/auth/root/login`、`/auth/oidc/login`、`/oauth/authorize`へ適用する。forwarded headerは
-rate limitのためにMarginalisへ渡しても、Marginalisが認可判断に使うことはない。
+forwarded 系ヘッダーをプロキシのレート制限のために Marginalis へ渡すのは問題ありませんが、
+Marginalis がそれを認可判断に使うことはありません。
 
-`logFilter`は`RUST_LOG`としてserviceと投影再構築unitへ渡される。障害調査では一時的に
-`"info,marginalis_auth_oidc=debug"`のように狭いmoduleだけをdebugへ上げる。request body、password、
-OIDC code、tokenおよびsecretを記録する設定は提供しない。
+## ログ
+
+`logFilter` は `RUST_LOG` として本体サービスと投影再構築ユニットに渡されます。障害調査では
+`"info,marginalis_auth_oidc=debug"` のように、必要なモジュールだけを一時的に debug へ
+上げてください。リクエストボディ、パスワード、OIDC コード、トークン、シークレットをログに
+出力する設定は存在しません。
+
+失敗の詳細は `journalctl -u marginalis.service -b --no-pager` で確認し、応答の
+`X-Request-Id` と対応付けます。
 
 ## 適用後の確認
 
-`nixos-rebuild switch`後は、次を順に確認する。
+`nixos-rebuild switch` の後、次を順に確認します。
 
-1. `systemctl status marginalis.service`で`active (running)`であることを確認する。
-2. `curl -fsS https://marginalis.sandi05.com/api/v1/health`でhealth responseを確認する。
-3. `curl -fsS https://marginalis.sandi05.com/api/v1/readiness`が`ready`を返すことを確認する。`503`なら
-   OIDC Discovery障害でroot-only縮退起動中である。
-4. `https://marginalis.sandi05.com/auth/oidc/login`からKanidmへ移動し、ログイン後にBase URLへ戻ることを確認する。
-5. 初回はroot login後、`GET /api/v1/admin/users/pending`で保留ユーザーを確認し、有効化する。
-6. MCPを有効にした場合は`/.well-known/oauth-protected-resource/mcp`がJSONを返すことを確認する。
+1. `systemctl status marginalis.service` が `active (running)` である。
+2. `curl -fsS https://marginalis.sandi05.com/api/v1/health` がヘルスレスポンスを返す。
+3. `curl -fsS https://marginalis.sandi05.com/api/v1/readiness` が `ready` を返す。`503` の
+   場合は OIDC Discovery の障害により root 限定の縮退起動中です。
+4. `https://marginalis.sandi05.com/auth/oidc/login` から Kanidm へ遷移し、ログイン後に
+   ベース URL へ戻る。
+5. 初回は root ログイン後に `GET /api/v1/admin/users/pending` で保留ユーザーを確認し、
+   有効化する（次節）。
+6. MCP を有効にした場合は `/.well-known/oauth-protected-resource/mcp` が JSON を返す。
 
-### dataDir初期化後の保留OIDCユーザー承認
+OIDC Discovery が一時的に失敗しても、サービスは root 緊急ログインだけを有効にして起動
+します。この間は通常の OIDC ログインを利用できないため、IdP の復旧後に
+`sudo systemctl restart marginalis.service` で Discovery をやり直してください。
 
-`dataDir`（既定では`/var/lib/marginalis`）を新規初期化すると、SQLite上のroot credential、登録policy、
-OIDCユーザーおよびsessionも新しくなる。`approval` policyでは、対象ユーザーが一度OIDC loginして
-`pending`ユーザーを作成した後、rootが次の順で有効化する。
+## 保留 OIDC ユーザーの承認
 
-1. 初回起動にだけ`ROOT_PASSWORD`または`ROOT_PASSWORD_FILE`をNixOSのsecret設定から渡す。起動後、
-   root credentialがSQLiteに保存されたことを確認して、その初期化用secretを通常運用の設定から外す。
-2. 承認する利用者が`/auth/oidc/login`を完了する。この時点では通常sessionを得られず、保留ユーザーだけが
-   作成される。
-3. browserの安全なAPI clientまたは同一originの開発者ツールから`POST /auth/root/login`へroot passwordを送る。
-   成功時にroot session CookieとCSRF Cookieが発行される。password、CookieおよびCSRF tokenをshell履歴、
-   issue、ログへ貼り付けない。
-4. root sessionで`GET /api/v1/admin/users/pending`を実行し、承認対象の`user_id`を確認する。
-5. 同じsessionで`PUT /api/v1/admin/users/{user_id}/activate`を実行する。Cookieを伴う変更要求には
-   `X-CSRF-Token`、公開originと整合する`Origin`、`Sec-Fetch-Site: same-origin`が必要である。成功時は`204`を
-   返す。
-6. 対象ユーザーは一度logoutして、改めてOIDC loginする。`GET /api/v1/session`が`200`かつ`is_root: false`を
-   返せば承認完了である。root sessionも不要になったら`POST /auth/logout`で終了する。
+`dataDir` を新規に初期化すると、root 資格情報・登録ポリシー・OIDC ユーザー・セッションも
+すべて新規になります。`approval` ポリシーでは、利用者が一度 OIDC ログインして保留ユーザーを
+作成した後、root が次の手順で有効化します。
 
-root passwordの誤入力は15分間に5回までに制限される。reverse proxy配下ではMarginalisがTCP peerだけを
-見るため、利用者単位の追加rate limitはproxy側で設定する。
+1. 初回起動時にだけ、NixOS のシークレット設定から `initialRootPasswordFile` を渡します。
+   起動後、root 資格情報が SQLite に保存されたことを確認し、この初期化用シークレットを
+   通常運用の設定から外します。
+2. 承認対象の利用者が `/auth/oidc/login` を完了します。この時点では通常セッションは
+   得られず、保留ユーザーだけが作成されます。
+3. `POST /auth/root/login` へ root パスワードを送ります。成功すると root セッション Cookie
+   と CSRF Cookie が発行されます。
+4. root セッションで `GET /api/v1/admin/users/pending` を実行し、承認対象の `user_id` を
+   確認します。
+5. 同じセッションで `PUT /api/v1/admin/users/{user_id}/activate` を実行します。Cookie を
+   伴う変更操作なので、`X-CSRF-Token`、公開オリジンと一致する `Origin`、
+   `Sec-Fetch-Site: same-origin` が必要です。成功すると `204` を返します。
+6. 対象の利用者が改めて OIDC ログインし、`GET /api/v1/session` が `200` かつ
+   `is_root: false` を返せば承認完了です。root セッションが不要になったら
+   `POST /auth/logout` で終了します。
 
-次は`curl`と`jq`による実行例である。`BASE_URL`は外部公開URL、`ORIGIN`はそのschemeとhostだけに
-合わせる。Cookie jarは`mktemp`で作成し、終了時に削除する。root passwordをコマンド引数、履歴、
-設定ファイルへ書かない。
+root パスワードの誤入力は 15 分間に 5 回までに制限されます。リバースプロキシ配下では
+Marginalis から見た接続元がプロキシになるため、利用者単位の制限はプロキシ側で設定して
+ください。
+
+`curl` と `jq` による実行例を示します。`BASE_URL` は外部公開 URL、`ORIGIN` はその scheme と
+ホストだけにします。root パスワードをコマンド引数・履歴・設定ファイルに書かないでください。
 
 ```sh
 set -eu
@@ -175,23 +207,12 @@ curl --fail-with-body --silent --show-error \
   "$BASE_URL/auth/logout"
 ```
 
-最後のroot logoutはCookieをserver側でも失効させるため省略しない。対象OIDCユーザーはこの後に
-改めてブラウザーからOIDC loginし、`GET /api/v1/session`で通常sessionを確認する。
+最後の root ログアウトは、Cookie をサーバー側でも失効させるため省略しないでください。
 
-個人運用での段階的な初回公開は、reverse proxyを接続したまま`/api/v1/health`と`/api/v1/readiness`を
-確認し、root login、OIDC login、RESTでのノート作成・検索・削除、最後にMCP client認可と`search_notes`を
-順番に行う。各段階で`journalctl -u marginalis.service -b --no-pager`と`X-Request-Id`を記録すると、
-問題を安全に切り分けられる。
+## 監査ログの確認
 
-失敗の詳細は`journalctl -u marginalis.service -b --no-pager`で確認する。ログにはOIDC code、token、
-client secret、root passwordを出力しない。
-
-OIDC Discoveryが一時的に失敗した場合も、serviceはroot緊急ログインだけを有効にして起動する。通常の
-OIDC loginは利用不可となるため、IdP復旧後に`sudo systemctl restart marginalis.service`を実行して
-Discoveryをやり直す。
-
-root監査は`dataDir`内のSQLite DBに365日保持する。専用のHTTP APIは公開しないため、必要時にはサーバ上で
-読み取り専用に確認する。
+root の監査ログは `dataDir` 内の SQLite に 365 日間保持されます。閲覧用の HTTP API は
+ないため、必要なときにサーバー上で読み取り専用に確認します。
 
 ```sh
 sudo -u marginalis sqlite3 /var/lib/marginalis/marginalis.sqlite \
@@ -199,84 +220,97 @@ sudo -u marginalis sqlite3 /var/lib/marginalis/marginalis.sqlite \
    FROM root_audit_log ORDER BY audit_id DESC LIMIT 100;'
 ```
 
-この表にはpassword、cookie、session ID、OIDC code、tokenまたはtoken hashを保存しない。
+この表に、パスワード、Cookie、セッション ID、OIDC コード、トークンおよびそのハッシュが
+保存されることはありません。
 
 ## 正本からの投影再構築
 
-バックアップからAsciiDoc正本を復元した場合や、保守作業で`dataDir/notes/`を直接修正した場合は、次で
-SQLiteの検索・anchor・xref投影を正本から再構築する。
+バックアップから AsciiDoc 正本を復元した場合や、保守作業で `dataDir/notes/` を直接修正した
+場合は、SQLite の検索・アンカー・参照投影を正本から再構築します。
 
 ```sh
 sudo systemctl start marginalis-rebuild-projections.service
 sudo systemctl start marginalis.service
 ```
 
-再構築unitはHTTP serverと競合するため、起動時に`marginalis.service`を停止する。全`.adoc`正本を
-先にUTF-8・ノートprofile・ファイル名と`note-id`の一致まで検証し、その後に一つのSQLite transactionで
-投影を置換する。検証エラー時は最後に成功したSQLite投影を変更しない。既存ノートのACLは保持し、正本が
-なくなったノートの投影とACLだけを削除する。
+再構築ユニットは HTTP サーバーと競合するため、起動時に `marginalis.service` を停止します。
+すべての `.adoc` 正本について UTF-8・ノートプロファイル・ファイル名と `note-id` の一致を
+先に検証し、その後に 1 つの SQLite トランザクションで投影を置き換えます。検証に失敗した
+場合、最後に成功した投影は変更されません。既存ノートの ACL は保持され、正本が存在しなく
+なったノートの投影と ACL だけが削除されます。
 
 ## バックアップと復元
 
-`dataDir`はAsciiDoc正本とSQLiteを一組で扱う。`backupDirectory`には、同じfilesystemまたは別volume上の
-絶対pathを指定する。moduleはこのdirectoryを`marginalis`所有で用意し、その直下に時刻付きの新しい
-backup generationを作る。backup先の
-永続化、世代管理、off-site複製および保持期間は運用者が決める。自動timerは意図的に提供しない。
+`dataDir` の AsciiDoc 正本と SQLite は 1 組として扱います。`backupDirectory` には、同じ
+ファイルシステムまたは別ボリューム上の絶対パスを指定します。モジュールはこのディレクトリを
+`marginalis` ユーザー所有で用意し、その直下に時刻付きのバックアップ世代を作ります。
 
 ```nix
 services.marginalis.backupDirectory = "/var/lib/marginalis-backups";
 ```
 
-指定後、次のoneshot unitでHTTP serviceを停止した状態のbackupを作成する。
+バックアップ先の永続化、世代管理、遠隔複製、保持期間は運用者が決めます。自動タイマーは
+意図的に提供していません。
+
+バックアップは、HTTP サービスを停止した状態で次の oneshot ユニットが作成します。
 
 ```sh
 sudo systemctl start marginalis-backup.service
 sudo systemctl start marginalis.service
 ```
 
-成功した各generationには`FORMAT`、`marginalis.sqlite`、`notes/<UUID>.adoc`、`MANIFEST`および`COMPLETE`
-markerが含まれる。`MANIFEST`はformat v1、作成時刻、SQLiteと全正本のSHA-256を記録する。同じ出力pathが
-既に存在する場合は上書きせず失敗する。失敗した場合も不完全な出力を残すため、これらが揃わないdirectoryを
-復元に使用してはならない。個別の出力pathを指定する手動実行には
-`marginalis backup --output /absolute/path`を使う。
+成功した各世代には `FORMAT`、`marginalis.sqlite`、`notes/<UUID>.adoc`、`MANIFEST`、
+`COMPLETE` マーカーが含まれます。`MANIFEST` にはフォーマットバージョン、作成時刻、SQLite と
+全正本の SHA-256 が記録されます。同じ出力パスが既に存在する場合は上書きせずに失敗します。
+失敗時には不完全な出力が残ることがあるため、上記ファイルが揃っていないディレクトリを復元に
+使わないでください。出力パスを個別に指定する場合は
+`marginalis backup --output /absolute/path` を手動で実行します。
 
-復元時は、まず`marginalis restore --input <完全なbackup> --output <存在しない絶対path>`で、format marker、
-manifest hash、SQLiteの`integrity_check`、全正本のUTF-8・ノートprofile・ファイル名とのnote ID一致を確認する。この
-commandは既存`dataDir`を変更せず、検証済みSQLiteと正本を新しい出力directoryへ複製して`RESTORED`
-markerを作る。
+復元はまず検証だけを行います。
 
-実際にどの`dataDir`へ切り替えるかは、旧dataDirを保持してrollback可能にする運用判断である。出力を採用する
-場合だけ、`services.marginalis.dataDir`（必要なら`databaseUrl`）をその出力へ変更し、
-`marginalis-rebuild-projections.service`、続けて`marginalis.service`を起動する。既存dataDirの削除や
-in-place上書きは、この確認後に対象pathを明示して別途実施する。
+```sh
+marginalis restore --input <完全なバックアップ世代> --output <存在しない絶対パス>
+```
 
-## MCPの公開
+このコマンドは、フォーマットマーカー、マニフェストのハッシュ、SQLite の
+`integrity_check`、全正本の UTF-8・ノートプロファイル・ファイル名と note ID の一致を確認した
+うえで、検証済みの SQLite と正本を新しい出力ディレクトリへ複製し、`RESTORED` マーカーを
+作ります。既存の `dataDir` は変更しません。
 
-`services.marginalis.mcp.enable`の既定値は`false`である。`true`の場合に限り、同じBase URL配下へ
-`/mcp`、OAuth Authorization Server、Protected Resource Metadataを公開する。reverse proxyを用いる
-場合は、これらのpathを含めて同じoriginへ転送する。
+実際にどの `dataDir` へ切り替えるかは、旧データを保持してロールバックできるようにするための
+運用判断です。出力を採用する場合にだけ `services.marginalis.dataDir`（必要なら
+`databaseUrl`）をその出力へ変更し、`marginalis-rebuild-projections.service`、続けて
+`marginalis.service` を起動します。既存 `dataDir` の削除や上書きは、この確認の後に対象パスを
+明示して別途行ってください。
 
-`clientMetadataAllowedHosts`は、未知のOAuth clientの`client_id` URLからmetadataを取得してよい
-HTTPS hostの許可リストである。この制約により、認可endpointが任意の内部URLを取得するSSRFの入口に
-なることを防ぐ。空リストでも既にSQLiteへ登録済みのclientは利用できるが、初期運用ではmetadata hostを
-明示して登録する方式を推奨する。MCP client側の設定は[MCP仕様](mcp.md)を参照する。
+## MCP の公開
 
-## API-first再基線化時の初期化
+`services.marginalis.mcp.enable` の既定値は `false` です。`true` の場合にだけ、同じベース
+URL の下に `/mcp`、OAuth 認可サーバー、Protected Resource Metadata が公開されます。リバース
+プロキシを使う場合は、これらのパスも同じオリジンへ転送してください。
 
-現在の破壊的な再基線化では、旧dataDirを移行しない。新しいschema、OIDC identity、ACL、session、
-root credentialおよびAsciiDoc正本は空の状態から作成する。アプリケーションとNixOS moduleは通常の
-起動・`nixos-rebuild`で既存dataDirを削除しない。
+`clientMetadataAllowedHosts` は、未知の OAuth クライアントの `client_id` URL からメタデータを
+取得してよい HTTPS ホストの許可リストです。この制約により、認可エンドポイントが任意の内部
+URL を取得する SSRF の入口になることを防ぎます。空リストでも SQLite に登録済みのクライアントは
+利用できますが、初期運用ではメタデータのホストを明示して登録する方式を推奨します。
+クライアント側の設定は [MCP と OAuth](mcp.md) を参照してください。
 
-デプロイ先の既存データを破棄して切り替える場合は、次の順序を用いる。
+## 既存データを破棄して初期化する
 
-1. `sudo systemctl stop marginalis.service`でサービスを停止する。
-2. 必要なら`dataDir`をバックアップする。復帰の可能性が不要なら、対象の`dataDir`だけを明示して
+現在の破壊的な再基線化では、旧 `dataDir` を移行しません。新しいスキーマ、OIDC identity、
+ACL、セッション、root 資格情報、AsciiDoc 正本は空の状態から作成します。アプリケーションと
+NixOS モジュールが、通常の起動や `nixos-rebuild` で既存 `dataDir` を削除することは
+ありません。旧 SQLite を新しいサーバーに指定した場合は、互換移行を試みずバージョン不一致
+として起動を停止します。これは旧 ACL やセッションを新しい認可モデルへ誤って持ち込まない
+ためです。
+
+既存データを破棄して切り替える場合は、次の順序で行います。
+
+1. `sudo systemctl stop marginalis.service` でサービスを停止する。
+2. 必要なら `dataDir` をバックアップする。復帰が不要なら、対象の `dataDir` だけを明示して
    削除する。
-3. module設定を新しいMarginalis revisionへ更新し、`nixos-rebuild switch`を実行する。
-   systemdの`StateDirectory`により空のdata directoryが専用ユーザー所有で作成される。
-4. `initialRootPasswordFile`を一度だけ指定してroot credentialを初期化し、OIDC login、
-   `GET /api/v1/health`および`GET /api/v1/session`を確認する。
-5. root初期化後は`initialRootPasswordFile`をNixOS設定から除去する。
-
-再基線化の完了時には、旧SQLiteを新しいserverへ指定した場合、互換migrationを試みずversion不一致
-として起動を停止する。これは誤って旧ACLやsessionを新しい認可モデルへ持ち込まないためである。
+3. モジュール設定を新しいリビジョンへ更新し、`nixos-rebuild switch` を実行する。systemd の
+   `StateDirectory` により、空のデータディレクトリが専用ユーザー所有で作成される。
+4. `initialRootPasswordFile` を一度だけ指定して root を初期化し、OIDC ログイン、
+   `GET /api/v1/health`、`GET /api/v1/session` を確認する。
+5. root の初期化後、`initialRootPasswordFile` を設定から除去する。

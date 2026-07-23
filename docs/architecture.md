@@ -1,32 +1,15 @@
 # Marginalis アーキテクチャ
 
-## 現在の構成
+## 目的と現状
 
-API-first再基線化は完了している。RESTとMCPは同じ`NoteUseCases`へ到達し、SQLite、ファイル正本、
-AsciiDoc解析およびOIDC実装をHTTP handlerから直接操作しない。旧dataDirとの互換性は持たず、新しい
-deploymentは空のdataDirから開始する。
+Marginalis は、研究ノートの正本である AsciiDoc、SQLite 投影、OIDC 認証、MCP、NixOS 運用を、
+長期にわたって変更し続けられる構成を目標とする。API-first の再基線化は完了しており、REST と
+MCP は同じアプリケーション層のユースケースに到達する。HTTP ハンドラーが SQLite・ファイル
+正本・AsciiDoc 解析・OIDC 実装を直接操作することはない。
 
-## 目的
+旧実装との後方互換は持たない。新しいデプロイは空のデータディレクトリから開始する。
 
-Marginalisは、研究ノートの正本であるAsciiDoc、SQLite投影、OIDC、Web UI、MCPおよびNixOS
-運用を長期間にわたり変更できるようにする。初期実装との後方互換は要求しない。公開API、DB
-schemaおよび設定形式は、この文書の構成へ破壊的に移行する。
-
-## 再基線化前の問題
-
-- HTTP transportがSQLite、ファイル、AsciiDocおよびsession adapterの具体型へ直接到達すると、
-  RESTとMCPが同じ認可・更新手順を共有できない。
-- server binary、設定読込およびtracingの責務がHTTP transportと混在すると、NixOS moduleと
-  maintenance CLIの組立が不安定になる。
-- 時刻、UUID生成、乱数、SQLおよびファイルI/Oの境界が明確でなく、ユースケースを単体試験
-  できない。
-- SQL schemaを実行時の`CREATE TABLE IF NOT EXISTS`と個別`ALTER TABLE`で更新しており、
-  schema version、再現可能なmigrationおよびupgrade testがない。
-- AsciiDoc正本のファイルサービスと更新ジャーナルが未実装であり、SQLite投影だけが先行している。
-- NixOS moduleが必要とする型付き設定・secret入力・実行ユーザー・永続パスの契約が、サーバー
-  設定としてまだ定義されていない。
-
-## 目標構成
+## 全体構成
 
 ```text
 HTTP REST       MCP transport       maintenance CLI
@@ -43,95 +26,108 @@ HTTP REST       MCP transport       maintenance CLI
        composition root / config / tracing / serve
 ```
 
-### crateの責務
+### クレートの責務
 
-- `marginalis-domain`: ID、権限、ユーザー状態、ノートmetadata、エラー、純粋なpolicy。
-- `marginalis-application`: 作成・更新・削除・認証・ACL・投影再構築のユースケースとport trait。
-- `marginalis-asciidoc`: AdocWeaveを使うノートprofile、解析、投影、描画入力。DB・HTTP・認証を
-  持たない。
-- `marginalis-sqlite`: sqlx migration、Repository実装、操作ジャーナル、検索・グラフ投影。
-- `marginalis-files`: data format v1 marker、datadirのパス規則、原子的置換、revision hash、
-  ファイル操作の復旧補助。
-- `marginalis-auth-oidc`: OIDC Discovery・code exchange・ID Token検証。Web sessionはapplication
-  portを通じて発行する。
-- `marginalis-server`: `StorageConfig`、`HttpConfig`、`OidcConfig`とsecret設定、Clock/Random、SQLite/files/AsciiDoc/OIDCをapplication portへ接続する
-  server adapter。transportの業務判断を持たない。
-- `marginalis-service`: 実行バイナリ。設定読込、依存組立、tracing初期化とHTTP listenを一箇所に集める
-  composition root。NixOS packageはこのcrateのbinaryを`marginalis`として公開する。
+| クレート | 責務 |
+| --- | --- |
+| `marginalis-domain` | ID、権限、ユーザー状態、ノートのメタデータ、エラー、純粋なポリシー |
+| `marginalis-application` | 作成・更新・削除・認証・ACL・投影再構築のユースケースとポート trait |
+| `marginalis-asciidoc` | AdocWeave を使うノートプロファイル、解析、投影、描画入力。DB・HTTP・認証へ依存しない |
+| `marginalis-sqlite` | sqlx マイグレーション、リポジトリ実装、操作ジャーナル、検索・グラフ投影 |
+| `marginalis-files` | データフォーマット v1 のマーカー、パス規則、原子的置換、リビジョンハッシュ、復旧補助 |
+| `marginalis-auth-oidc` | OIDC Discovery、コード交換、ID トークン検証。セッション発行はアプリケーション層のポートを通す |
+| `marginalis-server` | 設定型と Clock / Random、各アダプターをアプリケーション層のポートへ接続するサーバーアダプター。トランスポートの業務判断を持たない |
+| `marginalis-service` | 実行バイナリ。設定読込、依存組立、tracing 初期化、HTTP 待受を一箇所に集める composition root |
 
-各crateはworkspace内の実装境界であり、外部公開するRustライブラリAPIは設けない。
+各クレートはワークスペース内部の実装境界であり、外部公開する Rust ライブラリ API は設けない。
 
 ## 不変条件
 
-- AsciiDoc正本、SQLite投影および操作ジャーナルの更新は一つのapplication use caseだけが調停する。
-- HTTP、MCPおよび将来のCLIは同じuse caseを呼び、SQLやファイルI/Oへ直接アクセスしない。
-- 外部OIDC callbackは`OidcAuthenticationUseCases`、Cookie sessionとroot loginは`WebSessionUseCases`、
-  root管理は`UserAdministrationUseCases`を通す。HTTP transportはsession table、root credential、OIDC stateおよび
-  identity storeを直接参照しない。
-- OIDCの`issuer`と`subject`だけが外部本人同定に使われる。email・表示名は可変属性である。
-- secret、token、authorization code、state、nonceおよびPKCE verifierを監査ログ・通常ログ・
-  Nix storeへ出力しない。
-- rootの認証成功・失敗とroot管理操作は、秘密値を含まない構造化行としてSQLiteへ保存する。監査の
-  保持期間は365日であり、初期段階ではHTTP経由で公開せずサーバ上から直接確認する。
-- HTTP requestごとにserver生成UUIDv7の`X-Request-Id`を返し、同じ値をtracing spanへ記録する。
-  クライアントが送った相関IDを採用しない。
-- Cookie sessionを伴う変更操作は、CSRF token、固定した公開origin、`Sec-Fetch-Site`を同時に検証する。
-  `X-Forwarded-*`はこの判定にもroot loginの補助rate limitにも使わない。
-- root loginとroot管理endpointは`administration_router`へ隔離し、current releaseでは通常routerへmergeする。
-  専用管理origin・mTLSは後続でこのrouterだけを別listenerへ載せ替える。
-- REST JSON boundaryは`marginalis-web::contract`へ閉じ、OpenAPI 3.1 documentを`/api/v1/openapi.json`とrelease
-  artifactへ同一内容で公開する。MCP token、Cookie、CSRFおよびadapter内部型をこのcontractへ含めない。
-- MCP access tokenはcanonical resource URI・scope・有効期限を同時に照合する。利用時刻だけを記録し、
-  token値・hashはAPIやログへ出さない。refresh tokenは一回だけ使用でき、交換時に同一SQLite
-  transactionで次のtoken pairへローテーションする。
-- MCPの参照一覧は、参照元と参照先の双方を閲覧できる場合だけ返す。不可視の参照先はtitle、anchor、
-  投影上の存在を返さない。
-- root sessionはMCP clientの認可を作れず、root actorをMCP Bearer tokenとして認証しない。
-- Client ID Metadata Documentは、NixOS設定で許可されたHTTPS hostだけから取得する。取得値はclient IDの
-  完全一致、サイズ上限、redirect URI policyを検証してからSQLiteへ保存する。
-- data formatはv1である。空directoryは`FORMAT` markerとともに初期化し、markerのない非空directoryまたは
-  未知のmarkerは起動・maintenance・restore入力で明確に拒否する。SQLite migrationはv1の内部schema revisionであり、
-  markerのない旧deploymentを暗黙移行しない。v1は`marginalis-asciidoc`が固定するAdocWeave公開契約と
-  ノートprofileを前提とする。正本の意味を変える契約変更はdata format versionを上げ、SQLiteだけの内部変更は
-  v1内のmigrationとして扱う。
-- `rebuild-projections`保守操作は、全AsciiDoc正本を検証してから一つのSQLite transactionで検索・
-  anchor・xref投影を置換する。検証失敗時は最後に成功した投影を保持し、既存ACLは維持する。
-- `backup`保守操作はHTTP service停止中にSQLiteをcheckpointしてbackup fileへ出力し、検証済みの
-  AsciiDoc正本だけを同じ出力directoryへ複製する。`FORMAT`、`MANIFEST`、`COMPLETE`がそろい、manifestの
-  SQLite・各正本SHA-256が一致する一組だけを復元候補とする。既存backupは上書きしない。
-- `restore`保守操作はformat marker、manifest hash、backup SQLiteの`integrity_check`と全正本を検証してから、既存dataDirを変更せず
-  新しいdataDir候補を作る。実際のdataDir切替・旧データ削除は運用者が明示して行う。
-- 時刻はUTC epoch milliseconds、IDは型付きUUIDv7、外部入力は境界で検証する。
+### 責務境界
+
+- AsciiDoc 正本、SQLite 投影、操作ジャーナルの更新は、一つのアプリケーションユースケースが
+  調停する。HTTP、MCP、CLI は同じユースケースを呼び、SQL やファイル I/O へ直接アクセス
+  しない。
+- 外部 OIDC コールバックは `OidcAuthenticationUseCases`、Cookie セッションと root ログインは
+  `WebSessionUseCases`、root 管理は `UserAdministrationUseCases` を通す。HTTP トランス
+  ポートは、セッションテーブル・root 資格情報・OIDC 状態・identity ストアを直接参照しない。
+- REST の JSON 境界は `marginalis-web::contract` に閉じる。OpenAPI 3.1 ドキュメントを
+  `/api/v1/openapi.json` とリリース成果物に同一内容で公開する。MCP トークン、Cookie、CSRF、
+  アダプター内部型をこの契約に含めない。
+- root ログインと root 管理エンドポイントは `administration_router` に隔離する。現在は通常の
+  ルーターへ合流させるが、専用管理オリジンや mTLS はこのルーターだけを別リスナーへ載せ替えて
+  実現する。
+
+### 認証と秘密情報
+
+- 外部の本人同定には OIDC の `issuer` と `subject` だけを使う。メールアドレスと表示名は
+  可変の属性である。
+- シークレット、トークン、認可コード、`state`、`nonce`、PKCE verifier を、監査ログ・通常
+  ログ・Nix ストアへ出力しない。
+- root の認証成功・失敗と root 管理操作は、秘密値を含まない構造化行として SQLite に保存
+  する。監査の保持期間は 365 日である。HTTP では公開せず、サーバー上で直接確認する。
+- Cookie セッションを伴う変更操作では、CSRF トークン、起動時に固定した公開オリジン、
+  `Sec-Fetch-Site` を同時に検証する。`X-Forwarded-*` は、この判定にも root ログインの補助
+  レート制限にも使わない。
+- HTTP リクエストごとにサーバー生成の UUIDv7 を `X-Request-Id` として返し、同じ値を tracing
+  スパンに記録する。クライアントが送った相関 ID は採用しない。
+
+### MCP と OAuth
+
+- MCP アクセストークンは、正規のリソース URI・スコープ・有効期限を同時に照合する。利用時刻
+  だけを記録し、トークン値やハッシュを API・ログへ出さない。
+- リフレッシュトークンは一回だけ使用でき、交換時に同一 SQLite トランザクションで次の
+  トークンペアへローテーションする。
+- MCP の参照一覧は、参照元と参照先の両方を閲覧できる場合にだけ返す。閲覧できない参照先の
+  タイトル・アンカー・投影上の存在を返さない。
+- root セッションは MCP クライアントの認可を作成できず、root を MCP の Bearer トークンとして
+  認証しない。
+- Client ID Metadata Document は、NixOS 設定で許可した HTTPS ホストからだけ取得する。取得値は
+  クライアント ID の完全一致、サイズ上限、リダイレクト URI ポリシーを検証してから SQLite に
+  保存する。
+
+### データフォーマットと保守
+
+- データフォーマットは v1 である。空ディレクトリは `FORMAT` マーカーとともに初期化し、
+  マーカーのない非空ディレクトリと未知のマーカーは、起動・保守・復元入力のいずれでも明確に
+  拒否する。SQLite マイグレーションは v1 内部のスキーマ改訂であり、マーカーのない旧デプロイを
+  暗黙に移行しない。
+- v1 は `marginalis-asciidoc` が固定する AdocWeave の公開契約とノートプロファイルを前提と
+  する。正本の意味を変える契約変更はデータフォーマットのバージョンを上げ、SQLite だけの内部
+  変更は v1 内のマイグレーションとして扱う。
+- `rebuild-projections` は、全 AsciiDoc 正本を検証してから、一つの SQLite トランザクションで
+  検索・アンカー・参照投影を置き換える。検証に失敗した場合は最後に成功した投影を保持し、
+  既存の ACL を維持する。
+- `backup` は、HTTP サービス停止中に SQLite をチェックポイントしてバックアップファイルへ
+  出力し、検証済みの AsciiDoc 正本だけを同じ出力ディレクトリへ複製する。`FORMAT`・
+  `MANIFEST`・`COMPLETE` が揃い、マニフェストの SHA-256 が SQLite と各正本に一致する一組
+  だけを復元候補とする。既存のバックアップは上書きしない。
+- `restore` は、フォーマットマーカー、マニフェストのハッシュ、バックアップ SQLite の
+  `integrity_check`、全正本を検証してから、既存のデータディレクトリを変更せずに新しい候補を
+  作る。実際の切り替えと旧データの削除は運用者が明示して行う。
+- 時刻は UTC のエポックミリ秒、ID は型付き UUIDv7 とし、外部入力は境界で検証する。
 
 ## 設定と起動
 
-HTTP serviceは`ServerConfig`を一箇所で検証し、`HttpConfig`（Base URL・listen address）、`StorageConfig`
-（data directory・SQLite URL・新規DB登録ポリシー）、`OidcConfig`（issuer・client ID）へ分離する。secretは
-別の`SecretConfig`で受け、NixOSではsystemd credentialから渡す。
-運用中の登録policyはSQLiteを正本とし、root APIで変更する。NixOS設定は既存DBへ再適用しない。
-`backup`、`rebuild-projections`および`prune-audit`は`StorageConfig`だけを読み、Base URL、OIDC issuerおよび
-client secretを必要としない。
+HTTP サービスは `ServerConfig` を一箇所で検証し、`HttpConfig`（ベース URL・待受アドレス）、
+`StorageConfig`（データディレクトリ・SQLite URL・新規 DB の登録ポリシー）、`OidcConfig`
+（issuer・クライアント ID）へ分離する。シークレットは別の `SecretConfig` で受け取り、NixOS
+では systemd の credential として渡す。
 
-起動順は、設定検証、data format検証、migration、root初期化、未完了ジャーナル復旧、OIDC client
-初期化、HTTP listenとする。OIDC Discoveryが一時的に失敗してもserviceはroot緊急ログインだけを
-有効にして起動する。この間のOIDC loginは`503`相当の安全な失敗となり、IdP復旧後はserviceを再起動して
-Discoveryを再実行する。
+運用中の登録ポリシーは SQLite を正本とし、root API で変更する。NixOS 設定の値を既存 DB へ
+再適用することはない。`backup`・`rebuild-projections`・`prune-audit` は `StorageConfig`
+だけを読み、ベース URL、OIDC issuer、クライアントシークレットを必要としない。
 
-## 段階的な再基線化
+起動順序は、設定検証、データフォーマット検証、マイグレーション、root 初期化、未完了
+ジャーナルの復旧、OIDC クライアント初期化、HTTP 待受である。OIDC Discovery が一時的に失敗
+しても、サービスは root 緊急ログインだけを有効にして起動する。この間の OIDC ログインは
+`503` 相当の安全な失敗となり、IdP 復旧後にサービスを再起動して Discovery をやり直す。
 
-1. 新crate構成、domain型、`ServerConfig`、Clock/Random port、sqlx migration基盤を導入する。
-2. `ServerConfig`が確定した時点で、最小のNix package/moduleとhealth checkを並行して実装する。
-   moduleは設定型と永続パスだけを扱い、OIDC secret注入は後続の契約へ委ねる。
-3. ユーザー・ACL・session・OIDC試行を新SQLite adapterへ移す。旧schemaは移行せず、deploymentの
-   dataDirを明示的に初期化する。
-4. ファイル正本と操作ジャーナルを実装し、ノートCRUDをapplication use caseとして成立させる。
-5. Axumを新use caseへ接続し、OIDC、Cookie、CSRF、RESTをadapterへ限定する。NixOS VM testをここで
-   OIDC secret contractまで拡張する。
-6. MCP OAuthを同じapplication portに追加し、Web UIとWASM previewは後続にする。
+## 初期公開の HTTP 方針
 
-### 初期公開のHTTP方針
+初期公開では REST API と OAuth 保護 MCP を先行させ、一般利用者向けのサーバー生成 Web UI は
+提供しない。ノート一覧・閲覧・編集・ACL 管理の UI と WASM プレビューは後続段階とする。
 
-初期公開ではREST APIとOAuth保護されたMCPを先行し、通常利用者向けのサーバー生成Web UIは提供しない。ノート一覧、
-閲覧、編集およびACL管理のUI、WASM previewは後続段階とする。`/acceptance`は実環境受入のためだけの同一origin、
-server-rendered formであり、製品UIの公開や新しいapplication use caseを意味しない。REST APIもHTTP adapterに留まり、
-同じapplication use caseを経由して正本・SQLite投影・ACLを扱う。
+`/acceptance` は実環境の受入確認のためだけの同一オリジン・サーバー描画フォームであり、製品
+UI の公開や新しいユースケースの追加を意味しない。REST API も HTTP アダプターに留まり、同じ
+アプリケーションユースケースを経由して正本・SQLite 投影・ACL を扱う。

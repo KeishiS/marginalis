@@ -1,109 +1,132 @@
-# MCPとOAuth
+# MCP と OAuth
 
-## 範囲
+## 概要
 
-Marginalisは、研究ノートの検索、取得、作成、更新、参照一覧および確認付き物理削除のために、OAuthで
-保護されたMCP Streamable HTTP endpointを提供する。
-この認可はWebのCookie sessionとは別であり、外部Kanidmは認可画面で利用者をログインさせるOIDC
-providerとしてのみ使う。MCP access token、refresh token、authorization codeをKanidmへ渡したり、
-CookieをMCP endpointで受理したりしない。
+Marginalis は、研究ノートの検索・取得・作成・更新・参照一覧・確認付き物理削除のために、
+OAuth で保護された MCP（Streamable HTTP）エンドポイントを提供します。
 
-MCPは`services.marginalis.mcp.enable = true;`を設定した場合だけ有効になる。Base URLを`B`とすると、
-公開URLは次のとおりである。
+この認可は Web の Cookie セッションとは独立しています。外部の Kanidm は、認可画面で利用者を
+ログインさせる OIDC プロバイダーとしてだけ使います。MCP のアクセストークン・リフレッシュ
+トークン・認可コードを Kanidm へ渡すことはなく、MCP エンドポイントが Cookie を受け付ける
+こともありません。
 
-| 用途                          | URL                                          |
-| ----------------------------- | -------------------------------------------- |
-| MCP transport                 | `B/mcp`                                      |
-| Protected Resource Metadata   | `B/.well-known/oauth-protected-resource/mcp` |
-| Authorization Server Metadata | `B/.well-known/oauth-authorization-server`   |
-| authorization endpoint        | `B/oauth/authorize`                          |
-| token endpoint                | `B/oauth/token`                              |
+MCP は `services.marginalis.mcp.enable = true` を設定した場合にだけ有効になります。
+ベース URL を `B` とすると、公開 URL は次のとおりです。ベース URL がサブパスを含む場合も、
+各パスはそのサブパスの下に置かれます。
 
-Base URLがsubpathを持つ場合も、上表のpathはそのsubpathの下へ追加される。
+| 用途 | URL |
+| --- | --- |
+| MCP トランスポート | `B/mcp` |
+| Protected Resource Metadata | `B/.well-known/oauth-protected-resource/mcp` |
+| Authorization Server Metadata | `B/.well-known/oauth-authorization-server` |
+| 認可エンドポイント | `B/oauth/authorize` |
+| トークンエンドポイント | `B/oauth/token` |
 
-## MCP transport
+## MCP トランスポート
 
-`POST /mcp`はJSON-RPC 2.0 requestを受ける。clientは`Accept`に`application/json`と
-`text/event-stream`の両方を含め、`Authorization: Bearer <access-token>`を付ける。Bearer tokenが
-ないか無効なら、serverは`401`と次の形式の`WWW-Authenticate`を返す。
+`POST /mcp` は JSON-RPC 2.0 リクエストを受け付けます。クライアントは `Accept` ヘッダーに
+`application/json` と `text/event-stream` の両方を含め、`Authorization: Bearer <access-token>`
+を付けてください。Bearer トークンがない、または無効な場合は `401` と次の形式の
+`WWW-Authenticate` ヘッダーを返します。
 
 ```text
 Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource/mcp"
 ```
 
-初期公開のtoolは次のとおりである。
+そのほかのトランスポート仕様は次のとおりです。
 
-| tool                  | 入力                                                    | 出力                                                                                   |
-| --------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `search_notes`        | `query`、任意の`limit`と`cursor`                        | 可視ノートのID・titleと次cursor                                                        |
-| `get_note`            | `note_id`                                               | Read権限を持つノートのID・title・tags・作成/更新時刻・revision・AsciiDoc source        |
-| `list_note_links`     | `note_id`、任意の`limit`と`cursor`                      | sourceとtargetの双方を閲覧できるoutgoing参照の位置、target ID・title・anchorと次cursor |
-| `create_note`         | `title`、`body`、`tags`                                 | server生成metadataを持つ新規ノートとrevision                                           |
-| `update_note`         | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとrevision                                                               |
-| `prepare_delete_note` | `note_id`、`expected_revision`                          | title、revision、一回限りの確認token                                                   |
-| `delete_note`         | `confirmation_token`                                    | 物理削除の完了                                                                         |
+- `GET /mcp` は、サーバーからクライアントへの通知ストリームが必要になるまで `405` を
+  返します。
+- リクエストに `Origin` ヘッダーがある場合、ベース URL と同じオリジンでなければ拒否します。
+- 認証後のツール呼び出しは利用者ごとに毎分 120 回までです。超過すると `429` と
+  `Retry-After: 60` を返します。この制限はメモリ内の固定ウィンドウで、サーバー再起動で
+  リセットされます。
 
-検索はSQLite FTS5投影を使い、ACL filter後の結果だけをcursorへ含める。本文断片、score、権限のない
-ノートの存在は返さない。`GET /mcp`はserver-to-client notification streamが必要になるまで`405`を
-返す。MCP requestに`Origin` headerが存在するときは、Base URLと同じoriginでなければ拒否する。
-認証後のtool呼出しは利用者ごとに毎分120回までであり、超過時は`429`と`Retry-After: 60`を返す。
-この制限はメモリ内の固定windowであり、server再起動でリセットされる。
+## ツール一覧
 
-`list_note_links`は参照元と参照先の双方にRead権限がある行だけを返す。参照先が不可視の場合は、
-target ID、title、anchorおよびその投影上の存在を返さない。これは通常の検索・取得と同じACL非漏洩規則である。
+| ツール | 入力 | 出力 |
+| --- | --- | --- |
+| `search_notes` | `query`、任意の `limit`・`cursor` | 可視ノートの ID・タイトルと次カーソル |
+| `get_note` | `note_id` | Read 権限を持つノートの ID・タイトル・タグ・作成/更新時刻・リビジョン・AsciiDoc 本文 |
+| `list_note_links` | `note_id`、任意の `limit`・`cursor` | 参照元・参照先の両方を閲覧できる参照の位置、参照先の ID・タイトル・アンカーと次カーソル |
+| `create_note` | `title`、`body`、`tags` | サーバー生成メタデータを持つ新規ノートとリビジョン |
+| `update_note` | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとリビジョン |
+| `prepare_delete_note` | `note_id`、`expected_revision` | タイトル、リビジョン、一回限りの確認トークン |
+| `delete_note` | `confirmation_token` | 物理削除の完了 |
 
-## REST contractとの対応
+検索は SQLite FTS5 の投影を使い、ACL でフィルターした結果だけをカーソルに含めます。本文の
+断片、スコア、権限のないノートの存在は返しません。`list_note_links` も同じ規則に従い、
+参照元と参照先の両方に Read 権限がある行だけを返します。参照先が閲覧できない場合は、その
+ID・タイトル・アンカー・投影上の存在のいずれも返しません。
 
-OpenAPIで公開するREST contractとMCP toolは同じapplication use case・ACL・revision規則を共有するが、
-transport固有の認証方式は混在させない。
+### ノートの保護されたメタデータ
 
-| REST                                                                                           | MCP                                   | 相違点                                                               |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------- |
-| `GET /api/v1/search`                                                                           | `search_notes`                        | RESTはCookie session、MCPはBearer tokenと`notes:read` scopeを使う。  |
-| `GET /api/v1/notes/{note_id}/source`                                                           | `get_note`                            | MCPはmetadataとsourceを一つのJSON-RPC resultで返す。                 |
-| `POST /api/v1/notes`                                                                           | `create_note`                         | RESTは検証済みAsciiDoc正本、MCPは構造化したtitle/body/tagsを受ける。 |
-| `PUT /api/v1/notes/{note_id}/source`                                                           | `update_note`                         | 両者ともrevisionの完全一致を要求する。                               |
-| `POST /api/v1/notes/{note_id}/delete-preparations` → `POST /api/v1/notes/delete-confirmations` | `prepare_delete_note` → `delete_note` | 両transportとも確認tokenを二段階で必要とする。                       |
+`create_note` と `update_note` では、MCP クライアントは `note-id`・`creator-id`・
+`created-at`・`updated-at` を指定・変更できません。サーバーが UUIDv7 と作成者を決め、作成
+日時を保存し、更新時には更新日時だけを書き換えます。`update_note` は現在のリビジョンとの
+完全一致を要求し、競合時には何も変更しません。
 
-Cookie、`X-CSRF-Token`、`Origin`、`Sec-Fetch-Site`はREST browser boundaryだけの要件であり、MCP tool input・
-output schemaへ含めない。
+### 削除の二段階確認
 
-## OAuth flow
+削除には `notes:delete` スコープとノートの Admin 権限が必要です。`prepare_delete_note` が
+返す確認トークンは、実行者・対象ノート・リビジョン・被参照集合に結び付き、5 分で失効します。
+結果には実行者から見える範囲の被参照数 `incoming_reference_count` も含まれます。トークンは
+`delete_note` で一度だけ消費でき、準備後にリビジョンや被参照状態が変わっていた場合は削除を
+行いません。トークンの平文を SQLite へ保存することはありません。
 
-1. clientはProtected Resource Metadataを取得し、resource URIとAuthorization Serverを知る。
-2. clientは`/oauth/authorize`へ`response_type=code`、`client_id`、`redirect_uri`、`resource`、
-   `scope`、`code_challenge`、`code_challenge_method=S256`、任意の`state`を送る。
-3. 利用者にCookie sessionがなければ、MarginalisはKanidmのOIDC loginへ移動し、認可要求だけを短命の
-   `HttpOnly; Secure; SameSite=Lax` cookieへ保存する。OIDC callback後はその認可画面へだけ復帰する。
-4. 通常ユーザーはclient名、scopeを確認して許可または拒否する。root sessionはMCP clientを認可できない。
-5. 許可時は完全一致で検証したredirect URIへ`code`と元の`state`を付けて`303`する。
-6. clientは`POST /oauth/token`に`grant_type=authorization_code`、code、client ID、redirect URI、
-   resource、PKCE verifierをform bodyで送る。成功時にopaque access tokenとrefresh tokenを得る。
-   token responseには`token_type: "Bearer"`、`expires_in`、実際に許可された`scope`も含まれる。
+## REST API との対応
 
-`redirect_uri`は事前に登録された文字列との完全一致である。HTTPS URI、または`127.0.0.1`、`localhost`、
-`::1`へのHTTP loopback URIだけを許可する。query、fragment、userinfoを含むredirect URIは許可しない。
-scopeは`notes:read`、`notes:write`、`notes:delete`だけを受理する。clientは呼び出すtoolに対応するscopeを
-要求しなければならない。
+REST と MCP のツールは、同じアプリケーション層のユースケース・ACL・リビジョン規則を共有
+します。ただしトランスポート固有の認証方式は混在させません。Cookie・`X-CSRF-Token`・
+`Origin`・`Sec-Fetch-Site` は REST のブラウザ境界だけの要件であり、MCP のツール入出力には
+含まれません。
 
-`create_note`と`update_note`は`notes:write`に加えて、通常のノートACLを必要とする。MCP clientは
-`note-id`、`creator-id`、`created-at`、`updated-at`を指定・変更できない。serverがUUIDv7と作成者を
-決め、作成日時を保存し、更新日時だけを更新する。`update_note`は現在のrevisionとの完全一致を要求し、
-競合時には変更しない。
+| REST | MCP | 相違点 |
+| --- | --- | --- |
+| `GET /api/v1/search` | `search_notes` | REST は Cookie セッション、MCP は Bearer トークンと `notes:read` スコープを使う |
+| `GET /api/v1/notes/{note_id}/source` | `get_note` | MCP はメタデータと本文を 1 つの JSON-RPC 結果で返す |
+| `POST /api/v1/notes` | `create_note` | REST は AsciiDoc 全文、MCP は `title`/`body`/`tags` の構造化入力を受ける |
+| `PUT /api/v1/notes/{note_id}/source` | `update_note` | どちらもリビジョンの完全一致を要求する |
+| 削除準備 → 削除確定 | `prepare_delete_note` → `delete_note` | どちらも確認トークンによる二段階削除 |
 
-削除toolは`notes:delete`とAdmin ACLを必要とする。`prepare_delete_note`が返す確認tokenは実行者、
-対象ノート、revisionおよび被参照集合へ結び付けられ、5分で失効する。結果には実行者から可視な
-`incoming_reference_count`も含まれる。`delete_note`で一度だけ消費され、確認後にrevisionまたは
-被参照状態が変わっていれば物理削除を行わない。tokenの平文はSQLiteへ保存しない。
+## OAuth フロー
 
-access tokenの有効期間は1時間である。refresh tokenの有効期間は30日で、`grant_type=refresh_token`、
-`refresh_token`、client ID、resourceを`/oauth/token`へ送ると新しいtoken pairを得る。refresh tokenは
-交換と同時に無効化され、再利用は拒否される。既発行access tokenは自身の有効期限または明示的な
-認可取消まで有効である。
+1. クライアントは Protected Resource Metadata を取得し、リソース URI と認可サーバーを
+   特定します。
+2. クライアントは `/oauth/authorize` へ `response_type=code`、`client_id`、`redirect_uri`、
+   `resource`、`scope`、`code_challenge`、`code_challenge_method=S256`、任意の `state` を
+   送ります。
+3. 利用者に Cookie セッションがなければ、Marginalis は Kanidm の OIDC ログインへ誘導し、
+   認可要求だけを短命の `HttpOnly; Secure; SameSite=Lax` Cookie に保存します。OIDC
+   コールバック後は、その認可画面へだけ復帰します。
+4. 利用者はクライアント名とスコープを確認し、許可または拒否します。root セッションで MCP
+   クライアントを認可することはできません。
+5. 許可された場合、完全一致で検証済みのリダイレクト URI へ `code` と元の `state` を付けて
+   `303` を返します。
+6. クライアントは `POST /oauth/token` へ `grant_type=authorization_code`、コード、
+   クライアント ID、リダイレクト URI、リソース、PKCE verifier をフォームボディで送ります。
+   成功すると不透明なアクセストークンとリフレッシュトークンを取得できます。レスポンスには
+   `token_type: "Bearer"`、`expires_in`、実際に許可された `scope` も含まれます。
 
-## Client ID Metadata Document
+制約は次のとおりです。
 
-未知clientの`client_id`はHTTPS URLであり、そのURLのJSON documentは少なくとも次を持つ。
+- `redirect_uri` は事前登録された文字列との完全一致です。HTTPS、またはループバック
+  （`127.0.0.1`・`localhost`・`::1`）への HTTP だけを許可します。クエリ・フラグメント・
+  ユーザー情報を含む URI は登録できません。
+- スコープは `notes:read`・`notes:write`・`notes:delete` だけを受け付けます。クライアントは
+  呼び出すツールに対応するスコープを要求してください。スコープに加えて、各操作では通常の
+  ノート ACL も検証されます。
+- アクセストークンの有効期間は 1 時間です。リフレッシュトークンの有効期間は 30 日で、
+  `grant_type=refresh_token` により新しいトークンペアと交換できます。リフレッシュトークンは
+  交換と同時に無効化され、再利用は拒否されます。発行済みのアクセストークンは、自身の期限
+  または明示的な認可取消まで有効です。
+
+## クライアントの登録
+
+### Client ID Metadata Document
+
+未知のクライアントの `client_id` は HTTPS URL であり、その URL の JSON ドキュメントは
+少なくとも次を含みます。
 
 ```json
 {
@@ -113,26 +136,36 @@ access tokenの有効期間は1時間である。refresh tokenの有効期間は
 }
 ```
 
-Marginalisはclient IDとdocument中の`client_id`の完全一致、空でない`client_name`、非空の
-`redirect_uris`、各URIのredirect policyを検証してから登録する。redirectを追跡せず、応答は64 KiBを
-超えない。未知clientのmetadata取得は`services.marginalis.mcp.clientMetadataAllowedHosts`に含まれる
-HTTPS hostだけに限る。これは任意URLを取得するSSRFを防ぐ運用上の境界である。
+Marginalis は、クライアント ID とドキュメント内 `client_id` の完全一致、空でない
+`client_name`、空でない `redirect_uris`、各 URI のリダイレクトポリシーを検証してから登録
+します。リダイレクトは追跡せず、64 KiB を超える応答は受け付けません。取得先は
+`services.marginalis.mcp.clientMetadataAllowedHosts` に列挙した HTTPS ホストに限られます。
+これは認可エンドポイントを SSRF の入口にしないための境界です。
 
-Dynamic Client RegistrationとDevice Authorization Grantは初期公開に含めない。
+Dynamic Client Registration と Device Authorization Grant は現在のリリースには含まれません。
 
-Client ID Metadata Documentを提供しないclientは、rootが`POST /api/v1/admin/mcp-clients`を使って事前登録
-できる。これはroot sessionとCSRFを必要とし、MCP tokenやclient secretは受け取らない。
+### root による事前登録
 
-### ChatGPTなどのcallback URLを事前登録する
+Client ID Metadata Document を提供しないクライアントは、root が
+`POST /api/v1/admin/mcp-clients` で事前登録できます。この操作には root セッションと CSRF
+トークンが必要で、MCP トークンやクライアントシークレットは扱いません。
 
-ChatGPTのcustom MCP app設定では、登録者がOAuth client IDを指定する。これはsecretではないため、例えば
-`https://marginalis.sandi05.com/mcp-clients/chatgpt`のような安定したURI形式の値を決め、ChatGPTの
-「OAuth client ID」とMarginalisの事前登録で完全に同じ値を使う。このURIはrootによる事前登録を使う限り、
-Client ID Metadata Documentを配信する必要はない。callback URLはChatGPTが設定画面に表示する完全な値を使う。
-rootによる事前登録ではURL形式は必須ではないため、`chatgpt-web`のような空でない安定した文字列も使える。
-Dynamic Client Registration endpointは公開していないため、ChatGPTの「登録URL」は空欄にする。次の手順は
-root session、Cookie jarおよびCSRF tokenを作成してからclientを登録し、最後にroot sessionを破棄する。
-root password、Cookie、CSRF tokenをコマンド履歴、Issueまたはログへ記録しない。
+### 例: ChatGPT のコールバック URL を事前登録する
+
+ChatGPT のカスタム MCP アプリ設定では、登録者が OAuth クライアント ID を指定します。これは
+シークレットではないため、安定した値を決めて、ChatGPT 側の「OAuth client ID」と Marginalis
+側の事前登録で完全に同じ値を使ってください。root による事前登録では URL 形式は必須では
+ないため、`chatgpt-web` のような空でない安定した文字列でも構いません。
+
+- コールバック URL には、ChatGPT の設定画面に表示される完全な値を使います。
+- Dynamic Client Registration は公開していないため、ChatGPT の「登録 URL」は空欄にします。
+- Marginalis はパブリッククライアントの Authorization Code + PKCE だけを受け付けます。
+  `client_secret_basic` と `client_secret_post` は実装していないため、「OAuth client secret」
+  も空欄にします。
+
+次の手順は、root セッションと CSRF トークンを取得してクライアントを登録し、最後に root
+セッションを破棄します。root のパスワード、Cookie、CSRF トークン、コールバック URL を
+コマンド履歴・Issue・ログへ記録しないでください。
 
 ```sh
 set -eu
@@ -191,14 +224,14 @@ curl --fail-with-body --silent --show-error \
   "$BASE_URL/auth/logout"
 ```
 
-成功時は`HTTP 204`となる。callback URLはHTTPSで、query、fragment、userinfoを含まず、ChatGPTが送る
-`redirect_uri`と完全一致しなければならない。ChatGPTの「OAuth client secret」は空欄にする。Marginalisは
-public clientのAuthorization Code + PKCEだけを受理し、`client_secret_basic`と`client_secret_post`を
-実装しない。callback URL、Cookie、CSRF token、root passwordをIssue、ログまたはコマンド履歴へ記録しない。
+成功すると `HTTP 204` になります。コールバック URL は HTTPS で、クエリ・フラグメント・
+ユーザー情報を含まず、ChatGPT が送る `redirect_uri` と完全に一致する必要があります。
 
-利用者はREST APIで自分のclient認可を取り消せる。rootは任意ユーザーの認可を強制取消できる。取消時には
-そのユーザー・client組のaccess tokenとrefresh tokenをすべて失効させる。
+## 認可の確認と取消
 
-`GET /api/v1/mcp-authorizations`では、サインイン済み利用者が有効なclient認可の表示名、scope、認可日時、
-最後の成功利用日時を確認できる。応答にtoken値またはtoken hashを含めないため、この一覧をもとに安全に
-取消対象を選択できる。
+- 利用者は `GET /api/v1/mcp-authorizations` で、自分の有効なクライアント認可の表示名・
+  スコープ・認可日時・最終利用日時を確認できます。応答にトークンやそのハッシュは含まれない
+  ため、この一覧から安全に取消対象を選べます。
+- 利用者は REST API で自分のクライアント認可を取り消せます。root は任意ユーザーの認可を
+  強制的に取り消せます。取消時には、そのユーザーとクライアントの組に発行済みのアクセス
+  トークンとリフレッシュトークンをすべて失効させます。
