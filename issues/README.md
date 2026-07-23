@@ -15,12 +15,13 @@
 3. 完了: [020: data format v1とmaintenance lifecycle](020-data-format-and-maintenance-lifecycle.md)
 4. 完了: [019: Web security baselineとroot管理境界](019-web-security-and-admin-boundary.md)
 5. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)
-6. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
-7. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
-8. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の再有効化
-9. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
-10. 完了: [018: API契約・OpenAPI・互換性方針](018-api-contract-and-openapi.md)
-11. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の招待・専用管理origin
+6. [022: v0.1.0-rc.1 release acceptance](022-v0.1.0-rc.1-release-acceptance.md)
+7. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
+8. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
+9. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の再有効化
+10. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
+11. 完了: [018: API契約・OpenAPI・互換性方針](018-api-contract-and-openapi.md)
+12. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の招待・専用管理origin
 
 015、014、005および010の初期公開に必要な実装は完了している。以後は実OIDC/MCP clientとの結合、
 検索の拡張、公開前検証およびWeb UIを優先する。

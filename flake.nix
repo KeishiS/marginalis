@@ -24,7 +24,7 @@
         {
           default = pkgs.rustPlatform.buildRustPackage {
             pname = "marginalis";
-            version = "0.1.0";
+            version = "0.1.0-rc.1";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;
@@ -147,6 +147,48 @@
                 machine.succeed("test -f /var/lib/marginalis/audit-pruned")
               '';
             };
+          nixos-module-runtime-vm = pkgs.testers.nixosTest {
+            name = "marginalis-nixos-module-runtime";
+            nodes.machine = {
+              imports = [ self.nixosModules.default ];
+              system.stateVersion = "25.11";
+              environment.systemPackages = [
+                pkgs.curl
+                pkgs.jq
+              ];
+              environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
+              environment.etc."marginalis-test/root-password".text = "root-password";
+
+              services.marginalis = {
+                enable = true;
+                baseUrl = "https://marginalis.example.test";
+                initialRootPasswordFile = "/etc/marginalis-test/root-password";
+                oidc = {
+                  # networkに依存せずroot-only縮退起動を検証する。実OIDCの確認は手動acceptanceで行う。
+                  issuerUrl = "https://127.0.0.1:1";
+                  clientId = "marginalis";
+                  clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
+                };
+              };
+            };
+
+            testScript = ''
+              machine.wait_for_unit("marginalis.service")
+              machine.wait_until_succeeds(
+                  "curl -fsS http://127.0.0.1:3000/api/v1/health | jq -e '.status == \"ok\" and .api_version == \"v1\"'"
+              )
+              machine.succeed(
+                  "test \"$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/v1/readiness)\" = 503"
+              )
+              machine.succeed(
+                  "curl -fsS http://127.0.0.1:3000/api/v1/openapi.json | jq -e '.openapi == \"3.1.0\"'"
+              )
+              machine.succeed(
+                  "test \"$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{\"password\":\"root-password\"}' http://127.0.0.1:3000/auth/root/login)\" = 204"
+              )
+              machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM root_credentials'")
+            '';
+          };
         }
       );
 

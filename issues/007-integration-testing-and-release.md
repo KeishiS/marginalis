@@ -40,3 +40,10 @@ AdocWeave拡張を含むAsciiDoc処理全体の安全性、決定性および互
   手動受入確認として残す。
 - backup、非破壊restore候補、投影再構築、root auditの手順は実装済みであり、保存先・保持世代・実際の
   dataDir切替は運用policyとして明示的に判断する。
+
+## RC.1 gate
+
+- `cargo make release-gate`は通常の品質gateに、OpenAPI、GitHub Actions構文、NixOS VMおよびrelease package buildを
+  加える。実行内容とtag手順は`docs/release.md`に記録する。
+- 実Kanidm、reverse proxy、実MCP clientを使う確認は`docs/acceptance.md`とIssue 022に残す。secretをCIに入れず、
+  成功・失敗とrequest IDだけを記録する。

@@ -47,7 +47,8 @@ https://id.sandi05.com/oauth2/openid/marginalis/.well-known/openid-configuration
 
 - `https://id.sandi05.com/oauth2/openid/marginalis`で登録したClientからログインとログアウトができる。
 - Base URLがサブパスを含む場合もredirect URIとCookie Pathが一致する。
-- `open`、`approval`および`invite-only`の各登録ポリシーで期待どおりに扱われる。
+- RC.1では`open`および`approval`の登録ポリシーで期待どおりに扱われる。`invite-only`は招待機能を
+  導入するfuture releaseで検証する。
 - token、secret、authorization code、state、nonce、PKCE verifierがログまたはSQLiteの
   恒久データへ露出しない。
 - IdPが返す認可拒否、state不一致、期限切れ、署名不正およびtoken交換失敗が安全な共通の

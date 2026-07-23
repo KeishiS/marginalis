@@ -67,6 +67,25 @@ description = "Evaluate the Nix flake without building every output"
 command = "nix"
 args = ["flake", "check", "--no-build"]
 
+[tasks.actionlint]
+description = "Validate GitHub Actions workflow syntax"
+command = "actionlint"
+args = [".github/workflows/ci.yml", ".github/workflows/release-gate.yml"]
+
+[tasks.nix-release-check]
+description = "Build and run the Nix flake checks, including the NixOS VM test"
+command = "nix"
+args = ["flake", "check", "-L"]
+
+[tasks.release-package]
+description = "Build the Linux release package without creating a result symlink"
+command = "nix"
+args = ["build", ".#packages.x86_64-linux.default", "--no-link"]
+
+[tasks.release-gate]
+description = "Run every automated gate required before an RC or final release"
+dependencies = ["verify", "actionlint", "nix-release-check", "release-package"]
+
 [tasks.dependency-boundaries]
 description = "Reject concrete adapters from transport production dependency graphs"
 script_runner = "@shell"

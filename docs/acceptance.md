@@ -57,9 +57,9 @@ metadataを持たないclientは、rootが事前登録してから試す。
 4. `marginalis-rebuild-projections.service`を実行し、main serviceを再起動してhealth/readinessを再確認する。
 5. `systemctl status marginalis-prune-audit.timer`で、root監査の365日保持timerが有効であることを確認する。
 6. `curl -fsS https://marginalis.sandi05.com/api/v1/openapi.json | jq -e '.openapi == "3.1.0"'`で、実行中binaryが
-   公開contractを返すことを確認する。外部client向け互換性をfreezeするまでは、このdocumentの破壊的変更を許容する。
+   公開contractを返すことを確認する。RC.1では、このdocumentとの差分がrelease blocker修正だけであることを確認する。
 
-API versionをfreezeした後に破壊的変更が必要になった場合は、新しいversion pathを追加し、既存versionに
-deprecation告知・移行手順・少なくとも一つのrelease周期を設ける。`/api/v1`のfreeze時期は現時点では未決である。
+v0.1.0でAPI versionをfreezeした後に破壊的変更が必要になった場合は、新しいversion pathを追加し、既存versionに
+deprecation告知・移行手順・少なくとも一つのrelease周期を設ける。
 
 各段階で、失敗時は`X-Request-Id`と`journalctl -u marginalis.service -b --no-pager`を対応付ける。
