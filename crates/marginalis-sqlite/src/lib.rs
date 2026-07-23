@@ -7,14 +7,15 @@ use argon2::{
     password_hash::{PasswordHash, SaltString},
 };
 use marginalis_application::{
-    AuthenticatedSession, JournalEntry, McpAccessTokenStore, NoteAclStore, NoteOperationKind,
-    NoteProjectionStore, NoteQueryStore, OidcIdentityStore, OidcLoginAttempt,
+    AuthenticatedSession, JournalEntry, McpAccessTokenStore, McpOAuthStore, NoteAclStore,
+    NoteOperationKind, NoteProjectionStore, NoteQueryStore, OidcIdentityStore, OidcLoginAttempt,
     OidcLoginAttemptStore, OidcUserAdministrationStore, OperationId, OperationJournal,
     OperationState, RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity,
-    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
+    Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, NoteId, NotePage, NotePermission,
+    NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy,
+    SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -27,6 +28,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (2, include_str!("../migrations/0002_live_notes_index.sql")),
     (3, include_str!("../migrations/0003_note_search.sql")),
     (4, include_str!("../migrations/0004_mcp_access_tokens.sql")),
+    (5, include_str!("../migrations/0005_mcp_oauth.sql")),
 ];
 
 #[derive(Clone, Debug)]
@@ -65,6 +67,46 @@ pub struct SqliteNoteAclStore {
 #[derive(Clone, Debug)]
 pub struct SqliteMcpAccessTokenStore {
     pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SqliteMcpOAuthStore {
+    pool: SqlitePool,
+}
+
+#[derive(Debug)]
+pub enum McpOAuthStoreError {
+    Database(sqlx::Error),
+    Serialization(serde_json::Error),
+    CorruptUser,
+}
+
+impl fmt::Display for McpOAuthStoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MCP OAuth query failed")
+    }
+}
+
+impl std::error::Error for McpOAuthStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::Serialization(error) => Some(error),
+            Self::CorruptUser => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for McpOAuthStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
+}
+
+impl From<serde_json::Error> for McpOAuthStoreError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Serialization(value)
+    }
 }
 
 #[derive(Debug)]
@@ -407,6 +449,12 @@ impl SqliteDatabase {
 
     pub fn mcp_access_token_store(&self) -> SqliteMcpAccessTokenStore {
         SqliteMcpAccessTokenStore {
+            pool: self.pool.clone(),
+        }
+    }
+
+    pub fn mcp_oauth_store(&self) -> SqliteMcpOAuthStore {
+        SqliteMcpOAuthStore {
             pool: self.pool.clone(),
         }
     }
@@ -829,6 +877,147 @@ impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
                 })
             })
             .transpose()
+        }
+    }
+}
+
+impl McpOAuthStore for SqliteMcpOAuthStore {
+    type Error = McpOAuthStoreError;
+
+    fn upsert_client(
+        &self,
+        client: McpOAuthClient,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let redirect_uris = serde_json::to_string(&client.redirect_uris)?;
+            sqlx::query(
+                "INSERT INTO mcp_oauth_clients (client_id, display_name, redirect_uris_json)
+                 VALUES (?, ?, ?)
+                 ON CONFLICT(client_id) DO UPDATE SET
+                   display_name = excluded.display_name,
+                   redirect_uris_json = excluded.redirect_uris_json",
+            )
+            .bind(client.client_id)
+            .bind(client.display_name)
+            .bind(redirect_uris)
+            .execute(&pool)
+            .await?;
+            Ok(())
+        }
+    }
+
+    fn lookup_client(
+        &self,
+        client_id: String,
+    ) -> impl Future<Output = Result<Option<McpOAuthClient>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let Some(row) = sqlx::query(
+                "SELECT client_id, display_name, redirect_uris_json FROM mcp_oauth_clients WHERE client_id = ?",
+            )
+            .bind(client_id)
+            .fetch_optional(&pool)
+            .await? else {
+                return Ok(None);
+            };
+            Ok(Some(McpOAuthClient {
+                client_id: row.try_get("client_id")?,
+                display_name: row.try_get("display_name")?,
+                redirect_uris: serde_json::from_str(
+                    &row.try_get::<String, _>("redirect_uris_json")?,
+                )?,
+            }))
+        }
+    }
+
+    fn issue_authorization_code(
+        &self,
+        code: String,
+        grant: McpAuthorizationGrant,
+        code_challenge: String,
+        expires_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO mcp_authorization_codes
+                 (code_hash, user_id, client_id, redirect_uri, resource_uri, scopes, code_challenge, expires_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(hash_token(&code))
+            .bind(grant.user_id.to_string())
+            .bind(grant.client_id)
+            .bind(grant.redirect_uri)
+            .bind(grant.resource_uri)
+            .bind(grant.scopes.join(" "))
+            .bind(code_challenge)
+            .bind(expires_at.get())
+            .execute(&pool)
+            .await?;
+            Ok(())
+        }
+    }
+
+    fn consume_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<(McpAuthorizationGrant, String)>, Self::Error>> + Send
+    {
+        let pool = self.pool.clone();
+        async move {
+            let mut transaction = pool.begin().await?;
+            let row = sqlx::query(
+                "SELECT user_id, client_id, redirect_uri, resource_uri, scopes, code_challenge
+                 FROM mcp_authorization_codes
+                 WHERE code_hash = ? AND client_id = ? AND redirect_uri = ? AND resource_uri = ?
+                   AND consumed_at_ms IS NULL AND expires_at_ms > ?",
+            )
+            .bind(hash_token(&code))
+            .bind(&client_id)
+            .bind(&redirect_uri)
+            .bind(&resource_uri)
+            .bind(now.get())
+            .fetch_optional(&mut *transaction)
+            .await?;
+            let Some(row) = row else {
+                transaction.rollback().await?;
+                return Ok(None);
+            };
+            let updated = sqlx::query(
+                "UPDATE mcp_authorization_codes SET consumed_at_ms = ?
+                 WHERE code_hash = ? AND consumed_at_ms IS NULL",
+            )
+            .bind(now.get())
+            .bind(hash_token(&code))
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if updated != 1 {
+                transaction.rollback().await?;
+                return Ok(None);
+            }
+            let user_id = EntityId::from_str(&row.try_get::<String, _>("user_id")?)
+                .map_err(|_| McpOAuthStoreError::CorruptUser)?;
+            let scopes = row
+                .try_get::<String, _>("scopes")?
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect();
+            let grant = McpAuthorizationGrant {
+                user_id: UserId::new(user_id),
+                client_id: row.try_get("client_id")?,
+                redirect_uri: row.try_get("redirect_uri")?,
+                resource_uri: row.try_get("resource_uri")?,
+                scopes,
+            };
+            let challenge = row.try_get("code_challenge")?;
+            transaction.commit().await?;
+            Ok(Some((grant, challenge)))
         }
     }
 }
@@ -1295,15 +1484,15 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::{
-        JournalEntry, McpAccessTokenStore, NoteAclService, NoteAclServiceError, NoteAclStore,
-        NoteOperationKind, NoteProjectionStore, NoteQueryStore, OidcIdentityStore,
+        JournalEntry, McpAccessTokenStore, McpOAuthStore, NoteAclService, NoteAclServiceError,
+        NoteAclStore, NoteOperationKind, NoteProjectionStore, NoteQueryStore, OidcIdentityStore,
         OidcLoginAttempt, OidcLoginAttemptStore, OidcUserAdministrationStore, OperationId,
         OperationJournal, OperationState, RootCredentialStore,
     };
     use marginalis_domain::{
-        Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteReference, OidcIdentity,
-        OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
-        UserStatus,
+        Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, NoteId, NotePermission,
+        NoteProjection, NoteReference, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy,
+        SourceRevision, UnixMillis, UserId, UserStatus,
     };
     use sqlx::Row;
 
@@ -1347,7 +1536,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -1853,6 +2042,75 @@ mod tests {
                 )
                 .await
                 .expect("authentication")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_authorization_codes_are_client_bound_and_single_use() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000072").expect("user ID"),
+        );
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'User', 0, 0)",
+        )
+        .bind(user_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("user");
+        let store = database.mcp_oauth_store();
+        store
+            .upsert_client(McpOAuthClient {
+                client_id: "client".into(),
+                display_name: "Client".into(),
+                redirect_uris: vec!["http://127.0.0.1:4567/callback".into()],
+            })
+            .await
+            .expect("client");
+        let grant = McpAuthorizationGrant {
+            user_id,
+            client_id: "client".into(),
+            redirect_uri: "http://127.0.0.1:4567/callback".into(),
+            resource_uri: "https://example.test/mcp".into(),
+            scopes: vec!["notes:read".into()],
+        };
+        store
+            .issue_authorization_code(
+                "code".into(),
+                grant.clone(),
+                "challenge".into(),
+                UnixMillis::new(100),
+            )
+            .await
+            .expect("code");
+        assert_eq!(
+            store
+                .consume_authorization_code(
+                    "code".into(),
+                    "client".into(),
+                    "http://127.0.0.1:4567/callback".into(),
+                    "https://example.test/mcp".into(),
+                    UnixMillis::new(1),
+                )
+                .await
+                .expect("consume"),
+            Some((grant, "challenge".into()))
+        );
+        assert!(
+            store
+                .consume_authorization_code(
+                    "code".into(),
+                    "client".into(),
+                    "http://127.0.0.1:4567/callback".into(),
+                    "https://example.test/mcp".into(),
+                    UnixMillis::new(2),
+                )
+                .await
+                .expect("second consume")
                 .is_none()
         );
     }

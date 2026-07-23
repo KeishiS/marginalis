@@ -172,6 +172,24 @@ pub struct NotePage {
     pub next_offset: Option<u64>,
 }
 
+/// OAuth public clientとして登録されたMCP利用者。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpOAuthClient {
+    pub client_id: String,
+    pub display_name: String,
+    pub redirect_uris: Vec<String>,
+}
+
+/// ユーザーが同意済みのAuthorization Code。平文codeは永続化しない。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpAuthorizationGrant {
+    pub user_id: UserId,
+    pub client_id: String,
+    pub redirect_uri: String,
+    pub resource_uri: String,
+    pub scopes: Vec<String>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NoteReference {
     pub source_start: u32,

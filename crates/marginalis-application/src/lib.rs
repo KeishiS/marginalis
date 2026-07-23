@@ -1,8 +1,9 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePage, NotePermission, NoteProjection, NoteSource, OidcIdentity,
-    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+    Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, NoteId, NotePage, NotePermission,
+    NoteProjection, NoteSource, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy,
+    SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
@@ -223,6 +224,41 @@ pub trait McpAccessTokenStore: Send + Sync {
         resource_uri: String,
         now: UnixMillis,
     ) -> impl Future<Output = Result<Option<Actor>, Self::Error>> + Send;
+}
+
+/// MCP OAuthのclient、single-use authorization codeおよびtoken familyを扱う境界。
+///
+/// client metadata取得・同意画面・HTTP token endpointはtransport adapterの責務とし、このportは
+/// 検証済みの値だけを永続化する。
+pub trait McpOAuthStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn upsert_client(
+        &self,
+        client: McpOAuthClient,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn lookup_client(
+        &self,
+        client_id: String,
+    ) -> impl Future<Output = Result<Option<McpOAuthClient>, Self::Error>> + Send;
+
+    fn issue_authorization_code(
+        &self,
+        code: String,
+        grant: McpAuthorizationGrant,
+        code_challenge: String,
+        expires_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn consume_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<(McpAuthorizationGrant, String)>, Self::Error>> + Send;
 }
 
 /// sessionの有効期限と秘密値を一箇所で決めるユースケース。
