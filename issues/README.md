@@ -7,30 +7,38 @@
 
 ## 実装順序
 
-現在の優先順位は、Web UIより先にREST APIとMCPを成立させることである。root管理はREST APIで継続し、
-管理UIは後続とする。既存デプロイのdataDirは移行せず、Issue 015で明示的に初期化して新schemaへ移る。
+現在の優先順位は、Web UIより先にREST APIとMCPを成立させ、`v0.1.0-rc.1`を受入することである。root管理は
+REST APIで継続し、管理UIは後続とする。既存デプロイのdataDirは移行せず、Issue 015で明示的に初期化して
+新schemaへ移る。
 
-1. 完了: [016: プロダクト契約と要件定義の再整合](016-product-contract-reconciliation.md)
-2. 完了: [017: 依存境界を強制するアーキテクチャ再基線化 v2](017-architecture-boundary-rebaseline-v2.md)
-3. 完了: [020: data format v1とmaintenance lifecycle](020-data-format-and-maintenance-lifecycle.md)
-4. 完了: [019: Web security baselineとroot管理境界](019-web-security-and-admin-boundary.md)
-5. [028: current release契約と保守実装の再整合](028-contract-and-maintenance-reconciliation.md)
-6. [025: ACLと保護済みノートmetadataの不変条件](025-acl-and-metadata-invariants.md)
-7. [026: OIDCログイン開始要求のブラウザ結合](026-oidc-login-binding-and-runtime-limits.md)
-8. [024: 正本更新の復旧状態機械と並行書込み制御](024-write-recovery-and-concurrency.md)
-9. [023: 削除トランザクションと確認トークンの整合性](023-deletion-transaction-and-confirmation-integrity.md)
-10. [027: 検索・xref・閲覧用RenderPolicyの完成](027-search-reference-and-rendering-projections.md)
-11. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)
-12. [022: v0.1.0-rc.1 release acceptance](022-v0.1.0-rc.1-release-acceptance.md)
-13. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
-8. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
-9. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の再有効化
-10. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
-11. 完了: [018: API契約・OpenAPI・互換性方針](018-api-contract-and-openapi.md)
-12. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の招待・専用管理origin
+### RC.1 release blocker
 
-015、014、005および010の初期公開に必要な実装は完了している。以後は実OIDC/MCP clientとの結合、
-検索の拡張、公開前検証およびWeb UIを優先する。
+1. [028: current release契約と保守実装の再整合](028-contract-and-maintenance-reconciliation.md)
+2. [026: OIDCログイン開始要求のブラウザ結合](026-oidc-login-binding-and-runtime-limits.md)
+3. [024: 正本更新の復旧状態機械と並行書込み制御](024-write-recovery-and-concurrency.md)
+4. [027: 検索・xref・閲覧用RenderPolicyの完成](027-search-reference-and-rendering-projections.md)
+5. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)の残作業
+
+### RC.1受入とリリース
+
+1. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
+2. [022: v0.1.0-rc.1 release acceptance](022-v0.1.0-rc.1-release-acceptance.md)
+
+### RC.1後の優先項目
+
+1. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md)のユーザー再有効化、招待、専用管理origin・mTLS
+2. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)に基づく検索拡張と実MCP client結合試験
+3. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
+
+### 完了済みの基盤・初期実装
+
+[016](016-product-contract-reconciliation.md)、[017](017-architecture-boundary-rebaseline-v2.md)、
+[018](018-api-contract-and-openapi.md)、[019](019-web-security-and-admin-boundary.md)、
+[020](020-data-format-and-maintenance-lifecycle.md)、[025](025-acl-and-metadata-invariants.md)、
+[023](023-deletion-transaction-and-confirmation-integrity.md)、[015](015-api-first-architecture-rebaseline.md)、
+[014](014-rest-notes-search-and-mcp.md)、[005](005-projections-and-rebuild.md)、
+[010](010-nixos-module-and-release-packaging.md)の初期公開範囲は完了している。
+Issue 012は初期実装済みであり、検索拡張と運用結合試験を後続作業として残す。
 
 AsciiDocアダプタに関する依存順は次のとおりである。
 
