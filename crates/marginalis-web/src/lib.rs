@@ -1076,6 +1076,7 @@ async fn search_notes(
         .search_notes(
             actor,
             query.q,
+            marginalis_domain::NoteSearchFilters::default(),
             cursor_offset(query.cursor)?,
             bounded_limit(query.limit),
         )

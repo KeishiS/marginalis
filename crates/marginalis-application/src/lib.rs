@@ -2,8 +2,9 @@
 
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
-    NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSource, OidcIdentity,
-    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+    NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSearchFilters, NoteSource,
+    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
+    UserId,
 };
 use std::future::Future;
 
@@ -616,6 +617,7 @@ pub trait NoteQueryStore: Send + Sync {
         &self,
         actor: Actor,
         query: String,
+        filters: NoteSearchFilters,
         offset: u64,
         limit: u32,
     ) -> impl Future<Output = Result<NotePage, Self::Error>> + Send;
@@ -728,6 +730,7 @@ pub trait NoteUseCases: Send + Sync {
         &self,
         actor: Actor,
         query: String,
+        filters: NoteSearchFilters,
         offset: u64,
         limit: u32,
     ) -> Result<NotePage, NoteUseCaseError>;

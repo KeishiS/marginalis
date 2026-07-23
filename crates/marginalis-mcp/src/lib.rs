@@ -102,7 +102,13 @@ impl McpTools {
                 };
                 match self
                     .notes
-                    .search_notes(actor, arguments.query, offset, limit)
+                    .search_notes(
+                        actor,
+                        arguments.query,
+                        marginalis_domain::NoteSearchFilters::default(),
+                        offset,
+                        limit,
+                    )
                     .await
                 {
                     Ok(page) => {
@@ -554,6 +560,7 @@ mod tests {
             &self,
             _actor: Actor,
             _query: String,
+            _filters: marginalis_domain::NoteSearchFilters,
             _offset: u64,
             _limit: u32,
         ) -> Result<NotePage, NoteUseCaseError> {

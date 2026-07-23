@@ -1053,6 +1053,7 @@ impl NoteUseCases for ServerNoteUseCases {
         &self,
         actor: Actor,
         query: String,
+        filters: marginalis_domain::NoteSearchFilters,
         offset: u64,
         limit: u32,
     ) -> Result<NotePage, NoteUseCaseError> {
@@ -1061,7 +1062,7 @@ impl NoteUseCases for ServerNoteUseCases {
         }
         self.database
             .note_query_store()
-            .search_visible(actor, query, offset, limit)
+            .search_visible(actor, query, filters, offset, limit)
             .await
             .map_err(|_| NoteUseCaseError::Unavailable)
     }
@@ -1970,6 +1971,7 @@ mod tests {
                     is_root: true,
                 },
                 "Canonical".into(),
+                marginalis_domain::NoteSearchFilters::default(),
                 0,
                 10,
             )

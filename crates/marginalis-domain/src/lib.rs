@@ -181,6 +181,18 @@ pub struct NotePage {
     pub next_offset: Option<u64>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NoteSearchFilters {
+    pub tags: Vec<String>,
+    pub creator_id: Option<UserId>,
+    pub created_after: Option<String>,
+    pub created_before: Option<String>,
+    pub updated_after: Option<String>,
+    pub updated_before: Option<String>,
+    pub links_to: Option<NoteId>,
+    pub linked_from: Option<NoteId>,
+}
+
 /// ACLを満たす二つのノート間にある、位置付きのoutgoing参照。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteLink {

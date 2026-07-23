@@ -21,7 +21,7 @@ use marginalis_domain::{
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
-    Row, SqlitePool,
+    QueryBuilder, Row, Sqlite, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
@@ -1856,28 +1856,49 @@ impl NoteQueryStore for SqliteNoteQueryStore {
         &self,
         actor: Actor,
         query: String,
+        filters: marginalis_domain::NoteSearchFilters,
         offset: u64,
         limit: u32,
     ) -> impl Future<Output = Result<NotePage, Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
-            let rows = sqlx::query(
-                "SELECT notes.note_id, notes.title
-                 FROM note_search JOIN notes ON notes.note_id = note_search.note_id
-                 WHERE note_search MATCH ? AND (? OR EXISTS (
-                   SELECT 1 FROM note_acl
-                   WHERE note_acl.note_id = notes.note_id AND note_acl.user_id = ?
-                 ))
-                 ORDER BY bm25(note_search, 0.0, 100.0, 1.0), notes.note_id ASC
-                 LIMIT ? OFFSET ?",
-            )
-            .bind(fts_phrase_query(&query))
-            .bind(actor.is_root)
-            .bind(actor.user_id.to_string())
-            .bind(i64::from(limit) + 1)
-            .bind(i64::try_from(offset).unwrap_or(i64::MAX))
-            .fetch_all(&pool)
-            .await?;
+            let mut statement = QueryBuilder::<Sqlite>::new(
+                "SELECT notes.note_id, notes.title FROM note_search JOIN notes ON notes.note_id = note_search.note_id WHERE note_search MATCH ",
+            );
+            statement.push_bind(fts_phrase_query(&query));
+            statement.push(" AND (").push_bind(actor.is_root).push(" OR EXISTS (SELECT 1 FROM note_acl WHERE note_acl.note_id = notes.note_id AND note_acl.user_id = ").push_bind(actor.user_id.to_string()).push("))");
+            if let Some(creator) = filters.creator_id {
+                statement
+                    .push(" AND notes.creator_id = ")
+                    .push_bind(creator.to_string());
+            }
+            for tag in filters.tags {
+                statement.push(" AND EXISTS (SELECT 1 FROM note_tags WHERE note_tags.note_id = notes.note_id AND note_tags.tag_key = ").push_bind(tag).push(")");
+            }
+            if let Some(value) = filters.created_after {
+                statement.push(" AND notes.created_at >= ").push_bind(value);
+            }
+            if let Some(value) = filters.created_before {
+                statement.push(" AND notes.created_at <= ").push_bind(value);
+            }
+            if let Some(value) = filters.updated_after {
+                statement.push(" AND notes.updated_at >= ").push_bind(value);
+            }
+            if let Some(value) = filters.updated_before {
+                statement.push(" AND notes.updated_at <= ").push_bind(value);
+            }
+            if let Some(note_id) = filters.links_to {
+                statement.push(" AND EXISTS (SELECT 1 FROM note_references WHERE note_references.source_note_id = notes.note_id AND note_references.target_note_id = ").push_bind(note_id.to_string()).push(")");
+            }
+            if let Some(note_id) = filters.linked_from {
+                statement.push(" AND EXISTS (SELECT 1 FROM note_references WHERE note_references.source_note_id = ").push_bind(note_id.to_string()).push(" AND note_references.target_note_id = notes.note_id)");
+            }
+            statement
+                .push(" ORDER BY bm25(note_search, 0.0, 100.0, 1.0), notes.note_id ASC LIMIT ")
+                .push_bind(i64::from(limit) + 1)
+                .push(" OFFSET ")
+                .push_bind(i64::try_from(offset).unwrap_or(i64::MAX));
+            let rows = statement.build().fetch_all(&pool).await?;
             let has_next = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);
             let notes = rows
                 .into_iter()
@@ -3170,6 +3191,7 @@ mod tests {
                     is_root: false,
                 },
                 "unique-secret-phrase".into(),
+                marginalis_domain::NoteSearchFilters::default(),
                 0,
                 10,
             )
@@ -3183,6 +3205,7 @@ mod tests {
                     is_root: false,
                 },
                 "unique-secret-phrase".into(),
+                marginalis_domain::NoteSearchFilters::default(),
                 0,
                 10,
             )
@@ -3243,6 +3266,7 @@ mod tests {
                     is_root: false,
                 },
                 "needle".into(),
+                marginalis_domain::NoteSearchFilters::default(),
                 0,
                 10,
             )
