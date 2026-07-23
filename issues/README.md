@@ -25,11 +25,12 @@ REST APIで継続し、管理UIは後続とする。既存デプロイのdataDir
 3. [032: MCP向けノートprofile公開と検証診断の充実](032-mcp-authoring-profile-and-diagnostics.md)
 4. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
 5. [029: AdocWeave v0.4.0 への移行](029-adocweave-v0.4.0-adoption.md)
-6. [030: E2Eテスト自動化の準備と実装](030-end-to-end-test-automation-readiness.md)
-7. [027: 検索・xref・閲覧用RenderPolicyの完成](027-search-reference-and-rendering-projections.md)の公開filterとRenderPolicy
-8. [026: OIDCログイン開始要求のブラウザ結合](026-oidc-login-binding-and-runtime-limits.md)の期限設定化とproxy境界の改善
-9. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)のtest module完全分離
-10. [031: PostgreSQL storage backendの実現性調査](031-postgresql-storage-backend-feasibility.md)
+6. [033: リポジトリ文書のAsciiDoc移行](033-repository-documentation-asciidoc-migration.md)（029完了後）
+7. [030: E2Eテスト自動化の準備と実装](030-end-to-end-test-automation-readiness.md)
+8. [027: 検索・xref・閲覧用RenderPolicyの完成](027-search-reference-and-rendering-projections.md)の公開filterとRenderPolicy
+9. [026: OIDCログイン開始要求のブラウザ結合](026-oidc-login-binding-and-runtime-limits.md)の期限設定化とproxy境界の改善
+10. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)のtest module完全分離
+11. [031: PostgreSQL storage backendの実現性調査](031-postgresql-storage-backend-feasibility.md)
 
 ### 完了済みの基盤・初期実装
 
