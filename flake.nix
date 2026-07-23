@@ -155,6 +155,7 @@
               environment.systemPackages = [
                 pkgs.curl
                 pkgs.jq
+                pkgs.sqlite
               ];
               environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
               environment.etc."marginalis-test/root-password".text = "root-password";
