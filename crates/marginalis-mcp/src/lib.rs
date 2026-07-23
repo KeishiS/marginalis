@@ -1,6 +1,7 @@
 //! MCP JSON-RPCのtool adapter。HTTP、OAuthおよびSQLiteには依存しない。
 
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{NoteUseCaseError, NoteUseCases};
 use marginalis_domain::{Actor, EntityId, NoteId};
 use serde::{Deserialize, Serialize};
@@ -33,9 +34,14 @@ impl McpTools {
         Self { notes }
     }
 
-    pub async fn handle(&self, actor: Actor, request: JsonRpcRequest) -> JsonRpcResponse {
-        let id = request.id.unwrap_or(Value::Null);
-        match request.method.as_str() {
+    pub async fn handle(&self, actor: Actor, request: JsonRpcRequest) -> Option<JsonRpcResponse> {
+        let id = request.id.clone().unwrap_or(Value::Null);
+        if request.jsonrpc != "2.0" {
+            return request
+                .id
+                .map(|id| JsonRpcResponse::error(id, -32600, "JSON-RPC version is invalid"));
+        }
+        let response = match request.method.as_str() {
             "initialize" => JsonRpcResponse::success(
                 id,
                 json!({
@@ -47,7 +53,8 @@ impl McpTools {
             "tools/list" => JsonRpcResponse::success(id, tool_list()),
             "tools/call" => self.call_tool(actor, id, request.params).await,
             _ => JsonRpcResponse::error(id, -32601, "method not found"),
-        }
+        };
+        request.id.map(|_| response)
     }
 
     async fn call_tool(&self, actor: Actor, id: Value, params: Option<Value>) -> JsonRpcResponse {
@@ -64,9 +71,15 @@ impl McpTools {
                     return JsonRpcResponse::error(id, -32602, "search arguments are invalid");
                 };
                 let limit = arguments.limit.unwrap_or(50).clamp(1, 100);
+                let offset = match cursor_offset(arguments.cursor) {
+                    Ok(offset) => offset,
+                    Err(()) => {
+                        return JsonRpcResponse::error(id, -32602, "search cursor is invalid");
+                    }
+                };
                 match self
                     .notes
-                    .search_notes(actor, arguments.query, 0, limit)
+                    .search_notes(actor, arguments.query, offset, limit)
                     .await
                 {
                     Ok(page) => {
@@ -80,7 +93,10 @@ impl McpTools {
                             id,
                             json!({
                                 "content": [{ "type": "text", "text": text }],
-                                "structuredContent": { "notes": notes }
+                                "structuredContent": {
+                                    "notes": notes,
+                                    "next_cursor": next_cursor(page.next_offset)
+                                }
                             }),
                         )
                     }
@@ -96,13 +112,27 @@ impl McpTools {
                     return JsonRpcResponse::error(id, -32602, "note ID is invalid");
                 };
                 match self.notes.read_source(actor, NoteId::new(entity_id)).await {
-                    Ok(source) => match String::from_utf8(source.content) {
-                        Ok(source) => JsonRpcResponse::success(
-                            id,
-                            json!({ "content": [{ "type": "text", "text": source }] }),
-                        ),
-                        Err(_) => JsonRpcResponse::error(id, -32603, "note source is unavailable"),
-                    },
+                    Ok(note) => {
+                        let note_id = note.note_id;
+                        let title = note.title;
+                        let revision = note.revision;
+                        match String::from_utf8(note.content) {
+                            Ok(source) => JsonRpcResponse::success(
+                                id,
+                                json!({
+                                    "content": [{ "type": "text", "text": source }],
+                                    "structuredContent": {
+                                        "note_id": note_id.to_string(),
+                                        "title": title,
+                                        "revision": revision.to_hex()
+                                    }
+                                }),
+                            ),
+                            Err(_) => {
+                                JsonRpcResponse::error(id, -32603, "note source is unavailable")
+                            }
+                        }
+                    }
                     Err(error) => note_error(id, error),
                 }
             }
@@ -204,8 +234,166 @@ struct ToolCall {
 struct SearchArguments {
     query: String,
     limit: Option<u32>,
+    cursor: Option<String>,
 }
 #[derive(Deserialize)]
 struct GetNoteArguments {
     note_id: String,
+}
+
+fn cursor_offset(cursor: Option<String>) -> Result<u64, ()> {
+    let Some(cursor) = cursor else {
+        return Ok(0);
+    };
+    let bytes = URL_SAFE_NO_PAD.decode(cursor).map_err(|_| ())?;
+    let bytes: [u8; 8] = bytes.try_into().map_err(|_| ())?;
+    Ok(u64::from_be_bytes(bytes))
+}
+
+fn next_cursor(offset: Option<u64>) -> Option<String> {
+    offset.map(|offset| URL_SAFE_NO_PAD.encode(offset.to_be_bytes()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use marginalis_application::NoteUseCaseError;
+    use marginalis_domain::{NotePage, NotePermission, NoteSource, SourceRevision, UserId};
+
+    struct EmptyNotes;
+
+    #[async_trait]
+    impl NoteUseCases for EmptyNotes {
+        async fn list_notes(
+            &self,
+            _actor: Actor,
+            _offset: u64,
+            _limit: u32,
+        ) -> Result<NotePage, NoteUseCaseError> {
+            Ok(NotePage {
+                notes: Vec::new(),
+                next_offset: None,
+            })
+        }
+        async fn search_notes(
+            &self,
+            _actor: Actor,
+            _query: String,
+            _offset: u64,
+            _limit: u32,
+        ) -> Result<NotePage, NoteUseCaseError> {
+            Ok(NotePage {
+                notes: Vec::new(),
+                next_offset: None,
+            })
+        }
+        async fn read_source(
+            &self,
+            _actor: Actor,
+            _note_id: NoteId,
+        ) -> Result<NoteSource, NoteUseCaseError> {
+            Err(NoteUseCaseError::NotFound)
+        }
+        async fn create_source(
+            &self,
+            _actor: Actor,
+            _source: String,
+        ) -> Result<NoteId, NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+        async fn update_source(
+            &self,
+            _actor: Actor,
+            _note_id: NoteId,
+            _source: String,
+            _expected_revision: SourceRevision,
+        ) -> Result<(), NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+        async fn delete_note(
+            &self,
+            _actor: Actor,
+            _note_id: NoteId,
+            _expected_revision: SourceRevision,
+        ) -> Result<(), NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+        async fn set_permission(
+            &self,
+            _actor: Actor,
+            _note_id: NoteId,
+            _user_id: UserId,
+            _permission: Option<NotePermission>,
+        ) -> Result<(), NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+    }
+
+    fn actor() -> Actor {
+        Actor {
+            user_id: UserId::new(
+                EntityId::from_str("01800000-0000-7000-8000-000000000081").expect("user"),
+            ),
+            is_root: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn initialize_and_tool_list_follow_json_rpc() {
+        let tools = McpTools::new(Arc::new(EmptyNotes));
+        let response = tools
+            .handle(
+                actor(),
+                JsonRpcRequest {
+                    jsonrpc: "2.0".into(),
+                    id: Some(json!(1)),
+                    method: "initialize".into(),
+                    params: None,
+                },
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            response.result.expect("result")["protocolVersion"],
+            MCP_PROTOCOL_VERSION
+        );
+        let response = tools
+            .handle(
+                actor(),
+                JsonRpcRequest {
+                    jsonrpc: "2.0".into(),
+                    id: Some(json!(2)),
+                    method: "tools/list".into(),
+                    params: None,
+                },
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            response.result.expect("result")["tools"]
+                .as_array()
+                .expect("tools")
+                .len(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn notification_has_no_json_rpc_response() {
+        let tools = McpTools::new(Arc::new(EmptyNotes));
+        assert!(
+            tools
+                .handle(
+                    actor(),
+                    JsonRpcRequest {
+                        jsonrpc: "2.0".into(),
+                        id: None,
+                        method: "tools/list".into(),
+                        params: None,
+                    }
+                )
+                .await
+                .is_none()
+        );
+    }
 }

@@ -286,6 +286,19 @@ async fn mcp_post(
             "MCP origin is not allowed",
         ));
     }
+    let accepts = headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(',')
+                .map(|item| item.trim().split(';').next().unwrap_or_default())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !accepts.contains(&"application/json") || !accepts.contains(&"text/event-stream") {
+        return Ok(StatusCode::NOT_ACCEPTABLE.into_response());
+    }
     let token = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -307,7 +320,10 @@ async fn mcp_post(
             ));
         }
     };
-    Ok(Json(endpoint.tools.handle(actor, request).await).into_response())
+    match endpoint.tools.handle(actor, request).await {
+        Some(response) => Ok(Json(response).into_response()),
+        None => Ok(StatusCode::ACCEPTED.into_response()),
+    }
 }
 
 fn mcp_unauthorized(endpoint: &McpEndpoint) -> Response {
