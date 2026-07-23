@@ -101,6 +101,19 @@ pub mod contract {
     }
 
     #[derive(Serialize)]
+    pub struct DeletePreparation {
+        pub note_id: String,
+        pub title: String,
+        pub revision: String,
+        pub confirmation_token: String,
+    }
+
+    #[derive(Deserialize)]
+    pub struct DeleteConfirmation {
+        pub confirmation_token: String,
+    }
+
+    #[derive(Serialize)]
     pub struct NotePage {
         pub notes: Vec<NoteSummary>,
         pub next_cursor: Option<String>,
@@ -458,7 +471,14 @@ pub fn application_router(state: ApiState) -> Router {
         .route("/api/v1/notes/{note_id}/source", get(note_source))
         .route("/api/v1/notes/{note_id}", get(note_metadata))
         .route("/api/v1/notes/{note_id}/source", put(update_note_source))
-        .route("/api/v1/notes/{note_id}", delete(delete_note))
+        .route(
+            "/api/v1/notes/{note_id}/delete-preparations",
+            post(prepare_note_deletion),
+        )
+        .route(
+            "/api/v1/notes/delete-confirmations",
+            post(confirm_note_deletion),
+        )
         .route("/api/v1/notes", get(list_notes).post(create_note))
         .route("/api/v1/search", get(search_notes))
         .route("/mcp", get(mcp_get).post(mcp_post))
@@ -1194,11 +1214,11 @@ async fn update_note_source(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn delete_note(
+async fn prepare_note_deletion(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-) -> Result<StatusCode, ApiError> {
+) -> Result<Json<DeletePreparationResponse>, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
     require_csrf(&headers, &state).await?;
     let note_id = NoteId::new(
@@ -1206,9 +1226,35 @@ async fn delete_note(
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
     );
     let expected_revision = required_if_match(&headers)?;
+    let preparation = state
+        .notes
+        .prepare_delete_note(actor, note_id, expected_revision)
+        .await
+        .map_err(|error| note_error(error, "note deletion is unavailable"))?;
+    Ok(Json(DeletePreparationResponse {
+        note_id: preparation.note_id.to_string(),
+        title: preparation.title,
+        revision: preparation.revision.to_hex(),
+        confirmation_token: preparation.confirmation_token,
+    }))
+}
+
+async fn confirm_note_deletion(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<DeleteConfirmationRequest>,
+) -> Result<StatusCode, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
+    if request.confirmation_token.is_empty() {
+        return Err(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "confirmation token is required",
+        ));
+    }
     state
         .notes
-        .delete_note(actor, note_id, expected_revision)
+        .confirm_delete_note(actor, request.confirmation_token)
         .await
         .map_err(|error| note_error(error, "note deletion is unavailable"))?;
     Ok(StatusCode::NO_CONTENT)
@@ -1297,6 +1343,8 @@ struct OidcCallbackQuery {
 }
 
 type RootLoginRequest = contract::RootLogin;
+type DeletePreparationResponse = contract::DeletePreparation;
+type DeleteConfirmationRequest = contract::DeleteConfirmation;
 type RegistrationPolicyRequest = contract::RegistrationPolicy;
 type RegistrationPolicyResponse = contract::RegistrationPolicyResponse;
 type PendingOidcUserResponse = contract::PendingUser;
