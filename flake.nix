@@ -86,6 +86,7 @@
                 text = ''
                   test -s "$OIDC_CLIENT_SECRET_FILE"
                   test -d "$MARGINALIS_DATA_DIR"
+                  test "$MARGINALIS_INITIAL_REGISTRATION_POLICY" = open
                   if [ "''${1-}" = "rebuild-projections" ]; then
                     touch "$MARGINALIS_DATA_DIR/projections-rebuilt"
                     exit 0
@@ -107,6 +108,7 @@
                   enable = true;
                   package = probeServer;
                   baseUrl = "https://marginalis.example.test";
+                  initialRegistrationPolicy = "open";
                   oidc = {
                     issuerUrl = "https://id.example.test";
                     clientId = "marginalis";
