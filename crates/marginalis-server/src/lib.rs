@@ -695,6 +695,14 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
             .map_err(|_| AuthenticationUseCaseError::Unavailable)
     }
 
+    async fn disable_oidc_user(&self, user_id: UserId) -> Result<bool, AuthenticationUseCaseError> {
+        self.database
+            .oidc_user_administration_store()
+            .disable(user_id, SystemClock.now())
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
     fn cookie_path(&self) -> &str {
         self.oidc
             .as_ref()

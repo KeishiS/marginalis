@@ -291,6 +291,10 @@ pub fn router(state: ApiState) -> Router {
             "/api/v1/admin/users/{user_id}/activate",
             put(activate_pending_user),
         )
+        .route(
+            "/api/v1/admin/users/{user_id}/disable",
+            put(disable_oidc_user),
+        )
         .layer(middleware::from_fn(assign_request_id))
         .layer(
             TraceLayer::new_for_http()
@@ -1232,6 +1236,32 @@ async fn activate_pending_user(
         ));
     }
     tracing::info!(user_id = %user_id, "OIDC user activated by root");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn disable_oidc_user(
+    State(state): State<ApiState>,
+    Path(user_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    require_root(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
+    let user_id = UserId::new(
+        EntityId::from_str(&user_id)
+            .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "user is not available"))?,
+    );
+    if !state
+        .authentication
+        .disable_oidc_user(user_id)
+        .await
+        .map_err(authentication_error)?
+    {
+        return Err(ApiError::new(
+            ApiErrorCode::NotFound,
+            "user is not available",
+        ));
+    }
+    tracing::info!(user_id = %user_id, "OIDC user disabled by root");
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -61,6 +61,11 @@ pub trait OidcUserAdministrationStore: Send + Sync {
         user_id: UserId,
         now: UnixMillis,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+    fn disable(
+        &self,
+        user_id: UserId,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 }
 
 pub struct RootInitializationService<'a, Store, Entropy, Time> {
@@ -208,6 +213,7 @@ pub trait WebAuthenticationUseCases: Send + Sync {
         &self,
         user_id: UserId,
     ) -> Result<bool, AuthenticationUseCaseError>;
+    async fn disable_oidc_user(&self, user_id: UserId) -> Result<bool, AuthenticationUseCaseError>;
     fn cookie_path(&self) -> &str;
 }
 

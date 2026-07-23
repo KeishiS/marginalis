@@ -704,6 +704,38 @@ impl OidcUserAdministrationStore for SqliteOidcUserAdministrationStore {
             Ok(result.rows_affected() == 1)
         }
     }
+
+    fn disable(
+        &self,
+        user_id: UserId,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let mut transaction = pool.begin().await?;
+            let updated = sqlx::query(
+                "UPDATE users SET status = 'disabled', updated_at_ms = ?
+                 WHERE user_id = ? AND authentication_kind = 'oidc' AND status = 'active'",
+            )
+            .bind(now.get())
+            .bind(user_id.to_string())
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if updated != 1 {
+                transaction.rollback().await?;
+                return Ok(false);
+            }
+            sqlx::query("UPDATE web_sessions SET revoked_at_ms = ? WHERE user_id = ? AND revoked_at_ms IS NULL")
+                .bind(now.get()).bind(user_id.to_string()).execute(&mut *transaction).await?;
+            sqlx::query("UPDATE mcp_access_tokens SET revoked_at_ms = ? WHERE user_id = ? AND revoked_at_ms IS NULL")
+                .bind(now.get()).bind(user_id.to_string()).execute(&mut *transaction).await?;
+            sqlx::query("UPDATE mcp_refresh_tokens SET revoked_at_ms = ? WHERE user_id = ? AND revoked_at_ms IS NULL")
+                .bind(now.get()).bind(user_id.to_string()).execute(&mut *transaction).await?;
+            transaction.commit().await?;
+            Ok(true)
+        }
+    }
 }
 
 impl OidcLoginAttemptStore for SqliteOidcLoginAttemptStore {

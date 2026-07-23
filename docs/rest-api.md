@@ -27,12 +27,17 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 | --- | --- | --- | --- |
 | 保留OIDCユーザー一覧 | `GET /api/v1/admin/users/pending` | `200`、ユーザー配列 | root |
 | 保留OIDCユーザー有効化 | `PUT /api/v1/admin/users/{user_id}/activate` | `204` | root、CSRF |
+| 有効OIDCユーザー無効化 | `PUT /api/v1/admin/users/{user_id}/disable` | `204` | root、CSRF |
 | MCP client事前登録 | `POST /api/v1/admin/mcp-clients` | `204` | root、CSRF |
 | 他ユーザーのMCP認可取消 | `DELETE /api/v1/admin/mcp-authorizations?user_id=...&client_id=...` | `204` | root、CSRF |
 
 有効化は`pending`のOIDCユーザーにだけ作用する。成功後、そのユーザーは次回のOIDC loginで
 通常のsessionを得られる。rootのパスワードをHTTP request body以外へ記録・保存してはならない。
 初期実装では管理操作はREST APIで提供し、ブラウザー管理UIは後続とする。
+
+無効化は`active`なOIDCユーザーだけに作用し、同一SQLite transactionで当該ユーザーのWeb session、
+MCP access tokenおよびrefresh tokenを失効させる。無効化済みユーザーはOIDC login、REST API、MCPを
+利用できない。
 
 `POST /api/v1/admin/mcp-clients`のbodyは`client_id`、`display_name`、`redirect_uris`を持つJSON objectで
 ある。Client ID Metadata Documentを提供しないMCP public clientを明示的に登録するために使う。redirect URIは
