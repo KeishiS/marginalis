@@ -359,11 +359,26 @@ pub fn build_note_projection(
     let references = references.expect("validated references");
     let note_id = NoteId::new(EntityId::from_str(&metadata.note_id).expect("validated UUIDv7"));
     let owner_id = UserId::new(EntityId::from_str(&metadata.creator_id).expect("validated UUIDv7"));
+    let projection = project(analysis, &RenderInputs::default());
+    // AdocWeave標準projectionの可読テキストを正本とし、初期profileで受理するLaTeX数式を補う。
+    // 生のAsciiDoc属性・マクロ記法をFTSへ流し込まない。
+    let mut search_parts = vec![projection.searchable_text.text];
+    search_parts.extend(
+        projection
+            .formulas
+            .into_iter()
+            .filter(|formula| formula.language == MathLanguage::Latex)
+            .map(|formula| formula.source),
+    );
     Ok(NoteProjection {
         note_id,
         owner_id,
         title: metadata.title,
-        search_text: analysis.source().to_owned(),
+        search_text: search_parts
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
         anchors: analysis
             .reference_targets()
             .iter()
@@ -857,6 +872,7 @@ mod tests {
             .expect("valid AsciiDoc");
         let projection = build_note_projection(&analysis).expect("valid note projection");
         assert_eq!(projection.title, "Typed note");
+        assert!(projection.search_text.contains("Typed note"));
         assert!(projection.anchors.iter().any(|anchor| anchor == "start"));
         assert_eq!(projection.references.len(), 1);
         assert!(projection.references[0].source_end > projection.references[0].source_start);
