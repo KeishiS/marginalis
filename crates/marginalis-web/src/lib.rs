@@ -2172,6 +2172,7 @@ mod tests {
             .expect("register pending user");
         let directory = std::env::temp_dir().join("marginalis-web-root-admin-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
+        let audit_database = database.clone();
         let app = router(ApiState::with_test_adapters(
             database.clone(),
             Arc::new(marginalis_server::ServerNoteUseCases::new(
@@ -2245,6 +2246,13 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let actions = sqlx::query_scalar::<_, String>(
+            "SELECT action FROM root_audit_log ORDER BY audit_id ASC",
+        )
+        .fetch_all(audit_database.pool())
+        .await
+        .expect("audit records");
+        assert_eq!(actions, ["login-succeeded", "oidc-user-activated"]);
     }
 
     fn cookie_from_set_cookie(values: &[String], name: &str) -> String {
