@@ -38,6 +38,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         7,
         include_str!("../migrations/0007_mcp_token_timestamps.sql"),
     ),
+    (
+        8,
+        include_str!("../migrations/0008_registration_policy.sql"),
+    ),
 ];
 
 #[derive(Clone, Debug)]
@@ -501,6 +505,18 @@ impl SqliteDatabase {
         SqliteOidcUserAdministrationStore {
             pool: self.pool.clone(),
         }
+    }
+
+    pub async fn registration_policy(&self) -> Result<RegistrationPolicy, sqlx::Error> {
+        let value: String =
+            sqlx::query_scalar("SELECT policy FROM registration_policy WHERE singleton = 1")
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(match value.as_str() {
+            "open" => RegistrationPolicy::Open,
+            "approval" => RegistrationPolicy::Approval,
+            _ => RegistrationPolicy::InviteOnly,
+        })
     }
 }
 
@@ -1960,7 +1976,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )

@@ -250,6 +250,7 @@ impl OidcAuthentication {
         identities: &Identities,
         entropy: &Entropy,
         clock: &Time,
+        registration_policy: RegistrationPolicy,
         code: &str,
         state: &str,
     ) -> Result<OidcLoginResult, OidcCallbackError>
@@ -312,7 +313,7 @@ impl OidcAuthentication {
         let identity = OidcIdentity::new(claims.issuer().as_str(), subject, display_name)
             .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Identity))?;
         OidcRegistrationService::new(identities, entropy)
-            .register_or_lookup(identity, RegistrationPolicy::default(), clock.now())
+            .register_or_lookup(identity, registration_policy, clock.now())
             .await
             .map_err(|_| OidcCallbackError::Unavailable)
     }

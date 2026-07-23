@@ -570,12 +570,18 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
         code: String,
         state: String,
     ) -> Result<OidcLoginResult, AuthenticationUseCaseError> {
+        let registration_policy = self
+            .database
+            .registration_policy()
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
         self.oidc()?
             .complete_login(
                 &self.database.oidc_login_attempt_store(),
                 &self.database.oidc_identity_store(),
                 &SystemRandom,
                 &SystemClock,
+                registration_policy,
                 &code,
                 &state,
             )
