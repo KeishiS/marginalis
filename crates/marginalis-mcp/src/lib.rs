@@ -323,7 +323,10 @@ fn tool_list() -> Value {
             "name": "search_notes",
             "description": "Search notes visible to the authenticated user.",
             "inputSchema": { "type": "object", "required": ["query"], "properties": {
-                "query": { "type": "string" }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+                "query": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } },
+                "created_after": { "type": "string", "format": "date-time" }, "created_before": { "type": "string", "format": "date-time" },
+                "updated_after": { "type": "string", "format": "date-time" }, "updated_before": { "type": "string", "format": "date-time" },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
             } },
             "annotations": { "readOnlyHint": true, "destructiveHint": false }
         },
