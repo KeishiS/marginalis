@@ -96,10 +96,19 @@ in
       description = "Optional runtime path to the one-time root password. Required only while the database has no root account.";
     };
 
-    mcp.enable = mkOption {
-      type = types.bool;
-      default = false;
-      description = "Whether to expose the OAuth-protected MCP endpoint and authorization server.";
+    mcp = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether to expose the OAuth-protected MCP endpoint and authorization server.";
+      };
+
+      clientMetadataAllowedHosts = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "clients.example.org" ];
+        description = "HTTPS hosts from which MCP Client ID Metadata Documents may be fetched. Keeping this explicit prevents the authorization endpoint from becoming an SSRF primitive.";
+      };
     };
   };
 
@@ -148,6 +157,7 @@ in
         OIDC_CLIENT_ID = cfg.oidc.clientId;
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
+        MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.mcp.clientMetadataAllowedHosts;
       }
       // optionalAttrs (cfg.initialRootPasswordFile != null) {
         ROOT_PASSWORD_FILE = "%d/root-password";

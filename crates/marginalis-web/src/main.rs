@@ -75,7 +75,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 database.clone(),
                 mcp_resource_url.to_string(),
             )),
-            oauth: std::sync::Arc::new(ServerMcpOAuthService::new(database)),
+            oauth: std::sync::Arc::new(ServerMcpOAuthService::new(
+                database,
+                configuration.mcp_client_metadata_allowed_hosts,
+            )),
             resource_uri: mcp_resource_url.to_string(),
             metadata_uri: mcp_metadata_url.to_string(),
             authorization_server_uri: mcp_authorization_server_url.to_string(),

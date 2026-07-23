@@ -1,7 +1,7 @@
 //! サーバーの設定境界。環境変数とNixOS moduleはこの型へ変換される。
 
 use core::fmt;
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{env, net::SocketAddr, path::PathBuf, time::Duration};
 
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -20,6 +20,7 @@ use marginalis_domain::{
 use marginalis_files::FileNoteStore;
 use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
 use marginalis_sqlite::SqliteDatabase;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use url::Url;
 use uuid::Uuid;
@@ -83,15 +84,107 @@ pub enum McpOAuthError {
     Unavailable,
 }
 
+#[derive(Deserialize)]
+struct ClientMetadataDocument {
+    client_id: String,
+    client_name: String,
+    redirect_uris: Vec<String>,
+}
+
 /// MCP OAuthのcode発行・exchangeをSQLite adapterへ接続するapplication service。
 #[derive(Clone)]
 pub struct ServerMcpOAuthService {
     database: SqliteDatabase,
+    metadata_client: reqwest::Client,
+    metadata_allowed_hosts: Vec<String>,
 }
 
 impl ServerMcpOAuthService {
-    pub const fn new(database: SqliteDatabase) -> Self {
-        Self { database }
+    pub fn new(database: SqliteDatabase, metadata_allowed_hosts: Vec<String>) -> Self {
+        Self {
+            database,
+            metadata_client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(Duration::from_secs(5))
+                .build()
+                .expect("static reqwest configuration is valid"),
+            metadata_allowed_hosts,
+        }
+    }
+
+    async fn lookup_or_fetch_client(
+        &self,
+        client_id: String,
+    ) -> Result<Option<marginalis_domain::McpOAuthClient>, McpOAuthError> {
+        if let Some(client) = self
+            .database
+            .mcp_oauth_store()
+            .lookup_client(client_id.clone())
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?
+        {
+            return Ok(Some(client));
+        }
+        let Ok(client_url) = Url::parse(&client_id) else {
+            return Ok(None);
+        };
+        if client_url.scheme() != "https"
+            || client_url.query().is_some()
+            || client_url.fragment().is_some()
+            || !client_url.username().is_empty()
+            || client_url.password().is_some()
+            || !client_url.host_str().is_some_and(|host| {
+                self.metadata_allowed_hosts
+                    .iter()
+                    .any(|allowed| allowed == host)
+            })
+        {
+            return Ok(None);
+        }
+        let response = self
+            .metadata_client
+            .get(client_url)
+            .send()
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        if !response.status().is_success()
+            || response
+                .content_length()
+                .is_some_and(|length| length > 65_536)
+        {
+            return Ok(None);
+        }
+        let body = response
+            .bytes()
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        if body.len() > 65_536 {
+            return Ok(None);
+        }
+        let Ok(metadata) = serde_json::from_slice::<ClientMetadataDocument>(&body) else {
+            return Ok(None);
+        };
+        if metadata.client_id != client_id
+            || metadata.client_name.trim().is_empty()
+            || metadata.redirect_uris.is_empty()
+            || !metadata
+                .redirect_uris
+                .iter()
+                .all(|uri| valid_redirect_uri(uri))
+        {
+            return Ok(None);
+        }
+        let client = marginalis_domain::McpOAuthClient {
+            client_id,
+            display_name: metadata.client_name,
+            redirect_uris: metadata.redirect_uris,
+        };
+        self.database
+            .mcp_oauth_store()
+            .upsert_client(client.clone())
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        Ok(Some(client))
     }
 
     pub async fn authorize(
@@ -99,13 +192,7 @@ impl ServerMcpOAuthService {
         grant: McpAuthorizationGrant,
         code_challenge: String,
     ) -> Result<String, McpOAuthError> {
-        let Some(client) = self
-            .database
-            .mcp_oauth_store()
-            .lookup_client(grant.client_id.clone())
-            .await
-            .map_err(|_| McpOAuthError::Unavailable)?
-        else {
+        let Some(client) = self.lookup_or_fetch_client(grant.client_id.clone()).await? else {
             return Err(McpOAuthError::Rejected);
         };
         if !client.redirect_uris.contains(&grant.redirect_uri) || code_challenge.is_empty() {
@@ -254,11 +341,12 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
             return Err(McpOAuthUseCaseError::Rejected);
         }
         let client = self
-            .database
-            .mcp_oauth_store()
-            .lookup_client(request.client_id)
+            .lookup_or_fetch_client(request.client_id)
             .await
-            .map_err(|_| McpOAuthUseCaseError::Unavailable)?
+            .map_err(|error| match error {
+                McpOAuthError::Rejected => McpOAuthUseCaseError::Rejected,
+                McpOAuthError::Unavailable => McpOAuthUseCaseError::Unavailable,
+            })?
             .ok_or(McpOAuthUseCaseError::Rejected)?;
         if !client.redirect_uris.contains(&request.redirect_uri) {
             return Err(McpOAuthUseCaseError::Rejected);
@@ -773,6 +861,7 @@ pub struct ServerConfig {
     pub database_url: String,
     pub oidc: OidcPublicConfig,
     pub mcp_enabled: bool,
+    pub mcp_client_metadata_allowed_hosts: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -853,6 +942,9 @@ impl ServerConfig {
                 client_id,
             },
             mcp_enabled: optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false),
+            mcp_client_metadata_allowed_hosts: optional_csv(
+                "MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS",
+            )?,
         };
         let secrets = SecretConfig {
             oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
@@ -870,6 +962,19 @@ fn optional_bool(name: &'static str) -> Result<Option<bool>, ConfigurationError>
             _ => Err(ConfigurationError::InvalidMcpEnable),
         },
         Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpEnable),
+    }
+}
+
+fn optional_csv(name: &'static str) -> Result<Vec<String>, ConfigurationError> {
+    match env::var(name) {
+        Ok(value) => Ok(value
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect()),
+        Err(env::VarError::NotPresent) => Ok(Vec::new()),
         Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpEnable),
     }
 }
