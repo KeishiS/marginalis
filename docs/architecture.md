@@ -131,6 +131,7 @@ Discoveryを再実行する。
 
 ### 初期公開のHTTP方針
 
-初期公開ではREST APIとOAuth保護されたMCPを先行し、サーバー生成Web UIは提供しない。ノート一覧、閲覧、編集および
-ACL管理のUI、WASM previewは後続段階とする。REST APIもHTTP adapterに留まり、同じ
-application use caseを経由して正本・SQLite投影・ACLを扱う。
+初期公開ではREST APIとOAuth保護されたMCPを先行し、通常利用者向けのサーバー生成Web UIは提供しない。ノート一覧、
+閲覧、編集およびACL管理のUI、WASM previewは後続段階とする。`/acceptance`は実環境受入のためだけの同一origin、
+server-rendered formであり、製品UIの公開や新しいapplication use caseを意味しない。REST APIもHTTP adapterに留まり、
+同じapplication use caseを経由して正本・SQLite投影・ACLを扱う。

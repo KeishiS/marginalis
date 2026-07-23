@@ -13,12 +13,6 @@ REST APIで継続し、管理UIは後続とする。既存デプロイのdataDir
 
 ### RC.1 release blocker
 
-1. [028: current release契約と保守実装の再整合](028-contract-and-maintenance-reconciliation.md)
-2. [026: OIDCログイン開始要求のブラウザ結合](026-oidc-login-binding-and-runtime-limits.md)
-3. [024: 正本更新の復旧状態機械と並行書込み制御](024-write-recovery-and-concurrency.md)
-4. [027: 検索・xref・閲覧用RenderPolicyの完成](027-search-reference-and-rendering-projections.md)
-5. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)の残作業
-
 ### RC.1受入とリリース
 
 1. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
@@ -31,6 +25,9 @@ REST APIで継続し、管理UIは後続とする。既存デプロイのdataDir
 3. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
 4. [029: AdocWeave v0.4.0 への移行](029-adocweave-v0.4.0-adoption.md)
 5. [030: E2Eテスト自動化の準備と実装](030-end-to-end-test-automation-readiness.md)
+6. [027: 検索・xref・閲覧用RenderPolicyの完成](027-search-reference-and-rendering-projections.md)の公開filterとRenderPolicy
+7. [026: OIDCログイン開始要求のブラウザ結合](026-oidc-login-binding-and-runtime-limits.md)の期限設定化とproxy境界の改善
+8. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)のtest module完全分離
 
 ### 完了済みの基盤・初期実装
 
@@ -39,7 +36,9 @@ REST APIで継続し、管理UIは後続とする。既存デプロイのdataDir
 [020](020-data-format-and-maintenance-lifecycle.md)、[025](025-acl-and-metadata-invariants.md)、
 [023](023-deletion-transaction-and-confirmation-integrity.md)、[015](015-api-first-architecture-rebaseline.md)、
 [014](014-rest-notes-search-and-mcp.md)、[005](005-projections-and-rebuild.md)、
-[010](010-nixos-module-and-release-packaging.md)の初期公開範囲は完了している。
+[010](010-nixos-module-and-release-packaging.md)、[028](028-contract-and-maintenance-reconciliation.md)の
+初期公開範囲は完了している。[024](024-write-recovery-and-concurrency.md)と
+[021](021-test-architecture-and-release-gates.md)のRC.1範囲も完了している。
 Issue 012は初期実装済みであり、検索拡張と運用結合試験を後続作業として残す。
 
 AsciiDocアダプタに関する依存順は次のとおりである。

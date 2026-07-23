@@ -1,6 +1,6 @@
 # 028: current release契約と保守実装の再整合
 
-状態: RC.1 release blocker（文書契約）。
+状態: 完了（2026-07-23）。
 
 ## 問題
 
@@ -28,3 +28,10 @@ AdocWeaveのruntime contract検証はtestだけで、本番起動時には実行
 - 起動時のAdocWeave契約不一致と解析失敗を、秘密を出さずに検出できる。
 - projection更新の共通部分は一箇所で検証される。
 
+## 実施結果
+
+- `requirements.md`をcurrent/next/futureの境界、data format v1、root監査、backup/restoreおよび
+  実装済み検索filterに合わせた。未導入の数値resource limitは要件から除外した。
+- `marginalis-service`は起動前にAdocWeave runtime contractを検証し、解析失敗は安全な空でない
+  diagnosticとして扱う。
+- SQLiteの通常保存と投影再構築は共通のprojection行挿入操作を利用する。

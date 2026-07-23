@@ -3,7 +3,8 @@
 ## RC.1 の範囲
 
 `v0.1.0-rc.1`は、研究室内で REST API と OAuth 保護 MCP を運用する最初の候補版である。
-Web UI、SMTP、招待、ユーザー再有効化、グループ ACL、専用管理 origin・mTLSは含めない。
+通常利用者向けWeb UI、SMTP、招待、ユーザー再有効化、グループ ACL、専用管理 origin・mTLSは含めない。
+実環境受入専用の`/acceptance`は含むが、製品のWeb UIではない。
 
 API pathは`/api/v1`、data formatはv1である。RC.1で公開する[OpenAPI contract](openapi.json)は
 v0.1.0のfreeze候補とする。RC期間中は、security、データ破損、ACL漏洩、相互運用性のrelease blockerだけを
