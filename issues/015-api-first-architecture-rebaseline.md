@@ -1,6 +1,6 @@
 # 015: API-firstアーキテクチャ再基線化
 
-状態: 優先。Issue 014より先に実施する。
+状態: 実装中。REST/MCP共通use caseとcomposition rootの分離は完了し、identity管理・監査・運用CLIを継続する。
 
 RESTによるノートCRUD・検索とMCP toolを同じ業務ロジックへ接続するため、現在のHTTP中心の組立を
 破壊的に再構成する。公開HTTP API、SQLite schema、設定形式およびRust crateの後方互換は要求しない。
@@ -51,7 +51,7 @@ HTTP REST        MCP transport        CLI / maintenance
 3. **認証済み主体を統一する。** Web Cookie、MCP access tokenおよび将来のCLI tokenは、検証後に
    `Principal`（内部UserId、権限、認証種別、session/token識別子）へ変換する。rootはMCP principalに
    変換しない。
-4. **設定と実行をserverへ集約する。** binaryを`marginalis-server`へ移し、`marginalis-web`を
+4. **設定と実行をserviceへ集約する。** binaryを`marginalis-service`へ移し、`marginalis-web`を
    HTTP transport adapterとして縮小する。`ServerConfig`へ登録ポリシー、session lifetime、API/MCPの
    listener・公開URLを追加し、NixOS moduleはこの設定に対応する。
 5. **SQLite schemaをread model中心に再設計する。** users/ACL/session/監査と、notes/anchors/references/

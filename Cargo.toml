@@ -7,6 +7,7 @@ members = [
     "crates/marginalis-files",
     "crates/marginalis-mcp",
     "crates/marginalis-server",
+    "crates/marginalis-service",
     "crates/marginalis-sqlite",
     "crates/marginalis-web",
 ]

@@ -39,7 +39,7 @@ HTTP REST       MCP transport       maintenance CLI
  ┌────────────┬───────────┼─────────────┬───────────┐
  SQLite adapter  filesystem adapter  AsciiDoc adapter  OIDC adapter
                           │
-                 marginalis-server
+                marginalis-service
        composition root / config / tracing / serve
 ```
 
@@ -53,8 +53,10 @@ HTTP REST       MCP transport       maintenance CLI
 - `marginalis-files`: datadirのパス規則、原子的置換、revision hash、ファイル操作の復旧補助。
 - `marginalis-auth-oidc`: OIDC Discovery・code exchange・ID Token検証。Web sessionはapplication
   portを通じて発行する。
-- `marginalis-server`: 設定読込、依存組立、tracing、server起動。HTTP、MCPおよびCLIを具体adapterへ
-  接続するcomposition rootであり、transportの業務判断を持たない。
+- `marginalis-server`: 設定型、Clock/Random、SQLite/files/AsciiDoc/OIDCをapplication portへ接続する
+  server adapter。transportの業務判断を持たない。
+- `marginalis-service`: 実行バイナリ。設定読込、依存組立、tracing初期化とHTTP listenを一箇所に集める
+  composition root。NixOS packageはこのcrateのbinaryを`marginalis`として公開する。
 
 各crateはworkspace内の実装境界であり、外部公開するRustライブラリAPIは設けない。
 

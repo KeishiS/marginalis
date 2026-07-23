@@ -1,3 +1,5 @@
+//! Marginalisのcomposition root。設定読込、adapter組立、tracingおよびHTTP listenを担う。
+
 use marginalis_application::{RootCredentialStore, RootInitializationService};
 use marginalis_files::FileNoteStore;
 use marginalis_server::{
@@ -50,15 +52,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         configuration.base_url.as_str(),
     )?;
     let oidc = OidcAuthentication::discover(&oidc_configuration).await?;
-    let mcp_resource_url = base_url_at(&configuration.base_url, "mcp");
-    let mcp_metadata_url = base_url_at(
+    let resource_uri = base_url_at(&configuration.base_url, "mcp");
+    let metadata_uri = base_url_at(
         &configuration.base_url,
         ".well-known/oauth-protected-resource/mcp",
     );
-    let mcp_authorization_server_url = configuration.base_url.clone();
-    let mcp_authorize_url = base_url_at(&configuration.base_url, "oauth/authorize");
-    let mcp_token_url = base_url_at(&configuration.base_url, "oauth/token");
-    let mcp_origin = configuration.base_url.origin().ascii_serialization();
+    let authorization_endpoint_uri = base_url_at(&configuration.base_url, "oauth/authorize");
+    let token_endpoint_uri = base_url_at(&configuration.base_url, "oauth/token");
     let listener = tokio::net::TcpListener::bind(configuration.listen_address).await?;
     tracing::info!(address = %configuration.listen_address, "Marginalis server listening");
     let state = ApiState::new(
@@ -76,17 +76,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         state.with_mcp(McpEndpoint {
             tools: marginalis_mcp::McpTools::new(std::sync::Arc::new(notes)),
             authenticator: std::sync::Arc::new(ServerMcpAuthenticator::new(
-                database.clone(),
-                mcp_resource_url.to_string(),
+                database,
+                resource_uri.to_string(),
             )),
             oauth: oauth.clone(),
             oauth_administration: oauth,
-            resource_uri: mcp_resource_url.to_string(),
-            metadata_uri: mcp_metadata_url.to_string(),
-            authorization_server_uri: mcp_authorization_server_url.to_string(),
-            authorization_endpoint_uri: mcp_authorize_url.to_string(),
-            token_endpoint_uri: mcp_token_url.to_string(),
-            allowed_origin: mcp_origin,
+            resource_uri: resource_uri.to_string(),
+            metadata_uri: metadata_uri.to_string(),
+            authorization_server_uri: configuration.base_url.to_string(),
+            authorization_endpoint_uri: authorization_endpoint_uri.to_string(),
+            token_endpoint_uri: token_endpoint_uri.to_string(),
+            allowed_origin: configuration.base_url.origin().ascii_serialization(),
             rate_limiter: marginalis_web::McpRateLimiter::new(120),
         })
     } else {
@@ -98,7 +98,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn base_url_at(base_url: &url::Url, suffix: &str) -> url::Url {
     let mut url = base_url.clone();
-    let prefix = base_url.path().trim_end_matches('/');
-    url.set_path(&format!("{prefix}/{suffix}"));
+    url.set_path(&format!(
+        "{}/{suffix}",
+        base_url.path().trim_end_matches('/')
+    ));
     url
 }

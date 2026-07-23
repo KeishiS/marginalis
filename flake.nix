@@ -34,13 +34,13 @@
             };
             cargoBuildFlags = [
               "--package"
-              "marginalis-web"
+              "marginalis-service"
               "--bin"
-              "marginalis-web"
+              "marginalis-service"
             ];
             doCheck = false;
             installPhase = ''
-              install -Dm755 target/${pkgs.stdenv.hostPlatform.rust.cargoShortTarget}/release/marginalis-web $out/bin/marginalis
+              install -Dm755 target/${pkgs.stdenv.hostPlatform.rust.cargoShortTarget}/release/marginalis-service $out/bin/marginalis
             '';
           };
         }

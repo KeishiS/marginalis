@@ -1225,6 +1225,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "marginalis-service"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "marginalis-application",
+ "marginalis-files",
+ "marginalis-mcp",
+ "marginalis-server",
+ "marginalis-sqlite",
+ "marginalis-web",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "marginalis-sqlite"
 version = "0.1.0"
 dependencies = [

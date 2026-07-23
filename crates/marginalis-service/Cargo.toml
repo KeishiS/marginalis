@@ -1,0 +1,20 @@
+[package]
+name = "marginalis-service"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+axum.workspace = true
+marginalis-application = { path = "../marginalis-application" }
+marginalis-files = { path = "../marginalis-files" }
+marginalis-mcp = { path = "../marginalis-mcp" }
+marginalis-server = { path = "../marginalis-server" }
+marginalis-sqlite = { path = "../marginalis-sqlite" }
+marginalis-web = { path = "../marginalis-web" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
