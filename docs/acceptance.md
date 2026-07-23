@@ -28,10 +28,27 @@ password、Cookie、OIDC code、MCP access/refresh tokenをコマンド履歴、
 `marginalis_session`や`marginalis_csrf`をshellの引数・履歴へ貼り付けない。API clientのsecret storeまたは
 一時的なCookie jarを用い、確認後に削除する。
 
-### browser開発者ツールによるREST確認例
+### browser開発者ツールによるREST確認例（strict CSPでは使用しない）
 
-OIDC login済みの同一originでbrowser開発者ツールのConsoleを開き、次を順に実行する。この方法では
-HttpOnlyなsession Cookieをコピーせず、browserが自動送信する。`unique_phrase`は他のノートに含まれない
+OIDC login済みの同一originでbrowser開発者ツールのConsoleを開く方法は、`connect-src`を許可するCSPを
+明示的に設定した開発環境だけで使う。current production deploymentの`Content-Security-Policy: default-src 'none'`
+では、Consoleの`fetch`も遮断されるため使用してはならない。CSPをこの受入確認のために緩めない。
+
+productionではCookie jarとCSRF Cookieを保持できる外部API clientを使う。そのclient自身のbrowser loginで
+OIDC sessionを確立し、同じcookie jarで以下のrequestを実行する。clientが`marginalis_csrf` Cookieを
+`X-CSRF-Token`へ展開できない場合は、REST受入の自動化対象から外し、Issue 030のE2E基盤で扱う。
+
+| 順序 | request | 必須設定 | 期待結果 |
+| --- | --- | --- | --- |
+| 1 | `POST /api/v1/notes` | UTF-8 AsciiDoc body、`Content-Type: text/plain; charset=utf-8`、`X-CSRF-Token` | `201`、`Location` |
+| 2 | `GET {Location}` | Cookie jar | `200`、`ETag` |
+| 3 | `PUT {Location}` | 更新済みbody、`If-Match: <ETag>`、`X-CSRF-Token` | `204` |
+| 4 | 同じ`If-Match`で再度`PUT` | 同上 | `409` |
+| 5 | `GET /api/v1/search?q=<固有語>` | Cookie jar | `200`、作成ノートだけを含む |
+| 6 | `POST /api/v1/notes/{note_id}/delete-preparations` | `If-Match: <最新ETag>`、`X-CSRF-Token` | `200`、`confirmation_token` |
+| 7 | `POST /api/v1/notes/delete-confirmations` | JSON body `{"confirmation_token":"..."}`、`X-CSRF-Token` | `204` |
+
+次のConsoleコードは、CSPを許可したローカル開発環境でだけ利用する。`unique_phrase`は他のノートに含まれない
 値へ変更する。`Origin`と`Sec-Fetch-Site`はbrowserが付与するため、JavaScriptから設定しない。
 
 ```js
