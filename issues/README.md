@@ -7,6 +7,16 @@
 
 ## 実装順序
 
+現在の優先順位は、Web UIより先にREST APIとMCPを成立させることである。root管理はREST APIで継続し、
+管理UIは後続とする。
+
+1. [014: RESTノートAPI・検索・MCP連携](014-rest-notes-search-and-mcp.md)
+2. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
+3. [005: 検索・グラフ投影と再構築](005-projections-and-rebuild.md)
+4. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md)
+
+AsciiDocアダプタに関する依存順は次のとおりである。
+
 1. [008: 一般AsciiDocライブラリへの適用アダプタ](008-asciidoc-library-adaptation-boundary.md)
 2. [001: 依存固定と契約監視](001-adocweave-dependency-and-contract.md)
 3. [002: ノート用プロファイルと属性検証](002-note-profile-and-metadata.md)
@@ -35,8 +45,11 @@
 ノート変更を検索用中間表現へ反映し、ACLを守ったMCP曖昧検索を実現するための調査は
 [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)で管理する。
 
-rootのローカル認証、OIDC保留ユーザーの承認および最小管理UIは
-[013: root管理・OIDCユーザー承認・最小管理UI](013-root-administration-and-approval.md)で管理する。
+rootのローカル認証とOIDC保留ユーザーの承認は
+[013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md)で管理する。
+
+REST APIだけでのノートCRUD・検索と、そのuse caseを再利用するMCP連携は
+[014: RESTノートAPI・検索・MCP連携](014-rest-notes-search-and-mcp.md)で管理する。
 
 ## 実装原則
 
