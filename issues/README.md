@@ -28,6 +28,7 @@ REST APIで継続し、管理UIは後続とする。既存デプロイのdataDir
 6. [027: 検索・xref・閲覧用RenderPolicyの完成](027-search-reference-and-rendering-projections.md)の公開filterとRenderPolicy
 7. [026: OIDCログイン開始要求のブラウザ結合](026-oidc-login-binding-and-runtime-limits.md)の期限設定化とproxy境界の改善
 8. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)のtest module完全分離
+9. [031: PostgreSQL storage backendの実現性調査](031-postgresql-storage-backend-feasibility.md)
 
 ### 完了済みの基盤・初期実装
 
