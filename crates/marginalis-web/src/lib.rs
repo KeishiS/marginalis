@@ -525,7 +525,7 @@ async fn mcp_authorize(
         "CSRF token is required",
     ))?;
     let body = format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>Marginalis authorization</title><h1>Authorize {}</h1><p>This client requests: {}</p><form method=\"post\" action=\"oauth/authorize\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\" type=\"submit\">Allow</button><button name=\"decision\" value=\"deny\" type=\"submit\">Deny</button></form>",
+        "<!doctype html><meta charset=\"utf-8\"><title>Marginalis authorization</title><h1>Authorize {}</h1><p>This client requests: {}</p><form method=\"post\" action=\"authorize\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\" type=\"submit\">Allow</button><button name=\"decision\" value=\"deny\" type=\"submit\">Deny</button></form>",
         escape_html(&client.display_name),
         escape_html(&query.scope),
         escape_html(&query.client_id),
