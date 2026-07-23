@@ -1,9 +1,9 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, NoteId, NotePage, NotePermission,
-    NoteProjection, NoteSource, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy,
-    SourceRevision, UnixMillis, UserId,
+    Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
+    NotePage, NotePermission, NoteProjection, NoteSource, OidcIdentity, OidcLoginResult, OidcUser,
+    RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
@@ -289,6 +289,7 @@ pub trait McpOAuthStore: Send + Sync {
         grant: McpAuthorizationGrant,
         access_expires_at: UnixMillis,
         refresh_expires_at: UnixMillis,
+        issued_at: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     fn revoke_client_tokens(
@@ -297,6 +298,11 @@ pub trait McpOAuthStore: Send + Sync {
         client_id: String,
         now: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn list_client_authorizations(
+        &self,
+        user_id: UserId,
+    ) -> impl Future<Output = Result<Vec<McpClientAuthorization>, Self::Error>> + Send;
 
     /// refresh tokenを一度だけ消費し、新しいtoken pairを同一transactionで保存する。
     fn rotate_refresh_token(
@@ -354,6 +360,11 @@ pub trait McpOAuthAdministrationUseCases: Send + Sync {
         user_id: UserId,
         client_id: String,
     ) -> Result<(), McpOAuthUseCaseError>;
+    async fn list_client_authorizations(
+        &self,
+        actor: Actor,
+        user_id: UserId,
+    ) -> Result<Vec<McpClientAuthorization>, McpOAuthUseCaseError>;
 }
 
 #[async_trait]

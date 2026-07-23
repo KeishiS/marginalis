@@ -102,3 +102,7 @@ Client ID Metadata Documentを提供しないclientは、rootが`POST /api/v1/ad
 
 利用者はREST APIで自分のclient認可を取り消せる。rootは任意ユーザーの認可を強制取消できる。取消時には
 そのユーザー・client組のaccess tokenとrefresh tokenをすべて失効させる。
+
+`GET /api/v1/mcp-authorizations`では、サインイン済み利用者が有効なclient認可の表示名、scope、認可日時、
+最後の成功利用日時を確認できる。応答にtoken値またはtoken hashを含めないため、この一覧をもとに安全に
+取消対象を選択できる。

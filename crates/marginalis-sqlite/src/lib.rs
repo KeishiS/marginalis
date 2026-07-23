@@ -14,9 +14,9 @@ use marginalis_application::{
     RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, NoteId, NotePage, NotePermission,
-    NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy,
-    SourceRevision, UnixMillis, UserId, UserStatus,
+    Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
+    NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
+    RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -33,6 +33,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (
         6,
         include_str!("../migrations/0006_delete_confirmations.sql"),
+    ),
+    (
+        7,
+        include_str!("../migrations/0007_mcp_token_timestamps.sql"),
     ),
 ];
 
@@ -868,6 +872,7 @@ impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
     ) -> impl Future<Output = Result<Option<Actor>, Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
+            let token_hash = hash_token(&token);
             let row = sqlx::query(
                 "SELECT mcp_access_tokens.user_id
                  FROM mcp_access_tokens JOIN users ON users.user_id = mcp_access_tokens.user_id
@@ -879,22 +884,27 @@ impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
                    AND users.status = 'active'
                    AND users.authentication_kind <> 'root'",
             )
-            .bind(hash_token(&token))
+            .bind(&token_hash)
             .bind(resource_uri)
             .bind(now.get())
             .bind(required_scope)
             .fetch_optional(&pool)
             .await?;
-            row.map(|row| {
-                let user_id: String = row.try_get("user_id")?;
-                let entity_id = EntityId::from_str(&user_id)
-                    .map_err(|_| McpAccessTokenStoreError::CorruptUser)?;
-                Ok(Actor {
-                    user_id: UserId::new(entity_id),
-                    is_root: false,
-                })
-            })
-            .transpose()
+            let Some(row) = row else {
+                return Ok(None);
+            };
+            sqlx::query("UPDATE mcp_access_tokens SET last_used_at_ms = ? WHERE token_hash = ?")
+                .bind(now.get())
+                .bind(token_hash)
+                .execute(&pool)
+                .await?;
+            let user_id: String = row.try_get("user_id")?;
+            let entity_id =
+                EntityId::from_str(&user_id).map_err(|_| McpAccessTokenStoreError::CorruptUser)?;
+            Ok(Some(Actor {
+                user_id: UserId::new(entity_id),
+                is_root: false,
+            }))
         }
     }
 }
@@ -1121,6 +1131,7 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
         grant: McpAuthorizationGrant,
         access_expires_at: UnixMillis,
         refresh_expires_at: UnixMillis,
+        issued_at: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
@@ -1128,8 +1139,8 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             let scopes = grant.scopes.join(" ");
             sqlx::query(
                 "INSERT INTO mcp_access_tokens
-                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms)
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms, issued_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(hash_token(&access_token))
             .bind(grant.user_id.to_string())
@@ -1137,12 +1148,13 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             .bind(&grant.resource_uri)
             .bind(&scopes)
             .bind(access_expires_at.get())
+            .bind(issued_at.get())
             .execute(&mut *transaction)
             .await?;
             sqlx::query(
                 "INSERT INTO mcp_refresh_tokens
-                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms)
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms, issued_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(hash_token(&refresh_token))
             .bind(grant.user_id.to_string())
@@ -1150,6 +1162,7 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             .bind(&grant.resource_uri)
             .bind(scopes)
             .bind(refresh_expires_at.get())
+            .bind(issued_at.get())
             .execute(&mut *transaction)
             .await?;
             transaction.commit().await?;
@@ -1186,6 +1199,54 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             .await?;
             transaction.commit().await?;
             Ok(())
+        }
+    }
+
+    fn list_client_authorizations(
+        &self,
+        user_id: UserId,
+    ) -> impl Future<Output = Result<Vec<McpClientAuthorization>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let rows = sqlx::query(
+                "SELECT refresh.client_id, clients.display_name,
+                        GROUP_CONCAT(DISTINCT refresh.scopes) AS scopes,
+                        MIN(refresh.issued_at_ms) AS authorized_at_ms,
+                        MAX(access.last_used_at_ms) AS last_used_at_ms
+                 FROM mcp_refresh_tokens AS refresh
+                 JOIN mcp_oauth_clients AS clients ON clients.client_id = refresh.client_id
+                 LEFT JOIN mcp_access_tokens AS access
+                   ON access.user_id = refresh.user_id
+                  AND access.client_id = refresh.client_id
+                  AND access.revoked_at_ms IS NULL
+                 WHERE refresh.user_id = ? AND refresh.revoked_at_ms IS NULL
+                 GROUP BY refresh.client_id, clients.display_name
+                 ORDER BY authorized_at_ms DESC, refresh.client_id ASC",
+            )
+            .bind(user_id.to_string())
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(|row| {
+                    let mut scopes = row
+                        .try_get::<String, _>("scopes")?
+                        .split(',')
+                        .flat_map(str::split_whitespace)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>();
+                    scopes.sort();
+                    scopes.dedup();
+                    Ok(McpClientAuthorization {
+                        client_id: row.try_get("client_id")?,
+                        display_name: row.try_get("display_name")?,
+                        scopes,
+                        authorized_at: UnixMillis::new(row.try_get("authorized_at_ms")?),
+                        last_used_at: row
+                            .try_get::<Option<i64>, _>("last_used_at_ms")?
+                            .map(UnixMillis::new),
+                    })
+                })
+                .collect()
         }
     }
 
@@ -1252,8 +1313,8 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             let scopes = grant.scopes.join(" ");
             sqlx::query(
                 "INSERT INTO mcp_access_tokens
-                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms)
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms, issued_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(hash_token(&new_access_token))
             .bind(grant.user_id.to_string())
@@ -1261,12 +1322,13 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             .bind(&grant.resource_uri)
             .bind(&scopes)
             .bind(access_expires_at.get())
+            .bind(now.get())
             .execute(&mut *transaction)
             .await?;
             sqlx::query(
                 "INSERT INTO mcp_refresh_tokens
-                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms)
-                 VALUES (?, ?, ?, ?, ?, ?)",
+                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms, issued_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(hash_token(&new_refresh_token))
             .bind(grant.user_id.to_string())
@@ -1274,6 +1336,7 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             .bind(&grant.resource_uri)
             .bind(scopes)
             .bind(refresh_expires_at.get())
+            .bind(now.get())
             .execute(&mut *transaction)
             .await?;
             transaction.commit().await?;
@@ -1796,7 +1859,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -2428,6 +2491,7 @@ mod tests {
                 grant,
                 UnixMillis::new(100),
                 UnixMillis::new(200),
+                UnixMillis::new(0),
             )
             .await
             .expect("tokens");
@@ -2480,6 +2544,15 @@ mod tests {
                 .expect("access token")
                 .is_some()
         );
+        let authorizations = store
+            .list_client_authorizations(user_id)
+            .await
+            .expect("authorization list");
+        assert_eq!(authorizations.len(), 1);
+        assert_eq!(authorizations[0].client_id, "client");
+        assert_eq!(authorizations[0].scopes, ["notes:read"]);
+        assert_eq!(authorizations[0].authorized_at, UnixMillis::new(0));
+        assert_eq!(authorizations[0].last_used_at, Some(UnixMillis::new(2)));
         store
             .revoke_client_tokens(user_id, "client".into(), UnixMillis::new(3))
             .await

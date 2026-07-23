@@ -274,7 +274,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/admin/mcp-clients", post(register_mcp_client))
         .route(
             "/api/v1/mcp-authorizations",
-            delete(revoke_own_mcp_authorization),
+            get(list_own_mcp_authorizations).delete(revoke_own_mcp_authorization),
         )
         .route(
             "/api/v1/admin/mcp-authorizations",
@@ -1081,6 +1081,15 @@ struct McpAuthorizationQuery {
     user_id: Option<String>,
 }
 
+#[derive(Serialize)]
+struct McpClientAuthorizationResponse {
+    client_id: String,
+    display_name: String,
+    scopes: Vec<String>,
+    authorized_at_ms: i64,
+    last_used_at_ms: Option<i64>,
+}
+
 async fn complete_oidc_login(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -1236,6 +1245,34 @@ async fn revoke_own_mcp_authorization(
     let actor = authenticated_actor(&headers, &state).await?;
     require_csrf(&headers, &state).await?;
     revoke_mcp_client_authorization(&state, actor, actor.user_id, query.client_id).await
+}
+
+async fn list_own_mcp_authorizations(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<McpClientAuthorizationResponse>>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    let authorizations = endpoint
+        .oauth_administration
+        .list_client_authorizations(actor, actor.user_id)
+        .await
+        .map_err(oauth_error)?;
+    Ok(Json(
+        authorizations
+            .into_iter()
+            .map(|authorization| McpClientAuthorizationResponse {
+                client_id: authorization.client_id,
+                display_name: authorization.display_name,
+                scopes: authorization.scopes,
+                authorized_at_ms: authorization.authorized_at.get(),
+                last_used_at_ms: authorization.last_used_at.map(|value| value.get()),
+            })
+            .collect(),
+    ))
 }
 
 async fn revoke_mcp_authorization_as_root(
@@ -1428,7 +1465,8 @@ mod tests {
         WebSessionStore,
     };
     use marginalis_domain::{
-        Actor, EntityId, McpOAuthClient, OidcIdentity, RegistrationPolicy, UnixMillis, UserId,
+        Actor, EntityId, McpClientAuthorization, McpOAuthClient, OidcIdentity, RegistrationPolicy,
+        UnixMillis, UserId,
     };
     use std::{str::FromStr, sync::Arc};
     use tower::ServiceExt;
@@ -1508,6 +1546,14 @@ mod tests {
             _user_id: UserId,
             _client_id: String,
         ) -> Result<(), McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+
+        async fn list_client_authorizations(
+            &self,
+            _actor: Actor,
+            _user_id: UserId,
+        ) -> Result<Vec<McpClientAuthorization>, McpOAuthUseCaseError> {
             Err(McpOAuthUseCaseError::Rejected)
         }
     }

@@ -40,6 +40,10 @@ rootは`DELETE /api/v1/admin/mcp-authorizations?user_id=...&client_id=...`で任
 取り消せる。いずれもCSRF tokenを必要とし、対象ユーザーとclient IDのaccess tokenおよびrefresh tokenを
 すべて直ちに失効させる。
 
+`GET /api/v1/mcp-authorizations`は、現在の通常ユーザーの有効なMCP認可を返す。各要素はclient ID、
+表示名、scope、最初の認可時刻（`authorized_at_ms`）、最後の利用時刻（`last_used_at_ms`。未使用なら`null`）を
+含む。access token、refresh token、token hashは応答に含めない。
+
 OIDC callbackの成功時はBase URL（`/`）へredirectする。Web UI公開前の`GET /`はhealth responseを
 返すため、ログイン完了後に404にはならない。`GET /api/v1/session`は現在の有効なsessionについて
 `user_id`と`is_root`を返し、sessionがなければ`401`を返す。

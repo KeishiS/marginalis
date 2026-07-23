@@ -183,6 +183,16 @@ pub struct McpOAuthClient {
     pub redirect_uris: Vec<String>,
 }
 
+/// token値を含まない、利用者向けのMCP client認可一覧行。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpClientAuthorization {
+    pub client_id: String,
+    pub display_name: String,
+    pub scopes: Vec<String>,
+    pub authorized_at: UnixMillis,
+    pub last_used_at: Option<UnixMillis>,
+}
+
 /// ユーザーが同意済みのAuthorization Code。平文codeは永続化しない。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthorizationGrant {

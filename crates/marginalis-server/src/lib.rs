@@ -248,6 +248,7 @@ impl ServerMcpOAuthService {
                 grant,
                 UnixMillis::new(now.get() + (access_expires_in_seconds * 1_000) as i64),
                 UnixMillis::new(now.get() + 30 * 24 * 60 * 60 * 1_000),
+                now,
             )
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;
@@ -479,6 +480,21 @@ impl McpOAuthAdministrationUseCases for ServerMcpOAuthService {
         self.database
             .mcp_oauth_store()
             .revoke_client_tokens(user_id, client_id, SystemClock.now())
+            .await
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)
+    }
+
+    async fn list_client_authorizations(
+        &self,
+        actor: Actor,
+        user_id: marginalis_domain::UserId,
+    ) -> Result<Vec<marginalis_domain::McpClientAuthorization>, McpOAuthUseCaseError> {
+        if !actor.is_root && actor.user_id != user_id {
+            return Err(McpOAuthUseCaseError::Rejected);
+        }
+        self.database
+            .mcp_oauth_store()
+            .list_client_authorizations(user_id)
             .await
             .map_err(|_| McpOAuthUseCaseError::Unavailable)
     }
