@@ -32,7 +32,6 @@ Cookie認証を用いるREST/root管理のsecurity最低条件を、reverse prox
 
 ## 要判断事項
 
-- 現行proxyを信頼し、client IPを受け入れるためのCIDR/header設定を提供するか。それともroot rate limitは
-  proxy側でのみ実施し、MarginalisはTCP peer固定のままとするか。
-- 専用管理origin/mTLSをnext releaseの必須にするか、route分離だけをcurrent releaseの到達点にするか。
-
+- root loginのclient IP単位rate limitはreverse proxy側で実施する。Marginalisはforwarded headerを信頼せず、
+  TCP peer単位の補助制限だけを維持する。
+- current releaseではroot routeを独立routerへ分離する。専用管理origin/mTLSは後続とする。

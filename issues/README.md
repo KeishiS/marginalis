@@ -14,12 +14,13 @@
 2. [017: 依存境界を強制するアーキテクチャ再基線化 v2](017-architecture-boundary-rebaseline-v2.md)
 3. [019: Web security baselineとroot管理境界](019-web-security-and-admin-boundary.md)
 4. [020: data format v1とmaintenance lifecycle](020-data-format-and-maintenance-lifecycle.md)
-5. [018: API契約・OpenAPI・互換性方針](018-api-contract-and-openapi.md)
-6. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)
-7. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
-8. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
-9. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の招待・専用管理origin
-10. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
+5. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)
+6. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
+7. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
+8. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の再有効化
+9. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
+10. [018: API契約・OpenAPI・互換性方針](018-api-contract-and-openapi.md)
+11. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の招待・専用管理origin
 
 015、014、005および010の初期公開に必要な実装は完了している。以後は実OIDC/MCP clientとの結合、
 検索の拡張、公開前検証およびWeb UIを優先する。

@@ -25,6 +25,5 @@ AsciiDoc正本、SQLite投影・identity・session・audit、backupおよびrest
 
 ## 要判断事項
 
-- 既存deploymentを破棄できる前提で、format v1以前はmigrationせず拒否してよいか。
+- 既存deploymentを破棄できる前提で、format v1以前はmigrationせず拒否する。
 - backupの保持世代、保存先、off-site複製、暗号化をどの運用手段で担うか。
-
