@@ -1,6 +1,6 @@
 # 012: MCP曖昧検索用の中間表現インデックス調査
 
-状態: 優先調査。Issue 014の検索・MCP実装に先行する。
+状態: 初期実装済み。検索拡張と運用結合試験はIssue 014で継続する。
 
 ノートの作成・更新・物理削除を契機として検索用の中間表現（IR）を更新し、MCP経由で権限を守った
 曖昧検索を提供するための設計を調査する。初期REST APIおよび正本ファイルの意味論は変更しない。
@@ -94,3 +94,14 @@
 - ACLを持たないActorに情報を漏らさない検索手順が選定されている。
 - 作成・更新・削除・復旧の各経路で検索投影を収束させる方式が選定されている。
 - 採用する検索技術とNixOS運用への影響が根拠とともに記録されている。
+
+## 実装済み範囲
+
+- `NoteWriteService`の同期投影としてSQLite FTS5を更新し、物理削除と起動時recoveryにも追従させた。
+- RESTとMCPの`search_notes`・`get_note`は同じ`NoteUseCases`とACL非漏洩queryを利用する。
+- MCPはStreamable HTTP、Protected Resource Metadata、OAuth Authorization Code + PKCE S256、opaque
+  access/refresh token、resource audience照合、refresh token rotationを実装した。
+- NixOS moduleはMCPを明示opt-inにし、Client ID Metadata Documentの取得hostを許可リストに限定する。
+
+実運用のMCP clientとのOAuth結合試験、rate limit、全文snippet・semantic search、server-to-client
+notification streamは初期実装に含まれず、後続作業とする。
