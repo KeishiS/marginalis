@@ -96,7 +96,7 @@ HTTP REST        MCP transport        CLI / maintenance
 - RESTとMCPは`NoteUseCases`を共有し、HTTP handlerからSQLite、file、AsciiDocの具体adapterを参照しない。
 - 実行バイナリは`marginalis-service`へ分離し、設定読込、adapter組立、tracing初期化、HTTP listenを集約した。
 - request ID、Cookie CSRF、MCP rate limitはHTTP境界にある。identity policyはSQLiteへ永続化した。
-- root管理監査はSQLiteへ永続化し、`marginalis rebuild-projections`とNixOS oneshot unitで正本から
-  projectionを再構築できる。VM testはcredential注入、永続directory、service再起動およびoneshotとの排他を
-  確認する。
+- root管理監査はSQLiteへ永続化し、`marginalis rebuild-projections`と`marginalis backup`、対応する
+  NixOS oneshot unitで正本の投影再構築とSQLite・正本の一組backupを実行できる。VM testはcredential注入、
+  永続directory、service再起動およびoneshotとの排他を確認する。
 - NixOS VM上で実OIDC providerと実MCP clientを用いるend-to-end結合試験は未実装である。

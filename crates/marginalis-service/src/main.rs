@@ -9,21 +9,84 @@ use marginalis_server::{
 };
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::{ApiState, McpEndpoint, OidcAuthentication, OidcConfiguration, router};
+use std::path::{Path, PathBuf};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
     initialize_tracing();
-    let command = std::env::args().nth(1);
+    let mut arguments = std::env::args().skip(1);
+    let command = arguments.next();
     let result = match command.as_deref() {
         None | Some("serve") => run().await,
         Some("rebuild-projections") => rebuild_projections().await,
-        Some(_) => Err("usage: marginalis [serve|rebuild-projections]".into()),
+        Some("backup") => backup(arguments).await,
+        Some(_) => Err(
+            "usage: marginalis [serve|rebuild-projections|backup (--output <absolute-directory>|--directory <absolute-directory>)]"
+                .into(),
+        ),
     };
     if let Err(error) = result {
         tracing::error!(error = %error, "Marginalis server terminated");
         std::process::exit(1);
     }
+}
+
+/// 停止中のserviceに対してSQLiteとAsciiDoc正本を一組で取得するbackup command。
+async fn backup(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let option = arguments.next();
+    let value = arguments.next();
+    let output = match (option.as_deref(), value) {
+        (Some("--output"), Some(path)) if arguments.next().is_none() => PathBuf::from(path),
+        (Some("--directory"), Some(path)) if arguments.next().is_none() => {
+            let directory = PathBuf::from(path);
+            if !directory.is_absolute() || !directory.is_dir() {
+                return Err("backup directory must be an existing absolute directory".into());
+            }
+            directory.join(format!("backup-{}", SystemClock.now().get()))
+        }
+        _ => {
+            return Err(
+                "usage: marginalis backup (--output <absolute-directory>|--directory <absolute-directory>)"
+                    .into(),
+            );
+        }
+    };
+    if !output.is_absolute() {
+        return Err("backup output directory must be an absolute path".into());
+    }
+    if output.exists() {
+        return Err(format!("backup output already exists: {}", output.display()).into());
+    }
+    std::fs::create_dir(&output)?;
+
+    let result = backup_into(&output).await;
+    if let Err(error) = result {
+        tracing::error!(output = %output.display(), error = %error, "backup failed; incomplete output was retained");
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let (configuration, _) = ServerConfig::from_environment()?;
+    let database = SqliteDatabase::connect_with_initial_registration_policy(
+        &configuration.database_url,
+        configuration.initial_registration_policy,
+    )
+    .await?;
+    let sources = FileNoteStore::open(&configuration.data_dir)?;
+    let database_path = output.join("marginalis.sqlite");
+    let database_path = database_path
+        .to_str()
+        .ok_or("backup output directory must be valid UTF-8")?;
+    database.backup_to(database_path).await?;
+    let note_count = sources.copy_sources_to(output)?;
+    std::fs::write(output.join("COMPLETE"), "Marginalis backup format 1\n")?;
+    tracing::info!(output = %output.display(), note_count, "backup completed");
+    Ok(())
 }
 
 /// 停止中のserviceに対して実行する、正本からのSQLite投影再構築コマンド。

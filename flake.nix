@@ -92,6 +92,11 @@
                     touch "$MARGINALIS_DATA_DIR/projections-rebuilt"
                     exit 0
                   fi
+                  if [ "''${1-}" = "backup" ] && [ "''${2-}" = "--directory" ]; then
+                    test "$3" = "/var/lib/marginalis-backups/test"
+                    touch "$3/backup-created"
+                    exit 0
+                  fi
                   touch "$MARGINALIS_DATA_DIR/service-started"
                   exec sleep infinity
                 '';
@@ -110,6 +115,7 @@
                   package = probeServer;
                   baseUrl = "https://marginalis.example.test";
                   initialRegistrationPolicy = "open";
+                  backupDirectory = "/var/lib/marginalis-backups/test";
                   oidc = {
                     issuerUrl = "https://id.example.test";
                     clientId = "marginalis";
@@ -129,6 +135,9 @@
                 machine.succeed("systemctl show -p ActiveState --value marginalis.service | grep -qx inactive")
                 machine.succeed("systemctl start marginalis.service")
                 machine.wait_for_unit("marginalis.service")
+                machine.succeed("systemctl start marginalis-backup.service")
+                machine.succeed("test -f /var/lib/marginalis-backups/test/backup-created")
+                machine.succeed("systemctl show -p ActiveState --value marginalis.service | grep -qx inactive")
               '';
             };
         }

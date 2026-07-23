@@ -85,6 +85,9 @@ HTTP REST       MCP transport       maintenance CLI
   明確に拒否する。
 - `rebuild-projections`保守操作は、全AsciiDoc正本を検証してから一つのSQLite transactionで検索・
   anchor・xref投影を置換する。検証失敗時は最後に成功した投影を保持し、既存ACLは維持する。
+- `backup`保守操作はHTTP service停止中にSQLiteをcheckpointしてbackup fileへ出力し、検証済みの
+  AsciiDoc正本だけを同じ出力directoryへ複製する。既存backupは上書きせず、完了markerのある一組だけを
+  復元候補とする。
 - 時刻はUTC epoch milliseconds、IDは型付きUUIDv7、外部入力は境界で検証する。
 
 ## 設定と起動

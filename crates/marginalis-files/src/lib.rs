@@ -129,6 +129,25 @@ impl FileNoteStore {
             .collect()
     }
 
+    /// 検証済みの正本をbackup directoryへ複製する。
+    ///
+    /// 呼出し側はSQLiteのbackupと同じ停止期間に実行する。出力先には`notes/`だけを作り、
+    /// 一時ファイルや正本以外のファイルは持ち込まない。
+    pub fn copy_sources_to(
+        &self,
+        backup_directory: impl AsRef<Path>,
+    ) -> Result<usize, FileStoreError> {
+        let destination = backup_directory.as_ref().join("notes");
+        fs::create_dir(&destination)?;
+        let sources = self.list_sources()?;
+        for (note_id, source) in &sources {
+            let target = destination.join(format!("{note_id}.adoc"));
+            fs::write(target, source)?;
+        }
+        File::open(&destination)?.sync_all()?;
+        Ok(sources.len())
+    }
+
     /// 正本をtemp fileへ完全に書き出して同期してからrenameする。
     ///
     /// temp file名はapplication層の操作IDから作るため、任意パスや隠れた乱数生成を持ち込まない。
@@ -258,6 +277,30 @@ mod tests {
             sources.list_sources(),
             Err(FileStoreError::InvalidNoteFileName(_))
         ));
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[test]
+    fn copies_only_validated_canonical_sources_to_backup() {
+        let directory = test_directory();
+        let sources = FileNoteStore::open(&directory).expect("open sources");
+        let note_id = note(1);
+        fs::write(
+            directory.join("notes").join(format!("{note_id}.adoc")),
+            "= canonical\n",
+        )
+        .expect("write source");
+        fs::write(directory.join("notes").join("ignored.tmp"), "temporary")
+            .expect("write temporary file");
+        let backup = directory.join("backup");
+        fs::create_dir(&backup).expect("create backup directory");
+
+        assert_eq!(sources.copy_sources_to(&backup).expect("copy sources"), 1);
+        assert_eq!(
+            fs::read(backup.join("notes").join(format!("{note_id}.adoc"))).expect("read backup"),
+            b"= canonical\n"
+        );
+        assert!(!backup.join("notes").join("ignored.tmp").exists());
         fs::remove_dir_all(directory).expect("remove directory");
     }
 

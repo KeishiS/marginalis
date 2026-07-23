@@ -107,6 +107,34 @@ sudo systemctl start marginalis.service
 投影を置換する。検証エラー時は最後に成功したSQLite投影を変更しない。既存ノートのACLは保持し、正本が
 なくなったノートの投影とACLだけを削除する。
 
+## バックアップと復元
+
+`dataDir`はAsciiDoc正本とSQLiteを一組で扱う。`backupDirectory`には、同じfilesystemまたは別volume上の
+絶対pathを指定する。moduleはこのdirectoryを`marginalis`所有で用意し、その直下に時刻付きの新しい
+backup generationを作る。backup先の
+永続化、世代管理、off-site複製および保持期間は運用者が決める。自動timerは意図的に提供しない。
+
+```nix
+services.marginalis.backupDirectory = "/var/lib/marginalis-backups";
+```
+
+指定後、次のoneshot unitでHTTP serviceを停止した状態のbackupを作成する。
+
+```sh
+sudo systemctl start marginalis-backup.service
+sudo systemctl start marginalis.service
+```
+
+成功した各generationには`marginalis.sqlite`、`notes/<UUID>.adoc`および`COMPLETE` markerが含まれる。
+同じ出力pathが既に存在する場合は上書きせず失敗する。失敗した場合も不完全な出力を残すため、`COMPLETE`
+のないdirectoryを復元に使用してはならない。個別の出力pathを指定する手動実行には
+`marginalis backup --output /absolute/path`を使う。
+
+復元は既存dataDirを置換する破壊的操作であるため、moduleに自動コマンドは設けない。まずserviceを停止し、
+現在のdataDirを別名で退避してから、`COMPLETE`を確認済みのbackupからSQLiteと`notes/`を同じ所有者・
+modeで戻す。最後に`marginalis-rebuild-projections.service`を実行して正本を検証し、`marginalis.service`
+を起動する。復元先と退避の確定はデータ損失に直結するため、実施時に対象pathを明示して判断する。
+
 ## MCPの公開
 
 `services.marginalis.mcp.enable`の既定値は`false`である。`true`の場合に限り、同じBase URL配下へ

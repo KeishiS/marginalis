@@ -461,6 +461,21 @@ impl SqliteDatabase {
         &self.pool
     }
 
+    /// WALをcheckpointしてから、SQLite自身のbackup機能で一貫したdatabase fileを書き出す。
+    ///
+    /// `VACUUM INTO`はtransaction内で実行できないため、呼出し側はHTTP serviceを停止して、
+    /// 正本filesystemとの組を取得する必要がある。
+    pub async fn backup_to(&self, destination: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&self.pool)
+            .await?;
+        let destination = destination.replace('\'', "''");
+        sqlx::query(&format!("VACUUM INTO '{destination}'"))
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub fn operation_journal(&self) -> SqliteOperationJournal {
         SqliteOperationJournal {
             pool: self.pool.clone(),
@@ -2107,6 +2122,45 @@ mod tests {
         .await
         .expect("journal table exists");
         assert_eq!(row.get::<String, _>("name"), "operation_journal");
+    }
+
+    #[tokio::test]
+    async fn backup_writes_a_readable_consistent_sqlite_database() {
+        let suffix: u64 = rand::random();
+        let source_path =
+            std::env::temp_dir().join(format!("marginalis-backup-source-{suffix}.sqlite"));
+        let backup_path =
+            std::env::temp_dir().join(format!("marginalis-backup-output-{suffix}.sqlite"));
+        let source_url = format!("sqlite:{}", source_path.display());
+        let database = SqliteDatabase::connect(&source_url)
+            .await
+            .expect("database");
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES ('01800000-0000-7000-8000-000000000001', 'oidc', 'active', 'Backup user', 0, 0)",
+        )
+        .execute(database.pool())
+        .await
+        .expect("insert user");
+        database
+            .backup_to(backup_path.to_str().expect("UTF-8 backup path"))
+            .await
+            .expect("backup");
+        drop(database);
+
+        let backup_url = format!("sqlite:{}", backup_path.display());
+        let backup = SqliteDatabase::connect(&backup_url)
+            .await
+            .expect("open backup");
+        let count = sqlx::query("SELECT count(*) AS count FROM users")
+            .fetch_one(backup.pool())
+            .await
+            .expect("query backup")
+            .get::<i64, _>("count");
+        assert_eq!(count, 1);
+        drop(backup);
+        std::fs::remove_file(source_path).expect("remove source");
+        std::fs::remove_file(backup_path).expect("remove backup");
     }
 
     #[tokio::test]
