@@ -92,7 +92,7 @@ Document、利用できるツール、トークンの期限とローテーショ
 
 ## 現在の範囲と後続作業
 
-`v0.1.0-rc.2` の範囲は、REST API、root による保留 OIDC ユーザーの承認、OAuth 保護 MCP です。
+`v0.1.0` の範囲は、REST API、root による保留 OIDC ユーザーの承認、OAuth 保護 MCP です。
 受入専用の `/acceptance` を除くブラウザ編集 UI、数式・コードのクライアント描画、Device
 Authorization Grant、ベクトル・曖昧検索、専用管理オリジン・mTLS は後続の作業です。実装順と
 未完了の項目は [Issue 一覧](issues/README.md)で管理しています。

@@ -2,9 +2,10 @@
 
 ## 現在地
 
-`v0.1.0-rc.2` で、OIDC 認証付きの REST API、OAuth 保護 MCP、NixOS モジュール、手動受入
-手順、リリースゲートが揃いました。直近の節目は RC.2 の実環境受入と v0.1.0 の確定であり、
-その後は機能を広げる前に、実運用の経路を継続的に検証できる基盤を整えます。
+`v0.1.0` をリリースし、OpenAPI 契約とデータフォーマット v1 を凍結しました（2026-07-23、
+段階 0 完了）。OIDC 認証付きの REST API、OAuth 保護 MCP、NixOS モジュール、手動受入手順、
+リリースゲートが揃っています。今後は機能を広げる前に、実運用の経路を継続的に検証できる
+基盤を整えます。
 
 各作業の詳細な受入条件と設計判断は [Issue 一覧](../issues/README.md)を正とします。この文書は
 着手順と依存関係だけを示します。
@@ -13,7 +14,7 @@
 
 | 段階 | 主 Issue | 目的 | 次段階へ進む条件 |
 | --- | --- | --- | --- |
-| 0 | [009](../issues/009-oidc-provider-registration.md)、[022](../issues/022-v0.1.0-rc.1-release-acceptance.md) | RC.2 の実環境受入を完了し、v0.1.0 をタグ付けして OpenAPI 契約を凍結する | 受入の段階 1〜3 が完了し、リリースブロッカーがない。E2E 自動化の完成は待たない |
+| 0（完了） | [009](../issues/009-oidc-provider-registration.md)、[022](../issues/022-v0.1.0-rc.1-release-acceptance.md) | RC.2 の実環境受入を完了し、v0.1.0 をタグ付けして OpenAPI 契約を凍結する | 完了（2026-07-23、`v0.1.0` タグ） |
 | 1 | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザ・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
 | 2 | [029](../issues/029-adocweave-v0.4.0-adoption.md) | AdocWeave v0.4.0 へ移行し、正本解釈・投影・HTML・WASM の契約を再固定する | データフォーマット、再構築、バックアップ・復元を含む互換性方針が確定する |
 | 3 | [032](../issues/032-mcp-authoring-profile-and-diagnostics.md) | MCP クライアント向けのプロファイル公開と位置付き検証診断を追加する | MCP / REST が後方互換な診断を返し、クライアントが推測なしで入力を修正できる |
