@@ -70,7 +70,8 @@ current releaseでは同一listenerでmergeするが、将来の専用管理orig
 rootのログイン成功・失敗、logout、OIDCユーザーの有効化・無効化、登録ポリシー変更およびrootによる
 MCP管理操作はSQLiteの`root_audit_log`へ記録する。監査閲覧用REST APIは設けない。運用者はサーバ上で
 DBを直接参照する。password、cookie、session ID、OIDC code、access/refresh tokenとそのhashは記録しない。
-記録は日次の`marginalis-prune-audit.timer`が365日より古い行を削除する。
+記録は日次の`marginalis-prune-audit.timer`が365日より古い行を削除する。同じmaintenanceは、期限切れ・
+消費済みのOIDC login attempt、session、削除確認およびMCP tokenを削除するが、ノート正本・投影は対象にしない。
 
 無効化は`active`なOIDCユーザーだけに作用し、同一SQLite transactionで当該ユーザーのWeb session、
 MCP access tokenおよびrefresh tokenを失効させる。無効化済みユーザーはOIDC login、REST API、MCPを

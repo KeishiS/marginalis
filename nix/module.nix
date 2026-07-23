@@ -259,9 +259,9 @@ in
       };
     };
 
-    # root監査は365日保持する。HTTP serverの再起動時ではなく、専用timerで期限切れ行を掃除する。
+    # root監査は365日保持する。HTTP serverの再起動時ではなく、専用timerで監査と期限切れ認証補助データを掃除する。
     systemd.services.marginalis-prune-audit = {
-      description = "Prune Marginalis root audit records older than one year";
+      description = "Prune Marginalis root audit records and expired authentication data";
       environment = {
         RUST_LOG = cfg.logFilter;
         MARGINALIS_DATA_DIR = cfg.dataDir;
@@ -288,7 +288,7 @@ in
     };
 
     systemd.timers.marginalis-prune-audit = {
-      description = "Run Marginalis root audit retention daily";
+      description = "Run Marginalis audit retention and authentication cleanup daily";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = "daily";

@@ -637,6 +637,30 @@ impl SqliteDatabase {
         )
     }
 
+    /// 期限切れまたは消費済みで再利用不能な認証補助データを削除する。
+    ///
+    /// root監査やノート正本・投影は対象にしない。呼出側は日次maintenanceとして実行する。
+    pub async fn purge_expired_ephemera(&self, now: UnixMillis) -> Result<u64, sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+        let mut purged = 0;
+        for statement in [
+            "DELETE FROM oidc_login_attempts WHERE expires_at_ms <= ?",
+            "DELETE FROM delete_confirmations WHERE expires_at_ms <= ? OR consumed_at_ms IS NOT NULL",
+            "DELETE FROM mcp_authorization_codes WHERE expires_at_ms <= ? OR consumed_at_ms IS NOT NULL",
+            "DELETE FROM mcp_access_tokens WHERE expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
+            "DELETE FROM mcp_refresh_tokens WHERE expires_at_ms <= ? OR rotated_at_ms IS NOT NULL OR revoked_at_ms IS NOT NULL",
+            "DELETE FROM web_sessions WHERE idle_expires_at_ms <= ? OR absolute_expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
+        ] {
+            let mut query = sqlx::query(statement).bind(now.get());
+            if statement.contains("absolute_expires_at_ms") {
+                query = query.bind(now.get());
+            }
+            purged += query.execute(&mut *transaction).await?.rows_affected();
+        }
+        transaction.commit().await?;
+        Ok(purged)
+    }
+
     /// 全正本の検証済みprojectionでSQLite検索・参照投影を置換する。
     ///
     /// 呼出側は、すべての正本を解析し、ファイル名と文書内`note-id`の一致を確認してから呼ぶ。
@@ -2464,6 +2488,64 @@ mod tests {
             "registration-policy-changed"
         );
         assert_eq!(row.get::<String, _>("target"), "approval");
+    }
+
+    #[tokio::test]
+    async fn maintenance_purges_expired_ephemera_without_touching_root_audit() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000088").expect("user ID"),
+        );
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'User', 0, 0)",
+        )
+        .bind(user_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("user");
+        sqlx::query(
+            "INSERT INTO oidc_login_attempts (state_hash, nonce, pkce_verifier, expires_at_ms)
+             VALUES (X'01', 'nonce', 'verifier', 10)",
+        )
+        .execute(database.pool())
+        .await
+        .expect("OIDC attempt");
+        sqlx::query(
+            "INSERT INTO web_sessions
+             (session_id_hash, csrf_token_hash, user_id, idle_timeout_ms, issued_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
+             VALUES (X'02', X'03', ?, 1, 0, 0, 10, 10)",
+        )
+        .bind(user_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("session");
+        database
+            .record_root_audit(RootAuditEvent {
+                action: RootAuditAction::LoginSucceeded,
+                actor_user_id: None,
+                target_user_id: None,
+                target: None,
+                occurred_at: UnixMillis::new(0),
+            })
+            .await
+            .expect("audit");
+        assert_eq!(
+            database
+                .purge_expired_ephemera(UnixMillis::new(10))
+                .await
+                .expect("purge"),
+            2
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM root_audit_log")
+                .fetch_one(database.pool())
+                .await
+                .expect("audit count"),
+            1
+        );
     }
 
     #[tokio::test]

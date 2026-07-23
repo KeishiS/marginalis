@@ -304,6 +304,8 @@ async fn prune_audit() -> Result<(), Box<dyn std::error::Error>> {
     let cutoff = UnixMillis::new(SystemClock.now().get().saturating_sub(retention_ms));
     let purged = database.purge_root_audit_before(cutoff).await?;
     tracing::info!(purged, "expired root audit records purged");
+    let purged = database.purge_expired_ephemera(SystemClock.now()).await?;
+    tracing::info!(purged, "expired authentication ephemera purged");
     Ok(())
 }
 

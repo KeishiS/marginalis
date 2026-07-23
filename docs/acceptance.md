@@ -56,7 +56,8 @@ metadataを持たないclientは、rootが事前登録してから試す。
    `RESTORED` marker、SQLiteおよび正本が作られることを確認する。実際のdataDir切替は、旧データを
    保持する場所とrollback手順を決めてから行う。
 4. `marginalis-rebuild-projections.service`を実行し、main serviceを再起動してhealth/readinessを再確認する。
-5. `systemctl status marginalis-prune-audit.timer`で、root監査の365日保持timerが有効であることを確認する。
+5. `systemctl status marginalis-prune-audit.timer`で、root監査の365日保持と期限切れ認証補助データのcleanupを
+   行うtimerが有効であることを確認する。
 6. `curl -fsS https://marginalis.sandi05.com/api/v1/openapi.json | jq -e '.openapi == "3.1.0"'`で、実行中binaryが
    公開contractを返すことを確認する。RC.1では、このdocumentとの差分がrelease blocker修正だけであることを確認する。
 
