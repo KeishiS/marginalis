@@ -21,8 +21,8 @@ pub use marginalis_auth_oidc::{
     OidcConfigurationError, OidcDiscoveryError, OidcLoginStartError,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteSummary, OidcLoginResult, SourceRevision,
-    OidcUser, UserId,
+    Actor, EntityId, NoteId, NotePermission, NoteSummary, OidcLoginResult, OidcUser,
+    SourceRevision, UserId,
 };
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
@@ -57,7 +57,9 @@ impl ApiState {
     ) -> Self {
         Self::new(
             notes,
-            Arc::new(marginalis_server::ServerWebAuthenticationUseCases::new(database)),
+            Arc::new(marginalis_server::ServerWebAuthenticationUseCases::new(
+                database,
+            )),
         )
     }
 }
@@ -139,10 +141,13 @@ fn note_error(error: NoteUseCaseError, unavailable_message: &'static str) -> Api
 
 fn authentication_error(error: AuthenticationUseCaseError) -> ApiError {
     match error {
-        AuthenticationUseCaseError::Rejected => {
-            ApiError::new(ApiErrorCode::AuthenticationRequired, "authentication failed")
+        AuthenticationUseCaseError::Rejected => ApiError::new(
+            ApiErrorCode::AuthenticationRequired,
+            "authentication failed",
+        ),
+        AuthenticationUseCaseError::NotFound => {
+            ApiError::new(ApiErrorCode::NotFound, "user is not available")
         }
-        AuthenticationUseCaseError::NotFound => ApiError::new(ApiErrorCode::NotFound, "user is not available"),
         AuthenticationUseCaseError::Unavailable => {
             ApiError::new(ApiErrorCode::Internal, "authentication is unavailable")
         }
@@ -310,13 +315,21 @@ fn required_if_match(headers: &HeaderMap) -> Result<SourceRevision, ApiError> {
     let value = headers
         .get(header::IF_MATCH)
         .and_then(|value| value.to_str().ok())
-        .ok_or(ApiError::new(ApiErrorCode::Conflict, "If-Match is required"))?;
+        .ok_or(ApiError::new(
+            ApiErrorCode::Conflict,
+            "If-Match is required",
+        ))?;
     let value = value
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
-        .ok_or(ApiError::new(ApiErrorCode::ValidationFailed, "If-Match is invalid"))?;
-    SourceRevision::from_hex(value)
-        .ok_or(ApiError::new(ApiErrorCode::ValidationFailed, "If-Match is invalid"))
+        .ok_or(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "If-Match is invalid",
+        ))?;
+    SourceRevision::from_hex(value).ok_or(ApiError::new(
+        ApiErrorCode::ValidationFailed,
+        "If-Match is invalid",
+    ))
 }
 
 fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {

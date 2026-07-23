@@ -1,9 +1,8 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSource, NoteSummary,
-    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
-    UserId,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSource, NoteSummary, OidcIdentity,
+    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
@@ -194,8 +193,10 @@ pub trait WebAuthenticationUseCases: Send + Sync {
         session_id: String,
         csrf_token: String,
     ) -> Result<bool, AuthenticationUseCaseError>;
-    async fn issue_oidc_session(&self, user_id: UserId)
-    -> Result<WebSession, AuthenticationUseCaseError>;
+    async fn issue_oidc_session(
+        &self,
+        user_id: UserId,
+    ) -> Result<WebSession, AuthenticationUseCaseError>;
     async fn root_login(
         &self,
         password: String,

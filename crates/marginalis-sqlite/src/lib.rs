@@ -13,9 +13,8 @@ use marginalis_application::{
     RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSummary,
-    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
-    UserId, UserStatus,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSummary, OidcIdentity,
+    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -901,7 +900,9 @@ impl NoteQueryStore for SqliteNoteQueryStore {
             .bind(i64::from(limit))
             .fetch_all(&pool)
             .await?;
-            rows.into_iter().map(|row| note_summary_from_row(&row)).collect()
+            rows.into_iter()
+                .map(|row| note_summary_from_row(&row))
+                .collect()
         }
     }
 }
