@@ -96,3 +96,6 @@ Marginalisはclient IDとdocument中の`client_id`の完全一致、空でない
 HTTPS hostだけに限る。これは任意URLを取得するSSRFを防ぐ運用上の境界である。
 
 Dynamic Client RegistrationとDevice Authorization Grantは初期公開に含めない。
+
+Client ID Metadata Documentを提供しないclientは、rootが`POST /api/v1/admin/mcp-clients`を使って事前登録
+できる。これはroot sessionとCSRFを必要とし、MCP tokenやclient secretは受け取らない。

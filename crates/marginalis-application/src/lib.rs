@@ -335,6 +335,15 @@ pub enum McpOAuthUseCaseError {
 }
 
 #[async_trait]
+pub trait McpOAuthAdministrationUseCases: Send + Sync {
+    async fn register_client(
+        &self,
+        actor: Actor,
+        client: McpOAuthClient,
+    ) -> Result<(), McpOAuthUseCaseError>;
+}
+
+#[async_trait]
 pub trait McpOAuthUseCases: Send + Sync {
     async fn validate_authorization_request(
         &self,

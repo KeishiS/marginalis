@@ -7,11 +7,12 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, Clock, DeleteConfirmationStore, DeletePreparation,
-    McpAccessTokenStore, McpAuthorizationRequest, McpOAuthStore, McpOAuthUseCaseError,
-    McpOAuthUseCases, McpRefreshTokenRotation, McpTokenPair, NoteAclService, NoteAclServiceError,
-    NoteAclStore, NoteDraft, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases,
-    NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore, SessionLifetime,
-    WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
+    McpAccessTokenStore, McpAuthorizationRequest, McpOAuthAdministrationUseCases, McpOAuthStore,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation, McpTokenPair, NoteAclService,
+    NoteAclServiceError, NoteAclStore, NoteDraft, NoteOperationKind, NoteQueryStore,
+    NoteUseCaseError, NoteUseCases, NoteWriteService, OidcUserAdministrationStore, Random,
+    RootCredentialStore, SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService,
+    WebSessionStore,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
@@ -438,6 +439,32 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
             access_expires_in_seconds: tokens.access_expires_in_seconds,
             scope: tokens.scope,
         })
+    }
+}
+
+#[async_trait]
+impl McpOAuthAdministrationUseCases for ServerMcpOAuthService {
+    async fn register_client(
+        &self,
+        actor: Actor,
+        client: marginalis_domain::McpOAuthClient,
+    ) -> Result<(), McpOAuthUseCaseError> {
+        if !actor.is_root
+            || client.client_id.trim().is_empty()
+            || client.display_name.trim().is_empty()
+            || client.redirect_uris.is_empty()
+            || !client
+                .redirect_uris
+                .iter()
+                .all(|uri| valid_redirect_uri(uri))
+        {
+            return Err(McpOAuthUseCaseError::Rejected);
+        }
+        self.database
+            .mcp_oauth_store()
+            .upsert_client(client)
+            .await
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)
     }
 }
 

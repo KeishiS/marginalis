@@ -69,16 +69,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         )),
     );
     let state = if configuration.mcp_enabled {
+        let oauth = std::sync::Arc::new(ServerMcpOAuthService::new(
+            database.clone(),
+            configuration.mcp_client_metadata_allowed_hosts,
+        ));
         state.with_mcp(McpEndpoint {
             tools: marginalis_mcp::McpTools::new(std::sync::Arc::new(notes)),
             authenticator: std::sync::Arc::new(ServerMcpAuthenticator::new(
                 database.clone(),
                 mcp_resource_url.to_string(),
             )),
-            oauth: std::sync::Arc::new(ServerMcpOAuthService::new(
-                database,
-                configuration.mcp_client_metadata_allowed_hosts,
-            )),
+            oauth: oauth.clone(),
+            oauth_administration: oauth,
             resource_uri: mcp_resource_url.to_string(),
             metadata_uri: mcp_metadata_url.to_string(),
             authorization_server_uri: mcp_authorization_server_url.to_string(),

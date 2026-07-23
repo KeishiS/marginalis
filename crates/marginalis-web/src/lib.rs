@@ -19,8 +19,9 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases,
-    NoteUseCaseError, NoteUseCases, WebAuthenticationUseCases, WebSession,
+    AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthAdministrationUseCases,
+    McpOAuthUseCaseError, McpOAuthUseCases, NoteUseCaseError, NoteUseCases,
+    WebAuthenticationUseCases, WebSession,
 };
 pub use marginalis_auth_oidc::{
     OidcAuthentication, OidcCallbackError, OidcCallbackRejection, OidcConfiguration,
@@ -52,6 +53,7 @@ pub struct McpEndpoint {
     pub tools: McpTools,
     pub authenticator: Arc<dyn McpAuthenticator>,
     pub oauth: Arc<dyn McpOAuthUseCases>,
+    pub oauth_administration: Arc<dyn McpOAuthAdministrationUseCases>,
     pub resource_uri: String,
     pub metadata_uri: String,
     pub authorization_server_uri: String,
@@ -269,6 +271,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/auth/oidc/callback", get(complete_oidc_login))
         .route("/auth/root/login", post(root_login))
         .route("/auth/logout", post(logout))
+        .route("/api/v1/admin/mcp-clients", post(register_mcp_client))
         .route("/api/v1/admin/users/pending", get(list_pending_users))
         .route(
             "/api/v1/admin/users/{user_id}/activate",
@@ -1057,6 +1060,13 @@ struct PendingOidcUserResponse {
     display_name: String,
 }
 
+#[derive(Deserialize)]
+struct McpClientRegistrationRequest {
+    client_id: String,
+    display_name: String,
+    redirect_uris: Vec<String>,
+}
+
 async fn complete_oidc_login(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -1175,6 +1185,32 @@ async fn activate_pending_user(
         ));
     }
     tracing::info!(user_id = %user_id, "OIDC user activated by root");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn register_mcp_client(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<McpClientRegistrationRequest>,
+) -> Result<StatusCode, ApiError> {
+    let actor = require_root(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    endpoint
+        .oauth_administration
+        .register_client(
+            actor,
+            marginalis_domain::McpOAuthClient {
+                client_id: request.client_id,
+                display_name: request.display_name,
+                redirect_uris: request.redirect_uris,
+            },
+        )
+        .await
+        .map_err(oauth_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1317,8 +1353,9 @@ mod tests {
         response::IntoResponse,
     };
     use marginalis_application::{
-        McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair,
-        OidcIdentityStore, RootCredentialStore, WebSession, WebSessionStore,
+        McpAuthorizationRequest, McpOAuthAdministrationUseCases, McpOAuthUseCaseError,
+        McpOAuthUseCases, McpTokenPair, OidcIdentityStore, RootCredentialStore, WebSession,
+        WebSessionStore,
     };
     use marginalis_domain::{
         Actor, EntityId, McpOAuthClient, OidcIdentity, RegistrationPolicy, UnixMillis, UserId,
@@ -1385,6 +1422,17 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
+    impl McpOAuthAdministrationUseCases for RejectMcpOAuth {
+        async fn register_client(
+            &self,
+            _actor: Actor,
+            _client: McpOAuthClient,
+        ) -> Result<(), McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+    }
+
     #[test]
     fn oidc_configuration_preserves_the_base_url_subpath_in_its_callback() {
         let configuration = OidcConfiguration::new(
@@ -1435,6 +1483,7 @@ mod tests {
                 tools: McpTools::new(notes),
                 authenticator: Arc::new(RejectMcpAuthenticator),
                 oauth: Arc::new(RejectMcpOAuth),
+                oauth_administration: Arc::new(RejectMcpOAuth),
                 resource_uri: "https://example.test/marginalis/mcp".into(),
                 metadata_uri:
                     "https://example.test/marginalis/.well-known/oauth-protected-resource/mcp"
