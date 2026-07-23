@@ -11,6 +11,111 @@ use std::{
 use marginalis_application::{NoteSourceStore, OperationId};
 use marginalis_domain::{EntityId, NoteId, SourceRevision};
 
+/// Marginalisが管理するdata directoryの破壊的format識別子。
+pub const DATA_FORMAT_VERSION: u32 = 1;
+const DATA_FORMAT_FILE: &str = "FORMAT";
+const DATA_FORMAT_CONTENT: &str = "marginalis-data-format=1\n";
+
+/// 正本・SQLite・運用metadataを収容するdata directoryの入口。
+///
+/// markerのない非空directoryは旧formatまたは手動配置とみなし、暗黙移行しない。
+#[derive(Clone, Debug)]
+pub struct StorageLayout {
+    data_directory: PathBuf,
+}
+
+#[derive(Debug)]
+pub enum StorageLayoutError {
+    Io(io::Error),
+    Incompatible(PathBuf),
+}
+
+impl fmt::Display for StorageLayoutError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(error) => write!(formatter, "data directory operation failed: {error}"),
+            Self::Incompatible(path) => write!(
+                formatter,
+                "data directory is not Marginalis data format v{DATA_FORMAT_VERSION}: {}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for StorageLayoutError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Incompatible(_) => None,
+        }
+    }
+}
+
+impl From<io::Error> for StorageLayoutError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl StorageLayout {
+    /// 空directoryをformat v1として初期化し、既存directoryはmarkerが一致する場合だけ開く。
+    pub fn open(data_directory: impl AsRef<Path>) -> Result<Self, StorageLayoutError> {
+        let data_directory = data_directory.as_ref().to_path_buf();
+        fs::create_dir_all(&data_directory)?;
+        let marker = data_directory.join(DATA_FORMAT_FILE);
+        match fs::read_to_string(&marker) {
+            Ok(content) if content == DATA_FORMAT_CONTENT => Ok(Self { data_directory }),
+            Ok(_) => Err(StorageLayoutError::Incompatible(data_directory)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                if fs::read_dir(&data_directory)?.next().is_some() {
+                    return Err(StorageLayoutError::Incompatible(data_directory));
+                }
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(marker)?;
+                file.write_all(DATA_FORMAT_CONTENT.as_bytes())?;
+                file.sync_all()?;
+                drop(file);
+                File::open(&data_directory)?.sync_all()?;
+                Ok(Self { data_directory })
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// backup/restore入力のように、formatを新規作成せず既存markerだけを検証する。
+    pub fn validate_existing(data_directory: impl AsRef<Path>) -> Result<Self, StorageLayoutError> {
+        let data_directory = data_directory.as_ref().to_path_buf();
+        match fs::read_to_string(data_directory.join(DATA_FORMAT_FILE)) {
+            Ok(content) if content == DATA_FORMAT_CONTENT => Ok(Self { data_directory }),
+            Ok(_) => Err(StorageLayoutError::Incompatible(data_directory)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                Err(StorageLayoutError::Incompatible(data_directory))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub fn data_directory(&self) -> &Path {
+        &self.data_directory
+    }
+
+    pub fn database_path(&self) -> PathBuf {
+        self.data_directory.join("marginalis.sqlite")
+    }
+
+    pub fn copy_format_to(&self, destination: impl AsRef<Path>) -> Result<(), StorageLayoutError> {
+        fs::write(
+            destination.as_ref().join(DATA_FORMAT_FILE),
+            DATA_FORMAT_CONTENT,
+        )?;
+        File::open(destination.as_ref())?.sync_all()?;
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub enum FileStoreError {
     Io(io::Error),
@@ -240,6 +345,52 @@ mod tests {
 
     fn note(value: u128) -> NoteId {
         NoteId::new(EntityId::from_uuid_v7(Uuid::from_u128(value | (7 << 76))))
+    }
+
+    #[test]
+    fn storage_layout_initializes_only_an_empty_directory() {
+        let directory = test_directory();
+
+        let layout = StorageLayout::open(&directory).expect("initialize layout");
+
+        assert_eq!(layout.data_directory(), directory);
+        assert_eq!(layout.database_path(), directory.join("marginalis.sqlite"));
+        assert_eq!(
+            fs::read_to_string(directory.join(DATA_FORMAT_FILE)).expect("format marker"),
+            DATA_FORMAT_CONTENT
+        );
+        StorageLayout::validate_existing(&directory).expect("validate initialized layout");
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[test]
+    fn storage_layout_rejects_nonempty_directory_without_marker() {
+        let directory = test_directory();
+        fs::create_dir_all(&directory).expect("create directory");
+        fs::write(directory.join("marginalis.sqlite"), "legacy").expect("write legacy data");
+
+        assert!(matches!(
+            StorageLayout::open(&directory),
+            Err(StorageLayoutError::Incompatible(path)) if path == directory
+        ));
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[test]
+    fn storage_layout_rejects_unknown_marker_version() {
+        let directory = test_directory();
+        fs::create_dir_all(&directory).expect("create directory");
+        fs::write(
+            directory.join(DATA_FORMAT_FILE),
+            "marginalis-data-format=2\n",
+        )
+        .expect("write marker");
+
+        assert!(matches!(
+            StorageLayout::validate_existing(&directory),
+            Err(StorageLayoutError::Incompatible(path)) if path == directory
+        ));
+        fs::remove_dir_all(directory).expect("remove directory");
     }
 
     #[test]

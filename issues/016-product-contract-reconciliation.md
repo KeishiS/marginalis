@@ -1,6 +1,6 @@
 # 016: プロダクト契約と要件定義の再整合
 
-状態: 提案。実装着手前に要件を確定する。
+状態: 完了。
 
 ## 目的
 
@@ -28,3 +28,9 @@
 - 次の優先順位を採用する: REST/MCP実運用、SMTP・OIDCユーザー再有効化・Web UI、招待・グループACL。
 - 現在の`/api/v1`は個人開発の再構成期間に破壊的変更を許容する。OpenAPI導入後に、外部client向けの
   互換性をfreezeする時期を決める。
+
+## 実施結果
+
+- `docs/requirements.md`へcurrent/next/futureのrelease境界を明記した。
+- current releaseをREST/MCP実運用、nextをSMTP・再有効化・Web UI、futureを招待・グループACLとして固定した。
+- `/api/v1`はOpenAPI完成まで破壊的変更を許容し、data formatはv1で固定した。

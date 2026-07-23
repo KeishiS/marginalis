@@ -50,10 +50,11 @@ metadataを持たないclientは、rootが事前登録してから試す。
    ```
 
 2. 永続backup storageと保持世代を決め、`backupDirectory`を設定する。`marginalis-backup.service`を起動後、
-   新しいgenerationに`COMPLETE`、`marginalis.sqlite`、`notes/`があることを確認する。
+   新しいgenerationに`FORMAT`、`MANIFEST`、`COMPLETE`、`marginalis.sqlite`、`notes/`があることを確認する。
 3. 本番dataDirを切り替えず、`marginalis restore --input <generation> --output <新しい絶対path>`を実行する。
    `RESTORED` marker、SQLiteおよび正本が作られることを確認する。実際のdataDir切替は、旧データを
    保持する場所とrollback手順を決めてから行う。
 4. `marginalis-rebuild-projections.service`を実行し、main serviceを再起動してhealth/readinessを再確認する。
+5. `systemctl status marginalis-prune-audit.timer`で、root監査の365日保持timerが有効であることを確認する。
 
 各段階で、失敗時は`X-Request-Id`と`journalctl -u marginalis.service -b --no-pager`を対応付ける。

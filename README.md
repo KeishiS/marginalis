@@ -33,7 +33,7 @@ cargo make verify
 | `MARGINALIS_DATABASE_URL` | 必須 | SQLite接続URL。 |
 | `MARGINALIS_BASE_URL` | 必須 | 公開Base URL。現在は`https://marginalis.sandi05.com`。 |
 | `MARGINALIS_LISTEN_ADDR` | 必須 | HTTP待受アドレス。例: `127.0.0.1:3000`。 |
-| `MARGINALIS_DATA_DIR` | 必須 | AsciiDoc正本とSQLite DBを置く永続ディレクトリ。 |
+| `MARGINALIS_DATA_DIR` | 必須 | AsciiDoc正本、SQLite DB、format v1 markerを置く永続ディレクトリ。空directoryだけを初期化し、markerのない既存directoryは拒否する。 |
 | `MARGINALIS_MCP_ENABLE` | 任意 | `true`の場合だけOAuth保護されたMCP endpointを公開する。既定値は`false`。 |
 | `MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS` | MCP有効時に推奨 | Client ID Metadata Documentを取得してよいHTTPS hostのカンマ区切り一覧。空なら未知clientを取得しない。 |
 | `OIDC_ISSUER_URL` | 必須 | OIDC issuer。Kanidmのclientごとのissuerとして`https://id.sandi05.com/oauth2/openid/marginalis`を設定する。 |
@@ -67,9 +67,9 @@ OIDC認可要求は`openid profile email` scopeとAuthorization Code Flow、PKCE
 
 ## 再基線化とデータ初期化
 
-REST APIとMCPを共通のapplication層へ接続する再基線化では、既存のdataDirを移行しない。既存
-データの破棄は、サービス停止後に運用者が明示して行う。通常の起動、`nixos-rebuild`および
-Marginalis自身がdataDirを自動削除することはない。NixOSでの正確な手順は
+REST APIとMCPを共通のapplication層へ接続する再基線化では、既存のdataDirを移行しない。data format v1は
+`FORMAT` markerを持つdirectoryだけを受理する。既存データの破棄は、サービス停止後に運用者が明示して行う。
+通常の起動、`nixos-rebuild`およびMarginalis自身がdataDirを自動削除することはない。NixOSでの正確な手順は
 [NixOS運用](docs/nixos.md#api-first再基線化時の初期化)を参照する。
 
 ## MCP

@@ -50,10 +50,11 @@ HTTP REST       MCP transport       maintenance CLI
 - `marginalis-asciidoc`: AdocWeaveを使うノートprofile、解析、投影、描画入力。DB・HTTP・認証を
   持たない。
 - `marginalis-sqlite`: sqlx migration、Repository実装、操作ジャーナル、検索・グラフ投影。
-- `marginalis-files`: datadirのパス規則、原子的置換、revision hash、ファイル操作の復旧補助。
+- `marginalis-files`: data format v1 marker、datadirのパス規則、原子的置換、revision hash、
+  ファイル操作の復旧補助。
 - `marginalis-auth-oidc`: OIDC Discovery・code exchange・ID Token検証。Web sessionはapplication
   portを通じて発行する。
-- `marginalis-server`: 設定型、Clock/Random、SQLite/files/AsciiDoc/OIDCをapplication portへ接続する
+- `marginalis-server`: `StorageConfig`とHTTP/OIDC設定型、Clock/Random、SQLite/files/AsciiDoc/OIDCをapplication portへ接続する
   server adapter。transportの業務判断を持たない。
 - `marginalis-service`: 実行バイナリ。設定読込、依存組立、tracing初期化とHTTP listenを一箇所に集める
   composition root。NixOS packageはこのcrateのbinaryを`marginalis`として公開する。
@@ -81,25 +82,28 @@ HTTP REST       MCP transport       maintenance CLI
 - root sessionはMCP clientの認可を作れず、root actorをMCP Bearer tokenとして認証しない。
 - Client ID Metadata Documentは、NixOS設定で許可されたHTTPS hostだけから取得する。取得値はclient IDの
   完全一致、サイズ上限、redirect URI policyを検証してからSQLiteへ保存する。
-- 新基線のDB schemaはversion管理し、空DB作成をCIで検証する。旧dataDirは移行せず、旧versionは
-  明確に拒否する。
+- data formatはv1である。空directoryは`FORMAT` markerとともに初期化し、markerのない非空directoryまたは
+  未知のmarkerは起動・maintenance・restore入力で明確に拒否する。SQLite migrationはv1の内部schema revisionであり、
+  markerのない旧deploymentを暗黙移行しない。
 - `rebuild-projections`保守操作は、全AsciiDoc正本を検証してから一つのSQLite transactionで検索・
   anchor・xref投影を置換する。検証失敗時は最後に成功した投影を保持し、既存ACLは維持する。
 - `backup`保守操作はHTTP service停止中にSQLiteをcheckpointしてbackup fileへ出力し、検証済みの
-  AsciiDoc正本だけを同じ出力directoryへ複製する。既存backupは上書きせず、完了markerのある一組だけを
-  復元候補とする。
-- `restore`保守操作はbackup SQLiteの`integrity_check`と全正本を検証してから、既存dataDirを変更せず
+  AsciiDoc正本だけを同じ出力directoryへ複製する。`FORMAT`、`MANIFEST`、`COMPLETE`がそろい、manifestの
+  SQLite・各正本SHA-256が一致する一組だけを復元候補とする。既存backupは上書きしない。
+- `restore`保守操作はformat marker、manifest hash、backup SQLiteの`integrity_check`と全正本を検証してから、既存dataDirを変更せず
   新しいdataDir候補を作る。実際のdataDir切替・旧データ削除は運用者が明示して行う。
 - 時刻はUTC epoch milliseconds、IDは型付きUUIDv7、外部入力は境界で検証する。
 
 ## 設定と起動
 
-`ServerConfig`を一箇所で検証し、環境変数、NixOS moduleおよび将来のCLIはこの型へ変換する。
+HTTP serviceは`ServerConfig`を一箇所で検証し、環境変数、NixOS moduleおよび将来のCLIはこの型へ変換する。
 設定にはBase URL、listen address、data directory、SQLite URL、OIDC公開設定、新規DB専用の登録ポリシー、
 session期限を含める。secretは別の`SecretConfig`で受け、NixOSではsystemd credentialから渡す。
 運用中の登録policyはSQLiteを正本とし、root APIで変更する。NixOS設定は既存DBへ再適用しない。
+`backup`、`rebuild-projections`および`prune-audit`は`StorageConfig`だけを読み、Base URL、OIDC issuerおよび
+client secretを必要としない。
 
-起動順は、設定検証、migration、datadir検証、root初期化、未完了ジャーナル復旧、OIDC client
+起動順は、設定検証、data format検証、migration、root初期化、未完了ジャーナル復旧、OIDC client
 初期化、HTTP listenとする。OIDC Discoveryが一時的に失敗してもserviceはroot緊急ログインだけを
 有効にして起動する。この間のOIDC loginは`503`相当の安全な失敗となり、IdP復旧後はserviceを再起動して
 Discoveryを再実行する。

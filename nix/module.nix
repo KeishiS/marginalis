@@ -236,20 +236,10 @@ in
       conflicts = [ "marginalis.service" ];
       environment = {
         RUST_LOG = cfg.logFilter;
-        MARGINALIS_BASE_URL = cfg.baseUrl;
-        MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
         MARGINALIS_DATA_DIR = cfg.dataDir;
         MARGINALIS_DATABASE_URL =
           if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
         MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
-        OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
-        OIDC_CLIENT_ID = cfg.oidc.clientId;
-        OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
-        MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
-        MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.mcp.clientMetadataAllowedHosts;
-      }
-      // optionalAttrs (cfg.initialRootPasswordFile != null) {
-        ROOT_PASSWORD_FILE = "%d/root-password";
       };
       serviceConfig = {
         Type = "oneshot";
@@ -257,12 +247,6 @@ in
         User = "marginalis";
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
-        LoadCredential = [
-          "oidc-client-secret:${cfg.oidc.clientSecretFile}"
-        ]
-        ++ optionals (cfg.initialRootPasswordFile != null) [
-          "root-password:${cfg.initialRootPasswordFile}"
-        ];
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectHome = true;
@@ -275,6 +259,44 @@ in
       };
     };
 
+    # root監査は365日保持する。HTTP serverの再起動時ではなく、専用timerで期限切れ行を掃除する。
+    systemd.services.marginalis-prune-audit = {
+      description = "Prune Marginalis root audit records older than one year";
+      environment = {
+        RUST_LOG = cfg.logFilter;
+        MARGINALIS_DATA_DIR = cfg.dataDir;
+        MARGINALIS_DATABASE_URL =
+          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
+        MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${cfg.package}/bin/marginalis prune-audit";
+        User = "marginalis";
+        Group = "marginalis";
+        WorkingDirectory = cfg.dataDir;
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectHome = true;
+        ProtectSystem = "strict";
+        ReadWritePaths = [ cfg.dataDir ];
+      }
+      // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
+        StateDirectory = "marginalis";
+        StateDirectoryMode = "0750";
+      };
+    };
+
+    systemd.timers.marginalis-prune-audit = {
+      description = "Run Marginalis root audit retention daily";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "daily";
+        Persistent = true;
+        Unit = "marginalis-prune-audit.service";
+      };
+    };
+
     # backup先は運用者が永続storageとretentionを決めてから明示する。timerは提供しない。
     # このunitはHTTP serverと競合させ、SQLiteとAsciiDoc正本を同じ停止期間に取得する。
     systemd.services.marginalis-backup = mkIf (cfg.backupDirectory != null) {
@@ -282,20 +304,10 @@ in
       conflicts = [ "marginalis.service" ];
       environment = {
         RUST_LOG = cfg.logFilter;
-        MARGINALIS_BASE_URL = cfg.baseUrl;
-        MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
         MARGINALIS_DATA_DIR = cfg.dataDir;
         MARGINALIS_DATABASE_URL =
           if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
         MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
-        OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
-        OIDC_CLIENT_ID = cfg.oidc.clientId;
-        OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
-        MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
-        MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.mcp.clientMetadataAllowedHosts;
-      }
-      // optionalAttrs (cfg.initialRootPasswordFile != null) {
-        ROOT_PASSWORD_FILE = "%d/root-password";
       };
       serviceConfig = {
         Type = "oneshot";
@@ -303,12 +315,6 @@ in
         User = "marginalis";
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
-        LoadCredential = [
-          "oidc-client-secret:${cfg.oidc.clientSecretFile}"
-        ]
-        ++ optionals (cfg.initialRootPasswordFile != null) [
-          "root-password:${cfg.initialRootPasswordFile}"
-        ];
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectHome = true;

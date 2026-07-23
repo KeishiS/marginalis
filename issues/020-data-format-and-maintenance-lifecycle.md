@@ -1,6 +1,6 @@
 # 020: data format v1とmaintenance lifecycle
 
-状態: 提案。
+状態: 完了。
 
 ## 目的
 
@@ -27,3 +27,12 @@ AsciiDoc正本、SQLite投影・identity・session・audit、backupおよびrest
 
 - 既存deploymentを破棄できる前提で、format v1以前はmigrationせず拒否する。
 - backupの保持世代、保存先、off-site複製、暗号化をどの運用手段で担うか。
+
+## 実施結果
+
+- 空のdata directoryだけを`FORMAT` marker付きdata format v1として初期化し、markerのない非空directoryと
+  未知versionを起動・maintenance・restore入力で拒否する。
+- backupには`FORMAT`、`MANIFEST`、`COMPLETE`を加え、作成時刻、SQLiteと全正本のSHA-256を記録・照合する。
+- restoreは`format確認 → manifest照合 → SQLite integrity → AsciiDoc検証 → 新directoryへのstage`で実行する。
+- root監査の365日保持は起動時副作用から`prune-audit` maintenance commandと日次NixOS timerへ移した。
+- backup保存先、世代数、off-site複製および暗号化は、data formatの互換性契約ではなく配備ごとの運用policyとする。

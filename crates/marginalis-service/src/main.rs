@@ -2,15 +2,19 @@
 
 use marginalis_application::{Clock, RootCredentialStore, RootInitializationService};
 use marginalis_asciidoc::parse_note_projection;
+use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_domain::UnixMillis;
-use marginalis_files::FileNoteStore;
+use marginalis_files::{FileNoteStore, StorageLayout};
 use marginalis_server::{
     ServerConfig, ServerMcpAuthenticator, ServerMcpOAuthService, ServerNoteUseCases,
-    ServerWebAuthenticationUseCases, SystemClock, SystemRandom,
+    ServerWebAuthenticationUseCases, StorageConfig, SystemClock, SystemRandom,
 };
 use marginalis_sqlite::SqliteDatabase;
-use marginalis_web::{ApiState, McpEndpoint, OidcAuthentication, OidcConfiguration, router};
-use std::path::{Path, PathBuf};
+use marginalis_web::{ApiState, McpEndpoint, router};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -21,10 +25,11 @@ async fn main() {
     let result = match command.as_deref() {
         None | Some("serve") => run().await,
         Some("rebuild-projections") => rebuild_projections().await,
+        Some("prune-audit") => prune_audit().await,
         Some("backup") => backup(arguments).await,
         Some("restore") => restore(arguments).await,
         Some(_) => Err(
-            "usage: marginalis [serve|rebuild-projections|backup (--output <absolute-directory>|--directory <absolute-directory>)|restore --input <backup-directory> --output <new-data-directory>]"
+            "usage: marginalis [serve|rebuild-projections|prune-audit|backup (--output <absolute-directory>|--directory <absolute-directory>)|restore --input <backup-directory> --output <new-data-directory>]"
                 .into(),
         ),
     };
@@ -73,19 +78,22 @@ async fn backup(
 }
 
 async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let (configuration, _) = ServerConfig::from_environment()?;
+    let configuration = StorageConfig::from_environment()?;
+    let layout = StorageLayout::open(&configuration.data_dir)?;
     let database = SqliteDatabase::connect_with_initial_registration_policy(
         &configuration.database_url,
         configuration.initial_registration_policy,
     )
     .await?;
-    let sources = FileNoteStore::open(&configuration.data_dir)?;
+    let sources = FileNoteStore::open(layout.data_directory())?;
     let database_path = output.join("marginalis.sqlite");
     let database_path = database_path
         .to_str()
         .ok_or("backup output directory must be valid UTF-8")?;
     database.backup_to(database_path).await?;
     let note_count = sources.copy_sources_to(output)?;
+    layout.copy_format_to(output)?;
+    write_backup_manifest(output, SystemClock.now())?;
     std::fs::write(output.join("COMPLETE"), "Marginalis backup format 1\n")?;
     tracing::info!(output = %output.display(), note_count, "backup completed");
     Ok(())
@@ -130,6 +138,7 @@ async fn restore_into(
     backup: &Path,
     data_directory: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    StorageLayout::validate_existing(backup)?;
     let marker = std::fs::read_to_string(backup.join("COMPLETE"))?;
     if marker != "Marginalis backup format 1\n" {
         return Err("backup COMPLETE marker is missing or unsupported".into());
@@ -140,6 +149,7 @@ async fn restore_into(
             "backup does not contain the required SQLite database and notes directory".into(),
         );
     }
+    verify_backup_manifest(backup)?;
     SqliteDatabase::validate_backup_file(&database).await?;
     let sources = FileNoteStore::open(backup)?;
     for (note_id, source) in sources.list_sources()? {
@@ -151,12 +161,13 @@ async fn restore_into(
         }
     }
 
-    std::fs::create_dir(data_directory)?;
+    let layout = StorageLayout::open(data_directory)?;
     let result = restore_into_validated(backup, data_directory);
     if let Err(error) = result {
         tracing::error!(output = %data_directory.display(), error = %error, "restore preparation failed; incomplete output was retained");
         return Err(error);
     }
+    debug_assert_eq!(layout.data_directory(), data_directory);
     tracing::info!(input = %backup.display(), output = %data_directory.display(), "restore preparation completed");
     Ok(())
 }
@@ -178,20 +189,121 @@ fn restore_into_validated(
     Ok(())
 }
 
+/// backupのformatと内容を、復元前に機械的に検証できる固定manifestへ記録する。
+///
+/// `SourceRevision`はSHA-256のhex表現なので、SQLiteと正本の同一性確認にも再利用する。
+fn write_backup_manifest(
+    backup: &Path,
+    created_at: UnixMillis,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let database = std::fs::read(backup.join("marginalis.sqlite"))?;
+    let sources = FileNoteStore::open(backup)?;
+    let mut manifest = format!(
+        "marginalis-backup-format=1\ncreated-at-ms={}\ndatabase-sha256={}\n",
+        created_at.get(),
+        marginalis_domain::SourceRevision::from_source(&database).to_hex()
+    );
+    for (note_id, source) in sources.list_sources()? {
+        manifest.push_str(&format!(
+            "note-sha256={note_id} {}\n",
+            marginalis_domain::SourceRevision::from_source(&source).to_hex()
+        ));
+    }
+    std::fs::write(backup.join("MANIFEST"), manifest)?;
+    std::fs::File::open(backup)?.sync_all()?;
+    Ok(())
+}
+
+fn verify_backup_manifest(backup: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let manifest = std::fs::read_to_string(backup.join("MANIFEST"))?;
+    let mut lines = manifest.lines();
+    if lines.next() != Some("marginalis-backup-format=1") {
+        return Err("backup manifest format is missing or unsupported".into());
+    }
+    let created_at = lines
+        .next()
+        .and_then(|line| line.strip_prefix("created-at-ms="))
+        .ok_or("backup manifest creation time is missing")?;
+    created_at
+        .parse::<i64>()
+        .map_err(|_| "backup manifest creation time is invalid")?;
+    let expected_database = lines
+        .next()
+        .and_then(|line| line.strip_prefix("database-sha256="))
+        .ok_or("backup manifest database hash is missing")?;
+    let actual_database = marginalis_domain::SourceRevision::from_source(&std::fs::read(
+        backup.join("marginalis.sqlite"),
+    )?)
+    .to_hex();
+    if expected_database != actual_database {
+        return Err("backup database does not match its manifest".into());
+    }
+
+    let mut expected_notes = BTreeMap::new();
+    for line in lines {
+        let entry = line
+            .strip_prefix("note-sha256=")
+            .ok_or("backup manifest contains an unknown entry")?;
+        let (note_id, revision) = entry
+            .split_once(' ')
+            .ok_or("backup manifest note entry is invalid")?;
+        if note_id.is_empty()
+            || revision.len() != 64
+            || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || expected_notes
+                .insert(note_id.to_owned(), revision.to_owned())
+                .is_some()
+        {
+            return Err("backup manifest note entry is invalid".into());
+        }
+    }
+    let sources = FileNoteStore::open(backup)?;
+    let actual_notes = sources
+        .list_sources()?
+        .into_iter()
+        .map(|(note_id, source)| {
+            (
+                note_id.to_string(),
+                marginalis_domain::SourceRevision::from_source(&source).to_hex(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    if expected_notes != actual_notes {
+        return Err("backup canonical sources do not match their manifest".into());
+    }
+    Ok(())
+}
+
 /// 停止中のserviceに対して実行する、正本からのSQLite投影再構築コマンド。
 async fn rebuild_projections() -> Result<(), Box<dyn std::error::Error>> {
-    let (configuration, _) = ServerConfig::from_environment()?;
-    std::fs::create_dir_all(&configuration.data_dir)?;
+    let configuration = StorageConfig::from_environment()?;
+    let layout = StorageLayout::open(&configuration.data_dir)?;
     let database = SqliteDatabase::connect_with_initial_registration_policy(
         &configuration.database_url,
         configuration.initial_registration_policy,
     )
     .await?;
-    let sources = FileNoteStore::open(&configuration.data_dir)?;
+    let sources = FileNoteStore::open(layout.data_directory())?;
     let notes = ServerNoteUseCases::new(database, sources);
     notes.recover().await?;
     let count = notes.rebuild_projections().await?;
     tracing::info!(count, "note projections rebuilt from canonical sources");
+    Ok(())
+}
+
+/// root監査を365日で保持する定期maintenance command。
+async fn prune_audit() -> Result<(), Box<dyn std::error::Error>> {
+    let configuration = StorageConfig::from_environment()?;
+    StorageLayout::open(&configuration.data_dir)?;
+    let database = SqliteDatabase::connect_with_initial_registration_policy(
+        &configuration.database_url,
+        configuration.initial_registration_policy,
+    )
+    .await?;
+    let retention_ms = 365_i64 * 24 * 60 * 60 * 1_000;
+    let cutoff = UnixMillis::new(SystemClock.now().get().saturating_sub(retention_ms));
+    let purged = database.purge_root_audit_before(cutoff).await?;
+    tracing::info!(purged, "expired root audit records purged");
     Ok(())
 }
 
@@ -207,20 +319,13 @@ fn initialize_tracing() {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (configuration, secrets) = ServerConfig::from_environment()?;
-    std::fs::create_dir_all(&configuration.data_dir)?;
+    let layout = StorageLayout::open(&configuration.data_dir)?;
     let database = SqliteDatabase::connect_with_initial_registration_policy(
         &configuration.database_url,
         configuration.initial_registration_policy,
     )
     .await?;
-    // root監査は365日保持する。古い行だけを起動時に掃除し、通常のHTTP APIからは公開しない。
-    let retention_ms = 365_i64 * 24 * 60 * 60 * 1_000;
-    let cutoff = UnixMillis::new(SystemClock.now().get().saturating_sub(retention_ms));
-    let purged = database.purge_root_audit_before(cutoff).await?;
-    if purged > 0 {
-        tracing::info!(purged, "expired root audit records purged");
-    }
-    let sources = FileNoteStore::open(&configuration.data_dir)?;
+    let sources = FileNoteStore::open(layout.data_directory())?;
     let notes = ServerNoteUseCases::new(database.clone(), sources);
     notes.recover().await?;
     let root_store = database.root_credential_store();
@@ -315,6 +420,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("marginalis-restore-{}", Uuid::now_v7()));
         let backup = root.join("backup");
         let output = root.join("restored");
+        StorageLayout::open(&backup).expect("initialize backup layout");
         fs::create_dir_all(backup.join("notes")).expect("create backup");
         let database_source = root.join("source.sqlite");
         let database = SqliteDatabase::connect(&format!("sqlite:{}", database_source.display()))
@@ -338,6 +444,7 @@ mod tests {
             ),
         )
         .expect("write note");
+        write_backup_manifest(&backup, UnixMillis::new(0)).expect("write manifest");
         fs::write(backup.join("COMPLETE"), "Marginalis backup format 1\n").expect("marker");
 
         restore_into(&backup, &output).await.expect("restore");
@@ -352,7 +459,31 @@ mod tests {
             fs::read_to_string(output.join("RESTORED")).expect("restore marker"),
             "Marginalis restore format 1\n"
         );
+        StorageLayout::validate_existing(&output).expect("restored format marker");
         assert!(backup.join("marginalis.sqlite").is_file());
+        fs::remove_dir_all(root).expect("remove test files");
+    }
+
+    #[test]
+    fn backup_manifest_rejects_changed_canonical_source() {
+        let root = std::env::temp_dir().join(format!("marginalis-manifest-{}", Uuid::now_v7()));
+        StorageLayout::open(&root).expect("initialize layout");
+        fs::write(root.join("marginalis.sqlite"), "not a database").expect("write database");
+        let note_id = "01800000-0000-7000-8000-000000000096";
+        fs::create_dir_all(root.join("notes")).expect("create notes");
+        fs::write(
+            root.join("notes").join(format!("{note_id}.adoc")),
+            "= Original\n",
+        )
+        .expect("write source");
+        write_backup_manifest(&root, UnixMillis::new(0)).expect("write manifest");
+        fs::write(
+            root.join("notes").join(format!("{note_id}.adoc")),
+            "= Changed\n",
+        )
+        .expect("change source");
+
+        assert!(verify_backup_manifest(&root).is_err());
         fs::remove_dir_all(root).expect("remove test files");
     }
 }

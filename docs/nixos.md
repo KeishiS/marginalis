@@ -125,13 +125,14 @@ sudo systemctl start marginalis-backup.service
 sudo systemctl start marginalis.service
 ```
 
-成功した各generationには`marginalis.sqlite`、`notes/<UUID>.adoc`および`COMPLETE` markerが含まれる。
-同じ出力pathが既に存在する場合は上書きせず失敗する。失敗した場合も不完全な出力を残すため、`COMPLETE`
-のないdirectoryを復元に使用してはならない。個別の出力pathを指定する手動実行には
+成功した各generationには`FORMAT`、`marginalis.sqlite`、`notes/<UUID>.adoc`、`MANIFEST`および`COMPLETE`
+markerが含まれる。`MANIFEST`はformat v1、作成時刻、SQLiteと全正本のSHA-256を記録する。同じ出力pathが
+既に存在する場合は上書きせず失敗する。失敗した場合も不完全な出力を残すため、これらが揃わないdirectoryを
+復元に使用してはならない。個別の出力pathを指定する手動実行には
 `marginalis backup --output /absolute/path`を使う。
 
-復元時は、まず`marginalis restore --input <COMPLETEのあるbackup> --output <存在しない絶対path>`で、
-SQLiteの`integrity_check`、全正本のUTF-8・ノートprofile・ファイル名とのnote ID一致を確認する。この
+復元時は、まず`marginalis restore --input <完全なbackup> --output <存在しない絶対path>`で、format marker、
+manifest hash、SQLiteの`integrity_check`、全正本のUTF-8・ノートprofile・ファイル名とのnote ID一致を確認する。この
 commandは既存`dataDir`を変更せず、検証済みSQLiteと正本を新しい出力directoryへ複製して`RESTORED`
 markerを作る。
 

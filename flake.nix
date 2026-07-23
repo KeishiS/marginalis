@@ -84,7 +84,6 @@
               probeServer = pkgs.writeShellApplication {
                 name = "marginalis";
                 text = ''
-                  test -s "$OIDC_CLIENT_SECRET_FILE"
                   test -d "$MARGINALIS_DATA_DIR"
                   test "$MARGINALIS_INITIAL_REGISTRATION_POLICY" = open
                   test "$RUST_LOG" = "info,marginalis_auth_oidc=info"
@@ -92,11 +91,16 @@
                     touch "$MARGINALIS_DATA_DIR/projections-rebuilt"
                     exit 0
                   fi
+                  if [ "''${1-}" = "prune-audit" ]; then
+                    touch "$MARGINALIS_DATA_DIR/audit-pruned"
+                    exit 0
+                  fi
                   if [ "''${1-}" = "backup" ] && [ "''${2-}" = "--directory" ]; then
                     test "$3" = "/var/lib/marginalis-backups/test"
                     touch "$3/backup-created"
                     exit 0
                   fi
+                  test -s "$OIDC_CLIENT_SECRET_FILE"
                   touch "$MARGINALIS_DATA_DIR/service-started"
                   exec sleep infinity
                 '';
@@ -138,6 +142,8 @@
                 machine.succeed("systemctl start marginalis-backup.service")
                 machine.succeed("test -f /var/lib/marginalis-backups/test/backup-created")
                 machine.succeed("systemctl show -p ActiveState --value marginalis.service | grep -qx inactive")
+                machine.succeed("systemctl start marginalis-prune-audit.service")
+                machine.succeed("test -f /var/lib/marginalis/audit-pruned")
               '';
             };
         }

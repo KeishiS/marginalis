@@ -1280,6 +1280,17 @@ pub struct ServerConfig {
     pub mcp_client_metadata_allowed_hosts: Vec<String>,
 }
 
+/// SQLiteとAsciiDoc正本だけを扱うmaintenance command向けの設定境界。
+///
+/// backupおよびprojection再構築はHTTP listener・OIDC client・secretを必要としないため、
+/// `ServerConfig`を読まずこの型だけを利用する。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageConfig {
+    pub data_dir: PathBuf,
+    pub database_url: String,
+    pub initial_registration_policy: RegistrationPolicy,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OidcPublicConfig {
     pub issuer_url: Url,
@@ -1344,19 +1355,16 @@ impl ServerConfig {
         if client_id.is_empty() {
             return Err(ConfigurationError::EmptyClientId);
         }
-        let data_dir = PathBuf::from(required("MARGINALIS_DATA_DIR")?);
-        if data_dir.as_os_str().is_empty() {
-            return Err(ConfigurationError::EmptyDataDirectory);
-        }
+        let storage = StorageConfig::from_environment()?;
         let listen_address = required("MARGINALIS_LISTEN_ADDR")?
             .parse()
             .map_err(|_| ConfigurationError::InvalidListenAddress)?;
         let configuration = Self {
             base_url,
             listen_address,
-            data_dir,
-            database_url: required("MARGINALIS_DATABASE_URL")?,
-            initial_registration_policy: optional_initial_registration_policy()?,
+            data_dir: storage.data_dir,
+            database_url: storage.database_url,
+            initial_registration_policy: storage.initial_registration_policy,
             oidc: OidcPublicConfig {
                 issuer_url,
                 client_id,
@@ -1371,6 +1379,20 @@ impl ServerConfig {
             initial_root_password: optional_secret("ROOT_PASSWORD")?,
         };
         Ok((configuration, secrets))
+    }
+}
+
+impl StorageConfig {
+    pub fn from_environment() -> Result<Self, ConfigurationError> {
+        let data_dir = PathBuf::from(required("MARGINALIS_DATA_DIR")?);
+        if data_dir.as_os_str().is_empty() {
+            return Err(ConfigurationError::EmptyDataDirectory);
+        }
+        Ok(Self {
+            data_dir,
+            database_url: required("MARGINALIS_DATABASE_URL")?,
+            initial_registration_policy: optional_initial_registration_policy()?,
+        })
     }
 }
 

@@ -25,10 +25,6 @@ use marginalis_application::{
     McpOAuthUseCaseError, McpOAuthUseCases, NoteUseCaseError, NoteUseCases,
     WebAuthenticationUseCases, WebSession,
 };
-pub use marginalis_auth_oidc::{
-    OidcAuthentication, OidcCallbackError, OidcCallbackRejection, OidcConfiguration,
-    OidcConfigurationError, OidcDiscoveryError, OidcLoginStartError,
-};
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePage, NotePermission, NoteSummary, OidcLoginResult, OidcUser,
     SourceRevision, UserId,
@@ -1673,6 +1669,7 @@ mod tests {
         McpOAuthUseCases, McpTokenPair, OidcIdentityStore, RootCredentialStore, WebSession,
         WebSessionStore,
     };
+    use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
     use marginalis_domain::{
         Actor, EntityId, McpClientAuthorization, McpOAuthClient, OidcIdentity, RegistrationPolicy,
         UnixMillis, UserId,
@@ -1682,8 +1679,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, OidcConfiguration,
-        OidcConfigurationError, REQUEST_ID_HEADER, RootLoginRateLimiter, router,
+        ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, REQUEST_ID_HEADER,
+        RootLoginRateLimiter, router,
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
     use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
