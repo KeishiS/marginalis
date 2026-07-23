@@ -58,6 +58,36 @@
 - migration／rebuild／障害復旧の運用手順。
 - 実装を分割する後続issueと、各issueの検証計画。
 
+## 2026-07-23時点の判断
+
+### 検索投影
+
+- 初期検索はSQLite FTS5を採用する。AdocWeaveの`searchable_text` projectionを本文の基礎とし、
+  profileで許可したsource blockとLaTeX数式を含める。生のAsciiDoc属性・マクロ記法は索引しない。
+- SQLite queryは`note_search`の候補に対し、同じSQL statementで`note_acl`の`EXISTS`を適用する。
+  不可視ノートを候補数、順位、cursorまたは本文断片へ含めない。
+- 初期のREST/MCP検索結果はnote IDとtitleだけとする。本文、snippet、scoreは返さない。検索結果の
+  cursorはACL filter後の結果集合だけを進める。
+- FTS5は同期投影とする。`NoteWriteService`が正本を書き込み、operation journalで投影更新を復旧する。
+  ベクトル検索、外部検索サービス、非同期outboxは初期公開の範囲外とする。
+
+### MCP認証・transport
+
+- Streamable HTTPの単一`/mcp` endpointを採用する。POSTはJSON-RPC requestを受け、GETは通知streamが
+  必要になるまで`405`を返す。初期toolは`search_notes`と`get_note`だけとする。
+- MCP resource serverはRFC 9728 Protected Resource Metadataを提供する。未認証の`/mcp` requestは
+  `401`と`WWW-Authenticate` headerでmetadata URLを示す。
+- OAuth Authorization ServerはMarginalisが担当し、外部Kanidmは利用者の本人認証だけに使う。access/
+  refresh tokenはopaque random valueを発行し、DBにはhashだけを置く。Web session Cookieとroot sessionは
+  MCPで受理しない。
+- Authorization Code + PKCE S256、resource indicator、Client ID Metadata Documents、HTTPSまたは
+  loopback redirect URI完全一致検証を初期境界とする。Dynamic Client RegistrationとDevice Flowは後続に
+  追加可能なportとして分離する。
+- MCP endpointでは、存在する`Origin`をBase URLのoriginと照合して拒否する。各Bearer tokenはMCP
+  canonical resource URIとscopeを照合し、root actorへは発行・認証しない。
+
+この判断はMCP Authorization SpecificationおよびStreamable HTTP transportの2025-11-25版に基づく。
+
 ## 完了条件
 
 - 正本、検索投影、MCPの責務境界が明文化されている。
