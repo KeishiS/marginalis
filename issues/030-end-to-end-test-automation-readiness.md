@@ -1,6 +1,6 @@
 # 030: E2Eテスト自動化の準備と実装
 
-状態: RC.1 リリース後、早期に着手。
+状態: v0.1.0 後の最優先（roadmap 段階 1）。2026-07-23 の決定方針に沿って実装中。
 
 ## 目的
 
@@ -59,9 +59,10 @@ E2E実装を開始する前に、次の五項目を決定し、このIssueの実
 - 失敗時のtrace、server log、request IDおよび必要最小限の非秘密artifactを取得できる。
 - 自動E2Eと手動実環境受入の責務分担が`docs/acceptance.md`とrelease gateに反映される。
 
-## 2026-07-23 事前調査と推奨案（承認待ち）
+## 2026-07-23 事前調査と決定
 
-「着手前に決める事項」の五項目について、調査結果と推奨案を記す。採否の決定は運用者が行う。
+「着手前に決める事項」の五項目について、調査結果と決定を記す。v0.1.0 リリース後の roadmap
+進行に伴い下記推奨案を採用した。実装で支障が判明した場合は、この節を更新して方針を見直す。
 
 ### 前提の確認結果
 
@@ -72,7 +73,7 @@ E2E実装を開始する前に、次の五項目を決定し、このIssueの実
 - 既存のrelease gateはNixOS VM test（module評価、maintenance lifecycle、実binaryの縮退起動）を
   含み、E2Eを同じ`nix flake check`系へ載せる下地がある。
 
-### 推奨案
+### 決定した方針
 
 1. **実行基盤**: 二層構成とする。
    - 第一層: `marginalis-integration-tests` crate（Issue 021の項目3）で、browserなしの
@@ -97,10 +98,10 @@ E2E実装を開始する前に、次の五項目を決定し、このIssueの実
    authorization code・client secretはtestScriptで生成した使い捨て値のみであり、実secretは
    一切CIへ入れない。念のためartifact収集前に`Set-Cookie`値と`code=`パラメータをmaskする。
 
-### 運用者の決定が必要な点
+### 付随する決定
 
-- 上記1〜5の採否（特に、mock IdPではなく実KanidmをVMで使う方針）。
-- VM E2Eをrelease gate必須にするか、別workflow（nightly等）から始めるか。VM＋browserは
-  実行時間が長く、まず非必須で安定させてから必須化する段階導入を推奨する。
-- Kanidm versionの追従方針（`kanidm_1_9`固定か、nixpkgs更新へ追従か）。本番Kanidmの
-  versionと合わせることを推奨する。
+- VM E2Eはまずrelease gate非必須の別checkとして安定させ、その後に必須へ昇格する段階導入と
+  する。
+- Kanidm versionは本番と同系列の`kanidm_1_9`へ固定し、本番のversion更新に追従して上げる。
+- 実装順序: 第一層（`marginalis-integration-tests` crateのin-process試験）を先に整備し、
+  第二層（NixOS VM＋Playwright）はKVMを利用できる環境で検証しながら追加する。
