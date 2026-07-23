@@ -19,6 +19,7 @@ url.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-auth-oidc = { path = "../marginalis-auth-oidc" }
 marginalis-files = { path = "../marginalis-files" }
+marginalis-mcp = { path = "../marginalis-mcp" }
 marginalis-server = { path = "../marginalis-server" }
 marginalis-sqlite = { path = "../marginalis-sqlite" }
 marginalis-web = { path = "../marginalis-web" }

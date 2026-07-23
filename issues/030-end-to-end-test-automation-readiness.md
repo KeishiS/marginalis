@@ -112,9 +112,12 @@ E2E実装を開始する前に、次の五項目を決定し、このIssueの実
     `404`と検索からの消失（シナリオ2）。
   - 二利用者間のACL非漏洩: 他者の非公開ノートはsource取得`404`かつ検索結果に現れない
     （シナリオ2）。
-- 未実装として残る範囲: MCP OAuth flowのHTTP試験（`marginalis-web`のtestが一部をカバー済み）、
-  REST/MCP可視性一致（シナリオ3）、subpath・reverse proxy・CSRF失敗経路（シナリオ4、主に
-  第二層）、backup/restore lifecycle（シナリオ5、既存VM testの拡張）。
+  - MCP OAuth（Authorization Code + PKCE）のHTTP flowと、REST/MCPの検索可視性一致
+    （シナリオ3）。
+  - CSRF token・Origin・Fetch Metadataの欠落・不一致がすべて`403`となる失敗経路
+    （シナリオ4のapplication側）。
+- 未実装として残る範囲: subpath・reverse proxy・TLSを通す経路（シナリオ4の残り、第二層）、
+  backup/restore lifecycle（シナリオ5、既存VM testの拡張）、認可取消後のtoken失効のHTTP試験。
 
 第二層（NixOS VM＋実Kanidm＋Playwright）の実装・検証にはKVMが必要である。現在の開発環境には
 KVMがないため、KVMを利用できる環境での作業として残す。

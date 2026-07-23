@@ -9,15 +9,19 @@ use axum::{
     extract::ConnectInfo,
     http::{Request, Response, StatusCode, header},
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::RootInitializationService;
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_files::FileNoteStore;
 use marginalis_integration_tests::MockIdentityProvider;
+use marginalis_mcp::McpTools;
 use marginalis_server::{
-    ServerNoteUseCases, ServerWebAuthenticationUseCases, SystemClock, SystemRandom,
+    ServerMcpAuthenticator, ServerMcpOAuthService, ServerNoteUseCases,
+    ServerWebAuthenticationUseCases, SystemClock, SystemRandom,
 };
 use marginalis_sqlite::SqliteDatabase;
-use marginalis_web::{ApiState, router};
+use marginalis_web::{ApiState, McpEndpoint, McpRateLimiter, router};
+use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 use url::Url;
 
@@ -25,6 +29,9 @@ const BROWSER_ORIGIN: &str = "https://marginalis.example.test";
 const CLIENT_ID: &str = "marginalis";
 const CLIENT_SECRET: &str = "integration-client-secret";
 const ROOT_PASSWORD: &str = "integration-root-password";
+const MCP_RESOURCE: &str = "https://marginalis.example.test/mcp";
+const MCP_CLIENT_ID: &str = "integration-mcp-client";
+const MCP_CALLBACK: &str = "http://127.0.0.1:4567/callback";
 
 /// mock IdPと空のdataDirへ接続した、試験ごとに独立するアプリケーション一式。
 struct TestServer {
@@ -66,16 +73,31 @@ impl TestServer {
             oidc,
         ));
         let notes = Arc::new(ServerNoteUseCases::new(
-            database,
+            database.clone(),
             FileNoteStore::open(&directory).expect("note sources"),
         ));
-        let app = router(ApiState::new(
-            notes,
+        let oauth = Arc::new(ServerMcpOAuthService::new(database.clone(), Vec::new()));
+        let state = ApiState::new(
+            notes.clone(),
             authentication.clone(),
             authentication.clone(),
             authentication,
             BROWSER_ORIGIN.into(),
-        ));
+        )
+        .with_mcp(McpEndpoint {
+            tools: McpTools::new(notes),
+            authenticator: Arc::new(ServerMcpAuthenticator::new(database, MCP_RESOURCE.into())),
+            oauth: oauth.clone(),
+            oauth_administration: oauth,
+            resource_uri: MCP_RESOURCE.into(),
+            metadata_uri: format!("{BROWSER_ORIGIN}/.well-known/oauth-protected-resource/mcp"),
+            authorization_server_uri: BROWSER_ORIGIN.into(),
+            authorization_endpoint_uri: format!("{BROWSER_ORIGIN}/oauth/authorize"),
+            token_endpoint_uri: format!("{BROWSER_ORIGIN}/oauth/token"),
+            allowed_origin: BROWSER_ORIGIN.into(),
+            rate_limiter: McpRateLimiter::new(120),
+        });
+        let app = router(state);
         Self {
             idp,
             app,
@@ -553,6 +575,256 @@ async fn other_users_cannot_observe_private_notes() {
         Some(0),
         "other user search must not reveal the note"
     );
+
+    server.finish();
+}
+
+/// rootとしてMCP public clientを事前登録する。
+async fn register_mcp_client(app: &Router, session: &str, csrf: &str) {
+    let response = send(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/api/v1/admin/mcp-clients")
+            .header(header::COOKIE, format!("marginalis_session={session}"))
+            .header("x-csrf-token", csrf)
+            .header(header::ORIGIN, BROWSER_ORIGIN)
+            .header("sec-fetch-site", "same-origin")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "client_id": MCP_CLIENT_ID,
+                    "display_name": "Integration MCP client",
+                    "redirect_uris": [MCP_CALLBACK],
+                })
+                .to_string(),
+            ))
+            .expect("client registration request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+/// Authorization Code + PKCEをHTTPで通し、`notes:read`のaccess tokenを得る。
+async fn mcp_access_token(app: &Router, session: &str, csrf: &str, verifier: &str) -> String {
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("response_type", "code")
+        .append_pair("client_id", MCP_CLIENT_ID)
+        .append_pair("redirect_uri", MCP_CALLBACK)
+        .append_pair("resource", MCP_RESOURCE)
+        .append_pair("scope", "notes:read")
+        .append_pair("code_challenge", &challenge)
+        .append_pair("code_challenge_method", "S256")
+        .finish();
+    let cookies = format!("marginalis_session={session}; marginalis_csrf={csrf}");
+    let response = send(
+        app,
+        Request::builder()
+            .uri(format!("/oauth/authorize?{query}"))
+            .header(header::COOKIE, &cookies)
+            .body(Body::empty())
+            .expect("authorization request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let form = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("client_id", MCP_CLIENT_ID)
+        .append_pair("redirect_uri", MCP_CALLBACK)
+        .append_pair("resource", MCP_RESOURCE)
+        .append_pair("scope", "notes:read")
+        .append_pair("code_challenge", &challenge)
+        .append_pair("csrf_token", csrf)
+        .append_pair("decision", "approve")
+        .finish();
+    let response = send(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/oauth/authorize")
+            .header(header::COOKIE, &cookies)
+            .header(header::ORIGIN, BROWSER_ORIGIN)
+            .header("sec-fetch-site", "same-origin")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(form))
+            .expect("approval request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .expect("authorization redirect")
+        .to_str()
+        .expect("location header");
+    let code = Url::parse(location)
+        .expect("redirect URL")
+        .query_pairs()
+        .find_map(|(key, value)| (key == "code").then(|| value.into_owned()))
+        .expect("authorization code");
+
+    let token_form = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", "authorization_code")
+        .append_pair("code", &code)
+        .append_pair("client_id", MCP_CLIENT_ID)
+        .append_pair("redirect_uri", MCP_CALLBACK)
+        .append_pair("resource", MCP_RESOURCE)
+        .append_pair("code_verifier", verifier)
+        .finish();
+    let response = send(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/oauth/token")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(token_form))
+            .expect("token request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    json_body(response).await["access_token"]
+        .as_str()
+        .expect("access token")
+        .to_owned()
+}
+
+/// MCPの`search_notes`を実行し、`structuredContent.notes`を返す。
+async fn mcp_search(app: &Router, access_token: &str, query: &str) -> serde_json::Value {
+    let response = send(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::AUTHORIZATION, format!("Bearer {access_token}"))
+            .body(Body::from(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": { "name": "search_notes", "arguments": { "query": query } },
+                })
+                .to_string(),
+            ))
+            .expect("MCP request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    json_body(response).await["result"]["structuredContent"]["notes"].clone()
+}
+
+#[tokio::test]
+async fn mcp_search_visibility_matches_rest() {
+    let server = TestServer::start().await;
+    let (root_session, root_csrf) = root_login(&server.app).await;
+    set_registration_policy_open(&server.app, &root_session, &root_csrf).await;
+    register_mcp_client(&server.app, &root_session, &root_csrf).await;
+    let (owner_session, owner_csrf) =
+        login_active_user(&server, "subject-mcp-owner", "code-m1").await;
+    let (other_session, other_csrf) =
+        login_active_user(&server, "subject-mcp-other", "code-m2").await;
+
+    create_note(
+        &server.app,
+        &owner_session,
+        &owner_csrf,
+        note_source("mcpparitytoken"),
+    )
+    .await;
+
+    let owner_token = mcp_access_token(
+        &server.app,
+        &owner_session,
+        &owner_csrf,
+        "integration-pkce-verifier-owner-0123456789",
+    )
+    .await;
+    let other_token = mcp_access_token(
+        &server.app,
+        &other_session,
+        &other_csrf,
+        "integration-pkce-verifier-other-0123456789",
+    )
+    .await;
+
+    // RESTとMCPで、所有者には見え、他ユーザーには存在が漏れない。
+    let owner_rest = search(&server.app, &owner_session, "mcpparitytoken").await;
+    assert_eq!(owner_rest["notes"].as_array().map(Vec::len), Some(1));
+    let other_rest = search(&server.app, &other_session, "mcpparitytoken").await;
+    assert_eq!(other_rest["notes"].as_array().map(Vec::len), Some(0));
+
+    let owner_mcp = mcp_search(&server.app, &owner_token, "mcpparitytoken").await;
+    let owner_mcp = owner_mcp.as_array().expect("owner MCP results");
+    assert_eq!(owner_mcp.len(), 1);
+    assert_eq!(
+        owner_mcp[0]["title"].as_str(),
+        Some("Integration note"),
+        "MCP search must return the owner's note"
+    );
+    let other_mcp = mcp_search(&server.app, &other_token, "mcpparitytoken").await;
+    assert_eq!(
+        other_mcp.as_array().map(Vec::len),
+        Some(0),
+        "MCP search must not reveal another user's note"
+    );
+
+    server.finish();
+}
+
+#[tokio::test]
+async fn cookie_mutations_require_csrf_origin_and_fetch_metadata() {
+    let server = TestServer::start().await;
+    let (root_session, root_csrf) = root_login(&server.app).await;
+    set_registration_policy_open(&server.app, &root_session, &root_csrf).await;
+    let (session, csrf) = login_active_user(&server, "subject-csrf", "code-csrf").await;
+
+    let request = |csrf_header: Option<&str>, origin: &str, fetch_site: &str| {
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri("/api/v1/notes")
+            .header(header::COOKIE, format!("marginalis_session={session}"))
+            .header(header::ORIGIN, origin)
+            .header("sec-fetch-site", fetch_site)
+            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8");
+        if let Some(token) = csrf_header {
+            builder = builder.header("x-csrf-token", token);
+        }
+        builder
+            .body(Body::from(note_source("csrfguardtoken")))
+            .expect("note creation request")
+    };
+
+    // CSRF token・Origin・Fetch Metadataのいずれが欠けても拒否される。
+    let response = send(&server.app, request(None, BROWSER_ORIGIN, "same-origin")).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = send(
+        &server.app,
+        request(Some(&csrf), "https://evil.example.test", "same-origin"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = send(
+        &server.app,
+        request(Some(&csrf), BROWSER_ORIGIN, "cross-site"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = send(
+        &server.app,
+        request(Some("wrong-token"), BROWSER_ORIGIN, "same-origin"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // すべて揃った場合だけ作成できる。
+    let response = send(
+        &server.app,
+        request(Some(&csrf), BROWSER_ORIGIN, "same-origin"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
 
     server.finish();
 }

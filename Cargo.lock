@@ -1196,6 +1196,7 @@ dependencies = [
  "marginalis-application",
  "marginalis-auth-oidc",
  "marginalis-files",
+ "marginalis-mcp",
  "marginalis-server",
  "marginalis-sqlite",
  "marginalis-web",
