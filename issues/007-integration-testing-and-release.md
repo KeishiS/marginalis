@@ -31,3 +31,12 @@ AdocWeave拡張を含むAsciiDoc処理全体の安全性、決定性および互
 - 004
 - 005
 - 006
+
+## 2026-07-23時点の実環境受入確認
+
+- unit・HTTP結合試験と実環境確認を混同しない。実provider・reverse proxy・実MCP clientを通す手順は
+  `docs/acceptance.md`で管理する。
+- REST CRUD/検索と実MCP clientのOAuth・tool相互運用は、認証済み利用者またはclientの選択を必要とする
+  手動受入確認として残す。
+- backup、非破壊restore候補、投影再構築、root auditの手順は実装済みであり、保存先・保持世代・実際の
+  dataDir切替は運用policyとして明示的に判断する。
