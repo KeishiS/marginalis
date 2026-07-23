@@ -1317,18 +1317,73 @@ mod tests {
         response::IntoResponse,
     };
     use marginalis_application::{
+        McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair,
         OidcIdentityStore, RootCredentialStore, WebSession, WebSessionStore,
     };
     use marginalis_domain::{
-        Actor, EntityId, OidcIdentity, RegistrationPolicy, UnixMillis, UserId,
+        Actor, EntityId, McpOAuthClient, OidcIdentity, RegistrationPolicy, UnixMillis, UserId,
     };
     use std::{str::FromStr, sync::Arc};
     use tower::ServiceExt;
 
     use super::{
-        ApiError, ApiErrorCode, ApiState, McpRateLimiter, OidcConfiguration,
+        ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, OidcConfiguration,
         OidcConfigurationError, router,
     };
+    use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
+
+    struct RejectMcpAuthenticator;
+
+    #[async_trait::async_trait]
+    impl McpAuthenticator for RejectMcpAuthenticator {
+        async fn authenticate(
+            &self,
+            _bearer_token: &str,
+            _required_scope: &str,
+        ) -> Result<Actor, McpAuthenticationError> {
+            Err(McpAuthenticationError::MissingOrInvalid)
+        }
+    }
+
+    struct RejectMcpOAuth;
+
+    #[async_trait::async_trait]
+    impl McpOAuthUseCases for RejectMcpOAuth {
+        async fn validate_authorization_request(
+            &self,
+            _request: McpAuthorizationRequest,
+        ) -> Result<McpOAuthClient, McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+
+        async fn authorize(
+            &self,
+            _actor: Actor,
+            _request: McpAuthorizationRequest,
+        ) -> Result<String, McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+
+        async fn exchange_authorization_code(
+            &self,
+            _code: String,
+            _client_id: String,
+            _redirect_uri: String,
+            _resource_uri: String,
+            _code_verifier: String,
+        ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+
+        async fn refresh_access_token(
+            &self,
+            _refresh_token: String,
+            _client_id: String,
+            _resource_uri: String,
+        ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+    }
 
     #[test]
     fn oidc_configuration_preserves_the_base_url_subpath_in_its_callback() {
@@ -1363,6 +1418,54 @@ mod tests {
         assert!(limiter.allow(actor));
         assert!(limiter.allow(actor));
         assert!(!limiter.allow(actor));
+    }
+
+    #[tokio::test]
+    async fn mcp_unauthorized_response_advertises_resource_metadata() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let directory = std::env::temp_dir().join("marginalis-web-mcp-contract-test");
+        let notes = Arc::new(marginalis_server::ServerNoteUseCases::new(
+            database.clone(),
+            marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+        ));
+        let app = router(
+            ApiState::with_test_adapters(database, notes.clone()).with_mcp(McpEndpoint {
+                tools: McpTools::new(notes),
+                authenticator: Arc::new(RejectMcpAuthenticator),
+                oauth: Arc::new(RejectMcpOAuth),
+                resource_uri: "https://example.test/marginalis/mcp".into(),
+                metadata_uri:
+                    "https://example.test/marginalis/.well-known/oauth-protected-resource/mcp"
+                        .into(),
+                authorization_server_uri: "https://example.test/marginalis".into(),
+                authorization_endpoint_uri: "https://example.test/marginalis/oauth/authorize"
+                    .into(),
+                token_endpoint_uri: "https://example.test/marginalis/oauth/token".into(),
+                allowed_origin: "https://example.test".into(),
+                rate_limiter: McpRateLimiter::new(10),
+            }),
+        );
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp")
+                    .header("accept", "application/json, text/event-stream")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers().get("www-authenticate").expect("header"),
+            "Bearer resource_metadata=\"https://example.test/marginalis/.well-known/oauth-protected-resource/mcp\""
+        );
     }
 
     #[test]
