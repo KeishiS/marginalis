@@ -8,7 +8,7 @@
 ## 実装順序
 
 現在の優先順位は、Web UIより先にREST APIとMCPを成立させることである。root管理はREST APIで継続し、
-管理UIは後続とする。
+管理UIは後続とする。既存デプロイのdataDirは移行せず、Issue 015で明示的に初期化して新schemaへ移る。
 
 1. [015: API-firstアーキテクチャ再基線化](015-api-first-architecture-rebaseline.md)
 2. [014: RESTノートAPI・検索・MCP連携](014-rest-notes-search-and-mcp.md)

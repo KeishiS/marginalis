@@ -4,8 +4,8 @@
 
 RESTによるノートCRUD・検索とMCP toolを同じ業務ロジックへ接続するため、現在のHTTP中心の組立を
 破壊的に再構成する。公開HTTP API、SQLite schema、設定形式およびRust crateの後方互換は要求しない。
-ただし、運用中の正本ファイルおよびSQLiteを自動削除してはならず、移行または明示的な再初期化の
-手順を用意する。
+既存デプロイのAsciiDoc正本およびSQLiteは廃棄可能であり、旧schema・identity・ACLを移行しない。
+ただし、dataDirの削除はアプリケーション起動時に自動実行せず、運用者が停止後に明示して行う。
 
 ## 現状の問題
 
@@ -71,17 +71,20 @@ HTTP REST        MCP transport        CLI / maintenance
 6. server binary、NixOS module、VM testおよび運用CLIを新構成へ移す。旧crate・旧route・旧schemaを
    明示的に削除する。
 
-## データ移行方針
+## 初期化方針
 
-- AsciiDoc sourceは正本として保持し、新projectionはそこから再構築する。
-- SQLite内のidentity、root credential、ACL、設定および監査は再構築できないため、明示的なone-shot
-  importerまたは新規DBへの管理者承認手順を提供する。自動破棄しない。
-- 開発環境では旧SQLiteを破棄して新schemaを作成してよい。本番ではbackup作成、dry-run、完了確認を
-  行う移行commandを必須とする。
+- この再基線化では旧dataDirを移行しない。新しいSQLite schema、root credential、OIDC identity、
+  ACL、session、監査およびAsciiDoc正本を空の状態から作成する。
+- NixOS運用手順は、service停止、対象dataDirのバックアップまたは削除、空directoryの所有者設定、
+  configuration適用、root初期化、OIDC login確認の順に固定する。
+- applicationおよびNixOS moduleは、通常の起動やrebuildで既存dataDirを削除しない。初期化は運用者が
+  明示的に選んだ場合だけ行う。
+- 新schemaには旧migrationを引き継がず、空DB作成だけを初期サポート対象にする。旧DBを指定した場合は、
+  明確なversion不一致エラーで停止する。
 
 ## 完了条件
 
 - HTTPとMCPがSQLite、files、AsciiDoc、OIDCの具体adapterを直接参照しない。
 - RESTのCRUD/検索とMCPのread/searchが同じapplication command/queryとACL policyを利用する。
-- 既存sourceを再構築した新projectionと、identity/ACL等の移行手順が検証されている。
+- 空のdataDirからroot初期化、OIDC login、REST CRUD、検索およびMCP read/searchまでを一貫して検証する。
 - serverの組立、NixOS設定、tracingおよびmaintenance CLIの責務が一箇所にある。
