@@ -696,46 +696,7 @@ impl SqliteDatabase {
             .execute(&mut *transaction)
             .await?;
         for (projection, revision) in projections {
-            sqlx::query(
-                "INSERT INTO notes (note_id, relative_path, title, source_revision, deleted_at_ms)
-                 VALUES (?, ?, ?, ?, NULL)
-                 ON CONFLICT(note_id) DO UPDATE SET
-                   relative_path = excluded.relative_path, title = excluded.title,
-                   source_revision = excluded.source_revision, deleted_at_ms = NULL",
-            )
-            .bind(projection.note_id.to_string())
-            .bind(format!("notes/{}.adoc", projection.note_id))
-            .bind(&projection.title)
-            .bind(revision.bytes().to_vec())
-            .execute(&mut *transaction)
-            .await?;
-            sqlx::query("INSERT INTO note_search (note_id, title, content) VALUES (?, ?, ?)")
-                .bind(projection.note_id.to_string())
-                .bind(&projection.title)
-                .bind(&projection.search_text)
-                .execute(&mut *transaction)
-                .await?;
-            for anchor in &projection.anchors {
-                sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
-                    .bind(projection.note_id.to_string())
-                    .bind(anchor)
-                    .execute(&mut *transaction)
-                    .await?;
-            }
-            for reference in &projection.references {
-                sqlx::query(
-                    "INSERT INTO note_references
-                     (source_note_id, source_start, source_end, target_note_id, target_anchor)
-                     VALUES (?, ?, ?, ?, ?)",
-                )
-                .bind(projection.note_id.to_string())
-                .bind(i64::from(reference.source_start))
-                .bind(i64::from(reference.source_end))
-                .bind(&reference.target_note_id)
-                .bind(&reference.target_anchor)
-                .execute(&mut *transaction)
-                .await?;
-            }
+            insert_note_projection_rows(&mut transaction, projection, *revision).await?;
         }
         transaction.commit().await?;
         Ok(())
@@ -1732,34 +1693,10 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
                     .bind(projection.note_id.to_string())
                     .fetch_one(&mut *transaction)
                     .await?;
-            sqlx::query(
-                "INSERT INTO notes (note_id, relative_path, title, source_revision, deleted_at_ms)
-                 VALUES (?, ?, ?, ?, NULL)
-                 ON CONFLICT(note_id) DO UPDATE SET
-                   title = excluded.title, source_revision = excluded.source_revision, deleted_at_ms = NULL",
-            )
-            .bind(projection.note_id.to_string())
-            .bind(format!("notes/{}.adoc", projection.note_id))
-            .bind(&projection.title)
-            .bind(revision.bytes().to_vec())
-            .execute(&mut *transaction).await?;
             sqlx::query("DELETE FROM note_search WHERE note_id = ?")
                 .bind(projection.note_id.to_string())
                 .execute(&mut *transaction)
                 .await?;
-            sqlx::query("INSERT INTO note_search (note_id, title, content) VALUES (?, ?, ?)")
-                .bind(projection.note_id.to_string())
-                .bind(&projection.title)
-                .bind(&projection.search_text)
-                .execute(&mut *transaction)
-                .await?;
-            if !exists {
-                sqlx::query("INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)")
-                    .bind(projection.note_id.to_string())
-                    .bind(projection.owner_id.to_string())
-                    .execute(&mut *transaction)
-                    .await?;
-            }
             sqlx::query("DELETE FROM note_anchors WHERE note_id = ?")
                 .bind(projection.note_id.to_string())
                 .execute(&mut *transaction)
@@ -1768,26 +1705,13 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
                 .bind(projection.note_id.to_string())
                 .execute(&mut *transaction)
                 .await?;
-            for anchor in projection.anchors {
-                sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
+            insert_note_projection_rows(&mut transaction, &projection, revision).await?;
+            if !exists {
+                sqlx::query("INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)")
                     .bind(projection.note_id.to_string())
-                    .bind(anchor)
+                    .bind(projection.owner_id.to_string())
                     .execute(&mut *transaction)
                     .await?;
-            }
-            for reference in projection.references {
-                sqlx::query(
-                    "INSERT INTO note_references
-                     (source_note_id, source_start, source_end, target_note_id, target_anchor)
-                     VALUES (?, ?, ?, ?, ?)",
-                )
-                .bind(projection.note_id.to_string())
-                .bind(i64::from(reference.source_start))
-                .bind(i64::from(reference.source_end))
-                .bind(reference.target_note_id)
-                .bind(reference.target_anchor)
-                .execute(&mut *transaction)
-                .await?;
             }
             transaction.commit().await?;
             Ok(())
@@ -1811,6 +1735,58 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
             Ok(())
         }
     }
+}
+
+/// `notes`、検索、anchor、xref投影の共通挿入処理。
+///
+/// 呼出側は、既存projectionを置換する場合に検索・anchor・xrefを先に削除する。ACL初期化は
+/// この操作に含めず、新規ノート作成を検出した通常保存経路だけが行う。
+async fn insert_note_projection_rows(
+    connection: &mut sqlx::SqliteConnection,
+    projection: &NoteProjection,
+    revision: SourceRevision,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO notes (note_id, relative_path, title, source_revision, deleted_at_ms)
+         VALUES (?, ?, ?, ?, NULL)
+         ON CONFLICT(note_id) DO UPDATE SET
+           relative_path = excluded.relative_path, title = excluded.title,
+           source_revision = excluded.source_revision, deleted_at_ms = NULL",
+    )
+    .bind(projection.note_id.to_string())
+    .bind(format!("notes/{}.adoc", projection.note_id))
+    .bind(&projection.title)
+    .bind(revision.bytes().to_vec())
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query("INSERT INTO note_search (note_id, title, content) VALUES (?, ?, ?)")
+        .bind(projection.note_id.to_string())
+        .bind(&projection.title)
+        .bind(&projection.search_text)
+        .execute(&mut *connection)
+        .await?;
+    for anchor in &projection.anchors {
+        sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
+            .bind(projection.note_id.to_string())
+            .bind(anchor)
+            .execute(&mut *connection)
+            .await?;
+    }
+    for reference in &projection.references {
+        sqlx::query(
+            "INSERT INTO note_references
+             (source_note_id, source_start, source_end, target_note_id, target_anchor)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(projection.note_id.to_string())
+        .bind(i64::from(reference.source_start))
+        .bind(i64::from(reference.source_end))
+        .bind(&reference.target_note_id)
+        .bind(&reference.target_anchor)
+        .execute(&mut *connection)
+        .await?;
+    }
+    Ok(())
 }
 
 impl NoteQueryStore for SqliteNoteQueryStore {
