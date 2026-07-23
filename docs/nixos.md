@@ -108,12 +108,7 @@ BASE_URL='https://marginalis.sandi05.com'
 ORIGIN='https://marginalis.sandi05.com'
 COOKIE_JAR="$(mktemp)"
 trap 'rm -f "$COOKIE_JAR"' EXIT
-
-printf 'root password: ' >&2
-stty -echo
-IFS= read -r ROOT_PASSWORD
-stty echo
-printf '\n' >&2
+read -s ROOT_PASSWORD
 
 {
   printf '{"password":'
@@ -134,7 +129,7 @@ curl --fail-with-body --silent --show-error \
 
 CSRF_TOKEN="$(awk '$6 == "marginalis_csrf" { print $7 }' "$COOKIE_JAR")"
 [ -n "$CSRF_TOKEN" ]
-read -r -p 'activateするpending user_id: ' PENDING_USER_ID
+read -r PENDING_USER_ID
 
 curl --fail-with-body --silent --show-error \
   --cookie "$COOKIE_JAR" \

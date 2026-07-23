@@ -28,11 +28,14 @@ password、Cookie、OIDC code、MCP access/refresh tokenをコマンド履歴、
 `marginalis_session`や`marginalis_csrf`をshellの引数・履歴へ貼り付けない。API clientのsecret storeまたは
 一時的なCookie jarを用い、確認後に削除する。
 
-### browser開発者ツールによるREST確認例（strict CSPでは使用しない）
+### 最小Web UIによる手動確認
 
-OIDC login済みの同一originでbrowser開発者ツールのConsoleを開く方法は、`connect-src`を許可するCSPを
-明示的に設定した開発環境だけで使う。current production deploymentの`Content-Security-Policy: default-src 'none'`
-では、Consoleの`fetch`も遮断されるため使用してはならない。CSPをこの受入確認のために緩めない。
+OIDC login後に`/acceptance`を開くと、JavaScriptを使わずに作成、取得、更新、検索、削除を順に操作できる。
+この画面は同一originのHTML formでCSRF tokenを送るため、productionの`Content-Security-Policy: default-src 'none'`
+を緩めない。HTTPの`201`、`204`、`409`やREST APIのrequest/response contractそのものは、この画面ではなく次の
+外部API client手順で確認する。
+
+### 外部API clientによるREST確認例
 
 productionではCookie jarとCSRF Cookieを保持できる外部API clientを使う。そのclient自身のbrowser loginで
 OIDC sessionを確立し、同じcookie jarで以下のrequestを実行する。clientが`marginalis_csrf` Cookieを
@@ -47,95 +50,6 @@ OIDC sessionを確立し、同じcookie jarで以下のrequestを実行する。
 | 5 | `GET /api/v1/search?q=<固有語>` | Cookie jar | `200`、作成ノートだけを含む |
 | 6 | `POST /api/v1/notes/{note_id}/delete-preparations` | `If-Match: <最新ETag>`、`X-CSRF-Token` | `200`、`confirmation_token` |
 | 7 | `POST /api/v1/notes/delete-confirmations` | JSON body `{"confirmation_token":"..."}`、`X-CSRF-Token` | `204` |
-
-次のConsoleコードは、CSPを許可したローカル開発環境でだけ利用する。`unique_phrase`は他のノートに含まれない
-値へ変更する。`Origin`と`Sec-Fetch-Site`はbrowserが付与するため、JavaScriptから設定しない。
-
-```js
-const csrf = document.cookie
-  .split('; ')
-  .find((part) => part.startsWith('marginalis_csrf='))
-  ?.split('=')[1];
-if (!csrf) throw new Error('marginalis_csrf cookie is unavailable');
-
-const request = (path, options = {}) => fetch(path, {
-  credentials: 'same-origin',
-  ...options,
-  headers: { 'X-CSRF-Token': csrf, ...(options.headers ?? {}) },
-});
-
-const unique_phrase = 'acceptance-unique-phrase-2026-07-23';
-const source = `= 受入確認ノート
-:note-id: 01800000-0000-7000-8000-000000000001
-:creator-id: 01800000-0000-7000-8000-000000000002
-:created-at: 2026-07-23T00:00:00.000Z
-:updated-at: 2026-07-23T00:00:00.000Z
-:tags: acceptance
-
-${unique_phrase}
-`;
-
-const created = await request('/api/v1/notes', {
-  method: 'POST',
-  headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-  body: source,
-});
-if (created.status !== 201) throw new Error(`create: ${created.status}`);
-const noteUrl = created.headers.get('Location');
-if (!noteUrl) throw new Error('create response has no Location header');
-
-const firstSource = await request(noteUrl);
-const firstEtag = firstSource.headers.get('ETag');
-const savedSource = await firstSource.text();
-if (!firstEtag || !savedSource.includes(unique_phrase)) throw new Error('source or ETag is invalid');
-console.log({ noteUrl, firstEtag, savedSource });
-
-const updatedSource = savedSource.replace(unique_phrase, `${unique_phrase} updated`);
-const updated = await request(noteUrl, {
-  method: 'PUT',
-  headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-Match': firstEtag },
-  body: updatedSource,
-});
-if (updated.status !== 204) throw new Error(`update: ${updated.status}`);
-
-const searched = await request(`/api/v1/search?q=${encodeURIComponent(unique_phrase)}`);
-const searchPage = await searched.json();
-if (searched.status !== 200 || !searchPage.notes.some((note) => note.note_id === noteUrl.split('/').at(-2))) {
-  throw new Error(`search: ${searched.status}`);
-}
-console.log(searchPage);
-
-const stale = await request(noteUrl, {
-  method: 'PUT',
-  headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-Match': firstEtag },
-  body: updatedSource,
-});
-if (stale.status !== 409) throw new Error(`stale update: ${stale.status}`);
-
-const currentSource = await request(noteUrl);
-const currentEtag = currentSource.headers.get('ETag');
-const preparation = await request(`${noteUrl.replace('/source', '')}/delete-preparations`, {
-  method: 'POST',
-  headers: { 'If-Match': currentEtag },
-});
-if (preparation.status !== 200) throw new Error(`delete preparation: ${preparation.status}`);
-const confirmation = await preparation.json();
-
-const deleted = await request('/api/v1/notes/delete-confirmations', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ confirmation_token: confirmation.confirmation_token }),
-});
-if (deleted.status !== 204) throw new Error(`delete confirmation: ${deleted.status}`);
-
-for (const path of [noteUrl, `/api/v1/search?q=${encodeURIComponent(unique_phrase)}`, '/api/v1/notes']) {
-  const response = await request(path);
-  console.log(path, response.status); // sourceは404、検索・一覧では対象ノートが含まれないことを確認する。
-}
-```
-
-この例の`note-id`、`creator-id`、日時は形式を満たすダミー値であり、作成時にserver値へ置換される。
-Console出力を共有する場合も、Cookie、CSRF token、削除confirmation tokenを含めない。
 
 ## 段階2: 実MCP client
 

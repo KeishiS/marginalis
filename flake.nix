@@ -200,6 +200,7 @@
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
+              curl
               actionlint
               cargo
               cargo-make

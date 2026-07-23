@@ -470,6 +470,25 @@ pub fn router(state: ApiState) -> Router {
 pub fn application_router(state: ApiState) -> Router {
     Router::new()
         .route("/", get(landing))
+        .route("/acceptance", get(acceptance_home))
+        .route("/acceptance/search", get(acceptance_search))
+        .route(
+            "/acceptance/notes",
+            get(acceptance_open_note).post(acceptance_create_note),
+        )
+        .route("/acceptance/notes/{note_id}", get(acceptance_note))
+        .route(
+            "/acceptance/notes/{note_id}/source",
+            post(acceptance_update_note),
+        )
+        .route(
+            "/acceptance/notes/{note_id}/delete-preparations",
+            post(acceptance_prepare_note_deletion),
+        )
+        .route(
+            "/acceptance/delete-confirmations",
+            post(acceptance_confirm_note_deletion),
+        )
         .route("/api/v1/openapi.json", get(openapi))
         .route("/api/v1/health", get(health))
         .route("/api/v1/readiness", get(readiness))
@@ -1031,6 +1050,242 @@ fn escape_html(value: &str) -> String {
 /// Web UI公開前のBase URL到達先。OIDC callback後のredirect先としても用いる。
 async fn landing() -> Json<HealthResponse> {
     health().await
+}
+
+#[derive(Deserialize)]
+struct AcceptanceCreateForm {
+    csrf_token: String,
+    source: String,
+}
+
+#[derive(Deserialize)]
+struct AcceptanceUpdateForm {
+    csrf_token: String,
+    revision: String,
+    source: String,
+}
+
+#[derive(Deserialize)]
+struct AcceptanceDeletePreparationForm {
+    csrf_token: String,
+    revision: String,
+}
+
+#[derive(Deserialize)]
+struct AcceptanceDeleteConfirmationForm {
+    csrf_token: String,
+    confirmation_token: String,
+}
+
+#[derive(Deserialize)]
+struct AcceptanceSearchQuery {
+    q: String,
+}
+
+#[derive(Deserialize)]
+struct AcceptanceOpenNoteQuery {
+    note_id: String,
+}
+
+/// JavaScriptを必要としないREST受入確認用の最小画面。
+///
+/// このUIは公開APIの代替ではない。CookieとCSRF tokenを同一originのHTML formで送るため、
+/// productionのstrict CSPを緩めずに、作成・更新・検索・削除の手順を手動確認できる。
+async fn acceptance_home(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Html<String>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let csrf = escape_html(&acceptance_csrf(&headers)?);
+    Ok(Html(acceptance_page(
+        &format!(
+            "ログイン中の user_id: {}",
+            escape_html(&actor.user_id.to_string())
+        ),
+        &format!(
+            "<section><h2>1. ノートを作成</h2><p>識別子と日時のダミー値は作成時にserverが置換します。</p><form method=\"post\" action=\"/acceptance/notes\"><input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\"><label>AsciiDoc正本<textarea name=\"source\" rows=\"16\" cols=\"88\" required>= 受入確認ノート\n:note-id: 01800000-0000-7000-8000-000000000001\n:creator-id: 01800000-0000-7000-8000-000000000002\n:created-at: 2026-07-23T00:00:00.000Z\n:updated-at: 2026-07-23T00:00:00.000Z\n:tags: acceptance\n\n固有語をここへ記述する。</textarea></label><button type=\"submit\">作成</button></form></section><section><h2>2. 既存ノートを取得・更新・削除</h2><form method=\"get\" action=\"/acceptance/notes\"><label>note_id <input name=\"note_id\" required></label><button type=\"submit\">開く</button></form></section><section><h2>3. 検索</h2><form method=\"get\" action=\"/acceptance/search\"><label>固有語 <input name=\"q\" required></label><button type=\"submit\">検索</button></form></section>"
+        ),
+    )))
+}
+
+fn acceptance_csrf(headers: &HeaderMap) -> Result<String, ApiError> {
+    cookie_value(headers, "marginalis_csrf").ok_or(ApiError::new(
+        ApiErrorCode::Forbidden,
+        "CSRF token is required",
+    ))
+}
+
+fn acceptance_page(summary: &str, content: &str) -> String {
+    format!(
+        "<!doctype html><html lang=\"ja\"><meta charset=\"utf-8\"><title>Marginalis 受入確認</title><body><h1>Marginalis REST 受入確認</h1><p>{summary}</p><p><a href=\"/acceptance\">最初へ戻る</a></p>{content}</body></html>"
+    )
+}
+
+fn acceptance_note_id(note_id: &str) -> Result<NoteId, ApiError> {
+    EntityId::from_str(note_id)
+        .map(NoteId::new)
+        .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))
+}
+
+fn acceptance_revision(revision: &str) -> Result<SourceRevision, ApiError> {
+    SourceRevision::from_hex(revision).ok_or(ApiError::new(
+        ApiErrorCode::ValidationFailed,
+        "revision is invalid",
+    ))
+}
+
+async fn acceptance_open_note(
+    Query(query): Query<AcceptanceOpenNoteQuery>,
+) -> Result<Redirect, ApiError> {
+    let note_id = acceptance_note_id(&query.note_id)?;
+    Ok(Redirect::to(&format!("/acceptance/notes/{note_id}")))
+}
+
+async fn acceptance_create_note(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Form(form): Form<AcceptanceCreateForm>,
+) -> Result<Response, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    let note_id = state
+        .notes
+        .create_source(actor, form.source)
+        .await
+        .map_err(|error| note_error(error, "note creation is unavailable"))?;
+    Ok(Redirect::to(&format!("/acceptance/notes/{note_id}")).into_response())
+}
+
+async fn acceptance_note(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Html<String>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let csrf = escape_html(&acceptance_csrf(&headers)?);
+    let note_id = acceptance_note_id(&note_id)?;
+    let source = state
+        .notes
+        .read_source(actor, note_id)
+        .await
+        .map_err(|error| note_error(error, "note lookup is unavailable"))?;
+    let note_id = source.note_id.to_string();
+    let revision = source.revision.to_hex();
+    let content = String::from_utf8(source.content)
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note source is not UTF-8"))?;
+    let escaped_source = escape_html(&content);
+    Ok(Html(acceptance_page(
+        &format!("取得成功（ETag: &quot;{revision}&quot;）"),
+        &format!(
+            "<section><h2>更新</h2><p>同じrevisionで二度送信すると、二度目は競合になります。</p><form method=\"post\" action=\"/acceptance/notes/{note_id}/source\"><input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\"><label>revision（ETagの引用符を除いた値）<input name=\"revision\" value=\"{revision}\" required></label><label>AsciiDoc正本<textarea name=\"source\" rows=\"16\" cols=\"88\" required>{escaped_source}</textarea></label><button type=\"submit\">更新</button></form></section><section><h2>削除準備</h2><form method=\"post\" action=\"/acceptance/notes/{note_id}/delete-preparations\"><input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\"><label>revision（最新ETag）<input name=\"revision\" value=\"{revision}\" required></label><button type=\"submit\">削除を準備</button></form></section>"
+        ),
+    )))
+}
+
+async fn acceptance_update_note(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<AcceptanceUpdateForm>,
+) -> Result<Response, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    let note_id = acceptance_note_id(&note_id)?;
+    state
+        .notes
+        .update_source(
+            actor,
+            note_id,
+            form.source,
+            acceptance_revision(&form.revision)?,
+        )
+        .await
+        .map_err(|error| note_error(error, "note update is unavailable"))?;
+    Ok(Redirect::to(&format!("/acceptance/notes/{note_id}")).into_response())
+}
+
+async fn acceptance_prepare_note_deletion(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<AcceptanceDeletePreparationForm>,
+) -> Result<Html<String>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    let preparation = state
+        .notes
+        .prepare_delete_note(
+            actor,
+            acceptance_note_id(&note_id)?,
+            acceptance_revision(&form.revision)?,
+        )
+        .await
+        .map_err(|error| note_error(error, "note deletion is unavailable"))?;
+    let csrf = escape_html(&acceptance_csrf(&headers)?);
+    Ok(Html(acceptance_page(
+        "削除準備成功",
+        &format!(
+            "<p>対象: {}。参照元: {} 件。</p><form method=\"post\" action=\"/acceptance/delete-confirmations\"><input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\"><input type=\"hidden\" name=\"confirmation_token\" value=\"{}\"><button type=\"submit\">削除を確定</button></form>",
+            escape_html(&preparation.title),
+            preparation.incoming_reference_count,
+            escape_html(&preparation.confirmation_token),
+        ),
+    )))
+}
+
+async fn acceptance_confirm_note_deletion(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Form(form): Form<AcceptanceDeleteConfirmationForm>,
+) -> Result<Html<String>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    if form.confirmation_token.is_empty() {
+        return Err(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "confirmation token is required",
+        ));
+    }
+    state
+        .notes
+        .confirm_delete_note(actor, form.confirmation_token)
+        .await
+        .map_err(|error| note_error(error, "note deletion is unavailable"))?;
+    Ok(Html(acceptance_page(
+        "削除成功",
+        "<p>一覧・検索・source取得で対象ノートが見えないことを確認してください。</p>",
+    )))
+}
+
+async fn acceptance_search(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Query(query): Query<AcceptanceSearchQuery>,
+) -> Result<Html<String>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let page = state
+        .notes
+        .search_notes(actor, query.q.clone(), Default::default(), 0, 100)
+        .await
+        .map_err(|error| note_error(error, "note search is unavailable"))?;
+    let notes = page
+        .notes
+        .into_iter()
+        .map(|note| {
+            format!(
+                "<li><a href=\"/acceptance/notes/{}\">{}</a></li>",
+                note.note_id,
+                escape_html(&note.title)
+            )
+        })
+        .collect::<String>();
+    Ok(Html(acceptance_page(
+        &format!("検索結果: {}", escape_html(&query.q)),
+        &format!(
+            "<p>結果: {} 件</p><ul>{notes}</ul>",
+            notes.matches("<li>").count()
+        ),
+    )))
 }
 
 type CurrentSessionResponse = contract::Session;
@@ -2425,6 +2680,64 @@ mod tests {
         .expect("response");
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn acceptance_page_is_server_rendered_without_javascript() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-0000000000a1").expect("UUIDv7"),
+        );
+        sqlx::query("INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms) VALUES (?, 'oidc', 'active', 'User', 0, 0)")
+            .bind(user_id.to_string()).execute(database.pool()).await.expect("user");
+        database
+            .web_session_store()
+            .issue(
+                WebSession {
+                    session_id: "session".into(),
+                    csrf_token: "csrf".into(),
+                    actor: Actor {
+                        user_id,
+                        is_root: false,
+                    },
+                    idle_expires_at: UnixMillis::new(4_000_000_000_000),
+                    absolute_expires_at: UnixMillis::new(4_000_000_000_000),
+                },
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("session");
+        let directory = std::env::temp_dir().join(format!(
+            "marginalis-web-acceptance-page-test-{}",
+            uuid::Uuid::now_v7()
+        ));
+        let response = router(ApiState::with_test_adapters(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database,
+                marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+            )),
+        ))
+        .oneshot(
+            Request::builder()
+                .uri("/acceptance")
+                .header("cookie", "marginalis_session=session; marginalis_csrf=csrf")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("body");
+        let body = std::str::from_utf8(&body).expect("UTF-8 HTML");
+        assert!(body.contains("/acceptance/notes"));
+        assert!(body.contains("name=\"csrf_token\" value=\"csrf\""));
+        assert!(!body.contains("<script"));
     }
 
     #[tokio::test]

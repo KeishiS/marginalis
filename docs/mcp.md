@@ -11,13 +11,13 @@ CookieをMCP endpointで受理したりしない。
 MCPは`services.marginalis.mcp.enable = true;`を設定した場合だけ有効になる。Base URLを`B`とすると、
 公開URLは次のとおりである。
 
-| 用途 | URL |
-| --- | --- |
-| MCP transport | `B/mcp` |
-| Protected Resource Metadata | `B/.well-known/oauth-protected-resource/mcp` |
-| Authorization Server Metadata | `B/.well-known/oauth-authorization-server` |
-| authorization endpoint | `B/oauth/authorize` |
-| token endpoint | `B/oauth/token` |
+| 用途                          | URL                                          |
+| ----------------------------- | -------------------------------------------- |
+| MCP transport                 | `B/mcp`                                      |
+| Protected Resource Metadata   | `B/.well-known/oauth-protected-resource/mcp` |
+| Authorization Server Metadata | `B/.well-known/oauth-authorization-server`   |
+| authorization endpoint        | `B/oauth/authorize`                          |
+| token endpoint                | `B/oauth/token`                              |
 
 Base URLがsubpathを持つ場合も、上表のpathはそのsubpathの下へ追加される。
 
@@ -33,15 +33,15 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 
 初期公開のtoolは次のとおりである。
 
-| tool | 入力 | 出力 |
-| --- | --- | --- |
-| `search_notes` | `query`、任意の`limit`と`cursor` | 可視ノートのID・titleと次cursor |
-| `get_note` | `note_id` | Read権限を持つノートのID・title・tags・作成/更新時刻・revision・AsciiDoc source |
-| `list_note_links` | `note_id`、任意の`limit`と`cursor` | sourceとtargetの双方を閲覧できるoutgoing参照の位置、target ID・title・anchorと次cursor |
-| `create_note` | `title`、`body`、`tags` | server生成metadataを持つ新規ノートとrevision |
-| `update_note` | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとrevision |
-| `prepare_delete_note` | `note_id`、`expected_revision` | title、revision、一回限りの確認token |
-| `delete_note` | `confirmation_token` | 物理削除の完了 |
+| tool                  | 入力                                                    | 出力                                                                                   |
+| --------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `search_notes`        | `query`、任意の`limit`と`cursor`                        | 可視ノートのID・titleと次cursor                                                        |
+| `get_note`            | `note_id`                                               | Read権限を持つノートのID・title・tags・作成/更新時刻・revision・AsciiDoc source        |
+| `list_note_links`     | `note_id`、任意の`limit`と`cursor`                      | sourceとtargetの双方を閲覧できるoutgoing参照の位置、target ID・title・anchorと次cursor |
+| `create_note`         | `title`、`body`、`tags`                                 | server生成metadataを持つ新規ノートとrevision                                           |
+| `update_note`         | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとrevision                                                               |
+| `prepare_delete_note` | `note_id`、`expected_revision`                          | title、revision、一回限りの確認token                                                   |
+| `delete_note`         | `confirmation_token`                                    | 物理削除の完了                                                                         |
 
 検索はSQLite FTS5投影を使い、ACL filter後の結果だけをcursorへ含める。本文断片、score、権限のない
 ノートの存在は返さない。`GET /mcp`はserver-to-client notification streamが必要になるまで`405`を
@@ -57,13 +57,13 @@ target ID、title、anchorおよびその投影上の存在を返さない。こ
 OpenAPIで公開するREST contractとMCP toolは同じapplication use case・ACL・revision規則を共有するが、
 transport固有の認証方式は混在させない。
 
-| REST | MCP | 相違点 |
-| --- | --- | --- |
-| `GET /api/v1/search` | `search_notes` | RESTはCookie session、MCPはBearer tokenと`notes:read` scopeを使う。 |
-| `GET /api/v1/notes/{note_id}/source` | `get_note` | MCPはmetadataとsourceを一つのJSON-RPC resultで返す。 |
-| `POST /api/v1/notes` | `create_note` | RESTは検証済みAsciiDoc正本、MCPは構造化したtitle/body/tagsを受ける。 |
-| `PUT /api/v1/notes/{note_id}/source` | `update_note` | 両者ともrevisionの完全一致を要求する。 |
-| `POST /api/v1/notes/{note_id}/delete-preparations` → `POST /api/v1/notes/delete-confirmations` | `prepare_delete_note` → `delete_note` | 両transportとも確認tokenを二段階で必要とする。 |
+| REST                                                                                           | MCP                                   | 相違点                                                               |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------- |
+| `GET /api/v1/search`                                                                           | `search_notes`                        | RESTはCookie session、MCPはBearer tokenと`notes:read` scopeを使う。  |
+| `GET /api/v1/notes/{note_id}/source`                                                           | `get_note`                            | MCPはmetadataとsourceを一つのJSON-RPC resultで返す。                 |
+| `POST /api/v1/notes`                                                                           | `create_note`                         | RESTは検証済みAsciiDoc正本、MCPは構造化したtitle/body/tagsを受ける。 |
+| `PUT /api/v1/notes/{note_id}/source`                                                           | `update_note`                         | 両者ともrevisionの完全一致を要求する。                               |
+| `POST /api/v1/notes/{note_id}/delete-preparations` → `POST /api/v1/notes/delete-confirmations` | `prepare_delete_note` → `delete_note` | 両transportとも確認tokenを二段階で必要とする。                       |
 
 Cookie、`X-CSRF-Token`、`Origin`、`Sec-Fetch-Site`はREST browser boundaryだけの要件であり、MCP tool input・
 output schemaへ含めない。
@@ -107,9 +107,9 @@ access tokenの有効期間は1時間である。refresh tokenの有効期間は
 
 ```json
 {
-  "client_id": "https://clients.example.org/marginalis.json",
-  "client_name": "Example MCP client",
-  "redirect_uris": ["http://127.0.0.1:4567/callback"]
+    "client_id": "https://clients.example.org/marginalis.json",
+    "client_name": "Example MCP client",
+    "redirect_uris": ["http://127.0.0.1:4567/callback"]
 }
 ```
 
@@ -122,6 +122,79 @@ Dynamic Client RegistrationとDevice Authorization Grantは初期公開に含め
 
 Client ID Metadata Documentを提供しないclientは、rootが`POST /api/v1/admin/mcp-clients`を使って事前登録
 できる。これはroot sessionとCSRFを必要とし、MCP tokenやclient secretは受け取らない。
+
+### ChatGPTなどのcallback URLを事前登録する
+
+ChatGPTのcustom MCP app設定では、登録者がOAuth client IDを指定する。これはsecretではないため、例えば
+`https://marginalis.sandi05.com/mcp-clients/chatgpt`のような安定したURI形式の値を決め、ChatGPTの
+「OAuth client ID」とMarginalisの事前登録で完全に同じ値を使う。このURIはrootによる事前登録を使う限り、
+Client ID Metadata Documentを配信する必要はない。callback URLはChatGPTが設定画面に表示する完全な値を使う。
+rootによる事前登録ではURL形式は必須ではないため、`chatgpt-web`のような空でない安定した文字列も使える。
+Dynamic Client Registration endpointは公開していないため、ChatGPTの「登録URL」は空欄にする。次の手順は
+root session、Cookie jarおよびCSRF tokenを作成してからclientを登録し、最後にroot sessionを破棄する。
+root password、Cookie、CSRF tokenをコマンド履歴、Issueまたはログへ記録しない。
+
+```sh
+set -eu
+
+BASE_URL='https://marginalis.sandi05.com'
+ORIGIN='https://marginalis.sandi05.com'
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+
+read -s ROOT_PASSWORD
+{
+  printf '{"password":'
+  printf '%s' "$ROOT_PASSWORD" | jq -Rs .
+  printf '}'
+} | curl --fail-with-body --silent --show-error \
+  --cookie-jar "$COOKIE_JAR" \
+  --header 'Content-Type: application/json' \
+  --data-binary @- \
+  --output /dev/null \
+  "$BASE_URL/auth/root/login"
+unset ROOT_PASSWORD
+
+CSRF_TOKEN="$(awk '$6 == "marginalis_csrf" { print $7 }' "$COOKIE_JAR")"
+[ -n "$CSRF_TOKEN" ]
+
+CHATGPT_CLIENT_ID='chatgpt-web'
+read -r CHATGPT_CALLBACK_URL
+
+jq -n \
+  --arg client_id "$CHATGPT_CLIENT_ID" \
+  --arg callback "$CHATGPT_CALLBACK_URL" \
+  '{
+    client_id: $client_id,
+    display_name: "ChatGPT Marginalis MCP",
+    redirect_uris: [$callback]
+  }' |
+curl --fail-with-body --silent --show-error \
+  --cookie "$COOKIE_JAR" \
+  --header 'Content-Type: application/json' \
+  --header "X-CSRF-Token: $CSRF_TOKEN" \
+  --header "Origin: $ORIGIN" \
+  --header 'Sec-Fetch-Site: same-origin' \
+  --request POST \
+  --data-binary @- \
+  --output /dev/null \
+  --write-out 'MCP client registration: HTTP %{http_code}\n' \
+  "$BASE_URL/api/v1/admin/mcp-clients"
+
+curl --fail-with-body --silent --show-error \
+  --cookie "$COOKIE_JAR" \
+  --header "X-CSRF-Token: $CSRF_TOKEN" \
+  --header "Origin: $ORIGIN" \
+  --header 'Sec-Fetch-Site: same-origin' \
+  --request POST \
+  --output /dev/null \
+  "$BASE_URL/auth/logout"
+```
+
+成功時は`HTTP 204`となる。callback URLはHTTPSで、query、fragment、userinfoを含まず、ChatGPTが送る
+`redirect_uri`と完全一致しなければならない。ChatGPTの「OAuth client secret」は空欄にする。Marginalisは
+public clientのAuthorization Code + PKCEだけを受理し、`client_secret_basic`と`client_secret_post`を
+実装しない。callback URL、Cookie、CSRF token、root passwordをIssue、ログまたはコマンド履歴へ記録しない。
 
 利用者はREST APIで自分のclient認可を取り消せる。rootは任意ユーザーの認可を強制取消できる。取消時には
 そのユーザー・client組のaccess tokenとrefresh tokenをすべて失効させる。
