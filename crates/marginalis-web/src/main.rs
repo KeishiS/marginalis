@@ -1,6 +1,8 @@
 use marginalis_application::{RootCredentialStore, RootInitializationService};
 use marginalis_files::FileNoteStore;
-use marginalis_server::{ServerConfig, ServerNoteUseCases, SystemClock, SystemRandom};
+use marginalis_server::{
+    ServerConfig, ServerNoteUseCases, ServerWebAuthenticationUseCases, SystemClock, SystemRandom,
+};
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::{ApiState, OidcAuthentication, OidcConfiguration, router};
 use tracing_subscriber::EnvFilter;
@@ -51,10 +53,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(address = %configuration.listen_address, "Marginalis server listening");
     axum::serve(
         listener,
-        router(ApiState::with_oidc(
-            database,
+        router(ApiState::new(
             std::sync::Arc::new(notes),
-            oidc,
+            std::sync::Arc::new(ServerWebAuthenticationUseCases::with_oidc(database, oidc)),
         )),
     )
     .await?;

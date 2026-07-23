@@ -7,11 +7,14 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     Clock, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteQueryStore,
-    NoteUseCaseError, NoteUseCases, NoteWriteService, Random,
+    AuthenticationUseCaseError, NoteUseCaseError, NoteUseCases, NoteWriteService, Random,
+    SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService,
+    WebSessionStore, RootCredentialStore, OidcUserAdministrationStore,
 };
+use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteSource, NoteSummary, SourceRevision, UnixMillis,
-    UserId,
+    Actor, EntityId, NoteId, NotePermission, NoteSource, NoteSummary, OidcLoginResult,
+    SourceRevision, UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_sqlite::SqliteDatabase;
@@ -48,6 +51,143 @@ impl Random for SystemRandom {
 pub struct ServerNoteUseCases {
     database: SqliteDatabase,
     sources: FileNoteStore,
+}
+
+/// Web session、外部OIDCとroot管理を同じapplication境界で公開するserver adapter。
+#[derive(Clone)]
+pub struct ServerWebAuthenticationUseCases {
+    database: SqliteDatabase,
+    oidc: Option<OidcAuthentication>,
+}
+
+impl ServerWebAuthenticationUseCases {
+    pub const fn new(database: SqliteDatabase) -> Self {
+        Self {
+            database,
+            oidc: None,
+        }
+    }
+
+    pub fn with_oidc(database: SqliteDatabase, oidc: OidcAuthentication) -> Self {
+        Self {
+            database,
+            oidc: Some(oidc),
+        }
+    }
+
+    fn oidc(&self) -> Result<&OidcAuthentication, AuthenticationUseCaseError> {
+        self.oidc
+            .as_ref()
+            .ok_or(AuthenticationUseCaseError::Unavailable)
+    }
+}
+
+#[async_trait]
+impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
+    async fn begin_oidc_login(&self) -> Result<String, AuthenticationUseCaseError> {
+        self.oidc()?
+            .begin_login(
+                &self.database.oidc_login_attempt_store(),
+                &SystemRandom,
+                &SystemClock,
+            )
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn complete_oidc_login(
+        &self,
+        code: String,
+        state: String,
+    ) -> Result<OidcLoginResult, AuthenticationUseCaseError> {
+        self.oidc()?
+            .complete_login(
+                &self.database.oidc_login_attempt_store(),
+                &self.database.oidc_identity_store(),
+                &SystemRandom,
+                &SystemClock,
+                &code,
+                &state,
+            )
+            .await
+            .map_err(|error| match error {
+                OidcCallbackError::Rejected(_) => AuthenticationUseCaseError::Rejected,
+                OidcCallbackError::Unavailable => AuthenticationUseCaseError::Unavailable,
+            })
+    }
+
+    async fn authenticate_session(
+        &self,
+        session_id: String,
+    ) -> Result<Option<marginalis_application::AuthenticatedSession>, AuthenticationUseCaseError> {
+        self.database
+            .web_session_store()
+            .lookup(session_id, SystemClock.now())
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn verify_csrf(
+        &self,
+        session_id: String,
+        csrf_token: String,
+    ) -> Result<bool, AuthenticationUseCaseError> {
+        self.database
+            .web_session_store()
+            .verify_csrf(session_id, csrf_token, SystemClock.now())
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn issue_oidc_session(
+        &self,
+        user_id: UserId,
+    ) -> Result<WebSession, AuthenticationUseCaseError> {
+        WebSessionService::new(&self.database.web_session_store(), &SystemRandom, &SystemClock)
+            .issue(
+                Actor { user_id, is_root: false },
+                SessionLifetime { idle_timeout_ms: 8 * 60 * 60 * 1_000, absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000 },
+            )
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn root_login(
+        &self,
+        password: String,
+    ) -> Result<Option<WebSession>, AuthenticationUseCaseError> {
+        let Some(user_id) = self.database.root_credential_store().verify_password(password).await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)? else {
+                return Ok(None);
+            };
+        WebSessionService::new(&self.database.web_session_store(), &SystemRandom, &SystemClock)
+            .issue(
+                Actor { user_id, is_root: true },
+                SessionLifetime { idle_timeout_ms: 30 * 60 * 1_000, absolute_timeout_ms: 8 * 60 * 60 * 1_000 },
+            )
+            .await
+            .map(Some)
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError> {
+        self.database.web_session_store().revoke(session_id, SystemClock.now()).await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn list_pending_users(&self) -> Result<Vec<marginalis_domain::OidcUser>, AuthenticationUseCaseError> {
+        self.database.oidc_user_administration_store().list_pending().await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn activate_pending_user(&self, user_id: UserId) -> Result<bool, AuthenticationUseCaseError> {
+        self.database.oidc_user_administration_store().activate(user_id, SystemClock.now()).await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    fn cookie_path(&self) -> &str {
+        self.oidc.as_ref().map_or("/", OidcAuthentication::cookie_path)
+    }
 }
 
 impl ServerNoteUseCases {

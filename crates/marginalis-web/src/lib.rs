@@ -13,8 +13,8 @@ use axum::{
     routing::{delete, get, post, put},
 };
 use marginalis_application::{
-    Clock, NoteUseCaseError, NoteUseCases, OidcUserAdministrationStore, RootCredentialStore,
-    SessionLifetime, WebSession, WebSessionService, WebSessionStore,
+    AuthenticationUseCaseError, NoteUseCaseError, NoteUseCases, WebAuthenticationUseCases,
+    WebSession,
 };
 pub use marginalis_auth_oidc::{
     OidcAuthentication, OidcCallbackError, OidcCallbackRejection, OidcConfiguration,
@@ -24,8 +24,6 @@ use marginalis_domain::{
     Actor, EntityId, NoteId, NotePermission, NoteSummary, OidcLoginResult, SourceRevision,
     OidcUser, UserId,
 };
-use marginalis_server::{SystemClock, SystemRandom};
-use marginalis_sqlite::SqliteDatabase;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
@@ -37,30 +35,30 @@ pub const API_VERSION: &str = "v1";
 /// HTTPハンドラーが利用する共有状態。
 #[derive(Clone)]
 pub struct ApiState {
-    pub database: SqliteDatabase,
     pub notes: Arc<dyn NoteUseCases>,
-    pub oidc: Option<Arc<OidcAuthentication>>,
+    pub authentication: Arc<dyn WebAuthenticationUseCases>,
 }
 
 impl ApiState {
-    pub fn new(database: SqliteDatabase, notes: Arc<dyn NoteUseCases>) -> Self {
+    pub fn new(
+        notes: Arc<dyn NoteUseCases>,
+        authentication: Arc<dyn WebAuthenticationUseCases>,
+    ) -> Self {
         Self {
-            database,
             notes,
-            oidc: None,
+            authentication,
         }
     }
 
-    pub fn with_oidc(
-        database: SqliteDatabase,
+    #[cfg(test)]
+    fn with_test_adapters(
+        database: marginalis_sqlite::SqliteDatabase,
         notes: Arc<dyn NoteUseCases>,
-        oidc: OidcAuthentication,
     ) -> Self {
-        Self {
-            database,
+        Self::new(
             notes,
-            oidc: Some(Arc::new(oidc)),
-        }
+            Arc::new(marginalis_server::ServerWebAuthenticationUseCases::new(database)),
+        )
     }
 }
 
@@ -136,6 +134,18 @@ fn note_error(error: NoteUseCaseError, unavailable_message: &'static str) -> Api
             ApiError::new(ApiErrorCode::ValidationFailed, "note source is invalid")
         }
         NoteUseCaseError::Unavailable => ApiError::new(ApiErrorCode::Internal, unavailable_message),
+    }
+}
+
+fn authentication_error(error: AuthenticationUseCaseError) -> ApiError {
+    match error {
+        AuthenticationUseCaseError::Rejected => {
+            ApiError::new(ApiErrorCode::AuthenticationRequired, "authentication failed")
+        }
+        AuthenticationUseCaseError::NotFound => ApiError::new(ApiErrorCode::NotFound, "user is not available"),
+        AuthenticationUseCaseError::Unavailable => {
+            ApiError::new(ApiErrorCode::Internal, "authentication is unavailable")
+        }
     }
 }
 
@@ -451,18 +461,11 @@ async fn update_note_acl(
 }
 
 async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, ApiError> {
-    let oidc = state.oidc.as_ref().ok_or(ApiError::new(
-        ApiErrorCode::Internal,
-        "authentication is not configured",
-    ))?;
-    let destination = oidc
-        .begin_login(
-            &state.database.oidc_login_attempt_store(),
-            &SystemRandom,
-            &SystemClock,
-        )
+    let destination = state
+        .authentication
+        .begin_oidc_login()
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
+        .map_err(authentication_error)?;
     Ok(Redirect::temporary(&destination))
 }
 
@@ -488,10 +491,6 @@ async fn complete_oidc_login(
     State(state): State<ApiState>,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Response, ApiError> {
-    let oidc = state.oidc.as_ref().ok_or(ApiError::new(
-        ApiErrorCode::Internal,
-        "authentication is not configured",
-    ))?;
     if query.error.is_some() {
         tracing::warn!("OIDC callback rejected by authorization server");
         return Err(ApiError::new(
@@ -506,28 +505,11 @@ async fn complete_oidc_login(
             "authentication failed",
         ));
     };
-    let OidcLoginResult::Active(user) = oidc
-        .complete_login(
-            &state.database.oidc_login_attempt_store(),
-            &state.database.oidc_identity_store(),
-            &SystemRandom,
-            &SystemClock,
-            code,
-            state_token,
-        )
+    let OidcLoginResult::Active(user) = state
+        .authentication
+        .complete_oidc_login(code.into(), state_token.into())
         .await
-        .map_err(|error| match error {
-            OidcCallbackError::Rejected(_) => {
-                tracing::warn!(stage = error.diagnostic_stage(), "OIDC callback rejected");
-                ApiError::new(
-                    ApiErrorCode::AuthenticationRequired,
-                    "authentication failed",
-                )
-            }
-            OidcCallbackError::Unavailable => {
-                ApiError::new(ApiErrorCode::Internal, "authentication is unavailable")
-            }
-        })?
+        .map_err(authentication_error)?
     else {
         tracing::warn!("OIDC callback rejected: user is not authorized");
         return Err(ApiError::new(
@@ -535,25 +517,16 @@ async fn complete_oidc_login(
             "authentication failed",
         ));
     };
-    let clock = SystemClock;
-    let random = SystemRandom;
-    let session = WebSessionService::new(&state.database.web_session_store(), &random, &clock)
-        .issue(
-            Actor {
-                user_id: user.user_id,
-                is_root: false,
-            },
-            SessionLifetime {
-                idle_timeout_ms: 8 * 60 * 60 * 1_000,
-                absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
-            },
-        )
+    let session = state
+        .authentication
+        .issue_oidc_session(user.user_id)
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
-    let headers = session_headers(&session, oidc.cookie_path())?;
+        .map_err(authentication_error)?;
+    let cookie_path = state.authentication.cookie_path();
+    let headers = session_headers(&session, cookie_path)?;
     Ok((
         headers,
-        Redirect::to(&format!("{}/", oidc.cookie_path().trim_end_matches('/'))),
+        Redirect::to(&format!("{}/", cookie_path.trim_end_matches('/'))),
     )
         .into_response())
 }
@@ -562,41 +535,19 @@ async fn root_login(
     State(state): State<ApiState>,
     Json(request): Json<RootLoginRequest>,
 ) -> Result<Response, ApiError> {
-    let root_user_id = state
-        .database
-        .root_credential_store()
-        .verify_password(request.password)
+    let session = state
+        .authentication
+        .root_login(request.password)
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
-    let Some(user_id) = root_user_id else {
+        .map_err(authentication_error)?;
+    let Some(session) = session else {
         tracing::warn!("root login rejected");
         return Err(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication failed",
         ));
     };
-    let session = WebSessionService::new(
-        &state.database.web_session_store(),
-        &SystemRandom,
-        &SystemClock,
-    )
-    .issue(
-        Actor {
-            user_id,
-            is_root: true,
-        },
-        SessionLifetime {
-            idle_timeout_ms: 30 * 60 * 1_000,
-            absolute_timeout_ms: 8 * 60 * 60 * 1_000,
-        },
-    )
-    .await
-    .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
-    let cookie_path = state
-        .oidc
-        .as_ref()
-        .map(|oidc| oidc.cookie_path())
-        .unwrap_or("/");
+    let cookie_path = state.authentication.cookie_path();
     let mut response = StatusCode::NO_CONTENT.into_response();
     response
         .headers_mut()
@@ -611,11 +562,10 @@ async fn list_pending_users(
 ) -> Result<Json<Vec<PendingOidcUserResponse>>, ApiError> {
     require_root(&headers, &state).await?;
     let users = state
-        .database
-        .oidc_user_administration_store()
-        .list_pending()
+        .authentication
+        .list_pending_users()
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "user lookup is unavailable"))?;
+        .map_err(authentication_error)?;
     Ok(Json(users.into_iter().map(pending_user_response).collect()))
 }
 
@@ -631,11 +581,10 @@ async fn activate_pending_user(
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "user is not available"))?,
     );
     let activated = state
-        .database
-        .oidc_user_administration_store()
-        .activate(user_id, SystemClock.now())
+        .authentication
+        .activate_pending_user(user_id)
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "user update is unavailable"))?;
+        .map_err(authentication_error)?;
     if !activated {
         return Err(ApiError::new(
             ApiErrorCode::NotFound,
@@ -660,11 +609,10 @@ async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> Result<Ac
         "authentication is required",
     ))?;
     let session = state
-        .database
-        .web_session_store()
-        .lookup(session_id, SystemClock.now())
+        .authentication
+        .authenticate_session(session_id)
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?
+        .map_err(authentication_error)?
         .ok_or(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication is required",
@@ -722,11 +670,10 @@ async fn require_csrf(headers: &HeaderMap, state: &ApiState) -> Result<(), ApiEr
             "CSRF token is required",
         ))?;
     let valid = state
-        .database
-        .web_session_store()
-        .verify_csrf(session_id, csrf_token, SystemClock.now())
+        .authentication
+        .verify_csrf(session_id, csrf_token)
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
+        .map_err(authentication_error)?;
     if valid {
         Ok(())
     } else {
@@ -745,11 +692,10 @@ async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> Result<Res
         "authentication is required",
     ))?;
     state
-        .database
-        .web_session_store()
-        .revoke(session_id, SystemClock.now())
+        .authentication
+        .revoke_session(session_id)
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?;
+        .map_err(authentication_error)?;
     let mut response = StatusCode::NO_CONTENT.into_response();
     response.headers_mut().insert(
         header::SET_COOKIE,
@@ -836,7 +782,7 @@ mod tests {
             .expect("open store");
         let directory = std::env::temp_dir().join("marginalis-web-health-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let response = router(ApiState::new(
+        let response = router(ApiState::with_test_adapters(
             database.clone(),
             Arc::new(marginalis_server::ServerNoteUseCases::new(
                 database, sources,
@@ -861,7 +807,7 @@ mod tests {
             .expect("open store");
         let directory = std::env::temp_dir().join("marginalis-web-landing-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let response = router(ApiState::new(
+        let response = router(ApiState::with_test_adapters(
             database.clone(),
             Arc::new(marginalis_server::ServerNoteUseCases::new(
                 database, sources,
@@ -886,7 +832,7 @@ mod tests {
             .expect("open database");
         let directory = std::env::temp_dir().join("marginalis-web-note-auth-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let response = router(ApiState::new(
+        let response = router(ApiState::with_test_adapters(
             database.clone(),
             Arc::new(marginalis_server::ServerNoteUseCases::new(
                 database, sources,
@@ -932,7 +878,7 @@ mod tests {
             .expect("session");
         let directory = std::env::temp_dir().join("marginalis-web-csrf-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let response = router(ApiState::new(
+        let response = router(ApiState::with_test_adapters(
             database.clone(),
             Arc::new(marginalis_server::ServerNoteUseCases::new(
                 database, sources,
@@ -980,7 +926,7 @@ mod tests {
             .expect("register pending user");
         let directory = std::env::temp_dir().join("marginalis-web-root-admin-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let app = router(ApiState::new(
+        let app = router(ApiState::with_test_adapters(
             database.clone(),
             Arc::new(marginalis_server::ServerNoteUseCases::new(
                 database, sources,

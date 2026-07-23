@@ -167,6 +167,48 @@ pub trait WebSessionStore: Send + Sync {
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 }
 
+/// Cookie session、外部OIDCおよびroot管理をtransportから隔離する境界。
+///
+/// Web HTTPとMCP OAuthは異なるcredentialを用いるが、いずれもここで認証済み主体へ変換する。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthenticationUseCaseError {
+    Rejected,
+    NotFound,
+    Unavailable,
+}
+
+#[async_trait]
+pub trait WebAuthenticationUseCases: Send + Sync {
+    async fn begin_oidc_login(&self) -> Result<String, AuthenticationUseCaseError>;
+    async fn complete_oidc_login(
+        &self,
+        code: String,
+        state: String,
+    ) -> Result<OidcLoginResult, AuthenticationUseCaseError>;
+    async fn authenticate_session(
+        &self,
+        session_id: String,
+    ) -> Result<Option<AuthenticatedSession>, AuthenticationUseCaseError>;
+    async fn verify_csrf(
+        &self,
+        session_id: String,
+        csrf_token: String,
+    ) -> Result<bool, AuthenticationUseCaseError>;
+    async fn issue_oidc_session(&self, user_id: UserId)
+    -> Result<WebSession, AuthenticationUseCaseError>;
+    async fn root_login(
+        &self,
+        password: String,
+    ) -> Result<Option<WebSession>, AuthenticationUseCaseError>;
+    async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError>;
+    async fn list_pending_users(&self) -> Result<Vec<OidcUser>, AuthenticationUseCaseError>;
+    async fn activate_pending_user(
+        &self,
+        user_id: UserId,
+    ) -> Result<bool, AuthenticationUseCaseError>;
+    fn cookie_path(&self) -> &str;
+}
+
 /// sessionの有効期限と秘密値を一箇所で決めるユースケース。
 pub struct WebSessionService<'a, Store, Entropy, Time> {
     store: &'a Store,

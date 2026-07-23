@@ -56,6 +56,8 @@ HTTP REST       MCP transport       maintenance CLI
 
 - AsciiDoc正本、SQLite投影および操作ジャーナルの更新は一つのapplication use caseだけが調停する。
 - HTTP、MCPおよび将来のCLIは同じuse caseを呼び、SQLやファイルI/Oへ直接アクセスしない。
+- Web Cookie session、root loginおよび外部OIDC callbackは`WebAuthenticationUseCases`を通す。
+  HTTP transportはsession table、root credential、OIDC stateおよびidentity storeを直接参照しない。
 - OIDCの`issuer`と`subject`だけが外部本人同定に使われる。email・表示名は可変属性である。
 - secret、token、authorization code、state、nonceおよびPKCE verifierを監査ログ・通常ログ・
   Nix storeへ出力しない。
