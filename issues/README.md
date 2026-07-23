@@ -10,10 +10,11 @@
 現在の優先順位は、Web UIより先にREST APIとMCPを成立させることである。root管理はREST APIで継続し、
 管理UIは後続とする。
 
-1. [014: RESTノートAPI・検索・MCP連携](014-rest-notes-search-and-mcp.md)
-2. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
-3. [005: 検索・グラフ投影と再構築](005-projections-and-rebuild.md)
-4. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md)
+1. [015: API-firstアーキテクチャ再基線化](015-api-first-architecture-rebaseline.md)
+2. [014: RESTノートAPI・検索・MCP連携](014-rest-notes-search-and-mcp.md)
+3. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
+4. [005: 検索・グラフ投影と再構築](005-projections-and-rebuild.md)
+5. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md)
 
 AsciiDocアダプタに関する依存順は次のとおりである。
 
@@ -50,6 +51,9 @@ rootのローカル認証とOIDC保留ユーザーの承認は
 
 REST APIだけでのノートCRUD・検索と、そのuse caseを再利用するMCP連携は
 [014: RESTノートAPI・検索・MCP連携](014-rest-notes-search-and-mcp.md)で管理する。
+
+RESTとMCPを実装する前の破壊的なAPI-first再構成は
+[015: API-firstアーキテクチャ再基線化](015-api-first-architecture-rebaseline.md)で管理する。
 
 ## 実装原則
 
