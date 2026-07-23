@@ -216,9 +216,13 @@ in
           "root-password:${cfg.initialRootPasswordFile}"
         ];
         NoNewPrivileges = true;
+        CapabilityBoundingSet = "";
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectKernelTunables = true;
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
+        SystemCallFilter = [ "@system-service" "~@privileged" ];
         ReadWritePaths = [ cfg.dataDir ];
       }
       // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
@@ -248,9 +252,13 @@ in
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
         NoNewPrivileges = true;
+        CapabilityBoundingSet = "";
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectKernelTunables = true;
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
+        SystemCallFilter = [ "@system-service" "~@privileged" ];
         ReadWritePaths = [ cfg.dataDir ];
       }
       // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
@@ -276,9 +284,13 @@ in
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
         NoNewPrivileges = true;
+        CapabilityBoundingSet = "";
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectKernelTunables = true;
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
+        SystemCallFilter = [ "@system-service" "~@privileged" ];
         ReadWritePaths = [ cfg.dataDir ];
       }
       // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
@@ -316,9 +328,13 @@ in
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
         NoNewPrivileges = true;
+        CapabilityBoundingSet = "";
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectKernelTunables = true;
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
+        SystemCallFilter = [ "@system-service" "~@privileged" ];
         ReadWritePaths = [
           cfg.dataDir
           cfg.backupDirectory

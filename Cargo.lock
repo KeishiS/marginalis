@@ -1167,6 +1167,7 @@ dependencies = [
 name = "marginalis-domain"
 version = "0.1.0-rc.2"
 dependencies = [
+ "base64 0.22.1",
  "serde",
  "sha2",
  "uuid",
@@ -1190,7 +1191,6 @@ name = "marginalis-mcp"
 version = "0.1.0-rc.2"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
  "marginalis-application",
  "marginalis-domain",
  "serde",

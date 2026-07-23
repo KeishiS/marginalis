@@ -106,6 +106,46 @@ pub struct SqliteDeleteConfirmationStore {
     pool: SqlitePool,
 }
 
+macro_rules! sqlite_store_error {
+    ($name:ident, $database_message:literal $(, $variant:ident => $variant_message:literal)* $(,)?) => {
+        #[derive(Debug)]
+        pub enum $name {
+            Database(sqlx::Error),
+            $($variant,)*
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    Self::Database(_) => formatter.write_str($database_message),
+                    $(Self::$variant => formatter.write_str($variant_message),)*
+                }
+            }
+        }
+
+        impl std::error::Error for $name {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                match self {
+                    Self::Database(error) => Some(error),
+                    $(Self::$variant => None,)*
+                }
+            }
+        }
+
+        impl From<sqlx::Error> for $name {
+            fn from(value: sqlx::Error) -> Self {
+                Self::Database(value)
+            }
+        }
+    };
+}
+
+sqlite_store_error!(
+    DeleteConfirmationStoreError,
+    "delete confirmation query failed",
+    CorruptConfirmation => "delete confirmation contains invalid data",
+);
+
 #[derive(Debug)]
 pub enum McpOAuthStoreError {
     Database(sqlx::Error),
@@ -141,57 +181,18 @@ impl From<serde_json::Error> for McpOAuthStoreError {
     }
 }
 
-#[derive(Debug)]
-pub enum McpAccessTokenStoreError {
-    Database(sqlx::Error),
-    CorruptUser,
-}
+sqlite_store_error!(
+    McpAccessTokenStoreError,
+    "MCP access token query failed",
+    CorruptUser => "MCP access token contains an invalid user",
+);
 
-impl fmt::Display for McpAccessTokenStoreError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("MCP access token query failed")
-    }
-}
-
-impl std::error::Error for McpAccessTokenStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(error) => Some(error),
-            Self::CorruptUser => None,
-        }
-    }
-}
-
-impl From<sqlx::Error> for McpAccessTokenStoreError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
-
-#[derive(Debug)]
-pub enum NoteAclStoreError {
-    Database(sqlx::Error),
-    InvalidPermission,
-    LastAdmin,
-}
-impl fmt::Display for NoteAclStoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("note ACL query failed")
-    }
-}
-impl std::error::Error for NoteAclStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-impl From<sqlx::Error> for NoteAclStoreError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
+sqlite_store_error!(
+    NoteAclStoreError,
+    "note ACL query failed",
+    InvalidPermission => "note ACL contains an invalid permission",
+    LastAdmin => "the last note administrator cannot be removed",
+);
 
 #[derive(Clone, Debug)]
 pub struct SqliteWebSessionStore {
@@ -213,220 +214,42 @@ pub struct SqliteOidcUserAdministrationStore {
     pool: SqlitePool,
 }
 
-#[derive(Debug)]
-pub enum RootCredentialStoreError {
-    Database(sqlx::Error),
-    PasswordHash,
-}
-impl fmt::Display for RootCredentialStoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("root credential initialization failed")
-    }
-}
-impl std::error::Error for RootCredentialStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(e) => Some(e),
-            Self::PasswordHash => None,
-        }
-    }
-}
-impl From<sqlx::Error> for RootCredentialStoreError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
-
-#[derive(Debug)]
-pub enum OidcUserAdministrationStoreError {
-    Database(sqlx::Error),
-    CorruptUser,
-}
-impl fmt::Display for OidcUserAdministrationStoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("OIDC user administration query failed")
-    }
-}
-impl std::error::Error for OidcUserAdministrationStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(error) => Some(error),
-            Self::CorruptUser => None,
-        }
-    }
-}
-impl From<sqlx::Error> for OidcUserAdministrationStoreError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
-
-#[derive(Debug)]
-pub enum OidcLoginAttemptStoreError {
-    Database(sqlx::Error),
-}
-
-impl fmt::Display for OidcLoginAttemptStoreError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("OIDC login attempt query failed")
-    }
-}
-
-impl std::error::Error for OidcLoginAttemptStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(error) => Some(error),
-        }
-    }
-}
-
-impl From<sqlx::Error> for OidcLoginAttemptStoreError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
-
-#[derive(Debug)]
-pub enum WebSessionStoreError {
-    Database(sqlx::Error),
-    CorruptSession,
-}
-
-impl fmt::Display for WebSessionStoreError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("web session query failed")
-    }
-}
-impl std::error::Error for WebSessionStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(error) => Some(error),
-            Self::CorruptSession => None,
-        }
-    }
-}
-impl From<sqlx::Error> for WebSessionStoreError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
-
-#[derive(Debug)]
-pub enum NoteProjectionError {
-    Database(sqlx::Error),
-}
-
-#[derive(Debug)]
-pub enum NoteQueryStoreError {
-    Database(sqlx::Error),
-    CorruptNote,
-}
-impl fmt::Display for NoteQueryStoreError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("note query failed")
-    }
-}
-impl std::error::Error for NoteQueryStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(error) => Some(error),
-            Self::CorruptNote => None,
-        }
-    }
-}
-impl From<sqlx::Error> for NoteQueryStoreError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
-
-impl fmt::Display for NoteProjectionError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("note projection query failed")
-    }
-}
-
-impl std::error::Error for NoteProjectionError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(error) => Some(error),
-        }
-    }
-}
-
-impl From<sqlx::Error> for NoteProjectionError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
-
-#[derive(Debug)]
-pub enum OidcIdentityStoreError {
-    Database(sqlx::Error),
-    CorruptUser,
-}
-
-impl fmt::Display for OidcIdentityStoreError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Database(error) => write!(formatter, "OIDC identity query failed: {error}"),
-            Self::CorruptUser => {
-                formatter.write_str("OIDC identity store contains an invalid user")
-            }
-        }
-    }
-}
-
-impl std::error::Error for OidcIdentityStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(error) => Some(error),
-            Self::CorruptUser => None,
-        }
-    }
-}
-
-impl From<sqlx::Error> for OidcIdentityStoreError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
-
-#[derive(Debug)]
-pub enum JournalError {
-    Database(sqlx::Error),
-    CorruptEntry,
-    InvalidTransition,
-}
-
-impl fmt::Display for JournalError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Database(error) => write!(formatter, "operation journal query failed: {error}"),
-            Self::CorruptEntry => {
-                formatter.write_str("operation journal contains an invalid entry")
-            }
-            Self::InvalidTransition => {
-                formatter.write_str("operation journal state transition is invalid")
-            }
-        }
-    }
-}
-
-impl std::error::Error for JournalError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Database(error) => Some(error),
-            Self::CorruptEntry | Self::InvalidTransition => None,
-        }
-    }
-}
-
-impl From<sqlx::Error> for JournalError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Database(value)
-    }
-}
+sqlite_store_error!(
+    RootCredentialStoreError,
+    "root credential initialization failed",
+    PasswordHash => "root credential contains an invalid password hash",
+);
+sqlite_store_error!(
+    OidcUserAdministrationStoreError,
+    "OIDC user administration query failed",
+    CorruptUser => "OIDC user administration contains an invalid user",
+);
+sqlite_store_error!(
+    OidcLoginAttemptStoreError,
+    "OIDC login attempt query failed"
+);
+sqlite_store_error!(
+    WebSessionStoreError,
+    "web session query failed",
+    CorruptSession => "web session contains invalid data",
+);
+sqlite_store_error!(NoteProjectionError, "note projection query failed");
+sqlite_store_error!(
+    NoteQueryStoreError,
+    "note query failed",
+    CorruptNote => "note query contains an invalid note",
+);
+sqlite_store_error!(
+    OidcIdentityStoreError,
+    "OIDC identity query failed",
+    CorruptUser => "OIDC identity store contains an invalid user",
+);
+sqlite_store_error!(
+    JournalError,
+    "operation journal query failed",
+    CorruptEntry => "operation journal contains an invalid entry",
+    InvalidTransition => "operation journal state transition is invalid",
+);
 
 impl SqliteDatabase {
     /// 接続設定とmigrationを一箇所に集約する。
@@ -653,14 +476,22 @@ impl SqliteDatabase {
             "DELETE FROM mcp_authorization_codes WHERE expires_at_ms <= ? OR consumed_at_ms IS NOT NULL",
             "DELETE FROM mcp_access_tokens WHERE expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
             "DELETE FROM mcp_refresh_tokens WHERE expires_at_ms <= ? OR rotated_at_ms IS NOT NULL OR revoked_at_ms IS NOT NULL",
-            "DELETE FROM web_sessions WHERE idle_expires_at_ms <= ? OR absolute_expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
         ] {
-            let mut query = sqlx::query(statement).bind(now.get());
-            if statement.contains("absolute_expires_at_ms") {
-                query = query.bind(now.get());
-            }
-            purged += query.execute(&mut *transaction).await?.rows_affected();
+            purged += sqlx::query(statement)
+                .bind(now.get())
+                .execute(&mut *transaction)
+                .await?
+                .rows_affected();
         }
+        purged += sqlx::query(
+            "DELETE FROM web_sessions
+             WHERE idle_expires_at_ms <= ? OR absolute_expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
+        )
+        .bind(now.get())
+        .bind(now.get())
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
         transaction.commit().await?;
         Ok(purged)
     }
@@ -1064,7 +895,7 @@ impl WebSessionStore for SqliteWebSessionStore {
         let pool = self.pool.clone();
         async move {
             let hash = hash_token(&session_id);
-            let row = sqlx::query("SELECT web_sessions.user_id, users.authentication_kind, idle_timeout_ms, idle_expires_at_ms, absolute_expires_at_ms FROM web_sessions JOIN users ON users.user_id = web_sessions.user_id WHERE session_id_hash = ? AND revoked_at_ms IS NULL")
+            let row = sqlx::query("SELECT web_sessions.user_id, users.authentication_kind, idle_timeout_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms FROM web_sessions JOIN users ON users.user_id = web_sessions.user_id WHERE session_id_hash = ? AND revoked_at_ms IS NULL")
                 .bind(&hash).fetch_optional(&pool).await?;
             let Some(row) = row else { return Ok(None) };
             let idle: i64 = row.try_get("idle_expires_at_ms")?;
@@ -1074,8 +905,16 @@ impl WebSessionStore for SqliteWebSessionStore {
             }
             let timeout: i64 = row.try_get("idle_timeout_ms")?;
             let next_idle = (now.get() + timeout).min(absolute);
-            sqlx::query("UPDATE web_sessions SET last_seen_at_ms = ?, idle_expires_at_ms = ? WHERE session_id_hash = ?")
-                .bind(now.get()).bind(next_idle).bind(hash).execute(&pool).await?;
+            let last_seen: i64 = row.try_get("last_seen_at_ms")?;
+            // 高頻度のread-only API呼出しをSQLite writeへ変えない。60秒に一度だけidle期限を
+            // 更新しても、継続利用中のsessionは十分な余裕を持って延長される。
+            let idle_expires_at = if now.get().saturating_sub(last_seen) >= 60_000 {
+                sqlx::query("UPDATE web_sessions SET last_seen_at_ms = ?, idle_expires_at_ms = ? WHERE session_id_hash = ?")
+                    .bind(now.get()).bind(next_idle).bind(hash).execute(&pool).await?;
+                next_idle
+            } else {
+                idle
+            };
             let user_id: String = row.try_get("user_id")?;
             let authentication_kind: String = row.try_get("authentication_kind")?;
             Ok(Some(AuthenticatedSession {
@@ -1086,7 +925,7 @@ impl WebSessionStore for SqliteWebSessionStore {
                     ),
                     is_root: authentication_kind == "root",
                 },
-                idle_expires_at: UnixMillis::new(next_idle),
+                idle_expires_at: UnixMillis::new(idle_expires_at),
                 absolute_expires_at: UnixMillis::new(absolute),
             }))
         }
@@ -1233,7 +1072,7 @@ impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
 }
 
 impl DeleteConfirmationStore for SqliteDeleteConfirmationStore {
-    type Error = McpOAuthStoreError;
+    type Error = DeleteConfirmationStoreError;
 
     fn issue(
         &self,
@@ -1290,7 +1129,7 @@ impl DeleteConfirmationStore for SqliteDeleteConfirmationStore {
             };
             let note_id = EntityId::from_str(&row.try_get::<String, _>("note_id")?)
                 .map(NoteId::new)
-                .map_err(|_| McpOAuthStoreError::CorruptUser)?;
+                .map_err(|_| DeleteConfirmationStoreError::CorruptConfirmation)?;
             let stored_reference_state_hash: Vec<u8> =
                 row.try_get("incoming_reference_state_hash")?;
             let (current_reference_state_hash, _) =
@@ -1313,7 +1152,7 @@ impl DeleteConfirmationStore for SqliteDeleteConfirmationStore {
                 return Ok(DeleteConfirmation::Missing);
             }
             let revision = SourceRevision::from_hex(&row.try_get::<String, _>("source_revision")?)
-                .ok_or(McpOAuthStoreError::CorruptUser)?;
+                .ok_or(DeleteConfirmationStoreError::CorruptConfirmation)?;
             transaction.commit().await?;
             Ok(DeleteConfirmation::Confirmed {
                 note_id,
@@ -1996,9 +1835,17 @@ fn note_summary_from_row(
     })
 }
 
-/// 利用者入力をFTS演算子として解釈せず、一つのphraseとして検索する。
+/// 利用者入力をFTS演算子として解釈せず、空白区切りの各語をAND検索する。
 fn fts_phrase_query(query: &str) -> String {
-    format!("\"{}\"", query.replace('"', "\"\""))
+    let terms = query
+        .split_whitespace()
+        .map(|term| format!("\"{}\"", term.replace('"', "\"\"")))
+        .collect::<Vec<_>>();
+    if terms.is_empty() {
+        "\"\"".into()
+    } else {
+        terms.join(" AND ")
+    }
 }
 
 impl OidcIdentityStore for SqliteOidcIdentityStore {
@@ -3728,5 +3575,11 @@ mod tests {
                 .expect("consume"),
             DeleteConfirmation::Stale
         );
+    }
+
+    #[test]
+    fn fts_query_uses_safe_and_joined_terms() {
+        assert_eq!(fts_phrase_query("alpha beta"), "\"alpha\" AND \"beta\"");
+        assert_eq!(fts_phrase_query("a\"b"), "\"a\"\"b\"");
     }
 }

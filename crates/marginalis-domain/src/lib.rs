@@ -2,6 +2,7 @@
 
 use core::{fmt, str::FromStr};
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -18,6 +19,37 @@ impl UnixMillis {
     pub const fn get(self) -> i64 {
         self.0
     }
+}
+
+/// 不透明なページングcursorの形式エラー。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidOffsetCursor;
+
+impl fmt::Display for InvalidOffsetCursor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("an offset cursor must be an unpadded base64url u64")
+    }
+}
+
+impl std::error::Error for InvalidOffsetCursor {}
+
+/// 現在の一覧・検索実装が使う不透明なoffset cursorを復号する。
+///
+/// cursorはAPIの内部表現であり、利用者は直前の応答の`next_cursor`だけを渡す。
+pub fn decode_offset_cursor(cursor: Option<String>) -> Result<u64, InvalidOffsetCursor> {
+    let Some(cursor) = cursor else {
+        return Ok(0);
+    };
+    let bytes = URL_SAFE_NO_PAD
+        .decode(cursor)
+        .map_err(|_| InvalidOffsetCursor)?;
+    let bytes: [u8; 8] = bytes.try_into().map_err(|_| InvalidOffsetCursor)?;
+    Ok(u64::from_be_bytes(bytes))
+}
+
+/// offsetをAPI公開用の不透明cursorに符号化する。
+pub fn encode_offset_cursor(offset: Option<u64>) -> Option<String> {
+    offset.map(|offset| URL_SAFE_NO_PAD.encode(offset.to_be_bytes()))
 }
 
 /// AsciiDoc正本から算出するSHA-256 revision。
@@ -412,5 +444,16 @@ mod tests {
         let revision = SourceRevision::from_source(b"source");
         assert_eq!(SourceRevision::from_hex(&revision.to_hex()), Some(revision));
         assert_eq!(SourceRevision::from_hex("not-a-revision"), None);
+    }
+
+    #[test]
+    fn offset_cursor_round_trips_and_rejects_invalid_values() {
+        let cursor = encode_offset_cursor(Some(42)).expect("cursor");
+        assert_eq!(decode_offset_cursor(Some(cursor)), Ok(42));
+        assert_eq!(decode_offset_cursor(None), Ok(0));
+        assert_eq!(
+            decode_offset_cursor(Some("invalid".into())),
+            Err(InvalidOffsetCursor)
+        );
     }
 }

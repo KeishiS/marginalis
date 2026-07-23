@@ -1,7 +1,6 @@
 //! MCP JSON-RPCのtool adapter。HTTP、OAuthおよびSQLiteには依存しない。
 
 use async_trait::async_trait;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{NoteDraft, NoteUseCaseError, NoteUseCases};
 use marginalis_domain::{Actor, EntityId, NoteId, SourceRevision};
 use serde::{Deserialize, Serialize};
@@ -94,9 +93,9 @@ impl McpTools {
                     return JsonRpcResponse::error(id, -32602, "search arguments are invalid");
                 };
                 let limit = arguments.limit.unwrap_or(50).clamp(1, 100);
-                let offset = match cursor_offset(arguments.cursor) {
+                let offset = match marginalis_domain::decode_offset_cursor(arguments.cursor) {
                     Ok(offset) => offset,
-                    Err(()) => {
+                    Err(_) => {
                         return JsonRpcResponse::error(id, -32602, "search cursor is invalid");
                     }
                 };
@@ -131,7 +130,7 @@ impl McpTools {
                                 "content": [{ "type": "text", "text": text }],
                                 "structuredContent": {
                                     "notes": notes,
-                                    "next_cursor": next_cursor(page.next_offset)
+                                    "next_cursor": marginalis_domain::encode_offset_cursor(page.next_offset)
                                 }
                             }),
                         )
@@ -185,9 +184,9 @@ impl McpTools {
                     return JsonRpcResponse::error(id, -32602, "note ID is invalid");
                 };
                 let limit = arguments.limit.unwrap_or(50).clamp(1, 100);
-                let offset = match cursor_offset(arguments.cursor) {
+                let offset = match marginalis_domain::decode_offset_cursor(arguments.cursor) {
                     Ok(offset) => offset,
-                    Err(()) => {
+                    Err(_) => {
                         return JsonRpcResponse::error(id, -32602, "link cursor is invalid");
                     }
                 };
@@ -217,7 +216,7 @@ impl McpTools {
                                 "content": [{ "type": "text", "text": text }],
                                 "structuredContent": {
                                     "links": links,
-                                    "next_cursor": next_cursor(page.next_offset)
+                                    "next_cursor": marginalis_domain::encode_offset_cursor(page.next_offset)
                                 }
                             }),
                         )
@@ -533,19 +532,6 @@ struct PrepareDeleteArguments {
 #[derive(Deserialize)]
 struct DeleteArguments {
     confirmation_token: String,
-}
-
-fn cursor_offset(cursor: Option<String>) -> Result<u64, ()> {
-    let Some(cursor) = cursor else {
-        return Ok(0);
-    };
-    let bytes = URL_SAFE_NO_PAD.decode(cursor).map_err(|_| ())?;
-    let bytes: [u8; 8] = bytes.try_into().map_err(|_| ())?;
-    Ok(u64::from_be_bytes(bytes))
-}
-
-fn next_cursor(offset: Option<u64>) -> Option<String> {
-    offset.map(|offset| URL_SAFE_NO_PAD.encode(offset.to_be_bytes()))
 }
 
 #[cfg(test)]

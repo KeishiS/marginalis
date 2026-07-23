@@ -31,8 +31,8 @@ password、Cookie、OIDC code、MCP access/refresh tokenをコマンド履歴、
 ### 最小Web UIによる手動確認
 
 OIDC login後に`/acceptance`を開くと、JavaScriptを使わずに作成、取得、更新、検索、削除を順に操作できる。
-この画面は同一originのHTML formでCSRF tokenを送るため、productionの`Content-Security-Policy: default-src 'none'`
-を緩めない。HTTPの`201`、`204`、`409`やREST APIのrequest/response contractそのものは、この画面ではなく次の
+この画面は同一originのHTML formでCSRF tokenを送るため、Marginalisが全応答へ付与するstrict CSP
+（`default-src 'none'`、`form-action 'self'`、`frame-ancestors 'none'`）を緩めない。HTTPの`201`、`204`、`409`やREST APIのrequest/response contractそのものは、この画面ではなく次の
 外部API client手順で確認する。
 
 ### 外部API clientによるREST確認例

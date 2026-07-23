@@ -13,13 +13,12 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::{ConnectInfo, Form, Path, Query, State},
+    extract::{ConnectInfo, Extension, Form, Path, Query, State},
     http::{HeaderMap, HeaderValue, Request, StatusCode, header},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post, put},
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthAdministrationUseCases,
     McpOAuthUseCaseError, McpOAuthUseCases, NoteUseCaseError, NoteUseCases,
@@ -176,6 +175,8 @@ pub mod contract {
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 const OIDC_STATE_COOKIE: &str = "marginalis_oidc_state";
+const CONTENT_SECURITY_POLICY: &str =
+    "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 #[derive(Clone)]
 struct RequestId(String);
@@ -191,6 +192,7 @@ pub struct ApiState {
     pub browser_origin: String,
     pub mcp: Option<Arc<McpEndpoint>>,
     root_login_rate_limiter: RootLoginRateLimiter,
+    oidc_login_rate_limiter: OidcLoginRateLimiter,
 }
 
 /// root loginの接続元単位の失敗回数を抑える固定window limiter。
@@ -218,6 +220,7 @@ impl RootLoginRateLimiter {
             return false;
         };
         let now = Instant::now();
+        prune_expired_windows(&mut windows, now, self.window);
         let window = windows.entry(source.into()).or_insert((now, 0));
         if now.duration_since(window.0) >= self.window {
             *window = (now, 0);
@@ -230,6 +233,7 @@ impl RootLoginRateLimiter {
             return;
         };
         let now = Instant::now();
+        prune_expired_windows(&mut windows, now, self.window);
         let window = windows.entry(source.into()).or_insert((now, 0));
         if now.duration_since(window.0) >= self.window {
             *window = (now, 0);
@@ -242,6 +246,55 @@ impl RootLoginRateLimiter {
             windows.remove(source);
         }
     }
+}
+
+/// OIDC開始要求による一時stateの永続化を、接続元単位で抑える固定window limiter。
+///
+/// proxy配下ではTCP peer単位の粗い上限となる。client IP headerを信頼しないため、公開proxyでは
+/// 利用者単位のrate limitも併用する。
+#[derive(Clone)]
+struct OidcLoginRateLimiter {
+    attempts_per_window: u32,
+    window: Duration,
+    max_sources: usize,
+    windows: Arc<Mutex<HashMap<String, (Instant, u32)>>>,
+}
+
+impl OidcLoginRateLimiter {
+    fn new(attempts_per_window: u32, window: Duration, max_sources: usize) -> Self {
+        Self {
+            attempts_per_window,
+            window,
+            max_sources,
+            windows: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// 一回分を消費する。上限または追跡可能な接続元数を超えた場合は拒否する。
+    fn allow_attempt(&self, source: &str) -> bool {
+        let Ok(mut windows) = self.windows.lock() else {
+            return false;
+        };
+        let now = Instant::now();
+        prune_expired_windows(&mut windows, now, self.window);
+        if !windows.contains_key(source) && windows.len() >= self.max_sources {
+            return false;
+        }
+        let window = windows.entry(source.into()).or_insert((now, 0));
+        if window.1 >= self.attempts_per_window {
+            return false;
+        }
+        window.1 = window.1.saturating_add(1);
+        true
+    }
+}
+
+fn prune_expired_windows(
+    windows: &mut HashMap<String, (Instant, u32)>,
+    now: Instant,
+    window: Duration,
+) {
+    windows.retain(|_, (started, _)| now.duration_since(*started) < window);
 }
 
 pub struct McpEndpoint {
@@ -308,6 +361,7 @@ impl ApiState {
             browser_origin,
             mcp: None,
             root_login_rate_limiter: RootLoginRateLimiter::new(5, Duration::from_secs(15 * 60)),
+            oidc_login_rate_limiter: OidcLoginRateLimiter::new(30, Duration::from_secs(60), 4096),
         }
     }
 
@@ -447,6 +501,7 @@ pub fn router(state: ApiState) -> Router {
     application_router(state.clone())
         .merge(administration_router(state))
         .layer(middleware::from_fn(assign_request_id))
+        .layer(middleware::from_fn(set_security_headers))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {
@@ -578,6 +633,25 @@ async fn assign_request_id(mut request: Request<axum::body::Body>, next: Next) -
     if let Ok(value) = HeaderValue::from_str(&request_id.0) {
         response.headers_mut().insert(REQUEST_ID_HEADER, value);
     }
+    response
+}
+
+/// HTML UIを含む全応答へ、reverse proxyの有無にかかわらない最小のbrowser防御headerを付ける。
+async fn set_security_headers(request: Request<axum::body::Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
     response
 }
 
@@ -814,6 +888,7 @@ fn oauth_error(error: McpOAuthUseCaseError) -> ApiError {
 
 async fn mcp_authorize(
     State(state): State<ApiState>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     Query(query): Query<McpAuthorizeQuery>,
 ) -> Result<Response, ApiError> {
@@ -830,7 +905,7 @@ async fn mcp_authorize(
     let actor = match authenticated_actor(&headers, &state).await {
         Ok(actor) => actor,
         Err(error) if error.code == ApiErrorCode::AuthenticationRequired => {
-            return oidc_login_with_return_to(&state, &query).await;
+            return oidc_login_with_return_to(&state, &query, request_source(peer)).await;
         }
         Err(error) => return Err(error),
     };
@@ -968,7 +1043,9 @@ fn required_token_field(value: Option<String>, name: &'static str) -> Result<Str
 async fn oidc_login_with_return_to(
     state: &ApiState,
     query: &McpAuthorizeQuery,
+    source: String,
 ) -> Result<Response, ApiError> {
+    require_oidc_login_capacity(state, &source)?;
     let destination = state
         .oidc
         .begin_oidc_login()
@@ -1268,6 +1345,7 @@ async fn acceptance_search(
         .search_notes(actor, query.q.clone(), Default::default(), 0, 100)
         .await
         .map_err(|error| note_error(error, "note search is unavailable"))?;
+    let result_count = page.notes.len();
     let notes = page
         .notes
         .into_iter()
@@ -1281,10 +1359,7 @@ async fn acceptance_search(
         .collect::<String>();
     Ok(Html(acceptance_page(
         &format!("検索結果: {}", escape_html(&query.q)),
-        &format!(
-            "<p>結果: {} 件</p><ul>{notes}</ul>",
-            notes.matches("<li>").count()
-        ),
+        &format!("<p>結果: {} 件</p><ul>{notes}</ul>", result_count),
     )))
 }
 
@@ -1317,7 +1392,8 @@ async fn list_notes(
         .notes
         .list_notes(
             actor,
-            cursor_offset(query.cursor)?,
+            marginalis_domain::decode_offset_cursor(query.cursor)
+                .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "cursor is invalid"))?,
             bounded_limit(query.limit),
         )
         .await
@@ -1344,7 +1420,8 @@ async fn search_notes(
                 updated_before: query.updated_before,
                 ..Default::default()
             },
-            cursor_offset(query.cursor)?,
+            marginalis_domain::decode_offset_cursor(query.cursor)
+                .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "cursor is invalid"))?,
             bounded_limit(query.limit),
         )
         .await
@@ -1358,23 +1435,6 @@ fn bounded_limit(value: Option<u32>) -> u32 {
         value if value > 100 => 100,
         value => value,
     }
-}
-
-fn cursor_offset(cursor: Option<String>) -> Result<u64, ApiError> {
-    let Some(cursor) = cursor else {
-        return Ok(0);
-    };
-    let bytes = URL_SAFE_NO_PAD
-        .decode(cursor)
-        .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "cursor is invalid"))?;
-    let bytes: [u8; 8] = bytes
-        .try_into()
-        .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "cursor is invalid"))?;
-    Ok(u64::from_be_bytes(bytes))
-}
-
-fn next_cursor(offset: Option<u64>) -> Option<String> {
-    offset.map(|offset| URL_SAFE_NO_PAD.encode(offset.to_be_bytes()))
 }
 
 fn etag(revision: SourceRevision) -> String {
@@ -1412,7 +1472,7 @@ fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
 fn note_page_response(page: NotePage) -> NotePageResponse {
     NotePageResponse {
         notes: page.notes.into_iter().map(note_summary_response).collect(),
-        next_cursor: next_cursor(page.next_offset),
+        next_cursor: marginalis_domain::encode_offset_cursor(page.next_offset),
     }
 }
 
@@ -1589,7 +1649,11 @@ async fn update_note_acl(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Response, ApiError> {
+async fn begin_oidc_login(
+    State(state): State<ApiState>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+) -> Result<Response, ApiError> {
+    require_oidc_login_capacity(&state, &request_source(peer))?;
     let destination = state
         .oidc
         .begin_oidc_login()
@@ -1603,6 +1667,21 @@ async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Response, Api
             .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
     );
     Ok(response)
+}
+
+fn request_source(peer: Option<Extension<ConnectInfo<SocketAddr>>>) -> String {
+    peer.map(|Extension(ConnectInfo(peer))| peer.ip().to_string())
+        .unwrap_or_else(|| "unknown".into())
+}
+
+fn require_oidc_login_capacity(state: &ApiState, source: &str) -> Result<(), ApiError> {
+    if state.oidc_login_rate_limiter.allow_attempt(source) {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        ApiErrorCode::TooManyRequests,
+        "OIDC login is temporarily rate limited",
+    ))
 }
 
 #[derive(Deserialize)]
@@ -2178,10 +2257,11 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, OPENAPI_DOCUMENT,
-        REQUEST_ID_HEADER, RootLoginRateLimiter, administration_router, clear_oidc_state_cookie,
-        oidc_callback_failure, oidc_state_cookie, oidc_state_from_destination,
-        require_same_origin_browser_request, rfc3339_timestamp, router,
+        ApiError, ApiErrorCode, ApiState, CONTENT_SECURITY_POLICY, McpEndpoint, McpRateLimiter,
+        OPENAPI_DOCUMENT, OidcLoginRateLimiter, REQUEST_ID_HEADER, RootLoginRateLimiter,
+        administration_router, clear_oidc_state_cookie, oidc_callback_failure, oidc_state_cookie,
+        oidc_state_from_destination, require_same_origin_browser_request, rfc3339_timestamp,
+        router,
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
     use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
@@ -3241,5 +3321,58 @@ mod tests {
         assert!(limiter.allow("127.0.0.2"));
         limiter.reset("127.0.0.1");
         assert!(limiter.allow("127.0.0.1"));
+    }
+
+    #[test]
+    fn oidc_login_limiter_consumes_attempts_and_bounds_tracked_sources() {
+        let limiter = OidcLoginRateLimiter::new(2, Duration::from_secs(60), 1);
+        assert!(limiter.allow_attempt("127.0.0.1"));
+        assert!(limiter.allow_attempt("127.0.0.1"));
+        assert!(!limiter.allow_attempt("127.0.0.1"));
+        assert!(!limiter.allow_attempt("127.0.0.2"));
+    }
+
+    #[tokio::test]
+    async fn router_sets_security_headers_on_api_responses() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let directory = std::env::temp_dir().join("marginalis-web-security-headers-test");
+        let notes = Arc::new(marginalis_server::ServerNoteUseCases::new(
+            database.clone(),
+            marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+        ));
+        let response = router(ApiState::with_test_adapters(database, notes))
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/health")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_SECURITY_POLICY)
+                .and_then(|value| value.to_str().ok()),
+            Some(CONTENT_SECURITY_POLICY)
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::X_CONTENT_TYPE_OPTIONS)
+                .and_then(|value| value.to_str().ok()),
+            Some("nosniff")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::REFERRER_POLICY)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-referrer")
+        );
+        std::fs::remove_dir_all(directory).expect("remove directory");
     }
 }

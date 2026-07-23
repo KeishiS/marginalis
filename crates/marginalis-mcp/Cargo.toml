@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 async-trait.workspace = true
-base64.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 serde.workspace = true

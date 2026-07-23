@@ -1158,9 +1158,14 @@ impl NoteUseCases for ServerNoteUseCases {
         actor: Actor,
         draft: NoteDraft,
     ) -> Result<NoteSource, NoteUseCaseError> {
-        let note_id = NoteId::new(SystemRandom.uuid_v7());
         let now = timestamp_rfc3339(SystemClock.now())?;
-        let source = render_note_source(note_id, actor.user_id, &now, &now, &draft)?;
+        // create_sourceが正本のnote-idを生成・置換する。render_note_sourceにはheaderの構造を
+        // 満たす固定placeholderだけを渡し、UUIDを二度生成しない。
+        let placeholder_note_id = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000000")
+                .expect("fixed UUIDv7 placeholder"),
+        );
+        let source = render_note_source(placeholder_note_id, actor.user_id, &now, &now, &draft)?;
         let note_id = self.create_source(actor, source).await?;
         self.read_source(actor, note_id).await
     }
