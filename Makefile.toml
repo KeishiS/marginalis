@@ -83,7 +83,7 @@ command = "nix"
 args = ["build", ".#packages.x86_64-linux.default", "--no-link"]
 
 [tasks.release-metadata]
-description = "Verify RC version and declared dual-license files"
+description = "Verify release version and declared dual-license files"
 script_runner = "@shell"
 script = '''
 set -eu
@@ -91,7 +91,7 @@ test -s LICENSE-MIT
 test -s LICENSE-APACHE
 cargo metadata --no-deps --format-version 1 | jq -e '
   all(.packages[];
-    .version == "0.1.0-rc.2"
+    .version == "0.1.0"
     and .license == "MIT OR Apache-2.0"
     and .publish == [])
 '

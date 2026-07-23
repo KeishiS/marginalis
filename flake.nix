@@ -24,7 +24,7 @@
         {
           default = pkgs.rustPlatform.buildRustPackage {
             pname = "marginalis";
-            version = "0.1.0-rc.2";
+            version = "0.1.0";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;
