@@ -15,8 +15,14 @@
 3. 完了: [020: data format v1とmaintenance lifecycle](020-data-format-and-maintenance-lifecycle.md)
 4. 完了: [019: Web security baselineとroot管理境界](019-web-security-and-admin-boundary.md)
 5. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)
-6. [022: v0.1.0-rc.1 release acceptance](022-v0.1.0-rc.1-release-acceptance.md)
-7. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
+6. [023: 削除トランザクションと確認トークンの整合性](023-deletion-transaction-and-confirmation-integrity.md)
+7. [024: 正本更新の復旧状態機械と並行書込み制御](024-write-recovery-and-concurrency.md)
+8. [025: ACLと保護済みノートmetadataの不変条件](025-acl-and-metadata-invariants.md)
+9. [026: OIDCログイン開始要求のブラウザ結合](026-oidc-login-binding-and-runtime-limits.md)
+10. [027: 検索・xref・閲覧用RenderPolicyの完成](027-search-reference-and-rendering-projections.md)
+11. [028: current release契約と保守実装の再整合](028-contract-and-maintenance-reconciliation.md)
+12. [022: v0.1.0-rc.1 release acceptance](022-v0.1.0-rc.1-release-acceptance.md)
+13. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
 8. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
 9. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の再有効化
 10. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
