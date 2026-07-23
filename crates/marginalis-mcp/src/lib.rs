@@ -105,7 +105,14 @@ impl McpTools {
                     .search_notes(
                         actor,
                         arguments.query,
-                        marginalis_domain::NoteSearchFilters::default(),
+                        marginalis_domain::NoteSearchFilters {
+                            tags: arguments.tags.unwrap_or_default(),
+                            created_after: arguments.created_after,
+                            created_before: arguments.created_before,
+                            updated_after: arguments.updated_after,
+                            updated_before: arguments.updated_before,
+                            ..Default::default()
+                        },
                         offset,
                         limit,
                     )
@@ -469,6 +476,11 @@ struct ToolCall {
 #[derive(Deserialize)]
 struct SearchArguments {
     query: String,
+    tags: Option<Vec<String>>,
+    created_after: Option<String>,
+    created_before: Option<String>,
+    updated_after: Option<String>,
+    updated_before: Option<String>,
     limit: Option<u32>,
     cursor: Option<String>,
 }

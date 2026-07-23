@@ -83,6 +83,11 @@ pub mod contract {
     #[derive(Deserialize)]
     pub struct NoteSearchQuery {
         pub q: String,
+        pub tags: Option<Vec<String>>,
+        pub created_after: Option<String>,
+        pub created_before: Option<String>,
+        pub updated_after: Option<String>,
+        pub updated_before: Option<String>,
         pub limit: Option<u32>,
         pub cursor: Option<String>,
     }
@@ -1076,7 +1081,14 @@ async fn search_notes(
         .search_notes(
             actor,
             query.q,
-            marginalis_domain::NoteSearchFilters::default(),
+            marginalis_domain::NoteSearchFilters {
+                tags: query.tags.unwrap_or_default(),
+                created_after: query.created_after,
+                created_before: query.created_before,
+                updated_after: query.updated_after,
+                updated_before: query.updated_before,
+                ..Default::default()
+            },
             cursor_offset(query.cursor)?,
             bounded_limit(query.limit),
         )
