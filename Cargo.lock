@@ -1186,6 +1186,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "marginalis-mcp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "marginalis-application",
+ "marginalis-domain",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "marginalis-server"
 version = "0.1.0"
 dependencies = [
