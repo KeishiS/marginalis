@@ -26,4 +26,5 @@
 
 - current releaseを「研究室内でREST/MCPを実運用できる最小版」と定義する。
 - 次の優先順位を採用する: REST/MCP実運用、SMTP・OIDCユーザー再有効化・Web UI、招待・グループACL。
-- REST APIを外部client向けの安定契約としていつfreezeするか。
+- 現在の`/api/v1`は個人開発の再構成期間に破壊的変更を許容する。OpenAPI導入後に、外部client向けの
+  互換性をfreezeする時期を決める。
