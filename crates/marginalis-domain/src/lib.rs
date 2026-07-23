@@ -163,6 +163,13 @@ pub struct NoteSummary {
     pub title: String,
 }
 
+/// ACL適用後の一覧・検索結果の一頁。offsetはtransportが不透明cursorへ符号化する。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NotePage {
+    pub notes: Vec<NoteSummary>,
+    pub next_offset: Option<u64>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NoteReference {
     pub source_start: u32,

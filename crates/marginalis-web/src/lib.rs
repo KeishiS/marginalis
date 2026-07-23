@@ -12,6 +12,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::{delete, get, post, put},
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, NoteUseCaseError, NoteUseCases, WebAuthenticationUseCases,
     WebSession,
@@ -21,7 +22,7 @@ pub use marginalis_auth_oidc::{
     OidcConfigurationError, OidcDiscoveryError, OidcLoginStartError,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteSummary, OidcLoginResult, OidcUser,
+    Actor, EntityId, NoteId, NotePage, NotePermission, NoteSummary, OidcLoginResult, OidcUser,
     SourceRevision, UserId,
 };
 use serde::{Deserialize, Serialize};
@@ -249,12 +250,14 @@ async fn current_session(
 #[derive(Deserialize)]
 struct NoteListQuery {
     limit: Option<u32>,
+    cursor: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct NoteSearchQuery {
     q: String,
     limit: Option<u32>,
+    cursor: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -264,39 +267,46 @@ struct NoteSummaryResponse {
 }
 
 #[derive(Serialize)]
-struct NoteSearchResponse {
-    note_id: String,
-    title: String,
+struct NotePageResponse {
+    notes: Vec<NoteSummaryResponse>,
+    next_cursor: Option<String>,
 }
 
 async fn list_notes(
     State(state): State<ApiState>,
     headers: HeaderMap,
     Query(query): Query<NoteListQuery>,
-) -> Result<Json<Vec<NoteSummaryResponse>>, ApiError> {
+) -> Result<Json<NotePageResponse>, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
-    let notes = state
+    let page = state
         .notes
-        .list_notes(actor, bounded_limit(query.limit))
+        .list_notes(
+            actor,
+            cursor_offset(query.cursor)?,
+            bounded_limit(query.limit),
+        )
         .await
         .map_err(|error| note_error(error, "note listing is unavailable"))?;
-    Ok(Json(notes.into_iter().map(note_summary_response).collect()))
+    Ok(Json(note_page_response(page)))
 }
 
 async fn search_notes(
     State(state): State<ApiState>,
     headers: HeaderMap,
     Query(query): Query<NoteSearchQuery>,
-) -> Result<Json<Vec<NoteSearchResponse>>, ApiError> {
+) -> Result<Json<NotePageResponse>, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
-    let results = state
+    let page = state
         .notes
-        .search_notes(actor, query.q, bounded_limit(query.limit))
+        .search_notes(
+            actor,
+            query.q,
+            cursor_offset(query.cursor)?,
+            bounded_limit(query.limit),
+        )
         .await
         .map_err(|error| note_error(error, "note search is unavailable"))?;
-    Ok(Json(
-        results.into_iter().map(note_search_response).collect(),
-    ))
+    Ok(Json(note_page_response(page)))
 }
 
 fn bounded_limit(value: Option<u32>) -> u32 {
@@ -305,6 +315,23 @@ fn bounded_limit(value: Option<u32>) -> u32 {
         value if value > 100 => 100,
         value => value,
     }
+}
+
+fn cursor_offset(cursor: Option<String>) -> Result<u64, ApiError> {
+    let Some(cursor) = cursor else {
+        return Ok(0);
+    };
+    let bytes = URL_SAFE_NO_PAD
+        .decode(cursor)
+        .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "cursor is invalid"))?;
+    let bytes: [u8; 8] = bytes
+        .try_into()
+        .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "cursor is invalid"))?;
+    Ok(u64::from_be_bytes(bytes))
+}
+
+fn next_cursor(offset: Option<u64>) -> Option<String> {
+    offset.map(|offset| URL_SAFE_NO_PAD.encode(offset.to_be_bytes()))
 }
 
 fn etag(revision: SourceRevision) -> String {
@@ -339,10 +366,10 @@ fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
     }
 }
 
-fn note_search_response(note: NoteSummary) -> NoteSearchResponse {
-    NoteSearchResponse {
-        note_id: note.note_id.to_string(),
-        title: note.title,
+fn note_page_response(page: NotePage) -> NotePageResponse {
+    NotePageResponse {
+        notes: page.notes.into_iter().map(note_summary_response).collect(),
+        next_cursor: next_cursor(page.next_offset),
     }
 }
 

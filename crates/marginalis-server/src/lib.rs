@@ -13,8 +13,8 @@ use marginalis_application::{
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteSource, NoteSummary, OidcLoginResult,
-    SourceRevision, UnixMillis, UserId,
+    Actor, EntityId, NoteId, NotePage, NotePermission, NoteSource, OidcLoginResult, SourceRevision,
+    UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_sqlite::SqliteDatabase;
@@ -258,11 +258,12 @@ impl NoteUseCases for ServerNoteUseCases {
     async fn list_notes(
         &self,
         actor: Actor,
+        offset: u64,
         limit: u32,
-    ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
+    ) -> Result<NotePage, NoteUseCaseError> {
         self.database
             .note_query_store()
-            .list_visible(actor, limit)
+            .list_visible(actor, offset, limit)
             .await
             .map_err(|_| NoteUseCaseError::Unavailable)
     }
@@ -271,14 +272,15 @@ impl NoteUseCases for ServerNoteUseCases {
         &self,
         actor: Actor,
         query: String,
+        offset: u64,
         limit: u32,
-    ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
+    ) -> Result<NotePage, NoteUseCaseError> {
         if query.trim().is_empty() {
             return Err(NoteUseCaseError::Validation);
         }
         self.database
             .note_query_store()
-            .search_visible(actor, query, limit)
+            .search_visible(actor, query, offset, limit)
             .await
             .map_err(|_| NoteUseCaseError::Unavailable)
     }

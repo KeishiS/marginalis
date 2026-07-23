@@ -1,7 +1,7 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSource, NoteSummary, OidcIdentity,
+    Actor, EntityId, NoteId, NotePage, NotePermission, NoteProjection, NoteSource, OidcIdentity,
     OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
@@ -371,14 +371,16 @@ pub trait NoteQueryStore: Send + Sync {
     fn list_visible(
         &self,
         actor: Actor,
+        offset: u64,
         limit: u32,
-    ) -> impl Future<Output = Result<Vec<NoteSummary>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<NotePage, Self::Error>> + Send;
     fn search_visible(
         &self,
         actor: Actor,
         query: String,
+        offset: u64,
         limit: u32,
-    ) -> impl Future<Output = Result<Vec<NoteSummary>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<NotePage, Self::Error>> + Send;
 }
 
 /// ノートACLの永続化境界。HTTPはこのportを介してのみ権限を問い合わせる。
@@ -473,14 +475,16 @@ pub trait NoteUseCases: Send + Sync {
     async fn list_notes(
         &self,
         actor: Actor,
+        offset: u64,
         limit: u32,
-    ) -> Result<Vec<NoteSummary>, NoteUseCaseError>;
+    ) -> Result<NotePage, NoteUseCaseError>;
     async fn search_notes(
         &self,
         actor: Actor,
         query: String,
+        offset: u64,
         limit: u32,
-    ) -> Result<Vec<NoteSummary>, NoteUseCaseError>;
+    ) -> Result<NotePage, NoteUseCaseError>;
     async fn read_source(
         &self,
         actor: Actor,

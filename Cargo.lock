@@ -1222,6 +1222,7 @@ name = "marginalis-web"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "marginalis-application",
  "marginalis-asciidoc",
  "marginalis-auth-oidc",

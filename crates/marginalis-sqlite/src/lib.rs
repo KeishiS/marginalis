@@ -13,7 +13,7 @@ use marginalis_application::{
     RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSummary, OidcIdentity,
+    Actor, EntityId, NoteId, NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity,
     OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
@@ -852,8 +852,9 @@ impl NoteQueryStore for SqliteNoteQueryStore {
     fn list_visible(
         &self,
         actor: Actor,
+        offset: u64,
         limit: u32,
-    ) -> impl Future<Output = Result<Vec<NoteSummary>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<NotePage, Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
             let rows = sqlx::query(
@@ -863,16 +864,26 @@ impl NoteQueryStore for SqliteNoteQueryStore {
                    WHERE note_acl.note_id = notes.note_id AND note_acl.user_id = ?
                  )
                  ORDER BY notes.title COLLATE NOCASE ASC, notes.note_id ASC
-                 LIMIT ?",
+                 LIMIT ? OFFSET ?",
             )
             .bind(actor.is_root)
             .bind(actor.user_id.to_string())
-            .bind(i64::from(limit))
+            .bind(i64::from(limit) + 1)
+            .bind(i64::try_from(offset).unwrap_or(i64::MAX))
             .fetch_all(&pool)
             .await?;
-            rows.into_iter()
+            let has_next = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);
+            let notes = rows
+                .into_iter()
+                .take(usize::try_from(limit).unwrap_or(usize::MAX))
                 .map(|row| note_summary_from_row(&row))
-                .collect()
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(NotePage {
+                next_offset: has_next
+                    .then(|| offset.checked_add(u64::from(limit)))
+                    .flatten(),
+                notes,
+            })
         }
     }
 
@@ -880,8 +891,9 @@ impl NoteQueryStore for SqliteNoteQueryStore {
         &self,
         actor: Actor,
         query: String,
+        offset: u64,
         limit: u32,
-    ) -> impl Future<Output = Result<Vec<NoteSummary>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<NotePage, Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
             let rows = sqlx::query(
@@ -892,17 +904,27 @@ impl NoteQueryStore for SqliteNoteQueryStore {
                    WHERE note_acl.note_id = notes.note_id AND note_acl.user_id = ?
                  ))
                  ORDER BY bm25(note_search), notes.note_id ASC
-                 LIMIT ?",
+                 LIMIT ? OFFSET ?",
             )
             .bind(fts_phrase_query(&query))
             .bind(actor.is_root)
             .bind(actor.user_id.to_string())
-            .bind(i64::from(limit))
+            .bind(i64::from(limit) + 1)
+            .bind(i64::try_from(offset).unwrap_or(i64::MAX))
             .fetch_all(&pool)
             .await?;
-            rows.into_iter()
+            let has_next = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);
+            let notes = rows
+                .into_iter()
+                .take(usize::try_from(limit).unwrap_or(usize::MAX))
                 .map(|row| note_summary_from_row(&row))
-                .collect()
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(NotePage {
+                next_offset: has_next
+                    .then(|| offset.checked_add(u64::from(limit)))
+                    .flatten(),
+                notes,
+            })
         }
     }
 }
@@ -1669,11 +1691,12 @@ mod tests {
                     is_root: false,
                 },
                 "unique-secret-phrase".into(),
+                0,
                 10,
             )
             .await
             .expect("owner search");
-        assert_eq!(owner_results.len(), 1);
+        assert_eq!(owner_results.notes.len(), 1);
         let other_results = query
             .search_visible(
                 Actor {
@@ -1681,10 +1704,11 @@ mod tests {
                     is_root: false,
                 },
                 "unique-secret-phrase".into(),
+                0,
                 10,
             )
             .await
             .expect("other search");
-        assert!(other_results.is_empty());
+        assert!(other_results.notes.is_empty());
     }
 }
