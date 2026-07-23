@@ -21,7 +21,9 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 
 `POST /auth/root/login`は`{"password":"..."}`を受け取り、rootのパスワードが正しければ
 `204`とroot session・CSRF Cookieを返す。失敗時は理由を区別せず`401 authentication-required`を
-返す。root sessionは無操作30分または発行から8時間で失効する。
+返す。root sessionは無操作30分または発行から8時間で失効する。root loginはTCP接続元ごとに15分間で
+5回の失敗までに制限し、超過時は`429 too-many-requests`を返す。reverse proxyの
+`X-Forwarded-For`はこの制限に使わないため、proxyを介する構成ではproxy自体が接続元として扱われる。
 
 | 操作 | endpoint | 成功応答 | 認可 |
 | --- | --- | --- | --- |

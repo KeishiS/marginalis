@@ -100,7 +100,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         state
     };
-    axum::serve(listener, router(state)).await?;
+    axum::serve(
+        listener,
+        router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 

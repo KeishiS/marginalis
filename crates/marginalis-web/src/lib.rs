@@ -5,6 +5,7 @@
 
 use std::{
     collections::HashMap,
+    net::SocketAddr,
     str::FromStr,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -12,7 +13,7 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::{Form, Path, Query, State},
+    extract::{ConnectInfo, Form, Path, Query, State},
     http::{HeaderMap, HeaderValue, Request, StatusCode, header},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
@@ -53,6 +54,58 @@ pub struct ApiState {
     pub notes: Arc<dyn NoteUseCases>,
     pub authentication: Arc<dyn WebAuthenticationUseCases>,
     pub mcp: Option<Arc<McpEndpoint>>,
+    root_login_rate_limiter: RootLoginRateLimiter,
+}
+
+/// root loginの接続元単位の失敗回数を抑える固定window limiter。
+///
+/// root accountは一つだけなので、接続元とroot accountを組にした制限と同値である。reverse proxyの
+/// `X-Forwarded-For`は無条件に信頼せず、TCP peer addressだけを用いる。
+#[derive(Clone)]
+struct RootLoginRateLimiter {
+    failures_per_window: u32,
+    window: Duration,
+    windows: Arc<Mutex<HashMap<String, (Instant, u32)>>>,
+}
+
+impl RootLoginRateLimiter {
+    fn new(failures_per_window: u32, window: Duration) -> Self {
+        Self {
+            failures_per_window,
+            window,
+            windows: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn allow(&self, source: &str) -> bool {
+        let Ok(mut windows) = self.windows.lock() else {
+            return false;
+        };
+        let now = Instant::now();
+        let window = windows.entry(source.into()).or_insert((now, 0));
+        if now.duration_since(window.0) >= self.window {
+            *window = (now, 0);
+        }
+        window.1 < self.failures_per_window
+    }
+
+    fn record_failure(&self, source: &str) {
+        let Ok(mut windows) = self.windows.lock() else {
+            return;
+        };
+        let now = Instant::now();
+        let window = windows.entry(source.into()).or_insert((now, 0));
+        if now.duration_since(window.0) >= self.window {
+            *window = (now, 0);
+        }
+        window.1 = window.1.saturating_add(1);
+    }
+
+    fn reset(&self, source: &str) {
+        if let Ok(mut windows) = self.windows.lock() {
+            windows.remove(source);
+        }
+    }
 }
 
 pub struct McpEndpoint {
@@ -112,6 +165,7 @@ impl ApiState {
             notes,
             authentication,
             mcp: None,
+            root_login_rate_limiter: RootLoginRateLimiter::new(5, Duration::from_secs(15 * 60)),
         }
     }
 
@@ -150,6 +204,7 @@ pub enum ApiErrorCode {
     NotFound,
     ValidationFailed,
     Conflict,
+    TooManyRequests,
     Internal,
 }
 
@@ -161,6 +216,7 @@ impl ApiErrorCode {
             Self::NotFound => "not-found",
             Self::ValidationFailed => "validation-failed",
             Self::Conflict => "conflict",
+            Self::TooManyRequests => "too-many-requests",
             Self::Internal => "internal",
         }
     }
@@ -172,6 +228,7 @@ impl ApiErrorCode {
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::ValidationFailed => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Conflict => StatusCode::CONFLICT,
+            Self::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -1189,20 +1246,31 @@ fn oidc_return_to(headers: &HeaderMap) -> Option<String> {
 
 async fn root_login(
     State(state): State<ApiState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(request): Json<RootLoginRequest>,
 ) -> Result<Response, ApiError> {
+    let source = peer.ip().to_string();
+    if !state.root_login_rate_limiter.allow(&source) {
+        tracing::warn!(source = %source, "root login rate limited");
+        return Err(ApiError::new(
+            ApiErrorCode::TooManyRequests,
+            "root login is temporarily rate limited",
+        ));
+    }
     let session = state
         .authentication
         .root_login(request.password)
         .await
         .map_err(authentication_error)?;
     let Some(session) = session else {
+        state.root_login_rate_limiter.record_failure(&source);
         tracing::warn!("root login rejected");
         return Err(ApiError::new(
             ApiErrorCode::AuthenticationRequired,
             "authentication failed",
         ));
     };
+    state.root_login_rate_limiter.reset(&source);
     let cookie_path = state.authentication.cookie_path();
     let mut response = StatusCode::NO_CONTENT.into_response();
     response
@@ -1580,12 +1648,12 @@ mod tests {
         UnixMillis, UserId,
     };
     use sha2::{Digest, Sha256};
-    use std::{str::FromStr, sync::Arc};
+    use std::{str::FromStr, sync::Arc, time::Duration};
     use tower::ServiceExt;
 
     use super::{
         ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, OidcConfiguration,
-        OidcConfigurationError, REQUEST_ID_HEADER, router,
+        OidcConfigurationError, REQUEST_ID_HEADER, RootLoginRateLimiter, router,
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
     use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
@@ -2117,6 +2185,11 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/auth/root/login")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:12345"
+                            .parse::<std::net::SocketAddr>()
+                            .expect("address"),
+                    ))
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"password":"root-password"}"#))
                     .expect("request"),
@@ -2193,5 +2266,18 @@ mod tests {
             ApiError::new(ApiErrorCode::ValidationFailed, "invalid input").into_response();
 
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[test]
+    fn root_login_limiter_blocks_after_five_failures_and_resets_on_success() {
+        let limiter = RootLoginRateLimiter::new(5, Duration::from_secs(60));
+        for _ in 0..5 {
+            assert!(limiter.allow("127.0.0.1"));
+            limiter.record_failure("127.0.0.1");
+        }
+        assert!(!limiter.allow("127.0.0.1"));
+        assert!(limiter.allow("127.0.0.2"));
+        limiter.reset("127.0.0.1");
+        assert!(limiter.allow("127.0.0.1"));
     }
 }
