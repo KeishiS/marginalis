@@ -74,7 +74,8 @@
 ### MCP認証・transport
 
 - Streamable HTTPの単一`/mcp` endpointを採用する。POSTはJSON-RPC requestを受け、GETは通知streamが
-  必要になるまで`405`を返す。初期toolは`search_notes`と`get_note`だけとする。
+  必要になるまで`405`を返す。初期toolは`search_notes`、`get_note`、`list_note_links`、構造化
+  create/updateおよび確認付き物理deleteとする。
 - MCP resource serverはRFC 9728 Protected Resource Metadataを提供する。未認証の`/mcp` requestは
   `401`と`WWW-Authenticate` headerでmetadata URLを示す。
 - OAuth Authorization ServerはMarginalisが担当し、外部Kanidmは利用者の本人認証だけに使う。access/
@@ -98,7 +99,8 @@
 ## 実装済み範囲
 
 - `NoteWriteService`の同期投影としてSQLite FTS5を更新し、物理削除と起動時recoveryにも追従させた。
-- RESTとMCPの`search_notes`・`get_note`は同じ`NoteUseCases`とACL非漏洩queryを利用する。
+- RESTとMCPの`search_notes`・`get_note`・`list_note_links`および書込みtoolは同じ`NoteUseCases`と
+  ACL非漏洩queryを利用する。
 - MCPはStreamable HTTP、Protected Resource Metadata、OAuth Authorization Code + PKCE S256、opaque
   access/refresh token、resource audience照合、refresh token rotationを実装した。
 - NixOS moduleはMCPを明示opt-inにし、Client ID Metadata Documentの取得hostを許可リストに限定する。
