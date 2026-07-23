@@ -3,6 +3,7 @@
 use core::fmt;
 use std::{env, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
+use adocweave::attributes::AttributeOperation;
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
@@ -981,6 +982,44 @@ fn source_metadata(source: &str) -> Result<marginalis_asciidoc::NoteMetadata, No
         .map_err(|_| NoteUseCaseError::Unavailable)
 }
 
+/// raw AsciiDoc APIの保護属性を、解析済みのattribute rangeだけでサーバ値へ置換する。
+///
+/// header全体を再生成しないため、利用者が書いた他のAsciiDoc属性と文書構造を保持する。
+fn replace_protected_attributes(
+    source: String,
+    replacements: &[(&str, &str)],
+) -> Result<String, NoteUseCaseError> {
+    let analysis = adocweave::Engine::new(Default::default())
+        .analyze(&source)
+        .map_err(|_| NoteUseCaseError::Validation)?;
+    let mut ranges = Vec::with_capacity(replacements.len());
+    for (name, value) in replacements {
+        let attributes = analysis
+            .ast()
+            .attributes()
+            .iter()
+            .filter(|attribute| attribute.name == *name)
+            .collect::<Vec<_>>();
+        let Some(attribute) = attributes.first() else {
+            return Err(NoteUseCaseError::Validation);
+        };
+        if attributes.len() != 1 || attribute.operation != AttributeOperation::Set {
+            return Err(NoteUseCaseError::Validation);
+        }
+        let start = usize::try_from(attribute.value_range.start().to_u32())
+            .map_err(|_| NoteUseCaseError::Validation)?;
+        let end = usize::try_from(attribute.value_range.end().to_u32())
+            .map_err(|_| NoteUseCaseError::Validation)?;
+        ranges.push((start, end, *value));
+    }
+    ranges.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
+    let mut rewritten = source;
+    for (start, end, value) in ranges {
+        rewritten.replace_range(start..end, value);
+    }
+    Ok(rewritten)
+}
+
 #[async_trait]
 impl NoteUseCases for ServerNoteUseCases {
     async fn list_notes(
@@ -1065,20 +1104,25 @@ impl NoteUseCases for ServerNoteUseCases {
         source: String,
     ) -> Result<NoteId, NoteUseCaseError> {
         let _write_guard = self.write_lock.lock().await;
+        // 入力headerの構造だけを検証し、identityと時刻はクライアント値を採用しない。
+        let note_id = NoteId::new(SystemRandom.uuid_v7());
+        let note_id_text = note_id.to_string();
+        let creator_id_text = actor.user_id.to_string();
+        let now = timestamp_rfc3339(SystemClock.now())?;
+        let source = replace_protected_attributes(
+            source,
+            &[
+                ("note-id", &note_id_text),
+                ("creator-id", &creator_id_text),
+                ("created-at", &now),
+                ("updated-at", &now),
+            ],
+        )?;
         let projection = marginalis_asciidoc::parse_note_projection(&source)
             .map_err(|_| NoteUseCaseError::Validation)?;
         if projection.owner_id != actor.user_id {
             return Err(NoteUseCaseError::Forbidden);
         }
-        if self
-            .sources
-            .read(projection.note_id)
-            .map_err(|_| NoteUseCaseError::Unavailable)?
-            .is_some()
-        {
-            return Err(NoteUseCaseError::Conflict);
-        }
-        let note_id = projection.note_id;
         let projections = self.database.note_projection_store();
         let journal = self.database.operation_journal();
         NoteWriteService::new(
@@ -1102,7 +1146,7 @@ impl NoteUseCases for ServerNoteUseCases {
         let note_id = NoteId::new(SystemRandom.uuid_v7());
         let now = timestamp_rfc3339(SystemClock.now())?;
         let source = render_note_source(note_id, actor.user_id, &now, &now, &draft)?;
-        self.create_source(actor, source).await?;
+        let note_id = self.create_source(actor, source).await?;
         self.read_source(actor, note_id).await
     }
 
@@ -1123,11 +1167,6 @@ impl NoteUseCases for ServerNoteUseCases {
         if !matches!(permission, Some(value) if value.permits(NotePermission::Write)) {
             return Err(NoteUseCaseError::NotFound);
         }
-        let projection = marginalis_asciidoc::parse_note_projection(&source)
-            .map_err(|_| NoteUseCaseError::Validation)?;
-        if projection.note_id != note_id {
-            return Err(NoteUseCaseError::Validation);
-        }
         let previous_source = self
             .sources
             .read(note_id)
@@ -1138,11 +1177,21 @@ impl NoteUseCases for ServerNoteUseCases {
         }
         let previous_source =
             std::str::from_utf8(&previous_source).map_err(|_| NoteUseCaseError::Unavailable)?;
-        let previous_projection = marginalis_asciidoc::parse_note_projection(previous_source)
-            .map_err(|_| NoteUseCaseError::Unavailable)?;
-        if projection.owner_id != previous_projection.owner_id {
+        let previous_metadata = source_metadata(previous_source)?;
+        // updated-atはクライアント入力を信頼しない。置換してから形式を検証するため、
+        // 任意の過去時刻や不正な時刻を送られてもサーバ時刻以外は保存されない。
+        let updated_at = timestamp_rfc3339(SystemClock.now())?;
+        let source = replace_protected_attributes(source, &[("updated-at", &updated_at)])?;
+        let candidate_metadata =
+            source_metadata(&source).map_err(|_| NoteUseCaseError::Validation)?;
+        if candidate_metadata.note_id != previous_metadata.note_id
+            || candidate_metadata.creator_id != previous_metadata.creator_id
+            || candidate_metadata.created_at != previous_metadata.created_at
+        {
             return Err(NoteUseCaseError::Validation);
         }
+        let projection = marginalis_asciidoc::parse_note_projection(&source)
+            .map_err(|_| NoteUseCaseError::Validation)?;
         let projections = self.database.note_projection_store();
         let journal = self.database.operation_journal();
         NoteWriteService::new(
@@ -1584,6 +1633,126 @@ mod tests {
         assert_eq!(metadata.note_id, note_id.to_string());
         assert_eq!(metadata.creator_id, user_id.to_string());
         assert_eq!(metadata.title, "Structured note");
+    }
+
+    #[tokio::test]
+    async fn raw_source_creation_replaces_client_supplied_protected_metadata() {
+        let directory =
+            std::env::temp_dir().join(format!("marginalis-raw-create-{}", Uuid::now_v7()));
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let actor_id =
+            UserId::new(EntityId::from_str("01800000-0000-7000-8000-000000000096").expect("actor"));
+        database
+            .oidc_identity_store()
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "raw-create", "Raw creator")
+                    .expect("identity"),
+                RegistrationPolicy::Open,
+                actor_id,
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("actor");
+        let supplied_note_id =
+            NoteId::new(EntityId::from_str("01800000-0000-7000-8000-000000000097").expect("note"));
+        let supplied_creator_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000098").expect("creator"),
+        );
+        let source = render_note_source(
+            supplied_note_id,
+            supplied_creator_id,
+            "2000-01-01T00:00:00.000Z",
+            "2000-01-01T00:00:00.000Z",
+            &NoteDraft {
+                title: "Raw source".into(),
+                body: "The body is retained verbatim.".into(),
+                tags: vec!["research".into()],
+            },
+        )
+        .expect("source");
+        let service =
+            ServerNoteUseCases::new(database, FileNoteStore::open(&directory).expect("sources"));
+        let actor = Actor {
+            user_id: actor_id,
+            is_root: false,
+        };
+        let note_id = service.create_source(actor, source).await.expect("create");
+        let stored = service.read_source(actor, note_id).await.expect("read");
+        let metadata = source_metadata(std::str::from_utf8(&stored.content).expect("UTF-8"))
+            .expect("metadata");
+        assert_ne!(note_id, supplied_note_id);
+        assert_eq!(metadata.note_id, note_id.to_string());
+        assert_eq!(metadata.creator_id, actor_id.to_string());
+        assert_ne!(metadata.created_at, "2000-01-01T00:00:00.000Z");
+        assert_eq!(metadata.updated_at, metadata.created_at);
+        std::fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[tokio::test]
+    async fn raw_source_update_rejects_immutable_changes_and_overwrites_updated_at() {
+        let directory =
+            std::env::temp_dir().join(format!("marginalis-raw-update-{}", Uuid::now_v7()));
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let actor_id =
+            UserId::new(EntityId::from_str("01800000-0000-7000-8000-000000000099").expect("actor"));
+        database
+            .oidc_identity_store()
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "raw-update", "Raw editor")
+                    .expect("identity"),
+                RegistrationPolicy::Open,
+                actor_id,
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("actor");
+        let service =
+            ServerNoteUseCases::new(database, FileNoteStore::open(&directory).expect("sources"));
+        let actor = Actor {
+            user_id: actor_id,
+            is_root: false,
+        };
+        let created = service
+            .create_note(
+                actor,
+                NoteDraft {
+                    title: "Raw update".into(),
+                    body: "Original body".into(),
+                    tags: vec![],
+                },
+            )
+            .await
+            .expect("create");
+        let original = String::from_utf8(created.content).expect("UTF-8");
+        let immutable_change =
+            original.replace(":created-at: ", ":created-at: 2000-01-01T00:00:00.000Z #");
+        assert_eq!(
+            service
+                .update_source(actor, created.note_id, immutable_change, created.revision)
+                .await,
+            Err(NoteUseCaseError::Validation)
+        );
+
+        let replacement = original
+            .replace("Original body", "Revised body")
+            .replace(":updated-at: ", ":updated-at: not-a-timestamp #");
+        service
+            .update_source(actor, created.note_id, replacement, created.revision)
+            .await
+            .expect("update");
+        let stored = service
+            .read_source(actor, created.note_id)
+            .await
+            .expect("read updated");
+        let stored = String::from_utf8(stored.content).expect("UTF-8");
+        assert!(stored.contains("Revised body"));
+        assert!(!stored.contains("not-a-timestamp"));
+        assert!(source_metadata(&stored).is_ok());
+        std::fs::remove_dir_all(directory).expect("remove directory");
     }
 
     #[tokio::test]
