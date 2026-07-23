@@ -91,7 +91,7 @@ test -s LICENSE-MIT
 test -s LICENSE-APACHE
 cargo metadata --no-deps --format-version 1 | jq -e '
   all(.packages[];
-    .version == "0.1.0-rc.1"
+    .version == "0.1.0-rc.2"
     and .license == "MIT OR Apache-2.0"
     and .publish == [])
 '

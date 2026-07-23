@@ -82,7 +82,7 @@ metadataを持たないclientは、rootが事前登録してから試す。
 5. `systemctl status marginalis-prune-audit.timer`で、root監査の365日保持と期限切れ認証補助データのcleanupを
    行うtimerが有効であることを確認する。
 6. `curl -fsS https://marginalis.sandi05.com/api/v1/openapi.json | jq -e '.openapi == "3.1.0"'`で、実行中binaryが
-   公開contractを返すことを確認する。RC.1では、このdocumentとの差分がrelease blocker修正だけであることを確認する。
+   公開contractを返すことを確認する。RC.2では、このdocumentとの差分がrelease blocker修正だけであることを確認する。
 
 v0.1.0でAPI versionをfreezeした後に破壊的変更が必要になった場合は、新しいversion pathを追加し、既存versionに
 deprecation告知・移行手順・少なくとも一つのrelease周期を設ける。

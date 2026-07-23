@@ -7,16 +7,16 @@
 
 ## 実装順序
 
-現在の優先順位は、Web UIより先にREST APIとMCPを成立させ、`v0.1.0-rc.1`を受入することである。root管理は
+現在の優先順位は、Web UIより先にREST APIとMCPを成立させ、`v0.1.0-rc.2`を受入することである。root管理は
 REST APIで継続し、管理UIは後続とする。既存デプロイのdataDirは移行せず、Issue 015で明示的に初期化して
 新schemaへ移る。
 
-### RC.1 release blocker
+### RC.2 release blocker
 
-### RC.1受入とリリース
+### RC.2受入とリリース
 
 1. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
-2. [022: v0.1.0-rc.1 release acceptance](022-v0.1.0-rc.1-release-acceptance.md)
+2. [022: v0.1.0 RC release acceptance](022-v0.1.0-rc.1-release-acceptance.md)
 
 ### RC.1後の優先項目
 

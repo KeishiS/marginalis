@@ -41,7 +41,7 @@ Cookieを伴う変更操作は、これに加えて`Origin`が公開Base URLのo
 REST clientはこのdocumentを契約として使用する。Cookie、CSRF、OriginおよびFetch MetadataはHTTP固有の
 security schemeであり、MCP tool contractには含めない。
 
-`v0.1.0-rc.1`では、このOpenAPI documentをv0.1.0のfreeze候補とする。RC期間中のfield、status、header、
+`v0.1.0-rc.2`では、このOpenAPI documentをv0.1.0のfreeze候補とする。RC期間中のfield、status、header、
 endpointの破壊的変更は、security、データ破損、ACL漏洩または相互運用性のrelease blocker修正に限る。
 v0.1.0のfreeze後は、破壊的変更を新しいAPI version pathへ移し、既存versionでは少なくとも一つの
 リリース周期のdeprecation告知とmigration手順を提供する。

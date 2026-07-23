@@ -84,6 +84,6 @@ MCPは既定で無効である。有効化、OAuth Authorization Code + PKCE、C
 
 ## 現在の範囲と後続作業
 
-`v0.1.0-rc.1`の範囲はREST API、rootによる保留OIDCユーザー承認、OAuth保護されたMCPである。受入専用の
+`v0.1.0-rc.2`の範囲はREST API、rootによる保留OIDCユーザー承認、OAuth保護されたMCPである。受入専用の
 `/acceptance`を除くブラウザー編集UI、数式・コードのクライアント描画、Device Authorization Grant、ベクトル／あいまい検索および
 専用管理origin・mTLSは後続とする。実装順と未完了項目は[issues](issues/README.md)で管理する。

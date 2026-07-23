@@ -7,7 +7,7 @@
 
 ## release境界
 
-`v0.1.0-rc.1`は「研究室内でREST APIとMCPを実運用できる最小版」の候補版である。HTTP APIは
+`v0.1.0-rc.2`は「研究室内でREST APIとMCPを実運用できる最小版」の候補版である。HTTP APIは
 `/api/v1`を維持し、OpenAPI契約をv0.1.0のfreeze候補とする。RC期間中はrelease blockerの修正に限り
 破壊的変更を許容する。data formatはv1で固定し、
 既存deploymentのdata directoryは移行せず、`FORMAT` markerのない非空directoryを拒否する。
