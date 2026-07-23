@@ -30,12 +30,13 @@ Base URLがsubpathを持つ場合も、上表のpathはそのsubpathの下へ追
 Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource/mcp"
 ```
 
-初期toolは次の二つである。
+初期公開のtoolは次のとおりである。
 
 | tool | 入力 | 出力 |
 | --- | --- | --- |
 | `search_notes` | `query`、任意の`limit`と`cursor` | 可視ノートのID・titleと次cursor |
 | `get_note` | `note_id` | Read権限を持つノートのID・title・tags・作成/更新時刻・revision・AsciiDoc source |
+| `list_note_links` | `note_id`、任意の`limit`と`cursor` | sourceとtargetの双方を閲覧できるoutgoing参照の位置、target ID・title・anchorと次cursor |
 | `create_note` | `title`、`body`、`tags` | server生成metadataを持つ新規ノートとrevision |
 | `update_note` | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとrevision |
 | `prepare_delete_note` | `note_id`、`expected_revision` | title、revision、一回限りの確認token |
@@ -62,8 +63,8 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 
 `redirect_uri`は事前に登録された文字列との完全一致である。HTTPS URI、または`127.0.0.1`、`localhost`、
 `::1`へのHTTP loopback URIだけを許可する。query、fragment、userinfoを含むredirect URIは許可しない。
-scopeは`notes:read`、`notes:write`、`notes:delete`だけを受理する。現在公開するtoolは読み取り専用のため、
-clientは`notes:read`を要求する。
+scopeは`notes:read`、`notes:write`、`notes:delete`だけを受理する。clientは呼び出すtoolに対応するscopeを
+要求しなければならない。
 
 `create_note`と`update_note`は`notes:write`に加えて、通常のノートACLを必要とする。MCP clientは
 `note-id`、`creator-id`、`created-at`、`updated-at`を指定・変更できない。serverがUUIDv7と作成者を

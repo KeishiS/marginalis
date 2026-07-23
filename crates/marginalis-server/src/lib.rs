@@ -800,6 +800,20 @@ impl NoteUseCases for ServerNoteUseCases {
             .map_err(|_| NoteUseCaseError::Unavailable)
     }
 
+    async fn list_note_links(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        offset: u64,
+        limit: u32,
+    ) -> Result<marginalis_domain::NoteLinkPage, NoteUseCaseError> {
+        self.database
+            .note_query_store()
+            .list_visible_links(actor, note_id, offset, limit)
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
     async fn read_source(
         &self,
         actor: Actor,

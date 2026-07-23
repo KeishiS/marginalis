@@ -162,6 +162,56 @@ impl McpTools {
                     Err(error) => note_error(id, error),
                 }
             }
+            "list_note_links" => {
+                let Ok(arguments) =
+                    serde_json::from_value::<ListNoteLinksArguments>(call.arguments)
+                else {
+                    return JsonRpcResponse::error(id, -32602, "link arguments are invalid");
+                };
+                let Ok(entity_id) = EntityId::from_str(&arguments.note_id) else {
+                    return JsonRpcResponse::error(id, -32602, "note ID is invalid");
+                };
+                let limit = arguments.limit.unwrap_or(50).clamp(1, 100);
+                let offset = match cursor_offset(arguments.cursor) {
+                    Ok(offset) => offset,
+                    Err(()) => {
+                        return JsonRpcResponse::error(id, -32602, "link cursor is invalid");
+                    }
+                };
+                match self
+                    .notes
+                    .list_note_links(actor, NoteId::new(entity_id), offset, limit)
+                    .await
+                {
+                    Ok(page) => {
+                        let links = page
+                            .links
+                            .into_iter()
+                            .map(|link| {
+                                json!({
+                                    "source_start": link.source_start,
+                                    "source_end": link.source_end,
+                                    "target_note_id": link.target.note_id.to_string(),
+                                    "target_title": link.target.title,
+                                    "target_anchor": link.target_anchor,
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        let text = serde_json::to_string(&links).expect("serializable MCP links");
+                        JsonRpcResponse::success(
+                            id,
+                            json!({
+                                "content": [{ "type": "text", "text": text }],
+                                "structuredContent": {
+                                    "links": links,
+                                    "next_cursor": next_cursor(page.next_offset)
+                                }
+                            }),
+                        )
+                    }
+                    Err(error) => note_error(id, error),
+                }
+            }
             "create_note" => {
                 let Ok(arguments) = serde_json::from_value::<NoteDraftArguments>(call.arguments)
                 else {
@@ -302,6 +352,14 @@ fn tool_list() -> Value {
                 "note_id": { "type": "string" }
             } },
             "annotations": { "readOnlyHint": true, "destructiveHint": false }
+        },
+        {
+            "name": "list_note_links",
+            "description": "List outgoing links whose source and target are visible to the authenticated user.",
+            "inputSchema": { "type": "object", "required": ["note_id"], "properties": {
+                "note_id": { "type": "string" }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+            } },
+            "annotations": { "readOnlyHint": true, "destructiveHint": false }
         }
     ] })
 }
@@ -413,6 +471,13 @@ struct GetNoteArguments {
 }
 
 #[derive(Deserialize)]
+struct ListNoteLinksArguments {
+    note_id: String,
+    cursor: Option<String>,
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
 struct NoteDraftArguments {
     title: String,
     body: String,
@@ -465,7 +530,9 @@ fn next_cursor(offset: Option<u64>) -> Option<String> {
 mod tests {
     use super::*;
     use marginalis_application::{DeletePreparation, NoteUseCaseError};
-    use marginalis_domain::{NotePage, NotePermission, NoteSource, SourceRevision, UserId};
+    use marginalis_domain::{
+        NoteLinkPage, NotePage, NotePermission, NoteSource, SourceRevision, UserId,
+    };
 
     struct EmptyNotes;
 
@@ -491,6 +558,18 @@ mod tests {
         ) -> Result<NotePage, NoteUseCaseError> {
             Ok(NotePage {
                 notes: Vec::new(),
+                next_offset: None,
+            })
+        }
+        async fn list_note_links(
+            &self,
+            _actor: Actor,
+            _note_id: NoteId,
+            _offset: u64,
+            _limit: u32,
+        ) -> Result<NoteLinkPage, NoteUseCaseError> {
+            Ok(NoteLinkPage {
+                links: Vec::new(),
                 next_offset: None,
             })
         }
@@ -624,7 +703,7 @@ mod tests {
                 .as_array()
                 .expect("tools")
                 .len(),
-            6
+            7
         );
     }
 

@@ -2,8 +2,8 @@
 
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
-    NotePage, NotePermission, NoteProjection, NoteSource, OidcIdentity, OidcLoginResult, OidcUser,
-    RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+    NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSource, OidcIdentity,
+    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
@@ -565,6 +565,14 @@ pub trait NoteQueryStore: Send + Sync {
         offset: u64,
         limit: u32,
     ) -> impl Future<Output = Result<NotePage, Self::Error>> + Send;
+
+    fn list_visible_links(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        offset: u64,
+        limit: u32,
+    ) -> impl Future<Output = Result<NoteLinkPage, Self::Error>> + Send;
 }
 
 /// ノートACLの永続化境界。HTTPはこのportを介してのみ権限を問い合わせる。
@@ -669,6 +677,13 @@ pub trait NoteUseCases: Send + Sync {
         offset: u64,
         limit: u32,
     ) -> Result<NotePage, NoteUseCaseError>;
+    async fn list_note_links(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        offset: u64,
+        limit: u32,
+    ) -> Result<NoteLinkPage, NoteUseCaseError>;
     async fn read_source(
         &self,
         actor: Actor,

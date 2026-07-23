@@ -175,6 +175,22 @@ pub struct NotePage {
     pub next_offset: Option<u64>,
 }
 
+/// ACLを満たす二つのノート間にある、位置付きのoutgoing参照。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteLink {
+    pub source_start: u32,
+    pub source_end: u32,
+    pub target: NoteSummary,
+    pub target_anchor: Option<String>,
+}
+
+/// 参照一覧の一頁。参照先も閲覧可能な場合だけ含む。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteLinkPage {
+    pub links: Vec<NoteLink>,
+    pub next_offset: Option<u64>,
+}
+
 /// OAuth public clientとして登録されたMCP利用者。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpOAuthClient {

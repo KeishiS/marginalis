@@ -15,8 +15,8 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
-    NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
-    RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
+    NoteLink, NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity,
+    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -1519,6 +1519,75 @@ impl NoteQueryStore for SqliteNoteQueryStore {
             })
         }
     }
+
+    fn list_visible_links(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        offset: u64,
+        limit: u32,
+    ) -> impl Future<Output = Result<NoteLinkPage, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let rows = sqlx::query(
+                "SELECT refs.source_start, refs.source_end, refs.target_anchor,
+                        target.note_id AS target_note_id, target.title AS target_title
+                 FROM note_references AS refs
+                 JOIN notes AS source ON source.note_id = refs.source_note_id
+                 JOIN notes AS target ON target.note_id = refs.target_note_id
+                 WHERE refs.source_note_id = ?
+                   AND (? OR EXISTS (
+                     SELECT 1 FROM note_acl
+                     WHERE note_acl.note_id = source.note_id AND note_acl.user_id = ?
+                   ))
+                   AND (? OR EXISTS (
+                     SELECT 1 FROM note_acl
+                     WHERE note_acl.note_id = target.note_id AND note_acl.user_id = ?
+                   ))
+                 ORDER BY refs.source_start ASC, refs.source_end ASC,
+                          target.note_id ASC
+                 LIMIT ? OFFSET ?",
+            )
+            .bind(note_id.to_string())
+            .bind(actor.is_root)
+            .bind(actor.user_id.to_string())
+            .bind(actor.is_root)
+            .bind(actor.user_id.to_string())
+            .bind(i64::from(limit) + 1)
+            .bind(i64::try_from(offset).unwrap_or(i64::MAX))
+            .fetch_all(&pool)
+            .await?;
+            let has_next = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);
+            let links = rows
+                .into_iter()
+                .take(usize::try_from(limit).unwrap_or(usize::MAX))
+                .map(|row| -> Result<NoteLink, NoteQueryStoreError> {
+                    let target_note_id: String = row.try_get("target_note_id")?;
+                    let target = NoteSummary {
+                        note_id: NoteId::new(
+                            EntityId::from_str(&target_note_id)
+                                .map_err(|_| NoteQueryStoreError::CorruptNote)?,
+                        ),
+                        title: row.try_get("target_title")?,
+                    };
+                    Ok(NoteLink {
+                        source_start: u32::try_from(row.try_get::<i64, _>("source_start")?)
+                            .map_err(|_| NoteQueryStoreError::CorruptNote)?,
+                        source_end: u32::try_from(row.try_get::<i64, _>("source_end")?)
+                            .map_err(|_| NoteQueryStoreError::CorruptNote)?,
+                        target,
+                        target_anchor: row.try_get("target_anchor")?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(NoteLinkPage {
+                links,
+                next_offset: has_next
+                    .then(|| offset.checked_add(u64::from(limit)))
+                    .flatten(),
+            })
+        }
+    }
 }
 
 fn note_summary_from_row(
@@ -1980,6 +2049,14 @@ mod tests {
         let owner_id = UserId::new(
             EntityId::from_str("01800000-0000-7000-8000-000000000011").expect("UUIDv7 user ID"),
         );
+        let target_note_id = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000012")
+                .expect("UUIDv7 target note ID"),
+        );
+        let target_owner_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000013")
+                .expect("UUIDv7 target owner ID"),
+        );
         // The owner is normally created by OIDC/root initialization before note creation.
         sqlx::query(
             "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
@@ -1989,6 +2066,29 @@ mod tests {
         .execute(database.pool())
         .await
         .expect("insert owner");
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'Target owner', 0, 0)",
+        )
+        .bind(target_owner_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("insert target owner");
+        database
+            .note_projection_store()
+            .replace_projection(
+                NoteProjection {
+                    note_id: target_note_id,
+                    owner_id: target_owner_id,
+                    title: "Target".into(),
+                    search_text: "Target".into(),
+                    anchors: vec!["target".into()],
+                    references: Vec::new(),
+                },
+                SourceRevision::from_source(b"= Target\n"),
+            )
+            .await
+            .expect("store target projection");
         database
             .note_projection_store()
             .replace_projection(
@@ -2018,6 +2118,32 @@ mod tests {
                 .try_get("count")
                 .expect("count");
         assert_eq!(count, 1);
+        let actor = Actor {
+            user_id: owner_id,
+            is_root: false,
+        };
+        assert!(
+            database
+                .note_query_store()
+                .list_visible_links(actor, note_id, 0, 10)
+                .await
+                .expect("private target is hidden")
+                .links
+                .is_empty()
+        );
+        database
+            .note_acl_store()
+            .set_permission(target_note_id, owner_id, Some(NotePermission::Read))
+            .await
+            .expect("share target");
+        let links = database
+            .note_query_store()
+            .list_visible_links(actor, note_id, 0, 10)
+            .await
+            .expect("visible target link");
+        assert_eq!(links.links.len(), 1);
+        assert_eq!(links.links[0].target.note_id, target_note_id);
+        assert_eq!(links.links[0].target_anchor.as_deref(), Some("target"));
     }
 
     #[tokio::test]
