@@ -65,6 +65,25 @@ pub struct ServerNoteUseCases {
     write_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
+const OIDC_SESSION_IDLE_TIMEOUT_MS: i64 = 24 * 60 * 60 * 1_000;
+const OIDC_SESSION_ABSOLUTE_TIMEOUT_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+const ROOT_SESSION_IDLE_TIMEOUT_MS: i64 = 30 * 60 * 1_000;
+const ROOT_SESSION_ABSOLUTE_TIMEOUT_MS: i64 = 8 * 60 * 60 * 1_000;
+
+const fn oidc_session_lifetime() -> SessionLifetime {
+    SessionLifetime {
+        idle_timeout_ms: OIDC_SESSION_IDLE_TIMEOUT_MS,
+        absolute_timeout_ms: OIDC_SESSION_ABSOLUTE_TIMEOUT_MS,
+    }
+}
+
+const fn root_session_lifetime() -> SessionLifetime {
+    SessionLifetime {
+        idle_timeout_ms: ROOT_SESSION_IDLE_TIMEOUT_MS,
+        absolute_timeout_ms: ROOT_SESSION_ABSOLUTE_TIMEOUT_MS,
+    }
+}
+
 /// Web session、外部OIDCとroot管理を同じapplication境界で公開するserver adapter。
 #[derive(Clone)]
 pub struct ServerWebAuthenticationUseCases {
@@ -686,10 +705,7 @@ impl WebSessionUseCases for ServerWebAuthenticationUseCases {
                 user_id,
                 is_root: false,
             },
-            SessionLifetime {
-                idle_timeout_ms: 8 * 60 * 60 * 1_000,
-                absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
-            },
+            oidc_session_lifetime(),
         )
         .await
         .map_err(|_| AuthenticationUseCaseError::Unavailable)
@@ -728,10 +744,7 @@ impl WebSessionUseCases for ServerWebAuthenticationUseCases {
                 user_id,
                 is_root: true,
             },
-            SessionLifetime {
-                idle_timeout_ms: 30 * 60 * 1_000,
-                absolute_timeout_ms: 8 * 60 * 60 * 1_000,
-            },
+            root_session_lifetime(),
         )
         .await
         .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
@@ -1621,6 +1634,15 @@ mod tests {
                 .path(),
             "/marginalis"
         );
+    }
+
+    #[test]
+    fn ordinary_oidc_sessions_idle_after_twenty_four_hours() {
+        assert_eq!(
+            oidc_session_lifetime().idle_timeout_ms,
+            24 * 60 * 60 * 1_000
+        );
+        assert_eq!(root_session_lifetime().idle_timeout_ms, 30 * 60 * 1_000);
     }
 
     #[tokio::test]
