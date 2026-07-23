@@ -156,6 +156,7 @@ pub mod contract {
 }
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
+const OIDC_STATE_COOKIE: &str = "marginalis_oidc_state";
 
 #[derive(Clone)]
 struct RequestId(String);
@@ -928,16 +929,23 @@ async fn oidc_login_with_return_to(
         .begin_oidc_login()
         .await
         .map_err(authentication_error)?;
+    let state_token = oidc_state_from_destination(&destination)?;
     let return_to = oauth_authorize_return_to(query);
     let cookie_path = state.oidc.cookie_path();
-    let cookie = format!(
+    let return_to_cookie = format!(
         "marginalis_oauth_return_to={}; Path={cookie_path}; Max-Age=300; Secure; HttpOnly; SameSite=Lax",
         url::form_urlencoded::byte_serialize(return_to.as_bytes()).collect::<String>(),
     );
+    let state_cookie = oidc_state_cookie(&state_token, cookie_path);
     let mut response = Redirect::temporary(&destination).into_response();
     response.headers_mut().insert(
         header::SET_COOKIE,
-        HeaderValue::from_str(&cookie)
+        HeaderValue::from_str(&return_to_cookie)
+            .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
+    );
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&state_cookie)
             .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
     );
     Ok(response)
@@ -1265,13 +1273,20 @@ async fn update_note_acl(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, ApiError> {
+async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Response, ApiError> {
     let destination = state
         .oidc
         .begin_oidc_login()
         .await
         .map_err(authentication_error)?;
-    Ok(Redirect::temporary(&destination))
+    let state_token = oidc_state_from_destination(&destination)?;
+    let mut response = Redirect::temporary(&destination).into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&oidc_state_cookie(&state_token, state.oidc.cookie_path()))
+            .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
+    );
+    Ok(response)
 }
 
 #[derive(Deserialize)]
@@ -1308,6 +1323,13 @@ async fn complete_oidc_login(
             "authentication failed",
         ));
     };
+    if cookie_value(&headers, OIDC_STATE_COOKIE).as_deref() != Some(state_token) {
+        tracing::warn!("OIDC callback rejected: browser state binding did not match");
+        return Err(ApiError::new(
+            ApiErrorCode::AuthenticationRequired,
+            "authentication failed",
+        ));
+    }
     let OidcLoginResult::Active(user) = state
         .oidc
         .complete_oidc_login(code.into(), state_token.into())
@@ -1336,7 +1358,36 @@ async fn complete_oidc_login(
         ))
         .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
     );
+    response_headers.append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&clear_oidc_state_cookie(cookie_path))
+            .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
+    );
     Ok((response_headers, Redirect::to(&destination)).into_response())
+}
+
+fn oidc_state_from_destination(destination: &str) -> Result<String, ApiError> {
+    Url::parse(destination)
+        .ok()
+        .and_then(|url| {
+            url.query_pairs()
+                .find_map(|(name, value)| (name == "state").then(|| value.into_owned()))
+        })
+        .filter(|state| !state.is_empty())
+        .ok_or(ApiError::new(
+            ApiErrorCode::Internal,
+            "authentication is unavailable",
+        ))
+}
+
+fn oidc_state_cookie(state: &str, cookie_path: &str) -> String {
+    format!(
+        "{OIDC_STATE_COOKIE}={state}; Path={cookie_path}; Max-Age=300; Secure; HttpOnly; SameSite=Lax"
+    )
+}
+
+fn clear_oidc_state_cookie(cookie_path: &str) -> String {
+    format!("{OIDC_STATE_COOKIE}=; Path={cookie_path}; Max-Age=0; Secure; HttpOnly; SameSite=Lax")
 }
 
 fn oidc_return_to(headers: &HeaderMap) -> Option<String> {
@@ -1804,8 +1855,9 @@ mod tests {
 
     use super::{
         ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, OPENAPI_DOCUMENT,
-        REQUEST_ID_HEADER, RootLoginRateLimiter, administration_router,
-        require_same_origin_browser_request, rfc3339_timestamp, router,
+        REQUEST_ID_HEADER, RootLoginRateLimiter, administration_router, clear_oidc_state_cookie,
+        oidc_state_cookie, oidc_state_from_destination, require_same_origin_browser_request,
+        rfc3339_timestamp, router,
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
     use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
@@ -1935,6 +1987,23 @@ mod tests {
             "https://identity.example.edu"
         );
         assert_eq!(configuration.client_id().as_str(), "marginalis");
+    }
+
+    #[test]
+    fn oidc_browser_state_cookie_is_bound_to_the_authorization_request() {
+        let state = oidc_state_from_destination(
+            "https://identity.example.edu/authorize?client_id=marginalis&state=browser-state",
+        )
+        .expect("state parameter");
+        assert_eq!(state, "browser-state");
+        assert!(oidc_state_cookie(&state, "/marginalis").contains(
+            "marginalis_oidc_state=browser-state; Path=/marginalis; Max-Age=300; Secure; HttpOnly; SameSite=Lax"
+        ));
+        assert_eq!(
+            clear_oidc_state_cookie("/marginalis"),
+            "marginalis_oidc_state=; Path=/marginalis; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
+        );
+        assert!(oidc_state_from_destination("https://identity.example.edu/authorize").is_err());
     }
 
     #[test]
