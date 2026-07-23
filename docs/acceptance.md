@@ -22,11 +22,103 @@ password、Cookie、OIDC code、MCP access/refresh tokenをコマンド履歴、
 3. `GET` sourceの`ETag`を取得し、その値を`If-Match`と`X-CSRF-Token`に付けて`PUT`する。`204`後に
    `GET /api/v1/search?q=<固有語>`が作成ノートだけを返すことを確認する。
 4. 同じ`ETag`で二度更新して`409`となることを確認する。更新後の`ETag`で削除準備を行い、返された
-   confirmation tokenで削除を確定して`204`となることを確認する。削除後は一覧・検索・source取得が
-   いずれも`404`であることを確認する。
+   confirmation tokenで削除を確定して`204`となることを確認する。削除後はsource取得が`404`であり、
+   一覧・検索の`200`応答には対象ノートが含まれないことを確認する。
 
 `marginalis_session`や`marginalis_csrf`をshellの引数・履歴へ貼り付けない。API clientのsecret storeまたは
 一時的なCookie jarを用い、確認後に削除する。
+
+### browser開発者ツールによるREST確認例
+
+OIDC login済みの同一originでbrowser開発者ツールのConsoleを開き、次を順に実行する。この方法では
+HttpOnlyなsession Cookieをコピーせず、browserが自動送信する。`unique_phrase`は他のノートに含まれない
+値へ変更する。`Origin`と`Sec-Fetch-Site`はbrowserが付与するため、JavaScriptから設定しない。
+
+```js
+const csrf = document.cookie
+  .split('; ')
+  .find((part) => part.startsWith('marginalis_csrf='))
+  ?.split('=')[1];
+if (!csrf) throw new Error('marginalis_csrf cookie is unavailable');
+
+const request = (path, options = {}) => fetch(path, {
+  credentials: 'same-origin',
+  ...options,
+  headers: { 'X-CSRF-Token': csrf, ...(options.headers ?? {}) },
+});
+
+const unique_phrase = 'acceptance-unique-phrase-2026-07-23';
+const source = `= 受入確認ノート
+:note-id: 01800000-0000-7000-8000-000000000001
+:creator-id: 01800000-0000-7000-8000-000000000002
+:created-at: 2026-07-23T00:00:00.000Z
+:updated-at: 2026-07-23T00:00:00.000Z
+:tags: acceptance
+
+${unique_phrase}
+`;
+
+const created = await request('/api/v1/notes', {
+  method: 'POST',
+  headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  body: source,
+});
+if (created.status !== 201) throw new Error(`create: ${created.status}`);
+const noteUrl = created.headers.get('Location');
+if (!noteUrl) throw new Error('create response has no Location header');
+
+const firstSource = await request(noteUrl);
+const firstEtag = firstSource.headers.get('ETag');
+const savedSource = await firstSource.text();
+if (!firstEtag || !savedSource.includes(unique_phrase)) throw new Error('source or ETag is invalid');
+console.log({ noteUrl, firstEtag, savedSource });
+
+const updatedSource = savedSource.replace(unique_phrase, `${unique_phrase} updated`);
+const updated = await request(noteUrl, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-Match': firstEtag },
+  body: updatedSource,
+});
+if (updated.status !== 204) throw new Error(`update: ${updated.status}`);
+
+const searched = await request(`/api/v1/search?q=${encodeURIComponent(unique_phrase)}`);
+const searchPage = await searched.json();
+if (searched.status !== 200 || !searchPage.notes.some((note) => note.note_id === noteUrl.split('/').at(-2))) {
+  throw new Error(`search: ${searched.status}`);
+}
+console.log(searchPage);
+
+const stale = await request(noteUrl, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-Match': firstEtag },
+  body: updatedSource,
+});
+if (stale.status !== 409) throw new Error(`stale update: ${stale.status}`);
+
+const currentSource = await request(noteUrl);
+const currentEtag = currentSource.headers.get('ETag');
+const preparation = await request(`${noteUrl.replace('/source', '')}/delete-preparations`, {
+  method: 'POST',
+  headers: { 'If-Match': currentEtag },
+});
+if (preparation.status !== 200) throw new Error(`delete preparation: ${preparation.status}`);
+const confirmation = await preparation.json();
+
+const deleted = await request('/api/v1/notes/delete-confirmations', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ confirmation_token: confirmation.confirmation_token }),
+});
+if (deleted.status !== 204) throw new Error(`delete confirmation: ${deleted.status}`);
+
+for (const path of [noteUrl, `/api/v1/search?q=${encodeURIComponent(unique_phrase)}`, '/api/v1/notes']) {
+  const response = await request(path);
+  console.log(path, response.status); // sourceは404、検索・一覧では対象ノートが含まれないことを確認する。
+}
+```
+
+この例の`note-id`、`creator-id`、日時は形式を満たすダミー値であり、作成時にserver値へ置換される。
+Console出力を共有する場合も、Cookie、CSRF token、削除confirmation tokenを含めない。
 
 ## 段階2: 実MCP client
 
