@@ -1774,7 +1774,7 @@ impl NoteQueryStore for SqliteNoteQueryStore {
                    SELECT 1 FROM note_acl
                    WHERE note_acl.note_id = notes.note_id AND note_acl.user_id = ?
                  ))
-                 ORDER BY bm25(note_search), notes.note_id ASC
+                 ORDER BY bm25(note_search, 0.0, 100.0, 1.0), notes.note_id ASC
                  LIMIT ? OFFSET ?",
             )
             .bind(fts_phrase_query(&query))
@@ -3016,6 +3016,63 @@ mod tests {
             .await
             .expect("other search");
         assert!(other_results.notes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_ranks_title_matches_before_body_matches() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let owner_id =
+            UserId::new(EntityId::from_str("01800000-0000-7000-8000-000000000063").expect("owner"));
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'User', 0, 0)",
+        )
+        .bind(owner_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("user");
+        let title_note = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000064").expect("title note"),
+        );
+        let body_note = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000065").expect("body note"),
+        );
+        for (note_id, title, search_text) in [
+            (title_note, "Needle in title", "ordinary body"),
+            (body_note, "Ordinary title", "needle needle needle"),
+        ] {
+            database
+                .note_projection_store()
+                .replace_projection(
+                    NoteProjection {
+                        note_id,
+                        owner_id,
+                        title: title.into(),
+                        search_text: search_text.into(),
+                        anchors: Vec::new(),
+                        references: Vec::new(),
+                    },
+                    SourceRevision::from_source(search_text.as_bytes()),
+                )
+                .await
+                .expect("projection");
+        }
+        let results = database
+            .note_query_store()
+            .search_visible(
+                Actor {
+                    user_id: owner_id,
+                    is_root: false,
+                },
+                "needle".into(),
+                0,
+                10,
+            )
+            .await
+            .expect("search");
+        assert_eq!(results.notes[0].note_id, title_note);
     }
 
     #[tokio::test]
