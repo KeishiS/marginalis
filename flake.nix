@@ -86,6 +86,10 @@
                 text = ''
                   test -s "$OIDC_CLIENT_SECRET_FILE"
                   test -d "$MARGINALIS_DATA_DIR"
+                  if [ "''${1-}" = "rebuild-projections" ]; then
+                    touch "$MARGINALIS_DATA_DIR/projections-rebuilt"
+                    exit 0
+                  fi
                   touch "$MARGINALIS_DATA_DIR/service-started"
                   exec sleep infinity
                 '';
@@ -117,6 +121,11 @@
                 machine.succeed("systemctl restart marginalis.service")
                 machine.wait_for_unit("marginalis.service")
                 machine.succeed("test -f /var/lib/marginalis/service-started")
+                machine.succeed("systemctl start marginalis-rebuild-projections.service")
+                machine.succeed("test -f /var/lib/marginalis/projections-rebuilt")
+                machine.succeed("systemctl show -p ActiveState --value marginalis.service | grep -qx inactive")
+                machine.succeed("systemctl start marginalis.service")
+                machine.wait_for_unit("marginalis.service")
               '';
             };
         }
