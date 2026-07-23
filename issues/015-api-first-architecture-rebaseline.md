@@ -1,6 +1,7 @@
 # 015: API-firstアーキテクチャ再基線化
 
-状態: 実装中。REST/MCP共通use caseとcomposition rootの分離は完了し、identity管理・監査・運用CLIを継続する。
+状態: 実装中。REST/MCP共通use case、composition root、identity管理、root監査および投影再構築CLIは
+完了した。実OIDC/MCP serviceを用いるNixOS VM結合試験を継続する。
 
 RESTによるノートCRUD・検索とMCP toolを同じ業務ロジックへ接続するため、現在のHTTP中心の組立を
 破壊的に再構成する。公開HTTP API、SQLite schema、設定形式およびRust crateの後方互換は要求しない。
@@ -95,4 +96,7 @@ HTTP REST        MCP transport        CLI / maintenance
 - RESTとMCPは`NoteUseCases`を共有し、HTTP handlerからSQLite、file、AsciiDocの具体adapterを参照しない。
 - 実行バイナリは`marginalis-service`へ分離し、設定読込、adapter組立、tracing初期化、HTTP listenを集約した。
 - request ID、Cookie CSRF、MCP rate limitはHTTP境界にある。identity policyはSQLiteへ永続化した。
-- 管理監査、maintenance CLI、NixOS VM上のOIDC/MCP実サービス結合試験は未実装である。
+- root管理監査はSQLiteへ永続化し、`marginalis rebuild-projections`とNixOS oneshot unitで正本から
+  projectionを再構築できる。VM testはcredential注入、永続directory、service再起動およびoneshotとの排他を
+  確認する。
+- NixOS VM上で実OIDC providerと実MCP clientを用いるend-to-end結合試験は未実装である。
