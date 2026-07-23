@@ -837,6 +837,11 @@ pub enum NoteWriteError {
     Journal(Box<dyn std::error::Error + Send + Sync>),
     Source(Box<dyn std::error::Error + Send + Sync>),
     Projection(Box<dyn std::error::Error + Send + Sync>),
+    /// journalと正本の状態を安全に一意に復旧できない。
+    InconsistentRecovery {
+        operation_id: OperationId,
+        note_id: NoteId,
+    },
 }
 
 impl std::fmt::Display for NoteWriteError {
@@ -845,6 +850,9 @@ impl std::fmt::Display for NoteWriteError {
             Self::Journal(_) => formatter.write_str("note operation journal failed"),
             Self::Source(_) => formatter.write_str("note source update failed"),
             Self::Projection(_) => formatter.write_str("note projection update failed"),
+            Self::InconsistentRecovery { .. } => {
+                formatter.write_str("note operation recovery requires operator intervention")
+            }
         }
     }
 }
@@ -855,6 +863,7 @@ impl std::error::Error for NoteWriteError {
             Self::Journal(error) | Self::Source(error) | Self::Projection(error) => {
                 Some(error.as_ref())
             }
+            Self::InconsistentRecovery { .. } => None,
         }
     }
 }
@@ -988,7 +997,10 @@ where
                         .mark_source_applied(entry.operation_id, self.clock.now())
                         .await
                         .map_err(|error| NoteWriteError::Journal(Box::new(error)))?;
-                } else {
+                } else if matches!(
+                    (entry.kind, source),
+                    (NoteOperationKind::Create, None) | (NoteOperationKind::Delete, Some(_))
+                ) {
                     self.sources
                         .discard_temporary(entry.note_id, entry.operation_id)
                         .await
@@ -998,6 +1010,11 @@ where
                         .await
                         .map_err(|error| NoteWriteError::Journal(Box::new(error)))?;
                     continue;
+                } else {
+                    return Err(NoteWriteError::InconsistentRecovery {
+                        operation_id: entry.operation_id,
+                        note_id: entry.note_id,
+                    });
                 }
             }
             if entry.kind == NoteOperationKind::Delete {
@@ -1008,7 +1025,10 @@ where
                     .map_err(|error| NoteWriteError::Source(Box::new(error)))?
                     .is_some()
                 {
-                    continue;
+                    return Err(NoteWriteError::InconsistentRecovery {
+                        operation_id: entry.operation_id,
+                        note_id: entry.note_id,
+                    });
                 }
                 self.projections
                     .delete_projection(entry.note_id)
@@ -1021,7 +1041,10 @@ where
                 continue;
             }
             let Some(projection) = entry.projection else {
-                continue;
+                return Err(NoteWriteError::InconsistentRecovery {
+                    operation_id: entry.operation_id,
+                    note_id: entry.note_id,
+                });
             };
             let Some(source) = self
                 .sources
@@ -1029,11 +1052,17 @@ where
                 .await
                 .map_err(|error| NoteWriteError::Source(Box::new(error)))?
             else {
-                continue;
+                return Err(NoteWriteError::InconsistentRecovery {
+                    operation_id: entry.operation_id,
+                    note_id: entry.note_id,
+                });
             };
             let revision = SourceRevision::from_source(&source);
             if entry.source_revision != Some(revision) {
-                continue;
+                return Err(NoteWriteError::InconsistentRecovery {
+                    operation_id: entry.operation_id,
+                    note_id: entry.note_id,
+                });
             }
             self.projections
                 .replace_projection(projection, revision)

@@ -337,8 +337,8 @@ mod tests {
     };
 
     use marginalis_application::{
-        Clock, JournalEntry, NoteOperationKind, NoteWriteService, OperationId, OperationJournal,
-        OperationState, Random,
+        Clock, JournalEntry, NoteOperationKind, NoteWriteError, NoteWriteService, OperationId,
+        OperationJournal, OperationState, Random,
     };
     use marginalis_domain::{EntityId, NoteProjection, UnixMillis, UserId};
     use marginalis_sqlite::SqliteDatabase;
@@ -708,6 +708,60 @@ mod tests {
             .expect("title");
         assert_eq!(title, "Recovered");
         assert!(journal.incomplete().await.expect("journal").is_empty());
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[tokio::test]
+    async fn recovery_stops_on_an_unexpected_canonical_source() {
+        let directory = test_directory();
+        let sources = FileNoteStore::open(&directory).expect("open file store");
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let note_id = note(14);
+        let owner_id = UserId::new(note(15).entity_id());
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'Owner', 0, 0)",
+        )
+        .bind(owner_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("owner");
+        let operation = OperationId(note(16).entity_id());
+        let expected = b"= Expected\n".to_vec();
+        let journal = database.operation_journal();
+        journal
+            .prepare(JournalEntry {
+                operation_id: operation,
+                note_id,
+                kind: NoteOperationKind::Create,
+                state: OperationState::Prepared,
+                source_revision: Some(SourceRevision::from_source(&expected)),
+                projection: Some(NoteProjection {
+                    note_id,
+                    owner_id,
+                    title: "Expected".into(),
+                    search_text: "Expected".into(),
+                    anchors: Vec::new(),
+                    references: Vec::new(),
+                }),
+                created_at: UnixMillis::new(1),
+                updated_at: UnixMillis::new(1),
+            })
+            .await
+            .expect("prepare");
+        sources
+            .replace(note_id, operation, b"= Different\n")
+            .expect("write unexpected source");
+        let projections = database.note_projection_store();
+        assert!(matches!(
+            NoteWriteService::new(&sources, &projections, &journal, &FixedRandom, &FixedClock)
+                .recover()
+                .await,
+            Err(NoteWriteError::InconsistentRecovery { .. })
+        ));
+        assert_eq!(journal.incomplete().await.expect("journal").len(), 1);
         fs::remove_dir_all(directory).expect("remove test directory");
     }
 }
