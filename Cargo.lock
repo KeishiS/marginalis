@@ -1187,6 +1187,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "marginalis-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "hmac",
+ "marginalis-application",
+ "marginalis-auth-oidc",
+ "marginalis-files",
+ "marginalis-server",
+ "marginalis-sqlite",
+ "marginalis-web",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tower",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "marginalis-mcp"
 version = "0.1.0"
 dependencies = [

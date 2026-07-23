@@ -5,6 +5,7 @@ members = [
     "crates/marginalis-auth-oidc",
     "crates/marginalis-domain",
     "crates/marginalis-files",
+    "crates/marginalis-integration-tests",
     "crates/marginalis-mcp",
     "crates/marginalis-server",
     "crates/marginalis-service",
@@ -28,6 +29,7 @@ tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "s
 url = "2.5.8"
 uuid = { version = "1.18.1", features = ["serde", "v7"] }
 base64 = "0.22.1"
+hmac = "0.12.1"
 rand = "0.8.5"
 sha2 = "0.10.9"
 time = { version = "0.3.54", features = ["formatting", "macros", "parsing"] }

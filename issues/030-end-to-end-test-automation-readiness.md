@@ -98,6 +98,27 @@ E2E実装を開始する前に、次の五項目を決定し、このIssueの実
    authorization code・client secretはtestScriptで生成した使い捨て値のみであり、実secretは
    一切CIへ入れない。念のためartifact収集前に`Set-Cookie`値と`code=`パラメータをmaskする。
 
+## 実施結果
+
+### 第一層: in-process統合試験（2026-07-23）
+
+- `marginalis-integration-tests` crateを追加した（Issue 021 項目3の基盤を兼ねる）。
+- 試験用のHS256 OIDC provider（Discovery・JWKS・token endpointを実HTTP listenerで提供）を
+  実装し、`openidconnect`による実HTTPのDiscovery・code交換・PKCE検証・ID token検証を通した。
+- 実装済みのシナリオ:
+  - approval policyでの初回login→pending作成、rootによる承認、再loginでのsession取得、
+    stateの一回性、保護metadataのserver置換、ノート作成・取得・検索（シナリオ1と2の骨格）。
+  - `If-Match`による更新成功、旧revisionの`409`、削除準備→確認tokenによる物理削除、削除後の
+    `404`と検索からの消失（シナリオ2）。
+  - 二利用者間のACL非漏洩: 他者の非公開ノートはsource取得`404`かつ検索結果に現れない
+    （シナリオ2）。
+- 未実装として残る範囲: MCP OAuth flowのHTTP試験（`marginalis-web`のtestが一部をカバー済み）、
+  REST/MCP可視性一致（シナリオ3）、subpath・reverse proxy・CSRF失敗経路（シナリオ4、主に
+  第二層）、backup/restore lifecycle（シナリオ5、既存VM testの拡張）。
+
+第二層（NixOS VM＋実Kanidm＋Playwright）の実装・検証にはKVMが必要である。現在の開発環境には
+KVMがないため、KVMを利用できる環境での作業として残す。
+
 ### 付随する決定
 
 - VM E2Eはまずrelease gate非必須の別checkとして安定させ、その後に必須へ昇格する段階導入と

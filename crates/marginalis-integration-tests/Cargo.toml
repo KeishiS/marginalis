@@ -1,0 +1,26 @@
+[package]
+name = "marginalis-integration-tests"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+axum.workspace = true
+base64.workspace = true
+hmac.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+marginalis-application = { path = "../marginalis-application" }
+marginalis-auth-oidc = { path = "../marginalis-auth-oidc" }
+marginalis-files = { path = "../marginalis-files" }
+marginalis-server = { path = "../marginalis-server" }
+marginalis-sqlite = { path = "../marginalis-sqlite" }
+marginalis-web = { path = "../marginalis-web" }
+tower.workspace = true
+uuid.workspace = true
