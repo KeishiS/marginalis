@@ -7,10 +7,10 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, Clock, McpAccessTokenStore, McpAuthorizationRequest, McpOAuthStore,
-    McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, NoteAclService, NoteAclServiceError,
-    NoteAclStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases,
-    NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore, SessionLifetime,
-    WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation, McpTokenPair, NoteAclService,
+    NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError,
+    NoteUseCases, NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore,
+    SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
@@ -166,6 +166,45 @@ impl ServerMcpOAuthService {
             access_expires_in_seconds,
         })
     }
+
+    pub async fn refresh_access_token(
+        &self,
+        refresh_token: String,
+        client_id: String,
+        resource_uri: String,
+    ) -> Result<McpIssuedTokenPair, McpOAuthError> {
+        let now = SystemClock.now();
+        let access_token = SystemRandom.opaque_token();
+        let next_refresh_token = SystemRandom.opaque_token();
+        let access_expires_in_seconds = 60 * 60;
+        let grant = self
+            .database
+            .mcp_oauth_store()
+            .rotate_refresh_token(
+                McpRefreshTokenRotation {
+                    refresh_token,
+                    client_id,
+                    resource_uri,
+                    new_access_token: access_token.clone(),
+                    new_refresh_token: next_refresh_token.clone(),
+                    access_expires_at: UnixMillis::new(
+                        now.get() + (access_expires_in_seconds * 1_000) as i64,
+                    ),
+                    refresh_expires_at: UnixMillis::new(now.get() + 30 * 24 * 60 * 60 * 1_000),
+                },
+                now,
+            )
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        if grant.is_none() {
+            return Err(McpOAuthError::Rejected);
+        }
+        Ok(McpIssuedTokenPair {
+            access_token,
+            refresh_token: next_refresh_token,
+            access_expires_in_seconds,
+        })
+    }
 }
 
 fn pkce_s256(verifier: &str) -> String {
@@ -269,6 +308,30 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
             redirect_uri,
             resource_uri,
             code_verifier,
+        )
+        .await
+        .map_err(|error| match error {
+            McpOAuthError::Rejected => McpOAuthUseCaseError::Rejected,
+            McpOAuthError::Unavailable => McpOAuthUseCaseError::Unavailable,
+        })?;
+        Ok(McpTokenPair {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            access_expires_in_seconds: tokens.access_expires_in_seconds,
+        })
+    }
+
+    async fn refresh_access_token(
+        &self,
+        refresh_token: String,
+        client_id: String,
+        resource_uri: String,
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
+        let tokens = ServerMcpOAuthService::refresh_access_token(
+            self,
+            refresh_token,
+            client_id,
+            resource_uri,
         )
         .await
         .map_err(|error| match error {

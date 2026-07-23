@@ -7,10 +7,11 @@ use argon2::{
     password_hash::{PasswordHash, SaltString},
 };
 use marginalis_application::{
-    AuthenticatedSession, JournalEntry, McpAccessTokenStore, McpOAuthStore, NoteAclStore,
-    NoteOperationKind, NoteProjectionStore, NoteQueryStore, OidcIdentityStore, OidcLoginAttempt,
-    OidcLoginAttemptStore, OidcUserAdministrationStore, OperationId, OperationJournal,
-    OperationState, RootCredentialStore, WebSession, WebSessionStore,
+    AuthenticatedSession, JournalEntry, McpAccessTokenStore, McpOAuthStore,
+    McpRefreshTokenRotation, NoteAclStore, NoteOperationKind, NoteProjectionStore, NoteQueryStore,
+    OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcUserAdministrationStore,
+    OperationId, OperationJournal, OperationState, RootCredentialStore, WebSession,
+    WebSessionStore,
 };
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, NoteId, NotePage, NotePermission,
@@ -1061,6 +1062,98 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             .await?;
             transaction.commit().await?;
             Ok(())
+        }
+    }
+
+    fn rotate_refresh_token(
+        &self,
+        rotation: McpRefreshTokenRotation,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<McpAuthorizationGrant>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let McpRefreshTokenRotation {
+                refresh_token,
+                client_id,
+                resource_uri,
+                new_access_token,
+                new_refresh_token,
+                access_expires_at,
+                refresh_expires_at,
+            } = rotation;
+            let mut transaction = pool.begin().await?;
+            let row = sqlx::query(
+                "SELECT user_id, client_id, resource_uri, scopes
+                 FROM mcp_refresh_tokens
+                 WHERE token_hash = ? AND client_id = ? AND resource_uri = ?
+                   AND rotated_at_ms IS NULL AND revoked_at_ms IS NULL AND expires_at_ms > ?",
+            )
+            .bind(hash_token(&refresh_token))
+            .bind(&client_id)
+            .bind(&resource_uri)
+            .bind(now.get())
+            .fetch_optional(&mut *transaction)
+            .await?;
+            let Some(row) = row else {
+                transaction.rollback().await?;
+                return Ok(None);
+            };
+            let updated = sqlx::query(
+                "UPDATE mcp_refresh_tokens SET rotated_at_ms = ?
+                 WHERE token_hash = ? AND rotated_at_ms IS NULL AND revoked_at_ms IS NULL",
+            )
+            .bind(now.get())
+            .bind(hash_token(&refresh_token))
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if updated != 1 {
+                transaction.rollback().await?;
+                return Ok(None);
+            }
+            let user_id = EntityId::from_str(&row.try_get::<String, _>("user_id")?)
+                .map_err(|_| McpOAuthStoreError::CorruptUser)?;
+            let scopes = row
+                .try_get::<String, _>("scopes")?
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let grant = McpAuthorizationGrant {
+                user_id: UserId::new(user_id),
+                client_id: row.try_get("client_id")?,
+                redirect_uri: String::new(),
+                resource_uri: row.try_get("resource_uri")?,
+                scopes,
+            };
+            let scopes = grant.scopes.join(" ");
+            sqlx::query(
+                "INSERT INTO mcp_access_tokens
+                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(hash_token(&new_access_token))
+            .bind(grant.user_id.to_string())
+            .bind(&grant.client_id)
+            .bind(&grant.resource_uri)
+            .bind(&scopes)
+            .bind(access_expires_at.get())
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query(
+                "INSERT INTO mcp_refresh_tokens
+                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(hash_token(&new_refresh_token))
+            .bind(grant.user_id.to_string())
+            .bind(&grant.client_id)
+            .bind(&grant.resource_uri)
+            .bind(scopes)
+            .bind(refresh_expires_at.get())
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            Ok(Some(grant))
         }
     }
 }
@@ -2155,6 +2248,98 @@ mod tests {
                 .await
                 .expect("second consume")
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_refresh_tokens_rotate_once_and_issue_a_new_access_token() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000073").expect("user ID"),
+        );
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'User', 0, 0)",
+        )
+        .bind(user_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("user");
+        let store = database.mcp_oauth_store();
+        store
+            .upsert_client(McpOAuthClient {
+                client_id: "client".into(),
+                display_name: "Client".into(),
+                redirect_uris: vec!["http://127.0.0.1:4567/callback".into()],
+            })
+            .await
+            .expect("client");
+        let grant = McpAuthorizationGrant {
+            user_id,
+            client_id: "client".into(),
+            redirect_uri: "http://127.0.0.1:4567/callback".into(),
+            resource_uri: "https://example.test/mcp".into(),
+            scopes: vec!["notes:read".into()],
+        };
+        store
+            .issue_token_pair(
+                "access-1".into(),
+                "refresh-1".into(),
+                grant,
+                UnixMillis::new(100),
+                UnixMillis::new(200),
+            )
+            .await
+            .expect("tokens");
+        assert!(
+            store
+                .rotate_refresh_token(
+                    McpRefreshTokenRotation {
+                        refresh_token: "refresh-1".into(),
+                        client_id: "client".into(),
+                        resource_uri: "https://example.test/mcp".into(),
+                        new_access_token: "access-2".into(),
+                        new_refresh_token: "refresh-2".into(),
+                        access_expires_at: UnixMillis::new(100),
+                        refresh_expires_at: UnixMillis::new(200),
+                    },
+                    UnixMillis::new(1),
+                )
+                .await
+                .expect("rotate")
+                .is_some()
+        );
+        assert!(
+            store
+                .rotate_refresh_token(
+                    McpRefreshTokenRotation {
+                        refresh_token: "refresh-1".into(),
+                        client_id: "client".into(),
+                        resource_uri: "https://example.test/mcp".into(),
+                        new_access_token: "access-3".into(),
+                        new_refresh_token: "refresh-3".into(),
+                        access_expires_at: UnixMillis::new(100),
+                        refresh_expires_at: UnixMillis::new(200),
+                    },
+                    UnixMillis::new(2),
+                )
+                .await
+                .expect("second rotate")
+                .is_none()
+        );
+        assert!(
+            database
+                .mcp_access_token_store()
+                .authenticate_read(
+                    "access-2".into(),
+                    "https://example.test/mcp".into(),
+                    UnixMillis::new(2),
+                )
+                .await
+                .expect("access token")
+                .is_some()
         );
     }
 }

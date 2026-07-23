@@ -268,6 +268,13 @@ pub trait McpOAuthStore: Send + Sync {
         access_expires_at: UnixMillis,
         refresh_expires_at: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    /// refresh tokenを一度だけ消費し、新しいtoken pairを同一transactionで保存する。
+    fn rotate_refresh_token(
+        &self,
+        rotation: McpRefreshTokenRotation,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<McpAuthorizationGrant>, Self::Error>> + Send;
 }
 
 /// OAuth Authorization Code Flowでtransportから渡す検証済み候補。
@@ -278,6 +285,17 @@ pub struct McpAuthorizationRequest {
     pub resource_uri: String,
     pub scopes: Vec<String>,
     pub code_challenge: String,
+}
+
+/// refresh token rotationでadapterへ渡す、すでに生成済みの新旧tokenとbinding。
+pub struct McpRefreshTokenRotation {
+    pub refresh_token: String,
+    pub client_id: String,
+    pub resource_uri: String,
+    pub new_access_token: String,
+    pub new_refresh_token: String,
+    pub access_expires_at: UnixMillis,
+    pub refresh_expires_at: UnixMillis,
 }
 
 /// token endpointだけが短時間保持するtoken pair。Debugを実装しない。
@@ -311,6 +329,12 @@ pub trait McpOAuthUseCases: Send + Sync {
         redirect_uri: String,
         resource_uri: String,
         code_verifier: String,
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
+    async fn refresh_access_token(
+        &self,
+        refresh_token: String,
+        client_id: String,
+        resource_uri: String,
     ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
 }
 

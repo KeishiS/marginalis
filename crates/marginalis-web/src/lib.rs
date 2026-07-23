@@ -293,7 +293,7 @@ async fn mcp_authorization_server_metadata(
         "authorization_endpoint": endpoint.authorization_endpoint_uri,
         "token_endpoint": endpoint.token_endpoint_uri,
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
         "scopes_supported": ["notes:read", "notes:write", "notes:delete"],
         "token_endpoint_auth_methods_supported": ["none"]
@@ -397,11 +397,12 @@ struct McpAuthorizeForm {
 #[derive(Deserialize)]
 struct McpTokenForm {
     grant_type: String,
-    code: String,
+    code: Option<String>,
     client_id: String,
-    redirect_uri: String,
+    redirect_uri: Option<String>,
     resource: String,
-    code_verifier: String,
+    code_verifier: Option<String>,
+    refresh_token: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -547,29 +548,53 @@ async fn mcp_token(
         ApiErrorCode::NotFound,
         "MCP is not available",
     ))?;
-    if form.grant_type != "authorization_code" {
-        return Err(ApiError::new(
-            ApiErrorCode::ValidationFailed,
-            "OAuth grant type is not supported",
-        ));
-    }
-    let tokens = endpoint
-        .oauth
-        .exchange_authorization_code(
-            form.code,
-            form.client_id,
-            form.redirect_uri,
-            form.resource,
-            form.code_verifier,
-        )
-        .await
-        .map_err(oauth_error)?;
+    let tokens = match form.grant_type.as_str() {
+        "authorization_code" => endpoint
+            .oauth
+            .exchange_authorization_code(
+                required_token_field(form.code, "code")?,
+                form.client_id,
+                required_token_field(form.redirect_uri, "redirect_uri")?,
+                form.resource,
+                required_token_field(form.code_verifier, "code_verifier")?,
+            )
+            .await
+            .map_err(oauth_error)?,
+        "refresh_token" => endpoint
+            .oauth
+            .refresh_access_token(
+                required_token_field(form.refresh_token, "refresh_token")?,
+                form.client_id,
+                form.resource,
+            )
+            .await
+            .map_err(oauth_error)?,
+        _ => {
+            return Err(ApiError::new(
+                ApiErrorCode::ValidationFailed,
+                "OAuth grant type is not supported",
+            ));
+        }
+    };
     Ok(Json(McpTokenResponse {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         token_type: "Bearer",
         expires_in: tokens.access_expires_in_seconds,
     }))
+}
+
+fn required_token_field(value: Option<String>, name: &'static str) -> Result<String, ApiError> {
+    value.filter(|value| !value.is_empty()).ok_or(ApiError::new(
+        ApiErrorCode::ValidationFailed,
+        match name {
+            "code" => "OAuth code is required",
+            "redirect_uri" => "OAuth redirect URI is required",
+            "code_verifier" => "OAuth code verifier is required",
+            "refresh_token" => "OAuth refresh token is required",
+            _ => "OAuth request is invalid",
+        },
+    ))
 }
 
 async fn oidc_login_with_return_to(
