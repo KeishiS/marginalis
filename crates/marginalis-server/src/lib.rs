@@ -1465,7 +1465,7 @@ fn validate_issuer_url(value: String) -> Result<Url, ConfigurationError> {
 mod tests {
     use super::*;
     use marginalis_application::{
-        McpOAuthAdministrationUseCases, McpOAuthUseCases, OidcIdentityStore,
+        McpOAuthAdministrationUseCases, McpOAuthUseCases, NoteUseCases, OidcIdentityStore,
     };
     use marginalis_domain::{McpOAuthClient, OidcIdentity, RegistrationPolicy};
     use marginalis_mcp::McpAuthenticator;
@@ -1621,5 +1621,71 @@ mod tests {
                 .user_id,
             user_id
         );
+    }
+
+    #[tokio::test]
+    async fn projection_rebuild_keeps_the_previous_database_projection_when_a_source_is_invalid() {
+        let directory = std::env::temp_dir().join(format!("marginalis-rebuild-{}", Uuid::now_v7()));
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let owner =
+            UserId::new(EntityId::from_str("01800000-0000-7000-8000-000000000094").expect("owner"));
+        database
+            .oidc_identity_store()
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "rebuild-owner", "Owner")
+                    .expect("identity"),
+                RegistrationPolicy::Open,
+                owner,
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("owner");
+        let note_id =
+            NoteId::new(EntityId::from_str("01800000-0000-7000-8000-000000000095").expect("note"));
+        let sources = FileNoteStore::open(&directory).expect("sources");
+        let source = render_note_source(
+            note_id,
+            owner,
+            "2026-07-23T00:00:00.000Z",
+            "2026-07-23T00:00:00.000Z",
+            &NoteDraft {
+                title: "Canonical title".into(),
+                body: "searchable body".into(),
+                tags: vec!["research".into()],
+            },
+        )
+        .expect("source");
+        std::fs::write(
+            directory.join("notes").join(format!("{note_id}.adoc")),
+            source,
+        )
+        .expect("write source");
+        let service = ServerNoteUseCases::new(database, sources);
+        assert_eq!(service.rebuild_projections().await.expect("rebuild"), 1);
+        std::fs::write(
+            directory.join("notes").join(format!("{note_id}.adoc")),
+            "not a valid Marginalis note",
+        )
+        .expect("corrupt source");
+        assert_eq!(
+            service.rebuild_projections().await,
+            Err(NoteUseCaseError::Validation)
+        );
+        let result = service
+            .search_notes(
+                Actor {
+                    user_id: owner,
+                    is_root: false,
+                },
+                "Canonical".into(),
+                0,
+                10,
+            )
+            .await
+            .expect("previous projection remains searchable");
+        assert_eq!(result.notes[0].note_id, note_id);
+        std::fs::remove_dir_all(directory).expect("remove directory");
     }
 }
