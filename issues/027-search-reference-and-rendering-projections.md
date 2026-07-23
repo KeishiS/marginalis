@@ -1,6 +1,6 @@
 # 027: 検索・xref・閲覧用RenderPolicyの完成
 
-状態: RC.1 release blocker（current releaseの検索契約）。HTML配信部分はWeb UI着手前に必須。
+状態: タグ・検索・xrefはRC.1 release blocker。HTML配信部分はWeb UI着手前に必須。
 
 ## 問題
 
@@ -17,12 +17,11 @@ JOINできない。保存時に使う`RenderPolicy::default()`は閲覧時の明
    RESTおよびMCPへ追加する。
 2. FTSを`bm25(note_search, 10.0, 1.0)`等の明示した列重みで検索し、タイトル一致を本文一致より優先する。
 3. `xref:note:` UUIDをcanonical lowercase UUIDv7へ正規化して、reference投影とresolverで一貫して使う。
-4. 閲覧専用のMarginalis RenderPolicyを定義し、外部リンクの固定属性、resource禁止、LaTeX限定、ACL拒否時の
-完全非表示およびanchor欠落時のノート先頭fallbackをHTML contract testで固定する。
+4. Web UI着手時に、閲覧専用のMarginalis RenderPolicyを定義する。外部リンクの固定属性、resource禁止、
+   LaTeX限定、ACL拒否時の完全非表示およびanchor欠落時のノート先頭fallbackをHTML contract testで固定する。
 
 ## 完了条件
 
 - タグ・日時・xref filterをREST/MCPでACL非漏洩のまま利用できる。
 - 大文字・小文字の違いだけでnote xrefがリンク切れにならない。
 - 将来のHTML endpointは保存時profileと矛盾しないRenderPolicyを必ず使用する。
-
