@@ -52,6 +52,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         11,
         include_str!("../migrations/0011_delete_confirmation_reference_snapshot.sql"),
     ),
+    (
+        12,
+        include_str!("../migrations/0012_note_metadata_filters.sql"),
+    ),
 ];
 
 #[derive(Clone, Debug)]
@@ -693,6 +697,9 @@ impl SqliteDatabase {
             .execute(&mut *transaction)
             .await?;
         sqlx::query("DELETE FROM note_references")
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("DELETE FROM note_tags")
             .execute(&mut *transaction)
             .await?;
         for (projection, revision) in projections {
@@ -1705,6 +1712,10 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
                 .bind(projection.note_id.to_string())
                 .execute(&mut *transaction)
                 .await?;
+            sqlx::query("DELETE FROM note_tags WHERE note_id = ?")
+                .bind(projection.note_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
             insert_note_projection_rows(&mut transaction, &projection, revision).await?;
             if !exists {
                 sqlx::query("INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)")
@@ -1747,15 +1758,19 @@ async fn insert_note_projection_rows(
     revision: SourceRevision,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO notes (note_id, relative_path, title, source_revision, deleted_at_ms)
-         VALUES (?, ?, ?, ?, NULL)
+        "INSERT INTO notes (note_id, relative_path, title, creator_id, created_at, updated_at, source_revision, deleted_at_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
          ON CONFLICT(note_id) DO UPDATE SET
            relative_path = excluded.relative_path, title = excluded.title,
+           creator_id = excluded.creator_id, created_at = excluded.created_at, updated_at = excluded.updated_at,
            source_revision = excluded.source_revision, deleted_at_ms = NULL",
     )
     .bind(projection.note_id.to_string())
     .bind(format!("notes/{}.adoc", projection.note_id))
     .bind(&projection.title)
+    .bind(projection.owner_id.to_string())
+    .bind(&projection.created_at)
+    .bind(&projection.updated_at)
     .bind(revision.bytes().to_vec())
     .execute(&mut *connection)
     .await?;
@@ -1765,6 +1780,13 @@ async fn insert_note_projection_rows(
         .bind(&projection.search_text)
         .execute(&mut *connection)
         .await?;
+    for tag in &projection.tags {
+        sqlx::query("INSERT INTO note_tags (note_id, tag_key) VALUES (?, ?)")
+            .bind(projection.note_id.to_string())
+            .bind(tag)
+            .execute(&mut *connection)
+            .await?;
+    }
     for anchor in &projection.anchors {
         sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
             .bind(projection.note_id.to_string())
@@ -2381,7 +2403,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 11);
+        assert_eq!(version, 12);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -2544,6 +2566,9 @@ mod tests {
             note_id,
             owner_id: owner,
             title: "Rebuilt".into(),
+            tags: Vec::new(),
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+            updated_at: "2026-01-01T00:00:00.000Z".into(),
             search_text: "rebuild search text".into(),
             anchors: vec!["start".into()],
             references: vec![NoteReference {
@@ -2714,6 +2739,9 @@ mod tests {
                     note_id: target_note_id,
                     owner_id: target_owner_id,
                     title: "Target".into(),
+                    tags: Vec::new(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                    updated_at: "2026-01-01T00:00:00.000Z".into(),
                     search_text: "Target".into(),
                     anchors: vec!["target".into()],
                     references: Vec::new(),
@@ -2729,6 +2757,9 @@ mod tests {
                     note_id,
                     owner_id,
                     title: "Projection".into(),
+                    tags: Vec::new(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                    updated_at: "2026-01-01T00:00:00.000Z".into(),
                     search_text: "Projection".into(),
                     anchors: vec!["section".into()],
                     references: vec![NoteReference {
@@ -2954,6 +2985,9 @@ mod tests {
                     note_id,
                     owner_id,
                     title: "ACL".into(),
+                    tags: Vec::new(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                    updated_at: "2026-01-01T00:00:00.000Z".into(),
                     search_text: "ACL".into(),
                     anchors: Vec::new(),
                     references: Vec::new(),
@@ -2992,6 +3026,9 @@ mod tests {
                     note_id,
                     owner_id,
                     title: "Updated ACL".into(),
+                    tags: Vec::new(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                    updated_at: "2026-01-01T00:00:00.000Z".into(),
                     search_text: "updated ACL".into(),
                     anchors: Vec::new(),
                     references: Vec::new(),
@@ -3018,6 +3055,9 @@ mod tests {
                     note_id,
                     owner_id,
                     title: "Rebuilt ACL".into(),
+                    tags: Vec::new(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                    updated_at: "2026-01-01T00:00:00.000Z".into(),
                     search_text: "rebuilt ACL".into(),
                     anchors: Vec::new(),
                     references: Vec::new(),
@@ -3111,6 +3151,9 @@ mod tests {
                     note_id,
                     owner_id,
                     title: "Private hypothesis".into(),
+                    tags: Vec::new(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                    updated_at: "2026-01-01T00:00:00.000Z".into(),
                     search_text: "unique-secret-phrase".into(),
                     anchors: Vec::new(),
                     references: Vec::new(),
@@ -3180,6 +3223,9 @@ mod tests {
                         note_id,
                         owner_id,
                         title: title.into(),
+                        tags: Vec::new(),
+                        created_at: "2026-01-01T00:00:00.000Z".into(),
+                        updated_at: "2026-01-01T00:00:00.000Z".into(),
                         search_text: search_text.into(),
                         anchors: Vec::new(),
                         references: Vec::new(),
@@ -3495,6 +3541,9 @@ mod tests {
                     note_id,
                     owner_id: user_id,
                     title: "Disposable".into(),
+                    tags: Vec::new(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                    updated_at: "2026-01-01T00:00:00.000Z".into(),
                     search_text: "Disposable".into(),
                     anchors: Vec::new(),
                     references: Vec::new(),
@@ -3595,6 +3644,9 @@ mod tests {
                         note_id,
                         owner_id: user_id,
                         title: title.into(),
+                        tags: Vec::new(),
+                        created_at: "2026-01-01T00:00:00.000Z".into(),
+                        updated_at: "2026-01-01T00:00:00.000Z".into(),
                         search_text: title.into(),
                         anchors: Vec::new(),
                         references: Vec::new(),
@@ -3629,6 +3681,9 @@ mod tests {
                     note_id: source_id,
                     owner_id: user_id,
                     title: "Source".into(),
+                    tags: Vec::new(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                    updated_at: "2026-01-01T00:00:00.000Z".into(),
                     search_text: "Source".into(),
                     anchors: Vec::new(),
                     references: vec![marginalis_domain::NoteReference {

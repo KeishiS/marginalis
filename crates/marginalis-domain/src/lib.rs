@@ -155,6 +155,12 @@ pub struct NoteProjection {
     pub note_id: NoteId,
     pub owner_id: UserId,
     pub title: String,
+    /// 検索filter用に正規化したtagキー。
+    pub tags: Vec<String>,
+    /// 固定ミリ秒RFC 3339表現。UTC表現の辞書順は時刻順と一致する。
+    pub created_at: String,
+    /// 固定ミリ秒RFC 3339表現。UTC表現の辞書順は時刻順と一致する。
+    pub updated_at: String,
     /// 検索専用の正規化前テキスト。正本更新と同じtransactionで投影へ反映する。
     pub search_text: String,
     pub anchors: Vec<String>,

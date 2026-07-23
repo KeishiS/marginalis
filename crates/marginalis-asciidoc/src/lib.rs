@@ -376,6 +376,9 @@ pub fn build_note_projection(
         note_id,
         owner_id,
         title: metadata.title,
+        tags: metadata.tags.into_iter().map(|tag| tag.key).collect(),
+        created_at: metadata.created_at,
+        updated_at: metadata.updated_at,
         search_text: search_parts
             .into_iter()
             .filter(|part| !part.is_empty())
