@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use marginalis_application::{NoteUseCaseError, NoteUseCases};
-use marginalis_domain::{Actor, EntityId, NoteId};
+use marginalis_application::{NoteDraft, NoteUseCaseError, NoteUseCases};
+use marginalis_domain::{Actor, EntityId, NoteId, SourceRevision};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{str::FromStr, sync::Arc};
@@ -159,6 +159,41 @@ impl McpTools {
                     Err(error) => note_error(id, error),
                 }
             }
+            "create_note" => {
+                let Ok(arguments) = serde_json::from_value::<NoteDraftArguments>(call.arguments)
+                else {
+                    return JsonRpcResponse::error(id, -32602, "create arguments are invalid");
+                };
+                match self.notes.create_note(actor, arguments.into()).await {
+                    Ok(note) => note_source_response(id, note),
+                    Err(error) => note_error(id, error),
+                }
+            }
+            "update_note" => {
+                let Ok(arguments) = serde_json::from_value::<UpdateNoteArguments>(call.arguments)
+                else {
+                    return JsonRpcResponse::error(id, -32602, "update arguments are invalid");
+                };
+                let Ok(entity_id) = EntityId::from_str(&arguments.note_id) else {
+                    return JsonRpcResponse::error(id, -32602, "note ID is invalid");
+                };
+                let Some(revision) = SourceRevision::from_hex(&arguments.expected_revision) else {
+                    return JsonRpcResponse::error(id, -32602, "expected revision is invalid");
+                };
+                match self
+                    .notes
+                    .update_note(
+                        actor,
+                        NoteId::new(entity_id),
+                        arguments.draft.into(),
+                        revision,
+                    )
+                    .await
+                {
+                    Ok(note) => note_source_response(id, note),
+                    Err(error) => note_error(id, error),
+                }
+            }
             _ => JsonRpcResponse::error(id, -32602, "tool is not available"),
         }
     }
@@ -175,6 +210,22 @@ fn tool_list() -> Value {
             "annotations": { "readOnlyHint": true, "destructiveHint": false }
         },
         {
+            "name": "create_note",
+            "description": "Create a private note owned by the authenticated user.",
+            "inputSchema": draft_input_schema(),
+            "annotations": { "readOnlyHint": false, "destructiveHint": false }
+        },
+        {
+            "name": "update_note",
+            "description": "Update a writable note when its revision matches expected_revision.",
+            "inputSchema": { "type": "object", "required": ["note_id", "expected_revision", "title", "body", "tags"], "properties": {
+                "note_id": { "type": "string" }, "expected_revision": { "type": "string" },
+                "title": { "type": "string" }, "body": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } }
+            } },
+            "annotations": { "readOnlyHint": false, "destructiveHint": false }
+        },
+        {
             "name": "get_note",
             "description": "Read an AsciiDoc note visible to the authenticated user.",
             "inputSchema": { "type": "object", "required": ["note_id"], "properties": {
@@ -183,6 +234,31 @@ fn tool_list() -> Value {
             "annotations": { "readOnlyHint": true, "destructiveHint": false }
         }
     ] })
+}
+
+fn draft_input_schema() -> Value {
+    json!({ "type": "object", "required": ["title", "body", "tags"], "properties": {
+        "title": { "type": "string" }, "body": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+    } })
+}
+
+fn note_source_response(id: Value, note: marginalis_domain::NoteSource) -> JsonRpcResponse {
+    let note_id = note.note_id;
+    let title = note.title;
+    let revision = note.revision;
+    let Ok(source) = String::from_utf8(note.content) else {
+        return JsonRpcResponse::error(id, -32603, "note source is unavailable");
+    };
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "content": [{ "type": "text", "text": source }],
+            "structuredContent": {
+                "note_id": note_id.to_string(), "title": title, "revision": revision.to_hex()
+            }
+        }),
+    )
 }
 
 fn note_error(id: Value, error: NoteUseCaseError) -> JsonRpcResponse {
@@ -264,6 +340,31 @@ struct GetNoteArguments {
     note_id: String,
 }
 
+#[derive(Deserialize)]
+struct NoteDraftArguments {
+    title: String,
+    body: String,
+    tags: Vec<String>,
+}
+
+impl From<NoteDraftArguments> for NoteDraft {
+    fn from(value: NoteDraftArguments) -> Self {
+        Self {
+            title: value.title,
+            body: value.body,
+            tags: value.tags,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateNoteArguments {
+    note_id: String,
+    expected_revision: String,
+    #[serde(flatten)]
+    draft: NoteDraftArguments,
+}
+
 fn cursor_offset(cursor: Option<String>) -> Result<u64, ()> {
     let Some(cursor) = cursor else {
         return Ok(0);
@@ -324,6 +425,18 @@ mod tests {
         ) -> Result<NoteId, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
+        async fn create_note(
+            &self,
+            _actor: Actor,
+            _draft: NoteDraft,
+        ) -> Result<NoteSource, NoteUseCaseError> {
+            Ok(NoteSource {
+                note_id: note_id(),
+                title: "Created".into(),
+                revision: SourceRevision::from_source(b"= Created\n"),
+                content: b"= Created\n".to_vec(),
+            })
+        }
         async fn update_source(
             &self,
             _actor: Actor,
@@ -331,6 +444,15 @@ mod tests {
             _source: String,
             _expected_revision: SourceRevision,
         ) -> Result<(), NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+        async fn update_note(
+            &self,
+            _actor: Actor,
+            _note_id: NoteId,
+            _draft: NoteDraft,
+            _expected_revision: SourceRevision,
+        ) -> Result<NoteSource, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
         async fn delete_note(
@@ -359,6 +481,10 @@ mod tests {
             ),
             is_root: false,
         }
+    }
+
+    fn note_id() -> NoteId {
+        NoteId::new(EntityId::from_str("01800000-0000-7000-8000-000000000082").expect("note"))
     }
 
     #[tokio::test]
@@ -397,7 +523,7 @@ mod tests {
                 .as_array()
                 .expect("tools")
                 .len(),
-            2
+            4
         );
     }
 
@@ -417,6 +543,26 @@ mod tests {
                 )
                 .await
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn create_note_uses_write_scope_and_returns_server_metadata() {
+        let tools = McpTools::new(Arc::new(EmptyNotes));
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(json!(3)),
+            method: "tools/call".into(),
+            params: Some(json!({
+                "name": "create_note",
+                "arguments": { "title": "Created", "body": "text", "tags": ["research"] }
+            })),
+        };
+        assert_eq!(tools.required_scope(&request), "notes:write");
+        let response = tools.handle(actor(), request).await.expect("response");
+        assert_eq!(
+            response.result.expect("result")["structuredContent"]["note_id"],
+            note_id().to_string()
         );
     }
 }

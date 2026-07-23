@@ -36,6 +36,8 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 | --- | --- | --- |
 | `search_notes` | `query`、任意の`limit`と`cursor` | 可視ノートのID・titleと次cursor |
 | `get_note` | `note_id` | Read権限を持つノートのID・title・revision・AsciiDoc source |
+| `create_note` | `title`、`body`、`tags` | server生成metadataを持つ新規ノートとrevision |
+| `update_note` | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとrevision |
 
 検索はSQLite FTS5投影を使い、ACL filter後の結果だけをcursorへ含める。本文断片、score、権限のない
 ノートの存在は返さない。`GET /mcp`はserver-to-client notification streamが必要になるまで`405`を
@@ -60,6 +62,11 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 `::1`へのHTTP loopback URIだけを許可する。query、fragment、userinfoを含むredirect URIは許可しない。
 scopeは`notes:read`、`notes:write`、`notes:delete`だけを受理する。現在公開するtoolは読み取り専用のため、
 clientは`notes:read`を要求する。
+
+`create_note`と`update_note`は`notes:write`に加えて、通常のノートACLを必要とする。MCP clientは
+`note-id`、`creator-id`、`created-at`、`updated-at`を指定・変更できない。serverがUUIDv7と作成者を
+決め、作成日時を保存し、更新日時だけを更新する。`update_note`は現在のrevisionとの完全一致を要求し、
+競合時には変更しない。
 
 access tokenの有効期間は1時間である。refresh tokenの有効期間は30日で、`grant_type=refresh_token`、
 `refresh_token`、client ID、resourceを`/oauth/token`へ送ると新しいtoken pairを得る。refresh tokenは

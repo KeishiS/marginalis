@@ -160,7 +160,6 @@ mod tests {
     use std::{
         fs,
         sync::atomic::{AtomicUsize, Ordering},
-        time::{SystemTime, UNIX_EPOCH},
     };
 
     use marginalis_application::{
@@ -175,11 +174,7 @@ mod tests {
     use super::*;
 
     fn test_directory() -> PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock after epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("marginalis-files-{suffix}"))
+        std::env::temp_dir().join(format!("marginalis-files-{}", Uuid::now_v7()))
     }
 
     fn note(value: u128) -> NoteId {

@@ -622,6 +622,11 @@ pub trait NoteUseCases: Send + Sync {
     ) -> Result<NoteSource, NoteUseCaseError>;
     async fn create_source(&self, actor: Actor, source: String)
     -> Result<NoteId, NoteUseCaseError>;
+    async fn create_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+    ) -> Result<NoteSource, NoteUseCaseError>;
     async fn update_source(
         &self,
         actor: Actor,
@@ -629,6 +634,13 @@ pub trait NoteUseCases: Send + Sync {
         source: String,
         expected_revision: SourceRevision,
     ) -> Result<(), NoteUseCaseError>;
+    async fn update_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        draft: NoteDraft,
+        expected_revision: SourceRevision,
+    ) -> Result<NoteSource, NoteUseCaseError>;
     async fn delete_note(
         &self,
         actor: Actor,
@@ -642,6 +654,14 @@ pub trait NoteUseCases: Send + Sync {
         user_id: UserId,
         permission: Option<NotePermission>,
     ) -> Result<(), NoteUseCaseError>;
+}
+
+/// transportがtitle、body、tagsとして受け取る、server生成metadataを含まないノート内容。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteDraft {
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
 }
 
 /// transportに公開するノート操作の失敗分類。内部adapterの詳細はここから漏らさない。

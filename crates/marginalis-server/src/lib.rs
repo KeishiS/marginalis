@@ -1,16 +1,17 @@
 //! サーバーの設定境界。環境変数とNixOS moduleはこの型へ変換される。
 
 use core::fmt;
-use std::{env, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{env, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
 
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, Clock, McpAccessTokenStore, McpAuthorizationRequest, McpOAuthStore,
     McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation, McpTokenPair, NoteAclService,
-    NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError,
-    NoteUseCases, NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore,
-    SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
+    NoteAclServiceError, NoteAclStore, NoteDraft, NoteOperationKind, NoteQueryStore,
+    NoteUseCaseError, NoteUseCases, NoteWriteService, OidcUserAdministrationStore, Random,
+    RootCredentialStore, SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService,
+    WebSessionStore,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
@@ -663,6 +664,51 @@ impl ServerNoteUseCases {
     }
 }
 
+fn timestamp_rfc3339(now: UnixMillis) -> Result<String, NoteUseCaseError> {
+    let datetime =
+        time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(now.get()) * 1_000_000)
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+    let seconds = datetime
+        .format(time::macros::format_description!(
+            "[year]-[month]-[day]T[hour]:[minute]:[second]"
+        ))
+        .map_err(|_| NoteUseCaseError::Unavailable)?;
+    Ok(format!("{seconds}.{:03}Z", now.get().rem_euclid(1_000)))
+}
+
+fn render_note_source(
+    note_id: NoteId,
+    creator_id: UserId,
+    created_at: &str,
+    updated_at: &str,
+    draft: &NoteDraft,
+) -> Result<String, NoteUseCaseError> {
+    if draft.title.trim().is_empty()
+        || draft.title.contains(['\r', '\n'])
+        || draft.tags.iter().any(|tag| tag.contains(['\r', '\n']))
+    {
+        return Err(NoteUseCaseError::Validation);
+    }
+    Ok(format!(
+        "= {}\n:note-id: {}\n:creator-id: {}\n:created-at: {}\n:updated-at: {}\n:tags: {}\n\n{}\n",
+        draft.title,
+        note_id,
+        creator_id,
+        created_at,
+        updated_at,
+        draft.tags.join(", "),
+        draft.body,
+    ))
+}
+
+fn source_metadata(source: &str) -> Result<marginalis_asciidoc::NoteMetadata, NoteUseCaseError> {
+    let analysis = adocweave::Engine::new(Default::default())
+        .analyze(source)
+        .map_err(|_| NoteUseCaseError::Unavailable)?;
+    marginalis_asciidoc::validate_note_metadata(&analysis)
+        .map_err(|_| NoteUseCaseError::Unavailable)
+}
+
 #[async_trait]
 impl NoteUseCases for ServerNoteUseCases {
     async fn list_notes(
@@ -759,6 +805,18 @@ impl NoteUseCases for ServerNoteUseCases {
         Ok(note_id)
     }
 
+    async fn create_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+    ) -> Result<NoteSource, NoteUseCaseError> {
+        let note_id = NoteId::new(SystemRandom.uuid_v7());
+        let now = timestamp_rfc3339(SystemClock.now())?;
+        let source = render_note_source(note_id, actor.user_id, &now, &now, &draft)?;
+        self.create_source(actor, source).await?;
+        self.read_source(actor, note_id).await
+    }
+
     async fn update_source(
         &self,
         actor: Actor,
@@ -808,6 +866,36 @@ impl NoteUseCases for ServerNoteUseCases {
         .await
         .map(|_| ())
         .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    async fn update_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        draft: NoteDraft,
+        expected_revision: SourceRevision,
+    ) -> Result<NoteSource, NoteUseCaseError> {
+        let current = self.read_source(actor, note_id).await?;
+        if current.revision != expected_revision {
+            return Err(NoteUseCaseError::Conflict);
+        }
+        let source =
+            std::str::from_utf8(&current.content).map_err(|_| NoteUseCaseError::Unavailable)?;
+        let metadata = source_metadata(source)?;
+        let creator_id = EntityId::from_str(&metadata.creator_id)
+            .map(UserId::new)
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let updated_at = timestamp_rfc3339(SystemClock.now())?;
+        let source = render_note_source(
+            note_id,
+            creator_id,
+            &metadata.created_at,
+            &updated_at,
+            &draft,
+        )?;
+        self.update_source(actor, note_id, source, expected_revision)
+            .await?;
+        self.read_source(actor, note_id).await
     }
 
     async fn delete_note(
@@ -1062,5 +1150,29 @@ mod tests {
                 .path(),
             "/marginalis"
         );
+    }
+
+    #[test]
+    fn structured_note_source_keeps_server_metadata_out_of_client_draft() {
+        let note_id =
+            NoteId::new(EntityId::from_str("01800000-0000-7000-8000-000000000091").expect("note"));
+        let user_id =
+            UserId::new(EntityId::from_str("01800000-0000-7000-8000-000000000092").expect("user"));
+        let source = render_note_source(
+            note_id,
+            user_id,
+            "2026-07-23T00:00:00.000Z",
+            "2026-07-23T00:00:01.000Z",
+            &NoteDraft {
+                title: "Structured note".into(),
+                body: "Body".into(),
+                tags: vec!["research".into()],
+            },
+        )
+        .expect("source");
+        let metadata = source_metadata(&source).expect("metadata");
+        assert_eq!(metadata.note_id, note_id.to_string());
+        assert_eq!(metadata.creator_id, user_id.to_string());
+        assert_eq!(metadata.title, "Structured note");
     }
 }
