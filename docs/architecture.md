@@ -83,6 +83,8 @@ HTTP REST       MCP transport       maintenance CLI
   完全一致、サイズ上限、redirect URI policyを検証してからSQLiteへ保存する。
 - 新基線のDB schemaはversion管理し、空DB作成をCIで検証する。旧dataDirは移行せず、旧versionは
   明確に拒否する。
+- `rebuild-projections`保守操作は、全AsciiDoc正本を検証してから一つのSQLite transactionで検索・
+  anchor・xref投影を置換する。検証失敗時は最後に成功した投影を保持し、既存ACLは維持する。
 - 時刻はUTC epoch milliseconds、IDは型付きUUIDv7、外部入力は境界で検証する。
 
 ## 設定と起動

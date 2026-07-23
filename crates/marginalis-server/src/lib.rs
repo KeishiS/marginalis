@@ -877,6 +877,31 @@ impl ServerNoteUseCases {
         .await
         .map_err(|_| NoteUseCaseError::Unavailable)
     }
+
+    /// AsciiDoc正本を全件検証してから、SQLite検索・参照投影を一つのtransactionで置換する。
+    ///
+    /// 途中でUTF-8・profile・ファイル名と`note-id`の不一致があればDBへ一切書き込まない。
+    pub async fn rebuild_projections(&self) -> Result<usize, NoteUseCaseError> {
+        let sources = self
+            .sources
+            .list_sources()
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let mut projections = Vec::with_capacity(sources.len());
+        for (path_note_id, source) in sources {
+            let source = std::str::from_utf8(&source).map_err(|_| NoteUseCaseError::Validation)?;
+            let projection = marginalis_asciidoc::parse_note_projection(source)
+                .map_err(|_| NoteUseCaseError::Validation)?;
+            if projection.note_id != path_note_id {
+                return Err(NoteUseCaseError::Validation);
+            }
+            projections.push((projection, SourceRevision::from_source(source.as_bytes())));
+        }
+        self.database
+            .replace_all_note_projections(&projections)
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        Ok(projections.len())
+    }
 }
 
 fn timestamp_rfc3339(now: UnixMillis) -> Result<String, NoteUseCaseError> {

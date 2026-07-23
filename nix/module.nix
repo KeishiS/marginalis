@@ -188,5 +188,49 @@ in
         StateDirectoryMode = "0750";
       };
     };
+
+    # 正本からの投影再構築はHTTP serverと同時実行しない。systemdのcredential注入を再利用するため、
+    # 手動の環境変数指定ではなくこのoneshot unitを運用入口とする。
+    systemd.services.marginalis-rebuild-projections = {
+      description = "Rebuild Marginalis SQLite projections from canonical sources";
+      conflicts = [ "marginalis.service" ];
+      environment = {
+        MARGINALIS_BASE_URL = cfg.baseUrl;
+        MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
+        MARGINALIS_DATA_DIR = cfg.dataDir;
+        MARGINALIS_DATABASE_URL =
+          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
+        OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
+        OIDC_CLIENT_ID = cfg.oidc.clientId;
+        OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
+        MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
+        MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.mcp.clientMetadataAllowedHosts;
+      }
+      // optionalAttrs (cfg.initialRootPasswordFile != null) {
+        ROOT_PASSWORD_FILE = "%d/root-password";
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${cfg.package}/bin/marginalis rebuild-projections";
+        User = "marginalis";
+        Group = "marginalis";
+        WorkingDirectory = cfg.dataDir;
+        LoadCredential = [
+          "oidc-client-secret:${cfg.oidc.clientSecretFile}"
+        ]
+        ++ optionals (cfg.initialRootPasswordFile != null) [
+          "root-password:${cfg.initialRootPasswordFile}"
+        ];
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectHome = true;
+        ProtectSystem = "strict";
+        ReadWritePaths = [ cfg.dataDir ];
+      }
+      // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
+        StateDirectory = "marginalis";
+        StateDirectoryMode = "0750";
+      };
+    };
   };
 }

@@ -14,10 +14,29 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() {
     initialize_tracing();
-    if let Err(error) = run().await {
+    let command = std::env::args().nth(1);
+    let result = match command.as_deref() {
+        None | Some("serve") => run().await,
+        Some("rebuild-projections") => rebuild_projections().await,
+        Some(_) => Err("usage: marginalis [serve|rebuild-projections]".into()),
+    };
+    if let Err(error) = result {
         tracing::error!(error = %error, "Marginalis server terminated");
         std::process::exit(1);
     }
+}
+
+/// 停止中のserviceに対して実行する、正本からのSQLite投影再構築コマンド。
+async fn rebuild_projections() -> Result<(), Box<dyn std::error::Error>> {
+    let (configuration, _) = ServerConfig::from_environment()?;
+    std::fs::create_dir_all(&configuration.data_dir)?;
+    let database = SqliteDatabase::connect(&configuration.database_url).await?;
+    let sources = FileNoteStore::open(&configuration.data_dir)?;
+    let notes = ServerNoteUseCases::new(database, sources);
+    notes.recover().await?;
+    let count = notes.rebuild_projections().await?;
+    tracing::info!(count, "note projections rebuilt from canonical sources");
+    Ok(())
 }
 
 fn initialize_tracing() {

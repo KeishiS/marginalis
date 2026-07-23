@@ -1,6 +1,6 @@
 //! MarginalisのSQLite adapterと、version管理されたschema migration。
 
-use std::{fmt, future::Future, str::FromStr, time::Duration};
+use std::{collections::HashSet, fmt, future::Future, str::FromStr, time::Duration};
 
 use argon2::{
     Argon2, PasswordHasher, PasswordVerifier,
@@ -562,6 +562,94 @@ impl SqliteDatabase {
                 .await?
                 .rows_affected(),
         )
+    }
+
+    /// 全正本の検証済みprojectionでSQLite検索・参照投影を置換する。
+    ///
+    /// 呼出側は、すべての正本を解析し、ファイル名と文書内`note-id`の一致を確認してから呼ぶ。
+    /// transaction内で古い正本由来の行を消すため、途中失敗で最後の成功したprojectionは失われない。
+    pub async fn replace_all_note_projections(
+        &self,
+        projections: &[(NoteProjection, SourceRevision)],
+    ) -> Result<(), sqlx::Error> {
+        let expected_ids = projections
+            .iter()
+            .map(|(projection, _)| projection.note_id.to_string())
+            .collect::<HashSet<_>>();
+        let mut transaction = self.pool.begin().await?;
+        let existing_ids = sqlx::query_scalar::<_, String>("SELECT note_id FROM notes")
+            .fetch_all(&mut *transaction)
+            .await?;
+        for note_id in existing_ids
+            .into_iter()
+            .filter(|note_id| !expected_ids.contains(note_id))
+        {
+            sqlx::query("DELETE FROM notes WHERE note_id = ?")
+                .bind(note_id)
+                .execute(&mut *transaction)
+                .await?;
+        }
+        sqlx::query("DELETE FROM note_search")
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("DELETE FROM note_anchors")
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("DELETE FROM note_references")
+            .execute(&mut *transaction)
+            .await?;
+        for (projection, revision) in projections {
+            sqlx::query(
+                "INSERT INTO notes (note_id, relative_path, title, source_revision, deleted_at_ms)
+                 VALUES (?, ?, ?, ?, NULL)
+                 ON CONFLICT(note_id) DO UPDATE SET
+                   relative_path = excluded.relative_path, title = excluded.title,
+                   source_revision = excluded.source_revision, deleted_at_ms = NULL",
+            )
+            .bind(projection.note_id.to_string())
+            .bind(format!("notes/{}.adoc", projection.note_id))
+            .bind(&projection.title)
+            .bind(revision.bytes().to_vec())
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query("INSERT INTO note_search (note_id, title, content) VALUES (?, ?, ?)")
+                .bind(projection.note_id.to_string())
+                .bind(&projection.title)
+                .bind(&projection.search_text)
+                .execute(&mut *transaction)
+                .await?;
+            sqlx::query(
+                "INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)
+                 ON CONFLICT(note_id, user_id) DO NOTHING",
+            )
+            .bind(projection.note_id.to_string())
+            .bind(projection.owner_id.to_string())
+            .execute(&mut *transaction)
+            .await?;
+            for anchor in &projection.anchors {
+                sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
+                    .bind(projection.note_id.to_string())
+                    .bind(anchor)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+            for reference in &projection.references {
+                sqlx::query(
+                    "INSERT INTO note_references
+                     (source_note_id, source_start, source_end, target_note_id, target_anchor)
+                     VALUES (?, ?, ?, ?, ?)",
+                )
+                .bind(projection.note_id.to_string())
+                .bind(i64::from(reference.source_start))
+                .bind(i64::from(reference.source_end))
+                .bind(&reference.target_note_id)
+                .bind(&reference.target_anchor)
+                .execute(&mut *transaction)
+                .await?;
+            }
+        }
+        transaction.commit().await?;
+        Ok(())
     }
 }
 
@@ -2104,6 +2192,73 @@ mod tests {
             "registration-policy-changed"
         );
         assert_eq!(row.get::<String, _>("target"), "approval");
+    }
+
+    #[tokio::test]
+    async fn all_projection_rebuild_replaces_search_graph_and_removed_notes_atomically() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let owner = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000091").expect("UUIDv7"),
+        );
+        database
+            .root_credential_store()
+            .initialize_if_missing("root-password".into(), owner, UnixMillis::new(0))
+            .await
+            .expect("owner");
+        let note_id = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000092").expect("UUIDv7"),
+        );
+        let projection = NoteProjection {
+            note_id,
+            owner_id: owner,
+            title: "Rebuilt".into(),
+            search_text: "rebuild search text".into(),
+            anchors: vec!["start".into()],
+            references: vec![NoteReference {
+                source_start: 3,
+                source_end: 9,
+                target_note_id: "01800000-0000-7000-8000-000000000093".into(),
+                target_anchor: Some("target".into()),
+            }],
+        };
+        database
+            .replace_all_note_projections(&[(projection, SourceRevision::from_source(b"source"))])
+            .await
+            .expect("replace all projections");
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM note_search")
+                .fetch_one(database.pool())
+                .await
+                .expect("search count"),
+            1
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM note_references")
+                .fetch_one(database.pool())
+                .await
+                .expect("reference count"),
+            1
+        );
+        database
+            .replace_all_note_projections(&[])
+            .await
+            .expect("remove stale projections");
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM notes")
+                .fetch_one(database.pool())
+                .await
+                .expect("note count"),
+            0
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM note_acl")
+                .fetch_one(database.pool())
+                .await
+                .expect("ACL count"),
+            0
+        );
     }
 
     #[tokio::test]

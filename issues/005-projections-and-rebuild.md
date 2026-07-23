@@ -1,5 +1,8 @@
 # 005: 検索・グラフ投影と再構築
 
+状態: 実装中。同期投影、物理削除追従、起動時recoveryおよび正本全件からの原子的な再構築は実装済み。
+契約version別の部分無効化と統合試験は後続である。
+
 ## 目的
 
 一つのAdocWeave解析結果から、検索、グラフ、HTML表示に必要なアプリ固有projectionを構築する。
@@ -31,3 +34,12 @@
 - 002
 - 003
 - 004
+
+## 2026-07-23時点の実装状況
+
+- `marginalis rebuild-projections`は`notes/`の全UUIDv7 `.adoc`正本を列挙し、UTF-8、ノートprofile、
+  ファイル名と`note-id`の一致を全件確認してからSQLite投影を置換する。
+- NixOS moduleは`marginalis-rebuild-projections.service`を提供する。このoneshot unitはHTTP serverと
+  競合し、同じsystemd credentialとsandbox条件で実行される。
+- 再構築では検索、anchor、位置付きxrefを置換する。既存ノートのACLを維持し、正本から消えたノートだけを
+  ACLごと削除する。解析またはDB更新が失敗した場合、transactionにより最後の成功したprojectionを保持する。

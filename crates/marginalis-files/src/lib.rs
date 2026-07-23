@@ -5,14 +5,16 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use marginalis_application::{NoteSourceStore, OperationId};
-use marginalis_domain::{NoteId, SourceRevision};
+use marginalis_domain::{EntityId, NoteId, SourceRevision};
 
 #[derive(Debug)]
 pub enum FileStoreError {
     Io(io::Error),
+    InvalidNoteFileName(PathBuf),
 }
 
 impl NoteSourceStore for FileNoteStore {
@@ -47,6 +49,13 @@ impl fmt::Display for FileStoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(error) => write!(formatter, "note source file operation failed: {error}"),
+            Self::InvalidNoteFileName(path) => {
+                write!(
+                    formatter,
+                    "note source path is not a UUIDv7 AsciiDoc file: {}",
+                    path.display()
+                )
+            }
         }
     }
 }
@@ -55,6 +64,7 @@ impl std::error::Error for FileStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
+            Self::InvalidNoteFileName(_) => None,
         }
     }
 }
@@ -85,6 +95,38 @@ impl FileNoteStore {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error.into()),
         }
+    }
+
+    /// `notes/`直下の全`.adoc`正本を、安定したnote ID順で返す。
+    ///
+    /// 再構築はこの戻り値をすべて検証してからSQLiteを書き換える。`.adoc`の名前がUUIDv7でなければ
+    /// 外部編集による破損として失敗し、既存projectionを保持する。
+    pub fn list_sources(&self) -> Result<Vec<(NoteId, Vec<u8>)>, FileStoreError> {
+        let mut entries = fs::read_dir(&self.notes_directory)?
+            .map(|entry| entry.map_err(FileStoreError::from))
+            .collect::<Result<Vec<_>, _>>()?;
+        entries.sort_by_key(|entry| entry.file_name());
+        entries
+            .into_iter()
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+            .filter(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "adoc")
+            })
+            .map(|entry| {
+                let path = entry.path();
+                let stem = path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| FileStoreError::InvalidNoteFileName(path.clone()))?;
+                let note_id = EntityId::from_str(stem)
+                    .map(NoteId::new)
+                    .map_err(|_| FileStoreError::InvalidNoteFileName(path.clone()))?;
+                Ok((note_id, fs::read(path)?))
+            })
+            .collect()
     }
 
     /// 正本をtemp fileへ完全に書き出して同期してからrenameする。
@@ -179,6 +221,44 @@ mod tests {
 
     fn note(value: u128) -> NoteId {
         NoteId::new(EntityId::from_uuid_v7(Uuid::from_u128(value | (7 << 76))))
+    }
+
+    #[test]
+    fn lists_only_uuidv7_asciidoc_sources_in_stable_order() {
+        let directory = test_directory();
+        let sources = FileNoteStore::open(&directory).expect("open sources");
+        let first = note(1);
+        let second = note(2);
+        fs::write(
+            directory.join("notes").join(format!("{second}.adoc")),
+            "second",
+        )
+        .expect("write source");
+        fs::write(
+            directory.join("notes").join(format!("{first}.adoc")),
+            "first",
+        )
+        .expect("write source");
+        fs::write(directory.join("notes").join("ignored.txt"), "ignored").expect("write other");
+
+        assert_eq!(
+            sources.list_sources().expect("list sources"),
+            vec![(first, b"first".to_vec()), (second, b"second".to_vec())]
+        );
+        fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[test]
+    fn rejects_non_uuidv7_asciidoc_source_names() {
+        let directory = test_directory();
+        let sources = FileNoteStore::open(&directory).expect("open sources");
+        fs::write(directory.join("notes").join("not-a-note.adoc"), "invalid")
+            .expect("write source");
+        assert!(matches!(
+            sources.list_sources(),
+            Err(FileStoreError::InvalidNoteFileName(_))
+        ));
+        fs::remove_dir_all(directory).expect("remove directory");
     }
 
     struct FixedClock;

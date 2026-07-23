@@ -71,6 +71,21 @@ sudo -u marginalis sqlite3 /var/lib/marginalis/marginalis.sqlite \
 
 この表にはpassword、cookie、session ID、OIDC code、tokenまたはtoken hashを保存しない。
 
+## 正本からの投影再構築
+
+バックアップからAsciiDoc正本を復元した場合や、保守作業で`dataDir/notes/`を直接修正した場合は、次で
+SQLiteの検索・anchor・xref投影を正本から再構築する。
+
+```sh
+sudo systemctl start marginalis-rebuild-projections.service
+sudo systemctl start marginalis.service
+```
+
+再構築unitはHTTP serverと競合するため、起動時に`marginalis.service`を停止する。全`.adoc`正本を
+先にUTF-8・ノートprofile・ファイル名と`note-id`の一致まで検証し、その後に一つのSQLite transactionで
+投影を置換する。検証エラー時は最後に成功したSQLite投影を変更しない。既存ノートのACLは保持し、正本が
+なくなったノートの投影とACLだけを削除する。
+
 ## MCPの公開
 
 `services.marginalis.mcp.enable`の既定値は`false`である。`true`の場合に限り、同じBase URL配下へ
