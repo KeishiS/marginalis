@@ -458,6 +458,7 @@ struct McpTokenResponse {
     refresh_token: String,
     token_type: &'static str,
     expires_in: u64,
+    scope: String,
 }
 
 fn oauth_request(query: &McpAuthorizeQuery) -> Result<McpAuthorizationRequest, ApiError> {
@@ -628,6 +629,7 @@ async fn mcp_token(
         refresh_token: tokens.refresh_token,
         token_type: "Bearer",
         expires_in: tokens.access_expires_in_seconds,
+        scope: tokens.scope,
     }))
 }
 

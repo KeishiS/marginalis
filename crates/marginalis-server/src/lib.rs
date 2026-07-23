@@ -76,6 +76,7 @@ pub struct McpIssuedTokenPair {
     pub access_token: String,
     pub refresh_token: String,
     pub access_expires_in_seconds: u64,
+    pub scope: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -236,6 +237,7 @@ impl ServerMcpOAuthService {
         let access_token = SystemRandom.opaque_token();
         let refresh_token = SystemRandom.opaque_token();
         let access_expires_in_seconds = 60 * 60;
+        let scope = grant.scopes.join(" ");
         self.database
             .mcp_oauth_store()
             .issue_token_pair(
@@ -251,6 +253,7 @@ impl ServerMcpOAuthService {
             access_token,
             refresh_token,
             access_expires_in_seconds,
+            scope,
         })
     }
 
@@ -283,13 +286,14 @@ impl ServerMcpOAuthService {
             )
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;
-        if grant.is_none() {
+        let Some(grant) = grant else {
             return Err(McpOAuthError::Rejected);
-        }
+        };
         Ok(McpIssuedTokenPair {
             access_token,
             refresh_token: next_refresh_token,
             access_expires_in_seconds,
+            scope: grant.scopes.join(" "),
         })
     }
 }
@@ -406,6 +410,7 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,
             access_expires_in_seconds: tokens.access_expires_in_seconds,
+            scope: tokens.scope,
         })
     }
 
@@ -430,6 +435,7 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,
             access_expires_in_seconds: tokens.access_expires_in_seconds,
+            scope: tokens.scope,
         })
     }
 }

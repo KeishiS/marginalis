@@ -54,6 +54,7 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 5. 許可時は完全一致で検証したredirect URIへ`code`と元の`state`を付けて`303`する。
 6. clientは`POST /oauth/token`に`grant_type=authorization_code`、code、client ID、redirect URI、
    resource、PKCE verifierをform bodyで送る。成功時にopaque access tokenとrefresh tokenを得る。
+   token responseには`token_type: "Bearer"`、`expires_in`、実際に許可された`scope`も含まれる。
 
 `redirect_uri`は事前に登録された文字列との完全一致である。HTTPS URI、または`127.0.0.1`、`localhost`、
 `::1`へのHTTP loopback URIだけを許可する。query、fragment、userinfoを含むredirect URIは許可しない。

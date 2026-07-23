@@ -303,6 +303,7 @@ pub struct McpTokenPair {
     pub access_token: String,
     pub refresh_token: String,
     pub access_expires_in_seconds: u64,
+    pub scope: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
