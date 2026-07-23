@@ -89,3 +89,10 @@ HTTP REST        MCP transport        CLI / maintenance
 - RESTのCRUD/検索とMCPのread/searchが同じapplication command/queryとACL policyを利用する。
 - 空のdataDirからroot初期化、OIDC login、REST CRUD、検索およびMCP read/searchまでを一貫して検証する。
 - serverの組立、NixOS設定、tracingおよびmaintenance CLIの責務が一箇所にある。
+
+## 2026-07-23時点の実装状況
+
+- RESTとMCPは`NoteUseCases`を共有し、HTTP handlerからSQLite、file、AsciiDocの具体adapterを参照しない。
+- 実行バイナリは`marginalis-service`へ分離し、設定読込、adapter組立、tracing初期化、HTTP listenを集約した。
+- request ID、Cookie CSRF、MCP rate limitはHTTP境界にある。identity policyはSQLiteへ永続化した。
+- 管理監査、maintenance CLI、NixOS VM上のOIDC/MCP実サービス結合試験は未実装である。
