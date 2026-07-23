@@ -2255,6 +2255,78 @@ mod tests {
         assert_eq!(actions, ["login-succeeded", "oidc-user-activated"]);
     }
 
+    #[tokio::test]
+    async fn failed_root_logins_are_audited_before_the_route_is_rate_limited() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let root_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000052").expect("UUIDv7"),
+        );
+        database
+            .root_credential_store()
+            .initialize_if_missing("root-password".into(), root_id, UnixMillis::new(0))
+            .await
+            .expect("initialize root");
+        let audit_database = database.clone();
+        let directory =
+            std::env::temp_dir().join(format!("marginalis-root-limit-{}", uuid::Uuid::now_v7()));
+        let app = router(ApiState::with_test_adapters(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database,
+                marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+            )),
+        ));
+        for _ in 0..5 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/auth/root/login")
+                        .extension(axum::extract::ConnectInfo(
+                            "127.0.0.1:12345"
+                                .parse::<std::net::SocketAddr>()
+                                .expect("address"),
+                        ))
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"password":"wrong-password"}"#))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/root/login")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:12345"
+                            .parse::<std::net::SocketAddr>()
+                            .expect("address"),
+                    ))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"password":"wrong-password"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM root_audit_log WHERE action = 'login-failed'",
+            )
+            .fetch_one(audit_database.pool())
+            .await
+            .expect("audit count"),
+            5
+        );
+        std::fs::remove_dir_all(directory).expect("remove directory");
+    }
+
     fn cookie_from_set_cookie(values: &[String], name: &str) -> String {
         values
             .iter()
