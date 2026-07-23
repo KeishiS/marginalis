@@ -24,6 +24,7 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 | 保留OIDCユーザー一覧 | `GET /api/v1/admin/users/pending` | `200`、ユーザー配列 | root |
 | 保留OIDCユーザー有効化 | `PUT /api/v1/admin/users/{user_id}/activate` | `204` | root、CSRF |
 | MCP client事前登録 | `POST /api/v1/admin/mcp-clients` | `204` | root、CSRF |
+| 他ユーザーのMCP認可取消 | `DELETE /api/v1/admin/mcp-authorizations?user_id=...&client_id=...` | `204` | root、CSRF |
 
 有効化は`pending`のOIDCユーザーにだけ作用する。成功後、そのユーザーは次回のOIDC loginで
 通常のsessionを得られる。rootのパスワードをHTTP request body以外へ記録・保存してはならない。
@@ -33,6 +34,11 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 ある。Client ID Metadata Documentを提供しないMCP public clientを明示的に登録するために使う。redirect URIは
 HTTPS、またはloopback (`127.0.0.1`、`localhost`、`::1`) のHTTP URIだけを許可し、query、fragment、userinfoを
 含めてはならない。
+
+通常ユーザーは`DELETE /api/v1/mcp-authorizations?client_id=...`で自分のclient認可を取り消せる。
+rootは`DELETE /api/v1/admin/mcp-authorizations?user_id=...&client_id=...`で任意ユーザーの認可を
+取り消せる。いずれもCSRF tokenを必要とし、対象ユーザーとclient IDのaccess tokenおよびrefresh tokenを
+すべて直ちに失効させる。
 
 OIDC callbackの成功時はBase URL（`/`）へredirectする。Web UI公開前の`GET /`はhealth responseを
 返すため、ログイン完了後に404にはならない。`GET /api/v1/session`は現在の有効なsessionについて

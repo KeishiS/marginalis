@@ -99,3 +99,6 @@ Dynamic Client RegistrationとDevice Authorization Grantは初期公開に含め
 
 Client ID Metadata Documentを提供しないclientは、rootが`POST /api/v1/admin/mcp-clients`を使って事前登録
 できる。これはroot sessionとCSRFを必要とし、MCP tokenやclient secretは受け取らない。
+
+利用者はREST APIで自分のclient認可を取り消せる。rootは任意ユーザーの認可を強制取消できる。取消時には
+そのユーザー・client組のaccess tokenとrefresh tokenをすべて失効させる。

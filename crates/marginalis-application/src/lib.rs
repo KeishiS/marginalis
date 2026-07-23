@@ -291,6 +291,13 @@ pub trait McpOAuthStore: Send + Sync {
         refresh_expires_at: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
+    fn revoke_client_tokens(
+        &self,
+        user_id: UserId,
+        client_id: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
     /// refresh tokenを一度だけ消費し、新しいtoken pairを同一transactionで保存する。
     fn rotate_refresh_token(
         &self,
@@ -340,6 +347,12 @@ pub trait McpOAuthAdministrationUseCases: Send + Sync {
         &self,
         actor: Actor,
         client: McpOAuthClient,
+    ) -> Result<(), McpOAuthUseCaseError>;
+    async fn revoke_client_authorization(
+        &self,
+        actor: Actor,
+        user_id: UserId,
+        client_id: String,
     ) -> Result<(), McpOAuthUseCaseError>;
 }
 

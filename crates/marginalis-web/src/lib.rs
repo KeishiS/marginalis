@@ -272,6 +272,14 @@ pub fn router(state: ApiState) -> Router {
         .route("/auth/root/login", post(root_login))
         .route("/auth/logout", post(logout))
         .route("/api/v1/admin/mcp-clients", post(register_mcp_client))
+        .route(
+            "/api/v1/mcp-authorizations",
+            delete(revoke_own_mcp_authorization),
+        )
+        .route(
+            "/api/v1/admin/mcp-authorizations",
+            delete(revoke_mcp_authorization_as_root),
+        )
         .route("/api/v1/admin/users/pending", get(list_pending_users))
         .route(
             "/api/v1/admin/users/{user_id}/activate",
@@ -1067,6 +1075,12 @@ struct McpClientRegistrationRequest {
     redirect_uris: Vec<String>,
 }
 
+#[derive(Deserialize)]
+struct McpAuthorizationQuery {
+    client_id: String,
+    user_id: Option<String>,
+}
+
 async fn complete_oidc_login(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -1209,6 +1223,62 @@ async fn register_mcp_client(
                 redirect_uris: request.redirect_uris,
             },
         )
+        .await
+        .map_err(oauth_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn revoke_own_mcp_authorization(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Query(query): Query<McpAuthorizationQuery>,
+) -> Result<StatusCode, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
+    revoke_mcp_client_authorization(&state, actor, actor.user_id, query.client_id).await
+}
+
+async fn revoke_mcp_authorization_as_root(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Query(query): Query<McpAuthorizationQuery>,
+) -> Result<StatusCode, ApiError> {
+    let actor = require_root(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
+    let user_id = query
+        .user_id
+        .as_deref()
+        .ok_or(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "user ID is required",
+        ))
+        .and_then(|value| {
+            EntityId::from_str(value)
+                .map(UserId::new)
+                .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "user ID is invalid"))
+        })?;
+    revoke_mcp_client_authorization(&state, actor, user_id, query.client_id).await
+}
+
+async fn revoke_mcp_client_authorization(
+    state: &ApiState,
+    actor: Actor,
+    user_id: UserId,
+    client_id: String,
+) -> Result<StatusCode, ApiError> {
+    if client_id.trim().is_empty() {
+        return Err(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "client ID is required",
+        ));
+    }
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    endpoint
+        .oauth_administration
+        .revoke_client_authorization(actor, user_id, client_id)
         .await
         .map_err(oauth_error)?;
     Ok(StatusCode::NO_CONTENT)
@@ -1428,6 +1498,15 @@ mod tests {
             &self,
             _actor: Actor,
             _client: McpOAuthClient,
+        ) -> Result<(), McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+
+        async fn revoke_client_authorization(
+            &self,
+            _actor: Actor,
+            _user_id: UserId,
+            _client_id: String,
         ) -> Result<(), McpOAuthUseCaseError> {
             Err(McpOAuthUseCaseError::Rejected)
         }

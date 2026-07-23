@@ -466,6 +466,22 @@ impl McpOAuthAdministrationUseCases for ServerMcpOAuthService {
             .await
             .map_err(|_| McpOAuthUseCaseError::Unavailable)
     }
+
+    async fn revoke_client_authorization(
+        &self,
+        actor: Actor,
+        user_id: UserId,
+        client_id: String,
+    ) -> Result<(), McpOAuthUseCaseError> {
+        if !actor.is_root && actor.user_id != user_id {
+            return Err(McpOAuthUseCaseError::Rejected);
+        }
+        self.database
+            .mcp_oauth_store()
+            .revoke_client_tokens(user_id, client_id, SystemClock.now())
+            .await
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)
+    }
 }
 
 impl ServerMcpAuthenticator {

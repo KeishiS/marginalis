@@ -1157,6 +1157,38 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
         }
     }
 
+    fn revoke_client_tokens(
+        &self,
+        user_id: UserId,
+        client_id: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let mut transaction = pool.begin().await?;
+            sqlx::query(
+                "UPDATE mcp_access_tokens SET revoked_at_ms = ?
+                 WHERE user_id = ? AND client_id = ? AND revoked_at_ms IS NULL",
+            )
+            .bind(now.get())
+            .bind(user_id.to_string())
+            .bind(&client_id)
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query(
+                "UPDATE mcp_refresh_tokens SET revoked_at_ms = ?
+                 WHERE user_id = ? AND client_id = ? AND revoked_at_ms IS NULL",
+            )
+            .bind(now.get())
+            .bind(user_id.to_string())
+            .bind(&client_id)
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            Ok(())
+        }
+    }
+
     fn rotate_refresh_token(
         &self,
         rotation: McpRefreshTokenRotation,
@@ -2447,6 +2479,23 @@ mod tests {
                 .await
                 .expect("access token")
                 .is_some()
+        );
+        store
+            .revoke_client_tokens(user_id, "client".into(), UnixMillis::new(3))
+            .await
+            .expect("revoke");
+        assert!(
+            database
+                .mcp_access_token_store()
+                .authenticate(
+                    "access-2".into(),
+                    "https://example.test/mcp".into(),
+                    "notes:read".into(),
+                    UnixMillis::new(4),
+                )
+                .await
+                .expect("revoked access token")
+                .is_none()
         );
     }
 
