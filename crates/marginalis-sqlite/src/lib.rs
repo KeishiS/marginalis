@@ -7,11 +7,11 @@ use argon2::{
     password_hash::{PasswordHash, SaltString},
 };
 use marginalis_application::{
-    AuthenticatedSession, JournalEntry, McpAccessTokenStore, McpOAuthStore,
-    McpRefreshTokenRotation, NoteAclStore, NoteOperationKind, NoteProjectionStore, NoteQueryStore,
-    OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcUserAdministrationStore,
-    OperationId, OperationJournal, OperationState, RootCredentialStore, WebSession,
-    WebSessionStore,
+    AuthenticatedSession, DeleteConfirmationStore, JournalEntry, McpAccessTokenStore,
+    McpOAuthStore, McpRefreshTokenRotation, NoteAclStore, NoteOperationKind, NoteProjectionStore,
+    NoteQueryStore, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore,
+    OidcUserAdministrationStore, OperationId, OperationJournal, OperationState,
+    RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, NoteId, NotePage, NotePermission,
@@ -30,6 +30,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (3, include_str!("../migrations/0003_note_search.sql")),
     (4, include_str!("../migrations/0004_mcp_access_tokens.sql")),
     (5, include_str!("../migrations/0005_mcp_oauth.sql")),
+    (
+        6,
+        include_str!("../migrations/0006_delete_confirmations.sql"),
+    ),
 ];
 
 #[derive(Clone, Debug)]
@@ -72,6 +76,11 @@ pub struct SqliteMcpAccessTokenStore {
 
 #[derive(Clone, Debug)]
 pub struct SqliteMcpOAuthStore {
+    pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SqliteDeleteConfirmationStore {
     pool: SqlitePool,
 }
 
@@ -456,6 +465,12 @@ impl SqliteDatabase {
 
     pub fn mcp_oauth_store(&self) -> SqliteMcpOAuthStore {
         SqliteMcpOAuthStore {
+            pool: self.pool.clone(),
+        }
+    }
+
+    pub fn delete_confirmation_store(&self) -> SqliteDeleteConfirmationStore {
+        SqliteDeleteConfirmationStore {
             pool: self.pool.clone(),
         }
     }
@@ -880,6 +895,81 @@ impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
                 })
             })
             .transpose()
+        }
+    }
+}
+
+impl DeleteConfirmationStore for SqliteDeleteConfirmationStore {
+    type Error = McpOAuthStoreError;
+
+    fn issue(
+        &self,
+        token: String,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: SourceRevision,
+        expires_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO delete_confirmations
+                 (token_hash, user_id, note_id, source_revision, expires_at_ms)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(hash_token(&token))
+            .bind(actor.user_id.to_string())
+            .bind(note_id.to_string())
+            .bind(expected_revision.to_hex())
+            .bind(expires_at.get())
+            .execute(&pool)
+            .await?;
+            Ok(())
+        }
+    }
+
+    fn consume(
+        &self,
+        token: String,
+        actor: Actor,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<(NoteId, SourceRevision)>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let mut transaction = pool.begin().await?;
+            let row = sqlx::query(
+                "SELECT note_id, source_revision FROM delete_confirmations
+                 WHERE token_hash = ? AND user_id = ? AND consumed_at_ms IS NULL AND expires_at_ms > ?",
+            )
+            .bind(hash_token(&token))
+            .bind(actor.user_id.to_string())
+            .bind(now.get())
+            .fetch_optional(&mut *transaction)
+            .await?;
+            let Some(row) = row else {
+                transaction.rollback().await?;
+                return Ok(None);
+            };
+            let updated = sqlx::query(
+                "UPDATE delete_confirmations SET consumed_at_ms = ?
+                 WHERE token_hash = ? AND consumed_at_ms IS NULL",
+            )
+            .bind(now.get())
+            .bind(hash_token(&token))
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if updated != 1 {
+                transaction.rollback().await?;
+                return Ok(None);
+            }
+            let note_id = EntityId::from_str(&row.try_get::<String, _>("note_id")?)
+                .map(NoteId::new)
+                .map_err(|_| McpOAuthStoreError::CorruptUser)?;
+            let revision = SourceRevision::from_hex(&row.try_get::<String, _>("source_revision")?)
+                .ok_or(McpOAuthStoreError::CorruptUser)?;
+            transaction.commit().await?;
+            Ok(Some((note_id, revision)))
         }
     }
 }
@@ -1674,7 +1764,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -2357,6 +2447,91 @@ mod tests {
                 .await
                 .expect("access token")
                 .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_confirmation_is_bound_to_actor_and_single_use() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000074").expect("user ID"),
+        );
+        let other_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000075").expect("user ID"),
+        );
+        let note_id = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000076").expect("note ID"),
+        );
+        for id in [user_id, other_id] {
+            sqlx::query(
+                "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+                 VALUES (?, 'oidc', 'active', 'User', 0, 0)",
+            )
+            .bind(id.to_string())
+            .execute(database.pool())
+            .await
+            .expect("user");
+        }
+        database
+            .note_projection_store()
+            .replace_projection(
+                NoteProjection {
+                    note_id,
+                    owner_id: user_id,
+                    title: "Disposable".into(),
+                    search_text: "Disposable".into(),
+                    anchors: Vec::new(),
+                    references: Vec::new(),
+                },
+                SourceRevision::from_source(b"= Disposable\n"),
+            )
+            .await
+            .expect("note");
+        let revision = SourceRevision::from_source(b"= Disposable\n");
+        let store = database.delete_confirmation_store();
+        let actor = Actor {
+            user_id,
+            is_root: false,
+        };
+        store
+            .issue(
+                "confirmation".into(),
+                actor,
+                note_id,
+                revision,
+                UnixMillis::new(100),
+            )
+            .await
+            .expect("issue");
+        assert!(
+            store
+                .consume(
+                    "confirmation".into(),
+                    Actor {
+                        user_id: other_id,
+                        is_root: false
+                    },
+                    UnixMillis::new(1),
+                )
+                .await
+                .expect("other actor")
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .consume("confirmation".into(), actor, UnixMillis::new(1))
+                .await
+                .expect("consume"),
+            Some((note_id, revision))
+        );
+        assert!(
+            store
+                .consume("confirmation".into(), actor, UnixMillis::new(2))
+                .await
+                .expect("second consume")
+                .is_none()
         );
     }
 }

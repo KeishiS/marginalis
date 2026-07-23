@@ -194,6 +194,57 @@ impl McpTools {
                     Err(error) => note_error(id, error),
                 }
             }
+            "prepare_delete_note" => {
+                let Ok(arguments) =
+                    serde_json::from_value::<PrepareDeleteArguments>(call.arguments)
+                else {
+                    return JsonRpcResponse::error(id, -32602, "delete arguments are invalid");
+                };
+                let Ok(entity_id) = EntityId::from_str(&arguments.note_id) else {
+                    return JsonRpcResponse::error(id, -32602, "note ID is invalid");
+                };
+                let Some(revision) = SourceRevision::from_hex(&arguments.expected_revision) else {
+                    return JsonRpcResponse::error(id, -32602, "expected revision is invalid");
+                };
+                match self
+                    .notes
+                    .prepare_delete_note(actor, NoteId::new(entity_id), revision)
+                    .await
+                {
+                    Ok(preparation) => JsonRpcResponse::success(
+                        id,
+                        json!({
+                            "content": [{ "type": "text", "text": "Delete confirmation required." }],
+                            "structuredContent": {
+                                "note_id": preparation.note_id.to_string(), "title": preparation.title,
+                                "revision": preparation.revision.to_hex(),
+                                "confirmation_token": preparation.confirmation_token
+                            }
+                        }),
+                    ),
+                    Err(error) => note_error(id, error),
+                }
+            }
+            "delete_note" => {
+                let Ok(arguments) = serde_json::from_value::<DeleteArguments>(call.arguments)
+                else {
+                    return JsonRpcResponse::error(id, -32602, "delete confirmation is invalid");
+                };
+                match self
+                    .notes
+                    .confirm_delete_note(actor, arguments.confirmation_token)
+                    .await
+                {
+                    Ok(()) => JsonRpcResponse::success(
+                        id,
+                        json!({
+                            "content": [{ "type": "text", "text": "Note deleted." }],
+                            "structuredContent": { "deleted": true }
+                        }),
+                    ),
+                    Err(error) => note_error(id, error),
+                }
+            }
             _ => JsonRpcResponse::error(id, -32602, "tool is not available"),
         }
     }
@@ -224,6 +275,22 @@ fn tool_list() -> Value {
                 "tags": { "type": "array", "items": { "type": "string" } }
             } },
             "annotations": { "readOnlyHint": false, "destructiveHint": false }
+        },
+        {
+            "name": "prepare_delete_note",
+            "description": "Prepare physical deletion and return a short-lived confirmation token.",
+            "inputSchema": { "type": "object", "required": ["note_id", "expected_revision"], "properties": {
+                "note_id": { "type": "string" }, "expected_revision": { "type": "string" }
+            } },
+            "annotations": { "readOnlyHint": false, "destructiveHint": true }
+        },
+        {
+            "name": "delete_note",
+            "description": "Physically delete a note with a single-use confirmation token.",
+            "inputSchema": { "type": "object", "required": ["confirmation_token"], "properties": {
+                "confirmation_token": { "type": "string" }
+            } },
+            "annotations": { "readOnlyHint": false, "destructiveHint": true }
         },
         {
             "name": "get_note",
@@ -365,6 +432,17 @@ struct UpdateNoteArguments {
     draft: NoteDraftArguments,
 }
 
+#[derive(Deserialize)]
+struct PrepareDeleteArguments {
+    note_id: String,
+    expected_revision: String,
+}
+
+#[derive(Deserialize)]
+struct DeleteArguments {
+    confirmation_token: String,
+}
+
 fn cursor_offset(cursor: Option<String>) -> Result<u64, ()> {
     let Some(cursor) = cursor else {
         return Ok(0);
@@ -381,7 +459,7 @@ fn next_cursor(offset: Option<u64>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use marginalis_application::NoteUseCaseError;
+    use marginalis_application::{DeletePreparation, NoteUseCaseError};
     use marginalis_domain::{NotePage, NotePermission, NoteSource, SourceRevision, UserId};
 
     struct EmptyNotes;
@@ -463,6 +541,21 @@ mod tests {
         ) -> Result<(), NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
+        async fn prepare_delete_note(
+            &self,
+            _actor: Actor,
+            _note_id: NoteId,
+            _expected_revision: SourceRevision,
+        ) -> Result<DeletePreparation, NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+        async fn confirm_delete_note(
+            &self,
+            _actor: Actor,
+            _confirmation_token: String,
+        ) -> Result<(), NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
         async fn set_permission(
             &self,
             _actor: Actor,
@@ -523,7 +616,7 @@ mod tests {
                 .as_array()
                 .expect("tools")
                 .len(),
-            4
+            6
         );
     }
 

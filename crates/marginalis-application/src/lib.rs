@@ -227,6 +227,27 @@ pub trait McpAccessTokenStore: Send + Sync {
     ) -> impl Future<Output = Result<Option<Actor>, Self::Error>> + Send;
 }
 
+/// 二段階削除の確認tokenを短期かつ一回限りで保持する境界。
+pub trait DeleteConfirmationStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn issue(
+        &self,
+        token: String,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: SourceRevision,
+        expires_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn consume(
+        &self,
+        token: String,
+        actor: Actor,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<(NoteId, SourceRevision)>, Self::Error>> + Send;
+}
+
 /// MCP OAuthのclient、single-use authorization codeおよびtoken familyを扱う境界。
 ///
 /// client metadata取得・同意画面・HTTP token endpointはtransport adapterの責務とし、このportは
@@ -647,6 +668,17 @@ pub trait NoteUseCases: Send + Sync {
         note_id: NoteId,
         expected_revision: SourceRevision,
     ) -> Result<(), NoteUseCaseError>;
+    async fn prepare_delete_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: SourceRevision,
+    ) -> Result<DeletePreparation, NoteUseCaseError>;
+    async fn confirm_delete_note(
+        &self,
+        actor: Actor,
+        confirmation_token: String,
+    ) -> Result<(), NoteUseCaseError>;
     async fn set_permission(
         &self,
         actor: Actor,
@@ -662,6 +694,14 @@ pub struct NoteDraft {
     pub title: String,
     pub body: String,
     pub tags: Vec<String>,
+}
+
+/// confirmation tokenは返却時だけ平文であり、永続化adapterはhashのみを保存する。
+pub struct DeletePreparation {
+    pub note_id: NoteId,
+    pub title: String,
+    pub revision: SourceRevision,
+    pub confirmation_token: String,
 }
 
 /// transportに公開するノート操作の失敗分類。内部adapterの詳細はここから漏らさない。

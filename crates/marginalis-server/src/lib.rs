@@ -6,12 +6,12 @@ use std::{env, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    AuthenticationUseCaseError, Clock, McpAccessTokenStore, McpAuthorizationRequest, McpOAuthStore,
-    McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation, McpTokenPair, NoteAclService,
-    NoteAclServiceError, NoteAclStore, NoteDraft, NoteOperationKind, NoteQueryStore,
-    NoteUseCaseError, NoteUseCases, NoteWriteService, OidcUserAdministrationStore, Random,
-    RootCredentialStore, SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService,
-    WebSessionStore,
+    AuthenticationUseCaseError, Clock, DeleteConfirmationStore, DeletePreparation,
+    McpAccessTokenStore, McpAuthorizationRequest, McpOAuthStore, McpOAuthUseCaseError,
+    McpOAuthUseCases, McpRefreshTokenRotation, McpTokenPair, NoteAclService, NoteAclServiceError,
+    NoteAclStore, NoteDraft, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases,
+    NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore, SessionLifetime,
+    WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
@@ -933,6 +933,62 @@ impl NoteUseCases for ServerNoteUseCases {
         .delete(note_id)
         .await
         .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    async fn prepare_delete_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: SourceRevision,
+    ) -> Result<DeletePreparation, NoteUseCaseError> {
+        let permission = self
+            .database
+            .note_acl_store()
+            .permission_for(actor, note_id)
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        if !matches!(permission, Some(value) if value.permits(NotePermission::Admin)) {
+            return Err(NoteUseCaseError::NotFound);
+        }
+        let note = self.read_source(actor, note_id).await?;
+        if note.revision != expected_revision {
+            return Err(NoteUseCaseError::Conflict);
+        }
+        let token = SystemRandom.opaque_token();
+        self.database
+            .delete_confirmation_store()
+            .issue(
+                token.clone(),
+                actor,
+                note_id,
+                expected_revision,
+                UnixMillis::new(SystemClock.now().get() + 5 * 60 * 1_000),
+            )
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        Ok(DeletePreparation {
+            note_id,
+            title: note.title,
+            revision: note.revision,
+            confirmation_token: token,
+        })
+    }
+
+    async fn confirm_delete_note(
+        &self,
+        actor: Actor,
+        confirmation_token: String,
+    ) -> Result<(), NoteUseCaseError> {
+        let Some((note_id, revision)) = self
+            .database
+            .delete_confirmation_store()
+            .consume(confirmation_token, actor, SystemClock.now())
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)?
+        else {
+            return Err(NoteUseCaseError::NotFound);
+        };
+        self.delete_note(actor, note_id, revision).await
     }
 
     async fn set_permission(
