@@ -10,11 +10,14 @@
 現在の優先順位は、Web UIより先にREST APIとMCPを成立させることである。root管理はREST APIで継続し、
 管理UIは後続とする。既存デプロイのdataDirは移行せず、Issue 015で明示的に初期化して新schemaへ移る。
 
-1. [015: API-firstアーキテクチャ再基線化](015-api-first-architecture-rebaseline.md)
-2. [014: RESTノートAPI・検索・MCP連携](014-rest-notes-search-and-mcp.md)
-3. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
-4. [005: 検索・グラフ投影と再構築](005-projections-and-rebuild.md)
-5. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md)
+1. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
+2. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)
+3. [007: 結合試験とリリース検証](007-integration-testing-and-release.md)
+4. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md) の招待・専用管理origin
+5. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
+
+015、014、005および010の初期公開に必要な実装は完了している。以後は実OIDC/MCP clientとの結合、
+検索の拡張、公開前検証およびWeb UIを優先する。
 
 AsciiDocアダプタに関する依存順は次のとおりである。
 
