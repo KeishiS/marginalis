@@ -95,8 +95,9 @@ session期限を含める。secretは別の`SecretConfig`で受け、NixOSでは
 運用中の登録policyはSQLiteを正本とし、root APIで変更する。NixOS設定は既存DBへ再適用しない。
 
 起動順は、設定検証、migration、datadir検証、root初期化、未完了ジャーナル復旧、OIDC client
-初期化、HTTP listenとする。OIDC一時障害時の起動可否は、root緊急ログインと通常ログインの
-可用性要件を踏まえた明示設定にする。
+初期化、HTTP listenとする。OIDC Discoveryが一時的に失敗してもserviceはroot緊急ログインだけを
+有効にして起動する。この間のOIDC loginは`503`相当の安全な失敗となり、IdP復旧後はserviceを再起動して
+Discoveryを再実行する。
 
 ## 段階的な再基線化
 

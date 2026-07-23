@@ -86,7 +86,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         secrets.oidc_client_secret,
         configuration.base_url.as_str(),
     )?;
-    let oidc = OidcAuthentication::discover(&oidc_configuration).await?;
+    let oidc = match OidcAuthentication::discover(&oidc_configuration).await {
+        Ok(oidc) => Some(oidc),
+        Err(error) => {
+            tracing::error!(error = %error, "OIDC discovery failed; starting with root login only");
+            None
+        }
+    };
     let resource_uri = base_url_at(&configuration.base_url, "mcp");
     let metadata_uri = base_url_at(
         &configuration.base_url,
@@ -98,10 +104,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(address = %configuration.listen_address, "Marginalis server listening");
     let state = ApiState::new(
         std::sync::Arc::new(notes.clone()),
-        std::sync::Arc::new(ServerWebAuthenticationUseCases::with_oidc(
-            database.clone(),
-            oidc,
-        )),
+        std::sync::Arc::new(match oidc {
+            Some(oidc) => ServerWebAuthenticationUseCases::with_oidc(database.clone(), oidc),
+            None => ServerWebAuthenticationUseCases::new(database.clone()),
+        }),
     );
     let state = if configuration.mcp_enabled {
         let oauth = std::sync::Arc::new(ServerMcpOAuthService::new(

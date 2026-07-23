@@ -40,6 +40,8 @@ https://id.sandi05.com/oauth2/openid/marginalis/.well-known/openid-configuration
 - `(issuer, subject)`を内部ユーザーUUIDへ対応付ける。
 - 成功時だけSecure、HttpOnly、SameSite=LaxかつBase URLのサブパスをPathとする
   サーバ側セッションCookieを発行する。
+- 起動時のDiscoveryが一時的に失敗してもroot緊急ログインは維持する。この状態ではOIDC loginを安全に
+  拒否し、IdP復旧後のservice再起動でDiscoveryを再試行する。
 
 ## 完了条件
 
