@@ -3,7 +3,12 @@
 //! 認証、Web UIおよびMCPはこのcrateのHTTP adapterとして追加する。ノートの検証、ACLおよび
 //! 永続化の業務判断は`marginalis-application`のユースケースへ委譲する。
 
-use std::{str::FromStr, sync::Arc};
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use axum::{
     Json, Router,
@@ -53,6 +58,41 @@ pub struct McpEndpoint {
     pub authorization_endpoint_uri: String,
     pub token_endpoint_uri: String,
     pub allowed_origin: String,
+    pub rate_limiter: McpRateLimiter,
+}
+
+/// MCP tool呼出しの利用者単位固定window rate limiter。
+///
+/// tokenの内容は保持せず、server再起動時にはwindowを破棄する。永続的な利用量制御は運用監査基盤の
+/// 導入時に別途追加する。
+pub struct McpRateLimiter {
+    requests_per_minute: u32,
+    windows: Mutex<HashMap<String, (Instant, u32)>>,
+}
+
+impl McpRateLimiter {
+    pub fn new(requests_per_minute: u32) -> Self {
+        Self {
+            requests_per_minute,
+            windows: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn allow(&self, actor: Actor) -> bool {
+        let Ok(mut windows) = self.windows.lock() else {
+            return false;
+        };
+        let now = Instant::now();
+        let window = windows.entry(actor.user_id.to_string()).or_insert((now, 0));
+        if now.duration_since(window.0) >= Duration::from_secs(60) {
+            *window = (now, 0);
+        }
+        if window.1 >= self.requests_per_minute {
+            return false;
+        }
+        window.1 += 1;
+        true
+    }
 }
 
 impl ApiState {
@@ -353,6 +393,13 @@ async fn mcp_post(
             ));
         }
     };
+    if !endpoint.rate_limiter.allow(actor) {
+        let mut response = StatusCode::TOO_MANY_REQUESTS.into_response();
+        response
+            .headers_mut()
+            .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
+        return Ok(response);
+    }
     match endpoint.tools.handle(actor, request).await {
         Some(response) => Ok(Json(response).into_response()),
         None => Ok(StatusCode::ACCEPTED.into_response()),
@@ -1272,7 +1319,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        ApiError, ApiErrorCode, ApiState, OidcConfiguration, OidcConfigurationError, router,
+        ApiError, ApiErrorCode, ApiState, McpRateLimiter, OidcConfiguration,
+        OidcConfigurationError, router,
     };
 
     #[test]
@@ -1294,6 +1342,20 @@ mod tests {
             "https://identity.example.edu"
         );
         assert_eq!(configuration.client_id().as_str(), "marginalis");
+    }
+
+    #[test]
+    fn mcp_rate_limiter_rejects_the_next_request_in_a_window() {
+        let limiter = McpRateLimiter::new(2);
+        let actor = Actor {
+            user_id: UserId::new(
+                EntityId::from_str("01800000-0000-7000-8000-000000000081").expect("UUIDv7"),
+            ),
+            is_root: false,
+        };
+        assert!(limiter.allow(actor));
+        assert!(limiter.allow(actor));
+        assert!(!limiter.allow(actor));
     }
 
     #[test]

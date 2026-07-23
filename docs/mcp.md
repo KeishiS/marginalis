@@ -40,6 +40,8 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 検索はSQLite FTS5投影を使い、ACL filter後の結果だけをcursorへ含める。本文断片、score、権限のない
 ノートの存在は返さない。`GET /mcp`はserver-to-client notification streamが必要になるまで`405`を
 返す。MCP requestに`Origin` headerが存在するときは、Base URLと同じoriginでなければ拒否する。
+認証後のtool呼出しは利用者ごとに毎分120回までであり、超過時は`429`と`Retry-After: 60`を返す。
+この制限はメモリ内の固定windowであり、server再起動でリセットされる。
 
 ## OAuth flow
 

@@ -85,6 +85,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             authorization_endpoint_uri: mcp_authorize_url.to_string(),
             token_endpoint_uri: mcp_token_url.to_string(),
             allowed_origin: mcp_origin,
+            rate_limiter: marginalis_web::McpRateLimiter::new(120),
         })
     } else {
         state
