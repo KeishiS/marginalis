@@ -13,9 +13,8 @@ use axum::{
     routing::{delete, get, post, put},
 };
 use marginalis_application::{
-    Clock, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteWriteService,
-    OidcUserAdministrationStore, RootCredentialStore, SessionLifetime, WebSession,
-    WebSessionService, WebSessionStore,
+    Clock, NoteUseCaseError, NoteUseCases, OidcUserAdministrationStore, RootCredentialStore,
+    SessionLifetime, WebSession, WebSessionService, WebSessionStore,
 };
 pub use marginalis_auth_oidc::{
     OidcAuthentication, OidcCallbackError, OidcCallbackRejection, OidcConfiguration,
@@ -24,7 +23,6 @@ pub use marginalis_auth_oidc::{
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePermission, OidcLoginResult, OidcUser, UserId,
 };
-use marginalis_files::FileNoteStore;
 use marginalis_server::{SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use serde::{Deserialize, Serialize};
@@ -39,27 +37,27 @@ pub const API_VERSION: &str = "v1";
 #[derive(Clone)]
 pub struct ApiState {
     pub database: SqliteDatabase,
-    pub sources: FileNoteStore,
+    pub notes: Arc<dyn NoteUseCases>,
     pub oidc: Option<Arc<OidcAuthentication>>,
 }
 
 impl ApiState {
-    pub fn new(database: SqliteDatabase, sources: FileNoteStore) -> Self {
+    pub fn new(database: SqliteDatabase, notes: Arc<dyn NoteUseCases>) -> Self {
         Self {
             database,
-            sources,
+            notes,
             oidc: None,
         }
     }
 
     pub fn with_oidc(
         database: SqliteDatabase,
-        sources: FileNoteStore,
+        notes: Arc<dyn NoteUseCases>,
         oidc: OidcAuthentication,
     ) -> Self {
         Self {
             database,
-            sources,
+            notes,
             oidc: Some(Arc::new(oidc)),
         }
     }
@@ -119,6 +117,24 @@ pub struct ApiError {
 impl ApiError {
     pub const fn new(code: ApiErrorCode, message: &'static str) -> Self {
         Self { code, message }
+    }
+}
+
+fn note_error(error: NoteUseCaseError, unavailable_message: &'static str) -> ApiError {
+    match error {
+        NoteUseCaseError::NotFound => {
+            ApiError::new(ApiErrorCode::NotFound, "note is not available")
+        }
+        NoteUseCaseError::Forbidden => {
+            ApiError::new(ApiErrorCode::Forbidden, "note operation is not permitted")
+        }
+        NoteUseCaseError::Conflict => {
+            ApiError::new(ApiErrorCode::Conflict, "note operation conflicts")
+        }
+        NoteUseCaseError::Validation => {
+            ApiError::new(ApiErrorCode::ValidationFailed, "note source is invalid")
+        }
+        NoteUseCaseError::Unavailable => ApiError::new(ApiErrorCode::Internal, unavailable_message),
     }
 }
 
@@ -223,26 +239,11 @@ async fn note_source(
         EntityId::from_str(&note_id)
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
     );
-    let permission = state
-        .database
-        .note_acl_store()
-        .permission_for(actor, note_id)
-        .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note lookup is unavailable"))?;
-    if !matches!(permission, Some(value) if value.permits(NotePermission::Read)) {
-        return Err(ApiError::new(
-            ApiErrorCode::NotFound,
-            "note is not available",
-        ));
-    }
     state
-        .sources
-        .read(note_id)
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note lookup is unavailable"))?
-        .ok_or(ApiError::new(
-            ApiErrorCode::NotFound,
-            "note is not available",
-        ))
+        .notes
+        .read_source(actor, note_id)
+        .await
+        .map_err(|error| note_error(error, "note lookup is unavailable"))
 }
 
 async fn update_note_source(
@@ -257,56 +258,11 @@ async fn update_note_source(
         EntityId::from_str(&note_id)
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
     );
-    let permission = state
-        .database
-        .note_acl_store()
-        .permission_for(actor, note_id)
+    state
+        .notes
+        .update_source(actor, note_id, source)
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
-    if !matches!(permission, Some(value) if value.permits(NotePermission::Write)) {
-        return Err(ApiError::new(
-            ApiErrorCode::NotFound,
-            "note is not available",
-        ));
-    }
-    let projection = marginalis_asciidoc::parse_note_projection(&source)
-        .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "note source is invalid"))?;
-    if projection.note_id != note_id {
-        return Err(ApiError::new(
-            ApiErrorCode::ValidationFailed,
-            "note source does not match the requested note",
-        ));
-    }
-    let previous_source = state
-        .sources
-        .read(note_id)
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?
-        .ok_or(ApiError::new(
-            ApiErrorCode::NotFound,
-            "note is not available",
-        ))?;
-    let previous_source = std::str::from_utf8(&previous_source)
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
-    let previous_projection = marginalis_asciidoc::parse_note_projection(previous_source)
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
-    if projection.owner_id != previous_projection.owner_id {
-        return Err(ApiError::new(
-            ApiErrorCode::ValidationFailed,
-            "note creator cannot be changed",
-        ));
-    }
-    let projections = state.database.note_projection_store();
-    let journal = state.database.operation_journal();
-    NoteWriteService::new(
-        &state.sources,
-        &projections,
-        &journal,
-        &SystemRandom,
-        &SystemClock,
-    )
-    .replace(NoteOperationKind::Update, projection, source.into_bytes())
-    .await
-    .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note update is unavailable"))?;
+        .map_err(|error| note_error(error, "note update is unavailable"))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -321,30 +277,11 @@ async fn delete_note(
         EntityId::from_str(&note_id)
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
     );
-    let permission = state
-        .database
-        .note_acl_store()
-        .permission_for(actor, note_id)
+    state
+        .notes
+        .delete_note(actor, note_id)
         .await
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note deletion is unavailable"))?;
-    if !matches!(permission, Some(value) if value.permits(NotePermission::Admin)) {
-        return Err(ApiError::new(
-            ApiErrorCode::NotFound,
-            "note is not available",
-        ));
-    }
-    let projections = state.database.note_projection_store();
-    let journal = state.database.operation_journal();
-    NoteWriteService::new(
-        &state.sources,
-        &projections,
-        &journal,
-        &SystemRandom,
-        &SystemClock,
-    )
-    .delete(note_id)
-    .await
-    .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note deletion is unavailable"))?;
+        .map_err(|error| note_error(error, "note deletion is unavailable"))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -355,35 +292,11 @@ async fn create_note(
 ) -> Result<Response, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
     require_csrf(&headers, &state).await?;
-    let projection = marginalis_asciidoc::parse_note_projection(&source)
-        .map_err(|_| ApiError::new(ApiErrorCode::ValidationFailed, "note source is invalid"))?;
-    if projection.owner_id != actor.user_id {
-        return Err(ApiError::new(
-            ApiErrorCode::Forbidden,
-            "note creator does not match the authenticated user",
-        ));
-    }
-    if state
-        .sources
-        .read(projection.note_id)
-        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note creation is unavailable"))?
-        .is_some()
-    {
-        return Err(ApiError::new(ApiErrorCode::Conflict, "note already exists"));
-    }
-    let note_id = projection.note_id.to_string();
-    let projections = state.database.note_projection_store();
-    let journal = state.database.operation_journal();
-    NoteWriteService::new(
-        &state.sources,
-        &projections,
-        &journal,
-        &SystemRandom,
-        &SystemClock,
-    )
-    .replace(NoteOperationKind::Create, projection, source.into_bytes())
-    .await
-    .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note creation is unavailable"))?;
+    let note_id = state
+        .notes
+        .create_source(actor, source)
+        .await
+        .map_err(|error| note_error(error, "note creation is unavailable"))?;
     let mut headers = HeaderMap::new();
     headers.insert(
         header::LOCATION,
@@ -426,18 +339,11 @@ async fn update_note_acl(
             ));
         }
     };
-    NoteAclService::new(&state.database.note_acl_store())
+    state
+        .notes
         .set_permission(actor, note_id, user_id, permission)
         .await
-        .map_err(|error| match error {
-            NoteAclServiceError::Forbidden => ApiError::new(
-                ApiErrorCode::Forbidden,
-                "note administration is not permitted",
-            ),
-            NoteAclServiceError::Store(_) => {
-                ApiError::new(ApiErrorCode::Conflict, "note ACL update was rejected")
-            }
-        })?;
+        .map_err(|error| note_error(error, "note ACL update was rejected"))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -776,7 +682,7 @@ mod tests {
     use marginalis_domain::{
         Actor, EntityId, OidcIdentity, RegistrationPolicy, UnixMillis, UserId,
     };
-    use std::str::FromStr;
+    use std::{str::FromStr, sync::Arc};
     use tower::ServiceExt;
 
     use super::{
@@ -827,15 +733,20 @@ mod tests {
             .expect("open store");
         let directory = std::env::temp_dir().join("marginalis-web-health-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let response = router(ApiState::new(database, sources))
-            .oneshot(
-                Request::builder()
-                    .uri("/api/v1/health")
-                    .body(Body::empty())
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
+        let response = router(ApiState::new(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database, sources,
+            )),
+        ))
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/health")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
 
         assert_eq!(response.status(), StatusCode::OK);
     }
@@ -847,15 +758,20 @@ mod tests {
             .expect("open store");
         let directory = std::env::temp_dir().join("marginalis-web-landing-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let response = router(ApiState::new(database, sources))
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
+        let response = router(ApiState::new(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database, sources,
+            )),
+        ))
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
 
         assert_eq!(response.status(), StatusCode::OK);
     }
@@ -867,15 +783,20 @@ mod tests {
             .expect("open database");
         let directory = std::env::temp_dir().join("marginalis-web-note-auth-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let response = router(ApiState::new(database, sources))
-            .oneshot(
-                Request::builder()
-                    .uri("/api/v1/notes/01800000-0000-7000-8000-000000000001/source")
-                    .body(Body::empty())
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
+        let response = router(ApiState::new(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database, sources,
+            )),
+        ))
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/notes/01800000-0000-7000-8000-000000000001/source")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
@@ -908,17 +829,22 @@ mod tests {
             .expect("session");
         let directory = std::env::temp_dir().join("marginalis-web-csrf-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let response = router(ApiState::new(database, sources))
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/v1/notes")
-                    .header("cookie", "marginalis_session=session")
-                    .body(Body::from("invalid source"))
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
+        let response = router(ApiState::new(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database, sources,
+            )),
+        ))
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/notes")
+                .header("cookie", "marginalis_session=session")
+                .body(Body::from("invalid source"))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
@@ -951,7 +877,12 @@ mod tests {
             .expect("register pending user");
         let directory = std::env::temp_dir().join("marginalis-web-root-admin-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
-        let app = router(ApiState::new(database, sources));
+        let app = router(ApiState::new(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database, sources,
+            )),
+        ));
 
         let response = app
             .clone()

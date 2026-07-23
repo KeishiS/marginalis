@@ -3,13 +3,20 @@
 use core::fmt;
 use std::{env, net::SocketAddr, path::PathBuf};
 
+use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use marginalis_application::{Clock, Random};
-use marginalis_domain::{EntityId, UnixMillis};
+use marginalis_application::{
+    Clock, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteUseCaseError,
+    NoteUseCases, NoteWriteService, Random,
+};
+use marginalis_domain::{Actor, EntityId, NoteId, NotePermission, UnixMillis, UserId};
+use marginalis_files::FileNoteStore;
+use marginalis_sqlite::SqliteDatabase;
 use url::Url;
 use uuid::Uuid;
 
 /// server組立時に使うUTC millisecond clock。
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SystemClock;
 
 impl Clock for SystemClock {
@@ -19,6 +26,7 @@ impl Clock for SystemClock {
 }
 
 /// UUIDv7と暗号学的に安全な不透明tokenを生成する実行環境adapter。
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SystemRandom;
 
 impl Random for SystemRandom {
@@ -29,6 +37,178 @@ impl Random for SystemRandom {
     fn opaque_token(&self) -> String {
         let bytes: [u8; 32] = rand::random();
         URL_SAFE_NO_PAD.encode(bytes)
+    }
+}
+
+/// adapter群を組み合わせて、transportへノート操作だけを公開するserver側実装。
+#[derive(Clone, Debug)]
+pub struct ServerNoteUseCases {
+    database: SqliteDatabase,
+    sources: FileNoteStore,
+}
+
+impl ServerNoteUseCases {
+    pub const fn new(database: SqliteDatabase, sources: FileNoteStore) -> Self {
+        Self { database, sources }
+    }
+
+    pub async fn recover(&self) -> Result<(), NoteUseCaseError> {
+        let projections = self.database.note_projection_store();
+        let journal = self.database.operation_journal();
+        NoteWriteService::new(
+            &self.sources,
+            &projections,
+            &journal,
+            &SystemRandom,
+            &SystemClock,
+        )
+        .recover()
+        .await
+        .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+}
+
+#[async_trait]
+impl NoteUseCases for ServerNoteUseCases {
+    async fn read_source(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<u8>, NoteUseCaseError> {
+        let permission = self
+            .database
+            .note_acl_store()
+            .permission_for(actor, note_id)
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        if !matches!(permission, Some(value) if value.permits(NotePermission::Read)) {
+            return Err(NoteUseCaseError::NotFound);
+        }
+        self.sources
+            .read(note_id)
+            .map_err(|_| NoteUseCaseError::Unavailable)?
+            .ok_or(NoteUseCaseError::NotFound)
+    }
+
+    async fn create_source(
+        &self,
+        actor: Actor,
+        source: String,
+    ) -> Result<NoteId, NoteUseCaseError> {
+        let projection = marginalis_asciidoc::parse_note_projection(&source)
+            .map_err(|_| NoteUseCaseError::Validation)?;
+        if projection.owner_id != actor.user_id {
+            return Err(NoteUseCaseError::Forbidden);
+        }
+        if self
+            .sources
+            .read(projection.note_id)
+            .map_err(|_| NoteUseCaseError::Unavailable)?
+            .is_some()
+        {
+            return Err(NoteUseCaseError::Conflict);
+        }
+        let note_id = projection.note_id;
+        let projections = self.database.note_projection_store();
+        let journal = self.database.operation_journal();
+        NoteWriteService::new(
+            &self.sources,
+            &projections,
+            &journal,
+            &SystemRandom,
+            &SystemClock,
+        )
+        .replace(NoteOperationKind::Create, projection, source.into_bytes())
+        .await
+        .map_err(|_| NoteUseCaseError::Unavailable)?;
+        Ok(note_id)
+    }
+
+    async fn update_source(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        source: String,
+    ) -> Result<(), NoteUseCaseError> {
+        let permission = self
+            .database
+            .note_acl_store()
+            .permission_for(actor, note_id)
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        if !matches!(permission, Some(value) if value.permits(NotePermission::Write)) {
+            return Err(NoteUseCaseError::NotFound);
+        }
+        let projection = marginalis_asciidoc::parse_note_projection(&source)
+            .map_err(|_| NoteUseCaseError::Validation)?;
+        if projection.note_id != note_id {
+            return Err(NoteUseCaseError::Validation);
+        }
+        let previous_source = self
+            .sources
+            .read(note_id)
+            .map_err(|_| NoteUseCaseError::Unavailable)?
+            .ok_or(NoteUseCaseError::NotFound)?;
+        let previous_source =
+            std::str::from_utf8(&previous_source).map_err(|_| NoteUseCaseError::Unavailable)?;
+        let previous_projection = marginalis_asciidoc::parse_note_projection(previous_source)
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        if projection.owner_id != previous_projection.owner_id {
+            return Err(NoteUseCaseError::Validation);
+        }
+        let projections = self.database.note_projection_store();
+        let journal = self.database.operation_journal();
+        NoteWriteService::new(
+            &self.sources,
+            &projections,
+            &journal,
+            &SystemRandom,
+            &SystemClock,
+        )
+        .replace(NoteOperationKind::Update, projection, source.into_bytes())
+        .await
+        .map(|_| ())
+        .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    async fn delete_note(&self, actor: Actor, note_id: NoteId) -> Result<(), NoteUseCaseError> {
+        let permission = self
+            .database
+            .note_acl_store()
+            .permission_for(actor, note_id)
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        if !matches!(permission, Some(value) if value.permits(NotePermission::Admin)) {
+            return Err(NoteUseCaseError::NotFound);
+        }
+        let projections = self.database.note_projection_store();
+        let journal = self.database.operation_journal();
+        NoteWriteService::new(
+            &self.sources,
+            &projections,
+            &journal,
+            &SystemRandom,
+            &SystemClock,
+        )
+        .delete(note_id)
+        .await
+        .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    async fn set_permission(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        user_id: UserId,
+        permission: Option<NotePermission>,
+    ) -> Result<(), NoteUseCaseError> {
+        NoteAclService::new(&self.database.note_acl_store())
+            .set_permission(actor, note_id, user_id, permission)
+            .await
+            .map_err(|error| match error {
+                NoteAclServiceError::Forbidden => NoteUseCaseError::Forbidden,
+                NoteAclServiceError::Store(_) => NoteUseCaseError::Conflict,
+            })
     }
 }
 

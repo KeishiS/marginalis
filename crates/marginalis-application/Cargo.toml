@@ -7,4 +7,5 @@ license.workspace = true
 publish = false
 
 [dependencies]
+async-trait.workspace = true
 marginalis-domain = { path = "../marginalis-domain" }

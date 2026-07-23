@@ -62,6 +62,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-trait"
+version = "0.1.91"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae36dc4177970ef04fde5178d3e2429882def40e57a451f919c098f72baa6cec"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.2",
+]
+
+[[package]]
 name = "atoi"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1127,6 +1138,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 name = "marginalis-application"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "marginalis-domain",
 ]
 
@@ -1177,9 +1189,13 @@ dependencies = [
 name = "marginalis-server"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "marginalis-application",
+ "marginalis-asciidoc",
  "marginalis-domain",
+ "marginalis-files",
+ "marginalis-sqlite",
  "rand 0.8.7",
  "time",
  "url",

@@ -1,6 +1,6 @@
-use marginalis_application::{NoteWriteService, RootCredentialStore, RootInitializationService};
+use marginalis_application::{RootCredentialStore, RootInitializationService};
 use marginalis_files::FileNoteStore;
-use marginalis_server::{ServerConfig, SystemClock, SystemRandom};
+use marginalis_server::{ServerConfig, ServerNoteUseCases, SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::{ApiState, OidcAuthentication, OidcConfiguration, router};
 use tracing_subscriber::EnvFilter;
@@ -29,17 +29,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&configuration.data_dir)?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
     let sources = FileNoteStore::open(&configuration.data_dir)?;
-    let projections = database.note_projection_store();
-    let journal = database.operation_journal();
-    NoteWriteService::new(
-        &sources,
-        &projections,
-        &journal,
-        &SystemRandom,
-        &SystemClock,
-    )
-    .recover()
-    .await?;
+    let notes = ServerNoteUseCases::new(database.clone(), sources);
+    notes.recover().await?;
     let root_store = database.root_credential_store();
     if !root_store.is_initialized().await? {
         let password = secrets.initial_root_password.ok_or(
@@ -60,7 +51,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(address = %configuration.listen_address, "Marginalis server listening");
     axum::serve(
         listener,
-        router(ApiState::with_oidc(database, sources, oidc)),
+        router(ApiState::with_oidc(
+            database,
+            std::sync::Arc::new(notes),
+            oidc,
+        )),
     )
     .await?;
     Ok(())

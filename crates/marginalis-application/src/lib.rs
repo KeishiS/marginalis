@@ -6,6 +6,8 @@ use marginalis_domain::{
 };
 use std::future::Future;
 
+use async_trait::async_trait;
+
 /// 時刻取得を外部化し、期限・journal復旧を決定的に試験できるようにする。
 pub trait Clock: Send + Sync {
     fn now(&self) -> UnixMillis;
@@ -403,6 +405,53 @@ pub struct NoteWriteService<'a, Sources, Projections, Journal, Entropy, Time> {
     entropy: &'a Entropy,
     clock: &'a Time,
 }
+
+/// transportが利用するノート操作の境界。HTTP、MCPおよびCLIは具体adapterを参照しない。
+#[async_trait]
+pub trait NoteUseCases: Send + Sync {
+    async fn read_source(&self, actor: Actor, note_id: NoteId)
+    -> Result<Vec<u8>, NoteUseCaseError>;
+    async fn create_source(&self, actor: Actor, source: String)
+    -> Result<NoteId, NoteUseCaseError>;
+    async fn update_source(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        source: String,
+    ) -> Result<(), NoteUseCaseError>;
+    async fn delete_note(&self, actor: Actor, note_id: NoteId) -> Result<(), NoteUseCaseError>;
+    async fn set_permission(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        user_id: UserId,
+        permission: Option<NotePermission>,
+    ) -> Result<(), NoteUseCaseError>;
+}
+
+/// transportに公開するノート操作の失敗分類。内部adapterの詳細はここから漏らさない。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteUseCaseError {
+    NotFound,
+    Forbidden,
+    Conflict,
+    Validation,
+    Unavailable,
+}
+
+impl std::fmt::Display for NoteUseCaseError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::NotFound => "note is not available",
+            Self::Forbidden => "note operation is not permitted",
+            Self::Conflict => "note operation conflicts",
+            Self::Validation => "note source is invalid",
+            Self::Unavailable => "note operation is unavailable",
+        })
+    }
+}
+
+impl std::error::Error for NoteUseCaseError {}
 
 #[derive(Debug)]
 pub enum NoteWriteError {
