@@ -10,6 +10,21 @@ OIDC providerおよびMCP clientを通すE2Eテストを反復可能に自動化
 実装を始める前に、CIで安全かつ再現可能に動かすための前提を調査・決定する。この調査を飛ばして
 browser automationや実IdP依存を追加しない。
 
+## 着手前に決める事項
+
+E2E実装を開始する前に、次の五項目を決定し、このIssueの実施結果へ記録する。
+
+1. **実行基盤**: GitHub ActionsのUbuntu runner、Nix、Playwrightを主基盤とするか。browserとNixOS VMを
+   同一workflowで動かすか、責務別jobへ分けるか。
+2. **テスト用OIDC**: CI内のtest IdPを使い、実Kanidmは手動受入に残すか。test user、client、secretの
+   生成・注入・cleanup方法をどうするか。
+3. **reverse proxyの再現範囲**: TLS終端、subpath、`/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/`を
+   CIでどこまで通すか。proxy側rate limitをE2Eで検証するか。
+4. **MCP自動client**: Authorization Code + PKCEとStreamable HTTPを実行するclient実装・libraryを何にするか。
+   ChatGPT実機連携は手動受入として残すか。
+5. **失敗時artifactと保持**: browser trace、screenshot、server log、request IDの取得・保持期間を決める。
+   Cookie、token、authorization code、client secretをartifact・logへ出さないmasking方針を固定する。
+
 ## 事前調査・準備
 
 1. **実行基盤**: Playwright等のbrowser driver、headless browser、Nix devShell/CI runner、NixOS VM testの
