@@ -52,3 +52,10 @@ https://id.sandi05.com/oauth2/openid/marginalis/.well-known/openid-configuration
   恒久データへ露出しない。
 - IdPが返す認可拒否、state不一致、期限切れ、署名不正およびtoken交換失敗が安全な共通の
   失敗応答になる。
+
+## 2026-07-23時点の実環境確認
+
+- `https://marginalis.sandi05.com/api/v1/health`が`200`、
+  `https://marginalis.sandi05.com/api/v1/readiness`がOIDC `available`として`200`を返すことを確認した。
+- ブラウザからKanidmへのredirect、認証、callbackおよびMarginalisへのsession確立を確認した。
+- 次の実環境確認は、OIDC sessionを使うREST CRUD、MCP OAuth client認可、MCP tool呼出しである。
