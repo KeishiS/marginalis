@@ -105,6 +105,7 @@ pub mod contract {
         pub note_id: String,
         pub title: String,
         pub revision: String,
+        pub incoming_reference_count: u64,
         pub confirmation_token: String,
     }
 
@@ -1235,6 +1236,7 @@ async fn prepare_note_deletion(
         note_id: preparation.note_id.to_string(),
         title: preparation.title,
         revision: preparation.revision.to_hex(),
+        incoming_reference_count: preparation.incoming_reference_count,
         confirmation_token: preparation.confirmation_token,
     }))
 }

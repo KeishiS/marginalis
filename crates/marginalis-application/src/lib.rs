@@ -265,14 +265,28 @@ pub trait DeleteConfirmationStore: Send + Sync {
         note_id: NoteId,
         expected_revision: SourceRevision,
         expires_at: UnixMillis,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
 
     fn consume(
         &self,
         token: String,
         actor: Actor,
         now: UnixMillis,
-    ) -> impl Future<Output = Result<Option<(NoteId, SourceRevision)>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<DeleteConfirmation, Self::Error>> + Send;
+}
+
+/// 二段階削除の確認tokenを消費した結果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeleteConfirmation {
+    /// token、actor、期限および削除準備後に不変であるべき状態がすべて一致した。
+    Confirmed {
+        note_id: NoteId,
+        expected_revision: SourceRevision,
+    },
+    /// tokenが存在しない、別actorのもの、使用済み、または期限切れである。
+    Missing,
+    /// 対象ノートへの参照集合が削除準備後に変化した。
+    Stale,
 }
 
 /// MCP OAuthのclient、single-use authorization codeおよびtoken familyを扱う境界。
@@ -789,6 +803,8 @@ pub struct DeletePreparation {
     pub note_id: NoteId,
     pub title: String,
     pub revision: SourceRevision,
+    /// 要求actorから可視な、削除対象を参照するxrefの個数。
+    pub incoming_reference_count: u64,
     pub confirmation_token: String,
 }
 

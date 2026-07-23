@@ -271,6 +271,7 @@ impl McpTools {
                             "structuredContent": {
                                 "note_id": preparation.note_id.to_string(), "title": preparation.title,
                                 "revision": preparation.revision.to_hex(),
+                                "incoming_reference_count": preparation.incoming_reference_count,
                                 "confirmation_token": preparation.confirmation_token
                             }
                         }),

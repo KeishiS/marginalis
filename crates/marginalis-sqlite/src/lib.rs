@@ -7,11 +7,11 @@ use argon2::{
     password_hash::{PasswordHash, SaltString},
 };
 use marginalis_application::{
-    AuthenticatedSession, DeleteConfirmationStore, JournalEntry, McpAccessTokenStore,
-    McpOAuthStore, McpRefreshTokenRotation, NoteAclStore, NoteOperationKind, NoteProjectionStore,
-    NoteQueryStore, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore,
-    OidcUserAdministrationStore, OperationId, OperationJournal, OperationState,
-    RootCredentialStore, WebSession, WebSessionStore,
+    AuthenticatedSession, DeleteConfirmation, DeleteConfirmationStore, JournalEntry,
+    McpAccessTokenStore, McpOAuthStore, McpRefreshTokenRotation, NoteAclStore, NoteOperationKind,
+    NoteProjectionStore, NoteQueryStore, OidcIdentityStore, OidcLoginAttempt,
+    OidcLoginAttemptStore, OidcUserAdministrationStore, OperationId, OperationJournal,
+    OperationState, RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
@@ -47,6 +47,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (
         10,
         include_str!("../migrations/0010_delete_confirmation_note_cascade.sql"),
+    ),
+    (
+        11,
+        include_str!("../migrations/0011_delete_confirmation_reference_snapshot.sql"),
     ),
 ];
 
@@ -1135,6 +1139,58 @@ fn hash_token(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
 
+/// 削除対象へ向くxref集合を、利用者へ開示しない完全な状態hashと可視件数で表す。
+///
+/// hashには不可視な参照も含めるので、参照状態の変化を見落とさない。一方で応答へ返す
+/// 件数はsource noteを閲覧できる参照だけに限定し、不可視ノートの存在を漏らさない。
+async fn incoming_reference_snapshot(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    actor: Actor,
+    note_id: NoteId,
+) -> Result<(Vec<u8>, u64), sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT source_note_id, source_start, source_end, target_anchor
+         FROM note_references
+         WHERE target_note_id = ?
+         ORDER BY source_note_id ASC, source_start ASC, source_end ASC, target_anchor ASC",
+    )
+    .bind(note_id.to_string())
+    .fetch_all(&mut **transaction)
+    .await?;
+    let mut hasher = Sha256::new();
+    for row in rows {
+        let source_note_id: String = row.try_get("source_note_id")?;
+        let source_start: i64 = row.try_get("source_start")?;
+        let source_end: i64 = row.try_get("source_end")?;
+        let target_anchor: String = row.try_get("target_anchor")?;
+        for value in [
+            source_note_id,
+            source_start.to_string(),
+            source_end.to_string(),
+            target_anchor,
+        ] {
+            hasher.update((value.len() as u64).to_be_bytes());
+            hasher.update(value.as_bytes());
+        }
+    }
+    let visible_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM note_references AS refs
+         JOIN notes AS source ON source.note_id = refs.source_note_id
+         WHERE refs.target_note_id = ?
+           AND (? OR EXISTS (
+             SELECT 1 FROM note_acl
+             WHERE note_acl.note_id = source.note_id AND note_acl.user_id = ?
+           ))",
+    )
+    .bind(note_id.to_string())
+    .bind(actor.is_root)
+    .bind(actor.user_id.to_string())
+    .fetch_one(&mut **transaction)
+    .await?;
+    Ok((hasher.finalize().to_vec(), visible_count.max(0) as u64))
+}
+
 impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
     type Error = McpAccessTokenStoreError;
 
@@ -1194,22 +1250,27 @@ impl DeleteConfirmationStore for SqliteDeleteConfirmationStore {
         note_id: NoteId,
         expected_revision: SourceRevision,
         expires_at: UnixMillis,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+    ) -> impl Future<Output = Result<u64, Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
+            let mut transaction = pool.begin().await?;
+            let (incoming_reference_state_hash, incoming_reference_count) =
+                incoming_reference_snapshot(&mut transaction, actor, note_id).await?;
             sqlx::query(
                 "INSERT INTO delete_confirmations
-                 (token_hash, user_id, note_id, source_revision, expires_at_ms)
-                 VALUES (?, ?, ?, ?, ?)",
+                 (token_hash, user_id, note_id, source_revision, incoming_reference_state_hash, expires_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?)",
             )
             .bind(hash_token(&token))
             .bind(actor.user_id.to_string())
             .bind(note_id.to_string())
             .bind(expected_revision.to_hex())
+            .bind(incoming_reference_state_hash)
             .bind(expires_at.get())
-            .execute(&pool)
+            .execute(&mut *transaction)
             .await?;
-            Ok(())
+            transaction.commit().await?;
+            Ok(incoming_reference_count)
         }
     }
 
@@ -1218,12 +1279,12 @@ impl DeleteConfirmationStore for SqliteDeleteConfirmationStore {
         token: String,
         actor: Actor,
         now: UnixMillis,
-    ) -> impl Future<Output = Result<Option<(NoteId, SourceRevision)>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<DeleteConfirmation, Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
             let mut transaction = pool.begin().await?;
             let row = sqlx::query(
-                "SELECT note_id, source_revision FROM delete_confirmations
+                "SELECT note_id, source_revision, incoming_reference_state_hash FROM delete_confirmations
                  WHERE token_hash = ? AND user_id = ? AND consumed_at_ms IS NULL AND expires_at_ms > ?",
             )
             .bind(hash_token(&token))
@@ -1233,8 +1294,19 @@ impl DeleteConfirmationStore for SqliteDeleteConfirmationStore {
             .await?;
             let Some(row) = row else {
                 transaction.rollback().await?;
-                return Ok(None);
+                return Ok(DeleteConfirmation::Missing);
             };
+            let note_id = EntityId::from_str(&row.try_get::<String, _>("note_id")?)
+                .map(NoteId::new)
+                .map_err(|_| McpOAuthStoreError::CorruptUser)?;
+            let stored_reference_state_hash: Vec<u8> =
+                row.try_get("incoming_reference_state_hash")?;
+            let (current_reference_state_hash, _) =
+                incoming_reference_snapshot(&mut transaction, actor, note_id).await?;
+            if stored_reference_state_hash != current_reference_state_hash {
+                transaction.rollback().await?;
+                return Ok(DeleteConfirmation::Stale);
+            }
             let updated = sqlx::query(
                 "UPDATE delete_confirmations SET consumed_at_ms = ?
                  WHERE token_hash = ? AND consumed_at_ms IS NULL",
@@ -1246,15 +1318,15 @@ impl DeleteConfirmationStore for SqliteDeleteConfirmationStore {
             .rows_affected();
             if updated != 1 {
                 transaction.rollback().await?;
-                return Ok(None);
+                return Ok(DeleteConfirmation::Missing);
             }
-            let note_id = EntityId::from_str(&row.try_get::<String, _>("note_id")?)
-                .map(NoteId::new)
-                .map_err(|_| McpOAuthStoreError::CorruptUser)?;
             let revision = SourceRevision::from_hex(&row.try_get::<String, _>("source_revision")?)
                 .ok_or(McpOAuthStoreError::CorruptUser)?;
             transaction.commit().await?;
-            Ok(Some((note_id, revision)))
+            Ok(DeleteConfirmation::Confirmed {
+                note_id,
+                expected_revision: revision,
+            })
         }
     }
 }
@@ -2309,7 +2381,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 10);
+        assert_eq!(version, 11);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -3389,7 +3461,7 @@ mod tests {
             )
             .await
             .expect("issue");
-        assert!(
+        assert_eq!(
             store
                 .consume(
                     "confirmation".into(),
@@ -3400,22 +3472,25 @@ mod tests {
                     UnixMillis::new(1),
                 )
                 .await
-                .expect("other actor")
-                .is_none()
+                .expect("other actor"),
+            DeleteConfirmation::Missing
         );
         assert_eq!(
             store
                 .consume("confirmation".into(), actor, UnixMillis::new(1))
                 .await
                 .expect("consume"),
-            Some((note_id, revision))
+            DeleteConfirmation::Confirmed {
+                note_id,
+                expected_revision: revision,
+            }
         );
-        assert!(
+        assert_eq!(
             store
                 .consume("confirmation".into(), actor, UnixMillis::new(2))
                 .await
-                .expect("second consume")
-                .is_none()
+                .expect("second consume"),
+            DeleteConfirmation::Missing
         );
         database
             .note_projection_store()
@@ -3428,6 +3503,93 @@ mod tests {
                 .await
                 .expect("confirmation count"),
             0
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_confirmation_becomes_stale_when_an_incoming_reference_changes() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000077").expect("user ID"),
+        );
+        let target_id = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000078").expect("target ID"),
+        );
+        let source_id = NoteId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000079").expect("source ID"),
+        );
+        sqlx::query(
+            "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+             VALUES (?, 'oidc', 'active', 'User', 0, 0)",
+        )
+        .bind(user_id.to_string())
+        .execute(database.pool())
+        .await
+        .expect("user");
+        let revision = SourceRevision::from_source(b"= Target\n");
+        for (note_id, title) in [(target_id, "Target"), (source_id, "Source")] {
+            database
+                .note_projection_store()
+                .replace_projection(
+                    NoteProjection {
+                        note_id,
+                        owner_id: user_id,
+                        title: title.into(),
+                        search_text: title.into(),
+                        anchors: Vec::new(),
+                        references: Vec::new(),
+                    },
+                    revision,
+                )
+                .await
+                .expect("projection");
+        }
+        let actor = Actor {
+            user_id,
+            is_root: false,
+        };
+        let store = database.delete_confirmation_store();
+        assert_eq!(
+            store
+                .issue(
+                    "stale-confirmation".into(),
+                    actor,
+                    target_id,
+                    revision,
+                    UnixMillis::new(100),
+                )
+                .await
+                .expect("issue"),
+            0
+        );
+        database
+            .note_projection_store()
+            .replace_projection(
+                NoteProjection {
+                    note_id: source_id,
+                    owner_id: user_id,
+                    title: "Source".into(),
+                    search_text: "Source".into(),
+                    anchors: Vec::new(),
+                    references: vec![marginalis_domain::NoteReference {
+                        source_start: 0,
+                        source_end: 42,
+                        target_note_id: target_id.to_string(),
+                        target_anchor: None,
+                    }],
+                },
+                revision,
+            )
+            .await
+            .expect("reference update");
+        assert_eq!(
+            store
+                .consume("stale-confirmation".into(), actor, UnixMillis::new(1))
+                .await
+                .expect("consume"),
+            DeleteConfirmation::Stale
         );
     }
 }
