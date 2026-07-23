@@ -61,33 +61,32 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mcp_origin = configuration.base_url.origin().ascii_serialization();
     let listener = tokio::net::TcpListener::bind(configuration.listen_address).await?;
     tracing::info!(address = %configuration.listen_address, "Marginalis server listening");
-    axum::serve(
-        listener,
-        router(
-            ApiState::new(
-                std::sync::Arc::new(notes.clone()),
-                std::sync::Arc::new(ServerWebAuthenticationUseCases::with_oidc(
-                    database.clone(),
-                    oidc,
-                )),
-            )
-            .with_mcp(McpEndpoint {
-                tools: marginalis_mcp::McpTools::new(std::sync::Arc::new(notes)),
-                authenticator: std::sync::Arc::new(ServerMcpAuthenticator::new(
-                    database.clone(),
-                    mcp_resource_url.to_string(),
-                )),
-                oauth: std::sync::Arc::new(ServerMcpOAuthService::new(database)),
-                resource_uri: mcp_resource_url.to_string(),
-                metadata_uri: mcp_metadata_url.to_string(),
-                authorization_server_uri: mcp_authorization_server_url.to_string(),
-                authorization_endpoint_uri: mcp_authorize_url.to_string(),
-                token_endpoint_uri: mcp_token_url.to_string(),
-                allowed_origin: mcp_origin,
-            }),
-        ),
-    )
-    .await?;
+    let state = ApiState::new(
+        std::sync::Arc::new(notes.clone()),
+        std::sync::Arc::new(ServerWebAuthenticationUseCases::with_oidc(
+            database.clone(),
+            oidc,
+        )),
+    );
+    let state = if configuration.mcp_enabled {
+        state.with_mcp(McpEndpoint {
+            tools: marginalis_mcp::McpTools::new(std::sync::Arc::new(notes)),
+            authenticator: std::sync::Arc::new(ServerMcpAuthenticator::new(
+                database.clone(),
+                mcp_resource_url.to_string(),
+            )),
+            oauth: std::sync::Arc::new(ServerMcpOAuthService::new(database)),
+            resource_uri: mcp_resource_url.to_string(),
+            metadata_uri: mcp_metadata_url.to_string(),
+            authorization_server_uri: mcp_authorization_server_url.to_string(),
+            authorization_endpoint_uri: mcp_authorize_url.to_string(),
+            token_endpoint_uri: mcp_token_url.to_string(),
+            allowed_origin: mcp_origin,
+        })
+    } else {
+        state
+    };
+    axum::serve(listener, router(state)).await?;
     Ok(())
 }
 

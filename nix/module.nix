@@ -95,6 +95,12 @@ in
       example = "/run/secrets/marginalis-root-password";
       description = "Optional runtime path to the one-time root password. Required only while the database has no root account.";
     };
+
+    mcp.enable = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Whether to expose the OAuth-protected MCP endpoint and authorization server.";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -141,6 +147,7 @@ in
         OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
         OIDC_CLIENT_ID = cfg.oidc.clientId;
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
+        MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
       }
       // optionalAttrs (cfg.initialRootPasswordFile != null) {
         ROOT_PASSWORD_FILE = "%d/root-password";

@@ -772,6 +772,7 @@ pub struct ServerConfig {
     pub data_dir: PathBuf,
     pub database_url: String,
     pub oidc: OidcPublicConfig,
+    pub mcp_enabled: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -795,6 +796,7 @@ pub enum ConfigurationError {
     EmptyClientId,
     EmptyDataDirectory,
     UnreadableSecretFile(&'static str),
+    InvalidMcpEnable,
 }
 
 impl fmt::Display for ConfigurationError {
@@ -816,6 +818,9 @@ impl fmt::Display for ConfigurationError {
             }
             Self::UnreadableSecretFile(name) => {
                 write!(formatter, "secret file for {name} could not be read")
+            }
+            Self::InvalidMcpEnable => {
+                formatter.write_str("MARGINALIS_MCP_ENABLE must be `true` or `false`")
             }
         }
     }
@@ -847,12 +852,25 @@ impl ServerConfig {
                 issuer_url,
                 client_id,
             },
+            mcp_enabled: optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false),
         };
         let secrets = SecretConfig {
             oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
             initial_root_password: optional_secret("ROOT_PASSWORD")?,
         };
         Ok((configuration, secrets))
+    }
+}
+
+fn optional_bool(name: &'static str) -> Result<Option<bool>, ConfigurationError> {
+    match env::var(name) {
+        Ok(value) => match value.as_str() {
+            "true" => Ok(Some(true)),
+            "false" => Ok(Some(false)),
+            _ => Err(ConfigurationError::InvalidMcpEnable),
+        },
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpEnable),
     }
 }
 
