@@ -1,8 +1,9 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, OidcIdentity, OidcLoginResult,
-    OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSearchResult, NoteSummary,
+    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
+    UserId,
 };
 use std::future::Future;
 
@@ -320,6 +321,23 @@ pub trait NoteProjectionStore: Send + Sync {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
+/// ACL適用後のノート一覧・検索read model。候補数やsnippetを返す前に権限を適用する。
+pub trait NoteQueryStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn list_visible(
+        &self,
+        actor: Actor,
+        limit: u32,
+    ) -> impl Future<Output = Result<Vec<NoteSummary>, Self::Error>> + Send;
+    fn search_visible(
+        &self,
+        actor: Actor,
+        query: String,
+        limit: u32,
+    ) -> impl Future<Output = Result<Vec<NoteSearchResult>, Self::Error>> + Send;
+}
+
 /// ノートACLの永続化境界。HTTPはこのportを介してのみ権限を問い合わせる。
 pub trait NoteAclStore: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -409,6 +427,17 @@ pub struct NoteWriteService<'a, Sources, Projections, Journal, Entropy, Time> {
 /// transportが利用するノート操作の境界。HTTP、MCPおよびCLIは具体adapterを参照しない。
 #[async_trait]
 pub trait NoteUseCases: Send + Sync {
+    async fn list_notes(
+        &self,
+        actor: Actor,
+        limit: u32,
+    ) -> Result<Vec<NoteSummary>, NoteUseCaseError>;
+    async fn search_notes(
+        &self,
+        actor: Actor,
+        query: String,
+        limit: u32,
+    ) -> Result<Vec<NoteSearchResult>, NoteUseCaseError>;
     async fn read_source(&self, actor: Actor, note_id: NoteId)
     -> Result<Vec<u8>, NoteUseCaseError>;
     async fn create_source(&self, actor: Actor, source: String)

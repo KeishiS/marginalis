@@ -127,8 +127,24 @@ pub struct NoteProjection {
     pub note_id: NoteId,
     pub owner_id: UserId,
     pub title: String,
+    /// 検索専用の正規化前テキスト。正本更新と同じtransactionで投影へ反映する。
+    pub search_text: String,
     pub anchors: Vec<String>,
     pub references: Vec<NoteReference>,
+}
+
+/// ACLで可視なノートの一覧・検索に共通するread model。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NoteSummary {
+    pub note_id: NoteId,
+    pub title: String,
+}
+
+/// 全文検索の一件。snippetはHTMLではなく、transportがJSON等へ安全に符号化するプレーンテキストである。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NoteSearchResult {
+    pub note: NoteSummary,
+    pub snippet: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

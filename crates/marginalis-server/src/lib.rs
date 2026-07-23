@@ -6,10 +6,12 @@ use std::{env, net::SocketAddr, path::PathBuf};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    Clock, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteUseCaseError,
-    NoteUseCases, NoteWriteService, Random,
+    Clock, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteQueryStore,
+    NoteUseCaseError, NoteUseCases, NoteWriteService, Random,
 };
-use marginalis_domain::{Actor, EntityId, NoteId, NotePermission, UnixMillis, UserId};
+use marginalis_domain::{
+    Actor, EntityId, NoteId, NotePermission, NoteSearchResult, NoteSummary, UnixMillis, UserId,
+};
 use marginalis_files::FileNoteStore;
 use marginalis_sqlite::SqliteDatabase;
 use url::Url;
@@ -70,6 +72,34 @@ impl ServerNoteUseCases {
 
 #[async_trait]
 impl NoteUseCases for ServerNoteUseCases {
+    async fn list_notes(
+        &self,
+        actor: Actor,
+        limit: u32,
+    ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
+        self.database
+            .note_query_store()
+            .list_visible(actor, limit)
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    async fn search_notes(
+        &self,
+        actor: Actor,
+        query: String,
+        limit: u32,
+    ) -> Result<Vec<NoteSearchResult>, NoteUseCaseError> {
+        if query.trim().is_empty() {
+            return Err(NoteUseCaseError::Validation);
+        }
+        self.database
+            .note_query_store()
+            .search_visible(actor, query, limit)
+            .await
+            .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
     async fn read_source(
         &self,
         actor: Actor,

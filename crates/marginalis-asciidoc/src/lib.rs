@@ -363,6 +363,7 @@ pub fn build_note_projection(
         note_id,
         owner_id,
         title: metadata.title,
+        search_text: analysis.source().to_owned(),
         anchors: analysis
             .reference_targets()
             .iter()

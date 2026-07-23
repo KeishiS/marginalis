@@ -275,6 +275,7 @@ mod tests {
             note_id,
             owner_id,
             title: "First note".into(),
+            search_text: "First note".into(),
             anchors: vec!["start".into()],
             references: Vec::new(),
         };
@@ -346,6 +347,7 @@ mod tests {
                     note_id,
                     owner_id,
                     title: "Disposable".into(),
+                    search_text: "Disposable".into(),
                     anchors: Vec::new(),
                     references: Vec::new(),
                 },
@@ -391,6 +393,7 @@ mod tests {
             note_id,
             owner_id,
             title: "Recovered".into(),
+            search_text: "Recovered".into(),
             anchors: Vec::new(),
             references: Vec::new(),
         };

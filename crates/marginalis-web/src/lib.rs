@@ -21,7 +21,8 @@ pub use marginalis_auth_oidc::{
     OidcConfigurationError, OidcDiscoveryError, OidcLoginStartError,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, OidcLoginResult, OidcUser, UserId,
+    Actor, EntityId, NoteId, NotePermission, NoteSearchResult, NoteSummary, OidcLoginResult,
+    OidcUser, UserId,
 };
 use marginalis_server::{SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
@@ -166,7 +167,8 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/notes/{note_id}/source", get(note_source))
         .route("/api/v1/notes/{note_id}/source", put(update_note_source))
         .route("/api/v1/notes/{note_id}", delete(delete_note))
-        .route("/api/v1/notes", post(create_note))
+        .route("/api/v1/notes", get(list_notes).post(create_note))
+        .route("/api/v1/search", get(search_notes))
         .route(
             "/api/v1/notes/{note_id}/acl/{user_id}",
             put(update_note_acl),
@@ -227,6 +229,83 @@ async fn current_session(
         user_id: actor.user_id.to_string(),
         is_root: actor.is_root,
     }))
+}
+
+#[derive(Deserialize)]
+struct NoteListQuery {
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct NoteSearchQuery {
+    q: String,
+    limit: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct NoteSummaryResponse {
+    note_id: String,
+    title: String,
+}
+
+#[derive(Serialize)]
+struct NoteSearchResponse {
+    note_id: String,
+    title: String,
+    snippet: String,
+}
+
+async fn list_notes(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Query(query): Query<NoteListQuery>,
+) -> Result<Json<Vec<NoteSummaryResponse>>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let notes = state
+        .notes
+        .list_notes(actor, bounded_limit(query.limit))
+        .await
+        .map_err(|error| note_error(error, "note listing is unavailable"))?;
+    Ok(Json(notes.into_iter().map(note_summary_response).collect()))
+}
+
+async fn search_notes(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Query(query): Query<NoteSearchQuery>,
+) -> Result<Json<Vec<NoteSearchResponse>>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let results = state
+        .notes
+        .search_notes(actor, query.q, bounded_limit(query.limit))
+        .await
+        .map_err(|error| note_error(error, "note search is unavailable"))?;
+    Ok(Json(
+        results.into_iter().map(note_search_response).collect(),
+    ))
+}
+
+fn bounded_limit(value: Option<u32>) -> u32 {
+    match value.unwrap_or(50) {
+        0 => 1,
+        value if value > 100 => 100,
+        value => value,
+    }
+}
+
+fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
+    NoteSummaryResponse {
+        note_id: note.note_id.to_string(),
+        title: note.title,
+    }
+}
+
+fn note_search_response(result: NoteSearchResult) -> NoteSearchResponse {
+    NoteSearchResponse {
+        note_id: result.note.note_id.to_string(),
+        title: result.note.title,
+        snippet: result.snippet,
+    }
 }
 
 async fn note_source(

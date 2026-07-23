@@ -8,13 +8,14 @@ use argon2::{
 };
 use marginalis_application::{
     AuthenticatedSession, JournalEntry, NoteAclStore, NoteOperationKind, NoteProjectionStore,
-    OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcUserAdministrationStore,
-    OperationId, OperationJournal, OperationState, RootCredentialStore, WebSession,
-    WebSessionStore,
+    NoteQueryStore, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore,
+    OidcUserAdministrationStore, OperationId, OperationJournal, OperationState,
+    RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, OidcIdentity, OidcLoginResult,
-    OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSearchResult, NoteSummary,
+    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
+    UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -25,6 +26,7 @@ use sqlx::{
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/0001_initial.sql")),
     (2, include_str!("../migrations/0002_live_notes_index.sql")),
+    (3, include_str!("../migrations/0003_note_search.sql")),
 ];
 
 #[derive(Clone, Debug)]
@@ -47,6 +49,11 @@ pub struct SqliteOidcIdentityStore {
 /// ノート検索投影のSQLite実装。
 #[derive(Clone, Debug)]
 pub struct SqliteNoteProjectionStore {
+    pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SqliteNoteQueryStore {
     pool: SqlitePool,
 }
 
@@ -203,6 +210,30 @@ pub enum NoteProjectionError {
     Database(sqlx::Error),
 }
 
+#[derive(Debug)]
+pub enum NoteQueryStoreError {
+    Database(sqlx::Error),
+    CorruptNote,
+}
+impl fmt::Display for NoteQueryStoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("note query failed")
+    }
+}
+impl std::error::Error for NoteQueryStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::CorruptNote => None,
+        }
+    }
+}
+impl From<sqlx::Error> for NoteQueryStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
+}
+
 impl fmt::Display for NoteProjectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("note projection query failed")
@@ -326,6 +357,12 @@ impl SqliteDatabase {
 
     pub fn note_projection_store(&self) -> SqliteNoteProjectionStore {
         SqliteNoteProjectionStore {
+            pool: self.pool.clone(),
+        }
+    }
+
+    pub fn note_query_store(&self) -> SqliteNoteQueryStore {
+        SqliteNoteQueryStore {
             pool: self.pool.clone(),
         }
     }
@@ -739,6 +776,16 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
             .bind(&projection.title)
             .bind(revision.bytes().to_vec())
             .execute(&mut *transaction).await?;
+            sqlx::query("DELETE FROM note_search WHERE note_id = ?")
+                .bind(projection.note_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+            sqlx::query("INSERT INTO note_search (note_id, title, content) VALUES (?, ?, ?)")
+                .bind(projection.note_id.to_string())
+                .bind(&projection.title)
+                .bind(&projection.search_text)
+                .execute(&mut *transaction)
+                .await?;
             sqlx::query(
                 "INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)
                  ON CONFLICT(note_id, user_id) DO NOTHING",
@@ -787,6 +834,10 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
+            sqlx::query("DELETE FROM note_search WHERE note_id = ?")
+                .bind(note_id.to_string())
+                .execute(&pool)
+                .await?;
             sqlx::query("DELETE FROM notes WHERE note_id = ?")
                 .bind(note_id.to_string())
                 .execute(&pool)
@@ -794,6 +845,90 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
             Ok(())
         }
     }
+}
+
+impl NoteQueryStore for SqliteNoteQueryStore {
+    type Error = NoteQueryStoreError;
+
+    fn list_visible(
+        &self,
+        actor: Actor,
+        limit: u32,
+    ) -> impl Future<Output = Result<Vec<NoteSummary>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let rows = sqlx::query(
+                "SELECT notes.note_id, notes.title FROM notes
+                 WHERE ? OR EXISTS (
+                   SELECT 1 FROM note_acl
+                   WHERE note_acl.note_id = notes.note_id AND note_acl.user_id = ?
+                 )
+                 ORDER BY notes.title COLLATE NOCASE ASC, notes.note_id ASC
+                 LIMIT ?",
+            )
+            .bind(actor.is_root)
+            .bind(actor.user_id.to_string())
+            .bind(i64::from(limit))
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(|row| note_summary_from_row(&row))
+                .collect()
+        }
+    }
+
+    fn search_visible(
+        &self,
+        actor: Actor,
+        query: String,
+        limit: u32,
+    ) -> impl Future<Output = Result<Vec<NoteSearchResult>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let rows = sqlx::query(
+                "SELECT notes.note_id, notes.title,
+                        snippet(note_search, 2, '', '', '…', 24) AS snippet
+                 FROM note_search JOIN notes ON notes.note_id = note_search.note_id
+                 WHERE note_search MATCH ? AND (? OR EXISTS (
+                   SELECT 1 FROM note_acl
+                   WHERE note_acl.note_id = notes.note_id AND note_acl.user_id = ?
+                 ))
+                 ORDER BY bm25(note_search), notes.note_id ASC
+                 LIMIT ?",
+            )
+            .bind(fts_phrase_query(&query))
+            .bind(actor.is_root)
+            .bind(actor.user_id.to_string())
+            .bind(i64::from(limit))
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(|row| {
+                    Ok(NoteSearchResult {
+                        note: note_summary_from_row(&row)?,
+                        snippet: row.try_get("snippet")?,
+                    })
+                })
+                .collect()
+        }
+    }
+}
+
+fn note_summary_from_row(
+    row: &sqlx::sqlite::SqliteRow,
+) -> Result<NoteSummary, NoteQueryStoreError> {
+    let note_id: String = row.try_get("note_id")?;
+    Ok(NoteSummary {
+        note_id: NoteId::new(
+            EntityId::from_str(&note_id).map_err(|_| NoteQueryStoreError::CorruptNote)?,
+        ),
+        title: row.try_get("title")?,
+    })
+}
+
+/// 利用者入力をFTS演算子として解釈せず、一つのphraseとして検索する。
+fn fts_phrase_query(query: &str) -> String {
+    format!("\"{}\"", query.replace('"', "\"\""))
 }
 
 impl OidcIdentityStore for SqliteOidcIdentityStore {
@@ -1066,9 +1201,9 @@ mod tests {
 
     use marginalis_application::{
         JournalEntry, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind,
-        NoteProjectionStore, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore,
-        OidcUserAdministrationStore, OperationId, OperationJournal, OperationState,
-        RootCredentialStore,
+        NoteProjectionStore, NoteQueryStore, OidcIdentityStore, OidcLoginAttempt,
+        OidcLoginAttemptStore, OidcUserAdministrationStore, OperationId, OperationJournal,
+        OperationState, RootCredentialStore,
     };
     use marginalis_domain::{
         Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteReference, OidcIdentity,
@@ -1117,7 +1252,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -1127,6 +1262,15 @@ mod tests {
         .try_get("name")
         .expect("name");
         assert_eq!(index, "notes_live_title_idx");
+        let search_table: String = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'note_search'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("search table")
+        .try_get("name")
+        .expect("name");
+        assert_eq!(search_table, "note_search");
     }
 
     #[tokio::test]
@@ -1236,6 +1380,7 @@ mod tests {
                     note_id,
                     owner_id,
                     title: "Projection".into(),
+                    search_text: "Projection".into(),
                     anchors: vec!["section".into()],
                     references: vec![NoteReference {
                         source_start: 3,
@@ -1434,6 +1579,7 @@ mod tests {
                     note_id,
                     owner_id,
                     title: "ACL".into(),
+                    search_text: "ACL".into(),
                     anchors: Vec::new(),
                     references: Vec::new(),
                 },
@@ -1484,5 +1630,68 @@ mod tests {
             .expect("root"),
             Some(NotePermission::Admin)
         );
+    }
+
+    #[tokio::test]
+    async fn search_filters_notes_before_returning_snippets() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let owner_id =
+            UserId::new(EntityId::from_str("01800000-0000-7000-8000-000000000060").expect("owner"));
+        let other_id =
+            UserId::new(EntityId::from_str("01800000-0000-7000-8000-000000000061").expect("other"));
+        let note_id =
+            NoteId::new(EntityId::from_str("01800000-0000-7000-8000-000000000062").expect("note"));
+        for user_id in [owner_id, other_id] {
+            sqlx::query(
+                "INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms)
+                 VALUES (?, 'oidc', 'active', 'User', 0, 0)",
+            )
+            .bind(user_id.to_string())
+            .execute(database.pool())
+            .await
+            .expect("user");
+        }
+        database
+            .note_projection_store()
+            .replace_projection(
+                NoteProjection {
+                    note_id,
+                    owner_id,
+                    title: "Private hypothesis".into(),
+                    search_text: "unique-secret-phrase".into(),
+                    anchors: Vec::new(),
+                    references: Vec::new(),
+                },
+                SourceRevision::from_source(b"unique-secret-phrase"),
+            )
+            .await
+            .expect("projection");
+        let query = database.note_query_store();
+        let owner_results = query
+            .search_visible(
+                Actor {
+                    user_id: owner_id,
+                    is_root: false,
+                },
+                "unique-secret-phrase".into(),
+                10,
+            )
+            .await
+            .expect("owner search");
+        assert_eq!(owner_results.len(), 1);
+        let other_results = query
+            .search_visible(
+                Actor {
+                    user_id: other_id,
+                    is_root: false,
+                },
+                "unique-secret-phrase".into(),
+                10,
+            )
+            .await
+            .expect("other search");
+        assert!(other_results.is_empty());
     }
 }
