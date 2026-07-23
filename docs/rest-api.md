@@ -25,6 +25,10 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 通常のsessionを得られる。rootのパスワードをHTTP request body以外へ記録・保存してはならない。
 初期実装では管理操作はREST APIで提供し、ブラウザー管理UIは後続とする。
 
+OIDC callbackの成功時はBase URL（`/`）へredirectする。Web UI公開前の`GET /`はhealth responseを
+返すため、ログイン完了後に404にはならない。`GET /api/v1/session`は現在の有効なsessionについて
+`user_id`と`is_root`を返し、sessionがなければ`401`を返す。
+
 ## ノート正本
 
 正本はUTF-8のAsciiDocであり、SQLiteは検索・ACL・参照の投影である。HTTP handlerはSQLiteへ

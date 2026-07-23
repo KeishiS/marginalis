@@ -144,7 +144,9 @@ impl IntoResponse for ApiError {
 /// Web UI、REST APIおよび将来のMCP endpointを収容するルーター。
 pub fn router(state: ApiState) -> Router {
     Router::new()
+        .route("/", get(landing))
         .route("/api/v1/health", get(health))
+        .route("/api/v1/session", get(current_session))
         .route("/api/v1/notes/{note_id}/source", get(note_source))
         .route("/api/v1/notes/{note_id}/source", put(update_note_source))
         .route("/api/v1/notes/{note_id}", delete(delete_note))
@@ -187,6 +189,28 @@ async fn health() -> Json<HealthResponse> {
         status: "ok",
         api_version: API_VERSION,
     })
+}
+
+/// Web UI公開前のBase URL到達先。OIDC callback後のredirect先としても用いる。
+async fn landing() -> Json<HealthResponse> {
+    health().await
+}
+
+#[derive(Serialize)]
+struct CurrentSessionResponse {
+    user_id: String,
+    is_root: bool,
+}
+
+async fn current_session(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Json<CurrentSessionResponse>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    Ok(Json(CurrentSessionResponse {
+        user_id: actor.user_id.to_string(),
+        is_root: actor.is_root,
+    }))
 }
 
 async fn note_source(
@@ -817,6 +841,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn landing_endpoint_is_available_after_oidc_redirect() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let directory = std::env::temp_dir().join("marginalis-web-landing-test");
+        let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
+        let response = router(ApiState::new(database, sources))
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn note_source_requires_an_authenticated_session() {
         let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
             .await
@@ -936,6 +980,19 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/admin/users/pending")
+                    .header("cookie", format!("marginalis_session={session}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/session")
                     .header("cookie", format!("marginalis_session={session}"))
                     .body(Body::empty())
                     .expect("request"),
