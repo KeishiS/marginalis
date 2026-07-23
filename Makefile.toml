@@ -82,9 +82,24 @@ description = "Build the Linux release package without creating a result symlink
 command = "nix"
 args = ["build", ".#packages.x86_64-linux.default", "--no-link"]
 
+[tasks.release-metadata]
+description = "Verify RC version and declared dual-license files"
+script_runner = "@shell"
+script = '''
+set -eu
+test -s LICENSE-MIT
+test -s LICENSE-APACHE
+cargo metadata --no-deps --format-version 1 | jq -e '
+  all(.packages[];
+    .version == "0.1.0-rc.1"
+    and .license == "MIT OR Apache-2.0"
+    and .publish == [])
+'
+'''
+
 [tasks.release-gate]
 description = "Run every automated gate required before an RC or final release"
-dependencies = ["verify", "actionlint", "nix-release-check", "release-package"]
+dependencies = ["verify", "actionlint", "release-metadata", "nix-release-check", "release-package"]
 
 [tasks.dependency-boundaries]
 description = "Reject concrete adapters from transport production dependency graphs"
