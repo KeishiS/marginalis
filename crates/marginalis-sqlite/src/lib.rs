@@ -683,14 +683,6 @@ impl SqliteDatabase {
                 .bind(&projection.search_text)
                 .execute(&mut *transaction)
                 .await?;
-            sqlx::query(
-                "INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)
-                 ON CONFLICT(note_id, user_id) DO NOTHING",
-            )
-            .bind(projection.note_id.to_string())
-            .bind(projection.owner_id.to_string())
-            .execute(&mut *transaction)
-            .await?;
             for anchor in &projection.anchors {
                 sqlx::query("INSERT INTO note_anchors (note_id, anchor_id) VALUES (?, ?)")
                     .bind(projection.note_id.to_string())
@@ -730,14 +722,18 @@ impl NoteAclStore for SqliteNoteAclStore {
             if actor.is_root {
                 return Ok(Some(NotePermission::Admin));
             }
-            let value =
-                sqlx::query("SELECT permission FROM note_acl WHERE note_id = ? AND user_id = ?")
-                    .bind(note_id.to_string())
-                    .bind(actor.user_id.to_string())
-                    .fetch_optional(&pool)
-                    .await?
-                    .map(|row| row.try_get::<i64, _>("permission"))
-                    .transpose()?;
+            let value = sqlx::query(
+                "SELECT note_acl.permission
+                 FROM note_acl
+                 JOIN users ON users.user_id = note_acl.user_id
+                 WHERE note_acl.note_id = ? AND note_acl.user_id = ? AND users.status = 'active'",
+            )
+            .bind(note_id.to_string())
+            .bind(actor.user_id.to_string())
+            .fetch_optional(&pool)
+            .await?
+            .map(|row| row.try_get::<i64, _>("permission"))
+            .transpose()?;
             value.map(permission_from_storage).transpose()
         }
     }
@@ -760,7 +756,12 @@ impl NoteAclStore for SqliteNoteAclStore {
                     .transpose()?;
             if current == Some(3) && permission != Some(NotePermission::Admin) {
                 let count: i64 = sqlx::query(
-                    "SELECT COUNT(*) AS count FROM note_acl WHERE note_id = ? AND permission = 3",
+                    "SELECT COUNT(*) AS count
+                     FROM note_acl
+                     JOIN users ON users.user_id = note_acl.user_id
+                     WHERE note_acl.note_id = ?
+                       AND note_acl.permission = 3
+                       AND users.status = 'active'",
                 )
                 .bind(note_id.to_string())
                 .fetch_one(&mut *transaction)
@@ -927,6 +928,30 @@ impl OidcUserAdministrationStore for SqliteOidcUserAdministrationStore {
         let pool = self.pool.clone();
         async move {
             let mut transaction = pool.begin().await?;
+            let leaves_note_without_active_admin: bool = sqlx::query_scalar(
+                "SELECT EXISTS (
+                   SELECT 1
+                   FROM note_acl AS candidate
+                   WHERE candidate.user_id = ?
+                     AND candidate.permission = 3
+                     AND NOT EXISTS (
+                       SELECT 1
+                       FROM note_acl AS other_acl
+                       JOIN users AS other_user ON other_user.user_id = other_acl.user_id
+                       WHERE other_acl.note_id = candidate.note_id
+                         AND other_acl.permission = 3
+                         AND other_acl.user_id <> candidate.user_id
+                         AND other_user.status = 'active'
+                     )
+                 )",
+            )
+            .bind(user_id.to_string())
+            .fetch_one(&mut *transaction)
+            .await?;
+            if leaves_note_without_active_admin {
+                transaction.rollback().await?;
+                return Ok(false);
+            }
             let updated = sqlx::query(
                 "UPDATE users SET status = 'disabled', updated_at_ms = ?
                  WHERE user_id = ? AND authentication_kind = 'oidc' AND status = 'active'",
@@ -1602,6 +1627,11 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
         let pool = self.pool.clone();
         async move {
             let mut transaction = pool.begin().await?;
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM notes WHERE note_id = ?)")
+                    .bind(projection.note_id.to_string())
+                    .fetch_one(&mut *transaction)
+                    .await?;
             sqlx::query(
                 "INSERT INTO notes (note_id, relative_path, title, source_revision, deleted_at_ms)
                  VALUES (?, ?, ?, ?, NULL)
@@ -1623,14 +1653,13 @@ impl NoteProjectionStore for SqliteNoteProjectionStore {
                 .bind(&projection.search_text)
                 .execute(&mut *transaction)
                 .await?;
-            sqlx::query(
-                "INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)
-                 ON CONFLICT(note_id, user_id) DO NOTHING",
-            )
-            .bind(projection.note_id.to_string())
-            .bind(projection.owner_id.to_string())
-            .execute(&mut *transaction)
-            .await?;
+            if !exists {
+                sqlx::query("INSERT INTO note_acl (note_id, user_id, permission) VALUES (?, ?, 3)")
+                    .bind(projection.note_id.to_string())
+                    .bind(projection.owner_id.to_string())
+                    .execute(&mut *transaction)
+                    .await?;
+            }
             sqlx::query("DELETE FROM note_anchors WHERE note_id = ?")
                 .bind(projection.note_id.to_string())
                 .execute(&mut *transaction)
@@ -2793,6 +2822,82 @@ mod tests {
             acl.set_permission(note_id, owner_id, None).await,
             Err(NoteAclStoreError::LastAdmin)
         ));
+        acl.set_permission(note_id, other_id, Some(NotePermission::Admin))
+            .await
+            .expect("add second admin");
+        acl.set_permission(note_id, owner_id, Some(NotePermission::Read))
+            .await
+            .expect("demote former owner");
+        database
+            .note_projection_store()
+            .replace_projection(
+                NoteProjection {
+                    note_id,
+                    owner_id,
+                    title: "Updated ACL".into(),
+                    search_text: "updated ACL".into(),
+                    anchors: Vec::new(),
+                    references: Vec::new(),
+                },
+                SourceRevision::from_source(b"= Updated ACL\n"),
+            )
+            .await
+            .expect("update projection");
+        assert_eq!(
+            acl.permission_for(
+                Actor {
+                    user_id: owner_id,
+                    is_root: false,
+                },
+                note_id,
+            )
+            .await
+            .expect("former owner permission"),
+            Some(NotePermission::Read)
+        );
+        database
+            .replace_all_note_projections(&[(
+                NoteProjection {
+                    note_id,
+                    owner_id,
+                    title: "Rebuilt ACL".into(),
+                    search_text: "rebuilt ACL".into(),
+                    anchors: Vec::new(),
+                    references: Vec::new(),
+                },
+                SourceRevision::from_source(b"= Rebuilt ACL\n"),
+            )])
+            .await
+            .expect("rebuild projections");
+        assert_eq!(
+            acl.permission_for(
+                Actor {
+                    user_id: owner_id,
+                    is_root: false,
+                },
+                note_id,
+            )
+            .await
+            .expect("rebuilt former owner permission"),
+            Some(NotePermission::Read)
+        );
+        assert!(
+            !database
+                .oidc_user_administration_store()
+                .disable(other_id, UnixMillis::new(1))
+                .await
+                .expect("reject disabling the only active admin")
+        );
+        acl.set_permission(note_id, owner_id, Some(NotePermission::Admin))
+            .await
+            .expect("restore a second active admin");
+        assert!(
+            database
+                .oidc_user_administration_store()
+                .disable(other_id, UnixMillis::new(2))
+                .await
+                .expect("disable user after authority transfer")
+        );
         assert!(matches!(
             NoteAclService::new(&acl)
                 .set_permission(
