@@ -10,9 +10,9 @@ use marginalis_application::{
     McpAccessTokenStore, McpAuthorizationRequest, McpOAuthAdministrationUseCases, McpOAuthStore,
     McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation, McpTokenPair, NoteAclService,
     NoteAclServiceError, NoteAclStore, NoteDraft, NoteOperationKind, NoteQueryStore,
-    NoteUseCaseError, NoteUseCases, NoteWriteService, OidcUserAdministrationStore, Random,
-    RootCredentialStore, SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService,
-    WebSessionStore,
+    NoteUseCaseError, NoteUseCases, NoteWriteService, OidcAuthenticationUseCases,
+    OidcUserAdministrationStore, Random, RootCredentialStore, SessionLifetime,
+    UserAdministrationUseCases, WebSession, WebSessionService, WebSessionStore, WebSessionUseCases,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
@@ -578,7 +578,7 @@ impl ServerWebAuthenticationUseCases {
 }
 
 #[async_trait]
-impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
+impl OidcAuthenticationUseCases for ServerWebAuthenticationUseCases {
     async fn begin_oidc_login(&self) -> Result<String, AuthenticationUseCaseError> {
         self.oidc()?
             .begin_login(
@@ -617,6 +617,19 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
             })
     }
 
+    fn oidc_available(&self) -> bool {
+        self.oidc.is_some()
+    }
+
+    fn cookie_path(&self) -> &str {
+        self.oidc
+            .as_ref()
+            .map_or("/", OidcAuthentication::cookie_path)
+    }
+}
+
+#[async_trait]
+impl WebSessionUseCases for ServerWebAuthenticationUseCases {
     async fn authenticate_session(
         &self,
         session_id: String,
@@ -744,7 +757,10 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
         }
         Ok(())
     }
+}
 
+#[async_trait]
+impl UserAdministrationUseCases for ServerWebAuthenticationUseCases {
     async fn list_pending_users(
         &self,
     ) -> Result<Vec<marginalis_domain::OidcUser>, AuthenticationUseCaseError> {
@@ -849,16 +865,6 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
             })
             .await
             .map_err(|_| AuthenticationUseCaseError::Unavailable)
-    }
-
-    fn oidc_available(&self) -> bool {
-        self.oidc.is_some()
-    }
-
-    fn cookie_path(&self) -> &str {
-        self.oidc
-            .as_ref()
-            .map_or("/", OidcAuthentication::cookie_path)
     }
 }
 
@@ -1270,14 +1276,18 @@ impl NoteUseCases for ServerNoteUseCases {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServerConfig {
-    pub base_url: Url,
-    pub listen_address: SocketAddr,
-    pub data_dir: PathBuf,
-    pub database_url: String,
-    pub initial_registration_policy: RegistrationPolicy,
-    pub oidc: OidcPublicConfig,
+    pub http: HttpConfig,
+    pub storage: StorageConfig,
+    pub oidc: OidcConfig,
     pub mcp_enabled: bool,
     pub mcp_client_metadata_allowed_hosts: Vec<String>,
+}
+
+/// HTTP transportだけが必要とする公開設定。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpConfig {
+    pub base_url: Url,
+    pub listen_address: SocketAddr,
 }
 
 /// SQLiteとAsciiDoc正本だけを扱うmaintenance command向けの設定境界。
@@ -1292,7 +1302,7 @@ pub struct StorageConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OidcPublicConfig {
+pub struct OidcConfig {
     pub issuer_url: Url,
     pub client_id: String,
 }
@@ -1360,12 +1370,12 @@ impl ServerConfig {
             .parse()
             .map_err(|_| ConfigurationError::InvalidListenAddress)?;
         let configuration = Self {
-            base_url,
-            listen_address,
-            data_dir: storage.data_dir,
-            database_url: storage.database_url,
-            initial_registration_policy: storage.initial_registration_policy,
-            oidc: OidcPublicConfig {
+            http: HttpConfig {
+                base_url,
+                listen_address,
+            },
+            storage,
+            oidc: OidcConfig {
                 issuer_url,
                 client_id,
             },

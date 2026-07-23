@@ -172,9 +172,7 @@ pub trait WebSessionStore: Send + Sync {
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 }
 
-/// Cookie session、外部OIDCおよびroot管理をtransportから隔離する境界。
-///
-/// Web HTTPとMCP OAuthは異なるcredentialを用いるが、いずれもここで認証済み主体へ変換する。
+/// 認証・session・root管理のapplication interfaceで共有する失敗種別。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthenticationUseCaseError {
     Rejected,
@@ -183,13 +181,21 @@ pub enum AuthenticationUseCaseError {
 }
 
 #[async_trait]
-pub trait WebAuthenticationUseCases: Send + Sync {
+pub trait OidcAuthenticationUseCases: Send + Sync {
     async fn begin_oidc_login(&self) -> Result<String, AuthenticationUseCaseError>;
     async fn complete_oidc_login(
         &self,
         code: String,
         state: String,
     ) -> Result<OidcLoginResult, AuthenticationUseCaseError>;
+    /// OIDC Discoveryが完了しており、通常利用者のloginを開始できるか。
+    fn oidc_available(&self) -> bool;
+    fn cookie_path(&self) -> &str;
+}
+
+/// Cookie sessionとroot loginをtransportから隔離する境界。
+#[async_trait]
+pub trait WebSessionUseCases: Send + Sync {
     async fn authenticate_session(
         &self,
         session_id: String,
@@ -208,6 +214,11 @@ pub trait WebAuthenticationUseCases: Send + Sync {
         password: String,
     ) -> Result<Option<WebSession>, AuthenticationUseCaseError>;
     async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError>;
+}
+
+/// rootだけが実行するOIDCユーザー管理をtransportから隔離する境界。
+#[async_trait]
+pub trait UserAdministrationUseCases: Send + Sync {
     async fn list_pending_users(&self) -> Result<Vec<OidcUser>, AuthenticationUseCaseError>;
     async fn activate_pending_user(
         &self,
@@ -225,9 +236,6 @@ pub trait WebAuthenticationUseCases: Send + Sync {
         actor: Actor,
         policy: RegistrationPolicy,
     ) -> Result<(), AuthenticationUseCaseError>;
-    /// OIDC Discoveryが完了しており、通常利用者のloginを開始できるか。
-    fn oidc_available(&self) -> bool;
-    fn cookie_path(&self) -> &str;
 }
 
 /// MCP access tokenを検証済みの一般Actorへ変換する永続化境界。

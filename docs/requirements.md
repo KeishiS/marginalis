@@ -10,6 +10,8 @@
 2026-07時点のcurrent releaseは「研究室内でREST APIとMCPを実運用できる最小版」である。HTTP APIは
 `/api/v1`を維持するが、OpenAPI契約を完成してfreezeするまで破壊的変更を許容する。data formatはv1で固定し、
 既存deploymentのdata directoryは移行せず、`FORMAT` markerのない非空directoryを拒否する。
+v1では固定済みのAdocWeave公開契約とノートprofileを正本解釈の前提とし、それを変える場合はSQLite migrationだけでなく
+data format versionも更新する。
 
 | 状態 | 対象 |
 | --- | --- |

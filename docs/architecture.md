@@ -54,7 +54,7 @@ HTTP REST       MCP transport       maintenance CLI
   ファイル操作の復旧補助。
 - `marginalis-auth-oidc`: OIDC Discovery・code exchange・ID Token検証。Web sessionはapplication
   portを通じて発行する。
-- `marginalis-server`: `StorageConfig`とHTTP/OIDC設定型、Clock/Random、SQLite/files/AsciiDoc/OIDCをapplication portへ接続する
+- `marginalis-server`: `StorageConfig`、`HttpConfig`、`OidcConfig`とsecret設定、Clock/Random、SQLite/files/AsciiDoc/OIDCをapplication portへ接続する
   server adapter。transportの業務判断を持たない。
 - `marginalis-service`: 実行バイナリ。設定読込、依存組立、tracing初期化とHTTP listenを一箇所に集める
   composition root。NixOS packageはこのcrateのbinaryを`marginalis`として公開する。
@@ -65,8 +65,9 @@ HTTP REST       MCP transport       maintenance CLI
 
 - AsciiDoc正本、SQLite投影および操作ジャーナルの更新は一つのapplication use caseだけが調停する。
 - HTTP、MCPおよび将来のCLIは同じuse caseを呼び、SQLやファイルI/Oへ直接アクセスしない。
-- Web Cookie session、root loginおよび外部OIDC callbackは`WebAuthenticationUseCases`を通す。
-  HTTP transportはsession table、root credential、OIDC stateおよびidentity storeを直接参照しない。
+- 外部OIDC callbackは`OidcAuthenticationUseCases`、Cookie sessionとroot loginは`WebSessionUseCases`、
+  root管理は`UserAdministrationUseCases`を通す。HTTP transportはsession table、root credential、OIDC stateおよび
+  identity storeを直接参照しない。
 - OIDCの`issuer`と`subject`だけが外部本人同定に使われる。email・表示名は可変属性である。
 - secret、token、authorization code、state、nonceおよびPKCE verifierを監査ログ・通常ログ・
   Nix storeへ出力しない。
@@ -84,7 +85,9 @@ HTTP REST       MCP transport       maintenance CLI
   完全一致、サイズ上限、redirect URI policyを検証してからSQLiteへ保存する。
 - data formatはv1である。空directoryは`FORMAT` markerとともに初期化し、markerのない非空directoryまたは
   未知のmarkerは起動・maintenance・restore入力で明確に拒否する。SQLite migrationはv1の内部schema revisionであり、
-  markerのない旧deploymentを暗黙移行しない。
+  markerのない旧deploymentを暗黙移行しない。v1は`marginalis-asciidoc`が固定するAdocWeave公開契約と
+  ノートprofileを前提とする。正本の意味を変える契約変更はdata format versionを上げ、SQLiteだけの内部変更は
+  v1内のmigrationとして扱う。
 - `rebuild-projections`保守操作は、全AsciiDoc正本を検証してから一つのSQLite transactionで検索・
   anchor・xref投影を置換する。検証失敗時は最後に成功した投影を保持し、既存ACLは維持する。
 - `backup`保守操作はHTTP service停止中にSQLiteをcheckpointしてbackup fileへ出力し、検証済みの
@@ -96,9 +99,9 @@ HTTP REST       MCP transport       maintenance CLI
 
 ## 設定と起動
 
-HTTP serviceは`ServerConfig`を一箇所で検証し、環境変数、NixOS moduleおよび将来のCLIはこの型へ変換する。
-設定にはBase URL、listen address、data directory、SQLite URL、OIDC公開設定、新規DB専用の登録ポリシー、
-session期限を含める。secretは別の`SecretConfig`で受け、NixOSではsystemd credentialから渡す。
+HTTP serviceは`ServerConfig`を一箇所で検証し、`HttpConfig`（Base URL・listen address）、`StorageConfig`
+（data directory・SQLite URL・新規DB登録ポリシー）、`OidcConfig`（issuer・client ID）へ分離する。secretは
+別の`SecretConfig`で受け、NixOSではsystemd credentialから渡す。
 運用中の登録policyはSQLiteを正本とし、root APIで変更する。NixOS設定は既存DBへ再適用しない。
 `backup`、`rebuild-projections`および`prune-audit`は`StorageConfig`だけを読み、Base URL、OIDC issuerおよび
 client secretを必要としない。

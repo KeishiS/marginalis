@@ -10,10 +10,10 @@
 現在の優先順位は、Web UIより先にREST APIとMCPを成立させることである。root管理はREST APIで継続し、
 管理UIは後続とする。既存デプロイのdataDirは移行せず、Issue 015で明示的に初期化して新schemaへ移る。
 
-1. [016: プロダクト契約と要件定義の再整合](016-product-contract-reconciliation.md)
-2. [017: 依存境界を強制するアーキテクチャ再基線化 v2](017-architecture-boundary-rebaseline-v2.md)
-3. [019: Web security baselineとroot管理境界](019-web-security-and-admin-boundary.md)
-4. [020: data format v1とmaintenance lifecycle](020-data-format-and-maintenance-lifecycle.md)
+1. 完了: [016: プロダクト契約と要件定義の再整合](016-product-contract-reconciliation.md)
+2. 完了: [017: 依存境界を強制するアーキテクチャ再基線化 v2](017-architecture-boundary-rebaseline-v2.md)
+3. 完了: [020: data format v1とmaintenance lifecycle](020-data-format-and-maintenance-lifecycle.md)
+4. [019: Web security baselineとroot管理境界](019-web-security-and-admin-boundary.md)
 5. [021: 試験アーキテクチャとrelease gate](021-test-architecture-and-release-gates.md)
 6. [009: OIDCプロバイダ登録と実環境結合試験](009-oidc-provider-registration.md)
 7. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)

@@ -319,10 +319,10 @@ fn initialize_tracing() {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (configuration, secrets) = ServerConfig::from_environment()?;
-    let layout = StorageLayout::open(&configuration.data_dir)?;
+    let layout = StorageLayout::open(&configuration.storage.data_dir)?;
     let database = SqliteDatabase::connect_with_initial_registration_policy(
-        &configuration.database_url,
-        configuration.initial_registration_policy,
+        &configuration.storage.database_url,
+        configuration.storage.initial_registration_policy,
     )
     .await?;
     let sources = FileNoteStore::open(layout.data_directory())?;
@@ -341,7 +341,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         configuration.oidc.issuer_url.to_string(),
         configuration.oidc.client_id,
         secrets.oidc_client_secret,
-        configuration.base_url.as_str(),
+        configuration.http.base_url.as_str(),
     )?;
     let oidc = match OidcAuthentication::discover(&oidc_configuration).await {
         Ok(oidc) => Some(oidc),
@@ -350,21 +350,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
-    let resource_uri = base_url_at(&configuration.base_url, "mcp");
+    let resource_uri = base_url_at(&configuration.http.base_url, "mcp");
     let metadata_uri = base_url_at(
-        &configuration.base_url,
+        &configuration.http.base_url,
         ".well-known/oauth-protected-resource/mcp",
     );
-    let authorization_endpoint_uri = base_url_at(&configuration.base_url, "oauth/authorize");
-    let token_endpoint_uri = base_url_at(&configuration.base_url, "oauth/token");
-    let listener = tokio::net::TcpListener::bind(configuration.listen_address).await?;
-    tracing::info!(address = %configuration.listen_address, "Marginalis server listening");
+    let authorization_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/authorize");
+    let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
+    let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
+    tracing::info!(address = %configuration.http.listen_address, "Marginalis server listening");
+    let authentication = std::sync::Arc::new(match oidc {
+        Some(oidc) => ServerWebAuthenticationUseCases::with_oidc(database.clone(), oidc),
+        None => ServerWebAuthenticationUseCases::new(database.clone()),
+    });
     let state = ApiState::new(
         std::sync::Arc::new(notes.clone()),
-        std::sync::Arc::new(match oidc {
-            Some(oidc) => ServerWebAuthenticationUseCases::with_oidc(database.clone(), oidc),
-            None => ServerWebAuthenticationUseCases::new(database.clone()),
-        }),
+        authentication.clone(),
+        authentication.clone(),
+        authentication,
     );
     let state = if configuration.mcp_enabled {
         let oauth = std::sync::Arc::new(ServerMcpOAuthService::new(
@@ -381,10 +384,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             oauth_administration: oauth,
             resource_uri: resource_uri.to_string(),
             metadata_uri: metadata_uri.to_string(),
-            authorization_server_uri: configuration.base_url.to_string(),
+            authorization_server_uri: configuration.http.base_url.to_string(),
             authorization_endpoint_uri: authorization_endpoint_uri.to_string(),
             token_endpoint_uri: token_endpoint_uri.to_string(),
-            allowed_origin: configuration.base_url.origin().ascii_serialization(),
+            allowed_origin: configuration.http.base_url.origin().ascii_serialization(),
             rate_limiter: marginalis_web::McpRateLimiter::new(120),
         })
     } else {

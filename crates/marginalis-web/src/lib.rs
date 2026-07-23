@@ -23,7 +23,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthAdministrationUseCases,
     McpOAuthUseCaseError, McpOAuthUseCases, NoteUseCaseError, NoteUseCases,
-    WebAuthenticationUseCases, WebSession,
+    OidcAuthenticationUseCases, UserAdministrationUseCases, WebSession, WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePage, NotePermission, NoteSummary, OidcLoginResult, OidcUser,
@@ -48,7 +48,9 @@ struct RequestId(String);
 #[derive(Clone)]
 pub struct ApiState {
     pub notes: Arc<dyn NoteUseCases>,
-    pub authentication: Arc<dyn WebAuthenticationUseCases>,
+    pub oidc: Arc<dyn OidcAuthenticationUseCases>,
+    pub sessions: Arc<dyn WebSessionUseCases>,
+    pub administration: Arc<dyn UserAdministrationUseCases>,
     pub mcp: Option<Arc<McpEndpoint>>,
     root_login_rate_limiter: RootLoginRateLimiter,
 }
@@ -155,11 +157,15 @@ impl McpRateLimiter {
 impl ApiState {
     pub fn new(
         notes: Arc<dyn NoteUseCases>,
-        authentication: Arc<dyn WebAuthenticationUseCases>,
+        oidc: Arc<dyn OidcAuthenticationUseCases>,
+        sessions: Arc<dyn WebSessionUseCases>,
+        administration: Arc<dyn UserAdministrationUseCases>,
     ) -> Self {
         Self {
             notes,
-            authentication,
+            oidc,
+            sessions,
+            administration,
             mcp: None,
             root_login_rate_limiter: RootLoginRateLimiter::new(5, Duration::from_secs(15 * 60)),
         }
@@ -175,11 +181,14 @@ impl ApiState {
         database: marginalis_sqlite::SqliteDatabase,
         notes: Arc<dyn NoteUseCases>,
     ) -> Self {
+        let authentication = Arc::new(marginalis_server::ServerWebAuthenticationUseCases::new(
+            database,
+        ));
         Self::new(
             notes,
-            Arc::new(marginalis_server::ServerWebAuthenticationUseCases::new(
-                database,
-            )),
+            authentication.clone(),
+            authentication.clone(),
+            authentication,
         )
     }
 }
@@ -406,7 +415,7 @@ struct ReadinessResponse {
 
 /// 通常のOIDC loginを開始できるかを返す。root-only縮退起動はlivenessを満たすがreadinessを満たさない。
 async fn readiness(State(state): State<ApiState>) -> Response {
-    if state.authentication.oidc_available() {
+    if state.oidc.oidc_available() {
         (
             StatusCode::OK,
             Json(ReadinessResponse {
@@ -782,12 +791,12 @@ async fn oidc_login_with_return_to(
     query: &McpAuthorizeQuery,
 ) -> Result<Response, ApiError> {
     let destination = state
-        .authentication
+        .oidc
         .begin_oidc_login()
         .await
         .map_err(authentication_error)?;
     let return_to = oauth_authorize_return_to(query);
-    let cookie_path = state.authentication.cookie_path();
+    let cookie_path = state.oidc.cookie_path();
     let cookie = format!(
         "marginalis_oauth_return_to={}; Path={cookie_path}; Max-Age=300; Secure; HttpOnly; SameSite=Lax",
         url::form_urlencoded::byte_serialize(return_to.as_bytes()).collect::<String>(),
@@ -1158,7 +1167,7 @@ async fn update_note_acl(
 
 async fn begin_oidc_login(State(state): State<ApiState>) -> Result<Redirect, ApiError> {
     let destination = state
-        .authentication
+        .oidc
         .begin_oidc_login()
         .await
         .map_err(authentication_error)?;
@@ -1233,7 +1242,7 @@ async fn complete_oidc_login(
         ));
     };
     let OidcLoginResult::Active(user) = state
-        .authentication
+        .oidc
         .complete_oidc_login(code.into(), state_token.into())
         .await
         .map_err(authentication_error)?
@@ -1245,11 +1254,11 @@ async fn complete_oidc_login(
         ));
     };
     let session = state
-        .authentication
+        .sessions
         .issue_oidc_session(user.user_id)
         .await
         .map_err(authentication_error)?;
-    let cookie_path = state.authentication.cookie_path();
+    let cookie_path = state.oidc.cookie_path();
     let mut response_headers = session_headers(&session, cookie_path)?;
     let destination = oidc_return_to(&headers)
         .unwrap_or_else(|| format!("{}/", cookie_path.trim_end_matches('/')));
@@ -1284,7 +1293,7 @@ async fn root_login(
         ));
     }
     let session = state
-        .authentication
+        .sessions
         .root_login(request.password)
         .await
         .map_err(authentication_error)?;
@@ -1297,7 +1306,7 @@ async fn root_login(
         ));
     };
     state.root_login_rate_limiter.reset(&source);
-    let cookie_path = state.authentication.cookie_path();
+    let cookie_path = state.oidc.cookie_path();
     let mut response = StatusCode::NO_CONTENT.into_response();
     response
         .headers_mut()
@@ -1312,7 +1321,7 @@ async fn list_pending_users(
 ) -> Result<Json<Vec<PendingOidcUserResponse>>, ApiError> {
     require_root(&headers, &state).await?;
     let users = state
-        .authentication
+        .administration
         .list_pending_users()
         .await
         .map_err(authentication_error)?;
@@ -1331,7 +1340,7 @@ async fn activate_pending_user(
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "user is not available"))?,
     );
     let activated = state
-        .authentication
+        .administration
         .activate_pending_user(actor, user_id)
         .await
         .map_err(authentication_error)?;
@@ -1357,7 +1366,7 @@ async fn disable_oidc_user(
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "user is not available"))?,
     );
     if !state
-        .authentication
+        .administration
         .disable_oidc_user(actor, user_id)
         .await
         .map_err(authentication_error)?
@@ -1377,7 +1386,7 @@ async fn registration_policy(
 ) -> Result<Json<RegistrationPolicyResponse>, ApiError> {
     require_root(&headers, &state).await?;
     let policy = state
-        .authentication
+        .administration
         .registration_policy()
         .await
         .map_err(authentication_error)?;
@@ -1408,7 +1417,7 @@ async fn update_registration_policy(
         }
     };
     state
-        .authentication
+        .administration
         .set_registration_policy(actor, policy)
         .await
         .map_err(authentication_error)?;
@@ -1539,7 +1548,7 @@ async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> Result<Ac
         "authentication is required",
     ))?;
     let session = state
-        .authentication
+        .sessions
         .authenticate_session(session_id)
         .await
         .map_err(authentication_error)?
@@ -1608,7 +1617,7 @@ async fn require_csrf_token(
         "authentication is required",
     ))?;
     let valid = state
-        .authentication
+        .sessions
         .verify_csrf(session_id, csrf_token)
         .await
         .map_err(authentication_error)?;
@@ -1630,7 +1639,7 @@ async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> Result<Res
         "authentication is required",
     ))?;
     state
-        .authentication
+        .sessions
         .revoke_session(session_id)
         .await
         .map_err(authentication_error)?;
