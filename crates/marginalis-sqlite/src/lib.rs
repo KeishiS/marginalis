@@ -44,6 +44,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         include_str!("../migrations/0008_registration_policy.sql"),
     ),
     (9, include_str!("../migrations/0009_root_audit_log.sql")),
+    (
+        10,
+        include_str!("../migrations/0010_delete_confirmation_note_cascade.sql"),
+    ),
 ];
 
 #[derive(Clone, Debug)]
@@ -2282,7 +2286,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -3332,6 +3336,18 @@ mod tests {
                 .await
                 .expect("second consume")
                 .is_none()
+        );
+        database
+            .note_projection_store()
+            .delete_projection(note_id)
+            .await
+            .expect("delete note projection");
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM delete_confirmations")
+                .fetch_one(database.pool())
+                .await
+                .expect("confirmation count"),
+            0
         );
     }
 }
