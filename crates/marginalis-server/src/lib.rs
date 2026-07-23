@@ -6,10 +6,11 @@ use std::{env, net::SocketAddr, path::PathBuf};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    AuthenticationUseCaseError, Clock, McpAccessTokenStore, McpOAuthStore, NoteAclService,
-    NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError,
-    NoteUseCases, NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore,
-    SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
+    AuthenticationUseCaseError, Clock, McpAccessTokenStore, McpAuthorizationRequest, McpOAuthStore,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, NoteAclService, NoteAclServiceError,
+    NoteAclStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases,
+    NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore, SessionLifetime,
+    WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
@@ -169,6 +170,117 @@ impl ServerMcpOAuthService {
 
 fn pkce_s256(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+fn valid_mcp_scopes(scopes: &[String]) -> bool {
+    !scopes.is_empty()
+        && scopes.iter().all(|scope| {
+            matches!(
+                scope.as_str(),
+                "notes:read" | "notes:write" | "notes:delete"
+            )
+        })
+}
+
+fn valid_redirect_uri(value: &str) -> bool {
+    let Ok(url) = Url::parse(value) else {
+        return false;
+    };
+    if url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return false;
+    }
+    url.scheme() == "https"
+        || (url.scheme() == "http"
+            && matches!(
+                url.host_str(),
+                Some("127.0.0.1") | Some("localhost") | Some("::1")
+            ))
+}
+
+#[async_trait]
+impl McpOAuthUseCases for ServerMcpOAuthService {
+    async fn validate_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+    ) -> Result<marginalis_domain::McpOAuthClient, McpOAuthUseCaseError> {
+        if request.code_challenge.is_empty()
+            || request.resource_uri.trim().is_empty()
+            || !valid_mcp_scopes(&request.scopes)
+            || !valid_redirect_uri(&request.redirect_uri)
+        {
+            return Err(McpOAuthUseCaseError::Rejected);
+        }
+        let client = self
+            .database
+            .mcp_oauth_store()
+            .lookup_client(request.client_id)
+            .await
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)?
+            .ok_or(McpOAuthUseCaseError::Rejected)?;
+        if !client.redirect_uris.contains(&request.redirect_uri) {
+            return Err(McpOAuthUseCaseError::Rejected);
+        }
+        Ok(client)
+    }
+
+    async fn authorize(
+        &self,
+        actor: Actor,
+        request: McpAuthorizationRequest,
+    ) -> Result<String, McpOAuthUseCaseError> {
+        if actor.is_root {
+            return Err(McpOAuthUseCaseError::Rejected);
+        }
+        self.validate_authorization_request(request.clone()).await?;
+        ServerMcpOAuthService::authorize(
+            self,
+            McpAuthorizationGrant {
+                user_id: actor.user_id,
+                client_id: request.client_id,
+                redirect_uri: request.redirect_uri,
+                resource_uri: request.resource_uri,
+                scopes: request.scopes,
+            },
+            request.code_challenge,
+        )
+        .await
+        .map_err(|error| match error {
+            McpOAuthError::Rejected => McpOAuthUseCaseError::Rejected,
+            McpOAuthError::Unavailable => McpOAuthUseCaseError::Unavailable,
+        })
+    }
+
+    async fn exchange_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        code_verifier: String,
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
+        let tokens = ServerMcpOAuthService::exchange_authorization_code(
+            self,
+            code,
+            client_id,
+            redirect_uri,
+            resource_uri,
+            code_verifier,
+        )
+        .await
+        .map_err(|error| match error {
+            McpOAuthError::Rejected => McpOAuthUseCaseError::Rejected,
+            McpOAuthError::Unavailable => McpOAuthUseCaseError::Unavailable,
+        })?;
+        Ok(McpTokenPair {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            access_expires_in_seconds: tokens.access_expires_in_seconds,
+        })
+    }
 }
 
 impl ServerMcpAuthenticator {

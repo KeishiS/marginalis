@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-axum.workspace = true
+axum = { workspace = true, features = [ "form" ] }
 base64.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-asciidoc = { path = "../marginalis-asciidoc" }

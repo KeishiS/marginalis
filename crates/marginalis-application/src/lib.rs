@@ -270,6 +270,50 @@ pub trait McpOAuthStore: Send + Sync {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
+/// OAuth Authorization Code Flowでtransportから渡す検証済み候補。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpAuthorizationRequest {
+    pub client_id: String,
+    pub redirect_uri: String,
+    pub resource_uri: String,
+    pub scopes: Vec<String>,
+    pub code_challenge: String,
+}
+
+/// token endpointだけが短時間保持するtoken pair。Debugを実装しない。
+pub struct McpTokenPair {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub access_expires_in_seconds: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum McpOAuthUseCaseError {
+    Rejected,
+    Unavailable,
+}
+
+#[async_trait]
+pub trait McpOAuthUseCases: Send + Sync {
+    async fn validate_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+    ) -> Result<McpOAuthClient, McpOAuthUseCaseError>;
+    async fn authorize(
+        &self,
+        actor: Actor,
+        request: McpAuthorizationRequest,
+    ) -> Result<String, McpOAuthUseCaseError>;
+    async fn exchange_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        code_verifier: String,
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
+}
+
 /// sessionの有効期限と秘密値を一箇所で決めるユースケース。
 pub struct WebSessionService<'a, Store, Entropy, Time> {
     store: &'a Store,

@@ -7,15 +7,15 @@ use std::{str::FromStr, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Form, Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
-    response::{IntoResponse, Redirect, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post, put},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    AuthenticationUseCaseError, NoteUseCaseError, NoteUseCases, WebAuthenticationUseCases,
-    WebSession,
+    AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases,
+    NoteUseCaseError, NoteUseCases, WebAuthenticationUseCases, WebSession,
 };
 pub use marginalis_auth_oidc::{
     OidcAuthentication, OidcCallbackError, OidcCallbackRejection, OidcConfiguration,
@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use tracing::info_span;
+use url::Url;
 
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
@@ -45,8 +46,12 @@ pub struct ApiState {
 pub struct McpEndpoint {
     pub tools: McpTools,
     pub authenticator: Arc<dyn McpAuthenticator>,
+    pub oauth: Arc<dyn McpOAuthUseCases>,
     pub resource_uri: String,
     pub metadata_uri: String,
+    pub authorization_server_uri: String,
+    pub authorization_endpoint_uri: String,
+    pub token_endpoint_uri: String,
     pub allowed_origin: String,
 }
 
@@ -208,6 +213,15 @@ pub fn router(state: ApiState) -> Router {
             get(mcp_protected_resource_metadata),
         )
         .route(
+            "/.well-known/oauth-authorization-server",
+            get(mcp_authorization_server_metadata),
+        )
+        .route(
+            "/oauth/authorize",
+            get(mcp_authorize).post(mcp_authorize_submit),
+        )
+        .route("/oauth/token", post(mcp_token))
+        .route(
             "/api/v1/notes/{note_id}/acl/{user_id}",
             put(update_note_acl),
         )
@@ -261,9 +275,28 @@ async fn mcp_protected_resource_metadata(
     ))?;
     Ok(Json(serde_json::json!({
         "resource": endpoint.resource_uri,
-        "authorization_servers": [endpoint.resource_uri.trim_end_matches("/mcp")],
+        "authorization_servers": [endpoint.authorization_server_uri],
         "bearer_methods_supported": ["header"],
         "scopes_supported": ["notes:read", "notes:write", "notes:delete"]
+    })))
+}
+
+async fn mcp_authorization_server_metadata(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    Ok(Json(serde_json::json!({
+        "issuer": endpoint.authorization_server_uri,
+        "authorization_endpoint": endpoint.authorization_endpoint_uri,
+        "token_endpoint": endpoint.token_endpoint_uri,
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code"],
+        "code_challenge_methods_supported": ["S256"],
+        "scopes_supported": ["notes:read", "notes:write", "notes:delete"],
+        "token_endpoint_auth_methods_supported": ["none"]
     })))
 }
 
@@ -335,6 +368,283 @@ fn mcp_unauthorized(endpoint: &McpEndpoint) -> Response {
             .insert(header::WWW_AUTHENTICATE, value);
     }
     response
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct McpAuthorizeQuery {
+    response_type: String,
+    client_id: String,
+    redirect_uri: String,
+    resource: String,
+    scope: String,
+    code_challenge: String,
+    code_challenge_method: String,
+    state: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct McpAuthorizeForm {
+    client_id: String,
+    redirect_uri: String,
+    resource: String,
+    scope: String,
+    code_challenge: String,
+    state: Option<String>,
+    csrf_token: String,
+    decision: String,
+}
+
+#[derive(Deserialize)]
+struct McpTokenForm {
+    grant_type: String,
+    code: String,
+    client_id: String,
+    redirect_uri: String,
+    resource: String,
+    code_verifier: String,
+}
+
+#[derive(Serialize)]
+struct McpTokenResponse {
+    access_token: String,
+    refresh_token: String,
+    token_type: &'static str,
+    expires_in: u64,
+}
+
+fn oauth_request(query: &McpAuthorizeQuery) -> Result<McpAuthorizationRequest, ApiError> {
+    if query.response_type != "code" || query.code_challenge_method != "S256" {
+        return Err(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "OAuth authorization request is invalid",
+        ));
+    }
+    Ok(McpAuthorizationRequest {
+        client_id: query.client_id.clone(),
+        redirect_uri: query.redirect_uri.clone(),
+        resource_uri: query.resource.clone(),
+        scopes: query
+            .scope
+            .split_ascii_whitespace()
+            .map(str::to_owned)
+            .collect(),
+        code_challenge: query.code_challenge.clone(),
+    })
+}
+
+fn oauth_error(error: McpOAuthUseCaseError) -> ApiError {
+    match error {
+        McpOAuthUseCaseError::Rejected => ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "OAuth authorization request is invalid",
+        ),
+        McpOAuthUseCaseError::Unavailable => {
+            ApiError::new(ApiErrorCode::Internal, "OAuth service is unavailable")
+        }
+    }
+}
+
+async fn mcp_authorize(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Query(query): Query<McpAuthorizeQuery>,
+) -> Result<Response, ApiError> {
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    let request = oauth_request(&query)?;
+    let client = endpoint
+        .oauth
+        .validate_authorization_request(request)
+        .await
+        .map_err(oauth_error)?;
+    let actor = match authenticated_actor(&headers, &state).await {
+        Ok(actor) => actor,
+        Err(error) if error.code == ApiErrorCode::AuthenticationRequired => {
+            return oidc_login_with_return_to(&state, &query).await;
+        }
+        Err(error) => return Err(error),
+    };
+    if actor.is_root {
+        return Err(ApiError::new(
+            ApiErrorCode::Forbidden,
+            "root sessions cannot authorize MCP clients",
+        ));
+    }
+    let csrf = cookie_value(&headers, "marginalis_csrf").ok_or(ApiError::new(
+        ApiErrorCode::Forbidden,
+        "CSRF token is required",
+    ))?;
+    let body = format!(
+        "<!doctype html><meta charset=\"utf-8\"><title>Marginalis authorization</title><h1>Authorize {}</h1><p>This client requests: {}</p><form method=\"post\" action=\"oauth/authorize\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\" type=\"submit\">Allow</button><button name=\"decision\" value=\"deny\" type=\"submit\">Deny</button></form>",
+        escape_html(&client.display_name),
+        escape_html(&query.scope),
+        escape_html(&query.client_id),
+        escape_html(&query.redirect_uri),
+        escape_html(&query.resource),
+        escape_html(&query.scope),
+        escape_html(&query.code_challenge),
+        escape_html(query.state.as_deref().unwrap_or_default()),
+        escape_html(&csrf),
+    );
+    Ok(Html(body).into_response())
+}
+
+async fn mcp_authorize_submit(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Form(form): Form<McpAuthorizeForm>,
+) -> Result<Response, ApiError> {
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    let request = McpAuthorizationRequest {
+        client_id: form.client_id,
+        redirect_uri: form.redirect_uri,
+        resource_uri: form.resource,
+        scopes: form
+            .scope
+            .split_ascii_whitespace()
+            .map(str::to_owned)
+            .collect(),
+        code_challenge: form.code_challenge,
+    };
+    let actor = authenticated_actor(&headers, &state).await?;
+    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    endpoint
+        .oauth
+        .validate_authorization_request(request.clone())
+        .await
+        .map_err(oauth_error)?;
+    if form.decision != "approve" {
+        return oauth_redirect(
+            &request.redirect_uri,
+            form.state.as_deref(),
+            None,
+            Some("access_denied"),
+        );
+    }
+    let code = endpoint
+        .oauth
+        .authorize(actor, request.clone())
+        .await
+        .map_err(oauth_error)?;
+    oauth_redirect(
+        &request.redirect_uri,
+        form.state.as_deref(),
+        Some(&code),
+        None,
+    )
+}
+
+async fn mcp_token(
+    State(state): State<ApiState>,
+    Form(form): Form<McpTokenForm>,
+) -> Result<Json<McpTokenResponse>, ApiError> {
+    let endpoint = state.mcp.as_ref().ok_or(ApiError::new(
+        ApiErrorCode::NotFound,
+        "MCP is not available",
+    ))?;
+    if form.grant_type != "authorization_code" {
+        return Err(ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "OAuth grant type is not supported",
+        ));
+    }
+    let tokens = endpoint
+        .oauth
+        .exchange_authorization_code(
+            form.code,
+            form.client_id,
+            form.redirect_uri,
+            form.resource,
+            form.code_verifier,
+        )
+        .await
+        .map_err(oauth_error)?;
+    Ok(Json(McpTokenResponse {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        token_type: "Bearer",
+        expires_in: tokens.access_expires_in_seconds,
+    }))
+}
+
+async fn oidc_login_with_return_to(
+    state: &ApiState,
+    query: &McpAuthorizeQuery,
+) -> Result<Response, ApiError> {
+    let destination = state
+        .authentication
+        .begin_oidc_login()
+        .await
+        .map_err(authentication_error)?;
+    let return_to = oauth_authorize_return_to(query);
+    let cookie_path = state.authentication.cookie_path();
+    let cookie = format!(
+        "marginalis_oauth_return_to={}; Path={cookie_path}; Max-Age=300; Secure; HttpOnly; SameSite=Lax",
+        url::form_urlencoded::byte_serialize(return_to.as_bytes()).collect::<String>(),
+    );
+    let mut response = Redirect::temporary(&destination).into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&cookie)
+            .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
+    );
+    Ok(response)
+}
+
+fn oauth_authorize_return_to(query: &McpAuthorizeQuery) -> String {
+    let mut pairs = url::form_urlencoded::Serializer::new(String::new());
+    pairs.append_pair("response_type", &query.response_type);
+    pairs.append_pair("client_id", &query.client_id);
+    pairs.append_pair("redirect_uri", &query.redirect_uri);
+    pairs.append_pair("resource", &query.resource);
+    pairs.append_pair("scope", &query.scope);
+    pairs.append_pair("code_challenge", &query.code_challenge);
+    pairs.append_pair("code_challenge_method", &query.code_challenge_method);
+    if let Some(state) = &query.state {
+        pairs.append_pair("state", state);
+    }
+    format!("/oauth/authorize?{}", pairs.finish())
+}
+
+fn oauth_redirect(
+    redirect_uri: &str,
+    state: Option<&str>,
+    code: Option<&str>,
+    error: Option<&str>,
+) -> Result<Response, ApiError> {
+    let mut url = Url::parse(redirect_uri).map_err(|_| {
+        ApiError::new(
+            ApiErrorCode::ValidationFailed,
+            "OAuth redirect URI is invalid",
+        )
+    })?;
+    {
+        let mut pairs = url.query_pairs_mut();
+        if let Some(code) = code {
+            pairs.append_pair("code", code);
+        }
+        if let Some(error) = error {
+            pairs.append_pair("error", error);
+        }
+        if let Some(state) = state {
+            pairs.append_pair("state", state);
+        }
+    }
+    Ok(Redirect::to(url.as_str()).into_response())
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// Web UI公開前のBase URL到達先。OIDC callback後のredirect先としても用いる。
@@ -670,6 +980,7 @@ struct PendingOidcUserResponse {
 
 async fn complete_oidc_login(
     State(state): State<ApiState>,
+    headers: HeaderMap,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Response, ApiError> {
     if query.error.is_some() {
@@ -704,12 +1015,24 @@ async fn complete_oidc_login(
         .await
         .map_err(authentication_error)?;
     let cookie_path = state.authentication.cookie_path();
-    let headers = session_headers(&session, cookie_path)?;
-    Ok((
-        headers,
-        Redirect::to(&format!("{}/", cookie_path.trim_end_matches('/'))),
-    )
-        .into_response())
+    let mut response_headers = session_headers(&session, cookie_path)?;
+    let destination = oidc_return_to(&headers)
+        .unwrap_or_else(|| format!("{}/", cookie_path.trim_end_matches('/')));
+    response_headers.append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&format!(
+            "marginalis_oauth_return_to=; Path={cookie_path}; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
+        ))
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
+    );
+    Ok((response_headers, Redirect::to(&destination)).into_response())
+}
+
+fn oidc_return_to(headers: &HeaderMap) -> Option<String> {
+    let encoded = cookie_value(headers, "marginalis_oauth_return_to")?;
+    let decoded = url::form_urlencoded::parse(format!("value={encoded}").as_bytes())
+        .find_map(|(key, value)| (key == "value").then(|| value.into_owned()))?;
+    decoded.starts_with("/oauth/authorize?").then_some(decoded)
 }
 
 async fn root_login(
@@ -837,10 +1160,6 @@ fn session_headers(session: &WebSession, cookie_path: &str) -> Result<HeaderMap,
 }
 
 async fn require_csrf(headers: &HeaderMap, state: &ApiState) -> Result<(), ApiError> {
-    let session_id = cookie_value(headers, "marginalis_session").ok_or(ApiError::new(
-        ApiErrorCode::AuthenticationRequired,
-        "authentication is required",
-    ))?;
     let csrf_token = headers
         .get("x-csrf-token")
         .and_then(|value| value.to_str().ok())
@@ -850,6 +1169,18 @@ async fn require_csrf(headers: &HeaderMap, state: &ApiState) -> Result<(), ApiEr
             ApiErrorCode::Forbidden,
             "CSRF token is required",
         ))?;
+    require_csrf_token(headers, state, csrf_token).await
+}
+
+async fn require_csrf_token(
+    headers: &HeaderMap,
+    state: &ApiState,
+    csrf_token: String,
+) -> Result<(), ApiError> {
+    let session_id = cookie_value(headers, "marginalis_session").ok_or(ApiError::new(
+        ApiErrorCode::AuthenticationRequired,
+        "authentication is required",
+    ))?;
     let valid = state
         .authentication
         .verify_csrf(session_id, csrf_token)
