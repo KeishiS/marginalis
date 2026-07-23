@@ -1264,6 +1264,11 @@ fn validate_issuer_url(value: String) -> Result<Url, ConfigurationError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use marginalis_application::{
+        McpOAuthAdministrationUseCases, McpOAuthUseCases, OidcIdentityStore,
+    };
+    use marginalis_domain::{McpOAuthClient, OidcIdentity, RegistrationPolicy};
+    use marginalis_mcp::McpAuthenticator;
 
     #[test]
     fn base_url_rejects_non_https() {
@@ -1305,5 +1310,116 @@ mod tests {
         assert_eq!(metadata.note_id, note_id.to_string());
         assert_eq!(metadata.creator_id, user_id.to_string());
         assert_eq!(metadata.title, "Structured note");
+    }
+
+    #[tokio::test]
+    async fn mcp_oauth_code_pkce_refresh_and_bearer_authentication_form_one_flow() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id =
+            UserId::new(EntityId::from_str("01800000-0000-7000-8000-000000000093").expect("user"));
+        database
+            .oidc_identity_store()
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "subject", "User").expect("identity"),
+                RegistrationPolicy::Open,
+                user_id,
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("active user");
+        let service = ServerMcpOAuthService::new(database.clone(), Vec::new());
+        service
+            .register_client(
+                Actor {
+                    user_id,
+                    is_root: true,
+                },
+                McpOAuthClient {
+                    client_id: "test-client".into(),
+                    display_name: "Test client".into(),
+                    redirect_uris: vec!["http://127.0.0.1:4567/callback".into()],
+                },
+            )
+            .await
+            .expect("register client");
+        let verifier = "PKCE verifier";
+        let request = McpAuthorizationRequest {
+            client_id: "test-client".into(),
+            redirect_uri: "http://127.0.0.1:4567/callback".into(),
+            resource_uri: "https://example.test/mcp".into(),
+            scopes: vec!["notes:read".into()],
+            code_challenge: pkce_s256(verifier),
+        };
+        service
+            .validate_authorization_request(request.clone())
+            .await
+            .expect("validate authorization request");
+        let code = <ServerMcpOAuthService as McpOAuthUseCases>::authorize(
+            &service,
+            Actor {
+                user_id,
+                is_root: false,
+            },
+            request,
+        )
+        .await
+        .expect("authorization code");
+        let tokens = service
+            .exchange_authorization_code(
+                code,
+                "test-client".into(),
+                "http://127.0.0.1:4567/callback".into(),
+                "https://example.test/mcp".into(),
+                verifier.into(),
+            )
+            .await
+            .expect("token exchange");
+        let authenticator =
+            ServerMcpAuthenticator::new(database.clone(), "https://example.test/mcp".into());
+        assert_eq!(
+            authenticator
+                .authenticate(&tokens.access_token, "notes:read")
+                .await
+                .expect("access token")
+                .user_id,
+            user_id
+        );
+        let original_refresh_token = tokens.refresh_token.clone();
+        let refreshed = service
+            .refresh_access_token(
+                tokens.refresh_token,
+                "test-client".into(),
+                "https://example.test/mcp".into(),
+            )
+            .await
+            .expect("refresh token");
+        assert!(matches!(
+            service
+                .refresh_access_token(
+                    original_refresh_token,
+                    "test-client".into(),
+                    "https://example.test/mcp".into(),
+                )
+                .await,
+            Err(McpOAuthError::Rejected)
+        ));
+        assert_eq!(
+            authenticator
+                .authenticate(&tokens.access_token, "notes:read")
+                .await
+                .expect("unexpired original access token")
+                .user_id,
+            user_id
+        );
+        assert_eq!(
+            authenticator
+                .authenticate(&refreshed.access_token, "notes:read")
+                .await
+                .expect("refreshed access token")
+                .user_id,
+            user_id
+        );
     }
 }
