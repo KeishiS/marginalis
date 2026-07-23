@@ -1455,10 +1455,11 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use axum::{
-        body::Body,
+        body::{Body, to_bytes},
         http::{Request, StatusCode},
         response::IntoResponse,
     };
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use marginalis_application::{
         McpAuthorizationRequest, McpOAuthAdministrationUseCases, McpOAuthUseCaseError,
         McpOAuthUseCases, McpTokenPair, OidcIdentityStore, RootCredentialStore, WebSession,
@@ -1468,6 +1469,7 @@ mod tests {
         Actor, EntityId, McpClientAuthorization, McpOAuthClient, OidcIdentity, RegistrationPolicy,
         UnixMillis, UserId,
     };
+    use sha2::{Digest, Sha256};
     use std::{str::FromStr, sync::Arc};
     use tower::ServiceExt;
 
@@ -1476,6 +1478,7 @@ mod tests {
         OidcConfigurationError, router,
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
+    use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
 
     struct RejectMcpAuthenticator;
 
@@ -1640,6 +1643,181 @@ mod tests {
             response.headers().get("www-authenticate").expect("header"),
             "Bearer resource_metadata=\"https://example.test/marginalis/.well-known/oauth-protected-resource/mcp\""
         );
+    }
+
+    #[tokio::test]
+    async fn mcp_oauth_http_flow_issues_a_token_accepted_by_the_mcp_endpoint() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000084").expect("user ID"),
+        );
+        database
+            .oidc_identity_store()
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "subject", "User").expect("identity"),
+                RegistrationPolicy::Open,
+                user_id,
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("active user");
+        database
+            .web_session_store()
+            .issue(
+                WebSession {
+                    session_id: "session".into(),
+                    csrf_token: "csrf".into(),
+                    actor: Actor {
+                        user_id,
+                        is_root: false,
+                    },
+                    idle_expires_at: UnixMillis::new(9_000_000_000_000),
+                    absolute_expires_at: UnixMillis::new(9_000_000_000_000),
+                },
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("session");
+        let directory = std::env::temp_dir().join("marginalis-web-mcp-oauth-http-test");
+        let notes = Arc::new(marginalis_server::ServerNoteUseCases::new(
+            database.clone(),
+            marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+        ));
+        let oauth = Arc::new(ServerMcpOAuthService::new(database.clone(), Vec::new()));
+        oauth
+            .register_client(
+                Actor {
+                    user_id,
+                    is_root: true,
+                },
+                McpOAuthClient {
+                    client_id: "test-client".into(),
+                    display_name: "Test client".into(),
+                    redirect_uris: vec!["http://127.0.0.1:4567/callback".into()],
+                },
+            )
+            .await
+            .expect("client");
+        let app = router(
+            ApiState::with_test_adapters(database.clone(), notes.clone()).with_mcp(McpEndpoint {
+                tools: McpTools::new(notes),
+                authenticator: Arc::new(ServerMcpAuthenticator::new(
+                    database,
+                    "https://example.test/mcp".into(),
+                )),
+                oauth: oauth.clone(),
+                oauth_administration: oauth,
+                resource_uri: "https://example.test/mcp".into(),
+                metadata_uri: "https://example.test/.well-known/oauth-protected-resource/mcp"
+                    .into(),
+                authorization_server_uri: "https://example.test".into(),
+                authorization_endpoint_uri: "https://example.test/oauth/authorize".into(),
+                token_endpoint_uri: "https://example.test/oauth/token".into(),
+                allowed_origin: "https://example.test".into(),
+                rate_limiter: McpRateLimiter::new(10),
+            }),
+        );
+        let verifier = "test-pkce-verifier";
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+        let authorization_query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("response_type", "code")
+            .append_pair("client_id", "test-client")
+            .append_pair("redirect_uri", "http://127.0.0.1:4567/callback")
+            .append_pair("resource", "https://example.test/mcp")
+            .append_pair("scope", "notes:read")
+            .append_pair("code_challenge", &challenge)
+            .append_pair("code_challenge_method", "S256")
+            .finish();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/oauth/authorize?{authorization_query}"))
+                    .header("cookie", "marginalis_session=session; marginalis_csrf=csrf")
+                    .body(Body::empty())
+                    .expect("authorization request"),
+            )
+            .await
+            .expect("authorization response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let form = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("client_id", "test-client")
+            .append_pair("redirect_uri", "http://127.0.0.1:4567/callback")
+            .append_pair("resource", "https://example.test/mcp")
+            .append_pair("scope", "notes:read")
+            .append_pair("code_challenge", &challenge)
+            .append_pair("csrf_token", "csrf")
+            .append_pair("decision", "approve")
+            .finish();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth/authorize")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .header("cookie", "marginalis_session=session; marginalis_csrf=csrf")
+                    .body(Body::from(form))
+                    .expect("approval request"),
+            )
+            .await
+            .expect("approval response");
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        let location = response
+            .headers()
+            .get("location")
+            .expect("redirect")
+            .to_str()
+            .expect("location value");
+        let code = url::Url::parse(location)
+            .expect("redirect URL")
+            .query_pairs()
+            .find_map(|(key, value)| (key == "code").then(|| value.into_owned()))
+            .expect("authorization code");
+        let token_form = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("grant_type", "authorization_code")
+            .append_pair("code", &code)
+            .append_pair("client_id", "test-client")
+            .append_pair("redirect_uri", "http://127.0.0.1:4567/callback")
+            .append_pair("resource", "https://example.test/mcp")
+            .append_pair("code_verifier", verifier)
+            .finish();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from(token_form))
+                    .expect("token request"),
+            )
+            .await
+            .expect("token response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("token body");
+        let token: serde_json::Value = serde_json::from_slice(&body).expect("token JSON");
+        let access_token = token["access_token"].as_str().expect("access token");
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp")
+                    .header("accept", "application/json, text/event-stream")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {access_token}"))
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
+                    ))
+                    .expect("MCP request"),
+            )
+            .await
+            .expect("MCP response");
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[test]
