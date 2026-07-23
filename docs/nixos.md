@@ -74,6 +74,29 @@ OIDC code、tokenおよびsecretを記録する設定は提供しない。
 5. 初回はroot login後、`GET /api/v1/admin/users/pending`で保留ユーザーを確認し、有効化する。
 6. MCPを有効にした場合は`/.well-known/oauth-protected-resource/mcp`がJSONを返すことを確認する。
 
+### dataDir初期化後の保留OIDCユーザー承認
+
+`dataDir`（既定では`/var/lib/marginalis`）を新規初期化すると、SQLite上のroot credential、登録policy、
+OIDCユーザーおよびsessionも新しくなる。`approval` policyでは、対象ユーザーが一度OIDC loginして
+`pending`ユーザーを作成した後、rootが次の順で有効化する。
+
+1. 初回起動にだけ`ROOT_PASSWORD`または`ROOT_PASSWORD_FILE`をNixOSのsecret設定から渡す。起動後、
+   root credentialがSQLiteに保存されたことを確認して、その初期化用secretを通常運用の設定から外す。
+2. 承認する利用者が`/auth/oidc/login`を完了する。この時点では通常sessionを得られず、保留ユーザーだけが
+   作成される。
+3. browserの安全なAPI clientまたは同一originの開発者ツールから`POST /auth/root/login`へroot passwordを送る。
+   成功時にroot session CookieとCSRF Cookieが発行される。password、CookieおよびCSRF tokenをshell履歴、
+   issue、ログへ貼り付けない。
+4. root sessionで`GET /api/v1/admin/users/pending`を実行し、承認対象の`user_id`を確認する。
+5. 同じsessionで`PUT /api/v1/admin/users/{user_id}/activate`を実行する。Cookieを伴う変更要求には
+   `X-CSRF-Token`、公開originと整合する`Origin`、`Sec-Fetch-Site: same-origin`が必要である。成功時は`204`を
+   返す。
+6. 対象ユーザーは一度logoutして、改めてOIDC loginする。`GET /api/v1/session`が`200`かつ`is_root: false`を
+   返せば承認完了である。root sessionも不要になったら`POST /auth/logout`で終了する。
+
+root passwordの誤入力は15分間に5回までに制限される。reverse proxy配下ではMarginalisがTCP peerだけを
+見るため、利用者単位の追加rate limitはproxy側で設定する。
+
 個人運用での段階的な初回公開は、reverse proxyを接続したまま`/api/v1/health`と`/api/v1/readiness`を
 確認し、root login、OIDC login、RESTでのノート作成・検索・削除、最後にMCP client認可と`search_notes`を
 順番に行う。各段階で`journalctl -u marginalis.service -b --no-pager`と`X-Request-Id`を記録すると、
