@@ -140,6 +140,9 @@ entity_id!(NoteId);
 pub struct NoteSource {
     pub note_id: NoteId,
     pub title: String,
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
     pub content: Vec<u8>,
     pub revision: SourceRevision,
 }

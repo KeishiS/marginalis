@@ -761,11 +761,13 @@ impl NoteUseCases for ServerNoteUseCases {
             .map_err(|_| NoteUseCaseError::Unavailable)?
             .ok_or(NoteUseCaseError::NotFound)?;
         let source = std::str::from_utf8(&content).map_err(|_| NoteUseCaseError::Unavailable)?;
-        let projection = marginalis_asciidoc::parse_note_projection(source)
-            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let metadata = source_metadata(source)?;
         Ok(NoteSource {
             note_id,
-            title: projection.title,
+            title: metadata.title,
+            tags: metadata.tags.into_iter().map(|tag| tag.display).collect(),
+            created_at: metadata.created_at,
+            updated_at: metadata.updated_at,
             revision: SourceRevision::from_source(&content),
             content,
         })

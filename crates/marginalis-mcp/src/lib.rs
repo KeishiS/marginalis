@@ -147,6 +147,9 @@ impl McpTools {
                                     "structuredContent": {
                                         "note_id": note_id.to_string(),
                                         "title": title,
+                                        "tags": note.tags,
+                                        "created_at": note.created_at,
+                                        "updated_at": note.updated_at,
                                         "revision": revision.to_hex()
                                     }
                                 }),
@@ -322,7 +325,9 @@ fn note_source_response(id: Value, note: marginalis_domain::NoteSource) -> JsonR
         json!({
             "content": [{ "type": "text", "text": source }],
             "structuredContent": {
-                "note_id": note_id.to_string(), "title": title, "revision": revision.to_hex()
+                "note_id": note_id.to_string(), "title": title, "tags": note.tags,
+                "created_at": note.created_at, "updated_at": note.updated_at,
+                "revision": revision.to_hex()
             }
         }),
     )
@@ -511,6 +516,9 @@ mod tests {
             Ok(NoteSource {
                 note_id: note_id(),
                 title: "Created".into(),
+                tags: vec!["research".into()],
+                created_at: "2026-07-23T00:00:00.000Z".into(),
+                updated_at: "2026-07-23T00:00:00.000Z".into(),
                 revision: SourceRevision::from_source(b"= Created\n"),
                 content: b"= Created\n".to_vec(),
             })

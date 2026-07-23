@@ -35,7 +35,7 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 | tool | 入力 | 出力 |
 | --- | --- | --- |
 | `search_notes` | `query`、任意の`limit`と`cursor` | 可視ノートのID・titleと次cursor |
-| `get_note` | `note_id` | Read権限を持つノートのID・title・revision・AsciiDoc source |
+| `get_note` | `note_id` | Read権限を持つノートのID・title・tags・作成/更新時刻・revision・AsciiDoc source |
 | `create_note` | `title`、`body`、`tags` | server生成metadataを持つ新規ノートとrevision |
 | `update_note` | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとrevision |
 | `prepare_delete_note` | `note_id`、`expected_revision` | title、revision、一回限りの確認token |
