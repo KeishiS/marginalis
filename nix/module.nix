@@ -47,6 +47,13 @@ in
       description = "Whether to allow the TCP port in listenAddress through the NixOS firewall. This does not make a loopback-only listenAddress externally reachable.";
     };
 
+    logFilter = mkOption {
+      type = types.str;
+      default = "info,marginalis_auth_oidc=info";
+      example = "info,marginalis_server=debug,marginalis_auth_oidc=debug";
+      description = "RUST_LOG filter for structured tracing output. Do not enable request-body or secret logging.";
+    };
+
     baseUrl = mkOption {
       type = types.nullOr types.str;
       default = null;
@@ -157,6 +164,7 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       environment = {
+        RUST_LOG = cfg.logFilter;
         MARGINALIS_BASE_URL = cfg.baseUrl;
         MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
         MARGINALIS_DATA_DIR = cfg.dataDir;
@@ -205,6 +213,7 @@ in
       description = "Rebuild Marginalis SQLite projections from canonical sources";
       conflicts = [ "marginalis.service" ];
       environment = {
+        RUST_LOG = cfg.logFilter;
         MARGINALIS_BASE_URL = cfg.baseUrl;
         MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
         MARGINALIS_DATA_DIR = cfg.dataDir;

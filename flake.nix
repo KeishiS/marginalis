@@ -87,6 +87,7 @@
                   test -s "$OIDC_CLIENT_SECRET_FILE"
                   test -d "$MARGINALIS_DATA_DIR"
                   test "$MARGINALIS_INITIAL_REGISTRATION_POLICY" = open
+                  test "$RUST_LOG" = "info,marginalis_auth_oidc=info"
                   if [ "''${1-}" = "rebuild-projections" ]; then
                     touch "$MARGINALIS_DATA_DIR/projections-rebuilt"
                     exit 0

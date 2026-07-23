@@ -15,6 +15,8 @@
             enable = true;
             # reverse proxyを使わず直接待受けを公開する場合だけ有効にする。
             openFirewall = false;
+            # journalctlで観測するtracing filter。
+            logFilter = "info,marginalis_auth_oidc=info";
             baseUrl = "https://marginalis.sandi05.com";
             listenAddress = "127.0.0.1:3000";
             # 新規SQLite DBにだけ適用する。既存DBのroot設定は上書きしない。
@@ -51,15 +53,26 @@ SQLite DBと将来のAsciiDoc正本は`dataDir`（既定値は`/var/lib/marginal
 reverse proxyは`/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/`を同じoriginへ転送する。TLSはproxyで
 終端してよいが、`baseUrl`には外部から見えるHTTPS URLを設定する。
 
+`logFilter`は`RUST_LOG`としてserviceと投影再構築unitへ渡される。障害調査では一時的に
+`"info,marginalis_auth_oidc=debug"`のように狭いmoduleだけをdebugへ上げる。request body、password、
+OIDC code、tokenおよびsecretを記録する設定は提供しない。
+
 ## 適用後の確認
 
 `nixos-rebuild switch`後は、次を順に確認する。
 
 1. `systemctl status marginalis.service`で`active (running)`であることを確認する。
 2. `curl -fsS https://marginalis.sandi05.com/api/v1/health`でhealth responseを確認する。
-3. `https://marginalis.sandi05.com/auth/oidc/login`からKanidmへ移動し、ログイン後にBase URLへ戻ることを確認する。
-4. 初回はroot login後、`GET /api/v1/admin/users/pending`で保留ユーザーを確認し、有効化する。
-5. MCPを有効にした場合は`/.well-known/oauth-protected-resource/mcp`がJSONを返すことを確認する。
+3. `curl -fsS https://marginalis.sandi05.com/api/v1/readiness`が`ready`を返すことを確認する。`503`なら
+   OIDC Discovery障害でroot-only縮退起動中である。
+4. `https://marginalis.sandi05.com/auth/oidc/login`からKanidmへ移動し、ログイン後にBase URLへ戻ることを確認する。
+5. 初回はroot login後、`GET /api/v1/admin/users/pending`で保留ユーザーを確認し、有効化する。
+6. MCPを有効にした場合は`/.well-known/oauth-protected-resource/mcp`がJSONを返すことを確認する。
+
+個人運用での段階的な初回公開は、reverse proxyを接続したまま`/api/v1/health`と`/api/v1/readiness`を
+確認し、root login、OIDC login、RESTでのノート作成・検索・削除、最後にMCP client認可と`search_notes`を
+順番に行う。各段階で`journalctl -u marginalis.service -b --no-pager`と`X-Request-Id`を記録すると、
+問題を安全に切り分けられる。
 
 失敗の詳細は`journalctl -u marginalis.service -b --no-pager`で確認する。ログにはOIDC code、token、
 client secret、root passwordを出力しない。

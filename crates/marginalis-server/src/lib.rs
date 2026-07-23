@@ -851,6 +851,10 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
             .map_err(|_| AuthenticationUseCaseError::Unavailable)
     }
 
+    fn oidc_available(&self) -> bool {
+        self.oidc.is_some()
+    }
+
     fn cookie_path(&self) -> &str {
         self.oidc
             .as_ref()

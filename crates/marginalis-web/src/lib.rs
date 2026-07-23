@@ -305,6 +305,7 @@ pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/", get(landing))
         .route("/api/v1/health", get(health))
+        .route("/api/v1/readiness", get(readiness))
         .route("/api/v1/session", get(current_session))
         .route("/api/v1/notes/{note_id}/source", get(note_source))
         .route("/api/v1/notes/{note_id}", get(note_metadata))
@@ -399,6 +400,35 @@ async fn health() -> Json<HealthResponse> {
         status: "ok",
         api_version: API_VERSION,
     })
+}
+
+#[derive(Serialize)]
+struct ReadinessResponse {
+    status: &'static str,
+    oidc: &'static str,
+}
+
+/// 通常のOIDC loginを開始できるかを返す。root-only縮退起動はlivenessを満たすがreadinessを満たさない。
+async fn readiness(State(state): State<ApiState>) -> Response {
+    if state.authentication.oidc_available() {
+        (
+            StatusCode::OK,
+            Json(ReadinessResponse {
+                status: "ready",
+                oidc: "available",
+            }),
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ReadinessResponse {
+                status: "degraded",
+                oidc: "unavailable",
+            }),
+        )
+            .into_response()
+    }
 }
 
 async fn mcp_get() -> StatusCode {
@@ -2044,6 +2074,30 @@ mod tests {
             .to_str()
             .expect("request ID value");
         assert!(uuid::Uuid::parse_str(request_id).is_ok());
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_degraded_without_a_discovered_oidc_provider() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open store");
+        let directory = std::env::temp_dir().join("marginalis-web-readiness-test");
+        let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
+        let response = router(ApiState::with_test_adapters(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database, sources,
+            )),
+        ))
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/readiness")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]

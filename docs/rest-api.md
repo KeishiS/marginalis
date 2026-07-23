@@ -17,6 +17,16 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 `GET /api/v1/session`で確認できる。Web UIを提供しないため、API clientはCookie jarとCSRF cookieを
 管理する必要がある。
 
+## 稼働状態
+
+`GET /api/v1/health`はprocessのlivenessを返す。OIDC Discovery障害時でもroot緊急ログインを提供するため、
+このendpointは`200`を返す。
+
+`GET /api/v1/readiness`は通常利用者のOIDC loginを開始できるかを返す。OIDCが利用可能なら
+`200 {"status":"ready","oidc":"available"}`、root-only縮退起動中なら
+`503 {"status":"degraded","oidc":"unavailable"}`となる。reverse proxyや監視は、通常利用者向けの
+公開可否にこのendpointを用いる。
+
 ## root管理
 
 `POST /auth/root/login`は`{"password":"..."}`を受け取り、rootのパスワードが正しければ

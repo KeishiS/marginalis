@@ -225,6 +225,8 @@ pub trait WebAuthenticationUseCases: Send + Sync {
         actor: Actor,
         policy: RegistrationPolicy,
     ) -> Result<(), AuthenticationUseCaseError>;
+    /// OIDC Discoveryが完了しており、通常利用者のloginを開始できるか。
+    fn oidc_available(&self) -> bool;
     fn cookie_path(&self) -> &str;
 }
 
