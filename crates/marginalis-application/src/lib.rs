@@ -1,7 +1,7 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSearchResult, NoteSummary,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSummary,
     OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
     UserId,
 };
@@ -321,7 +321,7 @@ pub trait NoteProjectionStore: Send + Sync {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
-/// ACL適用後のノート一覧・検索read model。候補数やsnippetを返す前に権限を適用する。
+/// ACL適用後のノート一覧・検索read model。候補数や順位を返す前に権限を適用する。
 pub trait NoteQueryStore: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -335,7 +335,7 @@ pub trait NoteQueryStore: Send + Sync {
         actor: Actor,
         query: String,
         limit: u32,
-    ) -> impl Future<Output = Result<Vec<NoteSearchResult>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Vec<NoteSummary>, Self::Error>> + Send;
 }
 
 /// ノートACLの永続化境界。HTTPはこのportを介してのみ権限を問い合わせる。
@@ -437,7 +437,7 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
         query: String,
         limit: u32,
-    ) -> Result<Vec<NoteSearchResult>, NoteUseCaseError>;
+    ) -> Result<Vec<NoteSummary>, NoteUseCaseError>;
     async fn read_source(&self, actor: Actor, note_id: NoteId)
     -> Result<Vec<u8>, NoteUseCaseError>;
     async fn create_source(&self, actor: Actor, source: String)

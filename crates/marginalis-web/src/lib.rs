@@ -21,7 +21,7 @@ pub use marginalis_auth_oidc::{
     OidcConfigurationError, OidcDiscoveryError, OidcLoginStartError,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteSearchResult, NoteSummary, OidcLoginResult,
+    Actor, EntityId, NoteId, NotePermission, NoteSummary, OidcLoginResult,
     OidcUser, UserId,
 };
 use marginalis_server::{SystemClock, SystemRandom};
@@ -252,7 +252,6 @@ struct NoteSummaryResponse {
 struct NoteSearchResponse {
     note_id: String,
     title: String,
-    snippet: String,
 }
 
 async fn list_notes(
@@ -300,11 +299,10 @@ fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
     }
 }
 
-fn note_search_response(result: NoteSearchResult) -> NoteSearchResponse {
+fn note_search_response(note: NoteSummary) -> NoteSearchResponse {
     NoteSearchResponse {
-        note_id: result.note.note_id.to_string(),
-        title: result.note.title,
-        snippet: result.snippet,
+        note_id: note.note_id.to_string(),
+        title: note.title,
     }
 }
 

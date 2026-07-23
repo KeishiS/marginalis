@@ -13,7 +13,7 @@ use marginalis_application::{
     RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSearchResult, NoteSummary,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSummary,
     OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
     UserId, UserStatus,
 };
@@ -882,12 +882,11 @@ impl NoteQueryStore for SqliteNoteQueryStore {
         actor: Actor,
         query: String,
         limit: u32,
-    ) -> impl Future<Output = Result<Vec<NoteSearchResult>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<NoteSummary>, Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
             let rows = sqlx::query(
-                "SELECT notes.note_id, notes.title,
-                        snippet(note_search, 2, '', '', '…', 24) AS snippet
+                "SELECT notes.note_id, notes.title
                  FROM note_search JOIN notes ON notes.note_id = note_search.note_id
                  WHERE note_search MATCH ? AND (? OR EXISTS (
                    SELECT 1 FROM note_acl
@@ -902,14 +901,7 @@ impl NoteQueryStore for SqliteNoteQueryStore {
             .bind(i64::from(limit))
             .fetch_all(&pool)
             .await?;
-            rows.into_iter()
-                .map(|row| {
-                    Ok(NoteSearchResult {
-                        note: note_summary_from_row(&row)?,
-                        snippet: row.try_get("snippet")?,
-                    })
-                })
-                .collect()
+            rows.into_iter().map(|row| note_summary_from_row(&row)).collect()
         }
     }
 }
@@ -1633,7 +1625,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_filters_notes_before_returning_snippets() {
+    async fn search_filters_notes_before_returning_results() {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");

@@ -10,7 +10,7 @@ use marginalis_application::{
     NoteUseCaseError, NoteUseCases, NoteWriteService, Random,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteSearchResult, NoteSummary, UnixMillis, UserId,
+    Actor, EntityId, NoteId, NotePermission, NoteSummary, UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_sqlite::SqliteDatabase;
@@ -89,7 +89,7 @@ impl NoteUseCases for ServerNoteUseCases {
         actor: Actor,
         query: String,
         limit: u32,
-    ) -> Result<Vec<NoteSearchResult>, NoteUseCaseError> {
+    ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
         if query.trim().is_empty() {
             return Err(NoteUseCaseError::Validation);
         }

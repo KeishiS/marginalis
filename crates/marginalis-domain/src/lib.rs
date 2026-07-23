@@ -140,13 +140,6 @@ pub struct NoteSummary {
     pub title: String,
 }
 
-/// 全文検索の一件。snippetはHTMLではなく、transportがJSON等へ安全に符号化するプレーンテキストである。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct NoteSearchResult {
-    pub note: NoteSummary,
-    pub snippet: String,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NoteReference {
     pub source_start: u32,
