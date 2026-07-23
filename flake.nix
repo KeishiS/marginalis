@@ -41,6 +41,7 @@
             doCheck = false;
             installPhase = ''
               install -Dm755 target/${pkgs.stdenv.hostPlatform.rust.cargoShortTarget}/release/marginalis-service $out/bin/marginalis
+              install -Dm644 docs/openapi.json $out/share/marginalis/openapi.json
             '';
           };
         }

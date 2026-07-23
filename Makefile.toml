@@ -80,6 +80,15 @@ for package in marginalis-web marginalis-mcp; do
 done
 '''
 
+[tasks.openapi-check]
+description = "Validate the published OpenAPI document and required REST paths"
+command = "jq"
+args = [
+  "-e",
+  ".openapi == \"3.1.0\" and .info.version == \"v1\" and (.paths[\"/api/v1/openapi.json\"] | has(\"get\")) and (.paths[\"/api/v1/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v1/admin/users/pending\"] | has(\"get\")) and (.components.schemas.Problem.required == [\"code\", \"message\"]) and (.components.schemas.UuidV7.pattern | startswith(\"^[0-9a-fA-F]{8}\")) and (.components.schemas.McpAuthorization.properties.authorized_at.format == \"date-time\") and (.paths[\"/api/v1/notes/{note_id}/source\"].get.responses[\"200\"].headers.ETag.required == true)",
+  "docs/openapi.json",
+]
+
 [tasks.verify]
 description = "Run formatting, static analysis, tests, and flake evaluation"
-dependencies = ["fmt-check", "check", "clippy", "test", "dependency-boundaries", "flake-check"]
+dependencies = ["fmt-check", "check", "clippy", "test", "dependency-boundaries", "openapi-check", "flake-check"]

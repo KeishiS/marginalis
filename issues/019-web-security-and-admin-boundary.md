@@ -1,6 +1,6 @@
 # 019: Web security baselineとroot管理境界
 
-状態: 提案。
+状態: 完了。
 
 ## 目的
 
@@ -35,3 +35,12 @@ Cookie認証を用いるREST/root管理のsecurity最低条件を、reverse prox
 - root loginのclient IP単位rate limitはreverse proxy側で実施する。Marginalisはforwarded headerを信頼せず、
   TCP peer単位の補助制限だけを維持する。
 - current releaseではroot routeを独立routerへ分離する。専用管理origin/mTLSは後続とする。
+
+## 実施結果
+
+- logoutはsessionとCSRF Cookieの双方を、発行時と同じBase URL subpathで削除する。subpath testで検証する。
+- Cookie sessionを伴う変更操作はCSRF token、固定した公開origin、`Sec-Fetch-Site`をすべて検証する。
+- client IPはTCP peerだけを使い、forwarded headerを信頼しない。proxy配下の利用者単位制限はproxy側の責務として
+  NixOS運用文書へ明記した。
+- `administration_router`はroot loginと`/api/v1/admin/*`だけを収容し、composition rootで通常routerへmergeする。
+  将来の別listener/origin/mTLS化はrouterの載せ替えだけで行える。

@@ -359,15 +359,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
     let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
     tracing::info!(address = %configuration.http.listen_address, "Marginalis server listening");
+    let cookie_path = cookie_path(&configuration.http.base_url);
     let authentication = std::sync::Arc::new(match oidc {
-        Some(oidc) => ServerWebAuthenticationUseCases::with_oidc(database.clone(), oidc),
-        None => ServerWebAuthenticationUseCases::new(database.clone()),
+        Some(oidc) => ServerWebAuthenticationUseCases::with_oidc_and_cookie_path(
+            database.clone(),
+            oidc,
+            cookie_path.clone(),
+        ),
+        None => ServerWebAuthenticationUseCases::with_cookie_path(database.clone(), cookie_path),
     });
     let state = ApiState::new(
         std::sync::Arc::new(notes.clone()),
         authentication.clone(),
         authentication.clone(),
         authentication,
+        configuration.http.base_url.origin().ascii_serialization(),
     );
     let state = if configuration.mcp_enabled {
         let oauth = std::sync::Arc::new(ServerMcpOAuthService::new(
@@ -408,6 +414,15 @@ fn base_url_at(base_url: &url::Url, suffix: &str) -> url::Url {
         base_url.path().trim_end_matches('/')
     ));
     url
+}
+
+fn cookie_path(base_url: &url::Url) -> String {
+    let path = base_url.path().trim_end_matches('/');
+    if path.is_empty() {
+        "/".into()
+    } else {
+        path.into()
+    }
 }
 
 #[cfg(test)]

@@ -53,6 +53,11 @@ SQLite DBと将来のAsciiDoc正本は`dataDir`（既定値は`/var/lib/marginal
 reverse proxyは`/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/`を同じoriginへ転送する。TLSはproxyで
 終端してよいが、`baseUrl`には外部から見えるHTTPS URLを設定する。
 
+root loginの接続元rate limitは、Marginalis内ではTCP peer addressだけを使う補助制限である。proxy配下で
+利用者ごとの粗い制限を行う場合は、proxy側で実施する。Marginalisは`X-Forwarded-For`、`Forwarded`などの
+client IP headerを信頼しない。Cookieを伴うREST変更操作は、公開originと`Origin`・`Sec-Fetch-Site`を照合するため、
+proxyはこれらのbrowser headerを削除・書換えしてはならない。
+
 `logFilter`は`RUST_LOG`としてserviceと投影再構築unitへ渡される。障害調査では一時的に
 `"info,marginalis_auth_oidc=debug"`のように狭いmoduleだけをdebugへ上げる。request body、password、
 OIDC code、tokenおよびsecretを記録する設定は提供しない。

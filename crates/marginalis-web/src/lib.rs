@@ -31,6 +31,7 @@ use marginalis_domain::{
 };
 use marginalis_mcp::{JsonRpcRequest, McpAuthenticationError, McpAuthenticator, McpTools};
 use serde::{Deserialize, Serialize};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use tracing::info_span;
@@ -38,6 +39,121 @@ use url::Url;
 
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
+
+/// build artifactへ埋め込むREST APIの機械可読な唯一の公開契約。
+pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
+
+/// `/api/v1`のJSON request/response contract。
+///
+/// HTTP handlerはこのmoduleの型だけをJSON境界に使う。SQLite row、credential、token hashなどのadapter内部型を
+/// 公開contractへ渡してはならない。
+pub mod contract {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize)]
+    pub struct Problem {
+        pub code: &'static str,
+        pub message: &'static str,
+    }
+
+    #[derive(Serialize)]
+    pub struct Health {
+        pub status: &'static str,
+        pub api_version: &'static str,
+    }
+
+    #[derive(Serialize)]
+    pub struct Readiness {
+        pub status: &'static str,
+        pub oidc: &'static str,
+    }
+
+    #[derive(Serialize)]
+    pub struct Session {
+        pub user_id: String,
+        pub is_root: bool,
+    }
+
+    #[derive(Deserialize)]
+    pub struct NoteListQuery {
+        pub limit: Option<u32>,
+        pub cursor: Option<String>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct NoteSearchQuery {
+        pub q: String,
+        pub limit: Option<u32>,
+        pub cursor: Option<String>,
+    }
+
+    #[derive(Serialize)]
+    pub struct NoteSummary {
+        pub note_id: String,
+        pub title: String,
+    }
+
+    #[derive(Serialize)]
+    pub struct NoteMetadata {
+        pub note_id: String,
+        pub title: String,
+        pub revision: String,
+    }
+
+    #[derive(Serialize)]
+    pub struct NotePage {
+        pub notes: Vec<NoteSummary>,
+        pub next_cursor: Option<String>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct AclUpdate {
+        pub permission: Option<String>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct RegistrationPolicy {
+        pub policy: String,
+    }
+
+    #[derive(Serialize)]
+    pub struct RegistrationPolicyResponse {
+        pub policy: &'static str,
+    }
+
+    #[derive(Serialize)]
+    pub struct PendingUser {
+        pub user_id: String,
+        pub display_name: String,
+    }
+
+    #[derive(Deserialize)]
+    pub struct McpClientRegistration {
+        pub client_id: String,
+        pub display_name: String,
+        pub redirect_uris: Vec<String>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct McpAuthorizationQuery {
+        pub client_id: String,
+        pub user_id: Option<String>,
+    }
+
+    #[derive(Serialize)]
+    pub struct McpAuthorization {
+        pub client_id: String,
+        pub display_name: String,
+        pub scopes: Vec<String>,
+        pub authorized_at: String,
+        pub last_used_at: Option<String>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct RootLogin {
+        pub password: String,
+    }
+}
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
@@ -51,6 +167,8 @@ pub struct ApiState {
     pub oidc: Arc<dyn OidcAuthenticationUseCases>,
     pub sessions: Arc<dyn WebSessionUseCases>,
     pub administration: Arc<dyn UserAdministrationUseCases>,
+    /// Cookieを伴う状態変更を許可する単一のWeb origin。forwarded headerは参照しない。
+    pub browser_origin: String,
     pub mcp: Option<Arc<McpEndpoint>>,
     root_login_rate_limiter: RootLoginRateLimiter,
 }
@@ -160,12 +278,14 @@ impl ApiState {
         oidc: Arc<dyn OidcAuthenticationUseCases>,
         sessions: Arc<dyn WebSessionUseCases>,
         administration: Arc<dyn UserAdministrationUseCases>,
+        browser_origin: String,
     ) -> Self {
         Self {
             notes,
             oidc,
             sessions,
             administration,
+            browser_origin,
             mcp: None,
             root_login_rate_limiter: RootLoginRateLimiter::new(5, Duration::from_secs(15 * 60)),
         }
@@ -189,6 +309,7 @@ impl ApiState {
             authentication.clone(),
             authentication.clone(),
             authentication,
+            "https://marginalis.example.test".into(),
         )
     }
 }
@@ -286,11 +407,7 @@ fn authentication_error(error: AuthenticationUseCaseError) -> ApiError {
     }
 }
 
-#[derive(Serialize)]
-struct ApiErrorBody {
-    code: &'static str,
-    message: &'static str,
-}
+type ApiErrorBody = contract::Problem;
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -307,8 +424,33 @@ impl IntoResponse for ApiError {
 
 /// Web UI、REST APIおよび将来のMCP endpointを収容するルーター。
 pub fn router(state: ApiState) -> Router {
+    application_router(state.clone())
+        .merge(administration_router(state))
+        .layer(middleware::from_fn(assign_request_id))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    let request_id = request
+                        .extensions()
+                        .get::<RequestId>()
+                        .map(|id| id.0.as_str())
+                        .unwrap_or("missing");
+                    info_span!(
+                        "http_request",
+                        request_id,
+                        method = %request.method(),
+                        path = request.uri().path(),
+                    )
+                })
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
+}
+
+/// 通常利用者向けのHTTP境界。管理routerを別listener/originへ移す際もこのrouterは変更しない。
+pub fn application_router(state: ApiState) -> Router {
     Router::new()
         .route("/", get(landing))
+        .route("/api/v1/openapi.json", get(openapi))
         .route("/api/v1/health", get(health))
         .route("/api/v1/readiness", get(readiness))
         .route("/api/v1/session", get(current_session))
@@ -338,13 +480,30 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/auth/oidc/login", get(begin_oidc_login))
         .route("/auth/oidc/callback", get(complete_oidc_login))
-        .route("/auth/root/login", post(root_login))
         .route("/auth/logout", post(logout))
-        .route("/api/v1/admin/mcp-clients", post(register_mcp_client))
         .route(
             "/api/v1/mcp-authorizations",
             get(list_own_mcp_authorizations).delete(revoke_own_mcp_authorization),
         )
+        .with_state(state)
+}
+
+async fn openapi() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        OPENAPI_DOCUMENT,
+    )
+        .into_response()
+}
+
+/// root loginとroot管理だけを収容する独立router。
+///
+/// current releaseでは同一listenerへmergeする。将来の管理originまたはmTLS化は、composition rootでこの
+/// routerだけを別listenerへ載せればよく、handlerやapplication use caseを複製しない。
+pub fn administration_router(state: ApiState) -> Router {
+    Router::new()
+        .route("/auth/root/login", post(root_login))
+        .route("/api/v1/admin/mcp-clients", post(register_mcp_client))
         .route(
             "/api/v1/admin/mcp-authorizations",
             delete(revoke_mcp_authorization_as_root),
@@ -362,24 +521,6 @@ pub fn router(state: ApiState) -> Router {
             "/api/v1/admin/registration-policy",
             get(registration_policy).put(update_registration_policy),
         )
-        .layer(middleware::from_fn(assign_request_id))
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &axum::http::Request<_>| {
-                    let request_id = request
-                        .extensions()
-                        .get::<RequestId>()
-                        .map(|id| id.0.as_str())
-                        .unwrap_or("missing");
-                    info_span!(
-                        "http_request",
-                        request_id,
-                        method = %request.method(),
-                        path = request.uri().path(),
-                    )
-                })
-                .on_response(DefaultOnResponse::new().level(Level::INFO)),
-        )
         .with_state(state)
 }
 
@@ -394,11 +535,7 @@ async fn assign_request_id(mut request: Request<axum::body::Body>, next: Next) -
     response
 }
 
-#[derive(Serialize)]
-struct HealthResponse {
-    status: &'static str,
-    api_version: &'static str,
-}
+type HealthResponse = contract::Health;
 
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
@@ -407,11 +544,7 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
-#[derive(Serialize)]
-struct ReadinessResponse {
-    status: &'static str,
-    oidc: &'static str,
-}
+type ReadinessResponse = contract::Readiness;
 
 /// 通常のOIDC loginを開始できるかを返す。root-only縮退起動はlivenessを満たすがreadinessを満たさない。
 async fn readiness(State(state): State<ApiState>) -> Response {
@@ -866,11 +999,7 @@ async fn landing() -> Json<HealthResponse> {
     health().await
 }
 
-#[derive(Serialize)]
-struct CurrentSessionResponse {
-    user_id: String,
-    is_root: bool,
-}
+type CurrentSessionResponse = contract::Session;
 
 async fn current_session(
     State(state): State<ApiState>,
@@ -883,37 +1012,11 @@ async fn current_session(
     }))
 }
 
-#[derive(Deserialize)]
-struct NoteListQuery {
-    limit: Option<u32>,
-    cursor: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct NoteSearchQuery {
-    q: String,
-    limit: Option<u32>,
-    cursor: Option<String>,
-}
-
-#[derive(Serialize)]
-struct NoteSummaryResponse {
-    note_id: String,
-    title: String,
-}
-
-#[derive(Serialize)]
-struct NoteMetadataResponse {
-    note_id: String,
-    title: String,
-    revision: String,
-}
-
-#[derive(Serialize)]
-struct NotePageResponse {
-    notes: Vec<NoteSummaryResponse>,
-    next_cursor: Option<String>,
-}
+type NoteListQuery = contract::NoteListQuery;
+type NoteSearchQuery = contract::NoteSearchQuery;
+type NoteSummaryResponse = contract::NoteSummary;
+type NoteMetadataResponse = contract::NoteMetadata;
+type NotePageResponse = contract::NotePage;
 
 async fn list_notes(
     State(state): State<ApiState>,
@@ -1124,10 +1227,7 @@ async fn create_note(
     Ok((StatusCode::CREATED, headers).into_response())
 }
 
-#[derive(Deserialize)]
-struct AclUpdateRequest {
-    permission: Option<String>,
-}
+type AclUpdateRequest = contract::AclUpdate;
 
 async fn update_note_acl(
     State(state): State<ApiState>,
@@ -1181,46 +1281,13 @@ struct OidcCallbackQuery {
     error: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct RootLoginRequest {
-    password: String,
-}
-#[derive(Deserialize)]
-struct RegistrationPolicyRequest {
-    policy: String,
-}
-#[derive(Serialize)]
-struct RegistrationPolicyResponse {
-    policy: &'static str,
-}
-
-#[derive(Serialize)]
-struct PendingOidcUserResponse {
-    user_id: String,
-    display_name: String,
-}
-
-#[derive(Deserialize)]
-struct McpClientRegistrationRequest {
-    client_id: String,
-    display_name: String,
-    redirect_uris: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct McpAuthorizationQuery {
-    client_id: String,
-    user_id: Option<String>,
-}
-
-#[derive(Serialize)]
-struct McpClientAuthorizationResponse {
-    client_id: String,
-    display_name: String,
-    scopes: Vec<String>,
-    authorized_at_ms: i64,
-    last_used_at_ms: Option<i64>,
-}
+type RootLoginRequest = contract::RootLogin;
+type RegistrationPolicyRequest = contract::RegistrationPolicy;
+type RegistrationPolicyResponse = contract::RegistrationPolicyResponse;
+type PendingOidcUserResponse = contract::PendingUser;
+type McpClientRegistrationRequest = contract::McpClientRegistration;
+type McpAuthorizationQuery = contract::McpAuthorizationQuery;
+type McpClientAuthorizationResponse = contract::McpAuthorization;
 
 async fn complete_oidc_login(
     State(state): State<ApiState>,
@@ -1481,8 +1548,10 @@ async fn list_own_mcp_authorizations(
                 client_id: authorization.client_id,
                 display_name: authorization.display_name,
                 scopes: authorization.scopes,
-                authorized_at_ms: authorization.authorized_at.get(),
-                last_used_at_ms: authorization.last_used_at.map(|value| value.get()),
+                authorized_at: rfc3339_timestamp(authorization.authorized_at.get()),
+                last_used_at: authorization
+                    .last_used_at
+                    .map(|value| rfc3339_timestamp(value.get())),
             })
             .collect(),
     ))
@@ -1539,6 +1608,14 @@ fn pending_user_response(user: OidcUser) -> PendingOidcUserResponse {
         user_id: user.user_id.to_string(),
         display_name: user.display_name,
     }
+}
+
+/// 永続化層のUnix millisecondsを、公開契約だけで使うRFC 3339文字列へ変換する。
+fn rfc3339_timestamp(unix_millis: i64) -> String {
+    OffsetDateTime::from_unix_timestamp_nanos(i128::from(unix_millis) * 1_000_000)
+        .expect("domain timestamp is within OffsetDateTime range")
+        .format(&Rfc3339)
+        .expect("RFC 3339 format is supported")
 }
 
 /// Cookie sessionをapplication actorへ変換する唯一のHTTP境界。
@@ -1612,6 +1689,7 @@ async fn require_csrf_token(
     state: &ApiState,
     csrf_token: String,
 ) -> Result<(), ApiError> {
+    require_same_origin_browser_request(headers, state)?;
     let session_id = cookie_value(headers, "marginalis_session").ok_or(ApiError::new(
         ApiErrorCode::AuthenticationRequired,
         "authentication is required",
@@ -1631,6 +1709,34 @@ async fn require_csrf_token(
     }
 }
 
+/// Cookieを送る状態変更は、CSRF tokenに加えて同一originのbrowser requestだけを受理する。
+///
+/// reverse proxyが付与する`X-Forwarded-*`は信頼しない。判定は起動時に固定した公開originと、browserが
+/// 送る`Origin`・`Sec-Fetch-Site`だけで行う。非browser API clientも同じheaderを明示してこの境界を通る。
+fn require_same_origin_browser_request(
+    headers: &HeaderMap,
+    state: &ApiState,
+) -> Result<(), ApiError> {
+    let origin = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| *value == state.browser_origin)
+        .ok_or(ApiError::new(
+            ApiErrorCode::Forbidden,
+            "same-origin request is required",
+        ))?;
+    let fetch_site = headers
+        .get("sec-fetch-site")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| matches!(*value, "same-origin" | "none"))
+        .ok_or(ApiError::new(
+            ApiErrorCode::Forbidden,
+            "same-origin request is required",
+        ))?;
+    let _ = (origin, fetch_site);
+    Ok(())
+}
+
 async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> Result<Response, ApiError> {
     let _actor = authenticated_actor(&headers, &state).await?;
     require_csrf(&headers, &state).await?;
@@ -1643,12 +1749,21 @@ async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> Result<Res
         .revoke_session(session_id)
         .await
         .map_err(authentication_error)?;
+    let cookie_path = state.oidc.cookie_path();
     let mut response = StatusCode::NO_CONTENT.into_response();
     response.headers_mut().insert(
         header::SET_COOKIE,
-        HeaderValue::from_static(
-            "marginalis_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax",
-        ),
+        HeaderValue::from_str(&format!(
+            "marginalis_session=; Path={cookie_path}; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
+        ))
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
+    );
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&format!(
+            "marginalis_csrf=; Path={cookie_path}; Max-Age=0; Secure; SameSite=Lax"
+        ))
+        .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
     );
     Ok(response)
 }
@@ -1669,32 +1784,58 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
 mod tests {
     use axum::{
         body::{Body, to_bytes},
-        http::{Request, StatusCode},
+        http::{HeaderMap, HeaderValue, Request, StatusCode, header},
         response::IntoResponse,
     };
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use marginalis_application::{
-        McpAuthorizationRequest, McpOAuthAdministrationUseCases, McpOAuthUseCaseError,
-        McpOAuthUseCases, McpTokenPair, OidcIdentityStore, RootCredentialStore, WebSession,
-        WebSessionStore,
+        AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthAdministrationUseCases,
+        McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, OidcAuthenticationUseCases,
+        OidcIdentityStore, RootCredentialStore, WebSession, WebSessionStore,
     };
     use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
     use marginalis_domain::{
-        Actor, EntityId, McpClientAuthorization, McpOAuthClient, OidcIdentity, RegistrationPolicy,
-        UnixMillis, UserId,
+        Actor, EntityId, McpClientAuthorization, McpOAuthClient, OidcIdentity, OidcLoginResult,
+        RegistrationPolicy, UnixMillis, UserId,
     };
     use sha2::{Digest, Sha256};
     use std::{str::FromStr, sync::Arc, time::Duration};
     use tower::ServiceExt;
 
     use super::{
-        ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, REQUEST_ID_HEADER,
-        RootLoginRateLimiter, router,
+        ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, OPENAPI_DOCUMENT,
+        REQUEST_ID_HEADER, RootLoginRateLimiter, administration_router,
+        require_same_origin_browser_request, rfc3339_timestamp, router,
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
     use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
 
     struct RejectMcpAuthenticator;
+
+    struct SubpathOidc;
+
+    #[async_trait::async_trait]
+    impl OidcAuthenticationUseCases for SubpathOidc {
+        async fn begin_oidc_login(&self) -> Result<String, AuthenticationUseCaseError> {
+            Err(AuthenticationUseCaseError::Unavailable)
+        }
+
+        async fn complete_oidc_login(
+            &self,
+            _code: String,
+            _state: String,
+        ) -> Result<OidcLoginResult, AuthenticationUseCaseError> {
+            Err(AuthenticationUseCaseError::Unavailable)
+        }
+
+        fn oidc_available(&self) -> bool {
+            false
+        }
+
+        fn cookie_path(&self) -> &str {
+            "/marginalis"
+        }
+    }
 
     #[async_trait::async_trait]
     impl McpAuthenticator for RejectMcpAuthenticator {
@@ -1973,6 +2114,8 @@ mod tests {
                     .uri("/oauth/authorize")
                     .header("content-type", "application/x-www-form-urlencoded")
                     .header("cookie", "marginalis_session=session; marginalis_csrf=csrf")
+                    .header("origin", "https://marginalis.example.test")
+                    .header("sec-fetch-site", "same-origin")
                     .body(Body::from(form))
                     .expect("approval request"),
             )
@@ -2132,6 +2275,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openapi_endpoint_returns_the_embedded_contract() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let directory = std::env::temp_dir().join(format!(
+            "marginalis-web-openapi-test-{}",
+            uuid::Uuid::now_v7()
+        ));
+        let app = router(ApiState::with_test_adapters(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database,
+                marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+            )),
+        ));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/openapi.json")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json; charset=utf-8")
+        );
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("body");
+        assert_eq!(body.as_ref(), OPENAPI_DOCUMENT.as_bytes());
+        let document: serde_json::Value =
+            serde_json::from_slice(&body).expect("valid OpenAPI JSON");
+        assert_eq!(document["openapi"], "3.1.0");
+        assert!(document["paths"]["/api/v1/notes"].is_object());
+    }
+
+    #[tokio::test]
+    async fn administration_router_excludes_application_routes() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let directory = std::env::temp_dir().join(format!(
+            "marginalis-web-administration-router-test-{}",
+            uuid::Uuid::now_v7()
+        ));
+        let response = administration_router(ApiState::with_test_adapters(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database,
+                marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+            )),
+        ))
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/health")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn note_source_requires_an_authenticated_session() {
         let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
             .await
@@ -2201,6 +2415,126 @@ mod tests {
         .await
         .expect("response");
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn cookie_state_changes_require_exact_origin_and_fetch_metadata() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let state = ApiState::with_test_adapters(
+            database.clone(),
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database,
+                marginalis_files::FileNoteStore::open(std::env::temp_dir().join(format!(
+                    "marginalis-web-origin-test-{}",
+                    uuid::Uuid::now_v7()
+                )))
+                .expect("sources"),
+            )),
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://attacker.example"),
+        );
+        headers.insert("sec-fetch-site", HeaderValue::from_static("cross-site"));
+        assert!(require_same_origin_browser_request(&headers, &state).is_err());
+
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://marginalis.example.test"),
+        );
+        headers.insert("sec-fetch-site", HeaderValue::from_static("same-origin"));
+        assert!(require_same_origin_browser_request(&headers, &state).is_ok());
+
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://attacker.example"),
+        );
+        headers.insert(
+            "x-forwarded-host",
+            HeaderValue::from_static("marginalis.example.test"),
+        );
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert!(require_same_origin_browser_request(&headers, &state).is_err());
+    }
+
+    #[tokio::test]
+    async fn logout_deletes_session_and_csrf_cookies_at_the_configured_subpath() {
+        let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("open database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000044").expect("UUIDv7"),
+        );
+        sqlx::query("INSERT INTO users (user_id, authentication_kind, status, display_name, created_at_ms, updated_at_ms) VALUES (?, 'oidc', 'active', 'User', 0, 0)")
+            .bind(user_id.to_string())
+            .execute(database.pool())
+            .await
+            .expect("user");
+        database
+            .web_session_store()
+            .issue(
+                WebSession {
+                    session_id: "session".into(),
+                    csrf_token: "csrf".into(),
+                    actor: Actor {
+                        user_id,
+                        is_root: false,
+                    },
+                    idle_expires_at: UnixMillis::new(4_000_000_000_000),
+                    absolute_expires_at: UnixMillis::new(4_000_000_000_000),
+                },
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("session");
+        let directory = std::env::temp_dir().join(format!(
+            "marginalis-web-logout-subpath-test-{}",
+            uuid::Uuid::now_v7()
+        ));
+        let authentication = Arc::new(marginalis_server::ServerWebAuthenticationUseCases::new(
+            database.clone(),
+        ));
+        let app = router(ApiState::new(
+            Arc::new(marginalis_server::ServerNoteUseCases::new(
+                database,
+                marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+            )),
+            Arc::new(SubpathOidc),
+            authentication.clone(),
+            authentication,
+            "https://marginalis.example.test".into(),
+        ));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/logout")
+                    .header("cookie", "marginalis_session=session")
+                    .header("x-csrf-token", "csrf")
+                    .header("origin", "https://marginalis.example.test")
+                    .header("sec-fetch-site", "same-origin")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let cookies = response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|value| value.to_str().expect("cookie"))
+            .collect::<Vec<_>>();
+        assert!(cookies.iter().any(|cookie| {
+            cookie.starts_with("marginalis_session=") && cookie.contains("Path=/marginalis")
+        }));
+        assert!(cookies.iter().any(|cookie| {
+            cookie.starts_with("marginalis_csrf=") && cookie.contains("Path=/marginalis")
+        }));
     }
 
     #[tokio::test]
@@ -2300,6 +2634,8 @@ mod tests {
                     .uri(format!("/api/v1/admin/users/{pending_id}/activate"))
                     .header("cookie", format!("marginalis_session={session}"))
                     .header("x-csrf-token", csrf)
+                    .header("origin", "https://marginalis.example.test")
+                    .header("sec-fetch-site", "same-origin")
                     .body(Body::empty())
                     .expect("request"),
             )
@@ -2400,12 +2736,32 @@ mod tests {
             .expect("cookie is set")
     }
 
-    #[test]
-    fn api_errors_have_stable_http_statuses() {
+    #[tokio::test]
+    async fn api_errors_have_stable_http_statuses_and_json_shape() {
         let response =
             ApiError::new(ApiErrorCode::ValidationFailed, "invalid input").into_response();
 
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json")
+        );
+        let body = to_bytes(response.into_body(), 1024).await.expect("body");
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).expect("problem JSON"),
+            serde_json::json!({
+                "code": "validation-failed",
+                "message": "invalid input"
+            })
+        );
+    }
+
+    #[test]
+    fn authorization_timestamps_use_rfc3339() {
+        assert_eq!(rfc3339_timestamp(0), "1970-01-01T00:00:00Z");
     }
 
     #[test]

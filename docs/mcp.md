@@ -52,6 +52,22 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 `list_note_links`は参照元と参照先の双方にRead権限がある行だけを返す。参照先が不可視の場合は、
 target ID、title、anchorおよびその投影上の存在を返さない。これは通常の検索・取得と同じACL非漏洩規則である。
 
+## REST contractとの対応
+
+OpenAPIで公開するREST contractとMCP toolは同じapplication use case・ACL・revision規則を共有するが、
+transport固有の認証方式は混在させない。
+
+| REST | MCP | 相違点 |
+| --- | --- | --- |
+| `GET /api/v1/search` | `search_notes` | RESTはCookie session、MCPはBearer tokenと`notes:read` scopeを使う。 |
+| `GET /api/v1/notes/{note_id}/source` | `get_note` | MCPはmetadataとsourceを一つのJSON-RPC resultで返す。 |
+| `POST /api/v1/notes` | `create_note` | RESTは検証済みAsciiDoc正本、MCPは構造化したtitle/body/tagsを受ける。 |
+| `PUT /api/v1/notes/{note_id}/source` | `update_note` | 両者ともrevisionの完全一致を要求する。 |
+| `DELETE /api/v1/notes/{note_id}` | `prepare_delete_note` → `delete_note` | MCPは確認tokenを二段階で必要とする。 |
+
+Cookie、`X-CSRF-Token`、`Origin`、`Sec-Fetch-Site`はREST browser boundaryだけの要件であり、MCP tool input・
+output schemaへ含めない。
+
 ## OAuth flow
 
 1. clientはProtected Resource Metadataを取得し、resource URIとAuthorization Serverを知る。

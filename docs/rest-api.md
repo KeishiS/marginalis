@@ -12,6 +12,11 @@ sessionがないか、期限切れまたは失効済みなら`401 authentication
 
 login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`POST`、`PUT`およびlogoutは、
 同値を`X-CSRF-Token` headerへ付けなければならない。不在または不一致は`403`で拒否する。
+Cookieを伴う変更操作は、これに加えて`Origin`が公開Base URLのoriginと完全一致し、
+`Sec-Fetch-Site`が`same-origin`または`none`でなければならない。欠落・不一致・`cross-site`は`403`で
+拒否する。reverse proxyの`X-Forwarded-*`はこの判定に使用しない。非browser API clientも同じheaderを
+明示して送る。sessionを持たない`POST /auth/root/login`と、Cookieを使わないMCP OAuth token endpointは
+このCookie変更policyの対象外である。
 
 通常のログイン開始URLは`GET /auth/oidc/login`である。成功後はBase URLへ戻る。現在のsessionは
 `GET /api/v1/session`で確認できる。Web UIを提供しないため、API clientはCookie jarとCSRF cookieを
@@ -26,6 +31,17 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 `200 {"status":"ready","oidc":"available"}`、root-only縮退起動中なら
 `503 {"status":"degraded","oidc":"unavailable"}`となる。reverse proxyや監視は、通常利用者向けの
 公開可否にこのendpointを用いる。
+
+## OpenAPI契約と互換性
+
+`GET /api/v1/openapi.json`は、ビルド済みbinaryに埋め込まれたOpenAPI 3.1 documentを認証不要で返す。
+REST clientはこのdocumentを契約として使用する。Cookie、CSRF、OriginおよびFetch MetadataはHTTP固有の
+security schemeであり、MCP tool contractには含めない。
+
+`/api/v1`は現在も破壊的変更を許容する開発期間にある。OpenAPI documentのversionを基準に、外部client
+向け互換性をfreezeする日程を決めるまでは、field・status・header・endpointを変更または削除し得る。
+freeze後は、破壊的変更を新しいAPI version pathへ移し、既存versionでは少なくとも一つのリリース周期の
+deprecation告知とmigration手順を提供する。
 
 ## root管理
 
@@ -47,11 +63,14 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 有効化は`pending`のOIDCユーザーにだけ作用する。成功後、そのユーザーは次回のOIDC loginで
 通常のsessionを得られる。rootのパスワードをHTTP request body以外へ記録・保存してはならない。
 初期実装では管理操作はREST APIで提供し、ブラウザー管理UIは後続とする。
+root loginと`/api/v1/admin/*`は通常のapplication routerとは独立したmanagement routerへ収容する。
+current releaseでは同一listenerでmergeするが、将来の専用管理originまたはmTLS化では、このrouterだけを
+別listenerへ載せ替える。
 
 rootのログイン成功・失敗、logout、OIDCユーザーの有効化・無効化、登録ポリシー変更およびrootによる
 MCP管理操作はSQLiteの`root_audit_log`へ記録する。監査閲覧用REST APIは設けない。運用者はサーバ上で
 DBを直接参照する。password、cookie、session ID、OIDC code、access/refresh tokenとそのhashは記録しない。
-記録は起動時に365日より古い行を削除する。
+記録は日次の`marginalis-prune-audit.timer`が365日より古い行を削除する。
 
 無効化は`active`なOIDCユーザーだけに作用し、同一SQLite transactionで当該ユーザーのWeb session、
 MCP access tokenおよびrefresh tokenを失効させる。無効化済みユーザーはOIDC login、REST API、MCPを
@@ -72,7 +91,8 @@ rootは`DELETE /api/v1/admin/mcp-authorizations?user_id=...&client_id=...`で任
 すべて直ちに失効させる。
 
 `GET /api/v1/mcp-authorizations`は、現在の通常ユーザーの有効なMCP認可を返す。各要素はclient ID、
-表示名、scope、最初の認可時刻（`authorized_at_ms`）、最後の利用時刻（`last_used_at_ms`。未使用なら`null`）を
+表示名、scope、最初の認可時刻（RFC 3339の`authorized_at`）、最後の利用時刻（RFC 3339の`last_used_at`。
+未使用なら`null`）を
 含む。access token、refresh token、token hashは応答に含めない。
 
 OIDC callbackの成功時はBase URL（`/`）へredirectする。Web UI公開前の`GET /`はhealth responseを

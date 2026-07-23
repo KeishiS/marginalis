@@ -65,6 +65,7 @@ pub struct ServerNoteUseCases {
 pub struct ServerWebAuthenticationUseCases {
     database: SqliteDatabase,
     oidc: Option<OidcAuthentication>,
+    cookie_path: String,
 }
 
 /// MCP bearer tokenのresource audienceとscopeを検証するserver adapter。
@@ -556,17 +557,31 @@ impl McpAuthenticator for ServerMcpAuthenticator {
 }
 
 impl ServerWebAuthenticationUseCases {
-    pub const fn new(database: SqliteDatabase) -> Self {
+    pub fn new(database: SqliteDatabase) -> Self {
+        Self::with_cookie_path(database, "/".into())
+    }
+
+    pub fn with_cookie_path(database: SqliteDatabase, cookie_path: String) -> Self {
         Self {
             database,
             oidc: None,
+            cookie_path,
         }
     }
 
     pub fn with_oidc(database: SqliteDatabase, oidc: OidcAuthentication) -> Self {
+        Self::with_oidc_and_cookie_path(database, oidc.clone(), oidc.cookie_path().into())
+    }
+
+    pub fn with_oidc_and_cookie_path(
+        database: SqliteDatabase,
+        oidc: OidcAuthentication,
+        cookie_path: String,
+    ) -> Self {
         Self {
             database,
             oidc: Some(oidc),
+            cookie_path,
         }
     }
 
@@ -622,9 +637,7 @@ impl OidcAuthenticationUseCases for ServerWebAuthenticationUseCases {
     }
 
     fn cookie_path(&self) -> &str {
-        self.oidc
-            .as_ref()
-            .map_or("/", OidcAuthentication::cookie_path)
+        &self.cookie_path
     }
 }
 
@@ -1520,6 +1533,19 @@ mod tests {
             validate_base_url("https://example.test/marginalis".into())
                 .expect("valid URL")
                 .path(),
+            "/marginalis"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_only_authentication_keeps_the_configured_cookie_subpath() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let authentication =
+            ServerWebAuthenticationUseCases::with_cookie_path(database, "/marginalis".into());
+        assert_eq!(
+            OidcAuthenticationUseCases::cookie_path(&authentication),
             "/marginalis"
         );
     }

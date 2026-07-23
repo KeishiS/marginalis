@@ -75,6 +75,12 @@ HTTP REST       MCP transport       maintenance CLI
   保持期間は365日であり、初期段階ではHTTP経由で公開せずサーバ上から直接確認する。
 - HTTP requestごとにserver生成UUIDv7の`X-Request-Id`を返し、同じ値をtracing spanへ記録する。
   クライアントが送った相関IDを採用しない。
+- Cookie sessionを伴う変更操作は、CSRF token、固定した公開origin、`Sec-Fetch-Site`を同時に検証する。
+  `X-Forwarded-*`はこの判定にもroot loginの補助rate limitにも使わない。
+- root loginとroot管理endpointは`administration_router`へ隔離し、current releaseでは通常routerへmergeする。
+  専用管理origin・mTLSは後続でこのrouterだけを別listenerへ載せ替える。
+- REST JSON boundaryは`marginalis-web::contract`へ閉じ、OpenAPI 3.1 documentを`/api/v1/openapi.json`とrelease
+  artifactへ同一内容で公開する。MCP token、Cookie、CSRFおよびadapter内部型をこのcontractへ含めない。
 - MCP access tokenはcanonical resource URI・scope・有効期限を同時に照合する。利用時刻だけを記録し、
   token値・hashはAPIやログへ出さない。refresh tokenは一回だけ使用でき、交換時に同一SQLite
   transactionで次のtoken pairへローテーションする。
