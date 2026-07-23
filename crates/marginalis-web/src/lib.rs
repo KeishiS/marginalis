@@ -295,6 +295,10 @@ pub fn router(state: ApiState) -> Router {
             "/api/v1/admin/users/{user_id}/disable",
             put(disable_oidc_user),
         )
+        .route(
+            "/api/v1/admin/registration-policy",
+            get(registration_policy).put(update_registration_policy),
+        )
         .layer(middleware::from_fn(assign_request_id))
         .layer(
             TraceLayer::new_for_http()
@@ -1089,6 +1093,14 @@ struct OidcCallbackQuery {
 struct RootLoginRequest {
     password: String,
 }
+#[derive(Deserialize)]
+struct RegistrationPolicyRequest {
+    policy: String,
+}
+#[derive(Serialize)]
+struct RegistrationPolicyResponse {
+    policy: &'static str,
+}
 
 #[derive(Serialize)]
 struct PendingOidcUserResponse {
@@ -1262,6 +1274,50 @@ async fn disable_oidc_user(
         ));
     }
     tracing::info!(user_id = %user_id, "OIDC user disabled by root");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn registration_policy(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Json<RegistrationPolicyResponse>, ApiError> {
+    require_root(&headers, &state).await?;
+    let policy = state
+        .authentication
+        .registration_policy()
+        .await
+        .map_err(authentication_error)?;
+    Ok(Json(RegistrationPolicyResponse {
+        policy: match policy {
+            marginalis_domain::RegistrationPolicy::Open => "open",
+            marginalis_domain::RegistrationPolicy::Approval => "approval",
+            marginalis_domain::RegistrationPolicy::InviteOnly => "invite-only",
+        },
+    }))
+}
+
+async fn update_registration_policy(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<RegistrationPolicyRequest>,
+) -> Result<StatusCode, ApiError> {
+    require_root(&headers, &state).await?;
+    require_csrf(&headers, &state).await?;
+    let policy = match request.policy.as_str() {
+        "open" => marginalis_domain::RegistrationPolicy::Open,
+        "approval" => marginalis_domain::RegistrationPolicy::Approval,
+        _ => {
+            return Err(ApiError::new(
+                ApiErrorCode::ValidationFailed,
+                "registration policy is invalid",
+            ));
+        }
+    };
+    state
+        .authentication
+        .set_registration_policy(policy)
+        .await
+        .map_err(authentication_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

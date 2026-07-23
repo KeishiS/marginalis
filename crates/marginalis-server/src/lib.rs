@@ -17,7 +17,7 @@ use marginalis_application::{
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, NoteId, NotePage, NotePermission, NoteSource,
-    OidcLoginResult, SourceRevision, UnixMillis, UserId,
+    OidcLoginResult, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
@@ -705,6 +705,21 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
         self.database
             .oidc_user_administration_store()
             .disable(user_id, SystemClock.now())
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+    async fn registration_policy(&self) -> Result<RegistrationPolicy, AuthenticationUseCaseError> {
+        self.database
+            .registration_policy()
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+    async fn set_registration_policy(
+        &self,
+        policy: RegistrationPolicy,
+    ) -> Result<(), AuthenticationUseCaseError> {
+        self.database
+            .set_registration_policy(policy)
             .await
             .map_err(|_| AuthenticationUseCaseError::Unavailable)
     }

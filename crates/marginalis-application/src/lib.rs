@@ -214,6 +214,11 @@ pub trait WebAuthenticationUseCases: Send + Sync {
         user_id: UserId,
     ) -> Result<bool, AuthenticationUseCaseError>;
     async fn disable_oidc_user(&self, user_id: UserId) -> Result<bool, AuthenticationUseCaseError>;
+    async fn registration_policy(&self) -> Result<RegistrationPolicy, AuthenticationUseCaseError>;
+    async fn set_registration_policy(
+        &self,
+        policy: RegistrationPolicy,
+    ) -> Result<(), AuthenticationUseCaseError>;
     fn cookie_path(&self) -> &str;
 }
 

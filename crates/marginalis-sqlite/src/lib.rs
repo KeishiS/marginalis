@@ -518,6 +518,21 @@ impl SqliteDatabase {
             _ => RegistrationPolicy::InviteOnly,
         })
     }
+    pub async fn set_registration_policy(
+        &self,
+        policy: RegistrationPolicy,
+    ) -> Result<(), sqlx::Error> {
+        let value = match policy {
+            RegistrationPolicy::Open => "open",
+            RegistrationPolicy::Approval => "approval",
+            RegistrationPolicy::InviteOnly => "invite-only",
+        };
+        sqlx::query("UPDATE registration_policy SET policy = ? WHERE singleton = 1")
+            .bind(value)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }
 
 impl NoteAclStore for SqliteNoteAclStore {
