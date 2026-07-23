@@ -2,7 +2,7 @@
 
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePermission, NoteProjection, OidcIdentity, OidcLoginResult,
-    RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+    OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
@@ -39,6 +39,22 @@ pub trait RootCredentialStore: Send + Sync {
     fn initialize_if_missing(
         &self,
         password: String,
+        user_id: UserId,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+    fn verify_password(
+        &self,
+        password: String,
+    ) -> impl Future<Output = Result<Option<UserId>, Self::Error>> + Send;
+}
+
+/// rootが管理するOIDCユーザー状態の一覧および遷移を扱うport。
+pub trait OidcUserAdministrationStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn list_pending(&self) -> impl Future<Output = Result<Vec<OidcUser>, Self::Error>> + Send;
+    fn activate(
+        &self,
         user_id: UserId,
         now: UnixMillis,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;

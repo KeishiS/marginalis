@@ -2,11 +2,15 @@
 
 use std::{fmt, future::Future, str::FromStr, time::Duration};
 
-use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+use argon2::{
+    Argon2, PasswordHasher, PasswordVerifier,
+    password_hash::{PasswordHash, SaltString},
+};
 use marginalis_application::{
     AuthenticatedSession, JournalEntry, NoteAclStore, NoteOperationKind, NoteProjectionStore,
-    OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OperationId, OperationJournal,
-    OperationState, RootCredentialStore, WebSession, WebSessionStore,
+    OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcUserAdministrationStore,
+    OperationId, OperationJournal, OperationState, RootCredentialStore, WebSession,
+    WebSessionStore,
 };
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePermission, NoteProjection, OidcIdentity, OidcLoginResult,
@@ -91,6 +95,11 @@ pub struct SqliteRootCredentialStore {
     pool: SqlitePool,
 }
 
+#[derive(Clone, Debug)]
+pub struct SqliteOidcUserAdministrationStore {
+    pool: SqlitePool,
+}
+
 #[derive(Debug)]
 pub enum RootCredentialStoreError {
     Database(sqlx::Error),
@@ -110,6 +119,30 @@ impl std::error::Error for RootCredentialStoreError {
     }
 }
 impl From<sqlx::Error> for RootCredentialStoreError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum OidcUserAdministrationStoreError {
+    Database(sqlx::Error),
+    CorruptUser,
+}
+impl fmt::Display for OidcUserAdministrationStoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("OIDC user administration query failed")
+    }
+}
+impl std::error::Error for OidcUserAdministrationStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::CorruptUser => None,
+        }
+    }
+}
+impl From<sqlx::Error> for OidcUserAdministrationStoreError {
     fn from(value: sqlx::Error) -> Self {
         Self::Database(value)
     }
@@ -320,6 +353,12 @@ impl SqliteDatabase {
             pool: self.pool.clone(),
         }
     }
+
+    pub fn oidc_user_administration_store(&self) -> SqliteOidcUserAdministrationStore {
+        SqliteOidcUserAdministrationStore {
+            pool: self.pool.clone(),
+        }
+    }
 }
 
 impl NoteAclStore for SqliteNoteAclStore {
@@ -449,6 +488,77 @@ impl RootCredentialStore for SqliteRootCredentialStore {
                 .await?;
             transaction.commit().await?;
             Ok(true)
+        }
+    }
+
+    fn verify_password(
+        &self,
+        password: String,
+    ) -> impl Future<Output = Result<Option<UserId>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let row = sqlx::query("SELECT user_id, password_hash FROM root_credentials LIMIT 1")
+                .fetch_optional(&pool)
+                .await?;
+            let Some(row) = row else {
+                return Ok(None);
+            };
+            let hash: String = row.try_get("password_hash")?;
+            let parsed_hash =
+                PasswordHash::new(&hash).map_err(|_| RootCredentialStoreError::PasswordHash)?;
+            if Argon2::default()
+                .verify_password(password.as_bytes(), &parsed_hash)
+                .is_err()
+            {
+                return Ok(None);
+            }
+            let user_id: String = row.try_get("user_id")?;
+            EntityId::from_str(&user_id)
+                .map(UserId::new)
+                .map(Some)
+                .map_err(|_| RootCredentialStoreError::PasswordHash)
+        }
+    }
+}
+
+impl OidcUserAdministrationStore for SqliteOidcUserAdministrationStore {
+    type Error = OidcUserAdministrationStoreError;
+
+    fn list_pending(&self) -> impl Future<Output = Result<Vec<OidcUser>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let rows = sqlx::query(
+                "SELECT user_id, status, display_name FROM users
+                 WHERE authentication_kind = 'oidc' AND status = 'pending'
+                 ORDER BY created_at_ms ASC, user_id ASC",
+            )
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(|row| {
+                    oidc_user_from_row(&row)
+                        .map_err(|_| OidcUserAdministrationStoreError::CorruptUser)
+                })
+                .collect()
+        }
+    }
+
+    fn activate(
+        &self,
+        user_id: UserId,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let result = sqlx::query(
+                "UPDATE users SET status = 'active', updated_at_ms = ?
+                 WHERE user_id = ? AND authentication_kind = 'oidc' AND status = 'pending'",
+            )
+            .bind(now.get())
+            .bind(user_id.to_string())
+            .execute(&pool)
+            .await?;
+            Ok(result.rows_affected() == 1)
         }
     }
 }
@@ -957,11 +1067,13 @@ mod tests {
     use marginalis_application::{
         JournalEntry, NoteAclService, NoteAclServiceError, NoteAclStore, NoteOperationKind,
         NoteProjectionStore, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore,
-        OperationId, OperationJournal, OperationState, RootCredentialStore,
+        OidcUserAdministrationStore, OperationId, OperationJournal, OperationState,
+        RootCredentialStore,
     };
     use marginalis_domain::{
         Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteReference, OidcIdentity,
-        OidcLoginResult, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+        OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+        UserStatus,
     };
     use sqlx::Row;
 
@@ -1220,6 +1332,81 @@ mod tests {
             .try_get("password_hash")
             .expect("hash");
         assert_ne!(hash, "not-a-hash");
+        assert_eq!(
+            store
+                .verify_password("not-a-hash".into())
+                .await
+                .expect("verify password"),
+            Some(user_id)
+        );
+        assert!(
+            store
+                .verify_password("wrong-password".into())
+                .await
+                .expect("reject wrong password")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn root_can_list_and_activate_pending_oidc_users() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let user_id = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000022").expect("UUIDv7"),
+        );
+        let identities = database.oidc_identity_store();
+        let result = identities
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "pending-subject", "Pending user")
+                    .expect("identity"),
+                RegistrationPolicy::Approval,
+                user_id,
+                UnixMillis::new(1),
+            )
+            .await
+            .expect("register pending user");
+        assert!(matches!(result, OidcLoginResult::PendingApproval(_)));
+
+        let administration = database.oidc_user_administration_store();
+        assert_eq!(
+            administration
+                .list_pending()
+                .await
+                .expect("list pending users"),
+            vec![OidcUser {
+                user_id,
+                status: UserStatus::Pending,
+                display_name: "Pending user".into(),
+            }]
+        );
+        assert!(
+            administration
+                .activate(user_id, UnixMillis::new(2))
+                .await
+                .expect("activate user")
+        );
+        assert!(
+            administration
+                .list_pending()
+                .await
+                .expect("list active users")
+                .is_empty()
+        );
+        let result = identities
+            .register_or_lookup(
+                OidcIdentity::new("https://id.example.test", "pending-subject", "Pending user")
+                    .expect("identity"),
+                RegistrationPolicy::Approval,
+                UserId::new(
+                    EntityId::from_str("01800000-0000-7000-8000-000000000023").expect("UUIDv7"),
+                ),
+                UnixMillis::new(3),
+            )
+            .await
+            .expect("look up active user");
+        assert!(matches!(result, OidcLoginResult::Active(_)));
     }
 
     #[tokio::test]

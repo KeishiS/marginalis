@@ -4,11 +4,26 @@
 
 ## 認証
 
-`/api/v1/notes`以下の操作は、OIDC loginで発行した`marginalis_session` Cookieを必要とする。
+`/api/v1/notes`以下の操作は、OIDC loginまたはroot loginで発行した`marginalis_session` Cookieを必要とする。
 sessionがないか、期限切れまたは失効済みなら`401 authentication-required`を返す。
 
 login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`POST`、`PUT`およびlogoutは、
 同値を`X-CSRF-Token` headerへ付けなければならない。不在または不一致は`403`で拒否する。
+
+## root管理
+
+`POST /auth/root/login`は`{"password":"..."}`を受け取り、rootのパスワードが正しければ
+`204`とroot session・CSRF Cookieを返す。失敗時は理由を区別せず`401 authentication-required`を
+返す。root sessionは無操作30分または発行から8時間で失効する。
+
+| 操作 | endpoint | 成功応答 | 認可 |
+| --- | --- | --- | --- |
+| 保留OIDCユーザー一覧 | `GET /api/v1/admin/users/pending` | `200`、ユーザー配列 | root |
+| 保留OIDCユーザー有効化 | `PUT /api/v1/admin/users/{user_id}/activate` | `204` | root、CSRF |
+
+有効化は`pending`のOIDCユーザーにだけ作用する。成功後、そのユーザーは次回のOIDC loginで
+通常のsessionを得られる。rootのパスワードをHTTP request body以外へ記録・保存してはならない。
+初期実装では管理操作はREST APIで提供し、ブラウザー管理UIは後続とする。
 
 ## ノート正本
 

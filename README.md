@@ -46,3 +46,7 @@ OIDC認可要求は`openid profile email` scopeとAuthorization Code Flow、PKCE
 
 `ROOT_PASSWORD`は初回起動時にArgon2id hashとしてDBへ保存される。初期化済みDBでは不要であり、
 設定しても既存のrootパスワードを変更しない。
+
+初期実装では、保留OIDCユーザーをrootがREST APIから有効化できる。endpointとCSRFの扱いは
+[REST API仕様](docs/rest-api.md#root管理)を参照する。rootのパスワードはコマンド履歴、process引数、
+ログへ残してはならない。
