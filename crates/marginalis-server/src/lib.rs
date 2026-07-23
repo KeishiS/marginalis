@@ -6,18 +6,18 @@ use std::{env, net::SocketAddr, path::PathBuf};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    AuthenticationUseCaseError, Clock, NoteAclService, NoteAclServiceError, NoteAclStore,
-    McpAccessTokenStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases,
-    NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore,
-    SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
+    AuthenticationUseCaseError, Clock, McpAccessTokenStore, NoteAclService, NoteAclServiceError,
+    NoteAclStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases,
+    NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore, SessionLifetime,
+    WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
-use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
 use marginalis_domain::{
     Actor, EntityId, NoteId, NotePage, NotePermission, NoteSource, OidcLoginResult, SourceRevision,
     UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
+use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
 use marginalis_sqlite::SqliteDatabase;
 use url::Url;
 use uuid::Uuid;
@@ -70,7 +70,10 @@ pub struct ServerMcpAuthenticator {
 
 impl ServerMcpAuthenticator {
     pub fn new(database: SqliteDatabase, resource_uri: String) -> Self {
-        Self { database, resource_uri }
+        Self {
+            database,
+            resource_uri,
+        }
     }
 }
 
@@ -334,7 +337,12 @@ impl NoteUseCases for ServerNoteUseCases {
             .read(note_id)
             .map_err(|_| NoteUseCaseError::Unavailable)?
             .ok_or(NoteUseCaseError::NotFound)?;
+        let source = std::str::from_utf8(&content).map_err(|_| NoteUseCaseError::Unavailable)?;
+        let projection = marginalis_asciidoc::parse_note_projection(source)
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
         Ok(NoteSource {
+            note_id,
+            title: projection.title,
             revision: SourceRevision::from_source(&content),
             content,
         })

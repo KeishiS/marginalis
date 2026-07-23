@@ -197,6 +197,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/health", get(health))
         .route("/api/v1/session", get(current_session))
         .route("/api/v1/notes/{note_id}/source", get(note_source))
+        .route("/api/v1/notes/{note_id}", get(note_metadata))
         .route("/api/v1/notes/{note_id}/source", put(update_note_source))
         .route("/api/v1/notes/{note_id}", delete(delete_note))
         .route("/api/v1/notes", get(list_notes).post(create_note))
@@ -275,10 +276,15 @@ async fn mcp_post(
         ApiErrorCode::NotFound,
         "MCP is not available",
     ))?;
-    if let Some(origin) = headers.get(header::ORIGIN).and_then(|value| value.to_str().ok())
+    if let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
         && origin != endpoint.allowed_origin
     {
-        return Err(ApiError::new(ApiErrorCode::Forbidden, "MCP origin is not allowed"));
+        return Err(ApiError::new(
+            ApiErrorCode::Forbidden,
+            "MCP origin is not allowed",
+        ));
     }
     let token = headers
         .get(header::AUTHORIZATION)
@@ -289,11 +295,16 @@ async fn mcp_post(
     };
     let actor = match endpoint.authenticator.authenticate_read(token).await {
         Ok(actor) => actor,
-        Err(McpAuthenticationError::MissingOrInvalid | McpAuthenticationError::InsufficientScope) => {
+        Err(
+            McpAuthenticationError::MissingOrInvalid | McpAuthenticationError::InsufficientScope,
+        ) => {
             return Ok(mcp_unauthorized(endpoint));
         }
         Err(McpAuthenticationError::Unavailable) => {
-            return Err(ApiError::new(ApiErrorCode::Internal, "MCP authentication is unavailable"));
+            return Err(ApiError::new(
+                ApiErrorCode::Internal,
+                "MCP authentication is unavailable",
+            ));
         }
     };
     Ok(Json(endpoint.tools.handle(actor, request).await).into_response())
@@ -303,7 +314,9 @@ fn mcp_unauthorized(endpoint: &McpEndpoint) -> Response {
     let mut response = StatusCode::UNAUTHORIZED.into_response();
     let value = format!("Bearer resource_metadata=\"{}\"", endpoint.metadata_uri);
     if let Ok(value) = HeaderValue::from_str(&value) {
-        response.headers_mut().insert(header::WWW_AUTHENTICATE, value);
+        response
+            .headers_mut()
+            .insert(header::WWW_AUTHENTICATE, value);
     }
     response
 }
@@ -347,6 +360,13 @@ struct NoteSearchQuery {
 struct NoteSummaryResponse {
     note_id: String,
     title: String,
+}
+
+#[derive(Serialize)]
+struct NoteMetadataResponse {
+    note_id: String,
+    title: String,
+    revision: String,
 }
 
 #[derive(Serialize)]
@@ -478,6 +498,28 @@ async fn note_source(
             .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note lookup is unavailable"))?,
     );
     Ok(response)
+}
+
+async fn note_metadata(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<NoteMetadataResponse>, ApiError> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let note_id = NoteId::new(
+        EntityId::from_str(&note_id)
+            .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
+    );
+    let source = state
+        .notes
+        .read_source(actor, note_id)
+        .await
+        .map_err(|error| note_error(error, "note lookup is unavailable"))?;
+    Ok(Json(NoteMetadataResponse {
+        note_id: source.note_id.to_string(),
+        title: source.title,
+        revision: source.revision.to_hex(),
+    }))
 }
 
 async fn update_note_source(

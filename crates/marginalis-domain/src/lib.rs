@@ -138,6 +138,8 @@ entity_id!(NoteId);
 /// 認可済みのノート正本と、その内容に一意に対応するrevision。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteSource {
+    pub note_id: NoteId,
+    pub title: String,
     pub content: Vec<u8>,
     pub revision: SourceRevision,
 }
