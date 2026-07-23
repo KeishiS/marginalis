@@ -13,6 +13,8 @@ JOINできない。保存時に使う`RenderPolicy::default()`は閲覧時の明
 
 ## 実装項目
 
+複数タグfilterはAND semanticsとする。すなわち、指定したすべての正規化tagを持つノートだけを返す。
+
 1. タグと作成・更新日時を正規化して投影し、ACLを保ったタグ・作成者・日時・参照方向filterをquery port、
    RESTおよびMCPへ追加する。
 2. FTSを`bm25(note_search, 10.0, 1.0)`等の明示した列重みで検索し、タイトル一致を本文一致より優先する。
