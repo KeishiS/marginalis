@@ -6,19 +6,20 @@ use std::{env, net::SocketAddr, path::PathBuf};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    AuthenticationUseCaseError, Clock, McpAccessTokenStore, NoteAclService, NoteAclServiceError,
-    NoteAclStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases,
-    NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore, SessionLifetime,
-    WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
+    AuthenticationUseCaseError, Clock, McpAccessTokenStore, McpOAuthStore, NoteAclService,
+    NoteAclServiceError, NoteAclStore, NoteOperationKind, NoteQueryStore, NoteUseCaseError,
+    NoteUseCases, NoteWriteService, OidcUserAdministrationStore, Random, RootCredentialStore,
+    SessionLifetime, WebAuthenticationUseCases, WebSession, WebSessionService, WebSessionStore,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePage, NotePermission, NoteSource, OidcLoginResult, SourceRevision,
-    UnixMillis, UserId,
+    Actor, EntityId, McpAuthorizationGrant, NoteId, NotePage, NotePermission, NoteSource,
+    OidcLoginResult, SourceRevision, UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
 use marginalis_sqlite::SqliteDatabase;
+use sha2::{Digest, Sha256};
 use url::Url;
 use uuid::Uuid;
 
@@ -66,6 +67,108 @@ pub struct ServerWebAuthenticationUseCases {
 pub struct ServerMcpAuthenticator {
     database: SqliteDatabase,
     resource_uri: String,
+}
+
+/// OAuth code exchangeの成功時だけtransportへ返すtoken pair。Debugを実装しない。
+pub struct McpIssuedTokenPair {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub access_expires_in_seconds: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum McpOAuthError {
+    Rejected,
+    Unavailable,
+}
+
+/// MCP OAuthのcode発行・exchangeをSQLite adapterへ接続するapplication service。
+#[derive(Clone)]
+pub struct ServerMcpOAuthService {
+    database: SqliteDatabase,
+}
+
+impl ServerMcpOAuthService {
+    pub const fn new(database: SqliteDatabase) -> Self {
+        Self { database }
+    }
+
+    pub async fn authorize(
+        &self,
+        grant: McpAuthorizationGrant,
+        code_challenge: String,
+    ) -> Result<String, McpOAuthError> {
+        let Some(client) = self
+            .database
+            .mcp_oauth_store()
+            .lookup_client(grant.client_id.clone())
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?
+        else {
+            return Err(McpOAuthError::Rejected);
+        };
+        if !client.redirect_uris.contains(&grant.redirect_uri) || code_challenge.is_empty() {
+            return Err(McpOAuthError::Rejected);
+        }
+        let code = SystemRandom.opaque_token();
+        self.database
+            .mcp_oauth_store()
+            .issue_authorization_code(
+                code.clone(),
+                grant,
+                code_challenge,
+                UnixMillis::new(SystemClock.now().get() + 5 * 60 * 1_000),
+            )
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        Ok(code)
+    }
+
+    pub async fn exchange_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        code_verifier: String,
+    ) -> Result<McpIssuedTokenPair, McpOAuthError> {
+        let now = SystemClock.now();
+        let Some((grant, expected_challenge)) = self
+            .database
+            .mcp_oauth_store()
+            .consume_authorization_code(code, client_id, redirect_uri, resource_uri, now)
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?
+        else {
+            return Err(McpOAuthError::Rejected);
+        };
+        if pkce_s256(&code_verifier) != expected_challenge {
+            return Err(McpOAuthError::Rejected);
+        }
+        let access_token = SystemRandom.opaque_token();
+        let refresh_token = SystemRandom.opaque_token();
+        let access_expires_in_seconds = 60 * 60;
+        self.database
+            .mcp_oauth_store()
+            .issue_token_pair(
+                access_token.clone(),
+                refresh_token.clone(),
+                grant,
+                UnixMillis::new(now.get() + (access_expires_in_seconds * 1_000) as i64),
+                UnixMillis::new(now.get() + 30 * 24 * 60 * 60 * 1_000),
+            )
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        Ok(McpIssuedTokenPair {
+            access_token,
+            refresh_token,
+            access_expires_in_seconds,
+        })
+    }
+}
+
+fn pkce_s256(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
 impl ServerMcpAuthenticator {

@@ -17,6 +17,7 @@ marginalis-files = { path = "../marginalis-files" }
 marginalis-mcp = { path = "../marginalis-mcp" }
 marginalis-sqlite = { path = "../marginalis-sqlite" }
 rand.workspace = true
+sha2.workspace = true
 time.workspace = true
 url.workspace = true
 uuid.workspace = true

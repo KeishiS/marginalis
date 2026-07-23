@@ -1213,6 +1213,7 @@ dependencies = [
  "marginalis-mcp",
  "marginalis-sqlite",
  "rand 0.8.7",
+ "sha2",
  "time",
  "url",
  "uuid",

@@ -259,6 +259,15 @@ pub trait McpOAuthStore: Send + Sync {
         resource_uri: String,
         now: UnixMillis,
     ) -> impl Future<Output = Result<Option<(McpAuthorizationGrant, String)>, Self::Error>> + Send;
+
+    fn issue_token_pair(
+        &self,
+        access_token: String,
+        refresh_token: String,
+        grant: McpAuthorizationGrant,
+        access_expires_at: UnixMillis,
+        refresh_expires_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
 /// sessionの有効期限と秘密値を一箇所で決めるユースケース。

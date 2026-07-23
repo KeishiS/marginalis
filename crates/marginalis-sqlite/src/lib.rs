@@ -1020,6 +1020,49 @@ impl McpOAuthStore for SqliteMcpOAuthStore {
             Ok(Some((grant, challenge)))
         }
     }
+
+    fn issue_token_pair(
+        &self,
+        access_token: String,
+        refresh_token: String,
+        grant: McpAuthorizationGrant,
+        access_expires_at: UnixMillis,
+        refresh_expires_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let mut transaction = pool.begin().await?;
+            let scopes = grant.scopes.join(" ");
+            sqlx::query(
+                "INSERT INTO mcp_access_tokens
+                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(hash_token(&access_token))
+            .bind(grant.user_id.to_string())
+            .bind(&grant.client_id)
+            .bind(&grant.resource_uri)
+            .bind(&scopes)
+            .bind(access_expires_at.get())
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query(
+                "INSERT INTO mcp_refresh_tokens
+                 (token_hash, user_id, client_id, resource_uri, scopes, expires_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(hash_token(&refresh_token))
+            .bind(grant.user_id.to_string())
+            .bind(&grant.client_id)
+            .bind(&grant.resource_uri)
+            .bind(scopes)
+            .bind(refresh_expires_at.get())
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            Ok(())
+        }
+    }
 }
 
 impl NoteProjectionStore for SqliteNoteProjectionStore {
