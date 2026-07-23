@@ -148,6 +148,14 @@ impl NoteSourceStore for FileNoteStore {
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         std::future::ready(FileNoteStore::delete(self, note_id, operation))
     }
+
+    fn discard_temporary(
+        &self,
+        note_id: NoteId,
+        operation: OperationId,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
+        std::future::ready(FileNoteStore::discard_temporary(self, note_id, operation))
+    }
 }
 
 impl fmt::Display for FileStoreError {
@@ -646,7 +654,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recovery_replays_a_source_applied_operation() {
+    async fn recovery_detects_a_renamed_source_before_journal_marking() {
         let directory = test_directory();
         let sources = FileNoteStore::open(&directory).expect("open file store");
         let database = SqliteDatabase::connect("sqlite::memory:")
@@ -686,10 +694,6 @@ mod tests {
         sources
             .replace(note_id, operation, &source)
             .expect("write source");
-        journal
-            .mark_source_applied(operation, UnixMillis::new(2))
-            .await
-            .expect("mark source");
         let projections = database.note_projection_store();
         NoteWriteService::new(&sources, &projections, &journal, &FixedRandom, &FixedClock)
             .recover()

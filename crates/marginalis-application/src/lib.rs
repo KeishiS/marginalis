@@ -533,6 +533,12 @@ pub trait OperationJournal: Send + Sync {
         operation_id: OperationId,
         updated_at: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    /// 正本変更前に停止した操作を取り消し、journalから復旧対象を除く。
+    fn cancel(
+        &self,
+        operation_id: OperationId,
+        updated_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     fn incomplete(&self) -> impl Future<Output = Result<Vec<JournalEntry>, Self::Error>> + Send;
 }
 
@@ -553,6 +559,13 @@ pub trait NoteSourceStore: Send + Sync {
     ) -> impl Future<Output = Result<SourceRevision, Self::Error>> + Send;
 
     fn delete(
+        &self,
+        note_id: NoteId,
+        operation: OperationId,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    /// rename前に残った操作専用のtemp fileを除去する。
+    fn discard_temporary(
         &self,
         note_id: NoteId,
         operation: OperationId,
@@ -934,7 +947,7 @@ where
         Ok(())
     }
 
-    /// sourceを書込み済みで止まった操作だけを再投影する。preparedは正本変更前なので残す。
+    /// 未完了operationを、正本の状態から取消しまたは投影完了へ収束させる。
     pub async fn recover(&self) -> Result<(), NoteWriteError> {
         for entry in self
             .journal
@@ -942,8 +955,34 @@ where
             .await
             .map_err(|error| NoteWriteError::Journal(Box::new(error)))?
         {
-            if entry.state != OperationState::SourceApplied {
-                continue;
+            if entry.state == OperationState::Prepared {
+                let source = self
+                    .sources
+                    .read(entry.note_id)
+                    .await
+                    .map_err(|error| NoteWriteError::Source(Box::new(error)))?;
+                let source_is_applied = match entry.kind {
+                    NoteOperationKind::Delete => source.is_none(),
+                    NoteOperationKind::Create | NoteOperationKind::Update => {
+                        source.as_deref().map(SourceRevision::from_source) == entry.source_revision
+                    }
+                };
+                if source_is_applied {
+                    self.journal
+                        .mark_source_applied(entry.operation_id, self.clock.now())
+                        .await
+                        .map_err(|error| NoteWriteError::Journal(Box::new(error)))?;
+                } else {
+                    self.sources
+                        .discard_temporary(entry.note_id, entry.operation_id)
+                        .await
+                        .map_err(|error| NoteWriteError::Source(Box::new(error)))?;
+                    self.journal
+                        .cancel(entry.operation_id, self.clock.now())
+                        .await
+                        .map_err(|error| NoteWriteError::Journal(Box::new(error)))?;
+                    continue;
+                }
             }
             if entry.kind == NoteOperationKind::Delete {
                 if self

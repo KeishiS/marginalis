@@ -2046,6 +2046,29 @@ impl OperationJournal for SqliteOperationJournal {
         }
     }
 
+    fn cancel(
+        &self,
+        operation_id: OperationId,
+        updated_at: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let result = sqlx::query(
+                "UPDATE operation_journal SET state = 'completed', updated_at_ms = ?
+                 WHERE operation_id = ? AND state = 'prepared'",
+            )
+            .bind(updated_at.get())
+            .bind(operation_id.0.to_string())
+            .execute(&pool)
+            .await?;
+            if result.rows_affected() == 1 {
+                Ok(())
+            } else {
+                Err(JournalError::InvalidTransition)
+            }
+        }
+    }
+
     fn incomplete(&self) -> impl Future<Output = Result<Vec<JournalEntry>, Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
