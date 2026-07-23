@@ -1193,6 +1193,7 @@ dependencies = [
  "base64 0.22.1",
  "marginalis-application",
  "marginalis-asciidoc",
+ "marginalis-auth-oidc",
  "marginalis-domain",
  "marginalis-files",
  "marginalis-sqlite",
