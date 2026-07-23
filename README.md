@@ -50,3 +50,10 @@ OIDC認可要求は`openid profile email` scopeとAuthorization Code Flow、PKCE
 初期実装では、保留OIDCユーザーをrootがREST APIから有効化できる。endpointとCSRFの扱いは
 [REST API仕様](docs/rest-api.md#root管理)を参照する。rootのパスワードはコマンド履歴、process引数、
 ログへ残してはならない。
+
+## 再基線化とデータ初期化
+
+REST APIとMCPを共通のapplication層へ接続する再基線化では、既存のdataDirを移行しない。既存
+データの破棄は、サービス停止後に運用者が明示して行う。通常の起動、`nixos-rebuild`および
+Marginalis自身がdataDirを自動削除することはない。NixOSでの正確な手順は
+[NixOS運用](docs/nixos.md#api-first再基線化時の初期化)を参照する。
