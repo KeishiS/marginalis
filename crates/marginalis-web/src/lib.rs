@@ -1359,45 +1359,39 @@ async fn complete_oidc_login(
     headers: HeaderMap,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Response, ApiError> {
+    let cookie_path = state.oidc.cookie_path();
     if query.error.is_some() {
         tracing::warn!("OIDC callback rejected by authorization server");
-        return Err(ApiError::new(
-            ApiErrorCode::AuthenticationRequired,
-            "authentication failed",
-        ));
+        return Ok(oidc_callback_failure(cookie_path));
     }
     let (Some(code), Some(state_token)) = (query.code.as_deref(), query.state.as_deref()) else {
         tracing::warn!("OIDC callback rejected: missing authorization response parameters");
-        return Err(ApiError::new(
-            ApiErrorCode::AuthenticationRequired,
-            "authentication failed",
-        ));
+        return Ok(oidc_callback_failure(cookie_path));
     };
     if cookie_value(&headers, OIDC_STATE_COOKIE).as_deref() != Some(state_token) {
         tracing::warn!("OIDC callback rejected: browser state binding did not match");
-        return Err(ApiError::new(
-            ApiErrorCode::AuthenticationRequired,
-            "authentication failed",
-        ));
+        return Ok(oidc_callback_failure(cookie_path));
     }
-    let OidcLoginResult::Active(user) = state
+    let result = match state
         .oidc
         .complete_oidc_login(code.into(), state_token.into())
         .await
-        .map_err(authentication_error)?
-    else {
+    {
+        Ok(result) => result,
+        Err(_) => {
+            tracing::warn!("OIDC callback could not be completed");
+            return Ok(oidc_callback_failure(cookie_path));
+        }
+    };
+    let OidcLoginResult::Active(user) = result else {
         tracing::warn!("OIDC callback rejected: user is not authorized");
-        return Err(ApiError::new(
-            ApiErrorCode::AuthenticationRequired,
-            "authentication failed",
-        ));
+        return Ok(oidc_callback_failure(cookie_path));
     };
     let session = state
         .sessions
         .issue_oidc_session(user.user_id)
         .await
         .map_err(authentication_error)?;
-    let cookie_path = state.oidc.cookie_path();
     let mut response_headers = session_headers(&session, cookie_path)?;
     let destination = oidc_return_to(&headers)
         .unwrap_or_else(|| format!("{}/", cookie_path.trim_end_matches('/')));
@@ -1414,6 +1408,18 @@ async fn complete_oidc_login(
             .map_err(|_| ApiError::new(ApiErrorCode::Internal, "authentication is unavailable"))?,
     );
     Ok((response_headers, Redirect::to(&destination)).into_response())
+}
+
+fn oidc_callback_failure(cookie_path: &str) -> Response {
+    let mut response = ApiError::new(
+        ApiErrorCode::AuthenticationRequired,
+        "authentication failed",
+    )
+    .into_response();
+    if let Ok(cookie) = HeaderValue::from_str(&clear_oidc_state_cookie(cookie_path)) {
+        response.headers_mut().append(header::SET_COOKIE, cookie);
+    }
+    response
 }
 
 fn oidc_state_from_destination(destination: &str) -> Result<String, ApiError> {
@@ -1906,8 +1912,8 @@ mod tests {
     use super::{
         ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, OPENAPI_DOCUMENT,
         REQUEST_ID_HEADER, RootLoginRateLimiter, administration_router, clear_oidc_state_cookie,
-        oidc_state_cookie, oidc_state_from_destination, require_same_origin_browser_request,
-        rfc3339_timestamp, router,
+        oidc_callback_failure, oidc_state_cookie, oidc_state_from_destination,
+        require_same_origin_browser_request, rfc3339_timestamp, router,
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
     use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
@@ -2054,6 +2060,21 @@ mod tests {
             "marginalis_oidc_state=; Path=/marginalis; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
         );
         assert!(oidc_state_from_destination("https://identity.example.edu/authorize").is_err());
+    }
+
+    #[test]
+    fn failed_oidc_callback_clears_the_browser_state_cookie() {
+        let response = oidc_callback_failure("/marginalis");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::SET_COOKIE)
+                .expect("state clearing cookie")
+                .to_str()
+                .expect("header"),
+            "marginalis_oidc_state=; Path=/marginalis; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
+        );
     }
 
     #[test]
