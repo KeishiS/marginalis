@@ -29,6 +29,7 @@ REST APIで継続し、管理UIは後続とする。既存デプロイのdataDir
 1. [013: root管理・OIDCユーザー承認](013-root-administration-and-approval.md)のユーザー再有効化、招待、専用管理origin・mTLS
 2. [012: MCP曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)に基づく検索拡張と実MCP client結合試験
 3. [006: ブラウザ編集プレビュー](006-browser-preview.md)（Web UIを公開する段階）
+4. [029: AdocWeave v0.4.0 への移行](029-adocweave-v0.4.0-adoption.md)
 
 ### 完了済みの基盤・初期実装
 
