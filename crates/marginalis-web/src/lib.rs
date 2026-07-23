@@ -379,7 +379,12 @@ async fn mcp_post(
     let Some(token) = token else {
         return Ok(mcp_unauthorized(endpoint));
     };
-    let actor = match endpoint.authenticator.authenticate_read(token).await {
+    let required_scope = endpoint.tools.required_scope(&request);
+    let actor = match endpoint
+        .authenticator
+        .authenticate(token, required_scope)
+        .await
+    {
         Ok(actor) => actor,
         Err(
             McpAuthenticationError::MissingOrInvalid | McpAuthenticationError::InsufficientScope,

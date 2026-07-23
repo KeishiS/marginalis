@@ -451,12 +451,17 @@ impl ServerMcpAuthenticator {
 
 #[async_trait]
 impl McpAuthenticator for ServerMcpAuthenticator {
-    async fn authenticate_read(&self, bearer_token: &str) -> Result<Actor, McpAuthenticationError> {
+    async fn authenticate(
+        &self,
+        bearer_token: &str,
+        required_scope: &str,
+    ) -> Result<Actor, McpAuthenticationError> {
         self.database
             .mcp_access_token_store()
-            .authenticate_read(
+            .authenticate(
                 bearer_token.into(),
                 self.resource_uri.clone(),
+                required_scope.into(),
                 SystemClock.now(),
             )
             .await

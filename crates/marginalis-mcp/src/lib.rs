@@ -13,7 +13,11 @@ pub const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
 /// bearer tokenを検証済みの一般ユーザーへ変換するMCP専用の境界。
 #[async_trait]
 pub trait McpAuthenticator: Send + Sync {
-    async fn authenticate_read(&self, bearer_token: &str) -> Result<Actor, McpAuthenticationError>;
+    async fn authenticate(
+        &self,
+        bearer_token: &str,
+        required_scope: &str,
+    ) -> Result<Actor, McpAuthenticationError>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,6 +59,25 @@ impl McpTools {
             _ => JsonRpcResponse::error(id, -32601, "method not found"),
         };
         request.id.map(|_| response)
+    }
+
+    /// request本文から必要scopeを決める。未知または壊れたrequestはread scopeで認証し、その後JSON-RPCの
+    /// validation errorとして返すことで、scopeの有無をoracleにしない。
+    pub fn required_scope(&self, request: &JsonRpcRequest) -> &'static str {
+        if request.method != "tools/call" {
+            return "notes:read";
+        }
+        let Some(params) = &request.params else {
+            return "notes:read";
+        };
+        let Ok(call) = serde_json::from_value::<ToolCall>(params.clone()) else {
+            return "notes:read";
+        };
+        match call.name.as_str() {
+            "create_note" | "update_note" => "notes:write",
+            "prepare_delete_note" | "delete_note" => "notes:delete",
+            _ => "notes:read",
+        }
     }
 
     async fn call_tool(&self, actor: Actor, id: Value, params: Option<Value>) -> JsonRpcResponse {

@@ -218,10 +218,11 @@ pub trait WebAuthenticationUseCases: Send + Sync {
 pub trait McpAccessTokenStore: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn authenticate_read(
+    fn authenticate(
         &self,
         token: String,
         resource_uri: String,
+        required_scope: String,
         now: UnixMillis,
     ) -> impl Future<Output = Result<Option<Actor>, Self::Error>> + Send;
 }

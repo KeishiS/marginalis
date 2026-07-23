@@ -844,10 +844,11 @@ fn hash_token(token: &str) -> Vec<u8> {
 impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
     type Error = McpAccessTokenStoreError;
 
-    fn authenticate_read(
+    fn authenticate(
         &self,
         token: String,
         resource_uri: String,
+        required_scope: String,
         now: UnixMillis,
     ) -> impl Future<Output = Result<Option<Actor>, Self::Error>> + Send {
         let pool = self.pool.clone();
@@ -859,13 +860,14 @@ impl McpAccessTokenStore for SqliteMcpAccessTokenStore {
                    AND mcp_access_tokens.resource_uri = ?
                    AND mcp_access_tokens.revoked_at_ms IS NULL
                    AND mcp_access_tokens.expires_at_ms > ?
-                   AND instr(' ' || mcp_access_tokens.scopes || ' ', ' notes:read ') > 0
+                   AND instr(' ' || mcp_access_tokens.scopes || ' ', ' ' || ? || ' ') > 0
                    AND users.status = 'active'
                    AND users.authentication_kind <> 'root'",
             )
             .bind(hash_token(&token))
             .bind(resource_uri)
             .bind(now.get())
+            .bind(required_scope)
             .fetch_optional(&pool)
             .await?;
             row.map(|row| {
@@ -2157,9 +2159,10 @@ mod tests {
         let store = database.mcp_access_token_store();
         assert_eq!(
             store
-                .authenticate_read(
+                .authenticate(
                     "opaque-token".into(),
                     "https://example.test/mcp".into(),
+                    "notes:read".into(),
                     UnixMillis::new(1),
                 )
                 .await
@@ -2171,13 +2174,26 @@ mod tests {
         );
         assert!(
             store
-                .authenticate_read(
+                .authenticate(
                     "opaque-token".into(),
                     "https://other.test/mcp".into(),
+                    "notes:read".into(),
                     UnixMillis::new(1),
                 )
                 .await
                 .expect("authentication")
+                .is_none()
+        );
+        assert!(
+            store
+                .authenticate(
+                    "opaque-token".into(),
+                    "https://example.test/mcp".into(),
+                    "notes:delete".into(),
+                    UnixMillis::new(1),
+                )
+                .await
+                .expect("scope authentication")
                 .is_none()
         );
     }
@@ -2332,9 +2348,10 @@ mod tests {
         assert!(
             database
                 .mcp_access_token_store()
-                .authenticate_read(
+                .authenticate(
                     "access-2".into(),
                     "https://example.test/mcp".into(),
+                    "notes:read".into(),
                     UnixMillis::new(2),
                 )
                 .await
