@@ -13,7 +13,8 @@ use std::{
 use axum::{
     Json, Router,
     extract::{Form, Path, Query, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Request, StatusCode, header},
+    middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post, put},
 };
@@ -40,6 +41,11 @@ use url::Url;
 
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
+
+const REQUEST_ID_HEADER: &str = "x-request-id";
+
+#[derive(Clone)]
+struct RequestId(String);
 
 /// HTTPハンドラーが利用する共有状態。
 #[derive(Clone)]
@@ -285,11 +291,18 @@ pub fn router(state: ApiState) -> Router {
             "/api/v1/admin/users/{user_id}/activate",
             put(activate_pending_user),
         )
+        .layer(middleware::from_fn(assign_request_id))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {
+                    let request_id = request
+                        .extensions()
+                        .get::<RequestId>()
+                        .map(|id| id.0.as_str())
+                        .unwrap_or("missing");
                     info_span!(
                         "http_request",
+                        request_id,
                         method = %request.method(),
                         path = request.uri().path(),
                     )
@@ -297,6 +310,17 @@ pub fn router(state: ApiState) -> Router {
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
         .with_state(state)
+}
+
+/// 各requestにserver生成の相関IDを割り当て、response headerとtracing spanで共有する。
+async fn assign_request_id(mut request: Request<axum::body::Body>, next: Next) -> Response {
+    let request_id = RequestId(uuid::Uuid::now_v7().to_string());
+    request.extensions_mut().insert(request_id.clone());
+    let mut response = next.run(request).await;
+    if let Ok(value) = HeaderValue::from_str(&request_id.0) {
+        response.headers_mut().insert(REQUEST_ID_HEADER, value);
+    }
+    response
 }
 
 #[derive(Serialize)]
@@ -1475,7 +1499,7 @@ mod tests {
 
     use super::{
         ApiError, ApiErrorCode, ApiState, McpEndpoint, McpRateLimiter, OidcConfiguration,
-        OidcConfigurationError, router,
+        OidcConfigurationError, REQUEST_ID_HEADER, router,
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
     use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
@@ -1859,6 +1883,13 @@ mod tests {
         .expect("response");
 
         assert_eq!(response.status(), StatusCode::OK);
+        let request_id = response
+            .headers()
+            .get(REQUEST_ID_HEADER)
+            .expect("request ID")
+            .to_str()
+            .expect("request ID value");
+        assert!(uuid::Uuid::parse_str(request_id).is_ok());
     }
 
     #[tokio::test]
