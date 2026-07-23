@@ -17,12 +17,13 @@ password、Cookie、OIDC code、MCP access/refresh tokenをコマンド履歴、
 1. ブラウザで`/auth/oidc/login`へ移動し、Kanidm login後に`GET /api/v1/session`が`200`かつ
    `is_root: false`を返すことを確認する。
 2. Cookie jarとCSRF cookieを管理できるAPI clientで、`POST /api/v1/notes`へ有効なAsciiDoc正本を送る。
-   `creator-id`には前段のsession user ID、`note-id`には新しいUUIDv7を指定する。`201`とsource URLを
-   記録する。
+   必須header属性は含めるが、`note-id`、`creator-id`、`created-at`、`updated-at`はserverが置換する。
+   `201`とsource URLを記録し、取得したsourceがserver値になっていることを確認する。
 3. `GET` sourceの`ETag`を取得し、その値を`If-Match`と`X-CSRF-Token`に付けて`PUT`する。`204`後に
    `GET /api/v1/search?q=<固有語>`が作成ノートだけを返すことを確認する。
-4. 同じ`ETag`で二度更新して`409`となること、更新後の`ETag`で`DELETE`すると`204`となることを確認する。
-   削除後は一覧・検索・source取得がいずれも`404`であることを確認する。
+4. 同じ`ETag`で二度更新して`409`となることを確認する。更新後の`ETag`で削除準備を行い、返された
+   confirmation tokenで削除を確定して`204`となることを確認する。削除後は一覧・検索・source取得が
+   いずれも`404`であることを確認する。
 
 `marginalis_session`や`marginalis_csrf`をshellの引数・履歴へ貼り付けない。API clientのsecret storeまたは
 一時的なCookie jarを用い、確認後に削除する。

@@ -63,7 +63,7 @@ transport固有の認証方式は混在させない。
 | `GET /api/v1/notes/{note_id}/source` | `get_note` | MCPはmetadataとsourceを一つのJSON-RPC resultで返す。 |
 | `POST /api/v1/notes` | `create_note` | RESTは検証済みAsciiDoc正本、MCPは構造化したtitle/body/tagsを受ける。 |
 | `PUT /api/v1/notes/{note_id}/source` | `update_note` | 両者ともrevisionの完全一致を要求する。 |
-| `DELETE /api/v1/notes/{note_id}` | `prepare_delete_note` → `delete_note` | MCPは確認tokenを二段階で必要とする。 |
+| `POST /api/v1/notes/{note_id}/delete-preparations` → `POST /api/v1/notes/delete-confirmations` | `prepare_delete_note` → `delete_note` | 両transportとも確認tokenを二段階で必要とする。 |
 
 Cookie、`X-CSRF-Token`、`Origin`、`Sec-Fetch-Site`はREST browser boundaryだけの要件であり、MCP tool input・
 output schemaへ含めない。
@@ -92,8 +92,9 @@ scopeは`notes:read`、`notes:write`、`notes:delete`だけを受理する。cli
 競合時には変更しない。
 
 削除toolは`notes:delete`とAdmin ACLを必要とする。`prepare_delete_note`が返す確認tokenは実行者、
-対象ノート、revisionへ結び付けられ、5分で失効する。`delete_note`で一度だけ消費され、確認後に
-revisionまたはACLが変わっていれば物理削除を行わない。tokenの平文はSQLiteへ保存しない。
+対象ノート、revisionおよび被参照集合へ結び付けられ、5分で失効する。結果には実行者から可視な
+`incoming_reference_count`も含まれる。`delete_note`で一度だけ消費され、確認後にrevisionまたは
+被参照状態が変わっていれば物理削除を行わない。tokenの平文はSQLiteへ保存しない。
 
 access tokenの有効期間は1時間である。refresh tokenの有効期間は30日で、`grant_type=refresh_token`、
 `refresh_token`、client ID、resourceを`/oauth/token`へ送ると新しいtoken pairを得る。refresh tokenは
