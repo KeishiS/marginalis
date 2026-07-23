@@ -400,7 +400,15 @@ pub fn build_note_projection(
 pub fn parse_note_projection(source: &str) -> Result<NoteProjection, Vec<NoteProjectionError>> {
     let analysis = adocweave::Engine::new(Default::default())
         .analyze(source)
-        .map_err(|_| Vec::new())?;
+        .map_err(|_| {
+            // Parser内部の詳細はtransport境界へ漏らさない。ただし空のdiagnostic集合では
+            // 利用側が構文解析失敗とprofile検証失敗を区別できない。
+            vec![NoteProjectionError {
+                code: "asciidoc-parse-failed".into(),
+                range: TextRange::new(TextSize::ZERO, TextSize::ZERO)
+                    .expect("empty range is always valid"),
+            }]
+        })?;
     build_note_projection(&analysis)
 }
 

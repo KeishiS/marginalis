@@ -1,7 +1,7 @@
 //! Marginalisのcomposition root。設定読込、adapter組立、tracingおよびHTTP listenを担う。
 
 use marginalis_application::{Clock, RootCredentialStore, RootInitializationService};
-use marginalis_asciidoc::parse_note_projection;
+use marginalis_asciidoc::{parse_note_projection, verify_runtime_contracts};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_domain::UnixMillis;
 use marginalis_files::{FileNoteStore, StorageLayout};
@@ -318,6 +318,7 @@ fn initialize_tracing() {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    verify_runtime_contracts()?;
     let (configuration, secrets) = ServerConfig::from_environment()?;
     let layout = StorageLayout::open(&configuration.storage.data_dir)?;
     let database = SqliteDatabase::connect_with_initial_registration_policy(
