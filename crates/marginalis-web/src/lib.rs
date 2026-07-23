@@ -1230,7 +1230,7 @@ async fn activate_pending_user(
     Path(user_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
-    require_root(&headers, &state).await?;
+    let actor = require_root(&headers, &state).await?;
     require_csrf(&headers, &state).await?;
     let user_id = UserId::new(
         EntityId::from_str(&user_id)
@@ -1238,7 +1238,7 @@ async fn activate_pending_user(
     );
     let activated = state
         .authentication
-        .activate_pending_user(user_id)
+        .activate_pending_user(actor, user_id)
         .await
         .map_err(authentication_error)?;
     if !activated {
@@ -1256,7 +1256,7 @@ async fn disable_oidc_user(
     Path(user_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
-    require_root(&headers, &state).await?;
+    let actor = require_root(&headers, &state).await?;
     require_csrf(&headers, &state).await?;
     let user_id = UserId::new(
         EntityId::from_str(&user_id)
@@ -1264,7 +1264,7 @@ async fn disable_oidc_user(
     );
     if !state
         .authentication
-        .disable_oidc_user(user_id)
+        .disable_oidc_user(actor, user_id)
         .await
         .map_err(authentication_error)?
     {
@@ -1301,7 +1301,7 @@ async fn update_registration_policy(
     headers: HeaderMap,
     Json(request): Json<RegistrationPolicyRequest>,
 ) -> Result<StatusCode, ApiError> {
-    require_root(&headers, &state).await?;
+    let actor = require_root(&headers, &state).await?;
     require_csrf(&headers, &state).await?;
     let policy = match request.policy.as_str() {
         "open" => marginalis_domain::RegistrationPolicy::Open,
@@ -1315,7 +1315,7 @@ async fn update_registration_policy(
     };
     state
         .authentication
-        .set_registration_policy(policy)
+        .set_registration_policy(actor, policy)
         .await
         .map_err(authentication_error)?;
     Ok(StatusCode::NO_CONTENT)

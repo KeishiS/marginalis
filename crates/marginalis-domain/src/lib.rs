@@ -242,6 +242,45 @@ pub enum RegistrationPolicy {
     InviteOnly,
 }
 
+/// root権限で実行された認証・管理操作の、秘密情報を含まない監査種別。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootAuditAction {
+    LoginSucceeded,
+    LoginFailed,
+    Logout,
+    OidcUserActivated,
+    OidcUserDisabled,
+    RegistrationPolicyChanged,
+    McpClientRegistered,
+    McpClientAuthorizationRevoked,
+}
+
+impl RootAuditAction {
+    pub const fn as_storage(self) -> &'static str {
+        match self {
+            Self::LoginSucceeded => "login-succeeded",
+            Self::LoginFailed => "login-failed",
+            Self::Logout => "logout",
+            Self::OidcUserActivated => "oidc-user-activated",
+            Self::OidcUserDisabled => "oidc-user-disabled",
+            Self::RegistrationPolicyChanged => "registration-policy-changed",
+            Self::McpClientRegistered => "mcp-client-registered",
+            Self::McpClientAuthorizationRevoked => "mcp-client-authorization-revoked",
+        }
+    }
+}
+
+/// root監査の一行。password、token、cookie、OIDC codeその他の秘密値は含めない。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RootAuditEvent {
+    pub action: RootAuditAction,
+    pub actor_user_id: Option<UserId>,
+    pub target_user_id: Option<UserId>,
+    /// client IDや登録policyなど、秘密でない対象識別子だけを入れる。
+    pub target: Option<String>,
+    pub occurred_at: UnixMillis,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UserStatus {
     Pending,

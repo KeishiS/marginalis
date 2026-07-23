@@ -17,7 +17,8 @@ use marginalis_application::{
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, NoteId, NotePage, NotePermission, NoteSource,
-    OidcLoginResult, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+    OidcLoginResult, RegistrationPolicy, RootAuditAction, RootAuditEvent, SourceRevision,
+    UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
@@ -461,9 +462,20 @@ impl McpOAuthAdministrationUseCases for ServerMcpOAuthService {
         {
             return Err(McpOAuthUseCaseError::Rejected);
         }
+        let client_id = client.client_id.clone();
         self.database
             .mcp_oauth_store()
             .upsert_client(client)
+            .await
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
+        self.database
+            .record_root_audit(RootAuditEvent {
+                action: RootAuditAction::McpClientRegistered,
+                actor_user_id: Some(actor.user_id),
+                target_user_id: None,
+                target: Some(client_id),
+                occurred_at: SystemClock.now(),
+            })
             .await
             .map_err(|_| McpOAuthUseCaseError::Unavailable)
     }
@@ -479,9 +491,22 @@ impl McpOAuthAdministrationUseCases for ServerMcpOAuthService {
         }
         self.database
             .mcp_oauth_store()
-            .revoke_client_tokens(user_id, client_id, SystemClock.now())
+            .revoke_client_tokens(user_id, client_id.clone(), SystemClock.now())
             .await
-            .map_err(|_| McpOAuthUseCaseError::Unavailable)
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
+        if actor.is_root {
+            self.database
+                .record_root_audit(RootAuditEvent {
+                    action: RootAuditAction::McpClientAuthorizationRevoked,
+                    actor_user_id: Some(actor.user_id),
+                    target_user_id: Some(user_id),
+                    target: Some(client_id),
+                    occurred_at: SystemClock.now(),
+                })
+                .await
+                .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
+        }
+        Ok(())
     }
 
     async fn list_client_authorizations(
@@ -650,9 +675,19 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
             .await
             .map_err(|_| AuthenticationUseCaseError::Unavailable)?
         else {
+            self.database
+                .record_root_audit(RootAuditEvent {
+                    action: RootAuditAction::LoginFailed,
+                    actor_user_id: None,
+                    target_user_id: None,
+                    target: None,
+                    occurred_at: SystemClock.now(),
+                })
+                .await
+                .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
             return Ok(None);
         };
-        WebSessionService::new(
+        let session = WebSessionService::new(
             &self.database.web_session_store(),
             &SystemRandom,
             &SystemClock,
@@ -668,16 +703,46 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
             },
         )
         .await
-        .map(Some)
-        .map_err(|_| AuthenticationUseCaseError::Unavailable)
+        .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        self.database
+            .record_root_audit(RootAuditEvent {
+                action: RootAuditAction::LoginSucceeded,
+                actor_user_id: Some(user_id),
+                target_user_id: None,
+                target: None,
+                occurred_at: SystemClock.now(),
+            })
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        Ok(Some(session))
     }
 
     async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError> {
+        let now = SystemClock.now();
+        let session = self
+            .database
+            .web_session_store()
+            .lookup(session_id.clone(), now)
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
         self.database
             .web_session_store()
-            .revoke(session_id, SystemClock.now())
+            .revoke(session_id, now)
             .await
-            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        if let Some(session) = session.filter(|session| session.actor.is_root) {
+            self.database
+                .record_root_audit(RootAuditEvent {
+                    action: RootAuditAction::Logout,
+                    actor_user_id: Some(session.actor.user_id),
+                    target_user_id: None,
+                    target: None,
+                    occurred_at: now,
+                })
+                .await
+                .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        }
+        Ok(())
     }
 
     async fn list_pending_users(
@@ -692,21 +757,62 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
 
     async fn activate_pending_user(
         &self,
+        actor: Actor,
         user_id: UserId,
     ) -> Result<bool, AuthenticationUseCaseError> {
-        self.database
+        if !actor.is_root {
+            return Err(AuthenticationUseCaseError::Rejected);
+        }
+        let now = SystemClock.now();
+        let activated = self
+            .database
             .oidc_user_administration_store()
-            .activate(user_id, SystemClock.now())
+            .activate(user_id, now)
             .await
-            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        if activated {
+            self.database
+                .record_root_audit(RootAuditEvent {
+                    action: RootAuditAction::OidcUserActivated,
+                    actor_user_id: Some(actor.user_id),
+                    target_user_id: Some(user_id),
+                    target: None,
+                    occurred_at: now,
+                })
+                .await
+                .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        }
+        Ok(activated)
     }
 
-    async fn disable_oidc_user(&self, user_id: UserId) -> Result<bool, AuthenticationUseCaseError> {
-        self.database
+    async fn disable_oidc_user(
+        &self,
+        actor: Actor,
+        user_id: UserId,
+    ) -> Result<bool, AuthenticationUseCaseError> {
+        if !actor.is_root {
+            return Err(AuthenticationUseCaseError::Rejected);
+        }
+        let now = SystemClock.now();
+        let disabled = self
+            .database
             .oidc_user_administration_store()
-            .disable(user_id, SystemClock.now())
+            .disable(user_id, now)
             .await
-            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        if disabled {
+            self.database
+                .record_root_audit(RootAuditEvent {
+                    action: RootAuditAction::OidcUserDisabled,
+                    actor_user_id: Some(actor.user_id),
+                    target_user_id: Some(user_id),
+                    target: None,
+                    occurred_at: now,
+                })
+                .await
+                .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        }
+        Ok(disabled)
     }
     async fn registration_policy(&self) -> Result<RegistrationPolicy, AuthenticationUseCaseError> {
         self.database
@@ -716,10 +822,31 @@ impl WebAuthenticationUseCases for ServerWebAuthenticationUseCases {
     }
     async fn set_registration_policy(
         &self,
+        actor: Actor,
         policy: RegistrationPolicy,
     ) -> Result<(), AuthenticationUseCaseError> {
+        if !actor.is_root {
+            return Err(AuthenticationUseCaseError::Rejected);
+        }
         self.database
             .set_registration_policy(policy)
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        self.database
+            .record_root_audit(RootAuditEvent {
+                action: RootAuditAction::RegistrationPolicyChanged,
+                actor_user_id: Some(actor.user_id),
+                target_user_id: None,
+                target: Some(
+                    match policy {
+                        RegistrationPolicy::Open => "open",
+                        RegistrationPolicy::Approval => "approval",
+                        RegistrationPolicy::InviteOnly => "invite-only",
+                    }
+                    .into(),
+                ),
+                occurred_at: SystemClock.now(),
+            })
             .await
             .map_err(|_| AuthenticationUseCaseError::Unavailable)
     }

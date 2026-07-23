@@ -16,7 +16,8 @@ use marginalis_application::{
 use marginalis_domain::{
     Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
     NoteLink, NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity,
-    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId, UserStatus,
+    OidcLoginResult, OidcUser, RegistrationPolicy, RootAuditEvent, SourceRevision, UnixMillis,
+    UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -42,6 +43,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         8,
         include_str!("../migrations/0008_registration_policy.sql"),
     ),
+    (9, include_str!("../migrations/0009_root_audit_log.sql")),
 ];
 
 #[derive(Clone, Debug)]
@@ -532,6 +534,34 @@ impl SqliteDatabase {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// root監査を保存する。呼出元は秘密値を渡してはならない。
+    pub async fn record_root_audit(&self, event: RootAuditEvent) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO root_audit_log
+             (action, actor_user_id, target_user_id, target, occurred_at_ms)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(event.action.as_storage())
+        .bind(event.actor_user_id.map(|id| id.to_string()))
+        .bind(event.target_user_id.map(|id| id.to_string()))
+        .bind(event.target)
+        .bind(event.occurred_at.get())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// 保持期限より古いroot監査を消去する。呼出時刻はUTC epoch millisecondsで与える。
+    pub async fn purge_root_audit_before(&self, cutoff: UnixMillis) -> Result<u64, sqlx::Error> {
+        Ok(
+            sqlx::query("DELETE FROM root_audit_log WHERE occurred_at_ms < ?")
+                .bind(cutoff.get())
+                .execute(&self.pool)
+                .await?
+                .rows_affected(),
+        )
     }
 }
 
@@ -1947,7 +1977,7 @@ mod tests {
     use marginalis_domain::{
         Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, NoteId, NotePermission,
         NoteProjection, NoteReference, OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy,
-        SourceRevision, UnixMillis, UserId, UserStatus,
+        RootAuditAction, RootAuditEvent, SourceRevision, UnixMillis, UserId, UserStatus,
     };
     use sqlx::Row;
 
@@ -1991,7 +2021,7 @@ mod tests {
                 .expect("versions")
                 .try_get("version")
                 .expect("version");
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         let index: String = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'notes_live_title_idx'",
         )
@@ -2019,6 +2049,61 @@ mod tests {
         .try_get("name")
         .expect("table name");
         assert_eq!(token_table, "mcp_access_tokens");
+        let audit_table: String = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'root_audit_log'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("audit table")
+        .try_get("name")
+        .expect("table name");
+        assert_eq!(audit_table, "root_audit_log");
+    }
+
+    #[tokio::test]
+    async fn root_audit_is_secret_free_and_purged_by_retention_cutoff() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let root = UserId::new(
+            EntityId::from_str("01800000-0000-7000-8000-000000000090").expect("UUIDv7"),
+        );
+        database
+            .record_root_audit(RootAuditEvent {
+                action: RootAuditAction::LoginSucceeded,
+                actor_user_id: Some(root),
+                target_user_id: None,
+                target: None,
+                occurred_at: UnixMillis::new(10),
+            })
+            .await
+            .expect("record audit");
+        database
+            .record_root_audit(RootAuditEvent {
+                action: RootAuditAction::RegistrationPolicyChanged,
+                actor_user_id: Some(root),
+                target_user_id: None,
+                target: Some("approval".into()),
+                occurred_at: UnixMillis::new(20),
+            })
+            .await
+            .expect("record audit");
+        assert_eq!(
+            database
+                .purge_root_audit_before(UnixMillis::new(20))
+                .await
+                .expect("purge audit"),
+            1
+        );
+        let row = sqlx::query("SELECT action, target FROM root_audit_log")
+            .fetch_one(database.pool())
+            .await
+            .expect("remaining audit");
+        assert_eq!(
+            row.get::<String, _>("action"),
+            "registration-policy-changed"
+        );
+        assert_eq!(row.get::<String, _>("target"), "approval");
     }
 
     #[tokio::test]

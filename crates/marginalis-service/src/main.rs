@@ -1,6 +1,7 @@
 //! Marginalisのcomposition root。設定読込、adapter組立、tracingおよびHTTP listenを担う。
 
-use marginalis_application::{RootCredentialStore, RootInitializationService};
+use marginalis_application::{Clock, RootCredentialStore, RootInitializationService};
+use marginalis_domain::UnixMillis;
 use marginalis_files::FileNoteStore;
 use marginalis_server::{
     ServerConfig, ServerMcpAuthenticator, ServerMcpOAuthService, ServerNoteUseCases,
@@ -33,6 +34,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (configuration, secrets) = ServerConfig::from_environment()?;
     std::fs::create_dir_all(&configuration.data_dir)?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
+    // root監査は365日保持する。古い行だけを起動時に掃除し、通常のHTTP APIからは公開しない。
+    let retention_ms = 365_i64 * 24 * 60 * 60 * 1_000;
+    let cutoff = UnixMillis::new(SystemClock.now().get().saturating_sub(retention_ms));
+    let purged = database.purge_root_audit_before(cutoff).await?;
+    if purged > 0 {
+        tracing::info!(purged, "expired root audit records purged");
+    }
     let sources = FileNoteStore::open(&configuration.data_dir)?;
     let notes = ServerNoteUseCases::new(database.clone(), sources);
     notes.recover().await?;

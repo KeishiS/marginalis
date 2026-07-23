@@ -69,6 +69,8 @@ HTTP REST       MCP transport       maintenance CLI
 - OIDCの`issuer`と`subject`だけが外部本人同定に使われる。email・表示名は可変属性である。
 - secret、token、authorization code、state、nonceおよびPKCE verifierを監査ログ・通常ログ・
   Nix storeへ出力しない。
+- rootの認証成功・失敗とroot管理操作は、秘密値を含まない構造化行としてSQLiteへ保存する。監査の
+  保持期間は365日であり、初期段階ではHTTP経由で公開せずサーバ上から直接確認する。
 - HTTP requestごとにserver生成UUIDv7の`X-Request-Id`を返し、同じ値をtracing spanへ記録する。
   クライアントが送った相関IDを採用しない。
 - MCP access tokenはcanonical resource URI・scope・有効期限を同時に照合する。利用時刻だけを記録し、

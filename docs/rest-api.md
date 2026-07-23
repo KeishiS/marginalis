@@ -36,6 +36,11 @@ login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`PO
 通常のsessionを得られる。rootのパスワードをHTTP request body以外へ記録・保存してはならない。
 初期実装では管理操作はREST APIで提供し、ブラウザー管理UIは後続とする。
 
+rootのログイン成功・失敗、logout、OIDCユーザーの有効化・無効化、登録ポリシー変更およびrootによる
+MCP管理操作はSQLiteの`root_audit_log`へ記録する。監査閲覧用REST APIは設けない。運用者はサーバ上で
+DBを直接参照する。password、cookie、session ID、OIDC code、access/refresh tokenとそのhashは記録しない。
+記録は起動時に365日より古い行を削除する。
+
 無効化は`active`なOIDCユーザーだけに作用し、同一SQLite transactionで当該ユーザーのWeb session、
 MCP access tokenおよびrefresh tokenを失効させる。無効化済みユーザーはOIDC login、REST API、MCPを
 利用できない。
