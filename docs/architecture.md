@@ -61,6 +61,11 @@ HTTP REST       MCP transport       maintenance CLI
 - OIDCの`issuer`と`subject`だけが外部本人同定に使われる。email・表示名は可変属性である。
 - secret、token、authorization code、state、nonceおよびPKCE verifierを監査ログ・通常ログ・
   Nix storeへ出力しない。
+- MCP access tokenはcanonical resource URI・scope・有効期限を同時に照合する。refresh tokenは一回だけ
+  使用でき、交換時に同一SQLite transactionで次のtoken pairへローテーションする。
+- root sessionはMCP clientの認可を作れず、root actorをMCP Bearer tokenとして認証しない。
+- Client ID Metadata Documentは、NixOS設定で許可されたHTTPS hostだけから取得する。取得値はclient IDの
+  完全一致、サイズ上限、redirect URI policyを検証してからSQLiteへ保存する。
 - 新基線のDB schemaはversion管理し、空DB作成をCIで検証する。旧dataDirは移行せず、旧versionは
   明確に拒否する。
 - 時刻はUTC epoch milliseconds、IDは型付きUUIDv7、外部入力は境界で検証する。
@@ -85,10 +90,10 @@ session期限を含める。secretは別の`SecretConfig`で受け、NixOSでは
 4. ファイル正本と操作ジャーナルを実装し、ノートCRUDをapplication use caseとして成立させる。
 5. Axumを新use caseへ接続し、OIDC、Cookie、CSRF、RESTをadapterへ限定する。NixOS VM testをここで
    OIDC secret contractまで拡張する。
-6. Web UI、WASM preview、MCP OAuthを同じapplication portに追加する。
+6. MCP OAuthを同じapplication portに追加し、Web UIとWASM previewは後続にする。
 
 ### 初期公開のHTTP方針
 
-初期公開ではREST APIを先行し、サーバー生成Web UIは提供しない。ノート一覧、閲覧、編集および
-ACL管理のUI、WASM preview、MCP OAuthは後続段階とする。REST APIもHTTP adapterに留まり、同じ
+初期公開ではREST APIとOAuth保護されたMCPを先行し、サーバー生成Web UIは提供しない。ノート一覧、閲覧、編集および
+ACL管理のUI、WASM previewは後続段階とする。REST APIもHTTP adapterに留まり、同じ
 application use caseを経由して正本・SQLite投影・ACLを扱う。

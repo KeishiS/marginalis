@@ -2,6 +2,9 @@
 
 初期公開ではWeb UIを提供せず、このREST APIを利用境界とする。
 
+MCP client向けのBearer token認証・OAuth endpointはCookie REST APIとは分離している。
+詳細は[MCP仕様](mcp.md)を参照する。
+
 ## 認証
 
 `/api/v1/notes`以下の操作は、OIDC loginまたはroot loginで発行した`marginalis_session` Cookieを必要とする。

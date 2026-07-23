@@ -11,10 +11,10 @@
       modules = [
         marginalis.nixosModules.default
         {
-  services.marginalis = {
-    enable = true;
-    # reverse proxyを使わず直接待受けを公開する場合だけ有効にする。
-    openFirewall = false;
+          services.marginalis = {
+            enable = true;
+            # reverse proxyを使わず直接待受けを公開する場合だけ有効にする。
+            openFirewall = false;
             baseUrl = "https://marginalis.sandi05.com";
             listenAddress = "127.0.0.1:3000";
             oidc = {
@@ -23,6 +23,10 @@
               clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
             };
             initialRootPasswordFile = "/run/secrets/marginalis-root-password";
+            mcp = {
+              enable = true;
+              clientMetadataAllowedHosts = [ "clients.example.org" ];
+            };
           };
         }
       ];
@@ -37,6 +41,17 @@ moduleはsystemd `LoadCredential`でsecretを渡し、unitの環境変数にはs
 
 初回起動時だけ`initialRootPasswordFile`が必要である。root初期化後はこのoptionを削除できる。
 SQLite DBと将来のAsciiDoc正本は`dataDir`（既定値は`/var/lib/marginalis`）に永続化される。
+
+## MCPの公開
+
+`services.marginalis.mcp.enable`の既定値は`false`である。`true`の場合に限り、同じBase URL配下へ
+`/mcp`、OAuth Authorization Server、Protected Resource Metadataを公開する。reverse proxyを用いる
+場合は、これらのpathを含めて同じoriginへ転送する。
+
+`clientMetadataAllowedHosts`は、未知のOAuth clientの`client_id` URLからmetadataを取得してよい
+HTTPS hostの許可リストである。この制約により、認可endpointが任意の内部URLを取得するSSRFの入口に
+なることを防ぐ。空リストでも既にSQLiteへ登録済みのclientは利用できるが、初期運用ではmetadata hostを
+明示して登録する方式を推奨する。MCP client側の設定は[MCP仕様](mcp.md)を参照する。
 
 ## API-first再基線化時の初期化
 
