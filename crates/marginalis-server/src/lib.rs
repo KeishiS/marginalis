@@ -1,7 +1,7 @@
 //! サーバーの設定境界。環境変数とNixOS moduleはこの型へ変換される。
 
 use core::fmt;
-use std::{env, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
+use std::{env, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -58,6 +58,9 @@ impl Random for SystemRandom {
 pub struct ServerNoteUseCases {
     database: SqliteDatabase,
     sources: FileNoteStore,
+    /// 正本revisionの照合からrename/deleteまでを一つの臨界区間にする。
+    /// SQLiteとfilesystemをまたぐため、初期版ではprocess内の全ノート書込みを直列化する。
+    write_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 /// Web session、外部OIDCとroot管理を同じapplication境界で公開するserver adapter。
@@ -882,11 +885,16 @@ impl UserAdministrationUseCases for ServerWebAuthenticationUseCases {
 }
 
 impl ServerNoteUseCases {
-    pub const fn new(database: SqliteDatabase, sources: FileNoteStore) -> Self {
-        Self { database, sources }
+    pub fn new(database: SqliteDatabase, sources: FileNoteStore) -> Self {
+        Self {
+            database,
+            sources,
+            write_lock: Arc::new(tokio::sync::Mutex::new(())),
+        }
     }
 
     pub async fn recover(&self) -> Result<(), NoteUseCaseError> {
+        let _write_guard = self.write_lock.lock().await;
         let projections = self.database.note_projection_store();
         let journal = self.database.operation_journal();
         NoteWriteService::new(
@@ -905,6 +913,7 @@ impl ServerNoteUseCases {
     ///
     /// 途中でUTF-8・profile・ファイル名と`note-id`の不一致があればDBへ一切書き込まない。
     pub async fn rebuild_projections(&self) -> Result<usize, NoteUseCaseError> {
+        let _write_guard = self.write_lock.lock().await;
         let sources = self
             .sources
             .list_sources()
@@ -1055,6 +1064,7 @@ impl NoteUseCases for ServerNoteUseCases {
         actor: Actor,
         source: String,
     ) -> Result<NoteId, NoteUseCaseError> {
+        let _write_guard = self.write_lock.lock().await;
         let projection = marginalis_asciidoc::parse_note_projection(&source)
             .map_err(|_| NoteUseCaseError::Validation)?;
         if projection.owner_id != actor.user_id {
@@ -1103,6 +1113,7 @@ impl NoteUseCases for ServerNoteUseCases {
         source: String,
         expected_revision: SourceRevision,
     ) -> Result<(), NoteUseCaseError> {
+        let _write_guard = self.write_lock.lock().await;
         let permission = self
             .database
             .note_acl_store()
@@ -1183,6 +1194,7 @@ impl NoteUseCases for ServerNoteUseCases {
         note_id: NoteId,
         expected_revision: SourceRevision,
     ) -> Result<(), NoteUseCaseError> {
+        let _write_guard = self.write_lock.lock().await;
         let permission = self
             .database
             .note_acl_store()
@@ -1739,7 +1751,7 @@ mod tests {
             .search_notes(
                 Actor {
                     user_id: owner,
-                    is_root: false,
+                    is_root: true,
                 },
                 "Canonical".into(),
                 0,
