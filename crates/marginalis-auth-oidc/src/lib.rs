@@ -244,6 +244,8 @@ impl OidcAuthentication {
         Ok(url.into())
     }
 
+    /// 各adapterを明示的に受け取ることで、OIDC crateを永続化実装から独立させる。
+    #[allow(clippy::too_many_arguments)]
     pub async fn complete_login<Attempts, Identities, Entropy, Time>(
         &self,
         attempts: &Attempts,
