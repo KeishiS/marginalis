@@ -36,6 +36,22 @@ impl SourceRevision {
     pub fn from_bytes(value: &[u8]) -> Option<Self> {
         value.try_into().ok().map(Self)
     }
+
+    /// HTTP ETagおよび監査ログに使う、固定長の小文字16進表現。
+    pub fn to_hex(self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    pub fn from_hex(value: &str) -> Option<Self> {
+        if value.len() != 64 {
+            return None;
+        }
+        let mut bytes = [0_u8; 32];
+        for (index, byte) in bytes.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).ok()?;
+        }
+        Some(Self(bytes))
+    }
 }
 
 /// Marginalisが生成したUUIDv7だけを受け入れるID。
@@ -118,6 +134,13 @@ macro_rules! entity_id {
 
 entity_id!(UserId);
 entity_id!(NoteId);
+
+/// 認可済みのノート正本と、その内容に一意に対応するrevision。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteSource {
+    pub content: Vec<u8>,
+    pub revision: SourceRevision,
+}
 
 /// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。
 ///
@@ -269,5 +292,12 @@ mod tests {
     fn permissions_are_ordered() {
         assert!(NotePermission::Admin.permits(NotePermission::Write));
         assert!(!NotePermission::Read.permits(NotePermission::Write));
+    }
+
+    #[test]
+    fn source_revision_round_trips_through_hex() {
+        let revision = SourceRevision::from_source(b"source");
+        assert_eq!(SourceRevision::from_hex(&revision.to_hex()), Some(revision));
+        assert_eq!(SourceRevision::from_hex("not-a-revision"), None);
     }
 }

@@ -21,7 +21,7 @@ pub use marginalis_auth_oidc::{
     OidcConfigurationError, OidcDiscoveryError, OidcLoginStartError,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteSummary, OidcLoginResult,
+    Actor, EntityId, NoteId, NotePermission, NoteSummary, OidcLoginResult, SourceRevision,
     OidcUser, UserId,
 };
 use marginalis_server::{SystemClock, SystemRandom};
@@ -292,6 +292,23 @@ fn bounded_limit(value: Option<u32>) -> u32 {
     }
 }
 
+fn etag(revision: SourceRevision) -> String {
+    format!("\"{}\"", revision.to_hex())
+}
+
+fn required_if_match(headers: &HeaderMap) -> Result<SourceRevision, ApiError> {
+    let value = headers
+        .get(header::IF_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(ApiError::new(ApiErrorCode::Conflict, "If-Match is required"))?;
+    let value = value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .ok_or(ApiError::new(ApiErrorCode::ValidationFailed, "If-Match is invalid"))?;
+    SourceRevision::from_hex(value)
+        .ok_or(ApiError::new(ApiErrorCode::ValidationFailed, "If-Match is invalid"))
+}
+
 fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
     NoteSummaryResponse {
         note_id: note.note_id.to_string(),
@@ -310,17 +327,24 @@ async fn note_source(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-) -> Result<Vec<u8>, ApiError> {
+) -> Result<Response, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
     let note_id = NoteId::new(
         EntityId::from_str(&note_id)
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
     );
-    state
+    let source = state
         .notes
         .read_source(actor, note_id)
         .await
-        .map_err(|error| note_error(error, "note lookup is unavailable"))
+        .map_err(|error| note_error(error, "note lookup is unavailable"))?;
+    let mut response = source.content.into_response();
+    response.headers_mut().insert(
+        header::ETAG,
+        HeaderValue::from_str(&etag(source.revision))
+            .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note lookup is unavailable"))?,
+    );
+    Ok(response)
 }
 
 async fn update_note_source(
@@ -335,9 +359,10 @@ async fn update_note_source(
         EntityId::from_str(&note_id)
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
     );
+    let expected_revision = required_if_match(&headers)?;
     state
         .notes
-        .update_source(actor, note_id, source)
+        .update_source(actor, note_id, source, expected_revision)
         .await
         .map_err(|error| note_error(error, "note update is unavailable"))?;
     Ok(StatusCode::NO_CONTENT)
@@ -354,9 +379,10 @@ async fn delete_note(
         EntityId::from_str(&note_id)
             .map_err(|_| ApiError::new(ApiErrorCode::NotFound, "note is not available"))?,
     );
+    let expected_revision = required_if_match(&headers)?;
     state
         .notes
-        .delete_note(actor, note_id)
+        .delete_note(actor, note_id, expected_revision)
         .await
         .map_err(|error| note_error(error, "note deletion is unavailable"))?;
     Ok(StatusCode::NO_CONTENT)

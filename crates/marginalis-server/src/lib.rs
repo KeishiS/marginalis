@@ -10,7 +10,8 @@ use marginalis_application::{
     NoteUseCaseError, NoteUseCases, NoteWriteService, Random,
 };
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteSummary, UnixMillis, UserId,
+    Actor, EntityId, NoteId, NotePermission, NoteSource, NoteSummary, SourceRevision, UnixMillis,
+    UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_sqlite::SqliteDatabase;
@@ -104,7 +105,7 @@ impl NoteUseCases for ServerNoteUseCases {
         &self,
         actor: Actor,
         note_id: NoteId,
-    ) -> Result<Vec<u8>, NoteUseCaseError> {
+    ) -> Result<NoteSource, NoteUseCaseError> {
         let permission = self
             .database
             .note_acl_store()
@@ -114,10 +115,15 @@ impl NoteUseCases for ServerNoteUseCases {
         if !matches!(permission, Some(value) if value.permits(NotePermission::Read)) {
             return Err(NoteUseCaseError::NotFound);
         }
-        self.sources
+        let content = self
+            .sources
             .read(note_id)
             .map_err(|_| NoteUseCaseError::Unavailable)?
-            .ok_or(NoteUseCaseError::NotFound)
+            .ok_or(NoteUseCaseError::NotFound)?;
+        Ok(NoteSource {
+            revision: SourceRevision::from_source(&content),
+            content,
+        })
     }
 
     async fn create_source(
@@ -159,6 +165,7 @@ impl NoteUseCases for ServerNoteUseCases {
         actor: Actor,
         note_id: NoteId,
         source: String,
+        expected_revision: SourceRevision,
     ) -> Result<(), NoteUseCaseError> {
         let permission = self
             .database
@@ -179,6 +186,9 @@ impl NoteUseCases for ServerNoteUseCases {
             .read(note_id)
             .map_err(|_| NoteUseCaseError::Unavailable)?
             .ok_or(NoteUseCaseError::NotFound)?;
+        if SourceRevision::from_source(&previous_source) != expected_revision {
+            return Err(NoteUseCaseError::Conflict);
+        }
         let previous_source =
             std::str::from_utf8(&previous_source).map_err(|_| NoteUseCaseError::Unavailable)?;
         let previous_projection = marginalis_asciidoc::parse_note_projection(previous_source)
@@ -201,7 +211,12 @@ impl NoteUseCases for ServerNoteUseCases {
         .map_err(|_| NoteUseCaseError::Unavailable)
     }
 
-    async fn delete_note(&self, actor: Actor, note_id: NoteId) -> Result<(), NoteUseCaseError> {
+    async fn delete_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: SourceRevision,
+    ) -> Result<(), NoteUseCaseError> {
         let permission = self
             .database
             .note_acl_store()
@@ -210,6 +225,14 @@ impl NoteUseCases for ServerNoteUseCases {
             .map_err(|_| NoteUseCaseError::Unavailable)?;
         if !matches!(permission, Some(value) if value.permits(NotePermission::Admin)) {
             return Err(NoteUseCaseError::NotFound);
+        }
+        let source = self
+            .sources
+            .read(note_id)
+            .map_err(|_| NoteUseCaseError::Unavailable)?
+            .ok_or(NoteUseCaseError::NotFound)?;
+        if SourceRevision::from_source(&source) != expected_revision {
+            return Err(NoteUseCaseError::Conflict);
         }
         let projections = self.database.note_projection_store();
         let journal = self.database.operation_journal();

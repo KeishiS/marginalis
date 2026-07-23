@@ -1,7 +1,7 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSummary,
+    Actor, EntityId, NoteId, NotePermission, NoteProjection, NoteSource, NoteSummary,
     OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
     UserId,
 };
@@ -438,8 +438,11 @@ pub trait NoteUseCases: Send + Sync {
         query: String,
         limit: u32,
     ) -> Result<Vec<NoteSummary>, NoteUseCaseError>;
-    async fn read_source(&self, actor: Actor, note_id: NoteId)
-    -> Result<Vec<u8>, NoteUseCaseError>;
+    async fn read_source(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteSource, NoteUseCaseError>;
     async fn create_source(&self, actor: Actor, source: String)
     -> Result<NoteId, NoteUseCaseError>;
     async fn update_source(
@@ -447,8 +450,14 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
         note_id: NoteId,
         source: String,
+        expected_revision: SourceRevision,
     ) -> Result<(), NoteUseCaseError>;
-    async fn delete_note(&self, actor: Actor, note_id: NoteId) -> Result<(), NoteUseCaseError>;
+    async fn delete_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: SourceRevision,
+    ) -> Result<(), NoteUseCaseError>;
     async fn set_permission(
         &self,
         actor: Actor,

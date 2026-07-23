@@ -46,7 +46,8 @@ HTTP REST        MCP transport        CLI / maintenance
    `SessionCommands`および`AdministrationCommands`を、request/response型とdomain errorを持つ
    application APIとして定義する。HTTP/MCPはこのAPIだけに依存する。
 2. **読み取りと書き込みを分離する。** source正本を更新するcommandと、SQLite投影だけを返すqueryを
-   分ける。検索は`SearchNotes` queryに集約し、ACL filter、cursor、snippet、順位をその契約へ含める。
+   分ける。検索は`SearchNotes` queryに集約し、ACL filter、cursor、順位をその契約へ含める。初期公開の
+   検索結果はnote IDとtitleだけとし、本文・一致箇所の抜粋は返さない。
 3. **認証済み主体を統一する。** Web Cookie、MCP access tokenおよび将来のCLI tokenは、検証後に
    `Principal`（内部UserId、権限、認証種別、session/token識別子）へ変換する。rootはMCP principalに
    変換しない。
