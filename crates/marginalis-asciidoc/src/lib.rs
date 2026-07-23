@@ -306,7 +306,9 @@ pub fn extract_note_references(
         }
         references.push(NoteReference {
             range: reference.range,
-            note_id: locator.clone(),
+            // UUIDはcase-insensitiveな識別子として受理し、SQLite投影・resolverのcanonical表現は
+            // lowercaseに固定する。
+            note_id: locator.to_ascii_lowercase(),
             anchor: anchor.clone(),
             label_is_empty: reference.label.is_empty(),
         });
@@ -968,6 +970,18 @@ mod tests {
         );
         assert_eq!(references[1].anchor.as_deref(), Some("stable"));
         assert!(!references[1].label_is_empty);
+    }
+
+    #[test]
+    fn canonicalizes_uppercase_note_xref_uuid() {
+        let analysis = Engine::new(Default::default())
+            .analyze("xref:note:01800000-0000-7000-8000-0000000000AB[]\n")
+            .expect("valid AsciiDoc");
+        let references = extract_note_references(&analysis).expect("valid note reference");
+        assert_eq!(
+            references[0].note_id,
+            "01800000-0000-7000-8000-0000000000ab"
+        );
     }
 
     #[test]
