@@ -103,5 +103,5 @@
   access/refresh token、resource audience照合、refresh token rotationを実装した。
 - NixOS moduleはMCPを明示opt-inにし、Client ID Metadata Documentの取得hostを許可リストに限定する。
 
-実運用のMCP clientとのOAuth結合試験、rate limit、全文snippet・semantic search、server-to-client
-notification streamは初期実装に含まれず、後続作業とする。
+実運用のMCP clientとのOAuth結合試験、全文snippet・semantic search、server-to-client notification
+streamは初期実装に含まれず、後続作業とする。MCP tool呼出しの利用者単位rate limitは実装済みである。
