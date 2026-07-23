@@ -42,6 +42,24 @@ moduleはsystemd `LoadCredential`でsecretを渡し、unitの環境変数にはs
 初回起動時だけ`initialRootPasswordFile`が必要である。root初期化後はこのoptionを削除できる。
 SQLite DBと将来のAsciiDoc正本は`dataDir`（既定値は`/var/lib/marginalis`）に永続化される。
 
+`openFirewall`は`listenAddress`のTCP portをNixOS firewallで許可するだけである。既定の
+`127.0.0.1:3000`は外部から到達不能なままであり、公開には同一Base URLを終端するreverse proxyが必要である。
+reverse proxyは`/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/`を同じoriginへ転送する。TLSはproxyで
+終端してよいが、`baseUrl`には外部から見えるHTTPS URLを設定する。
+
+## 適用後の確認
+
+`nixos-rebuild switch`後は、次を順に確認する。
+
+1. `systemctl status marginalis.service`で`active (running)`であることを確認する。
+2. `curl -fsS https://marginalis.sandi05.com/api/v1/health`でhealth responseを確認する。
+3. `https://marginalis.sandi05.com/auth/oidc/login`からKanidmへ移動し、ログイン後にBase URLへ戻ることを確認する。
+4. 初回はroot login後、`GET /api/v1/admin/users/pending`で保留ユーザーを確認し、有効化する。
+5. MCPを有効にした場合は`/.well-known/oauth-protected-resource/mcp`がJSONを返すことを確認する。
+
+失敗の詳細は`journalctl -u marginalis.service -b --no-pager`で確認する。ログにはOIDC code、token、
+client secret、root passwordを出力しない。
+
 ## MCPの公開
 
 `services.marginalis.mcp.enable`の既定値は`false`である。`true`の場合に限り、同じBase URL配下へ

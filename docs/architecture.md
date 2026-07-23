@@ -1,4 +1,10 @@
-# Marginalis アーキテクチャ再設計
+# Marginalis アーキテクチャ
+
+## 現在の構成
+
+API-first再基線化は完了している。RESTとMCPは同じ`NoteUseCases`へ到達し、SQLite、ファイル正本、
+AsciiDoc解析およびOIDC実装をHTTP handlerから直接操作しない。旧dataDirとの互換性は持たず、新しい
+deploymentは空のdataDirから開始する。
 
 ## 目的
 
@@ -50,7 +56,7 @@ HTTP REST       MCP transport       maintenance CLI
 - `marginalis-server`: 設定読込、依存組立、tracing、server起動。HTTP、MCPおよびCLIを具体adapterへ
   接続するcomposition rootであり、transportの業務判断を持たない。
 
-初期段階ではworkspace内crateに留め、外部公開するRustライブラリAPIは設けない。
+各crateはworkspace内の実装境界であり、外部公開するRustライブラリAPIは設けない。
 
 ## 不変条件
 
@@ -61,8 +67,11 @@ HTTP REST       MCP transport       maintenance CLI
 - OIDCの`issuer`と`subject`だけが外部本人同定に使われる。email・表示名は可変属性である。
 - secret、token、authorization code、state、nonceおよびPKCE verifierを監査ログ・通常ログ・
   Nix storeへ出力しない。
-- MCP access tokenはcanonical resource URI・scope・有効期限を同時に照合する。refresh tokenは一回だけ
-  使用でき、交換時に同一SQLite transactionで次のtoken pairへローテーションする。
+- MCP access tokenはcanonical resource URI・scope・有効期限を同時に照合する。利用時刻だけを記録し、
+  token値・hashはAPIやログへ出さない。refresh tokenは一回だけ使用でき、交換時に同一SQLite
+  transactionで次のtoken pairへローテーションする。
+- MCPの参照一覧は、参照元と参照先の双方を閲覧できる場合だけ返す。不可視の参照先はtitle、anchor、
+  投影上の存在を返さない。
 - root sessionはMCP clientの認可を作れず、root actorをMCP Bearer tokenとして認証しない。
 - Client ID Metadata Documentは、NixOS設定で許可されたHTTPS hostだけから取得する。取得値はclient IDの
   完全一致、サイズ上限、redirect URI policyを検証してからSQLiteへ保存する。

@@ -13,6 +13,10 @@ sessionがないか、期限切れまたは失効済みなら`401 authentication
 login時には読み取り可能な`marginalis_csrf` Cookieも発行する。`POST`、`PUT`およびlogoutは、
 同値を`X-CSRF-Token` headerへ付けなければならない。不在または不一致は`403`で拒否する。
 
+通常のログイン開始URLは`GET /auth/oidc/login`である。成功後はBase URLへ戻る。現在のsessionは
+`GET /api/v1/session`で確認できる。Web UIを提供しないため、API clientはCookie jarとCSRF cookieを
+管理する必要がある。
+
 ## root管理
 
 `POST /auth/root/login`は`{"password":"..."}`を受け取り、rootのパスワードが正しければ
@@ -71,6 +75,24 @@ cursorは前の応答の`next_cursor`だけを受理し、`limit`の既定値は
 
 作成・更新のrequest bodyはAsciiDoc sourceそのものとする。保存前に`marginalis-asciidoc`が、必須
 metadata、危険な構文、`xref:note:`、anchor、およびsource言語のprofileを検証して投影を作る。
+
+作成時の最小例は次である。`note-id`はUUIDv7、`creator-id`は現在のsessionのuser IDにする。日時は
+RFC 3339 UTCである。
+
+```adoc
+= 研究メモ
+:note-id: 01800000-0000-7000-8000-000000000001
+:creator-id: 01800000-0000-7000-8000-000000000002
+:created-at: 2026-07-23T00:00:00.000Z
+:updated-at: 2026-07-23T00:00:00.000Z
+:tags: research, idea
+
+xref:note:01800000-0000-7000-8000-000000000003[関連ノート]
+```
+
+`POST /api/v1/notes`にはこのUTF-8 sourceをbodyとして送り、`X-CSRF-Token`を付ける。成功時の
+`Location`は作成済み正本の`/api/v1/notes/{note_id}/source`である。更新前にはsource取得時の`ETag`を
+そのまま`If-Match`へ送る。
 
 `PUT`ではURLの`note_id`と文書内`:note-id:`が一致しなければ`422 validation-failed`を返す。
 既存ノートの`:creator-id:`は不変であり、更新で変更しようとすると`422 validation-failed`を返す。
