@@ -9,11 +9,12 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::{HeaderMap, StatusCode, header},
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::get,
 };
 use marginalis_application::{
-    AuthenticationUseCaseError, NoteUseCaseError, V3NoteUseCases, V3WebSessionUseCases,
+    AuthenticationUseCaseError, NoteUseCaseError, V3NoteUseCases, V3OidcAuthenticationUseCases,
+    V3WebSessionUseCases,
 };
 use marginalis_domain::{CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, NoteId};
 use serde::{Deserialize, Serialize};
@@ -26,11 +27,23 @@ const CSRF_COOKIE: &str = "marginalis_csrf";
 pub struct V3ApiState {
     pub notes: Arc<dyn V3NoteUseCases>,
     pub sessions: Arc<dyn V3WebSessionUseCases>,
+    pub oidc: Arc<dyn V3OidcAuthenticationUseCases>,
+    pub cookie_path: String,
 }
 
 impl V3ApiState {
-    pub fn new(notes: Arc<dyn V3NoteUseCases>, sessions: Arc<dyn V3WebSessionUseCases>) -> Self {
-        Self { notes, sessions }
+    pub fn new(
+        notes: Arc<dyn V3NoteUseCases>,
+        sessions: Arc<dyn V3WebSessionUseCases>,
+        oidc: Arc<dyn V3OidcAuthenticationUseCases>,
+        cookie_path: String,
+    ) -> Self {
+        Self {
+            notes,
+            sessions,
+            oidc,
+            cookie_path,
+        }
     }
 }
 
@@ -146,6 +159,8 @@ struct DeleteInput {
 pub fn router(state: V3ApiState) -> Router {
     Router::new()
         .route("/", get(home))
+        .route("/auth/oidc/login", get(begin_login))
+        .route("/auth/oidc/callback", get(complete_login))
         .route("/api/v2/health", get(health))
         .route("/api/v2/session", get(session))
         .route("/api/v2/notes", get(list_notes).post(create_note))
@@ -155,6 +170,61 @@ pub fn router(state: V3ApiState) -> Router {
         )
         .route("/api/v2/notes/{note_id}/source", get(export_note))
         .with_state(state)
+}
+
+#[derive(Deserialize)]
+struct OidcCallbackQuery {
+    code: String,
+    state: String,
+}
+
+async fn begin_login(State(state): State<V3ApiState>) -> V3Result<Redirect> {
+    Ok(Redirect::temporary(
+        &state
+            .oidc
+            .begin_login()
+            .await
+            .map_err(authentication_error)?,
+    ))
+}
+
+async fn complete_login(
+    State(state): State<V3ApiState>,
+    axum::extract::Query(query): axum::extract::Query<OidcCallbackQuery>,
+) -> V3Result<Response> {
+    let actor = state
+        .oidc
+        .complete_login(query.code, query.state)
+        .await
+        .map_err(authentication_error)?;
+    let session = state
+        .sessions
+        .issue_session(actor)
+        .await
+        .map_err(authentication_error)?;
+    let mut response = Redirect::to("/").into_response();
+    for value in [
+        format!(
+            "{SESSION_COOKIE}={}; Path={}; Secure; HttpOnly; SameSite=Lax",
+            session.session_id, state.cookie_path
+        ),
+        format!(
+            "{CSRF_COOKIE}={}; Path={}; Secure; SameSite=Lax",
+            session.csrf_token, state.cookie_path
+        ),
+    ] {
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            value.parse().map_err(|_| {
+                problem(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "unavailable",
+                    "authentication is unavailable",
+                )
+            })?,
+        );
+    }
+    Ok(response)
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -480,8 +550,30 @@ mod tests {
         }
     }
 
+    struct Oidc;
+
+    #[async_trait]
+    impl V3OidcAuthenticationUseCases for Oidc {
+        async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError> {
+            Err(AuthenticationUseCaseError::Unavailable)
+        }
+
+        async fn complete_login(
+            &self,
+            _code: String,
+            _state: String,
+        ) -> Result<CanonicalActor, AuthenticationUseCaseError> {
+            Err(AuthenticationUseCaseError::Unavailable)
+        }
+    }
+
     fn app() -> Router {
-        router(V3ApiState::new(Arc::new(Notes), Arc::new(Sessions)))
+        router(V3ApiState::new(
+            Arc::new(Notes),
+            Arc::new(Sessions),
+            Arc::new(Oidc),
+            "/".into(),
+        ))
     }
 
     #[tokio::test]

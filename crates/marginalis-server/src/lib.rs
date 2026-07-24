@@ -13,7 +13,8 @@ use marginalis_application::{
     NoteDraft, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases, NoteWriteService,
     OidcAuthenticationUseCases, OidcUserAdministrationStore, Random, RootCredentialStore,
     SessionLifetime, UserAdministrationUseCases, V3MembershipResolver, V3NoteUseCases,
-    V3WebSessionUseCases, WebSession, WebSessionService, WebSessionStore, WebSessionUseCases,
+    V3OidcAuthenticationUseCases, V3WebSessionUseCases, WebSession, WebSessionService,
+    WebSessionStore, WebSessionUseCases,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
@@ -83,6 +84,19 @@ pub struct ServerV3WebSessionUseCases {
     database: V3SqliteDatabase,
     membership: Arc<dyn V3MembershipResolver>,
     lifetime: SessionLifetime,
+}
+
+/// v0.3 loginではKanidm group以外の利用者状態を保存しない。
+#[derive(Clone)]
+pub struct ServerV3OidcAuthenticationUseCases {
+    database: V3SqliteDatabase,
+    oidc: OidcAuthentication,
+}
+
+impl ServerV3OidcAuthenticationUseCases {
+    pub fn new(database: V3SqliteDatabase, oidc: OidcAuthentication) -> Self {
+        Self { database, oidc }
+    }
 }
 
 const V3_GROUP_REVALIDATION_INTERVAL_MS: i64 = 5 * 60 * 1_000;
@@ -1213,6 +1227,49 @@ impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
             .await
             .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
         Ok(session)
+    }
+}
+
+#[async_trait]
+impl V3OidcAuthenticationUseCases for ServerV3OidcAuthenticationUseCases {
+    async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError> {
+        self.oidc
+            .begin_login(
+                &self.database.oidc_login_attempt_store(),
+                &SystemRandom,
+                &SystemClock,
+            )
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn complete_login(
+        &self,
+        code: String,
+        state: String,
+    ) -> Result<CanonicalActor, AuthenticationUseCaseError> {
+        let identity = self
+            .oidc
+            .complete_v3_login(
+                &self.database.oidc_login_attempt_store(),
+                &SystemClock,
+                &code,
+                &state,
+                "groups",
+            )
+            .await
+            .map_err(|error| match error {
+                OidcCallbackError::Rejected(_) => AuthenticationUseCaseError::Rejected,
+                OidcCallbackError::Unavailable => AuthenticationUseCaseError::Unavailable,
+            })?;
+        if !identity.groups.is_user("server-users") {
+            return Err(AuthenticationUseCaseError::Rejected);
+        }
+        Ok(CanonicalActor {
+            issuer: identity.issuer,
+            subject: identity.subject,
+            is_administrator: identity.groups.is_administrator("server-admins"),
+        })
     }
 }
 

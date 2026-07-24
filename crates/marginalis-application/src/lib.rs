@@ -892,6 +892,17 @@ pub trait V3WebSessionUseCases: Send + Sync {
     ) -> Result<CanonicalWebSession, AuthenticationUseCaseError>;
 }
 
+/// v0.3のKanidmログイン開始・完了をHTTPから隔離する。
+#[async_trait]
+pub trait V3OidcAuthenticationUseCases: Send + Sync {
+    async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError>;
+    async fn complete_login(
+        &self,
+        code: String,
+        state: String,
+    ) -> Result<CanonicalActor, AuthenticationUseCaseError>;
+}
+
 impl std::fmt::Display for NoteUseCaseError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {

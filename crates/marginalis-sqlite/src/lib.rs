@@ -129,6 +129,17 @@ ON v3_web_sessions (issuer, subject)
 WHERE revoked_at_ms IS NULL;
 "#,
     ),
+    (
+        3,
+        r#"
+CREATE TABLE v3_oidc_login_attempts (
+    state_hash BLOB PRIMARY KEY NOT NULL,
+    nonce TEXT NOT NULL,
+    pkce_verifier TEXT NOT NULL,
+    expires_at_ms INTEGER NOT NULL
+) STRICT;
+"#,
+    ),
 ];
 
 #[derive(Clone, Debug)]
@@ -142,6 +153,11 @@ pub struct SqliteDatabase {
 /// 組み立て、旧schemaを作らない。
 #[derive(Clone, Debug)]
 pub struct V3SqliteDatabase {
+    pool: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct V3OidcLoginAttemptStore {
     pool: SqlitePool,
 }
 
@@ -673,6 +689,12 @@ impl V3SqliteDatabase {
 
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    pub fn oidc_login_attempt_store(&self) -> V3OidcLoginAttemptStore {
+        V3OidcLoginAttemptStore {
+            pool: self.pool.clone(),
+        }
     }
 
     /// Web sessionの不透明値はhashだけを保存する。
@@ -1687,6 +1709,63 @@ impl OidcLoginAttemptStore for SqliteOidcLoginAttemptStore {
                     })
                 },
             )
+            .transpose()
+        }
+    }
+}
+
+impl OidcLoginAttemptStore for V3OidcLoginAttemptStore {
+    type Error = sqlx::Error;
+
+    fn issue(
+        &self,
+        attempt: OidcLoginAttempt,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO v3_oidc_login_attempts (state_hash, nonce, pkce_verifier, expires_at_ms)
+                 VALUES (?, ?, ?, ?)",
+            )
+            .bind(hash_token(&attempt.state))
+            .bind(attempt.nonce)
+            .bind(attempt.pkce_verifier)
+            .bind(attempt.expires_at.get())
+            .execute(&pool)
+            .await?;
+            Ok(())
+        }
+    }
+
+    fn consume(
+        &self,
+        state: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<OidcLoginAttempt>, Self::Error>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let hash = hash_token(&state);
+            let row = sqlx::query(
+                "DELETE FROM v3_oidc_login_attempts
+                 WHERE state_hash = ? AND expires_at_ms > ?
+                 RETURNING nonce, pkce_verifier, expires_at_ms",
+            )
+            .bind(&hash)
+            .bind(now.get())
+            .fetch_optional(&pool)
+            .await?;
+            sqlx::query("DELETE FROM v3_oidc_login_attempts WHERE state_hash = ?")
+                .bind(hash)
+                .execute(&pool)
+                .await?;
+            row.map(|row| {
+                Ok(OidcLoginAttempt {
+                    state,
+                    nonce: row.try_get("nonce")?,
+                    pkce_verifier: row.try_get("pkce_verifier")?,
+                    expires_at: UnixMillis::new(row.try_get("expires_at_ms")?),
+                })
+            })
             .transpose()
         }
     }
