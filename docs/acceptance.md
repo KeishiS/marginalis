@@ -3,6 +3,9 @@
 この手順は、NixOS VM テストやユニットテストとは別に、実際のリバースプロキシ・Kanidm・
 MCP クライアントを通して行う確認です。
 
+リリース内容に関係する確認項目を選び、結果と実行日時を記録してください。API の仕様は
+[REST API リファレンス](rest-api.md)、MCP の仕様は [MCP と OAuth](mcp.md)を参照します。
+
 パスワード、Cookie、OIDC コード、MCP のアクセストークン・リフレッシュトークンを、コマンド
 履歴・Issue・ログ・画面共有に残さないでください。API クライアントのシークレットストアか
 一時的な Cookie jar を使い、確認後に削除します。
@@ -16,7 +19,7 @@ MCP クライアントを通して行う確認です。
 3. 登録ポリシーが `approval` の場合、root が対象の OIDC ユーザーを有効化済みである。
    root 操作は [REST API リファレンス](rest-api.md#root-管理)の CSRF 要件に従う。
 
-## 段階 1: OIDC 利用者による REST の確認
+## REST API の確認
 
 1. ブラウザで `/auth/oidc/login` へ移動し、Kanidm ログイン後に `GET /api/v1/session` が
    `200` かつ `is_root: false` を返すことを確認します。
@@ -55,7 +58,7 @@ Cookie jar と CSRF Cookie を保持できる外部 API クライアントを使
 | 6 | `POST /api/v1/notes/{note_id}/delete-preparations` | `If-Match: <最新 ETag>`、`X-CSRF-Token` | `200`、`confirmation_token` |
 | 7 | `POST /api/v1/notes/delete-confirmations` | JSON ボディ `{"confirmation_token":"..."}`、`X-CSRF-Token` | `204` |
 
-## 段階 2: 実 MCP クライアント
+## MCP クライアントの確認
 
 1. クライアントの Streamable HTTP エンドポイントを `https://marginalis.sandi05.com/mcp` に
    設定します。
@@ -72,7 +75,7 @@ Cookie jar と CSRF Cookie を保持できる外部 API クライアントを使
 `clientMetadataAllowedHosts` に追加します。メタデータを持たないクライアントは、root が
 事前登録してから試してください。
 
-## 段階 3: 運用の確認
+## 運用機能の確認
 
 1. root 監査ログを読み取り専用で確認します。
 
@@ -93,11 +96,11 @@ Cookie jar と CSRF Cookie を保持できる外部 API クライアントを使
 5. `systemctl status marginalis-prune-audit.timer` で、監査ログの 365 日保持と期限切れ認証
    データの掃除を行うタイマーが有効であることを確認します。
 6. `curl -fsS https://marginalis.sandi05.com/api/v1/openapi.json | jq -e '.openapi == "3.1.0"'`
-   で、実行中のバイナリが公開契約を返すことを確認します。契約は v0.1.0 で凍結済みのため、
-   リポジトリの `docs/openapi.json` と一致していることを確認します。
+   で、実行中のバイナリが公開契約を返すことを確認します。`/api/v1` は v0.1.0 から互換性を
+   保つため、リポジトリの `docs/openapi.json` と一致していることを確認します。
 
-v0.1.0 で API バージョンを凍結した後に破壊的変更が必要になった場合は、新しいバージョンパスを
+v0.1.0 で公開した API に破壊的変更が必要になった場合は、新しいバージョンパスを
 追加し、既存バージョンには非推奨告知・移行手順・少なくとも 1 リリース周期の猶予を設けます。
 
-いずれの段階でも、失敗時には応答の `X-Request-Id` と
+いずれの確認でも、失敗時には応答の `X-Request-Id` と
 `journalctl -u marginalis.service -b --no-pager` を対応付けて調査します。
