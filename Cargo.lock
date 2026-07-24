@@ -1259,7 +1259,6 @@ dependencies = [
  "marginalis-asciidoc",
  "marginalis-auth-oidc",
  "marginalis-domain",
- "marginalis-files",
  "marginalis-mcp",
  "marginalis-server",
  "marginalis-sqlite",
@@ -1271,7 +1270,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "uuid",
 ]
 
 [[package]]

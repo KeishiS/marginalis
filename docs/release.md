@@ -1,82 +1,14 @@
 # リリース手順
 
-`v0.1.0`（2026-07-23）から `/api/v1` の OpenAPI 仕様について互換性を保証しています。
-データフォーマット v1 は `v0.2.0` で AdocWeave v0.6.1 前提に破壊的に再定義します。
-以後のリリースはこの手順に従います。過去のリリース内容は
-[CHANGELOG](../CHANGELOG.md)を参照してください。
+v0.3 では `/api/v2` と SQLite canonical archive が公開契約です。v0.2 の `/api/v1`、ファイル正本、
+root API には後方互換性を提供しません。
 
-## 互換性の方針
+1. 作業ブランチで `cargo make verify`、`cargo make openapi-check`、`nix flake check --no-build` を実行する。
+2. Kanidm 1.10、TLS、サブパスを使う NixOS E2E を実行する。
+3. ChatGPT、Claude Code、Codex CLI の MCP OAuth read/write/revoke を受入確認する。
+4. 空 database からの NixOS 配備、backup destination、purge timer を確認する。
+5. OpenAPI、MCP、NixOS、受入文書が同じ契約を説明していることを確認する。
+6. Pull Request を作成し、目的・主な差分・検証結果を記載して rebase auto-merge を設定する。
+7. `main` へのマージと必須 gate 成功後に、対象 commit へ release tag を作成する。
 
-- フィールド追加などの後方互換な変更は `/api/v1` 内で行います。
-- 破壊的変更は新しいバージョンパスとして追加し、既存バージョンには少なくとも 1 リリース
-  周期の非推奨告知と移行手順を用意します。
-- `v0.2.0` では例外として、データフォーマットの識別子を v1 のまま維持し、内容を破壊的に
-  上書きします。旧 v1 の移行・復元・切戻しは提供せず、更新前に既存 `dataDir` と、そこから
-  分離して設定した SQLite を削除します。
-- `v0.2.0` の新しい v1 を次の基準点とします。以後、正本の解釈を変える場合は
-  データフォーマットの版を上げるか、破壊的な再定義であることを公開 Issue で明示します。
-
-## バージョンの付け方
-
-`v0.2.0` の正式リリース後は、`-rc.N`を付けたリリース候補版を公開しません。
-公開するバージョンとタグは、`v0.x.y`形式の通常版に統一します。
-
-- 公開前の変更はブランチ上で検証し、`release-gate`と必要な実環境受入に成功してから
-  `v0.x.y`タグを作成します。
-- 公開を妨げる問題が見つかった場合は、リリース候補版を追加せず、問題を修正して同じ検証を
-  最初から実行します。
-- 公開後の修正や機能追加は、変更範囲に応じて次の`0.x.y`へ反映します。
-- `v0.1.0-rc.*`と`v0.2.0-rc.1`は過去の公開履歴として維持します。
-
-## 自動検証
-
-タグを付ける直前に、Linux 上で次を実行します。
-
-```sh
-nix develop --command cargo make release-gate
-```
-
-このコマンドは、Rust のフォーマット、Clippy、ワークスペース全体のテスト、依存関係の検査、
-OpenAPI 仕様、GitHub Actions の構文、Nix flake、NixOS VM テスト、Linux パッケージビルドを
-実行します。タグの push 時と手動起動時には、GitHub Actions の `Release gate` ワークフローも
-同じ検証を実行します。
-
-## 実環境での確認
-
-自動検証の後、[実環境での受入確認](acceptance.md)のうちリリース内容に該当する項目を完了
-します。実際の Kanidm と MCP クライアントを使うため、OIDC シークレット、Cookie、認可コード、
-トークンを CI やコマンド履歴に渡してはいけません。
-
-公開 API・認証・データフォーマットに触れるリリースでは、最低限次を確認します。
-
-1. OIDC セッションでの REST CRUD、検索、`ETag` 競合、ACL 非漏洩、物理削除。
-2. 実 MCP クライアントの OAuth 認可、REST / MCP 間の可視性の一致、認可取消後のトークン失効。
-3. バックアップ世代の検証、非破壊の復元候補作成、投影再構築、監査タイマー、実行中バイナリの
-   OpenAPI 仕様。
-
-## バージョン、タグ、公開
-
-手動受入に成功し、既知の障害がない場合にだけ、次を行います。
-
-1. `Cargo.toml` 群と flake のバージョンがリリース対象のバージョンと一致していること、
-   `LICENSE-MIT`・`LICENSE-APACHE` が確定していることを確認する。`CHANGELOG.md` の対象版に
-   記載した `未公開` を公開日へ置き換える。
-2. リリース用ブランチをpushし、[GitHubを使う開発手順](development.md)に従ってPull Requestを
-   作成する。`main`へ直接pushしない。差分、ローカルのリリースゲート、Pull Requestの
-   必須チェックを確認してからマージする。
-3. マージ済みの`main`を取得し、Pull Requestで確認したコミットと一致することを確かめる。
-   注釈付きタグ`v<version>`をそのコミットへ作成し、タグだけをpushする。タグで起動した
-   `Release gate`は、タグ名、Cargoパッケージ群、flake、`CHANGELOG.md`の版が一致しない場合に
-   失敗する。
-4. GitHub Actions の `Release gate` が成功した後、公開配布が必要な場合にだけ GitHub Release
-   を作成する。タグだけで運用する場合は Release の作成を省略できる。
-5. NixOS 利用者には、Git 参照をタグへ固定するよう案内する。`v0.2.0` 系列への初回更新では、
-   新しいバイナリを起動する前に[初期化手順](nixos.md#v020-系列へ初めて更新する)
-   を完了するよう明記する。
-
-```nix
-inputs.marginalis.url = "github:KeishiS/Marginalis/v0.2.0";
-```
-
-GitHub Release の発行と実サーバーへの適用は外部の状態を変更するため、このリポジトリからは
-自動実行しません。
+復元試験、archive 保存世代、保存先の継続検証は v0.3 公開後に release gate へ追加する改善項目です。
