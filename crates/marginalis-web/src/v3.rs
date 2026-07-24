@@ -30,6 +30,7 @@ pub struct V3ApiState {
     pub sessions: Arc<dyn V3WebSessionUseCases>,
     pub oidc: Arc<dyn V3OidcAuthenticationUseCases>,
     pub cookie_path: String,
+    pub browser_origin: String,
 }
 
 impl V3ApiState {
@@ -38,12 +39,14 @@ impl V3ApiState {
         sessions: Arc<dyn V3WebSessionUseCases>,
         oidc: Arc<dyn V3OidcAuthenticationUseCases>,
         cookie_path: String,
+        browser_origin: String,
     ) -> Self {
         Self {
             notes,
             sessions,
             oidc,
             cookie_path,
+            browser_origin,
         }
     }
 }
@@ -415,6 +418,29 @@ async fn authenticated_mutation_actor(
     state: &V3ApiState,
 ) -> V3Result<CanonicalActor> {
     let actor = authenticated_actor(headers, state).await?;
+    if headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        != Some(state.browser_origin.as_str())
+    {
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            "same_origin_required",
+            "same-origin request is required",
+        ));
+    }
+    if let Some(site) = headers
+        .get("sec-fetch-site")
+        .and_then(|value| value.to_str().ok())
+    {
+        if !matches!(site, "same-origin" | "none") {
+            return Err(problem(
+                StatusCode::FORBIDDEN,
+                "same_origin_required",
+                "same-origin request is required",
+            ));
+        }
+    }
     let session_id =
         cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
     let csrf_cookie = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
@@ -583,6 +609,7 @@ mod tests {
             Arc::new(Sessions),
             Arc::new(Oidc),
             "/".into(),
+            "https://example.test".into(),
         ))
     }
 

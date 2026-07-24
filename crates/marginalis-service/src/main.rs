@@ -434,6 +434,7 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
         sessions,
         oidc,
         cookie_path,
+        configuration.http.base_url.origin().ascii_serialization(),
     );
     axum::serve(
         listener,
