@@ -6,7 +6,8 @@
 [039](039-kanidm-group-authorization-and-mcp-oauth.md)の後に実装する。v0.3の独立 HTTP router に
 認証済みの一覧閲覧、ACLを通すノート取得、CSRF保護した作成・更新・削除、および単体 AsciiDoc
 export を追加した。SQLiteの`deleted_at`と日次`purge-deleted` timerも追加済みである。安全なHTML
-rendering、検索・グラフ、復元とE2Eは残作業とする。
+rendering、検索・グラフ、E2Eは残作業とする。削除前の直接Adminと`server-admins`には、revision
+一致を条件とする30日以内の復元 API を提供する。
 
 ## 目的
 
