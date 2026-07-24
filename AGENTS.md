@@ -17,6 +17,7 @@
 - 環境変数の`GIT_AUTHOR_*`と`GIT_COMMITTER_*`を変更または削除しない。
 - `git status`、`git diff`、`git log`などの読み取り操作は必要に応じて実行する。
 - 可能な限り、独立した変更単位でコミットする。
+- GitHub上の本リポジトリを指すリモート名は`upstream`とする。
 - `main`への直接pushは禁止する。必ず目的が分かる作業ブランチを作成し、Pull Requestから
   `main`へマージする。
 - force pushやブランチ保護の回避を行わない。
