@@ -50,18 +50,22 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 
 | ツール | 入力 | 出力 |
 | --- | --- | --- |
-| `search_notes` | `query`、任意の `limit`・`cursor` | 可視ノートの ID・タイトルと次カーソル |
+| `search_notes` | `query`、任意の `tags`・作成/更新日時範囲・`limit` | 可視ノートの ID・タイトル |
 | `get_note` | `note_id` | Read 権限を持つノートの ID・タイトル・タグ・作成/更新時刻・リビジョン・AsciiDoc 本文 |
-| `list_note_links` | `note_id`、任意の `limit`・`cursor` | 参照元・参照先の両方を閲覧できる参照の位置、参照先の ID・タイトル・アンカーと次カーソル |
+| `list_note_links` | `note_id`、任意の `limit` | 指定ノートから出る参照の位置、参照先の ID・タイトル・アンカー |
 | `create_note` | `title`、`body`、`tags` | サーバー生成メタデータを持つ新規ノートとリビジョン |
 | `update_note` | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとリビジョン |
 | `prepare_delete_note` | `note_id`、`expected_revision` | タイトル、リビジョン、一回限りの確認トークン |
 | `delete_note` | `confirmation_token` | 物理削除の完了 |
 
-検索は SQLite FTS5 の投影を使い、ACL でフィルターした結果だけをカーソルに含めます。本文の
+検索は SQLite FTS5 の投影を使い、ACL でフィルターした結果だけを返します。本文の
 断片、スコア、権限のないノートの存在は返しません。`list_note_links` も同じ規則に従い、
 参照元と参照先の両方に Read 権限がある行だけを返します。参照先が閲覧できない場合は、その
 ID・タイトル・アンカー・投影上の存在のいずれも返しません。
+
+`v0.2.0-rc.1` の MCP ツール契約は `limit`（最大 100）だけを公開し、継続カーソルを
+`inputSchema` に含めません。このため、MCP クライアントから複数ページを順に取得することは
+現行契約の対象外です。REST の一覧・検索はカーソルページングに対応します。
 
 ### ノートの保護されたメタデータ
 
@@ -154,18 +158,17 @@ Client ID Metadata Document を提供しないクライアントは、root が
 `POST /api/v1/admin/mcp-clients` で事前登録できます。この操作には root セッションと CSRF
 トークンが必要で、MCP トークンやクライアントシークレットは扱いません。
 
-### ChatGPT のコールバック URL を事前登録する例
+### コールバック URL を事前登録する例
 
-ChatGPT のカスタム MCP アプリ設定では、登録者が OAuth クライアント ID を指定します。これは
-シークレットではないため、安定した値を決めて、ChatGPT 側の「OAuth client ID」と Marginalis
-側の事前登録で完全に同じ値を使ってください。root による事前登録では URL 形式は必須では
-ないため、`chatgpt-web` のような空でない安定した文字列でも構いません。
+クライアントが Client ID Metadata Document に対応しない場合は、クライアント側で使う安定した
+OAuth クライアント ID と、クライアントが提示するコールバック URL の完全な値を確認します。
+同じ値を Marginalis 側へ事前登録してください。クライアント ID はシークレットではなく、root
+による事前登録では URL 形式も必須ではありません。
 
-- コールバック URL には、ChatGPT の設定画面に表示される完全な値を使います。
-- Dynamic Client Registration は公開していないため、ChatGPT の「登録 URL」は空欄にします。
-- Marginalis はパブリッククライアントの Authorization Code + PKCE だけを受け付けます。
-  `client_secret_basic` と `client_secret_post` は実装していないため、「OAuth client secret」
-  も空欄にします。
+Marginalis は Dynamic Client Registration とクライアントシークレットを提供せず、パブリック
+クライアントの Authorization Code + PKCE だけを受け付けます。クライアントの設定項目名や
+コールバック URL は製品と版によって異なるため、利用中のクライアントが表示する値を正として
+ください。
 
 次の手順は、root セッションと CSRF トークンを取得してクライアントを登録し、最後に root
 セッションを破棄します。root のパスワード、Cookie、CSRF トークン、コールバック URL を
@@ -195,15 +198,15 @@ unset ROOT_PASSWORD
 CSRF_TOKEN="$(awk '$6 == "marginalis_csrf" { print $7 }' "$COOKIE_JAR")"
 [ -n "$CSRF_TOKEN" ]
 
-CHATGPT_CLIENT_ID='chatgpt-web'
-read -r CHATGPT_CALLBACK_URL
+MCP_CLIENT_ID='example-mcp-client'
+read -r MCP_CALLBACK_URL
 
 jq -n \
-  --arg client_id "$CHATGPT_CLIENT_ID" \
-  --arg callback "$CHATGPT_CALLBACK_URL" \
+  --arg client_id "$MCP_CLIENT_ID" \
+  --arg callback "$MCP_CALLBACK_URL" \
   '{
     client_id: $client_id,
-    display_name: "ChatGPT Marginalis MCP",
+    display_name: "Example Marginalis MCP client",
     redirect_uris: [$callback]
   }' |
 curl --fail-with-body --silent --show-error \
@@ -228,8 +231,9 @@ curl --fail-with-body --silent --show-error \
   "$BASE_URL/auth/logout"
 ```
 
-成功すると `HTTP 204` になります。コールバック URL は HTTPS で、クエリ・フラグメント・
-ユーザー情報を含まず、ChatGPT が送る `redirect_uri` と完全に一致する必要があります。
+成功すると `HTTP 204` になります。コールバック URL は HTTPS、または許可されたループバック
+HTTP で、クエリ・フラグメント・ユーザー情報を含まず、クライアントが送る `redirect_uri` と
+完全に一致する必要があります。
 
 ## 認可の確認と取消
 
