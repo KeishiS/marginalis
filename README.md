@@ -34,7 +34,7 @@ cargo make format
 cargo make lint
 cargo make test
 cargo make verify
-# リリース候補または正式リリースの前に実行する。
+# 公開リリースの前に実行する。
 cargo make release-gate
 ```
 
