@@ -3329,6 +3329,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn v3_schema_contains_oauth_tables_bound_to_kanidm_subjects() {
+        let database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        for table in [
+            "v3_mcp_clients",
+            "v3_mcp_authorization_codes",
+            "v3_mcp_access_tokens",
+            "v3_mcp_refresh_tokens",
+        ] {
+            let exists = sqlx::query_scalar::<_, i64>(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            )
+            .bind(table)
+            .fetch_optional(database.pool())
+            .await
+            .expect("schema query")
+            .is_some();
+            assert!(exists, "{table} must exist");
+        }
+    }
+
+    #[tokio::test]
     async fn applies_the_versioned_initial_schema() {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
