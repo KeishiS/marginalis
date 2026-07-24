@@ -192,6 +192,14 @@ pub struct VerifiedOidcGroups {
     pub groups: BTreeSet<String>,
 }
 
+/// v0.3 login callbackでのみ返す、署名検証済みOIDC identityとKanidm group claim。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedOidcIdentity {
+    pub issuer: String,
+    pub subject: String,
+    pub groups: VerifiedOidcGroups,
+}
+
 impl VerifiedOidcGroups {
     pub fn is_user(&self, user_group: &str) -> bool {
         self.groups.contains(user_group)
@@ -310,6 +318,8 @@ impl OidcAuthentication {
             .set_pkce_challenge(challenge)
             .add_scope(Scope::new("profile".into()))
             .add_scope(Scope::new("email".into()))
+            // Kanidm側でこのscopeへ文字列配列の`groups` claimを割り当てる。
+            .add_scope(Scope::new("groups".into()))
             .url();
         Ok(url.into())
     }
@@ -388,6 +398,47 @@ impl OidcAuthentication {
             .register_or_lookup(identity, registration_policy, clock.now())
             .await
             .map_err(|_| OidcCallbackError::Unavailable)
+    }
+
+    /// v0.3のlogin callback。ローカル利用者を作らず、検証済みKanidm identityとgroup claimだけを返す。
+    pub async fn complete_v3_login<Attempts, Time>(
+        &self,
+        attempts: &Attempts,
+        clock: &Time,
+        code: &str,
+        state: &str,
+        group_claim: &str,
+    ) -> Result<VerifiedOidcIdentity, OidcCallbackError>
+    where
+        Attempts: OidcLoginAttemptStore,
+        Time: Clock,
+    {
+        let pending = attempts
+            .consume(state.to_owned(), clock.now())
+            .await
+            .map_err(|_| OidcCallbackError::Unavailable)?
+            .ok_or(OidcCallbackError::Rejected(OidcCallbackRejection::State))?;
+        let token = self
+            .client
+            .exchange_code(AuthorizationCode::new(code.to_owned()))
+            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?
+            .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
+            .request_async(&self.http_client)
+            .await
+            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?;
+        let id_token = token.id_token().ok_or(OidcCallbackError::Rejected(
+            OidcCallbackRejection::MissingIdToken,
+        ))?;
+        let claims = id_token
+            .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
+            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Claims))?;
+        let groups = groups_from_verified_id_token(&id_token.to_string(), group_claim)
+            .map_err(OidcCallbackError::Rejected)?;
+        Ok(VerifiedOidcIdentity {
+            issuer: claims.issuer().as_str().to_owned(),
+            subject: claims.subject().as_str().to_owned(),
+            groups,
+        })
     }
 }
 
