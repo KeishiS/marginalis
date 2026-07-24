@@ -178,6 +178,191 @@ pub struct ServerMcpOAuthService {
     metadata_allowed_hosts: Vec<String>,
 }
 
+/// v0.3 SQLite schemaとKanidm主体を使うMCP OAuth service。
+#[derive(Clone)]
+pub struct ServerV3McpOAuthService {
+    database: V3SqliteDatabase,
+}
+
+impl ServerV3McpOAuthService {
+    pub const ACCESS_TOKEN_SECONDS: u64 = 60 * 60;
+    pub const REFRESH_TOKEN_SECONDS: u64 = 30 * 24 * 60 * 60;
+
+    pub fn new(database: V3SqliteDatabase) -> Self {
+        Self { database }
+    }
+
+    pub async fn register_client(
+        &self,
+        client: marginalis_domain::McpOAuthClient,
+    ) -> Result<(), McpOAuthError> {
+        if client.client_id.is_empty()
+            || client.display_name.trim().is_empty()
+            || client.redirect_uris.is_empty()
+            || !client
+                .redirect_uris
+                .iter()
+                .all(|uri| valid_redirect_uri(uri))
+        {
+            return Err(McpOAuthError::Rejected);
+        }
+        self.database
+            .upsert_mcp_client(&client)
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)
+    }
+
+    pub async fn authorize(
+        &self,
+        actor: CanonicalActor,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        scopes: Vec<String>,
+        code_challenge: String,
+    ) -> Result<String, McpOAuthError> {
+        let Some(client) = self
+            .database
+            .mcp_client(&client_id)
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?
+        else {
+            return Err(McpOAuthError::Rejected);
+        };
+        if !client.redirect_uris.contains(&redirect_uri)
+            || resource_uri.is_empty()
+            || scopes.is_empty()
+            || code_challenge.is_empty()
+        {
+            return Err(McpOAuthError::Rejected);
+        }
+        let code = SystemRandom.opaque_token();
+        let grant = marginalis_domain::CanonicalMcpAuthorizationGrant {
+            actor,
+            client_id,
+            redirect_uri,
+            resource_uri,
+            scopes,
+        };
+        self.database
+            .issue_mcp_authorization_code(
+                &code,
+                &grant,
+                &code_challenge,
+                UnixMillis::new(SystemClock.now().get() + 5 * 60 * 1_000),
+            )
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        Ok(code)
+    }
+
+    pub async fn exchange_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        verifier: String,
+    ) -> Result<McpIssuedTokenPair, McpOAuthError> {
+        let now = SystemClock.now();
+        let Some((grant, challenge)) = self
+            .database
+            .consume_mcp_authorization_code(&code, &client_id, &redirect_uri, &resource_uri, now)
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?
+        else {
+            return Err(McpOAuthError::Rejected);
+        };
+        if pkce_s256(&verifier) != challenge {
+            return Err(McpOAuthError::Rejected);
+        }
+        self.issue_pair(grant, now).await
+    }
+
+    pub async fn refresh_access_token(
+        &self,
+        refresh_token: String,
+        client_id: String,
+        resource_uri: String,
+    ) -> Result<McpIssuedTokenPair, McpOAuthError> {
+        let now = SystemClock.now();
+        let access_token = SystemRandom.opaque_token();
+        let next_refresh_token = SystemRandom.opaque_token();
+        let Some(grant) = self
+            .database
+            .rotate_mcp_refresh_token(
+                &refresh_token,
+                &client_id,
+                &resource_uri,
+                &access_token,
+                &next_refresh_token,
+                UnixMillis::new(now.get() + (Self::ACCESS_TOKEN_SECONDS * 1_000) as i64),
+                UnixMillis::new(now.get() + (Self::REFRESH_TOKEN_SECONDS * 1_000) as i64),
+                now,
+            )
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?
+        else {
+            return Err(McpOAuthError::Rejected);
+        };
+        Ok(McpIssuedTokenPair {
+            access_token,
+            refresh_token: next_refresh_token,
+            access_expires_in_seconds: Self::ACCESS_TOKEN_SECONDS,
+            scope: grant.scopes.join(" "),
+        })
+    }
+
+    async fn issue_pair(
+        &self,
+        grant: marginalis_domain::CanonicalMcpAuthorizationGrant,
+        now: UnixMillis,
+    ) -> Result<McpIssuedTokenPair, McpOAuthError> {
+        let access_token = SystemRandom.opaque_token();
+        let refresh_token = SystemRandom.opaque_token();
+        self.database
+            .issue_mcp_token_pair(
+                &access_token,
+                &refresh_token,
+                &grant,
+                UnixMillis::new(now.get() + (Self::ACCESS_TOKEN_SECONDS * 1_000) as i64),
+                UnixMillis::new(now.get() + (Self::REFRESH_TOKEN_SECONDS * 1_000) as i64),
+                now,
+            )
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        Ok(McpIssuedTokenPair {
+            access_token,
+            refresh_token,
+            access_expires_in_seconds: Self::ACCESS_TOKEN_SECONDS,
+            scope: grant.scopes.join(" "),
+        })
+    }
+
+    pub async fn authenticate(
+        &self,
+        token: &str,
+        resource_uri: &str,
+        scope: &str,
+    ) -> Result<Option<marginalis_domain::CanonicalMcpAuthenticatedActor>, McpOAuthError> {
+        self.database
+            .authenticate_mcp_access_token(token, resource_uri, scope, SystemClock.now())
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)
+    }
+
+    pub async fn revoke(
+        &self,
+        actor: &CanonicalActor,
+        client_id: &str,
+    ) -> Result<(), McpOAuthError> {
+        self.database
+            .revoke_mcp_client_tokens(&actor.issuer, &actor.subject, client_id, SystemClock.now())
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)
+    }
+}
+
 impl ServerMcpOAuthService {
     pub fn new(database: SqliteDatabase, metadata_allowed_hosts: Vec<String>) -> Self {
         Self {
@@ -2385,6 +2570,84 @@ mod tests {
                 .await
                 .expect("lookup"),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_oauth_rotates_tokens_and_honors_revocation() {
+        let database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let service = ServerV3McpOAuthService::new(database);
+        let client = marginalis_domain::McpOAuthClient {
+            client_id: "https://client.example.test/mcp.json".into(),
+            display_name: "Client".into(),
+            redirect_uris: vec!["https://client.example.test/callback".into()],
+        };
+        service
+            .register_client(client.clone())
+            .await
+            .expect("client");
+        let actor = CanonicalActor {
+            issuer: "https://id.example.test".into(),
+            subject: "alice".into(),
+            is_administrator: false,
+        };
+        let verifier = "v3-pkce-verifier".to_owned();
+        let code = service
+            .authorize(
+                actor.clone(),
+                client.client_id.clone(),
+                client.redirect_uris[0].clone(),
+                "https://notes.example.test/mcp".into(),
+                vec!["notes:read".into()],
+                pkce_s256(&verifier),
+            )
+            .await
+            .expect("authorize");
+        let tokens = service
+            .exchange_authorization_code(
+                code,
+                client.client_id.clone(),
+                client.redirect_uris[0].clone(),
+                "https://notes.example.test/mcp".into(),
+                verifier,
+            )
+            .await
+            .expect("exchange");
+        assert!(
+            service
+                .authenticate(
+                    &tokens.access_token,
+                    "https://notes.example.test/mcp",
+                    "notes:read"
+                )
+                .await
+                .expect("authenticate")
+                .is_some()
+        );
+        let rotated = service
+            .refresh_access_token(
+                tokens.refresh_token,
+                client.client_id.clone(),
+                "https://notes.example.test/mcp".into(),
+            )
+            .await
+            .expect("refresh");
+        service
+            .revoke(&actor, &client.client_id)
+            .await
+            .expect("revoke");
+        assert!(
+            service
+                .authenticate(
+                    &rotated.access_token,
+                    "https://notes.example.test/mcp",
+                    "notes:read"
+                )
+                .await
+                .expect("revoked")
+                .is_none()
         );
     }
 }
