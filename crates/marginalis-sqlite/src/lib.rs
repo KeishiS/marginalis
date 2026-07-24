@@ -15,10 +15,10 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     Actor, CANONICAL_ARCHIVE_FORMAT, CanonicalActor, CanonicalArchive,
-    CanonicalAuthenticatedSession, CanonicalNote, CanonicalNoteAclEntry, CanonicalNoteBundle,
-    CanonicalNoteDraft, CanonicalWebSession, EntityId, McpAuthorizationGrant,
-    McpClientAuthorization, McpOAuthClient, NoteId, NoteLink, NoteLinkPage, NotePage,
-    NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
+    CanonicalAuthenticatedSession, CanonicalMcpAuthorizationGrant, CanonicalNote,
+    CanonicalNoteAclEntry, CanonicalNoteBundle, CanonicalNoteDraft, CanonicalWebSession, EntityId,
+    McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId, NoteLink, NoteLinkPage,
+    NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
     RegistrationPolicy, RootAuditEvent, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
@@ -854,6 +854,21 @@ impl V3SqliteDatabase {
     ) -> Result<(), V3NoteStoreError> {
         sqlx::query("UPDATE v3_web_sessions SET revoked_at_ms = ? WHERE session_id_hash = ? AND revoked_at_ms IS NULL")
             .bind(now.get()).bind(hash_token(session_id)).execute(&self.pool).await.map_err(v3_database_error)?;
+        Ok(())
+    }
+
+    pub async fn issue_mcp_authorization_code(
+        &self,
+        code: &str,
+        grant: &CanonicalMcpAuthorizationGrant,
+        code_challenge: &str,
+        expires_at: UnixMillis,
+    ) -> Result<(), V3NoteStoreError> {
+        sqlx::query("INSERT INTO v3_mcp_authorization_codes (code_hash, client_id, redirect_uri, resource_uri, issuer, subject, is_administrator, scopes, code_challenge, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(code)).bind(&grant.client_id).bind(&grant.redirect_uri).bind(&grant.resource_uri)
+            .bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator)
+            .bind(grant.scopes.join(" ")).bind(code_challenge).bind(expires_at.get())
+            .execute(&self.pool).await.map_err(v3_database_error)?;
         Ok(())
     }
 

@@ -257,6 +257,16 @@ pub struct CanonicalAuthenticatedSession {
     pub absolute_expires_at: UnixMillis,
 }
 
+/// v0.3 MCP OAuthでcode・tokenへ束縛するKanidm主体とclient情報。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalMcpAuthorizationGrant {
+    pub actor: CanonicalActor,
+    pub client_id: String,
+    pub redirect_uri: String,
+    pub resource_uri: String,
+    pub scopes: Vec<String>,
+}
+
 /// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。
 ///
 /// `title`、anchorおよび参照はAsciiDoc adapterが検証してから渡す。domainは構文木を持たない。
