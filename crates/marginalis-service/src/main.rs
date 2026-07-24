@@ -326,9 +326,13 @@ impl KanidmMembershipResolver {
 impl V3MembershipResolver for KanidmMembershipResolver {
     async fn resolve(
         &self,
-        _issuer: &str,
+        issuer: &str,
         subject: &str,
     ) -> Result<V3GroupMembership, AuthenticationUseCaseError> {
+        let issuer = url::Url::parse(issuer).map_err(|_| AuthenticationUseCaseError::Rejected)?;
+        if issuer.origin() != self.api_url.origin() {
+            return Err(AuthenticationUseCaseError::Rejected);
+        }
         let response = self
             .client
             .get(self.person_url(subject)?)
@@ -449,13 +453,19 @@ mod tests {
         .expect("resolver");
         assert_eq!(
             resolver
-                .resolve("https://id.example.test", "subject-1")
+                .resolve(&format!("http://{address}"), "subject-1")
                 .await
                 .expect("membership"),
             V3GroupMembership {
                 is_user: true,
                 is_administrator: true,
             }
+        );
+        assert_eq!(
+            resolver
+                .resolve("https://another-id.example.test", "subject-1")
+                .await,
+            Err(AuthenticationUseCaseError::Rejected)
         );
     }
 }
