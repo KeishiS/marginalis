@@ -196,7 +196,7 @@
                 enable = true;
                 baseUrl = "https://marginalis.example.test";
                 oidc = {
-                  # networkに依存せずroot-only縮退起動を検証する。実OIDCの確認は手動acceptanceで行う。
+                  # networkに依存せず、OIDC未到達時にもlivenessを維持してloginをfail closedにする経路を検証する。
                   issuerUrl = "https://127.0.0.1:1";
                   clientId = "marginalis";
                   clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
