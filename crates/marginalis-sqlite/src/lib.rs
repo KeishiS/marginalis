@@ -986,6 +986,85 @@ impl V3SqliteDatabase {
         .transpose()
     }
 
+    /// refresh tokenを一度だけ消費し、同じKanidm主体に新しいtoken pairを発行する。
+    pub async fn rotate_mcp_refresh_token(
+        &self,
+        refresh_token: &str,
+        client_id: &str,
+        resource_uri: &str,
+        new_access_token: &str,
+        new_refresh_token: &str,
+        access_expires_at: UnixMillis,
+        refresh_expires_at: UnixMillis,
+        now: UnixMillis,
+    ) -> Result<Option<CanonicalMcpAuthorizationGrant>, V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let row = sqlx::query(
+            "UPDATE v3_mcp_refresh_tokens SET rotated_at_ms = ?
+             WHERE token_hash = ? AND client_id = ? AND resource_uri = ?
+               AND rotated_at_ms IS NULL AND revoked_at_ms IS NULL AND expires_at_ms > ?
+             RETURNING issuer, subject, is_administrator, scopes",
+        )
+        .bind(now.get())
+        .bind(hash_token(refresh_token))
+        .bind(client_id)
+        .bind(resource_uri)
+        .bind(now.get())
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let grant = CanonicalMcpAuthorizationGrant {
+            actor: CanonicalActor {
+                issuer: row.try_get("issuer").map_err(v3_database_error)?,
+                subject: row.try_get("subject").map_err(v3_database_error)?,
+                is_administrator: row.try_get("is_administrator").map_err(v3_database_error)?,
+            },
+            client_id: client_id.into(),
+            redirect_uri: String::new(),
+            resource_uri: resource_uri.into(),
+            scopes: row
+                .try_get::<String, _>("scopes")
+                .map_err(v3_database_error)?
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect(),
+        };
+        let scopes = grant.scopes.join(" ");
+        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, membership_checked_at_ms, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(new_access_token)).bind(client_id).bind(resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(now.get()).bind(&scopes).bind(access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(new_refresh_token)).bind(client_id).bind(resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        transaction.commit().await.map_err(v3_database_error)?;
+        Ok(Some(grant))
+    }
+
+    pub async fn revoke_mcp_client_tokens(
+        &self,
+        issuer: &str,
+        subject: &str,
+        client_id: &str,
+        now: UnixMillis,
+    ) -> Result<(), V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        for table in ["v3_mcp_access_tokens", "v3_mcp_refresh_tokens"] {
+            let query = format!(
+                "UPDATE {table} SET revoked_at_ms = ? WHERE issuer = ? AND subject = ? AND client_id = ? AND revoked_at_ms IS NULL"
+            );
+            sqlx::query(&query)
+                .bind(now.get())
+                .bind(issuer)
+                .bind(subject)
+                .bind(client_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(v3_database_error)?;
+        }
+        transaction.commit().await.map_err(v3_database_error)
+    }
+
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
     pub async fn create_note(
         &self,
@@ -3530,6 +3609,82 @@ mod tests {
                 )
                 .await
                 .expect("second consume")
+                .is_none()
+        );
+        database
+            .issue_mcp_token_pair(
+                "access",
+                "refresh",
+                &grant,
+                UnixMillis::new(100),
+                UnixMillis::new(1_000),
+                UnixMillis::new(1),
+            )
+            .await
+            .expect("token pair");
+        assert!(
+            database
+                .authenticate_mcp_access_token(
+                    "access",
+                    &grant.resource_uri,
+                    "notes:read",
+                    UnixMillis::new(2)
+                )
+                .await
+                .expect("access token")
+                .is_some()
+        );
+        assert!(
+            database
+                .rotate_mcp_refresh_token(
+                    "refresh",
+                    &grant.client_id,
+                    &grant.resource_uri,
+                    "next-access",
+                    "next-refresh",
+                    UnixMillis::new(200),
+                    UnixMillis::new(2_000),
+                    UnixMillis::new(3)
+                )
+                .await
+                .expect("rotation")
+                .is_some()
+        );
+        assert!(
+            database
+                .rotate_mcp_refresh_token(
+                    "refresh",
+                    &grant.client_id,
+                    &grant.resource_uri,
+                    "again-access",
+                    "again-refresh",
+                    UnixMillis::new(200),
+                    UnixMillis::new(2_000),
+                    UnixMillis::new(4)
+                )
+                .await
+                .expect("second rotation")
+                .is_none()
+        );
+        database
+            .revoke_mcp_client_tokens(
+                &grant.actor.issuer,
+                &grant.actor.subject,
+                &grant.client_id,
+                UnixMillis::new(5),
+            )
+            .await
+            .expect("revoke");
+        assert!(
+            database
+                .authenticate_mcp_access_token(
+                    "next-access",
+                    &grant.resource_uri,
+                    "notes:read",
+                    UnixMillis::new(6)
+                )
+                .await
+                .expect("revoked access")
                 .is_none()
         );
     }
