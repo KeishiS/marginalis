@@ -20,6 +20,7 @@ use marginalis_domain::{CanonicalActor, CanonicalNote, CanonicalNoteDraft, Entit
 use serde::{Deserialize, Serialize};
 
 pub const API_VERSION: &str = "v2";
+pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi-v3.json");
 const SESSION_COOKIE: &str = "marginalis_session";
 const CSRF_COOKIE: &str = "marginalis_csrf";
 
@@ -159,6 +160,7 @@ struct DeleteInput {
 pub fn router(state: V3ApiState) -> Router {
     Router::new()
         .route("/", get(home))
+        .route("/api/v2/openapi.json", get(openapi))
         .route("/auth/oidc/login", get(begin_login))
         .route("/auth/oidc/callback", get(complete_login))
         .route("/api/v2/health", get(health))
@@ -170,6 +172,14 @@ pub fn router(state: V3ApiState) -> Router {
         )
         .route("/api/v2/notes/{note_id}/source", get(export_note))
         .with_state(state)
+}
+
+async fn openapi() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        OPENAPI_DOCUMENT,
+    )
+        .into_response()
 }
 
 #[derive(Deserialize)]
@@ -596,5 +606,22 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(notes.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn v3_openapi_is_served_from_the_embedded_contract() {
+        let response = app()
+            .oneshot(
+                Request::get("/api/v2/openapi.json")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            OPENAPI_DOCUMENT,
+            include_str!("../../../docs/openapi-v3.json")
+        );
     }
 }
