@@ -17,21 +17,24 @@ use std::{
 };
 use tracing_subscriber::EnvFilter;
 
+const USAGE: &str = "usage: marginalis [--version|serve|rebuild-projections|prune-audit|backup (--output <absolute-directory>|--directory <absolute-directory>)|restore --input <backup-directory> --output <new-data-directory>]";
+
 #[tokio::main]
 async fn main() {
-    initialize_tracing();
     let mut arguments = std::env::args().skip(1);
     let command = arguments.next();
+    if matches!(command.as_deref(), Some("--version" | "-V")) && arguments.next().is_none() {
+        println!("marginalis {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    initialize_tracing();
     let result = match command.as_deref() {
         None | Some("serve") => run().await,
         Some("rebuild-projections") => rebuild_projections().await,
         Some("prune-audit") => prune_audit().await,
         Some("backup") => backup(arguments).await,
         Some("restore") => restore(arguments).await,
-        Some(_) => Err(
-            "usage: marginalis [serve|rebuild-projections|prune-audit|backup (--output <absolute-directory>|--directory <absolute-directory>)|restore --input <backup-directory> --output <new-data-directory>]"
-                .into(),
-        ),
+        Some(_) => Err(USAGE.into()),
     };
     if let Err(error) = result {
         tracing::error!(error = %error, "Marginalis server terminated");
