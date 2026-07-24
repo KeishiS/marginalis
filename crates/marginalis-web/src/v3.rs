@@ -3,6 +3,7 @@
 //! このmoduleはv0.2の`/api/v1`・root管理・ローカル`UserId`を参照しない。composition rootは
 //! v0.3.0ではこのrouterだけを公開する。
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use std::{str::FromStr, sync::Arc};
 
 use axum::{
@@ -25,6 +26,7 @@ pub const API_VERSION: &str = "v2";
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi-v3.json");
 const SESSION_COOKIE: &str = "marginalis_session";
 const CSRF_COOKIE: &str = "marginalis_csrf";
+const RETURN_TO_COOKIE: &str = "marginalis_return_to";
 
 #[derive(Clone)]
 pub struct V3ApiState {
@@ -256,18 +258,54 @@ struct OidcCallbackQuery {
     state: String,
 }
 
-async fn begin_login(State(state): State<V3ApiState>) -> V3Result<Redirect> {
-    Ok(Redirect::temporary(
+#[derive(Deserialize)]
+struct LoginQuery {
+    next: Option<String>,
+}
+
+fn valid_return_to(value: &str) -> bool {
+    value.starts_with("/oauth/authorize?")
+        && !value.starts_with("//")
+        && !value.contains('\r')
+        && !value.contains('\n')
+}
+
+async fn begin_login(
+    State(state): State<V3ApiState>,
+    Query(query): Query<LoginQuery>,
+) -> V3Result<Response> {
+    let mut response = Redirect::temporary(
         &state
             .oidc
             .begin_login()
             .await
             .map_err(authentication_error)?,
-    ))
+    )
+    .into_response();
+    if let Some(next) = query.next.filter(|next| valid_return_to(next)) {
+        let encoded = URL_SAFE_NO_PAD.encode(next);
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            format!(
+                "{RETURN_TO_COOKIE}={encoded}; Path={}; Secure; HttpOnly; SameSite=Lax; Max-Age=600",
+                state.cookie_path
+            )
+            .parse()
+            .map_err(|_| {
+                problem(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "unavailable",
+                    "authentication is unavailable",
+                )
+            })?,
+        );
+    }
+    Ok(response)
 }
 
 async fn complete_login(
     State(state): State<V3ApiState>,
+    headers: HeaderMap,
     axum::extract::Query(query): axum::extract::Query<OidcCallbackQuery>,
 ) -> V3Result<Response> {
     let actor = state
@@ -280,7 +318,12 @@ async fn complete_login(
         .issue_session(actor)
         .await
         .map_err(authentication_error)?;
-    let mut response = Redirect::to("/").into_response();
+    let return_to = cookie_value(&headers, RETURN_TO_COOKIE)
+        .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
+        .and_then(|value| String::from_utf8(value).ok())
+        .filter(|value| valid_return_to(value))
+        .unwrap_or_else(|| "/".into());
+    let mut response = Redirect::to(&return_to).into_response();
     for value in [
         format!(
             "{SESSION_COOKIE}={}; Path={}; Secure; HttpOnly; SameSite=Lax",
@@ -289,6 +332,10 @@ async fn complete_login(
         format!(
             "{CSRF_COOKIE}={}; Path={}; Secure; SameSite=Lax",
             session.csrf_token, state.cookie_path
+        ),
+        format!(
+            "{RETURN_TO_COOKIE}=; Path={}; Secure; HttpOnly; SameSite=Lax; Max-Age=0",
+            state.cookie_path
         ),
     ] {
         response.headers_mut().append(
@@ -506,8 +553,38 @@ async fn mcp_authorize(
     State(state): State<V3ApiState>,
     headers: HeaderMap,
     Query(query): Query<McpAuthorizeQuery>,
-) -> V3Result<Html<String>> {
-    let _actor = authenticated_actor(&headers, &state).await?;
+) -> V3Result<Response> {
+    let _actor = match authenticated_actor(&headers, &state).await {
+        Ok(actor) => actor,
+        Err((StatusCode::UNAUTHORIZED, _)) => {
+            let mut request_uri = url::Url::parse("https://invalid.example/oauth/authorize")
+                .expect("constant authorization URL is valid");
+            {
+                let mut pairs = request_uri.query_pairs_mut();
+                pairs.append_pair("response_type", &query.response_type);
+                pairs.append_pair("client_id", &query.client_id);
+                pairs.append_pair("redirect_uri", &query.redirect_uri);
+                pairs.append_pair("resource", &query.resource);
+                pairs.append_pair("scope", &query.scope);
+                pairs.append_pair("code_challenge", &query.code_challenge);
+                pairs.append_pair("code_challenge_method", &query.code_challenge_method);
+                if let Some(state) = &query.state {
+                    pairs.append_pair("state", state);
+                }
+            }
+            let next = format!(
+                "/oauth/authorize?{}",
+                request_uri.query().expect("query pairs were added")
+            );
+            let encoded_next =
+                url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>();
+            return Ok(
+                Redirect::temporary(&format!("/auth/oidc/login?next={encoded_next}"))
+                    .into_response(),
+            );
+        }
+        Err(error) => return Err(error),
+    };
     let _ = mcp_endpoint(&state)?;
     let (_scopes, _) = authorize_fields(&query)?;
     let csrf = cookie_value(&headers, CSRF_COOKIE).ok_or_else(|| {
@@ -527,7 +604,7 @@ async fn mcp_authorize(
         escape_html(&query.code_challenge),
         escape_html(query.state.as_deref().unwrap_or_default()),
         escape_html(&csrf)
-    )))
+    )).into_response())
 }
 
 async fn mcp_authorize_submit(
@@ -1253,7 +1330,7 @@ mod tests {
     #[async_trait]
     impl V3OidcAuthenticationUseCases for Oidc {
         async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError> {
-            Err(AuthenticationUseCaseError::Unavailable)
+            Ok("https://id.example.test/authorize".into())
         }
 
         async fn complete_login(
@@ -1411,6 +1488,52 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_authorization_starts_login_when_no_web_session_exists() {
+        let response = mcp_app()
+            .oneshot(
+                Request::get(
+                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%3A48123%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state=opaque",
+                )
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+        let login_location = response
+            .headers()
+            .get(header::LOCATION)
+            .expect("login location")
+            .to_str()
+            .expect("valid location")
+            .to_owned();
+        assert!(login_location.starts_with("/auth/oidc/login?next="));
+
+        let login = mcp_app()
+            .oneshot(
+                Request::get(login_location)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(login.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(
+            login.headers().get(header::LOCATION).expect("location"),
+            "https://id.example.test/authorize"
+        );
+        assert!(
+            login
+                .headers()
+                .get_all(header::SET_COOKIE)
+                .iter()
+                .any(|value| value
+                    .to_str()
+                    .is_ok_and(|value| value.contains(RETURN_TO_COOKIE)))
+        );
     }
 
     #[tokio::test]
