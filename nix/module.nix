@@ -102,6 +102,13 @@ in
         description = "Runtime path to the OIDC client secret. It is passed with systemd credentials, never copied to the Nix store.";
       };
 
+      caCertificateFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "/run/secrets/internal-ca.pem";
+        description = "Optional PEM CA certificate for a private Kanidm TLS PKI. The same trust anchor is used for OIDC discovery and membership revalidation.";
+      };
+
       membershipApiUrl = mkOption {
         type = types.nullOr types.str;
         default = null;
@@ -194,6 +201,8 @@ in
         OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
         OIDC_CLIENT_ID = cfg.oidc.clientId;
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
+        OIDC_CA_CERTIFICATE_FILE =
+          if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
         KANIDM_MEMBERSHIP_API_URL = cfg.oidc.membershipApiUrl;
         KANIDM_MEMBERSHIP_TOKEN_FILE = "%d/kanidm-membership-token";
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";

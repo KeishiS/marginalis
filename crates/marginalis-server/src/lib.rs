@@ -2089,6 +2089,7 @@ pub struct OidcConfig {
     pub issuer_url: Url,
     pub client_id: String,
     pub membership_api_url: Url,
+    pub ca_certificate_file: Option<PathBuf>,
 }
 
 /// secret値は公開設定から分離する。Debugを実装せずログ出力を防ぐ。
@@ -2164,6 +2165,9 @@ impl ServerConfig {
                 issuer_url,
                 client_id,
                 membership_api_url: validate_issuer_url(required("KANIDM_MEMBERSHIP_API_URL")?)?,
+                ca_certificate_file: std::env::var_os("OIDC_CA_CERTIFICATE_FILE")
+                    .filter(|value| !value.is_empty())
+                    .map(PathBuf::from),
             },
             mcp_enabled: optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false),
             mcp_client_metadata_allowed_hosts: optional_csv(

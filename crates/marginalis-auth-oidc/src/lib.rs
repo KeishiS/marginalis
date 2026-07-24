@@ -262,6 +262,15 @@ impl OidcAuthentication {
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|_| OidcDiscoveryError::HttpClient)?;
+        Self::discover_with_http_client(configuration, http_client).await
+    }
+
+    /// Discoveryとtoken exchangeに使うHTTP clientを明示する。内部CAを使う配備では、
+    /// 呼出し側が検証済みPEMをroot certificateとして追加したclientを渡す。
+    pub async fn discover_with_http_client(
+        configuration: &OidcConfiguration,
+        http_client: reqwest::Client,
+    ) -> Result<Self, OidcDiscoveryError> {
         let metadata =
             CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
                 .await

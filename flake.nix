@@ -96,6 +96,29 @@
         system:
         let
           pkgs = pkgsFor system;
+          kanidmDiscoveryCerts =
+            pkgs.runCommand "marginalis-kanidm-discovery-certs"
+              {
+                nativeBuildInputs = [ pkgs.openssl ];
+              }
+              ''
+                openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+                  -subj '/CN=Marginalis Kanidm Test CA' \
+                  -addext 'basicConstraints=critical,CA:TRUE' \
+                  -addext 'keyUsage=critical,keyCertSign' \
+                  -keyout ca-key.pem -out ca-cert.pem
+                openssl req -newkey rsa:2048 -nodes \
+                  -subj '/CN=id.example.test' \
+                  -addext 'subjectAltName=DNS:id.example.test' \
+                  -keyout $out-key.pem -out request.pem
+                openssl x509 -req -in request.pem -CA ca-cert.pem -CAkey ca-key.pem \
+                  -CAcreateserial -days 1 -out $out-cert.pem \
+                  -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:id.example.test')
+                mkdir -p $out
+                mv $out-key.pem $out/key.pem
+                mv $out-cert.pem $out/cert.pem
+                mv ca-cert.pem $out/ca.pem
+              '';
         in
         pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           nixos-module =
@@ -218,6 +241,75 @@
                   "curl -fsS http://127.0.0.1:3000/api/v2/openapi.json | jq -e '.openapi == \"3.1.0\"'"
               )
               machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM v3_notes'")
+            '';
+          };
+
+          # 実 Kanidm 1.10 の TLS Discovery を通して Marginalis が起動することを確認する。
+          # Authorization Code の browser interaction と group変更は別の手動受入/E2Eで扱う。
+          kanidm-discovery-vm = pkgs.testers.nixosTest {
+            name = "marginalis-kanidm-discovery";
+            nodes.idp = {
+              services.kanidm = {
+                package = pkgs.kanidmWithSecretProvisioning_1_10;
+                server = {
+                  enable = true;
+                  settings = {
+                    origin = "https://id.example.test:8443";
+                    domain = "id.example.test";
+                    bindaddress = "0.0.0.0:8443";
+                    tls_chain = "${kanidmDiscoveryCerts}/cert.pem";
+                    tls_key = "${kanidmDiscoveryCerts}/key.pem";
+                  };
+                };
+                provision = {
+                  enable = true;
+                  instanceUrl = "https://localhost:8443";
+                  acceptInvalidCerts = true;
+                  systems.oauth2.marginalis = {
+                    displayName = "Marginalis test client";
+                    originUrl = "https://marginalis.example.test/marginalis";
+                    originLanding = "https://marginalis.example.test/marginalis";
+                    basicSecretFile = pkgs.writeText "marginalis-test-oidc-secret" "test-only-secret";
+                  };
+                };
+              };
+              networking.firewall.allowedTCPPorts = [ 8443 ];
+            };
+            nodes.app =
+              { nodes, ... }:
+              {
+                imports = [ self.nixosModules.default ];
+                system.stateVersion = "25.11";
+                # NixOS test driverのeth0 DHCPアドレスは各VMで重複するため、隔離VLANの
+                # IdPアドレスを使う。idpは二番目に起動するVMなので192.168.1.2となる。
+                networking.hosts."192.168.1.2" = [ "id.example.test" ];
+                security.pki.certificateFiles = [ "${kanidmDiscoveryCerts}/ca.pem" ];
+                environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
+                environment.etc."marginalis-test/membership-token".text = "test-only-membership-token";
+                services.marginalis = {
+                  enable = true;
+                  baseUrl = "https://marginalis.example.test/marginalis";
+                  oidc = {
+                    issuerUrl = "https://id.example.test:8443/oauth2/openid/marginalis";
+                    clientId = "marginalis";
+                    clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
+                    caCertificateFile = "${kanidmDiscoveryCerts}/ca.pem";
+                    membershipApiUrl = "https://id.example.test:8443";
+                    membershipTokenFile = "/etc/marginalis-test/membership-token";
+                  };
+                };
+              };
+            testScript = ''
+              idp.start()
+              idp.wait_for_unit("kanidm.service")
+              idp.wait_until_succeeds(
+                "curl --insecure --resolve id.example.test:8443:127.0.0.1 -Lsf https://id.example.test:8443 | grep Kanidm"
+              )
+              app.start()
+              app.wait_for_unit("marginalis.service")
+              app.wait_until_succeeds("curl -fsS http://127.0.0.1:3000/api/v2/health | grep -q '\"api_version\":\"v2\"'")
+              app.succeed("journalctl -u marginalis.service | grep -q 'Marginalis server listening'")
+              app.succeed("! journalctl -u marginalis.service | grep -q 'OIDC discovery is unavailable'")
             '';
           };
         }

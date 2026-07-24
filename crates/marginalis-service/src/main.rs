@@ -203,7 +203,16 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
         secrets.oidc_client_secret,
         configuration.http.base_url.as_str(),
     )?;
-    let oidc = match OidcAuthentication::discover(&oidc_configuration).await {
+    let oidc_http_client = kanidm_http_client(
+        configuration.oidc.ca_certificate_file.as_deref(),
+        std::time::Duration::from_secs(10),
+    )?;
+    let oidc = match OidcAuthentication::discover_with_http_client(
+        &oidc_configuration,
+        oidc_http_client.clone(),
+    )
+    .await
+    {
         Ok(oidc) => Some(oidc),
         Err(error) => {
             tracing::warn!(%error, "OIDC discovery is unavailable; login requests will fail closed");
@@ -221,6 +230,10 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     let membership = std::sync::Arc::new(KanidmMembershipResolver::new(
         configuration.oidc.membership_api_url.clone(),
         secrets.kanidm_membership_token,
+        kanidm_http_client(
+            configuration.oidc.ca_certificate_file.as_deref(),
+            std::time::Duration::from_secs(5),
+        )?,
     )?);
     let sessions = std::sync::Arc::new(ServerV3WebSessionUseCases::new(
         database.clone(),
@@ -299,14 +312,15 @@ struct KanidmEntry {
 }
 
 impl KanidmMembershipResolver {
-    fn new(api_url: url::Url, token: String) -> Result<Self, reqwest::Error> {
+    fn new(
+        api_url: url::Url,
+        token: String,
+        client: reqwest::Client,
+    ) -> Result<Self, reqwest::Error> {
         Ok(Self {
             api_url,
             token,
-            client: reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .timeout(std::time::Duration::from_secs(5))
-                .build()?,
+            client,
         })
     }
 
@@ -320,6 +334,20 @@ impl KanidmMembershipResolver {
         drop(segments);
         Ok(url)
     }
+}
+
+fn kanidm_http_client(
+    ca_certificate_file: Option<&Path>,
+    timeout: std::time::Duration,
+) -> Result<reqwest::Client, Box<dyn std::error::Error>> {
+    let mut builder = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(timeout);
+    if let Some(path) = ca_certificate_file {
+        builder =
+            builder.add_root_certificate(reqwest::Certificate::from_pem(&std::fs::read(path)?)?);
+    }
+    Ok(builder.build()?)
 }
 
 #[async_trait::async_trait]
@@ -449,6 +477,7 @@ mod tests {
         let resolver = KanidmMembershipResolver::new(
             format!("http://{address}").parse().expect("URL"),
             "service-token".into(),
+            reqwest::Client::new(),
         )
         .expect("resolver");
         assert_eq!(

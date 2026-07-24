@@ -13,6 +13,7 @@ services.marginalis = {
     issuerUrl = "https://id.example.test/oauth2/openid/marginalis";
     clientId = "marginalis";
     clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
+    caCertificateFile = "/run/secrets/marginalis-kanidm-ca.pem";
     membershipApiUrl = "https://id.example.test";
     membershipTokenFile = "/run/secrets/marginalis-kanidm-membership-token";
   };
@@ -22,7 +23,8 @@ services.marginalis = {
 
 `membershipTokenFile` は Kanidm の person entry に対する `memberof` 読み取りだけを許可した
 service-account token を指定します。二つの secret file は systemd credential として渡され、Nix store に
-現れてはなりません。
+現れてはなりません。内部 CA の Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定する。
+これは OIDC Discovery と membership API の双方に適用される。
 
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
 サブパスでは外部 prefix を upstream へ渡す前に除去し、`baseUrl` と OIDC redirect URI を一致させます。
