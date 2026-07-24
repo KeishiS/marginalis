@@ -1,20 +1,19 @@
-# 011: アーキテクチャ再基線化
+# 011: アーキテクチャの再設計
 
-状態: 完了（Web UIおよびMCPは初期公開の範囲から除外し、後続issueで扱う）。
+状態: 完了（Web UIおよびMCPは初期公開の範囲から除外し、後続Issueで扱う）。
 
 `docs/architecture.md`の目標構成へ、公開前に破壊的移行する。
 
-## 作業順序
+## 実施内容
 
-1. 現行`marginalis-store`と`marginalis-web`の公開型・実行経路を凍結する。
-2. domain/application/adapter/server crateへ責務を分離する。
-3. version管理されたsqlx migrationと開発DB破棄方針を導入する。
-4. `ServerConfig`、secret入力、Clock/Random portを導入し、環境変数読込をserverだけに閉じる。
-5. 確定した`ServerConfig`を用いて、010の最小NixOS moduleとhealth checkを並行して実装する。
-6. ファイル正本・操作ジャーナル・ノートCRUDを実装する。
-7. OIDC、session、ACL、HTML表示を新application use caseへ移す。
-8. 旧crateを削除し、RESTを新server境界へ載せる。初期公開ではWeb UIを提供せず、Web UIとMCPは
-   後続段階とする。NixOS moduleにはOIDC secret contractと永続化のVM testを追加する。
+1. 旧`marginalis-store`と`marginalis-web`の公開型・実行経路を固定した。
+2. domain/application/adapter/serverの各クレートへ責務を分離した。
+3. バージョン管理されたsqlx migrationと開発DBの破棄方針を導入した。
+4. `ServerConfig`、secret入力、Clock/Random portを導入し、環境変数の読込みをserverへ集約した。
+5. 確定した`ServerConfig`を用いて、Issue 010の最小NixOSモジュールとhealth checkを実装した。
+6. ファイル原本、操作ジャーナルおよびノートCRUDを実装した。
+7. OIDC、session、ACLおよびHTML表示を新しいapplication use caseへ移した。
+8. 旧crateを削除し、RESTを新しいserver境界へ載せた。Web UIとMCPは後続Issueへ移管した。
 
 ## 完了条件
 

@@ -1,4 +1,7 @@
-# 009: OIDCプロバイダ登録と実環境結合試験
+# 009: OIDCプロバイダー登録と実環境統合試験
+
+状態: 初期受入完了。RESTと実MCPクライアントを含む追加のE2E試験は
+[Issue 030](030-end-to-end-test-automation-readiness.md)で管理する。
 
 ## 目的
 
@@ -6,7 +9,7 @@ KanidmのclientごとのOIDC issuer `https://id.sandi05.com/oauth2/openid/margin
 Discovery、Authorization Code Flow with PKCE、ID Token検証およびサーバ側セッションを
 結合試験する。
 
-## 利用者または運用者が用意する情報
+## 運用時に用意する情報
 
 - アプリケーションのBase URLは`https://marginalis.sandi05.com`とする。
 - IdPへ登録するredirect URIは
@@ -29,7 +32,7 @@ KanidmのDiscovery URLはissuerの末尾に付加する。
 https://id.sandi05.com/oauth2/openid/marginalis/.well-known/openid-configuration
 ```
 
-## アプリケーション側の作業
+## 実装要件
 
 - 起動時にDiscoveryとJWKS取得を行い、HTTP redirectを追跡しない。
 - `state`、`nonce`およびPKCE verifierを一回限り・有効期限付きで保存する。
@@ -54,9 +57,10 @@ https://id.sandi05.com/oauth2/openid/marginalis/.well-known/openid-configuration
 - IdPが返す認可拒否、state不一致、期限切れ、署名不正およびtoken交換失敗が安全な共通の
   失敗応答になる。
 
-## 2026-07-23時点の実環境確認
+## 実施記録（2026-07-23）
 
 - `https://marginalis.sandi05.com/api/v1/health`が`200`、
   `https://marginalis.sandi05.com/api/v1/readiness`がOIDC `available`として`200`を返すことを確認した。
-- ブラウザからKanidmへのredirect、認証、callbackおよびMarginalisへのsession確立を確認した。
-- 次の実環境確認は、OIDC sessionを使うREST CRUD、MCP OAuth client認可、MCP tool呼出しである。
+- ブラウザーからKanidmへのredirect、認証、callbackおよびMarginalisへのsession確立を確認した。
+- OIDCセッションを使うREST CRUD、MCP OAuthクライアント認可およびMCPツール呼出しの
+  継続的な検証は、Issue 030へ移管した。

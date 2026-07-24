@@ -1,31 +1,34 @@
-# 001: AdocWeave依存固定と契約監視
+# 001: AdocWeaveの依存固定と互換性検証
 
-## 目的
+位置付け: AdocWeave連携に関する恒久要件を定める。v0.6.1への具体的な移行作業は
+[Issue 029](029-adocweave-v0.6.1-migration.md)で管理する。
 
-AdocWeaveを本アプリの管理下で再現可能に利用し、更新に伴うHTML、検索・グラフ投影、
-WASMプレビューの互換性変更を検出できるようにする。
+## 概要
 
-## 範囲
+AdocWeaveを再現可能な形で利用し、更新に伴うHTML、検索・グラフ投影、WASMプレビューの
+互換性変更を検出できるようにする。
 
-- 採用するAdocWeaveのtagとcommitを依存定義へ固定する。
-- アプリ内に、AdocWeave連携とアプリ固有拡張を置くRust crate境界を作る。
-- AdocWeaveの完全一致package versionを起動時またはビルド時に照合し、Core、HTML、
-  Projection、ConformanceおよびWASMの成果物を同じreleaseへ揃える。
-- AdocWeave更新時に、影響するHTML cache、検索・参照projection、診断およびWASM資産の
-  再構築を要求する移行手順を定義する。
+## 対象範囲
 
-## 範囲外
+- 採用するAdocWeaveのタグとコミットを依存定義へ固定する。
+- AdocWeave連携とアプリケーション固有の拡張を、専用のRustクレートへ集約する。
+- Rust、HTML、Projection、ConformanceおよびWASMの成果物が、同じAdocWeaveリリースに
+  基づくことを検証する。
+- AdocWeave更新時に、HTMLキャッシュ、検索・参照投影、診断およびWASM配布物のうち、
+  再構築が必要な対象を明示する。
 
-- ノート固有の構文・属性の実装。
-- 参照先のDB解決、HTML表示およびブラウザWorkerの実装。
+## 対象外
+
+- ノート固有の構文と属性の実装。
+- 参照先のDB照会、HTML表示およびブラウザーWorkerの実装。
 
 ## 完了条件
 
-- 同じlockfileから同じAdocWeave versionをビルドできる。
-- CIが採用commitとpackage versionを記録・検証する。
-- 依存更新PRでは、契約version差分と必要な再構築対象が明示される。
-- アプリ固有拡張がAdocWeaveの公開API以外へ依存しない。
+- 同じlockfileから同じAdocWeaveバージョンをビルドできる。
+- CIが固定したコミットとパッケージ版を記録し、両者の対応を検証する。
+- 依存更新時に、互換性の差分と再構築対象が明示される。
+- アプリケーション固有の拡張がAdocWeaveの公開API以外へ依存しない。
 
-## 依存関係
+## 関連Issue
 
-なし。
+- 移行作業: [Issue 029](029-adocweave-v0.6.1-migration.md)

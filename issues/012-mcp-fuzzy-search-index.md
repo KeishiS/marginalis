@@ -1,6 +1,7 @@
-# 012: MCP曖昧検索用の中間表現インデックス調査
+# 012: MCP曖昧検索用インデックスの調査
 
-状態: 初期実装済み。検索拡張と運用結合試験はIssue 014で継続する。
+状態: 初期調査と初期実装は完了。検索拡張は必要性を再評価し、E2E試験は
+[Issue 030](030-end-to-end-test-automation-readiness.md)で継続する。
 
 ノートの作成・更新・物理削除を契機として検索用の中間表現（IR）を更新し、MCP経由で権限を守った
 曖昧検索を提供するための設計を調査する。初期REST APIおよび正本ファイルの意味論は変更しない。
@@ -50,15 +51,15 @@
    schema migration、インデックスversion、全量再構築コマンド、整合性検査、バックアップ／復元、
    観測可能性、データ量と性能の受入基準を決める。
 
-## 調査成果物
+## 成果物
 
 - 推奨するIR schemaと検索方式、および不採用案との比較表。
 - 作成・更新・削除から検索更新・復旧に至る状態遷移。
 - ACL非漏洩を含むMCP tool contract。
 - migration／rebuild／障害復旧の運用手順。
-- 実装を分割する後続issueと、各issueの検証計画。
+- 実装を分割する後続Issueと、各Issueの検証計画。
 
-## 2026-07-23時点の判断
+## 決定（2026-07-23）
 
 ### 検索投影
 
@@ -96,7 +97,7 @@
 - 作成・更新・削除・復旧の各経路で検索投影を収束させる方式が選定されている。
 - 採用する検索技術とNixOS運用への影響が根拠とともに記録されている。
 
-## 実装済み範囲
+## 実施結果
 
 - `NoteWriteService`の同期投影としてSQLite FTS5を更新し、物理削除と起動時recoveryにも追従させた。
 - RESTとMCPの`search_notes`・`get_note`・`list_note_links`および書込みtoolは同じ`NoteUseCases`と
@@ -105,5 +106,5 @@
   access/refresh token、resource audience照合、refresh token rotationを実装した。
 - NixOS moduleはMCPを明示opt-inにし、Client ID Metadata Documentの取得hostを許可リストに限定する。
 
-実運用のMCP clientとのOAuth結合試験、全文snippet・semantic search、server-to-client notification
-streamは初期実装に含まれず、後続作業とする。MCP tool呼出しの利用者単位rate limitは実装済みである。
+実運用のMCPクライアントとのOAuth統合試験、全文の抜粋、意味検索およびサーバーからクライアントへの
+通知ストリームは初期実装に含めない。MCPツール呼出しの利用者単位レート制限は実装済みである。

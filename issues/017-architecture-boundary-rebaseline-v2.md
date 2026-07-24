@@ -1,4 +1,4 @@
-# 017: 依存境界を強制するアーキテクチャ再基線化 v2
+# 017: 依存境界を強制するアーキテクチャ再設計 v2
 
 状態: 完了。
 
@@ -7,7 +7,7 @@
 HTTP/MCP transportがapplicationのportだけに依存し、SQLite、filesystem、AsciiDoc、OIDCおよびHTTP clientの
 具体adapterを本番依存として参照しない構成へ破壊的に移行する。
 
-## 現状の問題
+## 移行前の問題
 
 - `marginalis-web`はtest helperのために`marginalis-sqlite`、`marginalis-files`、`marginalis-server`等へ
   本番依存している。設計文書の「transportは具体adapterを参照しない」という不変条件をCargoが保証しない。
@@ -29,14 +29,14 @@ integration-tests ── runtime + concrete adapters
 
 crate名は実装時に決めるが、transportから具体adapterへの依存を禁止することを優先する。
 
-## 実装項目
+## 実施内容
 
-1. application facadeを`notes`、`identity/session`、`administration`、`mcp oauth`の能力別interfaceへ分割する。
-2. `marginalis-web`と`marginalis-mcp`をapplication/domain/contractだけへ依存させる。
-3. concrete adapterを使うHTTP/MCP試験を`marginalis-integration-tests`へ移す。
-4. `StorageConfig`、`HttpConfig`、`OidcConfig`、secretを分離する。
-5. backup/rebuild/restore/audit-pruneをOIDC設定なしで動くmaintenance組立へ移す。
-6. CIで`cargo tree`または専用compile testにより、transportの禁止依存を検査する。
+1. application facadeを`notes`、`identity/session`、`administration`、`mcp oauth`の能力別interfaceへ分割した。
+2. `marginalis-web`と`marginalis-mcp`をapplication/domain/contractだけへ依存させた。
+3. concrete adapterを使うHTTP/MCP試験を`marginalis-integration-tests`へ移した。
+4. `StorageConfig`、`HttpConfig`、`OidcConfig`およびsecretを分離した。
+5. backup/rebuild/restore/audit-pruneを、OIDC設定なしで動くmaintenance組立へ移した。
+6. CIでtransportの禁止依存を検査する`cargo make dependency-boundaries`を追加した。
 
 ## 完了条件
 

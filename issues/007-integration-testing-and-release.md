@@ -1,49 +1,45 @@
-# 007: 結合試験とリリース検証
+# 007: AsciiDoc連携の統合試験とリリース検証
 
-## 目的
+位置付け: AsciiDoc処理全体の検証要件を定める。現在のリリース判定は
+[Issue 021](021-test-architecture-and-release-gates.md)、E2E自動化は
+[Issue 030](030-end-to-end-test-automation-readiness.md)で管理する。
 
-AdocWeave拡張を含むAsciiDoc処理全体の安全性、決定性および互換性を継続的に検証する。
+## 概要
 
-## 範囲
+AdocWeave連携を含むAsciiDoc処理全体の安全性、決定性および互換性を継続的に検証する。
 
-- ノート用プロファイルの正常系、異常系、境界値、回復およびセキュリティfixtureを整備する。
-- native Rust、WASM Worker、Web APIおよびMCPが同じ解析・診断・投影規則を使うことを検証する。
-- 初期段階では、同じ入力と既定policyに対するnative HTMLとWASM HTMLの一致をRustテストで
-  固定する。Resolver URL policyおよび表示上書きは、対応する上流APIが提供された後に同じ
-  fixtureへ追加する。
-- パーサー、属性検証、参照解決、URL policy、HTML、位置変換およびFormatterのproperty testとfuzzingを行う。
-- `format(format(x)) == format(x)`と、整形前後の意味同値性を検証する。
-- 上流AdocWeave更新時に、契約version、golden HTML、projection、DB再構築およびブラウザ資産を検証する。
+## 検証範囲
+
+- ノート用プロファイルの正常系、異常系、境界値、回復およびセキュリティのテストデータを整備する。
+- Rust実装、WASM Worker、Web APIおよびMCPが同じ解析、診断および投影規則を使用することを検証する。
+- 同じ入力と既定のポリシーに対するRust実装とWASMのHTMLを比較する。
+- パーサー、属性検証、参照解決、URLポリシー、HTML、位置変換およびFormatterを、
+  property testとfuzzingで検証する。
+- `format(format(x)) == format(x)`と、整形前後の意味が同じであることを検証する。
+- AdocWeave更新時に、パッケージ版、golden HTML、投影、DB再構築およびブラウザー配布物を検証する。
 
 ## 完了条件
 
-- テストに、メタデータ、`xref:note:`、リンク切れ、ACL、LaTeX、コード、
-  危険URL、raw HTML、深い入れ子および巨大入力が含まれる。
-- 任意UTF-8入力と不正バイト列が、プロセス異常終了や機密情報のログ出力を引き起こさない。
+- テストにメタデータ、`xref:note:`、リンク切れ、ACL、LaTeX、コード、危険なURL、raw HTML、
+  深い入れ子および巨大な入力が含まれる。
+- 任意のUTF-8入力と不正バイト列が、プロセスの異常終了や機密情報のログ出力を引き起こさない。
 - CIが依存固定、Rust test、WASM適合試験、browser smoke test、fuzz/property testおよび
-  migration検証を実行する。
+  移行検証を実行する。
 
-## 依存関係
+## 実施記録
 
-- 001
-- 002
-- 003
-- 004
-- 005
-- 006
+- 単体試験、HTTP統合試験および実環境確認の役割を分けた。実プロバイダー、reverse proxyおよび
+  実MCPクライアントを通す手順は`docs/acceptance.md`で管理する。
+- REST CRUD・検索と実MCPクライアントのOAuth相互運用は、認証済み利用者またはクライアントの
+  選択を要する手動受入として残した。
+- backup、非破壊restore候補、投影再構築および`root`監査の手順を実装した。保存先、保持世代および
+  実際の`dataDir`切替は運用ポリシーとして判断する。
+- `cargo make release-gate`は通常の品質確認に、OpenAPI、GitHub Actions構文、NixOS VMおよび
+  release package buildを加える。実行内容とタグ作成手順は`docs/release.md`で管理する。
+- 実Kanidm、reverse proxyおよび実MCPクライアントを使う確認は`docs/acceptance.md`と
+  [Issue 022](022-v0.1.0-rc.1-release-acceptance.md)へ移管した。
 
-## 2026-07-23時点の実環境受入確認
+## 関連Issue
 
-- unit・HTTP結合試験と実環境確認を混同しない。実provider・reverse proxy・実MCP clientを通す手順は
-  `docs/acceptance.md`で管理する。
-- REST CRUD/検索と実MCP clientのOAuth・tool相互運用は、認証済み利用者またはclientの選択を必要とする
-  手動受入確認として残す。
-- backup、非破壊restore候補、投影再構築、root auditの手順は実装済みであり、保存先・保持世代・実際の
-  dataDir切替は運用policyとして明示的に判断する。
-
-## RC.1 gate
-
-- `cargo make release-gate`は通常の品質gateに、OpenAPI、GitHub Actions構文、NixOS VMおよびrelease package buildを
-  加える。実行内容とtag手順は`docs/release.md`に記録する。
-- 実Kanidm、reverse proxy、実MCP clientを使う確認は`docs/acceptance.md`とIssue 022に残す。secretをCIに入れず、
-  成功・失敗とrequest IDだけを記録する。
+- リリース判定: [Issue 021](021-test-architecture-and-release-gates.md)
+- E2E自動化: [Issue 030](030-end-to-end-test-automation-readiness.md)
