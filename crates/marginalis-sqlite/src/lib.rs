@@ -140,6 +140,16 @@ CREATE TABLE v3_oidc_login_attempts (
 ) STRICT;
 "#,
     ),
+    (
+        4,
+        r#"
+CREATE TABLE v3_mcp_clients (client_id TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, redirect_uris_json TEXT NOT NULL) STRICT;
+CREATE TABLE v3_mcp_authorization_codes (code_hash BLOB PRIMARY KEY NOT NULL, client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id), redirect_uri TEXT NOT NULL, resource_uri TEXT NOT NULL, issuer TEXT NOT NULL, subject TEXT NOT NULL, is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)), scopes TEXT NOT NULL, code_challenge TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, consumed_at_ms INTEGER) STRICT;
+CREATE TABLE v3_mcp_access_tokens (token_hash BLOB PRIMARY KEY NOT NULL, client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id), resource_uri TEXT NOT NULL, issuer TEXT NOT NULL, subject TEXT NOT NULL, is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)), membership_checked_at_ms INTEGER NOT NULL, scopes TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, revoked_at_ms INTEGER, last_used_at_ms INTEGER) STRICT;
+CREATE TABLE v3_mcp_refresh_tokens (token_hash BLOB PRIMARY KEY NOT NULL, client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id), resource_uri TEXT NOT NULL, issuer TEXT NOT NULL, subject TEXT NOT NULL, scopes TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, rotated_at_ms INTEGER, revoked_at_ms INTEGER) STRICT;
+CREATE INDEX v3_mcp_access_subject_idx ON v3_mcp_access_tokens (issuer, subject) WHERE revoked_at_ms IS NULL;
+"#,
+    ),
 ];
 
 #[derive(Clone, Debug)]
