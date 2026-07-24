@@ -79,7 +79,9 @@ AsciiDoc 正本と `FORMAT` マーカーは `dataDir`（既定値 `/var/lib/marg
   `/marginalis/api/v1/health` を内部の `/api/v1/health` へ転送します。
 - Marginalis 自身が全応答に `Content-Security-Policy: default-src 'none'; base-uri 'none';
   form-action 'self'; frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、
-  `Referrer-Policy: no-referrer` を付与します。プロキシでこれらを削除・緩和しないでください。
+  `Referrer-Policy: no-referrer` を付与します。`/acceptance` だけは同一オリジンの静的 CSS を
+  読み込むため、CSP に `style-src 'self'` も加わります。プロキシでこれらを削除・緩和しないで
+  ください。
 - Cookie を伴う変更操作では `Origin` と `Sec-Fetch-Site` を検証するため、プロキシでこれらの
   ブラウザー由来ヘッダーを削除・書き換えしないでください。
 - Marginalis は `X-Forwarded-For` や `Forwarded` などのクライアント IP ヘッダーを信頼せず、

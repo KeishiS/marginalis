@@ -62,10 +62,11 @@ v0.2.0 系列では、データフォーマット v1 を AdocWeave v0.6.1 前提
 ### 最小 Web UI による手動確認
 
 OIDC ログイン後に `/acceptance` を開くと、JavaScript を使わずに作成・取得・更新・検索・削除を
-順に操作できます。この画面は同一オリジンの HTML フォームで CSRF トークンを送るため、
-Marginalis が全応答に付与する厳格な CSP（`default-src 'none'`、`form-action 'self'`、
-`frame-ancestors 'none'`）を緩める必要はありません。ただし、HTTP ステータスやヘッダーを含む
-REST 契約そのものの確認は、この画面ではなく次の外部 API クライアント手順で行います。
+順に操作できます。この画面は同一オリジンの HTML フォームで CSRF トークンを送り、表示には
+同一オリジンの静的 CSS だけを使います。CSP は `default-src 'none'`、`form-action 'self'`、
+`frame-ancestors 'none'`、`style-src 'self'` で、スクリプトを許可しません。ただし、HTTP
+ステータスやヘッダーを含む REST 契約そのものの確認は、この画面ではなく次の外部 API
+クライアント手順で行います。
 
 ### 外部 API クライアントによる確認例
 

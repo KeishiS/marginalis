@@ -177,6 +177,107 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 const OIDC_STATE_COOKIE: &str = "marginalis_oidc_state";
 const CONTENT_SECURITY_POLICY: &str =
     "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const ACCEPTANCE_CONTENT_SECURITY_POLICY: &str = "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; style-src 'self'";
+const ACCEPTANCE_STYLESHEET: &str = r#"
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.6;
+}
+body {
+  margin: 0;
+  background: Canvas;
+  color: CanvasText;
+}
+header, main, footer {
+  width: min(70rem, calc(100% - 2rem));
+  margin-inline: auto;
+}
+header {
+  padding-block: 2rem 1rem;
+}
+header p, footer {
+  color: GrayText;
+}
+nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0;
+  list-style: none;
+}
+main {
+  display: grid;
+  gap: 1.25rem;
+  padding-block: 1rem 3rem;
+}
+section, aside {
+  padding: 1.25rem;
+  border: 1px solid GrayText;
+  border-radius: .6rem;
+}
+aside[role="status"] {
+  border-inline-start: .4rem solid LinkText;
+}
+form, fieldset, label {
+  display: grid;
+  gap: .6rem;
+}
+fieldset {
+  padding: 1rem;
+  border: 0;
+}
+label {
+  font-weight: 650;
+}
+input, textarea, button {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: .65rem;
+  font: inherit;
+}
+input, textarea {
+  width: 100%;
+}
+textarea {
+  font-family: ui-monospace, monospace;
+  line-height: 1.45;
+}
+button {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 700;
+}
+.danger {
+  border-color: Mark;
+}
+.danger button {
+  color: MarkText;
+  background: Mark;
+}
+code {
+  overflow-wrap: anywhere;
+}
+"#;
+const ACCEPTANCE_SAMPLE_SOURCE: &str = r#"= 受入確認ノート
+:note-id: 01800000-0000-7000-8000-000000000001
+:creator-id: 01800000-0000-7000-8000-000000000002
+:created-at: 2026-07-23T00:00:00.000Z
+:updated-at: 2026-07-23T00:00:00.000Z
+:tags: acceptance, v0.2
+:stem: latexmath
+
+検索語: acceptance-check-CHANGE-ME
+
+関連ノート xref:note:01800000-0000-7000-8000-000000000003[参照例]
+
+インライン数式 stem:[x^2 + y^2 = z^2]
+
+[source,rust]
+----
+let status = "accepted";
+----
+"#;
 
 #[derive(Clone)]
 struct RequestId(String);
@@ -526,6 +627,7 @@ pub fn application_router(state: ApiState) -> Router {
     Router::new()
         .route("/", get(landing))
         .route("/acceptance", get(acceptance_home))
+        .route("/acceptance/style.css", get(acceptance_stylesheet))
         .route("/acceptance/search", get(acceptance_search))
         .route(
             "/acceptance/notes",
@@ -638,11 +740,16 @@ async fn assign_request_id(mut request: Request<axum::body::Body>, next: Next) -
 
 /// HTML UIを含む全応答へ、reverse proxyの有無にかかわらない最小のbrowser防御headerを付ける。
 async fn set_security_headers(request: Request<axum::body::Body>, next: Next) -> Response {
+    let is_acceptance = request.uri().path().starts_with("/acceptance");
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+        HeaderValue::from_static(if is_acceptance {
+            ACCEPTANCE_CONTENT_SECURITY_POLICY
+        } else {
+            CONTENT_SECURITY_POLICY
+        }),
     );
     headers.insert(
         header::X_CONTENT_TYPE_OPTIONS,
@@ -1166,21 +1273,81 @@ struct AcceptanceOpenNoteQuery {
 
 /// JavaScriptを必要としないREST受入確認用の最小画面。
 ///
-/// このUIは公開APIの代替ではない。CookieとCSRF tokenを同一originのHTML formで送るため、
-/// productionのstrict CSPを緩めずに、作成・更新・検索・削除の手順を手動確認できる。
+/// このUIは公開APIの代替ではない。CookieとCSRF tokenを同一originのHTML formで送り、
+/// 同一originの静的stylesheetだけを許可したCSPの下で作成・更新・検索・削除を手動確認する。
+async fn acceptance_stylesheet() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        ACCEPTANCE_STYLESHEET,
+    )
+        .into_response()
+}
+
+fn acceptance_url(state: &ApiState, suffix: &str) -> String {
+    let prefix = state.oidc.cookie_path();
+    if prefix == "/" {
+        suffix.to_owned()
+    } else {
+        format!("{}{suffix}", prefix.trim_end_matches('/'))
+    }
+}
+
 async fn acceptance_home(
     State(state): State<ApiState>,
     headers: HeaderMap,
 ) -> Result<Html<String>, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
     let csrf = escape_html(&acceptance_csrf(&headers)?);
+    let notes_url = escape_html(&acceptance_url(&state, "/acceptance/notes"));
+    let search_url = escape_html(&acceptance_url(&state, "/acceptance/search"));
+    let sample_source = escape_html(ACCEPTANCE_SAMPLE_SOURCE);
     Ok(Html(acceptance_page(
+        &state,
         &format!(
-            "ログイン中の user_id: {}",
+            "ログイン済みです。利用者 ID: {}",
             escape_html(&actor.user_id.to_string())
         ),
         &format!(
-            "<section><h2>1. ノートを作成</h2><p>識別子と日時のダミー値は作成時にserverが置換します。</p><form method=\"post\" action=\"/acceptance/notes\"><input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\"><label>AsciiDoc正本<textarea name=\"source\" rows=\"16\" cols=\"88\" required>= 受入確認ノート\n:note-id: 01800000-0000-7000-8000-000000000001\n:creator-id: 01800000-0000-7000-8000-000000000002\n:created-at: 2026-07-23T00:00:00.000Z\n:updated-at: 2026-07-23T00:00:00.000Z\n:tags: acceptance\n\n固有語をここへ記述する。</textarea></label><button type=\"submit\">作成</button></form></section><section><h2>2. 既存ノートを取得・更新・削除</h2><form method=\"get\" action=\"/acceptance/notes\"><label>note_id <input name=\"note_id\" required></label><button type=\"submit\">開く</button></form></section><section><h2>3. 検索</h2><form method=\"get\" action=\"/acceptance/search\"><label>固有語 <input name=\"q\" required></label><button type=\"submit\">検索</button></form></section>"
+            r#"<section aria-labelledby="acceptance-guide">
+<h2 id="acceptance-guide">確認の進め方</h2>
+<ol>
+<li>一意な検索語を入れたノートを作成します。</li>
+<li>作成後の画面で取得、更新、競合、削除を確認します。</li>
+<li>検索からノートを開けることと、削除後に見つからないことを確認します。</li>
+</ol>
+<p>この画面は手動受入専用です。一般利用者向けのノート編集画面ではありません。</p>
+</section>
+<section aria-labelledby="create-note">
+<h2 id="create-note">1. ノートを作成する</h2>
+<p><code>note-id</code>、<code>creator-id</code>、作成日時、更新日時の例示値は、作成時にサーバーが正式な値へ置き換えます。検索語は実行ごとに一意な値へ変更してください。</p>
+<form method="post" action="{notes_url}">
+<input type="hidden" name="csrf_token" value="{csrf}">
+<fieldset>
+<legend>作成する AsciiDoc 正本</legend>
+<label for="create-source">AsciiDoc</label>
+<textarea id="create-source" name="source" rows="24" required spellcheck="false">{sample_source}</textarea>
+<button type="submit">ノートを作成</button>
+</fieldset>
+</form>
+</section>
+<section aria-labelledby="open-note">
+<h2 id="open-note">2. 既存ノートを開く</h2>
+<p>作成後に表示されたノート ID、または検索結果のノート ID を指定します。</p>
+<form method="get" action="{notes_url}">
+<label for="note-id">ノート ID（UUIDv7）</label>
+<input id="note-id" name="note_id" autocomplete="off" required>
+<button type="submit">ノートを開く</button>
+</form>
+</section>
+<section aria-labelledby="search-note">
+<h2 id="search-note">3. ノートを検索する</h2>
+<p>作成時に本文へ入れた一意な検索語を指定します。最大 100 件を表示します。</p>
+<form method="get" action="{search_url}">
+<label for="search-query">検索語</label>
+<input id="search-query" name="q" value="acceptance-check-CHANGE-ME" required>
+<button type="submit">検索する</button>
+</form>
+</section>"#
         ),
     )))
 }
@@ -1192,9 +1359,40 @@ fn acceptance_csrf(headers: &HeaderMap) -> Result<String, ApiError> {
     ))
 }
 
-fn acceptance_page(summary: &str, content: &str) -> String {
+fn acceptance_page(state: &ApiState, summary: &str, content: &str) -> String {
+    let home_url = escape_html(&acceptance_url(state, "/acceptance"));
+    let stylesheet_url = escape_html(&acceptance_url(state, "/acceptance/style.css"));
+    let session_url = escape_html(&acceptance_url(state, "/api/v1/session"));
+    let openapi_url = escape_html(&acceptance_url(state, "/api/v1/openapi.json"));
     format!(
-        "<!doctype html><html lang=\"ja\"><meta charset=\"utf-8\"><title>Marginalis 受入確認</title><body><h1>Marginalis REST 受入確認</h1><p>{summary}</p><p><a href=\"/acceptance\">最初へ戻る</a></p>{content}</body></html>"
+        r#"<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marginalis REST API 受入確認</title>
+<link rel="stylesheet" href="{stylesheet_url}">
+</head>
+<body>
+<header>
+<p>Marginalis / 手動受入専用</p>
+<h1>REST API 受入確認</h1>
+<p>作成、取得、更新、検索、競合、二段階削除を、同一オリジンのセッションで確認します。</p>
+<nav aria-label="受入確認">
+<ul>
+<li><a href="{home_url}">確認の最初へ</a></li>
+<li><a href="{session_url}">現在のセッション</a></li>
+<li><a href="{openapi_url}">OpenAPI 契約</a></li>
+</ul>
+</nav>
+</header>
+<main>
+<aside role="status" aria-live="polite"><strong>現在の状態:</strong> {summary}</aside>
+{content}
+</main>
+<footer><p>JavaScript は使用しません。秘密情報やノート本文を受入記録へ転記しないでください。</p></footer>
+</body>
+</html>"#
     )
 }
 
@@ -1212,10 +1410,14 @@ fn acceptance_revision(revision: &str) -> Result<SourceRevision, ApiError> {
 }
 
 async fn acceptance_open_note(
+    State(state): State<ApiState>,
     Query(query): Query<AcceptanceOpenNoteQuery>,
 ) -> Result<Redirect, ApiError> {
     let note_id = acceptance_note_id(&query.note_id)?;
-    Ok(Redirect::to(&format!("/acceptance/notes/{note_id}")))
+    Ok(Redirect::to(&acceptance_url(
+        &state,
+        &format!("/acceptance/notes/{note_id}"),
+    )))
 }
 
 async fn acceptance_create_note(
@@ -1230,7 +1432,11 @@ async fn acceptance_create_note(
         .create_source(actor, form.source)
         .await
         .map_err(|error| note_error(error, "note creation is unavailable"))?;
-    Ok(Redirect::to(&format!("/acceptance/notes/{note_id}")).into_response())
+    Ok(Redirect::to(&acceptance_url(
+        &state,
+        &format!("/acceptance/notes/{note_id}"),
+    ))
+    .into_response())
 }
 
 async fn acceptance_note(
@@ -1248,13 +1454,54 @@ async fn acceptance_note(
         .map_err(|error| note_error(error, "note lookup is unavailable"))?;
     let note_id = source.note_id.to_string();
     let revision = source.revision.to_hex();
+    let title = escape_html(&source.title);
     let content = String::from_utf8(source.content)
         .map_err(|_| ApiError::new(ApiErrorCode::Internal, "note source is not UTF-8"))?;
     let escaped_source = escape_html(&content);
+    let update_url = escape_html(&acceptance_url(
+        &state,
+        &format!("/acceptance/notes/{note_id}/source"),
+    ));
+    let delete_url = escape_html(&acceptance_url(
+        &state,
+        &format!("/acceptance/notes/{note_id}/delete-preparations"),
+    ));
     Ok(Html(acceptance_page(
-        &format!("取得成功（ETag: &quot;{revision}&quot;）"),
+        &state,
+        &format!("ノート「{title}」を取得しました。ETag: &quot;{revision}&quot;"),
         &format!(
-            "<section><h2>更新</h2><p>同じrevisionで二度送信すると、二度目は競合になります。</p><form method=\"post\" action=\"/acceptance/notes/{note_id}/source\"><input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\"><label>revision（ETagの引用符を除いた値）<input name=\"revision\" value=\"{revision}\" required></label><label>AsciiDoc正本<textarea name=\"source\" rows=\"16\" cols=\"88\" required>{escaped_source}</textarea></label><button type=\"submit\">更新</button></form></section><section><h2>削除準備</h2><form method=\"post\" action=\"/acceptance/notes/{note_id}/delete-preparations\"><input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\"><label>revision（最新ETag）<input name=\"revision\" value=\"{revision}\" required></label><button type=\"submit\">削除を準備</button></form></section>"
+            r#"<section aria-labelledby="note-details">
+<h2 id="note-details">取得結果</h2>
+<dl>
+<dt>ノート ID</dt><dd><code>{note_id}</code></dd>
+<dt>現在のリビジョン</dt><dd><code>{revision}</code></dd>
+</dl>
+<p>更新後は新しいリビジョンが発行されます。競合を確認する場合は、この画面を別のタブにも残し、古いリビジョンから更新してください。</p>
+</section>
+<section aria-labelledby="update-note">
+<h2 id="update-note">ノートを更新する</h2>
+<form method="post" action="{update_url}">
+<input type="hidden" name="csrf_token" value="{csrf}">
+<fieldset>
+<legend>楽観的ロックを使う更新</legend>
+<label for="revision">期待するリビジョン</label>
+<input id="revision" name="revision" value="{revision}" required spellcheck="false">
+<label for="update-source">AsciiDoc 正本</label>
+<textarea id="update-source" name="source" rows="24" required spellcheck="false">{escaped_source}</textarea>
+<button type="submit">この内容で更新</button>
+</fieldset>
+</form>
+</section>
+<section class="danger" aria-labelledby="prepare-delete">
+<h2 id="prepare-delete">ノートを削除する</h2>
+<p>削除は元に戻せません。最初に影響を確認するための削除準備を行います。この操作だけでは削除されません。</p>
+<form method="post" action="{delete_url}">
+<input type="hidden" name="csrf_token" value="{csrf}">
+<label for="delete-revision">期待するリビジョン</label>
+<input id="delete-revision" name="revision" value="{revision}" required spellcheck="false">
+<button type="submit">削除の影響を確認</button>
+</form>
+</section>"#
         ),
     )))
 }
@@ -1278,7 +1525,11 @@ async fn acceptance_update_note(
         )
         .await
         .map_err(|error| note_error(error, "note update is unavailable"))?;
-    Ok(Redirect::to(&format!("/acceptance/notes/{note_id}")).into_response())
+    Ok(Redirect::to(&acceptance_url(
+        &state,
+        &format!("/acceptance/notes/{note_id}"),
+    ))
+    .into_response())
 }
 
 async fn acceptance_prepare_note_deletion(
@@ -1299,10 +1550,24 @@ async fn acceptance_prepare_note_deletion(
         .await
         .map_err(|error| note_error(error, "note deletion is unavailable"))?;
     let csrf = escape_html(&acceptance_csrf(&headers)?);
+    let confirmation_url = escape_html(&acceptance_url(&state, "/acceptance/delete-confirmations"));
     Ok(Html(acceptance_page(
-        "削除準備成功",
+        &state,
+        "削除準備が完了しました。内容を確認してから確定してください。",
         &format!(
-            "<p>対象: {}。参照元: {} 件。</p><form method=\"post\" action=\"/acceptance/delete-confirmations\"><input type=\"hidden\" name=\"csrf_token\" value=\"{csrf}\"><input type=\"hidden\" name=\"confirmation_token\" value=\"{}\"><button type=\"submit\">削除を確定</button></form>",
+            r#"<section class="danger" aria-labelledby="confirm-delete">
+<h2 id="confirm-delete">削除を確定する</h2>
+<dl>
+<dt>対象ノート</dt><dd>{}</dd>
+<dt>閲覧可能な参照元</dt><dd>{} 件</dd>
+</dl>
+<p><strong>この操作は正本、投影、ACL を物理削除し、取り消せません。</strong> 確認トークンは 5 分で失効し、一度だけ使用できます。</p>
+<form method="post" action="{confirmation_url}">
+<input type="hidden" name="csrf_token" value="{csrf}">
+<input type="hidden" name="confirmation_token" value="{}">
+<button type="submit">削除を確定する</button>
+</form>
+</section>"#,
             escape_html(&preparation.title),
             preparation.incoming_reference_count,
             escape_html(&preparation.confirmation_token),
@@ -1329,8 +1594,9 @@ async fn acceptance_confirm_note_deletion(
         .await
         .map_err(|error| note_error(error, "note deletion is unavailable"))?;
     Ok(Html(acceptance_page(
-        "削除成功",
-        "<p>一覧・検索・source取得で対象ノートが見えないことを確認してください。</p>",
+        &state,
+        "ノートを削除しました。",
+        "<section><h2>削除後の確認</h2><p>最初の画面へ戻り、同じ検索語で結果が返らないことと、ノート ID を指定しても取得できないことを確認してください。</p></section>",
     )))
 }
 
@@ -1350,16 +1616,28 @@ async fn acceptance_search(
         .notes
         .into_iter()
         .map(|note| {
+            let note_url = escape_html(&acceptance_url(
+                &state,
+                &format!("/acceptance/notes/{}", note.note_id),
+            ));
             format!(
-                "<li><a href=\"/acceptance/notes/{}\">{}</a></li>",
-                note.note_id,
-                escape_html(&note.title)
+                "<li><a href=\"{note_url}\">{}</a> <small><code>{}</code></small></li>",
+                escape_html(&note.title),
+                note.note_id
             )
         })
         .collect::<String>();
+    let results = if result_count == 0 {
+        "<p><strong>一致するノートはありません。</strong></p>".to_owned()
+    } else {
+        format!("<p>{result_count} 件見つかりました。</p><ol>{notes}</ol>")
+    };
     Ok(Html(acceptance_page(
-        &format!("検索結果: {}", escape_html(&query.q)),
-        &format!("<p>結果: {} 件</p><ul>{notes}</ul>", result_count),
+        &state,
+        &format!("検索語「{}」の結果です。", escape_html(&query.q)),
+        &format!(
+            "<section aria-labelledby=\"search-results\"><h2 id=\"search-results\">検索結果</h2>{results}</section>"
+        ),
     )))
 }
 
@@ -2244,8 +2522,9 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use marginalis_application::{
         AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthAdministrationUseCases,
-        McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, OidcAuthenticationUseCases,
-        OidcIdentityStore, RootCredentialStore, WebSession, WebSessionStore,
+        McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, NoteUseCases,
+        OidcAuthenticationUseCases, OidcIdentityStore, RootCredentialStore, WebSession,
+        WebSessionStore,
     };
     use marginalis_auth_oidc::{OidcConfiguration, OidcConfigurationError};
     use marginalis_domain::{
@@ -2257,9 +2536,10 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        ApiError, ApiErrorCode, ApiState, CONTENT_SECURITY_POLICY, McpEndpoint, McpRateLimiter,
-        OPENAPI_DOCUMENT, OidcLoginRateLimiter, REQUEST_ID_HEADER, RootLoginRateLimiter,
-        administration_router, clear_oidc_state_cookie, oidc_callback_failure, oidc_state_cookie,
+        ACCEPTANCE_CONTENT_SECURITY_POLICY, ACCEPTANCE_SAMPLE_SOURCE, ApiError, ApiErrorCode,
+        ApiState, CONTENT_SECURITY_POLICY, McpEndpoint, McpRateLimiter, OPENAPI_DOCUMENT,
+        OidcLoginRateLimiter, REQUEST_ID_HEADER, RootLoginRateLimiter, administration_router,
+        clear_oidc_state_cookie, oidc_callback_failure, oidc_state_cookie,
         oidc_state_from_destination, require_same_origin_browser_request, rfc3339_timestamp,
         router,
     };
@@ -2793,31 +3073,79 @@ mod tests {
             "marginalis-web-acceptance-page-test-{}",
             uuid::Uuid::now_v7()
         ));
-        let response = router(ApiState::with_test_adapters(
+        let authentication = Arc::new(marginalis_server::ServerWebAuthenticationUseCases::new(
             database.clone(),
-            Arc::new(marginalis_server::ServerNoteUseCases::new(
-                database,
-                marginalis_files::FileNoteStore::open(&directory).expect("sources"),
-            )),
-        ))
-        .oneshot(
-            Request::builder()
-                .uri("/acceptance")
-                .header("cookie", "marginalis_session=session; marginalis_csrf=csrf")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
+        ));
+        let notes = Arc::new(marginalis_server::ServerNoteUseCases::new(
+            database,
+            marginalis_files::FileNoteStore::open(&directory).expect("sources"),
+        ));
+        notes
+            .create_source(
+                Actor {
+                    user_id,
+                    is_root: false,
+                },
+                ACCEPTANCE_SAMPLE_SOURCE.into(),
+            )
+            .await
+            .expect("acceptance sample must remain valid");
+        let app = router(ApiState::new(
+            notes,
+            Arc::new(SubpathOidc),
+            authentication.clone(),
+            authentication,
+            "https://marginalis.example.test".into(),
+        ));
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/acceptance")
+                    .header("cookie", "marginalis_session=session; marginalis_csrf=csrf")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
 
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_SECURITY_POLICY)
+                .expect("acceptance CSP"),
+            ACCEPTANCE_CONTENT_SECURITY_POLICY
+        );
         let body = to_bytes(response.into_body(), 1_000_000)
             .await
             .expect("body");
         let body = std::str::from_utf8(&body).expect("UTF-8 HTML");
-        assert!(body.contains("/acceptance/notes"));
+        assert!(body.contains("href=\"/marginalis/acceptance/style.css\""));
+        assert!(body.contains("action=\"/marginalis/acceptance/notes\""));
+        assert!(body.contains("action=\"/marginalis/acceptance/search\""));
+        assert!(body.contains("確認の進め方"));
+        assert!(body.contains("[source,rust]"));
         assert!(body.contains("name=\"csrf_token\" value=\"csrf\""));
         assert!(!body.contains("<script"));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/acceptance/style.css")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .expect("stylesheet content type"),
+            "text/css; charset=utf-8"
+        );
     }
 
     #[tokio::test]
