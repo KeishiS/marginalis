@@ -330,6 +330,48 @@ in
       };
     };
 
+    # v0.3の削除済みノートは30日間だけ保持する。SQLite正本だけを操作するため、HTTP serviceを
+    # 停止せずに日次実行できる。
+    systemd.services.marginalis-purge-deleted = {
+      description = "Purge expired Marginalis soft-deleted notes";
+      environment = {
+        RUST_LOG = cfg.logFilter;
+        MARGINALIS_DATA_DIR = cfg.dataDir;
+        MARGINALIS_DATABASE_URL =
+          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
+        MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${cfg.package}/bin/marginalis purge-deleted";
+        User = "marginalis";
+        Group = "marginalis";
+        WorkingDirectory = cfg.dataDir;
+        NoNewPrivileges = true;
+        CapabilityBoundingSet = "";
+        PrivateTmp = true;
+        ProtectHome = true;
+        ProtectSystem = "strict";
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        SystemCallFilter = [ "@system-service" "~@privileged" ];
+        ReadWritePaths = [ cfg.dataDir ];
+      }
+      // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
+        StateDirectory = "marginalis";
+        StateDirectoryMode = "0750";
+      };
+    };
+
+    systemd.timers.marginalis-purge-deleted = {
+      description = "Purge expired Marginalis soft-deleted notes daily";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "daily";
+        Persistent = true;
+        Unit = "marginalis-purge-deleted.service";
+      };
+    };
+
     # backup先は運用者が永続storageとretentionを決めてから明示する。timerは提供しない。
     # このunitはHTTP serverと競合させ、SQLiteとAsciiDoc正本を同じ停止期間に取得する。
     systemd.services.marginalis-backup = mkIf (cfg.backupDirectory != null) {

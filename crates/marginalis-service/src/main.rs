@@ -9,7 +9,7 @@ use marginalis_server::{
     ServerConfig, ServerMcpAuthenticator, ServerMcpOAuthService, ServerNoteUseCases,
     ServerWebAuthenticationUseCases, StorageConfig, SystemClock, SystemRandom,
 };
-use marginalis_sqlite::SqliteDatabase;
+use marginalis_sqlite::{SqliteDatabase, V3SqliteDatabase};
 use marginalis_web::{ApiState, McpEndpoint, router};
 use std::{
     collections::BTreeMap,
@@ -17,7 +17,8 @@ use std::{
 };
 use tracing_subscriber::EnvFilter;
 
-const USAGE: &str = "usage: marginalis [--version|serve|rebuild-projections|prune-audit|backup (--output <absolute-directory>|--directory <absolute-directory>)|restore --input <backup-directory> --output <new-data-directory>]";
+const USAGE: &str = "usage: marginalis [--version|serve|rebuild-projections|prune-audit|purge-deleted|backup (--output <absolute-directory>|--directory <absolute-directory>)|restore --input <backup-directory> --output <new-data-directory>]";
+const V3_SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
 #[tokio::main]
 async fn main() {
@@ -32,6 +33,7 @@ async fn main() {
         None | Some("serve") => run().await,
         Some("rebuild-projections") => rebuild_projections().await,
         Some("prune-audit") => prune_audit().await,
+        Some("purge-deleted") => purge_deleted().await,
         Some("backup") => backup(arguments).await,
         Some("restore") => restore(arguments).await,
         Some(_) => Err(USAGE.into()),
@@ -40,6 +42,22 @@ async fn main() {
         tracing::error!(error = %error, "Marginalis server terminated");
         std::process::exit(1);
     }
+}
+
+/// v0.3の30日間ソフトデリート保持期限を過ぎた正本を物理削除する。
+///
+/// 実行中のHTTP serviceと並行してもSQLite transactionとして完結する。NixOS timerは日次で起動する。
+async fn purge_deleted() -> Result<(), Box<dyn std::error::Error>> {
+    let configuration = StorageConfig::from_environment()?;
+    let database = V3SqliteDatabase::connect(&configuration.database_url).await?;
+    let cutoff = UnixMillis::new(SystemClock.now().get() - V3_SOFT_DELETE_RETENTION_MS);
+    let count = database.purge_deleted_before(cutoff).await?;
+    tracing::info!(
+        count,
+        cutoff_ms = cutoff.get(),
+        "purged expired soft-deleted v3 notes"
+    );
+    Ok(())
 }
 
 /// 停止中のserviceに対してSQLiteとAsciiDoc正本を一組で取得するbackup command。
