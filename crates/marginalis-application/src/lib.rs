@@ -1,11 +1,11 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, CanonicalActor, CanonicalAuthenticatedSession, CanonicalNote, CanonicalNoteDraft,
-    CanonicalWebSession, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient,
-    NoteId, NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSearchFilters, NoteSource,
-    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
-    UserId,
+    Actor, CanonicalActor, CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor,
+    CanonicalNote, CanonicalNoteDraft, CanonicalWebSession,
+    EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId, NoteLinkPage,
+    NotePage, NotePermission, NoteProjection, NoteSearchFilters, NoteSource, OidcIdentity,
+    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
@@ -908,6 +908,53 @@ pub trait V3OidcAuthenticationUseCases: Send + Sync {
         code: String,
         state: String,
     ) -> Result<CanonicalActor, AuthenticationUseCaseError>;
+}
+
+/// v0.3 MCP token endpointだけが返す短期token pair。
+pub struct V3McpTokenPair {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub access_expires_in_seconds: u64,
+    pub scope: String,
+}
+
+#[async_trait]
+pub trait V3McpOAuthUseCases: Send + Sync {
+    async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError>;
+    async fn authorize(
+        &self,
+        actor: CanonicalActor,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        scopes: Vec<String>,
+        code_challenge: String,
+    ) -> Result<String, McpOAuthUseCaseError>;
+    async fn exchange_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        verifier: String,
+    ) -> Result<V3McpTokenPair, McpOAuthUseCaseError>;
+    async fn refresh_access_token(
+        &self,
+        refresh_token: String,
+        client_id: String,
+        resource_uri: String,
+    ) -> Result<V3McpTokenPair, McpOAuthUseCaseError>;
+    async fn authenticate(
+        &self,
+        token: String,
+        resource_uri: String,
+        scope: String,
+    ) -> Result<Option<CanonicalMcpAuthenticatedActor>, McpOAuthUseCaseError>;
+    async fn revoke(
+        &self,
+        actor: CanonicalActor,
+        client_id: String,
+    ) -> Result<(), McpOAuthUseCaseError>;
 }
 
 impl std::fmt::Display for NoteUseCaseError {

@@ -12,9 +12,9 @@ use marginalis_application::{
     McpRefreshTokenRotation, McpTokenPair, NoteAclService, NoteAclServiceError, NoteAclStore,
     NoteDraft, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases, NoteWriteService,
     OidcAuthenticationUseCases, OidcUserAdministrationStore, Random, RootCredentialStore,
-    SessionLifetime, UserAdministrationUseCases, V3MembershipResolver, V3NoteUseCases,
-    V3OidcAuthenticationUseCases, V3WebSessionUseCases, WebSession, WebSessionService,
-    WebSessionStore, WebSessionUseCases,
+    SessionLifetime, UserAdministrationUseCases, V3McpOAuthUseCases, V3McpTokenPair,
+    V3MembershipResolver, V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
+    WebSession, WebSessionService, WebSessionStore, WebSessionUseCases,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
@@ -360,6 +360,97 @@ impl ServerV3McpOAuthService {
             .revoke_mcp_client_tokens(&actor.issuer, &actor.subject, client_id, SystemClock.now())
             .await
             .map_err(|_| McpOAuthError::Unavailable)
+    }
+}
+
+fn v3_mcp_error(error: McpOAuthError) -> McpOAuthUseCaseError {
+    match error {
+        McpOAuthError::Rejected => McpOAuthUseCaseError::Rejected,
+        McpOAuthError::Unavailable => McpOAuthUseCaseError::Unavailable,
+    }
+}
+
+#[async_trait]
+impl V3McpOAuthUseCases for ServerV3McpOAuthService {
+    async fn register_client(
+        &self,
+        client: marginalis_domain::McpOAuthClient,
+    ) -> Result<(), McpOAuthUseCaseError> {
+        self.register_client(client).await.map_err(v3_mcp_error)
+    }
+    async fn authorize(
+        &self,
+        actor: CanonicalActor,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        scopes: Vec<String>,
+        code_challenge: String,
+    ) -> Result<String, McpOAuthUseCaseError> {
+        self.authorize(
+            actor,
+            client_id,
+            redirect_uri,
+            resource_uri,
+            scopes,
+            code_challenge,
+        )
+        .await
+        .map_err(v3_mcp_error)
+    }
+    async fn exchange_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: String,
+        resource_uri: String,
+        verifier: String,
+    ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
+        let pair = self
+            .exchange_authorization_code(code, client_id, redirect_uri, resource_uri, verifier)
+            .await
+            .map_err(v3_mcp_error)?;
+        Ok(V3McpTokenPair {
+            access_token: pair.access_token,
+            refresh_token: pair.refresh_token,
+            access_expires_in_seconds: pair.access_expires_in_seconds,
+            scope: pair.scope,
+        })
+    }
+    async fn refresh_access_token(
+        &self,
+        refresh_token: String,
+        client_id: String,
+        resource_uri: String,
+    ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
+        let pair = self
+            .refresh_access_token(refresh_token, client_id, resource_uri)
+            .await
+            .map_err(v3_mcp_error)?;
+        Ok(V3McpTokenPair {
+            access_token: pair.access_token,
+            refresh_token: pair.refresh_token,
+            access_expires_in_seconds: pair.access_expires_in_seconds,
+            scope: pair.scope,
+        })
+    }
+    async fn authenticate(
+        &self,
+        token: String,
+        resource_uri: String,
+        scope: String,
+    ) -> Result<Option<marginalis_domain::CanonicalMcpAuthenticatedActor>, McpOAuthUseCaseError>
+    {
+        self.authenticate(&token, &resource_uri, &scope)
+            .await
+            .map_err(v3_mcp_error)
+    }
+    async fn revoke(
+        &self,
+        actor: CanonicalActor,
+        client_id: String,
+    ) -> Result<(), McpOAuthUseCaseError> {
+        self.revoke(&actor, &client_id).await.map_err(v3_mcp_error)
     }
 }
 
