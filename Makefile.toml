@@ -135,7 +135,7 @@ description = "Validate the published v0.3 OpenAPI document and required REST pa
 command = "jq"
 args = [
   "-e",
-  ".openapi == \"3.1.0\" and .info.version == \"v2\" and (.paths[\"/api/v2/health\"] | has(\"get\")) and (.paths[\"/api/v2/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v2/notes/{note_id}/source\"] | has(\"get\")) and (.paths[\"/api/v2/mcp-authorizations/{client_id}\"] | has(\"delete\"))",
+  ".openapi == \"3.1.0\" and .info.version == \"v2\" and (.paths[\"/api/v2/health\"] | has(\"get\")) and (.paths[\"/api/v2/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v2/notes/{note_id}\"] | has(\"get\") and has(\"put\") and has(\"delete\")) and (.paths[\"/api/v2/notes/{note_id}/source\"] | has(\"get\")) and (.paths[\"/api/v2/notes/{note_id}/restore\"] | has(\"post\")) and (.paths[\"/api/v2/mcp-authorizations/{client_id}\"] | has(\"delete\")) and (.components.schemas.Note.required | contains([\"note_id\", \"revision\"])) and (.components.parameters.CsrfToken.required == true)",
   "docs/openapi-v3.json",
 ]
 
