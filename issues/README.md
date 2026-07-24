@@ -12,6 +12,8 @@ AsciiDoc関連のIssueでは、MarginalisをAdocWeaveへ組み込む処理を扱
 `v0.1.0`の受入確認と公開は、2026-07-23に完了した。詳細は
 [009](009-oidc-provider-registration.md)と
 [022](022-v0.1.0-rc.1-release-acceptance.md)を参照する。
+`v0.2.0-rc.1`の受入確認とタグ公開は、2026-07-24に完了した。詳細は
+[035](035-v0.2.0-rc.1-release-acceptance.md)を参照する。
 
 root管理には引き続きREST APIを使い、管理UIは後続作業とする。AdocWeave v0.6.1への更新では
 保存形式v1を破壊的に上書きする。既存環境の`dataDir`は移行せず、サービス停止後に完全に
