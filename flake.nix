@@ -212,6 +212,9 @@
                   "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\" and .api_version == \"v2\"'"
               )
               machine.succeed(
+                  "test $(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/oidc/login) = 503"
+              )
+              machine.succeed(
                   "curl -fsS http://127.0.0.1:3000/api/v2/openapi.json | jq -e '.openapi == \"3.1.0\"'"
               )
               machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM v3_notes'")
