@@ -855,6 +855,12 @@ pub trait V3NoteUseCases: Send + Sync {
         note_id: NoteId,
         expected_revision: i64,
     ) -> Result<CanonicalNote, NoteUseCaseError>;
+    async fn restore_note(
+        &self,
+        actor: CanonicalActor,
+        note_id: NoteId,
+        expected_revision: i64,
+    ) -> Result<CanonicalNote, NoteUseCaseError>;
 }
 
 /// Kanidmから再確認した主体の利用資格。group名そのものはHTTP・SQLiteへ漏らさない。

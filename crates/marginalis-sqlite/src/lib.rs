@@ -931,6 +931,33 @@ impl V3SqliteDatabase {
         row.map(v3_note_from_row).transpose()
     }
 
+    /// 復元候補として削除済みノートをAdminだけへ返す。
+    pub async fn visible_deleted_note(
+        &self,
+        actor: &CanonicalActor,
+        note_id: NoteId,
+    ) -> Result<Option<CanonicalNote>, V3NoteStoreError> {
+        let row = sqlx::query(
+            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+             FROM v3_notes
+             WHERE note_id = ? AND deleted_at_ms IS NOT NULL
+               AND (? OR EXISTS (
+                    SELECT 1 FROM v3_note_acl
+                    WHERE v3_note_acl.note_id = v3_notes.note_id
+                      AND issuer = ? AND subject = ? AND permission >= ?
+               ))",
+        )
+        .bind(note_id.to_string())
+        .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
+        .bind(permission_to_storage(NotePermission::Admin))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(v3_database_error)?;
+        row.map(v3_note_from_row).transpose()
+    }
+
     /// 削除済みでない、主体に可視なノートを安定した順序で返す。
     pub async fn list_visible_notes(
         &self,

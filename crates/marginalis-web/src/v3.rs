@@ -10,7 +10,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
-    routing::get,
+    routing::{get, post},
 };
 use marginalis_application::{
     AuthenticationUseCaseError, NoteUseCaseError, V3NoteUseCases, V3OidcAuthenticationUseCases,
@@ -173,6 +173,7 @@ pub fn router(state: V3ApiState) -> Router {
             "/api/v2/notes/{note_id}",
             get(read_note).put(update_note).delete(delete_note),
         )
+        .route("/api/v2/notes/{note_id}/restore", post(restore_note))
         .route("/api/v2/notes/{note_id}/source", get(export_note))
         .with_state(state)
 }
@@ -338,6 +339,21 @@ async fn delete_note(
     let note = state
         .notes
         .soft_delete_note(actor, parse_note_id(&note_id)?, input.expected_revision)
+        .await
+        .map_err(note_error)?;
+    Ok(Json(note.into()))
+}
+
+async fn restore_note(
+    State(state): State<V3ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+    Json(input): Json<DeleteInput>,
+) -> V3Result<Json<NoteResponse>> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let note = state
+        .notes
+        .restore_note(actor, parse_note_id(&note_id)?, input.expected_revision)
         .await
         .map_err(note_error)?;
     Ok(Json(note.into()))
@@ -550,6 +566,15 @@ mod tests {
         }
 
         async fn soft_delete_note(
+            &self,
+            _actor: CanonicalActor,
+            _note_id: NoteId,
+            _expected_revision: i64,
+        ) -> Result<CanonicalNote, NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+
+        async fn restore_note(
             &self,
             _actor: CanonicalActor,
             _note_id: NoteId,

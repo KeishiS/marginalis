@@ -14,5 +14,6 @@
       "delete": { "responses": { "200": { "description": "soft deleted" }, "409": { "description": "revision conflict" } } }
     },
     "/api/v2/notes/{note_id}/source": { "get": { "responses": { "200": { "description": "AsciiDoc export" } } } }
+    ,"/api/v2/notes/{note_id}/restore": { "post": { "responses": { "200": { "description": "restored" }, "404": { "description": "not restorable" } } } }
   }
 }

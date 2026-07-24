@@ -1146,6 +1146,23 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
             .map_err(map_v3_note_error)?
             .ok_or(NoteUseCaseError::Unavailable)
     }
+
+    async fn restore_note(
+        &self,
+        actor: CanonicalActor,
+        note_id: NoteId,
+        expected_revision: i64,
+    ) -> Result<CanonicalNote, NoteUseCaseError> {
+        self.database
+            .visible_deleted_note(&actor, note_id)
+            .await
+            .map_err(map_v3_note_error)?
+            .ok_or(NoteUseCaseError::NotFound)?;
+        self.database
+            .restore_note(note_id, expected_revision, SystemClock.now())
+            .await
+            .map_err(map_v3_note_error)
+    }
 }
 
 #[async_trait]
@@ -2302,11 +2319,16 @@ mod tests {
         assert!(deleted.deleted_at.is_some());
         assert!(
             service
-                .list_visible_notes(owner)
+                .list_visible_notes(owner.clone())
                 .await
                 .expect("visible notes")
                 .is_empty()
         );
+        let restored = service
+            .restore_note(owner, note.note_id, deleted.revision)
+            .await
+            .expect("restore");
+        assert!(restored.deleted_at.is_none());
     }
 
     #[tokio::test]
