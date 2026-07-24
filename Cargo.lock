@@ -1157,9 +1157,12 @@ dependencies = [
 name = "marginalis-auth-oidc"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
  "marginalis-application",
  "marginalis-domain",
  "openidconnect",
+ "serde",
+ "serde_json",
  "tracing",
  "url",
 ]

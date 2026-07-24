@@ -1,7 +1,9 @@
 //! OIDC provider接続の設定境界。HTTP handlerやSQLiteへは依存しない。
 
 use core::fmt;
+use std::collections::BTreeSet;
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     Clock, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService,
     Random,
@@ -14,7 +16,12 @@ use openidconnect::{
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
+use serde::Deserialize;
 use url::Url;
+
+const MAX_ID_TOKEN_BYTES: usize = 16 * 1024;
+const MAX_GROUPS_PER_ID_TOKEN: usize = 128;
+const MAX_GROUP_NAME_BYTES: usize = 256;
 
 #[derive(Clone)]
 pub struct OidcConfiguration {
@@ -162,6 +169,7 @@ pub enum OidcCallbackRejection {
     MissingIdToken,
     Claims,
     Identity,
+    Groups,
 }
 
 impl OidcCallbackError {
@@ -172,9 +180,71 @@ impl OidcCallbackError {
             Self::Rejected(OidcCallbackRejection::MissingIdToken) => "missing-id-token",
             Self::Rejected(OidcCallbackRejection::Claims) => "id-token-claims",
             Self::Rejected(OidcCallbackRejection::Identity) => "identity",
+            Self::Rejected(OidcCallbackRejection::Groups) => "groups",
             Self::Unavailable => "storage",
         }
     }
+}
+
+/// 署名・issuer・audience・nonceを検証済みのID tokenから得たKanidm group所属。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedOidcGroups {
+    pub groups: BTreeSet<String>,
+}
+
+impl VerifiedOidcGroups {
+    pub fn is_user(&self, user_group: &str) -> bool {
+        self.groups.contains(user_group)
+    }
+
+    pub fn is_administrator(&self, administrator_group: &str) -> bool {
+        self.groups.contains(administrator_group)
+    }
+}
+
+#[derive(Deserialize)]
+struct GroupClaimPayload {
+    #[serde(flatten)]
+    claims: serde_json::Map<String, serde_json::Value>,
+}
+
+/// 検証済みID tokenのpayloadから、Kanidmで設定した文字列配列のgroup claimを読む。
+///
+/// この関数はJWTの署名検証をしない。必ず`IdToken::claims`の成功後にだけ呼び出す。claimが欠落、
+/// 文字列配列以外、空のgroup名を含む場合はfail closedで拒否する。
+pub fn groups_from_verified_id_token(
+    id_token: &str,
+    group_claim: &str,
+) -> Result<VerifiedOidcGroups, OidcCallbackRejection> {
+    if group_claim.is_empty() || id_token.len() > MAX_ID_TOKEN_BYTES {
+        return Err(OidcCallbackRejection::Groups);
+    }
+    let payload = id_token
+        .split('.')
+        .nth(1)
+        .ok_or(OidcCallbackRejection::Groups)?;
+    let payload = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| OidcCallbackRejection::Groups)?;
+    let payload = serde_json::from_slice::<GroupClaimPayload>(&payload)
+        .map_err(|_| OidcCallbackRejection::Groups)?;
+    let values = payload
+        .claims
+        .get(group_claim)
+        .and_then(serde_json::Value::as_array)
+        .ok_or(OidcCallbackRejection::Groups)?;
+    if values.len() > MAX_GROUPS_PER_ID_TOKEN {
+        return Err(OidcCallbackRejection::Groups);
+    }
+    let mut groups = BTreeSet::new();
+    for value in values {
+        let value = value
+            .as_str()
+            .filter(|value| !value.trim().is_empty() && value.len() <= MAX_GROUP_NAME_BYTES)
+            .ok_or(OidcCallbackRejection::Groups)?;
+        groups.insert(value.to_owned());
+    }
+    Ok(VerifiedOidcGroups { groups })
 }
 
 impl OidcAuthentication {
@@ -338,5 +408,26 @@ mod tests {
             "https://example.test/app/auth/oidc/callback"
         );
         assert_eq!(config.cookie_path(), "/app");
+    }
+
+    #[test]
+    fn parses_a_configured_group_claim_after_token_verification() {
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(r#"{"groups":["server-users","server-admins"]}"#);
+        let token = format!("{header}.{payload}.signature");
+        let groups = groups_from_verified_id_token(&token, "groups").expect("groups");
+        assert!(groups.is_user("server-users"));
+        assert!(groups.is_administrator("server-admins"));
+    }
+
+    #[test]
+    fn rejects_missing_or_non_string_group_claims() {
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(r#"{"groups":["server-users",3]}"#);
+        let token = format!("{header}.{payload}.signature");
+        assert_eq!(
+            groups_from_verified_id_token(&token, "groups"),
+            Err(OidcCallbackRejection::Groups)
+        );
     }
 }
