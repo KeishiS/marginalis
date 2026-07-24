@@ -203,7 +203,13 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
         secrets.oidc_client_secret,
         configuration.http.base_url.as_str(),
     )?;
-    let oidc = OidcAuthentication::discover(&oidc_configuration).await?;
+    let oidc = match OidcAuthentication::discover(&oidc_configuration).await {
+        Ok(oidc) => Some(oidc),
+        Err(error) => {
+            tracing::warn!(%error, "OIDC discovery is unavailable; login requests will fail closed");
+            None
+        }
+    };
     let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
     tracing::info!(address = %configuration.http.listen_address, "Marginalis server listening");
     let cookie_path = cookie_path(&configuration.http.base_url);

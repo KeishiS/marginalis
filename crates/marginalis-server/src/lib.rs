@@ -90,11 +90,11 @@ pub struct ServerV3WebSessionUseCases {
 #[derive(Clone)]
 pub struct ServerV3OidcAuthenticationUseCases {
     database: V3SqliteDatabase,
-    oidc: OidcAuthentication,
+    oidc: Option<OidcAuthentication>,
 }
 
 impl ServerV3OidcAuthenticationUseCases {
-    pub fn new(database: V3SqliteDatabase, oidc: OidcAuthentication) -> Self {
+    pub fn new(database: V3SqliteDatabase, oidc: Option<OidcAuthentication>) -> Self {
         Self { database, oidc }
     }
 }
@@ -1629,6 +1629,8 @@ impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
 impl V3OidcAuthenticationUseCases for ServerV3OidcAuthenticationUseCases {
     async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError> {
         self.oidc
+            .as_ref()
+            .ok_or(AuthenticationUseCaseError::Unavailable)?
             .begin_login(
                 &self.database.oidc_login_attempt_store(),
                 &SystemRandom,
@@ -1645,6 +1647,8 @@ impl V3OidcAuthenticationUseCases for ServerV3OidcAuthenticationUseCases {
     ) -> Result<CanonicalActor, AuthenticationUseCaseError> {
         let identity = self
             .oidc
+            .as_ref()
+            .ok_or(AuthenticationUseCaseError::Unavailable)?
             .complete_v3_login(
                 &self.database.oidc_login_attempt_store(),
                 &SystemClock,
@@ -2291,6 +2295,18 @@ mod tests {
         assert_eq!(
             validate_base_url("http://example.test".into()),
             Err(ConfigurationError::InvalidBaseUrl)
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_oidc_unavailability_rejects_login_without_preventing_service_construction() {
+        let database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let authentication = ServerV3OidcAuthenticationUseCases::new(database, None);
+        assert_eq!(
+            authentication.begin_login().await,
+            Err(AuthenticationUseCaseError::Unavailable)
         );
     }
 
