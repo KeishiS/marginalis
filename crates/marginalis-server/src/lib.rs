@@ -12,18 +12,18 @@ use marginalis_application::{
     McpRefreshTokenRotation, McpTokenPair, NoteAclService, NoteAclServiceError, NoteAclStore,
     NoteDraft, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases, NoteWriteService,
     OidcAuthenticationUseCases, OidcUserAdministrationStore, Random, RootCredentialStore,
-    SessionLifetime, UserAdministrationUseCases, WebSession, WebSessionService, WebSessionStore,
-    WebSessionUseCases,
+    SessionLifetime, UserAdministrationUseCases, V3NoteUseCases, WebSession, WebSessionService,
+    WebSessionStore, WebSessionUseCases,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
-    Actor, EntityId, McpAuthorizationGrant, NoteId, NotePage, NotePermission, NoteSource,
-    OidcLoginResult, RegistrationPolicy, RootAuditAction, RootAuditEvent, SourceRevision,
-    UnixMillis, UserId,
+    Actor, CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, McpAuthorizationGrant,
+    NoteId, NotePage, NotePermission, NoteSource, OidcLoginResult, RegistrationPolicy,
+    RootAuditAction, RootAuditEvent, SourceRevision, UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
-use marginalis_sqlite::SqliteDatabase;
+use marginalis_sqlite::{SqliteDatabase, V3NoteStoreError, V3SqliteDatabase};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -62,6 +62,18 @@ pub struct ServerNoteUseCases {
     /// 正本revisionの照合からrename/deleteまでを一つの臨界区間にする。
     /// SQLiteとfilesystemをまたぐため、初期版ではprocess内の全ノート書込みを直列化する。
     write_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+/// v0.3.0ではSQLiteだけを正本とするノート操作実装。
+#[derive(Clone, Debug)]
+pub struct ServerV3NoteUseCases {
+    database: V3SqliteDatabase,
+}
+
+impl ServerV3NoteUseCases {
+    pub fn new(database: V3SqliteDatabase) -> Self {
+        Self { database }
+    }
 }
 
 const OIDC_SESSION_IDLE_TIMEOUT_MS: i64 = 24 * 60 * 60 * 1_000;
@@ -989,6 +1001,112 @@ fn render_note_source(
 
 fn source_metadata(source: &str) -> Result<marginalis_asciidoc::NoteMetadata, NoteUseCaseError> {
     marginalis_asciidoc::parse_note_metadata(source).map_err(|_| NoteUseCaseError::Unavailable)
+}
+
+fn map_v3_note_error(error: V3NoteStoreError) -> NoteUseCaseError {
+    match error {
+        V3NoteStoreError::Conflict | V3NoteStoreError::LastAdmin => NoteUseCaseError::Conflict,
+        V3NoteStoreError::CorruptNote | V3NoteStoreError::ArchiveFormat => {
+            NoteUseCaseError::Validation
+        }
+        V3NoteStoreError::ArchiveTargetNotEmpty
+        | V3NoteStoreError::ArchiveMissingAdmin
+        | V3NoteStoreError::Database(_) => NoteUseCaseError::Unavailable,
+    }
+}
+
+#[async_trait]
+impl V3NoteUseCases for ServerV3NoteUseCases {
+    async fn list_visible_notes(
+        &self,
+        actor: CanonicalActor,
+    ) -> Result<Vec<CanonicalNote>, NoteUseCaseError> {
+        self.database
+            .list_visible_notes(&actor, 0, 1_000)
+            .await
+            .map_err(map_v3_note_error)
+    }
+
+    async fn read_note(
+        &self,
+        actor: CanonicalActor,
+        note_id: NoteId,
+    ) -> Result<CanonicalNote, NoteUseCaseError> {
+        self.database
+            .visible_note(&actor, note_id, NotePermission::Read)
+            .await
+            .map_err(map_v3_note_error)?
+            .ok_or(NoteUseCaseError::NotFound)
+    }
+
+    async fn create_note(
+        &self,
+        actor: CanonicalActor,
+        draft: CanonicalNoteDraft,
+    ) -> Result<CanonicalNote, NoteUseCaseError> {
+        let draft = marginalis_asciidoc::validate_canonical_note_draft(draft)
+            .map_err(|_| NoteUseCaseError::Validation)?;
+        let now = SystemClock.now();
+        let note = CanonicalNote {
+            note_id: NoteId::new(SystemRandom.uuid_v7()),
+            creator_issuer: actor.issuer.clone(),
+            creator_subject: actor.subject.clone(),
+            title: draft.title,
+            body: draft.body,
+            tags: draft.tags,
+            created_at: now,
+            updated_at: now,
+            revision: 1,
+            deleted_at: None,
+        };
+        self.database
+            .create_note(&note, NotePermission::Admin)
+            .await
+            .map_err(map_v3_note_error)?;
+        Ok(note)
+    }
+
+    async fn update_note(
+        &self,
+        actor: CanonicalActor,
+        note_id: NoteId,
+        draft: CanonicalNoteDraft,
+        expected_revision: i64,
+    ) -> Result<CanonicalNote, NoteUseCaseError> {
+        self.database
+            .visible_note(&actor, note_id, NotePermission::Write)
+            .await
+            .map_err(map_v3_note_error)?
+            .ok_or(NoteUseCaseError::NotFound)?;
+        let draft = marginalis_asciidoc::validate_canonical_note_draft(draft)
+            .map_err(|_| NoteUseCaseError::Validation)?;
+        self.database
+            .update_note(note_id, expected_revision, &draft, SystemClock.now())
+            .await
+            .map_err(map_v3_note_error)
+    }
+
+    async fn soft_delete_note(
+        &self,
+        actor: CanonicalActor,
+        note_id: NoteId,
+        expected_revision: i64,
+    ) -> Result<CanonicalNote, NoteUseCaseError> {
+        self.database
+            .visible_note(&actor, note_id, NotePermission::Admin)
+            .await
+            .map_err(map_v3_note_error)?
+            .ok_or(NoteUseCaseError::NotFound)?;
+        self.database
+            .soft_delete_note(note_id, expected_revision, SystemClock.now())
+            .await
+            .map_err(map_v3_note_error)?;
+        self.database
+            .note(note_id, true)
+            .await
+            .map_err(map_v3_note_error)?
+            .ok_or(NoteUseCaseError::Unavailable)
+    }
 }
 
 /// raw AsciiDoc APIの保護属性を、解析済みのattribute rangeだけでサーバ値へ置換する。
@@ -1949,5 +2067,65 @@ mod tests {
             .expect("previous projection remains searchable");
         assert_eq!(result.notes[0].note_id, note_id);
         std::fs::remove_dir_all(directory).expect("remove directory");
+    }
+
+    #[tokio::test]
+    async fn v3_notes_use_kanidm_subjects_and_sqlite_as_the_only_store() {
+        let database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let service = ServerV3NoteUseCases::new(database);
+        let owner = CanonicalActor {
+            issuer: "https://kanidm.example.test/oauth2/openid/marginalis".into(),
+            subject: "owner".into(),
+            is_administrator: false,
+        };
+        let reader = CanonicalActor {
+            issuer: owner.issuer.clone(),
+            subject: "reader".into(),
+            is_administrator: false,
+        };
+        let note = service
+            .create_note(
+                owner.clone(),
+                CanonicalNoteDraft {
+                    title: "SQLite canonical note".into(),
+                    body: "Only SQLite persists this body.".into(),
+                    tags: vec!["v3".into(), "sqlite".into()],
+                },
+            )
+            .await
+            .expect("create");
+        assert_eq!(note.creator_subject, "owner");
+        assert_eq!(
+            service.read_note(reader, note.note_id).await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        let updated = service
+            .update_note(
+                owner.clone(),
+                note.note_id,
+                CanonicalNoteDraft {
+                    title: "Updated title".into(),
+                    body: "Updated body".into(),
+                    tags: vec!["sqlite".into()],
+                },
+                note.revision,
+            )
+            .await
+            .expect("update");
+        assert_eq!(updated.revision, note.revision + 1);
+        let deleted = service
+            .soft_delete_note(owner.clone(), note.note_id, updated.revision)
+            .await
+            .expect("soft delete");
+        assert!(deleted.deleted_at.is_some());
+        assert!(
+            service
+                .list_visible_notes(owner)
+                .await
+                .expect("visible notes")
+                .is_empty()
+        );
     }
 }

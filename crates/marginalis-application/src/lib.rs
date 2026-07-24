@@ -1,10 +1,10 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
-    NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSearchFilters, NoteSource,
-    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
-    UserId,
+    Actor, CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, McpAuthorizationGrant,
+    McpClientAuthorization, McpOAuthClient, NoteId, NoteLinkPage, NotePage, NotePermission,
+    NoteProjection, NoteSearchFilters, NoteSource, OidcIdentity, OidcLoginResult, OidcUser,
+    RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
@@ -819,6 +819,41 @@ pub enum NoteUseCaseError {
     Conflict,
     Validation,
     Unavailable,
+}
+
+/// v0.3.0のSQLite正本を扱うノート操作境界。
+///
+/// `CanonicalActor`はKanidm issuer/subを識別子とし、v0.2のローカル`UserId`を受け取らない。
+/// HTTP、MCP、Web UIは同じ可視性規則をこの境界経由で利用する。
+#[async_trait]
+pub trait V3NoteUseCases: Send + Sync {
+    async fn list_visible_notes(
+        &self,
+        actor: CanonicalActor,
+    ) -> Result<Vec<CanonicalNote>, NoteUseCaseError>;
+    async fn read_note(
+        &self,
+        actor: CanonicalActor,
+        note_id: NoteId,
+    ) -> Result<CanonicalNote, NoteUseCaseError>;
+    async fn create_note(
+        &self,
+        actor: CanonicalActor,
+        draft: CanonicalNoteDraft,
+    ) -> Result<CanonicalNote, NoteUseCaseError>;
+    async fn update_note(
+        &self,
+        actor: CanonicalActor,
+        note_id: NoteId,
+        draft: CanonicalNoteDraft,
+        expected_revision: i64,
+    ) -> Result<CanonicalNote, NoteUseCaseError>;
+    async fn soft_delete_note(
+        &self,
+        actor: CanonicalActor,
+        note_id: NoteId,
+        expected_revision: i64,
+    ) -> Result<CanonicalNote, NoteUseCaseError>;
 }
 
 impl std::fmt::Display for NoteUseCaseError {
