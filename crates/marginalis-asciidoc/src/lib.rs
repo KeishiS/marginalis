@@ -17,8 +17,8 @@ use adocweave::semantic::{
 };
 use adocweave::text::{TextRange, TextSize};
 use marginalis_domain::{
-    CanonicalNote, EntityId, NoteId, NoteProjection, NoteReference as ProjectionReference,
-    UnixMillis, UserId,
+    CanonicalNote, CanonicalNoteDraft, EntityId, NoteId, NoteProjection,
+    NoteReference as ProjectionReference, UnixMillis, UserId,
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
@@ -86,6 +86,28 @@ impl fmt::Display for CanonicalExportError {
 
 impl std::error::Error for CanonicalExportError {}
 
+/// v0.3.0の単体AsciiDoc exportをimportできない理由。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalImportError {
+    InvalidDocument,
+    InvalidNoteId,
+    InvalidTimestamp,
+    InvalidTags,
+}
+
+impl fmt::Display for CanonicalImportError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidDocument => "canonical AsciiDoc export has invalid protected metadata",
+            Self::InvalidNoteId => "canonical AsciiDoc export has an invalid note ID",
+            Self::InvalidTimestamp => "canonical AsciiDoc export has an invalid timestamp",
+            Self::InvalidTags => "canonical AsciiDoc export has invalid tags",
+        })
+    }
+}
+
+impl std::error::Error for CanonicalImportError {}
+
 /// v0.3.0のSQLite正本を単体export用のAsciiDocへ変換する。
 ///
 /// headerは永続化しない。`note-id`、作成者、時刻、タグは正本から毎回生成するため、利用者が
@@ -106,12 +128,167 @@ pub fn export_canonical_note(note: &CanonicalNote) -> Result<String, CanonicalEx
     ))
 }
 
+/// 単体exportを、空のSQLiteへimportできる構造化正本へ変換する。
+///
+/// exportには楽観的ロック世代と削除状態を含めないため、import結果は revision 1 の非削除ノートに
+/// なる。ACL と削除状態を含む完全な復元には archive import を使う。
+pub fn import_canonical_note(source: &str) -> Result<CanonicalNote, CanonicalImportError> {
+    let (header, body) = source
+        .split_once("\n\n")
+        .ok_or(CanonicalImportError::InvalidDocument)?;
+    let mut lines = header.lines();
+    let title = lines
+        .next()
+        .and_then(|line| line.strip_prefix("= "))
+        .filter(|title| !title.is_empty() && !title.contains(['\r', '\n']))
+        .ok_or(CanonicalImportError::InvalidDocument)?
+        .to_owned();
+    let mut attributes = BTreeMap::new();
+    for line in lines {
+        let (name, value) = line
+            .strip_prefix(':')
+            .and_then(|line| line.split_once(":"))
+            .ok_or(CanonicalImportError::InvalidDocument)?;
+        if name.is_empty()
+            || (value.is_empty() && name != "tags")
+            || attributes
+                .insert(name.to_owned(), value.trim_start().to_owned())
+                .is_some()
+        {
+            return Err(CanonicalImportError::InvalidDocument);
+        }
+    }
+    let required = |name| {
+        attributes
+            .get(name)
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .ok_or(CanonicalImportError::InvalidDocument)
+    };
+    let note_id = required("note-id")?
+        .parse::<EntityId>()
+        .map(NoteId::new)
+        .map_err(|_| CanonicalImportError::InvalidNoteId)?;
+    let creator_issuer = required("creator-issuer")?;
+    let creator_subject = required("creator-subject")?;
+    let created_at = parse_unix_millis(&required("created-at")?)?;
+    let updated_at = parse_unix_millis(&required("updated-at")?)?;
+    let tags = parse_export_tags(
+        attributes
+            .get("tags")
+            .ok_or(CanonicalImportError::InvalidDocument)?,
+    )?;
+    Ok(CanonicalNote {
+        note_id,
+        creator_issuer,
+        creator_subject,
+        title,
+        body: body.to_owned(),
+        tags,
+        created_at,
+        updated_at,
+        revision: 1,
+        deleted_at: None,
+    })
+}
+
+/// v0.3.0の構造化入力を検証し、タグを正規化する。
+///
+/// SQLite正本ではheaderを保存しないため、従来の「文書全体の必須属性」検査とは分離して、
+/// 利用者が送るtitle・tags・bodyだけを検査する。本文の位置は入力されたbodyを基準に返す。
+pub fn validate_canonical_note_draft(
+    draft: CanonicalNoteDraft,
+) -> Result<CanonicalNoteDraft, Vec<NoteProjectionError>> {
+    let empty_range = TextRange::new(TextSize::ZERO, TextSize::ZERO).expect("empty range is valid");
+    let mut errors = Vec::new();
+    if draft.title.trim().is_empty()
+        || draft.title.contains(['\n', '\r'])
+        || draft.title.chars().count() > 200
+    {
+        errors.push(NoteProjectionError {
+            code: "invalid-title".into(),
+            range: empty_range,
+        });
+    }
+    let mut tags = BTreeMap::new();
+    for tag in draft.tags {
+        let display = tag.trim().nfc().collect::<String>();
+        if display.is_empty() || display.contains([',', '\n', '\r']) || display.chars().count() > 64
+        {
+            errors.push(NoteProjectionError {
+                code: "invalid-tags".into(),
+                range: empty_range,
+            });
+            continue;
+        }
+        tags.entry(display.to_lowercase()).or_insert(display);
+    }
+    if tags.len() > 50 {
+        errors.push(NoteProjectionError {
+            code: "too-many-tags".into(),
+            range: empty_range,
+        });
+    }
+    let analysis = adocweave::Engine::new(Default::default())
+        .analyze(&draft.body)
+        .map_err(|_| {
+            vec![NoteProjectionError {
+                code: "asciidoc-parse-failed".into(),
+                range: empty_range,
+            }]
+        })?;
+    errors.extend(
+        validate_note_content_profile(&analysis)
+            .into_iter()
+            .map(|error| NoteProjectionError {
+                code: error.code.as_str().into(),
+                range: error.range,
+            }),
+    );
+    if errors.is_empty() {
+        Ok(CanonicalNoteDraft {
+            title: draft.title.trim().nfc().collect(),
+            body: draft.body,
+            tags: tags.into_values().collect(),
+        })
+    } else {
+        errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.clone()));
+        Err(errors)
+    }
+}
+
 fn format_unix_millis(value: UnixMillis) -> Result<String, CanonicalExportError> {
     let nanos = i128::from(value.get()) * 1_000_000;
     OffsetDateTime::from_unix_timestamp_nanos(nanos)
         .map_err(|_| CanonicalExportError)?
         .format(&Rfc3339)
         .map_err(|_| CanonicalExportError)
+}
+
+fn parse_unix_millis(value: &str) -> Result<UnixMillis, CanonicalImportError> {
+    let value = OffsetDateTime::parse(value, &Rfc3339)
+        .map_err(|_| CanonicalImportError::InvalidTimestamp)?;
+    i64::try_from(value.unix_timestamp_nanos() / 1_000_000)
+        .map(UnixMillis::new)
+        .map_err(|_| CanonicalImportError::InvalidTimestamp)
+}
+
+fn parse_export_tags(value: &str) -> Result<Vec<String>, CanonicalImportError> {
+    if value.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut normalized = BTreeMap::new();
+    for value in value.split(',') {
+        let display = value.trim().nfc().collect::<String>();
+        if display.is_empty() || display.contains(['\n', '\r']) || display.chars().count() > 64 {
+            return Err(CanonicalImportError::InvalidTags);
+        }
+        normalized.entry(display.to_lowercase()).or_insert(display);
+    }
+    if normalized.len() > 50 {
+        return Err(CanonicalImportError::InvalidTags);
+    }
+    Ok(normalized.into_values().collect())
 }
 
 /// 保存済みノートで変更を許可しない文書属性。
@@ -960,15 +1137,15 @@ mod tests {
     use adocweave_wasm::{
         WasmOptions, WasmProductSet, WasmRenderInputs, WasmRequest, process_request,
     };
-    use marginalis_domain::{CanonicalNote, EntityId, NoteId, UnixMillis};
+    use marginalis_domain::{CanonicalNote, CanonicalNoteDraft, EntityId, NoteId, UnixMillis};
 
     use super::{
         ADOCWEAVE_SOURCE_REVISION, DEFAULT_SOURCE_LANGUAGES, NoteContentErrorCode, NoteMathDisplay,
         NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_ADOCWEAVE_PACKAGE_VERSION,
         ProtectedAttributeRewriteErrorCode, RenderInputs, build_note_projection,
-        export_canonical_note, extract_note_math, extract_note_references, project,
-        rewrite_protected_attributes, validate_note_content_profile, validate_note_metadata,
-        verify_runtime_package_version,
+        export_canonical_note, extract_note_math, extract_note_references, import_canonical_note,
+        project, rewrite_protected_attributes, validate_canonical_note_draft,
+        validate_note_content_profile, validate_note_metadata, verify_runtime_package_version,
     };
 
     #[test]
@@ -1004,6 +1181,31 @@ mod tests {
         assert!(exported.contains(":creator-issuer: https://id.example.test\n"));
         assert!(exported.contains(":creator-subject: alice\n"));
         assert!(exported.contains(":tags: research,v3\n\nbody"));
+        let imported = import_canonical_note(&exported).expect("import");
+        assert_eq!(imported, note);
+    }
+
+    #[test]
+    fn canonical_draft_validation_normalizes_tags_and_keeps_body_ranges() {
+        let draft = validate_canonical_note_draft(CanonicalNoteDraft {
+            title: "  Draft  ".into(),
+            body: "xref:note:0197c9bc-0000-7000-8000-000000000001[]".into(),
+            tags: vec![" Research ".into(), "research".into()],
+        })
+        .expect("valid draft");
+        assert_eq!(draft.title, "Draft");
+        assert_eq!(draft.tags, vec!["Research"]);
+        let errors = validate_canonical_note_draft(CanonicalNoteDraft {
+            title: "Draft".into(),
+            body: "include::secret.adoc[]".into(),
+            tags: Vec::new(),
+        })
+        .expect_err("include is rejected");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == "include-directive-disabled")
+        );
     }
 
     #[test]

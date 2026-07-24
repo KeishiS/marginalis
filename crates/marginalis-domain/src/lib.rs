@@ -229,6 +229,14 @@ pub struct CanonicalArchive {
 
 pub const CANONICAL_ARCHIVE_FORMAT: &str = "marginalis-v3-archive-1";
 
+/// KanidmのOIDC identityと`server-admins`所属から構成するv0.3.0の認可主体。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalActor {
+    pub issuer: String,
+    pub subject: String,
+    pub is_administrator: bool,
+}
+
 /// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。
 ///
 /// `title`、anchorおよび参照はAsciiDoc adapterが検証してから渡す。domainは構文木を持たない。

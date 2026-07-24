@@ -14,10 +14,10 @@ use marginalis_application::{
     OperationState, RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, CANONICAL_ARCHIVE_FORMAT, CanonicalArchive, CanonicalNote, CanonicalNoteAclEntry,
-    CanonicalNoteBundle, CanonicalNoteDraft, EntityId, McpAuthorizationGrant,
-    McpClientAuthorization, McpOAuthClient, NoteId, NoteLink, NoteLinkPage, NotePage,
-    NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
+    Actor, CANONICAL_ARCHIVE_FORMAT, CanonicalActor, CanonicalArchive, CanonicalNote,
+    CanonicalNoteAclEntry, CanonicalNoteBundle, CanonicalNoteDraft, EntityId,
+    McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId, NoteLink, NoteLinkPage,
+    NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
     RegistrationPolicy, RootAuditEvent, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
@@ -714,6 +714,64 @@ impl V3SqliteDatabase {
         }
         .map_err(v3_database_error)?;
         row.map(v3_note_from_row).transpose()
+    }
+
+    /// 管理者または直接ACLを持つ主体だけに、削除済みでない正本を返す。
+    pub async fn visible_note(
+        &self,
+        actor: &CanonicalActor,
+        note_id: NoteId,
+        required: NotePermission,
+    ) -> Result<Option<CanonicalNote>, V3NoteStoreError> {
+        let row = sqlx::query(
+            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+             FROM v3_notes
+             WHERE note_id = ? AND deleted_at_ms IS NULL
+               AND (? OR EXISTS (
+                    SELECT 1 FROM v3_note_acl
+                    WHERE v3_note_acl.note_id = v3_notes.note_id
+                      AND issuer = ? AND subject = ? AND permission >= ?
+               ))",
+        )
+        .bind(note_id.to_string())
+        .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
+        .bind(permission_to_storage(required))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(v3_database_error)?;
+        row.map(v3_note_from_row).transpose()
+    }
+
+    /// 削除済みでない、主体に可視なノートを安定した順序で返す。
+    pub async fn list_visible_notes(
+        &self,
+        actor: &CanonicalActor,
+        offset: u64,
+        limit: u32,
+    ) -> Result<Vec<CanonicalNote>, V3NoteStoreError> {
+        let rows = sqlx::query(
+            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+             FROM v3_notes
+             WHERE deleted_at_ms IS NULL
+               AND (? OR EXISTS (
+                    SELECT 1 FROM v3_note_acl
+                    WHERE v3_note_acl.note_id = v3_notes.note_id
+                      AND issuer = ? AND subject = ? AND permission >= ?
+               ))
+             ORDER BY updated_at_ms DESC, note_id ASC LIMIT ? OFFSET ?",
+        )
+        .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
+        .bind(permission_to_storage(NotePermission::Read))
+        .bind(i64::from(limit))
+        .bind(i64::try_from(offset).unwrap_or(i64::MAX))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(v3_database_error)?;
+        rows.into_iter().map(v3_note_from_row).collect()
     }
 
     /// 削除済みでない正本を楽観的ロックして更新する。
@@ -2789,6 +2847,42 @@ mod tests {
             )
             .await
             .expect("downgrade after second administrator");
+        let alice = CanonicalActor {
+            issuer: "https://id.example.test".into(),
+            subject: "alice".into(),
+            is_administrator: false,
+        };
+        let charlie = CanonicalActor {
+            issuer: "https://id.example.test".into(),
+            subject: "charlie".into(),
+            is_administrator: false,
+        };
+        let administrator = CanonicalActor {
+            issuer: "https://id.example.test".into(),
+            subject: "administrator".into(),
+            is_administrator: true,
+        };
+        assert!(
+            database
+                .visible_note(&alice, note_id, NotePermission::Read)
+                .await
+                .expect("owner remains visible")
+                .is_some()
+        );
+        assert_eq!(
+            database
+                .visible_note(&charlie, note_id, NotePermission::Read)
+                .await,
+            Ok(None)
+        );
+        assert_eq!(
+            database
+                .list_visible_notes(&administrator, 0, 10)
+                .await
+                .expect("administrator list")
+                .len(),
+            1
+        );
 
         let updated = database
             .update_note(
