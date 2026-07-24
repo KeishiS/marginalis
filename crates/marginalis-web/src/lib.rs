@@ -2594,7 +2594,6 @@ mod tests {
         time::Duration,
     };
     use tower::ServiceExt;
-    use tracing::instrument::WithSubscriber as _;
 
     use super::{
         ACCEPTANCE_CONTENT_SECURITY_POLICY, ACCEPTANCE_SAMPLE_SOURCE, ApiError, ApiErrorCode,
@@ -3049,6 +3048,7 @@ mod tests {
             .without_time()
             .with_writer(move || LogWriter(Arc::clone(&writer)))
             .finish();
+        tracing::subscriber::set_global_default(subscriber).expect("global tracing subscriber");
         let response = router(ApiState::with_test_adapters(
             database.clone(),
             Arc::new(marginalis_server::ServerNoteUseCases::new(
@@ -3061,7 +3061,6 @@ mod tests {
                 .body(Body::empty())
                 .expect("request"),
         )
-        .with_subscriber(subscriber)
         .await
         .expect("response");
 
