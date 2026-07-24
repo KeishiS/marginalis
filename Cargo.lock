@@ -1263,6 +1263,7 @@ dependencies = [
  "marginalis-server",
  "marginalis-sqlite",
  "marginalis-web",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",

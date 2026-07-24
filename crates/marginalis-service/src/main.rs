@@ -17,7 +17,7 @@ use std::{
 };
 use tracing_subscriber::EnvFilter;
 
-const USAGE: &str = "usage: marginalis [--version|serve|rebuild-projections|prune-audit|purge-deleted|backup (--output <absolute-directory>|--directory <absolute-directory>)|restore --input <backup-directory> --output <new-data-directory>]";
+const USAGE: &str = "usage: marginalis [--version|serve|rebuild-projections|prune-audit|purge-deleted|export-archive --output <absolute-file>|import-archive --input <absolute-file>|backup (--output <absolute-directory>|--directory <absolute-directory>)|restore --input <backup-directory> --output <new-data-directory>]";
 const V3_SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
 #[tokio::main]
@@ -34,6 +34,8 @@ async fn main() {
         Some("rebuild-projections") => rebuild_projections().await,
         Some("prune-audit") => prune_audit().await,
         Some("purge-deleted") => purge_deleted().await,
+        Some("export-archive") => export_archive(arguments).await,
+        Some("import-archive") => import_archive(arguments).await,
         Some("backup") => backup(arguments).await,
         Some("restore") => restore(arguments).await,
         Some(_) => Err(USAGE.into()),
@@ -58,6 +60,61 @@ async fn purge_deleted() -> Result<(), Box<dyn std::error::Error>> {
         "purged expired soft-deleted v3 notes"
     );
     Ok(())
+}
+
+/// SQLite正本を、ACL・削除状態を含む検証可能なv0.3 archiveとして出力する。
+async fn export_archive(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let output = required_absolute_file_argument(&mut arguments, "--output")?;
+    if output.exists() {
+        return Err(format!("archive output already exists: {}", output.display()).into());
+    }
+    let configuration = StorageConfig::from_environment()?;
+    let archive = V3SqliteDatabase::connect(&configuration.database_url)
+        .await?
+        .export_archive()
+        .await?;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output)?;
+    serde_json::to_writer_pretty(&file, &archive)?;
+    file.sync_all()?;
+    tracing::info!(output = %output.display(), note_count = archive.notes.len(), "exported v3 archive");
+    Ok(())
+}
+
+/// archiveを全件検証してから、空のv0.3 SQLite databaseへ一transactionで取り込む。
+async fn import_archive(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let input = required_absolute_file_argument(&mut arguments, "--input")?;
+    let file = std::fs::File::open(&input)?;
+    let archive = serde_json::from_reader(file)?;
+    let configuration = StorageConfig::from_environment()?;
+    V3SqliteDatabase::connect(&configuration.database_url)
+        .await?
+        .import_archive(&archive)
+        .await?;
+    tracing::info!(input = %input.display(), "imported v3 archive");
+    Ok(())
+}
+
+fn required_absolute_file_argument(
+    arguments: &mut impl Iterator<Item = String>,
+    option: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let received_option = arguments.next();
+    let value = arguments.next();
+    if received_option.as_deref() != Some(option) || value.is_none() || arguments.next().is_some() {
+        return Err(format!("usage requires {option} <absolute-file>").into());
+    }
+    let path = PathBuf::from(value.expect("value was checked"));
+    if !path.is_absolute() {
+        return Err(format!("{option} must be an absolute file path").into());
+    }
+    Ok(path)
 }
 
 /// 停止中のserviceに対してSQLiteとAsciiDoc正本を一組で取得するbackup command。
@@ -456,6 +513,33 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    #[test]
+    fn archive_arguments_require_exactly_one_absolute_file() {
+        assert_eq!(
+            required_absolute_file_argument(
+                &mut [
+                    "--output".to_owned(),
+                    "/var/backups/archive.json".to_owned()
+                ]
+                .into_iter(),
+                "--output",
+            )
+            .expect("absolute output"),
+            PathBuf::from("/var/backups/archive.json")
+        );
+        assert!(
+            required_absolute_file_argument(
+                &mut ["--output".to_owned(), "relative.json".to_owned()].into_iter(),
+                "--output",
+            )
+            .is_err()
+        );
+        assert!(
+            required_absolute_file_argument(&mut ["--input".to_owned()].into_iter(), "--output")
+                .is_err()
+        );
+    }
 
     #[tokio::test]
     async fn restore_prepares_a_verified_backup_without_changing_the_original() {
