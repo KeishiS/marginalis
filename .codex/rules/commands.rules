@@ -1,3 +1,14 @@
+# リポジトリのNix開発環境で実行するコマンド。
+prefix_rule(
+    pattern = ["nix", "develop", "--command"],
+    decision = "allow",
+    justification = "flakeで固定した開発環境からproject commandを実行することを許可する",
+    match = [
+        "nix develop --command cargo make verify",
+        "nix develop --command cargo test --workspace --all-features",
+    ],
+)
+
 # Rustの読み取り・構築・検証コマンド。
 prefix_rule(
     pattern = [
