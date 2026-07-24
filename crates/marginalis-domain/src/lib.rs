@@ -267,6 +267,12 @@ pub struct CanonicalMcpAuthorizationGrant {
     pub scopes: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalMcpAuthenticatedActor {
+    pub actor: CanonicalActor,
+    pub membership_checked_at: UnixMillis,
+}
+
 /// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。
 ///
 /// `title`、anchorおよび参照はAsciiDoc adapterが検証してから渡す。domainは構文木を持たない。

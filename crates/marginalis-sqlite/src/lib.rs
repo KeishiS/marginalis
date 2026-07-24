@@ -15,11 +15,12 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     Actor, CANONICAL_ARCHIVE_FORMAT, CanonicalActor, CanonicalArchive,
-    CanonicalAuthenticatedSession, CanonicalMcpAuthorizationGrant, CanonicalNote,
-    CanonicalNoteAclEntry, CanonicalNoteBundle, CanonicalNoteDraft, CanonicalWebSession, EntityId,
-    McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId, NoteLink, NoteLinkPage,
-    NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
-    RegistrationPolicy, RootAuditEvent, SourceRevision, UnixMillis, UserId, UserStatus,
+    CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor, CanonicalMcpAuthorizationGrant,
+    CanonicalNote, CanonicalNoteAclEntry, CanonicalNoteBundle, CanonicalNoteDraft,
+    CanonicalWebSession, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient,
+    NoteId, NoteLink, NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSummary,
+    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, RootAuditEvent, SourceRevision,
+    UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -958,6 +959,31 @@ impl V3SqliteDatabase {
         sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(hash_token(refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
         transaction.commit().await.map_err(v3_database_error)
+    }
+
+    pub async fn authenticate_mcp_access_token(
+        &self,
+        token: &str,
+        resource_uri: &str,
+        scope: &str,
+        now: UnixMillis,
+    ) -> Result<Option<CanonicalMcpAuthenticatedActor>, V3NoteStoreError> {
+        let row = sqlx::query("SELECT issuer, subject, is_administrator, membership_checked_at_ms FROM v3_mcp_access_tokens WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ? AND instr(' ' || scopes || ' ', ' ' || ? || ' ') > 0")
+            .bind(hash_token(token)).bind(resource_uri).bind(now.get()).bind(scope).fetch_optional(&self.pool).await.map_err(v3_database_error)?;
+        row.map(|r| {
+            Ok(CanonicalMcpAuthenticatedActor {
+                actor: CanonicalActor {
+                    issuer: r.try_get("issuer").map_err(v3_database_error)?,
+                    subject: r.try_get("subject").map_err(v3_database_error)?,
+                    is_administrator: r.try_get("is_administrator").map_err(v3_database_error)?,
+                },
+                membership_checked_at: UnixMillis::new(
+                    r.try_get("membership_checked_at_ms")
+                        .map_err(v3_database_error)?,
+                ),
+            })
+        })
+        .transpose()
     }
 
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
