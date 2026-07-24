@@ -1,16 +1,17 @@
 //! Marginalisのcomposition root。設定読込、adapter組立、tracingおよびHTTP listenを担う。
 
-use marginalis_application::{Clock, RootCredentialStore, RootInitializationService};
+use marginalis_application::{
+    AuthenticationUseCaseError, Clock, V3GroupMembership, V3MembershipResolver,
+};
 use marginalis_asciidoc::{parse_note_projection, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_domain::UnixMillis;
 use marginalis_files::{FileNoteStore, StorageLayout};
 use marginalis_server::{
-    ServerConfig, ServerMcpAuthenticator, ServerMcpOAuthService, ServerNoteUseCases,
-    ServerWebAuthenticationUseCases, StorageConfig, SystemClock, SystemRandom,
+    ServerConfig, ServerNoteUseCases, ServerV3NoteUseCases, ServerV3OidcAuthenticationUseCases,
+    ServerV3WebSessionUseCases, StorageConfig, SystemClock,
 };
 use marginalis_sqlite::{SqliteDatabase, V3SqliteDatabase};
-use marginalis_web::{ApiState, McpEndpoint, router};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -398,103 +399,63 @@ fn initialize_tracing() {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    run_v3().await
+}
+
+/// v0.3.0のcomposition root。旧ファイル正本・root管理・`/api/v1`を組み立てない。
+async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     verify_runtime_package_version()?;
     let (configuration, secrets) = ServerConfig::from_environment()?;
-    let layout = StorageLayout::open(&configuration.storage.data_dir)?;
-    let database = SqliteDatabase::connect_with_initial_registration_policy(
-        &configuration.storage.database_url,
-        configuration.storage.initial_registration_policy,
-    )
-    .await?;
-    let sources = FileNoteStore::open(layout.data_directory())?;
-    let notes = ServerNoteUseCases::new(database.clone(), sources);
-    notes.recover().await?;
-    let root_store = database.root_credential_store();
-    if !root_store.is_initialized().await? {
-        let password = secrets.initial_root_password.ok_or(
-            "ROOT_PASSWORD or ROOT_PASSWORD_FILE is required for an uninitialized database",
-        )?;
-        RootInitializationService::new(&root_store, &SystemRandom, &SystemClock)
-            .initialize_if_missing(password)
-            .await?;
-    }
+    let database = V3SqliteDatabase::connect(&configuration.storage.database_url).await?;
     let oidc_configuration = OidcConfiguration::new(
         configuration.oidc.issuer_url.to_string(),
         configuration.oidc.client_id,
         secrets.oidc_client_secret,
         configuration.http.base_url.as_str(),
     )?;
-    let oidc = match OidcAuthentication::discover(&oidc_configuration).await {
-        Ok(oidc) => Some(oidc),
-        Err(error) => {
-            tracing::error!(error = %error, "OIDC discovery failed; starting with root login only");
-            None
-        }
-    };
-    let resource_uri = base_url_at(&configuration.http.base_url, "mcp");
-    let metadata_uri = base_url_at(
-        &configuration.http.base_url,
-        ".well-known/oauth-protected-resource/mcp",
-    );
-    let authorization_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/authorize");
-    let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
+    let oidc = OidcAuthentication::discover(&oidc_configuration).await?;
     let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
     tracing::info!(address = %configuration.http.listen_address, "Marginalis server listening");
     let cookie_path = cookie_path(&configuration.http.base_url);
-    let authentication = std::sync::Arc::new(match oidc {
-        Some(oidc) => ServerWebAuthenticationUseCases::with_oidc_and_cookie_path(
-            database.clone(),
-            oidc,
-            cookie_path.clone(),
-        ),
-        None => ServerWebAuthenticationUseCases::with_cookie_path(database.clone(), cookie_path),
-    });
-    let state = ApiState::new(
-        std::sync::Arc::new(notes.clone()),
-        authentication.clone(),
-        authentication.clone(),
-        authentication,
-        configuration.http.base_url.origin().ascii_serialization(),
+    let oidc = std::sync::Arc::new(ServerV3OidcAuthenticationUseCases::new(
+        database.clone(),
+        oidc,
+    ));
+    let sessions = std::sync::Arc::new(ServerV3WebSessionUseCases::new(
+        database.clone(),
+        std::sync::Arc::new(ReauthenticateMembership),
+        marginalis_application::SessionLifetime {
+            idle_timeout_ms: 24 * 60 * 60 * 1_000,
+            absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
+        },
+    ));
+    let state = marginalis_web::v3::V3ApiState::new(
+        std::sync::Arc::new(ServerV3NoteUseCases::new(database)),
+        sessions,
+        oidc,
+        cookie_path,
     );
-    let state = if configuration.mcp_enabled {
-        let oauth = std::sync::Arc::new(ServerMcpOAuthService::new(
-            database.clone(),
-            configuration.mcp_client_metadata_allowed_hosts,
-        ));
-        state.with_mcp(McpEndpoint {
-            tools: marginalis_mcp::McpTools::new(std::sync::Arc::new(notes)),
-            authenticator: std::sync::Arc::new(ServerMcpAuthenticator::new(
-                database,
-                resource_uri.to_string(),
-            )),
-            oauth: oauth.clone(),
-            oauth_administration: oauth,
-            resource_uri: resource_uri.to_string(),
-            metadata_uri: metadata_uri.to_string(),
-            authorization_server_uri: configuration.http.base_url.to_string(),
-            authorization_endpoint_uri: authorization_endpoint_uri.to_string(),
-            token_endpoint_uri: token_endpoint_uri.to_string(),
-            allowed_origin: configuration.http.base_url.origin().ascii_serialization(),
-            rate_limiter: marginalis_web::McpRateLimiter::new(120),
-        })
-    } else {
-        state
-    };
     axum::serve(
         listener,
-        router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        marginalis_web::v3::router(state)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .await?;
     Ok(())
 }
 
-fn base_url_at(base_url: &url::Url, suffix: &str) -> url::Url {
-    let mut url = base_url.clone();
-    url.set_path(&format!(
-        "{}/{suffix}",
-        base_url.path().trim_end_matches('/')
-    ));
-    url
+/// 永続的なKanidm照会credentialを導入するまで、5分後に再OIDC loginを要求してfail closedにする。
+struct ReauthenticateMembership;
+
+#[async_trait::async_trait]
+impl V3MembershipResolver for ReauthenticateMembership {
+    async fn resolve(
+        &self,
+        _issuer: &str,
+        _subject: &str,
+    ) -> Result<V3GroupMembership, AuthenticationUseCaseError> {
+        Err(AuthenticationUseCaseError::Rejected)
+    }
 }
 
 fn cookie_path(base_url: &url::Url) -> String {

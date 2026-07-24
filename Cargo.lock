@@ -1253,6 +1253,7 @@ dependencies = [
 name = "marginalis-service"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "axum",
  "marginalis-application",
  "marginalis-asciidoc",
