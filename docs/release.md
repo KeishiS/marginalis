@@ -46,9 +46,11 @@ OpenAPI 契約、GitHub Actions の構文、Nix flake、NixOS VM テスト、Lin
 手動受入に成功し、既知の障害がない場合にだけ、次を行います。
 
 1. `Cargo.toml` 群と flake のバージョンがリリース対象のバージョンと一致していること、
-   `LICENSE-MIT`・`LICENSE-APACHE`・`CHANGELOG.md` が確定していることを確認する。
+   `LICENSE-MIT`・`LICENSE-APACHE`が確定していることを確認する。`CHANGELOG.md`の対象版に
+   記載した`未公開`を公開日へ置き換える。
 2. `Cargo.lock` を含む差分と `CHANGELOG.md` を確認し、注釈付きタグ `v<version>` を作成して
-   push する。
+   push する。タグで起動した`Release gate`は、タグ名、Cargoパッケージ群、flake、
+   `CHANGELOG.md`の版が一致しない場合に失敗する。
 3. GitHub Actions の `Release gate` が成功した後、公開配布が必要な場合にだけ GitHub Release
    を作成する。タグだけで運用する場合は Release の作成を省略できる。
 4. NixOS 利用者には、Git 参照をタグへ固定するよう案内する。`v0.2.0`系列への初回更新では、

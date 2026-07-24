@@ -83,11 +83,12 @@ command = "nix"
 args = ["build", ".#packages.x86_64-linux.default", "--no-link"]
 
 [tasks.release-metadata]
-description = "Verify release version and declared dual-license files"
+description = "Verify release version, tag, changelog, and declared dual-license files"
 script_runner = "@shell"
 script = '''
 set -eu
 expected_version="0.2.0-rc.1"
+release_tag="${MARGINALIS_RELEASE_TAG:-}"
 test -s LICENSE-MIT
 test -s LICENSE-APACHE
 cargo metadata --locked --no-deps --format-version 1 | jq -e \
@@ -98,7 +99,18 @@ cargo metadata --locked --no-deps --format-version 1 | jq -e \
     and .publish == [])
 '
 grep -Fq "version = \"$expected_version\";" flake.nix
-grep -Fq "## $expected_version — 未公開" CHANGELOG.md
+awk -v heading="## $expected_version — " '
+  index($0, heading) == 1 {
+    status = substr($0, length(heading) + 1)
+    if (status == "未公開" || status ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
+      matches++
+    }
+  }
+  END { exit matches != 1 }
+' CHANGELOG.md
+if [ -n "$release_tag" ]; then
+  test "$release_tag" = "v$expected_version"
+fi
 '''
 
 [tasks.release-gate]
