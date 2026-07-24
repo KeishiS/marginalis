@@ -25,7 +25,7 @@
 ## GitHub operations
 
 - GitHubのPull Request、Issue、Actions、Releaseを操作するときは、原則として`gh`を使う。
-  `gh`は`nix develop`の開発環境に含まれる。
+  `gh`は現在の環境から直接実行し、`nix develop --command gh`では呼び出さない。
 - 外部操作の前に対象リポジトリ、ブランチ、Pull Requestを読み取り確認する。
 - Pull Requestには変更目的、主な差分、実行した検証を記載する。
 - Pull Request作成後は、原則としてrebase方式のauto-mergeを設定する。必須チェックが成功し、
