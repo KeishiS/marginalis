@@ -22,9 +22,9 @@ SQLite 正本、Kanidm group 認可、`/api/v2` を現行契約とします。�
 - [要件定義](requirements.md): v0.3 の確定要件
 - [アーキテクチャ](architecture.md): クレートの責務、依存関係、データ整合性
 - [v0.3.0 再設計仕様](v0.3.0-design.md): SQLite 正本、Kanidm group 認可、新 API の確定設計
-- [個人研究の記憶を横断する探索基盤](research-search-vision.md): 多様な研究データを横断する
-  探索、個人向け学習、研究記録への還流を論じ、Marginalis のあいまい検索を第一歩に置く
-  非規範のポジションペーパー
+- [連環（Renkan）— 個人研究の記憶を横断する探索基盤](research-search-vision.md): 多様な研究
+  データを横断する探索、個人向け学習、研究記録への還流を論じ、Marginalis のあいまい検索を
+  第一歩に置く非規範のポジションペーパー
 - [ロードマップ](roadmap.md): 未完了作業の順序と判断時期
 - [要件ヒアリング記録](interviews.md): 要件を決めた時点の履歴
 
