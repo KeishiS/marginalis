@@ -23,19 +23,20 @@ root管理には引き続きREST APIを使い、管理UIは後続作業とする
 
 1. [030: E2Eテストの自動化](030-end-to-end-test-automation-readiness.md)
 2. [029: AdocWeave v0.6.1への移行](029-adocweave-v0.6.1-migration.md)
-3. [032: MCP向けの入力規則と検証結果](032-mcp-authoring-profile-and-diagnostics.md)
-4. [033: リポジトリ文書のAsciiDoc移行](033-repository-documentation-asciidoc-migration.md)
+3. [035: v0.2.0-rc.1のリリース受入](035-v0.2.0-rc.1-release-acceptance.md)
+4. [032: MCP向けの入力規則と検証結果](032-mcp-authoring-profile-and-diagnostics.md)
+5. [033: リポジトリ文書のAsciiDoc移行](033-repository-documentation-asciidoc-migration.md)
    （029の完了後。以降の作業とは並行できる）
-5. [027: 検索、xref、閲覧用の変換規則](027-search-reference-and-rendering-projections.md)
-6. [026: OIDCログインと実行時制限](026-oidc-login-binding-and-runtime-limits.md)の
+6. [027: 検索、xref、閲覧用の変換規則](027-search-reference-and-rendering-projections.md)
+7. [026: OIDCログインと実行時制限](026-oidc-login-binding-and-runtime-limits.md)の
    リソース上限・未認証経路対策と、
    [021: テスト構成とリリース前検証](021-test-architecture-and-release-gates.md)の
    テストモジュール分割・クレート分割
-7. [013: root 管理・OIDC ユーザー承認](013-root-administration-and-approval.md)のユーザー再有効化、招待、専用管理オリジン・mTLS
-8. Web UIの段階導入:
+8. [013: root 管理・OIDC ユーザー承認](013-root-administration-and-approval.md)のユーザー再有効化、招待、専用管理オリジン・mTLS
+9. Web UIの段階導入:
    [006: ブラウザー編集プレビュー](006-browser-preview.md)と
    [034: グラフ表示Web UI](034-graph-visualization-web-ui.md)（公開判断後）
-9. [031: PostgreSQL対応の実現性調査](031-postgresql-storage-backend-feasibility.md)
+10. [031: PostgreSQL対応の実現性調査](031-postgresql-storage-backend-feasibility.md)
 
 [012: MCP 曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)に基づく検索
 拡張は、E2E での検索品質測定後に必要性を再評価する。
