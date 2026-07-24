@@ -150,6 +150,12 @@ CREATE TABLE v3_mcp_refresh_tokens (token_hash BLOB PRIMARY KEY NOT NULL, client
 CREATE INDEX v3_mcp_access_subject_idx ON v3_mcp_access_tokens (issuer, subject) WHERE revoked_at_ms IS NULL;
 "#,
     ),
+    (
+        5,
+        r#"
+ALTER TABLE v3_mcp_refresh_tokens ADD COLUMN is_administrator INTEGER NOT NULL DEFAULT 0 CHECK (is_administrator IN (0, 1));
+"#,
+    ),
 ];
 
 #[derive(Clone, Debug)]
@@ -934,6 +940,24 @@ impl V3SqliteDatabase {
             ))
         })
         .transpose()
+    }
+
+    pub async fn issue_mcp_token_pair(
+        &self,
+        access_token: &str,
+        refresh_token: &str,
+        grant: &CanonicalMcpAuthorizationGrant,
+        access_expires_at: UnixMillis,
+        refresh_expires_at: UnixMillis,
+        now: UnixMillis,
+    ) -> Result<(), V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let scopes = grant.scopes.join(" ");
+        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, membership_checked_at_ms, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(now.get()).bind(&scopes).bind(access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        transaction.commit().await.map_err(v3_database_error)
     }
 
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
