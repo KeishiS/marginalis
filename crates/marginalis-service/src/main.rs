@@ -8,8 +8,8 @@ use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_domain::UnixMillis;
 use marginalis_files::{FileNoteStore, StorageLayout};
 use marginalis_server::{
-    ServerConfig, ServerNoteUseCases, ServerV3NoteUseCases, ServerV3OidcAuthenticationUseCases,
-    ServerV3WebSessionUseCases, StorageConfig, SystemClock,
+    ServerConfig, ServerNoteUseCases, ServerV3McpOAuthService, ServerV3NoteUseCases,
+    ServerV3OidcAuthenticationUseCases, ServerV3WebSessionUseCases, StorageConfig, SystemClock,
 };
 use marginalis_sqlite::{SqliteDatabase, V3SqliteDatabase};
 use std::{
@@ -430,12 +430,32 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
         },
     ));
     let state = marginalis_web::v3::V3ApiState::new(
-        std::sync::Arc::new(ServerV3NoteUseCases::new(database)),
+        std::sync::Arc::new(ServerV3NoteUseCases::new(database.clone())),
         sessions,
         oidc,
         cookie_path,
         configuration.http.base_url.origin().ascii_serialization(),
     );
+    let state = if configuration.mcp_enabled {
+        let resource_uri = base_url_at(&configuration.http.base_url, "mcp");
+        let metadata_uri = base_url_at(
+            &configuration.http.base_url,
+            ".well-known/oauth-protected-resource/mcp",
+        );
+        let authorization_endpoint_uri =
+            base_url_at(&configuration.http.base_url, "oauth/authorize");
+        let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
+        state.with_mcp(marginalis_web::v3::V3McpEndpoint {
+            oauth: std::sync::Arc::new(ServerV3McpOAuthService::new(database)),
+            resource_uri: resource_uri.to_string(),
+            metadata_uri: metadata_uri.to_string(),
+            authorization_server_uri: configuration.http.base_url.to_string(),
+            authorization_endpoint_uri: authorization_endpoint_uri.to_string(),
+            token_endpoint_uri: token_endpoint_uri.to_string(),
+        })
+    } else {
+        state
+    };
     axum::serve(
         listener,
         marginalis_web::v3::router(state)
@@ -443,6 +463,20 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     Ok(())
+}
+
+fn base_url_at(base_url: &url::Url, suffix: &str) -> url::Url {
+    let mut url = base_url.clone();
+    let prefix = base_url.path().trim_matches('/');
+    url.set_path(
+        if prefix.is_empty() {
+            format!("/{suffix}")
+        } else {
+            format!("/{prefix}/{suffix}")
+        }
+        .as_str(),
+    );
+    url
 }
 
 /// 永続的なKanidm照会credentialを導入するまで、5分後に再OIDC loginを要求してfail closedにする。

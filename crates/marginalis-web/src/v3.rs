@@ -7,14 +7,14 @@ use std::{str::FromStr, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Form, Path, Query, State},
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use marginalis_application::{
-    AuthenticationUseCaseError, NoteUseCaseError, V3NoteUseCases, V3OidcAuthenticationUseCases,
-    V3WebSessionUseCases,
+    AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, V3McpOAuthUseCases,
+    V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
 };
 use marginalis_domain::{CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, NoteId};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,16 @@ pub struct V3ApiState {
     pub oidc: Arc<dyn V3OidcAuthenticationUseCases>,
     pub cookie_path: String,
     pub browser_origin: String,
+    pub mcp: Option<Arc<V3McpEndpoint>>,
+}
+
+pub struct V3McpEndpoint {
+    pub oauth: Arc<dyn V3McpOAuthUseCases>,
+    pub resource_uri: String,
+    pub metadata_uri: String,
+    pub authorization_server_uri: String,
+    pub authorization_endpoint_uri: String,
+    pub token_endpoint_uri: String,
 }
 
 impl V3ApiState {
@@ -47,7 +57,13 @@ impl V3ApiState {
             oidc,
             cookie_path,
             browser_origin,
+            mcp: None,
         }
+    }
+
+    pub fn with_mcp(mut self, mcp: V3McpEndpoint) -> Self {
+        self.mcp = Some(Arc::new(mcp));
+        self
     }
 }
 
@@ -168,6 +184,19 @@ pub fn router(state: V3ApiState) -> Router {
         .route("/auth/oidc/login", get(begin_login))
         .route("/auth/oidc/callback", get(complete_login))
         .route("/auth/logout", post(logout))
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(mcp_resource_metadata),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(mcp_server_metadata),
+        )
+        .route(
+            "/oauth/authorize",
+            get(mcp_authorize).post(mcp_authorize_submit),
+        )
+        .route("/oauth/token", post(mcp_token))
         .route("/api/v2/health", get(health))
         .route("/api/v2/session", get(session))
         .route("/api/v2/notes", get(list_notes).post(create_note))
@@ -279,6 +308,256 @@ async fn logout(State(state): State<V3ApiState>, headers: HeaderMap) -> V3Result
 
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok", "api_version": API_VERSION}))
+}
+
+fn mcp_endpoint(state: &V3ApiState) -> V3Result<&Arc<V3McpEndpoint>> {
+    state
+        .mcp
+        .as_ref()
+        .ok_or_else(|| problem(StatusCode::NOT_FOUND, "not_found", "MCP is not available"))
+}
+
+async fn mcp_resource_metadata(
+    State(state): State<V3ApiState>,
+) -> V3Result<Json<serde_json::Value>> {
+    let endpoint = mcp_endpoint(&state)?;
+    Ok(Json(
+        serde_json::json!({"resource": endpoint.resource_uri, "authorization_servers": [endpoint.authorization_server_uri], "bearer_methods_supported": ["header"], "scopes_supported": ["notes:read", "notes:write", "notes:delete"]}),
+    ))
+}
+
+async fn mcp_server_metadata(State(state): State<V3ApiState>) -> V3Result<Json<serde_json::Value>> {
+    let endpoint = mcp_endpoint(&state)?;
+    Ok(Json(
+        serde_json::json!({"issuer": endpoint.authorization_server_uri, "authorization_endpoint": endpoint.authorization_endpoint_uri, "token_endpoint": endpoint.token_endpoint_uri, "response_types_supported": ["code"], "grant_types_supported": ["authorization_code", "refresh_token"], "code_challenge_methods_supported": ["S256"], "token_endpoint_auth_methods_supported": ["none"]}),
+    ))
+}
+
+#[derive(Deserialize)]
+struct McpAuthorizeQuery {
+    response_type: String,
+    client_id: String,
+    redirect_uri: String,
+    resource: String,
+    scope: String,
+    code_challenge: String,
+    code_challenge_method: String,
+    state: Option<String>,
+}
+#[derive(Deserialize)]
+struct McpAuthorizeForm {
+    client_id: String,
+    redirect_uri: String,
+    resource: String,
+    scope: String,
+    code_challenge: String,
+    state: Option<String>,
+    csrf_token: String,
+    decision: String,
+}
+#[derive(Deserialize)]
+struct McpTokenForm {
+    grant_type: String,
+    code: Option<String>,
+    client_id: String,
+    redirect_uri: Option<String>,
+    resource: String,
+    code_verifier: Option<String>,
+    refresh_token: Option<String>,
+}
+#[derive(Serialize)]
+struct McpTokenResponse {
+    access_token: String,
+    refresh_token: String,
+    token_type: &'static str,
+    expires_in: u64,
+    scope: String,
+}
+
+fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Problem>) {
+    match error {
+        McpOAuthUseCaseError::Rejected => problem(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "OAuth request is invalid",
+        ),
+        McpOAuthUseCaseError::Unavailable => problem(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "OAuth service is unavailable",
+        ),
+    }
+}
+
+fn authorize_fields(query: &McpAuthorizeQuery) -> V3Result<(Vec<String>, String)> {
+    if query.response_type != "code"
+        || query.code_challenge_method != "S256"
+        || query.code_challenge.is_empty()
+    {
+        return Err(problem(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "OAuth request is invalid",
+        ));
+    }
+    let scopes = query
+        .scope
+        .split_ascii_whitespace()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if scopes.is_empty() {
+        return Err(problem(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "OAuth request is invalid",
+        ));
+    }
+    Ok((scopes, query.code_challenge.clone()))
+}
+
+async fn mcp_authorize(
+    State(state): State<V3ApiState>,
+    headers: HeaderMap,
+    Query(query): Query<McpAuthorizeQuery>,
+) -> V3Result<Html<String>> {
+    let _actor = authenticated_actor(&headers, &state).await?;
+    let _ = mcp_endpoint(&state)?;
+    let (_scopes, _) = authorize_fields(&query)?;
+    let csrf = cookie_value(&headers, CSRF_COOKIE).ok_or_else(|| {
+        problem(
+            StatusCode::FORBIDDEN,
+            "csrf_required",
+            "CSRF token is required",
+        )
+    })?;
+    Ok(Html(format!(
+        "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>MCP authorization</h1><p>{}</p><form method=\"post\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
+        escape_html(&query.client_id),
+        escape_html(&query.client_id),
+        escape_html(&query.redirect_uri),
+        escape_html(&query.resource),
+        escape_html(&query.scope),
+        escape_html(&query.code_challenge),
+        escape_html(query.state.as_deref().unwrap_or_default()),
+        escape_html(&csrf)
+    )))
+}
+
+async fn mcp_authorize_submit(
+    State(state): State<V3ApiState>,
+    headers: HeaderMap,
+    Form(form): Form<McpAuthorizeForm>,
+) -> V3Result<Response> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let endpoint = mcp_endpoint(&state)?;
+    if cookie_value(&headers, CSRF_COOKIE).as_deref() != Some(&form.csrf_token)
+        || form.decision != "approve"
+    {
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            "access_denied",
+            "authorization was denied",
+        ));
+    }
+    let scopes = form
+        .scope
+        .split_ascii_whitespace()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let code = endpoint
+        .oauth
+        .authorize(
+            actor,
+            form.client_id,
+            form.redirect_uri.clone(),
+            form.resource,
+            scopes,
+            form.code_challenge,
+        )
+        .await
+        .map_err(mcp_error)?;
+    let mut url = url::Url::parse(&form.redirect_uri).map_err(|_| {
+        problem(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "redirect URI is invalid",
+        )
+    })?;
+    {
+        let mut pairs = url.query_pairs_mut();
+        pairs.append_pair("code", &code);
+        if let Some(state) = form.state {
+            pairs.append_pair("state", &state);
+        }
+    }
+    Ok(Redirect::to(url.as_str()).into_response())
+}
+
+async fn mcp_token(
+    State(state): State<V3ApiState>,
+    Form(form): Form<McpTokenForm>,
+) -> V3Result<Json<McpTokenResponse>> {
+    let endpoint = mcp_endpoint(&state)?;
+    let pair = match form.grant_type.as_str() {
+        "authorization_code" => endpoint
+            .oauth
+            .exchange_authorization_code(
+                form.code.ok_or_else(|| {
+                    problem(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request",
+                        "code is required",
+                    )
+                })?,
+                form.client_id,
+                form.redirect_uri.ok_or_else(|| {
+                    problem(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request",
+                        "redirect_uri is required",
+                    )
+                })?,
+                form.resource,
+                form.code_verifier.ok_or_else(|| {
+                    problem(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request",
+                        "code_verifier is required",
+                    )
+                })?,
+            )
+            .await
+            .map_err(mcp_error)?,
+        "refresh_token" => endpoint
+            .oauth
+            .refresh_access_token(
+                form.refresh_token.ok_or_else(|| {
+                    problem(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request",
+                        "refresh_token is required",
+                    )
+                })?,
+                form.client_id,
+                form.resource,
+            )
+            .await
+            .map_err(mcp_error)?,
+        _ => {
+            return Err(problem(
+                StatusCode::BAD_REQUEST,
+                "unsupported_grant_type",
+                "OAuth grant type is unsupported",
+            ));
+        }
+    };
+    Ok(Json(McpTokenResponse {
+        access_token: pair.access_token,
+        refresh_token: pair.refresh_token,
+        token_type: "Bearer",
+        expires_in: pair.access_expires_in_seconds,
+        scope: pair.scope,
+    }))
 }
 
 async fn session(

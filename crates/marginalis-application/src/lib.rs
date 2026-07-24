@@ -2,10 +2,10 @@
 
 use marginalis_domain::{
     Actor, CanonicalActor, CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor,
-    CanonicalNote, CanonicalNoteDraft, CanonicalWebSession,
-    EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId, NoteLinkPage,
-    NotePage, NotePermission, NoteProjection, NoteSearchFilters, NoteSource, OidcIdentity,
-    OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+    CanonicalNote, CanonicalNoteDraft, CanonicalWebSession, EntityId, McpAuthorizationGrant,
+    McpClientAuthorization, McpOAuthClient, NoteId, NoteLinkPage, NotePage, NotePermission,
+    NoteProjection, NoteSearchFilters, NoteSource, OidcIdentity, OidcLoginResult, OidcUser,
+    RegistrationPolicy, SourceRevision, UnixMillis, UserId,
 };
 use std::future::Future;
 
