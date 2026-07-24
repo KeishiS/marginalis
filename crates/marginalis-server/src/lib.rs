@@ -182,6 +182,7 @@ pub struct ServerMcpOAuthService {
 #[derive(Clone)]
 pub struct ServerV3McpOAuthService {
     database: V3SqliteDatabase,
+    membership: Option<Arc<dyn V3MembershipResolver>>,
 }
 
 impl ServerV3McpOAuthService {
@@ -189,7 +190,20 @@ impl ServerV3McpOAuthService {
     pub const REFRESH_TOKEN_SECONDS: u64 = 30 * 24 * 60 * 60;
 
     pub fn new(database: V3SqliteDatabase) -> Self {
-        Self { database }
+        Self {
+            database,
+            membership: None,
+        }
+    }
+
+    pub fn with_membership(
+        database: V3SqliteDatabase,
+        membership: Arc<dyn V3MembershipResolver>,
+    ) -> Self {
+        Self {
+            database,
+            membership: Some(membership),
+        }
     }
 
     pub async fn register_client(
@@ -345,10 +359,49 @@ impl ServerV3McpOAuthService {
         resource_uri: &str,
         scope: &str,
     ) -> Result<Option<marginalis_domain::CanonicalMcpAuthenticatedActor>, McpOAuthError> {
-        self.database
+        let now = SystemClock.now();
+        let Some(authenticated) = self
+            .database
             .authenticate_mcp_access_token(token, resource_uri, scope, SystemClock.now())
             .await
-            .map_err(|_| McpOAuthError::Unavailable)
+            .map_err(|_| McpOAuthError::Unavailable)?
+        else {
+            return Ok(None);
+        };
+        if now
+            .get()
+            .saturating_sub(authenticated.membership_checked_at.get())
+            < V3_GROUP_REVALIDATION_INTERVAL_MS
+        {
+            return Ok(Some(authenticated));
+        }
+        let Some(membership) = &self.membership else {
+            return Ok(Some(authenticated));
+        };
+        let refreshed = membership
+            .resolve(&authenticated.actor.issuer, &authenticated.actor.subject)
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        self.database
+            .refresh_mcp_subject_membership(
+                &authenticated.actor.issuer,
+                &authenticated.actor.subject,
+                refreshed.is_user,
+                refreshed.is_administrator,
+                now,
+            )
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        Ok(refreshed
+            .is_user
+            .then_some(marginalis_domain::CanonicalMcpAuthenticatedActor {
+                actor: CanonicalActor {
+                    issuer: authenticated.actor.issuer,
+                    subject: authenticated.actor.subject,
+                    is_administrator: refreshed.is_administrator,
+                },
+                membership_checked_at: now,
+            }))
     }
 
     pub async fn revoke(
@@ -1970,11 +2023,13 @@ pub struct StorageConfig {
 pub struct OidcConfig {
     pub issuer_url: Url,
     pub client_id: String,
+    pub membership_api_url: Url,
 }
 
 /// secret値は公開設定から分離する。Debugを実装せずログ出力を防ぐ。
 pub struct SecretConfig {
     pub oidc_client_secret: String,
+    pub kanidm_membership_token: String,
     pub initial_root_password: Option<String>,
 }
 
@@ -2043,6 +2098,7 @@ impl ServerConfig {
             oidc: OidcConfig {
                 issuer_url,
                 client_id,
+                membership_api_url: validate_issuer_url(required("KANIDM_MEMBERSHIP_API_URL")?)?,
             },
             mcp_enabled: optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false),
             mcp_client_metadata_allowed_hosts: optional_csv(
@@ -2051,6 +2107,7 @@ impl ServerConfig {
         };
         let secrets = SecretConfig {
             oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
+            kanidm_membership_token: required_secret("KANIDM_MEMBERSHIP_TOKEN")?,
             initial_root_password: optional_secret("ROOT_PASSWORD")?,
         };
         Ok((configuration, secrets))

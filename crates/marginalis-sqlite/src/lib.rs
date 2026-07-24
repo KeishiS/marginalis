@@ -1065,6 +1065,31 @@ impl V3SqliteDatabase {
         transaction.commit().await.map_err(v3_database_error)
     }
 
+    /// Kanidmの再確認結果を同一主体のMCP token familyへ反映する。
+    /// `server-users` を失った主体はaccess/refresh tokenを一括失効する。
+    pub async fn refresh_mcp_subject_membership(
+        &self,
+        issuer: &str,
+        subject: &str,
+        is_user: bool,
+        is_administrator: bool,
+        now: UnixMillis,
+    ) -> Result<(), V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        if !is_user {
+            for table in ["v3_mcp_access_tokens", "v3_mcp_refresh_tokens"] {
+                sqlx::query(&format!("UPDATE {table} SET revoked_at_ms = ? WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL"))
+                    .bind(now.get()).bind(issuer).bind(subject).execute(&mut *transaction).await.map_err(v3_database_error)?;
+            }
+        } else {
+            sqlx::query("UPDATE v3_mcp_access_tokens SET is_administrator = ?, membership_checked_at_ms = ? WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL")
+                .bind(is_administrator).bind(now.get()).bind(issuer).bind(subject).execute(&mut *transaction).await.map_err(v3_database_error)?;
+            sqlx::query("UPDATE v3_mcp_refresh_tokens SET is_administrator = ? WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL")
+                .bind(is_administrator).bind(issuer).bind(subject).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        }
+        transaction.commit().await.map_err(v3_database_error)
+    }
+
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
     pub async fn create_note(
         &self,

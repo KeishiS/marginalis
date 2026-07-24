@@ -114,6 +114,8 @@
                         issuerUrl = "https://id.example.test";
                         clientId = "marginalis";
                         clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
+                        membershipApiUrl = "https://id.example.test";
+                        membershipTokenFile = "/run/secrets/marginalis-membership-token";
                       };
                     };
                   }
@@ -136,6 +138,7 @@
                     exit 0
                   fi
                   test -s "$OIDC_CLIENT_SECRET_FILE"
+                  test -s "$KANIDM_MEMBERSHIP_TOKEN_FILE"
                   touch "$MARGINALIS_DATA_DIR/service-started"
                   exec sleep infinity
                 '';
@@ -148,6 +151,7 @@
                 system.stateVersion = "25.11";
 
                 environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
+                environment.etc."marginalis-test/membership-token".text = "test-only-membership-token";
 
                 services.marginalis = {
                   enable = true;
@@ -158,6 +162,8 @@
                     issuerUrl = "https://id.example.test";
                     clientId = "marginalis";
                     clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
+                    membershipApiUrl = "https://id.example.test";
+                    membershipTokenFile = "/etc/marginalis-test/membership-token";
                   };
                 };
               };
@@ -184,6 +190,7 @@
                 pkgs.sqlite
               ];
               environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
+              environment.etc."marginalis-test/membership-token".text = "test-only-membership-token";
 
               services.marginalis = {
                 enable = true;
@@ -193,6 +200,8 @@
                   issuerUrl = "https://127.0.0.1:1";
                   clientId = "marginalis";
                   clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
+                  membershipApiUrl = "https://127.0.0.1:1";
+                  membershipTokenFile = "/etc/marginalis-test/membership-token";
                 };
               };
             };

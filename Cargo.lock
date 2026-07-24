@@ -1264,6 +1264,8 @@ dependencies = [
  "marginalis-server",
  "marginalis-sqlite",
  "marginalis-web",
+ "reqwest",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",

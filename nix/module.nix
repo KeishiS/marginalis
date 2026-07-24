@@ -101,6 +101,20 @@ in
         example = "/run/secrets/marginalis-oidc-client-secret";
         description = "Runtime path to the OIDC client secret. It is passed with systemd credentials, never copied to the Nix store.";
       };
+
+      membershipApiUrl = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "https://id.sandi05.com";
+        description = "Kanidm HTTPS API base URL used for five-minute group membership revalidation.";
+      };
+
+      membershipTokenFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "/run/secrets/marginalis-kanidm-membership-token";
+        description = "Read-only Kanidm service-account API token used only for group membership revalidation.";
+      };
     };
 
     mcp = {
@@ -129,6 +143,14 @@ in
       {
         assertion = cfg.oidc.clientSecretFile != null;
         message = "services.marginalis.oidc.clientSecretFile must be set.";
+      }
+      {
+        assertion = cfg.oidc.membershipApiUrl != null;
+        message = "services.marginalis.oidc.membershipApiUrl must be set.";
+      }
+      {
+        assertion = cfg.oidc.membershipTokenFile != null;
+        message = "services.marginalis.oidc.membershipTokenFile must be set.";
       }
       {
         assertion =
@@ -172,6 +194,8 @@ in
         OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
         OIDC_CLIENT_ID = cfg.oidc.clientId;
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
+        KANIDM_MEMBERSHIP_API_URL = cfg.oidc.membershipApiUrl;
+        KANIDM_MEMBERSHIP_TOKEN_FILE = "%d/kanidm-membership-token";
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
       };
       serviceConfig = {
@@ -183,6 +207,7 @@ in
         RestartSec = "5s";
         LoadCredential = [
           "oidc-client-secret:${cfg.oidc.clientSecretFile}"
+          "kanidm-membership-token:${cfg.oidc.membershipTokenFile}"
         ];
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";

@@ -12,6 +12,7 @@ use marginalis_server::{
     ServerV3OidcAuthenticationUseCases, ServerV3WebSessionUseCases, StorageConfig, SystemClock,
 };
 use marginalis_sqlite::{SqliteDatabase, V3SqliteDatabase};
+use serde::Deserialize;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -425,9 +426,13 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
         database.clone(),
         oidc,
     ));
+    let membership = std::sync::Arc::new(KanidmMembershipResolver::new(
+        configuration.oidc.membership_api_url.clone(),
+        secrets.kanidm_membership_token,
+    )?);
     let sessions = std::sync::Arc::new(ServerV3WebSessionUseCases::new(
         database.clone(),
-        std::sync::Arc::new(ReauthenticateMembership),
+        membership.clone(),
         marginalis_application::SessionLifetime {
             idle_timeout_ms: 24 * 60 * 60 * 1_000,
             absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
@@ -451,7 +456,9 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
             base_url_at(&configuration.http.base_url, "oauth/authorize");
         let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
         state.with_mcp(marginalis_web::v3::V3McpEndpoint {
-            oauth: std::sync::Arc::new(ServerV3McpOAuthService::new(database)),
+            oauth: std::sync::Arc::new(ServerV3McpOAuthService::with_membership(
+                database, membership,
+            )),
             notes,
             resource_uri: resource_uri.to_string(),
             metadata_uri: metadata_uri.to_string(),
@@ -485,17 +492,90 @@ fn base_url_at(base_url: &url::Url, suffix: &str) -> url::Url {
     url
 }
 
-/// 永続的なKanidm照会credentialを導入するまで、5分後に再OIDC loginを要求してfail closedにする。
-struct ReauthenticateMembership;
+/// Kanidm REST APIをread-only service accountで照会する。ネットワーク・応答形式の異常は
+/// `Unavailable` とし、5分のfreshnessを越えたsessionをfail closedにする。
+struct KanidmMembershipResolver {
+    api_url: url::Url,
+    token: String,
+    client: reqwest::Client,
+}
+
+#[derive(Deserialize)]
+struct KanidmEntry {
+    #[serde(default)]
+    attrs: BTreeMap<String, Vec<String>>,
+}
+
+impl KanidmMembershipResolver {
+    fn new(api_url: url::Url, token: String) -> Result<Self, reqwest::Error> {
+        Ok(Self {
+            api_url,
+            token,
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(std::time::Duration::from_secs(5))
+                .build()?,
+        })
+    }
+
+    fn person_url(&self, subject: &str) -> Result<url::Url, AuthenticationUseCaseError> {
+        let mut url = self.api_url.clone();
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        segments.pop_if_empty();
+        segments.extend(["v1", "person", subject]);
+        drop(segments);
+        Ok(url)
+    }
+}
 
 #[async_trait::async_trait]
-impl V3MembershipResolver for ReauthenticateMembership {
+impl V3MembershipResolver for KanidmMembershipResolver {
     async fn resolve(
         &self,
         _issuer: &str,
-        _subject: &str,
+        subject: &str,
     ) -> Result<V3GroupMembership, AuthenticationUseCaseError> {
-        Err(AuthenticationUseCaseError::Rejected)
+        let response = self
+            .client
+            .get(self.person_url(subject)?)
+            .bearer_auth(&self.token)
+            .send()
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        if matches!(
+            response.status(),
+            reqwest::StatusCode::NOT_FOUND
+                | reqwest::StatusCode::UNAUTHORIZED
+                | reqwest::StatusCode::FORBIDDEN
+        ) {
+            return Err(AuthenticationUseCaseError::Rejected);
+        }
+        if !response.status().is_success() {
+            return Err(AuthenticationUseCaseError::Unavailable);
+        }
+        let entry = response
+            .json::<KanidmEntry>()
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        let groups = entry
+            .attrs
+            .get("memberof")
+            .or_else(|| entry.attrs.get("memberOf"));
+        let contains = |expected: &str| {
+            groups.is_some_and(|groups| {
+                groups.iter().any(|group| {
+                    group == expected
+                        || group.strip_suffix("@localhost") == Some(expected)
+                        || group.split('@').next() == Some(expected)
+                })
+            })
+        };
+        Ok(V3GroupMembership {
+            is_user: contains("server-users"),
+            is_administrator: contains("server-admins"),
+        })
     }
 }
 
@@ -512,6 +592,7 @@ fn cookie_path(base_url: &url::Url) -> String {
 mod tests {
     use std::fs;
 
+    use axum::{Router, extract::Path, http::HeaderMap, routing::get};
     use uuid::Uuid;
 
     use super::*;
@@ -540,6 +621,52 @@ mod tests {
         assert!(
             required_absolute_file_argument(&mut ["--input".to_owned()].into_iter(), "--output")
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn kanidm_membership_resolver_reads_the_service_account_view() {
+        async fn person(
+            Path(subject): Path<String>,
+            headers: HeaderMap,
+        ) -> axum::Json<serde_json::Value> {
+            assert_eq!(subject, "subject-1");
+            assert_eq!(
+                headers
+                    .get("authorization")
+                    .and_then(|value| value.to_str().ok()),
+                Some("Bearer service-token")
+            );
+            axum::Json(
+                serde_json::json!({"attrs":{"memberof":["server-users@example.test", "server-admins@example.test"]}}),
+            )
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("address");
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new().route("/v1/person/{subject}", get(person)),
+            )
+            .await
+            .expect("server");
+        });
+        let resolver = KanidmMembershipResolver::new(
+            format!("http://{address}").parse().expect("URL"),
+            "service-token".into(),
+        )
+        .expect("resolver");
+        assert_eq!(
+            resolver
+                .resolve("https://id.example.test", "subject-1")
+                .await
+                .expect("membership"),
+            V3GroupMembership {
+                is_user: true,
+                is_administrator: true,
+            }
         );
     }
 
