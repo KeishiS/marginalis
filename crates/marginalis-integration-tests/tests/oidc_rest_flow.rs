@@ -33,6 +33,11 @@ const MCP_RESOURCE: &str = "https://marginalis.example.test/mcp";
 const MCP_CLIENT_ID: &str = "integration-mcp-client";
 const MCP_CALLBACK: &str = "http://127.0.0.1:4567/callback";
 
+struct McpTokens {
+    access_token: String,
+    refresh_token: String,
+}
+
 /// mock IdPと空のdataDirへ接続した、試験ごとに独立するアプリケーション一式。
 struct TestServer {
     idp: MockIdentityProvider,
@@ -605,8 +610,8 @@ async fn register_mcp_client(app: &Router, session: &str, csrf: &str) {
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 }
 
-/// Authorization Code + PKCEをHTTPで通し、`notes:read`のaccess tokenを得る。
-async fn mcp_access_token(app: &Router, session: &str, csrf: &str, verifier: &str) -> String {
+/// Authorization Code + PKCEをHTTPで通し、`notes:read`のtoken pairを得る。
+async fn mcp_tokens(app: &Router, session: &str, csrf: &str, verifier: &str) -> McpTokens {
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("response_type", "code")
@@ -683,10 +688,17 @@ async fn mcp_access_token(app: &Router, session: &str, csrf: &str, verifier: &st
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
-    json_body(response).await["access_token"]
-        .as_str()
-        .expect("access token")
-        .to_owned()
+    let body = json_body(response).await;
+    McpTokens {
+        access_token: body["access_token"]
+            .as_str()
+            .expect("access token")
+            .to_owned(),
+        refresh_token: body["refresh_token"]
+            .as_str()
+            .expect("refresh token")
+            .to_owned(),
+    }
 }
 
 /// MCPの`search_notes`を実行し、`structuredContent.notes`を返す。
@@ -734,14 +746,14 @@ async fn mcp_search_visibility_matches_rest() {
     )
     .await;
 
-    let owner_token = mcp_access_token(
+    let owner_tokens = mcp_tokens(
         &server.app,
         &owner_session,
         &owner_csrf,
         "integration-pkce-verifier-owner-0123456789",
     )
     .await;
-    let other_token = mcp_access_token(
+    let other_tokens = mcp_tokens(
         &server.app,
         &other_session,
         &other_csrf,
@@ -755,7 +767,7 @@ async fn mcp_search_visibility_matches_rest() {
     let other_rest = search(&server.app, &other_session, "mcpparitytoken").await;
     assert_eq!(other_rest["notes"].as_array().map(Vec::len), Some(0));
 
-    let owner_mcp = mcp_search(&server.app, &owner_token, "mcpparitytoken").await;
+    let owner_mcp = mcp_search(&server.app, &owner_tokens.access_token, "mcpparitytoken").await;
     let owner_mcp = owner_mcp.as_array().expect("owner MCP results");
     assert_eq!(owner_mcp.len(), 1);
     assert_eq!(
@@ -763,11 +775,88 @@ async fn mcp_search_visibility_matches_rest() {
         Some("Integration note"),
         "MCP search must return the owner's note"
     );
-    let other_mcp = mcp_search(&server.app, &other_token, "mcpparitytoken").await;
+    let other_mcp = mcp_search(&server.app, &other_tokens.access_token, "mcpparitytoken").await;
     assert_eq!(
         other_mcp.as_array().map(Vec::len),
         Some(0),
         "MCP search must not reveal another user's note"
+    );
+
+    server.finish();
+}
+
+#[tokio::test]
+async fn revoking_mcp_authorization_invalidates_issued_tokens() {
+    let server = TestServer::start().await;
+    let (root_session, root_csrf) = root_login(&server.app).await;
+    set_registration_policy_open(&server.app, &root_session, &root_csrf).await;
+    register_mcp_client(&server.app, &root_session, &root_csrf).await;
+    let (session, csrf) =
+        login_active_user(&server, "subject-mcp-revocation", "code-mcp-revocation").await;
+    let tokens = mcp_tokens(
+        &server.app,
+        &session,
+        &csrf,
+        "integration-pkce-verifier-revocation-0123456789",
+    )
+    .await;
+
+    let response = send(
+        &server.app,
+        Request::builder()
+            .method("DELETE")
+            .uri(format!(
+                "/api/v1/mcp-authorizations?client_id={MCP_CLIENT_ID}"
+            ))
+            .header(header::COOKIE, format!("marginalis_session={session}"))
+            .header("x-csrf-token", &csrf)
+            .header(header::ORIGIN, BROWSER_ORIGIN)
+            .header("sec-fetch-site", "same-origin")
+            .body(Body::empty())
+            .expect("authorization revocation request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let response = send(
+        &server.app,
+        Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", tokens.access_token),
+            )
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
+            ))
+            .expect("MCP request with revoked access token"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let refresh_form = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", "refresh_token")
+        .append_pair("client_id", MCP_CLIENT_ID)
+        .append_pair("resource", MCP_RESOURCE)
+        .append_pair("refresh_token", &tokens.refresh_token)
+        .finish();
+    let response = send(
+        &server.app,
+        Request::builder()
+            .method("POST")
+            .uri("/oauth/token")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(refresh_form))
+            .expect("refresh request with revoked token"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        json_body(response).await["code"].as_str(),
+        Some("validation-failed")
     );
 
     server.finish();
