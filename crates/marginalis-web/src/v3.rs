@@ -674,7 +674,7 @@ async fn mcp_authorize_submit(
 async fn mcp_token(
     State(state): State<V3ApiState>,
     Form(form): Form<McpTokenForm>,
-) -> V3Result<Json<McpTokenResponse>> {
+) -> V3Result<Response> {
     let endpoint = mcp_endpoint(&state)?;
     let pair = match form.grant_type.as_str() {
         "authorization_code" => endpoint
@@ -729,13 +729,20 @@ async fn mcp_token(
             ));
         }
     };
-    Ok(Json(McpTokenResponse {
-        access_token: pair.access_token,
-        refresh_token: pair.refresh_token,
-        token_type: "Bearer",
-        expires_in: pair.access_expires_in_seconds,
-        scope: pair.scope,
-    }))
+    Ok((
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::PRAGMA, "no-cache"),
+        ],
+        Json(McpTokenResponse {
+            access_token: pair.access_token,
+            refresh_token: pair.refresh_token,
+            token_type: "Bearer",
+            expires_in: pair.access_expires_in_seconds,
+            scope: pair.scope,
+        }),
+    )
+        .into_response())
 }
 
 async fn revoke_mcp_authorization(
@@ -1394,7 +1401,12 @@ mod tests {
             _resource_uri: String,
             _verifier: String,
         ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
-            Err(McpOAuthUseCaseError::Rejected)
+            Ok(V3McpTokenPair {
+                access_token: "access-token".into(),
+                refresh_token: "refresh-token".into(),
+                access_expires_in_seconds: 300,
+                scope: "notes:read".into(),
+            })
         }
         async fn refresh_access_token(
             &self,
@@ -1615,5 +1627,29 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_token_response_is_not_cacheable() {
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/oauth/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from(
+                        "grant_type=authorization_code&code=code&client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&code_verifier=verifier",
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL),
+            Some(&"no-store".parse().expect("header"))
+        );
+        assert_eq!(
+            response.headers().get(header::PRAGMA),
+            Some(&"no-cache".parse().expect("header"))
+        );
     }
 }
