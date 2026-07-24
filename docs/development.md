@@ -46,15 +46,17 @@ Pull Requestからマージします。
    gh pr checks --watch
    ```
 
-6. 必須チェックが成功し、必要なレビューを得た後、GitHubで有効な方式を使ってマージします。
-   線形履歴を維持できる場合はrebase mergeを使用します。
+6. Pull Request作成後にrebase方式のauto-mergeを設定します。`main`のrulesetでは
+   GitHub Actionsの`verify`が必須であるため、このチェックと必要なレビューが完了するまで
+   実際のマージは行われません。
 
    ```sh
-   gh pr merge --rebase --delete-branch
+   gh pr merge --auto --rebase --delete-branch
    ```
 
-   リポジトリ設定がrebase mergeを許可していない場合は、許可された方式を選びます。
-   ブランチ保護の無効化、管理者権限による必須チェックの回避、force pushは行いません。
+   auto-mergeを設定できない場合は、rulesetの必須チェックとリポジトリの
+   `Allow auto-merge`設定を確認します。ブランチ保護の無効化、管理者権限による
+   必須チェックの回避、force pushは行いません。
 
 7. マージ後にローカル環境を整理します。
 
