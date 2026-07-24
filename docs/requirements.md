@@ -362,7 +362,7 @@ NixOS では、GitHub リポジトリを flake input として利用できるモ
 
 ```nix
 {
-  inputs.marginalis.url = "github:KeishiS/Marginalis/v0.2.0-rc.1";
+  inputs.marginalis.url = "github:KeishiS/Marginalis/v0.2.0";
   imports = [ inputs.marginalis.nixosModules.default ];
 
   services.marginalis.enable = true;
