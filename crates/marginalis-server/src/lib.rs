@@ -231,7 +231,7 @@ impl ServerV3McpOAuthService {
         };
         if !client.redirect_uris.contains(&redirect_uri)
             || resource_uri.is_empty()
-            || scopes.is_empty()
+            || !valid_mcp_scopes(&scopes)
             || code_challenge.is_empty()
         {
             return Err(McpOAuthError::Rejected);

@@ -198,6 +198,7 @@ pub fn router(state: V3ApiState) -> Router {
             "/oauth/authorize",
             get(mcp_authorize).post(mcp_authorize_submit),
         )
+        .route("/oauth/register", post(mcp_register_client))
         .route("/oauth/token", post(mcp_token))
         .route("/mcp", post(mcp_post))
         .route("/api/v2/health", get(health))
@@ -332,7 +333,7 @@ async fn mcp_resource_metadata(
 async fn mcp_server_metadata(State(state): State<V3ApiState>) -> V3Result<Json<serde_json::Value>> {
     let endpoint = mcp_endpoint(&state)?;
     Ok(Json(
-        serde_json::json!({"issuer": endpoint.authorization_server_uri, "authorization_endpoint": endpoint.authorization_endpoint_uri, "token_endpoint": endpoint.token_endpoint_uri, "response_types_supported": ["code"], "grant_types_supported": ["authorization_code", "refresh_token"], "code_challenge_methods_supported": ["S256"], "token_endpoint_auth_methods_supported": ["none"]}),
+        serde_json::json!({"issuer": endpoint.authorization_server_uri, "authorization_endpoint": endpoint.authorization_endpoint_uri, "token_endpoint": endpoint.token_endpoint_uri, "registration_endpoint": format!("{}/oauth/register", endpoint.authorization_server_uri.trim_end_matches('/')), "response_types_supported": ["code"], "grant_types_supported": ["authorization_code", "refresh_token"], "code_challenge_methods_supported": ["S256"], "token_endpoint_auth_methods_supported": ["none"]}),
     ))
 }
 
@@ -377,6 +378,22 @@ struct McpTokenResponse {
     scope: String,
 }
 
+#[derive(Deserialize)]
+struct McpRegistrationRequest {
+    client_name: Option<String>,
+    redirect_uris: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct McpRegistrationResponse {
+    client_id: String,
+    client_name: String,
+    redirect_uris: Vec<String>,
+    token_endpoint_auth_method: &'static str,
+    grant_types: [&'static str; 2],
+    response_types: [&'static str; 1],
+}
+
 fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Problem>) {
     match error {
         McpOAuthUseCaseError::Rejected => problem(
@@ -390,6 +407,44 @@ fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Problem>) {
             "OAuth service is unavailable",
         ),
     }
+}
+
+async fn mcp_register_client(
+    State(state): State<V3ApiState>,
+    Json(request): Json<McpRegistrationRequest>,
+) -> V3Result<(StatusCode, Json<McpRegistrationResponse>)> {
+    let endpoint = mcp_endpoint(&state)?;
+    let display_name = request
+        .client_name
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| {
+            problem(
+                StatusCode::BAD_REQUEST,
+                "invalid_client_metadata",
+                "client_name is required",
+            )
+        })?;
+    let client = marginalis_domain::McpOAuthClient {
+        client_id: format!("mcp-{}", uuid::Uuid::now_v7()),
+        display_name,
+        redirect_uris: request.redirect_uris,
+    };
+    endpoint
+        .oauth
+        .register_client(client.clone())
+        .await
+        .map_err(mcp_error)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(McpRegistrationResponse {
+            client_id: client.client_id,
+            client_name: client.display_name,
+            redirect_uris: client.redirect_uris,
+            token_endpoint_auth_method: "none",
+            grant_types: ["authorization_code", "refresh_token"],
+            response_types: ["code"],
+        }),
+    ))
 }
 
 fn authorize_fields(query: &McpAuthorizeQuery) -> V3Result<(Vec<String>, String)> {
@@ -1304,5 +1359,21 @@ mod tests {
             .expect("request");
         let allowed = mcp_app().oneshot(request).await.expect("response");
         assert_eq!(allowed.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_dynamic_registration_creates_a_public_client() {
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/oauth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"client_name":"Codex CLI","redirect_uris":["http://127.0.0.1:48123/callback"]}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::CREATED);
     }
 }
