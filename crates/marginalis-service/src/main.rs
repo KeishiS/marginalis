@@ -448,6 +448,7 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
         let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
         state.with_mcp(marginalis_web::v3::V3McpEndpoint {
             oauth: std::sync::Arc::new(ServerV3McpOAuthService::new(database)),
+            notes,
             resource_uri: resource_uri.to_string(),
             metadata_uri: metadata_uri.to_string(),
             authorization_server_uri: configuration.http.base_url.to_string(),

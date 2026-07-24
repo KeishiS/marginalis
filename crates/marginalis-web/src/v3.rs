@@ -17,6 +17,7 @@ use marginalis_application::{
     V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
 };
 use marginalis_domain::{CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, NoteId};
+use marginalis_mcp::{JsonRpcRequest, JsonRpcResponse};
 use serde::{Deserialize, Serialize};
 
 pub const API_VERSION: &str = "v2";
@@ -36,6 +37,7 @@ pub struct V3ApiState {
 
 pub struct V3McpEndpoint {
     pub oauth: Arc<dyn V3McpOAuthUseCases>,
+    pub notes: Arc<dyn V3NoteUseCases>,
     pub resource_uri: String,
     pub metadata_uri: String,
     pub authorization_server_uri: String,
@@ -197,6 +199,7 @@ pub fn router(state: V3ApiState) -> Router {
             get(mcp_authorize).post(mcp_authorize_submit),
         )
         .route("/oauth/token", post(mcp_token))
+        .route("/mcp", post(mcp_post))
         .route("/api/v2/health", get(health))
         .route("/api/v2/session", get(session))
         .route("/api/v2/notes", get(list_notes).post(create_note))
@@ -448,11 +451,9 @@ async fn mcp_authorize_submit(
     headers: HeaderMap,
     Form(form): Form<McpAuthorizeForm>,
 ) -> V3Result<Response> {
-    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let actor = authenticated_form_actor(&headers, &state, &form.csrf_token).await?;
     let endpoint = mcp_endpoint(&state)?;
-    if cookie_value(&headers, CSRF_COOKIE).as_deref() != Some(&form.csrf_token)
-        || form.decision != "approve"
-    {
+    if form.decision != "approve" {
         return Err(problem(
             StatusCode::FORBIDDEN,
             "access_denied",
@@ -558,6 +559,128 @@ async fn mcp_token(
         expires_in: pair.access_expires_in_seconds,
         scope: pair.scope,
     }))
+}
+
+#[derive(Deserialize)]
+struct McpToolCall {
+    name: String,
+    arguments: serde_json::Value,
+}
+
+fn mcp_required_scope(request: &JsonRpcRequest) -> &'static str {
+    if request.method != "tools/call" {
+        return "notes:read";
+    }
+    serde_json::from_value::<McpToolCall>(request.params.clone().unwrap_or_default())
+        .ok()
+        .map(|call| match call.name.as_str() {
+            "create_note" | "update_note" => "notes:write",
+            "delete_note" => "notes:delete",
+            _ => "notes:read",
+        })
+        .unwrap_or("notes:read")
+}
+
+fn mcp_unauthorized(endpoint: &V3McpEndpoint) -> Response {
+    let mut response = StatusCode::UNAUTHORIZED.into_response();
+    if let Ok(value) = format!("Bearer resource_metadata=\"{}\"", endpoint.metadata_uri).parse() {
+        response
+            .headers_mut()
+            .insert(header::WWW_AUTHENTICATE, value);
+    }
+    response
+}
+
+async fn mcp_post(
+    State(state): State<V3ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<JsonRpcRequest>,
+) -> V3Result<Response> {
+    let endpoint = mcp_endpoint(&state)?;
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let Some(token) = token else {
+        return Ok(mcp_unauthorized(endpoint));
+    };
+    let Some(actor) = endpoint
+        .oauth
+        .authenticate(
+            token.into(),
+            endpoint.resource_uri.clone(),
+            mcp_required_scope(&request).into(),
+        )
+        .await
+        .map_err(mcp_error)?
+        .map(|value| value.actor)
+    else {
+        return Ok(mcp_unauthorized(endpoint));
+    };
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    let response = match request.method.as_str() {
+        "initialize" => JsonRpcResponse::success(
+            id,
+            serde_json::json!({"protocolVersion": marginalis_mcp::MCP_PROTOCOL_VERSION, "capabilities":{"tools":{}}, "serverInfo":{"name":"marginalis","version":env!("CARGO_PKG_VERSION")}}),
+        ),
+        "tools/list" => JsonRpcResponse::success(
+            id,
+            serde_json::json!({"tools":[
+                {"name":"list_notes","description":"List notes visible to the authenticated user.","inputSchema":{"type":"object","properties":{}}},
+                {"name":"get_note","description":"Read one visible note.","inputSchema":{"type":"object","required":["note_id"],"properties":{"note_id":{"type":"string"}}}},
+                {"name":"create_note","description":"Create a note.","inputSchema":{"type":"object","required":["title","body","tags"],"properties":{"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}}}}},
+                {"name":"update_note","description":"Update a note at its current revision.","inputSchema":{"type":"object","required":["note_id","title","body","tags","expected_revision"],"properties":{"note_id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"expected_revision":{"type":"integer"}}}},
+                {"name":"delete_note","description":"Soft-delete a note at its current revision.","inputSchema":{"type":"object","required":["note_id","expected_revision"],"properties":{"note_id":{"type":"string"},"expected_revision":{"type":"integer"}}}}
+            ]}),
+        ),
+        "tools/call" => mcp_tool_call(endpoint, actor, id, request.params).await,
+        _ => JsonRpcResponse::error(id, -32601, "method not found"),
+    };
+    if request.id.is_none() {
+        Ok(StatusCode::ACCEPTED.into_response())
+    } else {
+        Ok(Json(response).into_response())
+    }
+}
+
+#[derive(Deserialize)]
+struct McpUpdate {
+    note_id: String,
+    title: String,
+    body: String,
+    tags: Vec<String>,
+    expected_revision: i64,
+}
+#[derive(Deserialize)]
+struct McpDelete {
+    note_id: String,
+    expected_revision: i64,
+}
+
+async fn mcp_tool_call(
+    endpoint: &V3McpEndpoint,
+    actor: CanonicalActor,
+    id: serde_json::Value,
+    params: Option<serde_json::Value>,
+) -> JsonRpcResponse {
+    let Ok(call) = serde_json::from_value::<McpToolCall>(params.unwrap_or_default()) else {
+        return JsonRpcResponse::error(id, -32602, "tool parameters are invalid");
+    };
+    let result = match call.name.as_str() {
+        "list_notes" => endpoint.notes.list_visible_notes(actor).await.map(|notes| serde_json::json!(notes.into_iter().map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"title":note.title,"revision":note.revision})).collect::<Vec<_>>())),
+        "get_note" => { let note_id = call.arguments.get("note_id").and_then(serde_json::Value::as_str).and_then(|value| EntityId::from_str(value).ok()).map(NoteId::new); match note_id { Some(note_id) => endpoint.notes.read_note(actor, note_id).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"title":note.title,"body":note.body,"tags":note.tags,"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") } }
+        "create_note" => match serde_json::from_value::<NoteInput>(call.arguments) { Ok(input) => endpoint.notes.create_note(actor, CanonicalNoteDraft { title: input.title, body: input.body, tags: input.tags }).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), Err(_) => return JsonRpcResponse::error(id, -32602, "note arguments are invalid") },
+        "update_note" => match serde_json::from_value::<McpUpdate>(call.arguments) { Ok(input) => match EntityId::from_str(&input.note_id).ok().map(NoteId::new) { Some(note_id) => endpoint.notes.update_note(actor, note_id, CanonicalNoteDraft { title: input.title, body: input.body, tags: input.tags }, input.expected_revision).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") }, Err(_) => return JsonRpcResponse::error(id, -32602, "update arguments are invalid") },
+        "delete_note" => match serde_json::from_value::<McpDelete>(call.arguments) { Ok(input) => match EntityId::from_str(&input.note_id).ok().map(NoteId::new) { Some(note_id) => endpoint.notes.soft_delete_note(actor, note_id, input.expected_revision).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") }, Err(_) => return JsonRpcResponse::error(id, -32602, "delete arguments are invalid") },
+        _ => return JsonRpcResponse::error(id, -32601, "tool not found"),
+    };
+    match result {
+        Ok(value) => JsonRpcResponse::success(
+            id,
+            serde_json::json!({"content":[{"type":"text","text":serde_json::to_string(&value).unwrap_or_default()}],"structuredContent":value}),
+        ),
+        Err(_) => JsonRpcResponse::error(id, -32000, "note operation failed"),
+    }
 }
 
 async fn session(
@@ -774,29 +897,7 @@ async fn authenticated_mutation_actor(
     state: &V3ApiState,
 ) -> V3Result<CanonicalActor> {
     let actor = authenticated_actor(headers, state).await?;
-    if headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        != Some(state.browser_origin.as_str())
-    {
-        return Err(problem(
-            StatusCode::FORBIDDEN,
-            "same_origin_required",
-            "same-origin request is required",
-        ));
-    }
-    if let Some(site) = headers
-        .get("sec-fetch-site")
-        .and_then(|value| value.to_str().ok())
-    {
-        if !matches!(site, "same-origin" | "none") {
-            return Err(problem(
-                StatusCode::FORBIDDEN,
-                "same_origin_required",
-                "same-origin request is required",
-            ));
-        }
-    }
+    validate_mutation_origin(headers, state)?;
     let session_id =
         cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
     let csrf_cookie = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
@@ -820,6 +921,60 @@ async fn authenticated_mutation_actor(
         || !state
             .sessions
             .verify_csrf(session_id, csrf_header.into())
+            .await
+            .map_err(authentication_error)?
+    {
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            "csrf_invalid",
+            "CSRF token is invalid",
+        ));
+    }
+    Ok(actor)
+}
+
+fn validate_mutation_origin(headers: &HeaderMap, state: &V3ApiState) -> V3Result<()> {
+    if headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        != Some(state.browser_origin.as_str())
+    {
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            "same_origin_required",
+            "same-origin request is required",
+        ));
+    }
+    if let Some(site) = headers
+        .get("sec-fetch-site")
+        .and_then(|value| value.to_str().ok())
+    {
+        if !matches!(site, "same-origin" | "none") {
+            return Err(problem(
+                StatusCode::FORBIDDEN,
+                "same_origin_required",
+                "same-origin request is required",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Form POSTs cannot attach the API's `X-CSRF-Token` header.  They still require
+/// the same-origin check, double-submit cookie, and server-side session binding.
+async fn authenticated_form_actor(
+    headers: &HeaderMap,
+    state: &V3ApiState,
+    csrf_token: &str,
+) -> V3Result<CanonicalActor> {
+    let actor = authenticated_actor(headers, state).await?;
+    validate_mutation_origin(headers, state)?;
+    let session_id =
+        cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
+    if cookie_value(headers, CSRF_COOKIE).as_deref() != Some(csrf_token)
+        || !state
+            .sessions
+            .verify_csrf(session_id, csrf_token.into())
             .await
             .map_err(authentication_error)?
     {
@@ -869,7 +1024,7 @@ mod tests {
     };
     use marginalis_domain::{
         CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor, CanonicalWebSession,
-        McpOAuthClient,
+        McpOAuthClient, UnixMillis,
     };
     use tower::ServiceExt;
 
@@ -1020,11 +1175,20 @@ mod tests {
         }
         async fn authenticate(
             &self,
-            _token: String,
+            token: String,
             _resource_uri: String,
             _scope: String,
         ) -> Result<Option<CanonicalMcpAuthenticatedActor>, McpOAuthUseCaseError> {
-            Ok(None)
+            Ok(
+                (token == "valid-token").then(|| CanonicalMcpAuthenticatedActor {
+                    actor: CanonicalActor {
+                        issuer: "https://kanidm.example.test".into(),
+                        subject: "alice".into(),
+                        is_administrator: false,
+                    },
+                    membership_checked_at: UnixMillis::new(0),
+                }),
+            )
         }
         async fn revoke(
             &self,
@@ -1056,6 +1220,7 @@ mod tests {
             )
             .with_mcp(V3McpEndpoint {
                 oauth: Arc::new(Mcp),
+                notes: Arc::new(Notes),
                 resource_uri: "https://example.test/mcp".into(),
                 metadata_uri: "https://example.test/.well-known/oauth-protected-resource/mcp"
                     .into(),
@@ -1116,5 +1281,28 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .expect("request");
+        let denied = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+        assert!(denied.headers().contains_key(header::WWW_AUTHENTICATE));
+
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::AUTHORIZATION, "Bearer valid-token")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .expect("request");
+        let allowed = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(allowed.status(), StatusCode::OK);
     }
 }

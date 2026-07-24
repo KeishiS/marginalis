@@ -452,7 +452,8 @@ pub struct JsonRpcError {
 }
 
 impl JsonRpcResponse {
-    fn success(id: Value, result: Value) -> Self {
+    /// Builds a successful JSON-RPC 2.0 response for an HTTP transport.
+    pub fn success(id: Value, result: Value) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -460,7 +461,8 @@ impl JsonRpcResponse {
             error: None,
         }
     }
-    fn error(id: Value, code: i32, message: &'static str) -> Self {
+    /// Builds an error JSON-RPC 2.0 response for an HTTP transport.
+    pub fn error(id: Value, code: i32, message: &'static str) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
