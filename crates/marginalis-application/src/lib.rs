@@ -896,6 +896,7 @@ pub trait V3WebSessionUseCases: Send + Sync {
         &self,
         actor: CanonicalActor,
     ) -> Result<CanonicalWebSession, AuthenticationUseCaseError>;
+    async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError>;
 }
 
 /// v0.3のKanidmログイン開始・完了をHTTPから隔離する。

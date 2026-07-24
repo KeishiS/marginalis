@@ -837,6 +837,16 @@ impl V3SqliteDatabase {
         Ok(exists)
     }
 
+    pub async fn revoke_web_session(
+        &self,
+        session_id: &str,
+        now: UnixMillis,
+    ) -> Result<(), V3NoteStoreError> {
+        sqlx::query("UPDATE v3_web_sessions SET revoked_at_ms = ? WHERE session_id_hash = ? AND revoked_at_ms IS NULL")
+            .bind(now.get()).bind(hash_token(session_id)).execute(&self.pool).await.map_err(v3_database_error)?;
+        Ok(())
+    }
+
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
     pub async fn create_note(
         &self,

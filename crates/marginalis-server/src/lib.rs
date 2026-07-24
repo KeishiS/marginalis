@@ -1245,6 +1245,13 @@ impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
             .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
         Ok(session)
     }
+
+    async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError> {
+        self.database
+            .revoke_web_session(&session_id, SystemClock.now())
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
 }
 
 #[async_trait]

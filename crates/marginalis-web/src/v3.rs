@@ -166,6 +166,7 @@ pub fn router(state: V3ApiState) -> Router {
         .route("/api/v2/openapi.json", get(openapi))
         .route("/auth/oidc/login", get(begin_login))
         .route("/auth/oidc/callback", get(complete_login))
+        .route("/auth/logout", post(logout))
         .route("/api/v2/health", get(health))
         .route("/api/v2/session", get(session))
         .route("/api/v2/notes", get(list_notes).post(create_note))
@@ -225,6 +226,40 @@ async fn complete_login(
         format!(
             "{CSRF_COOKIE}={}; Path={}; Secure; SameSite=Lax",
             session.csrf_token, state.cookie_path
+        ),
+    ] {
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            value.parse().map_err(|_| {
+                problem(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "unavailable",
+                    "authentication is unavailable",
+                )
+            })?,
+        );
+    }
+    Ok(response)
+}
+
+async fn logout(State(state): State<V3ApiState>, headers: HeaderMap) -> V3Result<Response> {
+    let _actor = authenticated_mutation_actor(&headers, &state).await?;
+    let session_id =
+        cookie_value(&headers, SESSION_COOKIE).expect("authenticated session cookie exists");
+    state
+        .sessions
+        .revoke_session(session_id)
+        .await
+        .map_err(authentication_error)?;
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    for value in [
+        format!(
+            "{SESSION_COOKIE}=; Path={}; Max-Age=0; Secure; HttpOnly; SameSite=Lax",
+            state.cookie_path
+        ),
+        format!(
+            "{CSRF_COOKIE}=; Path={}; Max-Age=0; Secure; SameSite=Lax",
+            state.cookie_path
         ),
     ] {
         response.headers_mut().append(
@@ -608,6 +643,13 @@ mod tests {
             _actor: CanonicalActor,
         ) -> Result<CanonicalWebSession, AuthenticationUseCaseError> {
             Err(AuthenticationUseCaseError::Unavailable)
+        }
+
+        async fn revoke_session(
+            &self,
+            _session_id: String,
+        ) -> Result<(), AuthenticationUseCaseError> {
+            Ok(())
         }
     }
 
