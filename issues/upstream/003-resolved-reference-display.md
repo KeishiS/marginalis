@@ -2,9 +2,9 @@
 
 ## Status
 
-AdocWeave RC.3 adds `UnresolvedReferencePresentation` (`Target`、`LabelOnly`、`Hidden`) and
-therefore provides a safe non-disclosing fallback policy. Resolver-provided display text for an
-empty authored label remains unavailable; this proposal is retained for that part only.
+AdocWeave RC.3 added `UnresolvedReferencePresentation` (`Target`、`LabelOnly`、`Hidden`).
+Resolver-provided plain-text `display_text` and its WASM／projection parity were added before
+v0.1.0 stable. This proposal is adopted.
 
 ## Problem
 

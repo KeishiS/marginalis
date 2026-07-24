@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | 0（完了） | [009](../issues/009-oidc-provider-registration.md)、[022](../issues/022-v0.1.0-rc.1-release-acceptance.md) | RC.2 の実環境受入を完了し、v0.1.0 をタグ付けして OpenAPI 契約を凍結する | 完了（2026-07-23、`v0.1.0` タグ） |
 | 1 | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザ・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
-| 2 | [029](../issues/029-adocweave-v0.4.0-adoption.md) | AdocWeave v0.5.0 へ移行し、正本解釈・投影・HTML・WASM の契約を再固定する | データフォーマット、再構築、バックアップ・復元を含む互換性方針が確定する |
+| 2 | [029](../issues/029-adocweave-v0.5.0-migration.md) | AdocWeave v0.5.0 へ移行し、正本解釈・投影・HTML・WASM の契約を再固定する | データフォーマット、再構築、バックアップ・復元を含む互換性方針が確定する |
 | 3 | [032](../issues/032-mcp-authoring-profile-and-diagnostics.md) | MCP クライアント向けのプロファイル公開と位置付き検証診断を追加する | MCP / REST が後方互換な診断を返し、クライアントが推測なしで入力を修正できる |
 | 4 | [033](../issues/033-repository-documentation-asciidoc-migration.md) | リポジトリ文書を AsciiDoc へ移行し、文書検証を CI へ組み込む | README、仕様、運用手順、Issue の形式・参照・閲覧方針が固定される。段階 3 以降と並行できる |
 | 5 | [027](../issues/027-search-reference-and-rendering-projections.md) | RenderPolicy、参照表示、公開フィルターを完成させる | 閲覧用 HTML と参照表示の可視性・安全性契約がフィクスチャで固定される |
