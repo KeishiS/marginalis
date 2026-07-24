@@ -774,20 +774,22 @@ async fn mcp_search_visibility_matches_rest() {
 }
 
 #[tokio::test]
-async fn cookie_mutations_require_csrf_origin_and_fetch_metadata() {
+async fn cookie_mutations_require_csrf_origin_and_validate_fetch_metadata_when_present() {
     let server = TestServer::start().await;
     let (root_session, root_csrf) = root_login(&server.app).await;
     set_registration_policy_open(&server.app, &root_session, &root_csrf).await;
     let (session, csrf) = login_active_user(&server, "subject-csrf", "code-csrf").await;
 
-    let request = |csrf_header: Option<&str>, origin: &str, fetch_site: &str| {
+    let request = |csrf_header: Option<&str>, origin: &str, fetch_site: Option<&str>| {
         let mut builder = Request::builder()
             .method("POST")
             .uri("/api/v1/notes")
             .header(header::COOKIE, format!("marginalis_session={session}"))
             .header(header::ORIGIN, origin)
-            .header("sec-fetch-site", fetch_site)
             .header(header::CONTENT_TYPE, "text/plain; charset=utf-8");
+        if let Some(fetch_site) = fetch_site {
+            builder = builder.header("sec-fetch-site", fetch_site);
+        }
         if let Some(token) = csrf_header {
             builder = builder.header("x-csrf-token", token);
         }
@@ -796,32 +798,44 @@ async fn cookie_mutations_require_csrf_origin_and_fetch_metadata() {
             .expect("note creation request")
     };
 
-    // CSRF token・Origin・Fetch Metadataのいずれが欠けても拒否される。
-    let response = send(&server.app, request(None, BROWSER_ORIGIN, "same-origin")).await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    // CSRF tokenの欠落、Originの不一致、明示されたcross-siteは拒否される。
     let response = send(
         &server.app,
-        request(Some(&csrf), "https://evil.example.test", "same-origin"),
+        request(None, BROWSER_ORIGIN, Some("same-origin")),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let response = send(
         &server.app,
-        request(Some(&csrf), BROWSER_ORIGIN, "cross-site"),
+        request(
+            Some(&csrf),
+            "https://evil.example.test",
+            Some("same-origin"),
+        ),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let response = send(
         &server.app,
-        request(Some("wrong-token"), BROWSER_ORIGIN, "same-origin"),
+        request(Some(&csrf), BROWSER_ORIGIN, Some("cross-site")),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = send(
+        &server.app,
+        request(Some("wrong-token"), BROWSER_ORIGIN, Some("same-origin")),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    // すべて揃った場合だけ作成できる。
+    // OriginとCSRF tokenが正しければ、Fetch Metadata非対応のclientも作成できる。
+    let response = send(&server.app, request(Some(&csrf), BROWSER_ORIGIN, None)).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // 許可されたFetch Metadataが明示された場合も作成できる。
     let response = send(
         &server.app,
-        request(Some(&csrf), BROWSER_ORIGIN, "same-origin"),
+        request(Some(&csrf), BROWSER_ORIGIN, Some("same-origin")),
     )
     .await;
     assert_eq!(response.status(), StatusCode::CREATED);

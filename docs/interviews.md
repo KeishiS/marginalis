@@ -245,7 +245,8 @@
 - Web UIではサーバ側セッションを使用し、OIDCトークンをJavaScriptへ渡さない。
 - セッションCookieに `Secure`、`HttpOnly`、`SameSite=Lax` およびサブパスに
   基づく `Path` を設定し、`Domain` 属性を設定しない。
-- 状態変更リクエストでは、CSRFトークン、OriginおよびFetch Metadataを検証する。
+- 状態変更リクエストでは、CSRFトークンとOriginを検証し、Fetch Metadataがある場合は
+  その値も検証する。
 - 一般ユーザーのセッション期限は無操作 24 時間・絶対 7 日、`root` は無操作 30 分・
   絶対 8 時間を既定値とし、設定で変更可能にする。
 - ログアウト時に即時失効し、`root` は全セッションの一覧表示・一括失効ができる。

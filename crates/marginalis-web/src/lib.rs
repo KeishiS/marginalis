@@ -2482,7 +2482,8 @@ async fn require_csrf_token(
 /// Cookieを送る状態変更は、CSRF tokenに加えて同一originのbrowser requestだけを受理する。
 ///
 /// reverse proxyが付与する`X-Forwarded-*`は信頼しない。判定は起動時に固定した公開originと、browserが
-/// 送る`Origin`・`Sec-Fetch-Site`だけで行う。非browser API clientも同じheaderを明示してこの境界を通る。
+/// 送る`Origin`で行う。`Sec-Fetch-Site`がある場合は追加検証し、非browser API clientも`Origin`を
+/// 明示してこの境界を通る。
 fn require_same_origin_browser_request(
     headers: &HeaderMap,
     state: &ApiState,
@@ -2495,15 +2496,18 @@ fn require_same_origin_browser_request(
             ApiErrorCode::Forbidden,
             "same-origin request is required",
         ))?;
-    let fetch_site = headers
-        .get("sec-fetch-site")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| matches!(*value, "same-origin" | "none"))
-        .ok_or(ApiError::new(
-            ApiErrorCode::Forbidden,
-            "same-origin request is required",
-        ))?;
-    let _ = (origin, fetch_site);
+    if let Some(fetch_site) = headers.get("sec-fetch-site") {
+        let fetch_site = fetch_site.to_str().map_err(|_| {
+            ApiError::new(ApiErrorCode::Forbidden, "same-origin request is required")
+        })?;
+        if !matches!(fetch_site, "same-origin" | "none") {
+            return Err(ApiError::new(
+                ApiErrorCode::Forbidden,
+                "same-origin request is required",
+            ));
+        }
+    }
+    let _ = origin;
     Ok(())
 }
 
@@ -3172,6 +3176,33 @@ mod tests {
         assert!(body.contains("name=\"csrf_token\" value=\"csrf\""));
         assert!(!body.contains("<script"));
 
+        let form = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("csrf_token", "csrf")
+            .append_pair("source", ACCEPTANCE_SAMPLE_SOURCE)
+            .finish();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/acceptance/notes")
+                    .header("cookie", "marginalis_session=session")
+                    .header(header::ORIGIN, "https://marginalis.example.test")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(form))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert!(
+            response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|location| location.starts_with("/marginalis/acceptance/notes/"))
+        );
+
         let response = app
             .oneshot(
                 Request::builder()
@@ -3335,7 +3366,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cookie_state_changes_require_exact_origin_and_fetch_metadata() {
+    async fn cookie_state_changes_require_exact_origin_and_validate_fetch_metadata_when_present() {
         let database = marginalis_sqlite::SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("open database");
@@ -3362,6 +3393,9 @@ mod tests {
             header::ORIGIN,
             HeaderValue::from_static("https://marginalis.example.test"),
         );
+        headers.remove("sec-fetch-site");
+        assert!(require_same_origin_browser_request(&headers, &state).is_ok());
+
         headers.insert("sec-fetch-site", HeaderValue::from_static("same-origin"));
         assert!(require_same_origin_browser_request(&headers, &state).is_ok());
 

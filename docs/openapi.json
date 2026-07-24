@@ -8,7 +8,7 @@
   "servers": [{ "url": "/" }],
   "x-marginalis-cookie-state-change-headers": {
     "Origin": "Must exactly match the configured public origin.",
-    "Sec-Fetch-Site": "Must be `same-origin` or `none`.",
+    "Sec-Fetch-Site": "Optional; when present, must be `same-origin` or `none`.",
     "X-CSRF-Token": "Must equal the marginalis_csrf cookie."
   },
   "paths": {
