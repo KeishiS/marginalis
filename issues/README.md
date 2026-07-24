@@ -13,8 +13,9 @@ AsciiDoc関連のIssueでは、MarginalisをAdocWeaveへ組み込む処理を扱
 [009](009-oidc-provider-registration.md)と
 [022](022-v0.1.0-rc.1-release-acceptance.md)を参照する。
 
-root管理には引き続きREST APIを使い、管理UIは後続作業とする。既存環境の`dataDir`は
-暗黙に移行しない。Issue 015で定めた手順に従って初期化し、新しいスキーマへ移る。
+root管理には引き続きREST APIを使い、管理UIは後続作業とする。AdocWeave v0.6.1への更新では
+保存形式v1を破壊的に上書きする。既存環境の`dataDir`は移行せず、サービス停止後に完全に
+削除して空の状態から初期化する。
 
 ### v0.1.0 後の優先項目
 
@@ -46,7 +47,8 @@ root管理には引き続きREST APIを使い、管理UIは後続作業とする
 [020](020-data-format-and-maintenance-lifecycle.md)、[025](025-acl-and-metadata-invariants.md)、
 [023](023-deletion-transaction-and-confirmation-integrity.md)、[015](015-api-first-architecture-rebaseline.md)、
 [014](014-rest-notes-search-and-mcp.md)、[005](005-projections-and-rebuild.md)、
-[010](010-nixos-module-and-release-packaging.md)、[028](028-contract-and-maintenance-reconciliation.md)の
+[010](010-nixos-module-and-release-packaging.md)、[028](028-contract-and-maintenance-reconciliation.md)、
+[029](029-adocweave-v0.6.1-migration.md)の
 初期公開範囲は完了している。[024](024-write-recovery-and-concurrency.md)と
 [021](021-test-architecture-and-release-gates.md)の RC.1 範囲も完了している。
 Issue 012 は初期実装済みであり、検索拡張と運用結合試験を後続作業として残す。

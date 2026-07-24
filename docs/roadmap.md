@@ -2,10 +2,13 @@
 
 ## 現在地
 
-`v0.1.0` をリリースし、OpenAPI 契約とデータフォーマット v1 の互換性保証を開始しました
+`v0.1.0` をリリースし、OpenAPI 契約の互換性保証を開始しました
 （2026-07-23、段階 0 完了）。OIDC 認証付きの REST API、OAuth 保護 MCP、NixOS モジュール、手動受入手順、
 リリース検証が揃っています。今後は機能を広げる前に、実運用の主要経路を継続的に検証できる
 基盤を整えます。
+
+データフォーマットの識別子は v1 を維持していますが、AdocWeave v0.6.1 前提の内容へ
+破壊的に再定義しました。以前の v1 は互換対象ではありません。
 
 各作業の詳細な受入条件と設計判断は [Issue 一覧](../issues/README.md)を正とします。この文書は
 着手順と依存関係だけを示します。
@@ -16,7 +19,7 @@
 | --- | --- | --- | --- |
 | 0（完了） | [009](../issues/009-oidc-provider-registration.md)、[022](../issues/022-v0.1.0-rc.1-release-acceptance.md) | RC.2 の実環境受入を完了し、v0.1.0 をタグ付けして OpenAPI の互換性保証を始める | 完了（2026-07-23、`v0.1.0` タグ） |
 | 1 | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザー・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
-| 2 | [029](../issues/029-adocweave-v0.6.1-migration.md) | AdocWeave v0.6.1 へ移行し、正本の解釈・投影・HTML・WASM の互換性基準を更新する | データフォーマット、再構築、バックアップ・復元を含む互換性方針が確定する |
+| 2（完了） | [029](../issues/029-adocweave-v0.6.1-migration.md) | AdocWeave v0.6.1 へ移行し、正本の解釈・投影・HTML・WASM の互換性基準を更新する | 完了（2026-07-24。旧 v1 は移行せず、`dataDir` を削除して初期化する） |
 | 3 | [032](../issues/032-mcp-authoring-profile-and-diagnostics.md) | MCP クライアント向けのプロファイル公開と位置付き検証診断を追加する | MCP / REST が後方互換な診断を返し、クライアントが推測なしで入力を修正できる |
 | 4 | [033](../issues/033-repository-documentation-asciidoc-migration.md) | リポジトリ文書を AsciiDoc へ移行し、文書検証を CI へ組み込む | README、仕様、運用手順、Issue の形式・参照・閲覧方針が確定する。段階 3 以降と並行できる |
 | 5 | [027](../issues/027-search-reference-and-rendering-projections.md) | RenderPolicy、参照表示、公開フィルターを完成させる | 閲覧用 HTML と参照表示の可視性・安全性契約がフィクスチャで固定される |
@@ -38,8 +41,8 @@
    手動作業である。完了判定と v0.1.0 のタグ付けは運用者が行う。
 2. **段階 1 の開始前**: Issue 030 の実行基盤、テスト IdP、プロキシ再現範囲、MCP 自動
    クライアント、テスト成果物の方針の 5 項目を決める。
-3. **段階 2 の完了時**: AdocWeave v0.6.1 の互換性差分が、データフォーマット v2 または明示的な
-   移行を必要とするか判断する。
+3. **段階 2 の完了時**: データフォーマット v1 を AdocWeave v0.6.1 前提で破壊的に
+   再定義する。旧 v1 は移行せず、既存 `dataDir` を削除して初期化する手順を確定する。
 4. **段階 4 の完了時**: GitHub 上の表示と外部リンクの互換性を踏まえ、AsciiDoc をリポジトリ
    文書の標準形式として確定する。
 5. **段階 7 の前後**: 一般利用者向け Web UI を公開するか、API / MCP 中心の運用を続けるか
@@ -53,8 +56,8 @@
 
 - **Device Flow / Personal Access Token**: ブラウザーを開けない CUI 環境の実利用者が現れた
   時点で、要件定義の設計方針に沿って優先度を再評価する。
-- **AdocWeave の参照表示 API**: v0.6.1 で利用できる `display_text` を段階 2 で取り込み、
-  段階 5 の参照表示規則に利用する。
+- **AdocWeave の参照表示 API**: v0.6.1 で利用できる `display_text` を段階 5 の
+  参照表示規則に利用する。
 - **検索品質**: 段階 1 の E2E で測定した後、Issue 012 の曖昧検索の要否を判断する。
 
 各段階で `cargo make release-gate` と、該当する実環境受入を実施します。公開 API または
