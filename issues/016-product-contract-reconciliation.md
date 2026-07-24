@@ -20,7 +20,7 @@
 - `docs/requirements.md`に、実装済み範囲を誤って将来機能として記述した箇所、および未実装機能を
   current releaseの必須として記述した箇所がない。
 - README、REST/MCP仕様、NixOS運用、issueの優先順位が同じrelease境界を示す。
-- API、data formatおよび運用の破壊的変更を許容する期間と、freezeする契約を明記する。
+- API、データ形式および運用の破壊的変更を許容する期間と、freezeする契約を明記する。
 
 ## 決定事項
 
@@ -33,4 +33,4 @@
 
 - `docs/requirements.md`へ現行版、次期版および将来版の境界を明記した。
 - 現行版をREST/MCP実運用、次期版をSMTP・再有効化・Web UI、将来版を招待・グループACLとして固定した。
-- `/api/v1`はOpenAPI完成まで破壊的変更を許容し、data formatはv1で固定した。
+- `/api/v1`はOpenAPI完成まで破壊的変更を許容し、データ形式はv1で固定した。

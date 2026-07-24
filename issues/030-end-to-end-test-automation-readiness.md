@@ -49,7 +49,7 @@ CIで安全かつ再現可能に実行するため、実行基盤、秘密情報
 ## E2Eシナリオ
 
 1. OIDC login、`approval`によるpending作成、root承認、通常session取得、logout。
-2. RESTの作成・更新・ETag競合・検索・ACL非漏洩・確認付き物理削除。
+2. RESTの作成・更新・ETag競合・検索・非公開情報を漏らさない・確認付き物理削除。
 3. MCP OAuth、REST/MCPの可視性一致、`search_notes`、認可取消後のaccess/refresh token失効。
 4. subpath、reverse proxy、CSRF/Origin/Fetch Metadata、OIDC login CSRF失敗経路。
 5. バックアップ作成、非破壊の復元候補、検索用データの再構築、保守タイマー、
@@ -111,7 +111,7 @@ CIで安全かつ再現可能に実行するため、実行基盤、秘密情報
     stateの一回性、保護metadataのserver置換、ノート作成・取得・検索（シナリオ1と2の骨格）。
   - `If-Match`による更新成功、旧revisionの`409`、削除準備→確認tokenによる物理削除、削除後の
     `404`と検索からの消失（シナリオ2）。
-  - 二利用者間のACL非漏洩: 他者の非公開ノートはsource取得`404`かつ検索結果に現れない
+  - 二利用者間の非公開情報を漏らさない: 他者の非公開ノートはsource取得`404`かつ検索結果に現れない
     （シナリオ2）。
   - MCP OAuth（Authorization Code + PKCE）のHTTP flowと、REST/MCPの検索可視性一致
     （シナリオ3）。

@@ -76,7 +76,7 @@ SQLite データベースと AsciiDoc 正本は `dataDir`（既定値 `/var/lib/
   form-action 'self'; frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、
   `Referrer-Policy: no-referrer` を付与します。プロキシでこれらを削除・緩和しないでください。
 - Cookie を伴う変更操作では `Origin` と `Sec-Fetch-Site` を検証するため、プロキシでこれらの
-  ブラウザ由来ヘッダーを削除・書き換えしないでください。
+  ブラウザー由来ヘッダーを削除・書き換えしないでください。
 - Marginalis は `X-Forwarded-For` や `Forwarded` などのクライアント IP ヘッダーを信頼せず、
   認可判断にも使いません。
 

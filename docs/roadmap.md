@@ -3,8 +3,7 @@
 ## 現在地
 
 `v0.1.0` をリリースし、OpenAPI 契約とデータフォーマット v1 の互換性保証を開始しました
-（2026-07-23、
-段階 0 完了）。OIDC 認証付きの REST API、OAuth 保護 MCP、NixOS モジュール、手動受入手順、
+（2026-07-23、段階 0 完了）。OIDC 認証付きの REST API、OAuth 保護 MCP、NixOS モジュール、手動受入手順、
 リリース検証が揃っています。今後は機能を広げる前に、実運用の主要経路を継続的に検証できる
 基盤を整えます。
 
@@ -16,8 +15,8 @@
 | 段階 | 主 Issue | 目的 | 次段階へ進む条件 |
 | --- | --- | --- | --- |
 | 0（完了） | [009](../issues/009-oidc-provider-registration.md)、[022](../issues/022-v0.1.0-rc.1-release-acceptance.md) | RC.2 の実環境受入を完了し、v0.1.0 をタグ付けして OpenAPI の互換性保証を始める | 完了（2026-07-23、`v0.1.0` タグ） |
-| 1 | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザ・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
-| 2 | [029](../issues/029-adocweave-v0.6.1-migration.md) | AdocWeave v0.6.1 へ移行し、正本解釈・投影・HTML・WASM の互換性基準を更新する | データフォーマット、再構築、バックアップ・復元を含む互換性方針が確定する |
+| 1 | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザー・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
+| 2 | [029](../issues/029-adocweave-v0.6.1-migration.md) | AdocWeave v0.6.1 へ移行し、正本の解釈・投影・HTML・WASM の互換性基準を更新する | データフォーマット、再構築、バックアップ・復元を含む互換性方針が確定する |
 | 3 | [032](../issues/032-mcp-authoring-profile-and-diagnostics.md) | MCP クライアント向けのプロファイル公開と位置付き検証診断を追加する | MCP / REST が後方互換な診断を返し、クライアントが推測なしで入力を修正できる |
 | 4 | [033](../issues/033-repository-documentation-asciidoc-migration.md) | リポジトリ文書を AsciiDoc へ移行し、文書検証を CI へ組み込む | README、仕様、運用手順、Issue の形式・参照・閲覧方針が確定する。段階 3 以降と並行できる |
 | 5 | [027](../issues/027-search-reference-and-rendering-projections.md) | RenderPolicy、参照表示、公開フィルターを完成させる | 閲覧用 HTML と参照表示の可視性・安全性契約がフィクスチャで固定される |
@@ -52,7 +51,7 @@
 
 段階には置かず、実利用からの信号で再評価します。
 
-- **Device Flow / Personal Access Token**: ブラウザを開けない CUI 環境の実利用者が現れた
+- **Device Flow / Personal Access Token**: ブラウザーを開けない CUI 環境の実利用者が現れた
   時点で、要件定義の設計方針に沿って優先度を再評価する。
 - **AdocWeave の参照表示 API**: v0.6.1 で利用できる `display_text` を段階 2 で取り込み、
   段階 5 の参照表示規則に利用する。

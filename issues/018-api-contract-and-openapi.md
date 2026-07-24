@@ -10,7 +10,7 @@ MCPクライアントが同じ契約を参照できる状態にする。
 ## 対象
 
 - OpenAPI文書と、REST APIの要求・応答・エラー型
-- UUIDv7、RFC 3339、ETag、カーソル、CSRF、認証失敗、ACL非漏洩404のスキーマ
+- UUIDv7、RFC 3339、ETag、カーソル、CSRF、認証失敗、非公開情報の存在を隠す`404`応答のスキーマ
 - APIのバージョン方針と破壊的変更の扱い
 - OpenAPI、ルーター、JSON直列化、HTTP状態コード、HTTPヘッダーの契約試験
 - REST APIとMCPツールのスキーマ対応

@@ -82,7 +82,7 @@ ID・タイトル・アンカー・投影上の存在のいずれも返しませ
 
 REST と MCP のツールは、同じアプリケーション層のユースケース・ACL・リビジョン規則を共有
 します。ただしトランスポート固有の認証方式は混在させません。Cookie・`X-CSRF-Token`・
-`Origin`・`Sec-Fetch-Site` は REST のブラウザ境界だけの要件であり、MCP のツール入出力には
+`Origin`・`Sec-Fetch-Site` は REST のブラウザー境界だけの要件であり、MCP のツール入出力には
 含まれません。
 
 | REST | MCP | 相違点 |

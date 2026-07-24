@@ -3,70 +3,77 @@
 状態: 機能実装は完了。実MCPクライアントを用いるHTTP/OAuth E2E試験とNixOS VM統合試験は
 [Issue 030](030-end-to-end-test-automation-readiness.md)へ移管した。
 
-Web UIより先に、認証済み利用者がREST APIだけでノートの作成、取得、更新、検索および物理削除を
-完結できるようにする。同じapplication use caseをMCPツールから再利用し、MCPを後付けのHTTP handlerや
-SQLite直結の別実装にしない。
+Web UIより先に、認証済み利用者がREST APIだけでノートの作成、取得、更新、検索、物理削除を
+完結できるようにする。MCPツールも同じアプリケーション層の処理を使い、HTTPハンドラーや
+SQLiteへ直接つながる別実装を作らない。
 
 ## 背景
 
-現在のREST APIにはsourceの作成・取得・更新・削除とACL更新がある。一方、ノート一覧、検索結果、
-安定した検索paginationおよびMCP transportは未実装である。ブラウザーUIを先に導入すると、検索・ACL・
-エラー表現がUI専用になり、MCPとの二重実装を招く。先にAPI契約を確定する。
+作業開始時のREST APIには、本文の作成・取得・更新・削除とACL更新があった。一方、
+ノート一覧、検索結果のページ分割、MCPの通信機能は未実装だった。ブラウザーUIを先に導入すると、
+検索、ACL、エラーがUI専用になり、MCPとの二重実装を招く。そのためAPI契約を先に確定する。
 
 ## 範囲
 
-- RESTによるノート一覧、メタデータ取得、source CRUD、検索、pagination
-- タイトル、タグ、本文およびanchorを対象とするACL非漏洩検索
+- RESTによるノート一覧、メタデータ取得、本文の作成・取得・更新・削除、検索、ページ分割
+- タイトル、タグ、本文およびanchorを対象とする非公開情報を漏らさない検索
 - 作成・更新・物理削除と検索投影の整合・復旧
-- REST検索use caseを再利用するMCP search/read tool
-- MCP専用の認証・認可境界、rate limitおよび監査方針
-- NixOS package/moduleからMCP serverを有効化する設定
+- REST検索の処理を再利用するMCPの検索・取得ツール
+- MCP専用の認証・認可、レート制限、監査方針
+- NixOSのパッケージとモジュールからMCPサーバーを有効にする設定
 
 Web UI、ベクトル検索、招待、rootによるMCP接続は範囲外とする。
 
 ## 実装内容
 
 1. **REST CRUD契約の完成**
-   - `GET /api/v1/notes`で、閲覧可能なノートのID、title、更新時刻およびcursorを返す。
-   - `GET /api/v1/notes/{note_id}`で閲覧用メタデータとprojectionを返す。
-   - 既存のsource CRUDをrevision（ETagまたは明示的revision）で条件付き更新可能にし、競合を`409`で表現する。
-   - source取得で強い`ETag`を返し、更新・削除は`If-Match`を必須として同時更新を拒否する。
+   - `GET /api/v1/notes`で、閲覧可能なノートのID、題名、更新時刻、カーソルを返す。
+   - `GET /api/v1/notes/{note_id}`で閲覧用メタデータと投影を返す。
+   - 本文の更新と削除には、ETagまたは明示的なリビジョンを要求する。競合時は`409`を返す。
+   - 本文の取得時に強い`ETag`を返す。更新と削除では`If-Match`を必須とし、同時更新を拒否する。
    - 不可視ノートは一覧、検索、取得の全てで存在を推測させない。
 
 2. **検索投影とREST検索**
    - Issue 005および012の調査結果を用いて、SQLite FTS5を最初の検索実装候補として評価・採用判断する。
-   - `GET /api/v1/search?q=...&limit=...&cursor=...`を追加し、note ID、titleおよび次cursorを返す。一致箇所の抜粋や本文は返さない。
-   - ACL filterは結果数と順位を返す前に適用する。Read権限がないノートを候補数にも含めない。
-   - create/update/deleteとrecoveryで検索投影を収束させ、再構築API/CLIを用意する。
+   - `GET /api/v1/search?q=...&limit=...&cursor=...`を追加し、ノートID、題名、
+     次のカーソルを返す。一致箇所の抜粋や本文は返さない。
+   - 結果数と順位を返す前にACLで絞り込む。Read権限がないノートを候補数にも含めない。
+   - 作成、更新、削除、復旧の各処理で検索投影を一致させ、再構築用のAPIとCLIを用意する。
 
-3. **MCP認証とtransport**
-   - Issue 012で、MCPのOAuth/token方式、transport（Streamable HTTPを第一候補）、client登録およびtoken audienceを確定する。Web session Cookieやroot accountをMCPへ流用しない。
-   - `marginalis-mcp` adapterを追加し、認証済みActorをREST検索use caseへ渡す。
+3. **MCPの認証と通信**
+   - Issue 012で、MCPのOAuthトークン、通信方式、クライアント登録、対象リソースの照合を
+     確定する。通信方式の第一候補はStreamable HTTPとする。WebセッションCookieや
+     `root`アカウントをMCPへ流用しない。
+   - `marginalis-mcp`アダプターを追加し、認証済み利用者をREST検索と同じ処理へ渡す。
    - 初期ツールは`search_notes`、`get_note`、`list_note_links`、構造化create/update、
-     確認付き物理deleteとする。各ツールはRESTと同じACL、pagination、エラー意味論を用いる。
-   - `marginalis-mcp`はJSON-RPC tool adapterとしてHTTP/OAuth/SQLiteから独立させ、`NoteUseCases`と
-     MCP専用Bearer-token authenticatorだけに依存させる。
+     確認付きの物理削除とする。各ツールはRESTと同じACL、ページ分割、エラーを使う。
+   - `marginalis-mcp`はJSON-RPCツールのアダプターとしてHTTP、OAuth、SQLiteから分離する。
+     `NoteUseCases`とMCP専用のBearerトークン認証だけに依存させる。
 
 4. **運用・結合試験**
-   - RESTとMCPで同一Actorに同一の可視結果だけが返ることを結合試験で確認する。
-   - ACL変更、物理削除、投影再構築、token失効、rate limitを含めて確認する。
+   - RESTとMCPで、同じ利用者に同じ可視範囲の結果が返ることを結合試験で確認する。
+   - ACL変更、物理削除、投影再構築、トークン失効、レート制限を確認する。
    - NixOS VMでREST、MCP有効化、永続化および認証設定を検証する。
 
 ## 完了条件
 
 - OIDCでログインした利用者が、Web UIなしでREST APIからノートを作成・取得・更新・検索・削除できる。
 - 検索結果はACLを満たすノートだけから構成され、不可視ノートの存在を漏らさない。
-- MCPのread/search/link/write/delete toolが同じuse caseとACL判定を利用する。
-- RESTとMCPの検索結果、cursor、削除後の可視性を結合試験で検証する。
+- MCPの取得、検索、参照、書き込み、削除ツールが、同じ業務処理とACL判定を利用する。
+- RESTとMCPの検索結果、カーソル、削除後の可視性を結合試験で検証する。
 
 ## 実施記録（2026-07-23）
 
-- REST CRUD、ETagを使う条件付き更新・物理削除、ACL非漏洩の一覧・FTS5検索・cursorを実装した。
-- MCPのread/search/link/write/delete toolは`NoteUseCases`を共有し、access tokenのscope/resource/
-  利用者状態をSQLiteで検証する。
-- MCP OAuthはPKCE S256、single-use authorization code、token pair、refresh token rotation、Client ID
-  Metadata Documentを備える。NixOSでは明示的な`mcp.enable`とmetadata host許可リストが必要である。
-- MCPはread/search、構造化create/update、二段階の物理delete、ACL非漏洩のoutgoingリンク一覧を提供する。
-  rate limitも実装した。SQLiteを用いるPKCE code、token exchange、refresh rotation、Bearer認証の
-  server結合試験と、通常sessionから認可画面、code、token、`/mcp`までを通すHTTP結合試験を実装した。
+- RESTによる作成・取得・更新・削除、ETagを使う条件付き更新、物理削除、
+  非公開情報を漏らさない一覧とFTS5検索、カーソルを実装した。
+- MCPの取得、検索、参照、書き込み、削除ツールは`NoteUseCases`を共有する。
+  SQLiteでアクセストークンのスコープ、対象リソース、利用者状態を検証する。
+- MCP OAuthはPKCE S256、一回限りの認可コード、トークンペア、リフレッシュトークンの
+  ローテーション、Client ID Metadata Documentに対応する。NixOSでは`mcp.enable`を明示し、
+  メタデータ取得先のホストを許可リストに登録する。
+- MCPは取得、検索、構造化された作成・更新、二段階の物理削除、非公開情報を漏らさない
+  参照一覧を提供する。レート制限も実装した。SQLiteを使う認可コード、トークン交換、
+  ローテーション、Bearer認証のサーバー結合試験を追加した。
+- 通常のセッションから認可画面、認可コード、トークン、`/mcp`までを通すHTTP結合試験を
+  実装した。
   実クライアントを使う相互運用試験はIssue 030へ移管した。

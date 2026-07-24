@@ -3,13 +3,13 @@
 状態: 初期調査と初期実装は完了。検索拡張は必要性を再評価し、E2E試験は
 [Issue 030](030-end-to-end-test-automation-readiness.md)で継続する。
 
-ノートの作成・更新・物理削除を契機として検索用の中間表現（IR）を更新し、MCP経由で権限を守った
-曖昧検索を提供するための設計を調査する。初期REST APIおよび正本ファイルの意味論は変更しない。
+ノートの作成、更新、物理削除に合わせて検索索引を更新し、MCPからアクセス権を守った
+曖昧検索を提供する方法を調査する。初期REST APIと正本ファイルの意味は変更しない。
 
 ## 前提
 
-- AsciiDoc sourceが正本であり、SQLiteは再構築可能な投影である。
-- 現在の`NoteWriteService`はoperation journalを介して、正本とSQLite投影を更新・復旧する。
+- AsciiDoc本文が正本であり、SQLiteは正本から再構築できる投影である。
+- 現在の`NoteWriteService`は操作記録を介して、正本とSQLite投影を更新・復旧する。
 - ノートが物理削除された場合、検索インデックスからも同じノートを除外する。
 - Read権限がないノートの存在、題名、断片、順位その他の情報を検索結果から推測できてはならない。
 - MCPはWeb UIとは独立した後続の利用境界である。
@@ -19,74 +19,77 @@
 1. **中間表現の定義**
 
    検索対象を、ノート単位・見出し単位・段落単位のどれにするか比較する。少なくとも`note_id`、
-   source revision、title、本文抽出値、anchor、位置範囲、および再構築に必要なversionを検討する。
-   AsciiDoc AST/projectionから安全に抽出できる本文と、xref・数式・source blockを検索語に含める規則も
-   定める。
+   正本のリビジョン、題名、本文の抽出値、アンカー、位置範囲、再構築に必要な版を検討する。
+   AsciiDocの構文木と投影から安全に抽出できる本文を定める。xref、数式、ソースブロックを
+   検索語に含める規則も決める。
 
 2. **曖昧検索方式**
 
-   SQLite FTS5（tokenizer、prefix、BM25、snippet）、trigram索引、外部のベクトル検索、および
-   keywordとsemantic retrievalの組合せを比較する。日本語・英語混在、typo、短いクエリ、ランキングの
-   再現性、運用時の依存追加、バックアップとNixOS配布への影響を評価する。
+   SQLite FTS5の分かち書き、前方一致、BM25、抜粋、trigram索引、外部のベクトル検索を比較する。
+   キーワード検索と意味検索の組合せも検討する。日本語と英語の混在、入力誤り、短い検索語、
+   順位の再現性、依存関係、バックアップ、NixOS配布への影響を評価する。
 
 3. **更新・復旧プロトコル**
 
-   `NoteWriteService`の成功後に同期更新する方法、operation journalをoutboxとして非同期更新する方法、
-   および起動時の全量再構築を比較する。作成・更新・削除の冪等性、source revisionによる古い更新の
-   排除、失敗時の再試行、検索投影のlagの公開方法を決める。
+   `NoteWriteService`の成功後に同期更新する方法、操作記録を送信待ち一覧として非同期更新する方法、
+   起動時に全件を再構築する方法を比較する。作成・更新・削除の冪等性、正本のリビジョンによる
+   古い更新の排除、失敗時の再試行、検索投影の遅延を利用者へ示す方法を決める。
 
 4. **ACLを含む検索実行**
 
-   検索前フィルタ、候補取得後フィルタ、ACLを検索投影へ複製する方法を比較する。root、直接ACL変更、
-   削除直後、競合する更新について、情報漏洩なく結果数・snippet・scoreを返す境界を定義する。
+   検索前の絞り込み、候補取得後の絞り込み、ACLを検索投影へ複製する方法を比較する。`root`、
+   直接ACLを変更した場合、削除直後、更新競合について、情報を漏らさずに結果数、抜粋、
+   順位を返す方法を定める。
 
 5. **MCP API境界**
 
-   tool名、入力（query、limit、検索対象、cursor）、出力（note ID、title、anchor、短い安全なsnippet、
-   score）、認証済みActorの伝達、エラー表現、ページング、rate limit、監査ログの要否を設計する。
-   MCP transportとOAuth/token方式はWeb session cookieに依存させない。
+   ツール名、入力、出力、認証済み利用者の伝達、エラー、ページ分割、レート制限、
+   監査ログの要否を設計する。入力には検索語、上限、検索対象、カーソルを含める。
+   出力にはノートID、題名、アンカー、安全な短い抜粋、順位を含める。
+   MCPの通信方式とOAuthトークンは、WebセッションCookieに依存させない。
 
 6. **運用・保守**
 
-   schema migration、インデックスversion、全量再構築コマンド、整合性検査、バックアップ／復元、
+   スキーマの移行、索引の版、全件再構築コマンド、整合性検査、バックアップと復元、
    観測可能性、データ量と性能の受入基準を決める。
 
 ## 成果物
 
-- 推奨するIR schemaと検索方式、および不採用案との比較表。
+- 推奨する検索用データのスキーマと検索方式、および不採用案との比較表。
 - 作成・更新・削除から検索更新・復旧に至る状態遷移。
-- ACL非漏洩を含むMCP tool contract。
-- migration／rebuild／障害復旧の運用手順。
+- 非公開情報を漏らさないMCPツールの契約。
+- 移行、再構築、障害復旧の運用手順。
 - 実装を分割する後続Issueと、各Issueの検証計画。
 
 ## 決定（2026-07-23）
 
 ### 検索投影
 
-- 初期検索はSQLite FTS5を採用する。AdocWeaveの`searchable_text` projectionを本文の基礎とし、
-  profileで許可したsource blockとLaTeX数式を含める。生のAsciiDoc属性・マクロ記法は索引しない。
-- SQLite queryは`note_search`の候補に対し、同じSQL statementで`note_acl`の`EXISTS`を適用する。
-  不可視ノートを候補数、順位、cursorまたは本文断片へ含めない。
-- 初期のREST/MCP検索結果はnote IDとtitleだけとする。本文、snippet、scoreは返さない。検索結果の
-  cursorはACL filter後の結果集合だけを進める。
-- FTS5は同期投影とする。`NoteWriteService`が正本を書き込み、operation journalで投影更新を復旧する。
-  ベクトル検索、外部検索サービス、非同期outboxは初期公開の範囲外とする。
+- 初期検索にはSQLite FTS5を採用する。AdocWeaveの`searchable_text`投影を本文の基礎とし、
+  プロファイルで許可したソースブロックとLaTeX数式を含める。生のAsciiDoc属性やマクロ記法は
+  索引しない。
+- SQLiteでは、`note_search`の候補に対して同じSQL文で`note_acl`の`EXISTS`を適用する。
+  閲覧できないノートを候補数、順位、カーソル、本文断片へ含めない。
+- 初期のREST・MCP検索結果はノートIDと題名だけとする。本文、抜粋、順位は返さない。
+  カーソルはACLで絞り込んだ後の結果集合だけを進める。
+- FTS5は同期して更新する。`NoteWriteService`が正本を書き込み、操作記録を使って投影更新を
+  復旧する。ベクトル検索、外部検索サービス、非同期更新は初期公開の範囲外とする。
 
-### MCP認証・transport
+### MCPの認証と通信
 
-- Streamable HTTPの単一`/mcp` endpointを採用する。POSTはJSON-RPC requestを受け、GETは通知streamが
-  必要になるまで`405`を返す。初期toolは`search_notes`、`get_note`、`list_note_links`、構造化
-  create/updateおよび確認付き物理deleteとする。
-- MCP resource serverはRFC 9728 Protected Resource Metadataを提供する。未認証の`/mcp` requestは
-  `401`と`WWW-Authenticate` headerでmetadata URLを示す。
-- OAuth Authorization ServerはMarginalisが担当し、外部Kanidmは利用者の本人認証だけに使う。access/
-  refresh tokenはopaque random valueを発行し、DBにはhashだけを置く。Web session Cookieとroot sessionは
-  MCPで受理しない。
+- Streamable HTTPの単一エンドポイント`/mcp`を採用する。POSTはJSON-RPC要求を受け取る。
+  GETは通知ストリームが必要になるまで`405`を返す。初期ツールは`search_notes`、
+  `get_note`、`list_note_links`、構造化された作成・更新、確認付きの物理削除とする。
+- MCPリソースサーバーはRFC 9728のProtected Resource Metadataを提供する。未認証の
+  `/mcp`要求には`401`を返し、`WWW-Authenticate`ヘッダーでメタデータURLを示す。
+- OAuth認可サーバーはMarginalisが担当し、外部Kanidmは利用者の本人認証だけに使う。
+  アクセストークンとリフレッシュトークンには推測困難な乱数を発行し、DBにはハッシュだけを置く。
+  WebセッションCookieと`root`セッションはMCPで受理しない。
 - Authorization Code + PKCE S256、resource indicator、Client ID Metadata Documents、HTTPSまたは
   loopback redirect URI完全一致検証を初期境界とする。Dynamic Client RegistrationとDevice Flowは後続に
   追加可能なportとして分離する。
-- MCP endpointでは、存在する`Origin`をBase URLのoriginと照合して拒否する。各Bearer tokenはMCP
-  canonical resource URIとscopeを照合し、root actorへは発行・認証しない。
+- MCPエンドポイントでは、`Origin`がある場合に公開ベースURLのオリジンと照合する。
+  各BearerトークンはMCPの正規リソースURIとスコープを照合し、`root`には発行しない。
 
 この判断はMCP Authorization SpecificationおよびStreamable HTTP transportの2025-11-25版に基づく。
 
@@ -100,11 +103,13 @@
 ## 実施結果
 
 - `NoteWriteService`の同期投影としてSQLite FTS5を更新し、物理削除と起動時recoveryにも追従させた。
-- RESTとMCPの`search_notes`・`get_note`・`list_note_links`および書込みtoolは同じ`NoteUseCases`と
-  ACL非漏洩queryを利用する。
-- MCPはStreamable HTTP、Protected Resource Metadata、OAuth Authorization Code + PKCE S256、opaque
-  access/refresh token、resource audience照合、refresh token rotationを実装した。
-- NixOS moduleはMCPを明示opt-inにし、Client ID Metadata Documentの取得hostを許可リストに限定する。
+- RESTとMCPの`search_notes`、`get_note`、`list_note_links`、書き込みツールは、
+  同じ`NoteUseCases`とアクセス制御付きの問い合わせを利用する。
+- MCPはStreamable HTTP、Protected Resource Metadata、OAuth Authorization CodeとPKCE S256、
+  推測困難なアクセス・リフレッシュトークン、対象リソースの照合、トークンのローテーションを
+  実装した。
+- NixOSモジュールではMCPを明示的に有効化する。Client ID Metadata Documentの取得先は、
+  許可リストに登録したホストだけに限定する。
 
 実運用のMCPクライアントとのOAuth統合試験、全文の抜粋、意味検索およびサーバーからクライアントへの
 通知ストリームは初期実装に含めない。MCPツール呼出しの利用者単位レート制限は実装済みである。
