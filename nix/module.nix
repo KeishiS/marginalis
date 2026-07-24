@@ -152,6 +152,10 @@ in
         message = "services.marginalis.oidc.clientSecretFile must be set.";
       }
       {
+        assertion = cfg.oidc.caCertificateFile == null || lib.hasPrefix "/" cfg.oidc.caCertificateFile;
+        message = "services.marginalis.oidc.caCertificateFile must be an absolute path when set.";
+      }
+      {
         assertion = cfg.oidc.membershipApiUrl != null;
         message = "services.marginalis.oidc.membershipApiUrl must be set.";
       }
