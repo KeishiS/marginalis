@@ -601,8 +601,7 @@ impl IntoResponse for ApiError {
 pub fn router(state: ApiState) -> Router {
     application_router(state.clone())
         .merge(administration_router(state))
-        .layer(middleware::from_fn(assign_request_id))
-        .layer(middleware::from_fn(set_security_headers))
+        // Axum applies the last layer first. Assign the ID before TraceLayer creates its span.
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {
@@ -620,6 +619,8 @@ pub fn router(state: ApiState) -> Router {
                 })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
+        .layer(middleware::from_fn(set_security_headers))
+        .layer(middleware::from_fn(assign_request_id))
 }
 
 /// 通常利用者向けのHTTP境界。管理routerを別listener/originへ移す際もこのrouterは変更しない。
@@ -2586,8 +2587,14 @@ mod tests {
         RegistrationPolicy, UnixMillis, UserId,
     };
     use sha2::{Digest, Sha256};
-    use std::{str::FromStr, sync::Arc, time::Duration};
+    use std::{
+        io::{self, Write},
+        str::FromStr,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
     use tower::ServiceExt;
+    use tracing::instrument::WithSubscriber as _;
 
     use super::{
         ACCEPTANCE_CONTENT_SECURITY_POLICY, ACCEPTANCE_SAMPLE_SOURCE, ApiError, ApiErrorCode,
@@ -2599,6 +2606,19 @@ mod tests {
     };
     use marginalis_mcp::{McpAuthenticationError, McpAuthenticator, McpTools};
     use marginalis_server::{ServerMcpAuthenticator, ServerMcpOAuthService};
+
+    struct LogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for LogWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("log buffer").extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     struct RejectMcpAuthenticator;
 
@@ -3022,6 +3042,13 @@ mod tests {
             .expect("open store");
         let directory = std::env::temp_dir().join("marginalis-web-health-test");
         let sources = marginalis_files::FileNoteStore::open(&directory).expect("open sources");
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let writer = Arc::clone(&logs);
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .without_time()
+            .with_writer(move || LogWriter(Arc::clone(&writer)))
+            .finish();
         let response = router(ApiState::with_test_adapters(
             database.clone(),
             Arc::new(marginalis_server::ServerNoteUseCases::new(
@@ -3034,6 +3061,7 @@ mod tests {
                 .body(Body::empty())
                 .expect("request"),
         )
+        .with_subscriber(subscriber)
         .await
         .expect("response");
 
@@ -3044,7 +3072,14 @@ mod tests {
             .expect("request ID")
             .to_str()
             .expect("request ID value");
-        assert!(uuid::Uuid::parse_str(request_id).is_ok());
+        let request_id_uuid = uuid::Uuid::parse_str(request_id).expect("UUID request ID");
+        assert_eq!(request_id_uuid.get_version_num(), 7);
+        let logs = String::from_utf8(logs.lock().expect("log buffer").clone()).expect("UTF-8 logs");
+        assert!(
+            logs.contains(&format!("request_id=\"{request_id}\"")),
+            "request ID is not shared with the tracing span: {logs}"
+        );
+        assert!(!logs.contains("request_id=\"missing\""), "{logs}");
     }
 
     #[tokio::test]
