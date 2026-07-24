@@ -22,8 +22,9 @@ SQLite 正本、Kanidm group 認可、`/api/v2` を現行契約とします。�
 - [要件定義](requirements.md): v0.2 の履歴。v0.3 の規範は再設計仕様を参照
 - [アーキテクチャ](architecture.md): クレートの責務、依存関係、データ整合性
 - [v0.3.0 再設計仕様](v0.3.0-design.md): SQLite 正本、Kanidm group 認可、新 API の確定設計
-- [研究データ横断検索ハブの将来構想](research-search-vision.md): 複数データソースの横断検索、
-  pgvector、個人向け学習、研究メモへの還流に関する非規範の長期構想
+- [個人研究データ横断探索基盤の将来構想](research-search-vision.md): Marginalis のあいまい検索を
+  第一歩として、多様な研究データを横断する検索、個人向け学習、研究記録への還流を目指す
+  非規範の長期構想
 - [ロードマップ](roadmap.md): 未完了作業の順序と判断時期
 - [要件ヒアリング記録](interviews.md): 要件を決めた時点の履歴
 
