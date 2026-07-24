@@ -1,38 +1,45 @@
-# 020: data format v1とmaintenance lifecycle
+# 020: データ形式v1と保守作業のライフサイクル
 
 状態: 完了。
 
 ## 目的
 
-AsciiDoc正本、SQLite投影・identity・session・audit、backupおよびrestoreの関係を、一つの明示的なdata format
-契約として固定する。現在は「旧schemaを拒否する」という文書と、SQLite migrationを継続する実装が併存する。
+AsciiDoc正本、SQLite投影、ID情報、セッション、監査記録、バックアップ、復元の関係を、
+一つのデータ形式として定義する。未知または不整合なデータを、安全側で拒否できる状態にする。
 
-## 実装項目
+## 解決する問題
 
-1. `dataDir` format version、AsciiDoc profile/AdocWeave contract version、SQLite schema versionの関係を定義する。
-2. format v1以前を明確に拒否するか、migrationを提供するかを一方に統一する。
-3. backup generationにmanifest、format version、作成時刻、SQLite integrity、正本一覧とhashを記録する。
-4. restoreを`verify → stage → switch → rebuild → health check`の状態遷移として明文化する。
-5. audit retention（365日）を起動時副作用ではなく、定期maintenance operationとして実行する。
-6. backup generationの衝突、部分失敗、保持世代、off-site同期を運用policyとして扱う。
+従来は、古いスキーマを拒否するという文書上の方針と、SQLiteの移行を継続する実装が
+併存していた。また、監査記録の保持処理がサーバーの再起動に依存していた。
+
+## 採用した方針
+
+1. `dataDir`の形式、AsciiDocプロファイル、AdocWeave契約、SQLiteスキーマの
+   バージョン関係を定義する。
+2. 既存環境を破棄できる前提に立ち、データ形式v1より前のデータは移行せず拒否する。
+3. バックアップには、マニフェスト、形式バージョン、作成時刻、SQLiteの整合性、
+   正本一覧、ハッシュを記録する。
+4. 復元は「検証、準備領域への配置、切り替え、再構築、稼働確認」の順に実施する。
+5. 監査記録の365日保持は、定期的な保守作業として実行する。
+6. バックアップ先、保持世代数、遠隔地への複製、暗号化は、配備ごとの運用方針で決める。
+
+## 実施内容
+
+- 空のデータディレクトリーだけを、`FORMAT`マーカー付きのデータ形式v1として初期化するようにした。
+- `FORMAT`マーカーがない非空ディレクトリーを、起動時と保守作業時に拒否するようにした。
+- 未知のバージョンを、起動時、保守作業時、復元時に拒否するようにした。
+- バックアップへ`FORMAT`、`MANIFEST`、`COMPLETE`を追加した。
+- バックアップに作成時刻、SQLite、全正本のSHA-256を記録し、復元前に照合するようにした。
+- 復元処理を、形式確認、マニフェスト照合、SQLite整合性検査、AsciiDoc検証、
+  新しいディレクトリーへの配置の順に実行するようにした。
+- root監査記録の保持処理を、起動時の副作用から`prune-audit`保守コマンドへ移した。
+- `prune-audit`を日次のNixOSタイマーで実行するようにした。
 
 ## 完了条件
 
-- 起動時に未知または不整合なdata formatを明確に拒否する。
-- backup manifestだけで、復元候補の完全性と互換性を事前判断できる。
-- audit retentionがserver再起動の有無に依存しない。
-- NixOS moduleのbackup/rebuild/restore手順とCLIの状態遷移が一致する。
+- 未知または不整合なデータ形式を起動時に明確に拒否する。
+- バックアップのマニフェストだけで、復元候補の完全性と互換性を事前に判断できる。
+- 監査記録の保持処理が、サーバーの再起動に依存しない。
+- NixOSモジュールのバックアップ、再構築、復元手順がCLIの状態遷移と一致する。
 
-## 要判断事項
-
-- 既存deploymentを破棄できる前提で、format v1以前はmigrationせず拒否する。
-- backupの保持世代、保存先、off-site複製、暗号化をどの運用手段で担うか。
-
-## 実施結果
-
-- 空のdata directoryだけを`FORMAT` marker付きdata format v1として初期化し、markerのない非空directoryと
-  未知versionを起動・maintenance・restore入力で拒否する。
-- backupには`FORMAT`、`MANIFEST`、`COMPLETE`を加え、作成時刻、SQLiteと全正本のSHA-256を記録・照合する。
-- restoreは`format確認 → manifest照合 → SQLite integrity → AsciiDoc検証 → 新directoryへのstage`で実行する。
-- root監査の365日保持は起動時副作用から`prune-audit` maintenance commandと日次NixOS timerへ移した。
-- backup保存先、世代数、off-site複製および暗号化は、data formatの互換性契約ではなく配備ごとの運用policyとする。
+上記の条件を満たしたため、このIssueを完了とする。

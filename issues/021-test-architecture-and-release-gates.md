@@ -1,43 +1,63 @@
-# 021: 試験アーキテクチャとrelease gate
+# 021: 試験構成とリリース判定
 
-状態: RC.1範囲は完了（2026-07-23）。test moduleの完全分離は後続の内部改善。
+状態: RC.1の対象は完了（2026-07-23）。試験モジュールの完全分離は継続課題。
 
 ## 目的
 
-単一crateの大きなtest moduleへ集まった検証を、unit・adapter contract・transport contract・integration・
-deployment acceptanceへ分け、変更時に必要な検証範囲を予測可能にする。
+単一クレートの大きな試験モジュールに集まった検証を、単体試験、アダプター契約試験、
+通信契約試験、結合試験、配備後の受入確認へ分ける。変更内容から必要な検証範囲を
+判断できる構成にする。
 
-## 実装項目
+## RC.1で実施する内容
 
-1. application層にin-memory fake portを置き、command/query/policyを高速に単体試験する。
-2. SQLite/files/AsciiDoc/OIDC adapterごとにport contract testを作る。
-3. 実SQLite・filesystem・OIDC mock・Axum・MCPを通す`marginalis-integration-tests` crateを作る。
-4. OpenAPI/REST/MCP schema、migration、data format、backup/restoreをrelease gateへ加える。
-5. NixOS VM testを、module評価だけでなくmaintenance lifecycleとreverse proxy前提まで拡張する。
-6. 実Kanidm・実MCP clientを通す確認は、secretをCIへ入れず`docs/acceptance.md`の手動acceptanceとして維持する。
-7. test module分離と同時に、単一fileへ肥大した`marginalis-sqlite`（約3,700行）と
-   `marginalis-web`（約3,200行）をstore単位・handler群単位のmoduleへ分割する。公開契約と
-   動作は変更しない（roadmap段階6。Web UI実装で`marginalis-web`が更に成長する前に行う）。
+1. アプリケーション層に、メモリー上で動作するテスト用ポートを置く。
+   コマンド、クエリー、方針を単体試験できるようにする。
+2. SQLite、ファイル、AsciiDoc、OIDCの各アダプターにポート契約試験を設ける。
+3. 実際のSQLite、ファイルシステム、OIDC模擬実装、Axum、MCPを通す
+   `marginalis-integration-tests`クレートを設ける。
+4. OpenAPI、REST API、MCPのスキーマ、データ移行、データ形式、
+   バックアップ、復元をリリース判定へ加える。
+5. NixOS仮想マシン試験を、モジュール評価だけでなく、保守作業のライフサイクルと
+   リバースプロキシーの前提まで拡張する。
+6. 実Kanidmと実MCPクライアントを使う確認は、秘密情報をCIへ入れず、
+   [実環境での受入確認](../docs/acceptance.md)に沿って手動で実施する。
 
-## RC.1 release gate
+## RC.1の自動判定
 
-- `cargo make verify`: format、Clippy、workspace test、transport dependency boundary、OpenAPI contract、flake評価。
-- `actionlint`: 通常CIとtag/手動起動用のrelease workflowを検証する。
-- `nix flake check -L`: module評価、maintenance lifecycle VM、実binaryのroot-only縮退起動VMを実行する。
-- `nix build .#packages.x86_64-linux.default --no-link`: Linux packageと`share/marginalis/openapi.json`を実ビルドする。
-- 実Kanidm、reverse proxyおよび実MCP clientは秘密情報を必要とするため、`docs/acceptance.md`とIssue 022で
-  手動受入する。
+- `cargo make verify`: 書式、Clippy、ワークスペース試験、通信層の依存境界、
+  OpenAPI契約、flake評価を検証する。
+- `actionlint`: 通常CIと、タグまたは手動起動用のリリースワークフローを検証する。
+- `nix flake check -L`: モジュール評価、保守作業の仮想マシン試験、
+  実バイナリーのroot専用縮退起動試験を実行する。
+- `nix build .#packages.x86_64-linux.default --no-link`:
+  Linuxパッケージと`share/marginalis/openapi.json`を実際にビルドする。
 
-## 完了条件
+実Kanidm、リバースプロキシー、実MCPクライアントの確認には秘密情報が必要である。
+これらは[実環境での受入確認](../docs/acceptance.md)とIssue 022で手動確認する。
 
-- production crateのtest helperが具体adapterを本番依存へ引き上げない。
-- 主要なpolicyがtransportなしで試験できる。
-- HTTP/MCP/data format/NixOS moduleの変更に対応するrelease gateが明確である。
-- 実環境手順と自動試験の責務分担が文書化される。
+## 実施内容
 
-## 実施結果
+- `cargo make release-gate`を追加した。
+- GitHub Actionsに`Release gate`ワークフローを追加した。
+- NixOS仮想マシン試験に、モジュール設定と保守作業のライフサイクルを追加した。
+- 同じ試験で、実Marginalisバイナリーによるroot初期化を確認するようにした。
+- OIDC Discovery失敗時の縮退起動、稼働確認、準備完了確認、OpenAPI、
+  rootログインを検証するようにした。
 
-- `cargo make release-gate`とGitHub Actionsの`Release gate` workflowを追加した。
-- NixOS VMはmodule設定とmaintenance lifecycleに加え、実Marginalis binaryのroot初期化、OIDC Discovery失敗時の
-  縮退起動、health/readiness、OpenAPIおよびroot loginを検証する。
-- test moduleの完全なintegration crateへの分離は、RC.1の機能・security gateを満たした後の内部改善として継続する。
+## 継続課題
+
+- 試験モジュールを、独立した結合試験クレートへ完全に分離する。
+- 約3,700行の`marginalis-sqlite`を、ストア単位のモジュールへ分割する。
+- 約3,200行の`marginalis-web`を、ハンドラー群単位のモジュールへ分割する。
+
+この分割では、公開契約と動作を変更しない。ロードマップの段階6として、
+Web UIの実装によって`marginalis-web`がさらに大きくなる前に実施する。
+
+## RC.1の完了条件
+
+- 本番用クレートの試験補助機能が、具体的なアダプターを本番依存へ追加しない。
+- 主要な方針を、通信層を介さずに試験できる。
+- HTTP、MCP、データ形式、NixOSモジュールの変更に対応するリリース判定が明確である。
+- 自動試験と実環境確認の責務分担が文書化されている。
+
+RC.1の対象は上記を満たした。完全分離は継続課題として扱う。
