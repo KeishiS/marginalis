@@ -14,10 +14,11 @@ use marginalis_application::{
     OperationState, RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, CANONICAL_ARCHIVE_FORMAT, CanonicalActor, CanonicalArchive, CanonicalNote,
-    CanonicalNoteAclEntry, CanonicalNoteBundle, CanonicalNoteDraft, EntityId,
-    McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId, NoteLink, NoteLinkPage,
-    NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
+    Actor, CANONICAL_ARCHIVE_FORMAT, CanonicalActor, CanonicalArchive,
+    CanonicalAuthenticatedSession, CanonicalNote, CanonicalNoteAclEntry, CanonicalNoteBundle,
+    CanonicalNoteDraft, CanonicalWebSession, EntityId, McpAuthorizationGrant,
+    McpClientAuthorization, McpOAuthClient, NoteId, NoteLink, NoteLinkPage, NotePage,
+    NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
     RegistrationPolicy, RootAuditEvent, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
@@ -59,9 +60,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
     ),
 ];
 
-const V3_MIGRATIONS: &[(i64, &str)] = &[(
-    1,
-    r#"
+const V3_MIGRATIONS: &[(i64, &str)] = &[
+    (
+        1,
+        r#"
 CREATE TABLE v3_notes (
     note_id TEXT PRIMARY KEY NOT NULL,
     creator_issuer TEXT NOT NULL,
@@ -104,7 +106,30 @@ CREATE VIRTUAL TABLE v3_note_search USING fts5(
     body
 );
 "#,
-)];
+    ),
+    (
+        2,
+        r#"
+CREATE TABLE v3_web_sessions (
+    session_id_hash BLOB PRIMARY KEY NOT NULL,
+    csrf_token_hash BLOB NOT NULL,
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)),
+    membership_checked_at_ms INTEGER NOT NULL,
+    issued_at_ms INTEGER NOT NULL,
+    last_seen_at_ms INTEGER NOT NULL,
+    idle_expires_at_ms INTEGER NOT NULL,
+    absolute_expires_at_ms INTEGER NOT NULL,
+    revoked_at_ms INTEGER
+) STRICT;
+
+CREATE INDEX v3_web_sessions_subject_idx
+ON v3_web_sessions (issuer, subject)
+WHERE revoked_at_ms IS NULL;
+"#,
+    ),
+];
 
 #[derive(Clone, Debug)]
 pub struct SqliteDatabase {
@@ -650,6 +675,146 @@ impl V3SqliteDatabase {
         &self.pool
     }
 
+    /// Web sessionの不透明値はhashだけを保存する。
+    pub async fn issue_web_session(
+        &self,
+        session: &CanonicalWebSession,
+        now: UnixMillis,
+    ) -> Result<(), V3NoteStoreError> {
+        sqlx::query(
+            "INSERT INTO v3_web_sessions
+             (session_id_hash, csrf_token_hash, issuer, subject, is_administrator, membership_checked_at_ms,
+              issued_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(hash_token(&session.session_id))
+        .bind(hash_token(&session.csrf_token))
+        .bind(&session.actor.issuer)
+        .bind(&session.actor.subject)
+        .bind(session.actor.is_administrator)
+        .bind(session.membership_checked_at.get())
+        .bind(now.get())
+        .bind(now.get())
+        .bind(session.idle_expires_at.get())
+        .bind(session.absolute_expires_at.get())
+        .execute(&self.pool)
+        .await
+        .map_err(v3_database_error)?;
+        Ok(())
+    }
+
+    /// sessionの期限を検証し、活動中なら利用時刻だけを更新する。
+    pub async fn lookup_web_session(
+        &self,
+        session_id: &str,
+        now: UnixMillis,
+    ) -> Result<Option<CanonicalAuthenticatedSession>, V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let hash = hash_token(session_id);
+        let row = sqlx::query(
+            "SELECT issuer, subject, is_administrator, membership_checked_at_ms, idle_expires_at_ms, absolute_expires_at_ms
+             FROM v3_web_sessions WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
+        )
+        .bind(&hash)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let session = v3_session_from_row(row)?;
+        if session.idle_expires_at <= now || session.absolute_expires_at <= now {
+            sqlx::query(
+                "UPDATE v3_web_sessions SET revoked_at_ms = ? WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
+            )
+            .bind(now.get())
+            .bind(hash)
+            .execute(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+            transaction.commit().await.map_err(v3_database_error)?;
+            return Ok(None);
+        }
+        sqlx::query("UPDATE v3_web_sessions SET last_seen_at_ms = ? WHERE session_id_hash = ?")
+            .bind(now.get())
+            .bind(hash)
+            .execute(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+        transaction.commit().await.map_err(v3_database_error)?;
+        Ok(Some(session))
+    }
+
+    /// Kanidmで再確認した所属をsessionへ反映する。利用者から除外された場合は同一subjectの全sessionを失効する。
+    pub async fn refresh_web_session_membership(
+        &self,
+        session_id: &str,
+        is_user: bool,
+        is_administrator: bool,
+        checked_at: UnixMillis,
+    ) -> Result<Option<CanonicalAuthenticatedSession>, V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let hash = hash_token(session_id);
+        let row = sqlx::query(
+            "SELECT issuer, subject, is_administrator, membership_checked_at_ms, idle_expires_at_ms, absolute_expires_at_ms
+             FROM v3_web_sessions WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
+        )
+        .bind(&hash)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let mut session = v3_session_from_row(row)?;
+        if !is_user {
+            sqlx::query(
+                "UPDATE v3_web_sessions SET revoked_at_ms = ?
+                 WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL",
+            )
+            .bind(checked_at.get())
+            .bind(&session.actor.issuer)
+            .bind(&session.actor.subject)
+            .execute(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+            transaction.commit().await.map_err(v3_database_error)?;
+            return Ok(None);
+        }
+        session.actor.is_administrator = is_administrator;
+        session.membership_checked_at = checked_at;
+        sqlx::query(
+            "UPDATE v3_web_sessions
+             SET is_administrator = ?, membership_checked_at_ms = ? WHERE session_id_hash = ?",
+        )
+        .bind(is_administrator)
+        .bind(checked_at.get())
+        .bind(hash)
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        transaction.commit().await.map_err(v3_database_error)?;
+        Ok(Some(session))
+    }
+
+    pub async fn validate_web_session_csrf(
+        &self,
+        session_id: &str,
+        csrf_token: &str,
+    ) -> Result<bool, V3NoteStoreError> {
+        let exists = sqlx::query_scalar::<_, i64>(
+            "SELECT 1 FROM v3_web_sessions
+             WHERE session_id_hash = ? AND csrf_token_hash = ? AND revoked_at_ms IS NULL",
+        )
+        .bind(hash_token(session_id))
+        .bind(hash_token(csrf_token))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(v3_database_error)?
+        .is_some();
+        Ok(exists)
+    }
+
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
     pub async fn create_note(
         &self,
@@ -1156,6 +1321,32 @@ fn v3_note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<CanonicalNote, V3Not
             .try_get::<Option<i64>, _>("deleted_at_ms")
             .map_err(v3_database_error)?
             .map(UnixMillis::new),
+    })
+}
+
+fn v3_session_from_row(
+    row: sqlx::sqlite::SqliteRow,
+) -> Result<CanonicalAuthenticatedSession, V3NoteStoreError> {
+    Ok(CanonicalAuthenticatedSession {
+        actor: CanonicalActor {
+            issuer: row.try_get("issuer").map_err(v3_database_error)?,
+            subject: row.try_get("subject").map_err(v3_database_error)?,
+            is_administrator: row
+                .try_get::<bool, _>("is_administrator")
+                .map_err(v3_database_error)?,
+        },
+        membership_checked_at: UnixMillis::new(
+            row.try_get("membership_checked_at_ms")
+                .map_err(v3_database_error)?,
+        ),
+        idle_expires_at: UnixMillis::new(
+            row.try_get("idle_expires_at_ms")
+                .map_err(v3_database_error)?,
+        ),
+        absolute_expires_at: UnixMillis::new(
+            row.try_get("absolute_expires_at_ms")
+                .map_err(v3_database_error)?,
+        ),
     })
 }
 
@@ -2955,6 +3146,60 @@ mod tests {
             1
         );
         assert_eq!(database.note(note_id, true).await, Ok(None));
+    }
+
+    #[tokio::test]
+    async fn v3_sessions_refresh_group_membership_and_revoke_removed_users() {
+        let database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("v3 migration succeeds");
+        let session = CanonicalWebSession {
+            session_id: "session-token".into(),
+            csrf_token: "csrf-token".into(),
+            actor: CanonicalActor {
+                issuer: "https://id.example.test".into(),
+                subject: "alice".into(),
+                is_administrator: false,
+            },
+            membership_checked_at: UnixMillis::new(100),
+            idle_expires_at: UnixMillis::new(1_000),
+            absolute_expires_at: UnixMillis::new(2_000),
+        };
+        database
+            .issue_web_session(&session, UnixMillis::new(100))
+            .await
+            .expect("issue session");
+        assert!(
+            database
+                .validate_web_session_csrf("session-token", "csrf-token")
+                .await
+                .expect("csrf query")
+        );
+        assert!(
+            !database
+                .validate_web_session_csrf("session-token", "wrong")
+                .await
+                .expect("csrf query")
+        );
+        let refreshed = database
+            .refresh_web_session_membership("session-token", true, true, UnixMillis::new(200))
+            .await
+            .expect("refresh")
+            .expect("active session");
+        assert!(refreshed.actor.is_administrator);
+        assert_eq!(refreshed.membership_checked_at, UnixMillis::new(200));
+        assert_eq!(
+            database
+                .refresh_web_session_membership("session-token", false, false, UnixMillis::new(300))
+                .await,
+            Ok(None)
+        );
+        assert_eq!(
+            database
+                .lookup_web_session("session-token", UnixMillis::new(301))
+                .await,
+            Ok(None)
+        );
     }
 
     #[tokio::test]

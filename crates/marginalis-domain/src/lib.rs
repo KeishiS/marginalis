@@ -237,6 +237,26 @@ pub struct CanonicalActor {
     pub is_administrator: bool,
 }
 
+/// v0.3.0のWeb session発行時だけに扱う不透明なIDとCSRF token。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalWebSession {
+    pub session_id: String,
+    pub csrf_token: String,
+    pub actor: CanonicalActor,
+    pub membership_checked_at: UnixMillis,
+    pub idle_expires_at: UnixMillis,
+    pub absolute_expires_at: UnixMillis,
+}
+
+/// token値を含まない、認証済みsessionの検証結果。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalAuthenticatedSession {
+    pub actor: CanonicalActor,
+    pub membership_checked_at: UnixMillis,
+    pub idle_expires_at: UnixMillis,
+    pub absolute_expires_at: UnixMillis,
+}
+
 /// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。
 ///
 /// `title`、anchorおよび参照はAsciiDoc adapterが検証してから渡す。domainは構文木を持たない。
