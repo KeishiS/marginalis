@@ -1297,6 +1297,37 @@ async fn acceptance_home(
     headers: HeaderMap,
 ) -> Result<Html<String>, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
+    let page = state
+        .notes
+        .list_notes(actor, 0, 100)
+        .await
+        .map_err(|error| note_error(error, "note listing is unavailable"))?;
+    let note_count = page.notes.len();
+    let note_items = page
+        .notes
+        .into_iter()
+        .map(|note| {
+            let note_url = escape_html(&acceptance_url(
+                &state,
+                &format!("/acceptance/notes/{}", note.note_id),
+            ));
+            format!(
+                "<li><a href=\"{note_url}\">{}</a> <small><code>{}</code></small></li>",
+                escape_html(&note.title),
+                note.note_id
+            )
+        })
+        .collect::<String>();
+    let note_list = if note_count == 0 {
+        "<p><strong>閲覧できるノートはありません。</strong> 下のフォームから受入確認用ノートを作成してください。</p>".to_owned()
+    } else {
+        format!("<p>{note_count} 件を表示しています。</p><ol>{note_items}</ol>")
+    };
+    let more_notes = if page.next_offset.is_some() {
+        "<p>101 件目以降はこの画面に表示しません。REST API のカーソルページングまたは検索を使用してください。</p>"
+    } else {
+        ""
+    };
     let csrf = escape_html(&acceptance_csrf(&headers)?);
     let notes_url = escape_html(&acceptance_url(&state, "/acceptance/notes"));
     let search_url = escape_html(&acceptance_url(&state, "/acceptance/search"));
@@ -1311,14 +1342,21 @@ async fn acceptance_home(
             r#"<section aria-labelledby="acceptance-guide">
 <h2 id="acceptance-guide">確認の進め方</h2>
 <ol>
+<li>閲覧できるノートの一覧と、各ノートを開けることを確認します。</li>
 <li>一意な検索語を入れたノートを作成します。</li>
 <li>作成後の画面で取得、更新、競合、削除を確認します。</li>
 <li>検索からノートを開けることと、削除後に見つからないことを確認します。</li>
 </ol>
 <p>この画面は手動受入専用です。一般利用者向けのノート編集画面ではありません。</p>
 </section>
+<section aria-labelledby="visible-notes">
+<h2 id="visible-notes">1. 閲覧できるノート</h2>
+<p>ログイン中の利用者が ACL により閲覧できるノートを、タイトル順で最大 100 件表示します。</p>
+{note_list}
+{more_notes}
+</section>
 <section aria-labelledby="create-note">
-<h2 id="create-note">1. ノートを作成する</h2>
+<h2 id="create-note">2. ノートを作成する</h2>
 <p><code>note-id</code>、<code>creator-id</code>、作成日時、更新日時の例示値は、作成時にサーバーが正式な値へ置き換えます。検索語は実行ごとに一意な値へ変更してください。</p>
 <form method="post" action="{notes_url}">
 <input type="hidden" name="csrf_token" value="{csrf}">
@@ -1331,7 +1369,7 @@ async fn acceptance_home(
 </form>
 </section>
 <section aria-labelledby="open-note">
-<h2 id="open-note">2. 既存ノートを開く</h2>
+<h2 id="open-note">3. ノート ID を指定して開く</h2>
 <p>作成後に表示されたノート ID、または検索結果のノート ID を指定します。</p>
 <form method="get" action="{notes_url}">
 <label for="note-id">ノート ID（UUIDv7）</label>
@@ -1340,7 +1378,7 @@ async fn acceptance_home(
 </form>
 </section>
 <section aria-labelledby="search-note">
-<h2 id="search-note">3. ノートを検索する</h2>
+<h2 id="search-note">4. ノートを検索する</h2>
 <p>作成時に本文へ入れた一意な検索語を指定します。最大 100 件を表示します。</p>
 <form method="get" action="{search_url}">
 <label for="search-query">検索語</label>
@@ -3080,7 +3118,7 @@ mod tests {
             database,
             marginalis_files::FileNoteStore::open(&directory).expect("sources"),
         ));
-        notes
+        let created_note_id = notes
             .create_source(
                 Actor {
                     user_id,
@@ -3125,6 +3163,11 @@ mod tests {
         assert!(body.contains("action=\"/marginalis/acceptance/notes\""));
         assert!(body.contains("action=\"/marginalis/acceptance/search\""));
         assert!(body.contains("確認の進め方"));
+        assert!(body.contains("1. 閲覧できるノート"));
+        assert!(body.contains("受入確認ノート"));
+        assert!(body.contains(&format!(
+            "href=\"/marginalis/acceptance/notes/{created_note_id}\""
+        )));
         assert!(body.contains("[source,rust]"));
         assert!(body.contains("name=\"csrf_token\" value=\"csrf\""));
         assert!(!body.contains("<script"));
