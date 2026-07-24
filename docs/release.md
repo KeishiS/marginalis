@@ -1,6 +1,6 @@
 # リリース手順
 
-`v0.1.0`（2026-07-23）から `/api/v1` の OpenAPI 契約を保証しています。
+`v0.1.0`（2026-07-23）から `/api/v1` の OpenAPI 仕様について互換性を保証しています。
 データフォーマット v1 は `v0.2.0` で AdocWeave v0.6.1 前提に破壊的に再定義します。
 以後のリリースはこの手順に従います。過去のリリース内容は
 [CHANGELOG](../CHANGELOG.md)を参照してください。
@@ -25,7 +25,7 @@ nix develop --command cargo make release-gate
 ```
 
 このコマンドは、Rust のフォーマット、Clippy、ワークスペース全体のテスト、依存関係の検査、
-OpenAPI 契約、GitHub Actions の構文、Nix flake、NixOS VM テスト、Linux パッケージビルドを
+OpenAPI 仕様、GitHub Actions の構文、Nix flake、NixOS VM テスト、Linux パッケージビルドを
 実行します。タグの push 時と手動起動時には、GitHub Actions の `Release gate` ワークフローも
 同じ検証を実行します。
 
@@ -40,7 +40,7 @@ OpenAPI 契約、GitHub Actions の構文、Nix flake、NixOS VM テスト、Lin
 1. OIDC セッションでの REST CRUD、検索、`ETag` 競合、ACL 非漏洩、物理削除。
 2. 実 MCP クライアントの OAuth 認可、REST / MCP 間の可視性の一致、認可取消後のトークン失効。
 3. バックアップ世代の検証、非破壊の復元候補作成、投影再構築、監査タイマー、実行中バイナリの
-   OpenAPI 契約。
+   OpenAPI 仕様。
 
 ## バージョン、タグ、公開
 

@@ -39,13 +39,13 @@ use url::Url;
 /// 公開REST APIの現在のバージョン。
 pub const API_VERSION: &str = "v1";
 
-/// build artifactへ埋め込むREST APIの機械可読な唯一の公開契約。
+/// build artifactへ埋め込むREST APIの機械可読な唯一の公開仕様。
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
 
-/// `/api/v1`のJSON request/response contract。
+/// `/api/v1`のJSON request/response型。
 ///
 /// HTTP handlerはこのmoduleの型だけをJSON境界に使う。SQLite row、credential、token hashなどのadapter内部型を
-/// 公開contractへ渡してはならない。
+/// 公開API仕様へ渡してはならない。
 pub mod contract {
     use serde::{Deserialize, Serialize};
 
@@ -1382,7 +1382,7 @@ fn acceptance_page(state: &ApiState, summary: &str, content: &str) -> String {
 <ul>
 <li><a href="{home_url}">確認の最初へ</a></li>
 <li><a href="{session_url}">現在のセッション</a></li>
-<li><a href="{openapi_url}">OpenAPI 契約</a></li>
+<li><a href="{openapi_url}">OpenAPI 仕様</a></li>
 </ul>
 </nav>
 </header>
@@ -2342,7 +2342,7 @@ fn pending_user_response(user: OidcUser) -> PendingOidcUserResponse {
     }
 }
 
-/// 永続化層のUnix millisecondsを、公開契約だけで使うRFC 3339文字列へ変換する。
+/// 永続化層のUnix millisecondsを、公開仕様だけで使うRFC 3339文字列へ変換する。
 fn rfc3339_timestamp(unix_millis: i64) -> String {
     OffsetDateTime::from_unix_timestamp_nanos(i128::from(unix_millis) * 1_000_000)
         .expect("domain timestamp is within OffsetDateTime range")

@@ -39,9 +39,9 @@ REST API        MCP             保守コマンド
 | `marginalis-sqlite` | sqlx マイグレーション、リポジトリ実装、操作ジャーナル、検索・グラフ投影 |
 | `marginalis-files` | データフォーマット v1 のマーカー、パス規則、原子的置換、リビジョンハッシュ、復旧補助 |
 | `marginalis-auth-oidc` | OIDC Discovery、コード交換、ID トークン検証。セッション発行はアプリケーション層のポートを通す |
-| `marginalis-mcp` | MCP ツールの入出力契約と、アプリケーション層への接続 |
+| `marginalis-mcp` | MCP ツールの入出力仕様と、アプリケーション層への接続 |
 | `marginalis-server` | 設定型と `Clock`・`Random`、各アダプターをアプリケーション層のポートへ接続するサーバーアダプター。HTTP 固有でない業務判断を持たない |
-| `marginalis-web` | REST、認証、OAuth、受入確認画面の HTTP ルーターと OpenAPI 契約 |
+| `marginalis-web` | REST、認証、OAuth、受入確認画面の HTTP ルーターと OpenAPI 仕様 |
 | `marginalis-service` | 実行バイナリ。設定の読込、依存関係の組立、tracing の初期化、HTTP の待受と保守コマンドを一箇所で行う |
 | `marginalis-integration-tests` | 実アダプターを組み合わせた認証、REST、MCP の結合テスト |
 
@@ -61,7 +61,7 @@ REST API        MCP             保守コマンド
   参照しない。
 - REST の JSON 境界は `marginalis-web::contract` に閉じる。OpenAPI 3.1 ドキュメントを
   `/api/v1/openapi.json` とリリース成果物に同一内容で公開する。Cookie セッションと CSRF
-  ヘッダーの security scheme は契約に含めるが、Cookie・トークンの内部表現とアダプター内部型は
+  ヘッダーの security scheme は仕様に含めるが、Cookie・トークンの内部表現とアダプター内部型は
   含めない。
 - `root` ログインと `root` 管理エンドポイントは `administration_router` に隔離する。現在は通常の
   ルーターへ合流させるが、専用管理オリジンや mTLS はこのルーターだけを別リスナーへ載せ替えて

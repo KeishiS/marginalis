@@ -1,4 +1,4 @@
-# 016: 製品契約と要件定義の整合
+# 016: 製品仕様と要件定義の整合
 
 状態: 完了。
 
@@ -11,7 +11,7 @@
 ## 実施範囲
 
 - 各要件へ`current release`、`next release`、`future`、`rejected`の状態を付ける。
-- current releaseのHTTP API、MCP、NixOS module、運用手順およびsecurity最低条件を一つの契約にする。
+- current release の HTTP API、MCP、NixOS module、運用手順および security 最低条件を一つの仕様にまとめる。
 - 各issueの状態を、実装済み・実環境確認待ち・設計待ち・後続に正規化する。
 - 仕様から削除した機能を失わないよう、future roadmapへ移す。
 
@@ -20,7 +20,7 @@
 - `docs/requirements.md`に、実装済み範囲を誤って将来機能として記述した箇所、および未実装機能を
   current releaseの必須として記述した箇所がない。
 - README、REST/MCP仕様、NixOS運用、issueの優先順位が同じrelease境界を示す。
-- API、データ形式および運用の破壊的変更を許容する期間と、freezeする契約を明記する。
+- API、データ形式および運用の破壊的変更を許容する期間と、固定する仕様を明記する。
 
 ## 決定事項
 

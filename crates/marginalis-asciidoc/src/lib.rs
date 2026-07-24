@@ -40,7 +40,7 @@ pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
 /// 本アプリが受理するAdocWeaveの完全一致パッケージ版。
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.6.1";
 
-/// 固定した契約と実行時の契約が異なる場合に返すエラー。
+/// 固定した仕様と実行時の仕様が異なる場合に返すエラー。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ContractMismatch {
     pub expected: &'static str,

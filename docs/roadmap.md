@@ -2,7 +2,7 @@
 
 ## 現在地
 
-`v0.1.0` をリリースし、OpenAPI 契約の互換性保証を開始しました
+`v0.1.0` をリリースし、OpenAPI 仕様の互換性保証を開始しました
 （2026-07-23、段階 0 完了）。OIDC 認証付きの REST API、OAuth 保護 MCP、NixOS モジュール、
 手動受入手順、リリース検証が揃っています。今後は機能を広げる前に、実運用の主要経路を
 継続的に検証できる基盤を整えます。
@@ -24,8 +24,8 @@
 | 1（次） | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザー・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
 | 3 | [032](../issues/032-mcp-authoring-profile-and-diagnostics.md) | MCP クライアント向けのプロファイル公開と位置付き検証診断を追加する | MCP / REST が後方互換な診断を返し、クライアントが推測なしで入力を修正できる |
 | 4 | [033](../issues/033-repository-documentation-asciidoc-migration.md) | リポジトリ文書を AsciiDoc へ移行し、文書検証を CI へ組み込む | README、仕様、運用手順、Issue の形式・参照・閲覧方針が確定する。段階 3 以降と並行できる |
-| 5 | [027](../issues/027-search-reference-and-rendering-projections.md) | RenderPolicy、参照表示、公開フィルターを完成させる | 閲覧用 HTML と参照表示の可視性・安全性契約がフィクスチャで固定される |
-| 6 | [026](../issues/026-oidc-login-binding-and-runtime-limits.md)、[021](../issues/021-test-architecture-and-release-gates.md) | リソース上限の導入、未認証経路の書き込み増幅対策、肥大化したクレートの分割など、Web UI 前の地固めを行う | 明示的な上限が契約として文書化され、`marginalis-web` / `marginalis-sqlite` がモジュール分割されている |
+| 5 | [027](../issues/027-search-reference-and-rendering-projections.md) | RenderPolicy、参照表示、公開フィルターを完成させる | 閲覧用 HTML と参照表示の可視性・安全性の仕様がフィクスチャで固定される |
+| 6 | [026](../issues/026-oidc-login-binding-and-runtime-limits.md)、[021](../issues/021-test-architecture-and-release-gates.md) | リソース上限の導入、未認証経路の書き込み増幅対策、肥大化したクレートの分割など、Web UI 前の地固めを行う | 明示的な上限が仕様として文書化され、`marginalis-web` / `marginalis-sqlite` がモジュール分割されている |
 | 7 | [013](../issues/013-root-administration-and-approval.md) | ユーザー再有効化、招待、SMTP など管理機能を拡充する | 管理経路の脅威モデルと運用手順が実際の配備に適合する |
 | 8 | [006](../issues/006-browser-preview.md)、[034](../issues/034-graph-visualization-web-ui.md) | Web UI を段階的に導入する（閲覧専用 → 編集・プレビュー → グラフ可視化） | プロファイル・診断・RenderPolicy を再利用し、保存時検証と編集時表示が乖離しない |
 | 9 | [031](../issues/031-postgresql-storage-backend-feasibility.md) | PostgreSQL を任意バックエンドとして採用する価値と移行可能性を判断する | SQLite 継続・PostgreSQL 実装・見送りのいずれかを根拠とともに決定する |
@@ -63,5 +63,5 @@
 - **検索品質**: 段階 1 の E2E で測定した後、Issue 012 の曖昧検索の要否を判断する。
 
 各段階で `cargo make release-gate` と、該当する実環境受入を実施します。公開 API または
-データフォーマットを変更する段階では、次のリリース候補を作る前に OpenAPI、MCP 契約、NixOS
+データフォーマットを変更する段階では、次のリリース候補を作る前に OpenAPI、MCP 仕様、NixOS
 運用手順、受入確認を更新します。

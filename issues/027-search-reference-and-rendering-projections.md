@@ -26,7 +26,7 @@ FTSはtitleを本文より高く評価する明示的な列重みを用いる。
 3. 完了: `xref:note:` UUIDをcanonical lowercase UUIDv7へ正規化して、reference投影とresolverで一貫して使う。
 4. 後続: 作成者・参照方向filterを公開REST APIとMCP toolへ追加する。
 5. Web UI着手時に、閲覧専用のMarginalis `RenderPolicy`を定義する。外部リンクの固定属性、外部ファイルの禁止、
-   LaTeX限定、ACL拒否時の完全非表示およびanchor欠落時のノート先頭fallbackをHTML contract testで固定する。
+   LaTeX 限定、ACL 拒否時の完全非表示および anchor 欠落時のノート先頭 fallback を HTML 出力試験で固定する。
 
 ## 完了条件
 

@@ -19,7 +19,7 @@
 
 - application層がAxum、sqlx、filesystem、openidconnectへ依存しない。
 - migration、空DB、復旧、ファイルと投影の一貫性をintegration testで検証する。
-- NixOS moduleが`ServerConfig`とsecret contractだけを介して起動する。
+- NixOS module が `ServerConfig` と秘密情報の受け渡し仕様だけを介して起動する。
 - 旧`NotebookStore`中心の実装を削除する。
 
 ## 検証

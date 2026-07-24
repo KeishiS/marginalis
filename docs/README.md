@@ -8,7 +8,7 @@
 
 - [REST API リファレンス](rest-api.md): Cookie 認証、CSRF、ノート、検索、アクセス制御、
   `root` 管理
-- [OpenAPI 3.1](openapi.json): `/api/v1` の機械可読な契約
+- [OpenAPI 3.1](openapi.json): `/api/v1` の機械可読な仕様
 - [MCP と OAuth](mcp.md): MCP ツール、OAuth 認可、クライアント登録、認可の取消
 
 ## 運用者向け
@@ -27,7 +27,7 @@
 
 ## 文書の読み分け
 
-現行の動作について文書間に差がある場合は、機械可読な REST 契約には `openapi.json`、製品要件
+現行の動作について文書間に差がある場合は、機械可読な REST 仕様には `openapi.json`、製品要件
 には `requirements.md`、具体的な実装判断には `architecture.md` を優先します。ヒアリング記録と
 完了済み Issue は判断当時の履歴であり、現行仕様ではありません。
 

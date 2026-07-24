@@ -55,7 +55,7 @@ GitHub Actions設定、依存先の文書は対象外とする。拡張子だけ
 - README、CHANGELOG、`docs/`、`issues/`がGitHubとlocal cloneで閲覧・追跡できる。
 - AdocWeave v0.6.1による解析・変換と内部リンク検証がCIとリリース前の必須検証で成功する。
 - 文書形式、ソースブロック、リンク、アンカー、画像、外部URLの執筆規則が明文化される。
-- OpenAPIなど対象外の機械可読契約と、既存のNixOS・REST・MCP手順への参照が失われない。
+- OpenAPI など対象外の機械可読仕様と、既存の NixOS・REST・MCP 手順への参照が失われない。
 
 ## 依存関係
 
