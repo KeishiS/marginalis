@@ -259,6 +259,7 @@ impl OidcAuthentication {
     pub async fn discover(configuration: &OidcConfiguration) -> Result<Self, OidcDiscoveryError> {
         let http_client = reqwest::ClientBuilder::new()
             .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|_| OidcDiscoveryError::HttpClient)?;
         let metadata =

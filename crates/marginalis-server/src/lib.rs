@@ -16,7 +16,7 @@ use marginalis_application::{
     V3MembershipResolver, V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
     WebSession, WebSessionService, WebSessionStore, WebSessionUseCases,
 };
-use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
+use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError, OidcConfiguration};
 use marginalis_domain::{
     Actor, CanonicalActor, CanonicalAuthenticatedSession, CanonicalNote, CanonicalNoteDraft,
     CanonicalWebSession, EntityId, McpAuthorizationGrant, NoteId, NotePage, NotePermission,
@@ -90,12 +90,33 @@ pub struct ServerV3WebSessionUseCases {
 #[derive(Clone)]
 pub struct ServerV3OidcAuthenticationUseCases {
     database: V3SqliteDatabase,
-    oidc: Option<OidcAuthentication>,
+    configuration: OidcConfiguration,
+    oidc: Arc<tokio::sync::RwLock<Option<OidcAuthentication>>>,
 }
 
 impl ServerV3OidcAuthenticationUseCases {
-    pub fn new(database: V3SqliteDatabase, oidc: Option<OidcAuthentication>) -> Self {
-        Self { database, oidc }
+    pub fn new(
+        database: V3SqliteDatabase,
+        configuration: OidcConfiguration,
+        oidc: Option<OidcAuthentication>,
+    ) -> Self {
+        Self {
+            database,
+            configuration,
+            oidc: Arc::new(tokio::sync::RwLock::new(oidc)),
+        }
+    }
+
+    /// Discovery失敗後も次のログイン要求で再試行する。service再起動をIdP復旧の前提にしない。
+    async fn oidc(&self) -> Result<OidcAuthentication, AuthenticationUseCaseError> {
+        if let Some(oidc) = self.oidc.read().await.clone() {
+            return Ok(oidc);
+        }
+        let discovered = OidcAuthentication::discover(&self.configuration)
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        let mut oidc = self.oidc.write().await;
+        Ok(oidc.get_or_insert(discovered).clone())
     }
 }
 
@@ -1628,9 +1649,8 @@ impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
 #[async_trait]
 impl V3OidcAuthenticationUseCases for ServerV3OidcAuthenticationUseCases {
     async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError> {
-        self.oidc
-            .as_ref()
-            .ok_or(AuthenticationUseCaseError::Unavailable)?
+        self.oidc()
+            .await?
             .begin_login(
                 &self.database.oidc_login_attempt_store(),
                 &SystemRandom,
@@ -1646,9 +1666,8 @@ impl V3OidcAuthenticationUseCases for ServerV3OidcAuthenticationUseCases {
         state: String,
     ) -> Result<CanonicalActor, AuthenticationUseCaseError> {
         let identity = self
-            .oidc
-            .as_ref()
-            .ok_or(AuthenticationUseCaseError::Unavailable)?
+            .oidc()
+            .await?
             .complete_v3_login(
                 &self.database.oidc_login_attempt_store(),
                 &SystemClock,
@@ -2303,7 +2322,14 @@ mod tests {
         let database = V3SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
-        let authentication = ServerV3OidcAuthenticationUseCases::new(database, None);
+        let configuration = OidcConfiguration::new(
+            "https://127.0.0.1:1".into(),
+            "marginalis".into(),
+            "test-secret".into(),
+            "https://marginalis.example.test",
+        )
+        .expect("configuration");
+        let authentication = ServerV3OidcAuthenticationUseCases::new(database, configuration, None);
         assert_eq!(
             authentication.begin_login().await,
             Err(AuthenticationUseCaseError::Unavailable)

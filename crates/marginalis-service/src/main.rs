@@ -215,6 +215,7 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     let cookie_path = cookie_path(&configuration.http.base_url);
     let oidc = std::sync::Arc::new(ServerV3OidcAuthenticationUseCases::new(
         database.clone(),
+        oidc_configuration,
         oidc,
     ));
     let membership = std::sync::Arc::new(KanidmMembershipResolver::new(
