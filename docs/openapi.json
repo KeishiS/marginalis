@@ -3,7 +3,7 @@
   "info": {
     "title": "Marginalis REST API",
     "version": "v1",
-    "description": "The current `/api/v1` specification. Breaking changes are permitted until the compatibility policy is frozen."
+    "description": "Historical v0.2 `/api/v1` specification. It is not served or supported by v0.3; use docs/openapi-v3.json for the current contract."
   },
   "servers": [{ "url": "/" }],
   "x-marginalis-cookie-state-change-headers": {
