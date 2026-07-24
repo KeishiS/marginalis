@@ -10,8 +10,9 @@
 データフォーマットの識別子は v1 を維持していますが、AdocWeave v0.6.1 前提の内容へ
 破壊的に再定義しました。以前の v1 は互換対象ではありません。
 `v0.2.0-rc.1` は、実環境受入、最終自動検証、タグ公開を完了しました
-（2026-07-24）。現在は、`v0.2.0`正式版の公開準備と、実運用の主要経路を継続的に
-検証するE2E基盤の整備を並行して進めます。
+（2026-07-24）。`v0.2.0`正式版もリリースゲートと差分の実環境受入を完了し、現在は
+Pull Request、`main`上の検証、タグ公開を残しています。実運用の主要経路を継続的に
+検証するE2E基盤は`v0.2.1`で整備します。
 
 `v0.2.0`の正式リリース後は`-rc.N`付きの版を公開せず、ロードマップ上の成果を
 `v0.x.y`形式の通常版として順次公開します。各公開前には、リリースゲートと変更範囲に
@@ -28,7 +29,7 @@
 | 2（完了） | [029](../issues/029-adocweave-v0.6.1-migration.md) | AdocWeave v0.6.1 へ移行し、正本の解釈・投影・HTML・WASM の互換性基準を更新する | 完了（2026-07-24。旧 v1 は移行せず、`dataDir` を削除して初期化する） |
 | 公開準備（完了） | [035](../issues/035-v0.2.0-rc.1-release-acceptance.md) | 空の新 v1 環境で実環境受入を行い、`v0.2.0-rc.1` の公開可否を判断する | 完了（2026-07-24、`v0.2.0-rc.1` タグ） |
 | 正式公開（現在） | [036](../issues/036-v0.2.0-release-acceptance.md) | RCの受入結果と正式版の差分を検証し、`v0.2.0`を公開する | release gate、差分受入、PR、タグの検証が完了する |
-| 1（実装中） | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザー・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
+| 1（v0.2.1） | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザー・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
 | 3 | [032](../issues/032-mcp-authoring-profile-and-diagnostics.md) | MCP クライアント向けのプロファイル公開と位置付き検証診断を追加する | MCP / REST が後方互換な診断を返し、クライアントが推測なしで入力を修正できる |
 | 4 | [033](../issues/033-repository-documentation-asciidoc-migration.md) | リポジトリ文書を AsciiDoc へ移行し、文書検証を CI へ組み込む | README、仕様、運用手順、Issue の形式・参照・閲覧方針が確定する。段階 3 以降と並行できる |
 | 5 | [027](../issues/027-search-reference-and-rendering-projections.md) | RenderPolicy、参照表示、公開フィルターを完成させる | 閲覧用 HTML と参照表示の可視性・安全性の仕様がフィクスチャで固定される |
