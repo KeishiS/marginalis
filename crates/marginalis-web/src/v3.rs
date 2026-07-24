@@ -241,6 +241,10 @@ async fn v3_security_headers(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
+    // v3のresponseにはsession、CSRF token、OAuth codeまたはノート本文が含まれ得る。公開metadataも
+    // 同じrouterを通るため、一律no-storeとして共有proxyの設定漏れを安全側に倒す。
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
     response
 }
 
@@ -1501,6 +1505,10 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(health.status(), StatusCode::OK);
+        assert_eq!(
+            health.headers().get(header::CACHE_CONTROL),
+            Some(&"no-store".parse().expect("header"))
+        );
         let notes = app()
             .oneshot(
                 Request::get("/api/v2/notes")
