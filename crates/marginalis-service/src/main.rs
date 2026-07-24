@@ -429,8 +429,9 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
             absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
         },
     ));
+    let notes = std::sync::Arc::new(ServerV3NoteUseCases::new(database.clone()));
     let state = marginalis_web::v3::V3ApiState::new(
-        std::sync::Arc::new(ServerV3NoteUseCases::new(database.clone())),
+        notes.clone(),
         sessions,
         oidc,
         cookie_path,
