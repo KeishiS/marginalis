@@ -1,29 +1,112 @@
 {
   "openapi": "3.1.0",
-  "info": { "title": "Marginalis API", "version": "v2" },
+  "info": {
+    "title": "Marginalis API",
+    "version": "v2",
+    "description": "SQLite canonical-note REST API. Browser requests use the OIDC session cookie; every state-changing request also requires a same-origin CSRF token in X-CSRF-Token."
+  },
   "paths": {
-    "/api/v2/health": { "get": { "responses": { "200": { "description": "ready" } } } },
-    "/api/v2/session": { "get": { "responses": { "200": { "description": "Kanidm subject" }, "401": { "description": "authentication required" } } } },
-    "/api/v2/notes": {
-      "get": { "responses": { "200": { "description": "visible notes" }, "401": { "description": "authentication required" } } },
-      "post": { "requestBody": { "required": true }, "responses": { "201": { "description": "created" }, "403": { "description": "CSRF rejected" } } }
+    "/api/v2/health": {
+      "get": {
+        "summary": "Liveness check",
+        "responses": { "200": { "description": "service is running", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } } }
+      }
     },
-    "/api/v2/notes/{note_id}": {
-      "get": { "responses": { "200": { "description": "note" }, "404": { "description": "not visible" } } },
-      "put": { "responses": { "200": { "description": "updated" }, "409": { "description": "revision conflict" } } },
-      "delete": { "responses": { "200": { "description": "soft deleted" }, "409": { "description": "revision conflict" } } }
-    },
-    "/api/v2/notes/{note_id}/source": { "get": { "responses": { "200": { "description": "AsciiDoc export" } } } },
-    "/api/v2/notes/{note_id}/restore": { "post": { "responses": { "200": { "description": "restored" }, "404": { "description": "not restorable" } } } },
-    "/api/v2/mcp-authorizations/{client_id}": {
-      "delete": {
-        "description": "Revoke the authenticated user's OAuth authorization and all of its tokens for one MCP client.",
+    "/api/v2/session": {
+      "get": {
+        "summary": "Read the current Kanidm identity",
         "responses": {
-          "204": { "description": "revoked" },
-          "401": { "description": "authentication required" },
-          "403": { "description": "CSRF rejected" }
+          "200": { "description": "authenticated session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "503": { "$ref": "#/components/responses/AuthenticationUnavailable" }
         }
       }
+    },
+    "/api/v2/notes": {
+      "get": {
+        "summary": "List visible notes",
+        "responses": {
+          "200": { "description": "notes visible to the current actor", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Note" } } } } },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" }
+        }
+      },
+      "post": {
+        "summary": "Create a note",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteDraft" } } } },
+        "responses": {
+          "201": { "description": "created note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/CsrfRejected" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/api/v2/notes/{note_id}": {
+      "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
+      "get": {
+        "summary": "Read one visible note",
+        "responses": { "200": { "description": "note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "put": {
+        "summary": "Update a note using an optimistic revision",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteUpdate" } } } },
+        "responses": { "200": { "description": "updated note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "422": { "$ref": "#/components/responses/ValidationFailed" } }
+      },
+      "delete": {
+        "summary": "Soft-delete a note",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Revision" } } } },
+        "responses": { "200": { "description": "soft-deleted note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/api/v2/notes/{note_id}/source": {
+      "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
+      "get": {
+        "summary": "Export one note as AsciiDoc",
+        "responses": { "200": { "description": "canonical AsciiDoc export", "content": { "text/asciidoc": { "schema": { "type": "string" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/v2/notes/{note_id}/restore": {
+      "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
+      "post": {
+        "summary": "Restore a note within the retention period",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Revision" } } } },
+        "responses": { "200": { "description": "restored note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/api/v2/mcp-authorizations/{client_id}": {
+      "parameters": [{ "name": "client_id", "in": "path", "required": true, "schema": { "type": "string", "minLength": 1 } }],
+      "delete": {
+        "summary": "Revoke one MCP OAuth authorization and its tokens",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "responses": { "204": { "description": "revoked" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "NoteId": { "name": "note_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "CsrfToken": { "name": "X-CSRF-Token", "in": "header", "required": true, "schema": { "type": "string", "minLength": 1 } }
+    },
+    "responses": {
+      "AuthenticationRequired": { "description": "OIDC session is required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "AuthenticationUnavailable": { "description": "authentication backend is temporarily unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "CsrfRejected": { "description": "same-origin or CSRF validation failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "Conflict": { "description": "revision conflicts or the operation violates an invariant", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "NotFound": { "description": "note or authorization is not visible", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "ValidationFailed": { "description": "note input is invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
+    },
+    "schemas": {
+      "Health": { "type": "object", "required": ["status", "api_version"], "properties": { "status": { "const": "ok" }, "api_version": { "const": "v2" } } },
+      "Session": { "type": "object", "required": ["issuer", "subject", "is_administrator"], "properties": { "issuer": { "type": "string", "format": "uri" }, "subject": { "type": "string" }, "is_administrator": { "type": "boolean" } } },
+      "NoteDraft": { "type": "object", "required": ["title", "body", "tags"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "body": { "type": "string" }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 64 } } } },
+      "NoteUpdate": { "allOf": [{ "$ref": "#/components/schemas/NoteDraft" }, { "$ref": "#/components/schemas/Revision" }] },
+      "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } } },
+      "Note": { "type": "object", "required": ["note_id", "title", "body", "tags", "created_at_ms", "updated_at_ms", "revision"], "properties": { "note_id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "body": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "created_at_ms": { "type": "integer" }, "updated_at_ms": { "type": "integer" }, "revision": { "type": "integer", "minimum": 1 } } },
+      "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } }
     }
   }
 }
