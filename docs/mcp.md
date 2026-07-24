@@ -1,5 +1,9 @@
 # MCP と OAuth
 
+> **v0.3.0:** v0.2 の root 事前登録・Client ID Metadata Document・二段階物理削除は廃止しました。
+> v0.3 の Dynamic Client Registration、ツール、認可取消は
+> [v0.3.0 運用契約](v0.3.0-operations.md) を正本とします。
+
 ## 概要
 
 Marginalis は、研究ノートの検索・取得・作成・更新・参照一覧・確認付き物理削除のために、
