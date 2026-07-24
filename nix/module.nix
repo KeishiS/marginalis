@@ -256,7 +256,10 @@ in
         ProtectHome = true;
         ProtectSystem = "strict";
         RestrictAddressFamilies = [ "AF_UNIX" ];
-        SystemCallFilter = [ "@system-service" "~@privileged" ];
+        SystemCallFilter = [
+          "@system-service"
+          "~@privileged"
+        ];
         ReadWritePaths = [ cfg.dataDir ];
       }
       // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {

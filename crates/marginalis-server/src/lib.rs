@@ -332,13 +332,19 @@ impl ServerV3McpOAuthService {
         let Some(grant) = self
             .database
             .rotate_mcp_refresh_token(
-                &refresh_token,
-                &client_id,
-                &resource_uri,
-                &access_token,
-                &next_refresh_token,
-                UnixMillis::new(now.get() + (Self::ACCESS_TOKEN_SECONDS * 1_000) as i64),
-                UnixMillis::new(now.get() + (Self::REFRESH_TOKEN_SECONDS * 1_000) as i64),
+                McpRefreshTokenRotation {
+                    refresh_token,
+                    client_id,
+                    resource_uri,
+                    new_access_token: access_token.clone(),
+                    new_refresh_token: next_refresh_token.clone(),
+                    access_expires_at: UnixMillis::new(
+                        now.get() + (Self::ACCESS_TOKEN_SECONDS * 1_000) as i64,
+                    ),
+                    refresh_expires_at: UnixMillis::new(
+                        now.get() + (Self::REFRESH_TOKEN_SECONDS * 1_000) as i64,
+                    ),
+                },
                 now,
             )
             .await
@@ -1518,6 +1524,15 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
             .restore_note(note_id, expected_revision, SystemClock.now())
             .await
             .map_err(map_v3_note_error)
+    }
+
+    fn export_note_source(&self, note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
+        marginalis_asciidoc::export_canonical_note(note).map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    fn render_note_html(&self, note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
+        marginalis_asciidoc::render_canonical_note_html(note)
+            .map_err(|_| NoteUseCaseError::Validation)
     }
 }
 

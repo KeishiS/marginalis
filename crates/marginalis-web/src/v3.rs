@@ -1015,7 +1015,7 @@ async fn export_note(
         .read_note(actor, parse_note_id(&note_id)?)
         .await
         .map_err(note_error)?;
-    let source = marginalis_asciidoc::export_canonical_note(&note).map_err(|_| {
+    let source = state.notes.export_note_source(&note).map_err(|_| {
         problem(
             StatusCode::SERVICE_UNAVAILABLE,
             "unavailable",
@@ -1062,7 +1062,7 @@ async fn view_note(
         .read_note(actor, parse_note_id(&note_id)?)
         .await
         .map_err(note_error)?;
-    let body = marginalis_asciidoc::render_canonical_note_html(&note).map_err(|_| {
+    let body = state.notes.render_note_html(&note).map_err(|_| {
         problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             "render_failed",
@@ -1155,14 +1155,13 @@ fn validate_mutation_origin(headers: &HeaderMap, state: &V3ApiState) -> V3Result
     if let Some(site) = headers
         .get("sec-fetch-site")
         .and_then(|value| value.to_str().ok())
+        && !matches!(site, "same-origin" | "none")
     {
-        if !matches!(site, "same-origin" | "none") {
-            return Err(problem(
-                StatusCode::FORBIDDEN,
-                "same_origin_required",
-                "same-origin request is required",
-            ));
-        }
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            "same_origin_required",
+            "same-origin request is required",
+        ));
     }
     Ok(())
 }
@@ -1287,6 +1286,14 @@ mod tests {
             _note_id: NoteId,
             _expected_revision: i64,
         ) -> Result<CanonicalNote, NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+
+        fn export_note_source(&self, _note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
+            Err(NoteUseCaseError::Unavailable)
+        }
+
+        fn render_note_html(&self, _note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
     }

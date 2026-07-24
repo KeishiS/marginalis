@@ -989,13 +989,7 @@ impl V3SqliteDatabase {
     /// refresh tokenを一度だけ消費し、同じKanidm主体に新しいtoken pairを発行する。
     pub async fn rotate_mcp_refresh_token(
         &self,
-        refresh_token: &str,
-        client_id: &str,
-        resource_uri: &str,
-        new_access_token: &str,
-        new_refresh_token: &str,
-        access_expires_at: UnixMillis,
-        refresh_expires_at: UnixMillis,
+        rotation: McpRefreshTokenRotation,
         now: UnixMillis,
     ) -> Result<Option<CanonicalMcpAuthorizationGrant>, V3NoteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
@@ -1006,9 +1000,9 @@ impl V3SqliteDatabase {
              RETURNING issuer, subject, is_administrator, scopes",
         )
         .bind(now.get())
-        .bind(hash_token(refresh_token))
-        .bind(client_id)
-        .bind(resource_uri)
+        .bind(hash_token(&rotation.refresh_token))
+        .bind(&rotation.client_id)
+        .bind(&rotation.resource_uri)
         .bind(now.get())
         .fetch_optional(&mut *transaction)
         .await
@@ -1022,9 +1016,9 @@ impl V3SqliteDatabase {
                 subject: row.try_get("subject").map_err(v3_database_error)?,
                 is_administrator: row.try_get("is_administrator").map_err(v3_database_error)?,
             },
-            client_id: client_id.into(),
+            client_id: rotation.client_id,
             redirect_uri: String::new(),
-            resource_uri: resource_uri.into(),
+            resource_uri: rotation.resource_uri,
             scopes: row
                 .try_get::<String, _>("scopes")
                 .map_err(v3_database_error)?
@@ -1034,9 +1028,9 @@ impl V3SqliteDatabase {
         };
         let scopes = grant.scopes.join(" ");
         sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, membership_checked_at_ms, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(new_access_token)).bind(client_id).bind(resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(now.get()).bind(&scopes).bind(access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
+            .bind(hash_token(&rotation.new_access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(now.get()).bind(&scopes).bind(rotation.access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
         sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(new_refresh_token)).bind(client_id).bind(resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
+            .bind(hash_token(&rotation.new_refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(rotation.refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
         transaction.commit().await.map_err(v3_database_error)?;
         Ok(Some(grant))
     }
@@ -3743,13 +3737,15 @@ mod tests {
         assert!(
             database
                 .rotate_mcp_refresh_token(
-                    "refresh",
-                    &grant.client_id,
-                    &grant.resource_uri,
-                    "next-access",
-                    "next-refresh",
-                    UnixMillis::new(200),
-                    UnixMillis::new(2_000),
+                    McpRefreshTokenRotation {
+                        refresh_token: "refresh".into(),
+                        client_id: grant.client_id.clone(),
+                        resource_uri: grant.resource_uri.clone(),
+                        new_access_token: "next-access".into(),
+                        new_refresh_token: "next-refresh".into(),
+                        access_expires_at: UnixMillis::new(200),
+                        refresh_expires_at: UnixMillis::new(2_000),
+                    },
                     UnixMillis::new(3)
                 )
                 .await
@@ -3759,13 +3755,15 @@ mod tests {
         assert!(
             database
                 .rotate_mcp_refresh_token(
-                    "refresh",
-                    &grant.client_id,
-                    &grant.resource_uri,
-                    "again-access",
-                    "again-refresh",
-                    UnixMillis::new(200),
-                    UnixMillis::new(2_000),
+                    McpRefreshTokenRotation {
+                        refresh_token: "refresh".into(),
+                        client_id: grant.client_id.clone(),
+                        resource_uri: grant.resource_uri.clone(),
+                        new_access_token: "again-access".into(),
+                        new_refresh_token: "again-refresh".into(),
+                        access_expires_at: UnixMillis::new(200),
+                        refresh_expires_at: UnixMillis::new(2_000),
+                    },
                     UnixMillis::new(4)
                 )
                 .await
