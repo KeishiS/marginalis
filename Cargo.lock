@@ -1278,6 +1278,7 @@ version = "0.2.0"
 dependencies = [
  "argon2",
  "marginalis-application",
+ "marginalis-asciidoc",
  "marginalis-domain",
  "rand 0.8.7",
  "serde_json",

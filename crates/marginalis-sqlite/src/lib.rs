@@ -1524,15 +1524,46 @@ impl V3SqliteDatabase {
             if !note_ids.insert(bundle.note.note_id) {
                 return Err(V3NoteStoreError::CorruptNote);
             }
+            if EntityId::from_str(&bundle.note.note_id.to_string()).is_err()
+                || bundle.note.creator_issuer.trim().is_empty()
+                || bundle.note.creator_subject.trim().is_empty()
+                || bundle.note.created_at > bundle.note.updated_at
+                || bundle
+                    .note
+                    .deleted_at
+                    .is_some_and(|deleted_at| deleted_at < bundle.note.created_at)
+                || bundle.note.revision <= 0
+            {
+                return Err(V3NoteStoreError::CorruptNote);
+            }
+            let normalized =
+                marginalis_asciidoc::validate_canonical_note_draft(CanonicalNoteDraft {
+                    title: bundle.note.title.clone(),
+                    body: bundle.note.body.clone(),
+                    tags: bundle.note.tags.clone(),
+                })
+                .map_err(|_| V3NoteStoreError::CorruptNote)?;
+            if normalized.title != bundle.note.title
+                || normalized.body != bundle.note.body
+                || normalized.tags != bundle.note.tags
+            {
+                return Err(V3NoteStoreError::CorruptNote);
+            }
+            let mut acl_subjects = HashSet::new();
+            for entry in &bundle.acl {
+                if entry.issuer.trim().is_empty()
+                    || entry.subject.trim().is_empty()
+                    || !acl_subjects.insert((&entry.issuer, &entry.subject))
+                {
+                    return Err(V3NoteStoreError::CorruptNote);
+                }
+            }
             if !bundle
                 .acl
                 .iter()
                 .any(|entry| entry.permission == NotePermission::Admin)
             {
                 return Err(V3NoteStoreError::ArchiveMissingAdmin);
-            }
-            if bundle.note.revision <= 0 {
-                return Err(V3NoteStoreError::CorruptNote);
             }
         }
 
@@ -3523,6 +3554,25 @@ mod tests {
         assert_eq!(
             imported_database.import_archive(&archive).await,
             Err(V3NoteStoreError::ArchiveTargetNotEmpty)
+        );
+        let mut invalid_archive = archive.clone();
+        invalid_archive.notes[0].note.tags = vec![" duplicate ".into(), "duplicate".into()];
+        let rejected_database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("empty rejected target");
+        assert_eq!(
+            rejected_database.import_archive(&invalid_archive).await,
+            Err(V3NoteStoreError::CorruptNote)
+        );
+        assert_eq!(
+            rejected_database
+                .export_archive()
+                .await
+                .expect("empty archive"),
+            CanonicalArchive {
+                format: CANONICAL_ARCHIVE_FORMAT.into(),
+                notes: Vec::new(),
+            }
         );
         database
             .soft_delete_note(note_id, 4, UnixMillis::new(400))
