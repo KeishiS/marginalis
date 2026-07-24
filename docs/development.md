@@ -48,7 +48,7 @@ Pull Requestからマージします。
    ```
 
 6. Pull Request作成後にrebase方式のauto-mergeを設定します。`main`のrulesetでは
-   GitHub Actionsの`verify`が必須であるため、このチェックと必要なレビューが完了するまで
+   GitHub Actionsの`verify`と`nixos-e2e`が必須であるため、このチェックと必要なレビューが完了するまで
    実際のマージは行われません。
 
    ```sh
