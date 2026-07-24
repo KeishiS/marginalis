@@ -20,8 +20,8 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-adocweave = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "f4ef9f995b909833b43e7e33d686c4de5319165b", package = "adocweave" }
-adocweave-wasm = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "f4ef9f995b909833b43e7e33d686c4de5319165b", package = "adocweave-wasm" }
+adocweave = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "48b8c284402763729a560366f7cbac9fc218edc8", package = "adocweave" }
+adocweave-wasm = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "48b8c284402763729a560366f7cbac9fc218edc8", package = "adocweave-wasm" }
 argon2 = "0.5.3"
 unicode-normalization = "0.1.25"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }

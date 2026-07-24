@@ -2,9 +2,13 @@
   description = "Development environment for Marginalis";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.rust-overlay = {
+    url = "github:oxalica/rust-overlay";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
 
   outputs =
-    { self, nixpkgs, ... }:
+    { self, nixpkgs, rust-overlay, ... }:
     let
       systems = [
         "aarch64-darwin"
@@ -13,16 +17,38 @@
         "x86_64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
-      pkgsFor = system: import nixpkgs { inherit system; };
+      pkgsFor = system: import nixpkgs {
+        inherit system;
+        overlays = [ rust-overlay.overlays.default ];
+      };
+      # AdocWeave v0.5.0 が要求する Rust 1.97.1 を確定的にピンする。
+      rustToolchainFor =
+        pkgs:
+        pkgs.rust-bin.stable."1.97.1".default.override {
+          extensions = [
+            "rust-src"
+            "rust-analyzer"
+          ];
+        };
+      rustPlatformFor =
+        pkgs:
+        let
+          toolchain = rustToolchainFor pkgs;
+        in
+        pkgs.makeRustPlatform {
+          cargo = toolchain;
+          rustc = toolchain;
+        };
     in
     {
       packages = forAllSystems (
         system:
         let
           pkgs = pkgsFor system;
+          rustPlatform = rustPlatformFor pkgs;
         in
         {
-          default = pkgs.rustPlatform.buildRustPackage {
+          default = rustPlatform.buildRustPackage {
             pname = "marginalis";
             version = "0.1.1";
             src = ./.;
@@ -197,28 +223,25 @@
         system:
         let
           pkgs = pkgsFor system;
+          rustToolchain = rustToolchainFor pkgs;
         in
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
               curl
               actionlint
-              cargo
+              rustToolchain
               cargo-make
-              clippy
               git
               lld
               nix
               nixfmt
               ripgrep
-              rust-analyzer
-              rustc
-              rustfmt
               sqlite
               wasm-bindgen-cli
             ];
 
-            RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+            RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
           };
         }
       );
