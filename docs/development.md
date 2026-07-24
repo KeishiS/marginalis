@@ -11,6 +11,7 @@ gh auth status
 
 `gh auth status`で、操作対象のGitHubアカウントとホストを確認してください。認証情報や
 アクセストークンをコマンド、ログ、Issue、Pull Requestへ記録してはいけません。
+本書では、GitHub上の本リポジトリを指すGitリモート名を`upstream`とします。
 
 ## ブランチとPull Request
 
@@ -21,7 +22,7 @@ Pull Requestからマージします。
 
    ```sh
    git switch main
-   git pull --ff-only origin main
+   git pull --ff-only upstream main
    ```
 
 2. 目的が分かる名前の作業ブランチを作成します。
@@ -34,7 +35,7 @@ Pull Requestからマージします。
 4. 作業ブランチをpushし、`gh`でPull Requestを作成します。
 
    ```sh
-   git push -u origin codex/<purpose>
+   git push -u upstream codex/<purpose>
    gh pr create --base main --head codex/<purpose>
    ```
 
@@ -59,7 +60,7 @@ Pull Requestからマージします。
 
    ```sh
    git switch main
-   git pull --ff-only origin main
+   git pull --ff-only upstream main
    git branch -d codex/<purpose>
    ```
 
