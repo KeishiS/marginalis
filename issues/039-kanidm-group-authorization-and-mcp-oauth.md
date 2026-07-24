@@ -4,8 +4,10 @@
 
 実装中。[037](037-v0.3.0-architecture-rebaseline.md)の認証・認可決定を実装する。
 検証済み ID token からの構成可能な group claim の fail-closed な読取りと、所属更新・
-利用者除外による v0.3 Web session 失効を実装した。Kanidm への再確認、MCP token への反映、
-OAuth endpoint の置換は後続作業とする。
+利用者除外による v0.3 Web session 失効を実装した。MCP は Authorization Code + PKCE、refresh
+rotation、Dynamic Client Registration、認可取消、OAuth/Protected Resource metadata、Streamable HTTP
+のノート操作を提供する。Kanidm への再確認と MCP token への5分以内の所属反映、対象 client の
+実環境 E2E は後続作業とする。
 
 ## 目的
 

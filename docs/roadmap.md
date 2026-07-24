@@ -32,7 +32,7 @@
 | 1（現在） | [037](../issues/037-v0.3.0-architecture-rebaseline.md) | SQLite 正本、Kanidm group 認可、新 API に再設計する | データ正本、認可、MCP、削除、公開 API の新しい契約が後続 Issue で実装可能な形に固定される |
 | 2 | [038](../issues/038-sqlite-canonical-notes-and-asciidoc-bundles.md) | SQLite の単一正本と AsciiDoc import/export を実装する | ファイル正本・操作ジャーナルなしにノート、ACL、検索を一 transaction で更新できる |
 | 3 | [039](../issues/039-kanidm-group-authorization-and-mcp-oauth.md) | Kanidm 1.10 group 認可と MCP OAuth を実装する | `server-users` / `server-admins`、5 分以内の所属反映、対象 MCP client の認可が機能する |
-| 4 | [040](../issues/040-v0.3.0-nixos-and-e2e-foundation.md) | NixOS 配備と Kanidm 1.10 E2E を release gate に組み込む | TLS、subpath、OIDC、MCP、NixOS module を CI で再現できる |
+| 4（実装中） | [040](../issues/040-v0.3.0-nixos-and-e2e-foundation.md) | NixOS 配備と Kanidm 1.10 E2E を release gate に組み込む | TLS、subpath、OIDC、MCP、NixOS module を CI で再現できる |
 | 5 | [041](../issues/041-web-ui-and-soft-deletion.md) | 閲覧用 Web UI と 30 日間のソフトデリートを提供する | API、MCP、Web UI が同一の可視性を守り、期限後の物理削除を自動化できる |
 | 6 | [042](../issues/042-v0.3.0-release-acceptance.md) | 空の新環境で v0.3.0 を受入・公開する | Kanidm 1.10 E2E、MCP 認可、NixOS 配備が成功し、破壊的初期化手順が確定する |
 
