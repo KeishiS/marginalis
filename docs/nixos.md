@@ -84,6 +84,8 @@ AsciiDoc 正本と `FORMAT` マーカーは `dataDir`（既定値 `/var/lib/marg
   ください。
 - Cookie を伴う変更操作では `Origin` を検証し、`Sec-Fetch-Site` がある場合はその値も
   検証します。プロキシでこれらのブラウザー由来ヘッダーを削除・書き換えしないでください。
+  `/acceptance` のサーバー生成 HTML フォームは、セッション連動 CSRF トークンを hidden
+  field で送るため、このヘッダー要件の対象外です。
 - Marginalis は `X-Forwarded-For` や `Forwarded` などのクライアント IP ヘッダーを信頼せず、
   認可判断にも使いません。
 

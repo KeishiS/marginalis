@@ -1464,7 +1464,7 @@ async fn acceptance_create_note(
     Form(form): Form<AcceptanceCreateForm>,
 ) -> Result<Response, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
-    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    verify_csrf_token(&headers, &state, form.csrf_token).await?;
     let note_id = state
         .notes
         .create_source(actor, form.source)
@@ -1551,7 +1551,7 @@ async fn acceptance_update_note(
     Form(form): Form<AcceptanceUpdateForm>,
 ) -> Result<Response, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
-    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    verify_csrf_token(&headers, &state, form.csrf_token).await?;
     let note_id = acceptance_note_id(&note_id)?;
     state
         .notes
@@ -1577,7 +1577,7 @@ async fn acceptance_prepare_note_deletion(
     Form(form): Form<AcceptanceDeletePreparationForm>,
 ) -> Result<Html<String>, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
-    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    verify_csrf_token(&headers, &state, form.csrf_token).await?;
     let preparation = state
         .notes
         .prepare_delete_note(
@@ -1619,7 +1619,7 @@ async fn acceptance_confirm_note_deletion(
     Form(form): Form<AcceptanceDeleteConfirmationForm>,
 ) -> Result<Html<String>, ApiError> {
     let actor = authenticated_actor(&headers, &state).await?;
-    require_csrf_token(&headers, &state, form.csrf_token).await?;
+    verify_csrf_token(&headers, &state, form.csrf_token).await?;
     if form.confirmation_token.is_empty() {
         return Err(ApiError::new(
             ApiErrorCode::ValidationFailed,
@@ -2460,6 +2460,18 @@ async fn require_csrf_token(
     csrf_token: String,
 ) -> Result<(), ApiError> {
     require_same_origin_browser_request(headers, state)?;
+    verify_csrf_token(headers, state, csrf_token).await
+}
+
+/// サーバー生成HTML formのhidden fieldで受け取った、session連動CSRF tokenを検証する。
+///
+/// `/acceptance`のformはcustom headerを設定できないため、REST APIのOrigin検証とは分離する。
+/// tokenは同一sessionの受入画面を取得しなければ知り得ず、session CookieもSameSite=Laxである。
+async fn verify_csrf_token(
+    headers: &HeaderMap,
+    state: &ApiState,
+    csrf_token: String,
+) -> Result<(), ApiError> {
     let session_id = cookie_value(headers, "marginalis_session").ok_or(ApiError::new(
         ApiErrorCode::AuthenticationRequired,
         "authentication is required",
@@ -3176,22 +3188,29 @@ mod tests {
         assert!(body.contains("name=\"csrf_token\" value=\"csrf\""));
         assert!(!body.contains("<script"));
 
-        let form = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("csrf_token", "csrf")
-            .append_pair("source", ACCEPTANCE_SAMPLE_SOURCE)
-            .finish();
+        let request = |csrf_token: &str| {
+            let form = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("csrf_token", csrf_token)
+                .append_pair("source", ACCEPTANCE_SAMPLE_SOURCE)
+                .finish();
+            Request::builder()
+                .method("POST")
+                .uri("/acceptance/notes")
+                .header("cookie", "marginalis_session=session")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(form))
+                .expect("request")
+        };
         let response = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/acceptance/notes")
-                    .header("cookie", "marginalis_session=session")
-                    .header(header::ORIGIN, "https://marginalis.example.test")
-                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                    .body(Body::from(form))
-                    .expect("request"),
-            )
+            .oneshot(request("invalid"))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = app
+            .clone()
+            .oneshot(request("csrf"))
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
