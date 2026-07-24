@@ -872,6 +872,34 @@ impl V3SqliteDatabase {
         Ok(())
     }
 
+    pub async fn upsert_mcp_client(&self, client: &McpOAuthClient) -> Result<(), V3NoteStoreError> {
+        let redirect_uris = serde_json::to_string(&client.redirect_uris)
+            .map_err(|_| V3NoteStoreError::CorruptNote)?;
+        sqlx::query("INSERT INTO v3_mcp_clients (client_id, display_name, redirect_uris_json) VALUES (?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET display_name = excluded.display_name, redirect_uris_json = excluded.redirect_uris_json")
+            .bind(&client.client_id).bind(&client.display_name).bind(redirect_uris).execute(&self.pool).await.map_err(v3_database_error)?;
+        Ok(())
+    }
+
+    pub async fn mcp_client(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<McpOAuthClient>, V3NoteStoreError> {
+        let row = sqlx::query("SELECT client_id, display_name, redirect_uris_json FROM v3_mcp_clients WHERE client_id = ?")
+            .bind(client_id).fetch_optional(&self.pool).await.map_err(v3_database_error)?;
+        row.map(|row| {
+            Ok(McpOAuthClient {
+                client_id: row.try_get("client_id").map_err(v3_database_error)?,
+                display_name: row.try_get("display_name").map_err(v3_database_error)?,
+                redirect_uris: serde_json::from_str(
+                    &row.try_get::<String, _>("redirect_uris_json")
+                        .map_err(v3_database_error)?,
+                )
+                .map_err(|_| V3NoteStoreError::CorruptNote)?,
+            })
+        })
+        .transpose()
+    }
+
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
     pub async fn create_note(
         &self,
@@ -3364,6 +3392,19 @@ mod tests {
             .is_some();
             assert!(exists, "{table} must exist");
         }
+        let client = McpOAuthClient {
+            client_id: "https://client.example.test/mcp.json".into(),
+            display_name: "Test client".into(),
+            redirect_uris: vec!["https://client.example.test/callback".into()],
+        };
+        database.upsert_mcp_client(&client).await.expect("client");
+        assert_eq!(
+            database
+                .mcp_client(&client.client_id)
+                .await
+                .expect("lookup"),
+            Some(client)
+        );
     }
 
     #[tokio::test]
