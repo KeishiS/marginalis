@@ -9,6 +9,7 @@
 - [REST API リファレンス](rest-api.md): Cookie 認証、CSRF、ノート、検索、アクセス制御、
   `root` 管理
 - [OpenAPI 3.1](openapi.json): `/api/v1` の機械可読な仕様
+- [v0.3 OpenAPI 3.1](openapi-v3.json): `/api/v2` の機械可読な仕様（v0.3公開時に現行契約へ昇格）
 - [MCP と OAuth](mcp.md): MCP ツール、OAuth 認可、クライアント登録、認可の取消
 
 ## 運用者向け
