@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed after evaluating the v0.5.0 public facade.
+Adopted in AdocWeave v0.6.0.
 
 ## Problem
 
@@ -69,3 +69,12 @@ information.
 
 Application-specific attribute names, UUID or timestamp validation, database values, authorization,
 and a generic source rewriting engine.
+
+## Implementation result
+
+AdocWeave v0.6.0 exposes
+`Analysis::document_attribute_occurrences() -> &[DocumentAttributeOccurrence]` and re-exports
+`DocumentAttributeOccurrence` and `DocumentAttributeOperation` from the `semantic` facade.
+The public occurrence owns the name and raw value and preserves source order, duplicates, empty
+sets, both unset forms, and the full, name, and value ranges. WASM and the browser library expose
+the same facts as `attributeOccurrences`.
