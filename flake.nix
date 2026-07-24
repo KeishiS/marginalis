@@ -8,7 +8,12 @@
   };
 
   outputs =
-    { self, nixpkgs, rust-overlay, ... }:
+    {
+      self,
+      nixpkgs,
+      rust-overlay,
+      ...
+    }:
     let
       systems = [
         "aarch64-darwin"
@@ -17,11 +22,13 @@
         "x86_64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
-      pkgsFor = system: import nixpkgs {
-        inherit system;
-        overlays = [ rust-overlay.overlays.default ];
-      };
-      # AdocWeave v0.5.0 が要求する Rust 1.97.1 を確定的にピンする。
+      pkgsFor =
+        system:
+        import nixpkgs {
+          inherit system;
+          overlays = [ rust-overlay.overlays.default ];
+        };
+      # AdocWeave v0.6.1 が要求する Rust 1.97.1 を確定的にピンする。
       rustToolchainFor =
         pkgs:
         pkgs.rust-bin.stable."1.97.1".default.override {
@@ -46,6 +53,13 @@
         let
           pkgs = pkgsFor system;
           rustPlatform = rustPlatformFor pkgs;
+          # adocweave は通常ビルドでリポジトリ直下の conformance manifest を
+          # include_str! するため、crate 単位の Cargo vendoring ではこのファイルが
+          # 欠落する。依存と同じコミットのファイルを内容ハッシュ付きで補う。
+          adocweaveConformanceCases = pkgs.fetchurl {
+            url = "https://raw.githubusercontent.com/KeishiS/AdocWeave/2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda/fixtures/conformance/cases.json";
+            hash = "sha256-Mlx66KZinQKdFGkFngC4hJKXKZ7VYGnhEelI8u3lLFg=";
+          };
         in
         {
           default = rustPlatform.buildRustPackage {
@@ -55,7 +69,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.1.0-rc.3" = "sha256-DvIaIEdTr7e0I9pRrm8W0bwtCceLGxwHbouxhbwibDY=";
+                "adocweave-0.6.1" = "sha256-FEjYbbpKsk3k5u1NucINXho/Z0Pl6OOFFI8xhTJCIv4=";
               };
             };
             cargoBuildFlags = [
@@ -64,6 +78,9 @@
               "--bin"
               "marginalis-service"
             ];
+            preBuild = ''
+              install -Dm444 ${adocweaveConformanceCases} ../fixtures/conformance/cases.json
+            '';
             doCheck = false;
             installPhase = ''
               install -Dm755 target/${pkgs.stdenv.hostPlatform.rust.cargoShortTarget}/release/marginalis-service $out/bin/marginalis

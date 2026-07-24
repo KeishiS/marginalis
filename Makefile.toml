@@ -123,6 +123,48 @@ args = [
   "docs/openapi.json",
 ]
 
+[tasks.adocweave-version-check]
+description = "Verify the pinned AdocWeave package version and supply-chain identity"
+script_runner = "@shell"
+script = '''
+set -eu
+expected_version="0.6.1"
+expected_revision="2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda"
+expected_hash="sha256-FEjYbbpKsk3k5u1NucINXho/Z0Pl6OOFFI8xhTJCIv4="
+expected_fixture_hash="sha256-Mlx66KZinQKdFGkFngC4hJKXKZ7VYGnhEelI8u3lLFg="
+
+cargo metadata --locked --format-version 1 | jq -e \
+  --arg version "$expected_version" \
+  --arg revision "$expected_revision" '
+    [.packages[]
+      | select(.name == "adocweave" or .name == "adocweave-wasm")
+      | select(
+          .version == $version
+          and (.source | contains("rev=" + $revision))
+          and (.source | endswith("#" + $revision))
+        )]
+    | length == 2
+  ' >/dev/null
+
+grep -Fq "pub const ADOCWEAVE_SOURCE_REVISION: &str = \"$expected_revision\";" \
+  crates/marginalis-asciidoc/src/lib.rs
+grep -Fq "pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = \"$expected_version\";" \
+  crates/marginalis-asciidoc/src/lib.rs
+grep -Fq "\"adocweave-$expected_version\" = \"$expected_hash\";" flake.nix
+grep -Fq "AdocWeave/$expected_revision/fixtures/conformance/cases.json" flake.nix
+grep -Fq "hash = \"$expected_fixture_hash\";" flake.nix
+
+if grep -Eq 'WASM_API_VERSION|PINNED_CONTRACTS|CONTRACT_VERSION|contractVersion' \
+  crates/marginalis-asciidoc/src/lib.rs crates/marginalis-server/src/lib.rs; then
+  echo "legacy AdocWeave contract identity remains" >&2
+  exit 1
+fi
+if grep -Eq '^adocweave[.]workspace' crates/marginalis-server/Cargo.toml; then
+  echo "marginalis-server directly depends on AdocWeave" >&2
+  exit 1
+fi
+'''
+
 [tasks.verify]
 description = "Run formatting, static analysis, tests, and flake evaluation"
-dependencies = ["fmt-check", "check", "clippy", "test", "dependency-boundaries", "openapi-check", "flake-check"]
+dependencies = ["fmt-check", "check", "clippy", "test", "dependency-boundaries", "openapi-check", "adocweave-version-check", "flake-check"]

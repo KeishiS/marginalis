@@ -3,7 +3,6 @@
 use core::fmt;
 use std::{env, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
-use adocweave::attributes::AttributeOperation;
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
@@ -989,51 +988,12 @@ fn render_note_source(
 }
 
 fn source_metadata(source: &str) -> Result<marginalis_asciidoc::NoteMetadata, NoteUseCaseError> {
-    let analysis = adocweave::Engine::new(Default::default())
-        .analyze(source)
-        .map_err(|_| NoteUseCaseError::Unavailable)?;
-    marginalis_asciidoc::validate_note_metadata(&analysis)
-        .map_err(|_| NoteUseCaseError::Unavailable)
+    marginalis_asciidoc::parse_note_metadata(source).map_err(|_| NoteUseCaseError::Unavailable)
 }
 
 /// raw AsciiDoc APIの保護属性を、解析済みのattribute rangeだけでサーバ値へ置換する。
 ///
 /// header全体を再生成しないため、利用者が書いた他のAsciiDoc属性と文書構造を保持する。
-fn replace_protected_attributes(
-    source: String,
-    replacements: &[(&str, &str)],
-) -> Result<String, NoteUseCaseError> {
-    let analysis = adocweave::Engine::new(Default::default())
-        .analyze(&source)
-        .map_err(|_| NoteUseCaseError::Validation)?;
-    let mut ranges = Vec::with_capacity(replacements.len());
-    for (name, value) in replacements {
-        let attributes = analysis
-            .ast()
-            .attributes()
-            .iter()
-            .filter(|attribute| attribute.name == *name)
-            .collect::<Vec<_>>();
-        let Some(attribute) = attributes.first() else {
-            return Err(NoteUseCaseError::Validation);
-        };
-        if attributes.len() != 1 || attribute.operation != AttributeOperation::Set {
-            return Err(NoteUseCaseError::Validation);
-        }
-        let start = usize::try_from(attribute.value_range.start().to_u32())
-            .map_err(|_| NoteUseCaseError::Validation)?;
-        let end = usize::try_from(attribute.value_range.end().to_u32())
-            .map_err(|_| NoteUseCaseError::Validation)?;
-        ranges.push((start, end, *value));
-    }
-    ranges.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
-    let mut rewritten = source;
-    for (start, end, value) in ranges {
-        rewritten.replace_range(start..end, value);
-    }
-    Ok(rewritten)
-}
-
 #[async_trait]
 impl NoteUseCases for ServerNoteUseCases {
     async fn list_notes(
@@ -1124,7 +1084,7 @@ impl NoteUseCases for ServerNoteUseCases {
         let note_id_text = note_id.to_string();
         let creator_id_text = actor.user_id.to_string();
         let now = timestamp_rfc3339(SystemClock.now())?;
-        let source = replace_protected_attributes(
+        let source = marginalis_asciidoc::rewrite_protected_attributes(
             source,
             &[
                 ("note-id", &note_id_text),
@@ -1132,7 +1092,8 @@ impl NoteUseCases for ServerNoteUseCases {
                 ("created-at", &now),
                 ("updated-at", &now),
             ],
-        )?;
+        )
+        .map_err(|_| NoteUseCaseError::Validation)?;
         let projection = marginalis_asciidoc::parse_note_projection(&source)
             .map_err(|_| NoteUseCaseError::Validation)?;
         if projection.owner_id != actor.user_id {
@@ -1201,7 +1162,11 @@ impl NoteUseCases for ServerNoteUseCases {
         // updated-atはクライアント入力を信頼しない。置換してから形式を検証するため、
         // 任意の過去時刻や不正な時刻を送られてもサーバ時刻以外は保存されない。
         let updated_at = timestamp_rfc3339(SystemClock.now())?;
-        let source = replace_protected_attributes(source, &[("updated-at", &updated_at)])?;
+        let source = marginalis_asciidoc::rewrite_protected_attributes(
+            source,
+            &[("updated-at", &updated_at)],
+        )
+        .map_err(|_| NoteUseCaseError::Validation)?;
         let candidate_metadata =
             source_metadata(&source).map_err(|_| NoteUseCaseError::Validation)?;
         if candidate_metadata.note_id != previous_metadata.note_id

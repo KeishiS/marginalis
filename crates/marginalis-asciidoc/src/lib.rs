@@ -6,24 +6,23 @@
 use core::{fmt, str::FromStr};
 use std::collections::{BTreeMap, BTreeSet};
 
-use adocweave::attributes::{AttributeOperation, DocumentAttribute};
-use adocweave::html::RenderPolicy;
-use adocweave::inline::{Inline, MathLanguage, ReferenceDestination};
-use adocweave::limits::SyntaxMode;
-use adocweave::parser::{AstBlock, DelimitedContent, HeadingKind};
-use adocweave::preprocessor::discover_includes;
-use adocweave::projection::{FormulaKind, project};
-use adocweave::render::RenderInputs;
-use adocweave::source::{TextRange, TextSize};
-use adocweave::url::UrlContext;
-use adocweave::walker::{SemanticNode, walk};
+use adocweave::SyntaxMode;
+use adocweave::output::html::RenderPolicy;
+use adocweave::output::projection::{FormulaKind, project};
+use adocweave::preprocess::discover_includes;
+use adocweave::resolution::{RenderInputs, UrlContext};
+use adocweave::semantic::{
+    Block, DelimitedContent, DocumentAttributeOccurrence, DocumentAttributeOperation, HeadingKind,
+    Inline, MathLanguage, ReferenceDestination, SemanticNode, VerbatimKind, walk,
+};
+use adocweave::text::{TextRange, TextSize};
 use marginalis_domain::{
     EntityId, NoteId, NoteProjection, NoteReference as ProjectionReference, UserId,
 };
 use unicode_normalization::UnicodeNormalization;
 
 /// 採用したAdocWeaveソースcommit。
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "f4ef9f995b909833b43e7e33d686c4de5319165b";
+pub const ADOCWEAVE_SOURCE_REVISION: &str = "2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda";
 
 /// 初期リリースでシンタックスハイライト対象として受理するsource block言語。
 pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
@@ -38,51 +37,21 @@ pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
     "text",
 ];
 
-/// アプリが受理するAdocWeave公開契約の組。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AdocWeaveContracts {
-    pub core_profile: u16,
-    pub core_api: u16,
-    pub html: u16,
-    pub projection: u16,
-    pub conformance: u16,
-    pub wasm_api: u16,
-}
-
-/// 現在固定しているAdocWeaveリリース契約。
-pub const PINNED_CONTRACTS: AdocWeaveContracts = AdocWeaveContracts {
-    core_profile: 1,
-    core_api: 2,
-    html: 2,
-    projection: 2,
-    conformance: 2,
-    wasm_api: 2,
-};
-
-/// 実際にlinkされたAdocWeaveの契約。
-pub const fn runtime_contracts() -> AdocWeaveContracts {
-    AdocWeaveContracts {
-        core_profile: adocweave::CORE_PROFILE_VERSION,
-        core_api: adocweave::CORE_API_VERSION,
-        html: adocweave::html::HTML_CONTRACT_VERSION,
-        projection: adocweave::projection::PROJECTION_CONTRACT_VERSION,
-        conformance: adocweave::conformance::CONFORMANCE_CONTRACT_VERSION,
-        wasm_api: adocweave_wasm::WASM_API_VERSION,
-    }
-}
+/// 本アプリが受理するAdocWeaveの完全一致パッケージ版。
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.6.1";
 
 /// 固定した契約と実行時の契約が異なる場合に返すエラー。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ContractMismatch {
-    pub expected: AdocWeaveContracts,
-    pub actual: AdocWeaveContracts,
+    pub expected: &'static str,
+    pub actual: &'static str,
 }
 
 impl fmt::Display for ContractMismatch {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "AdocWeave contract mismatch: expected {:?}, got {:?}",
+            "AdocWeave package version mismatch: expected {}, got {}",
             self.expected, self.actual
         )
     }
@@ -90,14 +59,14 @@ impl fmt::Display for ContractMismatch {
 
 impl std::error::Error for ContractMismatch {}
 
-/// linkされた依存が、本アプリの固定した公開契約と一致することを検証する。
-pub fn verify_runtime_contracts() -> Result<(), ContractMismatch> {
-    let actual = runtime_contracts();
-    if actual == PINNED_CONTRACTS {
+/// リンクされた依存が、本アプリの固定したパッケージ版と一致することを検証する。
+pub fn verify_runtime_package_version() -> Result<(), ContractMismatch> {
+    let actual = adocweave::VERSION;
+    if actual == PINNED_ADOCWEAVE_PACKAGE_VERSION {
         Ok(())
     } else {
         Err(ContractMismatch {
-            expected: PINNED_CONTRACTS,
+            expected: PINNED_ADOCWEAVE_PACKAGE_VERSION,
             actual,
         })
     }
@@ -109,6 +78,25 @@ pub struct ImmutableNoteMetadata {
     pub note_id: String,
     pub creator_id: String,
     pub created_at: String,
+}
+
+/// 保護属性の置換に失敗した理由。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProtectedAttributeRewriteErrorCode {
+    ParseFailed,
+    MissingAttribute,
+    DuplicateAttribute,
+    UnsetAttribute,
+    InvalidRange,
+    ProtectedAttributeMismatch,
+}
+
+/// 保護属性の置換が返す位置付きエラー。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtectedAttributeRewriteError {
+    pub code: ProtectedAttributeRewriteErrorCode,
+    pub attribute: String,
+    pub range: TextRange,
 }
 
 impl ImmutableNoteMetadata {
@@ -156,6 +144,7 @@ pub struct NoteProfileError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NoteProfileErrorCode {
+    ParseFailed,
     MissingTitle,
     TitleTooLong,
     MissingAttribute,
@@ -417,6 +406,116 @@ pub fn parse_note_projection(source: &str) -> Result<NoteProjection, Vec<NotePro
     build_note_projection(&analysis)
 }
 
+/// UTF-8のAsciiDoc正本を解析し、アプリ固有メタデータを返す。
+pub fn parse_note_metadata(source: &str) -> Result<NoteMetadata, Vec<NoteProfileError>> {
+    let analysis = adocweave::Engine::new(Default::default())
+        .analyze(source)
+        .map_err(|_| {
+            vec![NoteProfileError {
+                code: NoteProfileErrorCode::ParseFailed,
+                range: TextRange::new(TextSize::ZERO, TextSize::ZERO)
+                    .expect("empty range is always valid"),
+            }]
+        })?;
+    validate_note_metadata(&analysis)
+}
+
+/// 文書属性の出現位置を使い、元の書式を保ったまま保護属性の値を置換する。
+///
+/// 必須属性の欠落、重複、解除は拒否する。置換後は厳格モードと保護属性診断で再検証する。
+pub fn rewrite_protected_attributes(
+    source: String,
+    replacements: &[(&str, &str)],
+) -> Result<String, ProtectedAttributeRewriteError> {
+    let empty_range =
+        TextRange::new(TextSize::ZERO, TextSize::ZERO).expect("empty range is always valid");
+    let analysis = adocweave::Engine::new(Default::default())
+        .analyze(&source)
+        .map_err(|_| ProtectedAttributeRewriteError {
+            code: ProtectedAttributeRewriteErrorCode::ParseFailed,
+            attribute: String::new(),
+            range: empty_range,
+        })?;
+    let occurrences = analysis.document_attribute_occurrences();
+    let mut ranges = Vec::with_capacity(replacements.len());
+    for (name, value) in replacements {
+        let matching = occurrences
+            .iter()
+            .filter(|occurrence| occurrence.name == *name)
+            .collect::<Vec<_>>();
+        let Some(occurrence) = matching.first() else {
+            return Err(ProtectedAttributeRewriteError {
+                code: ProtectedAttributeRewriteErrorCode::MissingAttribute,
+                attribute: (*name).to_owned(),
+                range: empty_range,
+            });
+        };
+        if matching.len() != 1 {
+            return Err(ProtectedAttributeRewriteError {
+                code: ProtectedAttributeRewriteErrorCode::DuplicateAttribute,
+                attribute: (*name).to_owned(),
+                range: matching[1].range,
+            });
+        }
+        if occurrence.operation != DocumentAttributeOperation::Set {
+            return Err(ProtectedAttributeRewriteError {
+                code: ProtectedAttributeRewriteErrorCode::UnsetAttribute,
+                attribute: (*name).to_owned(),
+                range: occurrence.range,
+            });
+        }
+        let start = usize::try_from(occurrence.value_range.start().to_u32()).map_err(|_| {
+            ProtectedAttributeRewriteError {
+                code: ProtectedAttributeRewriteErrorCode::InvalidRange,
+                attribute: (*name).to_owned(),
+                range: occurrence.value_range,
+            }
+        })?;
+        let end = usize::try_from(occurrence.value_range.end().to_u32()).map_err(|_| {
+            ProtectedAttributeRewriteError {
+                code: ProtectedAttributeRewriteErrorCode::InvalidRange,
+                attribute: (*name).to_owned(),
+                range: occurrence.value_range,
+            }
+        })?;
+        ranges.push((start, end, *value));
+    }
+    ranges.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
+    let mut rewritten = source;
+    for (start, end, value) in ranges {
+        rewritten.replace_range(start..end, value);
+    }
+
+    let protected_attributes = replacements
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    let options = adocweave::ParseOptions {
+        syntax_mode: SyntaxMode::Strict,
+        protected_attributes,
+        ..adocweave::ParseOptions::default()
+    };
+    let verified = adocweave::Engine::new(options)
+        .analyze(&rewritten)
+        .map_err(|_| ProtectedAttributeRewriteError {
+            code: ProtectedAttributeRewriteErrorCode::ParseFailed,
+            attribute: String::new(),
+            range: empty_range,
+        })?;
+    if let Some(diagnostic) = verified
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "protected-attribute")
+    {
+        return Err(ProtectedAttributeRewriteError {
+            code: ProtectedAttributeRewriteErrorCode::ProtectedAttributeMismatch,
+            attribute: String::new(),
+            range: diagnostic.range,
+        });
+    }
+    Ok(rewritten)
+}
+
 /// アプリの保存プロファイルで許可しない、I/Oおよびraw HTML経路を検証する。
 ///
 /// include検出はAdocWeaveの公開preprocessor APIを使い、ファイルやネットワークへはアクセスしない。
@@ -447,12 +546,12 @@ pub fn validate_note_content_profile_with(
                 range: query.reference.range,
             }),
     );
-    walk(analysis.ast(), |node| match node {
+    walk(analysis.document(), |node| match node {
         SemanticNode::Inline(Inline::Passthrough { range, .. }) => errors.push(NoteContentError {
             code: NoteContentErrorCode::InlinePassthrough,
             range: *range,
         }),
-        SemanticNode::Block(AstBlock::Delimited(block))
+        SemanticNode::Block(Block::Delimited(block))
             if matches!(block.content, DelimitedContent::Passthrough(_)) =>
         {
             errors.push(NoteContentError {
@@ -468,13 +567,28 @@ pub fn validate_note_content_profile_with(
                 range: formula.range,
             });
         }
-        SemanticNode::Block(AstBlock::Math(math)) if math.language != MathLanguage::Latex => {
+        SemanticNode::Block(Block::Math(math)) if math.language != MathLanguage::Latex => {
             errors.push(NoteContentError {
                 code: NoteContentErrorCode::UnsupportedMathLanguage,
                 range: math.range,
             });
         }
-        SemanticNode::Block(AstBlock::Source(source)) => {
+        SemanticNode::Block(Block::Source(source)) => {
+            let Some(language) = source.language.as_deref() else {
+                return;
+            };
+            let normalized = language.to_ascii_lowercase();
+            if !profile.allowed_source_languages.contains(&normalized) {
+                errors.push(NoteContentError {
+                    code: NoteContentErrorCode::UnsupportedSourceLanguage,
+                    range: source.language_range.unwrap_or(source.attribute_range),
+                });
+            }
+        }
+        SemanticNode::Block(Block::Verbatim(block)) => {
+            let VerbatimKind::Source(source) = &block.kind else {
+                return;
+            };
             let Some(language) = source.language.as_deref() else {
                 return;
             };
@@ -530,6 +644,7 @@ pub fn extract_note_math(analysis: &adocweave::Analysis) -> Vec<NoteMathProjecti
 impl NoteProfileErrorCode {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ParseFailed => "asciidoc-parse-failed",
             Self::MissingTitle => "missing-note-title",
             Self::TitleTooLong => "note-title-too-long",
             Self::MissingAttribute => "missing-note-attribute",
@@ -554,11 +669,11 @@ pub fn validate_note_metadata(
     analysis: &adocweave::Analysis,
 ) -> Result<NoteMetadata, Vec<NoteProfileError>> {
     let title = analysis
-        .ast()
+        .document()
         .blocks()
         .iter()
         .find_map(|block| match block {
-            AstBlock::Heading(heading) if heading.kind == HeadingKind::DocumentTitle => {
+            Block::Heading(heading) if heading.kind == HeadingKind::DocumentTitle => {
                 Some((heading.text.clone(), heading.text_range))
             }
             _ => None,
@@ -577,43 +692,44 @@ pub fn validate_note_metadata(
         Some(_) => {}
     }
 
-    let note_id = required_attribute(analysis.ast().attributes(), "note-id", &mut errors);
-    let creator_id = required_attribute(analysis.ast().attributes(), "creator-id", &mut errors);
-    let created_at = required_attribute(analysis.ast().attributes(), "created-at", &mut errors);
-    let updated_at = required_attribute(analysis.ast().attributes(), "updated-at", &mut errors);
-    let tags = required_attribute(analysis.ast().attributes(), "tags", &mut errors);
+    let attributes = analysis.document_attribute_occurrences();
+    let note_id = required_attribute(attributes, "note-id", &mut errors);
+    let creator_id = required_attribute(attributes, "creator-id", &mut errors);
+    let created_at = required_attribute(attributes, "created-at", &mut errors);
+    let updated_at = required_attribute(attributes, "updated-at", &mut errors);
+    let tags = required_attribute(attributes, "tags", &mut errors);
 
-    if let Some(attribute) = note_id {
-        if !is_uuid_v7(&attribute.raw_value) {
-            errors.push(NoteProfileError {
-                code: NoteProfileErrorCode::InvalidNoteId,
-                range: attribute.value_range,
-            });
-        }
+    if let Some(attribute) = note_id
+        && !is_uuid_v7(&attribute.raw_value)
+    {
+        errors.push(NoteProfileError {
+            code: NoteProfileErrorCode::InvalidNoteId,
+            range: attribute.value_range,
+        });
     }
-    if let Some(attribute) = creator_id {
-        if !is_uuid_v7(&attribute.raw_value) {
-            errors.push(NoteProfileError {
-                code: NoteProfileErrorCode::InvalidCreatorId,
-                range: attribute.value_range,
-            });
-        }
+    if let Some(attribute) = creator_id
+        && !is_uuid_v7(&attribute.raw_value)
+    {
+        errors.push(NoteProfileError {
+            code: NoteProfileErrorCode::InvalidCreatorId,
+            range: attribute.value_range,
+        });
     }
-    if let Some(attribute) = created_at {
-        if !is_fixed_millisecond_timestamp(&attribute.raw_value) {
-            errors.push(NoteProfileError {
-                code: NoteProfileErrorCode::InvalidCreatedAt,
-                range: attribute.value_range,
-            });
-        }
+    if let Some(attribute) = created_at
+        && !is_fixed_millisecond_timestamp(&attribute.raw_value)
+    {
+        errors.push(NoteProfileError {
+            code: NoteProfileErrorCode::InvalidCreatedAt,
+            range: attribute.value_range,
+        });
     }
-    if let Some(attribute) = updated_at {
-        if !is_fixed_millisecond_timestamp(&attribute.raw_value) {
-            errors.push(NoteProfileError {
-                code: NoteProfileErrorCode::InvalidUpdatedAt,
-                range: attribute.value_range,
-            });
-        }
+    if let Some(attribute) = updated_at
+        && !is_fixed_millisecond_timestamp(&attribute.raw_value)
+    {
+        errors.push(NoteProfileError {
+            code: NoteProfileErrorCode::InvalidUpdatedAt,
+            range: attribute.value_range,
+        });
     }
 
     let normalized_tags = tags.and_then(|attribute| normalize_tags(attribute, &mut errors));
@@ -645,10 +761,10 @@ pub fn validate_note_metadata(
 }
 
 fn required_attribute<'a>(
-    attributes: &'a [DocumentAttribute],
+    attributes: &'a [DocumentAttributeOccurrence],
     name: &str,
     errors: &mut Vec<NoteProfileError>,
-) -> Option<&'a DocumentAttribute> {
+) -> Option<&'a DocumentAttributeOccurrence> {
     let matching = attributes
         .iter()
         .filter(|attribute| attribute.name == name)
@@ -670,7 +786,7 @@ fn required_attribute<'a>(
         }
         return None;
     }
-    if attribute.operation == AttributeOperation::Unset {
+    if attribute.operation == DocumentAttributeOperation::Unset {
         errors.push(NoteProfileError {
             code: NoteProfileErrorCode::UnsetAttribute,
             range: attribute.name_range,
@@ -681,7 +797,7 @@ fn required_attribute<'a>(
 }
 
 fn normalize_tags(
-    attribute: &DocumentAttribute,
+    attribute: &DocumentAttributeOccurrence,
     errors: &mut Vec<NoteProfileError>,
 ) -> Option<Vec<NoteTag>> {
     if attribute.raw_value.is_empty() {
@@ -787,7 +903,9 @@ fn days_in_month(year: u16, month: u16) -> u16 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 => 29,
+        2 if (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400) => {
+            29
+        }
         2 => 28,
         _ => 0,
     }
@@ -795,16 +913,18 @@ fn days_in_month(year: u16, month: u16) -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use adocweave::{Engine, NeverCancel, html::render};
+    use adocweave::semantic::DocumentAttributeOperation;
+    use adocweave::{Engine, NeverCancel, VERSION, output::html::render};
     use adocweave_wasm::{
-        WASM_API_VERSION, WasmOptions, WasmRenderInputs, WasmRequest, process_request,
+        WasmOptions, WasmProductSet, WasmRenderInputs, WasmRequest, process_request,
     };
 
     use super::{
         ADOCWEAVE_SOURCE_REVISION, DEFAULT_SOURCE_LANGUAGES, NoteContentErrorCode, NoteMathDisplay,
-        NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_CONTRACTS, build_note_projection,
-        extract_note_math, extract_note_references, validate_note_content_profile,
-        validate_note_metadata, verify_runtime_contracts,
+        NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_ADOCWEAVE_PACKAGE_VERSION,
+        ProtectedAttributeRewriteErrorCode, RenderInputs, build_note_projection, extract_note_math,
+        extract_note_references, project, rewrite_protected_attributes,
+        validate_note_content_profile, validate_note_metadata, verify_runtime_package_version,
     };
 
     #[test]
@@ -818,25 +938,35 @@ mod tests {
     }
 
     #[test]
-    fn linked_contracts_match_the_pinned_contracts() {
-        assert_eq!(PINNED_CONTRACTS.core_profile, 1);
-        verify_runtime_contracts().expect("pinned AdocWeave contracts must match");
+    fn linked_package_version_matches_the_pinned_version() {
+        assert_eq!(PINNED_ADOCWEAVE_PACKAGE_VERSION, "0.6.1");
+        verify_runtime_package_version().expect("pinned AdocWeave package version must match");
     }
 
     #[test]
     fn default_wasm_rendering_matches_native_html() {
-        let source = "= Preview\n\n== Section\n\nhttps://example.com[external]\n";
+        let source = "= Preview\n:custom: 値\n\n== Section\n\nhttps://example.com[external]\n";
         let native = Engine::new(Default::default())
             .analyze(source)
             .expect("valid AsciiDoc");
-        let native_html = render(native.ast(), &Default::default()).html;
+        let native_html = render(native.document(), &Default::default()).html;
+        let native_projection = project(&native, &RenderInputs::default());
         let wasm = process_request(
             WasmRequest {
-                api_version: WASM_API_VERSION,
+                package_version: VERSION.to_owned(),
                 source_id: None,
                 version: 1,
                 generation: 1,
                 source: source.into(),
+                products: WasmProductSet {
+                    syntax: true,
+                    canonical_ast: true,
+                    html: true,
+                    attribute_occurrences: true,
+                    diagnostics: true,
+                    symbols: true,
+                    projection: true,
+                },
                 render_inputs: WasmRenderInputs::default(),
                 options: WasmOptions::default(),
             },
@@ -844,7 +974,157 @@ mod tests {
         )
         .expect("WASM request succeeds");
 
+        assert_eq!(wasm.package_version, VERSION);
+        assert_eq!(wasm.parse.package_version, VERSION);
         assert_eq!(wasm.html, native_html);
+        assert!(!wasm.syntax.is_empty());
+        assert!(!wasm.ast.is_empty());
+        assert!(!wasm.diagnostics.is_null());
+        assert!(!wasm.symbols.is_null());
+        assert_eq!(wasm.attribute_occurrences.len(), 1);
+        assert_eq!(
+            wasm.attribute_occurrences[0].name,
+            native.document_attribute_occurrences()[0].name
+        );
+        assert_eq!(
+            wasm.attribute_occurrences[0].raw_value,
+            native.document_attribute_occurrences()[0].raw_value
+        );
+        assert_eq!(native_projection.package_version, VERSION);
+        assert_eq!(
+            wasm.projection
+                .get("packageVersion")
+                .and_then(|value| value.as_str()),
+            Some(VERSION)
+        );
+    }
+
+    #[test]
+    fn attribute_occurrences_preserve_operations_order_and_utf8_ranges() {
+        let source = "= 文書\n:alpha: first\n:alpha:\t\n:beta!:\n:!gamma:\n";
+        let analysis = Engine::new(Default::default())
+            .analyze(source)
+            .expect("valid AsciiDoc");
+        let occurrences = analysis.document_attribute_occurrences();
+        assert_eq!(occurrences.len(), 4);
+        assert_eq!(
+            occurrences
+                .iter()
+                .map(|occurrence| occurrence.name.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha", "alpha", "beta", "gamma"]
+        );
+        assert_eq!(occurrences[0].operation, DocumentAttributeOperation::Set);
+        assert_eq!(occurrences[0].raw_value, "first");
+        assert_eq!(occurrences[1].operation, DocumentAttributeOperation::Set);
+        assert_eq!(occurrences[1].raw_value, "");
+        assert_eq!(occurrences[2].operation, DocumentAttributeOperation::Unset);
+        assert_eq!(occurrences[3].operation, DocumentAttributeOperation::Unset);
+        for occurrence in occurrences {
+            let range = usize::try_from(occurrence.range.start().to_u32())
+                .expect("range start fits")
+                ..usize::try_from(occurrence.range.end().to_u32()).expect("range end fits");
+            let name_range = usize::try_from(occurrence.name_range.start().to_u32())
+                .expect("name start fits")
+                ..usize::try_from(occurrence.name_range.end().to_u32()).expect("name end fits");
+            assert!(source[range].starts_with(':'));
+            assert_eq!(&source[name_range], occurrence.name);
+        }
+    }
+
+    #[test]
+    fn protected_attribute_rewrite_preserves_source_formatting() {
+        let source = "= 文書\n\
+                      :note-id:\told-note\n\
+                      :creator-id: old-creator\n\
+                      :created-at: old-created\n\
+                      :updated-at: old-updated\n\
+                      :custom: 利用者の値\n\n\
+                      本文。\n"
+            .to_owned();
+        let rewritten = rewrite_protected_attributes(
+            source,
+            &[
+                ("note-id", "new-note"),
+                ("creator-id", "new-creator"),
+                ("created-at", "new-created"),
+                ("updated-at", "new-updated"),
+            ],
+        )
+        .expect("protected attributes are rewritten");
+        assert!(rewritten.contains(":note-id:\tnew-note\n"));
+        assert!(rewritten.contains(":creator-id: new-creator\n"));
+        assert!(rewritten.contains(":custom: 利用者の値\n\n本文。\n"));
+    }
+
+    #[test]
+    fn protected_attribute_rewrite_rejects_duplicate_and_unset_occurrences() {
+        let duplicate = rewrite_protected_attributes(
+            "= Note\n:note-id: first\n:note-id: second\n".to_owned(),
+            &[("note-id", "server")],
+        )
+        .expect_err("duplicate protected attribute is rejected");
+        assert_eq!(
+            duplicate.code,
+            ProtectedAttributeRewriteErrorCode::DuplicateAttribute
+        );
+
+        for source in ["= Note\n:note-id!:\n", "= Note\n:!note-id:\n"] {
+            let unset = rewrite_protected_attributes(source.to_owned(), &[("note-id", "server")])
+                .expect_err("unset protected attribute is rejected");
+            assert_eq!(
+                unset.code,
+                ProtectedAttributeRewriteErrorCode::UnsetAttribute
+            );
+        }
+    }
+
+    #[test]
+    fn wasm_products_and_package_version_fail_closed() {
+        let omitted = process_request(
+            WasmRequest {
+                package_version: VERSION.to_owned(),
+                source_id: None,
+                version: 1,
+                generation: 1,
+                source: "= Preview\n\ntext\n".into(),
+                products: WasmProductSet {
+                    syntax: false,
+                    canonical_ast: false,
+                    html: false,
+                    attribute_occurrences: false,
+                    diagnostics: false,
+                    symbols: false,
+                    projection: false,
+                },
+                render_inputs: WasmRenderInputs::default(),
+                options: WasmOptions::default(),
+            },
+            &NeverCancel,
+        )
+        .expect("matching package version succeeds");
+        assert_eq!(omitted.package_version, VERSION);
+        assert!(omitted.syntax.is_empty());
+        assert!(omitted.ast.is_empty());
+        assert!(omitted.html.is_empty());
+        assert!(omitted.attribute_occurrences.is_empty());
+        assert!(omitted.projection.is_null());
+
+        let mismatch = process_request(
+            WasmRequest {
+                package_version: "0.6.0".to_owned(),
+                source_id: None,
+                version: 1,
+                generation: 1,
+                source: "= Preview\n".into(),
+                products: WasmProductSet::default(),
+                render_inputs: WasmRenderInputs::default(),
+                options: WasmOptions::default(),
+            },
+            &NeverCancel,
+        )
+        .expect_err("mismatched package version is rejected");
+        assert_eq!(mismatch.code, "unsupported-api-version");
     }
 
     #[test]
