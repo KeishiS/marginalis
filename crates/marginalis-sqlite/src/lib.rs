@@ -900,6 +900,42 @@ impl V3SqliteDatabase {
         .transpose()
     }
 
+    pub async fn consume_mcp_authorization_code(
+        &self,
+        code: &str,
+        client_id: &str,
+        redirect_uri: &str,
+        resource_uri: &str,
+        now: UnixMillis,
+    ) -> Result<Option<(CanonicalMcpAuthorizationGrant, String)>, V3NoteStoreError> {
+        let row = sqlx::query("DELETE FROM v3_mcp_authorization_codes WHERE code_hash = ? AND client_id = ? AND redirect_uri = ? AND resource_uri = ? AND expires_at_ms > ? RETURNING issuer, subject, is_administrator, scopes, code_challenge")
+            .bind(hash_token(code)).bind(client_id).bind(redirect_uri).bind(resource_uri).bind(now.get()).fetch_optional(&self.pool).await.map_err(v3_database_error)?;
+        row.map(|row| {
+            Ok((
+                CanonicalMcpAuthorizationGrant {
+                    actor: CanonicalActor {
+                        issuer: row.try_get("issuer").map_err(v3_database_error)?,
+                        subject: row.try_get("subject").map_err(v3_database_error)?,
+                        is_administrator: row
+                            .try_get("is_administrator")
+                            .map_err(v3_database_error)?,
+                    },
+                    client_id: client_id.into(),
+                    redirect_uri: redirect_uri.into(),
+                    resource_uri: resource_uri.into(),
+                    scopes: row
+                        .try_get::<String, _>("scopes")
+                        .map_err(v3_database_error)?
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect(),
+                },
+                row.try_get("code_challenge").map_err(v3_database_error)?,
+            ))
+        })
+        .transpose()
+    }
+
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
     pub async fn create_note(
         &self,
