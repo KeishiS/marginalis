@@ -9,7 +9,8 @@
 
 データフォーマットの識別子は v1 を維持していますが、AdocWeave v0.6.1 前提の内容へ
 破壊的に再定義しました。以前の v1 は互換対象ではありません。
-現在は `v0.2.0-rc.1` の実環境受入と公開準備を進めています。
+`v0.2.0-rc.1` の実環境受入は完了しました。現在は、受入中の修正を含む最終自動検証と
+タグ公開の準備を進めています。
 
 各作業の詳細な受入条件と設計判断は [Issue 一覧](../issues/README.md)を正とします。この文書は
 着手順と依存関係だけを示します。
@@ -20,7 +21,7 @@
 | --- | --- | --- | --- |
 | 0（完了） | [009](../issues/009-oidc-provider-registration.md)、[022](../issues/022-v0.1.0-rc.1-release-acceptance.md) | RC.2 の実環境受入を完了し、v0.1.0 をタグ付けして OpenAPI の互換性保証を始める | 完了（2026-07-23、`v0.1.0` タグ） |
 | 2（完了） | [029](../issues/029-adocweave-v0.6.1-migration.md) | AdocWeave v0.6.1 へ移行し、正本の解釈・投影・HTML・WASM の互換性基準を更新する | 完了（2026-07-24。旧 v1 は移行せず、`dataDir` を削除して初期化する） |
-| 公開準備（現在） | [035](../issues/035-v0.2.0-rc.1-release-acceptance.md) | 空の新 v1 環境で実環境受入を行い、`v0.2.0-rc.1` の公開可否を判断する | 実 Kanidm、実 MCP クライアント、バックアップ先を使う受入が完了し、タグ公開方法を決定する |
+| 公開準備（現在） | [035](../issues/035-v0.2.0-rc.1-release-acceptance.md) | 空の新 v1 環境で実環境受入を行い、`v0.2.0-rc.1` の公開可否を判断する | 最終リリースゲートが成功し、タグ公開方法を決定する |
 | 1（次） | [030](../issues/030-end-to-end-test-automation-readiness.md) | ブラウザー・テスト IdP・リバースプロキシ・MCP クライアントを通す E2E 基盤を CI へ導入する | OIDC、REST CRUD、MCP OAuth、プロキシ境界の主要経路を非対話で再現できる |
 | 3 | [032](../issues/032-mcp-authoring-profile-and-diagnostics.md) | MCP クライアント向けのプロファイル公開と位置付き検証診断を追加する | MCP / REST が後方互換な診断を返し、クライアントが推測なしで入力を修正できる |
 | 4 | [033](../issues/033-repository-documentation-asciidoc-migration.md) | リポジトリ文書を AsciiDoc へ移行し、文書検証を CI へ組み込む | README、仕様、運用手順、Issue の形式・参照・閲覧方針が確定する。段階 3 以降と並行できる |
