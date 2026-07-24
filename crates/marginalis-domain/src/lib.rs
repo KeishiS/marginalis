@@ -179,6 +179,56 @@ pub struct NoteSource {
     pub revision: SourceRevision,
 }
 
+/// v0.3.0でSQLiteへ保存するノートの単一正本。
+///
+/// `title`、`tags`、`body`は構造化された入力として保存し、AsciiDoc headerはexport時に生成する。
+/// 稼働中のfilesystemに正本を持たないため、revisionはSQLite rowの更新世代で判定する。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CanonicalNote {
+    pub note_id: NoteId,
+    pub creator_issuer: String,
+    pub creator_subject: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub created_at: UnixMillis,
+    pub updated_at: UnixMillis,
+    pub revision: i64,
+    pub deleted_at: Option<UnixMillis>,
+}
+
+/// 新規作成・更新で利用者が指定できるノートの可変部分。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CanonicalNoteDraft {
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+}
+
+/// v0.3.0のSQLite正本に保存する直接ACLの一行。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CanonicalNoteAclEntry {
+    pub issuer: String,
+    pub subject: String,
+    pub permission: NotePermission,
+}
+
+/// 一ノートの正本と直接ACLをまとめた、v0.3.0 archive の論理単位。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CanonicalNoteBundle {
+    pub note: CanonicalNote,
+    pub acl: Vec<CanonicalNoteAclEntry>,
+}
+
+/// databaseからexportし、空のdatabaseへimportできる可搬 archive の論理表現。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CanonicalArchive {
+    pub format: String,
+    pub notes: Vec<CanonicalNoteBundle>,
+}
+
+pub const CANONICAL_ARCHIVE_FORMAT: &str = "marginalis-v3-archive-1";
+
 /// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。
 ///
 /// `title`、anchorおよび参照はAsciiDoc adapterが検証してから渡す。domainは構文木を持たない。
@@ -411,7 +461,7 @@ pub enum OidcLoginResult {
     Disabled(OidcUser),
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum NotePermission {
     Read,
     Write,

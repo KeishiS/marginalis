@@ -14,10 +14,11 @@ use marginalis_application::{
     OperationState, RootCredentialStore, WebSession, WebSessionStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient, NoteId,
-    NoteLink, NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSummary, OidcIdentity,
-    OidcLoginResult, OidcUser, RegistrationPolicy, RootAuditEvent, SourceRevision, UnixMillis,
-    UserId, UserStatus,
+    Actor, CANONICAL_ARCHIVE_FORMAT, CanonicalArchive, CanonicalNote, CanonicalNoteAclEntry,
+    CanonicalNoteBundle, CanonicalNoteDraft, EntityId, McpAuthorizationGrant,
+    McpClientAuthorization, McpOAuthClient, NoteId, NoteLink, NoteLinkPage, NotePage,
+    NotePermission, NoteProjection, NoteSummary, OidcIdentity, OidcLoginResult, OidcUser,
+    RegistrationPolicy, RootAuditEvent, SourceRevision, UnixMillis, UserId, UserStatus,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -58,10 +59,97 @@ const MIGRATIONS: &[(i64, &str)] = &[
     ),
 ];
 
+const V3_MIGRATIONS: &[(i64, &str)] = &[(
+    1,
+    r#"
+CREATE TABLE v3_notes (
+    note_id TEXT PRIMARY KEY NOT NULL,
+    creator_issuer TEXT NOT NULL,
+    creator_subject TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    tags_json TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    deleted_at_ms INTEGER
+) STRICT;
+
+CREATE TABLE v3_note_acl (
+    note_id TEXT NOT NULL REFERENCES v3_notes(note_id) ON DELETE CASCADE,
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    permission INTEGER NOT NULL CHECK (permission BETWEEN 1 AND 3),
+    PRIMARY KEY (note_id, issuer, subject)
+) STRICT;
+
+CREATE TABLE v3_note_references (
+    source_note_id TEXT NOT NULL REFERENCES v3_notes(note_id) ON DELETE CASCADE,
+    source_start INTEGER NOT NULL CHECK (source_start >= 0),
+    source_end INTEGER NOT NULL CHECK (source_end > source_start),
+    target_note_id TEXT NOT NULL,
+    target_anchor TEXT,
+    PRIMARY KEY (source_note_id, source_start, source_end)
+) STRICT;
+
+CREATE TABLE v3_note_anchors (
+    note_id TEXT NOT NULL REFERENCES v3_notes(note_id) ON DELETE CASCADE,
+    anchor_id TEXT NOT NULL,
+    PRIMARY KEY (note_id, anchor_id)
+) STRICT;
+
+CREATE VIRTUAL TABLE v3_note_search USING fts5(
+    note_id UNINDEXED,
+    title,
+    body
+);
+"#,
+)];
+
 #[derive(Clone, Debug)]
 pub struct SqliteDatabase {
     pool: SqlitePool,
 }
+
+/// v0.3.0のSQLite単一正本を扱うdatabase adapter。
+///
+/// 旧`SqliteDatabase`とは独立したmigration tableを使う。v0.3.0のサービス切替後はこの型だけを
+/// 組み立て、旧schemaを作らない。
+#[derive(Clone, Debug)]
+pub struct V3SqliteDatabase {
+    pool: SqlitePool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum V3NoteStoreError {
+    Conflict,
+    LastAdmin,
+    ArchiveFormat,
+    ArchiveTargetNotEmpty,
+    ArchiveMissingAdmin,
+    CorruptNote,
+    Database(String),
+}
+
+impl fmt::Display for V3NoteStoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Conflict => formatter.write_str("note revision does not match"),
+            Self::LastAdmin => formatter.write_str("a note must retain one direct administrator"),
+            Self::ArchiveFormat => formatter.write_str("v3 archive format is unsupported"),
+            Self::ArchiveTargetNotEmpty => {
+                formatter.write_str("v3 archive import target must be empty")
+            }
+            Self::ArchiveMissingAdmin => {
+                formatter.write_str("every archived note must retain one direct administrator")
+            }
+            Self::CorruptNote => formatter.write_str("v3 note data is invalid"),
+            Self::Database(_) => formatter.write_str("v3 note database query failed"),
+        }
+    }
+}
+
+impl std::error::Error for V3NoteStoreError {}
 
 /// 操作ジャーナルのSQLite実装。
 #[derive(Clone, Debug)]
@@ -538,6 +626,491 @@ impl SqliteDatabase {
         }
         transaction.commit().await?;
         Ok(())
+    }
+}
+
+impl V3SqliteDatabase {
+    /// v0.3.0専用のSQLite schemaへ接続する。
+    pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
+        let options = database_url
+            .parse::<SqliteConnectOptions>()?
+            .create_if_missing(true)
+            .foreign_keys(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(5));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(options)
+            .await?;
+        migrate_v3(&pool).await?;
+        Ok(Self { pool })
+    }
+
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    /// 正本、直接ACL、検索投影を同一transactionで作成する。
+    pub async fn create_note(
+        &self,
+        note: &CanonicalNote,
+        owner_permission: NotePermission,
+    ) -> Result<(), V3NoteStoreError> {
+        let tags_json =
+            serde_json::to_string(&note.tags).map_err(|_| V3NoteStoreError::CorruptNote)?;
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        sqlx::query(
+            "INSERT INTO v3_notes (note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(note.note_id.to_string())
+        .bind(&note.creator_issuer)
+        .bind(&note.creator_subject)
+        .bind(&note.title)
+        .bind(&note.body)
+        .bind(tags_json)
+        .bind(note.created_at.get())
+        .bind(note.updated_at.get())
+        .bind(note.revision)
+        .bind(note.deleted_at.map(UnixMillis::get))
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        sqlx::query(
+            "INSERT INTO v3_note_acl (note_id, issuer, subject, permission) VALUES (?, ?, ?, ?)",
+        )
+        .bind(note.note_id.to_string())
+        .bind(&note.creator_issuer)
+        .bind(&note.creator_subject)
+        .bind(permission_to_storage(owner_permission))
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        insert_v3_search_row(&mut transaction, note).await?;
+        transaction.commit().await.map_err(v3_database_error)
+    }
+
+    pub async fn note(
+        &self,
+        note_id: NoteId,
+        include_deleted: bool,
+    ) -> Result<Option<CanonicalNote>, V3NoteStoreError> {
+        let row = if include_deleted {
+            sqlx::query(
+                "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+                 FROM v3_notes WHERE note_id = ?",
+            )
+            .bind(note_id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+        } else {
+            sqlx::query(
+                "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+                 FROM v3_notes WHERE note_id = ? AND deleted_at_ms IS NULL",
+            )
+            .bind(note_id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+        }
+        .map_err(v3_database_error)?;
+        row.map(v3_note_from_row).transpose()
+    }
+
+    /// 削除済みでない正本を楽観的ロックして更新する。
+    pub async fn update_note(
+        &self,
+        note_id: NoteId,
+        expected_revision: i64,
+        draft: &CanonicalNoteDraft,
+        updated_at: UnixMillis,
+    ) -> Result<CanonicalNote, V3NoteStoreError> {
+        let tags_json =
+            serde_json::to_string(&draft.tags).map_err(|_| V3NoteStoreError::CorruptNote)?;
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let result = sqlx::query(
+            "UPDATE v3_notes
+             SET title = ?, body = ?, tags_json = ?, updated_at_ms = ?, revision = revision + 1
+             WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL",
+        )
+        .bind(&draft.title)
+        .bind(&draft.body)
+        .bind(tags_json)
+        .bind(updated_at.get())
+        .bind(note_id.to_string())
+        .bind(expected_revision)
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        if result.rows_affected() != 1 {
+            return Err(V3NoteStoreError::Conflict);
+        }
+        let row = sqlx::query(
+            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+             FROM v3_notes WHERE note_id = ?",
+        )
+        .bind(note_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        let note = v3_note_from_row(row)?;
+        sqlx::query("DELETE FROM v3_note_search WHERE note_id = ?")
+            .bind(note_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+        insert_v3_search_row(&mut transaction, &note).await?;
+        transaction.commit().await.map_err(v3_database_error)?;
+        Ok(note)
+    }
+
+    /// ノートを通常の参照・検索から除外し、30日間の復元候補にする。
+    pub async fn soft_delete_note(
+        &self,
+        note_id: NoteId,
+        expected_revision: i64,
+        deleted_at: UnixMillis,
+    ) -> Result<(), V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let result = sqlx::query(
+            "UPDATE v3_notes SET deleted_at_ms = ?, updated_at_ms = ?, revision = revision + 1
+             WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL",
+        )
+        .bind(deleted_at.get())
+        .bind(deleted_at.get())
+        .bind(note_id.to_string())
+        .bind(expected_revision)
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        if result.rows_affected() != 1 {
+            return Err(V3NoteStoreError::Conflict);
+        }
+        sqlx::query("DELETE FROM v3_note_search WHERE note_id = ?")
+            .bind(note_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+        transaction.commit().await.map_err(v3_database_error)
+    }
+
+    /// 削除から30日以内のノートを復元する。
+    pub async fn restore_note(
+        &self,
+        note_id: NoteId,
+        expected_revision: i64,
+        restored_at: UnixMillis,
+    ) -> Result<CanonicalNote, V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let result = sqlx::query(
+            "UPDATE v3_notes SET deleted_at_ms = NULL, updated_at_ms = ?, revision = revision + 1
+             WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NOT NULL",
+        )
+        .bind(restored_at.get())
+        .bind(note_id.to_string())
+        .bind(expected_revision)
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        if result.rows_affected() != 1 {
+            return Err(V3NoteStoreError::Conflict);
+        }
+        let row = sqlx::query(
+            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+             FROM v3_notes WHERE note_id = ?",
+        )
+        .bind(note_id.to_string())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        let note = v3_note_from_row(row)?;
+        insert_v3_search_row(&mut transaction, &note).await?;
+        transaction.commit().await.map_err(v3_database_error)?;
+        Ok(note)
+    }
+
+    /// retention期限を過ぎた削除済みノートを物理削除する。
+    pub async fn purge_deleted_before(&self, cutoff: UnixMillis) -> Result<u64, V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        sqlx::query(
+            "DELETE FROM v3_note_search WHERE note_id IN
+             (SELECT note_id FROM v3_notes WHERE deleted_at_ms IS NOT NULL AND deleted_at_ms < ?)",
+        )
+        .bind(cutoff.get())
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        let result = sqlx::query(
+            "DELETE FROM v3_notes WHERE deleted_at_ms IS NOT NULL AND deleted_at_ms < ?",
+        )
+        .bind(cutoff.get())
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        transaction.commit().await.map_err(v3_database_error)?;
+        Ok(result.rows_affected())
+    }
+
+    /// 直接ACLを置き換える。最後の直接Adminの降格・削除は同じtransactionで拒否する。
+    pub async fn set_note_permission(
+        &self,
+        note_id: NoteId,
+        issuer: &str,
+        subject: &str,
+        permission: Option<NotePermission>,
+    ) -> Result<(), V3NoteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let current_permission = sqlx::query_scalar::<_, i64>(
+            "SELECT permission FROM v3_note_acl WHERE note_id = ? AND issuer = ? AND subject = ?",
+        )
+        .bind(note_id.to_string())
+        .bind(issuer)
+        .bind(subject)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        let current_is_admin = matches!(current_permission, Some(3));
+        if current_is_admin && permission != Some(NotePermission::Admin) {
+            let administrator_count = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM v3_note_acl WHERE note_id = ? AND permission = 3",
+            )
+            .bind(note_id.to_string())
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+            if administrator_count <= 1 {
+                return Err(V3NoteStoreError::LastAdmin);
+            }
+        }
+        match permission {
+            Some(permission) => {
+                sqlx::query(
+                    "INSERT INTO v3_note_acl (note_id, issuer, subject, permission) VALUES (?, ?, ?, ?)
+                     ON CONFLICT (note_id, issuer, subject) DO UPDATE SET permission = excluded.permission",
+                )
+                .bind(note_id.to_string())
+                .bind(issuer)
+                .bind(subject)
+                .bind(permission_to_storage(permission))
+                .execute(&mut *transaction)
+                .await
+                .map_err(v3_database_error)?;
+            }
+            None => {
+                sqlx::query(
+                    "DELETE FROM v3_note_acl WHERE note_id = ? AND issuer = ? AND subject = ?",
+                )
+                .bind(note_id.to_string())
+                .bind(issuer)
+                .bind(subject)
+                .execute(&mut *transaction)
+                .await
+                .map_err(v3_database_error)?;
+            }
+        }
+        transaction.commit().await.map_err(v3_database_error)
+    }
+
+    pub async fn note_acl(
+        &self,
+        note_id: NoteId,
+    ) -> Result<Vec<CanonicalNoteAclEntry>, V3NoteStoreError> {
+        let rows = sqlx::query(
+            "SELECT issuer, subject, permission FROM v3_note_acl
+             WHERE note_id = ? ORDER BY issuer ASC, subject ASC",
+        )
+        .bind(note_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(v3_database_error)?;
+        rows.into_iter()
+            .map(|row| {
+                let permission = row
+                    .try_get::<i64, _>("permission")
+                    .map_err(v3_database_error)
+                    .and_then(v3_permission_from_storage)?;
+                Ok(CanonicalNoteAclEntry {
+                    issuer: row.try_get("issuer").map_err(v3_database_error)?,
+                    subject: row.try_get("subject").map_err(v3_database_error)?,
+                    permission,
+                })
+            })
+            .collect()
+    }
+
+    /// SQLite正本を可搬 archive の論理表現として取り出す。
+    pub async fn export_archive(&self) -> Result<CanonicalArchive, V3NoteStoreError> {
+        let rows = sqlx::query(
+            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+             FROM v3_notes ORDER BY note_id ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(v3_database_error)?;
+        let mut notes = Vec::with_capacity(rows.len());
+        for row in rows {
+            let note = v3_note_from_row(row)?;
+            let acl = self.note_acl(note.note_id).await?;
+            notes.push(CanonicalNoteBundle { note, acl });
+        }
+        Ok(CanonicalArchive {
+            format: CANONICAL_ARCHIVE_FORMAT.into(),
+            notes,
+        })
+    }
+
+    /// 検証済みarchiveを空の v0.3.0 databaseへ一つのtransactionでimportする。
+    pub async fn import_archive(&self, archive: &CanonicalArchive) -> Result<(), V3NoteStoreError> {
+        if archive.format != CANONICAL_ARCHIVE_FORMAT {
+            return Err(V3NoteStoreError::ArchiveFormat);
+        }
+        let mut note_ids = HashSet::new();
+        for bundle in &archive.notes {
+            if !note_ids.insert(bundle.note.note_id) {
+                return Err(V3NoteStoreError::CorruptNote);
+            }
+            if !bundle
+                .acl
+                .iter()
+                .any(|entry| entry.permission == NotePermission::Admin)
+            {
+                return Err(V3NoteStoreError::ArchiveMissingAdmin);
+            }
+            if bundle.note.revision <= 0 {
+                return Err(V3NoteStoreError::CorruptNote);
+            }
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        let existing_notes = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM v3_notes")
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+        if existing_notes != 0 {
+            return Err(V3NoteStoreError::ArchiveTargetNotEmpty);
+        }
+        for bundle in &archive.notes {
+            insert_v3_note_row(&mut transaction, &bundle.note).await?;
+            for entry in &bundle.acl {
+                sqlx::query(
+                    "INSERT INTO v3_note_acl (note_id, issuer, subject, permission) VALUES (?, ?, ?, ?)",
+                )
+                .bind(bundle.note.note_id.to_string())
+                .bind(&entry.issuer)
+                .bind(&entry.subject)
+                .bind(permission_to_storage(entry.permission))
+                .execute(&mut *transaction)
+                .await
+                .map_err(v3_database_error)?;
+            }
+            if bundle.note.deleted_at.is_none() {
+                insert_v3_search_row(&mut transaction, &bundle.note).await?;
+            }
+        }
+        transaction.commit().await.map_err(v3_database_error)
+    }
+}
+
+async fn migrate_v3(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS v3_schema_migrations (version INTEGER PRIMARY KEY NOT NULL) STRICT",
+    )
+    .execute(&mut *transaction)
+    .await?;
+    for (version, migration) in V3_MIGRATIONS {
+        let applied = sqlx::query("SELECT 1 FROM v3_schema_migrations WHERE version = ?")
+            .bind(version)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .is_some();
+        if !applied {
+            sqlx::raw_sql(migration).execute(&mut *transaction).await?;
+            sqlx::query("INSERT INTO v3_schema_migrations (version) VALUES (?)")
+                .bind(version)
+                .execute(&mut *transaction)
+                .await?;
+        }
+    }
+    transaction.commit().await
+}
+
+async fn insert_v3_search_row(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    note: &CanonicalNote,
+) -> Result<(), V3NoteStoreError> {
+    sqlx::query("INSERT INTO v3_note_search (note_id, title, body) VALUES (?, ?, ?)")
+        .bind(note.note_id.to_string())
+        .bind(&note.title)
+        .bind(&note.body)
+        .execute(&mut **transaction)
+        .await
+        .map_err(v3_database_error)?;
+    Ok(())
+}
+
+async fn insert_v3_note_row(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    note: &CanonicalNote,
+) -> Result<(), V3NoteStoreError> {
+    let tags_json = serde_json::to_string(&note.tags).map_err(|_| V3NoteStoreError::CorruptNote)?;
+    sqlx::query(
+        "INSERT INTO v3_notes (note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(note.note_id.to_string())
+    .bind(&note.creator_issuer)
+    .bind(&note.creator_subject)
+    .bind(&note.title)
+    .bind(&note.body)
+    .bind(tags_json)
+    .bind(note.created_at.get())
+    .bind(note.updated_at.get())
+    .bind(note.revision)
+    .bind(note.deleted_at.map(UnixMillis::get))
+    .execute(&mut **transaction)
+    .await
+    .map_err(v3_database_error)?;
+    Ok(())
+}
+
+fn v3_note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<CanonicalNote, V3NoteStoreError> {
+    let note_id = row
+        .try_get::<String, _>("note_id")
+        .map_err(v3_database_error)?
+        .parse::<EntityId>()
+        .map(NoteId::new)
+        .map_err(|_| V3NoteStoreError::CorruptNote)?;
+    let tags_json = row
+        .try_get::<String, _>("tags_json")
+        .map_err(v3_database_error)?;
+    let tags = serde_json::from_str(&tags_json).map_err(|_| V3NoteStoreError::CorruptNote)?;
+    Ok(CanonicalNote {
+        note_id,
+        creator_issuer: row.try_get("creator_issuer").map_err(v3_database_error)?,
+        creator_subject: row.try_get("creator_subject").map_err(v3_database_error)?,
+        title: row.try_get("title").map_err(v3_database_error)?,
+        body: row.try_get("body").map_err(v3_database_error)?,
+        tags,
+        created_at: UnixMillis::new(row.try_get("created_at_ms").map_err(v3_database_error)?),
+        updated_at: UnixMillis::new(row.try_get("updated_at_ms").map_err(v3_database_error)?),
+        revision: row.try_get("revision").map_err(v3_database_error)?,
+        deleted_at: row
+            .try_get::<Option<i64>, _>("deleted_at_ms")
+            .map_err(v3_database_error)?
+            .map(UnixMillis::new),
+    })
+}
+
+fn v3_database_error(error: sqlx::Error) -> V3NoteStoreError {
+    V3NoteStoreError::Database(error.to_string())
+}
+
+fn v3_permission_from_storage(value: i64) -> Result<NotePermission, V3NoteStoreError> {
+    match value {
+        1 => Ok(NotePermission::Read),
+        2 => Ok(NotePermission::Write),
+        3 => Ok(NotePermission::Admin),
+        _ => Err(V3NoteStoreError::CorruptNote),
     }
 }
 
@@ -2153,6 +2726,142 @@ mod tests {
     use sqlx::Row;
 
     use super::*;
+
+    #[tokio::test]
+    async fn v3_single_source_updates_and_purges_notes_transactionally() {
+        let database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("v3 migration succeeds");
+        let note_id = NoteId::new(
+            EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("v7 note ID"),
+        );
+        let note = CanonicalNote {
+            note_id,
+            creator_issuer: "https://id.example.test".into(),
+            creator_subject: "alice".into(),
+            title: "First title".into(),
+            body: "first body".into(),
+            tags: vec!["research".into()],
+            created_at: UnixMillis::new(100),
+            updated_at: UnixMillis::new(100),
+            revision: 1,
+            deleted_at: None,
+        };
+        database
+            .create_note(&note, NotePermission::Admin)
+            .await
+            .expect("create note");
+        assert_eq!(database.note(note_id, false).await, Ok(Some(note.clone())));
+        assert_eq!(
+            database.note_acl(note_id).await.expect("owner ACL"),
+            vec![CanonicalNoteAclEntry {
+                issuer: "https://id.example.test".into(),
+                subject: "alice".into(),
+                permission: NotePermission::Admin,
+            }]
+        );
+        assert_eq!(
+            database
+                .set_note_permission(
+                    note_id,
+                    "https://id.example.test",
+                    "alice",
+                    Some(NotePermission::Write),
+                )
+                .await,
+            Err(V3NoteStoreError::LastAdmin)
+        );
+        database
+            .set_note_permission(
+                note_id,
+                "https://id.example.test",
+                "bob",
+                Some(NotePermission::Admin),
+            )
+            .await
+            .expect("add second administrator");
+        database
+            .set_note_permission(
+                note_id,
+                "https://id.example.test",
+                "alice",
+                Some(NotePermission::Write),
+            )
+            .await
+            .expect("downgrade after second administrator");
+
+        let updated = database
+            .update_note(
+                note_id,
+                1,
+                &CanonicalNoteDraft {
+                    title: "Updated title".into(),
+                    body: "updated body".into(),
+                    tags: vec!["research".into(), "v3".into()],
+                },
+                UnixMillis::new(200),
+            )
+            .await
+            .expect("update note");
+        assert_eq!(updated.revision, 2);
+        assert_eq!(updated.title, "Updated title");
+        assert_eq!(
+            database
+                .soft_delete_note(note_id, 1, UnixMillis::new(300))
+                .await,
+            Err(V3NoteStoreError::Conflict)
+        );
+        database
+            .soft_delete_note(note_id, 2, UnixMillis::new(300))
+            .await
+            .expect("soft delete");
+        assert_eq!(database.note(note_id, false).await, Ok(None));
+        let deleted = database
+            .note(note_id, true)
+            .await
+            .expect("read deleted")
+            .expect("deleted note remains");
+        assert_eq!(deleted.deleted_at, Some(UnixMillis::new(300)));
+        assert_eq!(deleted.revision, 3);
+
+        let restored = database
+            .restore_note(note_id, 3, UnixMillis::new(350))
+            .await
+            .expect("restore note");
+        assert_eq!(restored.deleted_at, None);
+        assert_eq!(restored.revision, 4);
+        let archive = database.export_archive().await.expect("export archive");
+        let imported_database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("empty import target");
+        imported_database
+            .import_archive(&archive)
+            .await
+            .expect("import archive");
+        assert_eq!(
+            imported_database
+                .export_archive()
+                .await
+                .expect("re-export archive"),
+            archive
+        );
+        assert_eq!(
+            imported_database.import_archive(&archive).await,
+            Err(V3NoteStoreError::ArchiveTargetNotEmpty)
+        );
+        database
+            .soft_delete_note(note_id, 4, UnixMillis::new(400))
+            .await
+            .expect("delete before purge");
+        assert_eq!(
+            database
+                .purge_deleted_before(UnixMillis::new(401))
+                .await
+                .expect("purge"),
+            1
+        );
+        assert_eq!(database.note(note_id, true).await, Ok(None));
+    }
 
     #[tokio::test]
     async fn applies_the_versioned_initial_schema() {

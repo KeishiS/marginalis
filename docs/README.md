@@ -23,6 +23,7 @@
 - [GitHubを使う開発手順](development.md): Nix開発環境、`gh`、ブランチ、Pull Request、マージ
 - [要件定義](requirements.md): 現行の規範要件と、将来も維持する設計要件
 - [アーキテクチャ](architecture.md): クレートの責務、依存関係、データ整合性
+- [v0.3.0 再設計仕様](v0.3.0-design.md): SQLite 正本、Kanidm group 認可、新 API の確定設計
 - [ロードマップ](roadmap.md): 未完了作業の順序と判断時期
 - [要件ヒアリング記録](interviews.md): 要件を決めた時点の履歴
 

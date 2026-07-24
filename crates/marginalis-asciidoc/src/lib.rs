@@ -17,8 +17,10 @@ use adocweave::semantic::{
 };
 use adocweave::text::{TextRange, TextSize};
 use marginalis_domain::{
-    EntityId, NoteId, NoteProjection, NoteReference as ProjectionReference, UserId,
+    CanonicalNote, EntityId, NoteId, NoteProjection, NoteReference as ProjectionReference,
+    UnixMillis, UserId,
 };
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
 
 /// 採用したAdocWeaveソースcommit。
@@ -70,6 +72,46 @@ pub fn verify_runtime_package_version() -> Result<(), ContractMismatch> {
             actual,
         })
     }
+}
+
+/// SQLite正本から可搬用のAsciiDoc文書を生成できない理由。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CanonicalExportError;
+
+impl fmt::Display for CanonicalExportError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("canonical note timestamp is outside the RFC 3339 range")
+    }
+}
+
+impl std::error::Error for CanonicalExportError {}
+
+/// v0.3.0のSQLite正本を単体export用のAsciiDocへ変換する。
+///
+/// headerは永続化しない。`note-id`、作成者、時刻、タグは正本から毎回生成するため、利用者が
+/// server管理属性を偽装する経路を作らない。
+pub fn export_canonical_note(note: &CanonicalNote) -> Result<String, CanonicalExportError> {
+    let created_at = format_unix_millis(note.created_at)?;
+    let updated_at = format_unix_millis(note.updated_at)?;
+    Ok(format!(
+        "= {}\n:note-id: {}\n:creator-issuer: {}\n:creator-subject: {}\n:created-at: {}\n:updated-at: {}\n:tags: {}\n\n{}",
+        note.title,
+        note.note_id,
+        note.creator_issuer,
+        note.creator_subject,
+        created_at,
+        updated_at,
+        note.tags.join(","),
+        note.body,
+    ))
+}
+
+fn format_unix_millis(value: UnixMillis) -> Result<String, CanonicalExportError> {
+    let nanos = i128::from(value.get()) * 1_000_000;
+    OffsetDateTime::from_unix_timestamp_nanos(nanos)
+        .map_err(|_| CanonicalExportError)?
+        .format(&Rfc3339)
+        .map_err(|_| CanonicalExportError)
 }
 
 /// 保存済みノートで変更を許可しない文書属性。
@@ -918,13 +960,15 @@ mod tests {
     use adocweave_wasm::{
         WasmOptions, WasmProductSet, WasmRenderInputs, WasmRequest, process_request,
     };
+    use marginalis_domain::{CanonicalNote, EntityId, NoteId, UnixMillis};
 
     use super::{
         ADOCWEAVE_SOURCE_REVISION, DEFAULT_SOURCE_LANGUAGES, NoteContentErrorCode, NoteMathDisplay,
         NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_ADOCWEAVE_PACKAGE_VERSION,
-        ProtectedAttributeRewriteErrorCode, RenderInputs, build_note_projection, extract_note_math,
-        extract_note_references, project, rewrite_protected_attributes,
-        validate_note_content_profile, validate_note_metadata, verify_runtime_package_version,
+        ProtectedAttributeRewriteErrorCode, RenderInputs, build_note_projection,
+        export_canonical_note, extract_note_math, extract_note_references, project,
+        rewrite_protected_attributes, validate_note_content_profile, validate_note_metadata,
+        verify_runtime_package_version,
     };
 
     #[test]
@@ -935,6 +979,31 @@ mod tests {
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit())
         );
+    }
+
+    #[test]
+    fn exports_server_managed_attributes_from_the_canonical_note() {
+        let note = CanonicalNote {
+            note_id: NoteId::new(
+                "0197c9bc-0000-7000-8000-000000000001"
+                    .parse::<EntityId>()
+                    .expect("v7 ID"),
+            ),
+            creator_issuer: "https://id.example.test".into(),
+            creator_subject: "alice".into(),
+            title: "Export".into(),
+            body: "body".into(),
+            tags: vec!["research".into(), "v3".into()],
+            created_at: UnixMillis::new(0),
+            updated_at: UnixMillis::new(1_000),
+            revision: 1,
+            deleted_at: None,
+        };
+        let exported = export_canonical_note(&note).expect("export");
+        assert!(exported.starts_with("= Export\n:note-id: 0197c9bc-0000-7000-8000-000000000001\n"));
+        assert!(exported.contains(":creator-issuer: https://id.example.test\n"));
+        assert!(exported.contains(":creator-subject: alice\n"));
+        assert!(exported.contains(":tags: research,v3\n\nbody"));
     }
 
     #[test]

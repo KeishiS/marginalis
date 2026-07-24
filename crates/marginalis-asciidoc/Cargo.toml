@@ -11,3 +11,4 @@ adocweave.workspace = true
 adocweave-wasm.workspace = true
 marginalis-domain = { path = "../marginalis-domain" }
 unicode-normalization.workspace = true
+time.workspace = true
