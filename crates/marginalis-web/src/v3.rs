@@ -263,9 +263,20 @@ struct LoginQuery {
     next: Option<String>,
 }
 
-fn valid_return_to(value: &str) -> bool {
-    value.starts_with("/oauth/authorize?")
-        && !value.starts_with("//")
+fn external_path(base_path: &str, path: &str) -> String {
+    debug_assert!(path.starts_with('/'));
+    if base_path == "/" {
+        path.into()
+    } else {
+        format!("{}{path}", base_path.trim_end_matches('/'))
+    }
+}
+
+fn valid_return_to(value: &str, base_path: &str) -> bool {
+    value.starts_with(&format!(
+        "{}/oauth/authorize?",
+        base_path.trim_end_matches('/')
+    )) && !value.starts_with("//")
         && !value.contains('\r')
         && !value.contains('\n')
 }
@@ -282,7 +293,10 @@ async fn begin_login(
             .map_err(authentication_error)?,
     )
     .into_response();
-    if let Some(next) = query.next.filter(|next| valid_return_to(next)) {
+    if let Some(next) = query
+        .next
+        .filter(|next| valid_return_to(next, &state.cookie_path))
+    {
         let encoded = URL_SAFE_NO_PAD.encode(next);
         response.headers_mut().append(
             header::SET_COOKIE,
@@ -321,8 +335,8 @@ async fn complete_login(
     let return_to = cookie_value(&headers, RETURN_TO_COOKIE)
         .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
         .and_then(|value| String::from_utf8(value).ok())
-        .filter(|value| valid_return_to(value))
-        .unwrap_or_else(|| "/".into());
+        .filter(|value| valid_return_to(value, &state.cookie_path))
+        .unwrap_or_else(|| state.cookie_path.clone());
     let mut response = Redirect::to(&return_to).into_response();
     for value in [
         format!(
@@ -573,15 +587,17 @@ async fn mcp_authorize(
                 }
             }
             let next = format!(
-                "/oauth/authorize?{}",
+                "{}?{}",
+                external_path(&state.cookie_path, "/oauth/authorize"),
                 request_uri.query().expect("query pairs were added")
             );
             let encoded_next =
                 url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>();
-            return Ok(
-                Redirect::temporary(&format!("/auth/oidc/login?next={encoded_next}"))
-                    .into_response(),
-            );
+            return Ok(Redirect::temporary(&format!(
+                "{}?next={encoded_next}",
+                external_path(&state.cookie_path, "/auth/oidc/login")
+            ))
+            .into_response());
         }
         Err(error) => return Err(error),
     };
@@ -1040,8 +1056,8 @@ async fn home(State(state): State<V3ApiState>, headers: HeaderMap) -> V3Result<H
         .into_iter()
         .map(|note| {
             format!(
-                "<li><a href=\"/notes/{}\">{}</a></li>",
-                note.note_id,
+                "<li><a href=\"{}\">{}</a></li>",
+                external_path(&state.cookie_path, &format!("/notes/{}", note.note_id)),
                 escape_html(&note.title)
             )
         })
@@ -1070,8 +1086,9 @@ async fn view_note(
         )
     })?;
     Ok(Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>{}</title><main><p><a href=\"/\">一覧</a></p>{}</main>",
+        "<!doctype html><meta charset=\"utf-8\"><title>{}</title><main><p><a href=\"{}\">一覧</a></p>{}</main>",
         escape_html(&note.title),
+        external_path(&state.cookie_path, "/"),
         body
     )))
 }
@@ -1443,6 +1460,22 @@ mod tests {
                 token_endpoint_uri: "https://example.test/oauth/token".into(),
             }),
         )
+    }
+
+    #[test]
+    fn v3_external_paths_preserve_the_configured_subpath() {
+        assert_eq!(
+            external_path("/marginalis", "/notes/123"),
+            "/marginalis/notes/123"
+        );
+        assert!(valid_return_to(
+            "/marginalis/oauth/authorize?client_id=client",
+            "/marginalis"
+        ));
+        assert!(!valid_return_to(
+            "/oauth/authorize?client_id=client",
+            "/marginalis"
+        ));
     }
 
     #[tokio::test]
