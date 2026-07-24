@@ -211,6 +211,10 @@ pub fn router(state: V3ApiState) -> Router {
         )
         .route("/api/v2/notes/{note_id}/restore", post(restore_note))
         .route("/api/v2/notes/{note_id}/source", get(export_note))
+        .route(
+            "/api/v2/mcp-authorizations/{client_id}",
+            axum::routing::delete(revoke_mcp_authorization),
+        )
         .with_state(state)
         .layer(middleware::from_fn(v3_security_headers))
 }
@@ -639,6 +643,28 @@ async fn mcp_token(
         expires_in: pair.access_expires_in_seconds,
         scope: pair.scope,
     }))
+}
+
+async fn revoke_mcp_authorization(
+    State(state): State<V3ApiState>,
+    Path(client_id): Path<String>,
+    headers: HeaderMap,
+) -> V3Result<StatusCode> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let endpoint = mcp_endpoint(&state)?;
+    if client_id.trim().is_empty() {
+        return Err(problem(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "client ID is invalid",
+        ));
+    }
+    endpoint
+        .oauth
+        .revoke(actor, client_id)
+        .await
+        .map_err(mcp_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]

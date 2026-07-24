@@ -13,7 +13,17 @@
       "put": { "responses": { "200": { "description": "updated" }, "409": { "description": "revision conflict" } } },
       "delete": { "responses": { "200": { "description": "soft deleted" }, "409": { "description": "revision conflict" } } }
     },
-    "/api/v2/notes/{note_id}/source": { "get": { "responses": { "200": { "description": "AsciiDoc export" } } } }
-    ,"/api/v2/notes/{note_id}/restore": { "post": { "responses": { "200": { "description": "restored" }, "404": { "description": "not restorable" } } } }
+    "/api/v2/notes/{note_id}/source": { "get": { "responses": { "200": { "description": "AsciiDoc export" } } } },
+    "/api/v2/notes/{note_id}/restore": { "post": { "responses": { "200": { "description": "restored" }, "404": { "description": "not restorable" } } } },
+    "/api/v2/mcp-authorizations/{client_id}": {
+      "delete": {
+        "description": "Revoke the authenticated user's OAuth authorization and all of its tokens for one MCP client.",
+        "responses": {
+          "204": { "description": "revoked" },
+          "401": { "description": "authentication required" },
+          "403": { "description": "CSRF rejected" }
+        }
+      }
+    }
   }
 }
