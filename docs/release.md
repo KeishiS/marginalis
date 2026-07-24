@@ -61,12 +61,16 @@ OpenAPI 仕様、GitHub Actions の構文、Nix flake、NixOS VM テスト、Lin
 1. `Cargo.toml` 群と flake のバージョンがリリース対象のバージョンと一致していること、
    `LICENSE-MIT`・`LICENSE-APACHE` が確定していることを確認する。`CHANGELOG.md` の対象版に
    記載した `未公開` を公開日へ置き換える。
-2. `Cargo.lock` を含む差分と `CHANGELOG.md` を確認し、注釈付きタグ `v<version>` を作成して
-   push する。タグで起動した `Release gate` は、タグ名、Cargo パッケージ群、flake、
-   `CHANGELOG.md` の版が一致しない場合に失敗する。
-3. GitHub Actions の `Release gate` が成功した後、公開配布が必要な場合にだけ GitHub Release
+2. リリース用ブランチをpushし、[GitHubを使う開発手順](development.md)に従ってPull Requestを
+   作成する。`main`へ直接pushしない。差分、ローカルのリリースゲート、Pull Requestの
+   必須チェックを確認してからマージする。
+3. マージ済みの`main`を取得し、Pull Requestで確認したコミットと一致することを確かめる。
+   注釈付きタグ`v<version>`をそのコミットへ作成し、タグだけをpushする。タグで起動した
+   `Release gate`は、タグ名、Cargoパッケージ群、flake、`CHANGELOG.md`の版が一致しない場合に
+   失敗する。
+4. GitHub Actions の `Release gate` が成功した後、公開配布が必要な場合にだけ GitHub Release
    を作成する。タグだけで運用する場合は Release の作成を省略できる。
-4. NixOS 利用者には、Git 参照をタグへ固定するよう案内する。`v0.2.0` 系列への初回更新では、
+5. NixOS 利用者には、Git 参照をタグへ固定するよう案内する。`v0.2.0` 系列への初回更新では、
    新しいバイナリを起動する前に[初期化手順](nixos.md#v020-系列へ初めて更新する)
    を完了するよう明記する。
 

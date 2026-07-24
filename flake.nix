@@ -250,6 +250,7 @@
               rustToolchain
               cargo-make
               git
+              gh
               lld
               nix
               nixfmt

@@ -20,6 +20,7 @@
 
 ## 設計・開発向け
 
+- [GitHubを使う開発手順](development.md): Nix開発環境、`gh`、ブランチ、Pull Request、マージ
 - [要件定義](requirements.md): 現行の規範要件と、将来も維持する設計要件
 - [アーキテクチャ](architecture.md): クレートの責務、依存関係、データ整合性
 - [ロードマップ](roadmap.md): 未完了作業の順序と判断時期
