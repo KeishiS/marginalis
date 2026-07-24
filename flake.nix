@@ -129,16 +129,7 @@
                 name = "marginalis";
                 text = ''
                   test -d "$MARGINALIS_DATA_DIR"
-                  test "$MARGINALIS_INITIAL_REGISTRATION_POLICY" = open
                   test "$RUST_LOG" = "info,marginalis_auth_oidc=info"
-                  if [ "''${1-}" = "rebuild-projections" ]; then
-                    touch "$MARGINALIS_DATA_DIR/projections-rebuilt"
-                    exit 0
-                  fi
-                  if [ "''${1-}" = "prune-audit" ]; then
-                    touch "$MARGINALIS_DATA_DIR/audit-pruned"
-                    exit 0
-                  fi
                   if [ "''${1-}" = "backup" ] && [ "''${2-}" = "--directory" ]; then
                     test "$3" = "/var/lib/marginalis-backups/test"
                     touch "$3/backup-created"
