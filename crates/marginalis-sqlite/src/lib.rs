@@ -3439,7 +3439,48 @@ mod tests {
                 .mcp_client(&client.client_id)
                 .await
                 .expect("lookup"),
-            Some(client)
+            Some(client.clone())
+        );
+        let grant = CanonicalMcpAuthorizationGrant {
+            actor: CanonicalActor {
+                issuer: "https://id.example.test".into(),
+                subject: "alice".into(),
+                is_administrator: false,
+            },
+            client_id: client.client_id.clone(),
+            redirect_uri: client.redirect_uris[0].clone(),
+            resource_uri: "https://notes.example.test/mcp".into(),
+            scopes: vec!["notes:read".into()],
+        };
+        database
+            .issue_mcp_authorization_code("code", &grant, "challenge", UnixMillis::new(100))
+            .await
+            .expect("code");
+        assert!(
+            database
+                .consume_mcp_authorization_code(
+                    "code",
+                    &grant.client_id,
+                    &grant.redirect_uri,
+                    &grant.resource_uri,
+                    UnixMillis::new(1)
+                )
+                .await
+                .expect("consume")
+                .is_some()
+        );
+        assert!(
+            database
+                .consume_mcp_authorization_code(
+                    "code",
+                    &grant.client_id,
+                    &grant.redirect_uri,
+                    &grant.resource_uri,
+                    UnixMillis::new(1)
+                )
+                .await
+                .expect("second consume")
+                .is_none()
         );
     }
 
