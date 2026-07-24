@@ -864,8 +864,13 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use axum::{body::Body, http::Request};
-    use marginalis_application::{AuthenticationUseCaseError, NoteUseCaseError};
-    use marginalis_domain::{CanonicalAuthenticatedSession, CanonicalWebSession};
+    use marginalis_application::{
+        AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, V3McpTokenPair,
+    };
+    use marginalis_domain::{
+        CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor, CanonicalWebSession,
+        McpOAuthClient,
+    };
     use tower::ServiceExt;
 
     struct Notes;
@@ -975,6 +980,61 @@ mod tests {
         }
     }
 
+    struct Mcp;
+    #[async_trait]
+    impl V3McpOAuthUseCases for Mcp {
+        async fn register_client(
+            &self,
+            _client: McpOAuthClient,
+        ) -> Result<(), McpOAuthUseCaseError> {
+            Ok(())
+        }
+        async fn authorize(
+            &self,
+            _actor: CanonicalActor,
+            _client_id: String,
+            _redirect_uri: String,
+            _resource_uri: String,
+            _scopes: Vec<String>,
+            _code_challenge: String,
+        ) -> Result<String, McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+        async fn exchange_authorization_code(
+            &self,
+            _code: String,
+            _client_id: String,
+            _redirect_uri: String,
+            _resource_uri: String,
+            _verifier: String,
+        ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+        async fn refresh_access_token(
+            &self,
+            _refresh_token: String,
+            _client_id: String,
+            _resource_uri: String,
+        ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
+            Err(McpOAuthUseCaseError::Rejected)
+        }
+        async fn authenticate(
+            &self,
+            _token: String,
+            _resource_uri: String,
+            _scope: String,
+        ) -> Result<Option<CanonicalMcpAuthenticatedActor>, McpOAuthUseCaseError> {
+            Ok(None)
+        }
+        async fn revoke(
+            &self,
+            _actor: CanonicalActor,
+            _client_id: String,
+        ) -> Result<(), McpOAuthUseCaseError> {
+            Ok(())
+        }
+    }
+
     fn app() -> Router {
         router(V3ApiState::new(
             Arc::new(Notes),
@@ -983,6 +1043,27 @@ mod tests {
             "/".into(),
             "https://example.test".into(),
         ))
+    }
+
+    fn mcp_app() -> Router {
+        router(
+            V3ApiState::new(
+                Arc::new(Notes),
+                Arc::new(Sessions),
+                Arc::new(Oidc),
+                "/".into(),
+                "https://example.test".into(),
+            )
+            .with_mcp(V3McpEndpoint {
+                oauth: Arc::new(Mcp),
+                resource_uri: "https://example.test/mcp".into(),
+                metadata_uri: "https://example.test/.well-known/oauth-protected-resource/mcp"
+                    .into(),
+                authorization_server_uri: "https://example.test".into(),
+                authorization_endpoint_uri: "https://example.test/oauth/authorize".into(),
+                token_endpoint_uri: "https://example.test/oauth/token".into(),
+            }),
+        )
     }
 
     #[tokio::test]
@@ -1022,5 +1103,18 @@ mod tests {
             OPENAPI_DOCUMENT,
             include_str!("../../../docs/openapi-v3.json")
         );
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_metadata_is_available_when_enabled() {
+        let response = mcp_app()
+            .oneshot(
+                Request::get("/.well-known/oauth-authorization-server")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }
