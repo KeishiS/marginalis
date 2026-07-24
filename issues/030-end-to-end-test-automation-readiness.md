@@ -3,8 +3,9 @@
 ## 状態
 
 実装中。第一段階のプロセス内結合試験は2026-07-23に完了した。第二段階のNixOS VM、
-実Kanidm、Playwrightを使う試験は、KVMを利用できる環境での実装と検証が必要である。
-このIssueはv0.1.0公開後の最優先作業とする。
+実Kanidm、Playwrightを使う試験は未実装である。現在のNixOS VM試験はKVM featureを
+要求するが、TCGでの実行を許可する構成も選択できる。実KanidmとChromiumを含む場合の
+実行時間は実測して判断する。このIssueはv0.1.0公開後の最優先作業とする。
 
 ## 目的
 
@@ -70,8 +71,9 @@ CIで安全かつ再現可能に実行するため、実行基盤、秘密情報
 
 - 現在のnixpkgs pinで実Kanidmを`kanidm_1_9`（1.9.4）または`kanidm_1_8`（1.8.6）として利用
   できる。NixOSには`services.kanidm` moduleが存在する。
-- `playwright-driver`（1.61.1）と`playwright-driver.browsers`を利用できる。
-  ブラウザー実行ファイルはNixから再現可能に供給でき、実行時のネットワーク取得は不要である。
+- Python bindingのPlaywright 1.61.0、`playwright-driver` 1.61.1、
+  `playwright-driver.browsers`を利用できる。ブラウザー実行ファイルはNixから再現可能に
+  供給でき、実行時のネットワーク取得は不要である。
 - 既存のリリース前検証にはNixOS VM試験が含まれる。E2Eも同じ`nix flake check`から実行できる。
 
 ### 決定した方針
@@ -115,19 +117,28 @@ CIで安全かつ再現可能に実行するため、実行基盤、秘密情報
     （シナリオ2）。
   - MCP OAuth（Authorization Code + PKCE）のHTTP flowと、REST/MCPの検索可視性一致
     （シナリオ3）。
-  - CSRF token・Origin・Fetch Metadataの欠落・不一致がすべて`403`となる失敗経路
-    （シナリオ4のapplication側）。
+  - REST APIでは、セッション連動CSRF tokenの欠落・不一致、`Origin`の欠落・不一致、
+    および送信された`Sec-Fetch-Site`の不一致を`403`とする失敗経路
+    （シナリオ4のapplication側）。`Sec-Fetch-Site`は、非ブラウザーAPI clientとの互換性の
+    ため、欠落していても拒否しない。
+  - `/acceptance`のHTML formでは、hidden fieldのセッション連動CSRF tokenを検証する。
+    HTML formが任意のHTTP headerを設定できないため、REST APIの`Origin`と
+    `Sec-Fetch-Site`の要件は適用しない。
 - 未実装の範囲は、サブパス・リバースプロキシ・TLSを通す経路、バックアップと復元、
   認可取消後のトークン失効を確認するHTTP試験である。
 
 ### 未完了: NixOS VMによるE2E試験
 
-NixOS VM、実Kanidm、Playwrightを使う試験にはKVMが必要である。現在の開発環境では
-KVMを利用できないため、対応する環境で実装・検証する。
+現在の`pkgs.testers.nixosTest`は、既定でbuilderのKVM featureを要求する。現在の開発環境には
+`/dev/kvm`がないため、この設定のままではVM試験を実行できない。`requiredFeatures.kvm = false`
+としてQEMU TCGで実行することは可能だが、実KanidmとChromiumを含む試験時間を計測したうえで、
+ローカル検証とGitHub Actionsのどちらに採用するか決める。
 
 ### 付随する決定
 
 - VM E2Eは、まずリリース前の任意検証として安定させ、その後に必須検証へ昇格する。
-- Kanidm versionは本番と同系列の`kanidm_1_9`へ固定し、本番のversion更新に追従して上げる。
+- Kanidm versionは本番と同系列へ固定し、本番のversion更新に追従して上げる。現在のnixpkgs
+  pinに含まれる`kanidm_1_9` 1.9.4は2026-05-31でサポート期間を終了しているため、第二段階の
+  実装時にはnixpkgs pinと本番Kanidmの系列を先に更新する。
 - 実装順序: 第一層（`marginalis-integration-tests` crateのin-process試験）を先に整備し、
   第二層（NixOS VM＋Playwright）はKVMを利用できる環境で検証しながら追加する。
