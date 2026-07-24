@@ -14,6 +14,7 @@ AsciiDoc関連のIssueでは、MarginalisをAdocWeaveへ組み込む処理を扱
 [022](022-v0.1.0-rc.1-release-acceptance.md)を参照する。
 `v0.2.0-rc.1`の受入確認とタグ公開は、2026-07-24に完了した。詳細は
 [035](035-v0.2.0-rc.1-release-acceptance.md)を参照する。
+`v0.2.0`正式版の公開準備は[036](036-v0.2.0-release-acceptance.md)で管理する。
 
 root管理には引き続きREST APIを使い、管理UIは後続作業とする。AdocWeave v0.6.1への更新では
 保存形式v1を破壊的に上書きする。既存環境の`dataDir`は移行せず、サービス停止後に完全に
@@ -26,19 +27,20 @@ root管理には引き続きREST APIを使い、管理UIは後続作業とする
 1. [030: E2Eテストの自動化](030-end-to-end-test-automation-readiness.md)
 2. [029: AdocWeave v0.6.1への移行](029-adocweave-v0.6.1-migration.md)
 3. [035: v0.2.0-rc.1のリリース受入](035-v0.2.0-rc.1-release-acceptance.md)
-4. [032: MCP向けの入力規則と検証結果](032-mcp-authoring-profile-and-diagnostics.md)
-5. [033: リポジトリ文書のAsciiDoc移行](033-repository-documentation-asciidoc-migration.md)
+4. [036: v0.2.0のリリース受入](036-v0.2.0-release-acceptance.md)
+5. [032: MCP向けの入力規則と検証結果](032-mcp-authoring-profile-and-diagnostics.md)
+6. [033: リポジトリ文書のAsciiDoc移行](033-repository-documentation-asciidoc-migration.md)
    （029の完了後。以降の作業とは並行できる）
-6. [027: 検索、xref、閲覧用の変換規則](027-search-reference-and-rendering-projections.md)
-7. [026: OIDCログインと実行時制限](026-oidc-login-binding-and-runtime-limits.md)の
+7. [027: 検索、xref、閲覧用の変換規則](027-search-reference-and-rendering-projections.md)
+8. [026: OIDCログインと実行時制限](026-oidc-login-binding-and-runtime-limits.md)の
    リソース上限・未認証経路対策と、
    [021: テスト構成とリリース前検証](021-test-architecture-and-release-gates.md)の
    テストモジュール分割・クレート分割
-8. [013: root 管理・OIDC ユーザー承認](013-root-administration-and-approval.md)のユーザー再有効化、招待、専用管理オリジン・mTLS
-9. Web UIの段階導入:
+9. [013: root 管理・OIDC ユーザー承認](013-root-administration-and-approval.md)のユーザー再有効化、招待、専用管理オリジン・mTLS
+10. Web UIの段階導入:
    [006: ブラウザー編集プレビュー](006-browser-preview.md)と
    [034: グラフ表示Web UI](034-graph-visualization-web-ui.md)（公開判断後）
-10. [031: PostgreSQL対応の実現性調査](031-postgresql-storage-backend-feasibility.md)
+11. [031: PostgreSQL対応の実現性調査](031-postgresql-storage-backend-feasibility.md)
 
 [012: MCP 曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)に基づく検索
 拡張は、E2E での検索品質測定後に必要性を再評価する。

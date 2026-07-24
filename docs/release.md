@@ -75,7 +75,7 @@ OpenAPI 仕様、GitHub Actions の構文、Nix flake、NixOS VM テスト、Lin
    を完了するよう明記する。
 
 ```nix
-inputs.marginalis.url = "github:KeishiS/Marginalis/v0.2.0-rc.1";
+inputs.marginalis.url = "github:KeishiS/Marginalis/v0.2.0";
 ```
 
 GitHub Release の発行と実サーバーへの適用は外部の状態を変更するため、このリポジトリからは

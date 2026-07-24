@@ -10,7 +10,7 @@ GitHub の flake input から NixOS モジュールを取り込みます。
 
 ```nix
 {
-  inputs.marginalis.url = "github:KeishiS/Marginalis/v0.2.0-rc.1";
+  inputs.marginalis.url = "github:KeishiS/Marginalis/v0.2.0";
   outputs = { self, nixpkgs, marginalis, ... }: {
     nixosConfigurations.example = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
@@ -289,7 +289,7 @@ sudo systemctl start marginalis.service
 復元では、稼働中の保存データへ触れずに、検証済みの候補を新しいパスへ作成します。
 
 ```sh
-nix run github:KeishiS/Marginalis/v0.2.0-rc.1 -- \
+nix run github:KeishiS/Marginalis/v0.2.0 -- \
   restore --input <完全なバックアップ世代> --output <存在しない絶対パス>
 ```
 

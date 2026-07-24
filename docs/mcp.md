@@ -63,7 +63,7 @@ Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resou
 参照元と参照先の両方に Read 権限がある行だけを返します。参照先が閲覧できない場合は、その
 ID・タイトル・アンカー・投影上の存在のいずれも返しません。
 
-`v0.2.0-rc.1` の MCP ツール仕様は `limit`（最大 100）だけを公開し、継続カーソルを
+`v0.2.0` の MCP ツール仕様は `limit`（最大 100）だけを公開し、継続カーソルを
 `inputSchema` に含めません。このため、MCP クライアントから複数ページを順に取得することは
 現行仕様の対象外です。REST の一覧・検索はカーソルページングに対応します。
 
