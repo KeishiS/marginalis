@@ -1164,14 +1164,16 @@ mod tests {
         WasmOptions, WasmProductSet, WasmRenderInputs, WasmRequest, process_request,
     };
     use marginalis_domain::{CanonicalNote, CanonicalNoteDraft, EntityId, NoteId, UnixMillis};
+    use std::str::FromStr;
 
     use super::{
         ADOCWEAVE_SOURCE_REVISION, DEFAULT_SOURCE_LANGUAGES, NoteContentErrorCode, NoteMathDisplay,
         NoteProfileErrorCode, NoteReferenceErrorCode, PINNED_ADOCWEAVE_PACKAGE_VERSION,
         ProtectedAttributeRewriteErrorCode, RenderInputs, build_note_projection,
         export_canonical_note, extract_note_math, extract_note_references, import_canonical_note,
-        project, rewrite_protected_attributes, validate_canonical_note_draft,
-        validate_note_content_profile, validate_note_metadata, verify_runtime_package_version,
+        project, render_canonical_note_html, rewrite_protected_attributes,
+        validate_canonical_note_draft, validate_note_content_profile, validate_note_metadata,
+        verify_runtime_package_version,
     };
 
     #[test]
@@ -1209,6 +1211,29 @@ mod tests {
         assert!(exported.contains(":tags: research,v3\n\nbody"));
         let imported = import_canonical_note(&exported).expect("import");
         assert_eq!(imported, note);
+    }
+
+    #[test]
+    fn renders_canonical_notes_only_after_the_content_profile_check() {
+        let note = CanonicalNote {
+            note_id: NoteId::new(
+                EntityId::from_str("01800000-0000-7000-8000-000000000099").expect("id"),
+            ),
+            creator_issuer: "https://id.example.test".into(),
+            creator_subject: "alice".into(),
+            title: "Safe note".into(),
+            body: "A *safe* paragraph.".into(),
+            tags: vec![],
+            created_at: UnixMillis::new(0),
+            updated_at: UnixMillis::new(0),
+            revision: 1,
+            deleted_at: None,
+        };
+        assert!(
+            render_canonical_note_html(&note)
+                .expect("safe render")
+                .contains("safe")
+        );
     }
 
     #[test]
