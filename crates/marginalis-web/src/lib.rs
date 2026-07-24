@@ -3,6 +3,8 @@
 //! 認証、Web UIおよびMCPはこのcrateのHTTP adapterとして追加する。ノートの検証、ACLおよび
 //! 永続化の業務判断は`marginalis-application`のユースケースへ委譲する。
 
+pub mod v3;
+
 use std::{
     collections::HashMap,
     net::SocketAddr,
