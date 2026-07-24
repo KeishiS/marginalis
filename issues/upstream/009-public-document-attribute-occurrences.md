@@ -14,7 +14,7 @@ AdocWeave v0.5.0 exposes final values through
 `analysis.presentation().attributes()`. It also returns source occurrences from
 `analysis.ast().attributes()`, but the concrete `DocumentAttribute` and `AttributeOperation` types
 have no public module path. A consumer can infer an occurrence value and read some fields, but it
-cannot name the type in an adapter API or portably match the set／unset variants.
+cannot name the type in an adapter API or portably match the set/unset variants.
 
 Hosts should not need to parse attribute lines again or depend on private modules to implement
 duplicate diagnostics, protected-value checks, or source-preserving edits.
@@ -70,7 +70,7 @@ information.
 Application-specific attribute names, UUID or timestamp validation, database values, authorization,
 and a generic source rewriting engine.
 
-## Implementation result
+## Adoption result
 
 AdocWeave v0.6.0 exposes
 `Analysis::document_attribute_occurrences() -> &[DocumentAttributeOccurrence]` and re-exports

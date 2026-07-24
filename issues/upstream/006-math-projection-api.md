@@ -1,5 +1,14 @@
 # Proposal: structured math projection
 
+## Status
+
+Adopted in AdocWeave RC.3.
+
+## Adoption result
+
+AdocWeave exposes structured inline and block math data, including the language, source text, and
+source range, through native and WASM projection APIs.
+
 ## Problem
 
 Hosts need math language, raw source, inline/block kind, and source range for search, editor

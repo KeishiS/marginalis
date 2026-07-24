@@ -1,86 +1,87 @@
-# 030: E2Eテスト自動化の準備と実装
+# 030: E2Eテストの自動化
 
-状態: v0.1.0 後の最優先（roadmap 段階 1）。2026-07-23 の決定方針に沿って実装中。
+## 状態
+
+実装中。第一段階のプロセス内結合試験は2026-07-23に完了した。第二段階のNixOS VM、
+実Kanidm、Playwrightを使う試験は、KVMを利用できる環境での実装と検証が必要である。
+このIssueはv0.1.0公開後の最優先作業とする。
 
 ## 目的
 
-現在のunit、adapter contract、NixOS VM testおよび手動受入を補完し、実際のbrowser、reverse proxy、
-OIDC providerおよびMCP clientを通すE2Eテストを反復可能に自動化する。
+単体試験、連携層の契約試験、NixOS VM試験、手動受入確認を補完する。ブラウザー、
+リバースプロキシ、OIDCプロバイダー、MCPクライアントを通る操作を反復可能なE2E試験にする。
 
-実装を始める前に、CIで安全かつ再現可能に動かすための前提を調査・決定する。この調査を飛ばして
-browser automationや実IdP依存を追加しない。
+CIで安全かつ再現可能に実行するため、実行基盤、秘密情報の扱い、失敗時に保存する情報を
+先に決定する。
 
-## 着手前に決める事項
+## 調査した事項
 
-E2E実装を開始する前に、次の五項目を決定し、このIssueの実施結果へ記録する。
+2026-07-23に、次の五項目を調査して方針を決定した。結論は「決定事項」に記す。
 
-1. **実行基盤**: GitHub ActionsのUbuntu runner、Nix、Playwrightを主基盤とするか。browserとNixOS VMを
-   同一workflowで動かすか、責務別jobへ分けるか。
-2. **テスト用OIDC**: CI内のtest IdPを使い、実Kanidmは手動受入に残すか。test user、client、secretの
-   生成・注入・cleanup方法をどうするか。
+1. **実行基盤**: GitHub Actions、Nix、Playwrightの役割と、ブラウザー試験とNixOS VM試験の分け方。
+2. **テスト用OIDC**: CI内で使うIdPと、テスト用利用者、クライアント、秘密情報の生成・破棄方法。
 3. **reverse proxyの再現範囲**: TLS終端、subpath、`/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/`を
    CIでどこまで通すか。proxy側rate limitをE2Eで検証するか。
-4. **MCP自動client**: Authorization Code + PKCEとStreamable HTTPを実行するclient実装・libraryを何にするか。
-   ChatGPT実機連携は手動受入として残すか。
-5. **失敗時artifactと保持**: browser trace、screenshot、server log、request IDの取得・保持期間を決める。
-   Cookie、token、authorization code、client secretをartifact・logへ出さないmasking方針を固定する。
+4. **MCP自動クライアント**: Authorization Code + PKCEとStreamable HTTPを実行する実装。
+   ChatGPTとの接続確認を手動受入に残すか。
+5. **失敗時の記録**: ブラウザーのtrace、画面、サーバーログ、request IDの保存期間。
+   Cookie、トークン、認可コード、クライアント秘密情報を記録しない方法。
 
-## 事前調査・準備
+## 実装範囲
 
-1. **実行基盤**: Playwright等のbrowser driver、headless browser、Nix devShell/CI runner、NixOS VM testの
-   どれを主基盤にするか比較する。Linux CIでのbrowser binary、sandbox、画面記録・trace・screenshotの
-   保存方針と失敗時の取得物を決める。
-2. **OIDC test provider**: 実Kanidmを使わず、Authorization Code + PKCE、Discovery、JWKS、callback、
-   `approval` policyを再現できるtest IdPを選定する。test user、client secret、password、Cookie、tokenを
-   CI log・artifact・repositoryへ出さない注入とcleanup方法を定義する。
-3. **network topology**: TLS終端を含むreverse proxy、Base URLのsubpath、`/auth/`、`/api/`、`/mcp`、
+1. **実行基盤**: Playwrightなどのブラウザードライバー、ヘッドレスブラウザー、Nix開発環境、
+   CI、NixOS VM試験を比較する。Linux CIでの実行ファイル、sandbox、trace、画面の保存方法を決める。
+2. **OIDCプロバイダー**: Authorization Code + PKCE、Discovery、JWKS、callback、
+   `approval`規則を再現できるIdPを選ぶ。テスト用利用者、秘密情報、Cookie、トークンを
+   CIログ、成果物、リポジトリへ出さない生成・破棄方法を定義する。
+3. **ネットワーク構成**: TLS終端を含むリバースプロキシ、ベースURLのサブパス、`/auth/`、`/api/`、`/mcp`、
    `/.well-known/`、`/oauth/`の経路を、CI内でどこまで再現するか決める。trusted headerを用いないroot
    login rate limitの検証責務をproxy/E2E/unitのどこへ置くか明確にする。
-4. **MCP client**: Streamable HTTPとOAuth Authorization Code + PKCEを実装する自動clientを選定する。
+4. **MCPクライアント**: Streamable HTTPとOAuth Authorization Code + PKCEを実装する自動クライアントを選ぶ。
    Protected Resource Metadata、authorization、tool呼出し、認可取消後のtoken失効を非対話で検証する方法を
    確立する。
-5. **fixtureと隔離**: UUIDv7、clock、dataDir、SQLite、OIDC identity、MCP client registration、backup
-   storageをtestごとに隔離する。並列実行、失敗後cleanup、再実行、backup/restore候補の検証方法を定義する。
+5. **テストデータと隔離**: UUIDv7、時刻、`dataDir`、SQLite、OIDC利用者、
+   MCPクライアント登録、バックアップ先を試験ごとに隔離する。並列実行、失敗後の後始末、
+   再実行、復元候補の検証方法を定義する。
 6. **受入との分担**: [実環境受入確認](../docs/acceptance.md)から自動化できる項目と、実Kanidm・本番proxy・
    永続backup storageを使う手動確認に残す項目を表で固定する。
 
-## 実装候補シナリオ
+## E2Eシナリオ
 
 1. OIDC login、`approval`によるpending作成、root承認、通常session取得、logout。
 2. RESTの作成・更新・ETag競合・検索・ACL非漏洩・確認付き物理削除。
 3. MCP OAuth、REST/MCPの可視性一致、`search_notes`、認可取消後のaccess/refresh token失効。
 4. subpath、reverse proxy、CSRF/Origin/Fetch Metadata、OIDC login CSRF失敗経路。
-5. backup generation、非破壊restore候補、projection再構築、maintenance timer、実行中OpenAPI contract。
+5. バックアップ作成、非破壊の復元候補、検索用データの再構築、保守タイマー、
+   実行中サーバーのOpenAPI仕様。
 
 ## 完了条件
 
 - 実行基盤、test IdP、MCP client、network topology、secret/artifact policyが文書化され、CIで再現可能である。
 - 主要シナリオが独立・並列実行可能なE2E suiteとして実装される。
 - 失敗時のtrace、server log、request IDおよび必要最小限の非秘密artifactを取得できる。
-- 自動E2Eと手動実環境受入の責務分担が`docs/acceptance.md`とrelease gateに反映される。
+- 自動E2Eと手動受入確認の分担が`docs/acceptance.md`とリリース前の必須検証に反映される。
 
-## 2026-07-23 事前調査と決定
+## 決定事項（2026-07-23）
 
-「着手前に決める事項」の五項目について、調査結果と決定を記す。v0.1.0 リリース後の roadmap
-進行に伴い下記推奨案を採用した。実装で支障が判明した場合は、この節を更新して方針を見直す。
+調査結果に基づいて次の方針を採用した。実装上の問題が判明した場合は、この節を更新する。
 
 ### 前提の確認結果
 
 - 現在のnixpkgs pinで実Kanidmを`kanidm_1_9`（1.9.4）または`kanidm_1_8`（1.8.6）として利用
   できる。NixOSには`services.kanidm` moduleが存在する。
-- `playwright-driver`（1.61.1）と`playwright-driver.browsers`が利用でき、browser binaryを
-  Nixからhermeticに供給できる。ネットワーク取得は不要である。
-- 既存のrelease gateはNixOS VM test（module評価、maintenance lifecycle、実binaryの縮退起動）を
-  含み、E2Eを同じ`nix flake check`系へ載せる下地がある。
+- `playwright-driver`（1.61.1）と`playwright-driver.browsers`を利用できる。
+  ブラウザー実行ファイルはNixから再現可能に供給でき、実行時のネットワーク取得は不要である。
+- 既存のリリース前検証にはNixOS VM試験が含まれる。E2Eも同じ`nix flake check`から実行できる。
 
 ### 決定した方針
 
 1. **実行基盤**: 二層構成とする。
-   - 第一層: `marginalis-integration-tests` crate（Issue 021の項目3）で、browserなしの
-     REST/MCP契約をin-process Axum＋OIDC mockに対して高速に検証する。
-   - 第二層: NixOS VM testを主基盤とし、server VM（Marginalis＋nginx＋Kanidm）とclient VM
-     （Playwright＋headless Chromium）で実経路を通す。GitHub Actionsは既存release gateと同じ
-     `nix flake check`起動とし、browser用の別jobを設けない。
+   - 第一層: `marginalis-integration-tests`クレート（Issue 021の項目3）で、
+     ブラウザーを使わないREST・MCP試験をプロセス内のAxumとOIDC mockに対して実行する。
+   - 第二層: NixOS VM試験を主基盤とする。サーバーVM（Marginalis、nginx、Kanidm）と
+     クライアントVM（Playwright、ヘッドレスChromium）で実経路を通す。GitHub Actionsは
+     `nix flake check`から実行し、ブラウザー専用の別jobは設けない。
 2. **テスト用OIDC**: mock IdPを新規に選定せず、**実KanidmをVM内で使う**。本番IdPと同一実装で
    Discovery・JWKS・`approval` policyまで再現でき、忠実度が最も高い。test user・client secret
    はtestScript内で毎回生成し、リポジトリとCI secretへ置かない。実Kanidm「本番インスタンス」を
@@ -90,9 +91,9 @@ E2E実装を開始する前に、次の五項目を決定し、このIssueの実
    構成は独立した1シナリオとして持つ。proxy側rate limitはdocs/nixos.mdの設定例をそのまま
    VMへ適用して検証し、limiter単体の境界値はunit testの責務とする。
 4. **MCP自動client**: 外部SDKへ依存せず、integration-tests crate内に**最小のRust製test client**
-   （Streamable HTTP＋Authorization Code＋PKCE S256＋loopback redirect受け）を実装する。公開
-   契約だけを使い、外部runtime（Node等）をrelease gateへ持ち込まない。ChatGPT等の実機連携は
-   手動受入に残す。
+   （Streamable HTTP＋Authorization Code＋PKCE S256＋loopback redirect受け）を実装する。
+   公開仕様だけを使い、外部の実行環境（Nodeなど）をリリース前の必須検証へ持ち込まない。
+   ChatGPTなどとの接続確認は手動受入に残す。
 5. **失敗時artifact**: 失敗時にPlaywright trace・screenshot・`journalctl -u marginalis`・
    `X-Request-Id`対応表を取得し、GitHub Actions artifactとして14日保持する。Cookie・token・
    authorization code・client secretはtestScriptで生成した使い捨て値のみであり、実secretは
@@ -100,7 +101,7 @@ E2E実装を開始する前に、次の五項目を決定し、このIssueの実
 
 ## 実施結果
 
-### 第一層: in-process統合試験（2026-07-23）
+### 完了: プロセス内結合試験（2026-07-23）
 
 - `marginalis-integration-tests` crateを追加した（Issue 021 項目3の基盤を兼ねる）。
 - 試験用のHS256 OIDC provider（Discovery・JWKS・token endpointを実HTTP listenerで提供）を
@@ -116,16 +117,17 @@ E2E実装を開始する前に、次の五項目を決定し、このIssueの実
     （シナリオ3）。
   - CSRF token・Origin・Fetch Metadataの欠落・不一致がすべて`403`となる失敗経路
     （シナリオ4のapplication側）。
-- 未実装として残る範囲: subpath・reverse proxy・TLSを通す経路（シナリオ4の残り、第二層）、
-  backup/restore lifecycle（シナリオ5、既存VM testの拡張）、認可取消後のtoken失効のHTTP試験。
+- 未実装の範囲は、サブパス・リバースプロキシ・TLSを通す経路、バックアップと復元、
+  認可取消後のトークン失効を確認するHTTP試験である。
 
-第二層（NixOS VM＋実Kanidm＋Playwright）の実装・検証にはKVMが必要である。現在の開発環境には
-KVMがないため、KVMを利用できる環境での作業として残す。
+### 未完了: NixOS VMによるE2E試験
+
+NixOS VM、実Kanidm、Playwrightを使う試験にはKVMが必要である。現在の開発環境では
+KVMを利用できないため、対応する環境で実装・検証する。
 
 ### 付随する決定
 
-- VM E2Eはまずrelease gate非必須の別checkとして安定させ、その後に必須へ昇格する段階導入と
-  する。
+- VM E2Eは、まずリリース前の任意検証として安定させ、その後に必須検証へ昇格する。
 - Kanidm versionは本番と同系列の`kanidm_1_9`へ固定し、本番のversion更新に追従して上げる。
 - 実装順序: 第一層（`marginalis-integration-tests` crateのin-process試験）を先に整備し、
   第二層（NixOS VM＋Playwright）はKVMを利用できる環境で検証しながら追加する。

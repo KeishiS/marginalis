@@ -1,5 +1,14 @@
 # Proposal: structured fixed attributes for external links
 
+## Status
+
+Adopted in AdocWeave RC.3.
+
+## Adoption result
+
+AdocWeave can add fixed `target` and `rel` attributes to links classified as external without
+accepting arbitrary attributes from document input.
+
 ## Problem
 
 Hosts commonly need external `http` and `https` links to open in a new tab with

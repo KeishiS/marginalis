@@ -2,9 +2,13 @@
 
 ## Status
 
-AdocWeave RC.3 added `UnresolvedReferencePresentation` (`Target`、`LabelOnly`、`Hidden`).
-Resolver-provided plain-text `display_text` and its WASM／projection parity were added before
-v0.1.0 stable. This proposal is adopted.
+Adopted in AdocWeave v0.1.0.
+
+## Adoption result
+
+AdocWeave RC.3 added `UnresolvedReferencePresentation` (`Target`, `LabelOnly`, and `Hidden`).
+Resolver-provided plain-text `display_text`, including equivalent WASM and projection output, was
+added before v0.1.0.
 
 ## Problem
 

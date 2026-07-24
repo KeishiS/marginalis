@@ -1,5 +1,14 @@
 # Proposal: explicit resource-resolution profile
 
+## Status
+
+Adopted in AdocWeave RC.3.
+
+## Adoption result
+
+AdocWeave provides a restrictive resource profile without causing the core parser or renderer to
+perform I/O. Native and WASM integrations apply the same restrictions.
+
 ## Problem
 
 Pure parsing performs no I/O, but hosts benefit from an explicit profile that prevents accidental

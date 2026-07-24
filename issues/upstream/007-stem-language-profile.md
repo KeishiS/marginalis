@@ -1,5 +1,14 @@
 # Proposal: host-configurable STEM language profile
 
+## Status
+
+Adopted in AdocWeave RC.3.
+
+## Adoption result
+
+AdocWeave provides a host-configurable STEM-language policy with stable diagnostics and equivalent
+native, LSP, and WASM behavior.
+
 ## Problem
 
 Hosts may need to accept only a subset of otherwise supported STEM languages while preserving the

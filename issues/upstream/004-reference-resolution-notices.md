@@ -2,9 +2,13 @@
 
 ## Status
 
-AdocWeave RC.3 provides `ResolutionNoticeKind::Fallback` on successful resolved references and
-preserves it across native/WASM rendering and projection. Notice messages remain host-owned, so
-this draft's requested host-supplied message field is no longer required for the application.
+Adopted in AdocWeave RC.3.
+
+## Adoption result
+
+AdocWeave provides `ResolutionNoticeKind::Fallback` on successful resolved references and
+preserves it across native and WASM rendering and projection. Notice messages remain host-owned,
+so the host-supplied message field proposed below is not required by Marginalis.
 
 ## Problem
 

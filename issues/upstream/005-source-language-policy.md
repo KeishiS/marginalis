@@ -1,5 +1,14 @@
 # Proposal: source block language policy
 
+## Status
+
+Adopted in AdocWeave RC.3.
+
+## Adoption result
+
+AdocWeave provides a host-configurable source-language policy with consistent native and WASM
+behavior.
+
 ## Problem
 
 Sanitizing a source language into a `language-*` class is safe but does not let hosts reject or

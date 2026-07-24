@@ -1,5 +1,14 @@
 # Proposal: separate authored and resolver-produced URL policy, with WASM parity
 
+## Status
+
+Adopted in AdocWeave RC.3.
+
+## Adoption result
+
+AdocWeave distinguishes authored URLs from resolver-produced URLs and applies the same structured
+URL policy in native and WASM rendering.
+
 ## Problem
 
 An authored link and a URL returned by a trusted host resolver have different trust boundaries.
