@@ -53,23 +53,20 @@ NixOS モジュールの設定、シークレット、リバースプロキシ�
 | `MARGINALIS_DATABASE_URL` | SQLite の接続 URL |
 | `MARGINALIS_BASE_URL` | 外部からアクセスする HTTPS のベース URL |
 | `MARGINALIS_LISTEN_ADDR` | HTTP の待受アドレス |
-| `MARGINALIS_DATA_DIR` | AsciiDoc 正本、SQLite、`FORMAT` マーカーを置くディレクトリ |
+| `MARGINALIS_DATA_DIR` | SQLite runtime state を置くディレクトリ |
 | `OIDC_ISSUER_URL` | OIDC issuer |
 | `OIDC_CLIENT_ID` | OIDC クライアント ID |
 | `OIDC_CLIENT_SECRET` または `OIDC_CLIENT_SECRET_FILE` | OIDC クライアントシークレット |
-| `ROOT_PASSWORD` または `ROOT_PASSWORD_FILE` | 未初期化データベースで `root` を作成するための初期パスワード |
+| `KANIDM_MEMBERSHIP_API_URL` | Kanidm membership API のベース URL |
+| `KANIDM_MEMBERSHIP_TOKEN` または `KANIDM_MEMBERSHIP_TOKEN_FILE` | read-only service-account token |
 
-MCP は既定で無効です。`MARGINALIS_MCP_ENABLE=true` で有効にできます。未知のクライアントの
-Client ID Metadata Document を取得する場合は、
-`MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS` に許可する HTTPS ホストを指定します。
+MCP は既定で無効です。`MARGINALIS_MCP_ENABLE=true` で有効にできます。client は Dynamic Client
+Registration と Authorization Code + PKCE を使います。
 
 シークレットを Git、SQLite、通常の設定ファイル、ログへ保存しないでください。環境変数または
-`*_FILE` を使い、実行環境のシークレット管理機構から渡します。`ROOT_PASSWORD` と
-`ROOT_PASSWORD_FILE` は初回起動時にだけ必要です。初期化済みのデータベースへ指定しても、
-既存の `root` パスワードは変更されません。
+`*_FILE` を使い、実行環境のシークレット管理機構から渡します。
 
 ## 現在の範囲
 
-REST API、`root` による利用者管理、OAuth で保護された MCP、NixOS モジュールを提供しています。
-一般利用者向け Web UI、Device Authorization Grant、ベクトル検索、曖昧検索、専用の管理
-オリジンと mTLS は提供していません。着手順は[ロードマップ](docs/roadmap.md)を参照してください。
+Kanidm group 認可、SQLite 正本、閲覧 Web UI、OAuth で保護された MCP、NixOS module を提供します。
+現行運用は [v0.3.0 運用契約](docs/v0.3.0-operations.md) を参照してください。

@@ -131,12 +131,12 @@ done
 '''
 
 [tasks.openapi-check]
-description = "Validate the published OpenAPI document and required REST paths"
+description = "Validate the published v0.3 OpenAPI document and required REST paths"
 command = "jq"
 args = [
   "-e",
-  ".openapi == \"3.1.0\" and .info.version == \"v1\" and (.paths[\"/api/v1/openapi.json\"] | has(\"get\")) and (.paths[\"/api/v1/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v1/admin/users/pending\"] | has(\"get\")) and (.components.schemas.Problem.required == [\"code\", \"message\"]) and (.components.schemas.UuidV7.pattern | startswith(\"^[0-9a-fA-F]{8}\")) and (.components.schemas.McpAuthorization.properties.authorized_at.format == \"date-time\") and (.paths[\"/api/v1/notes/{note_id}/source\"].get.responses[\"200\"].headers.ETag.required == true)",
-  "docs/openapi.json",
+  ".openapi == \"3.1.0\" and .info.version == \"v2\" and (.paths[\"/api/v2/health\"] | has(\"get\")) and (.paths[\"/api/v2/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v2/notes/{note_id}/source\"] | has(\"get\")) and (.paths[\"/api/v2/mcp-authorizations/{client_id}\"] | has(\"delete\"))",
+  "docs/openapi-v3.json",
 ]
 
 [tasks.adocweave-version-check]
