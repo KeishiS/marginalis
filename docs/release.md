@@ -50,7 +50,7 @@ OpenAPI 契約、GitHub Actions の構文、Nix flake、NixOS VM テスト、Lin
 4. NixOS 利用者には、Git 参照をタグへ固定するよう案内する。
 
 ```nix
-inputs.marginalis.url = "github:KeishiS/Marginalis/v0.1.0";
+inputs.marginalis.url = "github:KeishiS/Marginalis/v0.1.1";
 ```
 
 GitHub Release の発行と実サーバーへの適用は外部の状態を変更するため、このリポジトリからは
