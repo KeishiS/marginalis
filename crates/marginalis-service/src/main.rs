@@ -118,7 +118,7 @@ fn required_absolute_file_argument(
     Ok(path)
 }
 
-/// 停止中のserviceに対してSQLiteとAsciiDoc正本を一組で取得するbackup command。
+/// 停止中のserviceに対してSQLite正本を可搬archiveとして取得するbackup command。
 async fn backup(
     mut arguments: impl Iterator<Item = String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -158,22 +158,25 @@ async fn backup(
 
 async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
-    let layout = StorageLayout::open(&configuration.data_dir)?;
-    let database = SqliteDatabase::connect_with_initial_registration_policy(
-        &configuration.database_url,
-        configuration.initial_registration_policy,
-    )
-    .await?;
-    let sources = FileNoteStore::open(layout.data_directory())?;
-    let database_path = output.join("marginalis.sqlite");
-    let database_path = database_path
-        .to_str()
-        .ok_or("backup output directory must be valid UTF-8")?;
-    database.backup_to(database_path).await?;
-    let note_count = sources.copy_sources_to(output)?;
-    layout.copy_format_to(output)?;
-    write_backup_manifest(output, SystemClock.now())?;
-    std::fs::write(output.join("COMPLETE"), "Marginalis backup format 1\n")?;
+    let archive = V3SqliteDatabase::connect(&configuration.database_url)
+        .await?
+        .export_archive()
+        .await?;
+    let archive_path = output.join("marginalis-v3-archive.json");
+    let archive_file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&archive_path)?;
+    serde_json::to_writer_pretty(&archive_file, &archive)?;
+    archive_file.sync_all()?;
+    std::fs::write(
+        output.join("COMPLETE"),
+        format!(
+            "Marginalis backup {}\n",
+            marginalis_domain::CANONICAL_ARCHIVE_FORMAT
+        ),
+    )?;
+    let note_count = archive.notes.len();
     tracing::info!(output = %output.display(), note_count, "backup completed");
     Ok(())
 }
@@ -271,6 +274,7 @@ fn restore_into_validated(
 /// backupのformatと内容を、復元前に機械的に検証できる固定manifestへ記録する。
 ///
 /// `SourceRevision`はSHA-256のhex表現なので、SQLiteと正本の同一性確認にも再利用する。
+#[cfg(test)]
 fn write_backup_manifest(
     backup: &Path,
     created_at: UnixMillis,

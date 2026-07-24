@@ -162,7 +162,6 @@
                   enable = true;
                   package = probeServer;
                   baseUrl = "https://marginalis.example.test";
-                  initialRegistrationPolicy = "open";
                   backupDirectory = "/var/lib/marginalis-backups/test";
                   oidc = {
                     issuerUrl = "https://id.example.test";
@@ -178,16 +177,9 @@
                 machine.succeed("systemctl restart marginalis.service")
                 machine.wait_for_unit("marginalis.service")
                 machine.succeed("test -f /var/lib/marginalis/service-started")
-                machine.succeed("systemctl start marginalis-rebuild-projections.service")
-                machine.succeed("test -f /var/lib/marginalis/projections-rebuilt")
-                machine.succeed("systemctl show -p ActiveState --value marginalis.service | grep -qx inactive")
-                machine.succeed("systemctl start marginalis.service")
-                machine.wait_for_unit("marginalis.service")
                 machine.succeed("systemctl start marginalis-backup.service")
                 machine.succeed("test -f /var/lib/marginalis-backups/test/backup-created")
                 machine.succeed("systemctl show -p ActiveState --value marginalis.service | grep -qx inactive")
-                machine.succeed("systemctl start marginalis-prune-audit.service")
-                machine.succeed("test -f /var/lib/marginalis/audit-pruned")
               '';
             };
           nixos-module-runtime-vm = pkgs.testers.nixosTest {
@@ -201,12 +193,10 @@
                 pkgs.sqlite
               ];
               environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
-              environment.etc."marginalis-test/root-password".text = "root-password";
 
               services.marginalis = {
                 enable = true;
                 baseUrl = "https://marginalis.example.test";
-                initialRootPasswordFile = "/etc/marginalis-test/root-password";
                 oidc = {
                   # networkに依存せずroot-only縮退起動を検証する。実OIDCの確認は手動acceptanceで行う。
                   issuerUrl = "https://127.0.0.1:1";
@@ -219,18 +209,12 @@
             testScript = ''
               machine.wait_for_unit("marginalis.service")
               machine.wait_until_succeeds(
-                  "curl -fsS http://127.0.0.1:3000/api/v1/health | jq -e '.status == \"ok\" and .api_version == \"v1\"'"
+                  "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\" and .api_version == \"v2\"'"
               )
               machine.succeed(
-                  "test \"$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/v1/readiness)\" = 503"
+                  "curl -fsS http://127.0.0.1:3000/api/v2/openapi.json | jq -e '.openapi == \"3.1.0\"'"
               )
-              machine.succeed(
-                  "curl -fsS http://127.0.0.1:3000/api/v1/openapi.json | jq -e '.openapi == \"3.1.0\"'"
-              )
-              machine.succeed(
-                  "test \"$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{\"password\":\"root-password\"}' http://127.0.0.1:3000/auth/root/login)\" = 204"
-              )
-              machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM root_credentials'")
+              machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM v3_notes'")
             '';
           };
         }
