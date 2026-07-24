@@ -251,6 +251,7 @@
               cargo-make
               git
               gh
+              jq
               lld
               nix
               nixfmt
