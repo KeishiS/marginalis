@@ -1,10 +1,11 @@
 //! HTTP、SQLite、ファイルシステムから独立したユースケースとport。
 
 use marginalis_domain::{
-    Actor, CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, McpAuthorizationGrant,
-    McpClientAuthorization, McpOAuthClient, NoteId, NoteLinkPage, NotePage, NotePermission,
-    NoteProjection, NoteSearchFilters, NoteSource, OidcIdentity, OidcLoginResult, OidcUser,
-    RegistrationPolicy, SourceRevision, UnixMillis, UserId,
+    Actor, CanonicalActor, CanonicalAuthenticatedSession, CanonicalNote, CanonicalNoteDraft,
+    CanonicalWebSession, EntityId, McpAuthorizationGrant, McpClientAuthorization, McpOAuthClient,
+    NoteId, NoteLinkPage, NotePage, NotePermission, NoteProjection, NoteSearchFilters, NoteSource,
+    OidcIdentity, OidcLoginResult, OidcUser, RegistrationPolicy, SourceRevision, UnixMillis,
+    UserId,
 };
 use std::future::Future;
 
@@ -854,6 +855,41 @@ pub trait V3NoteUseCases: Send + Sync {
         note_id: NoteId,
         expected_revision: i64,
     ) -> Result<CanonicalNote, NoteUseCaseError>;
+}
+
+/// Kanidmから再確認した主体の利用資格。group名そのものはHTTP・SQLiteへ漏らさない。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct V3GroupMembership {
+    pub is_user: bool,
+    pub is_administrator: bool,
+}
+
+/// Kanidmへの所属確認を隔離するport。
+#[async_trait]
+pub trait V3MembershipResolver: Send + Sync {
+    async fn resolve(
+        &self,
+        issuer: &str,
+        subject: &str,
+    ) -> Result<V3GroupMembership, AuthenticationUseCaseError>;
+}
+
+/// v0.3のCookie sessionとKanidm group再確認を扱う境界。
+#[async_trait]
+pub trait V3WebSessionUseCases: Send + Sync {
+    async fn authenticate_session(
+        &self,
+        session_id: String,
+    ) -> Result<Option<CanonicalAuthenticatedSession>, AuthenticationUseCaseError>;
+    async fn verify_csrf(
+        &self,
+        session_id: String,
+        csrf_token: String,
+    ) -> Result<bool, AuthenticationUseCaseError>;
+    async fn issue_session(
+        &self,
+        actor: CanonicalActor,
+    ) -> Result<CanonicalWebSession, AuthenticationUseCaseError>;
 }
 
 impl std::fmt::Display for NoteUseCaseError {

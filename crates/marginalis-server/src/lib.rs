@@ -12,14 +12,15 @@ use marginalis_application::{
     McpRefreshTokenRotation, McpTokenPair, NoteAclService, NoteAclServiceError, NoteAclStore,
     NoteDraft, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases, NoteWriteService,
     OidcAuthenticationUseCases, OidcUserAdministrationStore, Random, RootCredentialStore,
-    SessionLifetime, UserAdministrationUseCases, V3NoteUseCases, WebSession, WebSessionService,
-    WebSessionStore, WebSessionUseCases,
+    SessionLifetime, UserAdministrationUseCases, V3MembershipResolver, V3NoteUseCases,
+    V3WebSessionUseCases, WebSession, WebSessionService, WebSessionStore, WebSessionUseCases,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError};
 use marginalis_domain::{
-    Actor, CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, McpAuthorizationGrant,
-    NoteId, NotePage, NotePermission, NoteSource, OidcLoginResult, RegistrationPolicy,
-    RootAuditAction, RootAuditEvent, SourceRevision, UnixMillis, UserId,
+    Actor, CanonicalActor, CanonicalAuthenticatedSession, CanonicalNote, CanonicalNoteDraft,
+    CanonicalWebSession, EntityId, McpAuthorizationGrant, NoteId, NotePage, NotePermission,
+    NoteSource, OidcLoginResult, RegistrationPolicy, RootAuditAction, RootAuditEvent,
+    SourceRevision, UnixMillis, UserId,
 };
 use marginalis_files::FileNoteStore;
 use marginalis_mcp::{McpAuthenticationError, McpAuthenticator};
@@ -73,6 +74,30 @@ pub struct ServerV3NoteUseCases {
 impl ServerV3NoteUseCases {
     pub fn new(database: V3SqliteDatabase) -> Self {
         Self { database }
+    }
+}
+
+/// 5分ごとのKanidm group再確認を強制するv0.3 Cookie session service。
+#[derive(Clone)]
+pub struct ServerV3WebSessionUseCases {
+    database: V3SqliteDatabase,
+    membership: Arc<dyn V3MembershipResolver>,
+    lifetime: SessionLifetime,
+}
+
+const V3_GROUP_REVALIDATION_INTERVAL_MS: i64 = 5 * 60 * 1_000;
+
+impl ServerV3WebSessionUseCases {
+    pub fn new(
+        database: V3SqliteDatabase,
+        membership: Arc<dyn V3MembershipResolver>,
+        lifetime: SessionLifetime,
+    ) -> Self {
+        Self {
+            database,
+            membership,
+            lifetime,
+        }
     }
 }
 
@@ -1109,6 +1134,88 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
     }
 }
 
+#[async_trait]
+impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
+    async fn authenticate_session(
+        &self,
+        session_id: String,
+    ) -> Result<Option<CanonicalAuthenticatedSession>, AuthenticationUseCaseError> {
+        let now = SystemClock.now();
+        let Some(session) = self
+            .database
+            .lookup_web_session(&session_id, now)
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?
+        else {
+            return Ok(None);
+        };
+        if now
+            .get()
+            .saturating_sub(session.membership_checked_at.get())
+            < V3_GROUP_REVALIDATION_INTERVAL_MS
+        {
+            return Ok(Some(session));
+        }
+        let membership = match self
+            .membership
+            .resolve(&session.actor.issuer, &session.actor.subject)
+            .await
+        {
+            Ok(membership) => membership,
+            Err(AuthenticationUseCaseError::Rejected | AuthenticationUseCaseError::NotFound) => {
+                return self
+                    .database
+                    .refresh_web_session_membership(&session_id, false, false, now)
+                    .await
+                    .map_err(|_| AuthenticationUseCaseError::Unavailable);
+            }
+            Err(AuthenticationUseCaseError::Unavailable) => {
+                return Err(AuthenticationUseCaseError::Unavailable);
+            }
+        };
+        self.database
+            .refresh_web_session_membership(
+                &session_id,
+                membership.is_user,
+                membership.is_administrator,
+                now,
+            )
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn verify_csrf(
+        &self,
+        session_id: String,
+        csrf_token: String,
+    ) -> Result<bool, AuthenticationUseCaseError> {
+        self.database
+            .validate_web_session_csrf(&session_id, &csrf_token)
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+    }
+
+    async fn issue_session(
+        &self,
+        actor: CanonicalActor,
+    ) -> Result<CanonicalWebSession, AuthenticationUseCaseError> {
+        let now = SystemClock.now();
+        let session = CanonicalWebSession {
+            session_id: SystemRandom.opaque_token(),
+            csrf_token: SystemRandom.opaque_token(),
+            actor,
+            membership_checked_at: now,
+            idle_expires_at: UnixMillis::new(now.get() + self.lifetime.idle_timeout_ms),
+            absolute_expires_at: UnixMillis::new(now.get() + self.lifetime.absolute_timeout_ms),
+        };
+        self.database
+            .issue_web_session(&session, now)
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        Ok(session)
+    }
+}
+
 /// raw AsciiDoc APIの保護属性を、解析済みのattribute rangeだけでサーバ値へ置換する。
 ///
 /// header全体を再生成しないため、利用者が書いた他のAsciiDoc属性と文書構造を保持する。
@@ -1703,9 +1810,25 @@ mod tests {
     use super::*;
     use marginalis_application::{
         McpOAuthAdministrationUseCases, McpOAuthUseCases, NoteUseCases, OidcIdentityStore,
+        V3GroupMembership,
     };
     use marginalis_domain::{McpOAuthClient, OidcIdentity, RegistrationPolicy};
     use marginalis_mcp::McpAuthenticator;
+
+    struct TestMembershipResolver {
+        result: Result<V3GroupMembership, AuthenticationUseCaseError>,
+    }
+
+    #[async_trait]
+    impl V3MembershipResolver for TestMembershipResolver {
+        async fn resolve(
+            &self,
+            _issuer: &str,
+            _subject: &str,
+        ) -> Result<V3GroupMembership, AuthenticationUseCaseError> {
+            self.result
+        }
+    }
 
     #[test]
     fn base_url_rejects_non_https() {
@@ -2126,6 +2249,56 @@ mod tests {
                 .await
                 .expect("visible notes")
                 .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_session_revalidates_stale_membership_and_fails_closed() {
+        let database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let now = SystemClock.now();
+        let session = CanonicalWebSession {
+            session_id: "stale-session".into(),
+            csrf_token: "csrf".into(),
+            actor: CanonicalActor {
+                issuer: "https://kanidm.example.test".into(),
+                subject: "removed-user".into(),
+                is_administrator: false,
+            },
+            membership_checked_at: UnixMillis::new(
+                now.get() - V3_GROUP_REVALIDATION_INTERVAL_MS - 1,
+            ),
+            idle_expires_at: UnixMillis::new(now.get() + 60_000),
+            absolute_expires_at: UnixMillis::new(now.get() + 60_000),
+        };
+        database
+            .issue_web_session(&session, now)
+            .await
+            .expect("issue");
+        let service = ServerV3WebSessionUseCases::new(
+            database.clone(),
+            Arc::new(TestMembershipResolver {
+                result: Err(AuthenticationUseCaseError::Rejected),
+            }),
+            SessionLifetime {
+                idle_timeout_ms: 60_000,
+                absolute_timeout_ms: 60_000,
+            },
+        );
+        assert_eq!(
+            service
+                .authenticate_session(session.session_id.clone())
+                .await
+                .expect("revalidation"),
+            None
+        );
+        assert_eq!(
+            database
+                .lookup_web_session(&session.session_id, UnixMillis::new(now.get() + 1))
+                .await
+                .expect("lookup"),
+            None
         );
     }
 }
