@@ -115,7 +115,8 @@ Cookie jar と CSRF Cookie を保持できる外部 API クライアントを使
    `delete_note` を順に実行します。REST で作ったノートが MCP 検索でも、MCP で作ったノートが
    REST 検索でも、同じ ACL 判定の結果になることを確認します。
 4. REST の `DELETE /api/v1/mcp-authorizations?client_id=...` で認可を取り消し、既存の
-   アクセストークンによる `/mcp` が `401` になることを確認します。
+   アクセストークンによる `/mcp` が `401` になり、既存のリフレッシュトークンによる
+   `/oauth/token` での再発行が拒否されることを確認します。
 
 未知のクライアントを使う場合は、Client ID Metadata Document のホストを
 `clientMetadataAllowedHosts` に追加します。メタデータを持たないクライアントは、root が

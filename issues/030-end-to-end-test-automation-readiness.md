@@ -117,6 +117,8 @@ CIで安全かつ再現可能に実行するため、実行基盤、秘密情報
     （シナリオ2）。
   - MCP OAuth（Authorization Code + PKCE）のHTTP flowと、REST/MCPの検索可視性一致
     （シナリオ3）。
+  - 利用者自身によるMCP認可取消後に、発行済みaccess tokenの`/mcp`利用とrefresh tokenの
+    再交換を拒否するHTTP flow（シナリオ3）。
   - REST APIでは、セッション連動CSRF tokenの欠落・不一致、`Origin`の欠落・不一致、
     および送信された`Sec-Fetch-Site`の不一致を`403`とする失敗経路
     （シナリオ4のapplication側）。`Sec-Fetch-Site`は、非ブラウザーAPI clientとの互換性の
@@ -124,8 +126,8 @@ CIで安全かつ再現可能に実行するため、実行基盤、秘密情報
   - `/acceptance`のHTML formでは、hidden fieldのセッション連動CSRF tokenを検証する。
     HTML formが任意のHTTP headerを設定できないため、REST APIの`Origin`と
     `Sec-Fetch-Site`の要件は適用しない。
-- 未実装の範囲は、サブパス・リバースプロキシ・TLSを通す経路、バックアップと復元、
-  認可取消後のトークン失効を確認するHTTP試験である。
+- 未実装の範囲は、サブパス・リバースプロキシ・TLSを通す経路と、バックアップ・復元を
+  通す運用結合試験である。
 
 ### 未完了: NixOS VMによるE2E試験
 
