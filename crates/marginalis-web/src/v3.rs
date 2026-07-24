@@ -163,6 +163,7 @@ struct DeleteInput {
 pub fn router(state: V3ApiState) -> Router {
     Router::new()
         .route("/", get(home))
+        .route("/notes/{note_id}", get(view_note))
         .route("/api/v2/openapi.json", get(openapi))
         .route("/auth/oidc/login", get(begin_login))
         .route("/auth/oidc/callback", get(complete_login))
@@ -430,7 +431,7 @@ async fn home(State(state): State<V3ApiState>, headers: HeaderMap) -> V3Result<H
         .into_iter()
         .map(|note| {
             format!(
-                "<li><a href=\"/api/v2/notes/{}\">{}</a></li>",
+                "<li><a href=\"/notes/{}\">{}</a></li>",
                 note.note_id,
                 escape_html(&note.title)
             )
@@ -438,6 +439,31 @@ async fn home(State(state): State<V3ApiState>, headers: HeaderMap) -> V3Result<H
         .collect::<String>();
     Ok(Html(format!(
         "<!doctype html><meta charset=\"utf-8\"><title>Marginalis</title><main><h1>Marginalis</h1><p>閲覧できるノート</p><ul>{list}</ul></main>"
+    )))
+}
+
+async fn view_note(
+    State(state): State<V3ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> V3Result<Html<String>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let note = state
+        .notes
+        .read_note(actor, parse_note_id(&note_id)?)
+        .await
+        .map_err(note_error)?;
+    let body = marginalis_asciidoc::render_canonical_note_html(&note).map_err(|_| {
+        problem(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "render_failed",
+            "note cannot be rendered safely",
+        )
+    })?;
+    Ok(Html(format!(
+        "<!doctype html><meta charset=\"utf-8\"><title>{}</title><main><p><a href=\"/\">一覧</a></p>{}</main>",
+        escape_html(&note.title),
+        body
     )))
 }
 

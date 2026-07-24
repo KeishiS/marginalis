@@ -7,7 +7,7 @@ use core::{fmt, str::FromStr};
 use std::collections::{BTreeMap, BTreeSet};
 
 use adocweave::SyntaxMode;
-use adocweave::output::html::RenderPolicy;
+use adocweave::output::html::{RenderPolicy, render};
 use adocweave::output::projection::{FormulaKind, project};
 use adocweave::preprocess::discover_includes;
 use adocweave::resolution::{RenderInputs, UrlContext};
@@ -127,6 +127,32 @@ pub fn export_canonical_note(note: &CanonicalNote) -> Result<String, CanonicalEx
         note.body,
     ))
 }
+
+/// SQLite正本を再検証した上で、固定RenderPolicyの安全なHTMLへ変換する。
+pub fn render_canonical_note_html(note: &CanonicalNote) -> Result<String, CanonicalRenderError> {
+    let source = export_canonical_note(note).map_err(|_| CanonicalRenderError)?;
+    let analysis = adocweave::Engine::new(adocweave::ParseOptions {
+        syntax_mode: SyntaxMode::Strict,
+        ..Default::default()
+    })
+    .analyze(&source)
+    .map_err(|_| CanonicalRenderError)?;
+    if !validate_note_content_profile(&analysis).is_empty() {
+        return Err(CanonicalRenderError);
+    }
+    Ok(render(analysis.document(), &RenderPolicy::default()).html)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CanonicalRenderError;
+
+impl fmt::Display for CanonicalRenderError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("canonical note cannot be rendered safely")
+    }
+}
+
+impl std::error::Error for CanonicalRenderError {}
 
 /// 単体exportを、空のSQLiteへimportできる構造化正本へ変換する。
 ///
