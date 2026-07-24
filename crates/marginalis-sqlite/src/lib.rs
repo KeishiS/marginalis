@@ -1041,6 +1041,37 @@ impl V3SqliteDatabase {
         Ok(Some(grant))
     }
 
+    /// refresh tokenを消費せずに、更新前のKanidm所属再確認に必要な主体を読む。
+    pub async fn active_mcp_refresh_grant(
+        &self,
+        refresh_token: &str,
+        client_id: &str,
+        resource_uri: &str,
+        now: UnixMillis,
+    ) -> Result<Option<CanonicalMcpAuthorizationGrant>, V3NoteStoreError> {
+        let row = sqlx::query("SELECT issuer, subject, is_administrator, scopes FROM v3_mcp_refresh_tokens WHERE token_hash = ? AND client_id = ? AND resource_uri = ? AND rotated_at_ms IS NULL AND revoked_at_ms IS NULL AND expires_at_ms > ?")
+            .bind(hash_token(refresh_token)).bind(client_id).bind(resource_uri).bind(now.get()).fetch_optional(&self.pool).await.map_err(v3_database_error)?;
+        row.map(|row| {
+            Ok(CanonicalMcpAuthorizationGrant {
+                actor: CanonicalActor {
+                    issuer: row.try_get("issuer").map_err(v3_database_error)?,
+                    subject: row.try_get("subject").map_err(v3_database_error)?,
+                    is_administrator: row.try_get("is_administrator").map_err(v3_database_error)?,
+                },
+                client_id: client_id.into(),
+                redirect_uri: String::new(),
+                resource_uri: resource_uri.into(),
+                scopes: row
+                    .try_get::<String, _>("scopes")
+                    .map_err(v3_database_error)?
+                    .split_whitespace()
+                    .map(str::to_owned)
+                    .collect(),
+            })
+        })
+        .transpose()
+    }
+
     pub async fn revoke_mcp_client_tokens(
         &self,
         issuer: &str,

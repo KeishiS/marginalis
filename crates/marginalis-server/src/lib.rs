@@ -300,6 +300,33 @@ impl ServerV3McpOAuthService {
         resource_uri: String,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
         let now = SystemClock.now();
+        if let Some(membership) = &self.membership {
+            let Some(grant) = self
+                .database
+                .active_mcp_refresh_grant(&refresh_token, &client_id, &resource_uri, now)
+                .await
+                .map_err(|_| McpOAuthError::Unavailable)?
+            else {
+                return Err(McpOAuthError::Rejected);
+            };
+            let resolved = membership
+                .resolve(&grant.actor.issuer, &grant.actor.subject)
+                .await
+                .map_err(|_| McpOAuthError::Unavailable)?;
+            self.database
+                .refresh_mcp_subject_membership(
+                    &grant.actor.issuer,
+                    &grant.actor.subject,
+                    resolved.is_user,
+                    resolved.is_administrator,
+                    now,
+                )
+                .await
+                .map_err(|_| McpOAuthError::Unavailable)?;
+            if !resolved.is_user {
+                return Err(McpOAuthError::Rejected);
+            }
+        }
         let access_token = SystemRandom.opaque_token();
         let next_refresh_token = SystemRandom.opaque_token();
         let Some(grant) = self
