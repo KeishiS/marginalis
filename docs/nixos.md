@@ -32,6 +32,8 @@ reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を�
 - `marginalis-purge-deleted.timer` は毎日実行され、30 日を超えたソフトデリート済みノートを削除します。
 - `marginalis-backup.service` は `backupDirectory` を設定した場合だけ有効です。HTTP service と競合するため、
   週末の停止枠で `systemctl start marginalis-backup.service` を実行します。
+- backup service の完了後も `marginalis.service` は停止したままです。確認後に
+  `systemctl start marginalis.service` で明示的に再開します。
 - backup は `marginalis-v3-archive.json` を含む時刻付きディレクトリです。空の v3 database へ
   `marginalis import-archive --input <absolute-file>` で取り込めます。定期復元試験は v3 の release gate 外です。
 
