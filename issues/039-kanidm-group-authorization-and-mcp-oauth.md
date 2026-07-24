@@ -2,7 +2,10 @@
 
 ## 状態
 
-未着手。[037](037-v0.3.0-architecture-rebaseline.md)の認証・認可決定を実装する。
+実装中。[037](037-v0.3.0-architecture-rebaseline.md)の認証・認可決定を実装する。
+検証済み ID token からの構成可能な group claim の fail-closed な読取りと、所属更新・
+利用者除外による v0.3 Web session 失効を実装した。Kanidm への再確認、MCP token への反映、
+OAuth endpoint の置換は後続作業とする。
 
 ## 目的
 

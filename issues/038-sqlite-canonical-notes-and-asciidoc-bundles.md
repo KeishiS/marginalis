@@ -2,7 +2,10 @@
 
 ## 状態
 
-未着手。[037](037-v0.3.0-architecture-rebaseline.md)で決定した単一正本へ置き換える。
+実装中。[037](037-v0.3.0-architecture-rebaseline.md)で決定した単一正本へ置き換える。
+v0.3 schema、SQLite内のノート・ACL・検索投影の同一transaction更新、単体 AsciiDoc
+export と archive の原子 import/export を実装した。旧ファイル正本を除去して HTTP API から
+利用する変更は後続作業とする。
 
 ## 目的
 
