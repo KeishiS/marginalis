@@ -3,6 +3,13 @@
 この受入は空の SQLite database から行います。v0.2 の DB、`dataDir`、ファイル正本、root credential は
 入力にしません。archive import と定期復元試験は公開後の運用改善であり、本 release gate には含めません。
 
+## 自動証跡
+
+PR CI の `verify` と `nixos-e2e` はそれぞれ `cargo make verify` と `nix flake check -L` を実行する。
+後者には NixOS module の配備、backup/purge、OIDC 未到達時の fail-closed、実 Kanidm 1.10.4 の
+private CA・OAuth2 client provisioning・OIDC Discovery を含む。以下の browser 操作、group 変更、外部
+MCP client は実運用の IdP と client を要するため、release issue で手動結果を記録する。
+
 ## 必須確認
 
 1. NixOS module で service を配備し、`GET /api/v2/health` が `200` を返す。
