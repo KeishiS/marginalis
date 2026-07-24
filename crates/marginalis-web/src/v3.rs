@@ -8,7 +8,8 @@ use std::{str::FromStr, sync::Arc};
 use axum::{
     Json, Router,
     extract::{Form, Path, Query, State},
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
+    middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
@@ -211,6 +212,30 @@ pub fn router(state: V3ApiState) -> Router {
         .route("/api/v2/notes/{note_id}/restore", post(restore_note))
         .route("/api/v2/notes/{note_id}/source", get(export_note))
         .with_state(state)
+        .layer(middleware::from_fn(v3_security_headers))
+}
+
+async fn v3_security_headers(
+    request: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(
+            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        ),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    response
 }
 
 async fn openapi() -> Response {
@@ -652,6 +677,30 @@ async fn mcp_post(
     Json(request): Json<JsonRpcRequest>,
 ) -> V3Result<Response> {
     let endpoint = mcp_endpoint(&state)?;
+    if let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        && origin != state.browser_origin
+    {
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            "same_origin_required",
+            "MCP browser requests must use the configured origin",
+        ));
+    }
+    let accepts = headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(',')
+                .map(|item| item.trim().split(';').next().unwrap_or_default())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !accepts.contains(&"application/json") || !accepts.contains(&"text/event-stream") {
+        return Ok(StatusCode::NOT_ACCEPTABLE.into_response());
+    }
     let token = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -1342,6 +1391,7 @@ mod tests {
     async fn v3_mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         let request = Request::post("/mcp")
             .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
             .body(Body::from(
                 r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
             ))
@@ -1352,6 +1402,7 @@ mod tests {
 
         let request = Request::post("/mcp")
             .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
             .header(header::AUTHORIZATION, "Bearer valid-token")
             .body(Body::from(
                 r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
