@@ -6,8 +6,9 @@
 `marginalis-server`は公開facade、設定、ノート、session、OIDC、MCP OAuth、実行環境へ
 分割した。`marginalis-web`は共有状態、browser認証、security policy、REST note、閲覧UI、
 MCP transportへ分割した。SQLiteのschema、Web session、OIDC login attemptも独立moduleへ
-移した。規範文書の正本も主題別文書へ一本化した。残るSQLite note/archive/MCP、Webの
-MCP OAuth handler、moduleごとのtest配置を整理する。
+移し、note/ACL、archive、MCP OAuthの永続化も分離した。AsciiDoc archiveのcontent policyは
+入力境界へ移し、SQLite adapterからparser依存を除去した。規範文書の正本も主題別文書へ
+一本化した。残るWebのMCP OAuth handlerとmoduleごとのtest配置を整理する。
 
 ## 背景
 
