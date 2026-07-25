@@ -70,9 +70,83 @@ sudo install -m 0600 -o root -g root /dev/null \
 sudoedit /run/secrets/marginalis-kanidm-membership-token
 ```
 
-service account 自体には person entry の `memberof` を読む最小限の Kanidm access control profile を
-group 経由で付与する。読み取り権限を広く持つ組み込み group を安易に使わず、Marginalis 専用の group と
-ACP を作る。実際の API 応答が `memberof` 以外の不要な属性を含まないことを確認する。
+service account 自体には person entry の `memberof` を読む最小限の Kanidm access control profile
+(ACP) を group 経由で付与する。Kanidm 1.10 の CLI には ACP を作るサブコマンドがないため、次の初回
+設定では raw API を一度だけ使う。`idm_people_admins` のような広い組み込み group を service account へ
+恒久的に付与してはならない。
+
+まず ACP の receiver group を作り、service account をその group のみに加入させる。
+
+```bash
+kanidm group create marginalis-membership-readers idm_admin
+kanidm group add-members marginalis-membership-readers marginalis-membership
+```
+
+ACP 作成だけには read-write token と `idm_access_control_admins` の一時的な権限が必要である。次の
+token は作成直後だけ使用し、後続の手順で必ず失効させる。表示された token は shell history に保存せず、
+プロンプトへ貼り付ける。
+
+```bash
+kanidm group add-members idm_access_control_admins marginalis-membership
+kanidm service-account api-token generate --readwrite \
+  marginalis-membership "one-time ACP bootstrap"
+
+read -r -s -p 'Paste one-time token: ' BOOTSTRAP_TOKEN
+echo
+```
+
+`id.example.test` と CA ファイルは実環境の値へ置き換える。以下の ACP は `person` entry だけを対象にし、
+返却可能な属性を `memberof` のみに制限する。
+
+```bash
+curl --fail --show-error --cacert /etc/ssl/kanidm-ca.pem \
+  -H "Authorization: Bearer $BOOTSTRAP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data @- \
+  https://id.example.test/v1/raw/create <<'JSON'
+{
+  "entries": [
+    {
+      "attrs": {
+        "class": [
+          "object",
+          "access_control_profile",
+          "access_control_search",
+          "access_control_receiver_group",
+          "access_control_target_scope"
+        ],
+        "name": ["marginalis_membership_read"],
+        "description": ["Allow Marginalis to read person memberof only."],
+        "acp_receiver_group": ["marginalis-membership-readers"],
+        "acp_targetscope": [
+          "{\"and\":[{\"eq\":[\"class\",\"person\"]},{\"andnot\":{\"or\":[{\"eq\":[\"class\",\"recycled\"]},{\"eq\":[\"class\",\"tombstone\"]}]}}]}"
+        ],
+        "acp_search_attr": ["memberof"]
+      }
+    }
+  ]
+}
+JSON
+```
+
+成功後、temporary な権限と token を必ず除去する。`<bootstrap-token-uuid>` は
+`api-token status` の UUID へ置き換える。最後に生成する read-only token だけを
+`membershipTokenFile` へ保存する。
+
+```bash
+unset BOOTSTRAP_TOKEN
+kanidm group remove-members idm_access_control_admins marginalis-membership
+kanidm service-account api-token status marginalis-membership
+kanidm service-account api-token destroy \
+  marginalis-membership <bootstrap-token-uuid>
+
+kanidm service-account api-token generate \
+  marginalis-membership "marginalis-production-2026"
+```
+
+新しい read-only token で `GET /v1/person/<test-user>` を実行し、応答に `memberof` 以外の不要な
+属性が含まれないことを確認する。失敗時は service account が
+`idm_access_control_admins` に残っていないことを先に確認する。
 
 token の状態とローテーションは次で扱う。新 token を secret manager へ反映し、Marginalis を再起動して
 から、旧 token の UUID を失効させる。
