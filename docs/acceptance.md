@@ -16,6 +16,9 @@ release issueで手動結果を記録する。
 ## 必須確認
 
 1. NixOS module で service を配備し、`GET /api/v2/health` が `200` を返す。
+   OAuth metadataは`baseUrl`からRFC 8414/9728に従って導出し、Kanidmの`issuerUrl`からは
+   導出しない。host rootの`baseUrl`ではsubject pathを付けず、subpathの場合だけwell-known
+   suffixの後ろへsubject pathを付ける。
 2. TLS とサブパスで OIDC login を行い、`server-users` 所属者だけが session を取得できる。
 3. `server-admins` の利用者が他人のノートを閲覧・管理でき、通常利用者には ACL が適用される。
 4. `groups` claim を持たない主体と `server-users` 非所属の主体がログインを拒否されること、
