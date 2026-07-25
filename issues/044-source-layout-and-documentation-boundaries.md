@@ -2,9 +2,10 @@
 
 ## 状態
 
-着手済み。単一利用だったMCP wire crateは`marginalis-web::mcp`へ統合した。残る大規模な
-production fileと規範文書を、機能拡充前の横断的な保守性改善として、振る舞いを変えず
-責務単位のmoduleへ分割する。
+着手済み。単一利用だったMCP wire crateは`marginalis-web::mcp`へ統合し、
+`marginalis-server`は公開facade、設定、ノート、session、OIDC、MCP OAuth、実行環境へ
+分割した。SQLiteのWeb sessionとOIDC login attemptも独立moduleへ移した。残る大規模な
+production fileと規範文書を、機能拡充前の横断的な保守性改善として責務単位に整理する。
 
 ## 背景
 
@@ -17,6 +18,29 @@ transportへ統合した。
 crateは依存方向や再利用単位を隔離するときだけ増やし、単なるファイル整理には
 crate内moduleを使う。
 
+## 横断レビュー
+
+2026-07-25時点で、次を優先して解消する。
+
+1. `marginalis-web/src/http.rs`はrouter、OIDC、MCP OAuth、MCP JSON-RPC、REST、HTML UI、
+   Cookie/CSRFを2,000行以上の一ファイルに持つ。公開route一覧をcomposition rootへ残し、
+   handlerとwire型を変更理由ごとに分割する。
+2. `marginalis-sqlite/src/lib.rs`はschema、MCP OAuth、note/ACL、archiveと大半のtestを
+   1,500行以上の一ファイルに持つ。transaction境界を崩さず、永続化対象ごとに分割する。
+   AsciiDoc archiveの意味検証はSQLite adapterの責務ではないため、application/server側へ
+   移し、SQLiteは検証済みarchiveの原子的な格納に限定する。
+3. `marginalis-server`のproduction codeは責務別になったが、`mcp_oauth.rs`に他moduleのtestが
+   残る。各testを対象moduleへ移し、HTTPを通す試験だけをintegration crateへ残す。
+4. `marginalis-service/src/main.rs`はcomposition rootとmaintenance CLIを兼ねる。現状の規模では
+   crate分割は不要だが、引数解釈を`cli`、HTTP組立を`serve`、保守処理を`maintenance`へ分ける。
+5. `docs/v0.3.0-design.md`、`docs/v0.3.0-operations.md`と主題別文書が同じ規則を重複している。
+   現行の正本は`requirements.md`、`architecture.md`、`nixos.md`、`mcp.md`、`rest-api.md`とし、
+   版付き文書は公開時点の非規範snapshotとしてだけ残す。
+
+`domain`、`application`、OIDC adapter、SQLite adapter、HTTP adapter、composition rootという
+crate境界と依存方向は維持する。flatなIssue配置も番号による検索とリンク安定性を優先して維持し、
+完了・現行・将来の区別は`issues/README.md`で行う。ディレクトリ階層を増やすこと自体を目的にしない。
+
 ## 実装方針
 
 1. `marginalis-web`はrouterを一か所で一覧できる状態を保ち、`auth`、`oauth`、`mcp`、
@@ -27,9 +51,9 @@ crate内moduleを使う。
    transactionをまたぐprivate helperは所有するmoduleを一つに決める。
 4. testは対象moduleの近くへ置き、HTTP/OIDC/MCPを通す結合試験だけを
    `marginalis-integration-tests`へ残す。
-5. `docs/architecture.md`を現行責務の短い入口にする。版番号付き設計書と運用書は
-   v0.3公開後に履歴へ移し、現行の規範文書を`requirements.md`、`architecture.md`、
-   `nixos.md`、`mcp.md`、`rest-api.md`へ一本化する。
+5. `docs/architecture.md`を現行責務の短い入口にする。現行の規範文書を
+   `requirements.md`、`architecture.md`、`nixos.md`、`mcp.md`、`rest-api.md`へ一本化し、
+   版番号付き設計書と運用書は非規範snapshotとして扱う。
 6. 移動と意味変更を同じcommitに混在させない。各段階でdependency boundary、unit test、
    integration testを実行する。
 
@@ -39,4 +63,5 @@ crate内moduleを使う。
 - router、composition root、公開re-exportを見れば、実行経路と依存方向を追跡できる。
 - wire型だけの単一利用crateや、空の互換用directoryが残らない。
 - 現行仕様の同じ規則を複数文書で重複して定義せず、規範文書と履歴文書を判別できる。
+- SQLite adapterからAsciiDoc parserへの依存がなく、archiveの意味検証と格納責務が分かれる。
 - `cargo make verify`と該当するNixOS VM試験が成功し、公開HTTP/OpenAPI契約に差分がない。

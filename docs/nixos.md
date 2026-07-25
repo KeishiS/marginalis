@@ -1,7 +1,7 @@
 # NixOS での運用
 
-v3 の NixOS 設定は [v0.3.0 運用契約](v0.3.0-operations.md) を正とします。本書は設定の要点と日常操作を
-補足します。v0.2 の root、`dataDir` 内の AsciiDoc 正本、`/api/v1` の手順は適用しません。
+本書を現行のNixOS設定と日常運用の正本とします。v0.2 の root、`dataDir` 内の
+AsciiDoc 正本、`/api/v1` の手順は適用しません。
 
 ```nix
 services.marginalis = {

@@ -21,5 +21,6 @@
 - v3 の公開条件は Kanidm 1.10 E2E、MCP 認可、NixOS 配備の成功である。archive restore の定期試験は
   公開後に追加する。
 
-詳細なデータモデル、エラー処理、HTTP 契約は [再設計仕様](v0.3.0-design.md) と
-[OpenAPI](openapi.json) を参照してください。過去の v0.2 要件は Git 履歴で参照します。
+実装上の不変条件は[アーキテクチャ](architecture.md)、HTTP契約は
+[OpenAPI](openapi.json)を参照してください。過去のv0.2要件とv0.3の設計確定過程は、
+Git履歴と[再設計判断記録](v0.3.0-design.md)で参照します。

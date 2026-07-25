@@ -28,4 +28,27 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
 - access token と refresh token は hash だけを SQLite に保存する。MCP client に Kanidm token を渡さない。
 - HTTP、MCP、Web UI は可視性・ACL・revision の業務規則を複製しない。
 
-詳細な設計判断は [再設計仕様](v0.3.0-design.md) を参照してください。
+## ソース配置
+
+```text
+crates/
+├── marginalis-domain          値・不変条件
+├── marginalis-application     portとuse case契約
+├── marginalis-asciidoc        AsciiDoc検証・描画・export
+├── marginalis-auth-oidc       Kanidm OIDC adapter
+├── marginalis-sqlite          SQLite adapter
+├── marginalis-server          production adapterの組立部品
+├── marginalis-web             HTTP adapter
+├── marginalis-service         composition rootと実行バイナリ
+└── marginalis-integration-tests
+```
+
+依存は概ね上から下ではなく、外側から`domain`と`application`へ向かう。
+`domain`は他のMarginalis crateへ依存せず、`application`は`domain`だけへ依存する。
+HTTPとSQLiteは互いに依存せず、`service`が`server`を介して組み立てる。
+
+crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
+crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはcomposition rootとして、
+実行経路と公開型を短く一覧できる状態に保つ。
+
+設計を確定した経緯は[再設計判断記録](v0.3.0-design.md)を参照してください。

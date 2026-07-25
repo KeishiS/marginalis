@@ -19,9 +19,10 @@ SQLite database から初期化します。
 
 ## 運用
 
-NixOS 設定、秘密情報、backup、MCP 接続は [v0.3.0 運用契約](docs/v0.3.0-operations.md) を正とします。
-設計の根拠と不変条件は [再設計仕様](docs/v0.3.0-design.md)、今後の順序は
-[ロードマップ](docs/roadmap.md) にあります。
+NixOS 設定、秘密情報、backupは[NixOSでの運用](docs/nixos.md)、MCP接続は
+[MCPとOAuth](docs/mcp.md)を正とします。製品要件と不変条件は
+[要件定義](docs/requirements.md)と[アーキテクチャ](docs/architecture.md)、今後の順序は
+[ロードマップ](docs/roadmap.md)にあります。
 
 直接起動には、少なくとも `MARGINALIS_DATABASE_URL`、`MARGINALIS_BASE_URL`、
 `MARGINALIS_LISTEN_ADDR`、`OIDC_ISSUER_URL`、`OIDC_CLIENT_ID`、OIDC client secret が必要です。
