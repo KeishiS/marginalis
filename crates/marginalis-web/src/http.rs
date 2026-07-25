@@ -24,7 +24,7 @@ use marginalis_application::{
     AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthUseCaseError, NoteUseCaseError,
     McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
 };
-use marginalis_domain::{CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, NoteId};
+use marginalis_domain::{Actor, Note, NoteDraft, EntityId, NoteId};
 use marginalis_mcp::{JsonRpcRequest, JsonRpcResponse};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
@@ -196,8 +196,8 @@ struct NoteResponse {
     revision: i64,
 }
 
-impl From<CanonicalNote> for NoteResponse {
-    fn from(note: CanonicalNote) -> Self {
+impl From<Note> for NoteResponse {
+    fn from(note: Note) -> Self {
         Self {
             note_id: note.note_id.to_string(),
             title: note.title,
@@ -1118,7 +1118,7 @@ struct McpDelete {
 
 async fn mcp_tool_call(
     endpoint: &McpEndpoint,
-    actor: CanonicalActor,
+    actor: Actor,
     id: serde_json::Value,
     params: Option<serde_json::Value>,
 ) -> JsonRpcResponse {
@@ -1128,8 +1128,8 @@ async fn mcp_tool_call(
     let result = match call.name.as_str() {
         "list_notes" => endpoint.notes.list_visible_notes(actor).await.map(|notes| serde_json::json!(notes.into_iter().map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"title":note.title,"revision":note.revision})).collect::<Vec<_>>())),
         "get_note" => { let note_id = call.arguments.get("note_id").and_then(serde_json::Value::as_str).and_then(|value| EntityId::from_str(value).ok()).map(NoteId::new); match note_id { Some(note_id) => endpoint.notes.read_note(actor, note_id).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"title":note.title,"body":note.body,"tags":note.tags,"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") } }
-        "create_note" => match serde_json::from_value::<NoteInput>(call.arguments) { Ok(input) => endpoint.notes.create_note(actor, CanonicalNoteDraft { title: input.title, body: input.body, tags: input.tags }).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), Err(_) => return JsonRpcResponse::error(id, -32602, "note arguments are invalid") },
-        "update_note" => match serde_json::from_value::<McpUpdate>(call.arguments) { Ok(input) => match EntityId::from_str(&input.note_id).ok().map(NoteId::new) { Some(note_id) => endpoint.notes.update_note(actor, note_id, CanonicalNoteDraft { title: input.title, body: input.body, tags: input.tags }, input.expected_revision).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") }, Err(_) => return JsonRpcResponse::error(id, -32602, "update arguments are invalid") },
+        "create_note" => match serde_json::from_value::<NoteInput>(call.arguments) { Ok(input) => endpoint.notes.create_note(actor, NoteDraft { title: input.title, body: input.body, tags: input.tags }).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), Err(_) => return JsonRpcResponse::error(id, -32602, "note arguments are invalid") },
+        "update_note" => match serde_json::from_value::<McpUpdate>(call.arguments) { Ok(input) => match EntityId::from_str(&input.note_id).ok().map(NoteId::new) { Some(note_id) => endpoint.notes.update_note(actor, note_id, NoteDraft { title: input.title, body: input.body, tags: input.tags }, input.expected_revision).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") }, Err(_) => return JsonRpcResponse::error(id, -32602, "update arguments are invalid") },
         "delete_note" => match serde_json::from_value::<McpDelete>(call.arguments) { Ok(input) => match EntityId::from_str(&input.note_id).ok().map(NoteId::new) { Some(note_id) => endpoint.notes.soft_delete_note(actor, note_id, input.expected_revision).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") }, Err(_) => return JsonRpcResponse::error(id, -32602, "delete arguments are invalid") },
         _ => return JsonRpcResponse::error(id, -32601, "tool not found"),
     };
@@ -1191,7 +1191,7 @@ async fn create_note(
         .notes
         .create_note(
             actor,
-            CanonicalNoteDraft {
+            NoteDraft {
                 title: input.title,
                 body: input.body,
                 tags: input.tags,
@@ -1214,7 +1214,7 @@ async fn update_note(
         .update_note(
             actor,
             parse_note_id(&note_id)?,
-            CanonicalNoteDraft {
+            NoteDraft {
                 title: input.title,
                 body: input.body,
                 tags: input.tags,
@@ -1329,7 +1329,7 @@ async fn view_note(
     )))
 }
 
-async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> HandlerResult<CanonicalActor> {
+async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> HandlerResult<Actor> {
     let session_id = cookie_value(headers, SESSION_COOKIE).ok_or_else(|| {
         problem(
             StatusCode::UNAUTHORIZED,
@@ -1355,7 +1355,7 @@ async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> HandlerRe
 async fn authenticated_mutation_actor(
     headers: &HeaderMap,
     state: &ApiState,
-) -> HandlerResult<CanonicalActor> {
+) -> HandlerResult<Actor> {
     let actor = authenticated_actor(headers, state).await?;
     validate_mutation_origin(headers, state)?;
     let session_id =
@@ -1433,7 +1433,7 @@ async fn authenticated_form_actor(
     headers: &HeaderMap,
     state: &ApiState,
     csrf_token: &str,
-) -> HandlerResult<CanonicalActor> {
+) -> HandlerResult<Actor> {
     let actor = authenticated_actor(headers, state).await?;
     validate_mutation_origin(headers, state)?;
     let session_id =
@@ -1490,7 +1490,7 @@ mod tests {
         AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, McpTokenPair,
     };
     use marginalis_domain::{
-        CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor, CanonicalWebSession,
+        AuthenticatedSession, McpAuthenticatedActor, WebSession,
         McpOAuthClient,
     };
     use tower::ServiceExt;
@@ -1501,60 +1501,60 @@ mod tests {
     impl NoteUseCases for Notes {
         async fn list_visible_notes(
             &self,
-            _actor: CanonicalActor,
-        ) -> Result<Vec<CanonicalNote>, NoteUseCaseError> {
+            _actor: Actor,
+        ) -> Result<Vec<Note>, NoteUseCaseError> {
             Ok(Vec::new())
         }
 
         async fn read_note(
             &self,
-            _actor: CanonicalActor,
+            _actor: Actor,
             _note_id: NoteId,
-        ) -> Result<CanonicalNote, NoteUseCaseError> {
+        ) -> Result<Note, NoteUseCaseError> {
             Err(NoteUseCaseError::NotFound)
         }
 
         async fn create_note(
             &self,
-            _actor: CanonicalActor,
-            _draft: CanonicalNoteDraft,
-        ) -> Result<CanonicalNote, NoteUseCaseError> {
+            _actor: Actor,
+            _draft: NoteDraft,
+        ) -> Result<Note, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
 
         async fn update_note(
             &self,
-            _actor: CanonicalActor,
+            _actor: Actor,
             _note_id: NoteId,
-            _draft: CanonicalNoteDraft,
+            _draft: NoteDraft,
             _expected_revision: i64,
-        ) -> Result<CanonicalNote, NoteUseCaseError> {
+        ) -> Result<Note, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
 
         async fn soft_delete_note(
             &self,
-            _actor: CanonicalActor,
+            _actor: Actor,
             _note_id: NoteId,
             _expected_revision: i64,
-        ) -> Result<CanonicalNote, NoteUseCaseError> {
+        ) -> Result<Note, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
 
         async fn restore_note(
             &self,
-            _actor: CanonicalActor,
+            _actor: Actor,
             _note_id: NoteId,
             _expected_revision: i64,
-        ) -> Result<CanonicalNote, NoteUseCaseError> {
+        ) -> Result<Note, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
 
-        fn export_note_source(&self, _note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
+        fn export_note_source(&self, _note: &Note) -> Result<String, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
 
-        fn render_note_html(&self, _note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
+        fn render_note_html(&self, _note: &Note) -> Result<String, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
         }
     }
@@ -1566,7 +1566,7 @@ mod tests {
         async fn authenticate_session(
             &self,
             _session_id: String,
-        ) -> Result<Option<CanonicalAuthenticatedSession>, AuthenticationUseCaseError> {
+        ) -> Result<Option<AuthenticatedSession>, AuthenticationUseCaseError> {
             Ok(None)
         }
 
@@ -1580,8 +1580,8 @@ mod tests {
 
         async fn issue_session(
             &self,
-            _actor: CanonicalActor,
-        ) -> Result<CanonicalWebSession, AuthenticationUseCaseError> {
+            _actor: Actor,
+        ) -> Result<WebSession, AuthenticationUseCaseError> {
             Err(AuthenticationUseCaseError::Unavailable)
         }
 
@@ -1605,7 +1605,7 @@ mod tests {
             &self,
             _code: String,
             _state: String,
-        ) -> Result<CanonicalActor, AuthenticationUseCaseError> {
+        ) -> Result<Actor, AuthenticationUseCaseError> {
             Err(AuthenticationUseCaseError::Unavailable)
         }
     }
@@ -1631,7 +1631,7 @@ mod tests {
         }
         async fn authorize(
             &self,
-            _actor: CanonicalActor,
+            _actor: Actor,
             _request: marginalis_application::McpAuthorizationRequest,
         ) -> Result<String, McpOAuthUseCaseError> {
             Err(McpOAuthUseCaseError::Rejected)
@@ -1664,10 +1664,10 @@ mod tests {
             token: String,
             _resource_uri: String,
             _scope: String,
-        ) -> Result<Option<CanonicalMcpAuthenticatedActor>, McpOAuthUseCaseError> {
+        ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
             Ok(
-                (token == "valid-token").then(|| CanonicalMcpAuthenticatedActor {
-                    actor: CanonicalActor {
+                (token == "valid-token").then(|| McpAuthenticatedActor {
+                    actor: Actor {
                         issuer: "https://kanidm.example.test".into(),
                         subject: "alice".into(),
                         is_administrator: false,
@@ -1677,7 +1677,7 @@ mod tests {
         }
         async fn revoke(
             &self,
-            _actor: CanonicalActor,
+            _actor: Actor,
             _client_id: String,
         ) -> Result<(), McpOAuthUseCaseError> {
             Ok(())
@@ -2091,4 +2091,5 @@ mod tests {
         assert_eq!(mcp.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }
+
 

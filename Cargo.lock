@@ -1161,9 +1161,7 @@ dependencies = [
 name = "marginalis-domain"
 version = "0.2.0"
 dependencies = [
- "base64 0.22.1",
  "serde",
- "sha2",
  "uuid",
 ]
 

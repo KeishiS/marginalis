@@ -12,8 +12,8 @@ use marginalis_application::{
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError, OidcConfiguration};
 use marginalis_domain::{
-    CanonicalActor, CanonicalAuthenticatedSession, CanonicalNote, CanonicalNoteDraft,
-    CanonicalWebSession, EntityId, NoteId, NotePermission, UnixMillis,
+    Actor, AuthenticatedSession, Note, NoteDraft,
+    WebSession, EntityId, NoteId, NotePermission, UnixMillis,
 };
 use marginalis_sqlite::{SqliteStoreError, SqliteDatabase};
 use sha2::{Digest, Sha256};
@@ -173,12 +173,12 @@ impl ServerMcpOAuthService {
 
     pub async fn authorize(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         request: McpAuthorizationRequest,
     ) -> Result<String, McpOAuthError> {
         self.validate_authorization_request(&request).await?;
         let code = SystemRandom.opaque_token();
-        let grant = marginalis_domain::CanonicalMcpAuthorizationGrant {
+        let grant = marginalis_domain::McpAuthorizationGrant {
             actor,
             client_id: request.client_id,
             redirect_uri: request.redirect_uri,
@@ -298,7 +298,7 @@ impl ServerMcpOAuthService {
 
     async fn issue_pair(
         &self,
-        grant: marginalis_domain::CanonicalMcpAuthorizationGrant,
+        grant: marginalis_domain::McpAuthorizationGrant,
         now: UnixMillis,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
         let access_token = SystemRandom.opaque_token();
@@ -327,7 +327,7 @@ impl ServerMcpOAuthService {
         token: &str,
         resource_uri: &str,
         scope: &str,
-    ) -> Result<Option<marginalis_domain::CanonicalMcpAuthenticatedActor>, McpOAuthError> {
+    ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthError> {
         let Some(authenticated) = self
             .database
             .authenticate_mcp_access_token(token, resource_uri, scope, SystemClock.now())
@@ -341,7 +341,7 @@ impl ServerMcpOAuthService {
 
     pub async fn revoke(
         &self,
-        actor: &CanonicalActor,
+        actor: &Actor,
         client_id: &str,
     ) -> Result<(), McpOAuthError> {
         self.database
@@ -376,7 +376,7 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
     }
     async fn authorize(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         request: McpAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
         self.authorize(actor, request).await.map_err(mcp_error)
@@ -422,7 +422,7 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
         token: String,
         resource_uri: String,
         scope: String,
-    ) -> Result<Option<marginalis_domain::CanonicalMcpAuthenticatedActor>, McpOAuthUseCaseError>
+    ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthUseCaseError>
     {
         self.authenticate(&token, &resource_uri, &scope)
             .await
@@ -430,7 +430,7 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
     }
     async fn revoke(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         client_id: String,
     ) -> Result<(), McpOAuthUseCaseError> {
         self.revoke(&actor, &client_id).await.map_err(mcp_error)
@@ -506,8 +506,8 @@ fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
 impl NoteUseCases for ServerNoteUseCases {
     async fn list_visible_notes(
         &self,
-        actor: CanonicalActor,
-    ) -> Result<Vec<CanonicalNote>, NoteUseCaseError> {
+        actor: Actor,
+    ) -> Result<Vec<Note>, NoteUseCaseError> {
         self.database
             .list_visible_notes(&actor, 0, 1_000)
             .await
@@ -516,9 +516,9 @@ impl NoteUseCases for ServerNoteUseCases {
 
     async fn read_note(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         note_id: NoteId,
-    ) -> Result<CanonicalNote, NoteUseCaseError> {
+    ) -> Result<Note, NoteUseCaseError> {
         self.database
             .visible_note(&actor, note_id, NotePermission::Read)
             .await
@@ -528,13 +528,13 @@ impl NoteUseCases for ServerNoteUseCases {
 
     async fn create_note(
         &self,
-        actor: CanonicalActor,
-        draft: CanonicalNoteDraft,
-    ) -> Result<CanonicalNote, NoteUseCaseError> {
-        let draft = marginalis_asciidoc::validate_canonical_note_draft(draft)
+        actor: Actor,
+        draft: NoteDraft,
+    ) -> Result<Note, NoteUseCaseError> {
+        let draft = marginalis_asciidoc::validate_note_draft(draft)
             .map_err(|_| NoteUseCaseError::Validation)?;
         let now = SystemClock.now();
-        let note = CanonicalNote {
+        let note = Note {
             note_id: NoteId::new(SystemRandom.uuid_v7()),
             creator_issuer: actor.issuer.clone(),
             creator_subject: actor.subject.clone(),
@@ -555,17 +555,17 @@ impl NoteUseCases for ServerNoteUseCases {
 
     async fn update_note(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         note_id: NoteId,
-        draft: CanonicalNoteDraft,
+        draft: NoteDraft,
         expected_revision: i64,
-    ) -> Result<CanonicalNote, NoteUseCaseError> {
+    ) -> Result<Note, NoteUseCaseError> {
         self.database
             .visible_note(&actor, note_id, NotePermission::Write)
             .await
             .map_err(map_note_error)?
             .ok_or(NoteUseCaseError::NotFound)?;
-        let draft = marginalis_asciidoc::validate_canonical_note_draft(draft)
+        let draft = marginalis_asciidoc::validate_note_draft(draft)
             .map_err(|_| NoteUseCaseError::Validation)?;
         self.database
             .update_note(note_id, expected_revision, &draft, SystemClock.now())
@@ -575,10 +575,10 @@ impl NoteUseCases for ServerNoteUseCases {
 
     async fn soft_delete_note(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         note_id: NoteId,
         expected_revision: i64,
-    ) -> Result<CanonicalNote, NoteUseCaseError> {
+    ) -> Result<Note, NoteUseCaseError> {
         self.database
             .visible_note(&actor, note_id, NotePermission::Admin)
             .await
@@ -597,10 +597,10 @@ impl NoteUseCases for ServerNoteUseCases {
 
     async fn restore_note(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         note_id: NoteId,
         expected_revision: i64,
-    ) -> Result<CanonicalNote, NoteUseCaseError> {
+    ) -> Result<Note, NoteUseCaseError> {
         self.database
             .visible_deleted_note(&actor, note_id)
             .await
@@ -612,12 +612,12 @@ impl NoteUseCases for ServerNoteUseCases {
             .map_err(map_note_error)
     }
 
-    fn export_note_source(&self, note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
-        marginalis_asciidoc::export_canonical_note(note).map_err(|_| NoteUseCaseError::Unavailable)
+    fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
+        marginalis_asciidoc::export_note(note).map_err(|_| NoteUseCaseError::Unavailable)
     }
 
-    fn render_note_html(&self, note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
-        marginalis_asciidoc::render_canonical_note_html(note)
+    fn render_note_html(&self, note: &Note) -> Result<String, NoteUseCaseError> {
+        marginalis_asciidoc::render_note_html(note)
             .map_err(|_| NoteUseCaseError::Validation)
     }
 }
@@ -627,7 +627,7 @@ impl WebSessionUseCases for ServerWebSessionUseCases {
     async fn authenticate_session(
         &self,
         session_id: String,
-    ) -> Result<Option<CanonicalAuthenticatedSession>, AuthenticationUseCaseError> {
+    ) -> Result<Option<AuthenticatedSession>, AuthenticationUseCaseError> {
         let now = SystemClock.now();
         let Some(session) = self
             .database
@@ -653,10 +653,10 @@ impl WebSessionUseCases for ServerWebSessionUseCases {
 
     async fn issue_session(
         &self,
-        actor: CanonicalActor,
-    ) -> Result<CanonicalWebSession, AuthenticationUseCaseError> {
+        actor: Actor,
+    ) -> Result<WebSession, AuthenticationUseCaseError> {
         let now = SystemClock.now();
-        let session = CanonicalWebSession {
+        let session = WebSession {
             session_id: SystemRandom.opaque_token(),
             csrf_token: SystemRandom.opaque_token(),
             actor,
@@ -696,7 +696,7 @@ impl OidcAuthenticationUseCases for ServerOidcAuthenticationUseCases {
         &self,
         code: String,
         state: String,
-    ) -> Result<CanonicalActor, AuthenticationUseCaseError> {
+    ) -> Result<Actor, AuthenticationUseCaseError> {
         let identity = self
             .oidc()
             .await?
@@ -715,7 +715,7 @@ impl OidcAuthenticationUseCases for ServerOidcAuthenticationUseCases {
         if !identity.groups.is_user("server-users") {
             return Err(AuthenticationUseCaseError::Rejected);
         }
-        Ok(CanonicalActor {
+        Ok(Actor {
             issuer: identity.issuer,
             subject: identity.subject,
             is_administrator: identity.groups.is_administrator("server-admins"),
@@ -1033,12 +1033,12 @@ mod tests {
             .await
             .expect("database");
         let service = ServerNoteUseCases::new(database);
-        let owner = CanonicalActor {
+        let owner = Actor {
             issuer: "https://kanidm.example.test/oauth2/openid/marginalis".into(),
             subject: "owner".into(),
             is_administrator: false,
         };
-        let reader = CanonicalActor {
+        let reader = Actor {
             issuer: owner.issuer.clone(),
             subject: "reader".into(),
             is_administrator: false,
@@ -1046,7 +1046,7 @@ mod tests {
         let note = service
             .create_note(
                 owner.clone(),
-                CanonicalNoteDraft {
+                NoteDraft {
                     title: "SQLite canonical note".into(),
                     body: "Only SQLite persists this body.".into(),
                     tags: vec!["v3".into(), "sqlite".into()],
@@ -1063,7 +1063,7 @@ mod tests {
             .update_note(
                 owner.clone(),
                 note.note_id,
-                CanonicalNoteDraft {
+                NoteDraft {
                     title: "Updated title".into(),
                     body: "Updated body".into(),
                     tags: vec!["sqlite".into()],
@@ -1098,10 +1098,10 @@ mod tests {
             .await
             .expect("database");
         let now = SystemClock.now();
-        let session = CanonicalWebSession {
+        let session = WebSession {
             session_id: "stale-session".into(),
             csrf_token: "csrf".into(),
-            actor: CanonicalActor {
+            actor: Actor {
                 issuer: "https://kanidm.example.test".into(),
                 subject: "removed-user".into(),
                 is_administrator: false,
@@ -1125,7 +1125,7 @@ mod tests {
                 .authenticate_session(session.session_id.clone())
                 .await
                 .expect("snapshot"),
-            Some(CanonicalAuthenticatedSession {
+            Some(AuthenticatedSession {
                 actor: session.actor,
                 idle_expires_at: session.idle_expires_at,
                 absolute_expires_at: session.absolute_expires_at,
@@ -1149,7 +1149,7 @@ mod tests {
             .register_client(client.clone())
             .await
             .expect("client");
-        let actor = CanonicalActor {
+        let actor = Actor {
             issuer: "https://id.example.test".into(),
             subject: "alice".into(),
             is_administrator: false,
@@ -1272,4 +1272,5 @@ mod tests {
         );
     }
 }
+
 

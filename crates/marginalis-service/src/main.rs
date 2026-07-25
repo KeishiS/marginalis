@@ -164,7 +164,7 @@ async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
         output.join("COMPLETE"),
         format!(
             "Marginalis backup {}\n",
-            marginalis_domain::CANONICAL_ARCHIVE_FORMAT
+            marginalis_domain::ARCHIVE_FORMAT
         ),
     )?;
     let note_count = archive.notes.len();
@@ -376,4 +376,5 @@ mod tests {
         );
     }
 }
+
 

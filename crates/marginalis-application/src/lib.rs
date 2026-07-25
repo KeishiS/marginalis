@@ -6,8 +6,8 @@ use std::future::Future;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    CanonicalActor, CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor, CanonicalNote,
-    CanonicalNoteDraft, CanonicalWebSession, EntityId, McpOAuthClient, NoteId, UnixMillis,
+    Actor, AuthenticatedSession, McpAuthenticatedActor, Note,
+    NoteDraft, WebSession, EntityId, McpOAuthClient, NoteId, UnixMillis,
 };
 
 pub trait Clock: Send + Sync {
@@ -114,39 +114,39 @@ pub struct McpRefreshTokenRotation {
 pub trait NoteUseCases: Send + Sync {
     async fn list_visible_notes(
         &self,
-        actor: CanonicalActor,
-    ) -> Result<Vec<CanonicalNote>, NoteUseCaseError>;
+        actor: Actor,
+    ) -> Result<Vec<Note>, NoteUseCaseError>;
     async fn read_note(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         note_id: NoteId,
-    ) -> Result<CanonicalNote, NoteUseCaseError>;
+    ) -> Result<Note, NoteUseCaseError>;
     async fn create_note(
         &self,
-        actor: CanonicalActor,
-        draft: CanonicalNoteDraft,
-    ) -> Result<CanonicalNote, NoteUseCaseError>;
+        actor: Actor,
+        draft: NoteDraft,
+    ) -> Result<Note, NoteUseCaseError>;
     async fn update_note(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         note_id: NoteId,
-        draft: CanonicalNoteDraft,
+        draft: NoteDraft,
         expected_revision: i64,
-    ) -> Result<CanonicalNote, NoteUseCaseError>;
+    ) -> Result<Note, NoteUseCaseError>;
     async fn soft_delete_note(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         note_id: NoteId,
         expected_revision: i64,
-    ) -> Result<CanonicalNote, NoteUseCaseError>;
+    ) -> Result<Note, NoteUseCaseError>;
     async fn restore_note(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         note_id: NoteId,
         expected_revision: i64,
-    ) -> Result<CanonicalNote, NoteUseCaseError>;
-    fn export_note_source(&self, note: &CanonicalNote) -> Result<String, NoteUseCaseError>;
-    fn render_note_html(&self, note: &CanonicalNote) -> Result<String, NoteUseCaseError>;
+    ) -> Result<Note, NoteUseCaseError>;
+    fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError>;
+    fn render_note_html(&self, note: &Note) -> Result<String, NoteUseCaseError>;
 }
 
 /// Kanidm groupはOIDC login時に検証し、このCookie sessionの有効期間はsnapshotとして固定する。
@@ -155,7 +155,7 @@ pub trait WebSessionUseCases: Send + Sync {
     async fn authenticate_session(
         &self,
         session_id: String,
-    ) -> Result<Option<CanonicalAuthenticatedSession>, AuthenticationUseCaseError>;
+    ) -> Result<Option<AuthenticatedSession>, AuthenticationUseCaseError>;
     async fn verify_csrf(
         &self,
         session_id: String,
@@ -163,8 +163,8 @@ pub trait WebSessionUseCases: Send + Sync {
     ) -> Result<bool, AuthenticationUseCaseError>;
     async fn issue_session(
         &self,
-        actor: CanonicalActor,
-    ) -> Result<CanonicalWebSession, AuthenticationUseCaseError>;
+        actor: Actor,
+    ) -> Result<WebSession, AuthenticationUseCaseError>;
     async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError>;
 }
 
@@ -175,7 +175,7 @@ pub trait OidcAuthenticationUseCases: Send + Sync {
         &self,
         code: String,
         state: String,
-    ) -> Result<CanonicalActor, AuthenticationUseCaseError>;
+    ) -> Result<Actor, AuthenticationUseCaseError>;
 }
 
 /// token endpointだけが短時間保持するtoken pair。秘密値のためDebugを実装しない。
@@ -195,7 +195,7 @@ pub trait McpOAuthUseCases: Send + Sync {
     ) -> Result<McpOAuthClient, McpOAuthUseCaseError>;
     async fn authorize(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         request: McpAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError>;
     async fn exchange_authorization_code(
@@ -217,11 +217,12 @@ pub trait McpOAuthUseCases: Send + Sync {
         token: String,
         resource_uri: String,
         scope: String,
-    ) -> Result<Option<CanonicalMcpAuthenticatedActor>, McpOAuthUseCaseError>;
+    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError>;
     async fn revoke(
         &self,
-        actor: CanonicalActor,
+        actor: Actor,
         client_id: String,
     ) -> Result<(), McpOAuthUseCaseError>;
 }
+
 

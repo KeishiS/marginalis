@@ -6,10 +6,10 @@ use marginalis_application::{
     McpRefreshTokenRotation, OidcLoginAttempt, OidcLoginAttemptStore,
 };
 use marginalis_domain::{
-    CANONICAL_ARCHIVE_FORMAT, CanonicalActor, CanonicalArchive,
-    CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor,
-    CanonicalMcpAuthorizationGrant, CanonicalNote, CanonicalNoteAclEntry,
-    CanonicalNoteBundle, CanonicalNoteDraft, CanonicalWebSession, EntityId,
+    ARCHIVE_FORMAT, Actor, Archive,
+    AuthenticatedSession, McpAuthenticatedActor,
+    McpAuthorizationGrant, Note, NoteAclEntry,
+    NoteBundle, NoteDraft, WebSession, EntityId,
     McpOAuthClient, NoteId, NotePermission, UnixMillis,
 };
 use sha2::{Digest, Sha256};
@@ -210,7 +210,7 @@ impl SqliteDatabase {
     /// Web sessionの不透明値はhashだけを保存する。
     pub async fn issue_web_session(
         &self,
-        session: &CanonicalWebSession,
+        session: &WebSession,
         now: UnixMillis,
     ) -> Result<(), SqliteStoreError> {
         sqlx::query(
@@ -239,7 +239,7 @@ impl SqliteDatabase {
         &self,
         session_id: &str,
         now: UnixMillis,
-    ) -> Result<Option<CanonicalAuthenticatedSession>, SqliteStoreError> {
+    ) -> Result<Option<AuthenticatedSession>, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let hash = hash_token(session_id);
         let row = sqlx::query(
@@ -307,7 +307,7 @@ impl SqliteDatabase {
     pub async fn issue_mcp_authorization_code(
         &self,
         code: &str,
-        grant: &CanonicalMcpAuthorizationGrant,
+        grant: &McpAuthorizationGrant,
         code_challenge: &str,
         expires_at: UnixMillis,
     ) -> Result<(), SqliteStoreError> {
@@ -431,12 +431,12 @@ impl SqliteDatabase {
         resource_uri: &str,
         code_challenge: &str,
         now: UnixMillis,
-    ) -> Result<Option<CanonicalMcpAuthorizationGrant>, SqliteStoreError> {
+    ) -> Result<Option<McpAuthorizationGrant>, SqliteStoreError> {
         let row = sqlx::query("DELETE FROM mcp_authorization_codes WHERE code_hash = ? AND client_id = ? AND redirect_uri = ? AND resource_uri = ? AND code_challenge = ? AND expires_at_ms > ? RETURNING issuer, subject, is_administrator, scopes")
             .bind(hash_token(code)).bind(client_id).bind(redirect_uri).bind(resource_uri).bind(code_challenge).bind(now.get()).fetch_optional(&self.pool).await.map_err(database_error)?;
         row.map(|row| {
-            Ok(CanonicalMcpAuthorizationGrant {
-                actor: CanonicalActor {
+            Ok(McpAuthorizationGrant {
+                actor: Actor {
                     issuer: row.try_get("issuer").map_err(database_error)?,
                     subject: row.try_get("subject").map_err(database_error)?,
                     is_administrator: row.try_get("is_administrator").map_err(database_error)?,
@@ -459,7 +459,7 @@ impl SqliteDatabase {
         &self,
         access_token: &str,
         refresh_token: &str,
-        grant: &CanonicalMcpAuthorizationGrant,
+        grant: &McpAuthorizationGrant,
         access_expires_at: UnixMillis,
         refresh_expires_at: UnixMillis,
         _now: UnixMillis,
@@ -480,12 +480,12 @@ impl SqliteDatabase {
         resource_uri: &str,
         scope: &str,
         now: UnixMillis,
-    ) -> Result<Option<CanonicalMcpAuthenticatedActor>, SqliteStoreError> {
+    ) -> Result<Option<McpAuthenticatedActor>, SqliteStoreError> {
         let row = sqlx::query("SELECT issuer, subject, is_administrator FROM mcp_access_tokens WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ? AND instr(' ' || scopes || ' ', ' ' || ? || ' ') > 0")
             .bind(hash_token(token)).bind(resource_uri).bind(now.get()).bind(scope).fetch_optional(&self.pool).await.map_err(database_error)?;
         row.map(|r| {
-            Ok(CanonicalMcpAuthenticatedActor {
-                actor: CanonicalActor {
+            Ok(McpAuthenticatedActor {
+                actor: Actor {
                     issuer: r.try_get("issuer").map_err(database_error)?,
                     subject: r.try_get("subject").map_err(database_error)?,
                     is_administrator: r.try_get("is_administrator").map_err(database_error)?,
@@ -500,7 +500,7 @@ impl SqliteDatabase {
         &self,
         rotation: McpRefreshTokenRotation,
         now: UnixMillis,
-    ) -> Result<Option<CanonicalMcpAuthorizationGrant>, SqliteStoreError> {
+    ) -> Result<Option<McpAuthorizationGrant>, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let row = sqlx::query(
             "UPDATE mcp_refresh_tokens SET rotated_at_ms = ?
@@ -548,8 +548,8 @@ impl SqliteDatabase {
         let token_family_id = row
             .try_get::<Vec<u8>, _>("token_family_id")
             .map_err(database_error)?;
-        let grant = CanonicalMcpAuthorizationGrant {
-            actor: CanonicalActor {
+        let grant = McpAuthorizationGrant {
+            actor: Actor {
                 issuer: row.try_get("issuer").map_err(database_error)?,
                 subject: row.try_get("subject").map_err(database_error)?,
                 is_administrator: row.try_get("is_administrator").map_err(database_error)?,
@@ -600,7 +600,7 @@ impl SqliteDatabase {
     /// 正本、直接ACL、検索投影を同一transactionで作成する。
     pub async fn create_note(
         &self,
-        note: &CanonicalNote,
+        note: &Note,
         owner_permission: NotePermission,
     ) -> Result<(), SqliteStoreError> {
         let tags_json =
@@ -641,7 +641,7 @@ impl SqliteDatabase {
         &self,
         note_id: NoteId,
         include_deleted: bool,
-    ) -> Result<Option<CanonicalNote>, SqliteStoreError> {
+    ) -> Result<Option<Note>, SqliteStoreError> {
         let row = if include_deleted {
             sqlx::query(
                 "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
@@ -666,10 +666,10 @@ impl SqliteDatabase {
     /// 管理者または直接ACLを持つ主体だけに、削除済みでない正本を返す。
     pub async fn visible_note(
         &self,
-        actor: &CanonicalActor,
+        actor: &Actor,
         note_id: NoteId,
         required: NotePermission,
-    ) -> Result<Option<CanonicalNote>, SqliteStoreError> {
+    ) -> Result<Option<Note>, SqliteStoreError> {
         let row = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
@@ -694,9 +694,9 @@ impl SqliteDatabase {
     /// 復元候補として削除済みノートをAdminだけへ返す。
     pub async fn visible_deleted_note(
         &self,
-        actor: &CanonicalActor,
+        actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Option<CanonicalNote>, SqliteStoreError> {
+    ) -> Result<Option<Note>, SqliteStoreError> {
         let row = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
@@ -721,10 +721,10 @@ impl SqliteDatabase {
     /// 削除済みでない、主体に可視なノートを安定した順序で返す。
     pub async fn list_visible_notes(
         &self,
-        actor: &CanonicalActor,
+        actor: &Actor,
         offset: u64,
         limit: u32,
-    ) -> Result<Vec<CanonicalNote>, SqliteStoreError> {
+    ) -> Result<Vec<Note>, SqliteStoreError> {
         let rows = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
@@ -753,9 +753,9 @@ impl SqliteDatabase {
         &self,
         note_id: NoteId,
         expected_revision: i64,
-        draft: &CanonicalNoteDraft,
+        draft: &NoteDraft,
         updated_at: UnixMillis,
-    ) -> Result<CanonicalNote, SqliteStoreError> {
+    ) -> Result<Note, SqliteStoreError> {
         let tags_json =
             serde_json::to_string(&draft.tags).map_err(|_| SqliteStoreError::CorruptNote)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
@@ -831,7 +831,7 @@ impl SqliteDatabase {
         note_id: NoteId,
         expected_revision: i64,
         restored_at: UnixMillis,
-    ) -> Result<CanonicalNote, SqliteStoreError> {
+    ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let result = sqlx::query(
             "UPDATE notes SET deleted_at_ms = NULL, updated_at_ms = ?, revision = revision + 1
@@ -945,7 +945,7 @@ impl SqliteDatabase {
     pub async fn note_acl(
         &self,
         note_id: NoteId,
-    ) -> Result<Vec<CanonicalNoteAclEntry>, SqliteStoreError> {
+    ) -> Result<Vec<NoteAclEntry>, SqliteStoreError> {
         let rows = sqlx::query(
             "SELECT issuer, subject, permission FROM note_acl
              WHERE note_id = ? ORDER BY issuer ASC, subject ASC",
@@ -960,7 +960,7 @@ impl SqliteDatabase {
                     .try_get::<i64, _>("permission")
                     .map_err(database_error)
                     .and_then(permission_from_storage)?;
-                Ok(CanonicalNoteAclEntry {
+                Ok(NoteAclEntry {
                     issuer: row.try_get("issuer").map_err(database_error)?,
                     subject: row.try_get("subject").map_err(database_error)?,
                     permission,
@@ -970,7 +970,7 @@ impl SqliteDatabase {
     }
 
     /// SQLite正本を可搬 archive の論理表現として取り出す。
-    pub async fn export_archive(&self) -> Result<CanonicalArchive, SqliteStoreError> {
+    pub async fn export_archive(&self) -> Result<Archive, SqliteStoreError> {
         let rows = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes ORDER BY note_id ASC",
@@ -982,17 +982,17 @@ impl SqliteDatabase {
         for row in rows {
             let note = note_from_row(row)?;
             let acl = self.note_acl(note.note_id).await?;
-            notes.push(CanonicalNoteBundle { note, acl });
+            notes.push(NoteBundle { note, acl });
         }
-        Ok(CanonicalArchive {
-            format: CANONICAL_ARCHIVE_FORMAT.into(),
+        Ok(Archive {
+            format: ARCHIVE_FORMAT.into(),
             notes,
         })
     }
 
     /// 検証済みarchiveを空の v0.3.0 databaseへ一つのtransactionでimportする。
-    pub async fn import_archive(&self, archive: &CanonicalArchive) -> Result<(), SqliteStoreError> {
-        if archive.format != CANONICAL_ARCHIVE_FORMAT {
+    pub async fn import_archive(&self, archive: &Archive) -> Result<(), SqliteStoreError> {
+        if archive.format != ARCHIVE_FORMAT {
             return Err(SqliteStoreError::ArchiveFormat);
         }
         let mut note_ids = HashSet::new();
@@ -1013,7 +1013,7 @@ impl SqliteDatabase {
                 return Err(SqliteStoreError::CorruptNote);
             }
             let normalized =
-                marginalis_asciidoc::validate_canonical_note_draft(CanonicalNoteDraft {
+                marginalis_asciidoc::validate_note_draft(NoteDraft {
                     title: bundle.note.title.clone(),
                     body: bundle.note.body.clone(),
                     tags: bundle.note.tags.clone(),
@@ -1104,7 +1104,7 @@ async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 
 async fn insert_search_row(
     transaction: &mut sqlx::Transaction<'_, Sqlite>,
-    note: &CanonicalNote,
+    note: &Note,
 ) -> Result<(), SqliteStoreError> {
     sqlx::query("INSERT INTO note_search (note_id, title, body) VALUES (?, ?, ?)")
         .bind(note.note_id.to_string())
@@ -1118,7 +1118,7 @@ async fn insert_search_row(
 
 async fn insert_note_row(
     transaction: &mut sqlx::Transaction<'_, Sqlite>,
-    note: &CanonicalNote,
+    note: &Note,
 ) -> Result<(), SqliteStoreError> {
     let tags_json = serde_json::to_string(&note.tags).map_err(|_| SqliteStoreError::CorruptNote)?;
     sqlx::query(
@@ -1141,7 +1141,7 @@ async fn insert_note_row(
     Ok(())
 }
 
-fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<CanonicalNote, SqliteStoreError> {
+fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Note, SqliteStoreError> {
     let note_id = row
         .try_get::<String, _>("note_id")
         .map_err(database_error)?
@@ -1152,7 +1152,7 @@ fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<CanonicalNote, SqliteSt
         .try_get::<String, _>("tags_json")
         .map_err(database_error)?;
     let tags = serde_json::from_str(&tags_json).map_err(|_| SqliteStoreError::CorruptNote)?;
-    Ok(CanonicalNote {
+    Ok(Note {
         note_id,
         creator_issuer: row.try_get("creator_issuer").map_err(database_error)?,
         creator_subject: row.try_get("creator_subject").map_err(database_error)?,
@@ -1171,9 +1171,9 @@ fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<CanonicalNote, SqliteSt
 
 fn session_from_row(
     row: sqlx::sqlite::SqliteRow,
-) -> Result<CanonicalAuthenticatedSession, SqliteStoreError> {
-    Ok(CanonicalAuthenticatedSession {
-        actor: CanonicalActor {
+) -> Result<AuthenticatedSession, SqliteStoreError> {
+    Ok(AuthenticatedSession {
+        actor: Actor {
             issuer: row.try_get("issuer").map_err(database_error)?,
             subject: row.try_get("subject").map_err(database_error)?,
             is_administrator: row
@@ -1277,8 +1277,8 @@ mod tests {
 
     use marginalis_application::McpRefreshTokenRotation;
     use marginalis_domain::{
-        CanonicalActor, CanonicalArchive, CanonicalMcpAuthorizationGrant, CanonicalNote,
-        CanonicalNoteAclEntry, CanonicalNoteDraft, CanonicalWebSession, EntityId,
+        Actor, Archive, McpAuthorizationGrant, Note,
+        NoteAclEntry, NoteDraft, WebSession, EntityId,
         McpOAuthClient, NoteId, NotePermission, UnixMillis,
     };
 
@@ -1292,7 +1292,7 @@ mod tests {
         let note_id = NoteId::new(
             EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("v7 note ID"),
         );
-        let note = CanonicalNote {
+        let note = Note {
             note_id,
             creator_issuer: "https://id.example.test".into(),
             creator_subject: "alice".into(),
@@ -1311,7 +1311,7 @@ mod tests {
         assert_eq!(database.note(note_id, false).await, Ok(Some(note.clone())));
         assert_eq!(
             database.note_acl(note_id).await.expect("owner ACL"),
-            vec![CanonicalNoteAclEntry {
+            vec![NoteAclEntry {
                 issuer: "https://id.example.test".into(),
                 subject: "alice".into(),
                 permission: NotePermission::Admin,
@@ -1346,17 +1346,17 @@ mod tests {
             )
             .await
             .expect("downgrade after second administrator");
-        let alice = CanonicalActor {
+        let alice = Actor {
             issuer: "https://id.example.test".into(),
             subject: "alice".into(),
             is_administrator: false,
         };
-        let charlie = CanonicalActor {
+        let charlie = Actor {
             issuer: "https://id.example.test".into(),
             subject: "charlie".into(),
             is_administrator: false,
         };
-        let administrator = CanonicalActor {
+        let administrator = Actor {
             issuer: "https://id.example.test".into(),
             subject: "administrator".into(),
             is_administrator: true,
@@ -1387,7 +1387,7 @@ mod tests {
             .update_note(
                 note_id,
                 1,
-                &CanonicalNoteDraft {
+                &NoteDraft {
                     title: "Updated title".into(),
                     body: "updated body".into(),
                     tags: vec!["research".into(), "v3".into()],
@@ -1456,8 +1456,8 @@ mod tests {
                 .export_archive()
                 .await
                 .expect("empty archive"),
-            CanonicalArchive {
-                format: CANONICAL_ARCHIVE_FORMAT.into(),
+            Archive {
+                format: ARCHIVE_FORMAT.into(),
                 notes: Vec::new(),
             }
         );
@@ -1480,10 +1480,10 @@ mod tests {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("v3 migration succeeds");
-        let session = CanonicalWebSession {
+        let session = WebSession {
             session_id: "session-token".into(),
             csrf_token: "csrf-token".into(),
-            actor: CanonicalActor {
+            actor: Actor {
                 issuer: "https://id.example.test".into(),
                 subject: "alice".into(),
                 is_administrator: false,
@@ -1552,8 +1552,8 @@ mod tests {
                 .expect("lookup"),
             Some(client.clone())
         );
-        let grant = CanonicalMcpAuthorizationGrant {
-            actor: CanonicalActor {
+        let grant = McpAuthorizationGrant {
+            actor: Actor {
                 issuer: "https://id.example.test".into(),
                 subject: "alice".into(),
                 is_administrator: false,
@@ -1806,3 +1806,4 @@ mod tests {
 
 
 }
+

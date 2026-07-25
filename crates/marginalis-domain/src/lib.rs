@@ -2,12 +2,9 @@
 
 use core::{fmt, str::FromStr};
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-/// UTC epoch millisecondsで表すアプリケーション時刻。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct UnixMillis(i64);
 
@@ -21,72 +18,6 @@ impl UnixMillis {
     }
 }
 
-/// 不透明なページングcursorの形式エラー。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct InvalidOffsetCursor;
-
-impl fmt::Display for InvalidOffsetCursor {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("an offset cursor must be an unpadded base64url u64")
-    }
-}
-
-impl std::error::Error for InvalidOffsetCursor {}
-
-/// 現在の一覧・検索実装が使う不透明なoffset cursorを復号する。
-///
-/// cursorはAPIの内部表現であり、利用者は直前の応答の`next_cursor`だけを渡す。
-pub fn decode_offset_cursor(cursor: Option<String>) -> Result<u64, InvalidOffsetCursor> {
-    let Some(cursor) = cursor else {
-        return Ok(0);
-    };
-    let bytes = URL_SAFE_NO_PAD
-        .decode(cursor)
-        .map_err(|_| InvalidOffsetCursor)?;
-    let bytes: [u8; 8] = bytes.try_into().map_err(|_| InvalidOffsetCursor)?;
-    Ok(u64::from_be_bytes(bytes))
-}
-
-/// offsetをAPI公開用の不透明cursorに符号化する。
-pub fn encode_offset_cursor(offset: Option<u64>) -> Option<String> {
-    offset.map(|offset| URL_SAFE_NO_PAD.encode(offset.to_be_bytes()))
-}
-
-/// AsciiDoc正本から算出するSHA-256 revision。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SourceRevision([u8; 32]);
-
-impl SourceRevision {
-    pub fn from_source(source: &[u8]) -> Self {
-        Self(Sha256::digest(source).into())
-    }
-
-    pub const fn bytes(self) -> [u8; 32] {
-        self.0
-    }
-
-    pub fn from_bytes(value: &[u8]) -> Option<Self> {
-        value.try_into().ok().map(Self)
-    }
-
-    /// HTTP ETagおよび監査ログに使う、固定長の小文字16進表現。
-    pub fn to_hex(self) -> String {
-        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
-    }
-
-    pub fn from_hex(value: &str) -> Option<Self> {
-        if value.len() != 64 {
-            return None;
-        }
-        let mut bytes = [0_u8; 32];
-        for (index, byte) in bytes.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).ok()?;
-        }
-        Some(Self(bytes))
-    }
-}
-
-/// Marginalisが生成したUUIDv7だけを受け入れるID。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct EntityId(Uuid);
@@ -138,53 +69,26 @@ impl fmt::Display for EntityId {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
-pub struct UserId(EntityId);
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(transparent)]
 pub struct NoteId(EntityId);
 
-macro_rules! entity_id {
-    ($name:ident) => {
-        impl $name {
-            pub const fn new(value: EntityId) -> Self {
-                Self(value)
-            }
+impl NoteId {
+    pub const fn new(value: EntityId) -> Self {
+        Self(value)
+    }
 
-            pub const fn entity_id(self) -> EntityId {
-                self.0
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                self.0.fmt(formatter)
-            }
-        }
-    };
+    pub const fn entity_id(self) -> EntityId {
+        self.0
+    }
 }
 
-entity_id!(UserId);
-entity_id!(NoteId);
-
-/// 認可済みのノート正本と、その内容に一意に対応するrevision。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteSource {
-    pub note_id: NoteId,
-    pub title: String,
-    pub tags: Vec<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    pub content: Vec<u8>,
-    pub revision: SourceRevision,
+impl fmt::Display for NoteId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
 }
 
-/// v0.3.0でSQLiteへ保存するノートの単一正本。
-///
-/// `title`、`tags`、`body`は構造化された入力として保存し、AsciiDoc headerはexport時に生成する。
-/// 稼働中のfilesystemに正本を持たないため、revisionはSQLite rowの更新世代で判定する。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CanonicalNote {
+pub struct Note {
     pub note_id: NoteId,
     pub creator_issuer: String,
     pub creator_subject: String,
@@ -197,68 +101,60 @@ pub struct CanonicalNote {
     pub deleted_at: Option<UnixMillis>,
 }
 
-/// 新規作成・更新で利用者が指定できるノートの可変部分。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CanonicalNoteDraft {
+pub struct NoteDraft {
     pub title: String,
     pub body: String,
     pub tags: Vec<String>,
 }
 
-/// v0.3.0のSQLite正本に保存する直接ACLの一行。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CanonicalNoteAclEntry {
+pub struct NoteAclEntry {
     pub issuer: String,
     pub subject: String,
     pub permission: NotePermission,
 }
 
-/// 一ノートの正本と直接ACLをまとめた、v0.3.0 archive の論理単位。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CanonicalNoteBundle {
-    pub note: CanonicalNote,
-    pub acl: Vec<CanonicalNoteAclEntry>,
+pub struct NoteBundle {
+    pub note: Note,
+    pub acl: Vec<NoteAclEntry>,
 }
 
-/// databaseからexportし、空のdatabaseへimportできる可搬 archive の論理表現。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CanonicalArchive {
+pub struct Archive {
     pub format: String,
-    pub notes: Vec<CanonicalNoteBundle>,
+    pub notes: Vec<NoteBundle>,
 }
 
-pub const CANONICAL_ARCHIVE_FORMAT: &str = "marginalis-v3-archive-1";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-1";
 
-/// KanidmのOIDC identityと`server-admins`所属から構成するv0.3.0の認可主体。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalActor {
+pub struct Actor {
     pub issuer: String,
     pub subject: String,
     pub is_administrator: bool,
 }
 
-/// v0.3.0のWeb session発行時だけに扱う不透明なIDとCSRF token。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalWebSession {
+pub struct WebSession {
     pub session_id: String,
     pub csrf_token: String,
-    pub actor: CanonicalActor,
+    pub actor: Actor,
     pub idle_expires_at: UnixMillis,
     pub absolute_expires_at: UnixMillis,
 }
 
-/// token値を含まない、認証済みsessionの検証結果。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalAuthenticatedSession {
-    pub actor: CanonicalActor,
+pub struct AuthenticatedSession {
+    pub actor: Actor,
     pub idle_expires_at: UnixMillis,
     pub absolute_expires_at: UnixMillis,
 }
 
-/// v0.3 MCP OAuthでcode・tokenへ束縛するKanidm主体とclient情報。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalMcpAuthorizationGrant {
-    pub actor: CanonicalActor,
+pub struct McpAuthorizationGrant {
+    pub actor: Actor,
     pub client_id: String,
     pub redirect_uri: String,
     pub resource_uri: String,
@@ -266,240 +162,15 @@ pub struct CanonicalMcpAuthorizationGrant {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalMcpAuthenticatedActor {
-    pub actor: CanonicalActor,
+pub struct McpAuthenticatedActor {
+    pub actor: Actor,
 }
 
-/// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。
-///
-/// `title`、anchorおよび参照はAsciiDoc adapterが検証してから渡す。domainは構文木を持たない。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct NoteProjection {
-    pub note_id: NoteId,
-    pub owner_id: UserId,
-    pub title: String,
-    /// 検索filter用に正規化したtagキー。
-    pub tags: Vec<String>,
-    /// 固定ミリ秒RFC 3339表現。UTC表現の辞書順は時刻順と一致する。
-    pub created_at: String,
-    /// 固定ミリ秒RFC 3339表現。UTC表現の辞書順は時刻順と一致する。
-    pub updated_at: String,
-    /// 検索専用の正規化前テキスト。正本更新と同じtransactionで投影へ反映する。
-    pub search_text: String,
-    pub anchors: Vec<String>,
-    pub references: Vec<NoteReference>,
-}
-
-/// ACLで可視なノートの一覧・検索に共通するread model。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct NoteSummary {
-    pub note_id: NoteId,
-    pub title: String,
-}
-
-/// ACL適用後の一覧・検索結果の一頁。offsetはtransportが不透明cursorへ符号化する。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NotePage {
-    pub notes: Vec<NoteSummary>,
-    pub next_offset: Option<u64>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct NoteSearchFilters {
-    pub tags: Vec<String>,
-    pub creator_id: Option<UserId>,
-    pub created_after: Option<String>,
-    pub created_before: Option<String>,
-    pub updated_after: Option<String>,
-    pub updated_before: Option<String>,
-    pub links_to: Option<NoteId>,
-    pub linked_from: Option<NoteId>,
-}
-
-/// ACLを満たす二つのノート間にある、位置付きのoutgoing参照。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteLink {
-    pub source_start: u32,
-    pub source_end: u32,
-    pub target: NoteSummary,
-    pub target_anchor: Option<String>,
-}
-
-/// 参照一覧の一頁。参照先も閲覧可能な場合だけ含む。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteLinkPage {
-    pub links: Vec<NoteLink>,
-    pub next_offset: Option<u64>,
-}
-
-/// OAuth public clientとして登録されたMCP利用者。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpOAuthClient {
     pub client_id: String,
     pub display_name: String,
     pub redirect_uris: Vec<String>,
-}
-
-/// token値を含まない、利用者向けのMCP client認可一覧行。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpClientAuthorization {
-    pub client_id: String,
-    pub display_name: String,
-    pub scopes: Vec<String>,
-    pub authorized_at: UnixMillis,
-    pub last_used_at: Option<UnixMillis>,
-}
-
-/// ユーザーが同意済みのAuthorization Code。平文codeは永続化しない。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpAuthorizationGrant {
-    pub user_id: UserId,
-    pub client_id: String,
-    pub redirect_uri: String,
-    pub resource_uri: String,
-    pub scopes: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct NoteReference {
-    pub source_start: u32,
-    pub source_end: u32,
-    pub target_note_id: String,
-    pub target_anchor: Option<String>,
-}
-
-/// 認証済み主体。rootは通常ユーザーのACLを管理できる。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Actor {
-    pub user_id: UserId,
-    pub is_root: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RegistrationPolicy {
-    Open,
-    #[default]
-    Approval,
-    InviteOnly,
-}
-
-/// root権限で実行された認証・管理操作の、秘密情報を含まない監査種別。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RootAuditAction {
-    LoginSucceeded,
-    LoginFailed,
-    Logout,
-    OidcUserActivated,
-    OidcUserDisabled,
-    RegistrationPolicyChanged,
-    McpClientRegistered,
-    McpClientAuthorizationRevoked,
-}
-
-impl RootAuditAction {
-    pub const fn as_storage(self) -> &'static str {
-        match self {
-            Self::LoginSucceeded => "login-succeeded",
-            Self::LoginFailed => "login-failed",
-            Self::Logout => "logout",
-            Self::OidcUserActivated => "oidc-user-activated",
-            Self::OidcUserDisabled => "oidc-user-disabled",
-            Self::RegistrationPolicyChanged => "registration-policy-changed",
-            Self::McpClientRegistered => "mcp-client-registered",
-            Self::McpClientAuthorizationRevoked => "mcp-client-authorization-revoked",
-        }
-    }
-}
-
-/// root監査の一行。password、token、cookie、OIDC codeその他の秘密値は含めない。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RootAuditEvent {
-    pub action: RootAuditAction,
-    pub actor_user_id: Option<UserId>,
-    pub target_user_id: Option<UserId>,
-    /// client IDや登録policyなど、秘密でない対象識別子だけを入れる。
-    pub target: Option<String>,
-    pub occurred_at: UnixMillis,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UserStatus {
-    Pending,
-    Active,
-    Disabled,
-}
-
-impl UserStatus {
-    pub const fn as_storage(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Active => "active",
-            Self::Disabled => "disabled",
-        }
-    }
-
-    pub fn from_storage(value: &str) -> Option<Self> {
-        match value {
-            "pending" => Some(Self::Pending),
-            "active" => Some(Self::Active),
-            "disabled" => Some(Self::Disabled),
-            _ => None,
-        }
-    }
-}
-
-/// OIDCの検証済みID tokenから抽出した、本人同定と表示のための情報。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OidcIdentity {
-    pub issuer: String,
-    pub subject: String,
-    pub display_name: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct InvalidOidcIdentity;
-
-impl fmt::Display for InvalidOidcIdentity {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("OIDC issuer and subject must not be empty")
-    }
-}
-
-impl std::error::Error for InvalidOidcIdentity {}
-
-impl OidcIdentity {
-    pub fn new(
-        issuer: impl Into<String>,
-        subject: impl Into<String>,
-        display_name: impl Into<String>,
-    ) -> Result<Self, InvalidOidcIdentity> {
-        let identity = Self {
-            issuer: issuer.into(),
-            subject: subject.into(),
-            display_name: display_name.into(),
-        };
-        if identity.issuer.trim().is_empty() || identity.subject.trim().is_empty() {
-            Err(InvalidOidcIdentity)
-        } else {
-            Ok(identity)
-        }
-    }
-}
-
-/// OIDC identityに紐付く内部ユーザー。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OidcUser {
-    pub user_id: UserId,
-    pub status: UserStatus,
-    pub display_name: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OidcLoginResult {
-    Active(OidcUser),
-    PendingApproval(OidcUser),
-    RegistrationDenied,
-    Disabled(OidcUser),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -529,22 +200,5 @@ mod tests {
         assert!(NotePermission::Admin.permits(NotePermission::Write));
         assert!(!NotePermission::Read.permits(NotePermission::Write));
     }
-
-    #[test]
-    fn source_revision_round_trips_through_hex() {
-        let revision = SourceRevision::from_source(b"source");
-        assert_eq!(SourceRevision::from_hex(&revision.to_hex()), Some(revision));
-        assert_eq!(SourceRevision::from_hex("not-a-revision"), None);
-    }
-
-    #[test]
-    fn offset_cursor_round_trips_and_rejects_invalid_values() {
-        let cursor = encode_offset_cursor(Some(42)).expect("cursor");
-        assert_eq!(decode_offset_cursor(Some(cursor)), Ok(42));
-        assert_eq!(decode_offset_cursor(None), Ok(0));
-        assert_eq!(
-            decode_offset_cursor(Some("invalid".into())),
-            Err(InvalidOffsetCursor)
-        );
-    }
 }
+
