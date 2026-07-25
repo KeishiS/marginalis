@@ -3,180 +3,49 @@
 //! 旧`/api/v1`・root管理・ローカル`UserId`を参照しない。composition rootは
 //! v0.3.0ではこのrouterだけを公開する。
 
+mod error;
+mod security;
+mod state;
+
+pub use state::{ApiState, McpEndpoint};
+
 use super::{RequestId, assign_request_id};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use std::{
-    collections::VecDeque,
-    str::FromStr,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+use std::{str::FromStr, sync::Arc, time::Instant};
 
 use crate::mcp::{JsonRpcRequest, JsonRpcResponse, MCP_PROTOCOL_VERSION};
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Form, Path, Query, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
-    middleware::{self, Next},
+    http::{HeaderMap, StatusCode, header},
+    middleware,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
-use marginalis_application::{
-    AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases,
-    NoteUseCaseError, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
-};
+use marginalis_application::{McpAuthorizationRequest, McpOAuthUseCaseError};
 use marginalis_domain::{Actor, EntityId, Note, NoteDraft, NoteId};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, info_span};
+
+#[cfg(test)]
+use self::state::McpRegistrationRateLimiter;
+use self::{
+    error::{HandlerResult, authentication_error, mcp_error, note_error, problem},
+    security::security_headers,
+};
+#[cfg(test)]
+use marginalis_application::{
+    McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
+};
+#[cfg(test)]
+use std::time::Duration;
 
 pub const API_VERSION: &str = "v2";
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
 const SESSION_COOKIE: &str = "marginalis_session";
 const CSRF_COOKIE: &str = "marginalis_csrf";
 const RETURN_TO_COOKIE: &str = "marginalis_return_to";
-
-#[derive(Clone)]
-pub struct ApiState {
-    pub notes: Arc<dyn NoteUseCases>,
-    pub sessions: Arc<dyn WebSessionUseCases>,
-    pub oidc: Arc<dyn OidcAuthenticationUseCases>,
-    pub cookie_path: String,
-    pub browser_origin: String,
-    pub mcp: Option<Arc<McpEndpoint>>,
-    mcp_registration_limiter: McpRegistrationRateLimiter,
-}
-
-#[derive(Clone)]
-struct McpRegistrationRateLimiter {
-    attempts: Arc<Mutex<VecDeque<Instant>>>,
-    limit: usize,
-    window: Duration,
-}
-
-impl McpRegistrationRateLimiter {
-    fn new(limit: usize, window: Duration) -> Self {
-        Self {
-            attempts: Arc::new(Mutex::new(VecDeque::new())),
-            limit,
-            window,
-        }
-    }
-
-    fn allow(&self, now: Instant) -> bool {
-        let Ok(mut attempts) = self.attempts.lock() else {
-            return false;
-        };
-        let cutoff = now.checked_sub(self.window).unwrap_or(now);
-        while attempts.front().is_some_and(|attempt| *attempt <= cutoff) {
-            attempts.pop_front();
-        }
-        if attempts.len() >= self.limit {
-            return false;
-        }
-        attempts.push_back(now);
-        true
-    }
-}
-
-pub struct McpEndpoint {
-    pub oauth: Arc<dyn McpOAuthUseCases>,
-    pub notes: Arc<dyn NoteUseCases>,
-    /// Browser-based MCP clients are restricted to these exact Origins. Native clients omit
-    /// `Origin` and authenticate every request with a Bearer token.
-    pub allowed_origins: Vec<String>,
-    pub resource_uri: String,
-    pub metadata_uri: String,
-    pub authorization_server_uri: String,
-    pub authorization_server_metadata_uri: String,
-    pub authorization_endpoint_uri: String,
-    pub token_endpoint_uri: String,
-}
-
-impl ApiState {
-    pub fn new(
-        notes: Arc<dyn NoteUseCases>,
-        sessions: Arc<dyn WebSessionUseCases>,
-        oidc: Arc<dyn OidcAuthenticationUseCases>,
-        cookie_path: String,
-        browser_origin: String,
-    ) -> Self {
-        Self {
-            notes,
-            sessions,
-            oidc,
-            cookie_path,
-            browser_origin,
-            mcp: None,
-            mcp_registration_limiter: McpRegistrationRateLimiter::new(
-                30,
-                Duration::from_secs(10 * 60),
-            ),
-        }
-    }
-
-    pub fn with_mcp(mut self, mcp: McpEndpoint) -> Self {
-        self.mcp = Some(Arc::new(mcp));
-        self
-    }
-}
-
-#[derive(Serialize)]
-struct Problem {
-    code: &'static str,
-    message: &'static str,
-}
-
-type HandlerResult<T> = Result<T, (StatusCode, Json<Problem>)>;
-
-fn problem(
-    status: StatusCode,
-    code: &'static str,
-    message: &'static str,
-) -> (StatusCode, Json<Problem>) {
-    (status, Json(Problem { code, message }))
-}
-
-fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<Problem>) {
-    match error {
-        NoteUseCaseError::NotFound => {
-            problem(StatusCode::NOT_FOUND, "not_found", "note is not available")
-        }
-        NoteUseCaseError::Forbidden => problem(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "note operation is not permitted",
-        ),
-        NoteUseCaseError::Conflict => {
-            problem(StatusCode::CONFLICT, "conflict", "note revision conflicts")
-        }
-        NoteUseCaseError::Validation => problem(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "validation_failed",
-            "note is invalid",
-        ),
-        NoteUseCaseError::Unavailable => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
-            "note operation is unavailable",
-        ),
-    }
-}
-
-fn authentication_error(error: AuthenticationUseCaseError) -> (StatusCode, Json<Problem>) {
-    match error {
-        AuthenticationUseCaseError::Rejected | AuthenticationUseCaseError::NotFound => problem(
-            StatusCode::UNAUTHORIZED,
-            "authentication_required",
-            "authentication is required",
-        ),
-        AuthenticationUseCaseError::Unavailable => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "authentication_unavailable",
-            "authentication is unavailable",
-        ),
-    }
-}
 
 #[derive(Serialize)]
 struct SessionResponse {
@@ -304,30 +173,6 @@ pub fn router(state: ApiState) -> Router {
         )
         .layer(middleware::from_fn(security_headers))
         .layer(middleware::from_fn(assign_request_id))
-}
-
-async fn security_headers(request: axum::http::Request<axum::body::Body>, next: Next) -> Response {
-    let mut response = next.run(request).await;
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(
-            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
-        ),
-    );
-    headers.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
-    );
-    headers.insert(
-        header::REFERRER_POLICY,
-        HeaderValue::from_static("no-referrer"),
-    );
-    // v3のresponseにはsession、CSRF token、OAuth codeまたはノート本文が含まれ得る。公開metadataも
-    // 同じrouterを通るため、一律no-storeとして共有proxyの設定漏れを安全側に倒す。
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
-    response
 }
 
 async fn openapi() -> Response {
@@ -593,21 +438,6 @@ struct McpRegistrationResponse {
     token_endpoint_auth_method: &'static str,
     grant_types: [&'static str; 2],
     response_types: [&'static str; 1],
-}
-
-fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Problem>) {
-    match error {
-        McpOAuthUseCaseError::Rejected => problem(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "OAuth request is invalid",
-        ),
-        McpOAuthUseCaseError::Unavailable => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
-            "OAuth service is unavailable",
-        ),
-    }
 }
 
 async fn mcp_register_client(
