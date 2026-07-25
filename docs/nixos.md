@@ -82,24 +82,25 @@ kanidm group create marginalis-membership-readers idm_admin
 kanidm group add-members marginalis-membership-readers marginalis-membership
 ```
 
-ACP 作成には system administrator である `admin` の一時的な read-write token が必要である。
-`idm_admin` は IDM の person/group 管理者であり、`idm_access_control_admins` を変更できない。
-service account を一時的にも `idm_access_control_admins` へ加入させてはならない。次の token は作成直後
-だけ使用し、後続の手順で必ず失効させる。表示された token は shell history に保存せず、プロンプトへ
-貼り付ける。
+ACP 作成には system administrator である `admin` の CLI session が必要である。`idm_admin` は IDM の
+person/group 管理者であり、`idm_access_control_admins` を変更できない。`admin` は保護された system account
+のため API token を発行できず、`kanidm reauth` の対象でもない。service account を一時的にも
+`idm_access_control_admins` へ加入させてはならない。
+
+`admin` でログインすると、Kanidm 1.10 の CLI は session token を
+`~/.cache/kanidm_tokens` に保存する。次では、その session token を raw API の一回の呼出しにだけ使う。
+`admin@id.example.test` は実際に `kanidm login` が表示した principal へ置き換える。token を表示・
+shell history・Nix 式・journal へ書き出してはならない。
 
 ```bash
 kanidm login \
   --url https://id.example.test \
   --ca /etc/ssl/kanidm-ca.pem \
   --name admin
-kanidm reauth
 
-kanidm service-account api-token generate --readwrite \
-  admin "one-time Marginalis ACP bootstrap"
-
-read -r -s -p 'Paste one-time token: ' BOOTSTRAP_TOKEN
-echo
+BOOTSTRAP_TOKEN="$(jq -er \
+  '.instances[""].tokens["admin@id.example.test"]' \
+  ~/.cache/kanidm_tokens)"
 ```
 
 `id.example.test` と CA ファイルは実環境の値へ置き換える。以下の ACP は `person` entry だけを対象にし、
@@ -136,15 +137,12 @@ curl --fail --show-error --cacert /etc/ssl/kanidm-ca.pem \
 JSON
 ```
 
-成功後、temporary な token を必ず失効させる。`<bootstrap-token-uuid>` は
-`api-token status` の UUID へ置き換える。最後に生成する read-only token だけを
-`membershipTokenFile` へ保存する。
+成功後、session token を変数から除去し、`admin` session を logout する。最後に生成する read-only token
+だけを `membershipTokenFile` へ保存する。
 
 ```bash
 unset BOOTSTRAP_TOKEN
-kanidm service-account api-token status admin
-kanidm service-account api-token destroy \
-  admin <bootstrap-token-uuid>
+kanidm logout --name admin
 
 kanidm service-account api-token generate \
   marginalis-membership "marginalis-production-2026"
