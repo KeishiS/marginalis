@@ -4,19 +4,24 @@
 //! v0.3.0ではこのrouterだけを公開する。
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use std::{str::FromStr, sync::Arc};
+use std::{
+    collections::VecDeque,
+    str::FromStr,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use axum::{
     Json, Router,
-    extract::{Form, Path, Query, State},
+    extract::{DefaultBodyLimit, Form, Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use marginalis_application::{
-    AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, V3McpOAuthUseCases,
-    V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
+    AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthUseCaseError, NoteUseCaseError,
+    V3McpOAuthUseCases, V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
 };
 use marginalis_domain::{CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, NoteId};
 use marginalis_mcp::{JsonRpcRequest, JsonRpcResponse};
@@ -36,6 +41,39 @@ pub struct V3ApiState {
     pub cookie_path: String,
     pub browser_origin: String,
     pub mcp: Option<Arc<V3McpEndpoint>>,
+    mcp_registration_limiter: McpRegistrationRateLimiter,
+}
+
+#[derive(Clone)]
+struct McpRegistrationRateLimiter {
+    attempts: Arc<Mutex<VecDeque<Instant>>>,
+    limit: usize,
+    window: Duration,
+}
+
+impl McpRegistrationRateLimiter {
+    fn new(limit: usize, window: Duration) -> Self {
+        Self {
+            attempts: Arc::new(Mutex::new(VecDeque::new())),
+            limit,
+            window,
+        }
+    }
+
+    fn allow(&self, now: Instant) -> bool {
+        let Ok(mut attempts) = self.attempts.lock() else {
+            return false;
+        };
+        let cutoff = now.checked_sub(self.window).unwrap_or(now);
+        while attempts.front().is_some_and(|attempt| *attempt <= cutoff) {
+            attempts.pop_front();
+        }
+        if attempts.len() >= self.limit {
+            return false;
+        }
+        attempts.push_back(now);
+        true
+    }
 }
 
 pub struct V3McpEndpoint {
@@ -66,6 +104,10 @@ impl V3ApiState {
             cookie_path,
             browser_origin,
             mcp: None,
+            mcp_registration_limiter: McpRegistrationRateLimiter::new(
+                30,
+                Duration::from_secs(10 * 60),
+            ),
         }
     }
 
@@ -202,11 +244,22 @@ pub fn router(state: V3ApiState) -> Router {
         )
         .route(
             "/oauth/authorize",
-            get(mcp_authorize).post(mcp_authorize_submit),
+            get(mcp_authorize)
+                .post(mcp_authorize_submit)
+                .layer(DefaultBodyLimit::max(16 * 1024)),
         )
-        .route("/oauth/register", post(mcp_register_client))
-        .route("/oauth/token", post(mcp_token))
-        .route("/mcp", post(mcp_post))
+        .route(
+            "/oauth/register",
+            post(mcp_register_client).layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
+            "/oauth/token",
+            post(mcp_token).layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
+            "/mcp",
+            post(mcp_post).layer(DefaultBodyLimit::max(1024 * 1024)),
+        )
         .route("/api/v2/health", get(health))
         .route("/api/v2/session", get(session))
         .route("/api/v2/notes", get(list_notes).post(create_note))
@@ -475,6 +528,31 @@ struct McpTokenResponse {
     scope: String,
 }
 
+#[derive(Serialize)]
+struct OAuthErrorResponse {
+    error: &'static str,
+    error_description: &'static str,
+}
+
+fn oauth_error_response(
+    status: StatusCode,
+    error: &'static str,
+    description: &'static str,
+) -> Response {
+    (
+        status,
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::PRAGMA, "no-cache"),
+        ],
+        Json(OAuthErrorResponse {
+            error,
+            error_description: description,
+        }),
+    )
+        .into_response()
+}
+
 #[derive(Deserialize)]
 struct McpRegistrationRequest {
     client_name: Option<String>,
@@ -509,13 +587,20 @@ fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Problem>) {
 async fn mcp_register_client(
     State(state): State<V3ApiState>,
     Json(request): Json<McpRegistrationRequest>,
-) -> V3Result<(StatusCode, Json<McpRegistrationResponse>)> {
-    let endpoint = mcp_endpoint(&state)?;
+) -> Result<Response, Response> {
+    if !state.mcp_registration_limiter.allow(Instant::now()) {
+        return Err(oauth_error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "temporarily_unavailable",
+            "dynamic client registration rate limit exceeded",
+        ));
+    }
+    let endpoint = mcp_endpoint(&state).map_err(|error| error.into_response())?;
     let display_name = request
         .client_name
         .filter(|name| !name.trim().is_empty())
         .ok_or_else(|| {
-            problem(
+            oauth_error_response(
                 StatusCode::BAD_REQUEST,
                 "invalid_client_metadata",
                 "client_name is required",
@@ -530,7 +615,18 @@ async fn mcp_register_client(
         .oauth
         .register_client(client.clone())
         .await
-        .map_err(mcp_error)?;
+        .map_err(|error| match error {
+            McpOAuthUseCaseError::Rejected => oauth_error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_client_metadata",
+                "client metadata is invalid",
+            ),
+            McpOAuthUseCaseError::Unavailable => oauth_error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "temporarily_unavailable",
+                "OAuth service is unavailable",
+            ),
+        })?;
     Ok((
         StatusCode::CREATED,
         Json(McpRegistrationResponse {
@@ -541,7 +637,8 @@ async fn mcp_register_client(
             grant_types: ["authorization_code", "refresh_token"],
             response_types: ["code"],
         }),
-    ))
+    )
+        .into_response())
 }
 
 fn authorize_fields(query: &McpAuthorizeQuery) -> V3Result<(Vec<String>, String)> {
@@ -570,11 +667,29 @@ fn authorize_fields(query: &McpAuthorizeQuery) -> V3Result<(Vec<String>, String)
     Ok((scopes, query.code_challenge.clone()))
 }
 
+fn authorization_request(query: &McpAuthorizeQuery) -> V3Result<McpAuthorizationRequest> {
+    let (scopes, code_challenge) = authorize_fields(query)?;
+    Ok(McpAuthorizationRequest {
+        client_id: query.client_id.clone(),
+        redirect_uri: query.redirect_uri.clone(),
+        resource_uri: query.resource.clone(),
+        scopes,
+        code_challenge,
+    })
+}
+
 async fn mcp_authorize(
     State(state): State<V3ApiState>,
     headers: HeaderMap,
     Query(query): Query<McpAuthorizeQuery>,
 ) -> V3Result<Response> {
+    let endpoint = mcp_endpoint(&state)?;
+    let request = authorization_request(&query)?;
+    let client = endpoint
+        .oauth
+        .validate_authorization_request(request)
+        .await
+        .map_err(mcp_error)?;
     let _actor = match authenticated_actor(&headers, &state).await {
         Ok(actor) => actor,
         Err((StatusCode::UNAUTHORIZED, _)) => {
@@ -608,8 +723,6 @@ async fn mcp_authorize(
         }
         Err(error) => return Err(error),
     };
-    let _ = mcp_endpoint(&state)?;
-    let (_scopes, _) = authorize_fields(&query)?;
     let csrf = cookie_value(&headers, CSRF_COOKIE).ok_or_else(|| {
         problem(
             StatusCode::FORBIDDEN,
@@ -618,8 +731,10 @@ async fn mcp_authorize(
         )
     })?;
     Ok(Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>MCP authorization</h1><p>{}</p><form method=\"post\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
-        escape_html(&query.client_id),
+        "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>Authorize {}</h1><p>Requested scopes: {}</p><p>Redirect host: {}</p><form method=\"post\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
+        escape_html(&client.display_name),
+        escape_html(&query.scope),
+        escape_html(url::Url::parse(&query.redirect_uri).ok().and_then(|url| url.host_str().map(str::to_owned)).as_deref().unwrap_or("unknown")),
         escape_html(&query.client_id),
         escape_html(&query.redirect_uri),
         escape_html(&query.resource),
@@ -636,38 +751,51 @@ async fn mcp_authorize_submit(
     Form(form): Form<McpAuthorizeForm>,
 ) -> V3Result<Response> {
     let endpoint = mcp_endpoint(&state)?;
-    let actor = authenticated_mcp_authorization_form_actor(
-        &headers,
-        &state,
-        &endpoint.allowed_origins,
-        &form.csrf_token,
-    )
-    .await?;
-    if form.decision != "approve" {
-        return Err(problem(
-            StatusCode::FORBIDDEN,
-            "access_denied",
-            "authorization was denied",
-        ));
-    }
-    let scopes = form
-        .scope
-        .split_ascii_whitespace()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    let code = endpoint
+    let actor = authenticated_form_actor(&headers, &state, &form.csrf_token).await?;
+    let request = McpAuthorizationRequest {
+        client_id: form.client_id,
+        redirect_uri: form.redirect_uri,
+        resource_uri: form.resource,
+        scopes: form
+            .scope
+            .split_ascii_whitespace()
+            .map(str::to_owned)
+            .collect(),
+        code_challenge: form.code_challenge,
+    };
+    endpoint
         .oauth
-        .authorize(
-            actor,
-            form.client_id,
-            form.redirect_uri.clone(),
-            form.resource,
-            scopes,
-            form.code_challenge,
-        )
+        .validate_authorization_request(request.clone())
         .await
         .map_err(mcp_error)?;
-    let mut url = url::Url::parse(&form.redirect_uri).map_err(|_| {
+    if form.decision != "approve" {
+        return oauth_redirect(
+            &request.redirect_uri,
+            form.state.as_deref(),
+            None,
+            Some("access_denied"),
+        );
+    }
+    let code = endpoint
+        .oauth
+        .authorize(actor, request.clone())
+        .await
+        .map_err(mcp_error)?;
+    oauth_redirect(
+        &request.redirect_uri,
+        form.state.as_deref(),
+        Some(&code),
+        None,
+    )
+}
+
+fn oauth_redirect(
+    redirect_uri: &str,
+    state: Option<&str>,
+    code: Option<&str>,
+    error: Option<&str>,
+) -> V3Result<Response> {
+    let mut url = url::Url::parse(redirect_uri).map_err(|_| {
         problem(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -676,9 +804,14 @@ async fn mcp_authorize_submit(
     })?;
     {
         let mut pairs = url.query_pairs_mut();
-        pairs.append_pair("code", &code);
-        if let Some(state) = form.state {
-            pairs.append_pair("state", &state);
+        if let Some(code) = code {
+            pairs.append_pair("code", code);
+        }
+        if let Some(error) = error {
+            pairs.append_pair("error", error);
+        }
+        if let Some(state) = state {
+            pairs.append_pair("state", state);
         }
     }
     Ok(Redirect::to(url.as_str()).into_response())
@@ -687,14 +820,20 @@ async fn mcp_authorize_submit(
 async fn mcp_token(
     State(state): State<V3ApiState>,
     Form(form): Form<McpTokenForm>,
-) -> V3Result<Response> {
-    let endpoint = mcp_endpoint(&state)?;
+) -> Result<Response, Response> {
+    let endpoint = mcp_endpoint(&state).map_err(|_| {
+        oauth_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "temporarily_unavailable",
+            "OAuth service is unavailable",
+        )
+    })?;
     let pair = match form.grant_type.as_str() {
         "authorization_code" => endpoint
             .oauth
             .exchange_authorization_code(
                 form.code.ok_or_else(|| {
-                    problem(
+                    oauth_error_response(
                         StatusCode::BAD_REQUEST,
                         "invalid_request",
                         "code is required",
@@ -702,7 +841,7 @@ async fn mcp_token(
                 })?,
                 form.client_id,
                 form.redirect_uri.ok_or_else(|| {
-                    problem(
+                    oauth_error_response(
                         StatusCode::BAD_REQUEST,
                         "invalid_request",
                         "redirect_uri is required",
@@ -710,7 +849,7 @@ async fn mcp_token(
                 })?,
                 form.resource,
                 form.code_verifier.ok_or_else(|| {
-                    problem(
+                    oauth_error_response(
                         StatusCode::BAD_REQUEST,
                         "invalid_request",
                         "code_verifier is required",
@@ -718,12 +857,23 @@ async fn mcp_token(
                 })?,
             )
             .await
-            .map_err(mcp_error)?,
+            .map_err(|error| match error {
+                McpOAuthUseCaseError::Rejected => oauth_error_response(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "authorization code is invalid",
+                ),
+                McpOAuthUseCaseError::Unavailable => oauth_error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "temporarily_unavailable",
+                    "OAuth service is unavailable",
+                ),
+            })?,
         "refresh_token" => endpoint
             .oauth
             .refresh_access_token(
                 form.refresh_token.ok_or_else(|| {
-                    problem(
+                    oauth_error_response(
                         StatusCode::BAD_REQUEST,
                         "invalid_request",
                         "refresh_token is required",
@@ -733,9 +883,20 @@ async fn mcp_token(
                 form.resource,
             )
             .await
-            .map_err(mcp_error)?,
+            .map_err(|error| match error {
+                McpOAuthUseCaseError::Rejected => oauth_error_response(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "refresh token is invalid",
+                ),
+                McpOAuthUseCaseError::Unavailable => oauth_error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "temporarily_unavailable",
+                    "OAuth service is unavailable",
+                ),
+            })?,
         _ => {
-            return Err(problem(
+            return Err(oauth_error_response(
                 StatusCode::BAD_REQUEST,
                 "unsupported_grant_type",
                 "OAuth grant type is unsupported",
@@ -816,19 +977,26 @@ async fn mcp_post(
     Json(request): Json<JsonRpcRequest>,
 ) -> V3Result<Response> {
     let endpoint = mcp_endpoint(&state)?;
-    if let Some(origin) = headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        && !endpoint
-            .allowed_origins
-            .iter()
-            .any(|allowed| allowed == origin)
-    {
-        return Err(problem(
-            StatusCode::FORBIDDEN,
-            "same_origin_required",
-            "MCP browser request origin is not allowed",
-        ));
+    if let Some(value) = headers.get(header::ORIGIN) {
+        let origin = value.to_str().map_err(|_| {
+            problem(
+                StatusCode::FORBIDDEN,
+                "origin_not_allowed",
+                "MCP browser request origin is not allowed",
+            )
+        })?;
+        if origin != state.browser_origin
+            && !endpoint
+                .allowed_origins
+                .iter()
+                .any(|allowed| allowed == origin)
+        {
+            return Err(problem(
+                StatusCode::FORBIDDEN,
+                "origin_not_allowed",
+                "MCP browser request origin is not allowed",
+            ));
+        }
     }
     let accepts = headers
         .get(header::ACCEPT)
@@ -864,6 +1032,18 @@ async fn mcp_post(
         return Ok(mcp_unauthorized(endpoint));
     };
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    if request.jsonrpc != "2.0" {
+        return if request.id.is_none() {
+            Ok(StatusCode::ACCEPTED.into_response())
+        } else {
+            Ok(Json(JsonRpcResponse::error(
+                id,
+                -32600,
+                "JSON-RPC version is invalid",
+            ))
+            .into_response())
+        };
+    }
     let response = match request.method.as_str() {
         "initialize" => JsonRpcResponse::success(
             id,
@@ -1206,17 +1386,15 @@ fn validate_mutation_origin(headers: &HeaderMap, state: &V3ApiState) -> V3Result
     Ok(())
 }
 
-/// MCP clients hosted in a trusted browser origin may submit the authorization form from that
-/// origin. The session-bound CSRF token remains mandatory; ordinary Web mutations never use this
-/// exception.
-async fn authenticated_mcp_authorization_form_actor(
+/// Authorization consent is an interaction with this authorization server, so its form remains
+/// same-origin even when the OAuth client itself is browser-based.
+async fn authenticated_form_actor(
     headers: &HeaderMap,
     state: &V3ApiState,
-    allowed_origins: &[String],
     csrf_token: &str,
 ) -> V3Result<CanonicalActor> {
     let actor = authenticated_actor(headers, state).await?;
-    validate_mcp_authorization_origin(headers, state, allowed_origins)?;
+    validate_mutation_origin(headers, state)?;
     let session_id =
         cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
     if cookie_value(headers, CSRF_COOKIE).as_deref() != Some(csrf_token)
@@ -1233,27 +1411,6 @@ async fn authenticated_mcp_authorization_form_actor(
         ));
     }
     Ok(actor)
-}
-
-fn validate_mcp_authorization_origin(
-    headers: &HeaderMap,
-    state: &V3ApiState,
-    allowed_origins: &[String],
-) -> V3Result<()> {
-    let origin = headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok());
-    if origin == Some(state.browser_origin.as_str()) {
-        return validate_mutation_origin(headers, state);
-    }
-    if origin.is_some_and(|origin| allowed_origins.iter().any(|allowed| allowed == origin)) {
-        return Ok(());
-    }
-    Err(problem(
-        StatusCode::FORBIDDEN,
-        "same_origin_required",
-        "same-origin request is required",
-    ))
 }
 
 fn parse_note_id(value: &str) -> V3Result<NoteId> {
@@ -1421,14 +1578,20 @@ mod tests {
         ) -> Result<(), McpOAuthUseCaseError> {
             Ok(())
         }
+        async fn validate_authorization_request(
+            &self,
+            request: marginalis_application::McpAuthorizationRequest,
+        ) -> Result<McpOAuthClient, McpOAuthUseCaseError> {
+            Ok(McpOAuthClient {
+                client_id: request.client_id,
+                display_name: "Test MCP client".into(),
+                redirect_uris: vec![request.redirect_uri],
+            })
+        }
         async fn authorize(
             &self,
             _actor: CanonicalActor,
-            _client_id: String,
-            _redirect_uri: String,
-            _resource_uri: String,
-            _scopes: Vec<String>,
-            _code_challenge: String,
+            _request: marginalis_application::McpAuthorizationRequest,
         ) -> Result<String, McpOAuthUseCaseError> {
             Err(McpOAuthUseCaseError::Rejected)
         }
@@ -1672,6 +1835,17 @@ mod tests {
         let request = Request::post("/mcp")
             .header("content-type", "application/json")
             .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::ORIGIN, "https://example.test")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .expect("request");
+        let same_origin = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(same_origin.status(), StatusCode::UNAUTHORIZED);
+
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
             .header(header::ORIGIN, "https://untrusted.example")
             .body(Body::from(
                 r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
@@ -1682,7 +1856,16 @@ mod tests {
     }
 
     #[test]
-    fn v3_mcp_authorization_form_accepts_only_configured_cross_site_origins() {
+    fn v3_mcp_registration_limiter_bounds_a_window() {
+        let limiter = McpRegistrationRateLimiter::new(1, Duration::from_secs(60));
+        let now = Instant::now();
+        assert!(limiter.allow(now));
+        assert!(!limiter.allow(now));
+        assert!(limiter.allow(now + Duration::from_secs(61)));
+    }
+
+    #[test]
+    fn v3_browser_mutations_require_the_application_origin() {
         let state = V3ApiState::new(
             Arc::new(Notes),
             Arc::new(Sessions),
@@ -1690,20 +1873,26 @@ mod tests {
             "/".into(),
             "https://example.test".into(),
         );
-        let allowed_origins = vec!["https://chatgpt.com".into()];
         let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ORIGIN,
+            "https://example.test".parse().expect("origin"),
+        );
+        headers.insert("sec-fetch-site", "same-origin".parse().expect("metadata"));
+        assert!(validate_mutation_origin(&headers, &state).is_ok());
+
         headers.insert(
             header::ORIGIN,
             "https://chatgpt.com".parse().expect("origin"),
         );
-        headers.insert("sec-fetch-site", "cross-site".parse().expect("fetch site"));
-        assert!(validate_mcp_authorization_origin(&headers, &state, &allowed_origins).is_ok());
+        assert!(validate_mutation_origin(&headers, &state).is_err());
 
         headers.insert(
             header::ORIGIN,
-            "https://untrusted.example".parse().expect("origin"),
+            "https://example.test".parse().expect("origin"),
         );
-        assert!(validate_mcp_authorization_origin(&headers, &state, &allowed_origins).is_err());
+        headers.insert("sec-fetch-site", "cross-site".parse().expect("metadata"));
+        assert!(validate_mutation_origin(&headers, &state).is_err());
     }
 
     #[tokio::test]
@@ -1744,5 +1933,55 @@ mod tests {
             response.headers().get(header::PRAGMA),
             Some(&"no-cache".parse().expect("header"))
         );
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_token_errors_use_oauth_error_shape() {
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/oauth/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from(
+                        "grant_type=password&client_id=client&resource=https%3A%2F%2Fexample.test%2Fmcp",
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL),
+            Some(&"no-store".parse().expect("header"))
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let error: serde_json::Value = serde_json::from_slice(&body).expect("OAuth error");
+        assert_eq!(error["error"], "unsupported_grant_type");
+    }
+
+    #[tokio::test]
+    async fn v3_public_mcp_endpoints_reject_oversized_request_bodies() {
+        let registration = mcp_app()
+            .oneshot(
+                Request::post("/oauth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(vec![b' '; 16 * 1024 + 1]))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(registration.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        let mcp = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .body(Body::from(vec![b' '; 1024 * 1024 + 1]))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(mcp.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }

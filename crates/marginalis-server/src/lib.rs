@@ -192,14 +192,20 @@ pub struct ServerMcpOAuthService {
 #[derive(Clone)]
 pub struct ServerV3McpOAuthService {
     database: V3SqliteDatabase,
+    resource_uri: String,
 }
 
 impl ServerV3McpOAuthService {
     pub const ACCESS_TOKEN_SECONDS: u64 = 60 * 60;
     pub const REFRESH_TOKEN_SECONDS: u64 = 30 * 24 * 60 * 60;
+    const MAX_DYNAMIC_CLIENTS: i64 = 1_000;
+    const UNUSED_CLIENT_SECONDS: i64 = 24 * 60 * 60;
 
-    pub fn new(database: V3SqliteDatabase) -> Self {
-        Self { database }
+    pub fn new(database: V3SqliteDatabase, resource_uri: String) -> Self {
+        Self {
+            database,
+            resource_uri,
+        }
     }
 
     pub async fn register_client(
@@ -209,61 +215,81 @@ impl ServerV3McpOAuthService {
         if client.client_id.is_empty()
             || client.display_name.trim().is_empty()
             || client.redirect_uris.is_empty()
+            || client.display_name.len() > 128
+            || client.redirect_uris.len() > 8
             || !client
                 .redirect_uris
                 .iter()
-                .all(|uri| valid_redirect_uri(uri))
+                .all(|uri| uri.len() <= 2_048 && valid_redirect_uri(uri))
         {
             return Err(McpOAuthError::Rejected);
         }
-        self.database
-            .upsert_mcp_client(&client)
+        let now = SystemClock.now();
+        let registered = self
+            .database
+            .register_mcp_client_bounded(
+                &client,
+                now,
+                UnixMillis::new(now.get() - Self::UNUSED_CLIENT_SECONDS * 1_000),
+                Self::MAX_DYNAMIC_CLIENTS,
+            )
             .await
-            .map_err(|_| McpOAuthError::Unavailable)
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        if !registered {
+            return Err(McpOAuthError::Rejected);
+        }
+        Ok(())
     }
 
     pub async fn authorize(
         &self,
         actor: CanonicalActor,
-        client_id: String,
-        redirect_uri: String,
-        resource_uri: String,
-        scopes: Vec<String>,
-        code_challenge: String,
+        request: McpAuthorizationRequest,
     ) -> Result<String, McpOAuthError> {
-        let Some(client) = self
-            .database
-            .mcp_client(&client_id)
-            .await
-            .map_err(|_| McpOAuthError::Unavailable)?
-        else {
-            return Err(McpOAuthError::Rejected);
-        };
-        if !client.redirect_uris.contains(&redirect_uri)
-            || resource_uri.is_empty()
-            || !valid_mcp_scopes(&scopes)
-            || code_challenge.is_empty()
-        {
-            return Err(McpOAuthError::Rejected);
-        }
+        self.validate_authorization_request(&request).await?;
         let code = SystemRandom.opaque_token();
         let grant = marginalis_domain::CanonicalMcpAuthorizationGrant {
             actor,
-            client_id,
-            redirect_uri,
-            resource_uri,
-            scopes,
+            client_id: request.client_id,
+            redirect_uri: request.redirect_uri,
+            resource_uri: request.resource_uri,
+            scopes: request.scopes,
         };
         self.database
             .issue_mcp_authorization_code(
                 &code,
                 &grant,
-                &code_challenge,
+                &request.code_challenge,
                 UnixMillis::new(SystemClock.now().get() + 5 * 60 * 1_000),
             )
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;
         Ok(code)
+    }
+
+    pub async fn validate_authorization_request(
+        &self,
+        request: &McpAuthorizationRequest,
+    ) -> Result<marginalis_domain::McpOAuthClient, McpOAuthError> {
+        if request.resource_uri != self.resource_uri
+            || !valid_mcp_scopes(&request.scopes)
+            || !valid_pkce_challenge(&request.code_challenge)
+            || !valid_redirect_uri(&request.redirect_uri)
+        {
+            return Err(McpOAuthError::Rejected);
+        }
+        let Some(client) = self
+            .database
+            .mcp_client(&request.client_id)
+            .await
+            .map_err(|_| McpOAuthError::Unavailable)?
+        else {
+            return Err(McpOAuthError::Rejected);
+        };
+        if !client.redirect_uris.contains(&request.redirect_uri) {
+            return Err(McpOAuthError::Rejected);
+        }
+        Ok(client)
     }
 
     pub async fn exchange_authorization_code(
@@ -274,6 +300,9 @@ impl ServerV3McpOAuthService {
         resource_uri: String,
         verifier: String,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
+        if resource_uri != self.resource_uri || !valid_pkce_verifier(&verifier) {
+            return Err(McpOAuthError::Rejected);
+        }
         let now = SystemClock.now();
         let Some((grant, challenge)) = self
             .database
@@ -295,6 +324,9 @@ impl ServerV3McpOAuthService {
         client_id: String,
         resource_uri: String,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
+        if resource_uri != self.resource_uri {
+            return Err(McpOAuthError::Rejected);
+        }
         let now = SystemClock.now();
         let access_token = SystemRandom.opaque_token();
         let next_refresh_token = SystemRandom.opaque_token();
@@ -399,25 +431,20 @@ impl V3McpOAuthUseCases for ServerV3McpOAuthService {
     ) -> Result<(), McpOAuthUseCaseError> {
         self.register_client(client).await.map_err(v3_mcp_error)
     }
+    async fn validate_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+    ) -> Result<marginalis_domain::McpOAuthClient, McpOAuthUseCaseError> {
+        self.validate_authorization_request(&request)
+            .await
+            .map_err(v3_mcp_error)
+    }
     async fn authorize(
         &self,
         actor: CanonicalActor,
-        client_id: String,
-        redirect_uri: String,
-        resource_uri: String,
-        scopes: Vec<String>,
-        code_challenge: String,
+        request: McpAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
-        self.authorize(
-            actor,
-            client_id,
-            redirect_uri,
-            resource_uri,
-            scopes,
-            code_challenge,
-        )
-        .await
-        .map_err(v3_mcp_error)
+        self.authorize(actor, request).await.map_err(v3_mcp_error)
     }
     async fn exchange_authorization_code(
         &self,
@@ -678,6 +705,20 @@ fn pkce_s256(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
+fn valid_pkce_challenge(value: &str) -> bool {
+    value.len() == 43
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn valid_pkce_verifier(value: &str) -> bool {
+    (43..=128).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~'))
+}
+
 fn valid_mcp_scopes(scopes: &[String]) -> bool {
     !scopes.is_empty()
         && scopes.iter().all(|scope| {
@@ -692,7 +733,8 @@ fn valid_redirect_uri(value: &str) -> bool {
     let Ok(url) = Url::parse(value) else {
         return false;
     };
-    if url.query().is_some()
+    if url.host().is_none()
+        || url.query().is_some()
         || url.fragment().is_some()
         || !url.username().is_empty()
         || url.password().is_some()
@@ -702,8 +744,13 @@ fn valid_redirect_uri(value: &str) -> bool {
     url.scheme() == "https"
         || (url.scheme() == "http"
             && matches!(
-                url.host_str(),
-                Some("127.0.0.1") | Some("localhost") | Some("::1")
+                url.host(),
+                Some(url::Host::Ipv4(address)) if address.is_loopback()
+            ))
+        || (url.scheme() == "http"
+            && matches!(
+                url.host(),
+                Some(url::Host::Ipv6(address)) if address.is_loopback()
             ))
 }
 
@@ -1989,6 +2036,7 @@ pub enum ConfigurationError {
     EmptyDataDirectory,
     UnreadableSecretFile(&'static str),
     InvalidMcpEnable,
+    InvalidMcpAllowedOrigin,
     InvalidInitialRegistrationPolicy,
 }
 
@@ -2015,6 +2063,9 @@ impl fmt::Display for ConfigurationError {
             Self::InvalidMcpEnable => {
                 formatter.write_str("MARGINALIS_MCP_ENABLE must be `true` or `false`")
             }
+            Self::InvalidMcpAllowedOrigin => formatter.write_str(
+                "MARGINALIS_MCP_ALLOWED_ORIGINS must contain comma-separated HTTPS origins",
+            ),
             Self::InvalidInitialRegistrationPolicy => formatter
                 .write_str("MARGINALIS_INITIAL_REGISTRATION_POLICY must be `open` or `approval`"),
         }
@@ -2049,7 +2100,9 @@ impl ServerConfig {
                     .map(PathBuf::from),
             },
             mcp_enabled: optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false),
-            mcp_allowed_origins: optional_csv("MARGINALIS_MCP_ALLOWED_ORIGINS")?,
+            mcp_allowed_origins: validate_mcp_allowed_origins(optional_csv(
+                "MARGINALIS_MCP_ALLOWED_ORIGINS",
+            )?)?,
             mcp_client_metadata_allowed_hosts: optional_csv(
                 "MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS",
             )?,
@@ -2113,6 +2166,28 @@ fn optional_csv(name: &'static str) -> Result<Vec<String>, ConfigurationError> {
         Err(env::VarError::NotPresent) => Ok(Vec::new()),
         Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpEnable),
     }
+}
+
+fn validate_mcp_allowed_origins(values: Vec<String>) -> Result<Vec<String>, ConfigurationError> {
+    let mut origins = Vec::with_capacity(values.len());
+    for value in values {
+        let url = Url::parse(&value).map_err(|_| ConfigurationError::InvalidMcpAllowedOrigin)?;
+        if url.scheme() != "https"
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.path() != "/"
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(ConfigurationError::InvalidMcpAllowedOrigin);
+        }
+        let origin = url.origin().ascii_serialization();
+        if !origins.contains(&origin) {
+            origins.push(origin);
+        }
+    }
+    Ok(origins)
 }
 
 fn required_secret(name: &'static str) -> Result<String, ConfigurationError> {
@@ -2211,6 +2286,48 @@ mod tests {
                 .path(),
             "/marginalis"
         );
+    }
+
+    #[test]
+    fn mcp_allowed_origins_are_normalized_and_reject_non_origins() {
+        assert_eq!(
+            validate_mcp_allowed_origins(vec![
+                "https://chatgpt.com".into(),
+                "https://chatgpt.com".into(),
+            ])
+            .expect("origins"),
+            vec!["https://chatgpt.com"]
+        );
+        for invalid in [
+            "http://chatgpt.com",
+            "https://chatgpt.com/path",
+            "https://user@chatgpt.com",
+            "not-an-origin",
+        ] {
+            assert_eq!(
+                validate_mcp_allowed_origins(vec![invalid.into()]),
+                Err(ConfigurationError::InvalidMcpAllowedOrigin)
+            );
+        }
+    }
+
+    #[test]
+    fn oauth_redirects_require_https_or_an_ip_loopback() {
+        for valid in [
+            "https://chatgpt.com/connector/oauth/callback",
+            "http://127.0.0.1:48123/callback",
+            "http://[::1]:48123/callback",
+        ] {
+            assert!(valid_redirect_uri(valid), "{valid}");
+        }
+        for invalid in [
+            "http://localhost:48123/callback",
+            "http://client.example.test/callback",
+            "https://client.example.test/callback?next=other",
+            "https://user@client.example.test/callback",
+        ] {
+            assert!(!valid_redirect_uri(invalid), "{invalid}");
+        }
     }
 
     #[test]
@@ -2668,7 +2785,8 @@ mod tests {
         let database = V3SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
-        let service = ServerV3McpOAuthService::new(database);
+        let resource_uri = "https://notes.example.test/mcp".to_owned();
+        let service = ServerV3McpOAuthService::new(database, resource_uri.clone());
         let client = marginalis_domain::McpOAuthClient {
             client_id: "https://client.example.test/mcp.json".into(),
             display_name: "Client".into(),
@@ -2683,15 +2801,41 @@ mod tests {
             subject: "alice".into(),
             is_administrator: false,
         };
-        let verifier = "v3-pkce-verifier".to_owned();
+        let verifier = "v3-pkce-verifier-which-is-at-least-forty-three-characters".to_owned();
+        assert_eq!(
+            service
+                .validate_authorization_request(&McpAuthorizationRequest {
+                    client_id: client.client_id.clone(),
+                    redirect_uri: client.redirect_uris[0].clone(),
+                    resource_uri: "https://other.example.test/mcp".into(),
+                    scopes: vec!["notes:read".into()],
+                    code_challenge: pkce_s256(&verifier),
+                })
+                .await,
+            Err(McpOAuthError::Rejected)
+        );
+        assert_eq!(
+            service
+                .validate_authorization_request(&McpAuthorizationRequest {
+                    client_id: client.client_id.clone(),
+                    redirect_uri: client.redirect_uris[0].clone(),
+                    resource_uri: resource_uri.clone(),
+                    scopes: vec!["notes:read".into()],
+                    code_challenge: "short".into(),
+                })
+                .await,
+            Err(McpOAuthError::Rejected)
+        );
         let code = service
             .authorize(
                 actor.clone(),
-                client.client_id.clone(),
-                client.redirect_uris[0].clone(),
-                "https://notes.example.test/mcp".into(),
-                vec!["notes:read".into()],
-                pkce_s256(&verifier),
+                McpAuthorizationRequest {
+                    client_id: client.client_id.clone(),
+                    redirect_uri: client.redirect_uris[0].clone(),
+                    resource_uri: resource_uri.clone(),
+                    scopes: vec!["notes:read".into()],
+                    code_challenge: pkce_s256(&verifier),
+                },
             )
             .await
             .expect("authorize");
@@ -2700,18 +2844,14 @@ mod tests {
                 code,
                 client.client_id.clone(),
                 client.redirect_uris[0].clone(),
-                "https://notes.example.test/mcp".into(),
+                resource_uri.clone(),
                 verifier,
             )
             .await
             .expect("exchange");
         assert!(
             service
-                .authenticate(
-                    &tokens.access_token,
-                    "https://notes.example.test/mcp",
-                    "notes:read"
-                )
+                .authenticate(&tokens.access_token, &resource_uri, "notes:read")
                 .await
                 .expect("authenticate")
                 .is_some()
@@ -2720,7 +2860,7 @@ mod tests {
             .refresh_access_token(
                 tokens.refresh_token,
                 client.client_id.clone(),
-                "https://notes.example.test/mcp".into(),
+                resource_uri.clone(),
             )
             .await
             .expect("refresh");
@@ -2730,11 +2870,7 @@ mod tests {
             .expect("revoke");
         assert!(
             service
-                .authenticate(
-                    &rotated.access_token,
-                    "https://notes.example.test/mcp",
-                    "notes:read"
-                )
+                .authenticate(&rotated.access_token, &resource_uri, "notes:read")
                 .await
                 .expect("revoked")
                 .is_none()

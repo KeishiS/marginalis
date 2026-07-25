@@ -282,7 +282,7 @@
 - OAuth Client ID Metadata Documentsと、`root` によるクライアント事前登録に
   対応する。
 - CUI・デスクトップクライアントをパブリッククライアントとして扱い、PKCE S256 を必須とする。
-- リダイレクト URI を完全一致で検証し、HTTPS またはループバックアドレスの localhost だけを
+- リダイレクト URI を完全一致で検証し、HTTPS または IP literal のループバックアドレスだけを
   許可する。
 - 一般ユーザーは自身の認可を確認・取消でき、`root` は全認可を強制失効できる。
 - Dynamic Client Registrationは将来拡張とする。

@@ -120,7 +120,7 @@ in
       allowedOrigins = mkOption {
         type = types.listOf types.str;
         default = [ "https://chatgpt.com" ];
-        description = "Exact browser Origins permitted to call the MCP endpoint. Native MCP clients omit Origin and use Bearer authentication.";
+        description = "Exact HTTPS browser origins permitted to call only the MCP endpoint. Native MCP clients omit Origin and use Bearer authentication.";
       };
     };
   };

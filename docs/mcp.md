@@ -21,8 +21,16 @@ browser client は DNS rebinding 対策として完全一致の許可リスト�
 `https://chatgpt.com` です。Codex CLI と Claude Code のように `Origin` を送らない native client はこの
 制約の対象外です。
 
-同じ許可リストは MCP OAuth の承認 form POST にも使います。ChatGPT Web が cross-site POST を行う場合でも、
-session と session 結合済み CSRF token の照合が必須であり、通常の Web API の Origin 制約は緩和しません。
+この許可リストは MCP transport 専用です。OAuth の承認画面は Marginalis が表示する Authorization Server
+との操作なので、承認 form POST は Marginalis と同一 Origin、同一 session の CSRF token の両方を必須とします。
+
+Authorization Server は登録済み client、redirect URI、MCP resource URI、scope、PKCE S256 を login 前と
+承認時の両方で検証します。承認画面には登録済み client 名、要求 scope、redirect host を表示します。
+access token は 1 時間、rotation される refresh token は 30 日有効です。
+
+Dynamic Client Registration は 16 KiB の本文上限、10 分あたり 30 件の process 全体 rate limit、最大 1,000
+client の永続化上限を持ちます。grant を取得しない登録は 24 時間後、次の登録処理時に削除します。登録・token
+endpoint の失敗は OAuth の `error` / `error_description` 形式で返します。
 
 scope は `notes:read`、`notes:write`、`notes:delete` です。scope だけでは不十分であり、Web と同じ
 ノート ACL が必ず適用されます。`server-admins` はすべてのノートに管理者相当でアクセスします。

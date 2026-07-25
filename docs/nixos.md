@@ -17,7 +17,7 @@ services.marginalis = {
   };
   mcp = {
     enable = true;
-    # ChatGPT Web を使う既定値。必要な browser origin だけを追加する。
+    # /mcp を browser から呼ぶ client の HTTPS origin だけを列挙する。
     allowedOrigins = [ "https://chatgpt.com" ];
   };
 };
@@ -29,6 +29,8 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
 サブパスでは外部 prefix を upstream へ渡す前に除去し、`baseUrl` と OIDC redirect URI を一致させます。
+`mcp.allowedOrigins` は HTTPS origin の完全一致であり、path、query、userinfo を含む値や HTTP origin は
+起動時に拒否されます。この設定は `/oauth/authorize` の承認 form には適用されません。
 
 ## Kanidm の group claim
 

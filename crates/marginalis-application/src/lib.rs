@@ -906,14 +906,14 @@ pub struct V3McpTokenPair {
 #[async_trait]
 pub trait V3McpOAuthUseCases: Send + Sync {
     async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError>;
+    async fn validate_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+    ) -> Result<McpOAuthClient, McpOAuthUseCaseError>;
     async fn authorize(
         &self,
         actor: CanonicalActor,
-        client_id: String,
-        redirect_uri: String,
-        resource_uri: String,
-        scopes: Vec<String>,
-        code_challenge: String,
+        request: McpAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError>;
     async fn exchange_authorization_code(
         &self,

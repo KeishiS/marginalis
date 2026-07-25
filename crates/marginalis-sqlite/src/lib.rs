@@ -156,6 +156,12 @@ CREATE INDEX v3_mcp_access_subject_idx ON v3_mcp_access_tokens (issuer, subject)
 ALTER TABLE v3_mcp_refresh_tokens ADD COLUMN is_administrator INTEGER NOT NULL DEFAULT 0 CHECK (is_administrator IN (0, 1));
 "#,
     ),
+    (
+        6,
+        r#"
+ALTER TABLE v3_mcp_clients ADD COLUMN registered_at_ms INTEGER NOT NULL DEFAULT 0;
+"#,
+    ),
 ];
 
 #[derive(Clone, Debug)]
@@ -825,12 +831,70 @@ impl V3SqliteDatabase {
         Ok(())
     }
 
-    pub async fn upsert_mcp_client(&self, client: &McpOAuthClient) -> Result<(), V3NoteStoreError> {
+    pub async fn upsert_mcp_client(
+        &self,
+        client: &McpOAuthClient,
+        registered_at: UnixMillis,
+    ) -> Result<(), V3NoteStoreError> {
         let redirect_uris = serde_json::to_string(&client.redirect_uris)
             .map_err(|_| V3NoteStoreError::CorruptNote)?;
-        sqlx::query("INSERT INTO v3_mcp_clients (client_id, display_name, redirect_uris_json) VALUES (?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET display_name = excluded.display_name, redirect_uris_json = excluded.redirect_uris_json")
-            .bind(&client.client_id).bind(&client.display_name).bind(redirect_uris).execute(&self.pool).await.map_err(v3_database_error)?;
+        sqlx::query("INSERT INTO v3_mcp_clients (client_id, display_name, redirect_uris_json, registered_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET display_name = excluded.display_name, redirect_uris_json = excluded.redirect_uris_json")
+            .bind(&client.client_id).bind(&client.display_name).bind(redirect_uris).bind(registered_at.get()).execute(&self.pool).await.map_err(v3_database_error)?;
         Ok(())
+    }
+
+    /// Removes expired OAuth state and stale clients, then atomically registers one client only
+    /// while the configured persistence bound has capacity.
+    pub async fn register_mcp_client_bounded(
+        &self,
+        client: &McpOAuthClient,
+        now: UnixMillis,
+        unused_client_cutoff: UnixMillis,
+        maximum_clients: i64,
+    ) -> Result<bool, V3NoteStoreError> {
+        let redirect_uris = serde_json::to_string(&client.redirect_uris)
+            .map_err(|_| V3NoteStoreError::CorruptNote)?;
+        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
+        for statement in [
+            "DELETE FROM v3_mcp_authorization_codes WHERE expires_at_ms <= ? OR consumed_at_ms IS NOT NULL",
+            "DELETE FROM v3_mcp_access_tokens WHERE expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
+            "DELETE FROM v3_mcp_refresh_tokens WHERE expires_at_ms <= ? OR rotated_at_ms IS NOT NULL OR revoked_at_ms IS NOT NULL",
+        ] {
+            sqlx::query(statement)
+                .bind(now.get())
+                .execute(&mut *transaction)
+                .await
+                .map_err(v3_database_error)?;
+        }
+        sqlx::query(
+            "DELETE FROM v3_mcp_clients
+             WHERE registered_at_ms < ?
+               AND NOT EXISTS (SELECT 1 FROM v3_mcp_authorization_codes WHERE client_id = v3_mcp_clients.client_id)
+               AND NOT EXISTS (SELECT 1 FROM v3_mcp_access_tokens WHERE client_id = v3_mcp_clients.client_id)
+               AND NOT EXISTS (SELECT 1 FROM v3_mcp_refresh_tokens WHERE client_id = v3_mcp_clients.client_id)",
+        )
+        .bind(unused_client_cutoff.get())
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
+        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM v3_mcp_clients")
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+        if count >= maximum_clients {
+            transaction.commit().await.map_err(v3_database_error)?;
+            return Ok(false);
+        }
+        sqlx::query("INSERT INTO v3_mcp_clients (client_id, display_name, redirect_uris_json, registered_at_ms) VALUES (?, ?, ?, ?)")
+            .bind(&client.client_id)
+            .bind(&client.display_name)
+            .bind(redirect_uris)
+            .bind(now.get())
+            .execute(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+        transaction.commit().await.map_err(v3_database_error)?;
+        Ok(true)
     }
 
     pub async fn mcp_client(
@@ -3530,7 +3594,10 @@ mod tests {
             display_name: "Test client".into(),
             redirect_uris: vec!["https://client.example.test/callback".into()],
         };
-        database.upsert_mcp_client(&client).await.expect("client");
+        database
+            .upsert_mcp_client(&client, UnixMillis::new(0))
+            .await
+            .expect("client");
         assert_eq!(
             database
                 .mcp_client(&client.client_id)
@@ -3658,6 +3725,53 @@ mod tests {
                 .await
                 .expect("revoked access")
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_dynamic_registration_prunes_stale_unreferenced_clients() {
+        let database = V3SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        database
+            .upsert_mcp_client(
+                &McpOAuthClient {
+                    client_id: "stale-client".into(),
+                    display_name: "Stale client".into(),
+                    redirect_uris: vec!["https://client.example.test/callback".into()],
+                },
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("client");
+        assert!(
+            database
+                .register_mcp_client_bounded(
+                    &McpOAuthClient {
+                        client_id: "fresh-client".into(),
+                        display_name: "Fresh client".into(),
+                        redirect_uris: vec!["https://client.example.test/callback".into()],
+                    },
+                    UnixMillis::new(2 * 24 * 60 * 60 * 1_000),
+                    UnixMillis::new(24 * 60 * 60 * 1_000),
+                    1,
+                )
+                .await
+                .expect("register")
+        );
+        assert!(
+            database
+                .mcp_client("stale-client")
+                .await
+                .expect("lookup")
+                .is_none()
+        );
+        assert!(
+            database
+                .mcp_client("fresh-client")
+                .await
+                .expect("lookup")
+                .is_some()
         );
     }
 
