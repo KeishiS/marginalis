@@ -1,6 +1,17 @@
 //! 最小の閲覧用HTML UI。
 
-use super::*;
+use axum::{
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+    response::Html,
+};
+
+use super::{
+    auth::{authenticated_actor, external_path, parse_note_id},
+    error::{HandlerResult, note_error, problem},
+    html::escape_html,
+    state::ApiState,
+};
 
 pub(super) async fn home(
     State(state): State<ApiState>,

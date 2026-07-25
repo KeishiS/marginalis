@@ -2,9 +2,19 @@
 
 use std::str::FromStr;
 
+use axum::{
+    extract::{Query, State},
+    http::{HeaderMap, StatusCode, header},
+    response::{IntoResponse, Redirect, Response},
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use marginalis_domain::{Actor, EntityId, NoteId};
+use serde::Deserialize;
 
-use super::*;
+use super::{
+    error::{HandlerResult, authentication_error, problem},
+    state::ApiState,
+};
 
 const SESSION_COOKIE: &str = "marginalis_session";
 pub(super) const CSRF_COOKIE: &str = "marginalis_csrf";

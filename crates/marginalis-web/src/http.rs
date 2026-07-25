@@ -16,38 +16,26 @@ mod ui;
 pub use state::{ApiState, McpEndpoint};
 
 use super::{RequestId, assign_request_id};
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
-use crate::mcp::{JsonRpcRequest, JsonRpcResponse, MCP_PROTOCOL_VERSION};
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Form, Path, Query, State},
-    http::{HeaderMap, StatusCode, header},
+    extract::DefaultBodyLimit,
+    http::{StatusCode, header},
     middleware,
-    response::{Html, IntoResponse, Redirect, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
-use marginalis_application::{McpAuthorizationRequest, McpOAuthUseCaseError};
-use marginalis_domain::{Actor, EntityId, Note, NoteDraft, NoteId};
-use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, info_span};
 
-#[cfg(test)]
-use self::auth::{RETURN_TO_COOKIE, valid_return_to, validate_mutation_origin};
-#[cfg(test)]
-use self::state::McpRegistrationRateLimiter;
 use self::{
-    auth::{
-        CSRF_COOKIE, authenticated_actor, authenticated_form_actor, authenticated_mutation_actor,
-        begin_login, complete_login, cookie_value, external_path, logout, parse_note_id,
-    },
-    error::{HandlerResult, authentication_error, mcp_error, note_error, problem},
-    html::escape_html,
+    auth::{begin_login, complete_login, logout},
+    error::{HandlerResult, problem},
     mcp_transport::mcp_post,
     notes::{
-        NoteInput, create_note, delete_note, export_note, list_notes, read_note, restore_note,
-        session, update_note,
+        create_note, delete_note, export_note, list_notes, read_note, restore_note, session,
+        update_note,
     },
     oauth::{
         mcp_authorize, mcp_authorize_submit, mcp_register_client, mcp_resource_metadata,
@@ -56,12 +44,6 @@ use self::{
     security::security_headers,
     ui::{home, view_note},
 };
-#[cfg(test)]
-use marginalis_application::{
-    McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
-};
-#[cfg(test)]
-use std::time::Duration;
 
 pub const API_VERSION: &str = "v2";
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
@@ -164,14 +146,25 @@ fn mcp_endpoint(state: &ApiState) -> HandlerResult<&Arc<McpEndpoint>> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use axum::{body::Body, http::Request};
+    use axum::{
+        body::Body,
+        http::{HeaderMap, Request},
+    };
     use marginalis_application::{
-        AuthenticationUseCaseError, McpOAuthUseCaseError, McpTokenPair, NoteUseCaseError,
+        AuthenticationUseCaseError, McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair,
+        NoteUseCaseError, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
     };
     use marginalis_domain::{
-        AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, WebSession,
+        Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft,
+        NoteId, WebSession,
     };
+    use std::time::{Duration, Instant};
     use tower::ServiceExt;
+
+    use super::{
+        auth::{RETURN_TO_COOKIE, external_path, valid_return_to, validate_mutation_origin},
+        state::McpRegistrationRateLimiter,
+    };
 
     struct Notes;
 

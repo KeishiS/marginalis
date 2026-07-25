@@ -1,6 +1,23 @@
 //! MCP Streamable HTTPとJSON-RPC tool dispatch。
 
-use super::*;
+use axum::{
+    Json,
+    extract::State,
+    http::{HeaderMap, StatusCode, header},
+    response::{IntoResponse, Response},
+};
+use marginalis_domain::{Actor, Note, NoteDraft, NoteId};
+use serde::Deserialize;
+
+use crate::mcp::{JsonRpcRequest, JsonRpcResponse, MCP_PROTOCOL_VERSION};
+
+use super::{
+    auth::parse_note_id,
+    error::{HandlerResult, mcp_error, problem},
+    mcp_endpoint,
+    notes::NoteInput,
+    state::{ApiState, McpEndpoint},
+};
 
 #[derive(Deserialize)]
 struct McpToolCall {

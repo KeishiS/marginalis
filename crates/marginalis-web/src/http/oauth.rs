@@ -1,6 +1,26 @@
 //! Marginalisが提供するMCP OAuth authorization server境界。
 
-use super::*;
+use std::time::Instant;
+
+use axum::{
+    Form, Json,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode, header},
+    response::{Html, IntoResponse, Redirect, Response},
+};
+use marginalis_application::{McpAuthorizationRequest, McpOAuthUseCaseError};
+use serde::{Deserialize, Serialize};
+
+use super::{
+    auth::{
+        CSRF_COOKIE, authenticated_actor, authenticated_form_actor, authenticated_mutation_actor,
+        cookie_value, external_path,
+    },
+    error::{HandlerResult, mcp_error, problem},
+    html::escape_html,
+    mcp_endpoint,
+    state::ApiState,
+};
 
 pub(super) async fn mcp_resource_metadata(
     State(state): State<ApiState>,
