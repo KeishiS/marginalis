@@ -21,8 +21,9 @@ impl ServerNoteUseCases {
 
 fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
     match error {
+        SqliteStoreError::NotFound => NoteUseCaseError::NotFound,
         SqliteStoreError::Conflict | SqliteStoreError::LastAdmin => NoteUseCaseError::Conflict,
-        SqliteStoreError::CorruptNote | SqliteStoreError::ArchiveFormat => {
+        SqliteStoreError::CorruptData | SqliteStoreError::ArchiveFormat => {
             NoteUseCaseError::Validation
         }
         SqliteStoreError::ArchiveTargetNotEmpty
@@ -35,7 +36,7 @@ fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
 impl NoteUseCases for ServerNoteUseCases {
     async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
         self.database
-            .list_visible_notes(&actor, 0, 1_000)
+            .list_visible_notes(&actor)
             .await
             .map_err(map_note_error)
     }
@@ -65,7 +66,7 @@ impl NoteUseCases for ServerNoteUseCases {
             deleted_at: None,
         };
         self.database
-            .create_note(&note, NotePermission::Admin)
+            .create_note(&note)
             .await
             .map_err(map_note_error)?;
         Ok(note)
@@ -78,15 +79,16 @@ impl NoteUseCases for ServerNoteUseCases {
         draft: NoteDraft,
         expected_revision: i64,
     ) -> Result<Note, NoteUseCaseError> {
-        self.database
-            .visible_note(&actor, note_id, NotePermission::Write)
-            .await
-            .map_err(map_note_error)?
-            .ok_or(NoteUseCaseError::NotFound)?;
         let draft = marginalis_asciidoc::validate_note_draft(draft)
             .map_err(|_| NoteUseCaseError::Validation)?;
         self.database
-            .update_note(note_id, expected_revision, &draft, SystemClock.now())
+            .update_visible_note(
+                &actor,
+                note_id,
+                expected_revision,
+                &draft,
+                SystemClock.now(),
+            )
             .await
             .map_err(map_note_error)
     }
@@ -98,19 +100,9 @@ impl NoteUseCases for ServerNoteUseCases {
         expected_revision: i64,
     ) -> Result<Note, NoteUseCaseError> {
         self.database
-            .visible_note(&actor, note_id, NotePermission::Admin)
+            .soft_delete_visible_note(&actor, note_id, expected_revision, SystemClock.now())
             .await
-            .map_err(map_note_error)?
-            .ok_or(NoteUseCaseError::NotFound)?;
-        self.database
-            .soft_delete_note(note_id, expected_revision, SystemClock.now())
-            .await
-            .map_err(map_note_error)?;
-        self.database
-            .note(note_id, true)
-            .await
-            .map_err(map_note_error)?
-            .ok_or(NoteUseCaseError::Unavailable)
+            .map_err(map_note_error)
     }
 
     async fn restore_note(
@@ -120,12 +112,7 @@ impl NoteUseCases for ServerNoteUseCases {
         expected_revision: i64,
     ) -> Result<Note, NoteUseCaseError> {
         self.database
-            .visible_deleted_note(&actor, note_id)
-            .await
-            .map_err(map_note_error)?
-            .ok_or(NoteUseCaseError::NotFound)?;
-        self.database
-            .restore_note(note_id, expected_revision, SystemClock.now())
+            .restore_visible_note(&actor, note_id, expected_revision, SystemClock.now())
             .await
             .map_err(map_note_error)
     }

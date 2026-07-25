@@ -195,7 +195,7 @@ impl OidcCallbackError {
 /// 署名・issuer・audience・nonceを検証済みのID tokenから得たKanidm group所属。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedOidcGroups {
-    pub groups: BTreeSet<String>,
+    groups: BTreeSet<String>,
 }
 
 /// v0.3 login callbackでのみ返す、署名検証済みOIDC identityとKanidm group claim。
@@ -226,7 +226,7 @@ struct GroupClaimPayload {
 ///
 /// この関数はJWTの署名検証をしない。必ず`IdToken::claims`の成功後にだけ呼び出す。claimが欠落、
 /// 文字列配列以外、空のgroup名を含む場合はfail closedで拒否する。
-pub fn groups_from_verified_id_token(
+fn groups_from_verified_id_token(
     id_token: &str,
     group_claim: &str,
 ) -> Result<VerifiedOidcGroups, OidcCallbackRejection> {

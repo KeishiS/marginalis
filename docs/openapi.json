@@ -102,7 +102,7 @@
     "schemas": {
       "Health": { "type": "object", "required": ["status", "api_version"], "properties": { "status": { "const": "ok" }, "api_version": { "const": "v2" } } },
       "Session": { "type": "object", "required": ["issuer", "subject", "is_administrator"], "properties": { "issuer": { "type": "string", "format": "uri" }, "subject": { "type": "string" }, "is_administrator": { "type": "boolean" } } },
-      "NoteDraft": { "type": "object", "required": ["title", "body", "tags"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "body": { "type": "string" }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 64 } } } },
+      "NoteDraft": { "type": "object", "required": ["title", "body", "tags"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 64 } } } },
       "NoteUpdate": { "allOf": [{ "$ref": "#/components/schemas/NoteDraft" }, { "$ref": "#/components/schemas/Revision" }] },
       "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } } },
       "Note": { "type": "object", "required": ["note_id", "title", "body", "tags", "created_at_ms", "updated_at_ms", "revision"], "properties": { "note_id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "body": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "created_at_ms": { "type": "integer" }, "updated_at_ms": { "type": "integer" }, "revision": { "type": "integer", "minimum": 1 } } },

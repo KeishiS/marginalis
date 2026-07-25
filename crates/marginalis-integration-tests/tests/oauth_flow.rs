@@ -83,26 +83,11 @@ impl TestServer {
         ));
         let notes = Arc::new(ServerNoteUseCases::new(database.clone()));
         let oauth = Arc::new(ServerMcpOAuthService::new(database, MCP_RESOURCE.into()));
-        let state = ApiState::new(
-            notes.clone(),
-            sessions,
-            oidc,
-            "/".into(),
-            BROWSER_ORIGIN.into(),
-        )
-        .with_mcp(McpEndpoint {
-            oauth,
-            notes,
-            allowed_origins: vec!["https://chatgpt.com".into()],
-            resource_uri: MCP_RESOURCE.into(),
-            metadata_uri: format!("{BROWSER_ORIGIN}/.well-known/oauth-protected-resource/mcp"),
-            authorization_server_uri: BROWSER_ORIGIN.into(),
-            authorization_server_metadata_uri: format!(
-                "{BROWSER_ORIGIN}/.well-known/oauth-authorization-server"
-            ),
-            authorization_endpoint_uri: format!("{BROWSER_ORIGIN}/oauth/authorize"),
-            token_endpoint_uri: format!("{BROWSER_ORIGIN}/oauth/token"),
-        });
+        let base_url = url::Url::parse(BROWSER_ORIGIN).expect("base URL");
+        let state =
+            ApiState::new(notes, sessions, oidc, "/".into(), BROWSER_ORIGIN.into()).with_mcp(
+                McpEndpoint::new(oauth, &base_url, vec!["https://chatgpt.com".into()]),
+            );
         Self {
             idp,
             app: router(state),

@@ -32,15 +32,16 @@ pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
 
 /// 本アプリが受理するAdocWeaveの完全一致パッケージ版。
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.6.1";
+pub const MAX_NOTE_BODY_BYTES: usize = 512 * 1024;
 
 /// 固定した仕様と実行時の仕様が異なる場合に返すエラー。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ContractMismatch {
+pub struct PackageVersionMismatch {
     pub expected: &'static str,
     pub actual: &'static str,
 }
 
-impl fmt::Display for ContractMismatch {
+impl fmt::Display for PackageVersionMismatch {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
@@ -50,15 +51,15 @@ impl fmt::Display for ContractMismatch {
     }
 }
 
-impl std::error::Error for ContractMismatch {}
+impl std::error::Error for PackageVersionMismatch {}
 
 /// リンクされた依存が、本アプリの固定したパッケージ版と一致することを検証する。
-pub fn verify_runtime_package_version() -> Result<(), ContractMismatch> {
+pub fn verify_runtime_package_version() -> Result<(), PackageVersionMismatch> {
     let actual = adocweave::VERSION;
     if actual == PINNED_ADOCWEAVE_PACKAGE_VERSION {
         Ok(())
     } else {
-        Err(ContractMismatch {
+        Err(PackageVersionMismatch {
             expected: PINNED_ADOCWEAVE_PACKAGE_VERSION,
             actual,
         })
@@ -158,22 +159,29 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
             range: empty_range,
         });
     }
-    let analysis = adocweave::Engine::new(Default::default())
-        .analyze(&draft.body)
-        .map_err(|_| {
-            vec![NoteValidationError {
-                code: "asciidoc-parse-failed".into(),
-                range: empty_range,
-            }]
-        })?;
-    errors.extend(
-        validate_note_content_profile(&analysis)
-            .into_iter()
-            .map(|error| NoteValidationError {
-                code: error.code.as_str().into(),
-                range: error.range,
-            }),
-    );
+    if draft.body.len() > MAX_NOTE_BODY_BYTES {
+        errors.push(NoteValidationError {
+            code: "body-too-large".into(),
+            range: empty_range,
+        });
+    } else {
+        let analysis = adocweave::Engine::new(Default::default())
+            .analyze(&draft.body)
+            .map_err(|_| {
+                vec![NoteValidationError {
+                    code: "asciidoc-parse-failed".into(),
+                    range: empty_range,
+                }]
+            })?;
+        errors.extend(
+            validate_note_content_profile(&analysis)
+                .into_iter()
+                .map(|error| NoteValidationError {
+                    code: error.code.as_str().into(),
+                    range: error.range,
+                }),
+        );
+    }
     if errors.is_empty() {
         Ok(NoteDraft {
             title: draft.title.trim().nfc().collect(),
@@ -412,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn package_version_matches_the_pinned_contract() {
+    fn package_version_matches_the_pinned_specification() {
         assert_eq!(ADOCWEAVE_SOURCE_REVISION.len(), 40);
         verify_runtime_package_version().expect("pinned version");
     }
@@ -435,6 +443,17 @@ mod tests {
         .expect("valid draft");
         assert_eq!(draft.title, "Title");
         assert_eq!(draft.tags, vec!["Rust"]);
+    }
+
+    #[test]
+    fn draft_validation_rejects_oversized_body_before_parsing() {
+        let errors = validate_note_draft(NoteDraft {
+            title: "Title".into(),
+            body: "x".repeat(MAX_NOTE_BODY_BYTES + 1),
+            tags: Vec::new(),
+        })
+        .expect_err("oversized body");
+        assert!(errors.iter().any(|error| error.code == "body-too-large"));
     }
 
     #[test]

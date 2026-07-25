@@ -29,7 +29,7 @@
 | 2（完了） | [029](../issues/029-adocweave-v0.6.1-migration.md) | AdocWeave v0.6.1 へ移行し、正本の解釈・投影・HTML・WASM の互換性基準を更新する | 完了（2026-07-24。旧 v1 は移行せず、`dataDir` を削除して初期化する） |
 | 公開準備（完了） | [035](../issues/035-v0.2.0-rc.1-release-acceptance.md) | 空の新 v1 環境で実環境受入を行い、`v0.2.0-rc.1` の公開可否を判断する | 完了（2026-07-24、`v0.2.0-rc.1` タグ） |
 | 正式公開（完了） | [036](../issues/036-v0.2.0-release-acceptance.md) | RCの受入結果と正式版の差分を検証し、`v0.2.0`を公開する | 完了（2026-07-24、`v0.2.0`タグ） |
-| 1（完了） | [037](../issues/037-v0.3.0-architecture-rebaseline.md) | SQLite 正本、Kanidm group 認可、新 API に再設計する | データ正本、認可、MCP、削除、公開 API の契約を固定した |
+| 1（完了） | [037](../issues/037-v0.3.0-architecture-rebaseline.md) | SQLite 正本、Kanidm group 認可、新 API に再設計する | データ正本、認可、MCP、削除、公開 API の仕様を固定した |
 | 2（完了） | [038](../issues/038-sqlite-canonical-notes-and-asciidoc-bundles.md) | SQLite の単一正本と AsciiDoc import/export を実装する | ファイル正本・操作ジャーナルなしにノートと ACL を一 transaction で更新する |
 | 3（実装完了） | [039](../issues/039-kanidm-group-authorization-and-mcp-oauth.md) | Kanidm 1.10 group claim 認可と MCP OAuth を実装する | 自動試験済み。対象 MCP client の実環境受入は段階 6 で行う |
 | 4（実装完了） | [040](../issues/040-v0.3.0-nixos-and-e2e-foundation.md) | NixOS 配備と Kanidm 1.10 E2E を release gate に組み込む | TLS、subpath、OIDC、NixOS module を CI で再現した |

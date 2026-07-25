@@ -26,89 +26,29 @@ impl SqliteDatabase {
         Ok(())
     }
 
-    pub async fn upsert_mcp_client(
+    #[cfg(test)]
+    pub(crate) async fn upsert_mcp_client(
         &self,
         client: &McpOAuthClient,
         registered_at: UnixMillis,
     ) -> Result<(), SqliteStoreError> {
         let redirect_uris = serde_json::to_string(&client.redirect_uris)
-            .map_err(|_| SqliteStoreError::CorruptNote)?;
+            .map_err(|_| SqliteStoreError::CorruptData)?;
         sqlx::query("INSERT INTO mcp_clients (client_id, display_name, redirect_uris_json, registered_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET display_name = excluded.display_name, redirect_uris_json = excluded.redirect_uris_json")
             .bind(&client.client_id).bind(&client.display_name).bind(redirect_uris).bind(registered_at.get()).execute(&self.pool).await.map_err(database_error)?;
         Ok(())
     }
 
-    /// Removes expired OAuth state and stale clients, then atomically registers one client only
-    /// while the configured persistence bound has capacity.
+    /// configured persistence boundに空きがある場合だけclientを原子的に登録する。
     pub async fn register_mcp_client_bounded(
         &self,
         client: &McpOAuthClient,
         now: UnixMillis,
-        unused_client_cutoff: UnixMillis,
         maximum_clients: i64,
     ) -> Result<bool, SqliteStoreError> {
         let redirect_uris = serde_json::to_string(&client.redirect_uris)
-            .map_err(|_| SqliteStoreError::CorruptNote)?;
+            .map_err(|_| SqliteStoreError::CorruptData)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        sqlx::query(
-            "DELETE FROM mcp_access_tokens
-             WHERE expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
-        )
-        .bind(now.get())
-        .execute(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        sqlx::query(
-            "DELETE FROM mcp_refresh_tokens AS stale
-             WHERE stale.revoked_at_ms IS NOT NULL
-                OR (
-                    (stale.expires_at_ms <= ? OR stale.rotated_at_ms IS NOT NULL)
-                    AND NOT EXISTS (
-                        SELECT 1 FROM mcp_refresh_tokens AS active
-                        WHERE active.token_family_id = stale.token_family_id
-                          AND active.rotated_at_ms IS NULL
-                          AND active.revoked_at_ms IS NULL
-                          AND active.expires_at_ms > ?
-                    )
-                )",
-        )
-        .bind(now.get())
-        .bind(now.get())
-        .execute(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        sqlx::query(
-            "DELETE FROM mcp_authorization_codes AS stale
-             WHERE stale.expires_at_ms <= ?
-               AND (
-                    stale.token_family_id IS NULL
-                    OR (
-                        NOT EXISTS (
-                            SELECT 1 FROM mcp_access_tokens AS access
-                            WHERE access.token_family_id = stale.token_family_id
-                        )
-                        AND NOT EXISTS (
-                            SELECT 1 FROM mcp_refresh_tokens AS refresh
-                            WHERE refresh.token_family_id = stale.token_family_id
-                        )
-                    )
-               )",
-        )
-        .bind(now.get())
-        .execute(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        sqlx::query(
-            "DELETE FROM mcp_clients
-             WHERE registered_at_ms < ?
-               AND NOT EXISTS (SELECT 1 FROM mcp_authorization_codes WHERE client_id = mcp_clients.client_id)
-               AND NOT EXISTS (SELECT 1 FROM mcp_access_tokens WHERE client_id = mcp_clients.client_id)
-               AND NOT EXISTS (SELECT 1 FROM mcp_refresh_tokens WHERE client_id = mcp_clients.client_id)",
-        )
-        .bind(unused_client_cutoff.get())
-        .execute(&mut *transaction)
-        .await
-        .map_err(database_error)?;
         let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM mcp_clients")
             .fetch_one(&mut *transaction)
             .await
@@ -143,7 +83,7 @@ impl SqliteDatabase {
                     &row.try_get::<String, _>("redirect_uris_json")
                         .map_err(database_error)?,
                 )
-                .map_err(|_| SqliteStoreError::CorruptNote)?,
+                .map_err(|_| SqliteStoreError::CorruptData)?,
             })
         })
         .transpose()

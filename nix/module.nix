@@ -113,7 +113,7 @@ in
 
       allowedOrigins = mkOption {
         type = types.listOf types.str;
-        default = [ "https://chatgpt.com" ];
+        default = [ ];
         description = "Exact HTTPS browser origins permitted to call only the MCP endpoint. Native MCP clients omit Origin and use Bearer authentication.";
       };
     };
@@ -138,8 +138,11 @@ in
         message = "services.marginalis.oidc.clientSecretFile must be set.";
       }
       {
-        assertion = lib.hasPrefix "/" cfg.dataDir;
-        message = "services.marginalis.dataDir must be an absolute path.";
+        assertion =
+          lib.hasPrefix "/" cfg.dataDir
+          && cfg.dataDir != "/"
+          && builtins.match ".*[[:space:]].*" cfg.dataDir == null;
+        message = "services.marginalis.dataDir must be an absolute non-root path without whitespace.";
       }
       {
         assertion = cfg.oidc.clientSecretFile == null || lib.hasPrefix "/" cfg.oidc.clientSecretFile;
@@ -154,10 +157,12 @@ in
           cfg.backupDirectory == null
           || (
             lib.hasPrefix "/" cfg.backupDirectory
+            && cfg.backupDirectory != "/"
+            && builtins.match ".*[[:space:]].*" cfg.backupDirectory == null
             && cfg.backupDirectory != cfg.dataDir
             && !lib.hasPrefix "${cfg.dataDir}/" cfg.backupDirectory
           );
-        message = "services.marginalis.backupDirectory must be an absolute path outside services.marginalis.dataDir.";
+        message = "services.marginalis.backupDirectory must be an absolute non-root path without whitespace and outside services.marginalis.dataDir.";
       }
     ];
 
@@ -201,6 +206,7 @@ in
         WorkingDirectory = cfg.dataDir;
         Restart = "on-failure";
         RestartSec = "5s";
+        TimeoutStopSec = "30s";
         LoadCredential = [ "oidc-client-secret:${cfg.oidc.clientSecretFile}" ];
         UMask = "0077";
         NoNewPrivileges = true;
@@ -236,17 +242,17 @@ in
       };
     };
 
-    # v0.3の削除済みノートは30日間だけ保持する。SQLite正本だけを操作するため、HTTP serviceを
-    # 停止せずに日次実行できる。
-    systemd.services.marginalis-purge-deleted = {
-      description = "Purge expired Marginalis soft-deleted notes";
+    # v0.3の削除済みノートは30日間だけ保持し、期限切れの認証状態も削除する。SQLite正本だけを
+    # 操作するため、HTTP serviceを停止せずに日次実行できる。
+    systemd.services.marginalis-purge-expired = {
+      description = "Purge expired Marginalis notes and authentication state";
       environment = {
         RUST_LOG = cfg.logFilter;
         MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
       };
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${cfg.package}/bin/marginalis purge-deleted";
+        ExecStart = "${cfg.package}/bin/marginalis purge-expired";
         User = "marginalis";
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
@@ -278,21 +284,21 @@ in
       };
     };
 
-    systemd.timers.marginalis-purge-deleted = {
-      description = "Purge expired Marginalis soft-deleted notes daily";
+    systemd.timers.marginalis-purge-expired = {
+      description = "Purge expired Marginalis state daily";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = "daily";
         Persistent = true;
-        Unit = "marginalis-purge-deleted.service";
+        Unit = "marginalis-purge-expired.service";
       };
     };
 
     # backup先は運用者が永続storageとretentionを決めてから明示する。timerは提供しない。
-    # このunitはHTTP serverと競合させ、SQLite正本から一貫したarchiveを取得する。
+    # archive exportは一つのSQLite read transactionを使うため、HTTP serverを止めずに一貫した
+    # snapshotを取得できる。
     systemd.services.marginalis-backup = mkIf (cfg.backupDirectory != null) {
       description = "Create a consistent Marginalis backup";
-      conflicts = [ "marginalis.service" ];
       environment = {
         RUST_LOG = cfg.logFilter;
         MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";

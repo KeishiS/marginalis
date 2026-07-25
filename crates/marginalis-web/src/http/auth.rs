@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use marginalis_application::AuthenticationUseCaseError;
 use marginalis_domain::{Actor, EntityId, NoteId};
 use serde::Deserialize;
 
@@ -41,10 +42,43 @@ pub(super) fn external_path(base_path: &str, path: &str) -> String {
 }
 
 pub(super) fn valid_return_to(value: &str, base_path: &str) -> bool {
-    value.starts_with(&external_path(base_path, "/oauth/authorize?"))
+    let base_path = base_path.trim_end_matches('/');
+    (value == base_path || value.starts_with(&format!("{base_path}/")))
+        && value.starts_with('/')
         && !value.starts_with("//")
         && !value.contains('\r')
         && !value.contains('\n')
+}
+
+pub(super) async fn authenticated_ui_actor(
+    headers: &HeaderMap,
+    state: &ApiState,
+    return_to: &str,
+) -> Result<Actor, Response> {
+    let Some(session_id) = cookie_value(headers, SESSION_COOKIE) else {
+        return Err(login_redirect(state, return_to));
+    };
+    match state.sessions.authenticate_session(session_id).await {
+        Ok(Some(session)) => Ok(session.actor),
+        Ok(None)
+        | Err(AuthenticationUseCaseError::Rejected | AuthenticationUseCaseError::NotFound) => {
+            Err(login_redirect(state, return_to))
+        }
+        Err(AuthenticationUseCaseError::Unavailable) => {
+            Err(authentication_error(AuthenticationUseCaseError::Unavailable).into_response())
+        }
+    }
+}
+
+fn login_redirect(state: &ApiState, return_to: &str) -> Response {
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("next", return_to)
+        .finish();
+    Redirect::temporary(&format!(
+        "{}?{query}",
+        external_path(&state.cookie_path, "/auth/oidc/login")
+    ))
+    .into_response()
 }
 
 pub(super) async fn begin_login(

@@ -115,6 +115,15 @@ awk -v heading="## $expected_version — " '
 ' CHANGELOG.md
 if [ -n "$release_tag" ]; then
   test "$release_tag" = "v$expected_version"
+  awk -v heading="## $expected_version — " '
+    index($0, heading) == 1 {
+      status = substr($0, length(heading) + 1)
+      if (status ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
+        matches++
+      }
+    }
+    END { exit matches != 1 }
+  ' CHANGELOG.md
 fi
 '''
 
@@ -290,7 +299,7 @@ grep -Fq "hash = \"$expected_fixture_hash\";" flake.nix
 
 if grep -Eq 'WASM_API_VERSION|PINNED_CONTRACTS|CONTRACT_VERSION|contractVersion' \
   crates/marginalis-asciidoc/src/lib.rs crates/marginalis-server/src/lib.rs; then
-  echo "legacy AdocWeave contract identity remains" >&2
+  echo "legacy AdocWeave version identity remains" >&2
   exit 1
 fi
 if grep -Eq '^adocweave[.]workspace' crates/marginalis-server/Cargo.toml; then

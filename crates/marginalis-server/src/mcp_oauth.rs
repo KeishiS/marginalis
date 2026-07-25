@@ -14,24 +14,8 @@ use url::Url;
 
 use crate::{SystemClock, SystemRandom};
 
-/// OAuth code exchangeの成功時だけtransportへ返すtoken pair。Debugを実装しない。
-pub struct McpIssuedTokenPair {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub access_expires_in_seconds: u64,
-    pub scope: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum McpOAuthError {
-    InvalidRequest,
-    InvalidClient,
-    InvalidRedirectUri,
-    InvalidScope,
-    InvalidTarget,
-    InvalidGrant,
-    Unavailable,
-}
+type McpIssuedTokenPair = McpTokenPair;
+type McpOAuthError = McpOAuthUseCaseError;
 
 /// v0.3 SQLite schemaとKanidm主体を使うMCP OAuth service。
 #[derive(Clone)]
@@ -44,7 +28,6 @@ impl ServerMcpOAuthService {
     pub const ACCESS_TOKEN_SECONDS: u64 = 60 * 60;
     pub const REFRESH_TOKEN_SECONDS: u64 = 30 * 24 * 60 * 60;
     const MAX_DYNAMIC_CLIENTS: i64 = 1_000;
-    const UNUSED_CLIENT_SECONDS: i64 = 24 * 60 * 60;
 
     pub fn new(database: SqliteDatabase, resource_uri: String) -> Self {
         Self {
@@ -62,6 +45,10 @@ impl ServerMcpOAuthService {
             || client.redirect_uris.is_empty()
             || client.display_name.len() > 128
             || client.redirect_uris.len() > 8
+            || client.display_name.chars().any(|character| {
+                character.is_control()
+                    || matches!(character, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+            })
         {
             return Err(McpOAuthError::InvalidRequest);
         }
@@ -75,12 +62,7 @@ impl ServerMcpOAuthService {
         let now = SystemClock.now();
         let registered = self
             .database
-            .register_mcp_client_bounded(
-                &client,
-                now,
-                UnixMillis::new(now.get() - Self::UNUSED_CLIENT_SECONDS * 1_000),
-                Self::MAX_DYNAMIC_CLIENTS,
-            )
+            .register_mcp_client_bounded(&client, now, Self::MAX_DYNAMIC_CLIENTS)
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;
         if !registered {
@@ -315,49 +297,38 @@ impl ServerMcpOAuthService {
     }
 }
 
-fn mcp_error(error: McpOAuthError) -> McpOAuthUseCaseError {
-    match error {
-        McpOAuthError::InvalidRequest => McpOAuthUseCaseError::InvalidRequest,
-        McpOAuthError::InvalidClient => McpOAuthUseCaseError::InvalidClient,
-        McpOAuthError::InvalidRedirectUri => McpOAuthUseCaseError::InvalidRedirectUri,
-        McpOAuthError::InvalidScope => McpOAuthUseCaseError::InvalidScope,
-        McpOAuthError::InvalidTarget => McpOAuthUseCaseError::InvalidTarget,
-        McpOAuthError::InvalidGrant => McpOAuthUseCaseError::InvalidGrant,
-        McpOAuthError::Unavailable => McpOAuthUseCaseError::Unavailable,
-    }
-}
-
 #[async_trait]
 impl McpOAuthUseCases for ServerMcpOAuthService {
     async fn register_client(
         &self,
         client: marginalis_domain::McpOAuthClient,
     ) -> Result<(), McpOAuthUseCaseError> {
-        self.register_client(client).await.map_err(mcp_error)
+        ServerMcpOAuthService::register_client(self, client).await
     }
     async fn resolve_authorization_client(
         &self,
         client_id: String,
         redirect_uri: Option<String>,
     ) -> Result<McpAuthorizationClient, McpOAuthUseCaseError> {
-        self.resolve_authorization_client(&client_id, redirect_uri.as_deref())
-            .await
-            .map_err(mcp_error)
+        ServerMcpOAuthService::resolve_authorization_client(
+            self,
+            &client_id,
+            redirect_uri.as_deref(),
+        )
+        .await
     }
     async fn validate_authorization_request(
         &self,
         request: McpAuthorizationRequest,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
-        self.validate_authorization_request(&request)
-            .await
-            .map_err(mcp_error)
+        ServerMcpOAuthService::validate_authorization_request(self, &request).await
     }
     async fn authorize(
         &self,
         actor: Actor,
         request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
-        self.authorize(actor, request).await.map_err(mcp_error)
+        ServerMcpOAuthService::authorize(self, actor, request).await
     }
     async fn exchange_authorization_code(
         &self,
@@ -367,16 +338,15 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
         resource_uri: String,
         verifier: String,
     ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
-        let pair = self
-            .exchange_authorization_code(code, client_id, redirect_uri, resource_uri, verifier)
-            .await
-            .map_err(mcp_error)?;
-        Ok(McpTokenPair {
-            access_token: pair.access_token,
-            refresh_token: pair.refresh_token,
-            access_expires_in_seconds: pair.access_expires_in_seconds,
-            scope: pair.scope,
-        })
+        ServerMcpOAuthService::exchange_authorization_code(
+            self,
+            code,
+            client_id,
+            redirect_uri,
+            resource_uri,
+            verifier,
+        )
+        .await
     }
     async fn refresh_access_token(
         &self,
@@ -385,28 +355,24 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
         resource_uri: String,
         scopes: Option<Vec<String>>,
     ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
-        let pair = self
-            .refresh_access_token(refresh_token, client_id, resource_uri, scopes)
-            .await
-            .map_err(mcp_error)?;
-        Ok(McpTokenPair {
-            access_token: pair.access_token,
-            refresh_token: pair.refresh_token,
-            access_expires_in_seconds: pair.access_expires_in_seconds,
-            scope: pair.scope,
-        })
+        ServerMcpOAuthService::refresh_access_token(
+            self,
+            refresh_token,
+            client_id,
+            resource_uri,
+            scopes,
+        )
+        .await
     }
     async fn authenticate(
         &self,
         token: String,
         resource_uri: String,
     ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthUseCaseError> {
-        self.authenticate(&token, &resource_uri)
-            .await
-            .map_err(mcp_error)
+        ServerMcpOAuthService::authenticate(self, &token, &resource_uri).await
     }
     async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {
-        self.revoke(&actor, &client_id).await.map_err(mcp_error)
+        ServerMcpOAuthService::revoke(self, &actor, &client_id).await
     }
 }
 

@@ -1,12 +1,14 @@
 //! Marginalisの現行データモデルに限定したSQLite adapter。
 
 mod archive;
+mod cleanup;
 mod mcp;
 mod notes;
 mod schema;
 mod session;
 mod token;
 
+pub use cleanup::AuthStatePurgeCounts;
 pub use session::SqliteOidcLoginAttemptStore;
 
 use crate::schema::migrate;
@@ -24,18 +26,20 @@ pub struct SqliteDatabase {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SqliteStoreError {
+    NotFound,
     Conflict,
     LastAdmin,
     ArchiveFormat,
     ArchiveTargetNotEmpty,
     ArchiveMissingAdmin,
-    CorruptNote,
+    CorruptData,
     Database(String),
 }
 
 impl fmt::Display for SqliteStoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NotFound => formatter.write_str("note was not found or is not accessible"),
             Self::Conflict => formatter.write_str("note revision does not match"),
             Self::LastAdmin => formatter.write_str("a note must retain one direct administrator"),
             Self::ArchiveFormat => formatter.write_str("archive format is unsupported"),
@@ -45,7 +49,7 @@ impl fmt::Display for SqliteStoreError {
             Self::ArchiveMissingAdmin => {
                 formatter.write_str("every archived note must retain one direct administrator")
             }
-            Self::CorruptNote => formatter.write_str("note data is invalid"),
+            Self::CorruptData => formatter.write_str("stored data is invalid"),
             Self::Database(_) => formatter.write_str("database query failed"),
         }
     }
@@ -68,10 +72,6 @@ impl SqliteDatabase {
             .await?;
         migrate(&pool).await?;
         Ok(Self { pool })
-    }
-
-    pub fn pool(&self) -> &SqlitePool {
-        &self.pool
     }
 }
 
@@ -172,10 +172,7 @@ mod tests {
             revision: 1,
             deleted_at: None,
         };
-        database
-            .create_note(&note, NotePermission::Admin)
-            .await
-            .expect("create note");
+        database.create_note(&note).await.expect("create note");
         assert_eq!(database.note(note_id, false).await, Ok(Some(note.clone())));
         assert_eq!(
             database.note_acl(note_id).await.expect("owner ACL"),
@@ -244,15 +241,41 @@ mod tests {
         );
         assert_eq!(
             database
-                .list_visible_notes(&administrator, 0, 10)
+                .list_visible_notes(&administrator)
                 .await
                 .expect("administrator list")
                 .len(),
             1
         );
+        assert_eq!(
+            database
+                .update_visible_note(
+                    &charlie,
+                    note_id,
+                    1,
+                    &NoteDraft {
+                        title: "Unauthorized title".into(),
+                        body: "must not persist".into(),
+                        tags: vec![],
+                    },
+                    UnixMillis::new(150),
+                )
+                .await,
+            Err(SqliteStoreError::NotFound)
+        );
+        assert_eq!(
+            database
+                .note(note_id, false)
+                .await
+                .expect("note query")
+                .expect("note remains")
+                .title,
+            "First title"
+        );
 
         let updated = database
-            .update_note(
+            .update_visible_note(
+                &alice,
                 note_id,
                 1,
                 &NoteDraft {
@@ -268,14 +291,15 @@ mod tests {
         assert_eq!(updated.title, "Updated title");
         assert_eq!(
             database
-                .soft_delete_note(note_id, 1, UnixMillis::new(300))
+                .soft_delete_visible_note(&administrator, note_id, 1, UnixMillis::new(300))
                 .await,
             Err(SqliteStoreError::Conflict)
         );
-        database
-            .soft_delete_note(note_id, 2, UnixMillis::new(300))
+        let deleted = database
+            .soft_delete_visible_note(&administrator, note_id, 2, UnixMillis::new(300))
             .await
             .expect("soft delete");
+        assert_eq!(deleted.deleted_at, Some(UnixMillis::new(300)));
         assert_eq!(database.note(note_id, false).await, Ok(None));
         let deleted = database
             .note(note_id, true)
@@ -286,7 +310,7 @@ mod tests {
         assert_eq!(deleted.revision, 3);
 
         let restored = database
-            .restore_note(note_id, 3, UnixMillis::new(350))
+            .restore_visible_note(&administrator, note_id, 3, UnixMillis::new(350))
             .await
             .expect("restore note");
         assert_eq!(restored.deleted_at, None);
@@ -310,6 +334,26 @@ mod tests {
             imported_database.import_archive(&archive).await,
             Err(SqliteStoreError::ArchiveTargetNotEmpty)
         );
+        let nonempty_auth_database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("auth-state import target");
+        nonempty_auth_database
+            .oidc_login_attempt_store()
+            .issue(
+                OidcLoginAttempt {
+                    state: "pending-state".into(),
+                    nonce: "nonce".into(),
+                    pkce_verifier: "verifier".into(),
+                    expires_at: UnixMillis::new(1_000),
+                },
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("pending login attempt");
+        assert_eq!(
+            nonempty_auth_database.import_archive(&archive).await,
+            Err(SqliteStoreError::ArchiveTargetNotEmpty)
+        );
         let mut invalid_archive = archive.clone();
         invalid_archive.notes[0].note.creator_issuer.clear();
         let rejected_database = SqliteDatabase::connect("sqlite::memory:")
@@ -317,7 +361,7 @@ mod tests {
             .expect("empty rejected target");
         assert_eq!(
             rejected_database.import_archive(&invalid_archive).await,
-            Err(SqliteStoreError::CorruptNote)
+            Err(SqliteStoreError::CorruptData)
         );
         assert_eq!(
             rejected_database
@@ -330,12 +374,13 @@ mod tests {
             }
         );
         database
-            .soft_delete_note(note_id, 4, UnixMillis::new(400))
+            .soft_delete_visible_note(&administrator, note_id, 4, UnixMillis::new(400))
             .await
             .expect("delete before purge");
         assert_eq!(
             database
-                .restore_note(
+                .restore_visible_note(
+                    &administrator,
                     note_id,
                     5,
                     UnixMillis::new(400 + SOFT_DELETE_RETENTION_MS + 1)
@@ -426,10 +471,15 @@ mod tests {
         database
             .issue_web_session(&replacement, UnixMillis::new(2_100))
             .await
-            .expect("issuing a session cleans expired and revoked rows");
+            .expect("issue replacement session");
+        let counts = database
+            .purge_expired_auth_state(UnixMillis::new(2_100), UnixMillis::new(0))
+            .await
+            .expect("explicit session cleanup");
+        assert_eq!(counts.web_sessions, 1);
         assert_eq!(
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM web_sessions")
-                .fetch_one(database.pool())
+                .fetch_one(&database.pool)
                 .await
                 .expect("session count"),
             1
@@ -437,7 +487,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn oidc_attempt_issue_removes_expired_rows() {
+    async fn explicit_auth_cleanup_removes_expired_rows_without_new_issuance() {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("schema initialization succeeds");
@@ -462,13 +512,44 @@ mod tests {
                     pkce_verifier: "active-verifier".into(),
                     expires_at: UnixMillis::new(2_000),
                 },
-                UnixMillis::new(1_000),
+                UnixMillis::new(100),
             )
             .await
-            .expect("second attempt cleans the expired row");
+            .expect("active attempt");
+        attempts
+            .issue(
+                OidcLoginAttempt {
+                    state: "consumed-expired-state".into(),
+                    nonce: "expired-nonce".into(),
+                    pkce_verifier: "expired-verifier".into(),
+                    expires_at: UnixMillis::new(1_000),
+                },
+                UnixMillis::new(100),
+            )
+            .await
+            .expect("expired attempt to consume");
+        assert_eq!(
+            attempts
+                .consume("consumed-expired-state".into(), UnixMillis::new(1_000))
+                .await
+                .expect("consume expired attempt"),
+            None
+        );
+        assert_eq!(
+            attempts
+                .consume("consumed-expired-state".into(), UnixMillis::new(1_000))
+                .await
+                .expect("replay consumed attempt"),
+            None
+        );
+        let counts = database
+            .purge_expired_auth_state(UnixMillis::new(1_000), UnixMillis::new(0))
+            .await
+            .expect("explicit cleanup");
+        assert_eq!(counts.oidc_login_attempts, 1);
         assert_eq!(
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM oidc_login_attempts")
-                .fetch_one(database.pool())
+                .fetch_one(&database.pool)
                 .await
                 .expect("attempt count"),
             1
@@ -490,7 +571,7 @@ mod tests {
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
             )
             .bind(table)
-            .fetch_optional(database.pool())
+            .fetch_optional(&database.pool)
             .await
             .expect("schema query")
             .is_some();
@@ -627,11 +708,10 @@ mod tests {
                         redirect_uris: vec!["https://other.example.test/callback".into()],
                     },
                     UnixMillis::new(5),
-                    UnixMillis::new(0),
                     10,
                 )
                 .await
-                .expect("registration cleanup")
+                .expect("registration")
         );
         assert!(matches!(
             database
@@ -715,7 +795,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dynamic_registration_prunes_stale_unreferenced_clients() {
+    async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
@@ -730,6 +810,12 @@ mod tests {
             )
             .await
             .expect("client");
+        let now = UnixMillis::new(2 * 24 * 60 * 60 * 1_000);
+        let counts = database
+            .purge_expired_auth_state(now, UnixMillis::new(24 * 60 * 60 * 1_000))
+            .await
+            .expect("cleanup");
+        assert_eq!(counts.mcp_clients, 1);
         assert!(
             database
                 .register_mcp_client_bounded(
@@ -738,8 +824,7 @@ mod tests {
                         display_name: "Fresh client".into(),
                         redirect_uris: vec!["https://client.example.test/callback".into()],
                     },
-                    UnixMillis::new(2 * 24 * 60 * 60 * 1_000),
-                    UnixMillis::new(24 * 60 * 60 * 1_000),
+                    now,
                     1,
                 )
                 .await
@@ -824,7 +909,6 @@ mod tests {
                         redirect_uris: vec!["https://other.example/callback".into()],
                     },
                     UnixMillis::new(200),
-                    UnixMillis::new(0),
                     10,
                 )
                 .await

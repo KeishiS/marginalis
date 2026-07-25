@@ -32,7 +32,7 @@ use tracing::{Level, info_span};
 use self::{
     auth::{begin_login, complete_login, logout},
     error::{HandlerResult, problem},
-    mcp_transport::mcp_post,
+    mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
         create_note, delete_note, export_note, list_notes, read_note, restore_note, session,
         update_note,
@@ -75,7 +75,10 @@ pub fn router(state: ApiState) -> Router {
         )
         .route(
             "/mcp",
-            post(mcp_post).layer(DefaultBodyLimit::max(1024 * 1024)),
+            get(mcp_unsupported_method)
+                .post(mcp_post)
+                .delete(mcp_unsupported_method)
+                .layer(DefaultBodyLimit::max(1024 * 1024)),
         )
         .route("/api/v2/health", get(health))
         .route("/api/v2/session", get(session))
@@ -151,7 +154,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use axum::{
-        body::Body,
+        body::{Body, to_bytes},
         http::{HeaderMap, Request},
     };
     use marginalis_application::{
@@ -473,6 +476,7 @@ mod tests {
     }
 
     fn mcp_app() -> Router {
+        let base_url = url::Url::parse("https://example.test").expect("base URL");
         router(
             ApiState::new(
                 Arc::new(Notes),
@@ -481,23 +485,16 @@ mod tests {
                 "/".into(),
                 "https://example.test".into(),
             )
-            .with_mcp(McpEndpoint {
-                oauth: Arc::new(Mcp),
-                notes: Arc::new(Notes),
-                allowed_origins: vec!["https://chatgpt.com".into()],
-                resource_uri: "https://example.test/mcp".into(),
-                metadata_uri: "https://example.test/.well-known/oauth-protected-resource/mcp"
-                    .into(),
-                authorization_server_uri: "https://example.test".into(),
-                authorization_server_metadata_uri:
-                    "https://example.test/.well-known/oauth-authorization-server".into(),
-                authorization_endpoint_uri: "https://example.test/oauth/authorize".into(),
-                token_endpoint_uri: "https://example.test/oauth/token".into(),
-            }),
+            .with_mcp(McpEndpoint::new(
+                Arc::new(Mcp),
+                &base_url,
+                vec!["https://chatgpt.com".into()],
+            )),
         )
     }
 
     fn subpath_mcp_app() -> Router {
+        let base_url = url::Url::parse("https://example.test/marginalis").expect("base URL");
         router(
             ApiState::new(
                 Arc::new(Notes),
@@ -506,21 +503,7 @@ mod tests {
                 "/marginalis".into(),
                 "https://example.test".into(),
             )
-            .with_mcp(McpEndpoint {
-                oauth: Arc::new(Mcp),
-                notes: Arc::new(Notes),
-                allowed_origins: vec![],
-                resource_uri: "https://example.test/marginalis/mcp".into(),
-                metadata_uri:
-                    "https://example.test/.well-known/oauth-protected-resource/marginalis/mcp"
-                        .into(),
-                authorization_server_uri: "https://example.test/marginalis".into(),
-                authorization_server_metadata_uri:
-                    "https://example.test/.well-known/oauth-authorization-server/marginalis".into(),
-                authorization_endpoint_uri: "https://example.test/marginalis/oauth/authorize"
-                    .into(),
-                token_endpoint_uri: "https://example.test/marginalis/oauth/token".into(),
-            }),
+            .with_mcp(McpEndpoint::new(Arc::new(Mcp), &base_url, vec![])),
         )
     }
 
@@ -583,10 +566,22 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(notes.status(), StatusCode::UNAUTHORIZED);
+
+        let ui = app()
+            .oneshot(Request::get("/").body(Body::empty()).expect("request"))
+            .await
+            .expect("response");
+        assert_eq!(ui.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert!(
+            ui.headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|location| location.starts_with("/auth/oidc/login?next="))
+        );
     }
 
     #[tokio::test]
-    async fn openapi_is_served_from_the_embedded_contract() {
+    async fn openapi_is_served_from_the_embedded_specification() {
         let response = app()
             .oneshot(
                 Request::get("/api/v2/openapi.json")
@@ -821,6 +816,26 @@ mod tests {
             .expect("response");
         assert_eq!(missing_client.status(), StatusCode::BAD_REQUEST);
         assert!(!missing_client.headers().contains_key(header::LOCATION));
+
+        let oversized_state = "x".repeat(3_000);
+        let oversized_resume = mcp_app()
+            .oneshot(
+                Request::get(format!(
+                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state={oversized_state}"
+                ))
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(oversized_resume.status(), StatusCode::SEE_OTHER);
+        let location = oversized_resume
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .expect("redirect location");
+        assert!(location.starts_with("https://chatgpt.com/connector/oauth/callback?"));
+        assert!(location.contains("error=invalid_request"));
     }
 
     #[tokio::test]
@@ -846,6 +861,32 @@ mod tests {
             .expect("request");
         let allowed = mcp_app().oneshot(request).await.expect("response");
         assert_eq!(allowed.status(), StatusCode::OK);
+
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "APPLICATION/JSON, text/event-stream")
+            .header(header::AUTHORIZATION, "Bearer valid-token")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":"list","method":"tools/call","params":{"name":"list_notes"}}"#,
+            ))
+            .expect("request");
+        let listed = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(listed.status(), StatusCode::OK);
+        let body = to_bytes(listed.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let listed: serde_json::Value = serde_json::from_slice(&body).expect("JSON-RPC response");
+        assert!(listed["result"]["structuredContent"].is_object());
+        assert!(listed["result"]["structuredContent"]["notes"].is_array());
+
+        let request = Request::post("/mcp")
+            .header("content-type", "Application/JSON")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, "Bearer valid-token")
+            .body(Body::from(r#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#))
+            .expect("request");
+        let ping = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(ping.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -887,6 +928,252 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mcp_rejects_invalid_json_rpc_envelopes_and_reports_tool_errors_as_results() {
+        for (body, expected_id) in [
+            (r#"{"id":1,"method":"tools/list"}"#, serde_json::json!(1)),
+            (
+                r#"{"jsonrpc":"2.0","id":true,"method":"tools/list"}"#,
+                serde_json::Value::Null,
+            ),
+            (
+                r#"{"jsonrpc":"2.0","id":null,"method":"tools/list"}"#,
+                serde_json::Value::Null,
+            ),
+            (
+                r#"{"jsonrpc":"2.0","id":1.5,"method":"tools/list"}"#,
+                serde_json::Value::Null,
+            ),
+            (
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":[]}"#,
+                serde_json::json!(1),
+            ),
+        ] {
+            let response = mcp_app()
+                .oneshot(
+                    Request::post("/mcp")
+                        .header("content-type", "application/json")
+                        .header(header::ACCEPT, "application/json, text/event-stream")
+                        .header(header::AUTHORIZATION, "Bearer valid-token")
+                        .body(Body::from(body))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("response body");
+            let response: serde_json::Value =
+                serde_json::from_slice(&body).expect("JSON-RPC response");
+            assert_eq!(response["error"]["code"], -32600);
+            assert_eq!(response["id"], expected_id);
+        }
+        for (body, expected_code, expected_id) in [
+            (r#"{"jsonrpc":"2.0","#, -32700, serde_json::Value::Null),
+            (r#"{"jsonrpc":"2.0","id":1}"#, -32600, serde_json::json!(1)),
+            (
+                r#"[{"jsonrpc":"2.0","id":1,"method":"tools/list"}]"#,
+                -32600,
+                serde_json::Value::Null,
+            ),
+        ] {
+            let response = mcp_app()
+                .oneshot(
+                    Request::post("/mcp")
+                        .header("content-type", "application/json")
+                        .header(header::ACCEPT, "application/json, text/event-stream")
+                        .body(Body::from(body))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("response body");
+            let response: serde_json::Value =
+                serde_json::from_slice(&body).expect("JSON-RPC response");
+            assert_eq!(response["error"]["code"], expected_code);
+            assert_eq!(response["id"], expected_id);
+        }
+
+        let invalid_notification = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","method":"tools/list","params":[]}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_notification.status(), StatusCode::BAD_REQUEST);
+        assert!(
+            to_bytes(invalid_notification.into_body(), usize::MAX)
+                .await
+                .expect("response body")
+                .is_empty()
+        );
+
+        let invalid_arguments = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_notes","arguments":[]}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let body = to_bytes(invalid_arguments.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let response: serde_json::Value = serde_json::from_slice(&body).expect("JSON-RPC response");
+        assert_eq!(response["error"]["code"], -32602);
+
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_note","arguments":{"title":"Title","body":"Body","tags":[]}}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let response: serde_json::Value = serde_json::from_slice(&body).expect("JSON-RPC response");
+        assert_eq!(response["result"]["isError"], true);
+        assert_eq!(
+            response["result"]["structuredContent"]["code"],
+            "unavailable"
+        );
+        assert!(response.get("error").is_none());
+    }
+
+    #[tokio::test]
+    async fn mcp_negotiates_initialization_and_validates_the_protocol_header() {
+        for (requested, expected) in [
+            ("2025-11-25", "2025-11-25"),
+            ("2025-03-26", "2025-03-26"),
+            ("unsupported", "2025-11-25"),
+        ] {
+            let response = mcp_app()
+                .oneshot(
+                    Request::post("/mcp")
+                        .header("content-type", "application/json")
+                        .header(header::ACCEPT, "application/json, text/event-stream")
+                        .header(header::AUTHORIZATION, "Bearer valid-token")
+                        .body(Body::from(format!(
+                            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"{requested}","capabilities":{{}},"clientInfo":{{"name":"test","version":"1"}}}}}}"#
+                        )))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("response body");
+            let response: serde_json::Value =
+                serde_json::from_slice(&body).expect("initialize response");
+            assert_eq!(response["result"]["protocolVersion"], expected);
+        }
+
+        let invalid_capabilities = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"roots":false},"clientInfo":{"name":"test","version":"1"}}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let body = to_bytes(invalid_capabilities.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let response: serde_json::Value =
+            serde_json::from_slice(&body).expect("initialize response");
+        assert_eq!(response["error"]["code"], -32602);
+
+        let invalid_version = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
+                    .header("mcp-protocol-version", "unsupported")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_version.status(), StatusCode::BAD_REQUEST);
+
+        let initialized = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
+                    .header("mcp-protocol-version", "2025-11-25")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(initialized.status(), StatusCode::ACCEPTED);
+
+        let unexpected_response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":1,"result":{"unexpected":true}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(unexpected_response.status(), StatusCode::BAD_REQUEST);
+
+        let wrong_content_type = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "text/plain")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .body(Body::from("{}"))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            wrong_content_type.status(),
+            StatusCode::UNSUPPORTED_MEDIA_TYPE
+        );
+    }
+
+    #[tokio::test]
     async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
         let request = Request::post("/mcp")
             .header("content-type", "application/json")
@@ -920,15 +1207,27 @@ mod tests {
             .expect("request");
         let rejected = mcp_app().oneshot(request).await.expect("response");
         assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
+
+        let invalid_get = Request::get("/mcp")
+            .header(header::ORIGIN, "https://untrusted.example")
+            .body(Body::empty())
+            .expect("request");
+        let rejected = mcp_app().oneshot(invalid_get).await.expect("response");
+        assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
+
+        let native_get = Request::get("/mcp").body(Body::empty()).expect("request");
+        let unsupported = mcp_app().oneshot(native_get).await.expect("response");
+        assert_eq!(unsupported.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
     #[test]
     fn mcp_registration_limiter_bounds_a_window() {
         let limiter = McpRegistrationRateLimiter::new(1, Duration::from_secs(60));
         let now = Instant::now();
-        assert!(limiter.allow(now));
-        assert!(!limiter.allow(now));
-        assert!(limiter.allow(now + Duration::from_secs(61)));
+        assert!(limiter.allow("https://chatgpt.com", now));
+        assert!(!limiter.allow("https://chatgpt.com", now));
+        assert!(limiter.allow("https://claude.ai", now));
+        assert!(limiter.allow("https://chatgpt.com", now + Duration::from_secs(61)));
     }
 
     #[test]

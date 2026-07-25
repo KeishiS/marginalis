@@ -5,7 +5,7 @@
 実装完了。[038](038-sqlite-canonical-notes-and-asciidoc-bundles.md)と
 [039](039-kanidm-group-authorization-and-mcp-oauth.md)の上に、独立 HTTP router として
 認証済みの一覧閲覧、ACLを通すノート取得、CSRF保護した作成・更新・削除、および単体 AsciiDoc
-export を追加した。SQLiteの`deleted_at`と日次`purge-deleted` timerも追加済みである。安全なHTML
+export を追加した。SQLiteの`deleted_at`と日次`purge-expired` timerも追加済みである。安全なHTML
 renderingも追加した。SQLite正本をcontent profileで再検証して固定RenderPolicyでHTML化する。
 検索・グラフは将来拡張とし、実環境 E2E は [042](042-v0.3.0-release-acceptance.md)で扱う。
 削除前の直接Adminと`server-admins`には、revision

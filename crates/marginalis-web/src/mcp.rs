@@ -7,15 +7,52 @@ pub(crate) const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct JsonRpcRequest {
-    #[serde(default = "json_rpc_version")]
-    pub jsonrpc: String,
-    pub id: Option<Value>,
+    pub jsonrpc: Option<String>,
+    #[serde(default)]
+    pub id: JsonRpcId,
     pub method: String,
     pub params: Option<Value>,
 }
 
-fn json_rpc_version() -> String {
-    "2.0".into()
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum JsonRpcId {
+    #[default]
+    Missing,
+    Present(Value),
+}
+
+impl<'de> Deserialize<'de> for JsonRpcId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Value::deserialize(deserializer).map(Self::Present)
+    }
+}
+
+impl JsonRpcId {
+    pub(crate) fn is_notification(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+
+    /// MCPはJSON-RPC 2.0より厳しく、request IDを文字列または整数に限定する。
+    pub(crate) fn is_valid_mcp_id(&self) -> bool {
+        match self {
+            Self::Missing => true,
+            Self::Present(Value::String(_)) => true,
+            Self::Present(Value::Number(number)) => {
+                number.as_i64().is_some() || number.as_u64().is_some()
+            }
+            Self::Present(_) => false,
+        }
+    }
+
+    pub(crate) fn response_value(&self) -> Value {
+        match self {
+            Self::Missing => Value::Null,
+            Self::Present(value) => value.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -59,11 +96,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn request_defaults_to_json_rpc_two() {
-        let request: JsonRpcRequest =
+    fn request_requires_an_explicit_version_and_rejects_non_mcp_ids() {
+        let missing_version: JsonRpcRequest =
             serde_json::from_str(r#"{"id":1,"method":"initialize"}"#).expect("request");
-        assert_eq!(request.jsonrpc, "2.0");
-        assert_eq!(request.id, Some(serde_json::json!(1)));
+        assert_eq!(missing_version.jsonrpc, None);
+        assert_eq!(missing_version.id, JsonRpcId::Present(serde_json::json!(1)));
+
+        let explicit_null: JsonRpcRequest =
+            serde_json::from_str(r#"{"jsonrpc":"2.0","id":null,"method":"initialize"}"#)
+                .expect("request");
+        assert!(!explicit_null.id.is_notification());
+        assert!(!explicit_null.id.is_valid_mcp_id());
+
+        let invalid_id: JsonRpcRequest =
+            serde_json::from_str(r#"{"jsonrpc":"2.0","id":true,"method":"initialize"}"#)
+                .expect("request");
+        assert!(!invalid_id.id.is_valid_mcp_id());
+
+        let fractional_id: JsonRpcRequest =
+            serde_json::from_str(r#"{"jsonrpc":"2.0","id":1.5,"method":"initialize"}"#)
+                .expect("request");
+        assert!(!fractional_id.id.is_valid_mcp_id());
     }
 
     #[test]

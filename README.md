@@ -4,7 +4,7 @@ Marginalis は、研究ノートを AsciiDoc で可搬に保ちながら、SQLit
 セルフホスト型ノート環境です。Kanidm 1.10 が本人確認とグループ管理を担い、Web UI、REST API、
 MCP は同じ認可規則を使います。
 
-## 現行の契約
+## 現行仕様
 
 - ノート本文・メタデータ・ACL・削除状態の正本は SQLite です。AsciiDoc はノート単位の export、
   JSON archive は全体の import/export 形式です。

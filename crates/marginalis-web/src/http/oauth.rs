@@ -45,6 +45,7 @@ const TOKEN_PARAMETERS: &[&str] = &[
     "refresh_token",
     "scope",
 ];
+const MAX_LOGIN_RESUME_PATH_BYTES: usize = 2_800;
 
 pub(super) async fn mcp_resource_metadata(
     State(state): State<ApiState>,
@@ -216,13 +217,6 @@ pub(super) async fn mcp_register_client(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
-    if !state.mcp_registration_limiter.allow(Instant::now()) {
-        return Err(oauth_error_response(
-            StatusCode::TOO_MANY_REQUESTS,
-            "temporarily_unavailable",
-            "dynamic client registration rate limit exceeded",
-        ));
-    }
     if !content_type_is(&headers, "application/json") {
         return Err(oauth_error_response(
             StatusCode::BAD_REQUEST,
@@ -273,6 +267,24 @@ pub(super) async fn mcp_register_client(
             .unwrap_or_else(|| "MCP client".into()),
         redirect_uris,
     };
+    let rate_limit_key = client
+        .redirect_uris
+        .first()
+        .and_then(|value| url::Url::parse(value).ok())
+        .map_or_else(
+            || "invalid-redirect-uri".into(),
+            |url| url.origin().ascii_serialization(),
+        );
+    if !state
+        .mcp_registration_limiter
+        .allow(&rate_limit_key, Instant::now())
+    {
+        return Err(oauth_error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "temporarily_unavailable",
+            "dynamic client registration rate limit exceeded",
+        ));
+    }
     endpoint
         .oauth
         .register_client(client.clone())
@@ -414,7 +426,15 @@ async fn mcp_authorize_request(
     match authenticated_actor(headers, state).await {
         Ok(_) => {}
         Err((StatusCode::UNAUTHORIZED, _)) => {
-            return Ok(login_redirect(state, &input, &validated));
+            return Ok(
+                login_redirect(state, &input, &validated).unwrap_or_else(|| {
+                    oauth_redirect_error(
+                        &validated.redirect_uri,
+                        input.state.as_deref(),
+                        "invalid_request",
+                    )
+                }),
+            );
         }
         Err(error) => return Err(error.into_response()),
     }
@@ -433,7 +453,7 @@ fn login_redirect(
     state: &ApiState,
     input: &McpAuthorizeInput,
     request: &McpValidatedAuthorizationRequest,
-) -> Response {
+) -> Option<Response> {
     let mut request_uri = url::Url::parse("https://invalid.example/oauth/authorize")
         .expect("constant authorization URL is valid");
     {
@@ -454,12 +474,17 @@ fn login_redirect(
         external_path(&state.cookie_path, "/oauth/authorize"),
         request_uri.query().expect("query pairs were added")
     );
+    if next.len() > MAX_LOGIN_RESUME_PATH_BYTES {
+        return None;
+    }
     let encoded_next = url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>();
-    Redirect::to(&format!(
-        "{}?next={encoded_next}",
-        external_path(&state.cookie_path, "/auth/oidc/login")
-    ))
-    .into_response()
+    Some(
+        Redirect::to(&format!(
+            "{}?next={encoded_next}",
+            external_path(&state.cookie_path, "/auth/oidc/login")
+        ))
+        .into_response(),
+    )
 }
 
 fn consent_page(

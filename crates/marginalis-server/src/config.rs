@@ -149,7 +149,7 @@ fn optional_csv(name: &'static str) -> Result<Vec<String>, ConfigurationError> {
             .map(str::to_owned)
             .collect()),
         Err(env::VarError::NotPresent) => Ok(Vec::new()),
-        Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpEnable),
+        Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpAllowedOrigin),
     }
 }
 

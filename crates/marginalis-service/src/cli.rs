@@ -1,8 +1,8 @@
-//! 保守commandに共通する引数契約。
+//! 保守commandに共通する引数仕様。
 
 use std::path::PathBuf;
 
-pub(crate) const USAGE: &str = "usage: marginalis [--version|serve|purge-deleted|export-archive --output <absolute-file>|import-archive --input <absolute-file>|backup (--output <absolute-directory>|--directory <absolute-directory>)]";
+pub(crate) const USAGE: &str = "usage: marginalis [--version|serve|purge-expired|export-archive --output <absolute-file>|import-archive --input <absolute-file>|backup (--output <absolute-directory>|--directory <absolute-directory>)]";
 
 pub(crate) fn required_absolute_file_argument(
     arguments: &mut impl Iterator<Item = String>,

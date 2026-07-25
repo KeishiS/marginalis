@@ -30,17 +30,6 @@ impl SqliteDatabase {
     ) -> Result<(), SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         sqlx::query(
-            "DELETE FROM web_sessions
-             WHERE revoked_at_ms IS NOT NULL
-                OR idle_expires_at_ms <= ?
-                OR absolute_expires_at_ms <= ?",
-        )
-        .bind(now.get())
-        .bind(now.get())
-        .execute(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        sqlx::query(
             "INSERT INTO web_sessions
              (session_id_hash, csrf_token_hash, issuer, subject, is_administrator,
               issued_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
@@ -181,15 +170,11 @@ impl OidcLoginAttemptStore for SqliteOidcLoginAttemptStore {
     fn issue(
         &self,
         attempt: OidcLoginAttempt,
-        now: UnixMillis,
+        _now: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
             let mut transaction = pool.begin().await?;
-            sqlx::query("DELETE FROM oidc_login_attempts WHERE expires_at_ms <= ?")
-                .bind(now.get())
-                .execute(&mut *transaction)
-                .await?;
             let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM oidc_login_attempts")
                 .fetch_one(&mut *transaction)
                 .await?;
@@ -223,26 +208,23 @@ impl OidcLoginAttemptStore for SqliteOidcLoginAttemptStore {
             let hash = hash_token(&state);
             let row = sqlx::query(
                 "DELETE FROM oidc_login_attempts
-                 WHERE state_hash = ? AND expires_at_ms > ?
+                 WHERE state_hash = ?
                  RETURNING nonce, pkce_verifier, expires_at_ms",
             )
-            .bind(&hash)
-            .bind(now.get())
+            .bind(hash)
             .fetch_optional(&pool)
             .await?;
-            sqlx::query("DELETE FROM oidc_login_attempts WHERE state_hash = ?")
-                .bind(hash)
-                .execute(&pool)
-                .await?;
             row.map(|row| {
-                Ok(OidcLoginAttempt {
+                let attempt = OidcLoginAttempt {
                     state,
                     nonce: row.try_get("nonce")?,
                     pkce_verifier: row.try_get("pkce_verifier")?,
                     expires_at: UnixMillis::new(row.try_get("expires_at_ms")?),
-                })
+                };
+                Ok((attempt.expires_at > now).then_some(attempt))
             })
             .transpose()
+            .map(Option::flatten)
         }
     }
 }

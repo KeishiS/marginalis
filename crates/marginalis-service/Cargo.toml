@@ -7,7 +7,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-async-trait.workspace = true
 axum.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-asciidoc = { path = "../marginalis-asciidoc" }
@@ -18,7 +17,6 @@ marginalis-sqlite = { path = "../marginalis-sqlite" }
 marginalis-web = { path = "../marginalis-web" }
 serde_json.workspace = true
 reqwest.workspace = true
-serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

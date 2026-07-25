@@ -34,7 +34,7 @@ HTTP 固有の Cookie と CSRF は、MCP のツール仕様に含めない。
 - `docs/openapi.json` を OpenAPI 3.1 の正式仕様として定義した。
 - 同じ文書を、リリース成果物の`share/marginalis/openapi.json`と
   `/api/v1/openapi.json`へ配置した。
-- REST APIのJSON境界を`marginalis_web::contract`へ集約した。
+- REST APIのJSON型を専用moduleへ集約した。
 - アダプター内部の型、認証情報、トークンハッシュを公開仕様から除外した。
 - UUIDv7、カーソル、ETag、CSRF、エラー応答、MCP認可のRFC 3339時刻を
   OpenAPIスキーマへ明記した。

@@ -60,27 +60,13 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         configuration.http.base_url.origin().ascii_serialization(),
     );
     let state = if configuration.mcp_enabled {
-        let resource_uri = base_url_at(&configuration.http.base_url, "mcp");
-        let metadata_uri = well_known_url(&resource_uri, "oauth-protected-resource");
-        let authorization_server_metadata_uri =
-            well_known_url(&configuration.http.base_url, "oauth-authorization-server");
-        let authorization_endpoint_uri =
-            base_url_at(&configuration.http.base_url, "oauth/authorize");
-        let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
-        state.with_mcp(marginalis_web::http::McpEndpoint {
-            oauth: std::sync::Arc::new(ServerMcpOAuthService::new(
-                database,
-                resource_uri.to_string(),
-            )),
-            notes,
-            allowed_origins: configuration.mcp_allowed_origins,
-            resource_uri: resource_uri.to_string(),
-            metadata_uri: metadata_uri.to_string(),
-            authorization_server_uri: configuration.http.base_url.to_string(),
-            authorization_server_metadata_uri: authorization_server_metadata_uri.to_string(),
-            authorization_endpoint_uri: authorization_endpoint_uri.to_string(),
-            token_endpoint_uri: token_endpoint_uri.to_string(),
-        })
+        let resource_uri =
+            marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
+        state.with_mcp(marginalis_web::http::McpEndpoint::new(
+            std::sync::Arc::new(ServerMcpOAuthService::new(database, resource_uri)),
+            &configuration.http.base_url,
+            configuration.mcp_allowed_origins,
+        ))
     } else {
         state
     };
@@ -89,37 +75,37 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         marginalis_web::http::router(state)
             .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
     Ok(())
 }
 
-fn base_url_at(base_url: &url::Url, suffix: &str) -> url::Url {
-    let mut url = base_url.clone();
-    let prefix = base_url.path().trim_matches('/');
-    url.set_path(
-        if prefix.is_empty() {
-            format!("/{suffix}")
-        } else {
-            format!("/{prefix}/{suffix}")
+async fn shutdown_signal() {
+    let interrupt = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install Ctrl-C handler");
+            std::future::pending::<()>().await;
         }
-        .as_str(),
-    );
-    url
-}
-
-/// RFC 8414/9728に従い、subject URLのhostとpathの間へwell-known suffixを挿入する。
-fn well_known_url(subject: &url::Url, suffix: &str) -> url::Url {
-    let mut url = subject.clone();
-    let subject_path = subject.path().trim_end_matches('/');
-    url.set_path(
-        if subject_path.is_empty() {
-            format!("/.well-known/{suffix}")
-        } else {
-            format!("/.well-known/{suffix}{subject_path}")
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::error!(%error, "failed to install SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
         }
-        .as_str(),
-    );
-    url
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        () = interrupt => {}
+        () = terminate => {}
+    }
+    tracing::info!("shutdown signal received; draining HTTP requests");
 }
 
 fn kanidm_http_client(
@@ -142,32 +128,5 @@ fn cookie_path(base_url: &url::Url) -> String {
         "/".into()
     } else {
         path.into()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn well_known_urls_insert_the_suffix_before_a_subject_path() {
-        let root = url::Url::parse("https://example.test").expect("root URL");
-        assert_eq!(
-            well_known_url(&root, "oauth-authorization-server").as_str(),
-            "https://example.test/.well-known/oauth-authorization-server"
-        );
-
-        let issuer = url::Url::parse("https://example.test/marginalis").expect("issuer URL");
-        assert_eq!(
-            well_known_url(&issuer, "oauth-authorization-server").as_str(),
-            "https://example.test/.well-known/oauth-authorization-server/marginalis"
-        );
-
-        let resource =
-            url::Url::parse("https://example.test/marginalis/mcp").expect("resource URL");
-        assert_eq!(
-            well_known_url(&resource, "oauth-protected-resource").as_str(),
-            "https://example.test/.well-known/oauth-protected-resource/marginalis/mcp"
-        );
     }
 }

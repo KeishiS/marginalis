@@ -1,4 +1,4 @@
-//! SQLite正本の保持、移行、backupを行う停止時・定期保守command。
+//! SQLite正本の保持、移行、backupを行う定期・運用保守command。
 
 use crate::cli::required_absolute_file_argument;
 use marginalis_application::Clock;
@@ -6,23 +6,40 @@ use marginalis_asciidoc::validate_archive_notes;
 use marginalis_domain::{SOFT_DELETE_RETENTION_MS, UnixMillis};
 use marginalis_server::{StorageConfig, SystemClock};
 use marginalis_sqlite::SqliteDatabase;
-use std::path::{Path, PathBuf};
+use std::{
+    fs::{DirBuilder, File, OpenOptions},
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+    path::{Path, PathBuf},
+};
 
-/// 30日間の保持期限を過ぎたソフトデリート済みnoteを物理削除する。
-pub(crate) async fn purge_deleted() -> Result<(), Box<dyn std::error::Error>> {
+const PRIVATE_FILE_MODE: u32 = 0o600;
+const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
+
+const UNUSED_MCP_CLIENT_RETENTION_MS: i64 = 24 * 60 * 60 * 1_000;
+
+/// 保持期限を過ぎたnoteと一時的な認証状態を物理削除する。
+pub(crate) async fn purge_expired() -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
-    let cutoff = UnixMillis::new(
-        SystemClock
-            .now()
-            .get()
-            .saturating_sub(SOFT_DELETE_RETENTION_MS),
-    );
-    let count = database.purge_deleted_before(cutoff).await?;
+    let now = SystemClock.now();
+    let note_cutoff = UnixMillis::new(now.get().saturating_sub(SOFT_DELETE_RETENTION_MS));
+    let note_count = database.purge_deleted_before(note_cutoff).await?;
+    let auth_counts = database
+        .purge_expired_auth_state(
+            now,
+            UnixMillis::new(now.get().saturating_sub(UNUSED_MCP_CLIENT_RETENTION_MS)),
+        )
+        .await?;
     tracing::info!(
-        count,
-        cutoff_ms = cutoff.get(),
-        "purged expired soft-deleted notes"
+        note_count,
+        web_sessions = auth_counts.web_sessions,
+        oidc_login_attempts = auth_counts.oidc_login_attempts,
+        mcp_access_tokens = auth_counts.mcp_access_tokens,
+        mcp_refresh_tokens = auth_counts.mcp_refresh_tokens,
+        mcp_authorization_codes = auth_counts.mcp_authorization_codes,
+        mcp_clients = auth_counts.mcp_clients,
+        note_cutoff_ms = note_cutoff.get(),
+        "purged expired persisted state"
     );
     Ok(())
 }
@@ -40,12 +57,14 @@ pub(crate) async fn export_archive(
         .await?
         .export_archive()
         .await?;
-    let file = std::fs::OpenOptions::new()
+    let file = OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(PRIVATE_FILE_MODE)
         .open(&output)?;
     serde_json::to_writer_pretty(&file, &archive)?;
     file.sync_all()?;
+    sync_parent_directory(&output)?;
     tracing::info!(output = %output.display(), note_count = archive.notes.len(), "exported archive");
     Ok(())
 }
@@ -67,7 +86,7 @@ pub(crate) async fn import_archive(
     Ok(())
 }
 
-/// 停止中のserviceに対してSQLite正本を可搬archiveとして取得する。
+/// SQLiteの一貫したsnapshotを可搬archiveとして取得する。
 pub(crate) async fn backup(
     mut arguments: impl Iterator<Item = String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -95,7 +114,10 @@ pub(crate) async fn backup(
     if output.exists() {
         return Err(format!("backup output already exists: {}", output.display()).into());
     }
-    std::fs::create_dir(&output)?;
+    DirBuilder::new()
+        .mode(PRIVATE_DIRECTORY_MODE)
+        .create(&output)?;
+    sync_parent_directory(&output)?;
 
     let result = backup_into(&output).await;
     if let Err(error) = result {
@@ -112,17 +134,34 @@ async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .export_archive()
         .await?;
     let archive_path = output.join("marginalis-archive.json");
-    let archive_file = std::fs::OpenOptions::new()
+    let archive_file = OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(PRIVATE_FILE_MODE)
         .open(&archive_path)?;
     serde_json::to_writer_pretty(&archive_file, &archive)?;
     archive_file.sync_all()?;
-    std::fs::write(
-        output.join("COMPLETE"),
-        format!("Marginalis backup {}\n", marginalis_domain::ARCHIVE_FORMAT),
+    let marker = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(PRIVATE_FILE_MODE)
+        .open(output.join("COMPLETE"))?;
+    use std::io::Write as _;
+    writeln!(
+        &marker,
+        "Marginalis backup {}",
+        marginalis_domain::ARCHIVE_FORMAT
     )?;
+    marker.sync_all()?;
+    File::open(output)?.sync_all()?;
     let note_count = archive.notes.len();
     tracing::info!(output = %output.display(), note_count, "backup completed");
     Ok(())
+}
+
+fn sync_parent_directory(path: &Path) -> std::io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("output path has no parent directory"))?;
+    File::open(parent)?.sync_all()
 }

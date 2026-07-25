@@ -44,9 +44,9 @@ URLが次のように変わります。
 ProviderのURLであり、Marginalis自身のOAuth metadata URLの導出には使いません。
 
 `/mcp` は Cookie を使わず、すべての request を `Authorization: Bearer` で認可します。`Origin` がある
-browser client は DNS rebinding 対策として完全一致の許可リストで検証し、NixOS module の既定値は
-`https://chatgpt.com` です。Codex CLI と Claude Code のように `Origin` を送らない native client はこの
-制約の対象外です。
+browser client は DNS rebinding 対策として完全一致の許可リストで検証します。NixOS module の既定値は
+空であり、ChatGPT Web UIを使う場合は`https://chatgpt.com`を明示します。Codex CLI と Claude Code の
+ように `Origin` を送らない native client はこの制約の対象外です。
 
 Claude Codeは次のようにremote Streamable HTTP serverとして追加し、Claude Code内の`/mcp`から
 browser認証します。
@@ -92,8 +92,8 @@ rotation の親子関係も、有効な子孫がある間保持します。こ�
 現行のschema versionは2です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
 再初期化し、MCP clientは再登録・再認可してください。
 
-Dynamic Client Registration は 16 KiB の本文上限、10 分あたり 30 件の process 全体 rate limit、最大 1,000
-client の永続化上限を持ちます。grant を取得しない登録は 24 時間後、次の登録処理時に削除します。登録・token
+Dynamic Client Registration は 16 KiB の本文上限、redirect originごとに10分あたり30件のrate limit、
+最大1,000 clientの永続化上限を持ちます。grantを取得しない登録は24時間後の日次保守で削除します。登録・token
 endpointが受理したprotocol/application errorはOAuthの`error` / `error_description`形式で返します。
 本文上限超過、MCP無効時のroutingなどhandler外のHTTP境界の失敗はこの形式を保証しません。
 MCP requestでは無効または失効済みtokenを`401 invalid_token`、必要scopeを持たない有効なtokenを
@@ -101,6 +101,20 @@ MCP requestでは無効または失効済みtokenを`401 invalid_token`、必要
 含めます。
 public client専用token endpointでHTTP認証を試みた場合は`401 invalid_client`と、提示された認証schemeの
 `WWW-Authenticate`を返します。
+
+MCP transportは[JSON-RPC 2.0](https://www.jsonrpc.org/specification)の`jsonrpc`、method、params、idを
+厳密に検証します。[MCP base protocol](https://modelcontextprotocol.io/specification/2025-11-25/basic)
+の上乗せ仕様に従い、request IDは文字列または整数だけを許可し、`null`、Boolean、小数を拒否します。
+[Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)のPOST bodyは
+単一messageだけを許可するためbatchは受理しません。parse errorは`-32700`、不正なrequestは`-32600`、
+不明methodは`-32601`、不正paramsは`-32602`です。tool実行時の業務エラーはJSON-RPC errorではなくMCP
+[tool result](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)の`isError: true`で返します。
+`tools/call.arguments`は省略時に空objectとして扱い、`structuredContent`は常にobjectで返します。`ping`にも
+空objectで応答します。
+[MCP lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)に従い、初期化時は
+`2025-11-25`と`2025-03-26`をnegotiationし、以後の`MCP-Protocol-Version`が未知ならHTTP 400で拒否します。
+現行transportは`MCP-Session-Id`を発行しないstateless構成であり、clientは初期化順序と交渉したversionを
+保持します。serverは各requestのprotocol headerを検証します。
 
 本リリースのChatGPT、Claude、Codex受入では、互換登録経路としてDynamic Client Registrationを使用します。
 client版と実測結果はrelease issueへ記録するまで未検証として扱います。MCP 2025-11-25が推奨（SHOULD）する

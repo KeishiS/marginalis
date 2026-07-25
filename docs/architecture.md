@@ -40,7 +40,7 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
 ```text
 crates/
 ├── marginalis-domain          値・不変条件
-├── marginalis-application     portとuse case契約
+├── marginalis-application     portとuse case interface
 ├── marginalis-asciidoc        AsciiDoc検証・描画・export
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
 ├── marginalis-sqlite          SQLite adapter
@@ -63,7 +63,7 @@ crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはco
 ```text
 marginalis-service/src/
 ├── main.rs          process lifecycleとcommand選択
-├── cli.rs           引数契約
+├── cli.rs           引数仕様
 ├── serve.rs         HTTP composition root
 └── maintenance.rs   purge、archive、backup
 

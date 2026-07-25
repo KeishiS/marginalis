@@ -1,6 +1,6 @@
 # REST API
 
-## 現行契約
+## 現行仕様
 
 公開 API は `/api/v2` です。機械可読な正本は [OpenAPI 3.1](openapi.json) であり、実行中の
 `GET /api/v2/openapi.json` は同じ内容を返します。`/api/v1` と root 管理 API は v3 では提供しません。
@@ -19,7 +19,8 @@ token を `X-CSRF-Token` で送ります。`Origin` が公開 base URL と一致
 | MCP 認可取消 | `DELETE /api/v2/mcp-authorizations/{client_id}` | CSRF 必須。token family を失効 |
 
 ノートの作成・更新は JSON の `title`、`body`、`tags` を受け取ります。成功応答の詳細な形式、エラー、
-status code は OpenAPI を参照してください。アクセス可否は直接 ACL と Kanidm group 認可の両方で決まります。
+status code は OpenAPI を参照してください。本文はUTF-8で512 KiB以下です。アクセス可否は直接 ACL と
+Kanidm group 認可の両方で決まります。
 
 ## Web UI
 

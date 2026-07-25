@@ -18,7 +18,7 @@ async fn main() {
     initialize_tracing();
     let result = match command.as_deref() {
         None | Some("serve") => serve::run().await,
-        Some("purge-deleted") => maintenance::purge_deleted().await,
+        Some("purge-expired") => maintenance::purge_expired().await,
         Some("export-archive") => maintenance::export_archive(arguments).await,
         Some("import-archive") => maintenance::import_archive(arguments).await,
         Some("backup") => maintenance::backup(arguments).await,

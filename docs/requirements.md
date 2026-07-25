@@ -14,15 +14,16 @@
   署名検証済み OIDC ID token の `groups` claim をログイン時の権限スナップショットとする。
   group 変更は次回ログインから反映する。
 - Web session は最終利用から24時間で失効し、絶対期限はログインから7日とする。アイドル期限は
-  利用時に延長するが絶対期限を超えない。期限切れまたは失効済みの認証状態は発行処理時にも削除する。
+  利用時に延長するが絶対期限を超えない。期限切れまたは失効済みの認証状態は日次保守で削除する。
 - REST、Web UI、MCP は同じ ACL と revision 規則を使う。REST API は `/api/v2`、MCP は OAuth 2.1
   Authorization Code + PKCE S256 と Dynamic Client Registration を提供する。
 - 削除は 30 日のソフトデリートである。本文履歴は保存しない。期限後の物理削除は日次 timer が行う。
+- ノート本文はUTF-8で512 KiB以下とし、上限超過時はAsciiDoc解析を開始せず拒否する。
 - NixOS module は SQLite、OIDC client、MCP、backup destination を設定できる。client secret は systemd
   credential で渡す。
 - v3 の公開条件は Kanidm 1.10 E2E、MCP 認可、NixOS 配備の成功である。archive restore の定期試験は
   公開後に追加する。
 
-実装上の不変条件は[アーキテクチャ](architecture.md)、HTTP契約は
+実装上の不変条件は[アーキテクチャ](architecture.md)、HTTP仕様は
 [OpenAPI](openapi.json)を参照してください。過去のv0.2要件とv0.3の設計確定過程は、
 Git履歴と[再設計判断記録](v0.3.0-design.md)で参照します。

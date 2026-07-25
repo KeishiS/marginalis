@@ -64,11 +64,10 @@ service account、API token、custom ACP は不要である。
 
 ## 定期処理
 
-- `marginalis-purge-deleted.timer` は毎日実行され、30 日を超えたソフトデリート済みノートを削除します。
-- `marginalis-backup.service` は `backupDirectory` を設定した場合だけ有効です。HTTP service と競合するため、
-  週末の停止枠で `systemctl start marginalis-backup.service` を実行します。
-- backup service の完了後も `marginalis.service` は停止したままです。確認後に
-  `systemctl start marginalis.service` で明示的に再開します。
+- `marginalis-purge-expired.timer` は毎日実行され、30 日を超えたソフトデリート済みノートと、
+  期限切れ・失効済みのWeb/OIDC/MCP認証状態を削除します。
+- `marginalis-backup.service` は `backupDirectory` を設定した場合だけ有効です。単一のSQLite read
+  transactionからsnapshotを取得するため、HTTP serviceを停止せずに実行できます。
 - backup は `marginalis-archive.json` を含む時刻付きディレクトリです。空の database へ
   `marginalis import-archive --input <absolute-file>` で取り込めます。定期復元試験は v3 の release gate 外です。
 

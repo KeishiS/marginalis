@@ -80,4 +80,4 @@ crate境界と依存方向は維持する。flatなIssue配置も番号による
 - wire型だけの単一利用crateや、空の互換用directoryが残らない。
 - 現行仕様の同じ規則を複数文書で重複して定義せず、規範文書と履歴文書を判別できる。
 - SQLite adapterからAsciiDoc parserへの依存がなく、archiveの意味検証と格納責務が分かれる。
-- `cargo make verify`と該当するNixOS VM試験が成功し、公開HTTP/OpenAPI契約に差分がない。
+- `cargo make verify`と該当するNixOS VM試験が成功し、公開HTTP/OpenAPI仕様に差分がない。

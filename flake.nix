@@ -193,7 +193,7 @@
                 machine.succeed("test -f /var/lib/marginalis/service-started")
                 machine.succeed("systemctl start marginalis-backup.service")
                 machine.succeed("test -f /var/lib/marginalis-backups/test/backup-created")
-                machine.succeed("systemctl show -p ActiveState --value marginalis.service | grep -qx inactive")
+                machine.succeed("systemctl is-active marginalis.service")
               '';
             };
           nixos-module-runtime-vm = pkgs.testers.nixosTest {
@@ -233,14 +233,15 @@
               )
               machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM notes'")
               machine.succeed(
-                "sqlite3 /var/lib/marginalis/marginalis.sqlite \"INSERT INTO notes VALUES "
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite \"INSERT INTO notes "
+                + "(note_id,creator_issuer,creator_subject,title,body,tags_json,created_at_ms,updated_at_ms,revision,deleted_at_ms) VALUES "
                 + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale','stale','body','[]',0,0,1,0),"
                 + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent','recent','body','[]',0,0,1,4102444800000);"
                 + "INSERT INTO note_acl VALUES "
                 + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale',3),"
                 + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent',3);\""
               )
-              machine.succeed("systemctl start marginalis-purge-deleted.service")
+              machine.succeed("systemctl start marginalis-purge-expired.service")
               machine.succeed(
                 "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
                 + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000001'\") -eq 0"
@@ -249,8 +250,9 @@
                 "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
                 + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000002'\") -eq 1"
               )
-              machine.succeed("systemctl is-enabled marginalis-purge-deleted.timer")
+              machine.succeed("systemctl is-enabled marginalis-purge-expired.timer")
               machine.succeed("systemctl start marginalis-backup.service")
+              machine.succeed("systemctl is-active marginalis.service")
               machine.succeed(
                 "test $(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d | wc -l) -eq 1"
               )
@@ -264,8 +266,6 @@
                 + "test $(stat -c %a \"$backup/COMPLETE\") = 600; "
                 + "test $(stat -c %a \"$backup/marginalis-archive.json\") = 600"
               )
-              machine.succeed("systemctl start marginalis.service")
-              machine.wait_for_unit("marginalis.service")
             '';
           };
 
