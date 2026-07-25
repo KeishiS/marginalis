@@ -38,8 +38,8 @@ use self::{
         update_note,
     },
     oauth::{
-        mcp_authorize, mcp_authorize_post, mcp_register_client, mcp_resource_metadata,
-        mcp_server_metadata, mcp_token, revoke_mcp_authorization,
+        mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
+        mcp_resource_metadata, mcp_server_metadata, mcp_token, revoke_mcp_authorization,
     },
     security::security_headers,
     ui::{home, view_note},
@@ -60,6 +60,10 @@ pub fn router(state: ApiState) -> Router {
             get(mcp_authorize)
                 .post(mcp_authorize_post)
                 .layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
+            "/oauth/authorize/consent",
+            post(mcp_authorize_consent).layer(DefaultBodyLimit::max(16 * 1024)),
         )
         .route(
             "/oauth/register",
@@ -571,8 +575,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cross_origin_oauth_post_starts_login_without_bypassing_consent_csrf() {
-        let response = mcp_app()
+    async fn cross_origin_oauth_posts_start_login_without_bypassing_consent_csrf() {
+        let form_post = mcp_app()
             .oneshot(
                 Request::post("/oauth/authorize")
                     .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -585,18 +589,53 @@ mod tests {
             )
             .await
             .expect("response");
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(form_post.status(), StatusCode::SEE_OTHER);
         assert!(
-            response
+            form_post
                 .headers()
                 .get(header::LOCATION)
                 .and_then(|value| value.to_str().ok())
                 .is_some_and(|location| location.starts_with("/auth/oidc/login?next="))
         );
 
+        let query_post = mcp_app()
+            .oneshot(
+                Request::post(
+                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state=opaque",
+                )
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::ORIGIN, "https://chatgpt.com")
+                .header("sec-fetch-site", "cross-site")
+                .body(Body::from("csrf_token=client-owned-value"))
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(query_post.status(), StatusCode::SEE_OTHER);
+        assert!(
+            query_post
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|location| location.starts_with("/auth/oidc/login?next="))
+        );
+
+        let conflicting_post = mcp_app()
+            .oneshot(
+                Request::post(
+                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state=opaque",
+                )
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("client_id=different-client"))
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(conflicting_post.status(), StatusCode::BAD_REQUEST);
+
         let forged_approval = mcp_app()
             .oneshot(
-                Request::post("/oauth/authorize")
+                Request::post("/oauth/authorize/consent")
                     .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                     .header(header::ORIGIN, "https://chatgpt.com")
                     .header("sec-fetch-site", "cross-site")

@@ -16,7 +16,7 @@ use super::{
         CSRF_COOKIE, authenticated_actor, authenticated_form_actor, authenticated_mutation_actor,
         cookie_value, external_path,
     },
-    error::{HandlerResult, mcp_error, problem},
+    error::{HandlerResult, Problem, mcp_error, problem},
     html::escape_html,
     mcp_endpoint,
     state::ApiState,
@@ -52,6 +52,7 @@ pub(super) struct McpAuthorizeQuery {
     state: Option<String>,
 }
 
+#[derive(Deserialize)]
 pub(super) struct McpAuthorizeForm {
     client_id: String,
     redirect_uri: String,
@@ -63,18 +64,16 @@ pub(super) struct McpAuthorizeForm {
     decision: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 pub(super) struct McpAuthorizePost {
     response_type: Option<String>,
-    client_id: String,
-    redirect_uri: String,
-    resource: String,
-    scope: String,
-    code_challenge: String,
+    client_id: Option<String>,
+    redirect_uri: Option<String>,
+    resource: Option<String>,
+    scope: Option<String>,
+    code_challenge: Option<String>,
     code_challenge_method: Option<String>,
     state: Option<String>,
-    csrf_token: Option<String>,
-    decision: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -292,11 +291,13 @@ async fn mcp_authorize_request(
             "CSRF token is required",
         )
     })?;
+    let consent_path = external_path(&state.cookie_path, "/oauth/authorize/consent");
     Ok(Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>Authorize {}</h1><p>Requested scopes: {}</p><p>Redirect host: {}</p><form method=\"post\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
+        "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>Authorize {}</h1><p>Requested scopes: {}</p><p>Redirect host: {}</p><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
         escape_html(&client.display_name),
         escape_html(&query.scope),
         escape_html(url::Url::parse(&query.redirect_uri).ok().and_then(|url| url.host_str().map(str::to_owned)).as_deref().unwrap_or("unknown")),
+        escape_html(&consent_path),
         escape_html(&query.client_id),
         escape_html(&query.redirect_uri),
         escape_html(&query.resource),
@@ -307,56 +308,71 @@ async fn mcp_authorize_request(
     )).into_response())
 }
 
-fn required_authorize_value(value: Option<String>) -> HandlerResult<String> {
-    value.ok_or_else(|| {
-        problem(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "OAuth request is invalid",
-        )
-    })
+fn invalid_authorize_request() -> (StatusCode, Json<Problem>) {
+    problem(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "OAuth request is invalid",
+    )
 }
 
-/// OAuth clientからの初回POSTは状態を変更せず、検証後にloginまたは承認画面へ進める。
-/// Marginalis自身の承認formだけはsession-bound CSRFとsame-origin検証を必須にする。
+fn required_authorize_value(value: Option<String>) -> HandlerResult<String> {
+    value.ok_or_else(invalid_authorize_request)
+}
+
+fn merged_authorize_value(
+    query: Option<String>,
+    form: Option<String>,
+) -> HandlerResult<Option<String>> {
+    if query.is_some() && form.is_some() && query != form {
+        return Err(invalid_authorize_request());
+    }
+    Ok(form.or(query))
+}
+
+/// OAuth clientからの初回POSTはqueryとform bodyの両方を受け付けるが、状態を変更しない。
 pub(super) async fn mcp_authorize_post(
     State(state): State<ApiState>,
     headers: HeaderMap,
+    Query(query): Query<McpAuthorizePost>,
     Form(form): Form<McpAuthorizePost>,
 ) -> HandlerResult<Response> {
-    if form.decision.is_some() || form.csrf_token.is_some() {
-        let approval = McpAuthorizeForm {
-            client_id: form.client_id,
-            redirect_uri: form.redirect_uri,
-            resource: form.resource,
-            scope: form.scope,
-            code_challenge: form.code_challenge,
-            state: form.state,
-            csrf_token: required_authorize_value(form.csrf_token)?,
-            decision: required_authorize_value(form.decision)?,
-        };
-        return mcp_authorize_submit(&state, &headers, approval).await;
-    }
     let request = McpAuthorizeQuery {
-        response_type: required_authorize_value(form.response_type)?,
-        client_id: form.client_id,
-        redirect_uri: form.redirect_uri,
-        resource: form.resource,
-        scope: form.scope,
-        code_challenge: form.code_challenge,
-        code_challenge_method: required_authorize_value(form.code_challenge_method)?,
-        state: form.state,
+        response_type: required_authorize_value(merged_authorize_value(
+            query.response_type,
+            form.response_type,
+        )?)?,
+        client_id: required_authorize_value(merged_authorize_value(
+            query.client_id,
+            form.client_id,
+        )?)?,
+        redirect_uri: required_authorize_value(merged_authorize_value(
+            query.redirect_uri,
+            form.redirect_uri,
+        )?)?,
+        resource: required_authorize_value(merged_authorize_value(query.resource, form.resource)?)?,
+        scope: required_authorize_value(merged_authorize_value(query.scope, form.scope)?)?,
+        code_challenge: required_authorize_value(merged_authorize_value(
+            query.code_challenge,
+            form.code_challenge,
+        )?)?,
+        code_challenge_method: required_authorize_value(merged_authorize_value(
+            query.code_challenge_method,
+            form.code_challenge_method,
+        )?)?,
+        state: merged_authorize_value(query.state, form.state)?,
     };
     mcp_authorize_request(&state, &headers, request).await
 }
 
-async fn mcp_authorize_submit(
-    state: &ApiState,
-    headers: &HeaderMap,
-    form: McpAuthorizeForm,
+/// Marginalis自身が表示した承認form専用の状態変更endpoint。
+pub(super) async fn mcp_authorize_consent(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Form(form): Form<McpAuthorizeForm>,
 ) -> HandlerResult<Response> {
-    let endpoint = mcp_endpoint(state)?;
-    let actor = authenticated_form_actor(headers, state, &form.csrf_token).await?;
+    let endpoint = mcp_endpoint(&state)?;
+    let actor = authenticated_form_actor(&headers, &state, &form.csrf_token).await?;
     let request = McpAuthorizationRequest {
         client_id: form.client_id,
         redirect_uri: form.redirect_uri,

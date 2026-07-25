@@ -223,7 +223,7 @@ async fn assert_cross_origin_authorization_post_starts_login(app: &Router, clien
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(
         b"integration-pkce-verifier-with-more-than-forty-three-characters",
     ));
-    let form = url::form_urlencoded::Serializer::new(String::new())
+    let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("response_type", "code")
         .append_pair("client_id", client_id)
         .append_pair("redirect_uri", MCP_CALLBACK)
@@ -235,11 +235,11 @@ async fn assert_cross_origin_authorization_post_starts_login(app: &Router, clien
         .finish();
     let response = send(
         app,
-        Request::post("/oauth/authorize")
+        Request::post(format!("/oauth/authorize?{query}"))
             .header(header::ORIGIN, "https://chatgpt.com")
             .header("sec-fetch-site", "cross-site")
             .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .body(Body::from(form))
+            .body(Body::from("csrf_token=client-owned-value"))
             .expect("cross-origin authorization request"),
     )
     .await;
@@ -275,6 +275,14 @@ async fn authorize_mcp(app: &Router, browser: &BrowserSession, client_id: &str) 
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+    let consent_page = String::from_utf8(
+        to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("consent page body")
+            .to_vec(),
+    )
+    .expect("UTF-8 consent page");
+    assert!(consent_page.contains("action=\"/oauth/authorize/consent\""));
 
     let form = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("client_id", client_id)
@@ -288,7 +296,7 @@ async fn authorize_mcp(app: &Router, browser: &BrowserSession, client_id: &str) 
         .finish();
     let response = send(
         app,
-        Request::post("/oauth/authorize")
+        Request::post("/oauth/authorize/consent")
             .header(header::COOKIE, browser.cookies())
             .header(header::ORIGIN, BROWSER_ORIGIN)
             .header("sec-fetch-site", "same-origin")
