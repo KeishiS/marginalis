@@ -51,4 +51,33 @@ crateは独立した依存境界または再利用単位にだけ使い、HTTP h
 crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはcomposition rootとして、
 実行経路と公開型を短く一覧できる状態に保つ。
 
+主要な外側のadapterは、変更理由に対応して次のmoduleへ分ける。
+
+```text
+marginalis-service/src/
+├── main.rs          process lifecycleとcommand選択
+├── cli.rs           引数契約
+├── serve.rs         HTTP composition root
+└── maintenance.rs   purge、archive、backup
+
+marginalis-web/src/http/
+├── auth.rs          browser session、Cookie、CSRF
+├── oauth.rs         MCP OAuth endpoint
+├── mcp_transport.rs MCP Streamable HTTP
+├── notes.rs         REST note API
+├── ui.rs            閲覧UI
+└── security.rs      HTTP security policy
+
+marginalis-sqlite/src/
+├── schema.rs        schema検証
+├── session.rs       Web/OIDC session
+├── mcp.rs           MCP OAuth永続化
+├── notes.rs         noteとACL
+└── archive.rs       検証済みarchiveの原子的な格納
+```
+
+公開routeは`marginalis-web/src/http.rs`、公開型は各crateの`lib.rs`から追跡する。unit testは
+対象moduleの末尾へ置き、HTTP・OIDC・MCPを一気通貫で通す試験だけを
+`marginalis-integration-tests/tests/`へ置く。
+
 設計を確定した経緯は[再設計判断記録](v0.3.0-design.md)を参照してください。

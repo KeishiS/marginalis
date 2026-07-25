@@ -2,14 +2,14 @@
 
 ## 状態
 
-着手済み。単一利用だったMCP wire crateは`marginalis-web::mcp`へ統合し、
+実装完了。単一利用だったMCP wire crateは`marginalis-web::mcp`へ統合し、
 `marginalis-server`は公開facade、設定、ノート、session、OIDC、MCP OAuth、実行環境へ
 分割した。`marginalis-web`は共有状態、browser認証、security policy、REST note、閲覧UI、
 MCP transportへ分割した。SQLiteのschema、Web session、OIDC login attemptも独立moduleへ
 移し、note/ACL、archive、MCP OAuthの永続化も分離した。AsciiDoc archiveのcontent policyは
 入力境界へ移し、SQLite adapterからparser依存を除去した。規範文書の正本も主題別文書へ
-一本化した。WebのMCP OAuth handlerも独立moduleへ移した。残るmoduleごとのtest配置と
-各moduleのimport明示化を整理する。
+一本化した。WebのMCP OAuth handlerも独立moduleへ移し、moduleごとのtest配置とimportを
+明示した。実行バイナリも`cli`、`serve`、`maintenance`へ分離した。
 
 ## 背景
 
@@ -60,6 +60,18 @@ crate境界と依存方向は維持する。flatなIssue配置も番号による
    版番号付き設計書と運用書は非規範snapshotとして扱う。
 6. 移動と意味変更を同じcommitに混在させない。各段階でdependency boundary、unit test、
    integration testを実行する。
+
+## 完了レビュー
+
+- crateは依存境界に対応した8個であり、単一利用のwire crateや互換用directoryは残らない。
+- Webの公開routeは`http.rs`、実行時の組立は`service/src/serve.rs`、公開型は各`lib.rs`から
+  追跡できる。行数の大きい`http.rs`とSQLite `lib.rs`の大半は対象moduleに近接したtestであり、
+  production責務の集中ではない。
+- `service/src/main.rs`はprocess lifecycleだけを持ち、HTTP起動と保守commandの変更が競合しない。
+- `docs/`は読者別の入口を`README.md`に持つ。現行の規範文書、版付きsnapshot、履歴Issueを
+  directory名だけで無理に分割せず、linkの安定性と正本の明記を優先する。
+- flatな`issues/`は番号検索と相互linkを保つため維持する。完了状態と実装順は`issues/README.md`を
+  indexとし、上流提案だけを`issues/upstream/`へ隔離する。
 
 ## 完了条件
 

@@ -2,8 +2,10 @@
 
 ## 状態
 
-未着手。[037](037-v0.3.0-architecture-rebaseline.md)の破壊的切替後に残る旧実装を除去し、
-現行v0.3経路の試験不足を継続的に把握するための横断作業とする。
+実装完了。Nixで固定した`cargo-llvm-cov`からworkspaceと現行結合経路を別々に出力し、
+production dependency graphと禁止symbolは`cargo make verify`で静的に検査する。
+初回計測で判明したREST noteと閲覧UIの試験不足は、OIDC loginからMCP作成、REST更新・
+削除・復元、HTML閲覧までの結合試験を追加して解消した。
 
 ## 背景
 
@@ -27,8 +29,10 @@ coverageの未実行率を、そのまま未使用コード率とは呼ばない
 
 1. Rust toolchainと互換の`cargo-llvm-cov`および`llvm-tools`をNix開発環境へversion固定して追加する。
    CI中に未固定の最新版をdownloadしない。
-2. `cargo make coverage`で再現可能なtext summaryと機械可読JSONまたはLCOVを生成する。
-   vendor、生成物、test bodyはproduction coverageの分母に含めない。
+2. `cargo make coverage`で再現可能なtext summaryと機械可読JSONを生成する。vendor、生成物、
+   外部test sourceと結合試験専用crateはreportから除外する。同一source fileの
+   `#[cfg(test)]` unit testはLLVM report上で分離できないため、数値を厳密なproduction code
+   coverageとは呼ばず、配置を計測都合で崩さない。
 3. 次のreportを分離する。
    - v0.3 unit・integration test全体のcrate別line/region coverage。
    - `marginalis-service`の現行composition rootとv0.3 HTTP/OIDC/MCP結合経路に限定したcoverage。
@@ -38,6 +42,37 @@ coverageの未実行率を、そのまま未使用コード率とは呼ばない
    security境界と業務規則からcrate別の下限を決める。下限は低下を防ぐ方向にだけ更新する。
 6. reportへ秘密値、OIDC token、Cookie、実利用者データを含めない。CI artifactを保存する場合は
    保存期間と公開範囲を明示する。
+
+## 初回baseline
+
+2026-07-25に`nix develop --command cargo make coverage`を11.36秒で実行した。数値は
+line / region coverage（%）であり、`#[cfg(test)]`を同じsource fileに置くunit test本体を含む。
+
+| crate | workspace | 現行結合経路 |
+| --- | ---: | ---: |
+| `marginalis-application` | 0.0 / 0.0 | 対象外 |
+| `marginalis-asciidoc` | 70.1 / 74.3 | 40.1 / 44.2 |
+| `marginalis-auth-oidc` | 88.2 / 84.8 | 86.8 / 81.8 |
+| `marginalis-domain` | 78.7 / 80.3 | 67.5 / 68.1 |
+| `marginalis-server` | 84.1 / 79.1 | 64.2 / 54.6 |
+| `marginalis-service` | 23.1 / 21.1 | 23.1 / 21.1 |
+| `marginalis-sqlite` | 95.7 / 89.7 | 68.2 / 59.9 |
+| `marginalis-web` | 80.1 / 81.4 | 67.4 / 63.7 |
+| **全体** | **82.0 / 78.8** | **63.2 / 56.9** |
+
+未実行箇所は次のように分類した。
+
+- **試験不足**: REST note handlerと閲覧UIは初回の現行結合経路でそれぞれline 16.3%と0%だった。
+  結合試験追加後は83.0%と91.7%になった。残る認証失敗・競合分岐はunit testとSQLite testで
+  業務規則を確認し、意味のない網羅率目的の試験は追加しない。
+- **本番到達不能**: 旧公開API、ローカル管理者、ファイル正本、所属定期監視の実装は検出されなかった。
+  `marginalis-service`から推移的に到達するworkspace crateをallowlistと照合する。
+- **意図的な未実行経路**: `marginalis-service`のlisten、実Kanidm discovery、保守command、
+  filesystem失敗はprocess・実環境境界である。NixOS VM試験と公開前の手動受入で確認し、
+  unit coverageの閾値には使わない。`marginalis-application`の0%はport宣言だけを持つためである。
+
+coverageは独立したCI jobで約11秒を要する。summaryはCI logへ表示するだけでartifactは保存せず、
+初回baselineには合格率を設定しない。
 
 ## 完了条件
 
