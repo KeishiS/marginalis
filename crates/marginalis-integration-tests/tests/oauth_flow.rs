@@ -26,7 +26,7 @@ const BROWSER_ORIGIN: &str = "https://marginalis.example.test";
 const CLIENT_ID: &str = "marginalis-test-client";
 const CLIENT_SECRET: &str = "integration-client-secret";
 const MCP_RESOURCE: &str = "https://marginalis.example.test/mcp";
-const MCP_CALLBACK: &str = "https://chatgpt.com/connector/oauth/callback";
+const MCP_CALLBACK: &str = "http://localhost:48123/callback";
 
 struct TestServer {
     idp: MockIdentityProvider,
@@ -204,7 +204,7 @@ async fn register_mcp_client(app: &Router) -> String {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
                 serde_json::json!({
-                    "client_name": "ChatGPT integration test",
+                    "client_name": "Claude Code integration test",
                     "redirect_uris": [MCP_CALLBACK],
                 })
                 .to_string(),

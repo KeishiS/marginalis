@@ -678,7 +678,7 @@ mod tests {
                 Request::post("/oauth/register")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"client_name":"Codex CLI","redirect_uris":["http://127.0.0.1:48123/callback"]}"#,
+                        r#"{"client_name":"Claude Code","redirect_uris":["http://localhost:48123/callback"]}"#,
                     ))
                     .expect("request"),
             )

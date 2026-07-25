@@ -28,6 +28,8 @@ release issueで手動結果を記録する。
    Authorization Code + PKCE、read/write、認可取消を確認する。browser 開発者ツールで承認 form の
    `POST /oauth/authorize` が Marginalis 自身の `Origin` と `Sec-Fetch-Site: same-origin` を持ち、MCP
    request の `Origin` が設定済み許可リストに一致することも記録する。
+   Claude Codeは`claude mcp add --transport http marginalis B/mcp`で追加し、`/mcp`から認証する。
+   DCRで登録される`http://localhost:PORT/callback`に明示portがあることを確認する。
 7. `marginalis-backup.service` が指定先に archive を作ること、日次 purge timer が有効なことを確認する。
 
 実施結果は release issue に、環境、client の版、Kanidm 1.10 の版、base URL（機密情報を除く）、

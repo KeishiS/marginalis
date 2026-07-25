@@ -377,17 +377,18 @@ fn valid_redirect_uri(value: &str) -> bool {
     {
         return false;
     }
-    url.scheme() == "https"
-        || (url.scheme() == "http"
-            && matches!(
-                url.host(),
-                Some(url::Host::Ipv4(address)) if address.is_loopback()
-            ))
-        || (url.scheme() == "http"
-            && matches!(
-                url.host(),
-                Some(url::Host::Ipv6(address)) if address.is_loopback()
-            ))
+    if url.scheme() == "https" {
+        return true;
+    }
+    if url.scheme() != "http" || url.port().is_none() {
+        return false;
+    }
+    match url.host() {
+        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback(),
+        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        None => false,
+    }
 }
 
 #[cfg(test)]
@@ -395,16 +396,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn oauth_redirects_require_https_or_an_ip_loopback() {
+    fn oauth_redirects_require_https_or_an_explicit_loopback_port() {
         for valid in [
             "https://chatgpt.com/connector/oauth/callback",
+            "http://localhost:48123/callback",
             "http://127.0.0.1:48123/callback",
             "http://[::1]:48123/callback",
         ] {
             assert!(valid_redirect_uri(valid), "{valid}");
         }
         for invalid in [
-            "http://localhost:48123/callback",
+            "http://localhost/callback",
+            "http://localhost.example:48123/callback",
+            "http://127.0.0.1/callback",
             "http://client.example.test/callback",
             "https://client.example.test/callback?next=other",
             "https://user@client.example.test/callback",

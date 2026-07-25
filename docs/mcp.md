@@ -35,6 +35,18 @@ browser client は DNS rebinding 対策として完全一致の許可リスト�
 `https://chatgpt.com` です。Codex CLI と Claude Code のように `Origin` を送らない native client はこの
 制約の対象外です。
 
+Claude Codeは次のようにremote Streamable HTTP serverとして追加し、Claude Code内の`/mcp`から
+browser認証します。
+
+```bash
+claude mcp add --transport http marginalis https://marginalis.sandi05.com/mcp
+```
+
+Dynamic Client RegistrationではClaude Codeの`http://localhost:PORT/callback`を受け付けます。
+HTTP callbackは`localhost`完全一致、またはloopback IP addressで、明示的なportを持つ場合だけ許可します。
+HTTPS callbackは登録値との完全一致を維持します。SSH、container、WSL上のClaude Codeではbrowserから
+callback listenerへ到達できる構成が別途必要です。
+
 この許可リストは MCP transport 専用です。OAuth の承認画面は Marginalis が表示する Authorization Server
 との操作なので、承認 form POST は Marginalis と同一 Origin、同一 session の CSRF token の両方を必須とします。
 
