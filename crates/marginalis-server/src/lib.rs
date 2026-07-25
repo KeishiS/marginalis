@@ -303,18 +303,23 @@ impl ServerV3McpOAuthService {
         if resource_uri != self.resource_uri || !valid_pkce_verifier(&verifier) {
             return Err(McpOAuthError::Rejected);
         }
+        let expected_challenge = pkce_s256(&verifier);
         let now = SystemClock.now();
-        let Some((grant, challenge)) = self
+        let Some(grant) = self
             .database
-            .consume_mcp_authorization_code(&code, &client_id, &redirect_uri, &resource_uri, now)
+            .consume_mcp_authorization_code(
+                &code,
+                &client_id,
+                &redirect_uri,
+                &resource_uri,
+                &expected_challenge,
+                now,
+            )
             .await
             .map_err(|_| McpOAuthError::Unavailable)?
         else {
             return Err(McpOAuthError::Rejected);
         };
-        if pkce_s256(&verifier) != challenge {
-            return Err(McpOAuthError::Rejected);
-        }
         self.issue_pair(grant, now).await
     }
 

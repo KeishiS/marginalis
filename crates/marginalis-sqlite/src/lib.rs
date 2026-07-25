@@ -923,32 +923,28 @@ impl V3SqliteDatabase {
         client_id: &str,
         redirect_uri: &str,
         resource_uri: &str,
+        code_challenge: &str,
         now: UnixMillis,
-    ) -> Result<Option<(CanonicalMcpAuthorizationGrant, String)>, V3NoteStoreError> {
-        let row = sqlx::query("DELETE FROM v3_mcp_authorization_codes WHERE code_hash = ? AND client_id = ? AND redirect_uri = ? AND resource_uri = ? AND expires_at_ms > ? RETURNING issuer, subject, is_administrator, scopes, code_challenge")
-            .bind(hash_token(code)).bind(client_id).bind(redirect_uri).bind(resource_uri).bind(now.get()).fetch_optional(&self.pool).await.map_err(v3_database_error)?;
+    ) -> Result<Option<CanonicalMcpAuthorizationGrant>, V3NoteStoreError> {
+        let row = sqlx::query("DELETE FROM v3_mcp_authorization_codes WHERE code_hash = ? AND client_id = ? AND redirect_uri = ? AND resource_uri = ? AND code_challenge = ? AND expires_at_ms > ? RETURNING issuer, subject, is_administrator, scopes")
+            .bind(hash_token(code)).bind(client_id).bind(redirect_uri).bind(resource_uri).bind(code_challenge).bind(now.get()).fetch_optional(&self.pool).await.map_err(v3_database_error)?;
         row.map(|row| {
-            Ok((
-                CanonicalMcpAuthorizationGrant {
-                    actor: CanonicalActor {
-                        issuer: row.try_get("issuer").map_err(v3_database_error)?,
-                        subject: row.try_get("subject").map_err(v3_database_error)?,
-                        is_administrator: row
-                            .try_get("is_administrator")
-                            .map_err(v3_database_error)?,
-                    },
-                    client_id: client_id.into(),
-                    redirect_uri: redirect_uri.into(),
-                    resource_uri: resource_uri.into(),
-                    scopes: row
-                        .try_get::<String, _>("scopes")
-                        .map_err(v3_database_error)?
-                        .split_whitespace()
-                        .map(str::to_owned)
-                        .collect(),
+            Ok(CanonicalMcpAuthorizationGrant {
+                actor: CanonicalActor {
+                    issuer: row.try_get("issuer").map_err(v3_database_error)?,
+                    subject: row.try_get("subject").map_err(v3_database_error)?,
+                    is_administrator: row.try_get("is_administrator").map_err(v3_database_error)?,
                 },
-                row.try_get("code_challenge").map_err(v3_database_error)?,
-            ))
+                client_id: client_id.into(),
+                redirect_uri: redirect_uri.into(),
+                resource_uri: resource_uri.into(),
+                scopes: row
+                    .try_get::<String, _>("scopes")
+                    .map_err(v3_database_error)?
+                    .split_whitespace()
+                    .map(str::to_owned)
+                    .collect(),
+            })
         })
         .transpose()
     }
@@ -3627,6 +3623,21 @@ mod tests {
                     &grant.client_id,
                     &grant.redirect_uri,
                     &grant.resource_uri,
+                    "wrong-challenge",
+                    UnixMillis::new(1)
+                )
+                .await
+                .expect("wrong PKCE challenge")
+                .is_none()
+        );
+        assert!(
+            database
+                .consume_mcp_authorization_code(
+                    "code",
+                    &grant.client_id,
+                    &grant.redirect_uri,
+                    &grant.resource_uri,
+                    "challenge",
                     UnixMillis::new(1)
                 )
                 .await
@@ -3640,6 +3651,7 @@ mod tests {
                     &grant.client_id,
                     &grant.redirect_uri,
                     &grant.resource_uri,
+                    "challenge",
                     UnixMillis::new(1)
                 )
                 .await
