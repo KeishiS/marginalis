@@ -7,12 +7,5 @@ license.workspace = true
 publish = false
 
 [dependencies]
-async-trait.workspace = true
-marginalis-application = { path = "../marginalis-application" }
-marginalis-domain = { path = "../marginalis-domain" }
 serde.workspace = true
 serde_json.workspace = true
-uuid.workspace = true
-
-[dev-dependencies]
-tokio.workspace = true

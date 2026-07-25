@@ -1189,19 +1189,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "marginalis-files"
-version = "0.2.0"
-dependencies = [
- "marginalis-application",
- "marginalis-domain",
- "marginalis-sqlite",
- "sha2",
- "sqlx",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "marginalis-integration-tests"
 version = "0.2.0"
 dependencies = [
@@ -1224,13 +1211,8 @@ dependencies = [
 name = "marginalis-mcp"
 version = "0.2.0"
 dependencies = [
- "async-trait",
- "marginalis-application",
- "marginalis-domain",
  "serde",
  "serde_json",
- "tokio",
- "uuid",
 ]
 
 [[package]]
