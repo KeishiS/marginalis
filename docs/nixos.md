@@ -29,6 +29,58 @@ service-account token を指定します。二つの secret file は systemd cre
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
 サブパスでは外部 prefix を upstream へ渡す前に除去し、`baseUrl` と OIDC redirect URI を一致させます。
 
+## Kanidm membership service account
+
+`membershipTokenFile` は Marginalis 固有の Kanidm service account の read-only API token である。OIDC
+ID token だけではログイン後の group 変更を検出できないため、Marginalis はこの token で
+`GET /v1/person/{subject}` を照会し、`memberof` を最大 5 分ごとに再確認する。
+
+NixOS の `services.kanidm.provision` は person、group、OAuth2 client を宣言できるが、Kanidm 1.10
+では service account と API token を直接宣言できない。token は平文を生成時に一度だけ取得する秘密情報
+でもある。従って、service account は初回に管理者 CLI で作成し、token は sops-nix、agenix 等の secret
+manager で `membershipTokenFile` の場所へ配置する。
+
+以下は `idm_admin` で初回設定する例である。`id.example.test` と CA ファイルのパスは実環境へ置き換える。
+
+```bash
+kanidm login \
+  --url https://id.example.test \
+  --ca /etc/ssl/kanidm-ca.pem \
+  --name idm_admin
+
+kanidm service-account create \
+  marginalis-membership \
+  "Marginalis membership resolver" \
+  idm_admin
+
+kanidm service-account api-token generate \
+  marginalis-membership \
+  "marginalis-production-2026"
+```
+
+最後のコマンドは token を一度だけ表示する。`--readwrite` は指定しない。表示値を root のみが読める秘密
+ファイルへ保存し、NixOS 設定の `membershipTokenFile` と一致させる。token を shell history、Nix 式、
+journal、Git に書き込んではならない。
+
+```bash
+sudo install -m 0600 -o root -g root /dev/null \
+  /run/secrets/marginalis-kanidm-membership-token
+sudoedit /run/secrets/marginalis-kanidm-membership-token
+```
+
+service account 自体には person entry の `memberof` を読む最小限の Kanidm access control profile を
+group 経由で付与する。読み取り権限を広く持つ組み込み group を安易に使わず、Marginalis 専用の group と
+ACP を作る。実際の API 応答が `memberof` 以外の不要な属性を含まないことを確認する。
+
+token の状態とローテーションは次で扱う。新 token を secret manager へ反映し、Marginalis を再起動して
+から、旧 token の UUID を失効させる。
+
+```bash
+kanidm service-account api-token status marginalis-membership
+sudo systemctl restart marginalis.service
+kanidm service-account api-token destroy marginalis-membership <old-token-uuid>
+```
+
 ## 定期処理
 
 - `marginalis-purge-deleted.timer` は毎日実行され、30 日を超えたソフトデリート済みノートを削除します。
