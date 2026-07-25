@@ -3,6 +3,7 @@
 //! 旧`/api/v1`・root管理・ローカル`UserId`を参照しない。composition rootは
 //! v0.3.0ではこのrouterだけを公開する。
 
+mod auth;
 mod error;
 mod html;
 mod notes;
@@ -13,8 +14,7 @@ mod ui;
 pub use state::{ApiState, McpEndpoint};
 
 use super::{RequestId, assign_request_id};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use std::{str::FromStr, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use crate::mcp::{JsonRpcRequest, JsonRpcResponse, MCP_PROTOCOL_VERSION};
 use axum::{
@@ -32,8 +32,14 @@ use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, info_span};
 
 #[cfg(test)]
+use self::auth::{RETURN_TO_COOKIE, valid_return_to, validate_mutation_origin};
+#[cfg(test)]
 use self::state::McpRegistrationRateLimiter;
 use self::{
+    auth::{
+        CSRF_COOKIE, authenticated_actor, authenticated_form_actor, authenticated_mutation_actor,
+        begin_login, complete_login, cookie_value, external_path, logout, parse_note_id,
+    },
     error::{HandlerResult, authentication_error, mcp_error, note_error, problem},
     html::escape_html,
     notes::{
@@ -52,10 +58,6 @@ use std::time::Duration;
 
 pub const API_VERSION: &str = "v2";
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
-const SESSION_COOKIE: &str = "marginalis_session";
-const CSRF_COOKIE: &str = "marginalis_csrf";
-const RETURN_TO_COOKIE: &str = "marginalis_return_to";
-
 pub fn router(state: ApiState) -> Router {
     let mut router = Router::new()
         .route("/", get(home))
@@ -138,152 +140,6 @@ async fn openapi() -> Response {
         OPENAPI_DOCUMENT,
     )
         .into_response()
-}
-
-#[derive(Deserialize)]
-struct OidcCallbackQuery {
-    code: String,
-    state: String,
-}
-
-#[derive(Deserialize)]
-struct LoginQuery {
-    next: Option<String>,
-}
-
-fn external_path(base_path: &str, path: &str) -> String {
-    debug_assert!(path.starts_with('/'));
-    if base_path == "/" {
-        path.into()
-    } else {
-        format!("{}{path}", base_path.trim_end_matches('/'))
-    }
-}
-
-fn valid_return_to(value: &str, base_path: &str) -> bool {
-    value.starts_with(&external_path(base_path, "/oauth/authorize?"))
-        && !value.starts_with("//")
-        && !value.contains('\r')
-        && !value.contains('\n')
-}
-
-async fn begin_login(
-    State(state): State<ApiState>,
-    Query(query): Query<LoginQuery>,
-) -> HandlerResult<Response> {
-    let mut response = Redirect::temporary(
-        &state
-            .oidc
-            .begin_login()
-            .await
-            .map_err(authentication_error)?,
-    )
-    .into_response();
-    if let Some(next) = query
-        .next
-        .filter(|next| valid_return_to(next, &state.cookie_path))
-    {
-        let encoded = URL_SAFE_NO_PAD.encode(next);
-        response.headers_mut().append(
-            header::SET_COOKIE,
-            format!(
-                "{RETURN_TO_COOKIE}={encoded}; Path={}; Secure; HttpOnly; SameSite=Lax; Max-Age=600",
-                state.cookie_path
-            )
-            .parse()
-            .map_err(|_| {
-                problem(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "unavailable",
-                    "authentication is unavailable",
-                )
-            })?,
-        );
-    }
-    Ok(response)
-}
-
-async fn complete_login(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-    axum::extract::Query(query): axum::extract::Query<OidcCallbackQuery>,
-) -> HandlerResult<Response> {
-    let actor = state
-        .oidc
-        .complete_login(query.code, query.state)
-        .await
-        .map_err(authentication_error)?;
-    let session = state
-        .sessions
-        .issue_session(actor)
-        .await
-        .map_err(authentication_error)?;
-    let return_to = cookie_value(&headers, RETURN_TO_COOKIE)
-        .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
-        .and_then(|value| String::from_utf8(value).ok())
-        .filter(|value| valid_return_to(value, &state.cookie_path))
-        .unwrap_or_else(|| state.cookie_path.clone());
-    let mut response = Redirect::to(&return_to).into_response();
-    for value in [
-        format!(
-            "{SESSION_COOKIE}={}; Path={}; Secure; HttpOnly; SameSite=Lax",
-            session.session_id, state.cookie_path
-        ),
-        format!(
-            "{CSRF_COOKIE}={}; Path={}; Secure; SameSite=Lax",
-            session.csrf_token, state.cookie_path
-        ),
-        format!(
-            "{RETURN_TO_COOKIE}=; Path={}; Secure; HttpOnly; SameSite=Lax; Max-Age=0",
-            state.cookie_path
-        ),
-    ] {
-        response.headers_mut().append(
-            header::SET_COOKIE,
-            value.parse().map_err(|_| {
-                problem(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "unavailable",
-                    "authentication is unavailable",
-                )
-            })?,
-        );
-    }
-    Ok(response)
-}
-
-async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> HandlerResult<Response> {
-    let _actor = authenticated_mutation_actor(&headers, &state).await?;
-    let session_id =
-        cookie_value(&headers, SESSION_COOKIE).expect("authenticated session cookie exists");
-    state
-        .sessions
-        .revoke_session(session_id)
-        .await
-        .map_err(authentication_error)?;
-    let mut response = StatusCode::NO_CONTENT.into_response();
-    for value in [
-        format!(
-            "{SESSION_COOKIE}=; Path={}; Max-Age=0; Secure; HttpOnly; SameSite=Lax",
-            state.cookie_path
-        ),
-        format!(
-            "{CSRF_COOKIE}=; Path={}; Max-Age=0; Secure; SameSite=Lax",
-            state.cookie_path
-        ),
-    ] {
-        response.headers_mut().append(
-            header::SET_COOKIE,
-            value.parse().map_err(|_| {
-                problem(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "unavailable",
-                    "authentication is unavailable",
-                )
-            })?,
-        );
-    }
-    Ok(response)
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -1011,149 +867,6 @@ fn note_revision_json(note: Note) -> serde_json::Value {
         "note_id": note.note_id.to_string(),
         "revision": note.revision,
     })
-}
-
-async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> HandlerResult<Actor> {
-    let session_id = cookie_value(headers, SESSION_COOKIE).ok_or_else(|| {
-        problem(
-            StatusCode::UNAUTHORIZED,
-            "authentication_required",
-            "authentication is required",
-        )
-    })?;
-    state
-        .sessions
-        .authenticate_session(session_id)
-        .await
-        .map_err(authentication_error)?
-        .map(|session| session.actor)
-        .ok_or_else(|| {
-            problem(
-                StatusCode::UNAUTHORIZED,
-                "authentication_required",
-                "authentication is required",
-            )
-        })
-}
-
-async fn authenticated_mutation_actor(
-    headers: &HeaderMap,
-    state: &ApiState,
-) -> HandlerResult<Actor> {
-    let actor = authenticated_actor(headers, state).await?;
-    validate_mutation_origin(headers, state)?;
-    let session_id =
-        cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
-    let csrf_cookie = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
-        problem(
-            StatusCode::FORBIDDEN,
-            "csrf_required",
-            "CSRF token is required",
-        )
-    })?;
-    let csrf_header = headers
-        .get("x-csrf-token")
-        .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| {
-            problem(
-                StatusCode::FORBIDDEN,
-                "csrf_required",
-                "CSRF token is required",
-            )
-        })?;
-    if csrf_cookie != csrf_header
-        || !state
-            .sessions
-            .verify_csrf(session_id, csrf_header.into())
-            .await
-            .map_err(authentication_error)?
-    {
-        return Err(problem(
-            StatusCode::FORBIDDEN,
-            "csrf_invalid",
-            "CSRF token is invalid",
-        ));
-    }
-    Ok(actor)
-}
-
-fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) -> HandlerResult<()> {
-    let received_origin = headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok());
-    if received_origin != Some(state.browser_origin.as_str()) {
-        tracing::warn!(
-            received_origin = ?received_origin,
-            expected_origin = %state.browser_origin,
-            "rejected browser mutation with a missing or mismatched origin"
-        );
-        return Err(problem(
-            StatusCode::FORBIDDEN,
-            "same_origin_required",
-            "same-origin request is required",
-        ));
-    }
-    if let Some(site) = headers
-        .get("sec-fetch-site")
-        .and_then(|value| value.to_str().ok())
-        && !matches!(site, "same-origin" | "none")
-    {
-        tracing::warn!(
-            sec_fetch_site = site,
-            "rejected browser mutation with cross-site fetch metadata"
-        );
-        return Err(problem(
-            StatusCode::FORBIDDEN,
-            "same_origin_required",
-            "same-origin request is required",
-        ));
-    }
-    Ok(())
-}
-
-/// Authorization consent is an interaction with this authorization server, so its form remains
-/// same-origin even when the OAuth client itself is browser-based.
-async fn authenticated_form_actor(
-    headers: &HeaderMap,
-    state: &ApiState,
-    csrf_token: &str,
-) -> HandlerResult<Actor> {
-    let actor = authenticated_actor(headers, state).await?;
-    validate_mutation_origin(headers, state)?;
-    let session_id =
-        cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
-    if cookie_value(headers, CSRF_COOKIE).as_deref() != Some(csrf_token)
-        || !state
-            .sessions
-            .verify_csrf(session_id, csrf_token.into())
-            .await
-            .map_err(authentication_error)?
-    {
-        return Err(problem(
-            StatusCode::FORBIDDEN,
-            "csrf_invalid",
-            "CSRF token is invalid",
-        ));
-    }
-    Ok(actor)
-}
-
-fn parse_note_id(value: &str) -> HandlerResult<NoteId> {
-    EntityId::from_str(value)
-        .map(NoteId::new)
-        .map_err(|_| problem(StatusCode::NOT_FOUND, "not_found", "note is not available"))
-}
-
-fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get(header::COOKIE)?
-        .to_str()
-        .ok()?
-        .split(';')
-        .find_map(|part| {
-            let (key, value) = part.trim().split_once('=')?;
-            (key == name).then(|| value.to_owned())
-        })
 }
 
 #[cfg(test)]
