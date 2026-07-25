@@ -219,6 +219,8 @@ fn validate_issuer_url(value: String) -> Result<Url, ConfigurationError> {
     let url = Url::parse(&value).map_err(|_| ConfigurationError::InvalidIssuerUrl)?;
     if url.scheme() != "https"
         || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
     {
@@ -247,6 +249,19 @@ mod tests {
                 .path(),
             "/marginalis"
         );
+    }
+
+    #[test]
+    fn issuer_url_rejects_userinfo() {
+        for invalid in [
+            "https://user@id.example.test",
+            "https://user:password@id.example.test",
+        ] {
+            assert_eq!(
+                validate_issuer_url(invalid.into()),
+                Err(ConfigurationError::InvalidIssuerUrl)
+            );
+        }
     }
 
     #[test]

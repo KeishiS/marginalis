@@ -128,6 +128,7 @@ pub struct Archive {
 }
 
 pub const ARCHIVE_FORMAT: &str = "marginalis-archive-1";
+pub const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Actor {

@@ -83,10 +83,13 @@ pub(crate) fn database_error(error: sqlx::Error) -> SqliteStoreError {
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_application::McpRefreshTokenRotation;
+    use marginalis_application::{
+        McpRefreshTokenRotation, OidcLoginAttempt, OidcLoginAttemptStore,
+    };
     use marginalis_domain::{
         ARCHIVE_FORMAT, Actor, Archive, EntityId, McpAuthorizationGrant, McpOAuthClient, Note,
-        NoteAclEntry, NoteDraft, NoteId, NotePermission, UnixMillis, WebSession,
+        NoteAclEntry, NoteDraft, NoteId, NotePermission, SOFT_DELETE_RETENTION_MS, UnixMillis,
+        WebSession,
     };
 
     use super::*;
@@ -305,6 +308,16 @@ mod tests {
             .expect("delete before purge");
         assert_eq!(
             database
+                .restore_note(
+                    note_id,
+                    5,
+                    UnixMillis::new(400 + SOFT_DELETE_RETENTION_MS + 1)
+                )
+                .await,
+            Err(SqliteStoreError::Conflict)
+        );
+        assert_eq!(
+            database
                 .purge_deleted_before(UnixMillis::new(401))
                 .await
                 .expect("purge"),
@@ -346,11 +359,93 @@ mod tests {
                 .expect("csrf query")
         );
         let authenticated = database
-            .lookup_web_session("session-token", UnixMillis::new(200))
+            .lookup_web_session("session-token", UnixMillis::new(200), 900)
             .await
             .expect("lookup")
             .expect("active session");
         assert!(!authenticated.actor.is_administrator);
+        assert_eq!(authenticated.idle_expires_at, UnixMillis::new(1_100));
+        assert_eq!(
+            database
+                .lookup_web_session("session-token", UnixMillis::new(1_050), 900)
+                .await
+                .expect("sliding lookup")
+                .expect("activity extends the session")
+                .idle_expires_at,
+            UnixMillis::new(1_950)
+        );
+        assert_eq!(
+            database
+                .lookup_web_session("session-token", UnixMillis::new(1_900), 900)
+                .await
+                .expect("absolute cap lookup")
+                .expect("session remains active before the absolute limit")
+                .idle_expires_at,
+            UnixMillis::new(2_000)
+        );
+        assert_eq!(
+            database
+                .lookup_web_session("session-token", UnixMillis::new(2_000), 900)
+                .await,
+            Ok(None)
+        );
+        let replacement = WebSession {
+            session_id: "replacement-session".into(),
+            csrf_token: "replacement-csrf".into(),
+            actor: session.actor,
+            idle_expires_at: UnixMillis::new(3_000),
+            absolute_expires_at: UnixMillis::new(4_000),
+        };
+        database
+            .issue_web_session(&replacement, UnixMillis::new(2_100))
+            .await
+            .expect("issuing a session cleans expired and revoked rows");
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM web_sessions")
+                .fetch_one(database.pool())
+                .await
+                .expect("session count"),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn oidc_attempt_issue_removes_expired_rows() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("schema initialization succeeds");
+        let attempts = database.oidc_login_attempt_store();
+        attempts
+            .issue(
+                OidcLoginAttempt {
+                    state: "expired-state".into(),
+                    nonce: "expired-nonce".into(),
+                    pkce_verifier: "expired-verifier".into(),
+                    expires_at: UnixMillis::new(1_000),
+                },
+                UnixMillis::new(100),
+            )
+            .await
+            .expect("first attempt");
+        attempts
+            .issue(
+                OidcLoginAttempt {
+                    state: "active-state".into(),
+                    nonce: "active-nonce".into(),
+                    pkce_verifier: "active-verifier".into(),
+                    expires_at: UnixMillis::new(2_000),
+                },
+                UnixMillis::new(1_000),
+            )
+            .await
+            .expect("second attempt cleans the expired row");
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM oidc_login_attempts")
+                .fetch_one(database.pool())
+                .await
+                .expect("attempt count"),
+            1
+        );
     }
 
     #[tokio::test]

@@ -3,18 +3,21 @@
 use crate::cli::required_absolute_file_argument;
 use marginalis_application::Clock;
 use marginalis_asciidoc::validate_archive_notes;
-use marginalis_domain::UnixMillis;
+use marginalis_domain::{SOFT_DELETE_RETENTION_MS, UnixMillis};
 use marginalis_server::{StorageConfig, SystemClock};
 use marginalis_sqlite::SqliteDatabase;
 use std::path::{Path, PathBuf};
-
-const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
 /// 30日間の保持期限を過ぎたソフトデリート済みnoteを物理削除する。
 pub(crate) async fn purge_deleted() -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
-    let cutoff = UnixMillis::new(SystemClock.now().get() - SOFT_DELETE_RETENTION_MS);
+    let cutoff = UnixMillis::new(
+        SystemClock
+            .now()
+            .get()
+            .saturating_sub(SOFT_DELETE_RETENTION_MS),
+    );
     let count = database.purge_deleted_before(cutoff).await?;
     tracing::info!(
         count,

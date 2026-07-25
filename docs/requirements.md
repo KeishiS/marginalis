@@ -13,6 +13,8 @@
 - `server-users` に属する主体だけが利用できる。`server-admins` は全ノートを読め、管理できる。
   署名検証済み OIDC ID token の `groups` claim をログイン時の権限スナップショットとする。
   group 変更は次回ログインから反映する。
+- Web session は最終利用から24時間で失効し、絶対期限はログインから7日とする。アイドル期限は
+  利用時に延長するが絶対期限を超えない。期限切れまたは失効済みの認証状態は発行処理時にも削除する。
 - REST、Web UI、MCP は同じ ACL と revision 規則を使う。REST API は `/api/v2`、MCP は OAuth 2.1
   Authorization Code + PKCE S256 と Dynamic Client Registration を提供する。
 - 削除は 30 日のソフトデリートである。本文履歴は保存しない。期限後の物理削除は日次 timer が行う。

@@ -308,7 +308,7 @@ impl OidcAuthentication {
             expires_at: UnixMillis::new(now.get() + 10 * 60 * 1_000),
         };
         attempts
-            .issue(pending.clone())
+            .issue(pending.clone(), now)
             .await
             .map_err(|_| OidcLoginStartError::Store)?;
         let verifier = PkceCodeVerifier::new(pending.pkce_verifier);

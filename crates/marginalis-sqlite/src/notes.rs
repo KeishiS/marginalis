@@ -1,7 +1,8 @@
 //! ノート正本、直接ACL、ソフトデリートの永続化。
 
 use marginalis_domain::{
-    Actor, EntityId, Note, NoteAclEntry, NoteDraft, NoteId, NotePermission, UnixMillis,
+    Actor, EntityId, Note, NoteAclEntry, NoteDraft, NoteId, NotePermission,
+    SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
 use sqlx::Row;
 
@@ -232,13 +233,16 @@ impl SqliteDatabase {
         restored_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        let retention_cutoff = restored_at.get().saturating_sub(SOFT_DELETE_RETENTION_MS);
         let result = sqlx::query(
             "UPDATE notes SET deleted_at_ms = NULL, updated_at_ms = ?, revision = revision + 1
-             WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NOT NULL",
+             WHERE note_id = ? AND revision = ?
+               AND deleted_at_ms IS NOT NULL AND deleted_at_ms >= ?",
         )
         .bind(restored_at.get())
         .bind(note_id.to_string())
         .bind(expected_revision)
+        .bind(retention_cutoff)
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;

@@ -30,7 +30,7 @@ impl WebSessionUseCases for ServerWebSessionUseCases {
         let now = SystemClock.now();
         let Some(session) = self
             .database
-            .lookup_web_session(&session_id, now)
+            .lookup_web_session(&session_id, now, self.lifetime.idle_timeout_ms)
             .await
             .map_err(|_| AuthenticationUseCaseError::Unavailable)?
         else {

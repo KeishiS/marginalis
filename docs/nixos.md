@@ -43,6 +43,9 @@ Marginalis は OIDC callback で署名検証済み ID token の `groups` claim �
 ログインを拒否し、`server-admins` があれば発行する Web session と MCP authorization を管理者として固定する。
 Kanidm の group 変更は次回 OIDC login から反映され、既存の Web session と MCP token は有効期限または
 明示的な認可取消までその時点の権限を保つ。
+Web session は最終利用から24時間で失効し、ログインから7日を絶対期限とする。継続利用中は
+アイドル期限だけを延長するため、group変更を直ちに反映する必要がある場合は、対象利用者に再ログインを
+依頼するか、7日の絶対期限まで待つ。
 
 Kanidm の OAuth2 client は `groups_name` scope を許可し、文字列配列の `groups` claim に `server-users` と
 `server-admins` を含めるよう設定する。管理者も必ず `server-users` の member にする。

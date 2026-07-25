@@ -37,6 +37,7 @@ pub trait OidcLoginAttemptStore: Send + Sync {
     fn issue(
         &self,
         attempt: OidcLoginAttempt,
+        now: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     fn consume(
