@@ -116,6 +116,12 @@ in
         default = false;
         description = "Whether to expose the OAuth-protected MCP endpoint and authorization server.";
       };
+
+      allowedOrigins = mkOption {
+        type = types.listOf types.str;
+        default = [ "https://chatgpt.com" ];
+        description = "Exact browser Origins permitted to call the MCP endpoint. Native MCP clients omit Origin and use Bearer authentication.";
+      };
     };
   };
 
@@ -186,6 +192,7 @@ in
         OIDC_CA_CERTIFICATE_FILE =
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
+        MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
       };
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/marginalis";

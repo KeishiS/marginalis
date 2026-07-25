@@ -41,6 +41,9 @@ pub struct V3ApiState {
 pub struct V3McpEndpoint {
     pub oauth: Arc<dyn V3McpOAuthUseCases>,
     pub notes: Arc<dyn V3NoteUseCases>,
+    /// Browser-based MCP clients are restricted to these exact Origins. Native clients omit
+    /// `Origin` and authenticate every request with a Bearer token.
+    pub allowed_origins: Vec<String>,
     pub resource_uri: String,
     pub metadata_uri: String,
     pub authorization_server_uri: String,
@@ -810,12 +813,15 @@ async fn mcp_post(
     if let Some(origin) = headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
-        && origin != state.browser_origin
+        && !endpoint
+            .allowed_origins
+            .iter()
+            .any(|allowed| allowed == origin)
     {
         return Err(problem(
             StatusCode::FORBIDDEN,
             "same_origin_required",
-            "MCP browser requests must use the configured origin",
+            "MCP browser request origin is not allowed",
         ));
     }
     let accepts = headers
@@ -1467,6 +1473,7 @@ mod tests {
             .with_mcp(V3McpEndpoint {
                 oauth: Arc::new(Mcp),
                 notes: Arc::new(Notes),
+                allowed_origins: vec!["https://chatgpt.com".into()],
                 resource_uri: "https://example.test/mcp".into(),
                 metadata_uri: "https://example.test/.well-known/oauth-protected-resource/mcp"
                     .into(),
@@ -1618,6 +1625,31 @@ mod tests {
             .expect("request");
         let allowed = mcp_app().oneshot(request).await.expect("response");
         assert_eq!(allowed.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_accepts_configured_browser_origins_and_rejects_others() {
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::ORIGIN, "https://chatgpt.com")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .expect("request");
+        let allowed = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(allowed.status(), StatusCode::UNAUTHORIZED);
+
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::ORIGIN, "https://untrusted.example")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .expect("request");
+        let rejected = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

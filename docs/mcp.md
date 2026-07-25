@@ -16,6 +16,11 @@ Kanidm token を MCP client に渡すことはありません。
 Code + PKCE S256 を使います。未ログインで authorization endpoint を開いた場合は OIDC login へ移動し、
 認可リクエストへ安全に戻ります。
 
+`/mcp` は Cookie を使わず、すべての request を `Authorization: Bearer` で認可します。`Origin` がある
+browser client は DNS rebinding 対策として完全一致の許可リストで検証し、NixOS module の既定値は
+`https://chatgpt.com` です。Codex CLI と Claude Code のように `Origin` を送らない native client はこの
+制約の対象外です。
+
 scope は `notes:read`、`notes:write`、`notes:delete` です。scope だけでは不十分であり、Web と同じ
 ノート ACL が必ず適用されます。`server-admins` はすべてのノートに管理者相当でアクセスします。
 

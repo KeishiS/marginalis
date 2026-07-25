@@ -15,7 +15,11 @@ services.marginalis = {
     clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
     caCertificateFile = "/run/secrets/marginalis-kanidm-ca.pem";
   };
-  mcp.enable = true;
+  mcp = {
+    enable = true;
+    # ChatGPT Web を使う既定値。必要な browser origin だけを追加する。
+    allowedOrigins = [ "https://chatgpt.com" ];
+  };
 };
 ```
 

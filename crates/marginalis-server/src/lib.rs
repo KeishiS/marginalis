@@ -1944,6 +1944,7 @@ pub struct ServerConfig {
     pub storage: StorageConfig,
     pub oidc: OidcConfig,
     pub mcp_enabled: bool,
+    pub mcp_allowed_origins: Vec<String>,
     pub mcp_client_metadata_allowed_hosts: Vec<String>,
 }
 
@@ -2048,6 +2049,7 @@ impl ServerConfig {
                     .map(PathBuf::from),
             },
             mcp_enabled: optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false),
+            mcp_allowed_origins: optional_csv("MARGINALIS_MCP_ALLOWED_ORIGINS")?,
             mcp_client_metadata_allowed_hosts: optional_csv(
                 "MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS",
             )?,
