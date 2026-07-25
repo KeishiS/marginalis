@@ -3,6 +3,7 @@
 //! このmoduleはv0.2の`/api/v1`・root管理・ローカル`UserId`を参照しない。composition rootは
 //! v0.3.0ではこのrouterだけを公開する。
 
+use super::{RequestId, assign_request_id};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use std::{
     collections::VecDeque,
@@ -26,6 +27,8 @@ use marginalis_application::{
 use marginalis_domain::{CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, NoteId};
 use marginalis_mcp::{JsonRpcRequest, JsonRpcResponse};
 use serde::{Deserialize, Serialize};
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
+use tracing::{Level, info_span};
 
 pub const API_VERSION: &str = "v2";
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi-v3.json");
@@ -274,7 +277,26 @@ pub fn router(state: V3ApiState) -> Router {
             axum::routing::delete(revoke_mcp_authorization),
         )
         .with_state(state)
+        // Axum applies the last layer first. Assign the ID before TraceLayer creates its span.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    let request_id = request
+                        .extensions()
+                        .get::<RequestId>()
+                        .map(|id| id.0.as_str())
+                        .unwrap_or("missing");
+                    info_span!(
+                        "http_request",
+                        request_id,
+                        method = %request.method(),
+                        path = request.uri().path(),
+                    )
+                })
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .layer(middleware::from_fn(v3_security_headers))
+        .layer(middleware::from_fn(assign_request_id))
 }
 
 async fn v3_security_headers(
@@ -991,6 +1013,10 @@ async fn mcp_post(
                 .iter()
                 .any(|allowed| allowed == origin)
         {
+            tracing::warn!(
+                received_origin = origin,
+                "rejected MCP browser request from an untrusted origin"
+            );
             return Err(problem(
                 StatusCode::FORBIDDEN,
                 "origin_not_allowed",
@@ -1361,11 +1387,15 @@ async fn authenticated_mutation_actor(
 }
 
 fn validate_mutation_origin(headers: &HeaderMap, state: &V3ApiState) -> V3Result<()> {
-    if headers
+    let received_origin = headers
         .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        != Some(state.browser_origin.as_str())
-    {
+        .and_then(|value| value.to_str().ok());
+    if received_origin != Some(state.browser_origin.as_str()) {
+        tracing::warn!(
+            received_origin = ?received_origin,
+            expected_origin = %state.browser_origin,
+            "rejected browser mutation with a missing or mismatched origin"
+        );
         return Err(problem(
             StatusCode::FORBIDDEN,
             "same_origin_required",
@@ -1377,6 +1407,10 @@ fn validate_mutation_origin(headers: &HeaderMap, state: &V3ApiState) -> V3Result
         .and_then(|value| value.to_str().ok())
         && !matches!(site, "same-origin" | "none")
     {
+        tracing::warn!(
+            sec_fetch_site = site,
+            "rejected browser mutation with cross-site fetch metadata"
+        );
         return Err(problem(
             StatusCode::FORBIDDEN,
             "same_origin_required",
@@ -1703,6 +1737,18 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(health.status(), StatusCode::OK);
+        let request_id = health
+            .headers()
+            .get(super::super::REQUEST_ID_HEADER)
+            .expect("request ID")
+            .to_str()
+            .expect("request ID value");
+        assert_eq!(
+            uuid::Uuid::parse_str(request_id)
+                .expect("UUID request ID")
+                .get_version_num(),
+            7
+        );
         assert_eq!(
             health.headers().get(header::CACHE_CONTROL),
             Some(&"no-store".parse().expect("header"))

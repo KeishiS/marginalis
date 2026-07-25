@@ -28,4 +28,6 @@ release issueで手動結果を記録する。
 7. `marginalis-backup.service` が指定先に archive を作ること、日次 purge timer が有効なことを確認する。
 
 実施結果は release issue に、環境、client の版、Kanidm 1.10 の版、base URL（機密情報を除く）、
-各項目の結果として記録します。
+各項目の結果として記録します。HTTP失敗時はresponseの`X-Request-Id`を記録し、同じIDの
+`marginalis` service logを添えます。Cookie、token、authorization code、client secret、ノート本文は
+記録しません。
