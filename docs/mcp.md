@@ -16,6 +16,12 @@ Kanidm token を MCP client に渡すことはありません。
 Code + PKCE S256 を使います。未ログインで authorization endpoint を開いた場合は OIDC login へ移動し、
 認可リクエストへ安全に戻ります。
 
+OAuth clientからの認可開始はquery付き`GET`とform-encoded `POST`の両方を受け付けます。ChatGPTなどが
+client originから送る初回`POST`は、登録済みclient、redirect URI、resource、scope、PKCEを検証するだけで
+認可を確定しません。未ログイン時は`303 See Other`で`GET`のOIDC loginへ移動します。ログイン後に
+Marginalisが表示する承認formの`POST`だけが認可を作成し、Marginalisと同一originかつ同一sessionのCSRF
+tokenを必須とします。
+
 well-known suffixはhostとsubject pathの間へ挿入します。base URLがhost rootかsubpathかで
 URLが次のように変わります。
 
@@ -47,8 +53,15 @@ HTTP callbackは`localhost`完全一致、またはloopback IP addressで、明�
 HTTPS callbackは登録値との完全一致を維持します。SSH、container、WSL上のClaude Codeではbrowserから
 callback listenerへ到達できる構成が別途必要です。
 
+Claude.aiのWeb UIでは、`Customize`の`Connectors`からcustom connectorとして
+`https://marginalis.sandi05.com/mcp`を追加します。この接続はAnthropicのcloudから行われ、OAuthの
+browser loginと承認を経ます。Claude.ai subscriptionでClaude Codeへログインしている場合は、Claude.aiで
+追加したconnectorがClaude Codeにも表示されます。API key、Amazon Bedrock、Google Vertex AIで認証した
+Claude CodeにはClaude.ai側のconnectorは同期されないため、上記の`claude mcp add`を使います。
+
 この許可リストは MCP transport 専用です。OAuth の承認画面は Marginalis が表示する Authorization Server
 との操作なので、承認 form POST は Marginalis と同一 Origin、同一 session の CSRF token の両方を必須とします。
+client originからの認可開始POSTにこの制約は適用しませんが、状態変更を一切行いません。
 
 Authorization Server は登録済み client、redirect URI、MCP resource URI、scope、PKCE S256 を login 前と
 承認時の両方で検証します。承認画面には登録済み client 名、要求 scope、redirect host を表示します。

@@ -25,11 +25,16 @@ release issueで手動結果を記録する。
    `server-admins` の追加が次回ログインで管理権限として反映されることを確認する。
 5. Web UI と `/api/v2` からノートを作成、更新、削除、復元し、revision conflict と CSRF 拒否を確認する。
 6. ChatGPT、Claude Code、Codex CLI の各 MCP client で Dynamic Client Registration、OIDC login、
-   Authorization Code + PKCE、read/write、認可取消を確認する。browser 開発者ツールで承認 form の
-   `POST /oauth/authorize` が Marginalis 自身の `Origin` と `Sec-Fetch-Site: same-origin` を持ち、MCP
-   request の `Origin` が設定済み許可リストに一致することも記録する。
+   Authorization Code + PKCE、read/write、認可取消を確認する。ChatGPTがclient originから送る認可開始の
+   `POST /oauth/authorize`は`303`でloginへ進み、`same_origin_required`にならないことを確認する。一方、
+   Marginalisの承認formから送る同endpointのPOSTはMarginalis自身の`Origin`、
+   `Sec-Fetch-Site: same-origin`、同一sessionのCSRF tokenを持つことを記録する。MCP requestの`Origin`が
+   設定済み許可リストに一致することも確認する。
    Claude Codeは`claude mcp add --transport http marginalis B/mcp`で追加し、`/mcp`から認証する。
    DCRで登録される`http://localhost:PORT/callback`に明示portがあることを確認する。
+   Claude.ai Web UIは`Customize`の`Connectors`へ`B/mcp`をcustom connectorとして追加する。
+   Claude.ai subscriptionでClaude Codeへログインしている場合は、同connectorがClaude Codeにも表示される
+   ことを確認する。
 7. `marginalis-backup.service` が指定先に archive を作ること、日次 purge timer が有効なことを確認する。
 
 実施結果は release issue に、環境、client の版、Kanidm 1.10 の版、base URL（機密情報を除く）、
