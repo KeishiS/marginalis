@@ -1,6 +1,6 @@
 //! v0.3.0専用のHTTP APIと早期閲覧UI。
 //!
-//! 旧`/api/v1`・root管理・ローカル`UserId`を参照しない。composition rootは
+//! 旧公開API・ローカル管理者・ローカル`UserId`を参照しない。composition rootは
 //! v0.3.0ではこのrouterだけを公開する。
 
 mod auth;

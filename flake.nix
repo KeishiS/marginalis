@@ -33,6 +33,7 @@
         pkgs:
         pkgs.rust-bin.stable."1.97.1".default.override {
           extensions = [
+            "llvm-tools-preview"
             "rust-src"
             "rust-analyzer"
           ];
@@ -319,6 +320,7 @@
             packages = with pkgs; [
               curl
               actionlint
+              cargo-llvm-cov
               rustToolchain
               cargo-make
               git

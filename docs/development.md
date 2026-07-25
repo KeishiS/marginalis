@@ -33,6 +33,13 @@ Pull Requestからマージします。
    ```
 
 3. 変更を独立した単位でコミットし、関連する検証を実行します。
+
+   ```sh
+   nix develop --command cargo make verify
+   nix develop --command cargo make coverage
+   ```
+
+   coverageの対象と解釈は[本番到達性とカバレッジ](coverage.md)を参照してください。
 4. 作業ブランチをpushし、`gh`でPull Requestを作成します。
 
    ```sh
