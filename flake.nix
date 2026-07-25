@@ -210,6 +210,7 @@
               services.marginalis = {
                 enable = true;
                 baseUrl = "https://marginalis.example.test";
+                backupDirectory = "/var/lib/marginalis-backups/test";
                 oidc = {
                   # networkに依存せず、OIDC未到達時にもlivenessを維持してloginをfail closedにする経路を検証する。
                   issuerUrl = "https://127.0.0.1:1";
@@ -231,6 +232,40 @@
                   "curl -fsS http://127.0.0.1:3000/api/v2/openapi.json | jq -e '.openapi == \"3.1.0\"'"
               )
               machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM notes'")
+              machine.succeed(
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite \"INSERT INTO notes VALUES "
+                + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale','stale','body','[]',0,0,1,0),"
+                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent','recent','body','[]',0,0,1,4102444800000);"
+                + "INSERT INTO note_acl VALUES "
+                + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale',3),"
+                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent',3);\""
+              )
+              machine.succeed("systemctl start marginalis-purge-deleted.service")
+              machine.succeed(
+                "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000001'\") -eq 0"
+              )
+              machine.succeed(
+                "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000002'\") -eq 1"
+              )
+              machine.succeed("systemctl is-enabled marginalis-purge-deleted.timer")
+              machine.succeed("systemctl start marginalis-backup.service")
+              machine.succeed(
+                "test $(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d | wc -l) -eq 1"
+              )
+              machine.succeed(
+                "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
+                + "test -f \"$backup/COMPLETE\"; "
+                + "test -f \"$backup/marginalis-archive.json\"; "
+                + "jq -e '.format == \"marginalis-archive-1\" and (.notes | length == 1)' "
+                + "\"$backup/marginalis-archive.json\"; "
+                + "test $(stat -c %a \"$backup\") = 700; "
+                + "test $(stat -c %a \"$backup/COMPLETE\") = 600; "
+                + "test $(stat -c %a \"$backup/marginalis-archive.json\") = 600"
+              )
+              machine.succeed("systemctl start marginalis.service")
+              machine.wait_for_unit("marginalis.service")
             '';
           };
 
