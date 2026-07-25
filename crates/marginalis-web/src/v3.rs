@@ -635,8 +635,14 @@ async fn mcp_authorize_submit(
     headers: HeaderMap,
     Form(form): Form<McpAuthorizeForm>,
 ) -> V3Result<Response> {
-    let actor = authenticated_form_actor(&headers, &state, &form.csrf_token).await?;
     let endpoint = mcp_endpoint(&state)?;
+    let actor = authenticated_mcp_authorization_form_actor(
+        &headers,
+        &state,
+        &endpoint.allowed_origins,
+        &form.csrf_token,
+    )
+    .await?;
     if form.decision != "approve" {
         return Err(problem(
             StatusCode::FORBIDDEN,
@@ -1200,15 +1206,17 @@ fn validate_mutation_origin(headers: &HeaderMap, state: &V3ApiState) -> V3Result
     Ok(())
 }
 
-/// Form POSTs cannot attach the API's `X-CSRF-Token` header.  They still require
-/// the same-origin check, double-submit cookie, and server-side session binding.
-async fn authenticated_form_actor(
+/// MCP clients hosted in a trusted browser origin may submit the authorization form from that
+/// origin. The session-bound CSRF token remains mandatory; ordinary Web mutations never use this
+/// exception.
+async fn authenticated_mcp_authorization_form_actor(
     headers: &HeaderMap,
     state: &V3ApiState,
+    allowed_origins: &[String],
     csrf_token: &str,
 ) -> V3Result<CanonicalActor> {
     let actor = authenticated_actor(headers, state).await?;
-    validate_mutation_origin(headers, state)?;
+    validate_mcp_authorization_origin(headers, state, allowed_origins)?;
     let session_id =
         cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
     if cookie_value(headers, CSRF_COOKIE).as_deref() != Some(csrf_token)
@@ -1225,6 +1233,27 @@ async fn authenticated_form_actor(
         ));
     }
     Ok(actor)
+}
+
+fn validate_mcp_authorization_origin(
+    headers: &HeaderMap,
+    state: &V3ApiState,
+    allowed_origins: &[String],
+) -> V3Result<()> {
+    let origin = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok());
+    if origin == Some(state.browser_origin.as_str()) {
+        return validate_mutation_origin(headers, state);
+    }
+    if origin.is_some_and(|origin| allowed_origins.iter().any(|allowed| allowed == origin)) {
+        return Ok(());
+    }
+    Err(problem(
+        StatusCode::FORBIDDEN,
+        "same_origin_required",
+        "same-origin request is required",
+    ))
 }
 
 fn parse_note_id(value: &str) -> V3Result<NoteId> {
@@ -1650,6 +1679,31 @@ mod tests {
             .expect("request");
         let rejected = mcp_app().oneshot(request).await.expect("response");
         assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn v3_mcp_authorization_form_accepts_only_configured_cross_site_origins() {
+        let state = V3ApiState::new(
+            Arc::new(Notes),
+            Arc::new(Sessions),
+            Arc::new(Oidc),
+            "/".into(),
+            "https://example.test".into(),
+        );
+        let allowed_origins = vec!["https://chatgpt.com".into()];
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ORIGIN,
+            "https://chatgpt.com".parse().expect("origin"),
+        );
+        headers.insert("sec-fetch-site", "cross-site".parse().expect("fetch site"));
+        assert!(validate_mcp_authorization_origin(&headers, &state, &allowed_origins).is_ok());
+
+        headers.insert(
+            header::ORIGIN,
+            "https://untrusted.example".parse().expect("origin"),
+        );
+        assert!(validate_mcp_authorization_origin(&headers, &state, &allowed_origins).is_err());
     }
 
     #[tokio::test]

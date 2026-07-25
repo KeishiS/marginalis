@@ -21,6 +21,9 @@ browser client は DNS rebinding 対策として完全一致の許可リスト�
 `https://chatgpt.com` です。Codex CLI と Claude Code のように `Origin` を送らない native client はこの
 制約の対象外です。
 
+同じ許可リストは MCP OAuth の承認 form POST にも使います。ChatGPT Web が cross-site POST を行う場合でも、
+session と session 結合済み CSRF token の照合が必須であり、通常の Web API の Origin 制約は緩和しません。
+
 scope は `notes:read`、`notes:write`、`notes:delete` です。scope だけでは不十分であり、Web と同じ
 ノート ACL が必ず適用されます。`server-admins` はすべてのノートに管理者相当でアクセスします。
 
