@@ -40,6 +40,17 @@ Pull Requestからマージします。
    ```
 
    coverageの対象と解釈は[本番到達性とカバレッジ](coverage.md)を参照してください。
+
+   `docs/**`と`issues/**`だけを変更する場合は、次の文書検査だけで十分です。
+
+   ```sh
+   nix develop --command cargo make docs-check
+   ```
+
+   CIは変更pathを判定し、文書だけのPull Requestでは`verify`を文書検査へ縮退し、
+   `coverage`とNixOS VMの実行を省略します。機械可読な公開仕様である`docs/openapi.json`は
+   この省略対象に含めません。`.github/**`、`Makefile.toml`、Nix、Rust、OpenAPIその他のpathを
+   同時に変更した場合は、通常の検証をすべて実行します。
 4. 作業ブランチをpushし、`gh`でPull Requestを作成します。
 
    ```sh
@@ -56,7 +67,8 @@ Pull Requestからマージします。
 
 6. Pull Request作成後にrebase方式のauto-mergeを設定します。`main`のrulesetでは
    GitHub Actionsの`verify`と`nixos-e2e`が必須であるため、このチェックと必要なレビューが完了するまで
-   実際のマージは行われません。
+   実際のマージは行われません。文書だけの変更でもチェック名は維持し、`verify`は文書検査、
+   `nixos-e2e`は明示的な省略成功として完了するため、必須チェックが待機状態に残りません。
 
    ```sh
    gh pr merge --auto --rebase --delete-branch

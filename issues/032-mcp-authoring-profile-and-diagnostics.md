@@ -2,8 +2,8 @@
 
 ## 状態
 
-未着手。Issue 030、029の後に実装する。公開済みのOpenAPIとMCPの互換性を保ち、
-既存フィールドの意味は変更しない。
+計画済み。`v0.3.1`の運用堅牢化後、`v0.4.0`の主機能として実装する。
+REST API v2と公開済みMCP toolへ追加的に導入し、既存フィールドの意味は変更しない。
 
 ## 背景
 
@@ -28,7 +28,7 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
 - AdocWeaveは位置付き診断を公開APIとして提供する。`marginalis-asciidoc`の検証エラーは既に
   種別を持つ（`include-directive-disabled`等）。
 - 検証結果は利用者自身が送信した本文だけを対象とする。ACL、他のノート、秘密情報は含めない。
-- `/api/v1`には後方互換なフィールドだけを追加する。
+- `/api/v2`には既存の`code`と`message`を維持した追加フィールドとして導入する。
 
 ## 作業内容
 
@@ -55,7 +55,7 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
   検証エラー種別とAdocWeave診断の原文範囲から構成する。
 - MCPはJSON-RPC error objectの`data`フィールドへ検証結果の一覧を載せる。`code`と`message`は現行の
   安定値を維持する（後方互換な追加）。
-- RESTは共通エラーJSONへ後方互換な`details`配列を追加する。`code`と`message`は変更しない。
+- RESTは共通エラーJSONへ`details`配列を追加する。`code`と`message`は変更しない。
   OpenAPI文書も同時に更新する。
 - 検証結果には送信された本文に関する情報だけを含める。DBキー、ACL状態、他ノートの存在、
   内部例外を含めない（既存のerror方針を維持）。
@@ -82,4 +82,11 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
 - 入力規則への違反を含む`create_note`または`update_note`が、違反種別と可能な場合は位置を含む診断を
   JSON-RPC `error.data`で返す。RESTの同経路は共通エラーJSONの`details`で同じ診断を返す。
 - 診断に秘密情報・ACL情報・内部例外が含まれないことを試験で確認している。
-- OpenAPI document と MCP 仕様の変更が後方互換であることを適合性試験で確認している。
+- OpenAPI document と MCP tool schemaが実装と一致し、既存clientの入力を拒否しないことを
+  適合性試験で確認している。
+
+## 依存関係
+
+- 公開前提: [048: v0.3.1のリリース受入](048-v0.3.1-release-acceptance.md)
+- 入力規則: `marginalis-asciidoc`の現行profile
+- 通信仕様: REST API v2、JSON-RPC 2.0、現行MCP仕様
