@@ -183,7 +183,6 @@ in
         RUST_LOG = cfg.logFilter;
         MARGINALIS_BASE_URL = cfg.baseUrl;
         MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
-        MARGINALIS_DATA_DIR = cfg.dataDir;
         MARGINALIS_DATABASE_URL =
           if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
         OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
@@ -233,7 +232,6 @@ in
       description = "Purge expired Marginalis soft-deleted notes";
       environment = {
         RUST_LOG = cfg.logFilter;
-        MARGINALIS_DATA_DIR = cfg.dataDir;
         MARGINALIS_DATABASE_URL =
           if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
       };
@@ -278,7 +276,6 @@ in
       conflicts = [ "marginalis.service" ];
       environment = {
         RUST_LOG = cfg.logFilter;
-        MARGINALIS_DATA_DIR = cfg.dataDir;
         MARGINALIS_DATABASE_URL =
           if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
       };

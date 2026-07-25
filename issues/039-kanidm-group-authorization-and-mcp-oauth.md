@@ -8,6 +8,8 @@ rotation、Dynamic Client Registration、認可取消、OAuth/Protected Resource
 のノート操作を提供する。v0.3 の本番用 router、SQLite、OIDC・session・MCP OAuth serviceを結合した
 HTTP試験で、`server-users`拒否、`server-admins`可視性、MCP作成、REST可視性、認可取消後の
 access/refresh token失効を確認している。対象clientの実環境E2Eは後続作業とする。
+公開composition rootの設定境界からローカルroot password、登録policy、旧MCP client metadata host設定を
+除去し、Kanidm group claim以外の利用者ライフサイクル設定を受け付けない。
 
 ## 目的
 

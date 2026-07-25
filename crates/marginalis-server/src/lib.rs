@@ -1992,7 +1992,6 @@ pub struct ServerConfig {
     pub oidc: OidcConfig,
     pub mcp_enabled: bool,
     pub mcp_allowed_origins: Vec<String>,
-    pub mcp_client_metadata_allowed_hosts: Vec<String>,
 }
 
 /// HTTP transportだけが必要とする公開設定。
@@ -2008,9 +2007,7 @@ pub struct HttpConfig {
 /// `ServerConfig`を読まずこの型だけを利用する。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StorageConfig {
-    pub data_dir: PathBuf,
     pub database_url: String,
-    pub initial_registration_policy: RegistrationPolicy,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2023,7 +2020,6 @@ pub struct OidcConfig {
 /// secret値は公開設定から分離する。Debugを実装せずログ出力を防ぐ。
 pub struct SecretConfig {
     pub oidc_client_secret: String,
-    pub initial_root_password: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2033,11 +2029,9 @@ pub enum ConfigurationError {
     InvalidIssuerUrl,
     InvalidListenAddress,
     EmptyClientId,
-    EmptyDataDirectory,
     UnreadableSecretFile(&'static str),
     InvalidMcpEnable,
     InvalidMcpAllowedOrigin,
-    InvalidInitialRegistrationPolicy,
 }
 
 impl fmt::Display for ConfigurationError {
@@ -2054,9 +2048,6 @@ impl fmt::Display for ConfigurationError {
             }
             Self::InvalidListenAddress => formatter.write_str("MARGINALIS_LISTEN_ADDR is invalid"),
             Self::EmptyClientId => formatter.write_str("OIDC_CLIENT_ID must not be empty"),
-            Self::EmptyDataDirectory => {
-                formatter.write_str("MARGINALIS_DATA_DIR must not be empty")
-            }
             Self::UnreadableSecretFile(name) => {
                 write!(formatter, "secret file for {name} could not be read")
             }
@@ -2066,8 +2057,6 @@ impl fmt::Display for ConfigurationError {
             Self::InvalidMcpAllowedOrigin => formatter.write_str(
                 "MARGINALIS_MCP_ALLOWED_ORIGINS must contain comma-separated HTTPS origins",
             ),
-            Self::InvalidInitialRegistrationPolicy => formatter
-                .write_str("MARGINALIS_INITIAL_REGISTRATION_POLICY must be `open` or `approval`"),
         }
     }
 }
@@ -2103,13 +2092,9 @@ impl ServerConfig {
             mcp_allowed_origins: validate_mcp_allowed_origins(optional_csv(
                 "MARGINALIS_MCP_ALLOWED_ORIGINS",
             )?)?,
-            mcp_client_metadata_allowed_hosts: optional_csv(
-                "MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS",
-            )?,
         };
         let secrets = SecretConfig {
             oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
-            initial_root_password: optional_secret("ROOT_PASSWORD")?,
         };
         Ok((configuration, secrets))
     }
@@ -2117,29 +2102,9 @@ impl ServerConfig {
 
 impl StorageConfig {
     pub fn from_environment() -> Result<Self, ConfigurationError> {
-        let data_dir = PathBuf::from(required("MARGINALIS_DATA_DIR")?);
-        if data_dir.as_os_str().is_empty() {
-            return Err(ConfigurationError::EmptyDataDirectory);
-        }
         Ok(Self {
-            data_dir,
             database_url: required("MARGINALIS_DATABASE_URL")?,
-            initial_registration_policy: optional_initial_registration_policy()?,
         })
-    }
-}
-
-fn optional_initial_registration_policy() -> Result<RegistrationPolicy, ConfigurationError> {
-    match env::var("MARGINALIS_INITIAL_REGISTRATION_POLICY") {
-        Ok(value) => match value.as_str() {
-            "open" => Ok(RegistrationPolicy::Open),
-            "approval" | "" => Ok(RegistrationPolicy::Approval),
-            _ => Err(ConfigurationError::InvalidInitialRegistrationPolicy),
-        },
-        Err(env::VarError::NotPresent) => Ok(RegistrationPolicy::Approval),
-        Err(env::VarError::NotUnicode(_)) => {
-            Err(ConfigurationError::InvalidInitialRegistrationPolicy)
-        }
     }
 }
 

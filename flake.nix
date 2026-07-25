@@ -151,7 +151,7 @@
               probeServer = pkgs.writeShellApplication {
                 name = "marginalis";
                 text = ''
-                  test -d "$MARGINALIS_DATA_DIR"
+                  test "$PWD" = "/var/lib/marginalis"
                   test "$RUST_LOG" = "info,marginalis_auth_oidc=info"
                   if [ "''${1-}" = "backup" ] && [ "''${2-}" = "--directory" ]; then
                     test "$3" = "/var/lib/marginalis-backups/test"
@@ -159,7 +159,7 @@
                     exit 0
                   fi
                   test -s "$OIDC_CLIENT_SECRET_FILE"
-                  touch "$MARGINALIS_DATA_DIR/service-started"
+                  touch "$PWD/service-started"
                   exec sleep infinity
                 '';
               };
