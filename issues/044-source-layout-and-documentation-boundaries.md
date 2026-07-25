@@ -4,8 +4,10 @@
 
 着手済み。単一利用だったMCP wire crateは`marginalis-web::mcp`へ統合し、
 `marginalis-server`は公開facade、設定、ノート、session、OIDC、MCP OAuth、実行環境へ
-分割した。SQLiteのWeb sessionとOIDC login attemptも独立moduleへ移した。残る大規模な
-production fileと規範文書を、機能拡充前の横断的な保守性改善として責務単位に整理する。
+分割した。`marginalis-web`は共有状態、browser認証、security policy、REST note、閲覧UI、
+MCP transportへ分割した。SQLiteのschema、Web session、OIDC login attemptも独立moduleへ
+移した。規範文書の正本も主題別文書へ一本化した。残るSQLite note/archive/MCP、Webの
+MCP OAuth handler、moduleごとのtest配置を整理する。
 
 ## 背景
 
