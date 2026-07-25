@@ -93,3 +93,36 @@ impl OidcAuthenticationUseCases for ServerOidcAuthenticationUseCases {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use marginalis_application::{AuthenticationUseCaseError, OidcAuthenticationUseCases};
+    use marginalis_auth_oidc::OidcConfiguration;
+    use marginalis_sqlite::SqliteDatabase;
+
+    use super::ServerOidcAuthenticationUseCases;
+
+    #[tokio::test]
+    async fn unavailability_rejects_login_without_preventing_service_construction() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let configuration = OidcConfiguration::new(
+            "https://127.0.0.1:1".into(),
+            "marginalis".into(),
+            "test-secret".into(),
+            "https://marginalis.example.test",
+        )
+        .expect("configuration");
+        let authentication = ServerOidcAuthenticationUseCases::new(
+            database,
+            configuration,
+            reqwest::Client::new(),
+            None,
+        );
+        assert_eq!(
+            authentication.begin_login().await,
+            Err(AuthenticationUseCaseError::Unavailable)
+        );
+    }
+}

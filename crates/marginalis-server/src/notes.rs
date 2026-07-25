@@ -138,3 +138,77 @@ impl NoteUseCases for ServerNoteUseCases {
         marginalis_asciidoc::render_note_html(note).map_err(|_| NoteUseCaseError::Validation)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use marginalis_application::{NoteUseCaseError, NoteUseCases};
+    use marginalis_domain::{Actor, NoteDraft};
+    use marginalis_sqlite::SqliteDatabase;
+
+    use super::ServerNoteUseCases;
+
+    #[tokio::test]
+    async fn kanidm_subjects_and_sqlite_form_the_only_note_store() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let service = ServerNoteUseCases::new(database);
+        let owner = Actor {
+            issuer: "https://kanidm.example.test/oauth2/openid/marginalis".into(),
+            subject: "owner".into(),
+            is_administrator: false,
+        };
+        let reader = Actor {
+            issuer: owner.issuer.clone(),
+            subject: "reader".into(),
+            is_administrator: false,
+        };
+        let note = service
+            .create_note(
+                owner.clone(),
+                NoteDraft {
+                    title: "SQLite canonical note".into(),
+                    body: "Only SQLite persists this body.".into(),
+                    tags: vec!["v3".into(), "sqlite".into()],
+                },
+            )
+            .await
+            .expect("create");
+        assert_eq!(note.creator_subject, "owner");
+        assert_eq!(
+            service.read_note(reader, note.note_id).await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        let updated = service
+            .update_note(
+                owner.clone(),
+                note.note_id,
+                NoteDraft {
+                    title: "Updated title".into(),
+                    body: "Updated body".into(),
+                    tags: vec!["sqlite".into()],
+                },
+                note.revision,
+            )
+            .await
+            .expect("update");
+        assert_eq!(updated.revision, note.revision + 1);
+        let deleted = service
+            .soft_delete_note(owner.clone(), note.note_id, updated.revision)
+            .await
+            .expect("soft delete");
+        assert!(deleted.deleted_at.is_some());
+        assert!(
+            service
+                .list_visible_notes(owner.clone())
+                .await
+                .expect("visible notes")
+                .is_empty()
+        );
+        let restored = service
+            .restore_note(owner, note.note_id, deleted.revision)
+            .await
+            .expect("restore");
+        assert!(restored.deleted_at.is_none());
+    }
+}
