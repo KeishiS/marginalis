@@ -33,6 +33,13 @@ Pull Requestからマージします。
    ```
 
 3. 変更を独立した単位でコミットし、関連する検証を実行します。
+
+   ```sh
+   nix develop --command cargo make verify
+   nix develop --command cargo make coverage
+   ```
+
+   coverageの対象と解釈は[本番到達性とカバレッジ](coverage.md)を参照してください。
 4. 作業ブランチをpushし、`gh`でPull Requestを作成します。
 
    ```sh
@@ -48,7 +55,7 @@ Pull Requestからマージします。
    ```
 
 6. Pull Request作成後にrebase方式のauto-mergeを設定します。`main`のrulesetでは
-   GitHub Actionsの`verify`が必須であるため、このチェックと必要なレビューが完了するまで
+   GitHub Actionsの`verify`と`nixos-e2e`が必須であるため、このチェックと必要なレビューが完了するまで
    実際のマージは行われません。
 
    ```sh

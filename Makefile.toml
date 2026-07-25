@@ -72,6 +72,11 @@ description = "Validate GitHub Actions workflow syntax"
 command = "actionlint"
 args = [".github/workflows/ci.yml", ".github/workflows/release-gate.yml"]
 
+[tasks.security-audit]
+description = "Check Cargo.lock against the current RustSec advisory database"
+command = "cargo"
+args = ["audit", "--ignore", "RUSTSEC-2023-0071"]
+
 [tasks.nix-release-check]
 description = "Build and run the Nix flake checks, including the NixOS VM test"
 command = "nix"
@@ -87,7 +92,7 @@ description = "Verify release version, tag, changelog, and declared dual-license
 script_runner = "@shell"
 script = '''
 set -eu
-expected_version="0.2.0"
+expected_version="0.3.0"
 release_tag="${MARGINALIS_RELEASE_TAG:-}"
 test -s LICENSE-MIT
 test -s LICENSE-APACHE
@@ -110,6 +115,15 @@ awk -v heading="## $expected_version — " '
 ' CHANGELOG.md
 if [ -n "$release_tag" ]; then
   test "$release_tag" = "v$expected_version"
+  awk -v heading="## $expected_version — " '
+    index($0, heading) == 1 {
+      status = substr($0, length(heading) + 1)
+      if (status ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
+        matches++
+      }
+    }
+    END { exit matches != 1 }
+  ' CHANGELOG.md
 fi
 '''
 
@@ -122,7 +136,7 @@ description = "Reject concrete adapters from transport production dependency gra
 script_runner = "@shell"
 script = '''
 set -eu
-for package in marginalis-web marginalis-mcp; do
+for package in marginalis-web; do
   if cargo tree -p "$package" -e normal | grep -E 'marginalis-(sqlite|files|asciidoc|auth-oidc|server)|(^| )sqlx |(^| )adocweave |(^| )openidconnect |(^| )reqwest ' >/dev/null; then
     echo "concrete adapter leaked into $package production dependencies" >&2
     exit 1
@@ -130,12 +144,125 @@ for package in marginalis-web marginalis-mcp; do
 done
 '''
 
+[tasks.production-reachability]
+description = "Reject retired v0.2 components and routes from the production graph"
+script_runner = "@shell"
+script = '''
+set -eu
+actual=$(
+  cargo metadata --locked --format-version 1 |
+    jq -r '
+      . as $metadata
+      | ($metadata.packages[]
+          | select(.name == "marginalis-service")
+          | .id) as $root
+      | ($metadata.resolve.nodes
+          | map({key: .id, value: [.deps[].pkg]})
+          | from_entries) as $graph
+      | def closure($pending; $seen):
+          if ($pending | length) == 0 then $seen
+          else
+            [$pending[]
+              | select(. as $id | ($seen | index($id) | not))] as $new
+            | closure([$new[] as $id | $graph[$id][]?]; $seen + $new)
+          end;
+        closure([$root]; [])[] as $id
+      | select($metadata.workspace_members | index($id))
+      | $metadata.packages[]
+      | select(.id == $id)
+      | .name
+    ' |
+    sort -u
+)
+expected='marginalis-application
+marginalis-asciidoc
+marginalis-auth-oidc
+marginalis-domain
+marginalis-server
+marginalis-service
+marginalis-sqlite
+marginalis-web'
+test "$actual" = "$expected" || {
+  echo "unexpected workspace crate in marginalis-service production dependencies" >&2
+  diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
+  exit 1
+}
+
+if rg -n \
+  '/api/v1|marginalis[_-](files|membership)|membershipTokenFile|root_password|MARGINALIS_ROOT' \
+  Cargo.toml crates --glob 'Cargo.toml' --glob '*.rs'
+then
+  echo "retired v0.2 production symbol or route remains" >&2
+  exit 1
+fi
+'''
+
+[tasks.coverage]
+description = "Generate separate workspace and v0.3 integration-path coverage reports"
+script_runner = "@shell"
+script = '''
+set -eu
+report_dir=target/coverage
+ignored_sources='(^|/)(tests?(/|\.rs$)|marginalis-integration-tests/)'
+mkdir -p "$report_dir"
+
+cargo llvm-cov clean --workspace
+cargo llvm-cov \
+  --workspace --all-features --locked \
+  --ignore-filename-regex "$ignored_sources" \
+  --json --output-path "$report_dir/workspace.json"
+jq -r '
+  def row($name; $summary):
+    [$name,
+     $summary.lines.count, $summary.lines.covered, $summary.lines.percent,
+     $summary.regions.count, $summary.regions.covered, $summary.regions.percent,
+     $summary.functions.count, $summary.functions.covered, $summary.functions.percent]
+    | @tsv;
+  . as $report
+  | (["file", "lines", "covered", "line_%", "regions", "covered", "region_%",
+      "functions", "covered", "function_%"] | @tsv),
+    ($report.data[0].files[] | row(.filename; .summary)),
+    row("TOTAL"; $report.data[0].totals)
+' "$report_dir/workspace.json" >"$report_dir/workspace-summary.txt"
+
+cargo llvm-cov clean --workspace
+cargo llvm-cov \
+  --package marginalis-service --all-features --locked --no-report
+cargo llvm-cov \
+  --package marginalis-integration-tests --test oauth_flow --all-features --locked --no-clean \
+  --ignore-filename-regex "$ignored_sources" \
+  --json --output-path "$report_dir/.integration-test.json"
+cargo llvm-cov report \
+  --ignore-filename-regex "$ignored_sources" \
+  --json --output-path "$report_dir/v0.3-integration-path.json"
+rm "$report_dir/.integration-test.json"
+jq -r '
+  def row($name; $summary):
+    [$name,
+     $summary.lines.count, $summary.lines.covered, $summary.lines.percent,
+     $summary.regions.count, $summary.regions.covered, $summary.regions.percent,
+     $summary.functions.count, $summary.functions.covered, $summary.functions.percent]
+    | @tsv;
+  . as $report
+  | (["file", "lines", "covered", "line_%", "regions", "covered", "region_%",
+      "functions", "covered", "function_%"] | @tsv),
+    ($report.data[0].files[] | row(.filename; .summary)),
+    row("TOTAL"; $report.data[0].totals)
+' "$report_dir/v0.3-integration-path.json" >"$report_dir/v0.3-integration-path-summary.txt"
+
+printf '\nworkspace coverage\n'
+cat "$report_dir/workspace-summary.txt"
+printf '\nv0.3 integration-path coverage\n'
+cat "$report_dir/v0.3-integration-path-summary.txt"
+printf '\ncoverage reports: %s\n' "$report_dir"
+'''
+
 [tasks.openapi-check]
-description = "Validate the published OpenAPI document and required REST paths"
+description = "Validate the published v0.3 OpenAPI document and required REST paths"
 command = "jq"
 args = [
   "-e",
-  ".openapi == \"3.1.0\" and .info.version == \"v1\" and (.paths[\"/api/v1/openapi.json\"] | has(\"get\")) and (.paths[\"/api/v1/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v1/admin/users/pending\"] | has(\"get\")) and (.components.schemas.Problem.required == [\"code\", \"message\"]) and (.components.schemas.UuidV7.pattern | startswith(\"^[0-9a-fA-F]{8}\")) and (.components.schemas.McpAuthorization.properties.authorized_at.format == \"date-time\") and (.paths[\"/api/v1/notes/{note_id}/source\"].get.responses[\"200\"].headers.ETag.required == true)",
+  ".openapi == \"3.1.0\" and .info.version == \"v2\" and (.paths[\"/api/v2/health\"] | has(\"get\")) and (.paths[\"/api/v2/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v2/notes/{note_id}\"] | has(\"get\") and has(\"put\") and has(\"delete\")) and (.paths[\"/api/v2/notes/{note_id}/source\"] | has(\"get\")) and (.paths[\"/api/v2/notes/{note_id}/restore\"] | has(\"post\")) and (.paths[\"/api/v2/mcp-authorizations/{client_id}\"] | has(\"delete\")) and (.components.schemas.Note.required | contains([\"note_id\", \"revision\"])) and (.components.parameters.CsrfToken.required == true)",
   "docs/openapi.json",
 ]
 
@@ -153,13 +280,13 @@ cargo metadata --locked --format-version 1 | jq -e \
   --arg version "$expected_version" \
   --arg revision "$expected_revision" '
     [.packages[]
-      | select(.name == "adocweave" or .name == "adocweave-wasm")
+      | select(.name == "adocweave")
       | select(
           .version == $version
           and (.source | contains("rev=" + $revision))
           and (.source | endswith("#" + $revision))
         )]
-    | length == 2
+    | length == 1
   ' >/dev/null
 
 grep -Fq "pub const ADOCWEAVE_SOURCE_REVISION: &str = \"$expected_revision\";" \
@@ -172,7 +299,7 @@ grep -Fq "hash = \"$expected_fixture_hash\";" flake.nix
 
 if grep -Eq 'WASM_API_VERSION|PINNED_CONTRACTS|CONTRACT_VERSION|contractVersion' \
   crates/marginalis-asciidoc/src/lib.rs crates/marginalis-server/src/lib.rs; then
-  echo "legacy AdocWeave contract identity remains" >&2
+  echo "legacy AdocWeave version identity remains" >&2
   exit 1
 fi
 if grep -Eq '^adocweave[.]workspace' crates/marginalis-server/Cargo.toml; then
@@ -183,4 +310,4 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, tests, and flake evaluation"
-dependencies = ["fmt-check", "check", "clippy", "test", "dependency-boundaries", "openapi-check", "adocweave-version-check", "flake-check"]
+dependencies = ["fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "flake-check"]

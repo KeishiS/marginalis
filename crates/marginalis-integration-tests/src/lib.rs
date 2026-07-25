@@ -18,24 +18,29 @@ use axum::{
     routing::{get, post},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, Mac};
+use p256::ecdsa::{Signature, SigningKey, signature::Signer};
 use sha2::{Digest, Sha256};
+
+const TEST_SIGNING_KEY: [u8; 32] = [42; 32];
+const TEST_SIGNING_KEY_ID: &str = "marginalis-integration-es256";
 
 /// 認可承認済みとして登録された、一回限りのauthorization code。
 struct PendingAuthorization {
     subject: String,
     nonce: String,
     code_challenge: String,
+    groups: Vec<String>,
 }
 
 struct MockIdpState {
     issuer: String,
     client_id: String,
     client_secret: String,
+    signing_key: SigningKey,
     codes: HashMap<String, PendingAuthorization>,
 }
 
-/// HS256でID tokenを署名する試験用OIDC provider。
+/// ES256でID tokenを署名する試験用OIDC provider。
 ///
 /// 認可endpointへの実アクセスは想定しない。試験側が認可要求URLからstate・nonce・
 /// code challengeを読み取り、[`MockIdentityProvider::approve`]でcodeを登録することで
@@ -60,6 +65,8 @@ impl MockIdentityProvider {
             issuer: issuer.clone(),
             client_id: client_id.into(),
             client_secret: client_secret.into(),
+            signing_key: SigningKey::from_bytes((&TEST_SIGNING_KEY).into())
+                .expect("fixed test key is a valid P-256 scalar"),
             codes: HashMap::new(),
         }));
         let router = Router::new()
@@ -77,12 +84,25 @@ impl MockIdentityProvider {
 
     /// 利用者が認可画面を承認したものとして、一回限りのcodeを登録する。
     pub fn approve(&self, code: &str, subject: &str, nonce: &str, code_challenge: &str) {
+        self.approve_with_groups(code, subject, nonce, code_challenge, Vec::new());
+    }
+
+    /// group claimを含むv0.3 loginを承認する。
+    pub fn approve_with_groups(
+        &self,
+        code: &str,
+        subject: &str,
+        nonce: &str,
+        code_challenge: &str,
+        groups: Vec<String>,
+    ) {
         self.state.lock().expect("mock IdP state").codes.insert(
             code.into(),
             PendingAuthorization {
                 subject: subject.into(),
                 nonce: nonce.into(),
                 code_challenge: code_challenge.into(),
+                groups,
             },
         );
     }
@@ -97,15 +117,28 @@ async fn discovery(State(state): State<Arc<Mutex<MockIdpState>>>) -> Json<serde_
         "jwks_uri": format!("{issuer}/jwks"),
         "response_types_supported": ["code"],
         "subject_types_supported": ["public"],
-        "id_token_signing_alg_values_supported": ["HS256"],
+        "id_token_signing_alg_values_supported": ["ES256"],
         "scopes_supported": ["openid", "profile", "email"],
         "token_endpoint_auth_methods_supported": ["client_secret_post"],
     }))
 }
 
-async fn jwks() -> Json<serde_json::Value> {
-    // HS256はclient secretから導出する対称鍵で検証されるため、公開鍵集合は空でよい。
-    Json(serde_json::json!({ "keys": [] }))
+async fn jwks(State(state): State<Arc<Mutex<MockIdpState>>>) -> Json<serde_json::Value> {
+    let state = state.lock().expect("mock IdP state");
+    let public_key = state.signing_key.verifying_key().to_encoded_point(false);
+    let x = public_key.x().expect("uncompressed P-256 key has x");
+    let y = public_key.y().expect("uncompressed P-256 key has y");
+    Json(serde_json::json!({
+        "keys": [{
+            "kty": "EC",
+            "use": "sig",
+            "crv": "P-256",
+            "kid": TEST_SIGNING_KEY_ID,
+            "alg": "ES256",
+            "x": URL_SAFE_NO_PAD.encode(x),
+            "y": URL_SAFE_NO_PAD.encode(y),
+        }]
+    }))
 }
 
 async fn token(
@@ -140,8 +173,9 @@ async fn token(
         "iat": now,
         "nonce": pending.nonce,
         "name": "Integration User",
+        "groups": pending.groups,
     });
-    let id_token = sign_hs256(&state.client_secret, &claims);
+    let id_token = sign_es256(&state.signing_key, &claims);
     Ok(Json(serde_json::json!({
         "access_token": "mock-access-token",
         "token_type": "Bearer",
@@ -150,14 +184,14 @@ async fn token(
     })))
 }
 
-/// `base64url(header).base64url(payload)`へのHMAC-SHA256署名でHS256 JWTを作る。
-fn sign_hs256(secret: &str, claims: &serde_json::Value) -> String {
-    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+/// `base64url(header).base64url(payload)`へのECDSA P-256署名でES256 JWTを作る。
+fn sign_es256(signing_key: &SigningKey, claims: &serde_json::Value) -> String {
+    let header = URL_SAFE_NO_PAD.encode(
+        format!(r#"{{"alg":"ES256","kid":"{TEST_SIGNING_KEY_ID}","typ":"JWT"}}"#).as_bytes(),
+    );
     let payload = URL_SAFE_NO_PAD.encode(claims.to_string().as_bytes());
     let signing_input = format!("{header}.{payload}");
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
-    mac.update(signing_input.as_bytes());
-    let signature = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+    let signature: Signature = signing_key.sign(signing_input.as_bytes());
+    let signature = URL_SAFE_NO_PAD.encode(signature.to_bytes());
     format!("{signing_input}.{signature}")
 }

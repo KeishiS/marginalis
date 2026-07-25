@@ -1,20 +1,33 @@
 //! OIDC provider接続の設定境界。HTTP handlerやSQLiteへは依存しない。
 
 use core::fmt;
+use std::collections::BTreeSet;
 
-use marginalis_application::{
-    Clock, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService,
-    Random,
-};
-use marginalis_domain::{OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use marginalis_application::{Clock, OidcLoginAttempt, OidcLoginAttemptStore, Random};
+use marginalis_domain::UnixMillis;
 use openidconnect::{
     AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
     EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, RequestTokenError, Scope, TokenResponse,
-    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    RedirectUrl, Scope, TokenResponse,
+    core::{CoreAuthenticationFlow, CoreClient, CoreJwsSigningAlgorithm, CoreProviderMetadata},
     reqwest,
 };
+use serde::Deserialize;
 use url::Url;
+
+const MAX_ID_TOKEN_BYTES: usize = 16 * 1024;
+const MAX_GROUPS_PER_ID_TOKEN: usize = 128;
+const MAX_GROUP_NAME_BYTES: usize = 256;
+
+fn allowed_id_token_algorithms(
+    supported: &[CoreJwsSigningAlgorithm],
+) -> Vec<CoreJwsSigningAlgorithm> {
+    [CoreJwsSigningAlgorithm::EcdsaP256Sha256]
+        .into_iter()
+        .filter(|algorithm| supported.contains(algorithm))
+        .collect()
+}
 
 #[derive(Clone)]
 pub struct OidcConfiguration {
@@ -162,6 +175,7 @@ pub enum OidcCallbackRejection {
     MissingIdToken,
     Claims,
     Identity,
+    Groups,
 }
 
 impl OidcCallbackError {
@@ -172,21 +186,107 @@ impl OidcCallbackError {
             Self::Rejected(OidcCallbackRejection::MissingIdToken) => "missing-id-token",
             Self::Rejected(OidcCallbackRejection::Claims) => "id-token-claims",
             Self::Rejected(OidcCallbackRejection::Identity) => "identity",
+            Self::Rejected(OidcCallbackRejection::Groups) => "groups",
             Self::Unavailable => "storage",
         }
     }
+}
+
+/// 署名・issuer・audience・nonceを検証済みのID tokenから得たKanidm group所属。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedOidcGroups {
+    groups: BTreeSet<String>,
+}
+
+/// v0.3 login callbackでのみ返す、署名検証済みOIDC identityとKanidm group claim。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedOidcIdentity {
+    pub issuer: String,
+    pub subject: String,
+    pub groups: VerifiedOidcGroups,
+}
+
+impl VerifiedOidcGroups {
+    pub fn is_user(&self, user_group: &str) -> bool {
+        self.groups.contains(user_group)
+    }
+
+    pub fn is_administrator(&self, administrator_group: &str) -> bool {
+        self.groups.contains(administrator_group)
+    }
+}
+
+#[derive(Deserialize)]
+struct GroupClaimPayload {
+    #[serde(flatten)]
+    claims: serde_json::Map<String, serde_json::Value>,
+}
+
+/// 検証済みID tokenのpayloadから、Kanidmで設定した文字列配列のgroup claimを読む。
+///
+/// この関数はJWTの署名検証をしない。必ず`IdToken::claims`の成功後にだけ呼び出す。claimが欠落、
+/// 文字列配列以外、空のgroup名を含む場合はfail closedで拒否する。
+fn groups_from_verified_id_token(
+    id_token: &str,
+    group_claim: &str,
+) -> Result<VerifiedOidcGroups, OidcCallbackRejection> {
+    if group_claim.is_empty() || id_token.len() > MAX_ID_TOKEN_BYTES {
+        return Err(OidcCallbackRejection::Groups);
+    }
+    let payload = id_token
+        .split('.')
+        .nth(1)
+        .ok_or(OidcCallbackRejection::Groups)?;
+    let payload = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| OidcCallbackRejection::Groups)?;
+    let payload = serde_json::from_slice::<GroupClaimPayload>(&payload)
+        .map_err(|_| OidcCallbackRejection::Groups)?;
+    let values = payload
+        .claims
+        .get(group_claim)
+        .and_then(serde_json::Value::as_array)
+        .ok_or(OidcCallbackRejection::Groups)?;
+    if values.len() > MAX_GROUPS_PER_ID_TOKEN {
+        return Err(OidcCallbackRejection::Groups);
+    }
+    let mut groups = BTreeSet::new();
+    for value in values {
+        let value = value
+            .as_str()
+            .filter(|value| !value.trim().is_empty() && value.len() <= MAX_GROUP_NAME_BYTES)
+            .ok_or(OidcCallbackRejection::Groups)?;
+        groups.insert(value.to_owned());
+    }
+    Ok(VerifiedOidcGroups { groups })
 }
 
 impl OidcAuthentication {
     pub async fn discover(configuration: &OidcConfiguration) -> Result<Self, OidcDiscoveryError> {
         let http_client = reqwest::ClientBuilder::new()
             .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|_| OidcDiscoveryError::HttpClient)?;
+        Self::discover_with_http_client(configuration, http_client).await
+    }
+
+    /// Discoveryとtoken exchangeに使うHTTP clientを明示する。内部CAを使う配備では、
+    /// 呼出し側が検証済みPEMをroot certificateとして追加したclientを渡す。
+    pub async fn discover_with_http_client(
+        configuration: &OidcConfiguration,
+        http_client: reqwest::Client,
+    ) -> Result<Self, OidcDiscoveryError> {
         let metadata =
             CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
                 .await
                 .map_err(|_| OidcDiscoveryError::Discovery)?;
+        let signing_algorithms =
+            allowed_id_token_algorithms(metadata.id_token_signing_alg_values_supported());
+        if signing_algorithms.is_empty() {
+            return Err(OidcDiscoveryError::Discovery);
+        }
+        let metadata = metadata.set_id_token_signing_alg_values_supported(signing_algorithms);
         Ok(Self {
             client: CoreClient::from_provider_metadata(
                 metadata,
@@ -223,7 +323,7 @@ impl OidcAuthentication {
             expires_at: UnixMillis::new(now.get() + 10 * 60 * 1_000),
         };
         attempts
-            .issue(pending.clone())
+            .issue(pending.clone(), now)
             .await
             .map_err(|_| OidcLoginStartError::Store)?;
         let verifier = PkceCodeVerifier::new(pending.pkce_verifier);
@@ -240,26 +340,24 @@ impl OidcAuthentication {
             .set_pkce_challenge(challenge)
             .add_scope(Scope::new("profile".into()))
             .add_scope(Scope::new("email".into()))
+            // Kanidmの`groups_name` scopeは、group名だけからなる文字列配列の`groups` claimを発行する。
+            .add_scope(Scope::new("groups_name".into()))
             .url();
         Ok(url.into())
     }
 
     /// 各adapterを明示的に受け取ることで、OIDC crateを永続化実装から独立させる。
     #[allow(clippy::too_many_arguments)]
-    pub async fn complete_login<Attempts, Identities, Entropy, Time>(
+    pub async fn complete_login<Attempts, Time>(
         &self,
         attempts: &Attempts,
-        identities: &Identities,
-        entropy: &Entropy,
         clock: &Time,
-        registration_policy: RegistrationPolicy,
         code: &str,
         state: &str,
-    ) -> Result<OidcLoginResult, OidcCallbackError>
+        group_claim: &str,
+    ) -> Result<VerifiedOidcIdentity, OidcCallbackError>
     where
         Attempts: OidcLoginAttemptStore,
-        Identities: OidcIdentityStore,
-        Entropy: Random,
         Time: Clock,
     {
         let pending = attempts
@@ -274,50 +372,20 @@ impl OidcAuthentication {
             .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
             .request_async(&self.http_client)
             .await
-            .map_err(|error| {
-                match error {
-                    RequestTokenError::ServerResponse(response) => {
-                        tracing::warn!(
-                            error = %response.error(),
-                            "OIDC token endpoint rejected code exchange"
-                        );
-                    }
-                    RequestTokenError::Request(_) => {
-                        tracing::warn!("OIDC token endpoint request failed");
-                    }
-                    RequestTokenError::Parse(_, _) => {
-                        tracing::warn!("OIDC token endpoint returned an unparseable response");
-                    }
-                    RequestTokenError::Other(reason) => {
-                        tracing::warn!(
-                            reason,
-                            "OIDC token endpoint returned an unexpected response"
-                        );
-                    }
-                }
-                OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange)
-            })?;
+            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?;
         let id_token = token.id_token().ok_or(OidcCallbackError::Rejected(
             OidcCallbackRejection::MissingIdToken,
         ))?;
         let claims = id_token
             .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
             .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Claims))?;
-        let subject = claims.subject().as_str().to_owned();
-        let display_name = claims
-            .name()
-            .and_then(|value| value.get(None))
-            .map(|value| value.as_str())
-            .or_else(|| claims.preferred_username().map(|value| value.as_str()))
-            .or_else(|| claims.email().map(|value| value.as_str()))
-            .unwrap_or(&subject)
-            .to_owned();
-        let identity = OidcIdentity::new(claims.issuer().as_str(), subject, display_name)
-            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Identity))?;
-        OidcRegistrationService::new(identities, entropy)
-            .register_or_lookup(identity, registration_policy, clock.now())
-            .await
-            .map_err(|_| OidcCallbackError::Unavailable)
+        let groups = groups_from_verified_id_token(&id_token.to_string(), group_claim)
+            .map_err(OidcCallbackError::Rejected)?;
+        Ok(VerifiedOidcIdentity {
+            issuer: claims.issuer().as_str().to_owned(),
+            subject: claims.subject().as_str().to_owned(),
+            groups,
+        })
     }
 }
 
@@ -338,5 +406,42 @@ mod tests {
             "https://example.test/app/auth/oidc/callback"
         );
         assert_eq!(config.cookie_path(), "/app");
+    }
+
+    #[test]
+    fn parses_a_configured_group_claim_after_token_verification() {
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(r#"{"groups":["server-users","server-admins"]}"#);
+        let token = format!("{header}.{payload}.signature");
+        let groups = groups_from_verified_id_token(&token, "groups").expect("groups");
+        assert!(groups.is_user("server-users"));
+        assert!(groups.is_administrator("server-admins"));
+    }
+
+    #[test]
+    fn rejects_missing_or_non_string_group_claims() {
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(r#"{"groups":["server-users",3]}"#);
+        let token = format!("{header}.{payload}.signature");
+        assert_eq!(
+            groups_from_verified_id_token(&token, "groups"),
+            Err(OidcCallbackRejection::Groups)
+        );
+    }
+
+    #[test]
+    fn id_tokens_are_limited_to_es256() {
+        assert_eq!(
+            allowed_id_token_algorithms(&[
+                CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
+                CoreJwsSigningAlgorithm::EcdsaP256Sha256,
+                CoreJwsSigningAlgorithm::HmacSha256,
+            ]),
+            vec![CoreJwsSigningAlgorithm::EcdsaP256Sha256]
+        );
+        assert!(
+            allowed_id_token_algorithms(&[CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256])
+                .is_empty()
+        );
     }
 }

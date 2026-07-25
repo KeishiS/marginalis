@@ -1,0 +1,132 @@
+//! HTTP serviceのcomposition root。
+
+use marginalis_asciidoc::verify_runtime_package_version;
+use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
+use marginalis_server::{
+    ServerConfig, ServerMcpOAuthService, ServerNoteUseCases, ServerOidcAuthenticationUseCases,
+    ServerWebSessionUseCases,
+};
+use marginalis_sqlite::SqliteDatabase;
+use std::path::Path;
+
+pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    verify_runtime_package_version()?;
+    let (configuration, secrets) = ServerConfig::from_environment()?;
+    let database = SqliteDatabase::connect(&configuration.storage.database_url).await?;
+    let oidc_configuration = OidcConfiguration::new(
+        configuration.oidc.issuer_url.to_string(),
+        configuration.oidc.client_id,
+        secrets.oidc_client_secret,
+        configuration.http.base_url.as_str(),
+    )?;
+    let oidc_http_client = kanidm_http_client(
+        configuration.oidc.ca_certificate_file.as_deref(),
+        std::time::Duration::from_secs(10),
+    )?;
+    let oidc = match OidcAuthentication::discover_with_http_client(
+        &oidc_configuration,
+        oidc_http_client.clone(),
+    )
+    .await
+    {
+        Ok(oidc) => Some(oidc),
+        Err(error) => {
+            tracing::warn!(%error, "OIDC discovery is unavailable; login requests will fail closed");
+            None
+        }
+    };
+    let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
+    tracing::info!(address = %configuration.http.listen_address, "Marginalis server listening");
+    let cookie_path = cookie_path(&configuration.http.base_url);
+    let oidc = std::sync::Arc::new(ServerOidcAuthenticationUseCases::new(
+        database.clone(),
+        oidc_configuration,
+        oidc_http_client,
+        oidc,
+    ));
+    let sessions = std::sync::Arc::new(ServerWebSessionUseCases::new(
+        database.clone(),
+        marginalis_application::SessionLifetime {
+            idle_timeout_ms: 24 * 60 * 60 * 1_000,
+            absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
+        },
+    ));
+    let notes = std::sync::Arc::new(ServerNoteUseCases::new(database.clone()));
+    let state = marginalis_web::http::ApiState::new(
+        notes.clone(),
+        sessions,
+        oidc,
+        cookie_path,
+        configuration.http.base_url.origin().ascii_serialization(),
+    );
+    let state = if configuration.mcp_enabled {
+        let resource_uri =
+            marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
+        state.with_mcp(marginalis_web::http::McpEndpoint::new(
+            std::sync::Arc::new(ServerMcpOAuthService::new(database, resource_uri)),
+            &configuration.http.base_url,
+            configuration.mcp_allowed_origins,
+        ))
+    } else {
+        state
+    };
+    axum::serve(
+        listener,
+        marginalis_web::http::router(state)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
+    Ok(())
+}
+
+async fn shutdown_signal() {
+    let interrupt = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install Ctrl-C handler");
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::error!(%error, "failed to install SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        () = interrupt => {}
+        () = terminate => {}
+    }
+    tracing::info!("shutdown signal received; draining HTTP requests");
+}
+
+fn kanidm_http_client(
+    ca_certificate_file: Option<&Path>,
+    timeout: std::time::Duration,
+) -> Result<reqwest::Client, Box<dyn std::error::Error>> {
+    let mut builder = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(timeout);
+    if let Some(path) = ca_certificate_file {
+        builder =
+            builder.add_root_certificate(reqwest::Certificate::from_pem(&std::fs::read(path)?)?);
+    }
+    Ok(builder.build()?)
+}
+
+fn cookie_path(base_url: &url::Url) -> String {
+    let path = base_url.path().trim_end_matches('/');
+    if path.is_empty() {
+        "/".into()
+    } else {
+        path.into()
+    }
+}

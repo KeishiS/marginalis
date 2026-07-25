@@ -17,31 +17,28 @@ AsciiDoc関連のIssueでは、MarginalisをAdocWeaveへ組み込む処理を扱
 `v0.2.0`正式版の受入確認、Pull Request、タグ公開、タグのリリースゲートは、
 2026-07-24に完了した。詳細は[036](036-v0.2.0-release-acceptance.md)を参照する。
 
-root管理には引き続きREST APIを使い、管理UIは後続作業とする。AdocWeave v0.6.1への更新では
-保存形式v1を破壊的に上書きする。既存環境の`dataDir`は移行せず、サービス停止後に完全に
-削除して空の状態から初期化する。
+`v0.3.0`では、機能拡充に先立って SQLite 正本、Kanidm 1.10 group 認可、新 API、MCP OAuth、
+閲覧用 Web UI へ破壊的に再設計する。`v0.2.x` の API、保存形式、ローカル `root`、`dataDir`は
+互換対象ではない。詳細な決定は[037](037-v0.3.0-architecture-rebaseline.md)を正とする。
 
-### v0.2.0公開後の優先項目
+### v0.3.0再設計の優先項目
 
 着手順は[ロードマップ](../docs/roadmap.md)の段階に従う。
 
-1. [030: E2Eテストの自動化](030-end-to-end-test-automation-readiness.md)
-2. [032: MCP向けの入力規則と検証結果](032-mcp-authoring-profile-and-diagnostics.md)
-3. [033: リポジトリ文書のAsciiDoc移行](033-repository-documentation-asciidoc-migration.md)
-   （029の完了後。以降の作業とは並行できる）
-4. [027: 検索、xref、閲覧用の変換規則](027-search-reference-and-rendering-projections.md)
-5. [026: OIDCログインと実行時制限](026-oidc-login-binding-and-runtime-limits.md)の
-   リソース上限・未認証経路対策と、
-   [021: テスト構成とリリース前検証](021-test-architecture-and-release-gates.md)の
-   テストモジュール分割・クレート分割
-6. [013: root 管理・OIDC ユーザー承認](013-root-administration-and-approval.md)のユーザー再有効化、招待、専用管理オリジン・mTLS
-7. Web UIの段階導入:
-   [006: ブラウザー編集プレビュー](006-browser-preview.md)と
-   [034: グラフ表示Web UI](034-graph-visualization-web-ui.md)（公開判断後）
-8. [031: PostgreSQL対応の実現性調査](031-postgresql-storage-backend-feasibility.md)
+1. [037: v0.3.0のアーキテクチャ再設計](037-v0.3.0-architecture-rebaseline.md)
+2. [038: SQLite正本とAsciiDoc import/export](038-sqlite-canonical-notes-and-asciidoc-bundles.md)
+3. [039: Kanidmグループ認可とMCP OAuth](039-kanidm-group-authorization-and-mcp-oauth.md)
+4. [040: v0.3.0のNixOS配備とKanidm 1.10 E2E](040-v0.3.0-nixos-and-e2e-foundation.md)
+5. [041: 閲覧用Web UIとソフトデリート](041-web-ui-and-soft-deletion.md)
+6. [042: v0.3.0のリリース受入](042-v0.3.0-release-acceptance.md)
 
-[012: MCP 曖昧検索用の中間表現インデックス調査](012-mcp-fuzzy-search-index.md)に基づく検索
-拡張は、E2E での検索品質測定後に必要性を再評価する。
+横断的な品質確認として、[043: 本番到達性とテストカバレッジの可視化](043-production-reachability-and-test-coverage.md)
+と[044: ソース配置と文書境界の整理](044-source-layout-and-documentation-boundaries.md)を完了した。
+[042: v0.3.0のリリース受入](042-v0.3.0-release-acceptance.md)は自動検証と実環境受入を完了し、
+Pull Request、`main`上の最終検証、タグ公開を進めている。
+
+旧設計を前提とする未完了 Issue は削除せず履歴として保持する。新規実装の対象にするかは、
+v0.3.0 公開後に再評価する。
 
 ### 完了した基盤作業
 

@@ -64,7 +64,7 @@ in
     dataDir = mkOption {
       type = types.str;
       default = "/var/lib/marginalis";
-      description = "Directory holding the AsciiDoc source of record and SQLite database.";
+      description = "Directory holding the SQLite canonical store and its runtime state.";
     };
 
     backupDirectory = mkOption {
@@ -72,21 +72,6 @@ in
       default = null;
       example = "/var/lib/marginalis-backups";
       description = "Absolute directory in which marginalis-backup.service creates timestamped backup generations. Set this only after choosing persistent backup storage and retention outside dataDir.";
-    };
-
-    databaseUrl = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      description = "SQLite connection URL. Defaults to a database below dataDir.";
-    };
-
-    initialRegistrationPolicy = mkOption {
-      type = types.enum [
-        "open"
-        "approval"
-      ];
-      default = "approval";
-      description = "Registration policy written only when Marginalis creates a new database. Later root API changes are preserved.";
     };
 
     oidc = {
@@ -110,13 +95,13 @@ in
         example = "/run/secrets/marginalis-oidc-client-secret";
         description = "Runtime path to the OIDC client secret. It is passed with systemd credentials, never copied to the Nix store.";
       };
-    };
 
-    initialRootPasswordFile = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "/run/secrets/marginalis-root-password";
-      description = "Optional runtime path to the one-time root password. Required only while the database has no root account.";
+      caCertificateFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "/run/secrets/internal-ca.pem";
+        description = "Optional PEM CA certificate for a private Kanidm TLS PKI, used for OIDC discovery and token exchange.";
+      };
     };
 
     mcp = {
@@ -126,11 +111,10 @@ in
         description = "Whether to expose the OAuth-protected MCP endpoint and authorization server.";
       };
 
-      clientMetadataAllowedHosts = mkOption {
+      allowedOrigins = mkOption {
         type = types.listOf types.str;
         default = [ ];
-        example = [ "clients.example.org" ];
-        description = "HTTPS hosts from which MCP Client ID Metadata Documents may be fetched. Keeping this explicit prevents the authorization endpoint from becoming an SSRF primitive.";
+        description = "Exact HTTPS browser origins permitted to call only the MCP endpoint. Native MCP clients omit Origin and use Bearer authentication.";
       };
     };
   };
@@ -155,13 +139,30 @@ in
       }
       {
         assertion =
+          lib.hasPrefix "/" cfg.dataDir
+          && cfg.dataDir != "/"
+          && builtins.match ".*[[:space:]].*" cfg.dataDir == null;
+        message = "services.marginalis.dataDir must be an absolute non-root path without whitespace.";
+      }
+      {
+        assertion = cfg.oidc.clientSecretFile == null || lib.hasPrefix "/" cfg.oidc.clientSecretFile;
+        message = "services.marginalis.oidc.clientSecretFile must be an absolute path.";
+      }
+      {
+        assertion = cfg.oidc.caCertificateFile == null || lib.hasPrefix "/" cfg.oidc.caCertificateFile;
+        message = "services.marginalis.oidc.caCertificateFile must be an absolute path when set.";
+      }
+      {
+        assertion =
           cfg.backupDirectory == null
           || (
             lib.hasPrefix "/" cfg.backupDirectory
+            && cfg.backupDirectory != "/"
+            && builtins.match ".*[[:space:]].*" cfg.backupDirectory == null
             && cfg.backupDirectory != cfg.dataDir
             && !lib.hasPrefix "${cfg.dataDir}/" cfg.backupDirectory
           );
-        message = "services.marginalis.backupDirectory must be an absolute path outside services.marginalis.dataDir.";
+        message = "services.marginalis.backupDirectory must be an absolute non-root path without whitespace and outside services.marginalis.dataDir.";
       }
     ];
 
@@ -189,18 +190,14 @@ in
         RUST_LOG = cfg.logFilter;
         MARGINALIS_BASE_URL = cfg.baseUrl;
         MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
-        MARGINALIS_DATA_DIR = cfg.dataDir;
-        MARGINALIS_DATABASE_URL =
-          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
-        MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
+        MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
         OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
         OIDC_CLIENT_ID = cfg.oidc.clientId;
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
+        OIDC_CA_CERTIFICATE_FILE =
+          if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
-        MARGINALIS_MCP_CLIENT_METADATA_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.mcp.clientMetadataAllowedHosts;
-      }
-      // optionalAttrs (cfg.initialRootPasswordFile != null) {
-        ROOT_PASSWORD_FILE = "%d/root-password";
+        MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
       };
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/marginalis";
@@ -209,18 +206,23 @@ in
         WorkingDirectory = cfg.dataDir;
         Restart = "on-failure";
         RestartSec = "5s";
-        LoadCredential = [
-          "oidc-client-secret:${cfg.oidc.clientSecretFile}"
-        ]
-        ++ optionals (cfg.initialRootPasswordFile != null) [
-          "root-password:${cfg.initialRootPasswordFile}"
-        ];
+        TimeoutStopSec = "30s";
+        LoadCredential = [ "oidc-client-secret:${cfg.oidc.clientSecretFile}" ];
+        UMask = "0077";
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";
+        LockPersonality = true;
+        PrivateDevices = true;
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
         ProtectKernelTunables = true;
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
         RestrictAddressFamilies = [
           "AF_UNIX"
           "AF_INET"
@@ -240,35 +242,36 @@ in
       };
     };
 
-    # 正本からの投影再構築はHTTP serverと同時実行しない。systemdのcredential注入を再利用するため、
-    # 手動の環境変数指定ではなくこのoneshot unitを運用入口とする。
-    systemd.services.marginalis-rebuild-projections = {
-      description = "Rebuild Marginalis SQLite projections from canonical sources";
-      conflicts = [ "marginalis.service" ];
+    # v0.3の削除済みノートは30日間だけ保持し、期限切れの認証状態も削除する。SQLite正本だけを
+    # 操作するため、HTTP serviceを停止せずに日次実行できる。
+    systemd.services.marginalis-purge-expired = {
+      description = "Purge expired Marginalis notes and authentication state";
       environment = {
         RUST_LOG = cfg.logFilter;
-        MARGINALIS_DATA_DIR = cfg.dataDir;
-        MARGINALIS_DATABASE_URL =
-          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
-        MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
+        MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
       };
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${cfg.package}/bin/marginalis rebuild-projections";
+        ExecStart = "${cfg.package}/bin/marginalis purge-expired";
         User = "marginalis";
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
+        UMask = "0077";
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";
+        LockPersonality = true;
+        PrivateDevices = true;
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
         ProtectKernelTunables = true;
-        RestrictAddressFamilies = [
-          "AF_UNIX"
-          "AF_INET"
-          "AF_INET6"
-        ];
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictAddressFamilies = [ "AF_UNIX" ];
         SystemCallFilter = [
           "@system-service"
           "~@privileged"
@@ -281,66 +284,24 @@ in
       };
     };
 
-    # root監査は365日保持する。HTTP serverの再起動時ではなく、専用timerで監査と期限切れ認証補助データを掃除する。
-    systemd.services.marginalis-prune-audit = {
-      description = "Prune Marginalis root audit records and expired authentication data";
-      environment = {
-        RUST_LOG = cfg.logFilter;
-        MARGINALIS_DATA_DIR = cfg.dataDir;
-        MARGINALIS_DATABASE_URL =
-          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
-        MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
-      };
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${cfg.package}/bin/marginalis prune-audit";
-        User = "marginalis";
-        Group = "marginalis";
-        WorkingDirectory = cfg.dataDir;
-        NoNewPrivileges = true;
-        CapabilityBoundingSet = "";
-        PrivateTmp = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        ProtectKernelTunables = true;
-        RestrictAddressFamilies = [
-          "AF_UNIX"
-          "AF_INET"
-          "AF_INET6"
-        ];
-        SystemCallFilter = [
-          "@system-service"
-          "~@privileged"
-        ];
-        ReadWritePaths = [ cfg.dataDir ];
-      }
-      // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
-        StateDirectory = "marginalis";
-        StateDirectoryMode = "0750";
-      };
-    };
-
-    systemd.timers.marginalis-prune-audit = {
-      description = "Run Marginalis audit retention and authentication cleanup daily";
+    systemd.timers.marginalis-purge-expired = {
+      description = "Purge expired Marginalis state daily";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = "daily";
         Persistent = true;
-        Unit = "marginalis-prune-audit.service";
+        Unit = "marginalis-purge-expired.service";
       };
     };
 
     # backup先は運用者が永続storageとretentionを決めてから明示する。timerは提供しない。
-    # このunitはHTTP serverと競合させ、SQLiteとAsciiDoc正本を同じ停止期間に取得する。
+    # archive exportは一つのSQLite read transactionを使うため、HTTP serverを止めずに一貫した
+    # snapshotを取得できる。
     systemd.services.marginalis-backup = mkIf (cfg.backupDirectory != null) {
       description = "Create a consistent Marginalis backup";
-      conflicts = [ "marginalis.service" ];
       environment = {
         RUST_LOG = cfg.logFilter;
-        MARGINALIS_DATA_DIR = cfg.dataDir;
-        MARGINALIS_DATABASE_URL =
-          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
-        MARGINALIS_INITIAL_REGISTRATION_POLICY = cfg.initialRegistrationPolicy;
+        MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
       };
       serviceConfig = {
         Type = "oneshot";
@@ -348,17 +309,22 @@ in
         User = "marginalis";
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
+        UMask = "0077";
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";
+        LockPersonality = true;
+        PrivateDevices = true;
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
         ProtectKernelTunables = true;
-        RestrictAddressFamilies = [
-          "AF_UNIX"
-          "AF_INET"
-          "AF_INET6"
-        ];
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictAddressFamilies = [ "AF_UNIX" ];
         SystemCallFilter = [
           "@system-service"
           "~@privileged"

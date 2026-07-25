@@ -1,245 +1,136 @@
 # MCP と OAuth
 
-## 概要
+Marginalis は MCP の OAuth Authorization Server と Protected Resource を同一オリジンで提供します。
+Kanidm token を MCP client に渡すことはありません。
 
-Marginalis は、研究ノートの検索・取得・作成・更新・参照一覧・確認付き物理削除のために、
-OAuth で保護された MCP（Streamable HTTP）エンドポイントを提供します。
-
-この文書は MCP クライアントの利用者と、OAuth クライアントを登録する運用者を対象とします。
-REST API の Cookie 認証については [REST API リファレンス](rest-api.md)、NixOS で MCP を
-公開する方法は [NixOS での運用](nixos.md#mcp-の公開)を参照してください。
-
-この認可は Web の Cookie セッションとは独立しています。外部の Kanidm は、認可画面で利用者を
-ログインさせる OIDC プロバイダーとしてだけ使います。MCP のアクセストークン・リフレッシュ
-トークン・認可コードを Kanidm へ渡すことはなく、MCP エンドポイントが Cookie を受け付ける
-こともありません。
-
-MCP は `services.marginalis.mcp.enable = true` を設定した場合にだけ有効になります。
-ベース URL を `B` とすると、公開 URL は次のとおりです。ベース URL がサブパスを含む場合も、
-各パスはそのサブパスの下に置かれます。
-
-| 用途 | URL |
+| 対象 | endpoint |
 | --- | --- |
-| MCP トランスポート | `B/mcp` |
-| Protected Resource Metadata | `B/.well-known/oauth-protected-resource/mcp` |
-| Authorization Server Metadata | `B/.well-known/oauth-authorization-server` |
-| 認可エンドポイント | `B/oauth/authorize` |
-| トークンエンドポイント | `B/oauth/token` |
+| MCP | `POST B/mcp` |
+| Protected Resource Metadata | RFC 9728で`B/mcp`から導出するURL |
+| Authorization Server Metadata | RFC 8414で`B`から導出するURL |
+| Dynamic Client Registration | `POST B/oauth/register` |
+| Authorization開始 | `GET` / `POST B/oauth/authorize` |
+| Marginalis承認確定 | `POST B/oauth/authorize/consent` |
+| Token | `POST B/oauth/token` |
 
-## MCP トランスポート
+ここで `B` は外部 base URL です。クライアントは Dynamic Client Registration を行い、Authorization
+Code + PKCE S256 を使います。未ログインで authorization endpoint を開いた場合は OIDC login へ移動し、
+認可リクエストへ安全に戻ります。
 
-`POST /mcp` は JSON-RPC 2.0 リクエストを受け付けます。クライアントは `Accept` ヘッダーに
-`application/json` と `text/event-stream` の両方を含め、`Authorization: Bearer <access-token>`
-を付けてください。Bearer トークンがない、または無効な場合は `401` と次の形式の
-`WWW-Authenticate` ヘッダーを返します。
+OAuth clientからの認可開始はquery付き`GET`とform-encoded `POST`の両方を受け付けます。POSTのOAuth
+parameterはURL queryとform bodyのどちらにあってもよいですが、同じparameterを複数回送ると値が同じでも
+`invalid_request`として拒否します。空のparameterは省略として扱い、未知のparameterは無視します。
+ChatGPTやClaudeがclient originから送る初回POSTにclient自身のCSRF fieldが含まれていても、
+`B/oauth/authorize`は登録済みclient、redirect URI、resource、scope、PKCEを検証するだけで認可を
+確定しません。未ログイン時は`303 See Other`で`GET`のOIDC loginへ移動します。
 
-```text
-Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource/mcp"
+ログイン後にMarginalisが表示する承認formだけが`B/oauth/authorize/consent`へPOSTし、認可を作成します。
+OAuth clientのpopupやsandboxでは`Origin`が欠落またはopaqueになり得るため、このendpointは
+同一session、CSRF cookie、Marginalisが発行してsessionへ紐付けたform tokenの一致を必須とします。
+外部clientの認可開始endpointと状態変更endpointを分け、field名による推測では分類しません。
+
+well-known suffixはhostとsubject pathの間へ挿入します。base URLがhost rootかsubpathかで
+URLが次のように変わります。
+
+- `B = https://notes.example.test`: Protected Resource Metadataは
+  `https://notes.example.test/.well-known/oauth-protected-resource/mcp`、Authorization Server
+  Metadataは`https://notes.example.test/.well-known/oauth-authorization-server`。
+- `B = https://notes.example.test/marginalis`: Protected Resource Metadataは
+  `https://notes.example.test/.well-known/oauth-protected-resource/marginalis/mcp`、Authorization
+  Server Metadataは
+  `https://notes.example.test/.well-known/oauth-authorization-server/marginalis`。
+
+これはRFC 9728とRFC 8414のpath付きsubject規則です。KanidmのOIDC `issuerUrl`は外部Identity
+ProviderのURLであり、Marginalis自身のOAuth metadata URLの導出には使いません。
+
+`/mcp` は Cookie を使わず、すべての request を `Authorization: Bearer` で認可します。`Origin` がある
+browser client は DNS rebinding 対策として完全一致の許可リストで検証します。NixOS module の既定値は
+空であり、ChatGPT Web UIを使う場合は`https://chatgpt.com`を明示します。Codex CLI と Claude Code の
+ように `Origin` を送らない native client はこの制約の対象外です。
+
+Claude Codeは次のようにremote Streamable HTTP serverとして追加し、Claude Code内の`/mcp`から
+browser認証します。
+
+```bash
+claude mcp add --transport http marginalis https://marginalis.sandi05.com/mcp
 ```
 
-そのほかのトランスポート仕様は次のとおりです。
+Dynamic Client RegistrationではClaude Codeの`http://localhost:PORT/callback`を受け付けます。
+HTTP callbackは`localhost`完全一致、またはloopback IP addressだけを許可し、認可要求時の動的なportを
+登録値と異なる値でも受け付けます。hostとport以外の部分は登録値との完全一致を維持します。HTTPS callbackは
+登録値と完全一致しなければなりません。SSH、container、WSL上のClaude Codeではbrowserからcallback
+listenerへ到達できる構成が別途必要です。
+このnative client profileはHTTPSとloopback HTTPだけを対象とし、private-use URI schemeは提供しません。
+一般的なnative application全体ではなく、loopback callbackを使う受入対象clientとの相互運用に限定します。
+RFC 8252がIP literalを推奨する一方、`localhost`はClaude Code互換性のために許容し、承認画面でlocal
+applicationへのredirectであることを明示します。
 
-- `GET /mcp` は、サーバーからクライアントへの通知ストリームが必要になるまで `405` を
-  返します。
-- リクエストに `Origin` ヘッダーがある場合、ベース URL と同じオリジンでなければ拒否します。
-- 認証後のツール呼び出しは利用者ごとに毎分 120 回までです。超過すると `429` と
-  `Retry-After: 60` を返します。この制限はメモリ内の固定ウィンドウで、サーバー再起動で
-  リセットされます。
+Claude.aiのWeb UIでは、`Customize`の`Connectors`からcustom connectorとして
+`https://marginalis.sandi05.com/mcp`を追加します。この接続はAnthropicのcloudから行われ、OAuthの
+browser loginと承認を経ます。Claude.ai subscriptionでClaude Codeへログインしている場合は、Claude.aiで
+追加したconnectorがClaude Codeにも表示されます。API key、Amazon Bedrock、Google Vertex AIで認証した
+Claude CodeにはClaude.ai側のconnectorは同期されないため、上記の`claude mcp add`を使います。
 
-## ツール一覧
+この許可リストは MCP transport 専用です。OAuth の承認画面は Marginalis が表示する Authorization Server
+との操作ですが、clientのpopupやsandboxに依存しないよう`Origin`を認可根拠にはしません。
+`/oauth/authorize/consent`はsession-bound CSRF tokenを必須とします。client originから
+`/oauth/authorize`へ送る認可開始POSTは状態変更を一切行いません。
 
-| ツール | 入力 | 出力 |
-| --- | --- | --- |
-| `search_notes` | `query`、任意の `tags`・作成/更新日時範囲・`limit` | 可視ノートの ID・タイトル |
-| `get_note` | `note_id` | Read 権限を持つノートの ID・タイトル・タグ・作成/更新時刻・リビジョン・AsciiDoc 本文 |
-| `list_note_links` | `note_id`、任意の `limit` | 指定ノートから出る参照の位置、参照先の ID・タイトル・アンカー |
-| `create_note` | `title`、`body`、`tags` | サーバー生成メタデータを持つ新規ノートとリビジョン |
-| `update_note` | `note_id`、`expected_revision`、`title`、`body`、`tags` | 更新後のノートとリビジョン |
-| `prepare_delete_note` | `note_id`、`expected_revision` | タイトル、リビジョン、一回限りの確認トークン |
-| `delete_note` | `confirmation_token` | 物理削除の完了 |
+Authorization Server は登録済み client、redirect URI、MCP resource URI、scope、PKCE S256 を login 前と
+承認時の両方で検証します。承認画面には登録済み client 名、要求 scope、redirect host を表示します。
+認可要求でscopeを省略した場合は最小権限の`notes:read`を使います。登録redirect URIが一つだけなら認可要求と
+token交換の`redirect_uri`は省略できます。token交換で指定した場合は、認可時の値と一致しなければなりません。
+access token は 1 時間、rotation される refresh token は 30 日有効です。
+refresh時のscopeは元のgrantの部分集合だけを許可し、発行するaccess tokenをdownscopeできます。
+使用済み refresh token が正しい client と resource の組合せで再提示された場合は replay と判定し、
+同じ token family の access token と refresh token をすべて失効させます。利用者は再度認可してください。
+使用済み認可codeが同じclient、resource、PKCE bindingで再提示された場合も、同じtoken familyを失効させます。
+認可codeの有効期限後も、対応するtoken familyが残る間はreplay検知情報を保持します。
+rotation の親子関係も、有効な子孫がある間保持します。これは
+[OAuth 2.0 Security Best Current Practice §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
+の replay 検知要件に従うものです。
+現行のschema versionは2です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
+再初期化し、MCP clientは再登録・再認可してください。
 
-検索は SQLite FTS5 の投影を使い、ACL でフィルターした結果だけを返します。本文の
-断片、スコア、権限のないノートの存在は返しません。`list_note_links` も同じ規則に従い、
-参照元と参照先の両方に Read 権限がある行だけを返します。参照先が閲覧できない場合は、その
-ID・タイトル・アンカー・投影上の存在のいずれも返しません。
+Dynamic Client Registration は 16 KiB の本文上限、redirect originごとに10分あたり30件のrate limit、
+最大1,000 clientの永続化上限を持ちます。grantを取得しない登録は24時間後の日次保守で削除します。登録・token
+endpointが受理したprotocol/application errorはOAuthの`error` / `error_description`形式で返します。
+本文上限超過、MCP無効時のroutingなどhandler外のHTTP境界の失敗はこの形式を保証しません。
+MCP requestでは無効または失効済みtokenを`401 invalid_token`、必要scopeを持たない有効なtokenを
+`403 insufficient_scope`として区別し、`WWW-Authenticate`にProtected Resource Metadata URLと必要scopeを
+含めます。
+public client専用token endpointでHTTP認証を試みた場合は`401 invalid_client`と、提示された認証schemeの
+`WWW-Authenticate`を返します。
 
-`v0.2.0` の MCP ツール仕様は `limit`（最大 100）だけを公開し、継続カーソルを
-`inputSchema` に含めません。このため、MCP クライアントから複数ページを順に取得することは
-現行仕様の対象外です。REST の一覧・検索はカーソルページングに対応します。
+MCP transportは[JSON-RPC 2.0](https://www.jsonrpc.org/specification)の`jsonrpc`、method、params、idを
+厳密に検証します。[MCP base protocol](https://modelcontextprotocol.io/specification/2025-11-25/basic)
+の上乗せ仕様に従い、request IDは文字列または整数だけを許可し、`null`、Boolean、小数を拒否します。
+[Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)のPOST bodyは
+単一messageだけを許可するためbatchは受理しません。parse errorは`-32700`、不正なrequestは`-32600`、
+不明methodは`-32601`、不正paramsは`-32602`です。tool実行時の業務エラーはJSON-RPC errorではなくMCP
+[tool result](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)の`isError: true`で返します。
+`tools/call.arguments`は省略時に空objectとして扱い、`structuredContent`は常にobjectで返します。`ping`にも
+空objectで応答します。
+[MCP lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)に従い、初期化時は
+`2025-11-25`と`2025-03-26`をnegotiationし、以後の`MCP-Protocol-Version`が未知ならHTTP 400で拒否します。
+現行transportは`MCP-Session-Id`を発行しないstateless構成であり、clientは初期化順序と交渉したversionを
+保持します。serverは各requestのprotocol headerを検証します。
 
-### ノートの保護されたメタデータ
+本リリースのChatGPT、Claude、Codex受入では、互換登録経路としてDynamic Client Registrationを使用します。
+client版と実測結果はrelease issueへ記録するまで未検証として扱います。MCP 2025-11-25が推奨（SHOULD）する
+Client ID Metadata Documentには意図的に対応しません。client指定URLをAuthorization Serverから取得する
+方式にはSSRF、名前解決変更、取得制限、cacheの対策が必要であり、受入対象のDCR経路に不要なoutbound HTTP
+依存を増やすためです。対象clientがDCRを廃止した場合は、この判断を再検討します。
 
-`create_note` と `update_note` では、MCP クライアントは `note-id`・`creator-id`・
-`created-at`・`updated-at` を指定・変更できません。サーバーが UUIDv7 と作成者を決め、作成
-日時を保存し、更新時には更新日時だけを書き換えます。`update_note` は現在のリビジョンとの
-完全一致を要求し、競合時には何も変更しません。
+OAuth endpointへ一律のCORSは付与しません。authorization endpointはnavigation/form送信を受け、CORSを
+提供しません。token交換、Dynamic Client Registration、MCP requestはclient backendまたはnative client
+から行うことを受入試験で確認します。browser内JavaScriptから直接呼び出す汎用clientは対象外です。
 
-### 削除の二段階確認
+scope は `notes:read`、`notes:write`、`notes:delete` です。scope だけでは不十分であり、Web と同じ
+ノート ACL が必ず適用されます。`server-admins` はすべてのノートに管理者相当でアクセスします。
 
-削除には `notes:delete` スコープとノートの Admin 権限が必要です。`prepare_delete_note` が
-返す確認トークンは、実行者・対象ノート・リビジョン・被参照集合に結び付き、5 分で失効します。
-結果には実行者から見える範囲の被参照数 `incoming_reference_count` も含まれます。トークンは
-`delete_note` で一度だけ消費でき、準備後にリビジョンや被参照状態が変わっていた場合は削除を
-行いません。トークンの平文を SQLite へ保存することはありません。
+利用者は Web session と CSRF token を使って、`DELETE /api/v2/mcp-authorizations/{client_id}` から
+個別 client の認可を取り消せます。取り消し後、その client の access token と refresh token は使えません。
 
-## REST API との対応
-
-REST と MCP のツールは、同じアプリケーション層のユースケース・ACL・リビジョン規則を共有
-します。ただしトランスポート固有の認証方式は混在させません。Cookie・`X-CSRF-Token`・
-`Origin` と、送信された場合の `Sec-Fetch-Site` 検証は REST のブラウザー境界だけの要件であり、
-MCP のツール入出力には含まれません。
-
-| REST | MCP | 相違点 |
-| --- | --- | --- |
-| `GET /api/v1/search` | `search_notes` | REST は Cookie セッション、MCP は Bearer トークンと `notes:read` スコープを使う |
-| `GET /api/v1/notes/{note_id}/source` | `get_note` | MCP はメタデータと本文を 1 つの JSON-RPC 結果で返す |
-| `POST /api/v1/notes` | `create_note` | REST は AsciiDoc 全文、MCP は `title`/`body`/`tags` の構造化入力を受ける |
-| `PUT /api/v1/notes/{note_id}/source` | `update_note` | どちらもリビジョンの完全一致を要求する |
-| 削除準備 → 削除確定 | `prepare_delete_note` → `delete_note` | どちらも確認トークンによる二段階削除 |
-
-## OAuth フロー
-
-1. クライアントは Protected Resource Metadata を取得し、リソース URI と認可サーバーを
-   特定します。
-2. クライアントは `/oauth/authorize` へ `response_type=code`、`client_id`、`redirect_uri`、
-   `resource`、`scope`、`code_challenge`、`code_challenge_method=S256`、任意の `state` を
-   送ります。
-3. 利用者に Cookie セッションがなければ、Marginalis は Kanidm の OIDC ログインへ誘導し、
-   認可要求だけを短命の `HttpOnly; Secure; SameSite=Lax` Cookie に保存します。OIDC
-   コールバック後は、その認可画面へだけ復帰します。
-4. 利用者はクライアント名とスコープを確認し、許可または拒否します。root セッションで MCP
-   クライアントを認可することはできません。
-5. 許可された場合、完全一致で検証済みのリダイレクト URI へ `code` と元の `state` を付けて
-   `303` を返します。
-6. クライアントは `POST /oauth/token` へ `grant_type=authorization_code`、コード、
-   クライアント ID、リダイレクト URI、リソース、PKCE verifier をフォームボディで送ります。
-   成功すると不透明なアクセストークンとリフレッシュトークンを取得できます。レスポンスには
-   `token_type: "Bearer"`、`expires_in`、実際に許可された `scope` も含まれます。
-
-制約は次のとおりです。
-
-- `redirect_uri` は事前登録された文字列との完全一致です。HTTPS、またはループバック
-  （`127.0.0.1`・`localhost`・`::1`）への HTTP だけを許可します。クエリ・フラグメント・
-  ユーザー情報を含む URI は登録できません。
-- スコープは `notes:read`・`notes:write`・`notes:delete` だけを受け付けます。クライアントは
-  呼び出すツールに対応するスコープを要求してください。スコープに加えて、各操作では通常の
-  ノート ACL も検証されます。
-- アクセストークンの有効期間は 1 時間です。リフレッシュトークンの有効期間は 30 日で、
-  `grant_type=refresh_token` により新しいトークンペアと交換できます。リフレッシュトークンは
-  交換と同時に無効化され、再利用は拒否されます。発行済みのアクセストークンは、自身の期限
-  または明示的な認可取消まで有効です。
-
-## クライアントの登録
-
-### Client ID Metadata Document
-
-未知のクライアントの `client_id` は HTTPS URL であり、その URL の JSON ドキュメントは
-少なくとも次を含みます。
-
-```json
-{
-    "client_id": "https://clients.example.org/marginalis.json",
-    "client_name": "Example MCP client",
-    "redirect_uris": ["http://127.0.0.1:4567/callback"]
-}
-```
-
-Marginalis は、クライアント ID とドキュメント内 `client_id` の完全一致、空でない
-`client_name`、空でない `redirect_uris`、各 URI のリダイレクトポリシーを検証してから登録
-します。リダイレクトは追跡せず、64 KiB を超える応答は受け付けません。取得先は
-`services.marginalis.mcp.clientMetadataAllowedHosts` に列挙した HTTPS ホストに限られます。
-この制限は、認可エンドポイントを経由した SSRF を防ぎます。
-
-Dynamic Client Registration と Device Authorization Grant は現在のリリースには含まれません。
-
-### root による事前登録
-
-Client ID Metadata Document を提供しないクライアントは、root が
-`POST /api/v1/admin/mcp-clients` で事前登録できます。この操作には root セッションと CSRF
-トークンが必要で、MCP トークンやクライアントシークレットは扱いません。
-
-### コールバック URL を事前登録する例
-
-クライアントが Client ID Metadata Document に対応しない場合は、クライアント側で使う安定した
-OAuth クライアント ID と、クライアントが提示するコールバック URL の完全な値を確認します。
-同じ値を Marginalis 側へ事前登録してください。クライアント ID はシークレットではなく、root
-による事前登録では URL 形式も必須ではありません。
-
-Marginalis は Dynamic Client Registration とクライアントシークレットを提供せず、パブリック
-クライアントの Authorization Code + PKCE だけを受け付けます。クライアントの設定項目名や
-コールバック URL は製品と版によって異なるため、利用中のクライアントが表示する値を正として
-ください。
-
-次の手順は、root セッションと CSRF トークンを取得してクライアントを登録し、最後に root
-セッションを破棄します。root のパスワード、Cookie、CSRF トークン、コールバック URL を
-コマンド履歴・Issue・ログへ記録しないでください。
-
-```sh
-set -eu
-
-BASE_URL='https://marginalis.sandi05.com'
-ORIGIN='https://marginalis.sandi05.com'
-COOKIE_JAR="$(mktemp)"
-trap 'rm -f "$COOKIE_JAR"' EXIT
-
-read -s ROOT_PASSWORD
-{
-  printf '{"password":'
-  printf '%s' "$ROOT_PASSWORD" | jq -Rs .
-  printf '}'
-} | curl --fail-with-body --silent --show-error \
-  --cookie-jar "$COOKIE_JAR" \
-  --header 'Content-Type: application/json' \
-  --data-binary @- \
-  --output /dev/null \
-  "$BASE_URL/auth/root/login"
-unset ROOT_PASSWORD
-
-CSRF_TOKEN="$(awk '$6 == "marginalis_csrf" { print $7 }' "$COOKIE_JAR")"
-[ -n "$CSRF_TOKEN" ]
-
-MCP_CLIENT_ID='example-mcp-client'
-read -r MCP_CALLBACK_URL
-
-jq -n \
-  --arg client_id "$MCP_CLIENT_ID" \
-  --arg callback "$MCP_CALLBACK_URL" \
-  '{
-    client_id: $client_id,
-    display_name: "Example Marginalis MCP client",
-    redirect_uris: [$callback]
-  }' |
-curl --fail-with-body --silent --show-error \
-  --cookie "$COOKIE_JAR" \
-  --header 'Content-Type: application/json' \
-  --header "X-CSRF-Token: $CSRF_TOKEN" \
-  --header "Origin: $ORIGIN" \
-  --header 'Sec-Fetch-Site: same-origin' \
-  --request POST \
-  --data-binary @- \
-  --output /dev/null \
-  --write-out 'MCP client registration: HTTP %{http_code}\n' \
-  "$BASE_URL/api/v1/admin/mcp-clients"
-
-curl --fail-with-body --silent --show-error \
-  --cookie "$COOKIE_JAR" \
-  --header "X-CSRF-Token: $CSRF_TOKEN" \
-  --header "Origin: $ORIGIN" \
-  --header 'Sec-Fetch-Site: same-origin' \
-  --request POST \
-  --output /dev/null \
-  "$BASE_URL/auth/logout"
-```
-
-成功すると `HTTP 204` になります。コールバック URL は HTTPS、または許可されたループバック
-HTTP で、クエリ・フラグメント・ユーザー情報を含まず、クライアントが送る `redirect_uri` と
-完全に一致する必要があります。
-
-## 認可の確認と取消
-
-- 利用者は `GET /api/v1/mcp-authorizations` で、自分の有効なクライアント認可の表示名・
-  スコープ・認可日時・最終利用日時を確認できます。応答にトークンやそのハッシュは含まれない
-  ため、この一覧から安全に取消対象を選べます。
-- 利用者は REST API で自分のクライアント認可を取り消せます。root は任意ユーザーの認可を
-  強制的に取り消せます。取消時には、そのユーザーとクライアントの組に発行済みのアクセス
-  トークンとリフレッシュトークンをすべて失効させます。
+OIDC login 時に検証した `groups` claim を Web session と MCP authorization の権限スナップショットとします。
+group 変更は次回 login から反映され、既存 token は有効期限または認可取消まで発行時の権限を保持します。

@@ -9,6 +9,13 @@ prefix_rule(
     ],
 )
 
+# flakeで固定した成果物・NixOS VM E2Eの構築と実行。
+prefix_rule(
+    pattern = ["nix", "build"],
+    decision = "allow",
+    justification = "Nix store内で完結するproject成果物とNixOS VM testの構築を許可する",
+)
+
 # Rustの読み取り・構築・検証コマンド。
 prefix_rule(
     pattern = [

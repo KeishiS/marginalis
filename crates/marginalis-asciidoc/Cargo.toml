@@ -1,6 +1,6 @@
 [package]
 name = "marginalis-asciidoc"
-version = "0.2.0"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -8,6 +8,6 @@ publish = false
 
 [dependencies]
 adocweave.workspace = true
-adocweave-wasm.workspace = true
 marginalis-domain = { path = "../marginalis-domain" }
 unicode-normalization.workspace = true
+time.workspace = true
