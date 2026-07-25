@@ -1157,12 +1157,12 @@ version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
- "hmac",
  "marginalis-application",
  "marginalis-auth-oidc",
  "marginalis-server",
  "marginalis-sqlite",
  "marginalis-web",
+ "p256",
  "reqwest",
  "serde_json",
  "sha2",

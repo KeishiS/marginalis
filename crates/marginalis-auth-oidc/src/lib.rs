@@ -23,13 +23,10 @@ const MAX_GROUP_NAME_BYTES: usize = 256;
 fn allowed_id_token_algorithms(
     supported: &[CoreJwsSigningAlgorithm],
 ) -> Vec<CoreJwsSigningAlgorithm> {
-    [
-        CoreJwsSigningAlgorithm::EcdsaP256Sha256,
-        CoreJwsSigningAlgorithm::HmacSha256,
-    ]
-    .into_iter()
-    .filter(|algorithm| supported.contains(algorithm))
-    .collect()
+    [CoreJwsSigningAlgorithm::EcdsaP256Sha256]
+        .into_iter()
+        .filter(|algorithm| supported.contains(algorithm))
+        .collect()
 }
 
 #[derive(Clone)]
@@ -433,17 +430,14 @@ mod tests {
     }
 
     #[test]
-    fn id_tokens_are_limited_to_reviewed_non_rsa_algorithms() {
+    fn id_tokens_are_limited_to_es256() {
         assert_eq!(
             allowed_id_token_algorithms(&[
                 CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
                 CoreJwsSigningAlgorithm::EcdsaP256Sha256,
                 CoreJwsSigningAlgorithm::HmacSha256,
             ]),
-            vec![
-                CoreJwsSigningAlgorithm::EcdsaP256Sha256,
-                CoreJwsSigningAlgorithm::HmacSha256,
-            ]
+            vec![CoreJwsSigningAlgorithm::EcdsaP256Sha256]
         );
         assert!(
             allowed_id_token_algorithms(&[CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256])

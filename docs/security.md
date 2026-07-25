@@ -14,8 +14,8 @@
 修正版はありません。
 
 MarginalisはOIDC providerの秘密鍵を保持せず、ID tokenの公開鍵検証だけを行います。さらに
-provider discovery後、ID token署名方式をKanidm 1.10が使う`ES256`と結合試験用の`HS256`だけに
-制限し、RSA署名経路を受け付けません。このため、advisoryが対象とするRSA秘密鍵演算は実行経路に
+provider discovery後、ID token署名方式をKanidm 1.10と結合試験が使う`ES256`だけに制限し、
+RSA署名経路を受け付けません。このため、advisoryが対象とするRSA秘密鍵演算は実行経路に
 ありません。`cargo audit`ではこのIDだけを例外にし、他のadvisoryは失敗させます。
 
 `openidconnect`から`rsa`依存が除去される、修正版へ更新できる、またはadvisoryの影響範囲が変わった
