@@ -31,7 +31,7 @@
 | 正式公開（完了） | [036](../issues/036-v0.2.0-release-acceptance.md) | RCの受入結果と正式版の差分を検証し、`v0.2.0`を公開する | 完了（2026-07-24、`v0.2.0`タグ） |
 | 1（現在） | [037](../issues/037-v0.3.0-architecture-rebaseline.md) | SQLite 正本、Kanidm group 認可、新 API に再設計する | データ正本、認可、MCP、削除、公開 API の新しい契約が後続 Issue で実装可能な形に固定される |
 | 2 | [038](../issues/038-sqlite-canonical-notes-and-asciidoc-bundles.md) | SQLite の単一正本と AsciiDoc import/export を実装する | ファイル正本・操作ジャーナルなしにノート、ACL、検索を一 transaction で更新できる |
-| 3 | [039](../issues/039-kanidm-group-authorization-and-mcp-oauth.md) | Kanidm 1.10 group 認可と MCP OAuth を実装する | `server-users` / `server-admins`、5 分以内の所属反映、対象 MCP client の認可が機能する |
+| 3 | [039](../issues/039-kanidm-group-authorization-and-mcp-oauth.md) | Kanidm 1.10 group claim 認可と MCP OAuth を実装する | `server-users` / `server-admins` を含む OIDC group claim と対象 MCP client の認可が機能する |
 | 4（実装中） | [040](../issues/040-v0.3.0-nixos-and-e2e-foundation.md) | NixOS 配備と Kanidm 1.10 E2E を release gate に組み込む | TLS、subpath、OIDC、MCP、NixOS module を CI で再現できる |
 | 5 | [041](../issues/041-web-ui-and-soft-deletion.md) | 閲覧用 Web UI と 30 日間のソフトデリートを提供する | API、MCP、Web UI が同一の可視性を守り、期限後の物理削除を自動化できる |
 | 6 | [042](../issues/042-v0.3.0-release-acceptance.md) | 空の新環境で v0.3.0 を受入・公開する | Kanidm 1.10 E2E、MCP 認可、NixOS 配備が成功し、破壊的初期化手順が確定する |
@@ -47,8 +47,8 @@
 
 1. **段階 1**: SQLite 正本、Kanidm group、MCP OAuth、ソフトデリート、API v2 を
    破壊的に切り替える。旧環境は新しい空環境へ移行せず、退避物として扱う。
-2. **段階 3**: Kanidm の所属確認は最大 5 分ごととする。確認不能時は fail closed とし、
-   IdP 障害時の緊急管理は Kanidm の break-glass 手順に委譲する。
+2. **段階 3**: Kanidm の所属は OIDC login 時に署名検証済み `groups` claim から確定する。group 変更は
+   次回 login から反映し、既存 session と MCP token は有効期限または認可取消まで発行時の権限を保つ。
 3. **段階 4**: E2E の Kanidm は実運用と同じ 1.10 系列を使う。実本番 IdP、proxy、MCP client
    との接続確認は公開前の手動受入に残す。
 4. **段階 6**: archive import と復元を公開条件から外す。復元の頻度、保存先、保持世代は

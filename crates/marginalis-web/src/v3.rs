@@ -1258,7 +1258,7 @@ mod tests {
     };
     use marginalis_domain::{
         CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor, CanonicalWebSession,
-        McpOAuthClient, UnixMillis,
+        McpOAuthClient,
     };
     use tower::ServiceExt;
 
@@ -1433,7 +1433,6 @@ mod tests {
                         subject: "alice".into(),
                         is_administrator: false,
                     },
-                    membership_checked_at: UnixMillis::new(0),
                 }),
             )
         }

@@ -243,7 +243,6 @@ pub struct CanonicalWebSession {
     pub session_id: String,
     pub csrf_token: String,
     pub actor: CanonicalActor,
-    pub membership_checked_at: UnixMillis,
     pub idle_expires_at: UnixMillis,
     pub absolute_expires_at: UnixMillis,
 }
@@ -252,7 +251,6 @@ pub struct CanonicalWebSession {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalAuthenticatedSession {
     pub actor: CanonicalActor,
-    pub membership_checked_at: UnixMillis,
     pub idle_expires_at: UnixMillis,
     pub absolute_expires_at: UnixMillis,
 }
@@ -270,7 +268,6 @@ pub struct CanonicalMcpAuthorizationGrant {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalMcpAuthenticatedActor {
     pub actor: CanonicalActor,
-    pub membership_checked_at: UnixMillis,
 }
 
 /// SQLite検索・参照解決に使う、ノート正本から抽出済みの投影。

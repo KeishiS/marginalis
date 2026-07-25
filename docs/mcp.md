@@ -22,5 +22,5 @@ scope は `notes:read`、`notes:write`、`notes:delete` です。scope だけで
 利用者は Web session と CSRF token を使って、`DELETE /api/v2/mcp-authorizations/{client_id}` から
 個別 client の認可を取り消せます。取り消し後、その client の access token と refresh token は使えません。
 
-access token の利用時と refresh 時には Kanidm membership を最大 5 分ごとに検査します。`server-users`
-から外れた利用者は拒否され、管理者グループから外れた利用者は直後の再検査から管理権限を失います。
+OIDC login 時に検証した `groups` claim を Web session と MCP authorization の権限スナップショットとします。
+group 変更は次回 login から反映され、既存 token は有効期限または認可取消まで発行時の権限を保持します。

@@ -117,7 +117,6 @@ CREATE TABLE v3_web_sessions (
     issuer TEXT NOT NULL,
     subject TEXT NOT NULL,
     is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)),
-    membership_checked_at_ms INTEGER NOT NULL,
     issued_at_ms INTEGER NOT NULL,
     last_seen_at_ms INTEGER NOT NULL,
     idle_expires_at_ms INTEGER NOT NULL,
@@ -146,7 +145,7 @@ CREATE TABLE v3_oidc_login_attempts (
         r#"
 CREATE TABLE v3_mcp_clients (client_id TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, redirect_uris_json TEXT NOT NULL) STRICT;
 CREATE TABLE v3_mcp_authorization_codes (code_hash BLOB PRIMARY KEY NOT NULL, client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id), redirect_uri TEXT NOT NULL, resource_uri TEXT NOT NULL, issuer TEXT NOT NULL, subject TEXT NOT NULL, is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)), scopes TEXT NOT NULL, code_challenge TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, consumed_at_ms INTEGER) STRICT;
-CREATE TABLE v3_mcp_access_tokens (token_hash BLOB PRIMARY KEY NOT NULL, client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id), resource_uri TEXT NOT NULL, issuer TEXT NOT NULL, subject TEXT NOT NULL, is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)), membership_checked_at_ms INTEGER NOT NULL, scopes TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, revoked_at_ms INTEGER, last_used_at_ms INTEGER) STRICT;
+CREATE TABLE v3_mcp_access_tokens (token_hash BLOB PRIMARY KEY NOT NULL, client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id), resource_uri TEXT NOT NULL, issuer TEXT NOT NULL, subject TEXT NOT NULL, is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)), scopes TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, revoked_at_ms INTEGER, last_used_at_ms INTEGER) STRICT;
 CREATE TABLE v3_mcp_refresh_tokens (token_hash BLOB PRIMARY KEY NOT NULL, client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id), resource_uri TEXT NOT NULL, issuer TEXT NOT NULL, subject TEXT NOT NULL, scopes TEXT NOT NULL, expires_at_ms INTEGER NOT NULL, rotated_at_ms INTEGER, revoked_at_ms INTEGER) STRICT;
 CREATE INDEX v3_mcp_access_subject_idx ON v3_mcp_access_tokens (issuer, subject) WHERE revoked_at_ms IS NULL;
 "#,
@@ -722,16 +721,15 @@ impl V3SqliteDatabase {
     ) -> Result<(), V3NoteStoreError> {
         sqlx::query(
             "INSERT INTO v3_web_sessions
-             (session_id_hash, csrf_token_hash, issuer, subject, is_administrator, membership_checked_at_ms,
+             (session_id_hash, csrf_token_hash, issuer, subject, is_administrator,
               issued_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(hash_token(&session.session_id))
         .bind(hash_token(&session.csrf_token))
         .bind(&session.actor.issuer)
         .bind(&session.actor.subject)
         .bind(session.actor.is_administrator)
-        .bind(session.membership_checked_at.get())
         .bind(now.get())
         .bind(now.get())
         .bind(session.idle_expires_at.get())
@@ -751,7 +749,7 @@ impl V3SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
         let hash = hash_token(session_id);
         let row = sqlx::query(
-            "SELECT issuer, subject, is_administrator, membership_checked_at_ms, idle_expires_at_ms, absolute_expires_at_ms
+            "SELECT issuer, subject, is_administrator, idle_expires_at_ms, absolute_expires_at_ms
              FROM v3_web_sessions WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
         )
         .bind(&hash)
@@ -780,58 +778,6 @@ impl V3SqliteDatabase {
             .execute(&mut *transaction)
             .await
             .map_err(v3_database_error)?;
-        transaction.commit().await.map_err(v3_database_error)?;
-        Ok(Some(session))
-    }
-
-    /// Kanidmで再確認した所属をsessionへ反映する。利用者から除外された場合は同一subjectの全sessionを失効する。
-    pub async fn refresh_web_session_membership(
-        &self,
-        session_id: &str,
-        is_user: bool,
-        is_administrator: bool,
-        checked_at: UnixMillis,
-    ) -> Result<Option<CanonicalAuthenticatedSession>, V3NoteStoreError> {
-        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
-        let hash = hash_token(session_id);
-        let row = sqlx::query(
-            "SELECT issuer, subject, is_administrator, membership_checked_at_ms, idle_expires_at_ms, absolute_expires_at_ms
-             FROM v3_web_sessions WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
-        )
-        .bind(&hash)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(v3_database_error)?;
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        let mut session = v3_session_from_row(row)?;
-        if !is_user {
-            sqlx::query(
-                "UPDATE v3_web_sessions SET revoked_at_ms = ?
-                 WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL",
-            )
-            .bind(checked_at.get())
-            .bind(&session.actor.issuer)
-            .bind(&session.actor.subject)
-            .execute(&mut *transaction)
-            .await
-            .map_err(v3_database_error)?;
-            transaction.commit().await.map_err(v3_database_error)?;
-            return Ok(None);
-        }
-        session.actor.is_administrator = is_administrator;
-        session.membership_checked_at = checked_at;
-        sqlx::query(
-            "UPDATE v3_web_sessions
-             SET is_administrator = ?, membership_checked_at_ms = ? WHERE session_id_hash = ?",
-        )
-        .bind(is_administrator)
-        .bind(checked_at.get())
-        .bind(hash)
-        .execute(&mut *transaction)
-        .await
-        .map_err(v3_database_error)?;
         transaction.commit().await.map_err(v3_database_error)?;
         Ok(Some(session))
     }
@@ -950,12 +896,12 @@ impl V3SqliteDatabase {
         grant: &CanonicalMcpAuthorizationGrant,
         access_expires_at: UnixMillis,
         refresh_expires_at: UnixMillis,
-        now: UnixMillis,
+        _now: UnixMillis,
     ) -> Result<(), V3NoteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
         let scopes = grant.scopes.join(" ");
-        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, membership_checked_at_ms, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(now.get()).bind(&scopes).bind(access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
         sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(hash_token(refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
         transaction.commit().await.map_err(v3_database_error)
@@ -968,7 +914,7 @@ impl V3SqliteDatabase {
         scope: &str,
         now: UnixMillis,
     ) -> Result<Option<CanonicalMcpAuthenticatedActor>, V3NoteStoreError> {
-        let row = sqlx::query("SELECT issuer, subject, is_administrator, membership_checked_at_ms FROM v3_mcp_access_tokens WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ? AND instr(' ' || scopes || ' ', ' ' || ? || ' ') > 0")
+        let row = sqlx::query("SELECT issuer, subject, is_administrator FROM v3_mcp_access_tokens WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ? AND instr(' ' || scopes || ' ', ' ' || ? || ' ') > 0")
             .bind(hash_token(token)).bind(resource_uri).bind(now.get()).bind(scope).fetch_optional(&self.pool).await.map_err(v3_database_error)?;
         row.map(|r| {
             Ok(CanonicalMcpAuthenticatedActor {
@@ -977,10 +923,6 @@ impl V3SqliteDatabase {
                     subject: r.try_get("subject").map_err(v3_database_error)?,
                     is_administrator: r.try_get("is_administrator").map_err(v3_database_error)?,
                 },
-                membership_checked_at: UnixMillis::new(
-                    r.try_get("membership_checked_at_ms")
-                        .map_err(v3_database_error)?,
-                ),
             })
         })
         .transpose()
@@ -1027,43 +969,12 @@ impl V3SqliteDatabase {
                 .collect(),
         };
         let scopes = grant.scopes.join(" ");
-        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, membership_checked_at_ms, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&rotation.new_access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(now.get()).bind(&scopes).bind(rotation.access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(&rotation.new_access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(rotation.access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
         sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(hash_token(&rotation.new_refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(rotation.refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
         transaction.commit().await.map_err(v3_database_error)?;
         Ok(Some(grant))
-    }
-
-    /// refresh tokenを消費せずに、更新前のKanidm所属再確認に必要な主体を読む。
-    pub async fn active_mcp_refresh_grant(
-        &self,
-        refresh_token: &str,
-        client_id: &str,
-        resource_uri: &str,
-        now: UnixMillis,
-    ) -> Result<Option<CanonicalMcpAuthorizationGrant>, V3NoteStoreError> {
-        let row = sqlx::query("SELECT issuer, subject, is_administrator, scopes FROM v3_mcp_refresh_tokens WHERE token_hash = ? AND client_id = ? AND resource_uri = ? AND rotated_at_ms IS NULL AND revoked_at_ms IS NULL AND expires_at_ms > ?")
-            .bind(hash_token(refresh_token)).bind(client_id).bind(resource_uri).bind(now.get()).fetch_optional(&self.pool).await.map_err(v3_database_error)?;
-        row.map(|row| {
-            Ok(CanonicalMcpAuthorizationGrant {
-                actor: CanonicalActor {
-                    issuer: row.try_get("issuer").map_err(v3_database_error)?,
-                    subject: row.try_get("subject").map_err(v3_database_error)?,
-                    is_administrator: row.try_get("is_administrator").map_err(v3_database_error)?,
-                },
-                client_id: client_id.into(),
-                redirect_uri: String::new(),
-                resource_uri: resource_uri.into(),
-                scopes: row
-                    .try_get::<String, _>("scopes")
-                    .map_err(v3_database_error)?
-                    .split_whitespace()
-                    .map(str::to_owned)
-                    .collect(),
-            })
-        })
-        .transpose()
     }
 
     pub async fn revoke_mcp_client_tokens(
@@ -1086,31 +997,6 @@ impl V3SqliteDatabase {
                 .execute(&mut *transaction)
                 .await
                 .map_err(v3_database_error)?;
-        }
-        transaction.commit().await.map_err(v3_database_error)
-    }
-
-    /// Kanidmの再確認結果を同一主体のMCP token familyへ反映する。
-    /// `server-users` を失った主体はaccess/refresh tokenを一括失効する。
-    pub async fn refresh_mcp_subject_membership(
-        &self,
-        issuer: &str,
-        subject: &str,
-        is_user: bool,
-        is_administrator: bool,
-        now: UnixMillis,
-    ) -> Result<(), V3NoteStoreError> {
-        let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
-        if !is_user {
-            for table in ["v3_mcp_access_tokens", "v3_mcp_refresh_tokens"] {
-                sqlx::query(&format!("UPDATE {table} SET revoked_at_ms = ? WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL"))
-                    .bind(now.get()).bind(issuer).bind(subject).execute(&mut *transaction).await.map_err(v3_database_error)?;
-            }
-        } else {
-            sqlx::query("UPDATE v3_mcp_access_tokens SET is_administrator = ?, membership_checked_at_ms = ? WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL")
-                .bind(is_administrator).bind(now.get()).bind(issuer).bind(subject).execute(&mut *transaction).await.map_err(v3_database_error)?;
-            sqlx::query("UPDATE v3_mcp_refresh_tokens SET is_administrator = ? WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL")
-                .bind(is_administrator).bind(issuer).bind(subject).execute(&mut *transaction).await.map_err(v3_database_error)?;
         }
         transaction.commit().await.map_err(v3_database_error)
     }
@@ -1693,10 +1579,6 @@ fn v3_session_from_row(
                 .try_get::<bool, _>("is_administrator")
                 .map_err(v3_database_error)?,
         },
-        membership_checked_at: UnixMillis::new(
-            row.try_get("membership_checked_at_ms")
-                .map_err(v3_database_error)?,
-        ),
         idle_expires_at: UnixMillis::new(
             row.try_get("idle_expires_at_ms")
                 .map_err(v3_database_error)?,
@@ -3583,7 +3465,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_sessions_refresh_group_membership_and_revoke_removed_users() {
+    async fn v3_sessions_retain_login_time_group_snapshot() {
         let database = V3SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("v3 migration succeeds");
@@ -3595,7 +3477,6 @@ mod tests {
                 subject: "alice".into(),
                 is_administrator: false,
             },
-            membership_checked_at: UnixMillis::new(100),
             idle_expires_at: UnixMillis::new(1_000),
             absolute_expires_at: UnixMillis::new(2_000),
         };
@@ -3615,25 +3496,12 @@ mod tests {
                 .await
                 .expect("csrf query")
         );
-        let refreshed = database
-            .refresh_web_session_membership("session-token", true, true, UnixMillis::new(200))
+        let authenticated = database
+            .lookup_web_session("session-token", UnixMillis::new(200))
             .await
-            .expect("refresh")
+            .expect("lookup")
             .expect("active session");
-        assert!(refreshed.actor.is_administrator);
-        assert_eq!(refreshed.membership_checked_at, UnixMillis::new(200));
-        assert_eq!(
-            database
-                .refresh_web_session_membership("session-token", false, false, UnixMillis::new(300))
-                .await,
-            Ok(None)
-        );
-        assert_eq!(
-            database
-                .lookup_web_session("session-token", UnixMillis::new(301))
-                .await,
-            Ok(None)
-        );
+        assert!(!authenticated.actor.is_administrator);
     }
 
     #[tokio::test]

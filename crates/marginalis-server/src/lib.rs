@@ -13,8 +13,8 @@ use marginalis_application::{
     NoteDraft, NoteOperationKind, NoteQueryStore, NoteUseCaseError, NoteUseCases, NoteWriteService,
     OidcAuthenticationUseCases, OidcUserAdministrationStore, Random, RootCredentialStore,
     SessionLifetime, UserAdministrationUseCases, V3McpOAuthUseCases, V3McpTokenPair,
-    V3MembershipResolver, V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
-    WebSession, WebSessionService, WebSessionStore, WebSessionUseCases,
+    V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases, WebSession,
+    WebSessionService, WebSessionStore, WebSessionUseCases,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError, OidcConfiguration};
 use marginalis_domain::{
@@ -78,11 +78,10 @@ impl ServerV3NoteUseCases {
     }
 }
 
-/// 5分ごとのKanidm group再確認を強制するv0.3 Cookie session service。
+/// OIDC login時に検証したgroup claimをsessionへ固定するv0.3 Cookie session service。
 #[derive(Clone)]
 pub struct ServerV3WebSessionUseCases {
     database: V3SqliteDatabase,
-    membership: Arc<dyn V3MembershipResolver>,
     lifetime: SessionLifetime,
 }
 
@@ -120,19 +119,9 @@ impl ServerV3OidcAuthenticationUseCases {
     }
 }
 
-const V3_GROUP_REVALIDATION_INTERVAL_MS: i64 = 5 * 60 * 1_000;
-
 impl ServerV3WebSessionUseCases {
-    pub fn new(
-        database: V3SqliteDatabase,
-        membership: Arc<dyn V3MembershipResolver>,
-        lifetime: SessionLifetime,
-    ) -> Self {
-        Self {
-            database,
-            membership,
-            lifetime,
-        }
+    pub fn new(database: V3SqliteDatabase, lifetime: SessionLifetime) -> Self {
+        Self { database, lifetime }
     }
 }
 
@@ -203,7 +192,6 @@ pub struct ServerMcpOAuthService {
 #[derive(Clone)]
 pub struct ServerV3McpOAuthService {
     database: V3SqliteDatabase,
-    membership: Option<Arc<dyn V3MembershipResolver>>,
 }
 
 impl ServerV3McpOAuthService {
@@ -211,20 +199,7 @@ impl ServerV3McpOAuthService {
     pub const REFRESH_TOKEN_SECONDS: u64 = 30 * 24 * 60 * 60;
 
     pub fn new(database: V3SqliteDatabase) -> Self {
-        Self {
-            database,
-            membership: None,
-        }
-    }
-
-    pub fn with_membership(
-        database: V3SqliteDatabase,
-        membership: Arc<dyn V3MembershipResolver>,
-    ) -> Self {
-        Self {
-            database,
-            membership: Some(membership),
-        }
+        Self { database }
     }
 
     pub async fn register_client(
@@ -321,33 +296,6 @@ impl ServerV3McpOAuthService {
         resource_uri: String,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
         let now = SystemClock.now();
-        if let Some(membership) = &self.membership {
-            let Some(grant) = self
-                .database
-                .active_mcp_refresh_grant(&refresh_token, &client_id, &resource_uri, now)
-                .await
-                .map_err(|_| McpOAuthError::Unavailable)?
-            else {
-                return Err(McpOAuthError::Rejected);
-            };
-            let resolved = membership
-                .resolve(&grant.actor.issuer, &grant.actor.subject)
-                .await
-                .map_err(|_| McpOAuthError::Unavailable)?;
-            self.database
-                .refresh_mcp_subject_membership(
-                    &grant.actor.issuer,
-                    &grant.actor.subject,
-                    resolved.is_user,
-                    resolved.is_administrator,
-                    now,
-                )
-                .await
-                .map_err(|_| McpOAuthError::Unavailable)?;
-            if !resolved.is_user {
-                return Err(McpOAuthError::Rejected);
-            }
-        }
         let access_token = SystemRandom.opaque_token();
         let next_refresh_token = SystemRandom.opaque_token();
         let Some(grant) = self
@@ -413,7 +361,6 @@ impl ServerV3McpOAuthService {
         resource_uri: &str,
         scope: &str,
     ) -> Result<Option<marginalis_domain::CanonicalMcpAuthenticatedActor>, McpOAuthError> {
-        let now = SystemClock.now();
         let Some(authenticated) = self
             .database
             .authenticate_mcp_access_token(token, resource_uri, scope, SystemClock.now())
@@ -422,40 +369,7 @@ impl ServerV3McpOAuthService {
         else {
             return Ok(None);
         };
-        if now
-            .get()
-            .saturating_sub(authenticated.membership_checked_at.get())
-            < V3_GROUP_REVALIDATION_INTERVAL_MS
-        {
-            return Ok(Some(authenticated));
-        }
-        let Some(membership) = &self.membership else {
-            return Ok(Some(authenticated));
-        };
-        let refreshed = membership
-            .resolve(&authenticated.actor.issuer, &authenticated.actor.subject)
-            .await
-            .map_err(|_| McpOAuthError::Unavailable)?;
-        self.database
-            .refresh_mcp_subject_membership(
-                &authenticated.actor.issuer,
-                &authenticated.actor.subject,
-                refreshed.is_user,
-                refreshed.is_administrator,
-                now,
-            )
-            .await
-            .map_err(|_| McpOAuthError::Unavailable)?;
-        Ok(refreshed
-            .is_user
-            .then_some(marginalis_domain::CanonicalMcpAuthenticatedActor {
-                actor: CanonicalActor {
-                    issuer: authenticated.actor.issuer,
-                    subject: authenticated.actor.subject,
-                    is_administrator: refreshed.is_administrator,
-                },
-                membership_checked_at: now,
-            }))
+        Ok(Some(authenticated))
     }
 
     pub async fn revoke(
@@ -1572,39 +1486,7 @@ impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
         else {
             return Ok(None);
         };
-        if now
-            .get()
-            .saturating_sub(session.membership_checked_at.get())
-            < V3_GROUP_REVALIDATION_INTERVAL_MS
-        {
-            return Ok(Some(session));
-        }
-        let membership = match self
-            .membership
-            .resolve(&session.actor.issuer, &session.actor.subject)
-            .await
-        {
-            Ok(membership) => membership,
-            Err(AuthenticationUseCaseError::Rejected | AuthenticationUseCaseError::NotFound) => {
-                return self
-                    .database
-                    .refresh_web_session_membership(&session_id, false, false, now)
-                    .await
-                    .map_err(|_| AuthenticationUseCaseError::Unavailable);
-            }
-            Err(AuthenticationUseCaseError::Unavailable) => {
-                return Err(AuthenticationUseCaseError::Unavailable);
-            }
-        };
-        self.database
-            .refresh_web_session_membership(
-                &session_id,
-                membership.is_user,
-                membership.is_administrator,
-                now,
-            )
-            .await
-            .map_err(|_| AuthenticationUseCaseError::Unavailable)
+        Ok(Some(session))
     }
 
     async fn verify_csrf(
@@ -1627,7 +1509,6 @@ impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
             session_id: SystemRandom.opaque_token(),
             csrf_token: SystemRandom.opaque_token(),
             actor,
-            membership_checked_at: now,
             idle_expires_at: UnixMillis::new(now.get() + self.lifetime.idle_timeout_ms),
             absolute_expires_at: UnixMillis::new(now.get() + self.lifetime.absolute_timeout_ms),
         };
@@ -2088,14 +1969,12 @@ pub struct StorageConfig {
 pub struct OidcConfig {
     pub issuer_url: Url,
     pub client_id: String,
-    pub membership_api_url: Url,
     pub ca_certificate_file: Option<PathBuf>,
 }
 
 /// secret値は公開設定から分離する。Debugを実装せずログ出力を防ぐ。
 pub struct SecretConfig {
     pub oidc_client_secret: String,
-    pub kanidm_membership_token: String,
     pub initial_root_password: Option<String>,
 }
 
@@ -2164,7 +2043,6 @@ impl ServerConfig {
             oidc: OidcConfig {
                 issuer_url,
                 client_id,
-                membership_api_url: validate_issuer_url(required("KANIDM_MEMBERSHIP_API_URL")?)?,
                 ca_certificate_file: std::env::var_os("OIDC_CA_CERTIFICATE_FILE")
                     .filter(|value| !value.is_empty())
                     .map(PathBuf::from),
@@ -2176,7 +2054,6 @@ impl ServerConfig {
         };
         let secrets = SecretConfig {
             oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
-            kanidm_membership_token: required_secret("KANIDM_MEMBERSHIP_TOKEN")?,
             initial_root_password: optional_secret("ROOT_PASSWORD")?,
         };
         Ok((configuration, secrets))
@@ -2293,25 +2170,9 @@ mod tests {
     use super::*;
     use marginalis_application::{
         McpOAuthAdministrationUseCases, McpOAuthUseCases, NoteUseCases, OidcIdentityStore,
-        V3GroupMembership,
     };
     use marginalis_domain::{McpOAuthClient, OidcIdentity, RegistrationPolicy};
     use marginalis_mcp::McpAuthenticator;
-
-    struct TestMembershipResolver {
-        result: Result<V3GroupMembership, AuthenticationUseCaseError>,
-    }
-
-    #[async_trait]
-    impl V3MembershipResolver for TestMembershipResolver {
-        async fn resolve(
-            &self,
-            _issuer: &str,
-            _subject: &str,
-        ) -> Result<V3GroupMembership, AuthenticationUseCaseError> {
-            self.result
-        }
-    }
 
     #[test]
     fn base_url_rejects_non_https() {
@@ -2760,7 +2621,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_session_revalidates_stale_membership_and_fails_closed() {
+    async fn v3_session_retains_login_time_group_snapshot() {
         let database = V3SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
@@ -2773,9 +2634,6 @@ mod tests {
                 subject: "removed-user".into(),
                 is_administrator: false,
             },
-            membership_checked_at: UnixMillis::new(
-                now.get() - V3_GROUP_REVALIDATION_INTERVAL_MS - 1,
-            ),
             idle_expires_at: UnixMillis::new(now.get() + 60_000),
             absolute_expires_at: UnixMillis::new(now.get() + 60_000),
         };
@@ -2785,9 +2643,6 @@ mod tests {
             .expect("issue");
         let service = ServerV3WebSessionUseCases::new(
             database.clone(),
-            Arc::new(TestMembershipResolver {
-                result: Err(AuthenticationUseCaseError::Rejected),
-            }),
             SessionLifetime {
                 idle_timeout_ms: 60_000,
                 absolute_timeout_ms: 60_000,
@@ -2797,15 +2652,12 @@ mod tests {
             service
                 .authenticate_session(session.session_id.clone())
                 .await
-                .expect("revalidation"),
-            None
-        );
-        assert_eq!(
-            database
-                .lookup_web_session(&session.session_id, UnixMillis::new(now.get() + 1))
-                .await
-                .expect("lookup"),
-            None
+                .expect("snapshot"),
+            Some(CanonicalAuthenticatedSession {
+                actor: session.actor,
+                idle_expires_at: session.idle_expires_at,
+                absolute_expires_at: session.absolute_expires_at,
+            })
         );
     }
 

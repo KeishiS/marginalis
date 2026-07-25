@@ -11,12 +11,13 @@
 - SQLite は本文、メタデータ、ACL、削除状態の単一正本である。AsciiDoc はノート単位と archive の
   import/export 形式であり、稼働時の正本ではない。
 - `server-users` に属する主体だけが利用できる。`server-admins` は全ノートを読め、管理できる。
-  group 所属は最大 5 分ごとに service account で再確認し、確認不能かつ freshness 切れでは fail closed とする。
+  署名検証済み OIDC ID token の `groups` claim をログイン時の権限スナップショットとする。
+  group 変更は次回ログインから反映する。
 - REST、Web UI、MCP は同じ ACL と revision 規則を使う。REST API は `/api/v2`、MCP は OAuth 2.1
   Authorization Code + PKCE S256 と Dynamic Client Registration を提供する。
 - 削除は 30 日のソフトデリートである。本文履歴は保存しない。期限後の物理削除は日次 timer が行う。
-- NixOS module は SQLite、OIDC client、Kanidm membership token、MCP、backup destination を設定できる。
-  secret は systemd credential で渡す。
+- NixOS module は SQLite、OIDC client、MCP、backup destination を設定できる。client secret は systemd
+  credential で渡す。
 - v3 の公開条件は Kanidm 1.10 E2E、MCP 認可、NixOS 配備の成功である。archive restore の定期試験は
   公開後に追加する。
 

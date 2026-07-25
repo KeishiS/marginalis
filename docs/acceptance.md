@@ -6,8 +6,8 @@
 ## 自動証跡
 
 PR CI の `verify` と `nixos-e2e` はそれぞれ `cargo make verify` と `nix flake check -L` を実行する。
-後者には NixOS module の配備、backup/purge、OIDC 未到達時の fail-closed、実 Kanidm 1.10.4 の
-private CA・OAuth2 client provisioning・OIDC Discovery を含む。以下の browser 操作、group 変更、外部
+後者には NixOS module の配備、backup/purge、OIDC 未到達時の login fail-closed、実 Kanidm 1.10.4 の
+private CA・OAuth2 client provisioning・OIDC Discovery を含む。以下の browser 操作、group claim を含む OIDC 設定、外部
 MCP client は実運用の IdP と client を要するため、release issue で手動結果を記録する。
 
 ## 必須確認
@@ -15,8 +15,8 @@ MCP client は実運用の IdP と client を要するため、release issue で
 1. NixOS module で service を配備し、`GET /api/v2/health` が `200` を返す。
 2. TLS とサブパスで OIDC login を行い、`server-users` 所属者だけが session を取得できる。
 3. `server-admins` の利用者が他人のノートを閲覧・管理でき、通常利用者には ACL が適用される。
-4. Kanidm で group を変更し、最大 5 分後の要求で失効または管理権限の変更が反映される。Kanidm を
-   確認できない状態では、freshness が期限切れた要求が拒否される。
+4. `groups` claim を持たない主体と `server-users` 非所属の主体がログインを拒否されること、
+   `server-admins` の追加が次回ログインで管理権限として反映されることを確認する。
 5. Web UI と `/api/v2` からノートを作成、更新、削除、復元し、revision conflict と CSRF 拒否を確認する。
 6. ChatGPT、Claude Code、Codex CLI の各 MCP client で Dynamic Client Registration、OIDC login、
    Authorization Code + PKCE、read/write、認可取消を確認する。

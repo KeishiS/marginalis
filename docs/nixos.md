@@ -14,187 +14,27 @@ services.marginalis = {
     clientId = "marginalis";
     clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
     caCertificateFile = "/run/secrets/marginalis-kanidm-ca.pem";
-    membershipApiUrl = "https://id.example.test";
-    membershipTokenFile = "/run/secrets/marginalis-kanidm-membership-token";
   };
   mcp.enable = true;
 };
 ```
 
-`membershipTokenFile` は Kanidm の person entry に対する `memberof` 読み取りだけを許可した
-service-account token を指定します。二つの secret file は systemd credential として渡され、Nix store に
-現れてはなりません。内部 CA の Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定する。
-これは OIDC Discovery と membership API の双方に適用される。
+`clientSecretFile` は systemd credential として渡され、Nix store に現れてはなりません。内部 CA の
+Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し、OIDC Discovery と token exchange
+に適用します。
 
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
 サブパスでは外部 prefix を upstream へ渡す前に除去し、`baseUrl` と OIDC redirect URI を一致させます。
 
-## Kanidm membership service account
+## Kanidm の group claim
 
-`membershipTokenFile` は Marginalis 固有の Kanidm service account の read-only API token である。OIDC
-ID token だけではログイン後の group 変更を検出できないため、Marginalis はこの token で
-`GET /v1/person/{subject}` を照会し、`memberof` を最大 5 分ごとに再確認する。
+Marginalis は OIDC callback で署名検証済み ID token の `groups` claim を読む。`server-users` がなければ
+ログインを拒否し、`server-admins` があれば発行する Web session と MCP authorization を管理者として固定する。
+Kanidm の group 変更は次回 OIDC login から反映され、既存の Web session と MCP token は有効期限または
+明示的な認可取消までその時点の権限を保つ。
 
-NixOS の `services.kanidm.provision` は person、group、OAuth2 client を宣言できるが、Kanidm 1.10
-では service account と API token を直接宣言できない。token は平文を生成時に一度だけ取得する秘密情報
-でもある。従って、service account は初回に管理者 CLI で作成し、token は sops-nix、agenix 等の secret
-manager で `membershipTokenFile` の場所へ配置する。
-
-以下は `idm_admin` で初回設定する例である。`id.example.test` と CA ファイルのパスは実環境へ置き換える。
-
-```bash
-kanidm login \
-  --url https://id.example.test \
-  --ca /etc/ssl/kanidm-ca.pem \
-  --name idm_admin
-
-kanidm service-account create \
-  marginalis-membership \
-  "Marginalis membership resolver" \
-  idm_admin
-
-kanidm service-account api-token generate \
-  marginalis-membership \
-  "marginalis-production-2026"
-```
-
-最後のコマンドは token を一度だけ表示する。`--readwrite` は指定しない。表示値を root のみが読める秘密
-ファイルへ保存し、NixOS 設定の `membershipTokenFile` と一致させる。module は systemd の
-`LoadCredential` を使うため、PID 1 がこの元ファイルを読み、実行時に限って `marginalis` サービスへ
-credential を渡す。したがって元ファイルを `marginalis` ユーザー所有・可読にする必要はない。token を
-shell history、Nix 式、journal、Git に書き込んではならない。
-
-```bash
-sudo install -m 0600 -o root -g root /dev/null \
-  /run/secrets/marginalis-kanidm-membership-token
-sudoedit /run/secrets/marginalis-kanidm-membership-token
-```
-
-service account 自体には person entry の `memberof` を読む最小限の Kanidm access control profile
-(ACP) を group 経由で付与する。Kanidm 1.10 の CLI には ACP を作るサブコマンドがないため、次の初回
-設定では raw API を一度だけ使う。`idm_people_admins` のような広い組み込み group を service account へ
-恒久的に付与してはならない。
-
-まず ACP の receiver group を作り、service account をその group のみに加入させる。
-
-```bash
-kanidm group create marginalis-membership-readers idm_admin
-kanidm group add-members marginalis-membership-readers marginalis-membership
-```
-
-ACP 作成には system administrator である `admin` の CLI session が必要である。`idm_admin` は IDM の
-person/group 管理者であり、`idm_access_control_admins` を変更できない。`admin` は保護された system account
-のため API token を発行できず、`kanidm reauth` の対象でもない。service account を一時的にも
-`idm_access_control_admins` へ加入させてはならない。
-
-`admin` でログインすると、Kanidm 1.10 の CLI は session token を
-`~/.cache/kanidm_tokens` に保存する。次では、その session token を raw API の一回の呼出しにだけ使う。
-`admin@id.example.test` は実際に `kanidm login` が表示した principal へ置き換える。token を表示・
-shell history・Nix 式・journal へ書き出してはならない。
-
-```bash
-kanidm login \
-  --url https://id.example.test \
-  --ca /etc/ssl/kanidm-ca.pem \
-  --name admin
-
-BOOTSTRAP_TOKEN="$(jq -er \
-  '.instances[""].tokens["admin@id.example.test"]' \
-  ~/.cache/kanidm_tokens)"
-```
-
-`id.example.test` と CA ファイルは実環境の値へ置き換える。以下の ACP は `person` entry だけを対象にし、
-返却可能な属性を `memberof` のみに制限する。
-
-```bash
-curl --fail --show-error --cacert /etc/ssl/kanidm-ca.pem \
-  -H "Authorization: Bearer $BOOTSTRAP_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data @- \
-  https://id.example.test/v1/raw/create <<'JSON'
-{
-  "entries": [
-    {
-      "attrs": {
-        "class": [
-          "object",
-          "access_control_profile",
-          "access_control_search",
-          "access_control_receiver_group",
-          "access_control_target_scope"
-        ],
-        "name": ["marginalis_membership_read"],
-        "description": ["Allow Marginalis to read person memberof only."],
-        "acp_receiver_group": ["marginalis-membership-readers"],
-        "acp_targetscope": [
-          "{\"and\":[{\"eq\":[\"class\",\"person\"]},{\"andnot\":{\"or\":[{\"eq\":[\"class\",\"recycled\"]},{\"eq\":[\"class\",\"tombstone\"]}]}}]}"
-        ],
-        "acp_search_attr": ["memberof"]
-      }
-    }
-  ]
-}
-JSON
-```
-
-成功後、session token を変数から除去し、`admin` session を logout する。最後に生成する read-only token
-だけを `membershipTokenFile` へ保存する。
-
-```bash
-unset BOOTSTRAP_TOKEN
-kanidm logout --name admin
-
-kanidm service-account api-token generate \
-  marginalis-membership "marginalis-production-2026"
-```
-
-新しい read-only token で `GET /v1/person/<test-user>` を実行し、応答に `memberof` 以外の不要な
-属性が含まれないことを確認する。
-
-### 最終権限確認
-
-`marginalis-membership` は対話ログインではなく API token で確認する。以下は root shell で実行する。
-`TEST_USER` は mail address を持つ一般ユーザーへ置き換える。最初の要求は token の主体を、二つ目は
-一般ユーザーの `memberof` だけが読めることを確認する。三つ目は mail が返らないことを確認する。
-
-```bash
-TOKEN="$(< /run/secrets/marginalis-kanidm-membership-token)"
-BASE_URL=https://id.example.test
-TEST_USER=alice
-
-curl --fail --silent --show-error --cacert /etc/ssl/kanidm-ca.pem \
-  -H "Authorization: Bearer $TOKEN" \
-  "$BASE_URL/v1/self" \
-  | jq -e '.youare.attrs.name == ["marginalis-membership"]'
-
-curl --fail --silent --show-error --cacert /etc/ssl/kanidm-ca.pem \
-  -H "Authorization: Bearer $TOKEN" \
-  "$BASE_URL/v1/person/$TEST_USER" \
-  | jq -e '. != null and (.attrs | keys == ["memberof"])'
-
-curl --fail --silent --show-error --cacert /etc/ssl/kanidm-ca.pem \
-  -H "Authorization: Bearer $TOKEN" \
-  "$BASE_URL/v1/person/$TEST_USER/_attr/mail" \
-  | jq -e '. == null'
-
-unset TOKEN
-```
-
-各コマンドが exit status 0 なら読取り権限は期待どおりである。書込み要求を試験に使わない。read-only token
-であることは `idm_admin` session で次を実行して確認する。
-
-```bash
-kanidm service-account api-token status marginalis-membership
-```
-
-token の状態とローテーションは次で扱う。新 token を secret manager へ反映し、Marginalis を再起動して
-から、旧 token の UUID を失効させる。
-
-```bash
-kanidm service-account api-token status marginalis-membership
-sudo systemctl restart marginalis.service
-kanidm service-account api-token destroy marginalis-membership <old-token-uuid>
-```
+Kanidm の OAuth2 client が文字列配列の `groups` claim に `server-users` と `server-admins` を含めるよう
+設定する。Marginalis は Kanidm REST API を照会しないため、service account、API token、custom ACP は不要である。
 
 ## 定期処理
 

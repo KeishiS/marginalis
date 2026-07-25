@@ -106,21 +106,7 @@ in
         type = types.nullOr types.str;
         default = null;
         example = "/run/secrets/internal-ca.pem";
-        description = "Optional PEM CA certificate for a private Kanidm TLS PKI. The same trust anchor is used for OIDC discovery and membership revalidation.";
-      };
-
-      membershipApiUrl = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        example = "https://id.sandi05.com";
-        description = "Kanidm HTTPS API base URL used for five-minute group membership revalidation.";
-      };
-
-      membershipTokenFile = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        example = "/run/secrets/marginalis-kanidm-membership-token";
-        description = "Read-only Kanidm service-account API token used only for group membership revalidation.";
+        description = "Optional PEM CA certificate for a private Kanidm TLS PKI, used for OIDC discovery and token exchange.";
       };
     };
 
@@ -154,14 +140,6 @@ in
       {
         assertion = cfg.oidc.caCertificateFile == null || lib.hasPrefix "/" cfg.oidc.caCertificateFile;
         message = "services.marginalis.oidc.caCertificateFile must be an absolute path when set.";
-      }
-      {
-        assertion = cfg.oidc.membershipApiUrl != null;
-        message = "services.marginalis.oidc.membershipApiUrl must be set.";
-      }
-      {
-        assertion = cfg.oidc.membershipTokenFile != null;
-        message = "services.marginalis.oidc.membershipTokenFile must be set.";
       }
       {
         assertion =
@@ -207,8 +185,6 @@ in
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
         OIDC_CA_CERTIFICATE_FILE =
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
-        KANIDM_MEMBERSHIP_API_URL = cfg.oidc.membershipApiUrl;
-        KANIDM_MEMBERSHIP_TOKEN_FILE = "%d/kanidm-membership-token";
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
       };
       serviceConfig = {
@@ -218,10 +194,7 @@ in
         WorkingDirectory = cfg.dataDir;
         Restart = "on-failure";
         RestartSec = "5s";
-        LoadCredential = [
-          "oidc-client-secret:${cfg.oidc.clientSecretFile}"
-          "kanidm-membership-token:${cfg.oidc.membershipTokenFile}"
-        ];
+        LoadCredential = [ "oidc-client-secret:${cfg.oidc.clientSecretFile}" ];
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";
         PrivateTmp = true;

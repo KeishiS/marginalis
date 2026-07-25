@@ -865,24 +865,7 @@ pub trait V3NoteUseCases: Send + Sync {
     fn render_note_html(&self, note: &CanonicalNote) -> Result<String, NoteUseCaseError>;
 }
 
-/// Kanidmから再確認した主体の利用資格。group名そのものはHTTP・SQLiteへ漏らさない。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct V3GroupMembership {
-    pub is_user: bool,
-    pub is_administrator: bool,
-}
-
-/// Kanidmへの所属確認を隔離するport。
-#[async_trait]
-pub trait V3MembershipResolver: Send + Sync {
-    async fn resolve(
-        &self,
-        issuer: &str,
-        subject: &str,
-    ) -> Result<V3GroupMembership, AuthenticationUseCaseError>;
-}
-
-/// v0.3のCookie sessionとKanidm group再確認を扱う境界。
+/// v0.3のCookie sessionを扱う境界。Kanidm groupはOIDC login時にだけ検証する。
 #[async_trait]
 pub trait V3WebSessionUseCases: Send + Sync {
     async fn authenticate_session(

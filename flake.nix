@@ -137,8 +137,6 @@
                         issuerUrl = "https://id.example.test";
                         clientId = "marginalis";
                         clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
-                        membershipApiUrl = "https://id.example.test";
-                        membershipTokenFile = "/run/secrets/marginalis-membership-token";
                       };
                     };
                   }
@@ -161,7 +159,6 @@
                     exit 0
                   fi
                   test -s "$OIDC_CLIENT_SECRET_FILE"
-                  test -s "$KANIDM_MEMBERSHIP_TOKEN_FILE"
                   touch "$MARGINALIS_DATA_DIR/service-started"
                   exec sleep infinity
                 '';
@@ -174,8 +171,6 @@
                 system.stateVersion = "25.11";
 
                 environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
-                environment.etc."marginalis-test/membership-token".text = "test-only-membership-token";
-
                 services.marginalis = {
                   enable = true;
                   package = probeServer;
@@ -185,8 +180,6 @@
                     issuerUrl = "https://id.example.test";
                     clientId = "marginalis";
                     clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
-                    membershipApiUrl = "https://id.example.test";
-                    membershipTokenFile = "/etc/marginalis-test/membership-token";
                   };
                 };
               };
@@ -213,8 +206,6 @@
                 pkgs.sqlite
               ];
               environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
-              environment.etc."marginalis-test/membership-token".text = "test-only-membership-token";
-
               services.marginalis = {
                 enable = true;
                 baseUrl = "https://marginalis.example.test";
@@ -223,8 +214,6 @@
                   issuerUrl = "https://127.0.0.1:1";
                   clientId = "marginalis";
                   clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
-                  membershipApiUrl = "https://127.0.0.1:1";
-                  membershipTokenFile = "/etc/marginalis-test/membership-token";
                 };
               };
             };
@@ -285,7 +274,6 @@
                 networking.hosts."192.168.1.2" = [ "id.example.test" ];
                 security.pki.certificateFiles = [ "${kanidmDiscoveryCerts}/ca.pem" ];
                 environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
-                environment.etc."marginalis-test/membership-token".text = "test-only-membership-token";
                 services.marginalis = {
                   enable = true;
                   baseUrl = "https://marginalis.example.test/marginalis";
@@ -294,8 +282,6 @@
                     clientId = "marginalis";
                     clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
                     caCertificateFile = "${kanidmDiscoveryCerts}/ca.pem";
-                    membershipApiUrl = "https://id.example.test:8443";
-                    membershipTokenFile = "/etc/marginalis-test/membership-token";
                   };
                 };
               };

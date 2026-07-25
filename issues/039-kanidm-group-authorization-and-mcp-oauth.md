@@ -3,11 +3,9 @@
 ## 状態
 
 実装中。[037](037-v0.3.0-architecture-rebaseline.md)の認証・認可決定を実装する。
-検証済み ID token からの構成可能な group claim の fail-closed な読取りと、所属更新・
-利用者除外による v0.3 Web session 失効を実装した。MCP は Authorization Code + PKCE、refresh
+検証済み ID token からの構成可能な group claim の fail-closed な読取りを実装した。MCP は Authorization Code + PKCE、refresh
 rotation、Dynamic Client Registration、認可取消、OAuth/Protected Resource metadata、Streamable HTTP
-のノート操作を提供する。Kanidm への再確認と MCP token への5分以内の所属反映、対象 client の
-実環境 E2E は後続作業とする。
+のノート操作を提供する。対象 client の実環境 E2E は後続作業とする。
 
 ## 目的
 
@@ -18,8 +16,8 @@ rotation、Dynamic Client Registration、認可取消、OAuth/Protected Resource
 
 1. OIDC login 時に Kanidm の `server-users` と `server-admins` を検証する。`server-users` に
    属さない利用者は session を発行しない。`server-admins` は全ノートの管理を許可する。
-2. 各認証済み主体の所属を最大 5 分ごとに再確認する。除外または管理者降格は、次の確認で
-   session と MCP token に反映する。Kanidm が利用できず確認期限を超えた要求は fail closed とする。
+2. 検証済み ID token の `groups` claim を login 時の権限スナップショットとする。group 変更は次回
+   login から反映し、既存 session と MCP token は有効期限または認可取消まで発行時の権限を保持する。
 3. ローカル `root`、登録ポリシー、保留利用者、招待、SMTP、root-only 管理 API と関連 schema を
    削除する。緊急管理は Kanidm の break-glass 運用へ委ねる。
 4. Marginalis の MCP OAuth Authorization Server を新 API に合わせて実装する。OAuth discovery、
@@ -31,6 +29,7 @@ rotation、Dynamic Client Registration、認可取消、OAuth/Protected Resource
 ## 完了条件
 
 - `server-users` と `server-admins` に基づく認可が REST、MCP、Web UI で一致する。
-- グループ変更の反映遅延が最大 5 分であり、Kanidm 障害時の期限超過要求を拒否する。
+- `groups` claim を持たない、または `server-users` 非所属の主体を拒否し、`server-admins` を session と MCP
+  authorization に一貫して反映する。
 - ローカル root と独自の利用者ライフサイクルを参照する実装・設定・運用手順が残らない。
 - 三つの対象 MCP client で OAuth 認可と認可取消を確認できる。

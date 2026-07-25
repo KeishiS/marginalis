@@ -7,7 +7,7 @@ Web UI / REST (/api/v2) / MCP (Streamable HTTP)
                     │
           application use cases
                     │
-SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC / membership API
+SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
                     │
           marginalis-service + NixOS module
 ```
@@ -22,8 +22,8 @@ adapter を application port に接続し、`marginalis-sqlite` は v3 の canon
 - ノート、ACL、検索投影、削除状態の更新は SQLite transaction で完結する。
 - identity は `(issuer, subject)` で識別する。アプリケーションはローカル password、root、登録ポリシーを
   持たない。
-- membership は OIDC login 後も最大 5 分ごとに Kanidm service account で検査する。期限切れの確認に
-  失敗した要求は許可しない。
+- `server-users` と `server-admins` は、OIDC login 時に署名検証した `groups` claim から決め、その session と
+  MCP authorization の有効期間は固定する。
 - access token と refresh token は hash だけを SQLite に保存する。MCP client に Kanidm token を渡さない。
 - HTTP、MCP、Web UI は可視性・ACL・revision の業務規則を複製しない。
 
