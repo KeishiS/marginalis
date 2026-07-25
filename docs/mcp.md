@@ -6,8 +6,8 @@ Kanidm token を MCP client に渡すことはありません。
 | 対象 | endpoint |
 | --- | --- |
 | MCP | `POST B/mcp` |
-| Protected Resource Metadata | `B/.well-known/oauth-protected-resource/mcp` |
-| Authorization Server Metadata | `B/.well-known/oauth-authorization-server` |
+| Protected Resource Metadata | RFC 9728で`B/mcp`から導出するURL |
+| Authorization Server Metadata | RFC 8414で`B`から導出するURL |
 | Dynamic Client Registration | `POST B/oauth/register` |
 | Authorization | `GET` / `POST B/oauth/authorize` |
 | Token | `POST B/oauth/token` |
@@ -15,6 +15,13 @@ Kanidm token を MCP client に渡すことはありません。
 ここで `B` は外部 base URL です。クライアントは Dynamic Client Registration を行い、Authorization
 Code + PKCE S256 を使います。未ログインで authorization endpoint を開いた場合は OIDC login へ移動し、
 認可リクエストへ安全に戻ります。
+
+well-known suffixはhostとsubject pathの間へ挿入します。例えば
+`B = https://notes.example.test/marginalis` の場合、Protected Resource Metadataは
+`https://notes.example.test/.well-known/oauth-protected-resource/marginalis/mcp`、
+Authorization Server Metadataは
+`https://notes.example.test/.well-known/oauth-authorization-server/marginalis`です。
+これはRFC 9728とRFC 8414のpath付きsubject規則です。
 
 `/mcp` は Cookie を使わず、すべての request を `Authorization: Bearer` で認可します。`Origin` がある
 browser client は DNS rebinding 対策として完全一致の許可リストで検証し、NixOS module の既定値は

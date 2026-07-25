@@ -238,10 +238,9 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     );
     let state = if configuration.mcp_enabled {
         let resource_uri = base_url_at(&configuration.http.base_url, "mcp");
-        let metadata_uri = base_url_at(
-            &configuration.http.base_url,
-            ".well-known/oauth-protected-resource/mcp",
-        );
+        let metadata_uri = well_known_url(&resource_uri, "oauth-protected-resource");
+        let authorization_server_metadata_uri =
+            well_known_url(&configuration.http.base_url, "oauth-authorization-server");
         let authorization_endpoint_uri =
             base_url_at(&configuration.http.base_url, "oauth/authorize");
         let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
@@ -255,6 +254,7 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
             resource_uri: resource_uri.to_string(),
             metadata_uri: metadata_uri.to_string(),
             authorization_server_uri: configuration.http.base_url.to_string(),
+            authorization_server_metadata_uri: authorization_server_metadata_uri.to_string(),
             authorization_endpoint_uri: authorization_endpoint_uri.to_string(),
             token_endpoint_uri: token_endpoint_uri.to_string(),
         })
@@ -278,6 +278,21 @@ fn base_url_at(base_url: &url::Url, suffix: &str) -> url::Url {
             format!("/{suffix}")
         } else {
             format!("/{prefix}/{suffix}")
+        }
+        .as_str(),
+    );
+    url
+}
+
+/// RFC 8414/9728の規則に従い、subject URLのhostとpathの間へwell-known suffixを挿入する。
+fn well_known_url(subject: &url::Url, suffix: &str) -> url::Url {
+    let mut url = subject.clone();
+    let subject_path = subject.path().trim_end_matches('/');
+    url.set_path(
+        if subject_path.is_empty() {
+            format!("/.well-known/{suffix}")
+        } else {
+            format!("/.well-known/{suffix}{subject_path}")
         }
         .as_str(),
     );
@@ -336,6 +351,28 @@ mod tests {
         assert!(
             required_absolute_file_argument(&mut ["--input".to_owned()].into_iter(), "--output")
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn well_known_urls_insert_the_suffix_before_a_subject_path() {
+        let root = url::Url::parse("https://example.test").expect("root URL");
+        assert_eq!(
+            well_known_url(&root, "oauth-authorization-server").as_str(),
+            "https://example.test/.well-known/oauth-authorization-server"
+        );
+
+        let issuer = url::Url::parse("https://example.test/marginalis").expect("issuer URL");
+        assert_eq!(
+            well_known_url(&issuer, "oauth-authorization-server").as_str(),
+            "https://example.test/.well-known/oauth-authorization-server/marginalis"
+        );
+
+        let resource =
+            url::Url::parse("https://example.test/marginalis/mcp").expect("resource URL");
+        assert_eq!(
+            well_known_url(&resource, "oauth-protected-resource").as_str(),
+            "https://example.test/.well-known/oauth-protected-resource/marginalis/mcp"
         );
     }
 }

@@ -96,6 +96,9 @@ impl TestServer {
             resource_uri: MCP_RESOURCE.into(),
             metadata_uri: format!("{BROWSER_ORIGIN}/.well-known/oauth-protected-resource/mcp"),
             authorization_server_uri: BROWSER_ORIGIN.into(),
+            authorization_server_metadata_uri: format!(
+                "{BROWSER_ORIGIN}/.well-known/oauth-authorization-server"
+            ),
             authorization_endpoint_uri: format!("{BROWSER_ORIGIN}/oauth/authorize"),
             token_endpoint_uri: format!("{BROWSER_ORIGIN}/oauth/token"),
         });

@@ -88,6 +88,7 @@ pub struct V3McpEndpoint {
     pub resource_uri: String,
     pub metadata_uri: String,
     pub authorization_server_uri: String,
+    pub authorization_server_metadata_uri: String,
     pub authorization_endpoint_uri: String,
     pub token_endpoint_uri: String,
 }
@@ -230,21 +231,13 @@ struct DeleteInput {
 }
 
 pub fn router(state: V3ApiState) -> Router {
-    Router::new()
+    let mut router = Router::new()
         .route("/", get(home))
         .route("/notes/{note_id}", get(view_note))
         .route("/api/v2/openapi.json", get(openapi))
         .route("/auth/oidc/login", get(begin_login))
         .route("/auth/oidc/callback", get(complete_login))
         .route("/auth/logout", post(logout))
-        .route(
-            "/.well-known/oauth-protected-resource/mcp",
-            get(mcp_resource_metadata),
-        )
-        .route(
-            "/.well-known/oauth-authorization-server",
-            get(mcp_server_metadata),
-        )
         .route(
             "/oauth/authorize",
             get(mcp_authorize)
@@ -275,7 +268,21 @@ pub fn router(state: V3ApiState) -> Router {
         .route(
             "/api/v2/mcp-authorizations/{client_id}",
             axum::routing::delete(revoke_mcp_authorization),
-        )
+        );
+    if let Some(endpoint) = state.mcp.as_ref() {
+        let resource_metadata_path = url::Url::parse(&endpoint.metadata_uri)
+            .expect("validated MCP resource metadata URL")
+            .path()
+            .to_owned();
+        let server_metadata_path = url::Url::parse(&endpoint.authorization_server_metadata_uri)
+            .expect("validated authorization server metadata URL")
+            .path()
+            .to_owned();
+        router = router
+            .route(&resource_metadata_path, get(mcp_resource_metadata))
+            .route(&server_metadata_path, get(mcp_server_metadata));
+    }
+    router
         .with_state(state)
         // Axum applies the last layer first. Assign the ID before TraceLayer creates its span.
         .layer(
@@ -1704,8 +1711,37 @@ mod tests {
                 metadata_uri: "https://example.test/.well-known/oauth-protected-resource/mcp"
                     .into(),
                 authorization_server_uri: "https://example.test".into(),
+                authorization_server_metadata_uri:
+                    "https://example.test/.well-known/oauth-authorization-server".into(),
                 authorization_endpoint_uri: "https://example.test/oauth/authorize".into(),
                 token_endpoint_uri: "https://example.test/oauth/token".into(),
+            }),
+        )
+    }
+
+    fn subpath_mcp_app() -> Router {
+        router(
+            V3ApiState::new(
+                Arc::new(Notes),
+                Arc::new(Sessions),
+                Arc::new(Oidc),
+                "/marginalis".into(),
+                "https://example.test".into(),
+            )
+            .with_mcp(V3McpEndpoint {
+                oauth: Arc::new(Mcp),
+                notes: Arc::new(Notes),
+                allowed_origins: vec![],
+                resource_uri: "https://example.test/marginalis/mcp".into(),
+                metadata_uri:
+                    "https://example.test/.well-known/oauth-protected-resource/marginalis/mcp"
+                        .into(),
+                authorization_server_uri: "https://example.test/marginalis".into(),
+                authorization_server_metadata_uri:
+                    "https://example.test/.well-known/oauth-authorization-server/marginalis".into(),
+                authorization_endpoint_uri: "https://example.test/marginalis/oauth/authorize"
+                    .into(),
+                token_endpoint_uri: "https://example.test/marginalis/oauth/token".into(),
             }),
         )
     }
@@ -1792,6 +1828,30 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn v3_mcp_metadata_uses_rfc_well_known_paths_for_a_subpath_issuer() {
+        for path in [
+            "/.well-known/oauth-protected-resource/marginalis/mcp",
+            "/.well-known/oauth-authorization-server/marginalis",
+        ] {
+            let response = subpath_mcp_app()
+                .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+        }
+
+        let non_standard = subpath_mcp_app()
+            .oneshot(
+                Request::get("/marginalis/.well-known/oauth-authorization-server")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(non_standard.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

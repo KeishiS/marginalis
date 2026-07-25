@@ -283,6 +283,7 @@
                     clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
                     caCertificateFile = "${kanidmDiscoveryCerts}/ca.pem";
                   };
+                  mcp.enable = true;
                 };
               };
             testScript = ''
@@ -294,6 +295,12 @@
               app.start()
               app.wait_for_unit("marginalis.service")
               app.wait_until_succeeds("curl -fsS http://127.0.0.1:3000/api/v2/health | grep -q '\"api_version\":\"v2\"'")
+              app.succeed(
+                "curl -fsS http://127.0.0.1:3000/.well-known/oauth-authorization-server/marginalis | ${pkgs.jq}/bin/jq -e '.issuer == \"https://marginalis.example.test/marginalis\"'"
+              )
+              app.succeed(
+                "curl -fsS http://127.0.0.1:3000/.well-known/oauth-protected-resource/marginalis/mcp | ${pkgs.jq}/bin/jq -e '.resource == \"https://marginalis.example.test/marginalis/mcp\"'"
+              )
               app.succeed("journalctl -u marginalis.service | grep -q 'Marginalis server listening'")
               app.succeed("! journalctl -u marginalis.service | grep -q 'OIDC discovery is unavailable'")
             '';
