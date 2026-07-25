@@ -28,7 +28,9 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLite正本は`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。
+変更してください。現行のSQLite schema versionは2です。旧versionを自動移行しないため、このOAuth
+再設計より前のdatabaseを使っている場合はarchiveを退避してから空のdatabaseとして再初期化します。
+再初期化後はMCP clientの再登録と利用者の再認可が必要です。
 
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
 サブパスでは通常endpointの外部prefixをupstreamへ渡す前に除去します。一方、RFC 8414/9728の

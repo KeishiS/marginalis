@@ -132,6 +132,19 @@ pub struct McpRefreshTokenRotation {
     pub refresh_expires_at: UnixMillis,
 }
 
+/// 認可codeの一回消費とtoken pair発行を同じtransactionで行うための入力。
+pub struct McpAuthorizationCodeExchange {
+    pub code: String,
+    pub client_id: String,
+    pub redirect_uri: Option<String>,
+    pub resource_uri: String,
+    pub code_challenge: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub access_expires_at: UnixMillis,
+    pub refresh_expires_at: UnixMillis,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum McpRefreshTokenRotationOutcome {
     Rotated {

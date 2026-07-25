@@ -2,7 +2,7 @@
 
 use sqlx::SqlitePool;
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const INITIAL_SCHEMA: &str = include_str!("schema.sql");
 
 pub(crate) async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {

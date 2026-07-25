@@ -377,25 +377,25 @@ async fn mcp_authorize_request(
         .await
         .map_err(unsafe_authorization_error)?;
     if parameters.repeated {
-        return oauth_redirect_error(
+        return Ok(oauth_redirect_error(
             &resolved.redirect_uri,
             input.state.as_deref(),
             "invalid_request",
-        );
+        ));
     }
     if input.response_type.as_deref() != Some("code") {
-        return oauth_redirect_error(
+        return Ok(oauth_redirect_error(
             &resolved.redirect_uri,
             input.state.as_deref(),
             "unsupported_response_type",
-        );
+        ));
     }
     if input.code_challenge_method.as_deref() != Some("S256") {
-        return oauth_redirect_error(
+        return Ok(oauth_redirect_error(
             &resolved.redirect_uri,
             input.state.as_deref(),
             "invalid_request",
-        );
+        ));
     }
     let request = McpAuthorizationRequest {
         client_id,
@@ -481,9 +481,12 @@ fn consent_page(
         .unwrap_or_else(|| "unknown".into());
     let loopback_warning = url::Url::parse(&request.redirect_uri)
         .ok()
-        .is_some_and(|url| url.scheme() == "http")
-        .then_some("<p>This client redirects to a local application on this device.</p>")
-        .unwrap_or_default();
+        .is_some_and(|url| url.scheme() == "http");
+    let loopback_warning = if loopback_warning {
+        "<p>This client redirects to a local application on this device.</p>"
+    } else {
+        ""
+    };
     Html(format!(
         "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>Authorize {}</h1><p>Requested scopes: {}</p><p>Redirect host: {}</p>{}<form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\">{}<input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
         escape_html(&request.client.display_name),
@@ -528,17 +531,26 @@ pub(super) async fn mcp_authorize_consent(
         .oauth
         .validate_authorization_request(request)
         .await
-        .map_err(|error| unsafe_authorization_error(error))?;
+        .map_err(unsafe_authorization_error)?;
     match form.decision.as_str() {
-        "deny" => oauth_redirect_error(&validated.redirect_uri, state_value, "access_denied"),
+        "deny" => Ok(oauth_redirect_error(
+            &validated.redirect_uri,
+            state_value,
+            "access_denied",
+        )),
         "approve" => {
             let redirect_uri = validated.redirect_uri.clone();
             let code = endpoint
                 .oauth
                 .authorize(actor, validated)
                 .await
-                .map_err(|error| unsafe_authorization_error(error))?;
-            oauth_redirect(&redirect_uri, state_value, Some(&code), None)
+                .map_err(unsafe_authorization_error)?;
+            Ok(oauth_redirect(
+                &redirect_uri,
+                state_value,
+                Some(&code),
+                None,
+            ))
         }
         _ => Err(oauth_error_response(
             StatusCode::BAD_REQUEST,
@@ -574,14 +586,10 @@ fn safe_authorization_error(
         McpOAuthUseCaseError::Unavailable => "server_error",
         _ => "invalid_request",
     };
-    oauth_redirect_error(redirect_uri, state, code).unwrap_or_else(|error| error)
+    oauth_redirect_error(redirect_uri, state, code)
 }
 
-fn oauth_redirect_error(
-    redirect_uri: &str,
-    state: Option<&str>,
-    error: &'static str,
-) -> Result<Response, Response> {
+fn oauth_redirect_error(redirect_uri: &str, state: Option<&str>, error: &'static str) -> Response {
     oauth_redirect(redirect_uri, state, None, Some(error))
 }
 
@@ -590,14 +598,14 @@ fn oauth_redirect(
     state: Option<&str>,
     code: Option<&str>,
     error: Option<&str>,
-) -> Result<Response, Response> {
-    let mut url = url::Url::parse(redirect_uri).map_err(|_| {
-        oauth_error_response(
+) -> Response {
+    let Ok(mut url) = url::Url::parse(redirect_uri) else {
+        return oauth_error_response(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "redirect URI is invalid",
-        )
-    })?;
+        );
+    };
     {
         let mut pairs = url.query_pairs_mut();
         if let Some(code) = code {
@@ -610,7 +618,7 @@ fn oauth_redirect(
             pairs.append_pair("state", state);
         }
     }
-    Ok(Redirect::to(url.as_str()).into_response())
+    Redirect::to(url.as_str()).into_response()
 }
 
 pub(super) async fn mcp_token(
@@ -648,9 +656,12 @@ pub(super) async fn mcp_token(
             "token parameters must not be repeated",
         ));
     }
-    let grant_type = required_token_parameter(&mut form, "grant_type")?;
-    let client_id = required_token_parameter(&mut form, "client_id")?;
-    let resource = required_token_parameter(&mut form, "resource")?;
+    let grant_type =
+        required_token_parameter(&mut form, "grant_type").map_err(|_| missing_token_parameter())?;
+    let client_id =
+        required_token_parameter(&mut form, "client_id").map_err(|_| missing_token_parameter())?;
+    let resource =
+        required_token_parameter(&mut form, "resource").map_err(|_| missing_token_parameter())?;
     let endpoint = mcp_endpoint(&state).map_err(|_| {
         oauth_error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -660,8 +671,10 @@ pub(super) async fn mcp_token(
     })?;
     let pair = match grant_type.as_str() {
         "authorization_code" => {
-            let code = required_token_parameter(&mut form, "code")?;
-            let verifier = required_token_parameter(&mut form, "code_verifier")?;
+            let code = required_token_parameter(&mut form, "code")
+                .map_err(|_| missing_token_parameter())?;
+            let verifier = required_token_parameter(&mut form, "code_verifier")
+                .map_err(|_| missing_token_parameter())?;
             endpoint
                 .oauth
                 .exchange_authorization_code(
@@ -675,7 +688,8 @@ pub(super) async fn mcp_token(
                 .map_err(token_use_case_error)?
         }
         "refresh_token" => {
-            let refresh_token = required_token_parameter(&mut form, "refresh_token")?;
+            let refresh_token = required_token_parameter(&mut form, "refresh_token")
+                .map_err(|_| missing_token_parameter())?;
             let scopes = form
                 .take("scope")
                 .map(|value| value.split_ascii_whitespace().map(str::to_owned).collect());
@@ -712,14 +726,18 @@ pub(super) async fn mcp_token(
 fn required_token_parameter(
     parameters: &mut OAuthParameters,
     name: &'static str,
-) -> Result<String, Response> {
-    parameters.take(name).ok_or_else(|| {
-        oauth_error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "required token parameter is missing",
-        )
-    })
+) -> Result<String, MissingTokenParameter> {
+    parameters.take(name).ok_or(MissingTokenParameter)
+}
+
+struct MissingTokenParameter;
+
+fn missing_token_parameter() -> Response {
+    oauth_error_response(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "required token parameter is missing",
+    )
 }
 
 fn token_use_case_error(error: McpOAuthUseCaseError) -> Response {

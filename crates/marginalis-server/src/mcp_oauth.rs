@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    Clock, McpAuthorizationClient, McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases,
-    McpRefreshTokenRotation, McpRefreshTokenRotationOutcome, McpTokenPair,
-    McpValidatedAuthorizationRequest, Random,
+    Clock, McpAuthorizationClient, McpAuthorizationCodeExchange, McpAuthorizationRequest,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation,
+    McpRefreshTokenRotationOutcome, McpTokenPair, McpValidatedAuthorizationRequest, Random,
 };
 use marginalis_domain::{Actor, UnixMillis};
 use marginalis_sqlite::SqliteDatabase;
@@ -193,14 +193,26 @@ impl ServerMcpOAuthService {
         }
         let expected_challenge = pkce_s256(&verifier);
         let now = SystemClock.now();
+        let access_token = SystemRandom.opaque_token();
+        let refresh_token = SystemRandom.opaque_token();
         let Some(grant) = self
             .database
-            .consume_mcp_authorization_code(
-                &code,
-                &client_id,
-                redirect_uri.as_deref(),
-                &self.resource_uri,
-                &expected_challenge,
+            .exchange_mcp_authorization_code(
+                McpAuthorizationCodeExchange {
+                    code,
+                    client_id,
+                    redirect_uri,
+                    resource_uri: self.resource_uri.clone(),
+                    code_challenge: expected_challenge,
+                    access_token: access_token.clone(),
+                    refresh_token: refresh_token.clone(),
+                    access_expires_at: UnixMillis::new(
+                        now.get() + (Self::ACCESS_TOKEN_SECONDS * 1_000) as i64,
+                    ),
+                    refresh_expires_at: UnixMillis::new(
+                        now.get() + (Self::REFRESH_TOKEN_SECONDS * 1_000) as i64,
+                    ),
+                },
                 now,
             )
             .await
@@ -208,7 +220,12 @@ impl ServerMcpOAuthService {
         else {
             return Err(McpOAuthError::InvalidGrant);
         };
-        self.issue_pair(grant, now).await
+        Ok(McpIssuedTokenPair {
+            access_token,
+            refresh_token,
+            access_expires_in_seconds: Self::ACCESS_TOKEN_SECONDS,
+            scope: grant.scopes.join(" "),
+        })
     }
 
     pub async fn refresh_access_token(
@@ -268,32 +285,6 @@ impl ServerMcpOAuthService {
             refresh_token: next_refresh_token,
             access_expires_in_seconds: Self::ACCESS_TOKEN_SECONDS,
             scope: access_scopes.join(" "),
-        })
-    }
-
-    async fn issue_pair(
-        &self,
-        grant: marginalis_domain::McpAuthorizationGrant,
-        now: UnixMillis,
-    ) -> Result<McpIssuedTokenPair, McpOAuthError> {
-        let access_token = SystemRandom.opaque_token();
-        let refresh_token = SystemRandom.opaque_token();
-        self.database
-            .issue_mcp_token_pair(
-                &access_token,
-                &refresh_token,
-                &grant,
-                UnixMillis::new(now.get() + (Self::ACCESS_TOKEN_SECONDS * 1_000) as i64),
-                UnixMillis::new(now.get() + (Self::REFRESH_TOKEN_SECONDS * 1_000) as i64),
-                now,
-            )
-            .await
-            .map_err(|_| McpOAuthError::Unavailable)?;
-        Ok(McpIssuedTokenPair {
-            access_token,
-            refresh_token,
-            access_expires_in_seconds: Self::ACCESS_TOKEN_SECONDS,
-            scope: grant.scopes.join(" "),
         })
     }
 

@@ -1,6 +1,8 @@
 //! MCP OAuth client、code、access/refresh tokenの永続化。
 
-use marginalis_application::{McpRefreshTokenRotation, McpRefreshTokenRotationOutcome};
+use marginalis_application::{
+    McpAuthorizationCodeExchange, McpRefreshTokenRotation, McpRefreshTokenRotationOutcome,
+};
 use marginalis_domain::{
     Actor, McpAuthenticatedActor, McpAuthorizationGrant, McpOAuthClient, UnixMillis,
 };
@@ -49,7 +51,7 @@ impl SqliteDatabase {
             .map_err(|_| SqliteStoreError::CorruptNote)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         for statement in [
-            "DELETE FROM mcp_authorization_codes WHERE expires_at_ms <= ? OR consumed_at_ms IS NOT NULL",
+            "DELETE FROM mcp_authorization_codes WHERE expires_at_ms <= ?",
             "DELETE FROM mcp_access_tokens WHERE expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
         ] {
             sqlx::query(statement)
@@ -128,55 +130,99 @@ impl SqliteDatabase {
         .transpose()
     }
 
-    pub async fn consume_mcp_authorization_code(
+    /// 認可codeを一度だけ消費してtoken pairを発行し、再利用時は発行済みfamilyを失効する。
+    pub async fn exchange_mcp_authorization_code(
         &self,
-        code: &str,
-        client_id: &str,
-        redirect_uri: Option<&str>,
-        resource_uri: &str,
-        code_challenge: &str,
+        exchange: McpAuthorizationCodeExchange,
         now: UnixMillis,
     ) -> Result<Option<McpAuthorizationGrant>, SqliteStoreError> {
-        let row = sqlx::query("DELETE FROM mcp_authorization_codes WHERE code_hash = ? AND client_id = ? AND (? IS NULL OR redirect_uri = ?) AND resource_uri = ? AND code_challenge = ? AND expires_at_ms > ? RETURNING redirect_uri, issuer, subject, is_administrator, scopes")
-            .bind(hash_token(code)).bind(client_id).bind(redirect_uri).bind(redirect_uri).bind(resource_uri).bind(code_challenge).bind(now.get()).fetch_optional(&self.pool).await.map_err(database_error)?;
-        row.map(|row| {
-            Ok(McpAuthorizationGrant {
-                actor: Actor {
-                    issuer: row.try_get("issuer").map_err(database_error)?,
-                    subject: row.try_get("subject").map_err(database_error)?,
-                    is_administrator: row.try_get("is_administrator").map_err(database_error)?,
-                },
-                client_id: client_id.into(),
-                redirect_uri: row.try_get("redirect_uri").map_err(database_error)?,
-                resource_uri: resource_uri.into(),
-                scopes: row
-                    .try_get::<String, _>("scopes")
-                    .map_err(database_error)?
-                    .split_whitespace()
-                    .map(str::to_owned)
-                    .collect(),
-            })
-        })
-        .transpose()
-    }
-
-    pub async fn issue_mcp_token_pair(
-        &self,
-        access_token: &str,
-        refresh_token: &str,
-        grant: &McpAuthorizationGrant,
-        access_expires_at: UnixMillis,
-        refresh_expires_at: UnixMillis,
-        _now: UnixMillis,
-    ) -> Result<(), SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        let code_hash = hash_token(&exchange.code);
+        let row = sqlx::query(
+            "UPDATE mcp_authorization_codes SET consumed_at_ms = ?
+             WHERE code_hash = ? AND client_id = ?
+               AND (? IS NULL OR redirect_uri = ?)
+               AND resource_uri = ? AND code_challenge = ?
+               AND consumed_at_ms IS NULL AND expires_at_ms > ?
+             RETURNING redirect_uri, issuer, subject, is_administrator, scopes",
+        )
+        .bind(now.get())
+        .bind(&code_hash)
+        .bind(&exchange.client_id)
+        .bind(exchange.redirect_uri.as_deref())
+        .bind(exchange.redirect_uri.as_deref())
+        .bind(&exchange.resource_uri)
+        .bind(&exchange.code_challenge)
+        .bind(now.get())
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let Some(row) = row else {
+            let replayed_family = sqlx::query_scalar::<_, Vec<u8>>(
+                "SELECT token_family_id FROM mcp_authorization_codes
+                 WHERE code_hash = ? AND client_id = ?
+                   AND (? IS NULL OR redirect_uri = ?)
+                   AND resource_uri = ? AND code_challenge = ?
+                   AND consumed_at_ms IS NOT NULL AND expires_at_ms > ?
+                   AND token_family_id IS NOT NULL",
+            )
+            .bind(&code_hash)
+            .bind(&exchange.client_id)
+            .bind(exchange.redirect_uri.as_deref())
+            .bind(exchange.redirect_uri.as_deref())
+            .bind(&exchange.resource_uri)
+            .bind(&exchange.code_challenge)
+            .bind(now.get())
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+            if let Some(token_family_id) = replayed_family {
+                for table in ["mcp_access_tokens", "mcp_refresh_tokens"] {
+                    let query = format!(
+                        "UPDATE {table} SET revoked_at_ms = ?
+                         WHERE token_family_id = ? AND revoked_at_ms IS NULL"
+                    );
+                    sqlx::query(&query)
+                        .bind(now.get())
+                        .bind(&token_family_id)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(database_error)?;
+                }
+            }
+            transaction.commit().await.map_err(database_error)?;
+            return Ok(None);
+        };
+        let grant = McpAuthorizationGrant {
+            actor: Actor {
+                issuer: row.try_get("issuer").map_err(database_error)?,
+                subject: row.try_get("subject").map_err(database_error)?,
+                is_administrator: row.try_get("is_administrator").map_err(database_error)?,
+            },
+            client_id: exchange.client_id,
+            redirect_uri: row.try_get("redirect_uri").map_err(database_error)?,
+            resource_uri: exchange.resource_uri,
+            scopes: row
+                .try_get::<String, _>("scopes")
+                .map_err(database_error)?
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect(),
+        };
         let scopes = grant.scopes.join(" ");
-        let token_family_id = hash_token(refresh_token);
+        let token_family_id = hash_token(&exchange.refresh_token);
         sqlx::query("INSERT INTO mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
+            .bind(hash_token(&exchange.access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(exchange.access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
         sqlx::query("INSERT INTO mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(refresh_expires_at.get()).bind(grant.actor.is_administrator).bind(token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
-        transaction.commit().await.map_err(database_error)
+            .bind(hash_token(&exchange.refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(exchange.refresh_expires_at.get()).bind(grant.actor.is_administrator).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
+        sqlx::query("UPDATE mcp_authorization_codes SET token_family_id = ? WHERE code_hash = ?")
+            .bind(token_family_id)
+            .bind(code_hash)
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        transaction.commit().await.map_err(database_error)?;
+        Ok(Some(grant))
     }
 
     pub async fn authenticate_mcp_access_token(

@@ -60,7 +60,8 @@ CREATE TABLE mcp_authorization_codes (
     scopes TEXT NOT NULL,
     code_challenge TEXT NOT NULL,
     expires_at_ms INTEGER NOT NULL,
-    consumed_at_ms INTEGER
+    consumed_at_ms INTEGER,
+    token_family_id BLOB CHECK (token_family_id IS NULL OR length(token_family_id) = 32)
 ) STRICT;
 
 CREATE TABLE mcp_access_tokens (

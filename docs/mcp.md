@@ -18,7 +18,8 @@ Code + PKCE S256 を使います。未ログインで authorization endpoint を
 認可リクエストへ安全に戻ります。
 
 OAuth clientからの認可開始はquery付き`GET`とform-encoded `POST`の両方を受け付けます。POSTのOAuth
-parameterはURL queryとform bodyのどちらにあってもよく、両方にある場合は同値でなければ拒否します。
+parameterはURL queryとform bodyのどちらにあってもよいですが、同じparameterを複数回送ると値が同じでも
+`invalid_request`として拒否します。空のparameterは省略として扱い、未知のparameterは無視します。
 ChatGPTやClaudeがclient originから送る初回POSTにclient自身のCSRF fieldが含まれていても、
 `B/oauth/authorize`は登録済みclient、redirect URI、resource、scope、PKCEを検証するだけで認可を
 確定しません。未ログイン時は`303 See Other`で`GET`のOIDC loginへ移動します。
@@ -55,9 +56,10 @@ claude mcp add --transport http marginalis https://marginalis.sandi05.com/mcp
 ```
 
 Dynamic Client RegistrationではClaude Codeの`http://localhost:PORT/callback`を受け付けます。
-HTTP callbackは`localhost`完全一致、またはloopback IP addressで、明示的なportを持つ場合だけ許可します。
-HTTPS callbackは登録値との完全一致を維持します。SSH、container、WSL上のClaude Codeではbrowserから
-callback listenerへ到達できる構成が別途必要です。
+HTTP callbackは`localhost`完全一致、またはloopback IP addressだけを許可し、認可要求時の動的なportを
+登録値と異なる値でも受け付けます。hostとport以外の部分は登録値との完全一致を維持します。HTTPS callbackは
+登録値と完全一致しなければなりません。SSH、container、WSL上のClaude Codeではbrowserからcallback
+listenerへ到達できる構成が別途必要です。
 
 Claude.aiのWeb UIでは、`Customize`の`Connectors`からcustom connectorとして
 `https://marginalis.sandi05.com/mcp`を追加します。この接続はAnthropicのcloudから行われ、OAuthの
@@ -72,18 +74,24 @@ Claude CodeにはClaude.ai側のconnectorは同期されないため、上記の
 
 Authorization Server は登録済み client、redirect URI、MCP resource URI、scope、PKCE S256 を login 前と
 承認時の両方で検証します。承認画面には登録済み client 名、要求 scope、redirect host を表示します。
+認可要求でscopeを省略した場合は最小権限の`notes:read`を使います。登録redirect URIが一つだけなら認可要求と
+token交換の`redirect_uri`は省略できます。token交換で指定した場合は、認可時の値と一致しなければなりません。
 access token は 1 時間、rotation される refresh token は 30 日有効です。
+refresh時のscopeは元のgrantの部分集合だけを許可し、発行するaccess tokenをdownscopeできます。
 使用済み refresh token が正しい client と resource の組合せで再提示された場合は replay と判定し、
 同じ token family の access token と refresh token をすべて失効させます。利用者は再度認可してください。
+使用済み認可codeが同じclient、resource、PKCE bindingで再提示された場合も、同じtoken familyを失効させます。
 rotation の親子関係は、有効な子孫がある間保持します。これは
 [OAuth 2.0 Security Best Current Practice §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
 の replay 検知要件に従うものです。
-旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで再初期化し、MCP clientは
-再登録・再認可してください。
+現行のschema versionは2です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
+再初期化し、MCP clientは再登録・再認可してください。
 
 Dynamic Client Registration は 16 KiB の本文上限、10 分あたり 30 件の process 全体 rate limit、最大 1,000
 client の永続化上限を持ちます。grant を取得しない登録は 24 時間後、次の登録処理時に削除します。登録・token
-endpoint の失敗は OAuth の `error` / `error_description` 形式で返します。
+endpoint の失敗は OAuth の `error` / `error_description` 形式で返します。MCP requestでは無効または
+失効済みtokenを`401 invalid_token`、必要scopeを持たない有効なtokenを`403 insufficient_scope`として
+区別し、`WWW-Authenticate`にProtected Resource Metadata URLと必要scopeを含めます。
 
 scope は `notes:read`、`notes:write`、`notes:delete` です。scope だけでは不十分であり、Web と同じ
 ノート ACL が必ず適用されます。`server-admins` はすべてのノートに管理者相当でアクセスします。
