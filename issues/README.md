@@ -37,8 +37,42 @@ AsciiDoc関連のIssueでは、MarginalisをAdocWeaveへ組み込む処理を扱
 [042: v0.3.0のリリース受入](042-v0.3.0-release-acceptance.md)も完了し、2026-07-25に
 `v0.3.0`タグを公開した。
 
-旧設計を前提とする未完了 Issue は削除せず履歴として保持する。新規実装の対象にするかは、
-v0.3.0 公開後に再評価する。
+### v0.3.1運用堅牢化
+
+`v0.3.1`では機能を広げず、v0.3.0の公開仕様を運用し続けるための証拠を追加する。
+着手順は[ロードマップ](../docs/roadmap.md)に従う。
+
+1. [045: backup・復元ライフサイクル](045-backup-restore-lifecycle.md)
+2. [046: browser・MCP protocol回帰試験](046-browser-mcp-protocol-regression.md)
+3. [047: 実行時の運用診断](047-runtime-operability-diagnostics.md)
+4. [048: v0.3.1のリリース受入](048-v0.3.1-release-acceptance.md)
+
+045、046、047は責務が重ならない範囲で並行できる。048は三Issueの自動検証と実環境受入を
+まとめるrelease issueである。
+
+### v0.4.0執筆支援
+
+`v0.4.0`の主機能は[032: MCP向けの入力規則と検証結果](032-mcp-authoring-profile-and-diagnostics.md)
+とする。MCPを主要な執筆経路として、入力規則と位置付き診断をRESTとMCPで共通化する。
+Web編集、検索方式の変更、グラフ表示は同じreleaseへ混在させない。
+
+### 旧Issueと条件付き候補の分類
+
+旧設計を前提とするIssueは削除せず、判断時点の履歴として保持する。次の分類を、新しい実装へ
+着手してよいかの基準とする。
+
+| Issue | 分類 | 扱い |
+| --- | --- | --- |
+| [006](006-browser-preview.md) | 条件付き再設計 | MCPでは満たせない編集需要を確認した場合だけ、SQLite正本とWeb UI v2を前提に書き直す |
+| [012](012-mcp-fuzzy-search-index.md) | 評価待ち | 現行FTS5で失敗する固定例を得てから拡張方式を決める |
+| [013](013-root-administration-and-approval.md) | 置換済み | ローカル`root`とapprovalはv0.3.0で廃止した。新規実装へ参照しない |
+| [021](021-test-architecture-and-release-gates.md) | 基盤完了 | 残るファイル分割は独立目標にせず、対象moduleを変更するときに行う |
+| [026](026-oidc-login-binding-and-runtime-limits.md) | 置換済み | session期限と上限はv0.3.0で再実装済み。運用診断だけ047で扱う |
+| [027](027-search-reference-and-rendering-projections.md) | 部分置換 | 現行SQLite・REST v2で不足を再確認し、必要なfilterだけ別Issueにする |
+| [030](030-end-to-end-test-automation-readiness.md) | 引継ぎ済み | v0.3.0基盤は完了。現行browser・MCP回帰は046で扱う |
+| [031](031-postgresql-storage-backend-feasibility.md) | 保留 | 複数process、高可用性、規模超過の要件が生じるまで再開しない |
+| [033](033-repository-documentation-asciidoc-migration.md) | 低優先度 | 大量の形式差分に見合う保守上の便益が確認されるまで着手しない |
+| [034](034-graph-visualization-web-ui.md) | 条件付き再設計 | 検索と一覧だけでは参照関係を辿れない実例を得てから再設計する |
 
 ### 完了した基盤作業
 
@@ -87,6 +121,14 @@ Issue 012 は初期実装済みであり、検索拡張と運用結合試験を�
   [014: REST ノート API・検索・MCP 連携](014-rest-notes-search-and-mcp.md)で管理する。
 - RESTとMCPを実装する前に行ったAPI中心の再設計は、
   [015: APIを中心としたアーキテクチャの再設計](015-api-first-architecture-rebaseline.md)に記録する。
+- backupの世代管理と復元可能性は
+  [045: backup・復元ライフサイクル](045-backup-restore-lifecycle.md)で管理する。
+- browser、OAuth、MCP clientのprotocol回帰は
+  [046: browser・MCP protocol回帰試験](046-browser-mcp-protocol-regression.md)で管理する。
+- 小規模NixOS運用の診断境界は
+  [047: 実行時の運用診断](047-runtime-operability-diagnostics.md)で管理する。
+- v0.3.1の公開判定は
+  [048: v0.3.1のリリース受入](048-v0.3.1-release-acceptance.md)で管理する。
 
 ## 実装原則
 

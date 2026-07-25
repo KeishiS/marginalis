@@ -2,10 +2,10 @@
 
 ## 状態
 
-実装中。第一段階のプロセス内結合試験は2026-07-23に追加し、2026-07-25にv0.3の
-group claim、SQLite、MCP OAuth経路へ更新した。第二段階はNixOS module/runtime VMと、
-実Kanidm 1.10.4・private CA・provisioned OAuth2 clientによるDiscoveryまで実装済みである。
-Playwrightによるbrowser login、group変更、MCP client操作はv0.3の残作業である。
+v0.3.0基盤まで完了し、2026-07-25に公開した。本Issueには旧ファイル正本、ローカル`root`、
+`approval`を前提とする履歴が含まれるため、残件をこの仕様のまま実装しない。
+現行のKanidm group claim、SQLite、browser、MCP OAuth、subpathの回帰試験は
+[Issue 046](046-browser-mcp-protocol-regression.md)へ引き継ぐ。
 
 ## 目的
 

@@ -2,72 +2,78 @@
 
 ## 現在地
 
-`v0.1.0` をリリースし、OpenAPI 仕様の互換性保証を開始しました
-（2026-07-23、段階 0 完了）。OIDC 認証付きの REST API、OAuth 保護 MCP、NixOS モジュール、
-手動受入手順、リリース検証が揃っています。今後は機能を広げる前に、実運用の主要経路を
-継続的に検証できる基盤を整えます。
+`v0.3.0`は、SQLite正本、Kanidm 1.10の署名済みgroup claim、REST API v2、OAuthで保護した
+MCP、閲覧用Web UI、NixOS moduleを一つの認可モデルへ再設計し、2026-07-25に公開した。
+旧API、旧保存形式、ローカル`root`、所属定期監視との互換性は提供しない。
 
-データフォーマットの識別子は v1 を維持していますが、AdocWeave v0.6.1 前提の内容へ
-破壊的に再定義しました。以前の v1 は互換対象ではありません。
-`v0.2.0`は、実環境受入、Pull Request、`main`上の最終検証、タグ公開、タグで起動した
-リリースゲートを完了しました（2026-07-24）。その後の検討により、機能拡充の前に
-`v0.3.0`で破壊的なアーキテクチャ再設計を行うことを決定しました。旧 API、旧保存形式、
-ローカル `root` 認証との互換性は維持しません。`v0.3.0`は自動検証、実環境受入、
-Pull Request、`main`上の最終検証、タグ公開、タグ起点のrelease gateを完了しました
-（2026-07-25）。
+今後は機能数を増やす前に、公開済みの構成を少人数で低コストに運用できることを優先する。
+詳細な受入条件と設計判断は[Issue一覧](../issues/README.md)を正とし、この文書は着手順と
+判断時期を示す。
 
-`v0.2.0`の正式リリース後は`-rc.N`付きの版を公開せず、ロードマップ上の成果を
-`v0.x.y`形式の通常版として順次公開します。各公開前には、リリースゲートと変更範囲に
-応じた実環境受入を実施します。
+## 方針
 
-各作業の詳細な受入条件と設計判断は [Issue 一覧](../issues/README.md)を正とします。この文書は
-着手順と依存関係だけを示します。
+- `v0.3.1`では公開APIと保存形式を変えず、復元可能性、運用診断、OAuth・MCPの回帰検証を強化する。
+- `v0.4.0`ではMCPを主要な執筆経路として改善し、AI clientの無駄な再試行を減らす。
+- 検索、グラフ、Web編集、別database backendは、実利用から必要性を確認してから追加する。
+- 小規模運用では新しい常駐基盤を安易に増やさず、systemd、journald、SQLite、既存のrelease gateを
+  再利用する。
+- 破壊的変更は必要な場合に認めるが、公開済みの境界を壊すだけの明確な便益がない変更は行わない。
 
 ## 優先順
 
-| 段階 | 主 Issue | 目的 | 次段階へ進む条件 |
+| 段階 | 対象 | 目的 | 次段階へ進む条件 |
 | --- | --- | --- | --- |
-| 0（完了） | [009](../issues/009-oidc-provider-registration.md)、[022](../issues/022-v0.1.0-rc.1-release-acceptance.md) | RC.2 の実環境受入を完了し、v0.1.0 をタグ付けして OpenAPI の互換性保証を始める | 完了（2026-07-23、`v0.1.0` タグ） |
-| 2（完了） | [029](../issues/029-adocweave-v0.6.1-migration.md) | AdocWeave v0.6.1 へ移行し、正本の解釈・投影・HTML・WASM の互換性基準を更新する | 完了（2026-07-24。旧 v1 は移行せず、`dataDir` を削除して初期化する） |
-| 公開準備（完了） | [035](../issues/035-v0.2.0-rc.1-release-acceptance.md) | 空の新 v1 環境で実環境受入を行い、`v0.2.0-rc.1` の公開可否を判断する | 完了（2026-07-24、`v0.2.0-rc.1` タグ） |
-| 正式公開（完了） | [036](../issues/036-v0.2.0-release-acceptance.md) | RCの受入結果と正式版の差分を検証し、`v0.2.0`を公開する | 完了（2026-07-24、`v0.2.0`タグ） |
-| 1（完了） | [037](../issues/037-v0.3.0-architecture-rebaseline.md) | SQLite 正本、Kanidm group 認可、新 API に再設計する | データ正本、認可、MCP、削除、公開 API の仕様を固定した |
-| 2（完了） | [038](../issues/038-sqlite-canonical-notes-and-asciidoc-bundles.md) | SQLite の単一正本と AsciiDoc import/export を実装する | ファイル正本・操作ジャーナルなしにノートと ACL を一 transaction で更新する |
-| 3（完了） | [039](../issues/039-kanidm-group-authorization-and-mcp-oauth.md) | Kanidm 1.10 group claim 認可と MCP OAuth を実装する | 自動試験と対象 MCP client の実環境受入を完了した |
-| 4（完了） | [040](../issues/040-v0.3.0-nixos-and-e2e-foundation.md) | NixOS 配備と Kanidm 1.10 E2E を release gate に組み込む | TLS、subpath、OIDC、NixOS module を CI で再現した |
-| 5（完了） | [041](../issues/041-web-ui-and-soft-deletion.md) | 閲覧用 Web UI と 30 日間のソフトデリートを提供する | API、MCP、Web UI が同一の可視性を守り、期限後の物理削除を自動化する |
-| 横断（完了） | [043](../issues/043-production-reachability-and-test-coverage.md) | 本番到達性とv0.3 test coverageを分離して可視化する | 旧実装のproduction graph復帰を拒否し、未実行箇所を試験不足と不要コードに分類できる |
-| 横断（完了） | [044](../issues/044-source-layout-and-documentation-boundaries.md) | ソース配置と規範文書を責務単位に整理する | 実行経路を短く追跡でき、機能変更時に読む範囲と文書の重複が限定される |
-| 6（完了） | [042](../issues/042-v0.3.0-release-acceptance.md) | 空の新環境で v0.3.0 を受入・公開する | 完了（2026-07-25、`v0.3.0`タグ） |
+| 0（完了） | [037](../issues/037-v0.3.0-architecture-rebaseline.md)〜[044](../issues/044-source-layout-and-documentation-boundaries.md) | v0.3.0の破壊的再設計と公開 | 完了（2026-07-25、`v0.3.0`タグ） |
+| 1 | [045](../issues/045-backup-restore-lifecycle.md) | backupを空databaseへ復元できることを継続的に検証する | archive検証、NixOS VM復元試験、運用手順、保存世代管理が同じ仕様で動く |
+| 2 | [046](../issues/046-browser-mcp-protocol-regression.md) | browser、subpath、OAuth、MCP clientの回帰を自動検出する | 標準protocol flowを自動化し、実clientだけを手動受入に限定する |
+| 3 | [047](../issues/047-runtime-operability-diagnostics.md) | 小規模運用に必要な診断と失敗通知を整える | 秘密を出さずにDB、OIDC、保守jobの状態と失敗原因を特定できる |
+| 4 | [048](../issues/048-v0.3.1-release-acceptance.md) | v0.3.1を受入・公開する | 自動gate、復元試験、実環境のOIDC・MCP・backup確認が成功する |
+| 5 | [032](../issues/032-mcp-authoring-profile-and-diagnostics.md) | MCP入力規則と位置付き診断を提供する | RESTとMCPが同じ診断型を返し、clientが失敗理由を機械判定できる |
+| 6 | [012](../issues/012-mcp-fuzzy-search-index.md) | 実利用に基づいて検索品質を評価する | 固定した評価例で現行FTS5の不足を確認した場合だけ検索方式を拡張する |
 
-## 継続的な改善
+段階1から4を`v0.3.1`、段階5を`v0.4.0`の主な公開範囲とする。段階6の公開版は、評価結果から
+変更範囲を確定した後に決める。
 
-- [012](../issues/012-mcp-fuzzy-search-index.md): 新しい SQLite 正本の検索品質を測定した後、
-  曖昧検索や中間表現インデックスの必要性を再評価する。
-- archive import と復元の定期受入は、v0.3.0 公開後の運用改善として追加する。
-- グラフ可視化、編集プレビュー、PostgreSQL は、v0.3.0 の利用実績を得てから再評価する。
+## v0.3.1の運用目標
 
-## 判断の節目
+- `backupDirectory`を設定した環境では日次backupを既定とし、30世代を保持する設計を基準にする。
+- 四半期ごとの週末に、本番を停止せず最新archiveを一時的な空databaseへ復元して検証できるようにする。
+- 復元試験は本番databaseと本番OIDC・MCP認可状態を変更しない。
+- 失敗時はsystemd unit、終了status、構造化log、request IDから原因を追跡できるようにする。
+- Prometheus等の監視基盤やraw検索語の収集は導入しない。必要性が確認された場合は別Issueで扱う。
 
-1. **段階 1**: SQLite 正本、Kanidm group、MCP OAuth、ソフトデリート、API v2 を
-   破壊的に切り替える。旧環境は新しい空環境へ移行せず、退避物として扱う。
-2. **段階 3**: Kanidm の所属は OIDC login 時に署名検証済み `groups` claim から確定する。group 変更は
-   次回 login から反映し、既存 session と MCP token は有効期限または認可取消まで発行時の権限を保つ。
-3. **段階 4**: E2E の Kanidm は実運用と同じ 1.10 系列を使う。実本番 IdP、proxy、MCP client
-   との接続確認は公開前の手動受入に残す。
-4. **段階 6**: archive import と復元を公開条件から外す。復元の頻度、保存先、保持世代は
-   v0.3.0 公開後の実運用を基に定める。
+保存先そのものの冗長化、off-site複製、保存媒体のsnapshotはNixOS host側の運用責務とする。
+Marginalisは指定先に整合したarchiveを作り、世代管理と復元可能性を検証する。
 
-## 監視項目
+## v0.4.0の執筆目標
 
-段階には置かず、実利用からの信号で再評価します。
+ChatGPT、Claude Code、Codex等のMCP clientを主な執筆経路とする。`create_note`と`update_note`の
+入力規則を機械可読に公開し、検証失敗時は規則の識別子と可能な場合は本文中の位置を返す。
+同じ規則を文書、tool schema、REST、MCPへ重複して手書きしない。
 
-- **MCP client 相互運用性**: ChatGPT、Claude Code、Codex CLI の更新に対して、OAuth と
-  remote MCP の接続試験を継続する。
-- **検索品質**: 段階 4 の E2E と実利用で測定した後、Issue 012 の曖昧検索の要否を判断する。
-- **データベース**: 10 人・約 1,000 ノートの想定を超える利用実績が得られた場合にだけ、
-  PostgreSQL を再評価する。
+閲覧用Web UIを編集アプリケーションへ拡張する作業は、この段階に含めない。MCPでは解決できない
+具体的な編集需要が得られた場合に[006](../issues/006-browser-preview.md)を再設計する。
 
-各段階で `cargo make release-gate` と、該当する実環境受入を実施します。公開 API または
-データフォーマットを変更する段階では、次の通常版を公開する前に OpenAPI、MCP 仕様、NixOS
-運用手順、受入確認を更新します。
+## 条件付きの候補
+
+- **検索拡張**: 日本語・英語の再発見に失敗する固定例を集め、FTS5の語彙検索、表記揺れ対応、
+  trigram、意味検索の順に小さく比較する。検索語を無断でlogへ保存しない。
+- **グラフUI**: [034](../issues/034-graph-visualization-web-ui.md)は、一覧・検索だけでは参照関係を
+  辿れない実例が蓄積した場合に再設計する。
+- **連環（Renkan）**: 複数のデータソースを横断する段階ではMarginalisへ検索基盤を内包せず、
+  独立serviceとconnector境界を検討する。
+- **PostgreSQL**: 複数process、高可用性、または現在の規模を超える運用要件が発生した場合だけ
+  [031](../issues/031-postgresql-storage-backend-feasibility.md)を再開する。
+- **リポジトリ文書のAsciiDoc化**: [033](../issues/033-repository-documentation-asciidoc-migration.md)は
+  大量の形式差分に見合う保守上の便益が確認されるまで着手しない。
+
+## 継続監視
+
+- ChatGPT、Claude Code、Codex CLIの版と、MCP接続の手動受入結果
+- backupの最終成功時刻、保存世代数、四半期復元試験の結果
+- database容量、ノート数、主要操作の失敗、revision conflict
+- 検索で見つからなかった具体例と、MCP入力検証による再試行
+
+各公開では`cargo make release-gate`と変更範囲に応じた実環境受入を実施する。公開API、
+MCP tool、NixOS option、archive形式を変更する場合は、実装と同じPull Requestで仕様文書と
+受入手順を更新する。
