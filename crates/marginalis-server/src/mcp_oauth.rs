@@ -3,8 +3,9 @@
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    Clock, McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases,
-    McpRefreshTokenRotation, McpTokenPair, Random,
+    Clock, McpAuthorizationClient, McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases,
+    McpRefreshTokenRotation, McpRefreshTokenRotationOutcome, McpTokenPair,
+    McpValidatedAuthorizationRequest, Random,
 };
 use marginalis_domain::{Actor, UnixMillis};
 use marginalis_sqlite::SqliteDatabase;
@@ -23,7 +24,12 @@ pub struct McpIssuedTokenPair {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum McpOAuthError {
-    Rejected,
+    InvalidRequest,
+    InvalidClient,
+    InvalidRedirectUri,
+    InvalidScope,
+    InvalidTarget,
+    InvalidGrant,
     Unavailable,
 }
 
@@ -56,12 +62,15 @@ impl ServerMcpOAuthService {
             || client.redirect_uris.is_empty()
             || client.display_name.len() > 128
             || client.redirect_uris.len() > 8
-            || !client
-                .redirect_uris
-                .iter()
-                .all(|uri| uri.len() <= 2_048 && valid_redirect_uri(uri))
         {
-            return Err(McpOAuthError::Rejected);
+            return Err(McpOAuthError::InvalidRequest);
+        }
+        if !client
+            .redirect_uris
+            .iter()
+            .all(|uri| uri.len() <= 2_048 && valid_redirect_uri(uri))
+        {
+            return Err(McpOAuthError::InvalidRedirectUri);
         }
         let now = SystemClock.now();
         let registered = self
@@ -75,7 +84,7 @@ impl ServerMcpOAuthService {
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;
         if !registered {
-            return Err(McpOAuthError::Rejected);
+            return Err(McpOAuthError::InvalidRequest);
         }
         Ok(())
     }
@@ -83,13 +92,12 @@ impl ServerMcpOAuthService {
     pub async fn authorize(
         &self,
         actor: Actor,
-        request: McpAuthorizationRequest,
+        request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthError> {
-        self.validate_authorization_request(&request).await?;
         let code = SystemRandom.opaque_token();
         let grant = marginalis_domain::McpAuthorizationGrant {
             actor,
-            client_id: request.client_id,
+            client_id: request.client.client_id,
             redirect_uri: request.redirect_uri,
             resource_uri: request.resource_uri,
             scopes: request.scopes,
@@ -109,38 +117,79 @@ impl ServerMcpOAuthService {
     pub async fn validate_authorization_request(
         &self,
         request: &McpAuthorizationRequest,
-    ) -> Result<marginalis_domain::McpOAuthClient, McpOAuthError> {
-        if request.resource_uri != self.resource_uri
-            || !valid_mcp_scopes(&request.scopes)
-            || !valid_pkce_challenge(&request.code_challenge)
-            || !valid_redirect_uri(&request.redirect_uri)
-        {
-            return Err(McpOAuthError::Rejected);
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthError> {
+        let resolved = self
+            .resolve_authorization_client(&request.client_id, request.redirect_uri.as_deref())
+            .await?;
+        let client = resolved.client;
+        let redirect_uri = resolved.redirect_uri;
+        if !resource_uri_matches(&self.resource_uri, &request.resource_uri) {
+            return Err(McpOAuthError::InvalidTarget);
         }
+        let scopes = if request.scopes.is_empty() {
+            vec!["notes:read".into()]
+        } else if valid_mcp_scopes(&request.scopes) {
+            canonical_scopes(&request.scopes)
+        } else {
+            return Err(McpOAuthError::InvalidScope);
+        };
+        if !valid_pkce_challenge(&request.code_challenge) {
+            return Err(McpOAuthError::InvalidRequest);
+        }
+        Ok(McpValidatedAuthorizationRequest {
+            client,
+            redirect_uri,
+            resource_uri: self.resource_uri.clone(),
+            scopes,
+            code_challenge: request.code_challenge.clone(),
+        })
+    }
+
+    pub async fn resolve_authorization_client(
+        &self,
+        client_id: &str,
+        redirect_uri: Option<&str>,
+    ) -> Result<McpAuthorizationClient, McpOAuthError> {
         let Some(client) = self
             .database
-            .mcp_client(&request.client_id)
+            .mcp_client(client_id)
             .await
             .map_err(|_| McpOAuthError::Unavailable)?
         else {
-            return Err(McpOAuthError::Rejected);
+            return Err(McpOAuthError::InvalidClient);
         };
-        if !client.redirect_uris.contains(&request.redirect_uri) {
-            return Err(McpOAuthError::Rejected);
-        }
-        Ok(client)
+        let redirect_uri = match redirect_uri {
+            Some(value)
+                if valid_redirect_uri(value)
+                    && client
+                        .redirect_uris
+                        .iter()
+                        .any(|registered| redirect_uri_matches(registered, value)) =>
+            {
+                value.to_owned()
+            }
+            None if client.redirect_uris.len() == 1 => client.redirect_uris[0].clone(),
+            _ => return Err(McpOAuthError::InvalidRedirectUri),
+        };
+        Ok(McpAuthorizationClient {
+            client,
+            redirect_uri,
+        })
     }
 
     pub async fn exchange_authorization_code(
         &self,
         code: String,
         client_id: String,
-        redirect_uri: String,
+        redirect_uri: Option<String>,
         resource_uri: String,
         verifier: String,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
-        if resource_uri != self.resource_uri || !valid_pkce_verifier(&verifier) {
-            return Err(McpOAuthError::Rejected);
+        if !resource_uri_matches(&self.resource_uri, &resource_uri) {
+            return Err(McpOAuthError::InvalidTarget);
+        }
+        if !valid_pkce_verifier(&verifier) {
+            return Err(McpOAuthError::InvalidGrant);
         }
         let expected_challenge = pkce_s256(&verifier);
         let now = SystemClock.now();
@@ -149,15 +198,15 @@ impl ServerMcpOAuthService {
             .consume_mcp_authorization_code(
                 &code,
                 &client_id,
-                &redirect_uri,
-                &resource_uri,
+                redirect_uri.as_deref(),
+                &self.resource_uri,
                 &expected_challenge,
                 now,
             )
             .await
             .map_err(|_| McpOAuthError::Unavailable)?
         else {
-            return Err(McpOAuthError::Rejected);
+            return Err(McpOAuthError::InvalidGrant);
         };
         self.issue_pair(grant, now).await
     }
@@ -167,20 +216,28 @@ impl ServerMcpOAuthService {
         refresh_token: String,
         client_id: String,
         resource_uri: String,
+        scopes: Option<Vec<String>>,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
-        if resource_uri != self.resource_uri {
-            return Err(McpOAuthError::Rejected);
+        if !resource_uri_matches(&self.resource_uri, &resource_uri) {
+            return Err(McpOAuthError::InvalidTarget);
+        }
+        if scopes
+            .as_ref()
+            .is_some_and(|requested| !valid_mcp_scopes(requested))
+        {
+            return Err(McpOAuthError::InvalidScope);
         }
         let now = SystemClock.now();
         let access_token = SystemRandom.opaque_token();
         let next_refresh_token = SystemRandom.opaque_token();
-        let Some(grant) = self
+        let outcome = self
             .database
             .rotate_mcp_refresh_token(
                 McpRefreshTokenRotation {
                     refresh_token,
                     client_id,
-                    resource_uri,
+                    resource_uri: self.resource_uri.clone(),
+                    requested_scopes: scopes.map(|value| canonical_scopes(&value)),
                     new_access_token: access_token.clone(),
                     new_refresh_token: next_refresh_token.clone(),
                     access_expires_at: UnixMillis::new(
@@ -193,15 +250,24 @@ impl ServerMcpOAuthService {
                 now,
             )
             .await
-            .map_err(|_| McpOAuthError::Unavailable)?
-        else {
-            return Err(McpOAuthError::Rejected);
+            .map_err(|_| McpOAuthError::Unavailable)?;
+        let access_scopes = match outcome {
+            McpRefreshTokenRotationOutcome::Rotated {
+                grant: _,
+                access_scopes,
+            } => access_scopes,
+            McpRefreshTokenRotationOutcome::InvalidToken => {
+                return Err(McpOAuthError::InvalidGrant);
+            }
+            McpRefreshTokenRotationOutcome::InvalidScope => {
+                return Err(McpOAuthError::InvalidScope);
+            }
         };
         Ok(McpIssuedTokenPair {
             access_token,
             refresh_token: next_refresh_token,
             access_expires_in_seconds: Self::ACCESS_TOKEN_SECONDS,
-            scope: grant.scopes.join(" "),
+            scope: access_scopes.join(" "),
         })
     }
 
@@ -235,11 +301,13 @@ impl ServerMcpOAuthService {
         &self,
         token: &str,
         resource_uri: &str,
-        scope: &str,
     ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthError> {
+        if !resource_uri_matches(&self.resource_uri, resource_uri) {
+            return Ok(None);
+        }
         let Some(authenticated) = self
             .database
-            .authenticate_mcp_access_token(token, resource_uri, scope, SystemClock.now())
+            .authenticate_mcp_access_token(token, &self.resource_uri, SystemClock.now())
             .await
             .map_err(|_| McpOAuthError::Unavailable)?
         else {
@@ -258,7 +326,12 @@ impl ServerMcpOAuthService {
 
 fn mcp_error(error: McpOAuthError) -> McpOAuthUseCaseError {
     match error {
-        McpOAuthError::Rejected => McpOAuthUseCaseError::Rejected,
+        McpOAuthError::InvalidRequest => McpOAuthUseCaseError::InvalidRequest,
+        McpOAuthError::InvalidClient => McpOAuthUseCaseError::InvalidClient,
+        McpOAuthError::InvalidRedirectUri => McpOAuthUseCaseError::InvalidRedirectUri,
+        McpOAuthError::InvalidScope => McpOAuthUseCaseError::InvalidScope,
+        McpOAuthError::InvalidTarget => McpOAuthUseCaseError::InvalidTarget,
+        McpOAuthError::InvalidGrant => McpOAuthUseCaseError::InvalidGrant,
         McpOAuthError::Unavailable => McpOAuthUseCaseError::Unavailable,
     }
 }
@@ -271,10 +344,19 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
     ) -> Result<(), McpOAuthUseCaseError> {
         self.register_client(client).await.map_err(mcp_error)
     }
+    async fn resolve_authorization_client(
+        &self,
+        client_id: String,
+        redirect_uri: Option<String>,
+    ) -> Result<McpAuthorizationClient, McpOAuthUseCaseError> {
+        self.resolve_authorization_client(&client_id, redirect_uri.as_deref())
+            .await
+            .map_err(mcp_error)
+    }
     async fn validate_authorization_request(
         &self,
         request: McpAuthorizationRequest,
-    ) -> Result<marginalis_domain::McpOAuthClient, McpOAuthUseCaseError> {
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
         self.validate_authorization_request(&request)
             .await
             .map_err(mcp_error)
@@ -282,7 +364,7 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
     async fn authorize(
         &self,
         actor: Actor,
-        request: McpAuthorizationRequest,
+        request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
         self.authorize(actor, request).await.map_err(mcp_error)
     }
@@ -290,7 +372,7 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
         &self,
         code: String,
         client_id: String,
-        redirect_uri: String,
+        redirect_uri: Option<String>,
         resource_uri: String,
         verifier: String,
     ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
@@ -310,9 +392,10 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
         refresh_token: String,
         client_id: String,
         resource_uri: String,
+        scopes: Option<Vec<String>>,
     ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
         let pair = self
-            .refresh_access_token(refresh_token, client_id, resource_uri)
+            .refresh_access_token(refresh_token, client_id, resource_uri, scopes)
             .await
             .map_err(mcp_error)?;
         Ok(McpTokenPair {
@@ -326,9 +409,8 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
         &self,
         token: String,
         resource_uri: String,
-        scope: String,
     ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthUseCaseError> {
-        self.authenticate(&token, &resource_uri, &scope)
+        self.authenticate(&token, &resource_uri)
             .await
             .map_err(mcp_error)
     }
@@ -365,6 +447,14 @@ fn valid_mcp_scopes(scopes: &[String]) -> bool {
         })
 }
 
+fn canonical_scopes(scopes: &[String]) -> Vec<String> {
+    ["notes:read", "notes:write", "notes:delete"]
+        .into_iter()
+        .filter(|candidate| scopes.iter().any(|scope| scope == candidate))
+        .map(str::to_owned)
+        .collect()
+}
+
 fn valid_redirect_uri(value: &str) -> bool {
     let Ok(url) = Url::parse(value) else {
         return false;
@@ -380,7 +470,7 @@ fn valid_redirect_uri(value: &str) -> bool {
     if url.scheme() == "https" {
         return true;
     }
-    if url.scheme() != "http" || url.port().is_none() {
+    if url.scheme() != "http" {
         return false;
     }
     match url.host() {
@@ -391,30 +481,79 @@ fn valid_redirect_uri(value: &str) -> bool {
     }
 }
 
+fn redirect_uri_matches(registered: &str, requested: &str) -> bool {
+    if registered == requested {
+        return true;
+    }
+    let (Ok(mut registered), Ok(mut requested)) = (Url::parse(registered), Url::parse(requested))
+    else {
+        return false;
+    };
+    if registered.scheme() != "http"
+        || requested.scheme() != "http"
+        || !is_loopback_host(&registered)
+        || !is_loopback_host(&requested)
+        || registered.host() != requested.host()
+    {
+        return false;
+    }
+    let _ = registered.set_port(None);
+    let _ = requested.set_port(None);
+    registered == requested
+}
+
+fn is_loopback_host(url: &Url) -> bool {
+    match url.host() {
+        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback(),
+        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        None => false,
+    }
+}
+
+fn resource_uri_matches(expected: &str, received: &str) -> bool {
+    match (Url::parse(expected), Url::parse(received)) {
+        (Ok(expected), Ok(received)) => expected == received,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn oauth_redirects_require_https_or_an_explicit_loopback_port() {
+    fn oauth_redirects_require_https_or_a_loopback_host() {
         for valid in [
             "https://chatgpt.com/connector/oauth/callback",
+            "http://localhost/callback",
             "http://localhost:48123/callback",
+            "http://127.0.0.1/callback",
             "http://127.0.0.1:48123/callback",
             "http://[::1]:48123/callback",
         ] {
             assert!(valid_redirect_uri(valid), "{valid}");
         }
         for invalid in [
-            "http://localhost/callback",
             "http://localhost.example:48123/callback",
-            "http://127.0.0.1/callback",
             "http://client.example.test/callback",
             "https://client.example.test/callback?next=other",
             "https://user@client.example.test/callback",
         ] {
             assert!(!valid_redirect_uri(invalid), "{invalid}");
         }
+        assert!(redirect_uri_matches(
+            "http://127.0.0.1/callback",
+            "http://127.0.0.1:49152/callback"
+        ));
+        assert!(!redirect_uri_matches(
+            "http://127.0.0.1/callback",
+            "http://127.0.0.1:49152/other"
+        ));
+        assert!(resource_uri_matches(
+            "HTTPS://Notes.Example.Test/mcp",
+            "https://notes.example.test/mcp"
+        ));
     }
 
     #[tokio::test]
@@ -443,44 +582,47 @@ mod tests {
             service
                 .validate_authorization_request(&McpAuthorizationRequest {
                     client_id: client.client_id.clone(),
-                    redirect_uri: client.redirect_uris[0].clone(),
+                    redirect_uri: Some(client.redirect_uris[0].clone()),
                     resource_uri: "https://other.example.test/mcp".into(),
                     scopes: vec!["notes:read".into()],
                     code_challenge: pkce_s256(&verifier),
                 })
                 .await,
-            Err(McpOAuthError::Rejected)
+            Err(McpOAuthError::InvalidTarget)
         );
         assert_eq!(
             service
                 .validate_authorization_request(&McpAuthorizationRequest {
                     client_id: client.client_id.clone(),
-                    redirect_uri: client.redirect_uris[0].clone(),
+                    redirect_uri: Some(client.redirect_uris[0].clone()),
                     resource_uri: resource_uri.clone(),
                     scopes: vec!["notes:read".into()],
                     code_challenge: "short".into(),
                 })
                 .await,
-            Err(McpOAuthError::Rejected)
+            Err(McpOAuthError::InvalidRequest)
         );
+        let validated = service
+            .validate_authorization_request(&McpAuthorizationRequest {
+                client_id: client.client_id.clone(),
+                redirect_uri: None,
+                resource_uri: resource_uri.clone(),
+                scopes: Vec::new(),
+                code_challenge: pkce_s256(&verifier),
+            })
+            .await
+            .expect("valid authorization request");
+        assert_eq!(validated.redirect_uri, client.redirect_uris[0]);
+        assert_eq!(validated.scopes, vec!["notes:read"]);
         let code = service
-            .authorize(
-                actor.clone(),
-                McpAuthorizationRequest {
-                    client_id: client.client_id.clone(),
-                    redirect_uri: client.redirect_uris[0].clone(),
-                    resource_uri: resource_uri.clone(),
-                    scopes: vec!["notes:read".into()],
-                    code_challenge: pkce_s256(&verifier),
-                },
-            )
+            .authorize(actor.clone(), validated)
             .await
             .expect("authorize");
         let tokens = service
             .exchange_authorization_code(
                 code,
                 client.client_id.clone(),
-                client.redirect_uris[0].clone(),
+                None,
                 resource_uri.clone(),
                 verifier.clone(),
             )
@@ -488,7 +630,7 @@ mod tests {
             .expect("exchange");
         assert!(
             service
-                .authenticate(&tokens.access_token, &resource_uri, "notes:read")
+                .authenticate(&tokens.access_token, &resource_uri)
                 .await
                 .expect("authenticate")
                 .is_some()
@@ -499,6 +641,7 @@ mod tests {
                 tokens.refresh_token,
                 client.client_id.clone(),
                 resource_uri.clone(),
+                None,
             )
             .await
             .expect("refresh");
@@ -508,36 +651,38 @@ mod tests {
                     original_refresh_token,
                     client.client_id.clone(),
                     resource_uri.clone(),
+                    None,
                 )
                 .await,
-            Err(McpOAuthError::Rejected)
+            Err(McpOAuthError::InvalidGrant)
         ));
         assert!(
             service
-                .authenticate(&rotated.access_token, &resource_uri, "notes:read")
+                .authenticate(&rotated.access_token, &resource_uri)
                 .await
                 .expect("replayed token family")
                 .is_none()
         );
 
+        let replacement_request = service
+            .validate_authorization_request(&McpAuthorizationRequest {
+                client_id: client.client_id.clone(),
+                redirect_uri: Some(client.redirect_uris[0].clone()),
+                resource_uri: resource_uri.clone(),
+                scopes: vec!["notes:read".into()],
+                code_challenge: pkce_s256(&verifier),
+            })
+            .await
+            .expect("valid replacement request");
         let replacement_code = service
-            .authorize(
-                actor.clone(),
-                McpAuthorizationRequest {
-                    client_id: client.client_id.clone(),
-                    redirect_uri: client.redirect_uris[0].clone(),
-                    resource_uri: resource_uri.clone(),
-                    scopes: vec!["notes:read".into()],
-                    code_challenge: pkce_s256(&verifier),
-                },
-            )
+            .authorize(actor.clone(), replacement_request)
             .await
             .expect("replacement authorization");
         let replacement = service
             .exchange_authorization_code(
                 replacement_code,
                 client.client_id.clone(),
-                client.redirect_uris[0].clone(),
+                Some(client.redirect_uris[0].clone()),
                 resource_uri.clone(),
                 verifier,
             )
@@ -549,7 +694,7 @@ mod tests {
             .expect("revoke");
         assert!(
             service
-                .authenticate(&replacement.access_token, &resource_uri, "notes:read")
+                .authenticate(&replacement.access_token, &resource_uri)
                 .await
                 .expect("revoked")
                 .is_none()

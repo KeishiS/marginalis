@@ -84,7 +84,8 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::{
-        McpRefreshTokenRotation, OidcLoginAttempt, OidcLoginAttemptStore,
+        McpRefreshTokenRotation, McpRefreshTokenRotationOutcome, OidcLoginAttempt,
+        OidcLoginAttemptStore,
     };
     use marginalis_domain::{
         ARCHIVE_FORMAT, Actor, Archive, EntityId, McpAuthorizationGrant, McpOAuthClient, Note,
@@ -494,7 +495,7 @@ mod tests {
             client_id: client.client_id.clone(),
             redirect_uri: client.redirect_uris[0].clone(),
             resource_uri: "https://notes.example.test/mcp".into(),
-            scopes: vec!["notes:read".into()],
+            scopes: vec!["notes:read".into(), "notes:write".into()],
         };
         database
             .issue_mcp_authorization_code("code", &grant, "challenge", UnixMillis::new(100))
@@ -505,7 +506,7 @@ mod tests {
                 .consume_mcp_authorization_code(
                     "code",
                     &grant.client_id,
-                    &grant.redirect_uri,
+                    Some(&grant.redirect_uri),
                     &grant.resource_uri,
                     "wrong-challenge",
                     UnixMillis::new(1)
@@ -519,7 +520,7 @@ mod tests {
                 .consume_mcp_authorization_code(
                     "code",
                     &grant.client_id,
-                    &grant.redirect_uri,
+                    Some(&grant.redirect_uri),
                     &grant.resource_uri,
                     "challenge",
                     UnixMillis::new(1)
@@ -533,7 +534,7 @@ mod tests {
                 .consume_mcp_authorization_code(
                     "code",
                     &grant.client_id,
-                    &grant.redirect_uri,
+                    Some(&grant.redirect_uri),
                     &grant.resource_uri,
                     "challenge",
                     UnixMillis::new(1)
@@ -555,23 +556,38 @@ mod tests {
             .expect("token pair");
         assert!(
             database
-                .authenticate_mcp_access_token(
-                    "access",
-                    &grant.resource_uri,
-                    "notes:read",
-                    UnixMillis::new(2)
-                )
+                .authenticate_mcp_access_token("access", &grant.resource_uri, UnixMillis::new(2))
                 .await
                 .expect("access token")
                 .is_some()
         );
-        assert!(
+        assert!(matches!(
             database
                 .rotate_mcp_refresh_token(
                     McpRefreshTokenRotation {
                         refresh_token: "refresh".into(),
                         client_id: grant.client_id.clone(),
                         resource_uri: grant.resource_uri.clone(),
+                        requested_scopes: Some(vec!["notes:delete".into()]),
+                        new_access_token: "escalated-access".into(),
+                        new_refresh_token: "escalated-refresh".into(),
+                        access_expires_at: UnixMillis::new(200),
+                        refresh_expires_at: UnixMillis::new(2_000),
+                    },
+                    UnixMillis::new(2)
+                )
+                .await
+                .expect("scope escalation"),
+            McpRefreshTokenRotationOutcome::InvalidScope
+        ));
+        assert!(matches!(
+            database
+                .rotate_mcp_refresh_token(
+                    McpRefreshTokenRotation {
+                        refresh_token: "refresh".into(),
+                        client_id: grant.client_id.clone(),
+                        resource_uri: grant.resource_uri.clone(),
+                        requested_scopes: Some(vec!["notes:read".into()]),
                         new_access_token: "next-access".into(),
                         new_refresh_token: "next-refresh".into(),
                         access_expires_at: UnixMillis::new(200),
@@ -580,21 +596,15 @@ mod tests {
                     UnixMillis::new(3)
                 )
                 .await
-                .expect("rotation")
-                .is_some()
-        );
-        assert!(
-            database
-                .authenticate_mcp_access_token(
-                    "next-access",
-                    &grant.resource_uri,
-                    "notes:read",
-                    UnixMillis::new(4)
-                )
-                .await
-                .expect("rotated access")
-                .is_some()
-        );
+                .expect("rotation"),
+            McpRefreshTokenRotationOutcome::Rotated { .. }
+        ));
+        let rotated_actor = database
+            .authenticate_mcp_access_token("next-access", &grant.resource_uri, UnixMillis::new(4))
+            .await
+            .expect("rotated access")
+            .expect("authenticated actor");
+        assert_eq!(rotated_actor.scopes, vec!["notes:read"]);
         assert!(
             database
                 .register_mcp_client_bounded(
@@ -610,13 +620,14 @@ mod tests {
                 .await
                 .expect("registration cleanup")
         );
-        assert!(
+        assert!(matches!(
             database
                 .rotate_mcp_refresh_token(
                     McpRefreshTokenRotation {
                         refresh_token: "refresh".into(),
                         client_id: "different-client".into(),
                         resource_uri: grant.resource_uri.clone(),
+                        requested_scopes: None,
                         new_access_token: "wrong-binding-access".into(),
                         new_refresh_token: "wrong-binding-refresh".into(),
                         access_expires_at: UnixMillis::new(200),
@@ -625,28 +636,28 @@ mod tests {
                     UnixMillis::new(6)
                 )
                 .await
-                .expect("wrong binding")
-                .is_none()
-        );
+                .expect("wrong binding"),
+            McpRefreshTokenRotationOutcome::InvalidToken
+        ));
         assert!(
             database
                 .authenticate_mcp_access_token(
                     "next-access",
                     &grant.resource_uri,
-                    "notes:read",
                     UnixMillis::new(7)
                 )
                 .await
                 .expect("access after wrong binding")
                 .is_some()
         );
-        assert!(
+        assert!(matches!(
             database
                 .rotate_mcp_refresh_token(
                     McpRefreshTokenRotation {
                         refresh_token: "refresh".into(),
                         client_id: grant.client_id.clone(),
                         resource_uri: grant.resource_uri.clone(),
+                        requested_scopes: None,
                         new_access_token: "again-access".into(),
                         new_refresh_token: "again-refresh".into(),
                         access_expires_at: UnixMillis::new(200),
@@ -655,28 +666,28 @@ mod tests {
                     UnixMillis::new(8)
                 )
                 .await
-                .expect("refresh token replay")
-                .is_none()
-        );
+                .expect("refresh token replay"),
+            McpRefreshTokenRotationOutcome::InvalidToken
+        ));
         assert!(
             database
                 .authenticate_mcp_access_token(
                     "next-access",
                     &grant.resource_uri,
-                    "notes:read",
                     UnixMillis::new(9)
                 )
                 .await
                 .expect("access after replay")
                 .is_none()
         );
-        assert!(
+        assert!(matches!(
             database
                 .rotate_mcp_refresh_token(
                     McpRefreshTokenRotation {
                         refresh_token: "next-refresh".into(),
                         client_id: grant.client_id.clone(),
                         resource_uri: grant.resource_uri.clone(),
+                        requested_scopes: None,
                         new_access_token: "post-replay-access".into(),
                         new_refresh_token: "post-replay-refresh".into(),
                         access_expires_at: UnixMillis::new(200),
@@ -685,9 +696,9 @@ mod tests {
                     UnixMillis::new(10)
                 )
                 .await
-                .expect("family after replay")
-                .is_none()
-        );
+                .expect("family after replay"),
+            McpRefreshTokenRotationOutcome::InvalidToken
+        ));
     }
 
     #[tokio::test]

@@ -65,7 +65,12 @@ pub(super) fn authentication_error(
 
 pub(super) fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Problem>) {
     match error {
-        McpOAuthUseCaseError::Rejected => problem(
+        McpOAuthUseCaseError::InvalidRequest
+        | McpOAuthUseCaseError::InvalidClient
+        | McpOAuthUseCaseError::InvalidRedirectUri
+        | McpOAuthUseCaseError::InvalidScope
+        | McpOAuthUseCaseError::InvalidTarget
+        | McpOAuthUseCaseError::InvalidGrant => problem(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "OAuth request is invalid",

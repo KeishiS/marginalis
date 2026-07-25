@@ -165,6 +165,7 @@ pub struct McpAuthorizationGrant {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthenticatedActor {
     pub actor: Actor,
+    pub scopes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -155,8 +155,9 @@ mod tests {
         http::{HeaderMap, Request},
     };
     use marginalis_application::{
-        AuthenticationUseCaseError, McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair,
-        NoteUseCaseError, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
+        AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
+        McpTokenPair, McpValidatedAuthorizationRequest, NoteUseCaseError, NoteUseCases,
+        OidcAuthenticationUseCases, WebSessionUseCases,
     };
     use marginalis_domain::{
         Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft,
@@ -334,32 +335,68 @@ mod tests {
     impl McpOAuthUseCases for Mcp {
         async fn register_client(
             &self,
-            _client: McpOAuthClient,
+            client: McpOAuthClient,
         ) -> Result<(), McpOAuthUseCaseError> {
-            Ok(())
+            if client
+                .redirect_uris
+                .iter()
+                .any(|uri| uri.starts_with("http://remote.example"))
+            {
+                Err(McpOAuthUseCaseError::InvalidRedirectUri)
+            } else {
+                Ok(())
+            }
+        }
+        async fn resolve_authorization_client(
+            &self,
+            client_id: String,
+            redirect_uri: Option<String>,
+        ) -> Result<McpAuthorizationClient, McpOAuthUseCaseError> {
+            let redirect_uri =
+                redirect_uri.unwrap_or_else(|| "https://client.example.test/callback".into());
+            Ok(McpAuthorizationClient {
+                client: McpOAuthClient {
+                    client_id,
+                    display_name: "Test MCP client".into(),
+                    redirect_uris: vec![redirect_uri.clone()],
+                },
+                redirect_uri,
+            })
         }
         async fn validate_authorization_request(
             &self,
             request: marginalis_application::McpAuthorizationRequest,
-        ) -> Result<McpOAuthClient, McpOAuthUseCaseError> {
-            Ok(McpOAuthClient {
-                client_id: request.client_id,
-                display_name: "Test MCP client".into(),
-                redirect_uris: vec![request.redirect_uri],
+        ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
+            if request.resource_uri != "https://example.test/mcp" {
+                return Err(McpOAuthUseCaseError::InvalidTarget);
+            }
+            let redirect_uri = request
+                .redirect_uri
+                .unwrap_or_else(|| "https://client.example.test/callback".into());
+            Ok(McpValidatedAuthorizationRequest {
+                client: McpOAuthClient {
+                    client_id: request.client_id,
+                    display_name: "Test MCP client".into(),
+                    redirect_uris: vec![redirect_uri.clone()],
+                },
+                redirect_uri,
+                resource_uri: request.resource_uri,
+                scopes: request.scopes,
+                code_challenge: request.code_challenge,
             })
         }
         async fn authorize(
             &self,
             _actor: Actor,
-            _request: marginalis_application::McpAuthorizationRequest,
+            _request: McpValidatedAuthorizationRequest,
         ) -> Result<String, McpOAuthUseCaseError> {
-            Err(McpOAuthUseCaseError::Rejected)
+            Err(McpOAuthUseCaseError::InvalidRequest)
         }
         async fn exchange_authorization_code(
             &self,
             _code: String,
             _client_id: String,
-            _redirect_uri: String,
+            _redirect_uri: Option<String>,
             _resource_uri: String,
             _verifier: String,
         ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
@@ -375,22 +412,35 @@ mod tests {
             _refresh_token: String,
             _client_id: String,
             _resource_uri: String,
+            _scopes: Option<Vec<String>>,
         ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
-            Err(McpOAuthUseCaseError::Rejected)
+            Err(McpOAuthUseCaseError::InvalidGrant)
         }
         async fn authenticate(
             &self,
             token: String,
             _resource_uri: String,
-            _scope: String,
         ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
-            Ok((token == "valid-token").then(|| McpAuthenticatedActor {
-                actor: Actor {
-                    issuer: "https://kanidm.example.test".into(),
-                    subject: "alice".into(),
-                    is_administrator: false,
-                },
-            }))
+            Ok(
+                matches!(token.as_str(), "valid-token" | "read-token").then(|| {
+                    McpAuthenticatedActor {
+                        actor: Actor {
+                            issuer: "https://kanidm.example.test".into(),
+                            subject: "alice".into(),
+                            is_administrator: false,
+                        },
+                        scopes: if token == "read-token" {
+                            vec!["notes:read".into()]
+                        } else {
+                            vec![
+                                "notes:read".into(),
+                                "notes:write".into(),
+                                "notes:delete".into(),
+                            ]
+                        },
+                    }
+                }),
+            )
         }
         async fn revoke(
             &self,
@@ -678,7 +728,14 @@ mod tests {
             )
             .await
             .expect("response");
-        assert_eq!(conflicting_post.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(conflicting_post.status(), StatusCode::SEE_OTHER);
+        assert!(
+            conflicting_post
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|location| location.contains("error=invalid_request"))
+        );
 
         let forged_approval = mcp_app()
             .oneshot(
@@ -694,6 +751,42 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(forged_approval.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn authorization_errors_redirect_only_after_client_redirect_validation() {
+        let invalid_target = mcp_app()
+            .oneshot(
+                Request::get(
+                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fother.example%2Fmcp&code_challenge=verifier&code_challenge_method=S256&state=opaque",
+                )
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_target.status(), StatusCode::SEE_OTHER);
+        let location = invalid_target
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .expect("redirect location");
+        assert!(location.starts_with("https://chatgpt.com/connector/oauth/callback?"));
+        assert!(location.contains("error=invalid_target"));
+        assert!(location.contains("state=opaque"));
+
+        let missing_client = mcp_app()
+            .oneshot(
+                Request::get(
+                    "/oauth/authorize?response_type=code&redirect_uri=https%3A%2F%2Fevil.example%2Fcallback",
+                )
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(missing_client.status(), StatusCode::BAD_REQUEST);
+        assert!(!missing_client.headers().contains_key(header::LOCATION));
     }
 
     #[tokio::test]
@@ -719,6 +812,44 @@ mod tests {
             .expect("request");
         let allowed = mcp_app().oneshot(request).await.expect("response");
         assert_eq!(allowed.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn mcp_bearer_scheme_is_case_insensitive_and_scope_failures_are_forbidden() {
+        let lowercase_bearer = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, "bearer valid-token")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .expect("request");
+        let allowed = mcp_app().oneshot(lowercase_bearer).await.expect("response");
+        assert_eq!(allowed.status(), StatusCode::OK);
+
+        let insufficient_scope = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, "Bearer read-token")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_note","arguments":{"title":"Title","body":"Body","tags":[]}}}"#,
+            ))
+            .expect("request");
+        let denied = mcp_app()
+            .oneshot(insufficient_scope)
+            .await
+            .expect("response");
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert!(
+            denied
+                .headers()
+                .get(header::WWW_AUTHENTICATE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| {
+                    value.contains("error=\"insufficient_scope\"")
+                        && value.contains("scope=\"notes:write\"")
+                })
+        );
     }
 
     #[tokio::test]
@@ -845,6 +976,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mcp_registration_reports_invalid_redirect_uri() {
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/oauth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"client_name":"Invalid","redirect_uris":["http://remote.example/callback"]}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let error: serde_json::Value = serde_json::from_slice(&body).expect("OAuth error");
+        assert_eq!(error["error"], "invalid_redirect_uri");
+    }
+
+    #[tokio::test]
     async fn mcp_token_response_is_not_cacheable() {
         let response = mcp_app()
             .oneshot(
@@ -891,6 +1043,40 @@ mod tests {
             .expect("body");
         let error: serde_json::Value = serde_json::from_slice(&body).expect("OAuth error");
         assert_eq!(error["error"], "unsupported_grant_type");
+    }
+
+    #[tokio::test]
+    async fn mcp_token_accepts_an_omitted_redirect_and_rejects_duplicate_parameters() {
+        let omitted_redirect = mcp_app()
+            .oneshot(
+                Request::post("/oauth/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from(
+                        "grant_type=authorization_code&code=code&client_id=client&resource=https%3A%2F%2Fexample.test%2Fmcp&code_verifier=verifier",
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(omitted_redirect.status(), StatusCode::OK);
+
+        let duplicate = mcp_app()
+            .oneshot(
+                Request::post("/oauth/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from(
+                        "grant_type=authorization_code&grant_type=refresh_token&client_id=client&resource=https%3A%2F%2Fexample.test%2Fmcp",
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(duplicate.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(duplicate.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let error: serde_json::Value = serde_json::from_slice(&body).expect("OAuth error");
+        assert_eq!(error["error"], "invalid_request");
     }
 
     #[tokio::test]

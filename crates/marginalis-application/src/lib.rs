@@ -6,8 +6,8 @@ use std::future::Future;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft,
-    NoteId, UnixMillis, WebSession,
+    Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpAuthorizationGrant,
+    McpOAuthClient, Note, NoteDraft, NoteId, UnixMillis, WebSession,
 };
 
 pub trait Clock: Send + Sync {
@@ -85,7 +85,12 @@ impl std::error::Error for NoteUseCaseError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum McpOAuthUseCaseError {
-    Rejected,
+    InvalidRequest,
+    InvalidClient,
+    InvalidRedirectUri,
+    InvalidScope,
+    InvalidTarget,
+    InvalidGrant,
     Unavailable,
 }
 
@@ -93,6 +98,22 @@ pub enum McpOAuthUseCaseError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthorizationRequest {
     pub client_id: String,
+    pub redirect_uri: Option<String>,
+    pub resource_uri: String,
+    pub scopes: Vec<String>,
+    pub code_challenge: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpAuthorizationClient {
+    pub client: McpOAuthClient,
+    pub redirect_uri: String,
+}
+
+/// client登録とredirect URIを照合し、既定scopeも解決した認可要求。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpValidatedAuthorizationRequest {
+    pub client: McpOAuthClient,
     pub redirect_uri: String,
     pub resource_uri: String,
     pub scopes: Vec<String>,
@@ -104,10 +125,21 @@ pub struct McpRefreshTokenRotation {
     pub refresh_token: String,
     pub client_id: String,
     pub resource_uri: String,
+    pub requested_scopes: Option<Vec<String>>,
     pub new_access_token: String,
     pub new_refresh_token: String,
     pub access_expires_at: UnixMillis,
     pub refresh_expires_at: UnixMillis,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum McpRefreshTokenRotationOutcome {
+    Rotated {
+        grant: McpAuthorizationGrant,
+        access_scopes: Vec<String>,
+    },
+    InvalidToken,
+    InvalidScope,
 }
 
 /// SQLite正本を扱うノート操作境界。HTTP、MCP、Web UIはこの可視性規則を共有する。
@@ -176,20 +208,25 @@ pub struct McpTokenPair {
 #[async_trait]
 pub trait McpOAuthUseCases: Send + Sync {
     async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError>;
+    async fn resolve_authorization_client(
+        &self,
+        client_id: String,
+        redirect_uri: Option<String>,
+    ) -> Result<McpAuthorizationClient, McpOAuthUseCaseError>;
     async fn validate_authorization_request(
         &self,
         request: McpAuthorizationRequest,
-    ) -> Result<McpOAuthClient, McpOAuthUseCaseError>;
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError>;
     async fn authorize(
         &self,
         actor: Actor,
-        request: McpAuthorizationRequest,
+        request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError>;
     async fn exchange_authorization_code(
         &self,
         code: String,
         client_id: String,
-        redirect_uri: String,
+        redirect_uri: Option<String>,
         resource_uri: String,
         verifier: String,
     ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
@@ -198,12 +235,12 @@ pub trait McpOAuthUseCases: Send + Sync {
         refresh_token: String,
         client_id: String,
         resource_uri: String,
+        scopes: Option<Vec<String>>,
     ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
     async fn authenticate(
         &self,
         token: String,
         resource_uri: String,
-        scope: String,
     ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError>;
     async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError>;
 }

@@ -39,14 +39,34 @@ fn mcp_required_scope(request: &JsonRpcRequest) -> &'static str {
         .unwrap_or("notes:read")
 }
 
-fn mcp_unauthorized(endpoint: &McpEndpoint) -> Response {
-    let mut response = StatusCode::UNAUTHORIZED.into_response();
-    if let Ok(value) = format!("Bearer resource_metadata=\"{}\"", endpoint.metadata_uri).parse() {
+fn mcp_authentication_error(
+    endpoint: &McpEndpoint,
+    status: StatusCode,
+    error: Option<&str>,
+    scope: &str,
+) -> Response {
+    let mut response = status.into_response();
+    let error = error.map_or_else(String::new, |value| format!(", error=\"{value}\""));
+    if let Ok(value) = format!(
+        "Bearer resource_metadata=\"{}\", scope=\"{}\"{}",
+        endpoint.metadata_uri, scope, error
+    )
+    .parse()
+    {
         response
             .headers_mut()
             .insert(header::WWW_AUTHENTICATE, value);
     }
     response
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
+    let mut parts = value.split_ascii_whitespace();
+    let scheme = parts.next()?;
+    let token = parts.next()?;
+    (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty() && parts.next().is_none())
+        .then_some(token)
 }
 
 pub(super) async fn mcp_post(
@@ -93,26 +113,42 @@ pub(super) async fn mcp_post(
     if !accepts.contains(&"application/json") || !accepts.contains(&"text/event-stream") {
         return Ok(StatusCode::NOT_ACCEPTABLE.into_response());
     }
-    let token = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
+    let required_scope = mcp_required_scope(&request);
+    let token = bearer_token(&headers);
     let Some(token) = token else {
-        return Ok(mcp_unauthorized(endpoint));
+        return Ok(mcp_authentication_error(
+            endpoint,
+            StatusCode::UNAUTHORIZED,
+            None,
+            required_scope,
+        ));
     };
-    let Some(actor) = endpoint
+    let Some(authenticated) = endpoint
         .oauth
-        .authenticate(
-            token.into(),
-            endpoint.resource_uri.clone(),
-            mcp_required_scope(&request).into(),
-        )
+        .authenticate(token.into(), endpoint.resource_uri.clone())
         .await
         .map_err(mcp_error)?
-        .map(|value| value.actor)
     else {
-        return Ok(mcp_unauthorized(endpoint));
+        return Ok(mcp_authentication_error(
+            endpoint,
+            StatusCode::UNAUTHORIZED,
+            Some("invalid_token"),
+            required_scope,
+        ));
     };
+    if !authenticated
+        .scopes
+        .iter()
+        .any(|scope| scope == required_scope)
+    {
+        return Ok(mcp_authentication_error(
+            endpoint,
+            StatusCode::FORBIDDEN,
+            Some("insufficient_scope"),
+            required_scope,
+        ));
+    }
+    let actor = authenticated.actor;
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     if request.jsonrpc != "2.0" {
         return if request.id.is_none() {
