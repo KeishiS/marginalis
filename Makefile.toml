@@ -72,6 +72,11 @@ description = "Validate GitHub Actions workflow syntax"
 command = "actionlint"
 args = [".github/workflows/ci.yml", ".github/workflows/release-gate.yml"]
 
+[tasks.docs-check]
+description = "Validate local links and whitespace in Markdown documentation"
+command = "bash"
+args = [".github/scripts/check-docs.sh"]
+
 [tasks.security-audit]
 description = "Check Cargo.lock against the current RustSec advisory database"
 command = "cargo"
@@ -310,4 +315,4 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, tests, and flake evaluation"
-dependencies = ["fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "flake-check"]
+dependencies = ["fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "flake-check"]
