@@ -4,8 +4,11 @@
 //! v0.3.0ではこのrouterだけを公開する。
 
 mod error;
+mod html;
+mod notes;
 mod security;
 mod state;
+mod ui;
 
 pub use state::{ApiState, McpEndpoint};
 
@@ -32,7 +35,13 @@ use tracing::{Level, info_span};
 use self::state::McpRegistrationRateLimiter;
 use self::{
     error::{HandlerResult, authentication_error, mcp_error, note_error, problem},
+    html::escape_html,
+    notes::{
+        NoteInput, create_note, delete_note, export_note, list_notes, read_note, restore_note,
+        session, update_note,
+    },
     security::security_headers,
+    ui::{home, view_note},
 };
 #[cfg(test)]
 use marginalis_application::{
@@ -46,58 +55,6 @@ pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
 const SESSION_COOKIE: &str = "marginalis_session";
 const CSRF_COOKIE: &str = "marginalis_csrf";
 const RETURN_TO_COOKIE: &str = "marginalis_return_to";
-
-#[derive(Serialize)]
-struct SessionResponse {
-    issuer: String,
-    subject: String,
-    is_administrator: bool,
-}
-
-#[derive(Serialize)]
-struct NoteResponse {
-    note_id: String,
-    title: String,
-    body: String,
-    tags: Vec<String>,
-    created_at_ms: i64,
-    updated_at_ms: i64,
-    revision: i64,
-}
-
-impl From<Note> for NoteResponse {
-    fn from(note: Note) -> Self {
-        Self {
-            note_id: note.note_id.to_string(),
-            title: note.title,
-            body: note.body,
-            tags: note.tags,
-            created_at_ms: note.created_at.get(),
-            updated_at_ms: note.updated_at.get(),
-            revision: note.revision,
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct NoteInput {
-    title: String,
-    body: String,
-    tags: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct NoteUpdateInput {
-    title: String,
-    body: String,
-    tags: Vec<String>,
-    expected_revision: i64,
-}
-
-#[derive(Deserialize)]
-struct DeleteInput {
-    expected_revision: i64,
-}
 
 pub fn router(state: ApiState) -> Router {
     let mut router = Router::new()
@@ -1056,193 +1013,6 @@ fn note_revision_json(note: Note) -> serde_json::Value {
     })
 }
 
-async fn session(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-) -> HandlerResult<Json<SessionResponse>> {
-    let actor = authenticated_actor(&headers, &state).await?;
-    Ok(Json(SessionResponse {
-        issuer: actor.issuer,
-        subject: actor.subject,
-        is_administrator: actor.is_administrator,
-    }))
-}
-
-async fn list_notes(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-) -> HandlerResult<Json<Vec<NoteResponse>>> {
-    let actor = authenticated_actor(&headers, &state).await?;
-    let notes = state
-        .notes
-        .list_visible_notes(actor)
-        .await
-        .map_err(note_error)?;
-    Ok(Json(notes.into_iter().map(NoteResponse::from).collect()))
-}
-
-async fn read_note(
-    State(state): State<ApiState>,
-    Path(note_id): Path<String>,
-    headers: HeaderMap,
-) -> HandlerResult<Json<NoteResponse>> {
-    let actor = authenticated_actor(&headers, &state).await?;
-    let note = state
-        .notes
-        .read_note(actor, parse_note_id(&note_id)?)
-        .await
-        .map_err(note_error)?;
-    Ok(Json(note.into()))
-}
-
-async fn create_note(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-    Json(input): Json<NoteInput>,
-) -> HandlerResult<(StatusCode, Json<NoteResponse>)> {
-    let actor = authenticated_mutation_actor(&headers, &state).await?;
-    let note = state
-        .notes
-        .create_note(
-            actor,
-            NoteDraft {
-                title: input.title,
-                body: input.body,
-                tags: input.tags,
-            },
-        )
-        .await
-        .map_err(note_error)?;
-    Ok((StatusCode::CREATED, Json(note.into())))
-}
-
-async fn update_note(
-    State(state): State<ApiState>,
-    Path(note_id): Path<String>,
-    headers: HeaderMap,
-    Json(input): Json<NoteUpdateInput>,
-) -> HandlerResult<Json<NoteResponse>> {
-    let actor = authenticated_mutation_actor(&headers, &state).await?;
-    let note = state
-        .notes
-        .update_note(
-            actor,
-            parse_note_id(&note_id)?,
-            NoteDraft {
-                title: input.title,
-                body: input.body,
-                tags: input.tags,
-            },
-            input.expected_revision,
-        )
-        .await
-        .map_err(note_error)?;
-    Ok(Json(note.into()))
-}
-
-async fn delete_note(
-    State(state): State<ApiState>,
-    Path(note_id): Path<String>,
-    headers: HeaderMap,
-    Json(input): Json<DeleteInput>,
-) -> HandlerResult<Json<NoteResponse>> {
-    let actor = authenticated_mutation_actor(&headers, &state).await?;
-    let note = state
-        .notes
-        .soft_delete_note(actor, parse_note_id(&note_id)?, input.expected_revision)
-        .await
-        .map_err(note_error)?;
-    Ok(Json(note.into()))
-}
-
-async fn restore_note(
-    State(state): State<ApiState>,
-    Path(note_id): Path<String>,
-    headers: HeaderMap,
-    Json(input): Json<DeleteInput>,
-) -> HandlerResult<Json<NoteResponse>> {
-    let actor = authenticated_mutation_actor(&headers, &state).await?;
-    let note = state
-        .notes
-        .restore_note(actor, parse_note_id(&note_id)?, input.expected_revision)
-        .await
-        .map_err(note_error)?;
-    Ok(Json(note.into()))
-}
-
-async fn export_note(
-    State(state): State<ApiState>,
-    Path(note_id): Path<String>,
-    headers: HeaderMap,
-) -> HandlerResult<Response> {
-    let actor = authenticated_actor(&headers, &state).await?;
-    let note = state
-        .notes
-        .read_note(actor, parse_note_id(&note_id)?)
-        .await
-        .map_err(note_error)?;
-    let source = state.notes.export_note_source(&note).map_err(|_| {
-        problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
-            "note export is unavailable",
-        )
-    })?;
-    Ok((
-        [(header::CONTENT_TYPE, "text/asciidoc; charset=utf-8")],
-        source,
-    )
-        .into_response())
-}
-
-async fn home(State(state): State<ApiState>, headers: HeaderMap) -> HandlerResult<Html<String>> {
-    let actor = authenticated_actor(&headers, &state).await?;
-    let notes = state
-        .notes
-        .list_visible_notes(actor)
-        .await
-        .map_err(note_error)?;
-    let list = notes
-        .into_iter()
-        .map(|note| {
-            format!(
-                "<li><a href=\"{}\">{}</a></li>",
-                external_path(&state.cookie_path, &format!("/notes/{}", note.note_id)),
-                escape_html(&note.title)
-            )
-        })
-        .collect::<String>();
-    Ok(Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>Marginalis</title><main><h1>Marginalis</h1><p>閲覧できるノート</p><ul>{list}</ul></main>"
-    )))
-}
-
-async fn view_note(
-    State(state): State<ApiState>,
-    Path(note_id): Path<String>,
-    headers: HeaderMap,
-) -> HandlerResult<Html<String>> {
-    let actor = authenticated_actor(&headers, &state).await?;
-    let note = state
-        .notes
-        .read_note(actor, parse_note_id(&note_id)?)
-        .await
-        .map_err(note_error)?;
-    let body = state.notes.render_note_html(&note).map_err(|_| {
-        problem(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "render_failed",
-            "note cannot be rendered safely",
-        )
-    })?;
-    Ok(Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>{}</title><main><p><a href=\"{}\">一覧</a></p>{}</main>",
-        escape_html(&note.title),
-        external_path(&state.cookie_path, "/"),
-        body
-    )))
-}
-
 async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> HandlerResult<Actor> {
     let session_id = cookie_value(headers, SESSION_COOKIE).ok_or_else(|| {
         problem(
@@ -1384,15 +1154,6 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
             let (key, value) = part.trim().split_once('=')?;
             (key == name).then(|| value.to_owned())
         })
-}
-
-fn escape_html(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
 
 #[cfg(test)]
