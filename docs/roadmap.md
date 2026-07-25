@@ -34,6 +34,7 @@
 | 3 | [039](../issues/039-kanidm-group-authorization-and-mcp-oauth.md) | Kanidm 1.10 group claim 認可と MCP OAuth を実装する | `server-users` / `server-admins` を含む OIDC group claim と対象 MCP client の認可が機能する |
 | 4（実装中） | [040](../issues/040-v0.3.0-nixos-and-e2e-foundation.md) | NixOS 配備と Kanidm 1.10 E2E を release gate に組み込む | TLS、subpath、OIDC、MCP、NixOS module を CI で再現できる |
 | 5 | [041](../issues/041-web-ui-and-soft-deletion.md) | 閲覧用 Web UI と 30 日間のソフトデリートを提供する | API、MCP、Web UI が同一の可視性を守り、期限後の物理削除を自動化できる |
+| 横断（現在） | [043](../issues/043-production-reachability-and-test-coverage.md) | 本番到達性とv0.3 test coverageを分離して可視化する | 旧実装のproduction graph復帰を拒否し、未実行箇所を試験不足と不要コードに分類できる |
 | 6 | [042](../issues/042-v0.3.0-release-acceptance.md) | 空の新環境で v0.3.0 を受入・公開する | Kanidm 1.10 E2E、MCP 認可、NixOS 配備が成功し、破壊的初期化手順が確定する |
 
 ## 継続的な改善

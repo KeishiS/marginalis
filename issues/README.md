@@ -32,6 +32,9 @@ AsciiDoc関連のIssueでは、MarginalisをAdocWeaveへ組み込む処理を扱
 5. [041: 閲覧用Web UIとソフトデリート](041-web-ui-and-soft-deletion.md)
 6. [042: v0.3.0のリリース受入](042-v0.3.0-release-acceptance.md)
 
+横断的な品質確認として、[043: 本番到達性とテストカバレッジの可視化](043-production-reachability-and-test-coverage.md)
+を037から041までの実装と並行して進め、042のリリース受入前に完了する。
+
 旧設計を前提とする未完了 Issue は削除せず履歴として保持する。新規実装の対象にするかは、
 v0.3.0 公開後に再評価する。
 
