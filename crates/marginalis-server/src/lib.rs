@@ -7,15 +7,15 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, Clock, McpAuthorizationRequest, McpOAuthUseCaseError,
-    McpRefreshTokenRotation, NoteUseCaseError, Random, SessionLifetime, V3McpOAuthUseCases,
-    V3McpTokenPair, V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
+    McpRefreshTokenRotation, NoteUseCaseError, Random, SessionLifetime, McpOAuthUseCases,
+    McpTokenPair, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError, OidcConfiguration};
 use marginalis_domain::{
     CanonicalActor, CanonicalAuthenticatedSession, CanonicalNote, CanonicalNoteDraft,
     CanonicalWebSession, EntityId, NoteId, NotePermission, UnixMillis,
 };
-use marginalis_sqlite::{V3NoteStoreError, V3SqliteDatabase};
+use marginalis_sqlite::{SqliteStoreError, SqliteDatabase};
 use sha2::{Digest, Sha256};
 use url::Url;
 use uuid::Uuid;
@@ -47,34 +47,34 @@ impl Random for SystemRandom {
 
 /// adapter群を組み合わせて、transportへノート操作だけを公開するserver側実装。
 #[derive(Clone, Debug)]
-pub struct ServerV3NoteUseCases {
-    database: V3SqliteDatabase,
+pub struct ServerNoteUseCases {
+    database: SqliteDatabase,
 }
 
-impl ServerV3NoteUseCases {
-    pub fn new(database: V3SqliteDatabase) -> Self {
+impl ServerNoteUseCases {
+    pub fn new(database: SqliteDatabase) -> Self {
         Self { database }
     }
 }
 
 /// OIDC login時に検証したgroup claimをsessionへ固定するv0.3 Cookie session service。
 #[derive(Clone)]
-pub struct ServerV3WebSessionUseCases {
-    database: V3SqliteDatabase,
+pub struct ServerWebSessionUseCases {
+    database: SqliteDatabase,
     lifetime: SessionLifetime,
 }
 
 /// v0.3 loginではKanidm group以外の利用者状態を保存しない。
 #[derive(Clone)]
-pub struct ServerV3OidcAuthenticationUseCases {
-    database: V3SqliteDatabase,
+pub struct ServerOidcAuthenticationUseCases {
+    database: SqliteDatabase,
     configuration: OidcConfiguration,
     oidc: Arc<tokio::sync::RwLock<Option<OidcAuthentication>>>,
 }
 
-impl ServerV3OidcAuthenticationUseCases {
+impl ServerOidcAuthenticationUseCases {
     pub fn new(
-        database: V3SqliteDatabase,
+        database: SqliteDatabase,
         configuration: OidcConfiguration,
         oidc: Option<OidcAuthentication>,
     ) -> Self {
@@ -98,8 +98,8 @@ impl ServerV3OidcAuthenticationUseCases {
     }
 }
 
-impl ServerV3WebSessionUseCases {
-    pub fn new(database: V3SqliteDatabase, lifetime: SessionLifetime) -> Self {
+impl ServerWebSessionUseCases {
+    pub fn new(database: SqliteDatabase, lifetime: SessionLifetime) -> Self {
         Self { database, lifetime }
     }
 }
@@ -120,18 +120,18 @@ pub enum McpOAuthError {
 
 /// v0.3 SQLite schemaとKanidm主体を使うMCP OAuth service。
 #[derive(Clone)]
-pub struct ServerV3McpOAuthService {
-    database: V3SqliteDatabase,
+pub struct ServerMcpOAuthService {
+    database: SqliteDatabase,
     resource_uri: String,
 }
 
-impl ServerV3McpOAuthService {
+impl ServerMcpOAuthService {
     pub const ACCESS_TOKEN_SECONDS: u64 = 60 * 60;
     pub const REFRESH_TOKEN_SECONDS: u64 = 30 * 24 * 60 * 60;
     const MAX_DYNAMIC_CLIENTS: i64 = 1_000;
     const UNUSED_CLIENT_SECONDS: i64 = 24 * 60 * 60;
 
-    pub fn new(database: V3SqliteDatabase, resource_uri: String) -> Self {
+    pub fn new(database: SqliteDatabase, resource_uri: String) -> Self {
         Self {
             database,
             resource_uri,
@@ -351,7 +351,7 @@ impl ServerV3McpOAuthService {
     }
 }
 
-fn v3_mcp_error(error: McpOAuthError) -> McpOAuthUseCaseError {
+fn mcp_error(error: McpOAuthError) -> McpOAuthUseCaseError {
     match error {
         McpOAuthError::Rejected => McpOAuthUseCaseError::Rejected,
         McpOAuthError::Unavailable => McpOAuthUseCaseError::Unavailable,
@@ -359,12 +359,12 @@ fn v3_mcp_error(error: McpOAuthError) -> McpOAuthUseCaseError {
 }
 
 #[async_trait]
-impl V3McpOAuthUseCases for ServerV3McpOAuthService {
+impl McpOAuthUseCases for ServerMcpOAuthService {
     async fn register_client(
         &self,
         client: marginalis_domain::McpOAuthClient,
     ) -> Result<(), McpOAuthUseCaseError> {
-        self.register_client(client).await.map_err(v3_mcp_error)
+        self.register_client(client).await.map_err(mcp_error)
     }
     async fn validate_authorization_request(
         &self,
@@ -372,14 +372,14 @@ impl V3McpOAuthUseCases for ServerV3McpOAuthService {
     ) -> Result<marginalis_domain::McpOAuthClient, McpOAuthUseCaseError> {
         self.validate_authorization_request(&request)
             .await
-            .map_err(v3_mcp_error)
+            .map_err(mcp_error)
     }
     async fn authorize(
         &self,
         actor: CanonicalActor,
         request: McpAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
-        self.authorize(actor, request).await.map_err(v3_mcp_error)
+        self.authorize(actor, request).await.map_err(mcp_error)
     }
     async fn exchange_authorization_code(
         &self,
@@ -388,12 +388,12 @@ impl V3McpOAuthUseCases for ServerV3McpOAuthService {
         redirect_uri: String,
         resource_uri: String,
         verifier: String,
-    ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
         let pair = self
             .exchange_authorization_code(code, client_id, redirect_uri, resource_uri, verifier)
             .await
-            .map_err(v3_mcp_error)?;
-        Ok(V3McpTokenPair {
+            .map_err(mcp_error)?;
+        Ok(McpTokenPair {
             access_token: pair.access_token,
             refresh_token: pair.refresh_token,
             access_expires_in_seconds: pair.access_expires_in_seconds,
@@ -405,12 +405,12 @@ impl V3McpOAuthUseCases for ServerV3McpOAuthService {
         refresh_token: String,
         client_id: String,
         resource_uri: String,
-    ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
         let pair = self
             .refresh_access_token(refresh_token, client_id, resource_uri)
             .await
-            .map_err(v3_mcp_error)?;
-        Ok(V3McpTokenPair {
+            .map_err(mcp_error)?;
+        Ok(McpTokenPair {
             access_token: pair.access_token,
             refresh_token: pair.refresh_token,
             access_expires_in_seconds: pair.access_expires_in_seconds,
@@ -426,14 +426,14 @@ impl V3McpOAuthUseCases for ServerV3McpOAuthService {
     {
         self.authenticate(&token, &resource_uri, &scope)
             .await
-            .map_err(v3_mcp_error)
+            .map_err(mcp_error)
     }
     async fn revoke(
         &self,
         actor: CanonicalActor,
         client_id: String,
     ) -> Result<(), McpOAuthUseCaseError> {
-        self.revoke(&actor, &client_id).await.map_err(v3_mcp_error)
+        self.revoke(&actor, &client_id).await.map_err(mcp_error)
     }
 }
 
@@ -490,20 +490,20 @@ fn valid_redirect_uri(value: &str) -> bool {
             ))
 }
 
-fn map_v3_note_error(error: V3NoteStoreError) -> NoteUseCaseError {
+fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
     match error {
-        V3NoteStoreError::Conflict | V3NoteStoreError::LastAdmin => NoteUseCaseError::Conflict,
-        V3NoteStoreError::CorruptNote | V3NoteStoreError::ArchiveFormat => {
+        SqliteStoreError::Conflict | SqliteStoreError::LastAdmin => NoteUseCaseError::Conflict,
+        SqliteStoreError::CorruptNote | SqliteStoreError::ArchiveFormat => {
             NoteUseCaseError::Validation
         }
-        V3NoteStoreError::ArchiveTargetNotEmpty
-        | V3NoteStoreError::ArchiveMissingAdmin
-        | V3NoteStoreError::Database(_) => NoteUseCaseError::Unavailable,
+        SqliteStoreError::ArchiveTargetNotEmpty
+        | SqliteStoreError::ArchiveMissingAdmin
+        | SqliteStoreError::Database(_) => NoteUseCaseError::Unavailable,
     }
 }
 
 #[async_trait]
-impl V3NoteUseCases for ServerV3NoteUseCases {
+impl NoteUseCases for ServerNoteUseCases {
     async fn list_visible_notes(
         &self,
         actor: CanonicalActor,
@@ -511,7 +511,7 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
         self.database
             .list_visible_notes(&actor, 0, 1_000)
             .await
-            .map_err(map_v3_note_error)
+            .map_err(map_note_error)
     }
 
     async fn read_note(
@@ -522,7 +522,7 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
         self.database
             .visible_note(&actor, note_id, NotePermission::Read)
             .await
-            .map_err(map_v3_note_error)?
+            .map_err(map_note_error)?
             .ok_or(NoteUseCaseError::NotFound)
     }
 
@@ -549,7 +549,7 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
         self.database
             .create_note(&note, NotePermission::Admin)
             .await
-            .map_err(map_v3_note_error)?;
+            .map_err(map_note_error)?;
         Ok(note)
     }
 
@@ -563,14 +563,14 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
         self.database
             .visible_note(&actor, note_id, NotePermission::Write)
             .await
-            .map_err(map_v3_note_error)?
+            .map_err(map_note_error)?
             .ok_or(NoteUseCaseError::NotFound)?;
         let draft = marginalis_asciidoc::validate_canonical_note_draft(draft)
             .map_err(|_| NoteUseCaseError::Validation)?;
         self.database
             .update_note(note_id, expected_revision, &draft, SystemClock.now())
             .await
-            .map_err(map_v3_note_error)
+            .map_err(map_note_error)
     }
 
     async fn soft_delete_note(
@@ -582,16 +582,16 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
         self.database
             .visible_note(&actor, note_id, NotePermission::Admin)
             .await
-            .map_err(map_v3_note_error)?
+            .map_err(map_note_error)?
             .ok_or(NoteUseCaseError::NotFound)?;
         self.database
             .soft_delete_note(note_id, expected_revision, SystemClock.now())
             .await
-            .map_err(map_v3_note_error)?;
+            .map_err(map_note_error)?;
         self.database
             .note(note_id, true)
             .await
-            .map_err(map_v3_note_error)?
+            .map_err(map_note_error)?
             .ok_or(NoteUseCaseError::Unavailable)
     }
 
@@ -604,12 +604,12 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
         self.database
             .visible_deleted_note(&actor, note_id)
             .await
-            .map_err(map_v3_note_error)?
+            .map_err(map_note_error)?
             .ok_or(NoteUseCaseError::NotFound)?;
         self.database
             .restore_note(note_id, expected_revision, SystemClock.now())
             .await
-            .map_err(map_v3_note_error)
+            .map_err(map_note_error)
     }
 
     fn export_note_source(&self, note: &CanonicalNote) -> Result<String, NoteUseCaseError> {
@@ -623,7 +623,7 @@ impl V3NoteUseCases for ServerV3NoteUseCases {
 }
 
 #[async_trait]
-impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
+impl WebSessionUseCases for ServerWebSessionUseCases {
     async fn authenticate_session(
         &self,
         session_id: String,
@@ -679,7 +679,7 @@ impl V3WebSessionUseCases for ServerV3WebSessionUseCases {
 }
 
 #[async_trait]
-impl V3OidcAuthenticationUseCases for ServerV3OidcAuthenticationUseCases {
+impl OidcAuthenticationUseCases for ServerOidcAuthenticationUseCases {
     async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError> {
         self.oidc()
             .await?
@@ -700,7 +700,7 @@ impl V3OidcAuthenticationUseCases for ServerV3OidcAuthenticationUseCases {
         let identity = self
             .oidc()
             .await?
-            .complete_v3_login(
+            .complete_login(
                 &self.database.oidc_login_attempt_store(),
                 &SystemClock,
                 &code,
@@ -957,8 +957,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_oidc_unavailability_rejects_login_without_preventing_service_construction() {
-        let database = V3SqliteDatabase::connect("sqlite::memory:")
+    async fn oidc_unavailability_rejects_login_without_preventing_service_construction() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
         let configuration = OidcConfiguration::new(
@@ -968,7 +968,7 @@ mod tests {
             "https://marginalis.example.test",
         )
         .expect("configuration");
-        let authentication = ServerV3OidcAuthenticationUseCases::new(database, configuration, None);
+        let authentication = ServerOidcAuthenticationUseCases::new(database, configuration, None);
         assert_eq!(
             authentication.begin_login().await,
             Err(AuthenticationUseCaseError::Unavailable)
@@ -1028,11 +1028,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_notes_use_kanidm_subjects_and_sqlite_as_the_only_store() {
-        let database = V3SqliteDatabase::connect("sqlite::memory:")
+    async fn notes_use_kanidm_subjects_and_sqlite_as_the_only_store() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
-        let service = ServerV3NoteUseCases::new(database);
+        let service = ServerNoteUseCases::new(database);
         let owner = CanonicalActor {
             issuer: "https://kanidm.example.test/oauth2/openid/marginalis".into(),
             subject: "owner".into(),
@@ -1093,8 +1093,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_session_retains_login_time_group_snapshot() {
-        let database = V3SqliteDatabase::connect("sqlite::memory:")
+    async fn session_retains_login_time_group_snapshot() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
         let now = SystemClock.now();
@@ -1113,7 +1113,7 @@ mod tests {
             .issue_web_session(&session, now)
             .await
             .expect("issue");
-        let service = ServerV3WebSessionUseCases::new(
+        let service = ServerWebSessionUseCases::new(
             database.clone(),
             SessionLifetime {
                 idle_timeout_ms: 60_000,
@@ -1134,12 +1134,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_oauth_rotates_tokens_and_honors_revocation() {
-        let database = V3SqliteDatabase::connect("sqlite::memory:")
+    async fn mcp_oauth_rotates_tokens_and_honors_revocation() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
         let resource_uri = "https://notes.example.test/mcp".to_owned();
-        let service = ServerV3McpOAuthService::new(database, resource_uri.clone());
+        let service = ServerMcpOAuthService::new(database, resource_uri.clone());
         let client = marginalis_domain::McpOAuthClient {
             client_id: "https://client.example.test/mcp.json".into(),
             display_name: "Client".into(),
@@ -1272,3 +1272,4 @@ mod tests {
         );
     }
 }
+

@@ -5,15 +5,15 @@ use marginalis_asciidoc::verify_runtime_package_version;
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_domain::UnixMillis;
 use marginalis_server::{
-    ServerConfig, ServerV3McpOAuthService, ServerV3NoteUseCases,
-    ServerV3OidcAuthenticationUseCases, ServerV3WebSessionUseCases, StorageConfig, SystemClock,
+    ServerConfig, ServerMcpOAuthService, ServerNoteUseCases,
+    ServerOidcAuthenticationUseCases, ServerWebSessionUseCases, StorageConfig, SystemClock,
 };
-use marginalis_sqlite::V3SqliteDatabase;
+use marginalis_sqlite::SqliteDatabase;
 use std::path::{Path, PathBuf};
 use tracing_subscriber::EnvFilter;
 
 const USAGE: &str = "usage: marginalis [--version|serve|purge-deleted|export-archive --output <absolute-file>|import-archive --input <absolute-file>|backup (--output <absolute-directory>|--directory <absolute-directory>)]";
-const V3_SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
+const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
 #[tokio::main]
 async fn main() {
@@ -43,8 +43,8 @@ async fn main() {
 /// 実行中のHTTP serviceと並行してもSQLite transactionとして完結する。NixOS timerは日次で起動する。
 async fn purge_deleted() -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
-    let database = V3SqliteDatabase::connect(&configuration.database_url).await?;
-    let cutoff = UnixMillis::new(SystemClock.now().get() - V3_SOFT_DELETE_RETENTION_MS);
+    let database = SqliteDatabase::connect(&configuration.database_url).await?;
+    let cutoff = UnixMillis::new(SystemClock.now().get() - SOFT_DELETE_RETENTION_MS);
     let count = database.purge_deleted_before(cutoff).await?;
     tracing::info!(
         count,
@@ -63,7 +63,7 @@ async fn export_archive(
         return Err(format!("archive output already exists: {}", output.display()).into());
     }
     let configuration = StorageConfig::from_environment()?;
-    let archive = V3SqliteDatabase::connect(&configuration.database_url)
+    let archive = SqliteDatabase::connect(&configuration.database_url)
         .await?
         .export_archive()
         .await?;
@@ -85,7 +85,7 @@ async fn import_archive(
     let file = std::fs::File::open(&input)?;
     let archive = serde_json::from_reader(file)?;
     let configuration = StorageConfig::from_environment()?;
-    V3SqliteDatabase::connect(&configuration.database_url)
+    SqliteDatabase::connect(&configuration.database_url)
         .await?
         .import_archive(&archive)
         .await?;
@@ -149,7 +149,7 @@ async fn backup(
 
 async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
-    let archive = V3SqliteDatabase::connect(&configuration.database_url)
+    let archive = SqliteDatabase::connect(&configuration.database_url)
         .await?
         .export_archive()
         .await?;
@@ -190,7 +190,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     verify_runtime_package_version()?;
     let (configuration, secrets) = ServerConfig::from_environment()?;
-    let database = V3SqliteDatabase::connect(&configuration.storage.database_url).await?;
+    let database = SqliteDatabase::connect(&configuration.storage.database_url).await?;
     let oidc_configuration = OidcConfiguration::new(
         configuration.oidc.issuer_url.to_string(),
         configuration.oidc.client_id,
@@ -216,20 +216,20 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
     tracing::info!(address = %configuration.http.listen_address, "Marginalis server listening");
     let cookie_path = cookie_path(&configuration.http.base_url);
-    let oidc = std::sync::Arc::new(ServerV3OidcAuthenticationUseCases::new(
+    let oidc = std::sync::Arc::new(ServerOidcAuthenticationUseCases::new(
         database.clone(),
         oidc_configuration,
         oidc,
     ));
-    let sessions = std::sync::Arc::new(ServerV3WebSessionUseCases::new(
+    let sessions = std::sync::Arc::new(ServerWebSessionUseCases::new(
         database.clone(),
         marginalis_application::SessionLifetime {
             idle_timeout_ms: 24 * 60 * 60 * 1_000,
             absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
         },
     ));
-    let notes = std::sync::Arc::new(ServerV3NoteUseCases::new(database.clone()));
-    let state = marginalis_web::v3::V3ApiState::new(
+    let notes = std::sync::Arc::new(ServerNoteUseCases::new(database.clone()));
+    let state = marginalis_web::http::ApiState::new(
         notes.clone(),
         sessions,
         oidc,
@@ -244,8 +244,8 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
         let authorization_endpoint_uri =
             base_url_at(&configuration.http.base_url, "oauth/authorize");
         let token_endpoint_uri = base_url_at(&configuration.http.base_url, "oauth/token");
-        state.with_mcp(marginalis_web::v3::V3McpEndpoint {
-            oauth: std::sync::Arc::new(ServerV3McpOAuthService::new(
+        state.with_mcp(marginalis_web::http::McpEndpoint {
+            oauth: std::sync::Arc::new(ServerMcpOAuthService::new(
                 database,
                 resource_uri.to_string(),
             )),
@@ -263,7 +263,7 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     };
     axum::serve(
         listener,
-        marginalis_web::v3::router(state)
+        marginalis_web::http::router(state)
             .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .await?;
@@ -376,3 +376,4 @@ mod tests {
         );
     }
 }
+

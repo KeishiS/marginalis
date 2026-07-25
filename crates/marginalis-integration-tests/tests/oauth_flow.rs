@@ -13,11 +13,11 @@ use marginalis_application::SessionLifetime;
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_integration_tests::MockIdentityProvider;
 use marginalis_server::{
-    ServerV3McpOAuthService, ServerV3NoteUseCases, ServerV3OidcAuthenticationUseCases,
-    ServerV3WebSessionUseCases,
+    ServerMcpOAuthService, ServerNoteUseCases, ServerOidcAuthenticationUseCases,
+    ServerWebSessionUseCases,
 };
-use marginalis_sqlite::V3SqliteDatabase;
-use marginalis_web::v3::{V3ApiState, V3McpEndpoint, router};
+use marginalis_sqlite::SqliteDatabase;
+use marginalis_web::http::{ApiState, McpEndpoint, router};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 use url::Url;
@@ -55,7 +55,7 @@ impl BrowserSession {
 impl TestServer {
     async fn start() -> Self {
         let idp = MockIdentityProvider::start(CLIENT_ID, CLIENT_SECRET).await;
-        let database = V3SqliteDatabase::connect("sqlite::memory:")
+        let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
         let configuration = OidcConfiguration::new(
@@ -68,28 +68,28 @@ impl TestServer {
         let discovered = OidcAuthentication::discover(&configuration)
             .await
             .expect("OIDC discovery");
-        let oidc = Arc::new(ServerV3OidcAuthenticationUseCases::new(
+        let oidc = Arc::new(ServerOidcAuthenticationUseCases::new(
             database.clone(),
             configuration,
             Some(discovered),
         ));
-        let sessions = Arc::new(ServerV3WebSessionUseCases::new(
+        let sessions = Arc::new(ServerWebSessionUseCases::new(
             database.clone(),
             SessionLifetime {
                 idle_timeout_ms: 24 * 60 * 60 * 1_000,
                 absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
             },
         ));
-        let notes = Arc::new(ServerV3NoteUseCases::new(database.clone()));
-        let oauth = Arc::new(ServerV3McpOAuthService::new(database, MCP_RESOURCE.into()));
-        let state = V3ApiState::new(
+        let notes = Arc::new(ServerNoteUseCases::new(database.clone()));
+        let oauth = Arc::new(ServerMcpOAuthService::new(database, MCP_RESOURCE.into()));
+        let state = ApiState::new(
             notes.clone(),
             sessions,
             oidc,
             "/".into(),
             BROWSER_ORIGIN.into(),
         )
-        .with_mcp(V3McpEndpoint {
+        .with_mcp(McpEndpoint {
             oauth,
             notes,
             allowed_origins: vec!["https://chatgpt.com".into()],
@@ -333,7 +333,7 @@ async fn call_mcp(
 }
 
 #[tokio::test]
-async fn v3_oidc_mcp_and_revocation_form_one_http_flow() {
+async fn oidc_mcp_and_revocation_form_one_http_flow() {
     let server = TestServer::start().await;
     let client_id = register_mcp_client(&server.app).await;
     let user = login(
@@ -440,7 +440,7 @@ async fn v3_oidc_mcp_and_revocation_form_one_http_flow() {
 }
 
 #[tokio::test]
-async fn v3_oidc_rejects_a_subject_without_server_users_membership() {
+async fn oidc_rejects_a_subject_without_server_users_membership() {
     let server = TestServer::start().await;
     let response = login_response(
         &server,
@@ -452,3 +452,4 @@ async fn v3_oidc_rejects_a_subject_without_server_users_membership() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(cookie(&response, "marginalis_session").is_none());
 }
+

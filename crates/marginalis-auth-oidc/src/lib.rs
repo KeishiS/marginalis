@@ -4,15 +4,12 @@ use core::fmt;
 use std::collections::BTreeSet;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use marginalis_application::{
-    Clock, OidcIdentityStore, OidcLoginAttempt, OidcLoginAttemptStore, OidcRegistrationService,
-    Random,
-};
-use marginalis_domain::{OidcIdentity, OidcLoginResult, RegistrationPolicy, UnixMillis};
+use marginalis_application::{Clock, OidcLoginAttempt, OidcLoginAttemptStore, Random};
+use marginalis_domain::UnixMillis;
 use openidconnect::{
     AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
     EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, RequestTokenError, Scope, TokenResponse,
+    RedirectUrl, Scope, TokenResponse,
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     reqwest,
 };
@@ -336,82 +333,7 @@ impl OidcAuthentication {
 
     /// 各adapterを明示的に受け取ることで、OIDC crateを永続化実装から独立させる。
     #[allow(clippy::too_many_arguments)]
-    pub async fn complete_login<Attempts, Identities, Entropy, Time>(
-        &self,
-        attempts: &Attempts,
-        identities: &Identities,
-        entropy: &Entropy,
-        clock: &Time,
-        registration_policy: RegistrationPolicy,
-        code: &str,
-        state: &str,
-    ) -> Result<OidcLoginResult, OidcCallbackError>
-    where
-        Attempts: OidcLoginAttemptStore,
-        Identities: OidcIdentityStore,
-        Entropy: Random,
-        Time: Clock,
-    {
-        let pending = attempts
-            .consume(state.to_owned(), clock.now())
-            .await
-            .map_err(|_| OidcCallbackError::Unavailable)?
-            .ok_or(OidcCallbackError::Rejected(OidcCallbackRejection::State))?;
-        let token = self
-            .client
-            .exchange_code(AuthorizationCode::new(code.to_owned()))
-            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?
-            .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
-            .request_async(&self.http_client)
-            .await
-            .map_err(|error| {
-                match error {
-                    RequestTokenError::ServerResponse(response) => {
-                        tracing::warn!(
-                            error = %response.error(),
-                            "OIDC token endpoint rejected code exchange"
-                        );
-                    }
-                    RequestTokenError::Request(_) => {
-                        tracing::warn!("OIDC token endpoint request failed");
-                    }
-                    RequestTokenError::Parse(_, _) => {
-                        tracing::warn!("OIDC token endpoint returned an unparseable response");
-                    }
-                    RequestTokenError::Other(reason) => {
-                        tracing::warn!(
-                            reason,
-                            "OIDC token endpoint returned an unexpected response"
-                        );
-                    }
-                }
-                OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange)
-            })?;
-        let id_token = token.id_token().ok_or(OidcCallbackError::Rejected(
-            OidcCallbackRejection::MissingIdToken,
-        ))?;
-        let claims = id_token
-            .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
-            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Claims))?;
-        let subject = claims.subject().as_str().to_owned();
-        let display_name = claims
-            .name()
-            .and_then(|value| value.get(None))
-            .map(|value| value.as_str())
-            .or_else(|| claims.preferred_username().map(|value| value.as_str()))
-            .or_else(|| claims.email().map(|value| value.as_str()))
-            .unwrap_or(&subject)
-            .to_owned();
-        let identity = OidcIdentity::new(claims.issuer().as_str(), subject, display_name)
-            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Identity))?;
-        OidcRegistrationService::new(identities, entropy)
-            .register_or_lookup(identity, registration_policy, clock.now())
-            .await
-            .map_err(|_| OidcCallbackError::Unavailable)
-    }
-
-    /// v0.3のlogin callback。ローカル利用者を作らず、検証済みKanidm identityとgroup claimだけを返す。
-    pub async fn complete_v3_login<Attempts, Time>(
+    pub async fn complete_login<Attempts, Time>(
         &self,
         attempts: &Attempts,
         clock: &Time,
@@ -492,3 +414,4 @@ mod tests {
         );
     }
 }
+

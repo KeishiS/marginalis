@@ -2,7 +2,7 @@
 //!
 //! 公開面は`/api/v2`、閲覧UI、OIDC、MCP OAuthおよびStreamable HTTPだけである。
 
-pub mod v3;
+pub mod http;
 
 use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Response};
 
@@ -21,3 +21,4 @@ async fn assign_request_id(mut request: Request, next: Next) -> Response {
     }
     response
 }
+

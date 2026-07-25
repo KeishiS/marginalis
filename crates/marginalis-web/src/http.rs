@@ -22,7 +22,7 @@ use axum::{
 };
 use marginalis_application::{
     AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthUseCaseError, NoteUseCaseError,
-    V3McpOAuthUseCases, V3NoteUseCases, V3OidcAuthenticationUseCases, V3WebSessionUseCases,
+    McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
 };
 use marginalis_domain::{CanonicalActor, CanonicalNote, CanonicalNoteDraft, EntityId, NoteId};
 use marginalis_mcp::{JsonRpcRequest, JsonRpcResponse};
@@ -37,13 +37,13 @@ const CSRF_COOKIE: &str = "marginalis_csrf";
 const RETURN_TO_COOKIE: &str = "marginalis_return_to";
 
 #[derive(Clone)]
-pub struct V3ApiState {
-    pub notes: Arc<dyn V3NoteUseCases>,
-    pub sessions: Arc<dyn V3WebSessionUseCases>,
-    pub oidc: Arc<dyn V3OidcAuthenticationUseCases>,
+pub struct ApiState {
+    pub notes: Arc<dyn NoteUseCases>,
+    pub sessions: Arc<dyn WebSessionUseCases>,
+    pub oidc: Arc<dyn OidcAuthenticationUseCases>,
     pub cookie_path: String,
     pub browser_origin: String,
-    pub mcp: Option<Arc<V3McpEndpoint>>,
+    pub mcp: Option<Arc<McpEndpoint>>,
     mcp_registration_limiter: McpRegistrationRateLimiter,
 }
 
@@ -79,9 +79,9 @@ impl McpRegistrationRateLimiter {
     }
 }
 
-pub struct V3McpEndpoint {
-    pub oauth: Arc<dyn V3McpOAuthUseCases>,
-    pub notes: Arc<dyn V3NoteUseCases>,
+pub struct McpEndpoint {
+    pub oauth: Arc<dyn McpOAuthUseCases>,
+    pub notes: Arc<dyn NoteUseCases>,
     /// Browser-based MCP clients are restricted to these exact Origins. Native clients omit
     /// `Origin` and authenticate every request with a Bearer token.
     pub allowed_origins: Vec<String>,
@@ -93,11 +93,11 @@ pub struct V3McpEndpoint {
     pub token_endpoint_uri: String,
 }
 
-impl V3ApiState {
+impl ApiState {
     pub fn new(
-        notes: Arc<dyn V3NoteUseCases>,
-        sessions: Arc<dyn V3WebSessionUseCases>,
-        oidc: Arc<dyn V3OidcAuthenticationUseCases>,
+        notes: Arc<dyn NoteUseCases>,
+        sessions: Arc<dyn WebSessionUseCases>,
+        oidc: Arc<dyn OidcAuthenticationUseCases>,
         cookie_path: String,
         browser_origin: String,
     ) -> Self {
@@ -115,7 +115,7 @@ impl V3ApiState {
         }
     }
 
-    pub fn with_mcp(mut self, mcp: V3McpEndpoint) -> Self {
+    pub fn with_mcp(mut self, mcp: McpEndpoint) -> Self {
         self.mcp = Some(Arc::new(mcp));
         self
     }
@@ -127,7 +127,7 @@ struct Problem {
     message: &'static str,
 }
 
-type V3Result<T> = Result<T, (StatusCode, Json<Problem>)>;
+type HandlerResult<T> = Result<T, (StatusCode, Json<Problem>)>;
 
 fn problem(
     status: StatusCode,
@@ -230,7 +230,7 @@ struct DeleteInput {
     expected_revision: i64,
 }
 
-pub fn router(state: V3ApiState) -> Router {
+pub fn router(state: ApiState) -> Router {
     let mut router = Router::new()
         .route("/", get(home))
         .route("/notes/{note_id}", get(view_note))
@@ -302,11 +302,11 @@ pub fn router(state: V3ApiState) -> Router {
                 })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .layer(middleware::from_fn(v3_security_headers))
+        .layer(middleware::from_fn(security_headers))
         .layer(middleware::from_fn(assign_request_id))
 }
 
-async fn v3_security_headers(
+async fn security_headers(
     request: axum::http::Request<axum::body::Body>,
     next: Next,
 ) -> Response {
@@ -371,9 +371,9 @@ fn valid_return_to(value: &str, base_path: &str) -> bool {
 }
 
 async fn begin_login(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Query(query): Query<LoginQuery>,
-) -> V3Result<Response> {
+) -> HandlerResult<Response> {
     let mut response = Redirect::temporary(
         &state
             .oidc
@@ -407,10 +407,10 @@ async fn begin_login(
 }
 
 async fn complete_login(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     headers: HeaderMap,
     axum::extract::Query(query): axum::extract::Query<OidcCallbackQuery>,
-) -> V3Result<Response> {
+) -> HandlerResult<Response> {
     let actor = state
         .oidc
         .complete_login(query.code, query.state)
@@ -455,7 +455,7 @@ async fn complete_login(
     Ok(response)
 }
 
-async fn logout(State(state): State<V3ApiState>, headers: HeaderMap) -> V3Result<Response> {
+async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> HandlerResult<Response> {
     let _actor = authenticated_mutation_actor(&headers, &state).await?;
     let session_id =
         cookie_value(&headers, SESSION_COOKIE).expect("authenticated session cookie exists");
@@ -493,7 +493,7 @@ async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok", "api_version": API_VERSION}))
 }
 
-fn mcp_endpoint(state: &V3ApiState) -> V3Result<&Arc<V3McpEndpoint>> {
+fn mcp_endpoint(state: &ApiState) -> HandlerResult<&Arc<McpEndpoint>> {
     state
         .mcp
         .as_ref()
@@ -501,15 +501,15 @@ fn mcp_endpoint(state: &V3ApiState) -> V3Result<&Arc<V3McpEndpoint>> {
 }
 
 async fn mcp_resource_metadata(
-    State(state): State<V3ApiState>,
-) -> V3Result<Json<serde_json::Value>> {
+    State(state): State<ApiState>,
+) -> HandlerResult<Json<serde_json::Value>> {
     let endpoint = mcp_endpoint(&state)?;
     Ok(Json(
         serde_json::json!({"resource": endpoint.resource_uri, "authorization_servers": [endpoint.authorization_server_uri], "bearer_methods_supported": ["header"], "scopes_supported": ["notes:read", "notes:write", "notes:delete"]}),
     ))
 }
 
-async fn mcp_server_metadata(State(state): State<V3ApiState>) -> V3Result<Json<serde_json::Value>> {
+async fn mcp_server_metadata(State(state): State<ApiState>) -> HandlerResult<Json<serde_json::Value>> {
     let endpoint = mcp_endpoint(&state)?;
     Ok(Json(
         serde_json::json!({"issuer": endpoint.authorization_server_uri, "authorization_endpoint": endpoint.authorization_endpoint_uri, "token_endpoint": endpoint.token_endpoint_uri, "registration_endpoint": format!("{}/oauth/register", endpoint.authorization_server_uri.trim_end_matches('/')), "response_types_supported": ["code"], "grant_types_supported": ["authorization_code", "refresh_token"], "code_challenge_methods_supported": ["S256"], "token_endpoint_auth_methods_supported": ["none"]}),
@@ -614,7 +614,7 @@ fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Problem>) {
 }
 
 async fn mcp_register_client(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Json(request): Json<McpRegistrationRequest>,
 ) -> Result<Response, Response> {
     if !state.mcp_registration_limiter.allow(Instant::now()) {
@@ -670,7 +670,7 @@ async fn mcp_register_client(
         .into_response())
 }
 
-fn authorize_fields(query: &McpAuthorizeQuery) -> V3Result<(Vec<String>, String)> {
+fn authorize_fields(query: &McpAuthorizeQuery) -> HandlerResult<(Vec<String>, String)> {
     if query.response_type != "code"
         || query.code_challenge_method != "S256"
         || query.code_challenge.is_empty()
@@ -696,7 +696,7 @@ fn authorize_fields(query: &McpAuthorizeQuery) -> V3Result<(Vec<String>, String)
     Ok((scopes, query.code_challenge.clone()))
 }
 
-fn authorization_request(query: &McpAuthorizeQuery) -> V3Result<McpAuthorizationRequest> {
+fn authorization_request(query: &McpAuthorizeQuery) -> HandlerResult<McpAuthorizationRequest> {
     let (scopes, code_challenge) = authorize_fields(query)?;
     Ok(McpAuthorizationRequest {
         client_id: query.client_id.clone(),
@@ -708,10 +708,10 @@ fn authorization_request(query: &McpAuthorizeQuery) -> V3Result<McpAuthorization
 }
 
 async fn mcp_authorize(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     headers: HeaderMap,
     Query(query): Query<McpAuthorizeQuery>,
-) -> V3Result<Response> {
+) -> HandlerResult<Response> {
     let endpoint = mcp_endpoint(&state)?;
     let request = authorization_request(&query)?;
     let client = endpoint
@@ -775,10 +775,10 @@ async fn mcp_authorize(
 }
 
 async fn mcp_authorize_submit(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     headers: HeaderMap,
     Form(form): Form<McpAuthorizeForm>,
-) -> V3Result<Response> {
+) -> HandlerResult<Response> {
     let endpoint = mcp_endpoint(&state)?;
     let actor = authenticated_form_actor(&headers, &state, &form.csrf_token).await?;
     let request = McpAuthorizationRequest {
@@ -823,7 +823,7 @@ fn oauth_redirect(
     state: Option<&str>,
     code: Option<&str>,
     error: Option<&str>,
-) -> V3Result<Response> {
+) -> HandlerResult<Response> {
     let mut url = url::Url::parse(redirect_uri).map_err(|_| {
         problem(
             StatusCode::BAD_REQUEST,
@@ -847,7 +847,7 @@ fn oauth_redirect(
 }
 
 async fn mcp_token(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Form(form): Form<McpTokenForm>,
 ) -> Result<Response, Response> {
     let endpoint = mcp_endpoint(&state).map_err(|_| {
@@ -949,10 +949,10 @@ async fn mcp_token(
 }
 
 async fn revoke_mcp_authorization(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Path(client_id): Path<String>,
     headers: HeaderMap,
-) -> V3Result<StatusCode> {
+) -> HandlerResult<StatusCode> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let endpoint = mcp_endpoint(&state)?;
     if client_id.trim().is_empty() {
@@ -990,7 +990,7 @@ fn mcp_required_scope(request: &JsonRpcRequest) -> &'static str {
         .unwrap_or("notes:read")
 }
 
-fn mcp_unauthorized(endpoint: &V3McpEndpoint) -> Response {
+fn mcp_unauthorized(endpoint: &McpEndpoint) -> Response {
     let mut response = StatusCode::UNAUTHORIZED.into_response();
     if let Ok(value) = format!("Bearer resource_metadata=\"{}\"", endpoint.metadata_uri).parse() {
         response
@@ -1001,10 +1001,10 @@ fn mcp_unauthorized(endpoint: &V3McpEndpoint) -> Response {
 }
 
 async fn mcp_post(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     headers: HeaderMap,
     Json(request): Json<JsonRpcRequest>,
-) -> V3Result<Response> {
+) -> HandlerResult<Response> {
     let endpoint = mcp_endpoint(&state)?;
     if let Some(value) = headers.get(header::ORIGIN) {
         let origin = value.to_str().map_err(|_| {
@@ -1117,7 +1117,7 @@ struct McpDelete {
 }
 
 async fn mcp_tool_call(
-    endpoint: &V3McpEndpoint,
+    endpoint: &McpEndpoint,
     actor: CanonicalActor,
     id: serde_json::Value,
     params: Option<serde_json::Value>,
@@ -1143,9 +1143,9 @@ async fn mcp_tool_call(
 }
 
 async fn session(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     headers: HeaderMap,
-) -> V3Result<Json<SessionResponse>> {
+) -> HandlerResult<Json<SessionResponse>> {
     let actor = authenticated_actor(&headers, &state).await?;
     Ok(Json(SessionResponse {
         issuer: actor.issuer,
@@ -1155,9 +1155,9 @@ async fn session(
 }
 
 async fn list_notes(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     headers: HeaderMap,
-) -> V3Result<Json<Vec<NoteResponse>>> {
+) -> HandlerResult<Json<Vec<NoteResponse>>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let notes = state
         .notes
@@ -1168,10 +1168,10 @@ async fn list_notes(
 }
 
 async fn read_note(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-) -> V3Result<Json<NoteResponse>> {
+) -> HandlerResult<Json<NoteResponse>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -1182,10 +1182,10 @@ async fn read_note(
 }
 
 async fn create_note(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     headers: HeaderMap,
     Json(input): Json<NoteInput>,
-) -> V3Result<(StatusCode, Json<NoteResponse>)> {
+) -> HandlerResult<(StatusCode, Json<NoteResponse>)> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -1203,11 +1203,11 @@ async fn create_note(
 }
 
 async fn update_note(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
     Json(input): Json<NoteUpdateInput>,
-) -> V3Result<Json<NoteResponse>> {
+) -> HandlerResult<Json<NoteResponse>> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -1227,11 +1227,11 @@ async fn update_note(
 }
 
 async fn delete_note(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
     Json(input): Json<DeleteInput>,
-) -> V3Result<Json<NoteResponse>> {
+) -> HandlerResult<Json<NoteResponse>> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -1242,11 +1242,11 @@ async fn delete_note(
 }
 
 async fn restore_note(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
     Json(input): Json<DeleteInput>,
-) -> V3Result<Json<NoteResponse>> {
+) -> HandlerResult<Json<NoteResponse>> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -1257,10 +1257,10 @@ async fn restore_note(
 }
 
 async fn export_note(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-) -> V3Result<Response> {
+) -> HandlerResult<Response> {
     let actor = authenticated_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -1281,7 +1281,7 @@ async fn export_note(
         .into_response())
 }
 
-async fn home(State(state): State<V3ApiState>, headers: HeaderMap) -> V3Result<Html<String>> {
+async fn home(State(state): State<ApiState>, headers: HeaderMap) -> HandlerResult<Html<String>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let notes = state
         .notes
@@ -1304,10 +1304,10 @@ async fn home(State(state): State<V3ApiState>, headers: HeaderMap) -> V3Result<H
 }
 
 async fn view_note(
-    State(state): State<V3ApiState>,
+    State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-) -> V3Result<Html<String>> {
+) -> HandlerResult<Html<String>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -1329,7 +1329,7 @@ async fn view_note(
     )))
 }
 
-async fn authenticated_actor(headers: &HeaderMap, state: &V3ApiState) -> V3Result<CanonicalActor> {
+async fn authenticated_actor(headers: &HeaderMap, state: &ApiState) -> HandlerResult<CanonicalActor> {
     let session_id = cookie_value(headers, SESSION_COOKIE).ok_or_else(|| {
         problem(
             StatusCode::UNAUTHORIZED,
@@ -1354,8 +1354,8 @@ async fn authenticated_actor(headers: &HeaderMap, state: &V3ApiState) -> V3Resul
 
 async fn authenticated_mutation_actor(
     headers: &HeaderMap,
-    state: &V3ApiState,
-) -> V3Result<CanonicalActor> {
+    state: &ApiState,
+) -> HandlerResult<CanonicalActor> {
     let actor = authenticated_actor(headers, state).await?;
     validate_mutation_origin(headers, state)?;
     let session_id =
@@ -1393,7 +1393,7 @@ async fn authenticated_mutation_actor(
     Ok(actor)
 }
 
-fn validate_mutation_origin(headers: &HeaderMap, state: &V3ApiState) -> V3Result<()> {
+fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) -> HandlerResult<()> {
     let received_origin = headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok());
@@ -1431,9 +1431,9 @@ fn validate_mutation_origin(headers: &HeaderMap, state: &V3ApiState) -> V3Result
 /// same-origin even when the OAuth client itself is browser-based.
 async fn authenticated_form_actor(
     headers: &HeaderMap,
-    state: &V3ApiState,
+    state: &ApiState,
     csrf_token: &str,
-) -> V3Result<CanonicalActor> {
+) -> HandlerResult<CanonicalActor> {
     let actor = authenticated_actor(headers, state).await?;
     validate_mutation_origin(headers, state)?;
     let session_id =
@@ -1454,7 +1454,7 @@ async fn authenticated_form_actor(
     Ok(actor)
 }
 
-fn parse_note_id(value: &str) -> V3Result<NoteId> {
+fn parse_note_id(value: &str) -> HandlerResult<NoteId> {
     EntityId::from_str(value)
         .map(NoteId::new)
         .map_err(|_| problem(StatusCode::NOT_FOUND, "not_found", "note is not available"))
@@ -1487,7 +1487,7 @@ mod tests {
     use async_trait::async_trait;
     use axum::{body::Body, http::Request};
     use marginalis_application::{
-        AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, V3McpTokenPair,
+        AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, McpTokenPair,
     };
     use marginalis_domain::{
         CanonicalAuthenticatedSession, CanonicalMcpAuthenticatedActor, CanonicalWebSession,
@@ -1498,7 +1498,7 @@ mod tests {
     struct Notes;
 
     #[async_trait]
-    impl V3NoteUseCases for Notes {
+    impl NoteUseCases for Notes {
         async fn list_visible_notes(
             &self,
             _actor: CanonicalActor,
@@ -1562,7 +1562,7 @@ mod tests {
     struct Sessions;
 
     #[async_trait]
-    impl V3WebSessionUseCases for Sessions {
+    impl WebSessionUseCases for Sessions {
         async fn authenticate_session(
             &self,
             _session_id: String,
@@ -1596,7 +1596,7 @@ mod tests {
     struct Oidc;
 
     #[async_trait]
-    impl V3OidcAuthenticationUseCases for Oidc {
+    impl OidcAuthenticationUseCases for Oidc {
         async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError> {
             Ok("https://id.example.test/authorize".into())
         }
@@ -1612,7 +1612,7 @@ mod tests {
 
     struct Mcp;
     #[async_trait]
-    impl V3McpOAuthUseCases for Mcp {
+    impl McpOAuthUseCases for Mcp {
         async fn register_client(
             &self,
             _client: McpOAuthClient,
@@ -1643,8 +1643,8 @@ mod tests {
             _redirect_uri: String,
             _resource_uri: String,
             _verifier: String,
-        ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
-            Ok(V3McpTokenPair {
+        ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
+            Ok(McpTokenPair {
                 access_token: "access-token".into(),
                 refresh_token: "refresh-token".into(),
                 access_expires_in_seconds: 300,
@@ -1656,7 +1656,7 @@ mod tests {
             _refresh_token: String,
             _client_id: String,
             _resource_uri: String,
-        ) -> Result<V3McpTokenPair, McpOAuthUseCaseError> {
+        ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
             Err(McpOAuthUseCaseError::Rejected)
         }
         async fn authenticate(
@@ -1685,7 +1685,7 @@ mod tests {
     }
 
     fn app() -> Router {
-        router(V3ApiState::new(
+        router(ApiState::new(
             Arc::new(Notes),
             Arc::new(Sessions),
             Arc::new(Oidc),
@@ -1696,14 +1696,14 @@ mod tests {
 
     fn mcp_app() -> Router {
         router(
-            V3ApiState::new(
+            ApiState::new(
                 Arc::new(Notes),
                 Arc::new(Sessions),
                 Arc::new(Oidc),
                 "/".into(),
                 "https://example.test".into(),
             )
-            .with_mcp(V3McpEndpoint {
+            .with_mcp(McpEndpoint {
                 oauth: Arc::new(Mcp),
                 notes: Arc::new(Notes),
                 allowed_origins: vec!["https://chatgpt.com".into()],
@@ -1721,14 +1721,14 @@ mod tests {
 
     fn subpath_mcp_app() -> Router {
         router(
-            V3ApiState::new(
+            ApiState::new(
                 Arc::new(Notes),
                 Arc::new(Sessions),
                 Arc::new(Oidc),
                 "/marginalis".into(),
                 "https://example.test".into(),
             )
-            .with_mcp(V3McpEndpoint {
+            .with_mcp(McpEndpoint {
                 oauth: Arc::new(Mcp),
                 notes: Arc::new(Notes),
                 allowed_origins: vec![],
@@ -1747,7 +1747,7 @@ mod tests {
     }
 
     #[test]
-    fn v3_external_paths_preserve_the_configured_subpath() {
+    fn external_paths_preserve_the_configured_subpath() {
         assert_eq!(
             external_path("/marginalis", "/notes/123"),
             "/marginalis/notes/123"
@@ -1763,7 +1763,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_health_is_public_but_notes_require_a_v3_session() {
+    async fn health_is_public_but_notes_require_a_v3_session() {
         let health = app()
             .oneshot(
                 Request::get("/api/v2/health")
@@ -1801,7 +1801,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_openapi_is_served_from_the_embedded_contract() {
+    async fn openapi_is_served_from_the_embedded_contract() {
         let response = app()
             .oneshot(
                 Request::get("/api/v2/openapi.json")
@@ -1818,7 +1818,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_metadata_is_available_when_enabled() {
+    async fn mcp_metadata_is_available_when_enabled() {
         let response = mcp_app()
             .oneshot(
                 Request::get("/.well-known/oauth-authorization-server")
@@ -1831,7 +1831,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_metadata_uses_rfc_well_known_paths_for_a_subpath_issuer() {
+    async fn mcp_metadata_uses_rfc_well_known_paths_for_a_subpath_issuer() {
         for path in [
             "/.well-known/oauth-protected-resource/marginalis/mcp",
             "/.well-known/oauth-authorization-server/marginalis",
@@ -1855,7 +1855,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_authorization_starts_login_when_no_web_session_exists() {
+    async fn mcp_authorization_starts_login_when_no_web_session_exists() {
         let response = mcp_app()
             .oneshot(
                 Request::get(
@@ -1901,7 +1901,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
+    async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         let request = Request::post("/mcp")
             .header("content-type", "application/json")
             .header(header::ACCEPT, "application/json, text/event-stream")
@@ -1926,7 +1926,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_accepts_configured_browser_origins_and_rejects_others() {
+    async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
         let request = Request::post("/mcp")
             .header("content-type", "application/json")
             .header(header::ACCEPT, "application/json, text/event-stream")
@@ -1962,7 +1962,7 @@ mod tests {
     }
 
     #[test]
-    fn v3_mcp_registration_limiter_bounds_a_window() {
+    fn mcp_registration_limiter_bounds_a_window() {
         let limiter = McpRegistrationRateLimiter::new(1, Duration::from_secs(60));
         let now = Instant::now();
         assert!(limiter.allow(now));
@@ -1971,8 +1971,8 @@ mod tests {
     }
 
     #[test]
-    fn v3_browser_mutations_require_the_application_origin() {
-        let state = V3ApiState::new(
+    fn browser_mutations_require_the_application_origin() {
+        let state = ApiState::new(
             Arc::new(Notes),
             Arc::new(Sessions),
             Arc::new(Oidc),
@@ -2002,7 +2002,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_dynamic_registration_creates_a_public_client() {
+    async fn mcp_dynamic_registration_creates_a_public_client() {
         let response = mcp_app()
             .oneshot(
                 Request::post("/oauth/register")
@@ -2018,7 +2018,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_token_response_is_not_cacheable() {
+    async fn mcp_token_response_is_not_cacheable() {
         let response = mcp_app()
             .oneshot(
                 Request::post("/oauth/token")
@@ -2042,7 +2042,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_mcp_token_errors_use_oauth_error_shape() {
+    async fn mcp_token_errors_use_oauth_error_shape() {
         let response = mcp_app()
             .oneshot(
                 Request::post("/oauth/token")
@@ -2067,7 +2067,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn v3_public_mcp_endpoints_reject_oversized_request_bodies() {
+    async fn public_mcp_endpoints_reject_oversized_request_bodies() {
         let registration = mcp_app()
             .oneshot(
                 Request::post("/oauth/register")
@@ -2091,3 +2091,4 @@ mod tests {
         assert_eq!(mcp.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }
+
