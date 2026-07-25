@@ -3,6 +3,34 @@
 この文書には利用者に影響する変更だけを記録する。公開 API、データフォーマット、NixOS
 モジュールの動作を変えない内部的な再構成は掲載しない。
 
+## 0.3.0 — 未公開
+
+SQLite を単一の正本とし、Kanidm の署名済み OIDC group claim、閲覧用 Web UI、REST API、
+OAuth 2.1 で保護した MCP endpoint を一つの認可モデルへ統合する。
+
+### 破壊的変更
+
+- `v0.2.x` の database、ファイル正本、`/api/v1`、ローカル root、MCP token は移行しない。
+  空の SQLite database から初期化する。
+- 公開 REST API を `/api/v2` とし、OpenAPI 正本を `docs/openapi.json` に置く。
+- Kanidm の所属定期照会と service account を廃止し、OIDC login 時に検証した `groups` claim を
+  Web session と MCP authorization の有効期間中の権限 snapshot とする。
+
+### 変更
+
+- ノート、ACL、ソフトデリート状態を SQLite transaction で更新し、30 日後の日次 purge を提供する。
+- ノート単位の AsciiDoc export と、ACL・削除状態を含む JSON archive の import/export を提供する。
+- Authorization Code + PKCE S256、refresh token rotation・family replay 失効、Dynamic Client
+  Registration、認可取消を備えた MCP Streamable HTTP endpoint を提供する。
+- NixOS module に OIDC credential、MCP Origin allowlist、backup 保存先、purge timer を集約する。
+
+### セキュリティ
+
+- OAuth authorization code の消費を PKCE challenge と原子的に結合する。
+- 使用済み refresh token の再提示時に token family 全体を失効させる。
+- ブラウザー mutation は session 結合 CSRF token と同一 Origin を要求し、MCP browser request は
+  明示した HTTPS Origin のみ許可する。
+
 ## 0.2.0 — 2026-07-24
 
 AdocWeave v0.6.1を使うデータフォーマットv1の新しい基準点である。
