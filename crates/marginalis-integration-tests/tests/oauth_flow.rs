@@ -219,6 +219,40 @@ async fn register_mcp_client(app: &Router) -> String {
         .to_owned()
 }
 
+async fn assert_cross_origin_authorization_post_starts_login(app: &Router, client_id: &str) {
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(
+        b"integration-pkce-verifier-with-more-than-forty-three-characters",
+    ));
+    let form = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("response_type", "code")
+        .append_pair("client_id", client_id)
+        .append_pair("redirect_uri", MCP_CALLBACK)
+        .append_pair("resource", MCP_RESOURCE)
+        .append_pair("scope", "notes:read notes:write notes:delete")
+        .append_pair("code_challenge", &challenge)
+        .append_pair("code_challenge_method", "S256")
+        .append_pair("state", "cross-origin-client-state")
+        .finish();
+    let response = send(
+        app,
+        Request::post("/oauth/authorize")
+            .header(header::ORIGIN, "https://chatgpt.com")
+            .header("sec-fetch-site", "cross-site")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(form))
+            .expect("cross-origin authorization request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(
+        response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|location| location.starts_with("/auth/oidc/login?next="))
+    );
+}
+
 async fn authorize_mcp(app: &Router, browser: &BrowserSession, client_id: &str) -> McpTokens {
     let verifier = "integration-pkce-verifier-with-more-than-forty-three-characters";
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
@@ -344,6 +378,7 @@ async fn call_mcp(
 async fn oidc_mcp_and_revocation_form_one_http_flow() {
     let server = TestServer::start().await;
     let client_id = register_mcp_client(&server.app).await;
+    assert_cross_origin_authorization_post_starts_login(&server.app, &client_id).await;
     let user = login(
         &server,
         "user-subject",

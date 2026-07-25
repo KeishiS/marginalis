@@ -38,7 +38,7 @@ use self::{
         update_note,
     },
     oauth::{
-        mcp_authorize, mcp_authorize_submit, mcp_register_client, mcp_resource_metadata,
+        mcp_authorize, mcp_authorize_post, mcp_register_client, mcp_resource_metadata,
         mcp_server_metadata, mcp_token, revoke_mcp_authorization,
     },
     security::security_headers,
@@ -58,7 +58,7 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/oauth/authorize",
             get(mcp_authorize)
-                .post(mcp_authorize_submit)
+                .post(mcp_authorize_post)
                 .layer(DefaultBodyLimit::max(16 * 1024)),
         )
         .route(
@@ -536,7 +536,7 @@ mod tests {
             )
             .await
             .expect("response");
-        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
         let login_location = response
             .headers()
             .get(header::LOCATION)
@@ -568,6 +568,46 @@ mod tests {
                     .to_str()
                     .is_ok_and(|value| value.contains(RETURN_TO_COOKIE)))
         );
+    }
+
+    #[tokio::test]
+    async fn cross_origin_oauth_post_starts_login_without_bypassing_consent_csrf() {
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/oauth/authorize")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::ORIGIN, "https://chatgpt.com")
+                    .header("sec-fetch-site", "cross-site")
+                    .body(Body::from(
+                        "response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state=opaque",
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert!(
+            response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|location| location.starts_with("/auth/oidc/login?next="))
+        );
+
+        let forged_approval = mcp_app()
+            .oneshot(
+                Request::post("/oauth/authorize")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::ORIGIN, "https://chatgpt.com")
+                    .header("sec-fetch-site", "cross-site")
+                    .body(Body::from(
+                        "client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&state=opaque&csrf_token=forged&decision=approve",
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(forged_approval.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

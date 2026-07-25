@@ -52,7 +52,6 @@ pub(super) struct McpAuthorizeQuery {
     state: Option<String>,
 }
 
-#[derive(Deserialize)]
 pub(super) struct McpAuthorizeForm {
     client_id: String,
     redirect_uri: String,
@@ -62,6 +61,20 @@ pub(super) struct McpAuthorizeForm {
     state: Option<String>,
     csrf_token: String,
     decision: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct McpAuthorizePost {
+    response_type: Option<String>,
+    client_id: String,
+    redirect_uri: String,
+    resource: String,
+    scope: String,
+    code_challenge: String,
+    code_challenge_method: Option<String>,
+    state: Option<String>,
+    csrf_token: Option<String>,
+    decision: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -224,14 +237,22 @@ pub(super) async fn mcp_authorize(
     headers: HeaderMap,
     Query(query): Query<McpAuthorizeQuery>,
 ) -> HandlerResult<Response> {
-    let endpoint = mcp_endpoint(&state)?;
+    mcp_authorize_request(&state, &headers, query).await
+}
+
+async fn mcp_authorize_request(
+    state: &ApiState,
+    headers: &HeaderMap,
+    query: McpAuthorizeQuery,
+) -> HandlerResult<Response> {
+    let endpoint = mcp_endpoint(state)?;
     let request = authorization_request(&query)?;
     let client = endpoint
         .oauth
         .validate_authorization_request(request)
         .await
         .map_err(mcp_error)?;
-    let _actor = match authenticated_actor(&headers, &state).await {
+    let _actor = match authenticated_actor(headers, state).await {
         Ok(actor) => actor,
         Err((StatusCode::UNAUTHORIZED, _)) => {
             let mut request_uri = url::Url::parse("https://invalid.example/oauth/authorize")
@@ -256,7 +277,7 @@ pub(super) async fn mcp_authorize(
             );
             let encoded_next =
                 url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>();
-            return Ok(Redirect::temporary(&format!(
+            return Ok(Redirect::to(&format!(
                 "{}?next={encoded_next}",
                 external_path(&state.cookie_path, "/auth/oidc/login")
             ))
@@ -264,7 +285,7 @@ pub(super) async fn mcp_authorize(
         }
         Err(error) => return Err(error),
     };
-    let csrf = cookie_value(&headers, CSRF_COOKIE).ok_or_else(|| {
+    let csrf = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
         problem(
             StatusCode::FORBIDDEN,
             "csrf_required",
@@ -286,13 +307,56 @@ pub(super) async fn mcp_authorize(
     )).into_response())
 }
 
-pub(super) async fn mcp_authorize_submit(
+fn required_authorize_value(value: Option<String>) -> HandlerResult<String> {
+    value.ok_or_else(|| {
+        problem(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "OAuth request is invalid",
+        )
+    })
+}
+
+/// OAuth clientからの初回POSTは状態を変更せず、検証後にloginまたは承認画面へ進める。
+/// Marginalis自身の承認formだけはsession-bound CSRFとsame-origin検証を必須にする。
+pub(super) async fn mcp_authorize_post(
     State(state): State<ApiState>,
     headers: HeaderMap,
-    Form(form): Form<McpAuthorizeForm>,
+    Form(form): Form<McpAuthorizePost>,
 ) -> HandlerResult<Response> {
-    let endpoint = mcp_endpoint(&state)?;
-    let actor = authenticated_form_actor(&headers, &state, &form.csrf_token).await?;
+    if form.decision.is_some() || form.csrf_token.is_some() {
+        let approval = McpAuthorizeForm {
+            client_id: form.client_id,
+            redirect_uri: form.redirect_uri,
+            resource: form.resource,
+            scope: form.scope,
+            code_challenge: form.code_challenge,
+            state: form.state,
+            csrf_token: required_authorize_value(form.csrf_token)?,
+            decision: required_authorize_value(form.decision)?,
+        };
+        return mcp_authorize_submit(&state, &headers, approval).await;
+    }
+    let request = McpAuthorizeQuery {
+        response_type: required_authorize_value(form.response_type)?,
+        client_id: form.client_id,
+        redirect_uri: form.redirect_uri,
+        resource: form.resource,
+        scope: form.scope,
+        code_challenge: form.code_challenge,
+        code_challenge_method: required_authorize_value(form.code_challenge_method)?,
+        state: form.state,
+    };
+    mcp_authorize_request(&state, &headers, request).await
+}
+
+async fn mcp_authorize_submit(
+    state: &ApiState,
+    headers: &HeaderMap,
+    form: McpAuthorizeForm,
+) -> HandlerResult<Response> {
+    let endpoint = mcp_endpoint(state)?;
+    let actor = authenticated_form_actor(headers, state, &form.csrf_token).await?;
     let request = McpAuthorizationRequest {
         client_id: form.client_id,
         redirect_uri: form.redirect_uri,
