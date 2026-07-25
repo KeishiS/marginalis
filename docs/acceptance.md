@@ -7,8 +7,11 @@
 
 PR CI の `verify` と `nixos-e2e` はそれぞれ `cargo make verify` と `nix flake check -L` を実行する。
 後者には NixOS module の配備、backup/purge、OIDC 未到達時の login fail-closed、実 Kanidm 1.10.4 の
-private CA・OAuth2 client provisioning・OIDC Discovery を含む。以下の browser 操作、group claim を含む OIDC 設定、外部
-MCP client は実運用の IdP と client を要するため、release issue で手動結果を記録する。
+private CA・OAuth2 client provisioning・OIDC Discovery を含む。プロセス内結合試験は、署名済みgroup
+claimを発行するmock IdPとv0.3の本番用SQLite・service・routerを使い、`server-users`拒否、
+`server-admins`可視性、MCP OAuth、ノート作成、認可取消後のaccess/refresh token失効を確認する。
+以下の実browser操作、実Kanidmのgroup変更、外部MCP clientは実運用のIdPとclientを要するため、
+release issueで手動結果を記録する。
 
 ## 必須確認
 

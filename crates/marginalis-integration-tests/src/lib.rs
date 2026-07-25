@@ -26,6 +26,7 @@ struct PendingAuthorization {
     subject: String,
     nonce: String,
     code_challenge: String,
+    groups: Vec<String>,
 }
 
 struct MockIdpState {
@@ -77,12 +78,25 @@ impl MockIdentityProvider {
 
     /// 利用者が認可画面を承認したものとして、一回限りのcodeを登録する。
     pub fn approve(&self, code: &str, subject: &str, nonce: &str, code_challenge: &str) {
+        self.approve_with_groups(code, subject, nonce, code_challenge, Vec::new());
+    }
+
+    /// group claimを含むv0.3 loginを承認する。
+    pub fn approve_with_groups(
+        &self,
+        code: &str,
+        subject: &str,
+        nonce: &str,
+        code_challenge: &str,
+        groups: Vec<String>,
+    ) {
         self.state.lock().expect("mock IdP state").codes.insert(
             code.into(),
             PendingAuthorization {
                 subject: subject.into(),
                 nonce: nonce.into(),
                 code_challenge: code_challenge.into(),
+                groups,
             },
         );
     }
@@ -140,6 +154,7 @@ async fn token(
         "iat": now,
         "nonce": pending.nonce,
         "name": "Integration User",
+        "groups": pending.groups,
     });
     let id_token = sign_hs256(&state.client_secret, &claims);
     Ok(Json(serde_json::json!({

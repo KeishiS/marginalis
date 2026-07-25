@@ -5,7 +5,9 @@
 実装中。[037](037-v0.3.0-architecture-rebaseline.md)の認証・認可決定を実装する。
 検証済み ID token からの構成可能な group claim の fail-closed な読取りを実装した。MCP は Authorization Code + PKCE、refresh
 rotation、Dynamic Client Registration、認可取消、OAuth/Protected Resource metadata、Streamable HTTP
-のノート操作を提供する。対象 client の実環境 E2E は後続作業とする。
+のノート操作を提供する。v0.3 の本番用 router、SQLite、OIDC・session・MCP OAuth serviceを結合した
+HTTP試験で、`server-users`拒否、`server-admins`可視性、MCP作成、REST可視性、認可取消後の
+access/refresh token失効を確認している。対象clientの実環境E2Eは後続作業とする。
 
 ## 目的
 
