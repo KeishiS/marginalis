@@ -8,7 +8,8 @@ use marginalis_domain::{
 use sqlx::Sqlite;
 
 use crate::{
-    SqliteDatabase, SqliteStoreError, database_error, note_from_row, permission_to_storage,
+    SqliteDatabase, SqliteStoreError, database_error,
+    notes::{note_from_row, permission_to_storage},
 };
 
 impl SqliteDatabase {
