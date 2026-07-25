@@ -270,15 +270,14 @@ pub(super) fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) ->
     Ok(())
 }
 
-/// Authorization consent is an interaction with this authorization server, so its form remains
-/// same-origin even when the OAuth client itself is browser-based.
+/// OAuth consent may run in a client-controlled popup or sandbox whose `Origin` is absent or
+/// opaque. The session-bound double-submit token remains the authorization boundary here.
 pub(super) async fn authenticated_form_actor(
     headers: &HeaderMap,
     state: &ApiState,
     csrf_token: &str,
 ) -> HandlerResult<Actor> {
     let actor = authenticated_actor(headers, state).await?;
-    validate_mutation_origin(headers, state)?;
     let session_id =
         cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
     if cookie_value(headers, CSRF_COOKIE).as_deref() != Some(csrf_token)

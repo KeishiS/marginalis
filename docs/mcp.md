@@ -24,7 +24,8 @@ ChatGPTやClaudeがclient originから送る初回POSTにclient自身のCSRF fie
 確定しません。未ログイン時は`303 See Other`で`GET`のOIDC loginへ移動します。
 
 ログイン後にMarginalisが表示する承認formだけが`B/oauth/authorize/consent`へPOSTし、認可を作成します。
-このendpointはMarginalisと同一origin、同一session、Marginalisが発行したCSRF tokenを必須とします。
+OAuth clientのpopupやsandboxでは`Origin`が欠落またはopaqueになり得るため、このendpointは
+同一session、CSRF cookie、Marginalisが発行してsessionへ紐付けたform tokenの一致を必須とします。
 外部clientの認可開始endpointと状態変更endpointを分け、field名による推測では分類しません。
 
 well-known suffixはhostとsubject pathの間へ挿入します。base URLがhost rootかsubpathかで
@@ -65,9 +66,9 @@ browser loginと承認を経ます。Claude.ai subscriptionでClaude Codeへロ�
 Claude CodeにはClaude.ai側のconnectorは同期されないため、上記の`claude mcp add`を使います。
 
 この許可リストは MCP transport 専用です。OAuth の承認画面は Marginalis が表示する Authorization Server
-との操作なので、`/oauth/authorize/consent`へのPOSTはMarginalisと同一Origin、同一sessionのCSRF tokenの
-両方を必須とします。client originから`/oauth/authorize`へ送る認可開始POSTにこの制約は適用しませんが、
-状態変更を一切行いません。
+との操作ですが、clientのpopupやsandboxに依存しないよう`Origin`を認可根拠にはしません。
+`/oauth/authorize/consent`はsession-bound CSRF tokenを必須とします。client originから
+`/oauth/authorize`へ送る認可開始POSTは状態変更を一切行いません。
 
 Authorization Server は登録済み client、redirect URI、MCP resource URI、scope、PKCE S256 を login 前と
 承認時の両方で検証します。承認画面には登録済み client 名、要求 scope、redirect host を表示します。

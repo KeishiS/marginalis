@@ -160,13 +160,16 @@ mod tests {
     };
     use marginalis_domain::{
         Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft,
-        NoteId, WebSession,
+        NoteId, UnixMillis, WebSession,
     };
     use std::time::{Duration, Instant};
     use tower::ServiceExt;
 
     use super::{
-        auth::{RETURN_TO_COOKIE, external_path, valid_return_to, validate_mutation_origin},
+        auth::{
+            RETURN_TO_COOKIE, authenticated_form_actor, external_path, valid_return_to,
+            validate_mutation_origin,
+        },
         state::McpRegistrationRateLimiter,
     };
 
@@ -248,6 +251,50 @@ mod tests {
             _csrf_token: String,
         ) -> Result<bool, AuthenticationUseCaseError> {
             Ok(false)
+        }
+
+        async fn issue_session(
+            &self,
+            _actor: Actor,
+        ) -> Result<WebSession, AuthenticationUseCaseError> {
+            Err(AuthenticationUseCaseError::Unavailable)
+        }
+
+        async fn revoke_session(
+            &self,
+            _session_id: String,
+        ) -> Result<(), AuthenticationUseCaseError> {
+            Ok(())
+        }
+    }
+
+    struct ActiveSessions;
+
+    #[async_trait]
+    impl WebSessionUseCases for ActiveSessions {
+        async fn authenticate_session(
+            &self,
+            session_id: String,
+        ) -> Result<Option<AuthenticatedSession>, AuthenticationUseCaseError> {
+            Ok(
+                (session_id == "active-session").then(|| AuthenticatedSession {
+                    actor: Actor {
+                        issuer: "https://id.example.test".into(),
+                        subject: "alice".into(),
+                        is_administrator: false,
+                    },
+                    idle_expires_at: UnixMillis::new(i64::MAX - 1),
+                    absolute_expires_at: UnixMillis::new(i64::MAX),
+                }),
+            )
+        }
+
+        async fn verify_csrf(
+            &self,
+            session_id: String,
+            csrf_token: String,
+        ) -> Result<bool, AuthenticationUseCaseError> {
+            Ok(session_id == "active-session" && csrf_token == "session-csrf")
         }
 
         async fn issue_session(
@@ -748,6 +795,37 @@ mod tests {
         );
         headers.insert("sec-fetch-site", "cross-site".parse().expect("metadata"));
         assert!(validate_mutation_origin(&headers, &state).is_err());
+    }
+
+    #[tokio::test]
+    async fn oauth_consent_uses_session_bound_csrf_when_client_context_has_an_opaque_origin() {
+        let state = ApiState::new(
+            Arc::new(Notes),
+            Arc::new(ActiveSessions),
+            Arc::new(Oidc),
+            "/".into(),
+            "https://example.test".into(),
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::COOKIE,
+            "marginalis_session=active-session; marginalis_csrf=session-csrf"
+                .parse()
+                .expect("cookies"),
+        );
+        headers.insert(header::ORIGIN, "null".parse().expect("opaque origin"));
+        headers.insert("sec-fetch-site", "cross-site".parse().expect("metadata"));
+
+        assert!(
+            authenticated_form_actor(&headers, &state, "session-csrf")
+                .await
+                .is_ok()
+        );
+        assert!(
+            authenticated_form_actor(&headers, &state, "forged")
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

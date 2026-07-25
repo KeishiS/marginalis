@@ -28,9 +28,9 @@ release issueで手動結果を記録する。
    Authorization Code + PKCE、read/write、認可取消を確認する。ChatGPTがclient originから送る認可開始の
    `POST /oauth/authorize`はOAuth parameterがURL queryにあっても`303`でloginへ進み、client自身のCSRF
    fieldがあっても`same_origin_required`にならないことを確認する。一方、Marginalisの承認formから送る
-   `POST /oauth/authorize/consent`はMarginalis自身の`Origin`、
-   `Sec-Fetch-Site: same-origin`、同一sessionのCSRF tokenを持つことを記録する。MCP requestの`Origin`が
-   設定済み許可リストに一致することも確認する。
+   `POST /oauth/authorize/consent`は、OAuth clientのpopupやsandboxがopaqueな`Origin`を送っても、
+   同一sessionのCSRF cookieとform tokenが一致する場合だけ認可を確定することを確認する。MCP requestの
+   `Origin`が設定済み許可リストに一致することも確認する。
    Claude Codeは`claude mcp add --transport http marginalis B/mcp`で追加し、`/mcp`から認証する。
    DCRで登録される`http://localhost:PORT/callback`に明示portがあることを確認する。
    Claude.ai Web UIは`Customize`の`Connectors`へ`B/mcp`をcustom connectorとして追加する。
