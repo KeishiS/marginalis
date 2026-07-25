@@ -2815,7 +2815,7 @@ mod tests {
                 client.client_id.clone(),
                 client.redirect_uris[0].clone(),
                 resource_uri.clone(),
-                verifier,
+                verifier.clone(),
             )
             .await
             .expect("exchange");
@@ -2826,6 +2826,7 @@ mod tests {
                 .expect("authenticate")
                 .is_some()
         );
+        let original_refresh_token = tokens.refresh_token.clone();
         let rotated = service
             .refresh_access_token(
                 tokens.refresh_token,
@@ -2834,13 +2835,54 @@ mod tests {
             )
             .await
             .expect("refresh");
+        assert!(matches!(
+            service
+                .refresh_access_token(
+                    original_refresh_token,
+                    client.client_id.clone(),
+                    resource_uri.clone(),
+                )
+                .await,
+            Err(McpOAuthError::Rejected)
+        ));
+        assert!(
+            service
+                .authenticate(&rotated.access_token, &resource_uri, "notes:read")
+                .await
+                .expect("replayed token family")
+                .is_none()
+        );
+
+        let replacement_code = service
+            .authorize(
+                actor.clone(),
+                McpAuthorizationRequest {
+                    client_id: client.client_id.clone(),
+                    redirect_uri: client.redirect_uris[0].clone(),
+                    resource_uri: resource_uri.clone(),
+                    scopes: vec!["notes:read".into()],
+                    code_challenge: pkce_s256(&verifier),
+                },
+            )
+            .await
+            .expect("replacement authorization");
+        let replacement = service
+            .exchange_authorization_code(
+                replacement_code,
+                client.client_id.clone(),
+                client.redirect_uris[0].clone(),
+                resource_uri.clone(),
+                verifier,
+            )
+            .await
+            .expect("replacement exchange");
         service
             .revoke(&actor, &client.client_id)
             .await
             .expect("revoke");
         assert!(
             service
-                .authenticate(&rotated.access_token, &resource_uri, "notes:read")
+                .authenticate(&replacement.access_token, &resource_uri, "notes:read")
                 .await
                 .expect("revoked")
                 .is_none()

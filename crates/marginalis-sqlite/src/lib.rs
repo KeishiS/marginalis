@@ -162,6 +162,46 @@ ALTER TABLE v3_mcp_refresh_tokens ADD COLUMN is_administrator INTEGER NOT NULL D
 ALTER TABLE v3_mcp_clients ADD COLUMN registered_at_ms INTEGER NOT NULL DEFAULT 0;
 "#,
     ),
+    (
+        7,
+        r#"
+CREATE TABLE v3_mcp_access_tokens_with_family (
+    token_hash BLOB PRIMARY KEY NOT NULL,
+    client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id),
+    resource_uri TEXT NOT NULL,
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)),
+    scopes TEXT NOT NULL,
+    expires_at_ms INTEGER NOT NULL,
+    revoked_at_ms INTEGER,
+    last_used_at_ms INTEGER,
+    token_family_id BLOB NOT NULL CHECK (length(token_family_id) = 32)
+) STRICT;
+DROP TABLE v3_mcp_access_tokens;
+ALTER TABLE v3_mcp_access_tokens_with_family RENAME TO v3_mcp_access_tokens;
+CREATE INDEX v3_mcp_access_subject_idx
+ON v3_mcp_access_tokens (issuer, subject)
+WHERE revoked_at_ms IS NULL;
+
+CREATE TABLE v3_mcp_refresh_tokens_with_family (
+    token_hash BLOB PRIMARY KEY NOT NULL,
+    client_id TEXT NOT NULL REFERENCES v3_mcp_clients(client_id),
+    resource_uri TEXT NOT NULL,
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    scopes TEXT NOT NULL,
+    expires_at_ms INTEGER NOT NULL,
+    rotated_at_ms INTEGER,
+    revoked_at_ms INTEGER,
+    is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)),
+    token_family_id BLOB NOT NULL CHECK (length(token_family_id) = 32)
+) STRICT;
+DROP TABLE v3_mcp_refresh_tokens;
+ALTER TABLE v3_mcp_refresh_tokens_with_family RENAME TO v3_mcp_refresh_tokens;
+CREATE INDEX v3_mcp_refresh_family_idx ON v3_mcp_refresh_tokens (token_family_id);
+"#,
+    ),
 ];
 
 #[derive(Clone, Debug)]
@@ -858,7 +898,6 @@ impl V3SqliteDatabase {
         for statement in [
             "DELETE FROM v3_mcp_authorization_codes WHERE expires_at_ms <= ? OR consumed_at_ms IS NOT NULL",
             "DELETE FROM v3_mcp_access_tokens WHERE expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
-            "DELETE FROM v3_mcp_refresh_tokens WHERE expires_at_ms <= ? OR rotated_at_ms IS NOT NULL OR revoked_at_ms IS NOT NULL",
         ] {
             sqlx::query(statement)
                 .bind(now.get())
@@ -866,6 +905,25 @@ impl V3SqliteDatabase {
                 .await
                 .map_err(v3_database_error)?;
         }
+        sqlx::query(
+            "DELETE FROM v3_mcp_refresh_tokens AS stale
+             WHERE stale.revoked_at_ms IS NOT NULL
+                OR (
+                    (stale.expires_at_ms <= ? OR stale.rotated_at_ms IS NOT NULL)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM v3_mcp_refresh_tokens AS active
+                        WHERE active.token_family_id = stale.token_family_id
+                          AND active.rotated_at_ms IS NULL
+                          AND active.revoked_at_ms IS NULL
+                          AND active.expires_at_ms > ?
+                    )
+                )",
+        )
+        .bind(now.get())
+        .bind(now.get())
+        .execute(&mut *transaction)
+        .await
+        .map_err(v3_database_error)?;
         sqlx::query(
             "DELETE FROM v3_mcp_clients
              WHERE registered_at_ms < ?
@@ -960,10 +1018,11 @@ impl V3SqliteDatabase {
     ) -> Result<(), V3NoteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(v3_database_error)?;
         let scopes = grant.scopes.join(" ");
-        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
-        sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        let token_family_id = hash_token(refresh_token);
+        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(refresh_expires_at.get()).bind(grant.actor.is_administrator).bind(token_family_id).execute(&mut *transaction).await.map_err(v3_database_error)?;
         transaction.commit().await.map_err(v3_database_error)
     }
 
@@ -999,7 +1058,7 @@ impl V3SqliteDatabase {
             "UPDATE v3_mcp_refresh_tokens SET rotated_at_ms = ?
              WHERE token_hash = ? AND client_id = ? AND resource_uri = ?
                AND rotated_at_ms IS NULL AND revoked_at_ms IS NULL AND expires_at_ms > ?
-             RETURNING issuer, subject, is_administrator, scopes",
+             RETURNING issuer, subject, is_administrator, scopes, token_family_id",
         )
         .bind(now.get())
         .bind(hash_token(&rotation.refresh_token))
@@ -1010,8 +1069,37 @@ impl V3SqliteDatabase {
         .await
         .map_err(v3_database_error)?;
         let Some(row) = row else {
+            let replayed_family = sqlx::query_scalar::<_, Vec<u8>>(
+                "SELECT token_family_id FROM v3_mcp_refresh_tokens
+                 WHERE token_hash = ? AND client_id = ? AND resource_uri = ?
+                   AND rotated_at_ms IS NOT NULL AND revoked_at_ms IS NULL",
+            )
+            .bind(hash_token(&rotation.refresh_token))
+            .bind(&rotation.client_id)
+            .bind(&rotation.resource_uri)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(v3_database_error)?;
+            if let Some(token_family_id) = replayed_family {
+                for table in ["v3_mcp_access_tokens", "v3_mcp_refresh_tokens"] {
+                    let query = format!(
+                        "UPDATE {table} SET revoked_at_ms = ?
+                         WHERE token_family_id = ? AND revoked_at_ms IS NULL"
+                    );
+                    sqlx::query(&query)
+                        .bind(now.get())
+                        .bind(&token_family_id)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(v3_database_error)?;
+                }
+                transaction.commit().await.map_err(v3_database_error)?;
+            }
             return Ok(None);
         };
+        let token_family_id = row
+            .try_get::<Vec<u8>, _>("token_family_id")
+            .map_err(v3_database_error)?;
         let grant = CanonicalMcpAuthorizationGrant {
             actor: CanonicalActor {
                 issuer: row.try_get("issuer").map_err(v3_database_error)?,
@@ -1029,10 +1117,10 @@ impl V3SqliteDatabase {
                 .collect(),
         };
         let scopes = grant.scopes.join(" ");
-        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&rotation.new_access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(rotation.access_expires_at.get()).execute(&mut *transaction).await.map_err(v3_database_error)?;
-        sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&rotation.new_refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(rotation.refresh_expires_at.get()).bind(grant.actor.is_administrator).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(&rotation.new_access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(rotation.access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(v3_database_error)?;
+        sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(&rotation.new_refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(rotation.refresh_expires_at.get()).bind(grant.actor.is_administrator).bind(token_family_id).execute(&mut *transaction).await.map_err(v3_database_error)?;
         transaction.commit().await.map_err(v3_database_error)?;
         Ok(Some(grant))
     }
@@ -3701,6 +3789,63 @@ mod tests {
         );
         assert!(
             database
+                .authenticate_mcp_access_token(
+                    "next-access",
+                    &grant.resource_uri,
+                    "notes:read",
+                    UnixMillis::new(4)
+                )
+                .await
+                .expect("rotated access")
+                .is_some()
+        );
+        assert!(
+            database
+                .register_mcp_client_bounded(
+                    &McpOAuthClient {
+                        client_id: "another-client".into(),
+                        display_name: "Another client".into(),
+                        redirect_uris: vec!["https://other.example.test/callback".into()],
+                    },
+                    UnixMillis::new(5),
+                    UnixMillis::new(0),
+                    10,
+                )
+                .await
+                .expect("registration cleanup")
+        );
+        assert!(
+            database
+                .rotate_mcp_refresh_token(
+                    McpRefreshTokenRotation {
+                        refresh_token: "refresh".into(),
+                        client_id: "different-client".into(),
+                        resource_uri: grant.resource_uri.clone(),
+                        new_access_token: "wrong-binding-access".into(),
+                        new_refresh_token: "wrong-binding-refresh".into(),
+                        access_expires_at: UnixMillis::new(200),
+                        refresh_expires_at: UnixMillis::new(2_000),
+                    },
+                    UnixMillis::new(6)
+                )
+                .await
+                .expect("wrong binding")
+                .is_none()
+        );
+        assert!(
+            database
+                .authenticate_mcp_access_token(
+                    "next-access",
+                    &grant.resource_uri,
+                    "notes:read",
+                    UnixMillis::new(7)
+                )
+                .await
+                .expect("access after wrong binding")
+                .is_some()
+        );
+        assert!(
+            database
                 .rotate_mcp_refresh_token(
                     McpRefreshTokenRotation {
                         refresh_token: "refresh".into(),
@@ -3711,31 +3856,40 @@ mod tests {
                         access_expires_at: UnixMillis::new(200),
                         refresh_expires_at: UnixMillis::new(2_000),
                     },
-                    UnixMillis::new(4)
+                    UnixMillis::new(8)
                 )
                 .await
-                .expect("second rotation")
+                .expect("refresh token replay")
                 .is_none()
         );
-        database
-            .revoke_mcp_client_tokens(
-                &grant.actor.issuer,
-                &grant.actor.subject,
-                &grant.client_id,
-                UnixMillis::new(5),
-            )
-            .await
-            .expect("revoke");
         assert!(
             database
                 .authenticate_mcp_access_token(
                     "next-access",
                     &grant.resource_uri,
                     "notes:read",
-                    UnixMillis::new(6)
+                    UnixMillis::new(9)
                 )
                 .await
-                .expect("revoked access")
+                .expect("access after replay")
+                .is_none()
+        );
+        assert!(
+            database
+                .rotate_mcp_refresh_token(
+                    McpRefreshTokenRotation {
+                        refresh_token: "next-refresh".into(),
+                        client_id: grant.client_id.clone(),
+                        resource_uri: grant.resource_uri.clone(),
+                        new_access_token: "post-replay-access".into(),
+                        new_refresh_token: "post-replay-refresh".into(),
+                        access_expires_at: UnixMillis::new(200),
+                        refresh_expires_at: UnixMillis::new(2_000),
+                    },
+                    UnixMillis::new(10)
+                )
+                .await
+                .expect("family after replay")
                 .is_none()
         );
     }
@@ -3785,6 +3939,67 @@ mod tests {
                 .expect("lookup")
                 .is_some()
         );
+    }
+
+    #[tokio::test]
+    async fn v3_token_family_migration_invalidates_existing_tokens_and_adds_constraints() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("database");
+        sqlx::query(
+            "CREATE TABLE v3_schema_migrations (version INTEGER PRIMARY KEY NOT NULL) STRICT",
+        )
+        .execute(&pool)
+        .await
+        .expect("migration table");
+        for (version, migration) in V3_MIGRATIONS.iter().take(6) {
+            sqlx::raw_sql(migration)
+                .execute(&pool)
+                .await
+                .expect("old migration");
+            sqlx::query("INSERT INTO v3_schema_migrations (version) VALUES (?)")
+                .bind(version)
+                .execute(&pool)
+                .await
+                .expect("old migration version");
+        }
+        sqlx::query("INSERT INTO v3_mcp_clients (client_id, display_name, redirect_uris_json, registered_at_ms) VALUES ('client', 'Client', '[\"https://client.example.test/callback\"]', 0)")
+            .execute(&pool)
+            .await
+            .expect("client");
+        sqlx::query("INSERT INTO v3_mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms) VALUES (?, 'client', 'https://notes.example.test/mcp', 'https://id.example.test', 'alice', 0, 'notes:read', 100)")
+            .bind(hash_token("old-access"))
+            .execute(&pool)
+            .await
+            .expect("old access token");
+        sqlx::query("INSERT INTO v3_mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator) VALUES (?, 'client', 'https://notes.example.test/mcp', 'https://id.example.test', 'alice', 'notes:read', 1000, 0)")
+            .bind(hash_token("old-refresh"))
+            .execute(&pool)
+            .await
+            .expect("old refresh token");
+
+        migrate_v3(&pool).await.expect("family migration");
+
+        for table in ["v3_mcp_access_tokens", "v3_mcp_refresh_tokens"] {
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {table}"))
+                    .fetch_one(&pool)
+                    .await
+                    .expect("token count"),
+                0,
+                "pre-family tokens must be invalidated"
+            );
+            let family_column = sqlx::query(&format!("PRAGMA table_info({table})"))
+                .fetch_all(&pool)
+                .await
+                .expect("table info")
+                .into_iter()
+                .find(|row| row.get::<String, _>("name") == "token_family_id")
+                .expect("family column");
+            assert_eq!(family_column.get::<i64, _>("notnull"), 1);
+        }
     }
 
     #[tokio::test]
