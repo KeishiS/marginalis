@@ -2,7 +2,7 @@
 
 ## 現行契約
 
-公開 API は `/api/v2` です。機械可読な正本は [OpenAPI 3.1](openapi-v3.json) であり、実行中の
+公開 API は `/api/v2` です。機械可読な正本は [OpenAPI 3.1](openapi.json) であり、実行中の
 `GET /api/v2/openapi.json` は同じ内容を返します。`/api/v1` と root 管理 API は v3 では提供しません。
 
 ブラウザー API は OIDC session Cookie を用います。変更操作には session と同時に発行される CSRF

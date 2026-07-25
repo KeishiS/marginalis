@@ -270,7 +270,7 @@ in
     };
 
     # backup先は運用者が永続storageとretentionを決めてから明示する。timerは提供しない。
-    # このunitはHTTP serverと競合させ、SQLite正本から一貫したv3 archiveを取得する。
+    # このunitはHTTP serverと競合させ、SQLite正本から一貫したarchiveを取得する。
     systemd.services.marginalis-backup = mkIf (cfg.backupDirectory != null) {
       description = "Create a consistent Marginalis backup";
       conflicts = [ "marginalis.service" ];

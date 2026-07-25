@@ -8,7 +8,7 @@ SQLite 正本、Kanidm group 認可、`/api/v2` を現行契約とします。�
 ## 利用者向け
 
 - [v0.3.0 運用契約](v0.3.0-operations.md): Kanidm、NixOS、MCP の現行運用手順
-- [OpenAPI 3.1](openapi-v3.json): `/api/v2` の機械可読な仕様
+- [OpenAPI 3.1](openapi.json): `/api/v2` の機械可読な仕様
 - [MCP と OAuth](mcp.md): MCP ツール、OAuth 認可、クライアント登録、認可の取消
 
 ## 運用者向け
@@ -30,7 +30,7 @@ SQLite 正本、Kanidm group 認可、`/api/v2` を現行契約とします。�
 
 ## 文書の読み分け
 
-現行の動作について文書間に差がある場合は、機械可読な REST 仕様には `openapi-v3.json`、製品要件
+現行の動作について文書間に差がある場合は、機械可読な REST 仕様には `openapi.json`、製品要件
 と具体的な実装判断には `v0.3.0-design.md` を優先します。ヒアリング記録、将来構想、完了済み
 Issue、Git 履歴中の v0.2 文書は判断当時の記録であり、現行仕様ではありません。
 

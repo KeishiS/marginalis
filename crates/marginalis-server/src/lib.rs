@@ -7,15 +7,15 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     AuthenticationUseCaseError, Clock, McpAuthorizationRequest, McpOAuthUseCaseError,
-    McpRefreshTokenRotation, NoteUseCaseError, Random, SessionLifetime, McpOAuthUseCases,
-    McpTokenPair, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
+    McpOAuthUseCases, McpRefreshTokenRotation, McpTokenPair, NoteUseCaseError, NoteUseCases,
+    OidcAuthenticationUseCases, Random, SessionLifetime, WebSessionUseCases,
 };
 use marginalis_auth_oidc::{OidcAuthentication, OidcCallbackError, OidcConfiguration};
 use marginalis_domain::{
-    Actor, AuthenticatedSession, Note, NoteDraft,
-    WebSession, EntityId, NoteId, NotePermission, UnixMillis,
+    Actor, AuthenticatedSession, EntityId, Note, NoteDraft, NoteId, NotePermission, UnixMillis,
+    WebSession,
 };
-use marginalis_sqlite::{SqliteStoreError, SqliteDatabase};
+use marginalis_sqlite::{SqliteDatabase, SqliteStoreError};
 use sha2::{Digest, Sha256};
 use url::Url;
 use uuid::Uuid;
@@ -339,11 +339,7 @@ impl ServerMcpOAuthService {
         Ok(Some(authenticated))
     }
 
-    pub async fn revoke(
-        &self,
-        actor: &Actor,
-        client_id: &str,
-    ) -> Result<(), McpOAuthError> {
+    pub async fn revoke(&self, actor: &Actor, client_id: &str) -> Result<(), McpOAuthError> {
         self.database
             .revoke_mcp_client_tokens(&actor.issuer, &actor.subject, client_id, SystemClock.now())
             .await
@@ -422,17 +418,12 @@ impl McpOAuthUseCases for ServerMcpOAuthService {
         token: String,
         resource_uri: String,
         scope: String,
-    ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthUseCaseError>
-    {
+    ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthUseCaseError> {
         self.authenticate(&token, &resource_uri, &scope)
             .await
             .map_err(mcp_error)
     }
-    async fn revoke(
-        &self,
-        actor: Actor,
-        client_id: String,
-    ) -> Result<(), McpOAuthUseCaseError> {
+    async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {
         self.revoke(&actor, &client_id).await.map_err(mcp_error)
     }
 }
@@ -504,21 +495,14 @@ fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
 
 #[async_trait]
 impl NoteUseCases for ServerNoteUseCases {
-    async fn list_visible_notes(
-        &self,
-        actor: Actor,
-    ) -> Result<Vec<Note>, NoteUseCaseError> {
+    async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
         self.database
             .list_visible_notes(&actor, 0, 1_000)
             .await
             .map_err(map_note_error)
     }
 
-    async fn read_note(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<Note, NoteUseCaseError> {
+    async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
         self.database
             .visible_note(&actor, note_id, NotePermission::Read)
             .await
@@ -526,11 +510,7 @@ impl NoteUseCases for ServerNoteUseCases {
             .ok_or(NoteUseCaseError::NotFound)
     }
 
-    async fn create_note(
-        &self,
-        actor: Actor,
-        draft: NoteDraft,
-    ) -> Result<Note, NoteUseCaseError> {
+    async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
         let draft = marginalis_asciidoc::validate_note_draft(draft)
             .map_err(|_| NoteUseCaseError::Validation)?;
         let now = SystemClock.now();
@@ -617,8 +597,7 @@ impl NoteUseCases for ServerNoteUseCases {
     }
 
     fn render_note_html(&self, note: &Note) -> Result<String, NoteUseCaseError> {
-        marginalis_asciidoc::render_note_html(note)
-            .map_err(|_| NoteUseCaseError::Validation)
+        marginalis_asciidoc::render_note_html(note).map_err(|_| NoteUseCaseError::Validation)
     }
 }
 
@@ -651,10 +630,7 @@ impl WebSessionUseCases for ServerWebSessionUseCases {
             .map_err(|_| AuthenticationUseCaseError::Unavailable)
     }
 
-    async fn issue_session(
-        &self,
-        actor: Actor,
-    ) -> Result<WebSession, AuthenticationUseCaseError> {
+    async fn issue_session(&self, actor: Actor) -> Result<WebSession, AuthenticationUseCaseError> {
         let now = SystemClock.now();
         let session = WebSession {
             session_id: SystemRandom.opaque_token(),
@@ -1272,5 +1248,3 @@ mod tests {
         );
     }
 }
-
-

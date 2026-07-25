@@ -61,7 +61,7 @@ service account、API token、custom ACP は不要である。
   週末の停止枠で `systemctl start marginalis-backup.service` を実行します。
 - backup service の完了後も `marginalis.service` は停止したままです。確認後に
   `systemctl start marginalis.service` で明示的に再開します。
-- backup は `marginalis-v3-archive.json` を含む時刻付きディレクトリです。空の v3 database へ
+- backup は `marginalis-archive.json` を含む時刻付きディレクトリです。空の database へ
   `marginalis import-archive --input <absolute-file>` で取り込めます。定期復元試験は v3 の release gate 外です。
 
 初回配備後は `GET /api/v2/health`、OIDC login、一般利用者と管理者の可視性、MCP authorization を確認します。

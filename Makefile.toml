@@ -136,7 +136,7 @@ command = "jq"
 args = [
   "-e",
   ".openapi == \"3.1.0\" and .info.version == \"v2\" and (.paths[\"/api/v2/health\"] | has(\"get\")) and (.paths[\"/api/v2/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v2/notes/{note_id}\"] | has(\"get\") and has(\"put\") and has(\"delete\")) and (.paths[\"/api/v2/notes/{note_id}/source\"] | has(\"get\")) and (.paths[\"/api/v2/notes/{note_id}/restore\"] | has(\"post\")) and (.paths[\"/api/v2/mcp-authorizations/{client_id}\"] | has(\"delete\")) and (.components.schemas.Note.required | contains([\"note_id\", \"revision\"])) and (.components.parameters.CsrfToken.required == true)",
-  "docs/openapi-v3.json",
+  "docs/openapi.json",
 ]
 
 [tasks.adocweave-version-check]
@@ -153,13 +153,13 @@ cargo metadata --locked --format-version 1 | jq -e \
   --arg version "$expected_version" \
   --arg revision "$expected_revision" '
     [.packages[]
-      | select(.name == "adocweave" or .name == "adocweave-wasm")
+      | select(.name == "adocweave")
       | select(
           .version == $version
           and (.source | contains("rev=" + $revision))
           and (.source | endswith("#" + $revision))
         )]
-    | length == 2
+    | length == 1
   ' >/dev/null
 
 grep -Fq "pub const ADOCWEAVE_SOURCE_REVISION: &str = \"$expected_revision\";" \

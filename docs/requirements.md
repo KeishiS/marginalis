@@ -22,4 +22,4 @@
   公開後に追加する。
 
 詳細なデータモデル、エラー処理、HTTP 契約は [再設計仕様](v0.3.0-design.md) と
-[OpenAPI](openapi-v3.json) を参照してください。過去の v0.2 要件は Git 履歴で参照します。
+[OpenAPI](openapi.json) を参照してください。過去の v0.2 要件は Git 履歴で参照します。

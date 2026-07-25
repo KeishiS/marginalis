@@ -21,4 +21,3 @@ async fn assign_request_id(mut request: Request, next: Next) -> Response {
     }
     response
 }
-

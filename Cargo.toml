@@ -20,8 +20,6 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 adocweave = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda", package = "adocweave" }
-adocweave-wasm = { git = "https://github.com/KeishiS/AdocWeave.git", rev = "2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda", package = "adocweave-wasm" }
-argon2 = "0.5.3"
 unicode-normalization = "0.1.25"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
 tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "sync"] }

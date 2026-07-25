@@ -13,19 +13,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "adocweave-wasm"
-version = "0.6.1"
-source = "git+https://github.com/KeishiS/AdocWeave.git?rev=2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda#2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda"
-dependencies = [
- "adocweave",
- "js-sys",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1126,7 +1113,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "marginalis-application"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "marginalis-domain",
@@ -1134,10 +1121,9 @@ dependencies = [
 
 [[package]]
 name = "marginalis-asciidoc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "adocweave",
- "adocweave-wasm",
  "marginalis-domain",
  "time",
  "unicode-normalization",
@@ -1145,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-auth-oidc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "marginalis-application",
@@ -1159,7 +1145,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-domain"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "uuid",
@@ -1167,7 +1153,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-integration-tests"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1186,7 +1172,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-mcp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1194,7 +1180,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-server"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1213,7 +1199,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-service"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1236,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-sqlite"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "marginalis-application",
  "marginalis-asciidoc",
@@ -1249,7 +1235,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-web"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2010,17 +1996,6 @@ checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
 dependencies = [
  "ordered-float",
  "serde",
-]
-
-[[package]]
-name = "serde-wasm-bindgen"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
-dependencies = [
- "js-sys",
- "serde",
- "wasm-bindgen",
 ]
 
 [[package]]

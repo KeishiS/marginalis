@@ -5,8 +5,8 @@ use marginalis_asciidoc::verify_runtime_package_version;
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_domain::UnixMillis;
 use marginalis_server::{
-    ServerConfig, ServerMcpOAuthService, ServerNoteUseCases,
-    ServerOidcAuthenticationUseCases, ServerWebSessionUseCases, StorageConfig, SystemClock,
+    ServerConfig, ServerMcpOAuthService, ServerNoteUseCases, ServerOidcAuthenticationUseCases,
+    ServerWebSessionUseCases, StorageConfig, SystemClock,
 };
 use marginalis_sqlite::SqliteDatabase;
 use std::path::{Path, PathBuf};
@@ -49,7 +49,7 @@ async fn purge_deleted() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(
         count,
         cutoff_ms = cutoff.get(),
-        "purged expired soft-deleted v3 notes"
+        "purged expired soft-deleted notes"
     );
     Ok(())
 }
@@ -73,7 +73,7 @@ async fn export_archive(
         .open(&output)?;
     serde_json::to_writer_pretty(&file, &archive)?;
     file.sync_all()?;
-    tracing::info!(output = %output.display(), note_count = archive.notes.len(), "exported v3 archive");
+    tracing::info!(output = %output.display(), note_count = archive.notes.len(), "exported archive");
     Ok(())
 }
 
@@ -89,7 +89,7 @@ async fn import_archive(
         .await?
         .import_archive(&archive)
         .await?;
-    tracing::info!(input = %input.display(), "imported v3 archive");
+    tracing::info!(input = %input.display(), "imported archive");
     Ok(())
 }
 
@@ -153,7 +153,7 @@ async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .export_archive()
         .await?;
-    let archive_path = output.join("marginalis-v3-archive.json");
+    let archive_path = output.join("marginalis-archive.json");
     let archive_file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -162,10 +162,7 @@ async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     archive_file.sync_all()?;
     std::fs::write(
         output.join("COMPLETE"),
-        format!(
-            "Marginalis backup {}\n",
-            marginalis_domain::ARCHIVE_FORMAT
-        ),
+        format!("Marginalis backup {}\n", marginalis_domain::ARCHIVE_FORMAT),
     )?;
     let note_count = archive.notes.len();
     tracing::info!(output = %output.display(), note_count, "backup completed");
@@ -376,5 +373,3 @@ mod tests {
         );
     }
 }
-
-

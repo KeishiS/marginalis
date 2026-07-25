@@ -23,7 +23,7 @@ use tower::ServiceExt;
 use url::Url;
 
 const BROWSER_ORIGIN: &str = "https://marginalis.example.test";
-const CLIENT_ID: &str = "marginalis-v3";
+const CLIENT_ID: &str = "marginalis-test-client";
 const CLIENT_SECRET: &str = "integration-client-secret";
 const MCP_RESOURCE: &str = "https://marginalis.example.test/mcp";
 const MCP_CALLBACK: &str = "https://chatgpt.com/connector/oauth/callback";
@@ -452,4 +452,3 @@ async fn oidc_rejects_a_subject_without_server_users_membership() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(cookie(&response, "marginalis_session").is_none());
 }
-

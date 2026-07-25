@@ -6,8 +6,8 @@ use std::future::Future;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, McpAuthenticatedActor, Note,
-    NoteDraft, WebSession, EntityId, McpOAuthClient, NoteId, UnixMillis,
+    Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft,
+    NoteId, UnixMillis, WebSession,
 };
 
 pub trait Clock: Send + Sync {
@@ -112,20 +112,9 @@ pub struct McpRefreshTokenRotation {
 /// SQLite正本を扱うノート操作境界。HTTP、MCP、Web UIはこの可視性規則を共有する。
 #[async_trait]
 pub trait NoteUseCases: Send + Sync {
-    async fn list_visible_notes(
-        &self,
-        actor: Actor,
-    ) -> Result<Vec<Note>, NoteUseCaseError>;
-    async fn read_note(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<Note, NoteUseCaseError>;
-    async fn create_note(
-        &self,
-        actor: Actor,
-        draft: NoteDraft,
-    ) -> Result<Note, NoteUseCaseError>;
+    async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<Note>, NoteUseCaseError>;
+    async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
+    async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError>;
     async fn update_note(
         &self,
         actor: Actor,
@@ -161,10 +150,7 @@ pub trait WebSessionUseCases: Send + Sync {
         session_id: String,
         csrf_token: String,
     ) -> Result<bool, AuthenticationUseCaseError>;
-    async fn issue_session(
-        &self,
-        actor: Actor,
-    ) -> Result<WebSession, AuthenticationUseCaseError>;
+    async fn issue_session(&self, actor: Actor) -> Result<WebSession, AuthenticationUseCaseError>;
     async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError>;
 }
 
@@ -218,11 +204,5 @@ pub trait McpOAuthUseCases: Send + Sync {
         resource_uri: String,
         scope: String,
     ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError>;
-    async fn revoke(
-        &self,
-        actor: Actor,
-        client_id: String,
-    ) -> Result<(), McpOAuthUseCaseError>;
+    async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError>;
 }
-
-

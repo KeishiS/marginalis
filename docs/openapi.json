@@ -1,85 +1,112 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Marginalis REST API",
-    "version": "v1",
-    "description": "Historical v0.2 `/api/v1` specification. It is not served or supported by v0.3; use docs/openapi-v3.json for the current contract."
-  },
-  "servers": [{ "url": "/" }],
-  "x-marginalis-cookie-state-change-headers": {
-    "Origin": "Must exactly match the configured public origin.",
-    "Sec-Fetch-Site": "Optional; when present, must be `same-origin` or `none`.",
-    "X-CSRF-Token": "Must equal the marginalis_csrf cookie."
+    "title": "Marginalis API",
+    "version": "v2",
+    "description": "SQLite canonical-note REST API. Browser requests use the OIDC session cookie; every state-changing request also requires a same-origin CSRF token in X-CSRF-Token."
   },
   "paths": {
-    "/api/v1/openapi.json": { "get": { "operationId": "openapi", "responses": { "200": { "description": "OpenAPI document", "content": { "application/json": { "schema": { "type": "object" } } } } } } },
-    "/api/v1/health": { "get": { "operationId": "health", "responses": { "200": { "description": "Liveness", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } } } } },
-    "/api/v1/readiness": { "get": { "operationId": "readiness", "responses": { "200": { "description": "OIDC available", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Readiness" } } } }, "503": { "$ref": "#/components/responses/Internal" } } } },
-    "/api/v1/session": { "get": { "operationId": "currentSession", "security": [{ "cookieSession": [] }], "responses": { "200": { "description": "Current session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" } } } },
-    "/api/v1/notes": {
-      "get": { "operationId": "listNotes", "security": [{ "cookieSession": [] }], "parameters": [{ "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }], "responses": { "200": { "$ref": "#/components/responses/NotePage" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" } } },
-      "post": { "operationId": "createNote", "security": [{ "cookieSession": [], "csrfToken": [] }], "requestBody": { "required": true, "content": { "text/plain; charset=utf-8": { "schema": { "type": "string" } } } }, "responses": { "201": { "description": "Created", "headers": { "Location": { "required": true, "schema": { "type": "string", "format": "uri-reference" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" }, "422": { "$ref": "#/components/responses/ValidationFailed" } } }
+    "/api/v2/health": {
+      "get": {
+        "summary": "Liveness check",
+        "responses": { "200": { "description": "service is running", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } } }
+      }
     },
-    "/api/v1/notes/{note_id}": {
-      "get": { "operationId": "getNoteMetadata", "security": [{ "cookieSession": [] }], "parameters": [{ "$ref": "#/components/parameters/NoteId" }], "responses": { "200": { "description": "Metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteMetadata" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } } }
+    "/api/v2/session": {
+      "get": {
+        "summary": "Read the current Kanidm identity",
+        "responses": {
+          "200": { "description": "authenticated session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "503": { "$ref": "#/components/responses/AuthenticationUnavailable" }
+        }
+      }
     },
-    "/api/v1/notes/{note_id}/delete-preparations": { "post": { "operationId": "prepareNoteDeletion", "security": [{ "cookieSession": [], "csrfToken": [] }], "parameters": [{ "$ref": "#/components/parameters/NoteId" }, { "$ref": "#/components/parameters/IfMatch" }], "responses": { "200": { "description": "Deletion prepared", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeletePreparation" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" } } } },
-    "/api/v1/notes/delete-confirmations": { "post": { "operationId": "confirmNoteDeletion", "security": [{ "cookieSession": [], "csrfToken": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteConfirmation" } } } }, "responses": { "204": { "description": "Deleted" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "422": { "$ref": "#/components/responses/ValidationFailed" } } } },
-    "/api/v1/notes/{note_id}/source": {
-      "get": { "operationId": "getNoteSource", "security": [{ "cookieSession": [] }], "parameters": [{ "$ref": "#/components/parameters/NoteId" }], "responses": { "200": { "description": "Canonical AsciiDoc", "headers": { "ETag": { "required": true, "schema": { "type": "string" } } }, "content": { "text/plain; charset=utf-8": { "schema": { "type": "string" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } } },
-      "put": { "operationId": "updateNoteSource", "security": [{ "cookieSession": [], "csrfToken": [] }], "parameters": [{ "$ref": "#/components/parameters/NoteId" }, { "$ref": "#/components/parameters/IfMatch" }], "requestBody": { "required": true, "content": { "text/plain; charset=utf-8": { "schema": { "type": "string" } } } }, "responses": { "204": { "description": "Updated" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "422": { "$ref": "#/components/responses/ValidationFailed" } } }
+    "/api/v2/notes": {
+      "get": {
+        "summary": "List visible notes",
+        "responses": {
+          "200": { "description": "notes visible to the current actor", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Note" } } } } },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" }
+        }
+      },
+      "post": {
+        "summary": "Create a note",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteDraft" } } } },
+        "responses": {
+          "201": { "description": "created note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/CsrfRejected" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
     },
-    "/api/v1/search": { "get": { "operationId": "searchNotes", "security": [{ "cookieSession": [] }], "parameters": [{ "name": "q", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1 } }, { "name": "tags", "in": "query", "style": "form", "explode": true, "schema": { "type": "array", "items": { "type": "string" } } }, { "name": "created_after", "in": "query", "schema": { "type": "string", "format": "date-time" } }, { "name": "created_before", "in": "query", "schema": { "type": "string", "format": "date-time" } }, { "name": "updated_after", "in": "query", "schema": { "type": "string", "format": "date-time" } }, { "name": "updated_before", "in": "query", "schema": { "type": "string", "format": "date-time" } }, { "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }], "responses": { "200": { "$ref": "#/components/responses/NotePage" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "422": { "$ref": "#/components/responses/ValidationFailed" } } } },
-    "/api/v1/notes/{note_id}/acl/{user_id}": { "put": { "operationId": "setNoteAcl", "security": [{ "cookieSession": [], "csrfToken": [] }], "parameters": [{ "$ref": "#/components/parameters/NoteId" }, { "$ref": "#/components/parameters/UserId" }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AclUpdate" } } } }, "responses": { "204": { "description": "Updated" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "422": { "$ref": "#/components/responses/ValidationFailed" } } } },
-    "/api/v1/mcp-authorizations": { "get": { "operationId": "listOwnMcpAuthorizations", "security": [{ "cookieSession": [] }], "responses": { "200": { "description": "Authorizations", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/McpAuthorization" } } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" } } }, "delete": { "operationId": "revokeOwnMcpAuthorization", "security": [{ "cookieSession": [], "csrfToken": [] }], "parameters": [{ "name": "client_id", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1 } }], "responses": { "204": { "description": "Revoked" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" } } } },
-    "/api/v1/admin/users/pending": { "get": { "operationId": "listPendingUsers", "security": [{ "cookieSession": [] }], "responses": { "200": { "description": "Pending users", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PendingUser" } } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" } } } },
-    "/api/v1/admin/users/{user_id}/activate": { "put": { "operationId": "activatePendingUser", "security": [{ "cookieSession": [], "csrfToken": [] }], "parameters": [{ "$ref": "#/components/parameters/UserId" }], "responses": { "204": { "description": "Activated" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } } } },
-    "/api/v1/admin/users/{user_id}/disable": { "put": { "operationId": "disableOidcUser", "security": [{ "cookieSession": [], "csrfToken": [] }], "parameters": [{ "$ref": "#/components/parameters/UserId" }], "responses": { "204": { "description": "Disabled" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } } } },
-    "/api/v1/admin/registration-policy": { "get": { "operationId": "registrationPolicy", "security": [{ "cookieSession": [] }], "responses": { "200": { "description": "Policy", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegistrationPolicy" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" } } }, "put": { "operationId": "setRegistrationPolicy", "security": [{ "cookieSession": [], "csrfToken": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegistrationPolicy" } } } }, "responses": { "204": { "description": "Updated" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "422": { "$ref": "#/components/responses/ValidationFailed" } } } },
-    "/api/v1/admin/mcp-clients": { "post": { "operationId": "registerMcpClient", "security": [{ "cookieSession": [], "csrfToken": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/McpClientRegistration" } } } }, "responses": { "204": { "description": "Registered" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "422": { "$ref": "#/components/responses/ValidationFailed" } } } },
-    "/api/v1/admin/mcp-authorizations": { "delete": { "operationId": "revokeMcpAuthorizationAsRoot", "security": [{ "cookieSession": [], "csrfToken": [] }], "parameters": [{ "$ref": "#/components/parameters/UserIdQuery" }, { "name": "client_id", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1 } }], "responses": { "204": { "description": "Revoked" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } } } },
-    "/auth/oidc/login": { "get": { "operationId": "beginOidcLogin", "responses": { "307": { "description": "Redirect to the authorization server" }, "500": { "$ref": "#/components/responses/Internal" } } } },
-    "/auth/oidc/callback": { "get": { "operationId": "completeOidcLogin", "parameters": [{ "name": "code", "in": "query", "schema": { "type": "string" } }, { "name": "state", "in": "query", "schema": { "type": "string" } }, { "name": "error", "in": "query", "schema": { "type": "string" } }], "responses": { "303": { "description": "Session established and redirect" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" } } } },
-    "/auth/root/login": { "post": { "operationId": "rootLogin", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RootLogin" } } } }, "responses": { "204": { "description": "Root session established" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "429": { "$ref": "#/components/responses/TooManyRequests" } } } },
-    "/auth/logout": { "post": { "operationId": "logout", "security": [{ "cookieSession": [], "csrfToken": [] }], "responses": { "204": { "description": "Session revoked" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/Forbidden" } } } }
+    "/api/v2/notes/{note_id}": {
+      "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
+      "get": {
+        "summary": "Read one visible note",
+        "responses": { "200": { "description": "note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "put": {
+        "summary": "Update a note using an optimistic revision",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteUpdate" } } } },
+        "responses": { "200": { "description": "updated note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "422": { "$ref": "#/components/responses/ValidationFailed" } }
+      },
+      "delete": {
+        "summary": "Soft-delete a note",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Revision" } } } },
+        "responses": { "200": { "description": "soft-deleted note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/api/v2/notes/{note_id}/source": {
+      "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
+      "get": {
+        "summary": "Export one note as AsciiDoc",
+        "responses": { "200": { "description": "canonical AsciiDoc export", "content": { "text/asciidoc": { "schema": { "type": "string" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/v2/notes/{note_id}/restore": {
+      "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
+      "post": {
+        "summary": "Restore a note within the retention period",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Revision" } } } },
+        "responses": { "200": { "description": "restored note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/api/v2/mcp-authorizations/{client_id}": {
+      "parameters": [{ "name": "client_id", "in": "path", "required": true, "schema": { "type": "string", "minLength": 1 } }],
+      "delete": {
+        "summary": "Revoke one MCP OAuth authorization and its tokens",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "responses": { "204": { "description": "revoked" }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    }
   },
   "components": {
-    "securitySchemes": { "cookieSession": { "type": "apiKey", "in": "cookie", "name": "marginalis_session" }, "csrfToken": { "type": "apiKey", "in": "header", "name": "X-CSRF-Token" } },
     "parameters": {
-      "NoteId": { "name": "note_id", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/UuidV7" } },
-      "UserId": { "name": "user_id", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/UuidV7" } },
-      "UserIdQuery": { "name": "user_id", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/UuidV7" } },
-      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 } },
-      "Cursor": { "name": "cursor", "in": "query", "schema": { "type": "string" } },
-      "IfMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string" } }
+      "NoteId": { "name": "note_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "CsrfToken": { "name": "X-CSRF-Token", "in": "header", "required": true, "schema": { "type": "string", "minLength": 1 } }
     },
     "responses": {
-      "AuthenticationRequired": { "description": "Authentication is required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
-      "Forbidden": { "description": "Request is forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
-      "NotFound": { "description": "Resource is not available", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
-      "Conflict": { "description": "Concurrent or duplicate operation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
-      "ValidationFailed": { "description": "Input failed validation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
-      "Internal": { "description": "Service unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
-      "TooManyRequests": { "description": "Rate limited", "headers": { "Retry-After": { "schema": { "type": "integer" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
-      "NotePage": { "description": "Visible notes", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotePage" } } } }
+      "AuthenticationRequired": { "description": "OIDC session is required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "AuthenticationUnavailable": { "description": "authentication backend is temporarily unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "CsrfRejected": { "description": "same-origin or CSRF validation failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "Conflict": { "description": "revision conflicts or the operation violates an invariant", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "NotFound": { "description": "note or authorization is not visible", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "ValidationFailed": { "description": "note input is invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
     },
     "schemas": {
-      "UuidV7": { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", "description": "UUID version 7" },
-      "Health": { "type": "object", "required": ["status", "api_version"], "properties": { "status": { "const": "ok" }, "api_version": { "const": "v1" } } },
-      "Readiness": { "type": "object", "required": ["status", "oidc"], "properties": { "status": { "enum": ["ready", "degraded"] }, "oidc": { "enum": ["available", "unavailable"] } } },
-      "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "enum": ["authentication-required", "forbidden", "not-found", "validation-failed", "conflict", "too-many-requests", "internal"] }, "message": { "type": "string" } } },
-      "Session": { "type": "object", "required": ["user_id", "is_root"], "properties": { "user_id": { "$ref": "#/components/schemas/UuidV7" }, "is_root": { "type": "boolean" } } },
-      "NoteSummary": { "type": "object", "required": ["note_id", "title"], "properties": { "note_id": { "$ref": "#/components/schemas/UuidV7" }, "title": { "type": "string" } } },
-      "NoteMetadata": { "type": "object", "required": ["note_id", "title", "revision"], "properties": { "note_id": { "$ref": "#/components/schemas/UuidV7" }, "title": { "type": "string" }, "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" } } },
-      "DeletePreparation": { "type": "object", "required": ["note_id", "title", "revision", "incoming_reference_count", "confirmation_token"], "properties": { "note_id": { "$ref": "#/components/schemas/UuidV7" }, "title": { "type": "string" }, "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "incoming_reference_count": { "type": "integer", "format": "uint64", "description": "Number of incoming references visible to the requesting user." }, "confirmation_token": { "type": "string", "writeOnly": true } } },
-      "DeleteConfirmation": { "type": "object", "required": ["confirmation_token"], "properties": { "confirmation_token": { "type": "string", "writeOnly": true } } },
-      "NotePage": { "type": "object", "required": ["notes", "next_cursor"], "properties": { "notes": { "type": "array", "items": { "$ref": "#/components/schemas/NoteSummary" } }, "next_cursor": { "type": ["string", "null"] } } },
-      "AclUpdate": { "type": "object", "required": ["permission"], "properties": { "permission": { "type": ["string", "null"], "enum": ["read", "write", "admin", null] } } },
-      "RegistrationPolicy": { "type": "object", "required": ["policy"], "properties": { "policy": { "enum": ["open", "approval"] } } },
-      "PendingUser": { "type": "object", "required": ["user_id", "display_name"], "properties": { "user_id": { "$ref": "#/components/schemas/UuidV7" }, "display_name": { "type": "string" } } },
-      "McpClientRegistration": { "type": "object", "required": ["client_id", "display_name", "redirect_uris"], "properties": { "client_id": { "type": "string" }, "display_name": { "type": "string" }, "redirect_uris": { "type": "array", "items": { "type": "string", "format": "uri" } } } },
-      "McpAuthorization": { "type": "object", "required": ["client_id", "display_name", "scopes", "authorized_at", "last_used_at"], "properties": { "client_id": { "type": "string" }, "display_name": { "type": "string" }, "scopes": { "type": "array", "items": { "type": "string" } }, "authorized_at": { "type": "string", "format": "date-time" }, "last_used_at": { "type": ["string", "null"], "format": "date-time" } } }
-      ,"RootLogin": { "type": "object", "required": ["password"], "properties": { "password": { "type": "string", "format": "password", "writeOnly": true } } }
+      "Health": { "type": "object", "required": ["status", "api_version"], "properties": { "status": { "const": "ok" }, "api_version": { "const": "v2" } } },
+      "Session": { "type": "object", "required": ["issuer", "subject", "is_administrator"], "properties": { "issuer": { "type": "string", "format": "uri" }, "subject": { "type": "string" }, "is_administrator": { "type": "boolean" } } },
+      "NoteDraft": { "type": "object", "required": ["title", "body", "tags"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "body": { "type": "string" }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 64 } } } },
+      "NoteUpdate": { "allOf": [{ "$ref": "#/components/schemas/NoteDraft" }, { "$ref": "#/components/schemas/Revision" }] },
+      "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } } },
+      "Note": { "type": "object", "required": ["note_id", "title", "body", "tags", "created_at_ms", "updated_at_ms", "revision"], "properties": { "note_id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "body": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "created_at_ms": { "type": "integer" }, "updated_at_ms": { "type": "integer" }, "revision": { "type": "integer", "minimum": 1 } } },
+      "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } }
     }
   }
 }

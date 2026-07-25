@@ -64,7 +64,7 @@
         {
           default = rustPlatform.buildRustPackage {
             pname = "marginalis";
-            version = "0.2.0";
+            version = "0.3.0";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;
@@ -84,7 +84,7 @@
             doCheck = false;
             installPhase = ''
               install -Dm755 target/${pkgs.stdenv.hostPlatform.rust.cargoShortTarget}/release/marginalis-service $out/bin/marginalis
-              install -Dm644 docs/openapi-v3.json $out/share/marginalis/openapi.json
+              install -Dm644 docs/openapi.json $out/share/marginalis/openapi.json
             '';
           };
         }
@@ -229,7 +229,7 @@
               machine.succeed(
                   "curl -fsS http://127.0.0.1:3000/api/v2/openapi.json | jq -e '.openapi == \"3.1.0\"'"
               )
-              machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM v3_notes'")
+              machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM notes'")
             '';
           };
 

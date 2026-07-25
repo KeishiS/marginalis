@@ -2,15 +2,11 @@
 
 use std::{collections::HashSet, fmt, future::Future, str::FromStr, time::Duration};
 
-use marginalis_application::{
-    McpRefreshTokenRotation, OidcLoginAttempt, OidcLoginAttemptStore,
-};
+use marginalis_application::{McpRefreshTokenRotation, OidcLoginAttempt, OidcLoginAttemptStore};
 use marginalis_domain::{
-    ARCHIVE_FORMAT, Actor, Archive,
-    AuthenticatedSession, McpAuthenticatedActor,
-    McpAuthorizationGrant, Note, NoteAclEntry,
-    NoteBundle, NoteDraft, WebSession, EntityId,
-    McpOAuthClient, NoteId, NotePermission, UnixMillis,
+    ARCHIVE_FORMAT, Actor, Archive, AuthenticatedSession, EntityId, McpAuthenticatedActor,
+    McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry, NoteBundle, NoteDraft, NoteId,
+    NotePermission, UnixMillis, WebSession,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -40,27 +36,6 @@ CREATE TABLE note_acl (
     permission INTEGER NOT NULL CHECK (permission BETWEEN 1 AND 3),
     PRIMARY KEY (note_id, issuer, subject)
 ) STRICT;
-
-CREATE TABLE note_references (
-    source_note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
-    source_start INTEGER NOT NULL CHECK (source_start >= 0),
-    source_end INTEGER NOT NULL CHECK (source_end > source_start),
-    target_note_id TEXT NOT NULL,
-    target_anchor TEXT,
-    PRIMARY KEY (source_note_id, source_start, source_end)
-) STRICT;
-
-CREATE TABLE note_anchors (
-    note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
-    anchor_id TEXT NOT NULL,
-    PRIMARY KEY (note_id, anchor_id)
-) STRICT;
-
-CREATE VIRTUAL TABLE note_search USING fts5(
-    note_id UNINDEXED,
-    title,
-    body
-);
 
 CREATE TABLE web_sessions (
     session_id_hash BLOB PRIMARY KEY NOT NULL,
@@ -597,7 +572,7 @@ impl SqliteDatabase {
         transaction.commit().await.map_err(database_error)
     }
 
-    /// 正本、直接ACL、検索投影を同一transactionで作成する。
+    /// 正本と直接ACLを同一transactionで作成する。
     pub async fn create_note(
         &self,
         note: &Note,
@@ -633,7 +608,6 @@ impl SqliteDatabase {
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
-        insert_search_row(&mut transaction, note).await?;
         transaction.commit().await.map_err(database_error)
     }
 
@@ -785,17 +759,11 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         let note = note_from_row(row)?;
-        sqlx::query("DELETE FROM note_search WHERE note_id = ?")
-            .bind(note_id.to_string())
-            .execute(&mut *transaction)
-            .await
-            .map_err(database_error)?;
-        insert_search_row(&mut transaction, &note).await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
     }
 
-    /// ノートを通常の参照・検索から除外し、30日間の復元候補にする。
+    /// ノートを通常の閲覧経路から除外し、30日間の復元候補にする。
     pub async fn soft_delete_note(
         &self,
         note_id: NoteId,
@@ -817,11 +785,6 @@ impl SqliteDatabase {
         if result.rows_affected() != 1 {
             return Err(SqliteStoreError::Conflict);
         }
-        sqlx::query("DELETE FROM note_search WHERE note_id = ?")
-            .bind(note_id.to_string())
-            .execute(&mut *transaction)
-            .await
-            .map_err(database_error)?;
         transaction.commit().await.map_err(database_error)
     }
 
@@ -855,7 +818,6 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         let note = note_from_row(row)?;
-        insert_search_row(&mut transaction, &note).await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
     }
@@ -863,21 +825,12 @@ impl SqliteDatabase {
     /// retention期限を過ぎた削除済みノートを物理削除する。
     pub async fn purge_deleted_before(&self, cutoff: UnixMillis) -> Result<u64, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        sqlx::query(
-            "DELETE FROM note_search WHERE note_id IN
-             (SELECT note_id FROM notes WHERE deleted_at_ms IS NOT NULL AND deleted_at_ms < ?)",
-        )
-        .bind(cutoff.get())
-        .execute(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        let result = sqlx::query(
-            "DELETE FROM notes WHERE deleted_at_ms IS NOT NULL AND deleted_at_ms < ?",
-        )
-        .bind(cutoff.get())
-        .execute(&mut *transaction)
-        .await
-        .map_err(database_error)?;
+        let result =
+            sqlx::query("DELETE FROM notes WHERE deleted_at_ms IS NOT NULL AND deleted_at_ms < ?")
+                .bind(cutoff.get())
+                .execute(&mut *transaction)
+                .await
+                .map_err(database_error)?;
         transaction.commit().await.map_err(database_error)?;
         Ok(result.rows_affected())
     }
@@ -942,10 +895,7 @@ impl SqliteDatabase {
         transaction.commit().await.map_err(database_error)
     }
 
-    pub async fn note_acl(
-        &self,
-        note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, SqliteStoreError> {
+    pub async fn note_acl(&self, note_id: NoteId) -> Result<Vec<NoteAclEntry>, SqliteStoreError> {
         let rows = sqlx::query(
             "SELECT issuer, subject, permission FROM note_acl
              WHERE note_id = ? ORDER BY issuer ASC, subject ASC",
@@ -1012,13 +962,12 @@ impl SqliteDatabase {
             {
                 return Err(SqliteStoreError::CorruptNote);
             }
-            let normalized =
-                marginalis_asciidoc::validate_note_draft(NoteDraft {
-                    title: bundle.note.title.clone(),
-                    body: bundle.note.body.clone(),
-                    tags: bundle.note.tags.clone(),
-                })
-                .map_err(|_| SqliteStoreError::CorruptNote)?;
+            let normalized = marginalis_asciidoc::validate_note_draft(NoteDraft {
+                title: bundle.note.title.clone(),
+                body: bundle.note.body.clone(),
+                tags: bundle.note.tags.clone(),
+            })
+            .map_err(|_| SqliteStoreError::CorruptNote)?;
             if normalized.title != bundle.note.title
                 || normalized.body != bundle.note.body
                 || normalized.tags != bundle.note.tags
@@ -1065,14 +1014,10 @@ impl SqliteDatabase {
                 .await
                 .map_err(database_error)?;
             }
-            if bundle.note.deleted_at.is_none() {
-                insert_search_row(&mut transaction, &bundle.note).await?;
-            }
         }
         transaction.commit().await.map_err(database_error)
     }
 }
-
 
 async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let mut transaction = pool.begin().await?;
@@ -1081,12 +1026,24 @@ async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     )
     .execute(&mut *transaction)
     .await?;
-    let version = sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
-    )
-    .fetch_one(&mut *transaction)
-    .await?;
+    let version =
+        sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")
+            .fetch_one(&mut *transaction)
+            .await?;
     if version == 0 {
+        let existing_tables = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sqlite_schema
+             WHERE type = 'table'
+               AND name NOT LIKE 'sqlite_%'
+               AND name != 'schema_migrations'",
+        )
+        .fetch_one(&mut *transaction)
+        .await?;
+        if existing_tables != 0 {
+            return Err(sqlx::Error::Protocol(
+                "database initialization requires an empty database".into(),
+            ));
+        }
         sqlx::raw_sql(INITIAL_SCHEMA)
             .execute(&mut *transaction)
             .await?;
@@ -1100,20 +1057,6 @@ async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         )));
     }
     transaction.commit().await
-}
-
-async fn insert_search_row(
-    transaction: &mut sqlx::Transaction<'_, Sqlite>,
-    note: &Note,
-) -> Result<(), SqliteStoreError> {
-    sqlx::query("INSERT INTO note_search (note_id, title, body) VALUES (?, ?, ?)")
-        .bind(note.note_id.to_string())
-        .bind(&note.title)
-        .bind(&note.body)
-        .execute(&mut **transaction)
-        .await
-        .map_err(database_error)?;
-    Ok(())
 }
 
 async fn insert_note_row(
@@ -1181,8 +1124,7 @@ fn session_from_row(
                 .map_err(database_error)?,
         },
         idle_expires_at: UnixMillis::new(
-            row.try_get("idle_expires_at_ms")
-                .map_err(database_error)?,
+            row.try_get("idle_expires_at_ms").map_err(database_error)?,
         ),
         absolute_expires_at: UnixMillis::new(
             row.try_get("absolute_expires_at_ms")
@@ -1277,12 +1219,42 @@ mod tests {
 
     use marginalis_application::McpRefreshTokenRotation;
     use marginalis_domain::{
-        Actor, Archive, McpAuthorizationGrant, Note,
-        NoteAclEntry, NoteDraft, WebSession, EntityId,
-        McpOAuthClient, NoteId, NotePermission, UnixMillis,
+        Actor, Archive, EntityId, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry,
+        NoteDraft, NoteId, NotePermission, UnixMillis, WebSession,
     };
 
     use super::*;
+
+    #[tokio::test]
+    async fn initialization_rejects_a_database_with_unknown_tables() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("database");
+        sqlx::query("CREATE TABLE v3_notes (note_id TEXT PRIMARY KEY NOT NULL) STRICT")
+            .execute(&pool)
+            .await
+            .expect("transitional table");
+
+        let error = migrate(&pool)
+            .await
+            .expect_err("non-empty database must be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("initialization requires an empty database")
+        );
+        assert!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'notes'"
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("schema query")
+                == 0
+        );
+    }
 
     #[tokio::test]
     async fn single_source_updates_and_purges_notes_transactionally() {
@@ -1803,7 +1775,4 @@ mod tests {
                 .is_some()
         );
     }
-
-
 }
-

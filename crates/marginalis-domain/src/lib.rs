@@ -201,4 +201,3 @@ mod tests {
         assert!(!NotePermission::Read.permits(NotePermission::Write));
     }
 }
-

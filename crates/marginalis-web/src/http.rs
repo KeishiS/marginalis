@@ -1,6 +1,6 @@
 //! v0.3.0専用のHTTP APIと早期閲覧UI。
 //!
-//! このmoduleはv0.2の`/api/v1`・root管理・ローカル`UserId`を参照しない。composition rootは
+//! 旧`/api/v1`・root管理・ローカル`UserId`を参照しない。composition rootは
 //! v0.3.0ではこのrouterだけを公開する。
 
 use super::{RequestId, assign_request_id};
@@ -21,17 +21,17 @@ use axum::{
     routing::{get, post},
 };
 use marginalis_application::{
-    AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthUseCaseError, NoteUseCaseError,
-    McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
+    AuthenticationUseCaseError, McpAuthorizationRequest, McpOAuthUseCaseError, McpOAuthUseCases,
+    NoteUseCaseError, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
 };
-use marginalis_domain::{Actor, Note, NoteDraft, EntityId, NoteId};
+use marginalis_domain::{Actor, EntityId, Note, NoteDraft, NoteId};
 use marginalis_mcp::{JsonRpcRequest, JsonRpcResponse};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, info_span};
 
 pub const API_VERSION: &str = "v2";
-pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi-v3.json");
+pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
 const SESSION_COOKIE: &str = "marginalis_session";
 const CSRF_COOKIE: &str = "marginalis_csrf";
 const RETURN_TO_COOKIE: &str = "marginalis_return_to";
@@ -306,10 +306,7 @@ pub fn router(state: ApiState) -> Router {
         .layer(middleware::from_fn(assign_request_id))
 }
 
-async fn security_headers(
-    request: axum::http::Request<axum::body::Body>,
-    next: Next,
-) -> Response {
+async fn security_headers(request: axum::http::Request<axum::body::Body>, next: Next) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(
@@ -509,7 +506,9 @@ async fn mcp_resource_metadata(
     ))
 }
 
-async fn mcp_server_metadata(State(state): State<ApiState>) -> HandlerResult<Json<serde_json::Value>> {
+async fn mcp_server_metadata(
+    State(state): State<ApiState>,
+) -> HandlerResult<Json<serde_json::Value>> {
     let endpoint = mcp_endpoint(&state)?;
     Ok(Json(
         serde_json::json!({"issuer": endpoint.authorization_server_uri, "authorization_endpoint": endpoint.authorization_endpoint_uri, "token_endpoint": endpoint.token_endpoint_uri, "registration_endpoint": format!("{}/oauth/register", endpoint.authorization_server_uri.trim_end_matches('/')), "response_types_supported": ["code"], "grant_types_supported": ["authorization_code", "refresh_token"], "code_challenge_methods_supported": ["S256"], "token_endpoint_auth_methods_supported": ["none"]}),
@@ -1487,11 +1486,10 @@ mod tests {
     use async_trait::async_trait;
     use axum::{body::Body, http::Request};
     use marginalis_application::{
-        AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, McpTokenPair,
+        AuthenticationUseCaseError, McpOAuthUseCaseError, McpTokenPair, NoteUseCaseError,
     };
     use marginalis_domain::{
-        AuthenticatedSession, McpAuthenticatedActor, WebSession,
-        McpOAuthClient,
+        AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, WebSession,
     };
     use tower::ServiceExt;
 
@@ -1499,10 +1497,7 @@ mod tests {
 
     #[async_trait]
     impl NoteUseCases for Notes {
-        async fn list_visible_notes(
-            &self,
-            _actor: Actor,
-        ) -> Result<Vec<Note>, NoteUseCaseError> {
+        async fn list_visible_notes(&self, _actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
             Ok(Vec::new())
         }
 
@@ -1665,15 +1660,13 @@ mod tests {
             _resource_uri: String,
             _scope: String,
         ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
-            Ok(
-                (token == "valid-token").then(|| McpAuthenticatedActor {
-                    actor: Actor {
-                        issuer: "https://kanidm.example.test".into(),
-                        subject: "alice".into(),
-                        is_administrator: false,
-                    },
-                }),
-            )
+            Ok((token == "valid-token").then(|| McpAuthenticatedActor {
+                actor: Actor {
+                    issuer: "https://kanidm.example.test".into(),
+                    subject: "alice".into(),
+                    is_administrator: false,
+                },
+            }))
         }
         async fn revoke(
             &self,
@@ -1763,7 +1756,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn health_is_public_but_notes_require_a_v3_session() {
+    async fn health_is_public_but_notes_require_a_session() {
         let health = app()
             .oneshot(
                 Request::get("/api/v2/health")
@@ -1811,10 +1804,7 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            OPENAPI_DOCUMENT,
-            include_str!("../../../docs/openapi-v3.json")
-        );
+        assert_eq!(OPENAPI_DOCUMENT, include_str!("../../../docs/openapi.json"));
     }
 
     #[tokio::test]
@@ -2091,5 +2081,3 @@ mod tests {
         assert_eq!(mcp.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }
-
-
