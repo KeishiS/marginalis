@@ -2,7 +2,8 @@
 
 ## 状態
 
-実装完了、実環境受入待ち。[037](037-v0.3.0-architecture-rebaseline.md)の認証・認可決定を実装した。
+完了。[037](037-v0.3.0-architecture-rebaseline.md)の認証・認可決定を実装し、
+2026-07-25に実環境のKanidm 1.10と対象MCP clientによる受入を完了した。
 検証済み ID token からの構成可能な group claim の fail-closed な読取りを実装した。MCP は Authorization Code + PKCE、refresh
 rotation、Dynamic Client Registration、認可取消、OAuth/Protected Resource metadata、Streamable HTTP
 のノート操作を提供する。v0.3 の本番用 router、SQLite、OIDC・session・MCP OAuth serviceを結合した

@@ -12,7 +12,8 @@
 `v0.2.0`は、実環境受入、Pull Request、`main`上の最終検証、タグ公開、タグで起動した
 リリースゲートを完了しました（2026-07-24）。その後の検討により、機能拡充の前に
 `v0.3.0`で破壊的なアーキテクチャ再設計を行うことを決定しました。旧 API、旧保存形式、
-ローカル `root` 認証との互換性は維持しません。
+ローカル `root` 認証との互換性は維持しません。`v0.3.0`の自動検証と実環境受入は
+2026-07-25に完了し、現在はPull Request、`main`上の最終検証、タグ公開を進めています。
 
 `v0.2.0`の正式リリース後は`-rc.N`付きの版を公開せず、ロードマップ上の成果を
 `v0.x.y`形式の通常版として順次公開します。各公開前には、リリースゲートと変更範囲に
@@ -31,12 +32,12 @@
 | 正式公開（完了） | [036](../issues/036-v0.2.0-release-acceptance.md) | RCの受入結果と正式版の差分を検証し、`v0.2.0`を公開する | 完了（2026-07-24、`v0.2.0`タグ） |
 | 1（完了） | [037](../issues/037-v0.3.0-architecture-rebaseline.md) | SQLite 正本、Kanidm group 認可、新 API に再設計する | データ正本、認可、MCP、削除、公開 API の仕様を固定した |
 | 2（完了） | [038](../issues/038-sqlite-canonical-notes-and-asciidoc-bundles.md) | SQLite の単一正本と AsciiDoc import/export を実装する | ファイル正本・操作ジャーナルなしにノートと ACL を一 transaction で更新する |
-| 3（実装完了） | [039](../issues/039-kanidm-group-authorization-and-mcp-oauth.md) | Kanidm 1.10 group claim 認可と MCP OAuth を実装する | 自動試験済み。対象 MCP client の実環境受入は段階 6 で行う |
-| 4（実装完了） | [040](../issues/040-v0.3.0-nixos-and-e2e-foundation.md) | NixOS 配備と Kanidm 1.10 E2E を release gate に組み込む | TLS、subpath、OIDC、NixOS module を CI で再現した |
+| 3（完了） | [039](../issues/039-kanidm-group-authorization-and-mcp-oauth.md) | Kanidm 1.10 group claim 認可と MCP OAuth を実装する | 自動試験と対象 MCP client の実環境受入を完了した |
+| 4（完了） | [040](../issues/040-v0.3.0-nixos-and-e2e-foundation.md) | NixOS 配備と Kanidm 1.10 E2E を release gate に組み込む | TLS、subpath、OIDC、NixOS module を CI で再現した |
 | 5（完了） | [041](../issues/041-web-ui-and-soft-deletion.md) | 閲覧用 Web UI と 30 日間のソフトデリートを提供する | API、MCP、Web UI が同一の可視性を守り、期限後の物理削除を自動化する |
 | 横断（完了） | [043](../issues/043-production-reachability-and-test-coverage.md) | 本番到達性とv0.3 test coverageを分離して可視化する | 旧実装のproduction graph復帰を拒否し、未実行箇所を試験不足と不要コードに分類できる |
 | 横断（完了） | [044](../issues/044-source-layout-and-documentation-boundaries.md) | ソース配置と規範文書を責務単位に整理する | 実行経路を短く追跡でき、機能変更時に読む範囲と文書の重複が限定される |
-| 6（実環境受入待ち） | [042](../issues/042-v0.3.0-release-acceptance.md) | 空の新環境で v0.3.0 を受入・公開する | Kanidm 1.10 E2E、MCP 認可、NixOS 配備が成功し、破壊的初期化手順が確定する |
+| 6（公開手続き中） | [042](../issues/042-v0.3.0-release-acceptance.md) | 空の新環境で v0.3.0 を受入・公開する | 自動検証と実環境受入は完了。PR、main上の最終検証、タグ公開を残す |
 
 ## 継続的な改善
 

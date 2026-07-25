@@ -34,7 +34,8 @@ AsciiDoc関連のIssueでは、MarginalisをAdocWeaveへ組み込む処理を扱
 
 横断的な品質確認として、[043: 本番到達性とテストカバレッジの可視化](043-production-reachability-and-test-coverage.md)
 と[044: ソース配置と文書境界の整理](044-source-layout-and-documentation-boundaries.md)を完了した。
-残る段階は042の実環境リリース受入である。
+[042: v0.3.0のリリース受入](042-v0.3.0-release-acceptance.md)は自動検証と実環境受入を完了し、
+Pull Request、`main`上の最終検証、タグ公開を進めている。
 
 旧設計を前提とする未完了 Issue は削除せず履歴として保持する。新規実装の対象にするかは、
 v0.3.0 公開後に再評価する。
