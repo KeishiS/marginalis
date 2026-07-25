@@ -59,8 +59,10 @@ kanidm service-account api-token generate \
 ```
 
 最後のコマンドは token を一度だけ表示する。`--readwrite` は指定しない。表示値を root のみが読める秘密
-ファイルへ保存し、NixOS 設定の `membershipTokenFile` と一致させる。token を shell history、Nix 式、
-journal、Git に書き込んではならない。
+ファイルへ保存し、NixOS 設定の `membershipTokenFile` と一致させる。module は systemd の
+`LoadCredential` を使うため、PID 1 がこの元ファイルを読み、実行時に限って `marginalis` サービスへ
+credential を渡す。したがって元ファイルを `marginalis` ユーザー所有・可読にする必要はない。token を
+shell history、Nix 式、journal、Git に書き込んではならない。
 
 ```bash
 sudo install -m 0600 -o root -g root /dev/null \
