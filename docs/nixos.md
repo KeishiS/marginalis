@@ -82,14 +82,21 @@ kanidm group create marginalis-membership-readers idm_admin
 kanidm group add-members marginalis-membership-readers marginalis-membership
 ```
 
-ACP 作成だけには read-write token と `idm_access_control_admins` の一時的な権限が必要である。次の
-token は作成直後だけ使用し、後続の手順で必ず失効させる。表示された token は shell history に保存せず、
-プロンプトへ貼り付ける。
+ACP 作成には system administrator である `admin` の一時的な read-write token が必要である。
+`idm_admin` は IDM の person/group 管理者であり、`idm_access_control_admins` を変更できない。
+service account を一時的にも `idm_access_control_admins` へ加入させてはならない。次の token は作成直後
+だけ使用し、後続の手順で必ず失効させる。表示された token は shell history に保存せず、プロンプトへ
+貼り付ける。
 
 ```bash
-kanidm group add-members idm_access_control_admins marginalis-membership
+kanidm login \
+  --url https://id.example.test \
+  --ca /etc/ssl/kanidm-ca.pem \
+  --name admin
+kanidm reauth
+
 kanidm service-account api-token generate --readwrite \
-  marginalis-membership "one-time ACP bootstrap"
+  admin "one-time Marginalis ACP bootstrap"
 
 read -r -s -p 'Paste one-time token: ' BOOTSTRAP_TOKEN
 echo
@@ -129,24 +136,22 @@ curl --fail --show-error --cacert /etc/ssl/kanidm-ca.pem \
 JSON
 ```
 
-成功後、temporary な権限と token を必ず除去する。`<bootstrap-token-uuid>` は
+成功後、temporary な token を必ず失効させる。`<bootstrap-token-uuid>` は
 `api-token status` の UUID へ置き換える。最後に生成する read-only token だけを
 `membershipTokenFile` へ保存する。
 
 ```bash
 unset BOOTSTRAP_TOKEN
-kanidm group remove-members idm_access_control_admins marginalis-membership
-kanidm service-account api-token status marginalis-membership
+kanidm service-account api-token status admin
 kanidm service-account api-token destroy \
-  marginalis-membership <bootstrap-token-uuid>
+  admin <bootstrap-token-uuid>
 
 kanidm service-account api-token generate \
   marginalis-membership "marginalis-production-2026"
 ```
 
 新しい read-only token で `GET /v1/person/<test-user>` を実行し、応答に `memberof` 以外の不要な
-属性が含まれないことを確認する。失敗時は service account が
-`idm_access_control_admins` に残っていないことを先に確認する。
+属性が含まれないことを確認する。
 
 token の状態とローテーションは次で扱う。新 token を secret manager へ反映し、Marginalis を再起動して
 から、旧 token の UUID を失効させる。
