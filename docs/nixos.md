@@ -151,6 +151,42 @@ kanidm service-account api-token generate \
 新しい read-only token で `GET /v1/person/<test-user>` を実行し、応答に `memberof` 以外の不要な
 属性が含まれないことを確認する。
 
+### 最終権限確認
+
+`marginalis-membership` は対話ログインではなく API token で確認する。以下は root shell で実行する。
+`TEST_USER` は mail address を持つ一般ユーザーへ置き換える。最初の要求は token の主体を、二つ目は
+一般ユーザーの `memberof` だけが読めることを確認する。三つ目は mail が返らないことを確認する。
+
+```bash
+TOKEN="$(< /run/secrets/marginalis-kanidm-membership-token)"
+BASE_URL=https://id.example.test
+TEST_USER=alice
+
+curl --fail --silent --show-error --cacert /etc/ssl/kanidm-ca.pem \
+  -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/v1/self" \
+  | jq -e '.youare.attrs.name == ["marginalis-membership"]'
+
+curl --fail --silent --show-error --cacert /etc/ssl/kanidm-ca.pem \
+  -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/v1/person/$TEST_USER" \
+  | jq -e '. != null and (.attrs | keys == ["memberof"])'
+
+curl --fail --silent --show-error --cacert /etc/ssl/kanidm-ca.pem \
+  -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/v1/person/$TEST_USER/_attr/mail" \
+  | jq -e '. == null'
+
+unset TOKEN
+```
+
+各コマンドが exit status 0 なら読取り権限は期待どおりである。書込み要求を試験に使わない。read-only token
+であることは `idm_admin` session で次を実行して確認する。
+
+```bash
+kanidm service-account api-token status marginalis-membership
+```
+
 token の状態とローテーションは次で扱う。新 token を secret manager へ反映し、Marginalis を再起動して
 から、旧 token の UUID を失効させる。
 
