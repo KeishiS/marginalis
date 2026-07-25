@@ -9,18 +9,23 @@ Kanidm token を MCP client に渡すことはありません。
 | Protected Resource Metadata | RFC 9728で`B/mcp`から導出するURL |
 | Authorization Server Metadata | RFC 8414で`B`から導出するURL |
 | Dynamic Client Registration | `POST B/oauth/register` |
-| Authorization | `GET` / `POST B/oauth/authorize` |
+| Authorization開始 | `GET` / `POST B/oauth/authorize` |
+| Marginalis承認確定 | `POST B/oauth/authorize/consent` |
 | Token | `POST B/oauth/token` |
 
 ここで `B` は外部 base URL です。クライアントは Dynamic Client Registration を行い、Authorization
 Code + PKCE S256 を使います。未ログインで authorization endpoint を開いた場合は OIDC login へ移動し、
 認可リクエストへ安全に戻ります。
 
-OAuth clientからの認可開始はquery付き`GET`とform-encoded `POST`の両方を受け付けます。ChatGPTなどが
-client originから送る初回`POST`は、登録済みclient、redirect URI、resource、scope、PKCEを検証するだけで
-認可を確定しません。未ログイン時は`303 See Other`で`GET`のOIDC loginへ移動します。ログイン後に
-Marginalisが表示する承認formの`POST`だけが認可を作成し、Marginalisと同一originかつ同一sessionのCSRF
-tokenを必須とします。
+OAuth clientからの認可開始はquery付き`GET`とform-encoded `POST`の両方を受け付けます。POSTのOAuth
+parameterはURL queryとform bodyのどちらにあってもよく、両方にある場合は同値でなければ拒否します。
+ChatGPTやClaudeがclient originから送る初回POSTにclient自身のCSRF fieldが含まれていても、
+`B/oauth/authorize`は登録済みclient、redirect URI、resource、scope、PKCEを検証するだけで認可を
+確定しません。未ログイン時は`303 See Other`で`GET`のOIDC loginへ移動します。
+
+ログイン後にMarginalisが表示する承認formだけが`B/oauth/authorize/consent`へPOSTし、認可を作成します。
+このendpointはMarginalisと同一origin、同一session、Marginalisが発行したCSRF tokenを必須とします。
+外部clientの認可開始endpointと状態変更endpointを分け、field名による推測では分類しません。
 
 well-known suffixはhostとsubject pathの間へ挿入します。base URLがhost rootかsubpathかで
 URLが次のように変わります。
@@ -60,8 +65,9 @@ browser loginと承認を経ます。Claude.ai subscriptionでClaude Codeへロ�
 Claude CodeにはClaude.ai側のconnectorは同期されないため、上記の`claude mcp add`を使います。
 
 この許可リストは MCP transport 専用です。OAuth の承認画面は Marginalis が表示する Authorization Server
-との操作なので、承認 form POST は Marginalis と同一 Origin、同一 session の CSRF token の両方を必須とします。
-client originからの認可開始POSTにこの制約は適用しませんが、状態変更を一切行いません。
+との操作なので、`/oauth/authorize/consent`へのPOSTはMarginalisと同一Origin、同一sessionのCSRF tokenの
+両方を必須とします。client originから`/oauth/authorize`へ送る認可開始POSTにこの制約は適用しませんが、
+状態変更を一切行いません。
 
 Authorization Server は登録済み client、redirect URI、MCP resource URI、scope、PKCE S256 を login 前と
 承認時の両方で検証します。承認画面には登録済み client 名、要求 scope、redirect host を表示します。
