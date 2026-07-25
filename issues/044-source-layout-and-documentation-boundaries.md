@@ -8,7 +8,8 @@
 MCP transportへ分割した。SQLiteのschema、Web session、OIDC login attemptも独立moduleへ
 移し、note/ACL、archive、MCP OAuthの永続化も分離した。AsciiDoc archiveのcontent policyは
 入力境界へ移し、SQLite adapterからparser依存を除去した。規範文書の正本も主題別文書へ
-一本化した。残るWebのMCP OAuth handlerとmoduleごとのtest配置を整理する。
+一本化した。WebのMCP OAuth handlerも独立moduleへ移した。残るmoduleごとのtest配置と
+各moduleのimport明示化を整理する。
 
 ## 背景
 
