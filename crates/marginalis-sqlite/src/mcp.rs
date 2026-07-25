@@ -50,16 +50,14 @@ impl SqliteDatabase {
         let redirect_uris = serde_json::to_string(&client.redirect_uris)
             .map_err(|_| SqliteStoreError::CorruptNote)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        for statement in [
-            "DELETE FROM mcp_authorization_codes WHERE expires_at_ms <= ?",
-            "DELETE FROM mcp_access_tokens WHERE expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
-        ] {
-            sqlx::query(statement)
-                .bind(now.get())
-                .execute(&mut *transaction)
-                .await
-                .map_err(database_error)?;
-        }
+        sqlx::query(
+            "DELETE FROM mcp_access_tokens
+             WHERE expires_at_ms <= ? OR revoked_at_ms IS NOT NULL",
+        )
+        .bind(now.get())
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?;
         sqlx::query(
             "DELETE FROM mcp_refresh_tokens AS stale
              WHERE stale.revoked_at_ms IS NOT NULL
@@ -75,6 +73,27 @@ impl SqliteDatabase {
                 )",
         )
         .bind(now.get())
+        .bind(now.get())
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        sqlx::query(
+            "DELETE FROM mcp_authorization_codes AS stale
+             WHERE stale.expires_at_ms <= ?
+               AND (
+                    stale.token_family_id IS NULL
+                    OR (
+                        NOT EXISTS (
+                            SELECT 1 FROM mcp_access_tokens AS access
+                            WHERE access.token_family_id = stale.token_family_id
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM mcp_refresh_tokens AS refresh
+                            WHERE refresh.token_family_id = stale.token_family_id
+                        )
+                    )
+               )",
+        )
         .bind(now.get())
         .execute(&mut *transaction)
         .await
@@ -163,7 +182,7 @@ impl SqliteDatabase {
                  WHERE code_hash = ? AND client_id = ?
                    AND (? IS NULL OR redirect_uri = ?)
                    AND resource_uri = ? AND code_challenge = ?
-                   AND consumed_at_ms IS NOT NULL AND expires_at_ms > ?
+                   AND consumed_at_ms IS NOT NULL
                    AND token_family_id IS NOT NULL",
             )
             .bind(&code_hash)
@@ -172,7 +191,6 @@ impl SqliteDatabase {
             .bind(exchange.redirect_uri.as_deref())
             .bind(&exchange.resource_uri)
             .bind(&exchange.code_challenge)
-            .bind(now.get())
             .fetch_optional(&mut *transaction)
             .await
             .map_err(database_error)?;

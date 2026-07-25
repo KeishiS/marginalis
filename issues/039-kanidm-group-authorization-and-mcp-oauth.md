@@ -10,6 +10,8 @@ HTTP試験で、`server-users`拒否、`server-admins`可視性、MCP作成、RE
 access/refresh token失効を確認している。対象clientの実環境E2Eは後続作業とする。
 PKCE verifier は認可コードのatomicな消費条件に含め、誤ったverifierによるコード無効化を防ぐ。
 使用済みrefresh tokenの再提示時は永続化したtoken familyを検出し、そのfamily全体を失効させる。
+認可codeの消費とtoken pair発行も一つのSQLite transactionで行い、使用済みcodeの再提示時は
+対応するtoken familyを失効させる。
 公開composition rootの設定境界からローカルroot password、登録policy、旧MCP client metadata host設定を
 除去し、Kanidm group claim以外の利用者ライフサイクル設定を受け付けない。
 

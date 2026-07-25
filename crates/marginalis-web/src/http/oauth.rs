@@ -6,7 +6,7 @@ use axum::{
     Form, Json,
     body::Bytes,
     extract::{Path, RawQuery, State},
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
 };
 use marginalis_application::{
@@ -626,18 +626,30 @@ pub(super) async fn mcp_token(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
+    if let Some(authorization) = headers.get(header::AUTHORIZATION) {
+        let mut response = oauth_error_response(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "client authentication is unsupported",
+        );
+        if let Some(scheme) = authorization
+            .to_str()
+            .ok()
+            .and_then(|value| value.split_ascii_whitespace().next())
+            .filter(|scheme| valid_http_auth_scheme(scheme))
+        {
+            response.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_str(scheme).expect("validated HTTP authentication scheme"),
+            );
+        }
+        return Err(response);
+    }
     if !content_type_is(&headers, "application/x-www-form-urlencoded") {
         return Err(oauth_error_response(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "token request must be form encoded",
-        ));
-    }
-    if headers.contains_key(header::AUTHORIZATION) {
-        return Err(oauth_error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid_client",
-            "client authentication is unsupported",
         ));
     }
     let encoded = std::str::from_utf8(&body).map_err(|_| {
@@ -781,6 +793,30 @@ fn content_type_is(headers: &HeaderMap, expected: &str) -> bool {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
         .is_some_and(|value| value.trim().eq_ignore_ascii_case(expected))
+}
+
+fn valid_http_auth_scheme(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
 }
 
 pub(super) async fn revoke_mcp_authorization(

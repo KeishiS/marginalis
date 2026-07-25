@@ -56,8 +56,8 @@ impl McpRegistrationRateLimiter {
 pub struct McpEndpoint {
     pub oauth: Arc<dyn McpOAuthUseCases>,
     pub notes: Arc<dyn NoteUseCases>,
-    /// Browser-based MCP clients are restricted to these exact Origins. Native clients omit
-    /// `Origin` and authenticate every request with a Bearer token.
+    /// MCP requests that carry `Origin` are restricted to these exact values. Backend and native
+    /// clients normally omit `Origin` and authenticate every request with a Bearer token.
     pub allowed_origins: Vec<String>,
     pub resource_uri: String,
     pub metadata_uri: String,

@@ -60,6 +60,10 @@ HTTP callbackは`localhost`完全一致、またはloopback IP addressだけを�
 登録値と異なる値でも受け付けます。hostとport以外の部分は登録値との完全一致を維持します。HTTPS callbackは
 登録値と完全一致しなければなりません。SSH、container、WSL上のClaude Codeではbrowserからcallback
 listenerへ到達できる構成が別途必要です。
+このnative client profileはHTTPSとloopback HTTPだけを対象とし、private-use URI schemeは提供しません。
+一般的なnative application全体ではなく、loopback callbackを使う受入対象clientとの相互運用に限定します。
+RFC 8252がIP literalを推奨する一方、`localhost`はClaude Code互換性のために許容し、承認画面でlocal
+applicationへのredirectであることを明示します。
 
 Claude.aiのWeb UIでは、`Customize`の`Connectors`からcustom connectorとして
 `https://marginalis.sandi05.com/mcp`を追加します。この接続はAnthropicのcloudから行われ、OAuthの
@@ -81,7 +85,8 @@ refresh時のscopeは元のgrantの部分集合だけを許可し、発行する
 使用済み refresh token が正しい client と resource の組合せで再提示された場合は replay と判定し、
 同じ token family の access token と refresh token をすべて失効させます。利用者は再度認可してください。
 使用済み認可codeが同じclient、resource、PKCE bindingで再提示された場合も、同じtoken familyを失効させます。
-rotation の親子関係は、有効な子孫がある間保持します。これは
+認可codeの有効期限後も、対応するtoken familyが残る間はreplay検知情報を保持します。
+rotation の親子関係も、有効な子孫がある間保持します。これは
 [OAuth 2.0 Security Best Current Practice §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
 の replay 検知要件に従うものです。
 現行のschema versionは2です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
@@ -89,9 +94,23 @@ rotation の親子関係は、有効な子孫がある間保持します。こ�
 
 Dynamic Client Registration は 16 KiB の本文上限、10 分あたり 30 件の process 全体 rate limit、最大 1,000
 client の永続化上限を持ちます。grant を取得しない登録は 24 時間後、次の登録処理時に削除します。登録・token
-endpoint の失敗は OAuth の `error` / `error_description` 形式で返します。MCP requestでは無効または
-失効済みtokenを`401 invalid_token`、必要scopeを持たない有効なtokenを`403 insufficient_scope`として
-区別し、`WWW-Authenticate`にProtected Resource Metadata URLと必要scopeを含めます。
+endpointが受理したprotocol/application errorはOAuthの`error` / `error_description`形式で返します。
+本文上限超過、MCP無効時のroutingなどhandler外のHTTP境界の失敗はこの形式を保証しません。
+MCP requestでは無効または失効済みtokenを`401 invalid_token`、必要scopeを持たない有効なtokenを
+`403 insufficient_scope`として区別し、`WWW-Authenticate`にProtected Resource Metadata URLと必要scopeを
+含めます。
+public client専用token endpointでHTTP認証を試みた場合は`401 invalid_client`と、提示された認証schemeの
+`WWW-Authenticate`を返します。
+
+本リリースのChatGPT、Claude、Codex受入では、互換登録経路としてDynamic Client Registrationを使用します。
+client版と実測結果はrelease issueへ記録するまで未検証として扱います。MCP 2025-11-25が推奨（SHOULD）する
+Client ID Metadata Documentには意図的に対応しません。client指定URLをAuthorization Serverから取得する
+方式にはSSRF、名前解決変更、取得制限、cacheの対策が必要であり、受入対象のDCR経路に不要なoutbound HTTP
+依存を増やすためです。対象clientがDCRを廃止した場合は、この判断を再検討します。
+
+OAuth endpointへ一律のCORSは付与しません。authorization endpointはnavigation/form送信を受け、CORSを
+提供しません。token交換、Dynamic Client Registration、MCP requestはclient backendまたはnative client
+から行うことを受入試験で確認します。browser内JavaScriptから直接呼び出す汎用clientは対象外です。
 
 scope は `notes:read`、`notes:write`、`notes:delete` です。scope だけでは不十分であり、Web と同じ
 ノート ACL が必ず適用されます。`server-admins` はすべてのノートに管理者相当でアクセスします。

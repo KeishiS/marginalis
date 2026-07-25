@@ -409,12 +409,23 @@ mod tests {
         }
         async fn refresh_access_token(
             &self,
-            _refresh_token: String,
+            refresh_token: String,
             _client_id: String,
             _resource_uri: String,
-            _scopes: Option<Vec<String>>,
+            scopes: Option<Vec<String>>,
         ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
-            Err(McpOAuthUseCaseError::InvalidGrant)
+            if refresh_token == "refresh-ok" {
+                Ok(McpTokenPair {
+                    access_token: "downscoped-access".into(),
+                    refresh_token: "rotated-refresh".into(),
+                    access_expires_in_seconds: 300,
+                    scope: scopes
+                        .unwrap_or_else(|| vec!["notes:read".into()])
+                        .join(" "),
+                })
+            } else {
+                Err(McpOAuthUseCaseError::InvalidGrant)
+            }
         }
         async fn authenticate(
             &self,
@@ -599,6 +610,29 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("metadata body");
+        let metadata: serde_json::Value = serde_json::from_slice(&body).expect("metadata");
+        assert_eq!(
+            metadata["scopes_supported"],
+            serde_json::json!(["notes:read", "notes:write", "notes:delete"])
+        );
+
+        let protected = mcp_app()
+            .oneshot(
+                Request::get("/.well-known/oauth-protected-resource/mcp")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(protected.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(protected.into_body(), usize::MAX)
+            .await
+            .expect("metadata body");
+        let metadata: serde_json::Value = serde_json::from_slice(&body).expect("metadata");
+        assert_eq!(metadata["resource_name"], "Marginalis MCP");
     }
 
     #[tokio::test]
@@ -1043,6 +1077,30 @@ mod tests {
             .expect("body");
         let error: serde_json::Value = serde_json::from_slice(&body).expect("OAuth error");
         assert_eq!(error["error"], "unsupported_grant_type");
+
+        let client_authentication = mcp_app()
+            .oneshot(
+                Request::post("/oauth/token")
+                    .header(header::AUTHORIZATION, "Basic ZHVtbXk6ZHVtbXk=")
+                    .body(Body::from(
+                        "grant_type=authorization_code&code=code&client_id=client&resource=https%3A%2F%2Fexample.test%2Fmcp&code_verifier=verifier",
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(client_authentication.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            client_authentication
+                .headers()
+                .get(header::WWW_AUTHENTICATE),
+            Some(&"Basic".parse().expect("challenge"))
+        );
+        let body = axum::body::to_bytes(client_authentication.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let error: serde_json::Value = serde_json::from_slice(&body).expect("OAuth error");
+        assert_eq!(error["error"], "invalid_client");
     }
 
     #[tokio::test]
@@ -1077,6 +1135,24 @@ mod tests {
             .expect("body");
         let error: serde_json::Value = serde_json::from_slice(&body).expect("OAuth error");
         assert_eq!(error["error"], "invalid_request");
+
+        let downscoped = mcp_app()
+            .oneshot(
+                Request::post("/oauth/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from(
+                        "grant_type=refresh_token&refresh_token=refresh-ok&client_id=client&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread",
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(downscoped.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(downscoped.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let token: serde_json::Value = serde_json::from_slice(&body).expect("token");
+        assert_eq!(token["scope"], "notes:read");
     }
 
     #[tokio::test]

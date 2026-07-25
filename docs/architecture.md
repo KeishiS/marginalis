@@ -29,7 +29,10 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
   発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
 - OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う`ES256`だけを許可する。別の署名方式を
   追加する場合は[セキュリティ](security.md)の依存脆弱性判断を先に更新する。
-- access token と refresh token は hash だけを SQLite に保存する。MCP client に Kanidm token を渡さない。
+- authorization code、access token、refresh tokenはhashだけをSQLiteに保存する。認可codeの消費と
+  token pair発行は一つのtransactionで行い、codeまたはrefresh tokenのreplay時はtoken familyを失効する。
+  消費済みcodeは対応するtoken familyが残る間だけreplay検知用に保持する。
+  MCP clientにKanidm tokenを渡さない。
 - HTTP、MCP、Web UI は可視性・ACL・revision の業務規則を複製しない。
 
 ## ソース配置

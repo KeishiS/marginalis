@@ -12,6 +12,8 @@ OAuth 2.1 で保護した MCP endpoint を一つの認可モデルへ統合す�
 
 - `v0.2.x` の database、ファイル正本、`/api/v1`、ローカル root、MCP token は移行しない。
   空の SQLite database から初期化する。
+- 開発中の旧schema version 1も自動移行せず、schema version 2の空のdatabaseから再初期化する。
+  Dynamic Client Registrationと利用者のMCP認可をやり直す。
 - 公開 REST API を `/api/v2` とし、OpenAPI 正本を `docs/openapi.json` に置く。
 - Kanidm の所属定期照会と service account を廃止し、OIDC login 時に検証した `groups` claim を
   Web session と MCP authorization の有効期間中の権限 snapshot とする。
@@ -27,7 +29,9 @@ OAuth 2.1 で保護した MCP endpoint を一つの認可モデルへ統合す�
 ### セキュリティ
 
 - OAuth authorization code の消費を PKCE challenge と原子的に結合する。
+- 使用済みauthorization codeの再提示時に、発行済みtoken family全体を失効させる。
 - 使用済み refresh token の再提示時に token family 全体を失効させる。
+- token endpointで未対応のHTTP client認証が提示された場合、OAuth 2.1に従う`401` challengeを返す。
 - ブラウザー mutation は session 結合 CSRF token と同一 Origin を要求し、MCP browser request は
   明示した HTTPS Origin のみ許可する。
 

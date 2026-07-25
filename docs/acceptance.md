@@ -30,13 +30,18 @@ release issueで手動結果を記録する。
    fieldがあっても`same_origin_required`にならないことを確認する。一方、Marginalisの承認formから送る
    `POST /oauth/authorize/consent`は、OAuth clientのpopupやsandboxがopaqueな`Origin`を送っても、
    同一sessionのCSRF cookieとform tokenが一致する場合だけ認可を確定することを確認する。MCP requestの
-   `Origin`が設定済み許可リストに一致することも確認する。
+   `Origin`が設定済み許可リストに一致すること、無効tokenが`401 invalid_token`、scope不足が
+   `403 insufficient_scope`になることも確認する。token endpointへ`Authorization: Basic`を送った場合は
+   `401 invalid_client`と`WWW-Authenticate: Basic`になることを確認する。
    Claude Codeは`claude mcp add --transport http marginalis B/mcp`で追加し、`/mcp`から認証する。
    DCRで登録される`http://localhost:PORT/callback`に明示portがあることを確認する。
    Claude.ai Web UIは`Customize`の`Connectors`へ`B/mcp`をcustom connectorとして追加する。
    Claude.ai subscriptionでClaude Codeへログインしている場合は、同connectorがClaude Codeにも表示される
    ことを確認する。
 7. `marginalis-backup.service` が指定先に archive を作ること、日次 purge timer が有効なことを確認する。
+
+現行schema versionは2である。旧schemaからの自動移行は受入対象外であり、再配備時はarchiveを退避したうえで
+空のdatabaseを初期化し、MCP clientを再登録・再認可する。
 
 実施結果は release issue に、環境、client の版、Kanidm 1.10 の版、base URL（機密情報を除く）、
 各項目の結果として記録します。HTTP失敗時はresponseの`X-Request-Id`を記録し、同じIDの

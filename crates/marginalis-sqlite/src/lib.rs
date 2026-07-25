@@ -787,7 +787,7 @@ mod tests {
             scopes: vec!["notes:read".into()],
         };
         database
-            .issue_mcp_authorization_code("code", &grant, "challenge", UnixMillis::new(1_000))
+            .issue_mcp_authorization_code("code", &grant, "challenge", UnixMillis::new(100))
             .await
             .expect("authorization code");
         let exchanged = database
@@ -815,6 +815,21 @@ mod tests {
                 .expect("access token")
                 .is_some()
         );
+        assert!(
+            database
+                .register_mcp_client_bounded(
+                    &McpOAuthClient {
+                        client_id: "cleanup-trigger".into(),
+                        display_name: "Cleanup trigger".into(),
+                        redirect_uris: vec!["https://other.example/callback".into()],
+                    },
+                    UnixMillis::new(200),
+                    UnixMillis::new(0),
+                    10,
+                )
+                .await
+                .expect("cleanup while token family is active")
+        );
 
         let replay = database
             .exchange_mcp_authorization_code(
@@ -829,14 +844,14 @@ mod tests {
                     access_expires_at: UnixMillis::new(500),
                     refresh_expires_at: UnixMillis::new(900),
                 },
-                UnixMillis::new(3),
+                UnixMillis::new(201),
             )
             .await
             .expect("replayed exchange");
         assert!(replay.is_none());
         assert!(
             database
-                .authenticate_mcp_access_token("access", &grant.resource_uri, UnixMillis::new(4))
+                .authenticate_mcp_access_token("access", &grant.resource_uri, UnixMillis::new(202))
                 .await
                 .expect("revoked access token")
                 .is_none()
@@ -854,11 +869,99 @@ mod tests {
                         access_expires_at: UnixMillis::new(500),
                         refresh_expires_at: UnixMillis::new(900),
                     },
-                    UnixMillis::new(5),
+                    UnixMillis::new(203),
                 )
                 .await
                 .expect("revoked refresh token"),
             McpRefreshTokenRotationOutcome::InvalidToken
         ));
+    }
+
+    #[tokio::test]
+    async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let client = McpOAuthClient {
+            client_id: "client".into(),
+            display_name: "Client".into(),
+            redirect_uris: vec!["https://client.example/callback".into()],
+        };
+        database
+            .upsert_mcp_client(&client, UnixMillis::new(0))
+            .await
+            .expect("client");
+        let grant = McpAuthorizationGrant {
+            actor: Actor {
+                issuer: "https://id.example".into(),
+                subject: "alice".into(),
+                is_administrator: false,
+            },
+            client_id: client.client_id.clone(),
+            redirect_uri: client.redirect_uris[0].clone(),
+            resource_uri: "https://notes.example/mcp".into(),
+            scopes: vec!["notes:read".into()],
+        };
+        for code in ["first-code", "retryable-code"] {
+            database
+                .issue_mcp_authorization_code(code, &grant, "challenge", UnixMillis::new(1_000))
+                .await
+                .expect("authorization code");
+        }
+        database
+            .exchange_mcp_authorization_code(
+                McpAuthorizationCodeExchange {
+                    code: "first-code".into(),
+                    client_id: grant.client_id.clone(),
+                    redirect_uri: None,
+                    resource_uri: grant.resource_uri.clone(),
+                    code_challenge: "challenge".into(),
+                    access_token: "colliding-access".into(),
+                    refresh_token: "first-refresh".into(),
+                    access_expires_at: UnixMillis::new(500),
+                    refresh_expires_at: UnixMillis::new(900),
+                },
+                UnixMillis::new(1),
+            )
+            .await
+            .expect("first exchange")
+            .expect("first grant");
+
+        let failed = database
+            .exchange_mcp_authorization_code(
+                McpAuthorizationCodeExchange {
+                    code: "retryable-code".into(),
+                    client_id: grant.client_id.clone(),
+                    redirect_uri: None,
+                    resource_uri: grant.resource_uri.clone(),
+                    code_challenge: "challenge".into(),
+                    access_token: "colliding-access".into(),
+                    refresh_token: "failed-refresh".into(),
+                    access_expires_at: UnixMillis::new(500),
+                    refresh_expires_at: UnixMillis::new(900),
+                },
+                UnixMillis::new(2),
+            )
+            .await;
+        assert!(matches!(failed, Err(SqliteStoreError::Database(_))));
+
+        let retried = database
+            .exchange_mcp_authorization_code(
+                McpAuthorizationCodeExchange {
+                    code: "retryable-code".into(),
+                    client_id: grant.client_id,
+                    redirect_uri: None,
+                    resource_uri: grant.resource_uri,
+                    code_challenge: "challenge".into(),
+                    access_token: "retry-access".into(),
+                    refresh_token: "retry-refresh".into(),
+                    access_expires_at: UnixMillis::new(500),
+                    refresh_expires_at: UnixMillis::new(900),
+                },
+                UnixMillis::new(3),
+            )
+            .await
+            .expect("retry after rollback");
+        assert!(retried.is_some());
     }
 }
