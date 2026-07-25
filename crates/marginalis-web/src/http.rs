@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::mcp::{JsonRpcRequest, JsonRpcResponse, MCP_PROTOCOL_VERSION};
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Form, Path, Query, State},
@@ -25,7 +26,6 @@ use marginalis_application::{
     NoteUseCaseError, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
 };
 use marginalis_domain::{Actor, EntityId, Note, NoteDraft, NoteId};
-use marginalis_mcp::{JsonRpcRequest, JsonRpcResponse};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, info_span};
@@ -359,10 +359,8 @@ fn external_path(base_path: &str, path: &str) -> String {
 }
 
 fn valid_return_to(value: &str, base_path: &str) -> bool {
-    value.starts_with(&format!(
-        "{}/oauth/authorize?",
-        base_path.trim_end_matches('/')
-    )) && !value.starts_with("//")
+    value.starts_with(&external_path(base_path, "/oauth/authorize?"))
+        && !value.starts_with("//")
         && !value.contains('\r')
         && !value.contains('\n')
 }
@@ -1079,7 +1077,7 @@ async fn mcp_post(
     let response = match request.method.as_str() {
         "initialize" => JsonRpcResponse::success(
             id,
-            serde_json::json!({"protocolVersion": marginalis_mcp::MCP_PROTOCOL_VERSION, "capabilities":{"tools":{}}, "serverInfo":{"name":"marginalis","version":env!("CARGO_PKG_VERSION")}}),
+            serde_json::json!({"protocolVersion": MCP_PROTOCOL_VERSION, "capabilities":{"tools":{}}, "serverInfo":{"name":"marginalis","version":env!("CARGO_PKG_VERSION")}}),
         ),
         "tools/list" => JsonRpcResponse::success(
             id,
@@ -1125,11 +1123,84 @@ async fn mcp_tool_call(
         return JsonRpcResponse::error(id, -32602, "tool parameters are invalid");
     };
     let result = match call.name.as_str() {
-        "list_notes" => endpoint.notes.list_visible_notes(actor).await.map(|notes| serde_json::json!(notes.into_iter().map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"title":note.title,"revision":note.revision})).collect::<Vec<_>>())),
-        "get_note" => { let note_id = call.arguments.get("note_id").and_then(serde_json::Value::as_str).and_then(|value| EntityId::from_str(value).ok()).map(NoteId::new); match note_id { Some(note_id) => endpoint.notes.read_note(actor, note_id).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"title":note.title,"body":note.body,"tags":note.tags,"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") } }
-        "create_note" => match serde_json::from_value::<NoteInput>(call.arguments) { Ok(input) => endpoint.notes.create_note(actor, NoteDraft { title: input.title, body: input.body, tags: input.tags }).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), Err(_) => return JsonRpcResponse::error(id, -32602, "note arguments are invalid") },
-        "update_note" => match serde_json::from_value::<McpUpdate>(call.arguments) { Ok(input) => match EntityId::from_str(&input.note_id).ok().map(NoteId::new) { Some(note_id) => endpoint.notes.update_note(actor, note_id, NoteDraft { title: input.title, body: input.body, tags: input.tags }, input.expected_revision).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") }, Err(_) => return JsonRpcResponse::error(id, -32602, "update arguments are invalid") },
-        "delete_note" => match serde_json::from_value::<McpDelete>(call.arguments) { Ok(input) => match EntityId::from_str(&input.note_id).ok().map(NoteId::new) { Some(note_id) => endpoint.notes.soft_delete_note(actor, note_id, input.expected_revision).await.map(|note| serde_json::json!({"note_id":note.note_id.to_string(),"revision":note.revision})), None => return JsonRpcResponse::error(id, -32602, "note_id is invalid") }, Err(_) => return JsonRpcResponse::error(id, -32602, "delete arguments are invalid") },
+        "list_notes" => endpoint.notes.list_visible_notes(actor).await.map(|notes| {
+            serde_json::json!(
+                notes
+                    .into_iter()
+                    .map(|note| serde_json::json!({
+                        "note_id": note.note_id.to_string(),
+                        "title": note.title,
+                        "revision": note.revision,
+                    }))
+                    .collect::<Vec<_>>()
+            )
+        }),
+        "get_note" => {
+            let Some(note_id) = mcp_note_id(&call.arguments) else {
+                return JsonRpcResponse::error(id, -32602, "note_id is invalid");
+            };
+            endpoint.notes.read_note(actor, note_id).await.map(|note| {
+                serde_json::json!({
+                    "note_id": note.note_id.to_string(),
+                    "title": note.title,
+                    "body": note.body,
+                    "tags": note.tags,
+                    "revision": note.revision,
+                })
+            })
+        }
+        "create_note" => {
+            let Ok(input) = serde_json::from_value::<NoteInput>(call.arguments) else {
+                return JsonRpcResponse::error(id, -32602, "note arguments are invalid");
+            };
+            endpoint
+                .notes
+                .create_note(
+                    actor,
+                    NoteDraft {
+                        title: input.title,
+                        body: input.body,
+                        tags: input.tags,
+                    },
+                )
+                .await
+                .map(note_revision_json)
+        }
+        "update_note" => {
+            let Ok(input) = serde_json::from_value::<McpUpdate>(call.arguments) else {
+                return JsonRpcResponse::error(id, -32602, "update arguments are invalid");
+            };
+            let Some(note_id) = parse_note_id(&input.note_id).ok() else {
+                return JsonRpcResponse::error(id, -32602, "note_id is invalid");
+            };
+            endpoint
+                .notes
+                .update_note(
+                    actor,
+                    note_id,
+                    NoteDraft {
+                        title: input.title,
+                        body: input.body,
+                        tags: input.tags,
+                    },
+                    input.expected_revision,
+                )
+                .await
+                .map(note_revision_json)
+        }
+        "delete_note" => {
+            let Ok(input) = serde_json::from_value::<McpDelete>(call.arguments) else {
+                return JsonRpcResponse::error(id, -32602, "delete arguments are invalid");
+            };
+            let Some(note_id) = parse_note_id(&input.note_id).ok() else {
+                return JsonRpcResponse::error(id, -32602, "note_id is invalid");
+            };
+            endpoint
+                .notes
+                .soft_delete_note(actor, note_id, input.expected_revision)
+                .await
+                .map(note_revision_json)
+        }
         _ => return JsonRpcResponse::error(id, -32601, "tool not found"),
     };
     match result {
@@ -1139,6 +1210,20 @@ async fn mcp_tool_call(
         ),
         Err(_) => JsonRpcResponse::error(id, -32000, "note operation failed"),
     }
+}
+
+fn mcp_note_id(arguments: &serde_json::Value) -> Option<NoteId> {
+    arguments
+        .get("note_id")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| parse_note_id(value).ok())
+}
+
+fn note_revision_json(note: Note) -> serde_json::Value {
+    serde_json::json!({
+        "note_id": note.note_id.to_string(),
+        "revision": note.revision,
+    })
 }
 
 async fn session(
@@ -1741,6 +1826,8 @@ mod tests {
 
     #[test]
     fn external_paths_preserve_the_configured_subpath() {
+        assert_eq!(external_path("/", "/notes/123"), "/notes/123");
+        assert!(valid_return_to("/oauth/authorize?client_id=client", "/"));
         assert_eq!(
             external_path("/marginalis", "/notes/123"),
             "/marginalis/notes/123"
@@ -1752,6 +1839,11 @@ mod tests {
         assert!(!valid_return_to(
             "/oauth/authorize?client_id=client",
             "/marginalis"
+        ));
+        assert!(!valid_return_to("//oauth/authorize?client_id=client", "/"));
+        assert!(!valid_return_to(
+            "/oauth/authorize?client_id=client\r\nLocation:%20https://evil.test",
+            "/"
         ));
     }
 

@@ -25,7 +25,7 @@ async fn main() {
     }
     initialize_tracing();
     let result = match command.as_deref() {
-        None | Some("serve") => run().await,
+        None | Some("serve") => serve().await,
         Some("purge-deleted") => purge_deleted().await,
         Some("export-archive") => export_archive(arguments).await,
         Some("import-archive") => import_archive(arguments).await,
@@ -179,12 +179,8 @@ fn initialize_tracing() {
         .init();
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    run_v3().await
-}
-
-/// v0.3.0のcomposition root。旧ファイル正本・root管理・`/api/v1`を組み立てない。
-async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
+/// HTTP serviceのcomposition root。
+async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     verify_runtime_package_version()?;
     let (configuration, secrets) = ServerConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.storage.database_url).await?;
@@ -216,6 +212,7 @@ async fn run_v3() -> Result<(), Box<dyn std::error::Error>> {
     let oidc = std::sync::Arc::new(ServerOidcAuthenticationUseCases::new(
         database.clone(),
         oidc_configuration,
+        oidc_http_client,
         oidc,
     ));
     let sessions = std::sync::Arc::new(ServerWebSessionUseCases::new(

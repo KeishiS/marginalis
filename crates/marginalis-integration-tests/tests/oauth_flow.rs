@@ -9,7 +9,7 @@ use axum::{
     http::{Request, Response, StatusCode, header},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use marginalis_application::SessionLifetime;
+use marginalis_application::{OidcAuthenticationUseCases, SessionLifetime};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_integration_tests::MockIdentityProvider;
 use marginalis_server::{
@@ -71,6 +71,7 @@ impl TestServer {
         let oidc = Arc::new(ServerOidcAuthenticationUseCases::new(
             database.clone(),
             configuration,
+            reqwest::Client::new(),
             Some(discovered),
         ));
         let sessions = Arc::new(ServerWebSessionUseCases::new(
@@ -451,4 +452,27 @@ async fn oidc_rejects_a_subject_without_server_users_membership() {
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(cookie(&response, "marginalis_session").is_none());
+}
+
+#[tokio::test]
+async fn oidc_discovery_is_retried_with_the_configured_http_client() {
+    let idp = MockIdentityProvider::start(CLIENT_ID, CLIENT_SECRET).await;
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let configuration = OidcConfiguration::new(
+        idp.issuer,
+        CLIENT_ID.into(),
+        CLIENT_SECRET.into(),
+        BROWSER_ORIGIN,
+    )
+    .expect("OIDC configuration");
+    let authentication = ServerOidcAuthenticationUseCases::new(
+        database,
+        configuration,
+        reqwest::Client::new(),
+        None,
+    );
+
+    assert!(authentication.begin_login().await.is_ok());
 }

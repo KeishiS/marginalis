@@ -11,7 +11,6 @@ axum = { workspace = true, features = [ "form" ] }
 base64.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
-marginalis-mcp = { path = "../marginalis-mcp" }
 serde.workspace = true
 serde_json.workspace = true
 tower-http.workspace = true

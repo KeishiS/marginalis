@@ -1232,10 +1232,10 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .expect("database");
-        sqlx::query("CREATE TABLE v3_notes (note_id TEXT PRIMARY KEY NOT NULL) STRICT")
+        sqlx::query("CREATE TABLE unknown_notes (note_id TEXT PRIMARY KEY NOT NULL) STRICT")
             .execute(&pool)
             .await
-            .expect("transitional table");
+            .expect("unknown table");
 
         let error = migrate(&pool)
             .await
@@ -1260,7 +1260,7 @@ mod tests {
     async fn single_source_updates_and_purges_notes_transactionally() {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
-            .expect("v3 migration succeeds");
+            .expect("schema initialization succeeds");
         let note_id = NoteId::new(
             EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("v7 note ID"),
         );
@@ -1451,7 +1451,7 @@ mod tests {
     async fn sessions_retain_login_time_group_snapshot() {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
-            .expect("v3 migration succeeds");
+            .expect("schema initialization succeeds");
         let session = WebSession {
             session_id: "session-token".into(),
             csrf_token: "csrf-token".into(),

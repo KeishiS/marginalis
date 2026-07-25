@@ -69,6 +69,7 @@ pub struct ServerWebSessionUseCases {
 pub struct ServerOidcAuthenticationUseCases {
     database: SqliteDatabase,
     configuration: OidcConfiguration,
+    http_client: reqwest::Client,
     oidc: Arc<tokio::sync::RwLock<Option<OidcAuthentication>>>,
 }
 
@@ -76,11 +77,13 @@ impl ServerOidcAuthenticationUseCases {
     pub fn new(
         database: SqliteDatabase,
         configuration: OidcConfiguration,
+        http_client: reqwest::Client,
         oidc: Option<OidcAuthentication>,
     ) -> Self {
         Self {
             database,
             configuration,
+            http_client,
             oidc: Arc::new(tokio::sync::RwLock::new(oidc)),
         }
     }
@@ -90,9 +93,12 @@ impl ServerOidcAuthenticationUseCases {
         if let Some(oidc) = self.oidc.read().await.clone() {
             return Ok(oidc);
         }
-        let discovered = OidcAuthentication::discover(&self.configuration)
-            .await
-            .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        let discovered = OidcAuthentication::discover_with_http_client(
+            &self.configuration,
+            self.http_client.clone(),
+        )
+        .await
+        .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
         let mut oidc = self.oidc.write().await;
         Ok(oidc.get_or_insert(discovered).clone())
     }
@@ -944,7 +950,12 @@ mod tests {
             "https://marginalis.example.test",
         )
         .expect("configuration");
-        let authentication = ServerOidcAuthenticationUseCases::new(database, configuration, None);
+        let authentication = ServerOidcAuthenticationUseCases::new(
+            database,
+            configuration,
+            reqwest::Client::new(),
+            None,
+        );
         assert_eq!(
             authentication.begin_login().await,
             Err(AuthenticationUseCaseError::Unavailable)

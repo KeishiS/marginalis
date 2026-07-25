@@ -1163,19 +1163,12 @@ dependencies = [
  "marginalis-server",
  "marginalis-sqlite",
  "marginalis-web",
+ "reqwest",
  "serde_json",
  "sha2",
  "tokio",
  "tower",
  "url",
-]
-
-[[package]]
-name = "marginalis-mcp"
-version = "0.3.0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1190,6 +1183,7 @@ dependencies = [
  "marginalis-domain",
  "marginalis-sqlite",
  "rand 0.8.7",
+ "reqwest",
  "sha2",
  "time",
  "tokio",
@@ -1207,7 +1201,6 @@ dependencies = [
  "marginalis-asciidoc",
  "marginalis-auth-oidc",
  "marginalis-domain",
- "marginalis-mcp",
  "marginalis-server",
  "marginalis-sqlite",
  "marginalis-web",
@@ -1242,7 +1235,6 @@ dependencies = [
  "base64 0.22.1",
  "marginalis-application",
  "marginalis-domain",
- "marginalis-mcp",
  "serde",
  "serde_json",
  "tokio",

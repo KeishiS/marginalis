@@ -74,12 +74,6 @@ in
       description = "Absolute directory in which marginalis-backup.service creates timestamped backup generations. Set this only after choosing persistent backup storage and retention outside dataDir.";
     };
 
-    databaseUrl = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      description = "SQLite connection URL. Defaults to a database below dataDir.";
-    };
-
     oidc = {
       issuerUrl = mkOption {
         type = types.nullOr types.str;
@@ -144,6 +138,14 @@ in
         message = "services.marginalis.oidc.clientSecretFile must be set.";
       }
       {
+        assertion = lib.hasPrefix "/" cfg.dataDir;
+        message = "services.marginalis.dataDir must be an absolute path.";
+      }
+      {
+        assertion = cfg.oidc.clientSecretFile == null || lib.hasPrefix "/" cfg.oidc.clientSecretFile;
+        message = "services.marginalis.oidc.clientSecretFile must be an absolute path.";
+      }
+      {
         assertion = cfg.oidc.caCertificateFile == null || lib.hasPrefix "/" cfg.oidc.caCertificateFile;
         message = "services.marginalis.oidc.caCertificateFile must be an absolute path when set.";
       }
@@ -183,8 +185,7 @@ in
         RUST_LOG = cfg.logFilter;
         MARGINALIS_BASE_URL = cfg.baseUrl;
         MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
-        MARGINALIS_DATABASE_URL =
-          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
+        MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
         OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
         OIDC_CLIENT_ID = cfg.oidc.clientId;
         OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
@@ -201,12 +202,21 @@ in
         Restart = "on-failure";
         RestartSec = "5s";
         LoadCredential = [ "oidc-client-secret:${cfg.oidc.clientSecretFile}" ];
+        UMask = "0077";
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";
+        LockPersonality = true;
+        PrivateDevices = true;
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
         ProtectKernelTunables = true;
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
         RestrictAddressFamilies = [
           "AF_UNIX"
           "AF_INET"
@@ -232,8 +242,7 @@ in
       description = "Purge expired Marginalis soft-deleted notes";
       environment = {
         RUST_LOG = cfg.logFilter;
-        MARGINALIS_DATABASE_URL =
-          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
+        MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
       };
       serviceConfig = {
         Type = "oneshot";
@@ -241,11 +250,21 @@ in
         User = "marginalis";
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
+        UMask = "0077";
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";
+        LockPersonality = true;
+        PrivateDevices = true;
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
+        ProtectKernelTunables = true;
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
         RestrictAddressFamilies = [ "AF_UNIX" ];
         SystemCallFilter = [
           "@system-service"
@@ -276,8 +295,7 @@ in
       conflicts = [ "marginalis.service" ];
       environment = {
         RUST_LOG = cfg.logFilter;
-        MARGINALIS_DATABASE_URL =
-          if cfg.databaseUrl == null then "sqlite:${cfg.dataDir}/marginalis.sqlite" else cfg.databaseUrl;
+        MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
       };
       serviceConfig = {
         Type = "oneshot";
@@ -285,17 +303,22 @@ in
         User = "marginalis";
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
+        UMask = "0077";
         NoNewPrivileges = true;
         CapabilityBoundingSet = "";
+        LockPersonality = true;
+        PrivateDevices = true;
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
         ProtectKernelTunables = true;
-        RestrictAddressFamilies = [
-          "AF_UNIX"
-          "AF_INET"
-          "AF_INET6"
-        ];
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictAddressFamilies = [ "AF_UNIX" ];
         SystemCallFilter = [
           "@system-service"
           "~@privileged"

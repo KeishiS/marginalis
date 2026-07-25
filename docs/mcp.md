@@ -39,8 +39,8 @@ access token は 1 時間、rotation される refresh token は 30 日有効で
 rotation の親子関係は、有効な子孫がある間保持します。これは
 [OAuth 2.0 Security Best Current Practice §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
 の replay 検知要件に従うものです。
-token family導入前のdatabaseを更新する場合、関係を推測して安全性を落とさないため既存MCP tokenは
-すべて無効化され、clientでの再認可が必要になります。
+旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで再初期化し、MCP clientは
+再登録・再認可してください。
 
 Dynamic Client Registration は 16 KiB の本文上限、10 分あたり 30 件の process 全体 rate limit、最大 1,000
 client の永続化上限を持ちます。grant を取得しない登録は 24 時間後、次の登録処理時に削除します。登録・token

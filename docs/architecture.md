@@ -14,8 +14,9 @@ SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
 
 `marginalis-web` は HTTP、Cookie、CSRF、OAuth の境界を担当します。`marginalis-server` は設定と
 adapter を application port に接続し、`marginalis-sqlite` は単一の SQLite database を実装します。
-`marginalis-auth-oidc` は OIDC discovery・code exchange・ID token 検証を、`marginalis-mcp` は MCP tool
-の入出力を担当します。実行バイナリは `marginalis-service` です。
+`marginalis-auth-oidc` は OIDC discovery・code exchange・ID token 検証を担当します。MCP の
+JSON-RPC wire 型は、それを利用する唯一の transport である `marginalis-web::mcp` に置きます。
+実行バイナリは `marginalis-service` です。
 
 ## 不変条件
 

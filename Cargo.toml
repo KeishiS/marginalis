@@ -5,7 +5,6 @@ members = [
     "crates/marginalis-auth-oidc",
     "crates/marginalis-domain",
     "crates/marginalis-integration-tests",
-    "crates/marginalis-mcp",
     "crates/marginalis-server",
     "crates/marginalis-service",
     "crates/marginalis-sqlite",

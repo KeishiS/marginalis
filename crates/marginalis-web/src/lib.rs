@@ -3,6 +3,7 @@
 //! 公開面は`/api/v2`、閲覧UI、OIDC、MCP OAuthおよびStreamable HTTPだけである。
 
 pub mod http;
+mod mcp;
 
 use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Response};
 

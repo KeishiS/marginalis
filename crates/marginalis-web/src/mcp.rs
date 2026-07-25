@@ -1,14 +1,12 @@
-//! MCPで使うJSON-RPC 2.0のtransport型。
-//!
-//! OAuth、認可、ノート操作はHTTP/application境界に置き、このcrateはwire formatだけを定義する。
+//! MCP Streamable HTTPで使うJSON-RPC 2.0 wire型。
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
+pub(crate) const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct JsonRpcRequest {
+pub(crate) struct JsonRpcRequest {
     #[serde(default = "json_rpc_version")]
     pub jsonrpc: String,
     pub id: Option<Value>,
@@ -21,7 +19,7 @@ fn json_rpc_version() -> String {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct JsonRpcResponse {
+pub(crate) struct JsonRpcResponse {
     pub jsonrpc: &'static str,
     pub id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,13 +29,13 @@ pub struct JsonRpcResponse {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct JsonRpcError {
+pub(crate) struct JsonRpcError {
     pub code: i32,
     pub message: &'static str,
 }
 
 impl JsonRpcResponse {
-    pub fn success(id: Value, result: Value) -> Self {
+    pub(crate) fn success(id: Value, result: Value) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -46,7 +44,7 @@ impl JsonRpcResponse {
         }
     }
 
-    pub fn error(id: Value, code: i32, message: &'static str) -> Self {
+    pub(crate) fn error(id: Value, code: i32, message: &'static str) -> Self {
         Self {
             jsonrpc: "2.0",
             id,

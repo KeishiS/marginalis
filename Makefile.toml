@@ -122,7 +122,7 @@ description = "Reject concrete adapters from transport production dependency gra
 script_runner = "@shell"
 script = '''
 set -eu
-for package in marginalis-web marginalis-mcp; do
+for package in marginalis-web; do
   if cargo tree -p "$package" -e normal | grep -E 'marginalis-(sqlite|files|asciidoc|auth-oidc|server)|(^| )sqlx |(^| )adocweave |(^| )openidconnect |(^| )reqwest ' >/dev/null; then
     echo "concrete adapter leaked into $package production dependencies" >&2
     exit 1

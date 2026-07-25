@@ -26,6 +26,9 @@ services.marginalis = {
 `clientSecretFile` は systemd credential として渡され、Nix store に現れてはなりません。内部 CA の
 Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し、OIDC Discovery と token exchange
 に適用します。
+SQLite正本は`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
+任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
+変更してください。
 
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
 サブパスでは通常endpointの外部prefixをupstreamへ渡す前に除去します。一方、RFC 8414/9728の
