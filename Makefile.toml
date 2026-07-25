@@ -72,6 +72,11 @@ description = "Validate GitHub Actions workflow syntax"
 command = "actionlint"
 args = [".github/workflows/ci.yml", ".github/workflows/release-gate.yml"]
 
+[tasks.security-audit]
+description = "Check Cargo.lock against the current RustSec advisory database"
+command = "cargo"
+args = ["audit", "--ignore", "RUSTSEC-2023-0071"]
+
 [tasks.nix-release-check]
 description = "Build and run the Nix flake checks, including the NixOS VM test"
 command = "nix"
@@ -296,4 +301,4 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, tests, and flake evaluation"
-dependencies = ["fmt-check", "check", "clippy", "test", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "flake-check"]
+dependencies = ["fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "flake-check"]

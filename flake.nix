@@ -355,6 +355,7 @@
             packages = with pkgs; [
               curl
               actionlint
+              cargo-audit
               cargo-llvm-cov
               rustToolchain
               cargo-make

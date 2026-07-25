@@ -10,7 +10,7 @@ use openidconnect::{
     AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
     EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
     RedirectUrl, Scope, TokenResponse,
-    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    core::{CoreAuthenticationFlow, CoreClient, CoreJwsSigningAlgorithm, CoreProviderMetadata},
     reqwest,
 };
 use serde::Deserialize;
@@ -19,6 +19,18 @@ use url::Url;
 const MAX_ID_TOKEN_BYTES: usize = 16 * 1024;
 const MAX_GROUPS_PER_ID_TOKEN: usize = 128;
 const MAX_GROUP_NAME_BYTES: usize = 256;
+
+fn allowed_id_token_algorithms(
+    supported: &[CoreJwsSigningAlgorithm],
+) -> Vec<CoreJwsSigningAlgorithm> {
+    [
+        CoreJwsSigningAlgorithm::EcdsaP256Sha256,
+        CoreJwsSigningAlgorithm::HmacSha256,
+    ]
+    .into_iter()
+    .filter(|algorithm| supported.contains(algorithm))
+    .collect()
+}
 
 #[derive(Clone)]
 pub struct OidcConfiguration {
@@ -272,6 +284,12 @@ impl OidcAuthentication {
             CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
                 .await
                 .map_err(|_| OidcDiscoveryError::Discovery)?;
+        let signing_algorithms =
+            allowed_id_token_algorithms(metadata.id_token_signing_alg_values_supported());
+        if signing_algorithms.is_empty() {
+            return Err(OidcDiscoveryError::Discovery);
+        }
+        let metadata = metadata.set_id_token_signing_alg_values_supported(signing_algorithms);
         Ok(Self {
             client: CoreClient::from_provider_metadata(
                 metadata,
@@ -411,6 +429,25 @@ mod tests {
         assert_eq!(
             groups_from_verified_id_token(&token, "groups"),
             Err(OidcCallbackRejection::Groups)
+        );
+    }
+
+    #[test]
+    fn id_tokens_are_limited_to_reviewed_non_rsa_algorithms() {
+        assert_eq!(
+            allowed_id_token_algorithms(&[
+                CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
+                CoreJwsSigningAlgorithm::EcdsaP256Sha256,
+                CoreJwsSigningAlgorithm::HmacSha256,
+            ]),
+            vec![
+                CoreJwsSigningAlgorithm::EcdsaP256Sha256,
+                CoreJwsSigningAlgorithm::HmacSha256,
+            ]
+        );
+        assert!(
+            allowed_id_token_algorithms(&[CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256])
+                .is_empty()
         );
     }
 }

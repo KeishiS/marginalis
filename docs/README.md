@@ -20,6 +20,7 @@
 
 - [GitHubを使う開発手順](development.md): Nix開発環境、`gh`、ブランチ、Pull Request、マージ
 - [カバレッジ](coverage.md): 本番到達性検査、coverage reportの生成と読み方
+- [セキュリティ](security.md): 認証境界、依存脆弱性監査、例外の根拠
 - [要件定義](requirements.md): v0.3 の確定要件
 - [アーキテクチャ](architecture.md): クレートの責務、依存関係、データ整合性
 - [v0.3.0 再設計判断記録](v0.3.0-design.md): v0.3.0 の設計を確定した時点の非規範snapshot

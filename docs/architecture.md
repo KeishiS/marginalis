@@ -27,6 +27,8 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
   MCP authorization の有効期間は固定する。
 - Web session は24時間のsliding idle期限と7日の絶対期限を持つ。未完了OIDC login attemptは10分で失効し、
   発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
+- OIDC ID tokenの署名方式はKanidm 1.10の`ES256`と結合試験用の`HS256`だけを許可する。RSA署名方式を
+  追加する場合は[セキュリティ](security.md)の依存脆弱性判断を先に更新する。
 - access token と refresh token は hash だけを SQLite に保存する。MCP client に Kanidm token を渡さない。
 - HTTP、MCP、Web UI は可視性・ACL・revision の業務規則を複製しない。
 
