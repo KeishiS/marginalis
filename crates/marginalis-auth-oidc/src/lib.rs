@@ -328,8 +328,8 @@ impl OidcAuthentication {
             .set_pkce_challenge(challenge)
             .add_scope(Scope::new("profile".into()))
             .add_scope(Scope::new("email".into()))
-            // Kanidm側でこのscopeへ文字列配列の`groups` claimを割り当てる。
-            .add_scope(Scope::new("groups".into()))
+            // Kanidmの`groups_name` scopeは、group名だけからなる文字列配列の`groups` claimを発行する。
+            .add_scope(Scope::new("groups_name".into()))
             .url();
         Ok(url.into())
     }

@@ -33,8 +33,18 @@ Marginalis は OIDC callback で署名検証済み ID token の `groups` claim �
 Kanidm の group 変更は次回 OIDC login から反映され、既存の Web session と MCP token は有効期限または
 明示的な認可取消までその時点の権限を保つ。
 
-Kanidm の OAuth2 client が文字列配列の `groups` claim に `server-users` と `server-admins` を含めるよう
-設定する。Marginalis は Kanidm REST API を照会しないため、service account、API token、custom ACP は不要である。
+Kanidm の OAuth2 client は `groups_name` scope を許可し、文字列配列の `groups` claim に `server-users` と
+`server-admins` を含めるよう設定する。管理者も必ず `server-users` の member にする。
+
+```bash
+kanidm system oauth2 add-redirect-url marginalis \
+  https://marginalis.sandi05.com/auth/oidc/callback
+kanidm system oauth2 update-scope-map marginalis \
+  server-users openid profile email groups_name
+```
+
+redirect URI がすでに登録済みなら最初のコマンドは不要である。Marginalis は Kanidm REST API を照会しないため、
+service account、API token、custom ACP は不要である。
 
 ## 定期処理
 
