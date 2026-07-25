@@ -281,7 +281,7 @@ mod tests {
             Err(SqliteStoreError::ArchiveTargetNotEmpty)
         );
         let mut invalid_archive = archive.clone();
-        invalid_archive.notes[0].note.tags = vec![" duplicate ".into(), "duplicate".into()];
+        invalid_archive.notes[0].note.creator_issuer.clear();
         let rejected_database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("empty rejected target");

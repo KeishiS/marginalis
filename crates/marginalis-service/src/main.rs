@@ -1,7 +1,7 @@
 //! Marginalisのcomposition root。設定読込、adapter組立、tracingおよびHTTP listenを担う。
 
 use marginalis_application::Clock;
-use marginalis_asciidoc::verify_runtime_package_version;
+use marginalis_asciidoc::{validate_archive_notes, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_domain::UnixMillis;
 use marginalis_server::{
@@ -84,6 +84,7 @@ async fn import_archive(
     let input = required_absolute_file_argument(&mut arguments, "--input")?;
     let file = std::fs::File::open(&input)?;
     let archive = serde_json::from_reader(file)?;
+    validate_archive_notes(&archive)?;
     let configuration = StorageConfig::from_environment()?;
     SqliteDatabase::connect(&configuration.database_url)
         .await?

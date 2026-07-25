@@ -11,7 +11,7 @@ use adocweave::semantic::{
     Block, DelimitedContent, Inline, MathLanguage, SemanticNode, VerbatimKind, walk,
 };
 use adocweave::text::{TextRange, TextSize};
-use marginalis_domain::{Note, NoteDraft, UnixMillis};
+use marginalis_domain::{Archive, Note, NoteDraft, UnixMillis};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
 
@@ -186,6 +186,39 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
     }
 }
 
+/// archive内の全ノートが、現行のAsciiDoc profileで正規化済みであることを検証する。
+///
+/// ID、時刻、ACL、format markerの構造検証は永続化adapterが担う。本関数はparserを必要とする
+/// content policyだけを入力境界で検証し、SQLite adapterをAsciiDoc実装から独立させる。
+pub fn validate_archive_notes(archive: &Archive) -> Result<(), ArchiveValidationError> {
+    for bundle in &archive.notes {
+        let normalized = validate_note_draft(NoteDraft {
+            title: bundle.note.title.clone(),
+            body: bundle.note.body.clone(),
+            tags: bundle.note.tags.clone(),
+        })
+        .map_err(|_| ArchiveValidationError)?;
+        if normalized.title != bundle.note.title
+            || normalized.body != bundle.note.body
+            || normalized.tags != bundle.note.tags
+        {
+            return Err(ArchiveValidationError);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ArchiveValidationError;
+
+impl fmt::Display for ArchiveValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("archive contains a note outside the current AsciiDoc profile")
+    }
+}
+
+impl std::error::Error for ArchiveValidationError {}
+
 fn format_unix_millis(value: UnixMillis) -> Result<String, ExportError> {
     let nanos = i128::from(value.get()) * 1_000_000;
     OffsetDateTime::from_unix_timestamp_nanos(nanos)
@@ -357,7 +390,7 @@ fn validate_note_content_profile_with(
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{EntityId, NoteId};
+    use marginalis_domain::{Archive, EntityId, NoteBundle, NoteId};
 
     use super::*;
 
@@ -402,6 +435,23 @@ mod tests {
         .expect("valid draft");
         assert_eq!(draft.title, "Title");
         assert_eq!(draft.tags, vec!["Rust"]);
+    }
+
+    #[test]
+    fn archive_validation_rejects_non_normalized_notes() {
+        let mut archived_note = note("safe body");
+        archived_note.tags = vec![" duplicate ".into(), "duplicate".into()];
+        let archive = Archive {
+            format: marginalis_domain::ARCHIVE_FORMAT.into(),
+            notes: vec![NoteBundle {
+                note: archived_note,
+                acl: Vec::new(),
+            }],
+        };
+        assert_eq!(
+            validate_archive_notes(&archive),
+            Err(ArchiveValidationError)
+        );
     }
 
     #[test]

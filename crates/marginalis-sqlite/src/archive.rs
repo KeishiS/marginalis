@@ -2,9 +2,7 @@
 
 use std::{collections::HashSet, str::FromStr};
 
-use marginalis_domain::{
-    ARCHIVE_FORMAT, Archive, EntityId, Note, NoteBundle, NoteDraft, NotePermission,
-};
+use marginalis_domain::{ARCHIVE_FORMAT, Archive, EntityId, Note, NoteBundle, NotePermission};
 use sqlx::Sqlite;
 
 use crate::{
@@ -53,18 +51,6 @@ impl SqliteDatabase {
                     .deleted_at
                     .is_some_and(|deleted_at| deleted_at < bundle.note.created_at)
                 || bundle.note.revision <= 0
-            {
-                return Err(SqliteStoreError::CorruptNote);
-            }
-            let normalized = marginalis_asciidoc::validate_note_draft(NoteDraft {
-                title: bundle.note.title.clone(),
-                body: bundle.note.body.clone(),
-                tags: bundle.note.tags.clone(),
-            })
-            .map_err(|_| SqliteStoreError::CorruptNote)?;
-            if normalized.title != bundle.note.title
-                || normalized.body != bundle.note.body
-                || normalized.tags != bundle.note.tags
             {
                 return Err(SqliteStoreError::CorruptNote);
             }

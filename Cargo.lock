@@ -1218,7 +1218,6 @@ name = "marginalis-sqlite"
 version = "0.3.0"
 dependencies = [
  "marginalis-application",
- "marginalis-asciidoc",
  "marginalis-domain",
  "serde_json",
  "sha2",
