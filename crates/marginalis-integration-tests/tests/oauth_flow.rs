@@ -121,6 +121,13 @@ async fn json_body(response: Response<Body>) -> serde_json::Value {
     serde_json::from_slice(&bytes).expect("JSON response")
 }
 
+async fn text_body(response: Response<Body>) -> String {
+    let bytes = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("response body");
+    String::from_utf8(bytes.to_vec()).expect("UTF-8 response")
+}
+
 fn cookie(response: &Response<Body>, name: &str) -> Option<String> {
     response
         .headers()
@@ -352,7 +359,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         1,
         "create_note",
         serde_json::json!({
-            "title": "v0.3 integration note",
+            "title": "v0.3 <integration> note",
             "body": "Created through the authenticated MCP endpoint.",
             "tags": ["integration"],
         }),
@@ -360,7 +367,9 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let created = json_body(response).await;
-    assert!(created["result"]["structuredContent"]["note_id"].is_string());
+    let note_id = created["result"]["structuredContent"]["note_id"]
+        .as_str()
+        .expect("created note ID");
 
     let response = send(
         &server.app,
@@ -373,6 +382,136 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     assert_eq!(response.status(), StatusCode::OK);
     let notes = json_body(response).await;
     assert_eq!(notes.as_array().expect("notes").len(), 1);
+
+    let response = send(
+        &server.app,
+        Request::get("/api/v2/session")
+            .header(header::COOKIE, user.cookies())
+            .body(Body::empty())
+            .expect("session request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let session = json_body(response).await;
+    assert_eq!(session["subject"], "user-subject");
+    assert_eq!(session["is_administrator"], false);
+
+    let response = send(
+        &server.app,
+        Request::get("/")
+            .header(header::COOKIE, user.cookies())
+            .body(Body::empty())
+            .expect("UI list request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = text_body(response).await;
+    assert!(body.contains("v0.3 &lt;integration&gt; note"));
+    assert!(!body.contains("<integration>"));
+
+    let response = send(
+        &server.app,
+        Request::get(format!("/notes/{note_id}"))
+            .header(header::COOKIE, user.cookies())
+            .body(Body::empty())
+            .expect("UI note request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        text_body(response)
+            .await
+            .contains("Created through the authenticated MCP endpoint.")
+    );
+
+    let response = send(
+        &server.app,
+        Request::get(format!("/api/v2/notes/{note_id}"))
+            .header(header::COOKIE, user.cookies())
+            .body(Body::empty())
+            .expect("REST read request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let note = json_body(response).await;
+    let revision = note["revision"].as_i64().expect("revision");
+
+    let response = send(
+        &server.app,
+        Request::put(format!("/api/v2/notes/{note_id}"))
+            .header(header::COOKIE, user.cookies())
+            .header(header::ORIGIN, BROWSER_ORIGIN)
+            .header("sec-fetch-site", "same-origin")
+            .header("x-csrf-token", &user.csrf)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "title": "Updated integration note",
+                    "body": "Updated through REST.",
+                    "tags": ["integration", "updated"],
+                    "expected_revision": revision,
+                })
+                .to_string(),
+            ))
+            .expect("REST update request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let updated = json_body(response).await;
+    let revision = updated["revision"].as_i64().expect("updated revision");
+
+    let response = send(
+        &server.app,
+        Request::get(format!("/api/v2/notes/{note_id}/source"))
+            .header(header::COOKIE, user.cookies())
+            .body(Body::empty())
+            .expect("REST export request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        text_body(response)
+            .await
+            .contains("= Updated integration note")
+    );
+
+    let response = send(
+        &server.app,
+        Request::delete(format!("/api/v2/notes/{note_id}"))
+            .header(header::COOKIE, user.cookies())
+            .header(header::ORIGIN, BROWSER_ORIGIN)
+            .header("sec-fetch-site", "same-origin")
+            .header("x-csrf-token", &user.csrf)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({ "expected_revision": revision }).to_string(),
+            ))
+            .expect("REST delete request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let deleted = json_body(response).await;
+    let revision = deleted["revision"].as_i64().expect("deleted revision");
+
+    let response = send(
+        &server.app,
+        Request::post(format!("/api/v2/notes/{note_id}/restore"))
+            .header(header::COOKIE, user.cookies())
+            .header(header::ORIGIN, BROWSER_ORIGIN)
+            .header("sec-fetch-site", "same-origin")
+            .header("x-csrf-token", &user.csrf)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({ "expected_revision": revision }).to_string(),
+            ))
+            .expect("REST restore request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        json_body(response).await["title"],
+        "Updated integration note"
+    );
 
     let administrator = login(
         &server,
