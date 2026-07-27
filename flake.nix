@@ -28,7 +28,7 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-      # AdocWeave v0.6.1 が要求する Rust 1.97.1 を確定的にピンする。
+      # AdocWeave v0.10.1 が要求する Rust 1.97.1 を確定的にピンする。
       rustToolchainFor =
         pkgs:
         pkgs.rust-bin.stable."1.97.1".default.override {
@@ -58,8 +58,8 @@
           # include_str! するため、crate 単位の Cargo vendoring ではこのファイルが
           # 欠落する。依存と同じコミットのファイルを内容ハッシュ付きで補う。
           adocweaveConformanceCases = pkgs.fetchurl {
-            url = "https://raw.githubusercontent.com/KeishiS/AdocWeave/2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda/fixtures/conformance/cases.json";
-            hash = "sha256-Mlx66KZinQKdFGkFngC4hJKXKZ7VYGnhEelI8u3lLFg=";
+            url = "https://raw.githubusercontent.com/KeishiS/AdocWeave/3cd213fed631a6855859e71b74ee772134ce5834/fixtures/conformance/cases.json";
+            hash = "sha256-oKklt1LB7xT5WeQTc1N7ODVJEtVysv/+ADyJc00Sb8U=";
           };
         in
         {
@@ -78,7 +78,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.6.1" = "sha256-FEjYbbpKsk3k5u1NucINXho/Z0Pl6OOFFI8xhTJCIv4=";
+                "adocweave-0.10.1" = "sha256-VzPIjkKckbUIUUhDItrWAEOENfXJrrG8PUsRVTYaUHg=";
               };
             };
             cargoBuildFlags = [

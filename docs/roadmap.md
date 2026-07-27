@@ -18,8 +18,8 @@ NixOS moduleという`v0.3.0`の公開境界を維持しながら、backup・隔
 
 - 移行コストと後方互換性を設計判断の制約にしない。ただし、複雑さ、安全性または将来の変更容易性を
   改善しない破壊的変更は行わない。
-- AdocWeaveの解析結果、診断、Rust API、WASM protocol、conformance fixtureおよび配布物は、
-  同じパッケージ版へ完全一致で固定する。
+- AdocWeaveの解析結果、診断、Rust API、conformance fixtureおよび配布物は、同じパッケージ版へ
+  完全一致で固定する。WASMを導入する場合は、同じ版を使う独立した成果物契約として扱う。
 - AdocWeaveが解析できる構文と、Marginalisが保存・表示を許可するノートprofileを分離する。
 - 入力規則と診断コードの正本を一つにし、REST、MCP、文書およびtool schemaへ投影する。
 - 検索、Web編集、グラフ、添付Resource、別database backendは、実利用から必要性を確認してから
@@ -33,7 +33,7 @@ NixOS moduleという`v0.3.0`の公開境界を維持しながら、backup・隔
 | --- | --- | --- | --- |
 | 0（完了） | `v0.3.0`、`v0.3.1` | 現行アーキテクチャの公開と運用堅牢化 | 完了（2026-07-27、`v0.3.1`タグ） |
 | 1 | 文書とIssueの管理境界 | 文書の役割を整理し、作業管理をGitHub Issuesへ移す | 正本、履歴、作業項目の置き場所が明確になり、`issues/`を削除できる |
-| 2 | AdocWeave `v0.10.1` | AsciiDoc解析・描画契約を次の執筆支援の基準へ更新する | Rust、WASM、Nix、fixtureの版が一致し、`v0.6.1`との差分を固定例で説明できる |
+| 2 | AdocWeave `v0.10.1` | AsciiDoc解析・描画契約を次の執筆支援の基準へ更新する | Rust、Nix、fixtureの版が一致し、`v0.6.1`との差分を固定例で説明できる |
 | 3 | 保存形式v2とノートprofile | パーサー版とMarginalis固有の入力規則を独立して識別する | v1を安全側に拒否し、package版とprofile版の不一致を検出できる |
 | 4 | 共通診断と執筆profile | AI clientが入力前に規則を取得し、失敗原因と位置を機械判定できるようにする | RESTとMCPが同じ診断を返し、実clientの固定シナリオが成功する |
 | 5 | 認可・認証モデルの判断 | 利用不能なACLと自前OAuth Authorization Serverの将来像を確定する | 共有要件と実client接続試験に基づくADRが承認される |
@@ -52,11 +52,12 @@ AdocWeave `v0.6.1`から`v0.10.1`へ一括して更新する。中間版を配�
 
 - `v0.7.0`のsemantic model、見出しID位置および公開text API
 - `v0.9.0`の等幅文字境界と表header推論
-- `v0.10.0`の型付きrender診断、Resource用途、検証済みMIME typeおよびWASM schema 2
+- `v0.10.0`の型付きrender診断、Resource用途および検証済みMIME type
 - `v0.10.1`の相対targetのLint規則とHTML5適合出力
 
-依存commit、`adocweave::VERSION`、`Cargo.lock`、Nixの依存hash、WASM、conformance fixtureを
-完全一致させる。HTMLのbyte列、DOM、解析結果または診断が変わる入力は、差分を明示して
+依存commit、`adocweave::VERSION`、`Cargo.lock`、Nixの依存hash、conformance fixtureを
+完全一致させる。現行MarginalisはWASM成果物を配布しない。HTMLのbyte列、DOM、解析結果または
+診断が変わる入力は、差分を明示して
 期待結果を更新する。
 
 ### 保存形式とノートprofile

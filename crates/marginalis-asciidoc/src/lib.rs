@@ -15,7 +15,7 @@ use marginalis_domain::{Archive, Note, NoteDraft, UnixMillis};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
 
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda";
+pub const ADOCWEAVE_SOURCE_REVISION: &str = "3cd213fed631a6855859e71b74ee772134ce5834";
 
 /// 初期リリースでシンタックスハイライト対象として受理するsource block言語。
 pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
@@ -31,7 +31,7 @@ pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
 ];
 
 /// 本アプリが受理するAdocWeaveの完全一致パッケージ版。
-pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.6.1";
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.10.1";
 pub const MAX_NOTE_BODY_BYTES: usize = 512 * 1024;
 
 /// 固定した仕様と実行時の仕様が異なる場合に返すエラー。
@@ -314,7 +314,7 @@ fn validate_note_content_profile_with(
             .into_iter()
             .map(|query| NoteContentError {
                 code: NoteContentErrorCode::ResourceDisabled,
-                range: query.reference.range,
+                range: query.reference.range(),
             }),
     );
     walk(analysis.document(), |node| match node {
