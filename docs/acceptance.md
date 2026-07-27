@@ -56,7 +56,6 @@ NixOS VMは次の経路を自動確認します。
 現行schema versionは2です。v0.3.0からv0.3.1では同じdatabaseを保持します。v0.2以前のschemaからの
 自動移行は受入対象外です。
 
-実施結果は release issue に、環境、client の版、Kanidm 1.10 の版、base URL（機密情報を除く）、
-各項目の結果として記録します。HTTP失敗時はresponseの`X-Request-Id`を記録し、同じIDの
-`marginalis` service logを添えます。Cookie、token、authorization code、client secret、ノート本文は
-記録しません。
+実施結果はrelease issueに、必須項目の完了日と成否だけを記録します。環境、client版、base URLなどの
+詳細は記録しません。失敗を調査する場合も、Cookie、token、authorization code、client secret、
+ノート本文を記録してはいけません。

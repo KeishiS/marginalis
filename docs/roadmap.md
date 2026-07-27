@@ -69,7 +69,7 @@ ChatGPT、Claude Code、Codex等のMCP clientを主な執筆経路とする。`c
 
 ## 継続監視
 
-- ChatGPT、Claude Code、Codex CLIの版と、MCP接続の手動受入結果
+- ChatGPT、Claude Code、Codex CLIとのMCP接続可否
 - backupの最終成功時刻、保存世代数、四半期復元試験の結果
 - database容量、ノート数、主要操作の失敗、revision conflict
 - 検索で見つからなかった具体例と、MCP入力検証による再試行
