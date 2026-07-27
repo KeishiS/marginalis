@@ -137,8 +137,25 @@ pub struct NoteProfileRule {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteProfileExample {
+    pub kind: &'static str,
     pub description: &'static str,
     pub body: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteProfileSyntax {
+    pub allowed_blocks: Vec<&'static str>,
+    pub allowed_inlines: Vec<&'static str>,
+    pub source_language_optional: bool,
+    pub allowed_math_languages: Vec<&'static str>,
+    pub title_forbidden: Vec<&'static str>,
+    pub tag_forbidden: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteProfileNormalization {
+    pub title: Vec<&'static str>,
+    pub tags: Vec<&'static str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,6 +163,8 @@ pub struct NoteProfile {
     pub profile_version: u32,
     pub adocweave_package_version: &'static str,
     pub limits: NoteProfileLimits,
+    pub normalization: NoteProfileNormalization,
+    pub syntax: NoteProfileSyntax,
     pub allowed_source_languages: Vec<&'static str>,
     pub forbidden_rules: Vec<NoteProfileRule>,
     pub examples: Vec<NoteProfileExample>,

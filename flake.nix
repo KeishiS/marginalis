@@ -311,7 +311,9 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-1\" and (.notes | length == 1)' "
+                + "jq -e '.format == \"marginalis-archive-2\" "
+                + "and .adocweave_package_version == \"0.10.1\" "
+                + "and .note_profile_version == 1 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
                 + "test $(stat -c %a \"$backup\") = 700; "
                 + "test $(stat -c %a \"$backup/COMPLETE\") = 600; "
@@ -382,11 +384,11 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 2'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 3'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 2; PRAGMA journal_mode=WAL'"
+                + "'UPDATE schema_migrations SET version = 3; PRAGMA journal_mode=WAL'"
               )
             '';
           };
