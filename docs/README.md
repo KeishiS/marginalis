@@ -10,6 +10,7 @@
 
 - [OpenAPI 3.1](openapi.json): `/api/v2` の機械可読な仕様
 - [MCP と OAuth](mcp.md): MCP ツール、OAuth 認可、クライアント登録、認可の取消
+- [browser・MCP protocol回帰試験](protocol-regression.md): 自動回帰、client fixture、失敗証跡
 
 ## 運用者向け
 

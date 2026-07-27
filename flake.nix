@@ -116,8 +116,15 @@
                   -CAcreateserial -days 1 -out $out-cert.pem \
                   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:id.example.test')
                 mkdir -p $out
-                mv $out-key.pem $out/key.pem
-                mv $out-cert.pem $out/cert.pem
+                mv $out-key.pem $out/id-key.pem
+                mv $out-cert.pem $out/id-cert.pem
+                openssl req -newkey rsa:2048 -nodes \
+                  -subj '/CN=marginalis.example.test' \
+                  -addext 'subjectAltName=DNS:marginalis.example.test' \
+                  -keyout $out/app-key.pem -out app-request.pem
+                openssl x509 -req -in app-request.pem -CA ca-cert.pem -CAkey ca-key.pem \
+                  -CAserial ca-cert.srl -days 1 -out $out/app-cert.pem \
+                  -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:marginalis.example.test')
                 mv ca-cert.pem $out/ca.pem
               '';
         in
@@ -331,8 +338,8 @@
             '';
           };
 
-          # 実 Kanidm 1.10 の TLS Discovery を通して Marginalis が起動することを確認する。
-          # Authorization Code の browser interaction と group変更は別の手動受入/E2Eで扱う。
+          # 実 Kanidm 1.10、private CA、nginx TLS、subpathを通して、Discoveryと
+          # browser login開始を確認する。対話loginとgroup変更は手動受入で扱う。
           kanidm-discovery-vm = pkgs.testers.nixosTest {
             name = "marginalis-kanidm-discovery";
             nodes.idp = {
@@ -344,8 +351,8 @@
                     origin = "https://id.example.test:8443";
                     domain = "id.example.test";
                     bindaddress = "0.0.0.0:8443";
-                    tls_chain = "${kanidmDiscoveryCerts}/cert.pem";
-                    tls_key = "${kanidmDiscoveryCerts}/key.pem";
+                    tls_chain = "${kanidmDiscoveryCerts}/id-cert.pem";
+                    tls_key = "${kanidmDiscoveryCerts}/id-key.pem";
                   };
                 };
                 provision = {
@@ -370,8 +377,22 @@
                 # NixOS test driverのeth0 DHCPアドレスは各VMで重複するため、隔離VLANの
                 # IdPアドレスを使う。idpは二番目に起動するVMなので192.168.1.2となる。
                 networking.hosts."192.168.1.2" = [ "id.example.test" ];
+                networking.hosts."127.0.0.1" = [ "marginalis.example.test" ];
                 security.pki.certificateFiles = [ "${kanidmDiscoveryCerts}/ca.pem" ];
                 environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
+                services.nginx = {
+                  enable = true;
+                  virtualHosts."marginalis.example.test" = {
+                    forceSSL = true;
+                    sslCertificate = "${kanidmDiscoveryCerts}/app-cert.pem";
+                    sslCertificateKey = "${kanidmDiscoveryCerts}/app-key.pem";
+                    locations."/marginalis/".proxyPass = "http://127.0.0.1:3000/";
+                    locations."/.well-known/oauth-authorization-server/marginalis".proxyPass =
+                      "http://127.0.0.1:3000/.well-known/oauth-authorization-server/marginalis";
+                    locations."/.well-known/oauth-protected-resource/marginalis/mcp".proxyPass =
+                      "http://127.0.0.1:3000/.well-known/oauth-protected-resource/marginalis/mcp";
+                  };
+                };
                 services.marginalis = {
                   enable = true;
                   baseUrl = "https://marginalis.example.test/marginalis";
@@ -392,12 +413,24 @@
               )
               app.start()
               app.wait_for_unit("marginalis.service")
+              app.wait_for_unit("nginx.service")
               app.wait_until_succeeds("curl -fsS http://127.0.0.1:3000/api/v2/health | grep -q '\"api_version\":\"v2\"'")
               app.succeed(
-                "curl -fsS http://127.0.0.1:3000/.well-known/oauth-authorization-server/marginalis | ${pkgs.jq}/bin/jq -e '.issuer == \"https://marginalis.example.test/marginalis\"'"
+                "curl --cacert ${kanidmDiscoveryCerts}/ca.pem -fsS https://marginalis.example.test/.well-known/oauth-authorization-server/marginalis | ${pkgs.jq}/bin/jq -e '.issuer == \"https://marginalis.example.test/marginalis\"'"
               )
               app.succeed(
-                "curl -fsS http://127.0.0.1:3000/.well-known/oauth-protected-resource/marginalis/mcp | ${pkgs.jq}/bin/jq -e '.resource == \"https://marginalis.example.test/marginalis/mcp\"'"
+                "curl --cacert ${kanidmDiscoveryCerts}/ca.pem -fsS https://marginalis.example.test/.well-known/oauth-protected-resource/marginalis/mcp | ${pkgs.jq}/bin/jq -e '.resource == \"https://marginalis.example.test/marginalis/mcp\"'"
+              )
+              app.succeed(
+                "headers=$(mktemp); "
+                + "curl --cacert ${kanidmDiscoveryCerts}/ca.pem -sS -D \"$headers\" -o /dev/null "
+                + "'https://marginalis.example.test/marginalis/auth/oidc/login?next=%2Fmarginalis%2F'; "
+                + "grep -qi '^set-cookie: marginalis_return_to=.*Path=/marginalis.*Secure' \"$headers\"; "
+                + "grep -qi '^location: https://id.example.test:8443/' \"$headers\""
+              )
+              app.succeed(
+                "test $(curl --cacert ${kanidmDiscoveryCerts}/ca.pem -sS -o /dev/null -w '%{http_code}' "
+                + "'https://marginalis.example.test/marginalis/auth/oidc/callback?code=invalid&state=invalid') = 401"
               )
               app.succeed("journalctl -u marginalis.service | grep -q 'Marginalis server listening'")
               app.succeed("! journalctl -u marginalis.service | grep -q 'OIDC discovery is unavailable'")

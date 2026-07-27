@@ -1,6 +1,8 @@
 //! v0.3のOIDC group認可、Web session、MCP OAuth、SQLiteノート操作を、本番用adapterと
 //! Axum routerのHTTP境界を通して一気通貫で検証する。
 
+mod support;
+
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
@@ -21,6 +23,8 @@ use marginalis_web::http::{ApiState, McpEndpoint, router};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 use url::Url;
+
+use support::mcp_client::{McpTestClient, json_response as mcp_json_response};
 
 const BROWSER_ORIGIN: &str = "https://marginalis.example.test";
 const CLIENT_ID: &str = "marginalis-test-client";
@@ -367,6 +371,35 @@ async fn call_mcp(
     .await
 }
 
+async fn refresh_mcp(app: &Router, client_id: &str, refresh_token: &str) -> McpTokens {
+    let form = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", "refresh_token")
+        .append_pair("client_id", client_id)
+        .append_pair("resource", MCP_RESOURCE)
+        .append_pair("refresh_token", refresh_token)
+        .finish();
+    let response = send(
+        app,
+        Request::post("/oauth/token")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(form))
+            .expect("refresh request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    McpTokens {
+        access: body["access_token"]
+            .as_str()
+            .expect("refreshed access token")
+            .to_owned(),
+        refresh: body["refresh_token"]
+            .as_str()
+            .expect("rotated refresh token")
+            .to_owned(),
+    }
+}
+
 #[tokio::test]
 async fn oidc_mcp_and_revocation_form_one_http_flow() {
     let server = TestServer::start().await;
@@ -379,12 +412,54 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         "user-login-code",
     )
     .await;
-    let tokens = authorize_mcp(&server.app, &user, &client_id).await;
+    let issued_tokens = authorize_mcp(&server.app, &user, &client_id).await;
+    let tokens = refresh_mcp(&server.app, &client_id, &issued_tokens.refresh).await;
+    assert_ne!(tokens.access, issued_tokens.access);
+    assert_ne!(tokens.refresh, issued_tokens.refresh);
+
+    let mcp = McpTestClient::new(&server.app, "/mcp", &tokens.access);
+    let initialized = mcp_json_response(
+        mcp.request(
+            1,
+            "initialize",
+            serde_json::json!({
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "marginalis-regression-client", "version": "1"},
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(initialized["jsonrpc"], "2.0");
+    assert_eq!(initialized["id"], 1);
+    assert_eq!(initialized["result"]["protocolVersion"], "2025-03-26");
+    assert_eq!(
+        mcp.notification("notifications/initialized").await.status(),
+        StatusCode::ACCEPTED
+    );
+
+    let batch = mcp
+        .raw(serde_json::json!([
+            {"jsonrpc": "2.0", "id": 2, "method": "ping"}
+        ]))
+        .await;
+    let batch = mcp_json_response(batch).await;
+    assert_eq!(batch["error"]["code"], -32600);
+    assert_eq!(batch["id"], serde_json::Value::Null);
+
+    let unknown = mcp_json_response(
+        mcp.request(3, "client/nonstandard", serde_json::json!({}))
+            .await,
+    )
+    .await;
+    assert_eq!(unknown["error"]["code"], -32601);
+    assert_eq!(unknown["id"], 3);
 
     let response = call_mcp(
         &server.app,
         &tokens.access,
-        1,
+        4,
         "create_note",
         serde_json::json!({
             "title": "v0.3 <integration> note",
@@ -582,7 +657,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     let response = call_mcp(
         &server.app,
         &tokens.access,
-        2,
+        5,
         "list_notes",
         serde_json::json!({}),
     )
