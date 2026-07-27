@@ -233,7 +233,10 @@ mod tests {
             "https://id.example.test/{}",
             "a".repeat(MAX_IDENTITY_ISSUER_BYTES)
         );
-        assert_eq!(validate_identity(&long_issuer, "alice"), Err(InvalidIdentity));
+        assert_eq!(
+            validate_identity(&long_issuer, "alice"),
+            Err(InvalidIdentity)
+        );
         assert_eq!(
             validate_identity(
                 "https://id.example.test",
