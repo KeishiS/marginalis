@@ -651,6 +651,26 @@ pub(super) async fn mcp_token(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
+    let result = mcp_token_inner(state, headers, body).await;
+    match &result {
+        Ok(_) => tracing::info!(
+            event = "mcp.oauth.token.completed",
+            "MCP OAuth token request succeeded"
+        ),
+        Err(response) => tracing::warn!(
+            event = "mcp.oauth.token.failed",
+            status = response.status().as_u16(),
+            "MCP OAuth token request failed"
+        ),
+    }
+    result
+}
+
+async fn mcp_token_inner(
+    state: ApiState,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, Response> {
     if let Some(authorization) = headers.get(header::AUTHORIZATION) {
         let mut response = oauth_error_response(
             StatusCode::UNAUTHORIZED,

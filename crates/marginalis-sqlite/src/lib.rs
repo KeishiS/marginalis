@@ -2,6 +2,7 @@
 
 mod archive;
 mod cleanup;
+mod diagnostics;
 mod mcp;
 mod notes;
 mod schema;
@@ -9,6 +10,7 @@ mod session;
 mod token;
 
 pub use cleanup::AuthStatePurgeCounts;
+pub use diagnostics::SqliteDiagnosticReport;
 pub use session::SqliteOidcLoginAttemptStore;
 
 use crate::schema::migrate;
@@ -72,6 +74,11 @@ impl SqliteDatabase {
             .await?;
         migrate(&pool).await?;
         Ok(Self { pool })
+    }
+
+    /// databaseを変更せず、利用可否、schema、整合性を検査する。
+    pub async fn diagnose(database_url: &str) -> SqliteDiagnosticReport {
+        diagnostics::diagnose(database_url).await
     }
 }
 

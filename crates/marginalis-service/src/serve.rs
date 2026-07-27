@@ -29,14 +29,24 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await
     {
-        Ok(oidc) => Some(oidc),
-        Err(error) => {
-            tracing::warn!(%error, "OIDC discovery is unavailable; login requests will fail closed");
+        Ok(oidc) => {
+            tracing::info!(
+                event = "oidc.discovery.completed",
+                "OIDC discovery succeeded"
+            );
+            Some(oidc)
+        }
+        Err(_error) => {
+            tracing::warn!(
+                event = "oidc.discovery.failed",
+                error_kind = "unavailable",
+                "OIDC discovery is unavailable; login requests will fail closed"
+            );
             None
         }
     };
     let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
-    tracing::info!(address = %configuration.http.listen_address, "Marginalis server listening");
+    tracing::info!(event = "service.listening", address = %configuration.http.listen_address, "Marginalis server listening");
     let cookie_path = cookie_path(&configuration.http.base_url);
     let oidc = std::sync::Arc::new(ServerOidcAuthenticationUseCases::new(
         database.clone(),
