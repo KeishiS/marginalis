@@ -59,16 +59,17 @@ impl McpTool {
         }
     }
 
-    fn required_scope(self) -> Option<&'static str> {
+    fn accepted_scopes(self) -> &'static [&'static str] {
         match self {
-            Self::ListNotes | Self::GetNoteProfile | Self::GetNote => Some("notes:read"),
-            Self::CreateNote | Self::UpdateNote => Some("notes:write"),
-            Self::DeleteNote => Some("notes:delete"),
-            Self::Unknown => None,
+            Self::ListNotes | Self::GetNote => &["notes:read"],
+            Self::GetNoteProfile => &["notes:read", "notes:write"],
+            Self::CreateNote | Self::UpdateNote => &["notes:write"],
+            Self::DeleteNote => &["notes:delete"],
+            Self::Unknown => &[],
         }
     }
 
-    fn descriptor(self) -> serde_json::Value {
+    fn descriptor(self, profile: &NoteProfile) -> serde_json::Value {
         match self {
             Self::ListNotes => serde_json::json!({
                 "name":"list_notes",
@@ -88,12 +89,22 @@ impl McpTool {
             Self::CreateNote => serde_json::json!({
                 "name":"create_note",
                 "description":"Create a note. Call get_note_profile first to obtain the current authoring rules.",
-                "inputSchema":{"type":"object","required":["title","body","tags"],"properties":{"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}
+                "inputSchema":{"type":"object","required":["title","body","tags"],"properties":{
+                    "title":{"type":"string","minLength":1,"maxLength":profile.limits.max_title_characters},
+                    "body":{"type":"string","x-maxBytes":profile.limits.max_body_bytes},
+                    "tags":{"type":"array","maxItems":profile.limits.max_tags,"items":{"type":"string","maxLength":profile.limits.max_tag_characters}}
+                },"additionalProperties":false}
             }),
             Self::UpdateNote => serde_json::json!({
                 "name":"update_note",
                 "description":"Update a note at its current revision. Call get_note_profile first to obtain the current authoring rules.",
-                "inputSchema":{"type":"object","required":["note_id","title","body","tags","expected_revision"],"properties":{"note_id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"expected_revision":{"type":"integer"}},"additionalProperties":false}
+                "inputSchema":{"type":"object","required":["note_id","title","body","tags","expected_revision"],"properties":{
+                    "note_id":{"type":"string","format":"uuid"},
+                    "title":{"type":"string","minLength":1,"maxLength":profile.limits.max_title_characters},
+                    "body":{"type":"string","x-maxBytes":profile.limits.max_body_bytes},
+                    "tags":{"type":"array","maxItems":profile.limits.max_tags,"items":{"type":"string","maxLength":profile.limits.max_tag_characters}},
+                    "expected_revision":{"type":"integer","minimum":1}
+                },"additionalProperties":false}
             }),
             Self::DeleteNote => serde_json::json!({
                 "name":"delete_note",
@@ -356,8 +367,8 @@ pub(super) async fn mcp_post(
     let required_scope = decoded_tool_call
         .as_ref()
         .and_then(|call| call.as_ref().ok())
-        .and_then(|call| call.tool.required_scope());
-    let challenged_scope = required_scope.unwrap_or("notes:read");
+        .map_or(&[][..], |call| call.tool.accepted_scopes());
+    let challenged_scope = required_scope.first().copied().unwrap_or("notes:read");
     let token = bearer_token(&headers);
     let Some(token) = token else {
         return Ok(mcp_authentication_error(
@@ -380,8 +391,10 @@ pub(super) async fn mcp_post(
             challenged_scope,
         ));
     };
-    if required_scope
-        .is_some_and(|required| !authenticated.scopes.iter().any(|scope| scope == required))
+    if !required_scope.is_empty()
+        && !required_scope
+            .iter()
+            .any(|required| authenticated.scopes.iter().any(|scope| scope == required))
     {
         return Ok(mcp_authentication_error(
             endpoint,
@@ -432,7 +445,7 @@ pub(super) async fn mcp_post(
         "tools/list" if valid_tools_list_params(request.params.as_ref()) => {
             JsonRpcResponse::success(
                 id,
-                serde_json::json!({"tools": McpTool::ALL.map(McpTool::descriptor)}),
+                serde_json::json!({"tools": McpTool::ALL.map(|tool| tool.descriptor(&state.notes.note_profile()))}),
             )
         }
         "tools/list" => JsonRpcResponse::error(id, -32602, "Invalid params"),
@@ -642,8 +655,16 @@ fn note_profile_json(profile: NoteProfile) -> serde_json::Value {
             "max_tag_characters": profile.limits.max_tag_characters,
         },
         "normalization": {
-            "title": ["trim", "unicode_nfc"],
-            "tags": ["trim", "unicode_nfc", "case_insensitive_uniqueness", "lowercase_key_sort"]
+            "title": profile.normalization.title,
+            "tags": profile.normalization.tags,
+        },
+        "syntax": {
+            "allowed_blocks": profile.syntax.allowed_blocks,
+            "allowed_inlines": profile.syntax.allowed_inlines,
+            "source_language_optional": profile.syntax.source_language_optional,
+            "allowed_math_languages": profile.syntax.allowed_math_languages,
+            "title_forbidden": profile.syntax.title_forbidden,
+            "tag_forbidden": profile.syntax.tag_forbidden,
         },
         "allowed_source_languages": profile.allowed_source_languages,
         "forbidden_rules": profile.forbidden_rules.into_iter().map(|rule| serde_json::json!({
@@ -651,6 +672,7 @@ fn note_profile_json(profile: NoteProfile) -> serde_json::Value {
             "description": rule.description,
         })).collect::<Vec<_>>(),
         "examples": profile.examples.into_iter().map(|example| serde_json::json!({
+            "kind": example.kind,
             "description": example.description,
             "body": example.body,
         })).collect::<Vec<_>>(),

@@ -88,6 +88,7 @@ impl fmt::Display for NoteId {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Note {
     pub note_id: NoteId,
     pub creator_issuer: String,
@@ -109,6 +110,7 @@ pub struct NoteDraft {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NoteAclEntry {
     pub issuer: String,
     pub subject: String,
@@ -116,6 +118,7 @@ pub struct NoteAclEntry {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NoteBundle {
     pub note: Note,
     pub acl: Vec<NoteAclEntry>,

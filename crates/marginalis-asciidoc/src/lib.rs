@@ -4,6 +4,7 @@ use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
 
 use adocweave::SyntaxMode;
+use adocweave::output::diagnostics::Severity;
 use adocweave::output::html::{RenderPolicy, render};
 use adocweave::preprocess::discover_includes;
 use adocweave::resolution::{ReferenceKey, UrlContext};
@@ -12,8 +13,9 @@ use adocweave::semantic::{
 };
 use adocweave::text::TextRange;
 use marginalis_application::{
-    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileRule, NoteValidationCode,
-    NoteValidationDiagnostic, NoteValidationTarget, Utf8ByteSpan,
+    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileRule,
+    NoteProfileSyntax, NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget,
+    Utf8ByteSpan,
 };
 use marginalis_domain::{ARCHIVE_FORMAT, Archive, Note, NoteBundle, NoteDraft, UnixMillis};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -38,7 +40,17 @@ pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.10.1";
 /// Marginalisが保存時に適用するノート入力規則の版。
 pub const NOTE_PROFILE_VERSION: u32 = 1;
+pub const MAX_TITLE_CHARACTERS: usize = 200;
 pub const MAX_NOTE_BODY_BYTES: usize = 512 * 1024;
+pub const MAX_TAGS: usize = 50;
+pub const MAX_TAG_CHARACTERS: usize = 64;
+
+fn note_parse_options() -> adocweave::ParseOptions {
+    adocweave::ParseOptions {
+        syntax_mode: SyntaxMode::Strict,
+        ..Default::default()
+    }
+}
 
 /// 固定した仕様と実行時の仕様が異なる場合に返すエラー。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -107,16 +119,26 @@ pub fn export_note(note: &Note) -> Result<String, ExportError> {
 /// SQLite正本を再検証した上で、固定RenderPolicyの安全なHTMLへ変換する。
 pub fn render_note_html(note: &Note) -> Result<String, RenderError> {
     let source = export_note(note).map_err(|_| RenderError)?;
-    let analysis = adocweave::Engine::new(adocweave::ParseOptions {
-        syntax_mode: SyntaxMode::Strict,
-        ..Default::default()
-    })
-    .analyze(&source)
-    .map_err(|_| RenderError)?;
-    if !validate_note_content_profile(&analysis).is_empty() {
+    let analysis = adocweave::Engine::new(note_parse_options())
+        .analyze(&source)
+        .map_err(|_| RenderError)?;
+    if analysis
+        .diagnostics()
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Error)
+        || !validate_note_content_profile(&analysis).is_empty()
+    {
         return Err(RenderError);
     }
-    Ok(render(analysis.document(), &RenderPolicy::default()).html)
+    let output = render(analysis.document(), &RenderPolicy::default());
+    if output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Error)
+    {
+        return Err(RenderError);
+    }
+    Ok(output.html)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -136,9 +158,10 @@ impl std::error::Error for RenderError {}
 /// 利用者が送るtitle・tags・bodyだけを検査する。本文の位置は入力されたbodyを基準に返す。
 pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>> {
     let mut errors = Vec::new();
-    if draft.title.trim().is_empty()
-        || draft.title.contains(['\n', '\r'])
-        || draft.title.chars().count() > 200
+    let title = draft.title.trim().nfc().collect::<String>();
+    if title.is_empty()
+        || title.contains(['\n', '\r'])
+        || title.chars().count() > MAX_TITLE_CHARACTERS
     {
         errors.push(diagnostic(
             NoteValidationCode::InvalidTitle,
@@ -146,10 +169,19 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
             None,
         ));
     }
+    if draft.tags.len() > MAX_TAGS {
+        errors.push(diagnostic(
+            NoteValidationCode::TooManyTags,
+            NoteValidationTarget::Tags,
+            None,
+        ));
+    }
     let mut tags = BTreeMap::new();
     for (index, tag) in draft.tags.into_iter().enumerate() {
         let display = tag.trim().nfc().collect::<String>();
-        if display.is_empty() || display.contains([',', '\n', '\r']) || display.chars().count() > 64
+        if display.is_empty()
+            || display.contains([',', '\n', '\r'])
+            || display.chars().count() > MAX_TAG_CHARACTERS
         {
             errors.push(diagnostic(
                 NoteValidationCode::InvalidTag,
@@ -160,13 +192,6 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
         }
         tags.entry(display.to_lowercase()).or_insert(display);
     }
-    if tags.len() > 50 {
-        errors.push(diagnostic(
-            NoteValidationCode::TooManyTags,
-            NoteValidationTarget::Tags,
-            None,
-        ));
-    }
     if draft.body.len() > MAX_NOTE_BODY_BYTES {
         errors.push(diagnostic(
             NoteValidationCode::BodyTooLarge,
@@ -174,30 +199,39 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
             None,
         ));
     } else {
-        let analysis = adocweave::Engine::new(Default::default())
-            .analyze(&draft.body)
-            .map_err(|_| {
-                vec![diagnostic(
-                    NoteValidationCode::AsciiDocParseFailed,
-                    NoteValidationTarget::Body,
-                    None,
-                )]
-            })?;
-        errors.extend(
-            validate_note_content_profile(&analysis)
-                .into_iter()
-                .map(|error| {
-                    diagnostic(
-                        error.code.validation_code(),
-                        NoteValidationTarget::Body,
-                        Some(span(error.range)),
-                    )
-                }),
-        );
+        match adocweave::Engine::new(note_parse_options()).analyze(&draft.body) {
+            Ok(analysis) => {
+                errors.extend(analysis.diagnostics().iter().filter_map(|adoc_diagnostic| {
+                    (adoc_diagnostic.severity == Severity::Error).then(|| {
+                        diagnostic(
+                            NoteValidationCode::AsciiDocParseFailed,
+                            NoteValidationTarget::Body,
+                            Some(span(adoc_diagnostic.range)),
+                        )
+                    })
+                }));
+                errors.extend(
+                    validate_note_content_profile(&analysis)
+                        .into_iter()
+                        .map(|error| {
+                            diagnostic(
+                                error.code.validation_code(),
+                                NoteValidationTarget::Body,
+                                Some(span(error.range)),
+                            )
+                        }),
+                );
+            }
+            Err(_) => errors.push(diagnostic(
+                NoteValidationCode::AsciiDocParseFailed,
+                NoteValidationTarget::Body,
+                None,
+            )),
+        }
     }
     if errors.is_empty() {
         Ok(NoteDraft {
-            title: draft.title.trim().nfc().collect(),
+            title,
             body: draft.body,
             tags: tags.into_values().collect(),
         })
@@ -380,10 +414,46 @@ pub fn note_profile() -> NoteProfile {
         profile_version: NOTE_PROFILE_VERSION,
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION,
         limits: NoteProfileLimits {
-            max_title_characters: 200,
+            max_title_characters: MAX_TITLE_CHARACTERS,
             max_body_bytes: MAX_NOTE_BODY_BYTES,
-            max_tags: 50,
-            max_tag_characters: 64,
+            max_tags: MAX_TAGS,
+            max_tag_characters: MAX_TAG_CHARACTERS,
+        },
+        normalization: NoteProfileNormalization {
+            title: vec!["trim", "unicode_nfc"],
+            tags: vec![
+                "trim",
+                "unicode_nfc",
+                "case_insensitive_uniqueness",
+                "lowercase_key_sort",
+            ],
+        },
+        syntax: NoteProfileSyntax {
+            allowed_blocks: vec![
+                "paragraph",
+                "section",
+                "list",
+                "table",
+                "admonition",
+                "quote",
+                "example",
+                "literal",
+                "source",
+                "math",
+            ],
+            allowed_inlines: vec![
+                "emphasis",
+                "strong",
+                "monospace",
+                "local_anchor",
+                "local_cross_reference",
+                "safe_link",
+                "inline_math",
+            ],
+            source_language_optional: true,
+            allowed_math_languages: vec!["latexmath"],
+            title_forbidden: vec!["empty", "line_feed", "carriage_return"],
+            tag_forbidden: vec!["empty", "comma", "line_feed", "carriage_return"],
         },
         allowed_source_languages: DEFAULT_SOURCE_LANGUAGES.to_vec(),
         forbidden_rules: FORBIDDEN
@@ -396,16 +466,24 @@ pub fn note_profile() -> NoteProfile {
             .collect(),
         examples: vec![
             NoteProfileExample {
+                kind: "local_reference",
                 description: "Section, local anchor, and local cross-reference",
                 body: "== Result\n\n[[evidence]]\nEvidence.\n\nSee <<evidence>>.",
             },
             NoteProfileExample {
+                kind: "source_block",
                 description: "Rust source block",
                 body: "[source,rust]\n----\nfn main() {}\n----",
             },
             NoteProfileExample {
+                kind: "inline_math",
                 description: "LaTeX math",
                 body: ":stem: latexmath\n\nstem:[x^2 + y^2]",
+            },
+            NoteProfileExample {
+                kind: "block_math",
+                description: "LaTeX math block",
+                body: "[latexmath]\n++++\nx^2 + y^2\n++++",
             },
         ],
     }
@@ -596,6 +674,50 @@ mod tests {
         .expect("valid draft");
         assert_eq!(draft.title, "Title");
         assert_eq!(draft.tags, vec!["Rust"]);
+    }
+
+    #[test]
+    fn every_profile_example_is_accepted_by_the_validator() {
+        for example in note_profile().examples {
+            validate_note_draft(NoteDraft {
+                title: "Example".into(),
+                body: example.body.into(),
+                tags: Vec::new(),
+            })
+            .unwrap_or_else(|errors| panic!("{} must be valid: {errors:?}", example.kind));
+        }
+    }
+
+    #[test]
+    fn strict_syntax_is_rejected_before_storage_and_rendering() {
+        let body = "[role=test]";
+        let errors = validate_note_draft(NoteDraft {
+            title: "Title".into(),
+            body: body.into(),
+            tags: Vec::new(),
+        })
+        .expect_err("unsupported strict syntax");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteValidationCode::AsciiDocParseFailed)
+        );
+        assert_eq!(render_note_html(&note(body)), Err(RenderError));
+    }
+
+    #[test]
+    fn raw_tag_count_uses_the_advertised_limit() {
+        let errors = validate_note_draft(NoteDraft {
+            title: "Title".into(),
+            body: "Body.".into(),
+            tags: vec!["duplicate".into(); MAX_TAGS + 1],
+        })
+        .expect_err("raw tag count");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteValidationCode::TooManyTags)
+        );
     }
 
     #[test]

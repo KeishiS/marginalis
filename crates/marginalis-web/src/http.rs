@@ -160,9 +160,9 @@ mod tests {
     use marginalis_application::{
         AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
         McpTokenPair, McpValidatedAuthorizationRequest, NoteProfile, NoteProfileExample,
-        NoteProfileLimits, NoteUseCaseError, NoteUseCases, NoteValidationCode,
-        NoteValidationDiagnostic, NoteValidationTarget, OidcAuthenticationUseCases, Utf8ByteSpan,
-        WebSessionUseCases,
+        NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteUseCaseError,
+        NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget,
+        OidcAuthenticationUseCases, Utf8ByteSpan, WebSessionUseCases,
     };
     use marginalis_domain::{
         Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft,
@@ -265,9 +265,22 @@ mod tests {
                     max_tags: 50,
                     max_tag_characters: 64,
                 },
+                normalization: NoteProfileNormalization {
+                    title: vec!["trim", "unicode_nfc"],
+                    tags: vec!["trim", "unicode_nfc"],
+                },
+                syntax: NoteProfileSyntax {
+                    allowed_blocks: vec!["paragraph"],
+                    allowed_inlines: Vec::new(),
+                    source_language_optional: true,
+                    allowed_math_languages: vec!["latexmath"],
+                    title_forbidden: vec!["empty"],
+                    tag_forbidden: vec!["empty"],
+                },
                 allowed_source_languages: vec!["rust"],
                 forbidden_rules: Vec::new(),
                 examples: vec![NoteProfileExample {
+                    kind: "paragraph",
                     description: "Paragraph",
                     body: "Body.",
                 }],
