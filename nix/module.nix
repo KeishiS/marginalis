@@ -16,6 +16,32 @@ let
       throw "services.marginalis.listenAddress must end with a TCP port"
     else
       lib.toInt (builtins.elemAt matched 0);
+  commonServiceConfig = {
+    User = "marginalis";
+    Group = "marginalis";
+    UMask = "0077";
+    NoNewPrivileges = true;
+    CapabilityBoundingSet = "";
+    LockPersonality = true;
+    PrivateDevices = true;
+    PrivateTmp = true;
+    ProtectHome = true;
+    ProtectSystem = "strict";
+    ProtectClock = true;
+    ProtectControlGroups = true;
+    ProtectKernelLogs = true;
+    ProtectKernelModules = true;
+    ProtectKernelTunables = true;
+    RestrictNamespaces = true;
+    RestrictRealtime = true;
+    SystemCallFilter = [
+      "@system-service"
+      "~@privileged"
+    ];
+  };
+  localServiceConfig = commonServiceConfig // {
+    RestrictAddressFamilies = [ "AF_UNIX" ];
+  };
   inherit (lib)
     mkEnableOption
     mkIf
@@ -177,8 +203,9 @@ in
             && builtins.match ".*[[:space:]].*" cfg.backupDirectory == null
             && cfg.backupDirectory != cfg.dataDir
             && !lib.hasPrefix "${cfg.dataDir}/" cfg.backupDirectory
+            && !lib.hasPrefix "${cfg.backupDirectory}/" cfg.dataDir
           );
-        message = "services.marginalis.backupDirectory must be an absolute non-root path without whitespace and outside services.marginalis.dataDir.";
+        message = "services.marginalis.backupDirectory and services.marginalis.dataDir must be separate absolute non-root paths without whitespace; neither may contain the other.";
       }
     ];
 
@@ -215,47 +242,28 @@ in
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
       };
-      serviceConfig = {
-        ExecStart = "${cfg.package}/bin/marginalis";
-        User = "marginalis";
-        Group = "marginalis";
-        WorkingDirectory = cfg.dataDir;
-        Restart = "on-failure";
-        RestartSec = "5s";
-        TimeoutStopSec = "30s";
-        LoadCredential = [ "oidc-client-secret:${cfg.oidc.clientSecretFile}" ];
-        UMask = "0077";
-        NoNewPrivileges = true;
-        CapabilityBoundingSet = "";
-        LockPersonality = true;
-        PrivateDevices = true;
-        PrivateTmp = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        ProtectClock = true;
-        ProtectControlGroups = true;
-        ProtectKernelLogs = true;
-        ProtectKernelModules = true;
-        ProtectKernelTunables = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictAddressFamilies = [
-          "AF_UNIX"
-          "AF_INET"
-          "AF_INET6"
-        ];
-        SystemCallFilter = [
-          "@system-service"
-          "~@privileged"
-        ];
-        ReadWritePaths = [ cfg.dataDir ];
-      }
-      // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
-        # 既定の永続領域はservice開始前にsystemd自身が作成する。手動削除後も
-        # ReadWritePathsのmount namespace構築より先に復元される。
-        StateDirectory = "marginalis";
-        StateDirectoryMode = "0750";
-      };
+      serviceConfig =
+        commonServiceConfig
+        // {
+          ExecStart = "${cfg.package}/bin/marginalis";
+          WorkingDirectory = cfg.dataDir;
+          Restart = "on-failure";
+          RestartSec = "5s";
+          TimeoutStopSec = "30s";
+          LoadCredential = [ "oidc-client-secret:${cfg.oidc.clientSecretFile}" ];
+          RestrictAddressFamilies = [
+            "AF_UNIX"
+            "AF_INET"
+            "AF_INET6"
+          ];
+          ReadWritePaths = [ cfg.dataDir ];
+        }
+        // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
+          # 既定の永続領域はservice開始前にsystemd自身が作成する。手動削除後も
+          # ReadWritePathsのmount namespace構築より先に復元される。
+          StateDirectory = "marginalis";
+          StateDirectoryMode = "0750";
+        };
     };
 
     # v0.3の削除済みノートは30日間だけ保持し、期限切れの認証状態も削除する。SQLite正本だけを
@@ -266,38 +274,18 @@ in
         RUST_LOG = cfg.logFilter;
         MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
       };
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${cfg.package}/bin/marginalis purge-expired";
-        User = "marginalis";
-        Group = "marginalis";
-        WorkingDirectory = cfg.dataDir;
-        UMask = "0077";
-        NoNewPrivileges = true;
-        CapabilityBoundingSet = "";
-        LockPersonality = true;
-        PrivateDevices = true;
-        PrivateTmp = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        ProtectClock = true;
-        ProtectControlGroups = true;
-        ProtectKernelLogs = true;
-        ProtectKernelModules = true;
-        ProtectKernelTunables = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictAddressFamilies = [ "AF_UNIX" ];
-        SystemCallFilter = [
-          "@system-service"
-          "~@privileged"
-        ];
-        ReadWritePaths = [ cfg.dataDir ];
-      }
-      // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
-        StateDirectory = "marginalis";
-        StateDirectoryMode = "0750";
-      };
+      serviceConfig =
+        localServiceConfig
+        // {
+          Type = "oneshot";
+          ExecStart = "${cfg.package}/bin/marginalis purge-expired";
+          WorkingDirectory = cfg.dataDir;
+          ReadWritePaths = [ cfg.dataDir ];
+        }
+        // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
+          StateDirectory = "marginalis";
+          StateDirectoryMode = "0750";
+        };
     };
 
     systemd.timers.marginalis-purge-expired = {
@@ -325,20 +313,10 @@ in
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
       };
-      serviceConfig = {
+      serviceConfig = localServiceConfig // {
         Type = "oneshot";
         ExecStart = "${cfg.package}/bin/marginalis diagnose";
-        User = "marginalis";
-        Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
-        UMask = "0077";
-        NoNewPrivileges = true;
-        CapabilityBoundingSet = "";
-        PrivateDevices = true;
-        PrivateTmp = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        RestrictAddressFamilies = [ "AF_UNIX" ];
         ReadOnlyPaths = [ cfg.dataDir ];
       };
     };
@@ -351,44 +329,24 @@ in
         RUST_LOG = cfg.logFilter;
         MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
       };
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = [
-          "${cfg.package}/bin/marginalis backup --directory ${lib.escapeShellArg cfg.backupDirectory}"
-          "${cfg.package}/bin/marginalis prune-backups --directory ${lib.escapeShellArg cfg.backupDirectory} --keep ${toString cfg.backupRetention}"
-        ];
-        User = "marginalis";
-        Group = "marginalis";
-        WorkingDirectory = cfg.dataDir;
-        UMask = "0077";
-        NoNewPrivileges = true;
-        CapabilityBoundingSet = "";
-        LockPersonality = true;
-        PrivateDevices = true;
-        PrivateTmp = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        ProtectClock = true;
-        ProtectControlGroups = true;
-        ProtectKernelLogs = true;
-        ProtectKernelModules = true;
-        ProtectKernelTunables = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictAddressFamilies = [ "AF_UNIX" ];
-        SystemCallFilter = [
-          "@system-service"
-          "~@privileged"
-        ];
-        ReadWritePaths = [
-          cfg.dataDir
-          cfg.backupDirectory
-        ];
-      }
-      // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
-        StateDirectory = "marginalis";
-        StateDirectoryMode = "0750";
-      };
+      serviceConfig =
+        localServiceConfig
+        // {
+          Type = "oneshot";
+          ExecStart = [
+            "${cfg.package}/bin/marginalis backup --directory ${lib.escapeShellArg cfg.backupDirectory}"
+            "${cfg.package}/bin/marginalis prune-backups --directory ${lib.escapeShellArg cfg.backupDirectory} --keep ${toString cfg.backupRetention}"
+          ];
+          WorkingDirectory = cfg.dataDir;
+          ReadWritePaths = [
+            cfg.dataDir
+            cfg.backupDirectory
+          ];
+        }
+        // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
+          StateDirectory = "marginalis";
+          StateDirectoryMode = "0750";
+        };
     };
 
     systemd.timers.marginalis-backup = mkIf (cfg.backupDirectory != null) {
@@ -406,22 +364,10 @@ in
         {
           description = "Verify the latest Marginalis backup in an isolated database";
           environment.RUST_LOG = cfg.logFilter;
-          serviceConfig = {
+          serviceConfig = localServiceConfig // {
             Type = "oneshot";
             ExecStart = "${cfg.package}/bin/marginalis verify-latest-backup --directory ${lib.escapeShellArg cfg.backupDirectory}";
-            User = "marginalis";
-            Group = "marginalis";
             WorkingDirectory = cfg.dataDir;
-            UMask = "0077";
-            NoNewPrivileges = true;
-            CapabilityBoundingSet = "";
-            PrivateDevices = true;
-            PrivateTmp = true;
-            ProtectHome = true;
-            ProtectSystem = "strict";
-            RestrictNamespaces = true;
-            RestrictRealtime = true;
-            RestrictAddressFamilies = [ "AF_UNIX" ];
             ReadOnlyPaths = [ cfg.backupDirectory ];
           };
         };

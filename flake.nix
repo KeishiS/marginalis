@@ -152,6 +152,12 @@
               };
             in
             assert evaluated.config.networking.firewall.allowedTCPPorts == [ 3000 ];
+            assert evaluated.config.systemd.services.marginalis-diagnose.serviceConfig.ProtectKernelTunables;
+            assert
+              evaluated.config.systemd.services.marginalis-purge-expired.serviceConfig.SystemCallFilter == [
+                "@system-service"
+                "~@privileged"
+              ];
             pkgs.writeText "marginalis-nixos-module-evaluation" evaluated.config.systemd.services.marginalis.serviceConfig.ExecStart;
 
           nixos-module-vm =
@@ -286,7 +292,7 @@
                 + "'.database.available and .database.schema.ok and .database.integrity.ok and .database.foreign_keys.ok'"
               )
               machine.succeed(
-                "journalctl -u marginalis.service -o cat | grep -q 'event=\"oidc.discovery.failed\"'"
+                "journalctl -u marginalis.service -o cat | grep -Fq 'oidc.discovery.failed'"
               )
               machine.succeed("systemctl start marginalis-backup.service")
               machine.succeed("systemctl is-active marginalis.service")
@@ -320,10 +326,49 @@
                 + "${self.packages.${system}.default}/bin/marginalis import-archive "
                 + "--input \"$backup/marginalis-archive.json\""
               )
+              machine.succeed("mount -t tmpfs -o size=64K tmpfs /var/lib/marginalis-backups/test")
+              machine.succeed(
+                "dd if=/dev/zero of=/var/lib/marginalis-backups/test/fill bs=4096 status=none || true"
+              )
+              machine.fail("systemctl start marginalis-backup.service")
+              machine.succeed(
+                "journalctl -u marginalis-backup.service -o cat | "
+                + "grep -Fq 'maintenance.backup.failed'"
+              )
+              machine.succeed(
+                "! find /var/lib/marginalis-backups/test -name COMPLETE -print -quit | grep -q ."
+              )
+              machine.succeed("umount /var/lib/marginalis-backups/test")
+              machine.succeed("systemctl stop marginalis.service")
+              machine.succeed("cp /var/lib/marginalis/marginalis.sqlite /tmp/corrupt.sqlite")
+              machine.succeed(
+                "printf 'not-a-sqlite-database' | "
+                + "dd of=/tmp/corrupt.sqlite bs=1 seek=0 conv=notrunc status=none"
+              )
+              machine.fail(
+                "MARGINALIS_DATABASE_URL=sqlite:/tmp/corrupt.sqlite "
+                + "${self.packages.${system}.default}/bin/marginalis diagnose > /tmp/corrupt-report.json"
+              )
+              machine.succeed(
+                "jq -e '.status == \"failed\" and "
+                + "(.database.available == false or .database.integrity.ok == false)' "
+                + "/tmp/corrupt-report.json"
+              )
+              machine.succeed("chmod 0400 /var/lib/marginalis/marginalis.sqlite")
+              machine.fail("systemctl start marginalis-purge-expired.service")
+              machine.succeed(
+                "journalctl -u marginalis-purge-expired.service -o cat | "
+                + "grep -Fq 'maintenance.purge.failed'"
+              )
+              machine.succeed("chmod 0600 /var/lib/marginalis/marginalis.sqlite")
+              machine.succeed("systemctl start marginalis.service")
+              machine.wait_until_succeeds(
+                "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\"'"
+              )
               machine.succeed("systemctl stop marginalis.service")
               machine.succeed(
-                "sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 1'"
+                "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "'PRAGMA journal_mode=DELETE; UPDATE schema_migrations SET version = 1'"
               )
               machine.fail("systemctl start marginalis-diagnose.service")
               machine.succeed(
@@ -332,8 +377,8 @@
                 + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 2'"
               )
               machine.succeed(
-                "sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 2'"
+                "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "'UPDATE schema_migrations SET version = 2; PRAGMA journal_mode=WAL'"
               )
             '';
           };
