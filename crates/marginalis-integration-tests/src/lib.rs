@@ -2,7 +2,7 @@
 //!
 //! このcrateは試験専用であり、本番crateから参照してはならない。試験用のOIDC providerを
 //! 実HTTP listenerとして提供し、`openidconnect`のDiscovery・code交換・ID token検証を
-//! ネットワーク越しに通す。第二層（NixOS VM上の実Kanidm）はIssue 030で別途扱う。
+//! ネットワーク越しに通す。第二層はNixOS VM上の実Kanidmを使う。
 
 use std::{
     collections::HashMap,

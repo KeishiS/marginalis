@@ -1,10 +1,8 @@
 # リリース手順
 
-`v0.5.0`では`/api/v2`、SQLite schema version 4、`marginalis-archive-3`が公開仕様です。
-旧database、旧archive、`/api/v1`、ファイル正本、root APIには後方互換性を提供しません。
-更新時はserviceを停止し、切戻しが必要なら旧版専用として旧`dataDir`を別領域へ退避します。その後、
-配備先の旧`dataDir`全体を削除し、空の`dataDir`から再初期化します。退避したdatabaseは現行版へ
-importしません。
+この文書は、版に依存しない公開手順を定めます。対象版の互換性、移行、schema、archiveは
+[変更履歴](../CHANGELOG.md)と[受入確認](acceptance.md)を正とします。破壊的リリースではserviceを
+停止し、必要な退避を行った後、対象版の手順どおりに`dataDir`を初期化します。
 
 1. 作業ブランチで `cargo make verify`、`cargo make openapi-check`、`nix flake check --no-build` を実行する。
 2. Kanidm 1.10、TLS、サブパスを使う NixOS E2E を実行する。
@@ -16,7 +14,6 @@ importしません。
 7. `main`へのマージ後、対象commitでrelease-gate workflowを実行し、成功を確認する。
 8. 必須gateが成功した対象commitへrelease tagを作成する。
 
-現行運用では日次backup、30世代保持、四半期の週末復元試験を運用基準とする。復元先は
-本番databaseから隔離し、既存databaseを暗黙に上書きしてはならない。詳細は
-[Issue 045](../issues/045-backup-restore-lifecycle.md)と
-[v0.5.0受入確認](acceptance.md)を参照する。
+現行運用では日次backup、30世代保持、四半期の週末復元試験を運用基準とします。復元先は
+本番databaseから隔離し、既存databaseを暗黙に上書きしてはなりません。詳細は
+[NixOSでの運用](nixos.md)と[受入確認](acceptance.md)を参照してください。
