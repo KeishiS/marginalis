@@ -9,6 +9,8 @@ services.marginalis = {
   baseUrl = "https://notes.example.test/marginalis";
   listenAddress = "127.0.0.1:3000";
   backupDirectory = "/srv/marginalis-backups";
+  backupRetention = 30;
+  restoreCheck.enable = true;
   oidc = {
     issuerUrl = "https://id.example.test/oauth2/openid/marginalis";
     clientId = "marginalis";
@@ -66,9 +68,66 @@ service account、API token、custom ACP は不要である。
 
 - `marginalis-purge-expired.timer` は毎日実行され、30 日を超えたソフトデリート済みノートと、
   期限切れ・失効済みのWeb/OIDC/MCP認証状態を削除します。
-- `marginalis-backup.service` は `backupDirectory` を設定した場合だけ有効です。単一のSQLite read
-  transactionからsnapshotを取得するため、HTTP serviceを停止せずに実行できます。
-- backup は `marginalis-archive.json` を含む時刻付きディレクトリです。空の database へ
-  `marginalis import-archive --input <absolute-file>` で取り込めます。定期復元試験は v3 の release gate 外です。
+- `backupDirectory`を設定すると`marginalis-backup.timer`が毎日実行されます。単一のSQLite read
+  transactionからsnapshotを取得するため、HTTP serviceを停止しません。
+- 成功世代は`backup-<Unix時刻ミリ秒>`というディレクトリで、`marginalis-archive.json`と
+  `COMPLETE`を含みます。archiveの検証が完了するまで`COMPLETE`は作成されません。
+- `backupRetention`は検証済み成功世代の保持数で、既定値は30です。保持処理は
+  `backupDirectory`を正規化し、その直下にある既定名・marker・archiveをすべて検証できた世代だけを
+  対象にします。不完全な世代、symlink、運用者が置いたファイルは数えず、削除もしません。
+- `restoreCheck.enable = true`を明示すると、最新成功世代を隔離した空の一時databaseへ復元して
+  再exportとの論理一致を調べる`marginalis-restore-check.timer`が有効になります。既定scheduleは
+  各四半期の最初の土曜日3時です。`restoreCheck.calendar`で変更できます。
+
+保存媒体のsnapshot、off-site複製、暗号化はhost側で構成します。30世代に加え、復元用の一時databaseと
+SQLiteの一時領域を確保してください。必要量の目安は、正本と最大archiveの合計に作業余裕を加えた容量です。
+
+## Backupの確認
+
+archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
+
+```sh
+sudo -u marginalis marginalis validate-archive \
+  --input /srv/marginalis-backups/backup-<時刻>/marginalis-archive.json
+sudo systemctl start marginalis-restore-check.service
+sudo journalctl -u marginalis-backup.service -u marginalis-restore-check.service
+```
+
+backup作成または検証が失敗した場合、保持処理は実行されず、既存の成功世代は残ります。破損した成功世代を
+保持処理が検出した場合も削除前に失敗します。容量不足、権限、mount状態、SQLite errorを上記journalと
+`systemctl status`で確認し、原因を直してから再実行してください。不完全なディレクトリを削除する場合は、
+`COMPLETE`がないことと対象pathが`backupDirectory`直下であることを運用者が確認します。
+
+## 復元と切戻し
+
+本番databaseへ直接importしてはいけません。次の手順では、先に別の空databaseへ復元し、確認後に
+service停止中の切替を行います。
+
+1. 対象archiveを`validate-archive`と`verify-restore`で検証します。
+
+   ```sh
+   sudo -u marginalis marginalis verify-restore \
+     --input /srv/marginalis-backups/backup-<時刻>/marginalis-archive.json
+   ```
+
+2. `dataDir`とは別の永続領域に空の復元先を作り、archiveをimportします。既存ノートまたは認証状態が
+   あるdatabaseへのimportは失敗し、暗黙に上書きされません。
+
+   ```sh
+   sudo -u marginalis env \
+     MARGINALIS_DATABASE_URL=sqlite:/srv/marginalis-restore/marginalis.sqlite \
+     marginalis import-archive \
+     --input /srv/marginalis-backups/backup-<時刻>/marginalis-archive.json
+   ```
+
+3. 復元先を再exportし、`validate-archive`で検証します。ノート数、ACL、削除状態、revisionを
+   運用上の期待値とも照合します。archiveはWeb sessionやMCP tokenなどの認証状態を含まないため、
+   切替後は再ログインと必要に応じたMCP再認可が必要です。
+4. maintenance windowでserviceを停止し、現在の`dataDir`を削除せず退避します。復元済みdatabaseを
+   新しい`dataDir`へ配置して所有者とmodeを確認した後、serviceを起動します。
+5. health、OIDC login、一般利用者と管理者の可視性、ソフトデリート状態、MCP authorizationを確認します。
+
+切戻しではserviceを再度停止し、復元後のdatabaseを別名で保全してから、手順4で退避した元の`dataDir`へ
+戻します。復元先の確認が終わるまで元databaseを上書きまたは削除しないでください。
 
 初回配備後は `GET /api/v2/health`、OIDC login、一般利用者と管理者の可視性、MCP authorization を確認します。

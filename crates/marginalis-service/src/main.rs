@@ -21,7 +21,11 @@ async fn main() {
         Some("purge-expired") => maintenance::purge_expired().await,
         Some("export-archive") => maintenance::export_archive(arguments).await,
         Some("import-archive") => maintenance::import_archive(arguments).await,
+        Some("validate-archive") => maintenance::validate_archive(arguments).await,
+        Some("verify-restore") => maintenance::verify_restore(arguments).await,
+        Some("verify-latest-backup") => maintenance::verify_latest_backup(arguments).await,
         Some("backup") => maintenance::backup(arguments).await,
+        Some("prune-backups") => maintenance::prune_backups(arguments).await,
         Some(_) => Err(cli::USAGE.into()),
     };
     if let Err(error) = result {
