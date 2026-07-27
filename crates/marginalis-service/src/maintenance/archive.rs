@@ -2,7 +2,7 @@
 
 use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
 use crate::cli::required_absolute_file_argument;
-use marginalis_asciidoc::validate_archive_notes;
+use marginalis_asciidoc::{create_archive, validate_archive as validate_archive_contract};
 use marginalis_domain::Archive;
 use marginalis_server::StorageConfig;
 use marginalis_sqlite::SqliteDatabase;
@@ -22,10 +22,11 @@ pub(crate) async fn export_archive(
         return Err(format!("archive output already exists: {}", output.display()).into());
     }
     let configuration = StorageConfig::from_environment()?;
-    let archive = SqliteDatabase::connect(&configuration.database_url)
+    let notes = SqliteDatabase::connect(&configuration.database_url)
         .await?
-        .export_archive()
+        .export_note_bundles()
         .await?;
+    let archive = create_archive(notes);
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -47,7 +48,7 @@ pub(crate) async fn import_archive(
     let configuration = StorageConfig::from_environment()?;
     SqliteDatabase::connect(&configuration.database_url)
         .await?
-        .import_archive(&archive)
+        .import_note_bundles(&archive.notes)
         .await?;
     tracing::info!(event = "archive.import.completed", input = %input.display(), "imported archive");
     Ok(())
@@ -88,7 +89,7 @@ pub(crate) async fn verify_restore(
 pub(super) fn read_validated_archive(path: &Path) -> Result<Archive, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let archive: Archive = serde_json::from_reader(file)?;
-    validate_archive_notes(&archive)?;
+    validate_archive_contract(&archive)?;
     Ok(archive)
 }
 
@@ -96,8 +97,8 @@ pub(super) async fn verify_archive_in_memory(
     archive: &Archive,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let database = SqliteDatabase::connect("sqlite::memory:").await?;
-    database.import_archive(archive).await?;
-    if database.export_archive().await? != *archive {
+    database.import_note_bundles(&archive.notes).await?;
+    if create_archive(database.export_note_bundles().await?) != *archive {
         return Err("archive logical round-trip validation failed".into());
     }
     Ok(())
@@ -110,8 +111,8 @@ pub(super) async fn verify_archive_in_isolated_database(
     let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
     let result = async {
         let database = SqliteDatabase::connect(&database_url).await?;
-        database.import_archive(archive).await?;
-        let restored = database.export_archive().await?;
+        database.import_note_bundles(&archive.notes).await?;
+        let restored = create_archive(database.export_note_bundles().await?);
         if restored != *archive {
             return Err("restored archive does not match the source archive".into());
         }

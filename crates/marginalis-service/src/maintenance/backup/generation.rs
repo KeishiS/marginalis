@@ -36,10 +36,11 @@ pub(super) async fn create(output: &Path) -> Result<(), Box<dyn std::error::Erro
 
 async fn populate(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
-    let archive = SqliteDatabase::connect(&configuration.database_url)
+    let notes = SqliteDatabase::connect(&configuration.database_url)
         .await?
-        .export_archive()
+        .export_note_bundles()
         .await?;
+    let archive = marginalis_asciidoc::create_archive(notes);
     let archive_path = output.join("marginalis-archive.json");
     let archive_file = OpenOptions::new()
         .write(true)

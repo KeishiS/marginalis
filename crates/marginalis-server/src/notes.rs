@@ -23,9 +23,7 @@ fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
     match error {
         SqliteStoreError::NotFound => NoteUseCaseError::NotFound,
         SqliteStoreError::Conflict | SqliteStoreError::LastAdmin => NoteUseCaseError::Conflict,
-        SqliteStoreError::CorruptData | SqliteStoreError::ArchiveFormat => {
-            NoteUseCaseError::Validation
-        }
+        SqliteStoreError::CorruptData => NoteUseCaseError::Validation,
         SqliteStoreError::ArchiveTargetNotEmpty
         | SqliteStoreError::ArchiveMissingAdmin
         | SqliteStoreError::Database(_) => NoteUseCaseError::Unavailable,

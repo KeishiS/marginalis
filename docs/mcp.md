@@ -89,7 +89,7 @@ refresh時のscopeは元のgrantの部分集合だけを許可し、発行する
 rotation の親子関係も、有効な子孫がある間保持します。これは
 [OAuth 2.0 Security Best Current Practice §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
 の replay 検知要件に従うものです。
-現行のschema versionは2です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
+現行のschema versionは3です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
 再初期化し、MCP clientは再登録・再認可してください。
 
 Dynamic Client Registration は 16 KiB の本文上限、redirect originごとに10分あたり30件のrate limit、
