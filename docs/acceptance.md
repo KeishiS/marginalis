@@ -1,17 +1,27 @@
-# v0.3.0 受入確認
+# v0.3.1 受入確認
 
-この受入は空の SQLite database から行います。v0.2 の DB、`dataDir`、ファイル正本、root credential は
-入力にしません。archive import と定期復元試験は公開後の運用改善であり、本 release gate には含めません。
+この受入はv0.3.0のschema version 2と公開APIを維持した保守リリースを対象とします。v0.2のDB、
+`dataDir`、ファイル正本、root credentialは入力にしません。実環境では更新前に成功backupを確保し、
+本番とは隔離した空のSQLite databaseへ復元できることを確認します。
 
 ## 自動証跡
 
-PR CI の `verify` と `nixos-e2e` はそれぞれ `cargo make verify` と `nix flake check -L` を実行する。
-後者には NixOS module の配備、backup/purge、OIDC 未到達時の login fail-closed、実 Kanidm 1.10.4 の
-private CA・OAuth2 client provisioning・OIDC Discovery を含む。プロセス内結合試験は、署名済みgroup
-claimを発行するmock IdPとv0.3の本番用SQLite・service・routerを使い、`server-users`拒否、
-`server-admins`可視性、MCP OAuth、ノート作成、認可取消後のaccess/refresh token失効を確認する。
-以下の実browser操作、実Kanidmのgroup変更、外部MCP clientは実運用のIdPとclientを要するため、
-release issueで手動結果を記録する。
+PR CIの`verify`と`nixos-e2e`は、それぞれ`cargo make verify`と`nix flake check -L`を実行します。
+`cargo make release-gate`はこれらにrelease metadata、配布package、protocol fixture、失敗証跡の
+秘密情報検査を加えます。
+
+NixOS VMは次の経路を自動確認します。
+
+- backup生成、markerとarchiveの検証、最新成功世代の隔離復元、論理内容の一致、30世代保持
+- ACL、revision、ソフトデリート状態の復元と、空でないdatabase・破損archiveの拒否
+- database破損、schema不一致、OIDC到達不能、保存先容量不足、purge失敗と回復
+- 実Kanidm 1.10.4、private CA、nginx subpath、Playwrightによるloginとcallback
+- DCR、Authorization Code + PKCE S256、同一sessionのconsent、CSRF・Origin拒否
+- refresh token rotationと再利用時のfamily失効、実HTTP MCP初期化、認可取消
+
+プロセス内結合試験は、署名済みgroup claimを発行するmock IdPと本番用SQLite・service・routerを使い、
+`server-users`拒否、`server-admins`可視性、JSON-RPC、MCP tool callを網羅します。外部MCP clientと
+本番データの確認だけを手動受入としてrelease issueへ記録します。
 
 ## 必須確認
 
@@ -19,7 +29,7 @@ release issueで手動結果を記録する。
    OAuth metadataは`baseUrl`からRFC 8414/9728に従って導出し、Kanidmの`issuerUrl`からは
    導出しない。host rootの`baseUrl`ではsubject pathを付けず、subpathの場合だけwell-known
    suffixの後ろへsubject pathを付ける。
-2. TLS とサブパスで OIDC login を行い、`server-users` 所属者だけが session を取得できる。
+2. TLSとサブパスでOIDC loginを行い、`server-users`所属者だけがsessionを取得できる。
 3. `server-admins` の利用者が他人のノートを閲覧・管理でき、通常利用者には ACL が適用される。
 4. `groups` claim を持たない主体と `server-users` 非所属の主体がログインを拒否されること、
    `server-admins` の追加が次回ログインで管理権限として反映されることを確認する。
@@ -38,10 +48,13 @@ release issueで手動結果を記録する。
    Claude.ai Web UIは`Customize`の`Connectors`へ`B/mcp`をcustom connectorとして追加する。
    Claude.ai subscriptionでClaude Codeへログインしている場合は、同connectorがClaude Codeにも表示される
    ことを確認する。
-7. `marginalis-backup.service` が指定先に archive を作ること、日次 purge timer が有効なことを確認する。
+7. `marginalis-backup.service`が指定先に検証済みarchiveを作り、30世代だけを保持することを確認する。
+   日次backup・purge timerと、四半期の`marginalis-restore-check.timer`が有効であることも確認する。
+8. `marginalis diagnose`、systemdの終了status、安定event名、request IDを使い、database、
+   OIDC、保守jobの失敗原因をノート本文や認証情報なしで追跡できることを確認する。
 
-現行schema versionは2である。旧schemaからの自動移行は受入対象外であり、再配備時はarchiveを退避したうえで
-空のdatabaseを初期化し、MCP clientを再登録・再認可する。
+現行schema versionは2です。v0.3.0からv0.3.1では同じdatabaseを保持します。v0.2以前のschemaからの
+自動移行は受入対象外です。
 
 実施結果は release issue に、環境、client の版、Kanidm 1.10 の版、base URL（機密情報を除く）、
 各項目の結果として記録します。HTTP失敗時はresponseの`X-Request-Id`を記録し、同じIDの
