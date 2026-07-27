@@ -1290,6 +1290,16 @@ mod tests {
                 .await
                 .is_err()
         );
+
+        headers.insert(
+            header::ORIGIN,
+            "https://evil.example".parse().expect("foreign origin"),
+        );
+        assert!(
+            authenticated_form_actor(&headers, &state, "session-csrf")
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
