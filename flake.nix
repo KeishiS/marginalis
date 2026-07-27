@@ -65,7 +65,7 @@
         {
           default = rustPlatform.buildRustPackage {
             pname = "marginalis";
-            version = "0.4.0";
+            version = "0.5.0";
             src = pkgs.lib.fileset.toSource {
               root = ./.;
               fileset = pkgs.lib.fileset.unions [
@@ -276,10 +276,7 @@
                 "sqlite3 /var/lib/marginalis/marginalis.sqlite \"INSERT INTO notes "
                 + "(note_id,creator_issuer,creator_subject,title,body,tags_json,created_at_ms,updated_at_ms,revision,deleted_at_ms) VALUES "
                 + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale','stale','body','[]',0,0,1,0),"
-                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent','recent','body','[]',0,0,1,4102444800000);"
-                + "INSERT INTO note_acl VALUES "
-                + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale',3),"
-                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent',3);\""
+                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent','recent','body','[]',0,4102444800000,1,4102444800000);\""
               )
               machine.succeed("systemctl start marginalis-purge-expired.service")
               machine.succeed(
@@ -311,7 +308,7 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-2\" "
+                + "jq -e '.format == \"marginalis-archive-3\" "
                 + "and .adocweave_package_version == \"0.10.1\" "
                 + "and .note_profile_version == 1 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
@@ -327,8 +324,10 @@
                 + "--input \"$backup/marginalis-archive.json\"; "
                 + "test $(sqlite3 /tmp/restored.sqlite 'SELECT COUNT(*) FROM notes') -eq 1; "
                 + "test $(sqlite3 /tmp/restored.sqlite "
-                + "\"SELECT COUNT(*) FROM notes WHERE deleted_at_ms IS NOT NULL AND revision = 1\") -eq 1; "
-                + "test $(sqlite3 /tmp/restored.sqlite 'SELECT COUNT(*) FROM note_acl WHERE permission = 3') -eq 1"
+                + "\"SELECT COUNT(*) FROM notes WHERE deleted_at_ms IS NOT NULL AND revision = 1 "
+                + "AND creator_issuer = 'https://id.example.test' AND creator_subject = 'recent'\") -eq 1; "
+                + "test $(sqlite3 /tmp/restored.sqlite "
+                + "\"SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'note_acl'\") -eq 0"
               )
               machine.fail(
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
@@ -387,11 +386,11 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 3'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 4'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 3; PRAGMA journal_mode=WAL'"
+                + "'UPDATE schema_migrations SET version = 4; PRAGMA journal_mode=WAL'"
               )
             '';
           };

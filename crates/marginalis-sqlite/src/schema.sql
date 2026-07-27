@@ -10,14 +10,9 @@ CREATE TABLE notes (
     revision INTEGER NOT NULL CHECK (revision > 0),
     deleted_at_ms INTEGER
 ) STRICT;
-
-CREATE TABLE note_acl (
-    note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
-    issuer TEXT NOT NULL,
-    subject TEXT NOT NULL,
-    permission INTEGER NOT NULL CHECK (permission BETWEEN 1 AND 3),
-    PRIMARY KEY (note_id, issuer, subject)
-) STRICT;
+CREATE INDEX notes_owner_listing_idx
+ON notes (creator_issuer, creator_subject, updated_at_ms DESC, note_id)
+WHERE deleted_at_ms IS NULL;
 
 CREATE TABLE web_sessions (
     session_id_hash BLOB PRIMARY KEY NOT NULL,

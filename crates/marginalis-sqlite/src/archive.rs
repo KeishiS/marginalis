@@ -1,21 +1,15 @@
-//! 全ノートとACLの可搬archive import/export。
+//! 全ノートの可搬archive import/export。
 
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-};
+use std::{collections::HashSet, str::FromStr};
 
-use marginalis_domain::{EntityId, Note, NoteAclEntry, NoteBundle, NoteId, NotePermission};
-use sqlx::{Row, Sqlite};
+use marginalis_domain::{EntityId, Note};
+use sqlx::Sqlite;
 
-use crate::{
-    SqliteDatabase, SqliteStoreError, database_error,
-    notes::{note_from_row, permission_from_storage, permission_to_storage},
-};
+use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
 
 impl SqliteDatabase {
     /// SQLite正本を可搬archiveへ格納する論理snapshotとして取り出す。
-    pub async fn export_note_bundles(&self) -> Result<Vec<NoteBundle>, SqliteStoreError> {
+    pub async fn export_notes(&self) -> Result<Vec<Note>, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let rows = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
@@ -24,75 +18,34 @@ impl SqliteDatabase {
         .fetch_all(&mut *transaction)
         .await
         .map_err(database_error)?;
-        let acl_rows = sqlx::query(
-            "SELECT note_id, issuer, subject, permission
-             FROM note_acl ORDER BY note_id ASC, issuer ASC, subject ASC",
-        )
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        let mut acl_by_note = HashMap::<NoteId, Vec<NoteAclEntry>>::new();
-        for row in acl_rows {
-            let note_id = row
-                .try_get::<String, _>("note_id")
-                .map_err(database_error)?
-                .parse::<EntityId>()
-                .map(NoteId::new)
-                .map_err(|_| SqliteStoreError::CorruptData)?;
-            let permission = permission_from_storage(
-                row.try_get::<i64, _>("permission")
-                    .map_err(database_error)?,
-            )?;
-            acl_by_note.entry(note_id).or_default().push(NoteAclEntry {
-                issuer: row.try_get("issuer").map_err(database_error)?,
-                subject: row.try_get("subject").map_err(database_error)?,
-                permission,
-            });
-        }
-        let mut notes = Vec::with_capacity(rows.len());
-        for row in rows {
-            let note = note_from_row(row)?;
-            let acl = acl_by_note.remove(&note.note_id).unwrap_or_default();
-            notes.push(NoteBundle { note, acl });
-        }
+        let notes = rows
+            .into_iter()
+            .map(note_from_row)
+            .collect::<Result<Vec<_>, _>>()?;
         transaction.commit().await.map_err(database_error)?;
         Ok(notes)
     }
 
     /// 検証済みの論理snapshotを空databaseへ一つのtransactionでimportする。
-    pub async fn import_note_bundles(&self, notes: &[NoteBundle]) -> Result<(), SqliteStoreError> {
+    pub async fn import_notes(&self, notes: &[Note]) -> Result<(), SqliteStoreError> {
         let mut note_ids = HashSet::new();
-        for bundle in notes {
-            if !note_ids.insert(bundle.note.note_id) {
+        for note in notes {
+            if !note_ids.insert(note.note_id) {
                 return Err(SqliteStoreError::CorruptData);
             }
-            if EntityId::from_str(&bundle.note.note_id.to_string()).is_err()
-                || bundle.note.creator_issuer.trim().is_empty()
-                || bundle.note.creator_subject.trim().is_empty()
-                || bundle.note.created_at > bundle.note.updated_at
-                || bundle
-                    .note
+            if EntityId::from_str(&note.note_id.to_string()).is_err()
+                || note.creator_issuer.trim().is_empty()
+                || note.creator_subject.trim().is_empty()
+                || note.created_at > note.updated_at
+                || note
                     .deleted_at
-                    .is_some_and(|deleted_at| deleted_at < bundle.note.created_at)
-                || bundle.note.revision <= 0
+                    .is_some_and(|deleted_at| deleted_at < note.created_at)
+                || note
+                    .deleted_at
+                    .is_some_and(|deleted_at| deleted_at > note.updated_at)
+                || note.revision <= 0
             {
                 return Err(SqliteStoreError::CorruptData);
-            }
-            let mut acl_subjects = HashSet::new();
-            for entry in &bundle.acl {
-                if entry.issuer.trim().is_empty()
-                    || entry.subject.trim().is_empty()
-                    || !acl_subjects.insert((&entry.issuer, &entry.subject))
-                {
-                    return Err(SqliteStoreError::CorruptData);
-                }
-            }
-            if !bundle
-                .acl
-                .iter()
-                .any(|entry| entry.permission == NotePermission::Admin)
-            {
-                return Err(SqliteStoreError::ArchiveMissingAdmin);
             }
         }
 
@@ -113,20 +66,8 @@ impl SqliteDatabase {
         if target_has_data {
             return Err(SqliteStoreError::ArchiveTargetNotEmpty);
         }
-        for bundle in notes {
-            insert_note_row(&mut transaction, &bundle.note).await?;
-            for entry in &bundle.acl {
-                sqlx::query(
-                    "INSERT INTO note_acl (note_id, issuer, subject, permission) VALUES (?, ?, ?, ?)",
-                )
-                .bind(bundle.note.note_id.to_string())
-                .bind(&entry.issuer)
-                .bind(&entry.subject)
-                .bind(permission_to_storage(entry.permission))
-                .execute(&mut *transaction)
-                .await
-                .map_err(database_error)?;
-            }
+        for note in notes {
+            insert_note_row(&mut transaction, note).await?;
         }
         transaction.commit().await.map_err(database_error)
     }

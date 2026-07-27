@@ -9,7 +9,7 @@ use adocweave::output::html::{RenderPolicy, render};
 #[cfg(test)]
 use marginalis_application::Utf8ByteSpan;
 use marginalis_application::{NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget};
-use marginalis_domain::{ARCHIVE_FORMAT, Archive, Note, NoteBundle, NoteDraft, UnixMillis};
+use marginalis_domain::{ARCHIVE_FORMAT, Archive, Note, NoteDraft, UnixMillis};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
 
@@ -243,7 +243,7 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
 }
 
 /// SQLiteの論理snapshotへ現行のarchive identityを付与する。
-pub fn create_archive(notes: Vec<NoteBundle>) -> Archive {
+pub fn create_archive(notes: Vec<Note>) -> Archive {
     Archive {
         format: ARCHIVE_FORMAT.into(),
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION.into(),
@@ -254,7 +254,7 @@ pub fn create_archive(notes: Vec<NoteBundle>) -> Archive {
 
 /// archiveのidentityと全ノートが現行のAsciiDoc profileに一致することを検証する。
 ///
-/// ID、時刻、ACL、format markerの構造検証は永続化adapterが担う。本関数はparserを必要とする
+/// ID、時刻、format markerの構造検証は永続化adapterが担う。本関数はparserを必要とする
 /// content policyだけを入力境界で検証し、SQLite adapterをAsciiDoc実装から独立させる。
 pub fn validate_archive(archive: &Archive) -> Result<(), ArchiveValidationError> {
     if archive.format != ARCHIVE_FORMAT
@@ -263,16 +263,16 @@ pub fn validate_archive(archive: &Archive) -> Result<(), ArchiveValidationError>
     {
         return Err(ArchiveValidationError);
     }
-    for bundle in &archive.notes {
+    for note in &archive.notes {
         let normalized = validate_note_draft(NoteDraft {
-            title: bundle.note.title.clone(),
-            body: bundle.note.body.clone(),
-            tags: bundle.note.tags.clone(),
+            title: note.title.clone(),
+            body: note.body.clone(),
+            tags: note.tags.clone(),
         })
         .map_err(|_| ArchiveValidationError)?;
-        if normalized.title != bundle.note.title
-            || normalized.body != bundle.note.body
-            || normalized.tags != bundle.note.tags
+        if normalized.title != note.title
+            || normalized.body != note.body
+            || normalized.tags != note.tags
         {
             return Err(ArchiveValidationError);
         }
@@ -303,7 +303,7 @@ fn format_unix_millis(value: UnixMillis) -> Result<String, ExportError> {
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{Archive, EntityId, NoteBundle, NoteId};
+    use marginalis_domain::{Archive, EntityId, NoteId};
 
     use super::*;
 
@@ -442,10 +442,7 @@ mod tests {
     fn archive_validation_rejects_non_normalized_notes() {
         let mut archived_note = note("safe body");
         archived_note.tags = vec![" duplicate ".into(), "duplicate".into()];
-        let archive = create_archive(vec![NoteBundle {
-            note: archived_note,
-            acl: Vec::new(),
-        }]);
+        let archive = create_archive(vec![archived_note]);
         assert_eq!(validate_archive(&archive), Err(ArchiveValidationError));
     }
 

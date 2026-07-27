@@ -14,7 +14,7 @@
 
 ## 運用者向け
 
-- [NixOS での運用](nixos.md): v0.3 設定の要点と日常操作
+- [NixOS での運用](nixos.md): 現行設定の要点と日常操作
 - [リリース手順](release.md): 自動検証、実環境での確認、タグ付け、公開
 
 ## 設計・開発向け
@@ -22,14 +22,14 @@
 - [GitHubを使う開発手順](development.md): Nix開発環境、`gh`、ブランチ、Pull Request、マージ
 - [カバレッジ](coverage.md): 本番到達性検査、coverage reportの生成と読み方
 - [セキュリティ](security.md): 認証境界、依存脆弱性監査、例外の根拠
-- [要件定義](requirements.md): v0.3 の確定要件
+- [要件定義](requirements.md): 現行の確定要件
 - [アーキテクチャ](architecture.md): クレートの責務、依存関係、データ整合性
 - [v0.3.0 再設計判断記録](v0.3.0-design.md): v0.3.0 の設計を確定した時点の非規範snapshot
 - [v0.3.0 運用snapshot](v0.3.0-operations.md): v0.3.0 公開候補時点の非規範snapshot
 - [連環（Renkan）— 個人研究の記憶を横断する探索基盤](research-search-vision.md): 多様な研究
   データを横断する探索、個人向け学習、研究記録への還流を論じ、Marginalis のあいまい検索を
   第一歩に置く非規範のポジションペーパー
-- [ロードマップ](roadmap.md): v0.4.0のAdocWeave・診断再基準化、認可再設計、条件付き機能の判断時期
+- [ロードマップ](roadmap.md): v0.5.0の所有者モデルと、その後の設計判断
 - [要件ヒアリング記録](interviews.md): 要件を決めた時点の履歴
 
 ## 文書の読み分け

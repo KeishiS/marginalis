@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use marginalis_application::{Clock, NoteProfile, NoteUseCaseError, NoteUseCases, Random};
-use marginalis_domain::{Actor, Note, NoteDraft, NoteId, NotePermission};
+use marginalis_domain::{Actor, Note, NoteDraft, NoteId};
 use marginalis_sqlite::{SqliteDatabase, SqliteStoreError};
 
 use crate::{SystemClock, SystemRandom};
@@ -22,11 +22,11 @@ impl ServerNoteUseCases {
 fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
     match error {
         SqliteStoreError::NotFound => NoteUseCaseError::NotFound,
-        SqliteStoreError::Conflict | SqliteStoreError::LastAdmin => NoteUseCaseError::Conflict,
+        SqliteStoreError::Conflict => NoteUseCaseError::Conflict,
         SqliteStoreError::CorruptData => NoteUseCaseError::Unavailable,
-        SqliteStoreError::ArchiveTargetNotEmpty
-        | SqliteStoreError::ArchiveMissingAdmin
-        | SqliteStoreError::Database(_) => NoteUseCaseError::Unavailable,
+        SqliteStoreError::ArchiveTargetNotEmpty | SqliteStoreError::Database(_) => {
+            NoteUseCaseError::Unavailable
+        }
     }
 }
 
@@ -41,7 +41,7 @@ impl NoteUseCases for ServerNoteUseCases {
 
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
         self.database
-            .visible_note(&actor, note_id, NotePermission::Read)
+            .visible_note(&actor, note_id)
             .await
             .map_err(map_note_error)?
             .ok_or(NoteUseCaseError::NotFound)
@@ -139,7 +139,7 @@ mod tests {
     use super::ServerNoteUseCases;
 
     #[tokio::test]
-    async fn kanidm_subjects_and_sqlite_form_the_only_note_store() {
+    async fn owner_identity_hides_notes_from_other_identities() {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
@@ -154,21 +154,75 @@ mod tests {
             subject: "reader".into(),
             is_administrator: false,
         };
+        let same_subject_from_another_issuer = Actor {
+            issuer: "https://other-kanidm.example.test/oauth2/openid/marginalis".into(),
+            subject: owner.subject.clone(),
+            is_administrator: false,
+        };
         let note = service
             .create_note(
                 owner.clone(),
                 NoteDraft {
                     title: "SQLite canonical note".into(),
                     body: "Only SQLite persists this body.".into(),
-                    tags: vec!["v3".into(), "sqlite".into()],
+                    tags: vec!["ownership".into(), "sqlite".into()],
                 },
             )
             .await
             .expect("create");
         assert_eq!(note.creator_subject, "owner");
         assert_eq!(
-            service.read_note(reader, note.note_id).await,
+            service.read_note(reader.clone(), note.note_id).await,
             Err(NoteUseCaseError::NotFound)
+        );
+        assert_eq!(
+            service
+                .read_note(same_subject_from_another_issuer, note.note_id)
+                .await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        assert_eq!(
+            service
+                .update_note(
+                    reader.clone(),
+                    note.note_id,
+                    NoteDraft {
+                        title: "Hidden update".into(),
+                        body: "Hidden body".into(),
+                        tags: Vec::new(),
+                    },
+                    note.revision,
+                )
+                .await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        assert_eq!(
+            service
+                .update_note(
+                    reader.clone(),
+                    note.note_id,
+                    NoteDraft {
+                        title: "Hidden stale update".into(),
+                        body: "Hidden stale body".into(),
+                        tags: Vec::new(),
+                    },
+                    note.revision + 100,
+                )
+                .await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        assert_eq!(
+            service
+                .soft_delete_note(reader.clone(), note.note_id, note.revision)
+                .await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        assert!(
+            service
+                .list_visible_notes(reader.clone())
+                .await
+                .expect("reader list")
+                .is_empty()
         );
         let updated = service
             .update_note(
@@ -189,6 +243,12 @@ mod tests {
             .await
             .expect("soft delete");
         assert!(deleted.deleted_at.is_some());
+        assert_eq!(
+            service
+                .restore_note(reader.clone(), note.note_id, deleted.revision)
+                .await,
+            Err(NoteUseCaseError::NotFound)
+        );
         assert!(
             service
                 .list_visible_notes(owner.clone())

@@ -111,29 +111,14 @@ pub struct NoteDraft {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct NoteAclEntry {
-    pub issuer: String,
-    pub subject: String,
-    pub permission: NotePermission,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct NoteBundle {
-    pub note: Note,
-    pub acl: Vec<NoteAclEntry>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Archive {
     pub format: String,
     pub adocweave_package_version: String,
     pub note_profile_version: u32,
-    pub notes: Vec<NoteBundle>,
+    pub notes: Vec<Note>,
 }
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-2";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-3";
 pub const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -181,19 +166,6 @@ pub struct McpOAuthClient {
     pub redirect_uris: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-pub enum NotePermission {
-    Read,
-    Write,
-    Admin,
-}
-
-impl NotePermission {
-    pub fn permits(self, required: Self) -> bool {
-        self >= required
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,11 +173,5 @@ mod tests {
     #[test]
     fn entity_id_rejects_non_v7_uuid() {
         assert_eq!(EntityId::try_from_uuid(Uuid::nil()), Err(InvalidEntityId));
-    }
-
-    #[test]
-    fn permissions_are_ordered() {
-        assert!(NotePermission::Admin.permits(NotePermission::Write));
-        assert!(!NotePermission::Read.permits(NotePermission::Write));
     }
 }

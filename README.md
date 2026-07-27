@@ -6,16 +6,17 @@ MCP は同じ認可規則を使います。
 
 ## 現行仕様
 
-- ノート本文・メタデータ・ACL・削除状態の正本は SQLite です。AsciiDoc はノート単位の export、
+- ノート本文・メタデータ・所有者・削除状態の正本は SQLite です。AsciiDoc はノート単位の export、
   JSON archive は全体の import/export 形式です。
-- `server-users` の利用者がログインできます。`server-admins` はすべてのノートを読め、管理できます。
+- `server-users` の利用者がログインできます。通常利用者は自身が作成したノートだけを操作でき、
+  `server-admins` はすべてのノートを管理できます。
 - `/api/v2` が公開 REST API です。仕様は [OpenAPI](docs/openapi.json) を参照してください。
 - MCP は同一オリジンの Streamable HTTP endpoint と OAuth 2.1 Authorization Code + PKCE S256 を
   提供します。クライアントは Dynamic Client Registration を使えます。
 - 削除は 30 日間のソフトデリートで、日次の NixOS timer が期限切れデータを物理削除します。
 
-`v0.2` の `/api/v1`、ローカル root、ファイル正本、既存データは互換対象ではありません。現行版は空の
-SQLite database から初期化します。
+`v0.4`以前のdatabaseとarchive、`/api/v1`、ローカルroot、ファイル正本は互換対象ではありません。
+現行版は空のSQLite databaseから初期化します。
 
 ## 運用
 
