@@ -3,14 +3,21 @@
 この文書には利用者に影響する変更だけを記録する。公開 API、データフォーマット、NixOS
 モジュールの動作を変えない内部的な再構成は掲載しない。
 
-## 未リリース
+## 0.6.0 — 2026-07-27
 
 ### 変更
 
 - AdocWeaveを0.11.0へ更新し、解析、診断、執筆時URL、描画時URLおよびHTML出力上限を
   責務別の公開設定で固定した。
 - archiveとOpenAPIが記録するAdocWeave package版を0.11.0へ更新した。保存規則は変わらないため、
-  SQLite schema、archive形式およびnote profile版は維持した。
+  SQLite schemaとnote profile版は維持し、復元互換性を明示するarchive形式はv4へ更新した。
+- v0.5.0のSQLite schema 4 databaseは`dataDir`を保持したまま更新できる。AdocWeave 0.10.1の
+  archiveはv0.6.0へ復元できないため、更新後に0.11.0のarchiveを新しく作成する必要がある。
+
+### 修正
+
+- 所有者identityの長さ、issuer URL、制御文字を一つのdomain規則で検証し、不正なarchiveから
+  AsciiDocの管理属性を注入できないようにした。
 
 ## 0.5.0 — 2026-07-27
 

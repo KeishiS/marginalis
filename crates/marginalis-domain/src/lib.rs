@@ -3,6 +3,7 @@
 use core::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
+use url::Url;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -118,8 +119,41 @@ pub struct Archive {
     pub notes: Vec<Note>,
 }
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-3";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-4";
 pub const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
+pub const MAX_IDENTITY_ISSUER_BYTES: usize = 2_048;
+pub const MAX_IDENTITY_SUBJECT_BYTES: usize = 1_024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidIdentity;
+
+impl fmt::Display for InvalidIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("identity issuer or subject is invalid")
+    }
+}
+
+impl std::error::Error for InvalidIdentity {}
+
+pub fn validate_identity(issuer: &str, subject: &str) -> Result<(), InvalidIdentity> {
+    let issuer_url = Url::parse(issuer).map_err(|_| InvalidIdentity)?;
+    let issuer_valid = issuer.len() <= MAX_IDENTITY_ISSUER_BYTES
+        && matches!(issuer_url.scheme(), "http" | "https")
+        && !issuer_url.cannot_be_a_base()
+        && issuer_url.username().is_empty()
+        && issuer_url.password().is_none()
+        && issuer_url.query().is_none()
+        && issuer_url.fragment().is_none()
+        && !issuer.chars().any(char::is_control);
+    let subject_valid = !subject.is_empty()
+        && subject.len() <= MAX_IDENTITY_SUBJECT_BYTES
+        && !subject.chars().any(char::is_control);
+    if issuer_valid && subject_valid {
+        Ok(())
+    } else {
+        Err(InvalidIdentity)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Actor {
@@ -173,5 +207,39 @@ mod tests {
     #[test]
     fn entity_id_rejects_non_v7_uuid() {
         assert_eq!(EntityId::try_from_uuid(Uuid::nil()), Err(InvalidEntityId));
+    }
+
+    #[test]
+    fn identity_rejects_active_content_and_unbounded_values() {
+        assert_eq!(
+            validate_identity("https://id.example.test", "alice"),
+            Ok(())
+        );
+        assert_eq!(
+            validate_identity("http://127.0.0.1:3000", "test-user"),
+            Ok(())
+        );
+        for (issuer, subject) in [
+            ("https://id.example.test\n:admin: true", "alice"),
+            ("https://user@id.example.test", "alice"),
+            ("https://id.example.test?tenant=other", "alice"),
+            ("ftp://id.example.test", "alice"),
+            ("https://id.example.test", "alice\n:admin: true"),
+            ("https://id.example.test", ""),
+        ] {
+            assert_eq!(validate_identity(issuer, subject), Err(InvalidIdentity));
+        }
+        let long_issuer = format!(
+            "https://id.example.test/{}",
+            "a".repeat(MAX_IDENTITY_ISSUER_BYTES)
+        );
+        assert_eq!(validate_identity(&long_issuer, "alice"), Err(InvalidIdentity));
+        assert_eq!(
+            validate_identity(
+                "https://id.example.test",
+                &"a".repeat(MAX_IDENTITY_SUBJECT_BYTES + 1)
+            ),
+            Err(InvalidIdentity)
+        );
     }
 }

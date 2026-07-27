@@ -97,6 +97,8 @@ impl OidcAuthenticationUseCases for ServerOidcAuthenticationUseCases {
         if !identity.groups.is_user("server-users") {
             return Err(AuthenticationUseCaseError::Rejected);
         }
+        marginalis_domain::validate_identity(&identity.issuer, &identity.subject)
+            .map_err(|_| AuthenticationUseCaseError::Rejected)?;
         Ok(Actor {
             issuer: identity.issuer,
             subject: identity.subject,

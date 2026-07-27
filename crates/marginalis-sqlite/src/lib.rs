@@ -361,6 +361,12 @@ mod tests {
             rejected_database.import_notes(&invalid_snapshot).await,
             Err(SqliteStoreError::CorruptData)
         );
+        let mut injected_identity = snapshot.clone();
+        injected_identity[0].creator_subject = "alice\n:admin: true".into();
+        assert_eq!(
+            rejected_database.import_notes(&injected_identity).await,
+            Err(SqliteStoreError::CorruptData)
+        );
         let mut invalid_deleted_at = snapshot.clone();
         invalid_deleted_at[0].deleted_at =
             Some(UnixMillis::new(invalid_deleted_at[0].updated_at.get() + 1));

@@ -65,7 +65,7 @@
         {
           default = rustPlatform.buildRustPackage {
             pname = "marginalis";
-            version = "0.5.0";
+            version = "0.6.0";
             src = pkgs.lib.fileset.toSource {
               root = ./.;
               fileset = pkgs.lib.fileset.unions [
@@ -105,6 +105,10 @@
         system:
         let
           pkgs = pkgsFor system;
+          marginalisV050Schema = pkgs.fetchurl {
+            url = "https://raw.githubusercontent.com/KeishiS/Marginalis/v0.5.0/crates/marginalis-sqlite/src/schema.sql";
+            hash = "sha256-U8R8xzBYkohX+zKr3TtLlmvTPMhif+EBylhF+2L9u64=";
+          };
           kanidmDiscoveryCerts =
             pkgs.runCommand "marginalis-kanidm-discovery-certs"
               {
@@ -308,7 +312,7 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-3\" "
+                + "jq -e '.format == \"marginalis-archive-4\" "
                 + "and .adocweave_package_version == \"0.11.0\" "
                 + "and .note_profile_version == 1 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
@@ -391,6 +395,41 @@
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
                 + "'UPDATE schema_migrations SET version = 4; PRAGMA journal_mode=WAL'"
+              )
+              machine.succeed("rm -f /var/lib/marginalis/marginalis.sqlite*")
+              machine.succeed(
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "\"CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY NOT NULL); "
+                + "INSERT INTO schema_migrations (version) VALUES (4);\""
+              )
+              machine.succeed(
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite < ${marginalisV050Schema}"
+              )
+              machine.succeed(
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite \"INSERT INTO notes "
+                + "(note_id,creator_issuer,creator_subject,title,body,tags_json,created_at_ms,updated_at_ms,revision,deleted_at_ms) VALUES "
+                + "('019f0000-0000-7000-8000-000000000050','https://id.example.test','v0.5-user',"
+                + "'v0.5 note','kept across update','[\\\"upgrade\\\"]',1,2,3,NULL);\""
+              )
+              machine.succeed(
+                "chown marginalis:marginalis /var/lib/marginalis/marginalis.sqlite && "
+                + "chmod 0600 /var/lib/marginalis/marginalis.sqlite"
+              )
+              machine.succeed("systemctl start marginalis.service")
+              machine.wait_until_succeeds(
+                "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\"'"
+              )
+              machine.succeed(
+                "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000050' "
+                + "AND creator_subject = 'v0.5-user' AND title = 'v0.5 note' "
+                + "AND body = 'kept across update' AND revision = 3\") -eq 1"
+              )
+              machine.succeed("systemctl start marginalis-diagnose.service")
+              machine.succeed(
+                "journalctl -u marginalis-diagnose.service -o cat | "
+                + "grep '^{\"status\":\"ok\"' | tail -1 | jq -e "
+                + "'.database.schema.ok and .database.schema.actual == 4 and .database.schema.expected == 4'"
               )
             '';
           };

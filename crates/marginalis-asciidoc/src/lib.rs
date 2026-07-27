@@ -3,19 +3,24 @@
 use core::fmt;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
+use adocweave::OutputLimits;
 use adocweave::output::diagnostics::Severity;
-use adocweave::output::html::{RenderPolicy, render};
-use adocweave::resolution::ActiveUrlPolicy;
-use adocweave::{AnalysisOptions, DiagnosticProfile, OutputLimits, SyntaxMode, SyntaxOptions};
+use adocweave::output::html::render;
 #[cfg(test)]
 use marginalis_application::Utf8ByteSpan;
 use marginalis_application::{NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget};
-use marginalis_domain::{ARCHIVE_FORMAT, Archive, Note, NoteDraft, UnixMillis};
+use marginalis_domain::{ARCHIVE_FORMAT, Archive, Note, NoteDraft, UnixMillis, validate_identity};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
 
+mod configuration;
 mod policy;
 
+use configuration::{
+    analysis_options as note_analysis_options, html_is_within_output_limits,
+    output_limits as note_output_limits, render_policy as note_render_policy,
+};
 pub use policy::note_profile;
 use policy::{diagnostic, diagnostic_sort_key, span, validate_note_content_profile};
 
@@ -42,38 +47,6 @@ pub const MAX_TITLE_CHARACTERS: usize = 200;
 pub const MAX_NOTE_BODY_BYTES: usize = 512 * 1024;
 pub const MAX_TAGS: usize = 50;
 pub const MAX_TAG_CHARACTERS: usize = 64;
-
-fn note_analysis_options() -> AnalysisOptions {
-    let mut diagnostics = DiagnosticProfile::default();
-    diagnostics.lint.authored_url_policy.allow_relative = false;
-    AnalysisOptions {
-        syntax: SyntaxOptions {
-            syntax_mode: SyntaxMode::Strict,
-            ..SyntaxOptions::default()
-        },
-        diagnostics,
-    }
-}
-
-fn note_render_policy() -> RenderPolicy {
-    RenderPolicy {
-        active_urls: ActiveUrlPolicy {
-            allow_authored_relative: false,
-            allow_resolved_relative: false,
-            allow_resolved_root_relative: false,
-            ..ActiveUrlPolicy::default()
-        },
-        ..RenderPolicy::default()
-    }
-}
-
-fn note_output_limits() -> OutputLimits {
-    OutputLimits::default()
-}
-
-fn html_is_within_output_limits(html: &str, limits: &OutputLimits) -> bool {
-    u32::try_from(html.len()).is_ok_and(|length| length <= limits.max_output_bytes)
-}
 
 /// 固定した仕様と実行時の仕様が異なる場合に返すエラー。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,11 +82,19 @@ pub fn verify_runtime_package_version() -> Result<(), PackageVersionMismatch> {
 
 /// SQLite正本から可搬用のAsciiDoc文書を生成できない理由。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ExportError;
+pub enum ExportError {
+    InvalidIdentity,
+    InvalidTimestamp,
+}
 
 impl fmt::Display for ExportError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("canonical note timestamp is outside the RFC 3339 range")
+        match self {
+            Self::InvalidIdentity => formatter.write_str("canonical note identity is invalid"),
+            Self::InvalidTimestamp => {
+                formatter.write_str("canonical note timestamp is outside the RFC 3339 range")
+            }
+        }
     }
 }
 
@@ -124,6 +105,8 @@ impl std::error::Error for ExportError {}
 /// headerは永続化しない。`note-id`、作成者、時刻、タグは正本から毎回生成するため、利用者が
 /// server管理属性を偽装する経路を作らない。
 pub fn export_note(note: &Note) -> Result<String, ExportError> {
+    validate_identity(&note.creator_issuer, &note.creator_subject)
+        .map_err(|_| ExportError::InvalidIdentity)?;
     let created_at = format_unix_millis(note.created_at)?;
     let updated_at = format_unix_millis(note.updated_at)?;
     Ok(format!(
@@ -321,9 +304,9 @@ impl std::error::Error for ArchiveValidationError {}
 fn format_unix_millis(value: UnixMillis) -> Result<String, ExportError> {
     let nanos = i128::from(value.get()) * 1_000_000;
     OffsetDateTime::from_unix_timestamp_nanos(nanos)
-        .map_err(|_| ExportError)?
+        .map_err(|_| ExportError::InvalidTimestamp)?
         .format(&Rfc3339)
-        .map_err(|_| ExportError)
+        .map_err(|_| ExportError::InvalidTimestamp)
 }
 
 #[cfg(test)]
@@ -363,6 +346,14 @@ mod tests {
         assert!(exported.contains(":note-id: 0197c9bc-0000-7000-8000-000000000001"));
         assert!(exported.contains(":creator-subject: alice"));
         assert!(exported.ends_with("\n\nbody"));
+    }
+
+    #[test]
+    fn export_rejects_identity_attribute_injection() {
+        let mut unsafe_note = note("body");
+        unsafe_note.creator_subject = "alice\n:admin: true".into();
+        assert_eq!(export_note(&unsafe_note), Err(ExportError::InvalidIdentity));
+        assert_eq!(render_note_html(&unsafe_note), Err(RenderError));
     }
 
     #[test]
@@ -602,29 +593,40 @@ mod tests {
                     assert_eq!(case["accepted"], true, "{name}");
                     assert!(expected_diagnostics.is_empty(), "{name}");
                     let html = render_note_html(&note(body)).expect("render accepted fixture");
-                    for expected in case["html_contains"].as_array().expect("HTML fragments") {
-                        assert!(
-                            html.contains(expected.as_str().expect("HTML fragment")),
-                            "{name}"
-                        );
-                    }
+                    assert_eq!(
+                        html,
+                        case["html"].as_str().expect("complete HTML"),
+                        "{name}"
+                    );
                 }
                 Err(errors) => {
                     assert_eq!(case["accepted"], false, "{name}");
-                    for expected in expected_diagnostics {
-                        let code = expected["code"].as_str().expect("diagnostic code");
-                        let start = u32::try_from(expected["start"].as_u64().expect("start"))
-                            .expect("u32 start");
-                        let end =
-                            u32::try_from(expected["end"].as_u64().expect("end")).expect("u32 end");
-                        assert!(
-                            errors.iter().any(|error| {
-                                error.code.as_str() == code
-                                    && error.span == Some(Utf8ByteSpan { start, end })
-                            }),
-                            "{name}: {errors:?}"
-                        );
-                    }
+                    let actual = errors
+                        .iter()
+                        .map(|error| {
+                            let target = match error.target {
+                                NoteValidationTarget::Title => serde_json::json!("title"),
+                                NoteValidationTarget::Body => serde_json::json!("body"),
+                                NoteValidationTarget::Tag { index } => {
+                                    serde_json::json!({ "tag": index })
+                                }
+                                NoteValidationTarget::Tags => serde_json::json!("tags"),
+                            };
+                            let span = error.span.expect("fixture body diagnostic span");
+                            serde_json::json!({
+                                "code": error.code.as_str(),
+                                "target": target,
+                                "start": span.start,
+                                "end": span.end,
+                                "message": error.message,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    assert_eq!(
+                        serde_json::Value::Array(actual),
+                        serde_json::Value::Array(expected_diagnostics.clone()),
+                        "{name}: {errors:?}"
+                    );
                     assert_eq!(render_note_html(&note(body)), Err(RenderError), "{name}");
                 }
             }
@@ -658,6 +660,25 @@ mod tests {
             rendering.active_urls.allowed_schemes,
             ["http".to_owned(), "https".to_owned()].into()
         );
+        assert_eq!(
+            rendering.source_languages.allowed,
+            Some(
+                DEFAULT_SOURCE_LANGUAGES
+                    .iter()
+                    .map(|language| (*language).to_owned())
+                    .collect()
+            )
+        );
+        assert_eq!(
+            rendering.source_languages.unknown,
+            adocweave::output::html::UnknownSourceLanguage::Diagnostic
+        );
+        assert_eq!(
+            rendering.math_languages.allowed,
+            [adocweave::semantic::MathLanguage::Latex].into()
+        );
+        assert!(!rendering.resources.images);
+        assert!(!rendering.resources.media);
         assert_eq!(note_output_limits().max_output_bytes, 50 * 1024 * 1024);
         assert!(html_is_within_output_limits(
             "1234",

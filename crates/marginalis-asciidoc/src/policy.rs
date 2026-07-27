@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use adocweave::preprocess::discover_includes;
-use adocweave::resolution::{AuthoredUrlPolicy, ReferenceKey};
+use adocweave::resolution::ReferenceKey;
 use adocweave::semantic::{
     Block, DelimitedContent, Inline, MathLanguage, SemanticNode, VerbatimKind, walk,
 };
@@ -15,6 +15,7 @@ use marginalis_application::{
 use crate::{
     DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_BODY_BYTES, MAX_TAG_CHARACTERS, MAX_TAGS,
     MAX_TITLE_CHARACTERS, NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION,
+    configuration::authored_url_policy,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -251,10 +252,7 @@ fn validate_note_content_profile_with(
     analysis: &adocweave::Analysis,
     profile: &NoteContentProfile,
 ) -> Vec<NoteContentError> {
-    let authored_url_policy = AuthoredUrlPolicy {
-        allow_relative: false,
-        ..AuthoredUrlPolicy::default()
-    };
+    let authored_url_policy = authored_url_policy();
     let mut errors = discover_includes(analysis.source())
         .expect("analysis source must have a representable byte length")
         .into_iter()

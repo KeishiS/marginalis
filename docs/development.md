@@ -94,7 +94,9 @@ Pull Requestからマージします。
 
 バージョン、変更履歴、リリース文書を変更する場合も、専用ブランチとPull Requestを使用します。
 Pull Requestの必須チェックと[リリース手順](release.md)の検証が成功した後に`main`へマージし、
-タグはマージ済みの`main`が指すコミットへ付けます。
+`main`の先端で`release-gate`を手動実行します。入力する`release_tag`には作成予定のタグを
+指定します。gateの成功後、検証した`main`のコミットへタグを付けます。タグのpushでも同じ
+gateが再実行されます。
 
 GitHub Actionsの確認には次のコマンドを使用します。
 

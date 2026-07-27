@@ -24,7 +24,8 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
 - 通常利用者は、作成者の`(issuer, subject)`が自身のidentityと一致するノートだけを操作できる。
   `server-admins`は所有者にかかわらずすべてのノートを操作できる。
 - identity は `(issuer, subject)` で識別する。アプリケーションはローカル password、root、登録ポリシーを
-  持たない。
+  持たない。`issuer`はuserinfo、query、fragment、制御文字を含まない絶対HTTP(S) URL、
+  `subject`は空でなく制御文字を含まない値とし、長さ上限をdomainで一元検証する。
 - `server-users` と `server-admins` は、OIDC login 時に署名検証した `groups` claim から決め、その session と
   MCP authorization の有効期間は固定する。
 - Web session は24時間のsliding idle期限と7日の絶対期限を持つ。未完了OIDC login attemptは10分で失効し、
