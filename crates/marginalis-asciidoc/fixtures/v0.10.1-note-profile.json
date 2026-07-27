@@ -1,0 +1,49 @@
+{
+  "adocweave_package_version": "0.10.1",
+  "cases": [
+    {
+      "name": "monospace boundaries",
+      "body": "snake_`code`\n\n日本``和文``日本 😀``emoji``😀",
+      "accepted": true,
+      "html_contains": [
+        "snake_`code`",
+        "日本<code>和文</code>日本",
+        "😀<code>emoji</code>😀"
+      ],
+      "diagnostics": []
+    },
+    {
+      "name": "implicit table header",
+      "body": "|===\n|Name |Value\n\n|alpha |one\n|===",
+      "accepted": true,
+      "html_contains": ["<thead>", "<th class="],
+      "diagnostics": []
+    },
+    {
+      "name": "unsupported source language with UTF-8 prefix",
+      "body": "日本\n\n[source,brainfuck]\n----\n+\n----",
+      "accepted": false,
+      "html_contains": [],
+      "diagnostics": [
+        {
+          "code": "unsupported_source_language",
+          "start": 16,
+          "end": 25
+        }
+      ]
+    },
+    {
+      "name": "unsafe authored URL",
+      "body": "link:javascript:alert(1)[unsafe]",
+      "accepted": false,
+      "html_contains": [],
+      "diagnostics": [
+        {
+          "code": "invalid_url_scheme",
+          "start": 5,
+          "end": 24
+        }
+      ]
+    }
+  ]
+}

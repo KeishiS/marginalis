@@ -63,7 +63,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
     assert_eq!(archive_json["format"], "marginalis-archive-3");
-    assert_eq!(archive_json["adocweave_package_version"], "0.10.1");
+    assert_eq!(archive_json["adocweave_package_version"], "0.11.0");
     assert_eq!(archive_json["note_profile_version"], 1);
 
     let backup = directory.join("backup");
@@ -118,7 +118,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
 
     let incompatible_archive = directory.join("incompatible.json");
     let mut incompatible_json = archive_json.clone();
-    incompatible_json["adocweave_package_version"] = "0.6.1".into();
+    incompatible_json["adocweave_package_version"] = "0.10.1".into();
     fs::write(
         &incompatible_archive,
         serde_json::to_vec(&incompatible_json).expect("serialize incompatible archive"),
@@ -147,7 +147,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     assert!(!result.status.success());
 
     let unknown_field_archive = directory.join("unknown-field.json");
-    incompatible_json["adocweave_package_version"] = "0.10.1".into();
+    incompatible_json["adocweave_package_version"] = "0.11.0".into();
     incompatible_json["unexpected"] = true.into();
     fs::write(
         &unknown_field_archive,

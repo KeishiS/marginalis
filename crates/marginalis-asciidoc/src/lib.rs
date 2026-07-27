@@ -3,9 +3,10 @@
 use core::fmt;
 use std::collections::BTreeMap;
 
-use adocweave::SyntaxMode;
 use adocweave::output::diagnostics::Severity;
 use adocweave::output::html::{RenderPolicy, render};
+use adocweave::resolution::ActiveUrlPolicy;
+use adocweave::{AnalysisOptions, DiagnosticProfile, OutputLimits, SyntaxMode, SyntaxOptions};
 #[cfg(test)]
 use marginalis_application::Utf8ByteSpan;
 use marginalis_application::{NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget};
@@ -18,7 +19,7 @@ mod policy;
 pub use policy::note_profile;
 use policy::{diagnostic, diagnostic_sort_key, span, validate_note_content_profile};
 
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "3cd213fed631a6855859e71b74ee772134ce5834";
+pub const ADOCWEAVE_SOURCE_REVISION: &str = "778e9da4548f03ea8434677d50c819d7ce665809";
 
 /// 初期リリースでシンタックスハイライト対象として受理するsource block言語。
 pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
@@ -34,7 +35,7 @@ pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
 ];
 
 /// 本アプリが受理するAdocWeaveの完全一致パッケージ版。
-pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.10.1";
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.11.0";
 /// Marginalisが保存時に適用するノート入力規則の版。
 pub const NOTE_PROFILE_VERSION: u32 = 1;
 pub const MAX_TITLE_CHARACTERS: usize = 200;
@@ -42,11 +43,36 @@ pub const MAX_NOTE_BODY_BYTES: usize = 512 * 1024;
 pub const MAX_TAGS: usize = 50;
 pub const MAX_TAG_CHARACTERS: usize = 64;
 
-fn note_parse_options() -> adocweave::ParseOptions {
-    adocweave::ParseOptions {
-        syntax_mode: SyntaxMode::Strict,
-        ..Default::default()
+fn note_analysis_options() -> AnalysisOptions {
+    let mut diagnostics = DiagnosticProfile::default();
+    diagnostics.lint.authored_url_policy.allow_relative = false;
+    AnalysisOptions {
+        syntax: SyntaxOptions {
+            syntax_mode: SyntaxMode::Strict,
+            ..SyntaxOptions::default()
+        },
+        diagnostics,
     }
+}
+
+fn note_render_policy() -> RenderPolicy {
+    RenderPolicy {
+        active_urls: ActiveUrlPolicy {
+            allow_authored_relative: false,
+            allow_resolved_relative: false,
+            allow_resolved_root_relative: false,
+            ..ActiveUrlPolicy::default()
+        },
+        ..RenderPolicy::default()
+    }
+}
+
+fn note_output_limits() -> OutputLimits {
+    OutputLimits::default()
+}
+
+fn html_is_within_output_limits(html: &str, limits: &OutputLimits) -> bool {
+    u32::try_from(html.len()).is_ok_and(|length| length <= limits.max_output_bytes)
 }
 
 /// 固定した仕様と実行時の仕様が異なる場合に返すエラー。
@@ -116,7 +142,7 @@ pub fn export_note(note: &Note) -> Result<String, ExportError> {
 /// SQLite正本を再検証した上で、固定RenderPolicyの安全なHTMLへ変換する。
 pub fn render_note_html(note: &Note) -> Result<String, RenderError> {
     let source = export_note(note).map_err(|_| RenderError)?;
-    let analysis = adocweave::Engine::new(note_parse_options())
+    let analysis = adocweave::Engine::new(note_analysis_options())
         .analyze(&source)
         .map_err(|_| RenderError)?;
     if analysis
@@ -127,11 +153,12 @@ pub fn render_note_html(note: &Note) -> Result<String, RenderError> {
     {
         return Err(RenderError);
     }
-    let output = render(analysis.document(), &RenderPolicy::default());
+    let output = render(analysis.document(), &note_render_policy());
     if output
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.severity == Severity::Error)
+        || !html_is_within_output_limits(&output.html, &note_output_limits())
     {
         return Err(RenderError);
     }
@@ -196,7 +223,7 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
             None,
         ));
     } else {
-        match adocweave::Engine::new(note_parse_options()).analyze(&draft.body) {
+        match adocweave::Engine::new(note_analysis_options()).analyze(&draft.body) {
             Ok(analysis) => {
                 errors.extend(
                     analysis
@@ -557,23 +584,118 @@ mod tests {
     }
 
     #[test]
-    fn v010_parsing_semantics_are_part_of_the_note_profile() {
-        let monospace = render_note_html(&note("snake_`code`\n\n日本``和文``日本 😀``emoji``😀"))
-            .expect("render monospace");
-        assert!(monospace.contains("snake_`code`"));
-        assert!(monospace.contains("日本<code>和文</code>日本"));
-        assert!(monospace.contains("😀<code>emoji</code>😀"));
-
-        let implicit_header = render_note_html(&note("|===\n|Name |Value\n\n|alpha |one\n|==="))
-            .expect("render table");
-        assert!(implicit_header.contains("<thead>"));
-        assert!(implicit_header.contains("<th class="));
+    fn v010_and_v011_fixed_inputs_preserve_note_profile_semantics() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../fixtures/v0.10.1-note-profile.json"))
+                .expect("v0.10.1 fixture");
+        assert_eq!(fixture["adocweave_package_version"], "0.10.1");
+        for case in fixture["cases"].as_array().expect("cases") {
+            let name = case["name"].as_str().expect("case name");
+            let body = case["body"].as_str().expect("case body");
+            let expected_diagnostics = case["diagnostics"].as_array().expect("diagnostics");
+            match validate_note_draft(NoteDraft {
+                title: "Title".into(),
+                body: body.into(),
+                tags: Vec::new(),
+            }) {
+                Ok(_) => {
+                    assert_eq!(case["accepted"], true, "{name}");
+                    assert!(expected_diagnostics.is_empty(), "{name}");
+                    let html = render_note_html(&note(body)).expect("render accepted fixture");
+                    for expected in case["html_contains"].as_array().expect("HTML fragments") {
+                        assert!(
+                            html.contains(expected.as_str().expect("HTML fragment")),
+                            "{name}"
+                        );
+                    }
+                }
+                Err(errors) => {
+                    assert_eq!(case["accepted"], false, "{name}");
+                    for expected in expected_diagnostics {
+                        let code = expected["code"].as_str().expect("diagnostic code");
+                        let start = u32::try_from(expected["start"].as_u64().expect("start"))
+                            .expect("u32 start");
+                        let end =
+                            u32::try_from(expected["end"].as_u64().expect("end")).expect("u32 end");
+                        assert!(
+                            errors.iter().any(|error| {
+                                error.code.as_str() == code
+                                    && error.span == Some(Utf8ByteSpan { start, end })
+                            }),
+                            "{name}: {errors:?}"
+                        );
+                    }
+                    assert_eq!(render_note_html(&note(body)), Err(RenderError), "{name}");
+                }
+            }
+        }
 
         let explicit_noheader = render_note_html(&note(
             "[%noheader]\n|===\n|Name |Value\n\n|alpha |one\n|===",
         ))
         .expect("render table without header");
         assert!(!explicit_noheader.contains("<thead>"));
+    }
+
+    #[test]
+    fn v011_configuration_keeps_url_and_lint_responsibilities_explicit() {
+        use adocweave::output::diagnostics::{
+            ASCIIDOC_FILE_LINK, MACRO_BOUNDARY, NON_ASCIIDOC_XREF,
+        };
+
+        let analysis = note_analysis_options();
+        assert!(!analysis.diagnostics.lint.authored_url_policy.allow_relative);
+        assert!(analysis.diagnostics.lint.rule(ASCIIDOC_FILE_LINK).enabled);
+        assert!(analysis.diagnostics.lint.rule(NON_ASCIIDOC_XREF).enabled);
+        assert!(!analysis.diagnostics.lint.rule(MACRO_BOUNDARY).enabled);
+
+        let rendering = note_render_policy();
+        assert!(!rendering.active_urls.allow_authored_relative);
+        assert!(!rendering.active_urls.allow_resolved_relative);
+        assert!(!rendering.active_urls.allow_resolved_root_relative);
+        assert!(!rendering.active_urls.allow_data_uris);
+        assert_eq!(
+            rendering.active_urls.allowed_schemes,
+            ["http".to_owned(), "https".to_owned()].into()
+        );
+        assert_eq!(note_output_limits().max_output_bytes, 50 * 1024 * 1024);
+        assert!(html_is_within_output_limits(
+            "1234",
+            &OutputLimits {
+                max_output_bytes: 4
+            }
+        ));
+        assert!(!html_is_within_output_limits(
+            "12345",
+            &OutputLimits {
+                max_output_bytes: 4
+            }
+        ));
+    }
+
+    #[test]
+    fn v011_rejects_malformed_authored_urls() {
+        let body = "link:https://example.test/%ZZ[bad percent encoding]";
+        let errors = validate_note_draft(NoteDraft {
+            title: "Title".into(),
+            body: body.into(),
+            tags: Vec::new(),
+        })
+        .expect_err("malformed URL");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteValidationCode::InvalidUrlScheme),
+            "{errors:?}"
+        );
+
+        assert!(
+            !note_analysis_options()
+                .diagnostics
+                .lint
+                .authored_url_policy
+                .allows("//example.test/network-path")
+        );
     }
 
     #[test]

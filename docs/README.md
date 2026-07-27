@@ -29,6 +29,7 @@
 - [セキュリティ](security.md): 認証境界、依存脆弱性監査、例外の根拠
 - [要件定義](requirements.md): 現行の確定要件
 - [アーキテクチャ](architecture.md): クレートの責務、依存関係、データ整合性
+- [AdocWeave 0.11移行判断](adocweave-v0.11-migration.md): 固定入力比較、設定責務、lintと版の判断
 - [v0.3.0 再設計判断記録](v0.3.0-design.md): v0.3.0 の設計を確定した時点の非規範snapshot
 - [v0.3.0 運用snapshot](v0.3.0-operations.md): v0.3.0 公開候補時点の非規範snapshot
 - [連環（Renkan）— 個人研究の記憶を横断する探索基盤](research-search-vision.md): 多様な研究

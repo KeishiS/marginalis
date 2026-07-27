@@ -12,3 +12,6 @@ marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 unicode-normalization.workspace = true
 time.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
