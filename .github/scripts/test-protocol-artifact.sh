@@ -12,7 +12,8 @@ printf '%s\n' \
   'location: https://client.example/callback?code=authorization-code-value&state=state-value' \
   'authorization: Bearer access-token-value' \
   'set-cookie: marginalis_session=session-value; Secure' \
-  '{"access_token":"access-token-value","refresh_token":"refresh-token-value"}' \
+  '{"access_token":"access-token-value","refresh_token":"refresh-token-value","csrf_token":"csrf-value","code_verifier":"pkce-value"}' \
+  'grant_type=authorization_code&code=form-code-value&client_secret=form-secret-value' \
   >"$fixture"
 
 "$script_dir/protocol-artifact.sh" sanitize "$fixture" "$sanitized"
@@ -21,9 +22,16 @@ grep -Fq '[REDACTED]' "$sanitized"
 ! grep -Fq 'access-token-value' "$sanitized"
 ! grep -Fq 'refresh-token-value' "$sanitized"
 ! grep -Fq 'authorization-code-value' "$sanitized"
+! grep -Fq 'csrf-value' "$sanitized"
+! grep -Fq 'pkce-value' "$sanitized"
+! grep -Fq 'form-code-value' "$sanitized"
+! grep -Fq 'form-secret-value' "$sanitized"
 "$script_dir/protocol-artifact.sh" check "$sanitized"
 
-printf '%s\n' 'cookie: must-be-detected' >"$work_dir/leaked.log"
+printf '%s\n' \
+  'cookie: must-be-detected' \
+  '{"cookies":[{"name":"marginalis_session","value":"must-be-detected"}]}' \
+  >"$work_dir/leaked.log"
 if "$script_dir/protocol-artifact.sh" check "$work_dir/leaked.log" >/dev/null 2>&1; then
   echo "漏洩検査がCookieを検出しませんでした。" >&2
   exit 1

@@ -505,7 +505,13 @@
               )
               app.succeed(
                 "cp ${./tests/browser/kanidm-login.spec.js} /tmp/kanidm-login.spec.js; "
-                + "cd /tmp && playwright test kanidm-login.spec.js --reporter=line --workers=1"
+                + "cd /tmp; "
+                + "set +e; playwright test kanidm-login.spec.js --reporter=line --workers=1 "
+                + ">/tmp/playwright-raw.log 2>&1; status=$?; set -e; "
+                + "bash ${./.github/scripts/protocol-artifact.sh} sanitize "
+                + "/tmp/playwright-raw.log /tmp/playwright.log; "
+                + "bash ${./.github/scripts/protocol-artifact.sh} check /tmp/playwright.log; "
+                + "cat /tmp/playwright.log; exit $status"
               )
               for operation in ["registration", "authorization", "consent", "revocation"]:
                 app.succeed(
