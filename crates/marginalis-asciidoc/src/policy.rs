@@ -24,40 +24,69 @@ pub(crate) struct NoteContentError {
     pub(crate) range: TextRange,
 }
 
-pub(crate) const FORBIDDEN_RULES: &[(NoteValidationCode, &str)] = &[
-    (
-        NoteValidationCode::IncludeDirectiveDisabled,
-        "include directives are not allowed",
-    ),
-    (
-        NoteValidationCode::InlinePassthroughDisabled,
-        "inline passthrough is not allowed",
-    ),
-    (
-        NoteValidationCode::BlockPassthroughDisabled,
-        "block passthrough is not allowed",
-    ),
-    (
-        NoteValidationCode::DuplicateAnchor,
-        "anchor IDs must be unique within a note",
-    ),
-    (
-        NoteValidationCode::ExternalReferenceDisabled,
-        "cross-document and scheme references are not allowed",
-    ),
-    (
-        NoteValidationCode::InvalidUrlScheme,
-        "the authored link target is not allowed",
-    ),
-    (
-        NoteValidationCode::ResourceDisabled,
-        "external media resources are not allowed",
-    ),
-    (
-        NoteValidationCode::UnsupportedSourceLanguage,
-        "the source block language is not allowed",
-    ),
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ForbiddenRule {
+    IncludeDirective,
+    InlinePassthrough,
+    BlockPassthrough,
+    DuplicateAnchor,
+    ExternalReference,
+    InvalidUrlScheme,
+    Resource,
+    UnsupportedMathLanguage,
+    UnsupportedSourceLanguage,
+}
+
+const FORBIDDEN_RULES: &[ForbiddenRule] = &[
+    ForbiddenRule::IncludeDirective,
+    ForbiddenRule::InlinePassthrough,
+    ForbiddenRule::BlockPassthrough,
+    ForbiddenRule::DuplicateAnchor,
+    ForbiddenRule::ExternalReference,
+    ForbiddenRule::InvalidUrlScheme,
+    ForbiddenRule::Resource,
+    ForbiddenRule::UnsupportedMathLanguage,
+    ForbiddenRule::UnsupportedSourceLanguage,
 ];
+
+impl ForbiddenRule {
+    const fn code(self) -> NoteValidationCode {
+        match self {
+            Self::IncludeDirective => NoteValidationCode::IncludeDirectiveDisabled,
+            Self::InlinePassthrough => NoteValidationCode::InlinePassthroughDisabled,
+            Self::BlockPassthrough => NoteValidationCode::BlockPassthroughDisabled,
+            Self::DuplicateAnchor => NoteValidationCode::DuplicateAnchor,
+            Self::ExternalReference => NoteValidationCode::ExternalReferenceDisabled,
+            Self::InvalidUrlScheme => NoteValidationCode::InvalidUrlScheme,
+            Self::Resource => NoteValidationCode::ResourceDisabled,
+            Self::UnsupportedMathLanguage => NoteValidationCode::UnsupportedMathLanguage,
+            Self::UnsupportedSourceLanguage => NoteValidationCode::UnsupportedSourceLanguage,
+        }
+    }
+
+    const fn message(self) -> &'static str {
+        match self {
+            Self::IncludeDirective => "include directives are not allowed",
+            Self::InlinePassthrough => "inline passthrough is not allowed",
+            Self::BlockPassthrough => "block passthrough is not allowed",
+            Self::DuplicateAnchor => "anchor IDs must be unique within a note",
+            Self::ExternalReference => "cross-document and scheme references are not allowed",
+            Self::InvalidUrlScheme => "the authored link target is not allowed",
+            Self::Resource => "external media resources are not allowed",
+            Self::UnsupportedMathLanguage => "only latexmath formulas are allowed",
+            Self::UnsupportedSourceLanguage => "the source block language is not allowed",
+        }
+    }
+}
+
+impl NoteContentError {
+    const fn forbidden(rule: ForbiddenRule, range: TextRange) -> Self {
+        Self {
+            code: rule.code(),
+            range,
+        }
+    }
+}
 
 pub(crate) fn diagnostic(
     code: NoteValidationCode,
@@ -85,7 +114,7 @@ fn diagnostic_message(code: NoteValidationCode) -> &'static str {
         NoteValidationCode::AsciiDocParseFailed => "body is not valid AsciiDoc",
         forbidden => FORBIDDEN_RULES
             .iter()
-            .find_map(|(candidate, message)| (*candidate == forbidden).then_some(*message))
+            .find_map(|rule| (rule.code() == forbidden).then_some(rule.message()))
             .unwrap_or("note content is not allowed"),
     }
 }
@@ -166,9 +195,9 @@ pub fn note_profile() -> NoteProfile {
         allowed_source_languages: DEFAULT_SOURCE_LANGUAGES.to_vec(),
         forbidden_rules: FORBIDDEN_RULES
             .iter()
-            .map(|(code, description)| NoteProfileRule {
-                code: *code,
-                description,
+            .map(|rule| NoteProfileRule {
+                code: rule.code(),
+                description: rule.message(),
             })
             .collect(),
         examples: vec![
@@ -227,56 +256,45 @@ fn validate_note_content_profile_with(
     let mut errors = discover_includes(analysis.source())
         .expect("analysis source must have a representable byte length")
         .into_iter()
-        .map(|request| NoteContentError {
-            code: NoteValidationCode::IncludeDirectiveDisabled,
-            range: request.range,
-        })
+        .map(|request| NoteContentError::forbidden(ForbiddenRule::IncludeDirective, request.range))
         .collect::<Vec<_>>();
-    errors.extend(
-        analysis
-            .resource_queries()
-            .into_iter()
-            .map(|query| NoteContentError {
-                code: NoteValidationCode::ResourceDisabled,
-                range: query.reference.range(),
-            }),
-    );
+    errors.extend(analysis.resource_queries().into_iter().map(|query| {
+        NoteContentError::forbidden(ForbiddenRule::Resource, query.reference.range())
+    }));
     errors.extend(
         analysis
             .reference_queries()
             .into_iter()
             .filter(|query| !matches!(query.target, ReferenceKey::Local { .. }))
-            .map(|query| NoteContentError {
-                code: NoteValidationCode::ExternalReferenceDisabled,
-                range: query.source_range,
+            .map(|query| {
+                NoteContentError::forbidden(ForbiddenRule::ExternalReference, query.source_range)
             }),
     );
     walk(analysis.document(), |node| match node {
-        SemanticNode::Inline(Inline::Passthrough { range, .. }) => errors.push(NoteContentError {
-            code: NoteValidationCode::InlinePassthroughDisabled,
-            range: *range,
-        }),
+        SemanticNode::Inline(Inline::Passthrough { range, .. }) => errors.push(
+            NoteContentError::forbidden(ForbiddenRule::InlinePassthrough, *range),
+        ),
         SemanticNode::Block(Block::Delimited(block))
             if matches!(block.content, DelimitedContent::Passthrough(_)) =>
         {
-            errors.push(NoteContentError {
-                code: NoteValidationCode::BlockPassthroughDisabled,
-                range: block.range,
-            });
+            errors.push(NoteContentError::forbidden(
+                ForbiddenRule::BlockPassthrough,
+                block.range,
+            ));
         }
         SemanticNode::Inline(Inline::Formula(formula))
             if formula.language != MathLanguage::Latex =>
         {
-            errors.push(NoteContentError {
-                code: NoteValidationCode::UnsupportedMathLanguage,
-                range: formula.range,
-            });
+            errors.push(NoteContentError::forbidden(
+                ForbiddenRule::UnsupportedMathLanguage,
+                formula.range,
+            ));
         }
         SemanticNode::Block(Block::Math(math)) if math.language != MathLanguage::Latex => {
-            errors.push(NoteContentError {
-                code: NoteValidationCode::UnsupportedMathLanguage,
-                range: math.range,
-            });
+            errors.push(NoteContentError::forbidden(
+                ForbiddenRule::UnsupportedMathLanguage,
+                math.range,
+            ));
         }
         SemanticNode::Block(Block::Source(source)) => {
             let Some(language) = source.language.as_deref() else {
@@ -284,10 +302,10 @@ fn validate_note_content_profile_with(
             };
             let normalized = language.to_ascii_lowercase();
             if !profile.allowed_source_languages.contains(&normalized) {
-                errors.push(NoteContentError {
-                    code: NoteValidationCode::UnsupportedSourceLanguage,
-                    range: source.language_range.unwrap_or(source.attribute_range),
-                });
+                errors.push(NoteContentError::forbidden(
+                    ForbiddenRule::UnsupportedSourceLanguage,
+                    source.language_range.unwrap_or(source.attribute_range),
+                ));
             }
         }
         SemanticNode::Block(Block::Verbatim(block)) => {
@@ -299,29 +317,29 @@ fn validate_note_content_profile_with(
             };
             let normalized = language.to_ascii_lowercase();
             if !profile.allowed_source_languages.contains(&normalized) {
-                errors.push(NoteContentError {
-                    code: NoteValidationCode::UnsupportedSourceLanguage,
-                    range: source.language_range.unwrap_or(source.attribute_range),
-                });
+                errors.push(NoteContentError::forbidden(
+                    ForbiddenRule::UnsupportedSourceLanguage,
+                    source.language_range.unwrap_or(source.attribute_range),
+                ));
             }
         }
         SemanticNode::Inline(Inline::Link(link))
             if !render_policy.allows_url(&link.target, UrlContext::AuthoredLink) =>
         {
-            errors.push(NoteContentError {
-                code: NoteValidationCode::InvalidUrlScheme,
-                range: link.target_range,
-            });
+            errors.push(NoteContentError::forbidden(
+                ForbiddenRule::InvalidUrlScheme,
+                link.target_range,
+            ));
         }
         _ => {}
     });
     let mut seen_anchor_ids = BTreeSet::new();
     for target in analysis.reference_targets() {
         if !seen_anchor_ids.insert(&target.id) {
-            errors.push(NoteContentError {
-                code: NoteValidationCode::DuplicateAnchor,
-                range: target.id_range,
-            });
+            errors.push(NoteContentError::forbidden(
+                ForbiddenRule::DuplicateAnchor,
+                target.id_range,
+            ));
         }
     }
     errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.as_str()));
