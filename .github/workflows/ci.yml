@@ -49,7 +49,7 @@ jobs:
                   docs_only=false
                   break
                   ;;
-                docs/* | issues/*)
+                docs/* | README.md | CONTRIBUTING.md | AGENTS.md | CHANGELOG.md | .github/ISSUE_TEMPLATE/*)
                   ;;
                 *)
                   docs_only=false
@@ -69,6 +69,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - name: Check documentation
         if: needs.changes.outputs.docs-only == 'true'
         run: bash .github/scripts/check-docs.sh
@@ -106,4 +108,4 @@ jobs:
         run: nix develop --command cargo make nix-release-check
       - name: Skip NixOS VM E2E for documentation-only changes
         if: needs.changes.outputs.docs-only == 'true'
-        run: echo "docs/** and issues/** changes do not affect the NixOS runtime"
+        run: echo "Documentation-only changes do not affect the NixOS runtime"

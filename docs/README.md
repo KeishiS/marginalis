@@ -1,14 +1,16 @@
 # 文書案内
 
-このディレクトリには、Marginalis の現行仕様、利用手順、運用手順を収録しています。現行の
+このディレクトリには、Marginalisの現行仕様、利用手順、運用手順を収録しています。現行の
 製品要件は[要件定義](requirements.md)、実装上の不変条件は
 [アーキテクチャ](architecture.md)を正とします。REST、MCP、NixOSの詳細は、それぞれの
 主題別文書を正とします。過去のリリース内容は[変更履歴](../CHANGELOG.md)、将来の作業は
-[ロードマップ](roadmap.md)と[Issue 一覧](../issues/README.md)を正とします。
+[ロードマップ](roadmap.md)と[GitHub Issues](https://github.com/KeishiS/marginalis/issues)を
+正とします。配置、対象読者、更新責務は[文書管理方針](documentation.md)に従います。
 
 ## 利用者向け
 
 - [OpenAPI 3.1](openapi.json): `/api/v2` の機械可読な仕様
+- [REST API](rest-api.md): REST APIの利用方法、認可、revision、error
 - [MCP と OAuth](mcp.md): MCP ツール、OAuth 認可、クライアント登録、認可の取消
 - [browser・MCP protocol回帰試験](protocol-regression.md): 自動回帰、client fixture、失敗証跡
 
@@ -16,10 +18,13 @@
 
 - [NixOS での運用](nixos.md): 現行設定の要点と日常操作
 - [リリース手順](release.md): 自動検証、実環境での確認、タグ付け、公開
+- [現行版の受入確認](acceptance.md): 現行リリースの手動受入項目と実施結果
 
 ## 設計・開発向け
 
 - [GitHubを使う開発手順](development.md): Nix開発環境、`gh`、ブランチ、Pull Request、マージ
+- [文書管理方針](documentation.md): 対象読者、責務、正本、更新契機、ADR規則
+- [旧ローカルIssue移行対応表](issue-migration.md): v0.5.0以前のIssue記録と移行先
 - [カバレッジ](coverage.md): 本番到達性検査、coverage reportの生成と読み方
 - [セキュリティ](security.md): 認証境界、依存脆弱性監査、例外の根拠
 - [要件定義](requirements.md): 現行の確定要件
@@ -29,7 +34,7 @@
 - [連環（Renkan）— 個人研究の記憶を横断する探索基盤](research-search-vision.md): 多様な研究
   データを横断する探索、個人向け学習、研究記録への還流を論じ、Marginalis のあいまい検索を
   第一歩に置く非規範のポジションペーパー
-- [ロードマップ](roadmap.md): v0.5.0の所有者モデルと、その後の設計判断
+- [ロードマップ](roadmap.md): v0.5.0公開後の優先順位と次期公開候補
 - [要件ヒアリング記録](interviews.md): 要件を決めた時点の履歴
 
 ## 文書の読み分け
@@ -39,5 +44,5 @@
 優先します。版番号付きsnapshot、ヒアリング記録、将来構想、完了済みIssueは判断時点の記録であり、
 現行仕様ではありません。
 
-識別子、HTTP ヘッダー、設定名、コマンド、コード上の型名は原綴りで表記します。それ以外の
+識別子、HTTPヘッダー、設定名、コマンド、コード上の型名は原綴りで表記します。それ以外の
 一般用語は日本語で説明します。
