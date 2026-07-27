@@ -2,13 +2,14 @@
 
 ## 状態
 
-計画済み。`v0.3.1`の運用堅牢化後、`v0.4.0`の主機能として実装する。
-REST API v2と公開済みMCP toolへ追加的に導入し、既存フィールドの意味は変更しない。
+計画済み。AdocWeave `v0.10.1`、保存形式v2、note profile版を導入した後、
+`v0.4.0`の主機能として実装する。後方互換性は前提とせず、RESTとMCPが同じ診断契約を
+損失なく表現できる形へ変更する。
 
 ## 背景
 
 MCPクライアントは、現在の`tools/list`にある一行の説明だけでは本文の入力規則を判断できない。
-規則に違反すると`-32602 "request is invalid"`だけが返り、違反箇所も分からない。そのため、
+規則に違反すると一般化された検証失敗だけが返り、違反箇所も分からない。そのため、
 AIエージェントが原因を推測して再試行する必要がある。
 
 ## 目的
@@ -25,10 +26,13 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
   外部ファイルを参照するマクロ、危険なURL scheme）、`stem: latexmath`、
   `xref:note:<UUID>[label]`、タグ正規化規則を
   すべて同crateの定数・検証器が決めている。
-- AdocWeaveは位置付き診断を公開APIとして提供する。`marginalis-asciidoc`の検証エラーは既に
-  種別を持つ（`include-directive-disabled`等）。
+- AdocWeave `v0.10.1`の解析診断、位置情報および型付きrender診断を利用する。
+  `marginalis-asciidoc`の検証エラーは既に種別を持つ（`include-directive-disabled`等）。
 - 検証結果は利用者自身が送信した本文だけを対象とする。ACL、他のノート、秘密情報は含めない。
-- `/api/v2`には既存の`code`と`message`を維持した追加フィールドとして導入する。
+- AdocWeaveがLintで受理する相対link、文書間xrefおよびResourceを自動的に許可しない。
+  `v0.4.0`のnote profileでは相対link、includeおよび外部Resourceを拒否する。
+- 診断規則の正本を一つにし、検証器、`get_note_profile`、REST、MCP、tool schemaおよび文書へ
+  投影する。
 
 ## 作業内容
 
@@ -50,18 +54,18 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
 
 ### 2. 検証結果に位置情報を加える
 
-- application層の`NoteUseCaseError::Validation`へ構造化した検証結果を追加する。通信方式に依存しない型
-  （例: `SourceDiagnostic { code, message, start, end }`のリスト）とし、`marginalis-asciidoc`の
-  検証エラー種別とAdocWeave診断の原文範囲から構成する。
-- MCPはJSON-RPC error objectの`data`フィールドへ検証結果の一覧を載せる。`code`と`message`は現行の
-  安定値を維持する（後方互換な追加）。
-- RESTは共通エラーJSONへ`details`配列を追加する。`code`と`message`は変更しない。
-  OpenAPI文書も同時に更新する。
+- application層の`NoteUseCaseError::Validation`へ構造化した検証結果を追加する。通信方式に依存せず、
+  安定したcode、対象field、任意のUTF-8 byte範囲を持つ型とする。タイトルとタグへ本文の
+  `0..0`を疑似的に割り当てない。
+- MCPは、JSONまたはtool引数自体が不正な場合だけJSON-RPC errorを返す。正しいtool呼び出しで
+  ノート検証に失敗した場合は、`isError: true`のtool resultと`structuredContent`へ診断一覧を載せる。
+  診断を理解しないclient向けの短い`text`も返す。
+- RESTは同じ診断をエラー応答へ投影し、OpenAPI文書も同時に更新する。
 - 検証結果には送信された本文に関する情報だけを含める。DBキー、ACL状態、他ノートの存在、
   内部例外を含めない（既存のerror方針を維持）。
 - `create_note`/`update_note`の構造化経路では、bodyの位置が文書全体の位置とずれる。診断の
-  位置はクライアントが送った`body`基準へ変換するか、変換できない場合は位置なし診断として返す。
-  どちらを採るかを実装時に決めて`docs/mcp.md`へ明記する。
+  位置はクライアントが送った`body`基準とする。本文以外のfield、または安全に変換できない診断は
+  位置なしで返し、`docs/mcp.md`へ単位と範囲を明記する。
 
 ### 3. 実装順
 
@@ -73,20 +77,21 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
 
 - ヘッダ込みAsciiDoc雛形のMCP公開。
 - MCP resources機能への移行。現在は`tools`だけを提供するため、読み取り専用ツールとして追加する。
-- 検証規則そのものの変更。許可・禁止する構文はこのIssueでは変えない。
+- ノート間参照と添付Resourceの有効化。
+- ACLとOAuth Authorization Serverの再設計。
 
 ## 完了条件
 
 - `get_note_profile`が`marginalis-asciidoc`の定数から生成した機械可読な入力規則を返し、
   `docs/mcp.md`のtool表・説明と一致している。
 - 入力規則への違反を含む`create_note`または`update_note`が、違反種別と可能な場合は位置を含む診断を
-  JSON-RPC `error.data`で返す。RESTの同経路は共通エラーJSONの`details`で同じ診断を返す。
+  `isError: true`のtool resultと`structuredContent`で返す。RESTの同経路も同じ診断を返す。
 - 診断に秘密情報・ACL情報・内部例外が含まれないことを試験で確認している。
-- OpenAPI document と MCP tool schemaが実装と一致し、既存clientの入力を拒否しないことを
-  適合性試験で確認している。
+- OpenAPI documentとMCP tool schemaが実装と一致し、ChatGPT、Claude Code、Codex CLIの
+  固定シナリオで入力規則の取得、検証失敗の解釈、修正後の保存を確認している。
 
 ## 依存関係
 
-- 公開前提: [048: v0.3.1のリリース受入](048-v0.3.1-release-acceptance.md)
-- 入力規則: `marginalis-asciidoc`の現行profile
+- 公開前提: AdocWeave `v0.10.1`、保存形式v2、note profile版
+- 入力規則: `marginalis-asciidoc`の正規の規則カタログ
 - 通信仕様: REST API v2、JSON-RPC 2.0、現行MCP仕様

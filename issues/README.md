@@ -39,22 +39,25 @@ AsciiDoc関連のIssueでは、MarginalisをAdocWeaveへ組み込む処理を扱
 
 ### v0.3.1運用堅牢化
 
-`v0.3.1`では機能を広げず、v0.3.0の公開仕様を運用し続けるための証拠を追加する。
-着手順は[ロードマップ](../docs/roadmap.md)に従う。
+`v0.3.1`では機能を広げず、v0.3.0の公開仕様を運用し続けるための証拠を追加した。
+受入確認と公開は2026-07-27に完了した。
 
 1. [045: backup・復元ライフサイクル](045-backup-restore-lifecycle.md)
 2. [046: browser・MCP protocol回帰試験](046-browser-mcp-protocol-regression.md)
 3. [047: 実行時の運用診断](047-runtime-operability-diagnostics.md)
 4. [048: v0.3.1のリリース受入](048-v0.3.1-release-acceptance.md)
 
-045、046、047は責務が重ならない範囲で並行できる。048は三Issueの自動検証と実環境受入を
-まとめるrelease issueである。
+045、046、047の自動検証と、048の実環境受入は完了している。
 
-### v0.4.0執筆支援
+### v0.4.0のAsciiDoc契約と執筆支援
 
-`v0.4.0`の主機能は[032: MCP向けの入力規則と検証結果](032-mcp-authoring-profile-and-diagnostics.md)
-とする。MCPを主要な執筆経路として、入力規則と位置付き診断をRESTとMCPで共通化する。
-Web編集、検索方式の変更、グラフ表示は同じreleaseへ混在させない。
+`v0.4.0`では、AdocWeaveを`v0.10.1`へ更新して保存形式v2とnote profile版を導入した後、
+[032: MCP向けの入力規則と検証結果](032-mcp-authoring-profile-and-diagnostics.md)を実装する。
+MCPを主要な執筆経路として、入力規則と位置付き診断をRESTとMCPで共通化する。ACL・OAuthの
+再設計、Web編集、検索方式の変更、グラフ表示は同じreleaseへ混在させない。
+
+新しい作業項目はローカルIssueとして追加せず、文書の役割整理後にGitHub Issuesで管理する。
+詳細な着手順と版の範囲は[ロードマップ](../docs/roadmap.md)を正とする。
 
 ### 旧Issueと条件付き候補の分類
 
