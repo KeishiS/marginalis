@@ -97,16 +97,20 @@
       "CsrfRejected": { "description": "same-origin or CSRF validation failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
       "Conflict": { "description": "revision conflicts or the operation violates an invariant", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
       "NotFound": { "description": "note or authorization is not visible", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
-      "ValidationFailed": { "description": "note input is invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
+      "ValidationFailed": { "description": "note input is invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ValidationProblem" } } } }
     },
     "schemas": {
       "Health": { "type": "object", "required": ["status", "api_version"], "properties": { "status": { "const": "ok" }, "api_version": { "const": "v2" } } },
       "Session": { "type": "object", "required": ["issuer", "subject", "is_administrator"], "properties": { "issuer": { "type": "string", "format": "uri" }, "subject": { "type": "string" }, "is_administrator": { "type": "boolean" } } },
-      "NoteDraft": { "type": "object", "required": ["title", "body", "tags"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 64 } } } },
-      "NoteUpdate": { "allOf": [{ "$ref": "#/components/schemas/NoteDraft" }, { "$ref": "#/components/schemas/Revision" }] },
-      "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } } },
+      "NoteDraft": { "type": "object", "required": ["title", "body", "tags"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 64 } } }, "additionalProperties": false },
+      "NoteUpdate": { "type": "object", "required": ["title", "body", "tags", "expected_revision"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 64 } }, "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
+      "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "Note": { "type": "object", "required": ["note_id", "title", "body", "tags", "created_at_ms", "updated_at_ms", "revision"], "properties": { "note_id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "body": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "created_at_ms": { "type": "integer" }, "updated_at_ms": { "type": "integer" }, "revision": { "type": "integer", "minimum": 1 } } },
-      "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } }
+      "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } }, "additionalProperties": false },
+      "ValidationProblem": { "type": "object", "required": ["code", "message", "diagnostics"], "properties": { "code": { "const": "validation_failed" }, "message": { "type": "string" }, "diagnostics": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/ValidationDiagnostic" } } }, "additionalProperties": false },
+      "ValidationDiagnostic": { "type": "object", "required": ["code", "target", "message"], "properties": { "code": { "type": "string" }, "target": { "$ref": "#/components/schemas/ValidationTarget" }, "span": { "$ref": "#/components/schemas/Utf8ByteSpan" }, "message": { "type": "string" } }, "additionalProperties": false },
+      "ValidationTarget": { "type": "object", "required": ["field"], "properties": { "field": { "enum": ["title", "body", "tag", "tags"] }, "index": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+      "Utf8ByteSpan": { "type": "object", "required": ["start", "end", "unit"], "properties": { "start": { "type": "integer", "minimum": 0 }, "end": { "type": "integer", "minimum": 0 }, "unit": { "const": "utf8_byte" } }, "additionalProperties": false }
     }
   }
 }

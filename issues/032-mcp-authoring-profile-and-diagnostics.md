@@ -23,8 +23,8 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
   MCPの`create_note`/`update_note`は`title`・`body`・`tags`の構造化入力のみを受ける。
   ヘッダ込みの雛形をMCPへ公開する経路は追加しない。RESTの生source経路と二重の意味論を作らない。
 - 本文の入力規則は`marginalis-asciidoc`で定義する。許可するソース言語、禁止構文（include、passthrough、
-  外部ファイルを参照するマクロ、危険なURL scheme）、`stem: latexmath`、
-  `xref:note:<UUID>[label]`、タグ正規化規則を
+  外部ファイルを参照するマクロ、危険なURL scheme、文書間xref）、`stem: latexmath`、
+  ローカルanchor、タグ正規化規則を
   すべて同crateの定数・検証器が決めている。
 - AdocWeave `v0.10.1`の解析診断、位置情報および型付きrender診断を利用する。
   `marginalis-asciidoc`の検証エラーは既に種別を持つ（`include-directive-disabled`等）。
@@ -42,7 +42,7 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
 
 - 機械可読なJSONと短い説明を返す。少なくとも次を含める。
   - 許可するAsciiDoc構文の一覧と、禁止構文の一覧（禁止理由の一行説明つき）。
-  - `xref:note:<UUID>[label]`の書式、anchor付き参照の書式、および例。
+  - ローカルanchor付き参照の書式と例、および文書間xrefを許可しないこと。
   - `stem`の設定（`latexmath`）とインライン・ブロック数式の例。
   - 許可するソースブロック言語の一覧（言語未指定はプレーンテキストとして許可されること）。
   - タグの正規化規則（空白除去、カンマ・改行禁止、大文字小文字の同一視、ソート）。

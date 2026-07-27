@@ -61,11 +61,102 @@ pub enum AuthenticationUseCaseError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteValidationCode {
+    InvalidTitle,
+    InvalidTag,
+    TooManyTags,
+    BodyTooLarge,
+    AsciiDocParseFailed,
+    IncludeDirectiveDisabled,
+    InlinePassthroughDisabled,
+    BlockPassthroughDisabled,
+    DuplicateAnchor,
+    ExternalReferenceDisabled,
+    InvalidUrlScheme,
+    ResourceDisabled,
+    UnsupportedMathLanguage,
+    UnsupportedSourceLanguage,
+}
+
+impl NoteValidationCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidTitle => "invalid_title",
+            Self::InvalidTag => "invalid_tag",
+            Self::TooManyTags => "too_many_tags",
+            Self::BodyTooLarge => "body_too_large",
+            Self::AsciiDocParseFailed => "asciidoc_parse_failed",
+            Self::IncludeDirectiveDisabled => "include_directive_disabled",
+            Self::InlinePassthroughDisabled => "inline_passthrough_disabled",
+            Self::BlockPassthroughDisabled => "block_passthrough_disabled",
+            Self::DuplicateAnchor => "duplicate_anchor",
+            Self::ExternalReferenceDisabled => "external_reference_disabled",
+            Self::InvalidUrlScheme => "invalid_url_scheme",
+            Self::ResourceDisabled => "resource_disabled",
+            Self::UnsupportedMathLanguage => "unsupported_math_language",
+            Self::UnsupportedSourceLanguage => "unsupported_source_language",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NoteValidationTarget {
+    Title,
+    Body,
+    Tag { index: usize },
+    Tags,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Utf8ByteSpan {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteValidationDiagnostic {
+    pub code: NoteValidationCode,
+    pub target: NoteValidationTarget,
+    pub span: Option<Utf8ByteSpan>,
+    pub message: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteProfileLimits {
+    pub max_title_characters: usize,
+    pub max_body_bytes: usize,
+    pub max_tags: usize,
+    pub max_tag_characters: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteProfileRule {
+    pub code: NoteValidationCode,
+    pub description: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteProfileExample {
+    pub description: &'static str,
+    pub body: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteProfile {
+    pub profile_version: u32,
+    pub adocweave_package_version: &'static str,
+    pub limits: NoteProfileLimits,
+    pub allowed_source_languages: Vec<&'static str>,
+    pub forbidden_rules: Vec<NoteProfileRule>,
+    pub examples: Vec<NoteProfileExample>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NoteUseCaseError {
     NotFound,
     Forbidden,
     Conflict,
-    Validation,
+    Validation(Vec<NoteValidationDiagnostic>),
     Unavailable,
 }
 
@@ -75,7 +166,7 @@ impl std::fmt::Display for NoteUseCaseError {
             Self::NotFound => "note is not available",
             Self::Forbidden => "note operation is not permitted",
             Self::Conflict => "note operation conflicts",
-            Self::Validation => "note is invalid",
+            Self::Validation(_) => "note is invalid",
             Self::Unavailable => "note operation is unavailable",
         })
     }
@@ -182,6 +273,7 @@ pub trait NoteUseCases: Send + Sync {
     ) -> Result<Note, NoteUseCaseError>;
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError>;
     fn render_note_html(&self, note: &Note) -> Result<String, NoteUseCaseError>;
+    fn note_profile(&self) -> NoteProfile;
 }
 
 /// Kanidm groupはOIDC login時に検証し、このCookie sessionの有効期間はsnapshotとして固定する。

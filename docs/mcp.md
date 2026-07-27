@@ -116,6 +116,51 @@ MCP transportは[JSON-RPC 2.0](https://www.jsonrpc.org/specification)の`jsonrpc
 現行transportは`MCP-Session-Id`を発行しないstateless構成であり、clientは初期化順序と交渉したversionを
 保持します。serverは各requestのprotocol headerを検証します。
 
+## ノートtoolと入力診断
+
+| tool | scope | 用途 |
+| --- | --- | --- |
+| `get_note_profile` | `notes:read` | 現行の入力制約、禁止規則、許可言語、動作例の取得 |
+| `list_notes` | `notes:read` | 可視ノートの一覧 |
+| `get_note` | `notes:read` | 可視ノートの取得 |
+| `create_note` | `notes:write` | ノートの作成 |
+| `update_note` | `notes:write` | revisionを指定した更新 |
+| `delete_note` | `notes:delete` | revisionを指定したソフトデリート |
+
+`create_note`または`update_note`の前に`get_note_profile`を呼び出してください。profileには
+AdocWeave package版とMarginalis note profile版を別々に含めます。相対link、文書間xref、scheme付きxref、
+include、passthroughおよび外部Resourceは現行profileでは保存できません。ローカルanchorへの参照は
+利用できます。
+
+JSONまたはtool引数の構造が不正な場合はJSON-RPC `-32602`です。構造が正しく、ノート規則に違反する場合は
+次のようにtool実行結果で返します。`span`は利用者が送った`body`を基準とするUTF-8 byteの半開区間です。
+タイトルやタグなど本文位置を持たない診断では`span`を省略します。`content`のtextには
+`structuredContent`と同じJSONを直列化して返します。
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"code\":\"validation_failed\",\"message\":\"note input is invalid\",\"diagnostics\":[{\"code\":\"unsupported_source_language\",\"target\":{\"field\":\"body\"},\"span\":{\"start\":8,\"end\":17,\"unit\":\"utf8_byte\"},\"message\":\"the source block language is not allowed\"}]}"
+    }
+  ],
+  "structuredContent": {
+    "code": "validation_failed",
+    "message": "note input is invalid",
+    "diagnostics": [
+      {
+        "code": "unsupported_source_language",
+        "target": { "field": "body" },
+        "span": { "start": 8, "end": 17, "unit": "utf8_byte" },
+        "message": "the source block language is not allowed"
+      }
+    ]
+  },
+  "isError": true
+}
+```
+
 本リリースのChatGPT、Claude、Codex受入では、互換登録経路としてDynamic Client Registrationを使用します。
 client版と実測結果はrelease issueへ記録するまで未検証として扱います。MCP 2025-11-25が推奨（SHOULD）する
 Client ID Metadata Documentには意図的に対応しません。client指定URLをAuthorization Serverから取得する

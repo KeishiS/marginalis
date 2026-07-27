@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 adocweave.workspace = true
+marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 unicode-normalization.workspace = true
 time.workspace = true

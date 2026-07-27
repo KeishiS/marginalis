@@ -10,7 +10,11 @@ use adocweave::resolution::{ReferenceKey, UrlContext};
 use adocweave::semantic::{
     Block, DelimitedContent, Inline, MathLanguage, SemanticNode, VerbatimKind, walk,
 };
-use adocweave::text::{TextRange, TextSize};
+use adocweave::text::TextRange;
+use marginalis_application::{
+    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileRule, NoteValidationCode,
+    NoteValidationDiagnostic, NoteValidationTarget, Utf8ByteSpan,
+};
 use marginalis_domain::{ARCHIVE_FORMAT, Archive, Note, NoteBundle, NoteDraft, UnixMillis};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
@@ -130,57 +134,64 @@ impl std::error::Error for RenderError {}
 ///
 /// SQLite正本ではheaderを保存しないため、従来の「文書全体の必須属性」検査とは分離して、
 /// 利用者が送るtitle・tags・bodyだけを検査する。本文の位置は入力されたbodyを基準に返す。
-pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValidationError>> {
-    let empty_range = TextRange::new(TextSize::ZERO, TextSize::ZERO).expect("empty range is valid");
+pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>> {
     let mut errors = Vec::new();
     if draft.title.trim().is_empty()
         || draft.title.contains(['\n', '\r'])
         || draft.title.chars().count() > 200
     {
-        errors.push(NoteValidationError {
-            code: "invalid-title".into(),
-            range: empty_range,
-        });
+        errors.push(diagnostic(
+            NoteValidationCode::InvalidTitle,
+            NoteValidationTarget::Title,
+            None,
+        ));
     }
     let mut tags = BTreeMap::new();
-    for tag in draft.tags {
+    for (index, tag) in draft.tags.into_iter().enumerate() {
         let display = tag.trim().nfc().collect::<String>();
         if display.is_empty() || display.contains([',', '\n', '\r']) || display.chars().count() > 64
         {
-            errors.push(NoteValidationError {
-                code: "invalid-tags".into(),
-                range: empty_range,
-            });
+            errors.push(diagnostic(
+                NoteValidationCode::InvalidTag,
+                NoteValidationTarget::Tag { index },
+                None,
+            ));
             continue;
         }
         tags.entry(display.to_lowercase()).or_insert(display);
     }
     if tags.len() > 50 {
-        errors.push(NoteValidationError {
-            code: "too-many-tags".into(),
-            range: empty_range,
-        });
+        errors.push(diagnostic(
+            NoteValidationCode::TooManyTags,
+            NoteValidationTarget::Tags,
+            None,
+        ));
     }
     if draft.body.len() > MAX_NOTE_BODY_BYTES {
-        errors.push(NoteValidationError {
-            code: "body-too-large".into(),
-            range: empty_range,
-        });
+        errors.push(diagnostic(
+            NoteValidationCode::BodyTooLarge,
+            NoteValidationTarget::Body,
+            None,
+        ));
     } else {
         let analysis = adocweave::Engine::new(Default::default())
             .analyze(&draft.body)
             .map_err(|_| {
-                vec![NoteValidationError {
-                    code: "asciidoc-parse-failed".into(),
-                    range: empty_range,
-                }]
+                vec![diagnostic(
+                    NoteValidationCode::AsciiDocParseFailed,
+                    NoteValidationTarget::Body,
+                    None,
+                )]
             })?;
         errors.extend(
             validate_note_content_profile(&analysis)
                 .into_iter()
-                .map(|error| NoteValidationError {
-                    code: error.code.as_str().into(),
-                    range: error.range,
+                .map(|error| {
+                    diagnostic(
+                        error.code.validation_code(),
+                        NoteValidationTarget::Body,
+                        Some(span(error.range)),
+                    )
                 }),
         );
     }
@@ -191,7 +202,7 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
             tags: tags.into_values().collect(),
         })
     } else {
-        errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.clone()));
+        errors.sort_by_key(diagnostic_sort_key);
         Err(errors)
     }
 }
@@ -254,12 +265,6 @@ fn format_unix_millis(value: UnixMillis) -> Result<String, ExportError> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteValidationError {
-    pub code: String,
-    pub range: TextRange,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 struct NoteContentError {
     code: NoteContentErrorCode,
     range: TextRange,
@@ -279,18 +284,130 @@ enum NoteContentErrorCode {
 }
 
 impl NoteContentErrorCode {
-    const fn as_str(self) -> &'static str {
+    const fn validation_code(self) -> NoteValidationCode {
         match self {
-            Self::IncludeDirective => "include-directive-disabled",
-            Self::InlinePassthrough => "inline-passthrough-disabled",
-            Self::BlockPassthrough => "block-passthrough-disabled",
-            Self::DuplicateAnchor => "duplicate-anchor",
-            Self::ExternalReferenceDisabled => "external-reference-disabled",
-            Self::InvalidUrlScheme => "invalid-url-scheme",
-            Self::ResourceDisabled => "resource-disabled",
-            Self::UnsupportedMathLanguage => "unsupported-math-language",
-            Self::UnsupportedSourceLanguage => "unsupported-source-language",
+            Self::IncludeDirective => NoteValidationCode::IncludeDirectiveDisabled,
+            Self::InlinePassthrough => NoteValidationCode::InlinePassthroughDisabled,
+            Self::BlockPassthrough => NoteValidationCode::BlockPassthroughDisabled,
+            Self::DuplicateAnchor => NoteValidationCode::DuplicateAnchor,
+            Self::ExternalReferenceDisabled => NoteValidationCode::ExternalReferenceDisabled,
+            Self::InvalidUrlScheme => NoteValidationCode::InvalidUrlScheme,
+            Self::ResourceDisabled => NoteValidationCode::ResourceDisabled,
+            Self::UnsupportedMathLanguage => NoteValidationCode::UnsupportedMathLanguage,
+            Self::UnsupportedSourceLanguage => NoteValidationCode::UnsupportedSourceLanguage,
         }
+    }
+}
+
+fn diagnostic(
+    code: NoteValidationCode,
+    target: NoteValidationTarget,
+    span: Option<Utf8ByteSpan>,
+) -> NoteValidationDiagnostic {
+    NoteValidationDiagnostic {
+        code,
+        target,
+        span,
+        message: diagnostic_message(code),
+    }
+}
+
+const fn diagnostic_message(code: NoteValidationCode) -> &'static str {
+    match code {
+        NoteValidationCode::InvalidTitle => {
+            "title must be non-empty, single-line, and at most 200 characters"
+        }
+        NoteValidationCode::InvalidTag => {
+            "tag must be non-empty, single-line, comma-free, and at most 64 characters"
+        }
+        NoteValidationCode::TooManyTags => "a note may contain at most 50 unique tags",
+        NoteValidationCode::BodyTooLarge => "body must be at most 524288 UTF-8 bytes",
+        NoteValidationCode::AsciiDocParseFailed => "body is not valid AsciiDoc",
+        NoteValidationCode::IncludeDirectiveDisabled => "include directives are not allowed",
+        NoteValidationCode::InlinePassthroughDisabled => "inline passthrough is not allowed",
+        NoteValidationCode::BlockPassthroughDisabled => "block passthrough is not allowed",
+        NoteValidationCode::DuplicateAnchor => "anchor IDs must be unique within a note",
+        NoteValidationCode::ExternalReferenceDisabled => {
+            "cross-document and scheme references are not allowed"
+        }
+        NoteValidationCode::InvalidUrlScheme => "the authored link target is not allowed",
+        NoteValidationCode::ResourceDisabled => "external media resources are not allowed",
+        NoteValidationCode::UnsupportedMathLanguage => "only latexmath formulas are allowed",
+        NoteValidationCode::UnsupportedSourceLanguage => "the source block language is not allowed",
+    }
+}
+
+const fn span(range: TextRange) -> Utf8ByteSpan {
+    Utf8ByteSpan {
+        start: range.start().to_u32(),
+        end: range.end().to_u32(),
+    }
+}
+
+fn diagnostic_sort_key(
+    diagnostic: &NoteValidationDiagnostic,
+) -> (u8, usize, u32, u32, &'static str) {
+    let (target, index) = match diagnostic.target {
+        NoteValidationTarget::Title => (0, 0),
+        NoteValidationTarget::Tags => (1, 0),
+        NoteValidationTarget::Tag { index } => (2, index),
+        NoteValidationTarget::Body => (3, 0),
+    };
+    let span = diagnostic.span.unwrap_or(Utf8ByteSpan { start: 0, end: 0 });
+    (
+        target,
+        index,
+        span.start,
+        span.end,
+        diagnostic.code.as_str(),
+    )
+}
+
+/// 検証器と同じ正本から生成する機械可読なノート入力規則。
+pub fn note_profile() -> NoteProfile {
+    const FORBIDDEN: &[NoteValidationCode] = &[
+        NoteValidationCode::IncludeDirectiveDisabled,
+        NoteValidationCode::InlinePassthroughDisabled,
+        NoteValidationCode::BlockPassthroughDisabled,
+        NoteValidationCode::DuplicateAnchor,
+        NoteValidationCode::ExternalReferenceDisabled,
+        NoteValidationCode::InvalidUrlScheme,
+        NoteValidationCode::ResourceDisabled,
+        NoteValidationCode::UnsupportedMathLanguage,
+        NoteValidationCode::UnsupportedSourceLanguage,
+    ];
+    NoteProfile {
+        profile_version: NOTE_PROFILE_VERSION,
+        adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION,
+        limits: NoteProfileLimits {
+            max_title_characters: 200,
+            max_body_bytes: MAX_NOTE_BODY_BYTES,
+            max_tags: 50,
+            max_tag_characters: 64,
+        },
+        allowed_source_languages: DEFAULT_SOURCE_LANGUAGES.to_vec(),
+        forbidden_rules: FORBIDDEN
+            .iter()
+            .copied()
+            .map(|code| NoteProfileRule {
+                code,
+                description: diagnostic_message(code),
+            })
+            .collect(),
+        examples: vec![
+            NoteProfileExample {
+                description: "Section, local anchor, and local cross-reference",
+                body: "== Result\n\n[[evidence]]\nEvidence.\n\nSee <<evidence>>.",
+            },
+            NoteProfileExample {
+                description: "Rust source block",
+                body: "[source,rust]\n----\nfn main() {}\n----",
+            },
+            NoteProfileExample {
+                description: "LaTeX math",
+                body: ":stem: latexmath\n\nstem:[x^2 + y^2]",
+            },
+        ],
     }
 }
 
@@ -420,7 +537,13 @@ fn validate_note_content_profile_with(
             });
         }
     }
-    errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.as_str()));
+    errors.sort_by_key(|error| {
+        (
+            error.range.start(),
+            error.range.end(),
+            error.code.validation_code().as_str(),
+        )
+    });
     errors
 }
 
@@ -483,7 +606,40 @@ mod tests {
             tags: Vec::new(),
         })
         .expect_err("oversized body");
-        assert!(errors.iter().any(|error| error.code == "body-too-large"));
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code == NoteValidationCode::BodyTooLarge)
+        );
+    }
+
+    #[test]
+    fn diagnostics_identify_fields_and_utf8_body_ranges() {
+        let body = "日本\n\n[source,brainfuck]\n----\n+\n----";
+        let errors = validate_note_draft(NoteDraft {
+            title: String::new(),
+            body: body.into(),
+            tags: vec!["valid".into(), "bad,tag".into()],
+        })
+        .expect_err("invalid draft");
+        assert_eq!(errors[0].target, NoteValidationTarget::Title);
+        assert_eq!(errors[0].span, None);
+        assert_eq!(errors[1].target, NoteValidationTarget::Tag { index: 1 });
+        assert_eq!(errors[1].span, None);
+
+        let source = errors
+            .iter()
+            .find(|error| error.code == NoteValidationCode::UnsupportedSourceLanguage)
+            .expect("source diagnostic");
+        let expected_start = u32::try_from(body.find("brainfuck").expect("language")).unwrap();
+        assert_eq!(source.target, NoteValidationTarget::Body);
+        assert_eq!(
+            source.span,
+            Some(Utf8ByteSpan {
+                start: expected_start,
+                end: expected_start + 9,
+            })
+        );
     }
 
     #[test]
@@ -599,7 +755,7 @@ mod tests {
         assert!(
             errors
                 .iter()
-                .any(|error| error.code == "unsupported-source-language")
+                .any(|error| error.code == NoteValidationCode::UnsupportedSourceLanguage)
         );
     }
 }

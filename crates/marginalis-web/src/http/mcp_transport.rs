@@ -7,15 +7,15 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::{NoteUseCaseError, NoteUseCases};
-use marginalis_domain::{Actor, Note, NoteDraft, NoteId};
+use marginalis_application::{NoteProfile, NoteUseCaseError, NoteUseCases};
+use marginalis_domain::{Actor, Note, NoteDraft};
 use serde::Deserialize;
 
 use crate::mcp::{JsonRpcRequest, JsonRpcResponse, MCP_PROTOCOL_VERSION};
 
 use super::{
     auth::parse_note_id,
-    error::{HandlerResult, mcp_error, problem},
+    error::{HandlerResult, mcp_error, problem, validation_problem_json},
     mcp_endpoint,
     notes::NoteInput,
     state::{ApiState, McpEndpoint},
@@ -29,6 +29,7 @@ struct McpToolCall {
 #[derive(Clone, Copy)]
 enum McpTool {
     ListNotes,
+    GetNoteProfile,
     GetNote,
     CreateNote,
     UpdateNote,
@@ -37,8 +38,9 @@ enum McpTool {
 }
 
 impl McpTool {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::ListNotes,
+        Self::GetNoteProfile,
         Self::GetNote,
         Self::CreateNote,
         Self::UpdateNote,
@@ -48,6 +50,7 @@ impl McpTool {
     fn from_name(name: &str) -> Self {
         match name {
             "list_notes" => Self::ListNotes,
+            "get_note_profile" => Self::GetNoteProfile,
             "get_note" => Self::GetNote,
             "create_note" => Self::CreateNote,
             "update_note" => Self::UpdateNote,
@@ -58,7 +61,7 @@ impl McpTool {
 
     fn required_scope(self) -> Option<&'static str> {
         match self {
-            Self::ListNotes | Self::GetNote => Some("notes:read"),
+            Self::ListNotes | Self::GetNoteProfile | Self::GetNote => Some("notes:read"),
             Self::CreateNote | Self::UpdateNote => Some("notes:write"),
             Self::DeleteNote => Some("notes:delete"),
             Self::Unknown => None,
@@ -70,27 +73,32 @@ impl McpTool {
             Self::ListNotes => serde_json::json!({
                 "name":"list_notes",
                 "description":"List notes visible to the authenticated user.",
-                "inputSchema":{"type":"object","properties":{}}
+                "inputSchema":{"type":"object","properties":{},"additionalProperties":false}
+            }),
+            Self::GetNoteProfile => serde_json::json!({
+                "name":"get_note_profile",
+                "description":"Get the current note authoring rules and examples before calling create_note or update_note.",
+                "inputSchema":{"type":"object","properties":{},"additionalProperties":false}
             }),
             Self::GetNote => serde_json::json!({
                 "name":"get_note",
                 "description":"Read one visible note.",
-                "inputSchema":{"type":"object","required":["note_id"],"properties":{"note_id":{"type":"string"}}}
+                "inputSchema":{"type":"object","required":["note_id"],"properties":{"note_id":{"type":"string"}},"additionalProperties":false}
             }),
             Self::CreateNote => serde_json::json!({
                 "name":"create_note",
-                "description":"Create a note.",
-                "inputSchema":{"type":"object","required":["title","body","tags"],"properties":{"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}}}}
+                "description":"Create a note. Call get_note_profile first to obtain the current authoring rules.",
+                "inputSchema":{"type":"object","required":["title","body","tags"],"properties":{"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}
             }),
             Self::UpdateNote => serde_json::json!({
                 "name":"update_note",
-                "description":"Update a note at its current revision.",
-                "inputSchema":{"type":"object","required":["note_id","title","body","tags","expected_revision"],"properties":{"note_id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"expected_revision":{"type":"integer"}}}
+                "description":"Update a note at its current revision. Call get_note_profile first to obtain the current authoring rules.",
+                "inputSchema":{"type":"object","required":["note_id","title","body","tags","expected_revision"],"properties":{"note_id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"expected_revision":{"type":"integer"}},"additionalProperties":false}
             }),
             Self::DeleteNote => serde_json::json!({
                 "name":"delete_note",
                 "description":"Soft-delete a note at its current revision.",
-                "inputSchema":{"type":"object","required":["note_id","expected_revision"],"properties":{"note_id":{"type":"string"},"expected_revision":{"type":"integer"}}}
+                "inputSchema":{"type":"object","required":["note_id","expected_revision"],"properties":{"note_id":{"type":"string"},"expected_revision":{"type":"integer"}},"additionalProperties":false}
             }),
             Self::Unknown => unreachable!("unknown tools are not advertised"),
         }
@@ -457,6 +465,13 @@ fn detected_request_id(value: &serde_json::Value) -> serde_json::Value {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpGet {
+    note_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct McpUpdate {
     note_id: String,
     title: String,
@@ -466,6 +481,7 @@ struct McpUpdate {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct McpDelete {
     note_id: String,
     expected_revision: i64,
@@ -478,6 +494,14 @@ async fn mcp_tool_call(
     call: McpToolCall,
 ) -> JsonRpcResponse {
     let result = match call.tool {
+        McpTool::ListNotes
+            if call
+                .arguments
+                .as_object()
+                .is_none_or(|value| !value.is_empty()) =>
+        {
+            return JsonRpcResponse::error(id, -32602, "list arguments are invalid");
+        }
         McpTool::ListNotes => notes.list_visible_notes(actor).await.map(|notes| {
             serde_json::json!({
                 "notes": notes
@@ -490,8 +514,20 @@ async fn mcp_tool_call(
                     .collect::<Vec<_>>()
             })
         }),
+        McpTool::GetNoteProfile
+            if call
+                .arguments
+                .as_object()
+                .is_none_or(|value| !value.is_empty()) =>
+        {
+            return JsonRpcResponse::error(id, -32602, "profile arguments are invalid");
+        }
+        McpTool::GetNoteProfile => Ok(note_profile_json(notes.note_profile())),
         McpTool::GetNote => {
-            let Some(note_id) = mcp_note_id(&call.arguments) else {
+            let Ok(input) = serde_json::from_value::<McpGet>(call.arguments) else {
+                return JsonRpcResponse::error(id, -32602, "get arguments are invalid");
+            };
+            let Some(note_id) = parse_note_id(&input.note_id).ok() else {
                 return JsonRpcResponse::error(id, -32602, "note_id is invalid");
             };
             notes.read_note(actor, note_id).await.map(|note| {
@@ -565,28 +601,60 @@ async fn mcp_tool_call(
 }
 
 fn mcp_tool_error(id: serde_json::Value, error: NoteUseCaseError) -> JsonRpcResponse {
-    let (code, message) = match error {
-        NoteUseCaseError::NotFound => ("not_found", "note was not found"),
-        NoteUseCaseError::Forbidden => ("forbidden", "note operation is not permitted"),
-        NoteUseCaseError::Conflict => ("conflict", "note revision conflicts"),
-        NoteUseCaseError::Validation => ("validation", "note input is invalid"),
-        NoteUseCaseError::Unavailable => ("unavailable", "note service is unavailable"),
+    let value = match error {
+        NoteUseCaseError::Validation(diagnostics) => validation_problem_json(diagnostics),
+        NoteUseCaseError::NotFound => {
+            serde_json::json!({"code":"not_found","message":"note was not found"})
+        }
+        NoteUseCaseError::Forbidden => serde_json::json!({
+            "code":"forbidden",
+            "message":"note operation is not permitted"
+        }),
+        NoteUseCaseError::Conflict => {
+            serde_json::json!({"code":"conflict","message":"note revision conflicts"})
+        }
+        NoteUseCaseError::Unavailable => serde_json::json!({
+            "code":"unavailable",
+            "message":"note service is unavailable"
+        }),
     };
+    let text = serde_json::to_string(&value).unwrap_or_else(|_| {
+        r#"{"code":"unavailable","message":"note service is unavailable"}"#.into()
+    });
     JsonRpcResponse::success(
         id,
         serde_json::json!({
-            "content":[{"type":"text","text":message}],
-            "structuredContent":{"code":code},
+            "content":[{"type":"text","text":text}],
+            "structuredContent":value,
             "isError":true
         }),
     )
 }
 
-fn mcp_note_id(arguments: &serde_json::Value) -> Option<NoteId> {
-    arguments
-        .get("note_id")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|value| parse_note_id(value).ok())
+fn note_profile_json(profile: NoteProfile) -> serde_json::Value {
+    serde_json::json!({
+        "profile_version": profile.profile_version,
+        "adocweave_package_version": profile.adocweave_package_version,
+        "limits": {
+            "max_title_characters": profile.limits.max_title_characters,
+            "max_body_bytes": profile.limits.max_body_bytes,
+            "max_tags": profile.limits.max_tags,
+            "max_tag_characters": profile.limits.max_tag_characters,
+        },
+        "normalization": {
+            "title": ["trim", "unicode_nfc"],
+            "tags": ["trim", "unicode_nfc", "case_insensitive_uniqueness", "lowercase_key_sort"]
+        },
+        "allowed_source_languages": profile.allowed_source_languages,
+        "forbidden_rules": profile.forbidden_rules.into_iter().map(|rule| serde_json::json!({
+            "code": rule.code.as_str(),
+            "description": rule.description,
+        })).collect::<Vec<_>>(),
+        "examples": profile.examples.into_iter().map(|example| serde_json::json!({
+            "description": example.description,
+            "body": example.body,
+        })).collect::<Vec<_>>(),
+    })
 }
 
 fn note_revision_json(note: Note) -> serde_json::Value {
