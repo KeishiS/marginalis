@@ -507,6 +507,18 @@
                 "cp ${./tests/browser/kanidm-login.spec.js} /tmp/kanidm-login.spec.js; "
                 + "cd /tmp && playwright test kanidm-login.spec.js --reporter=line --workers=1"
               )
+              for operation in ["registration", "authorization", "consent", "revocation"]:
+                app.succeed(
+                  "journalctl -u marginalis.service "
+                  + "| grep 'mcp.oauth.operation.completed' "
+                  + f"| grep 'operation=\"{operation}\"'"
+                )
+              app.succeed(
+                "journalctl -u marginalis.service "
+                + "| grep 'mcp.oauth.operation.failed' "
+                + "| grep 'operation=\"consent\"' "
+                + "| grep 'status=403'"
+              )
               app.succeed("journalctl -u marginalis.service | grep -q 'Marginalis server listening'")
               app.succeed("! journalctl -u marginalis.service | grep -q 'OIDC discovery is unavailable'")
             '';

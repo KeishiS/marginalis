@@ -23,6 +23,7 @@ pub(crate) async fn verify_latest_backup(
     let archive = read_validated_archive(&archive_path)?;
     verify_archive_in_isolated_database(&archive).await?;
     tracing::info!(
+        event = "maintenance.backup_verification.completed",
         generation = %latest.file_name().and_then(|name| name.to_str()).unwrap_or("<invalid>"),
         note_count = archive.notes.len(),
         "verified latest backup generation"
@@ -85,6 +86,12 @@ pub(crate) async fn prune_backups(
     let removed_count = successful.len().saturating_sub(keep);
     repository::remove_expired_generations(successful, keep, |path| std::fs::remove_dir_all(path))?;
     File::open(&canonical_directory)?.sync_all()?;
-    tracing::info!(directory = %canonical_directory.display(), keep, removed_count, "pruned successful backup generations");
+    tracing::info!(
+        event = "maintenance.backup_prune.completed",
+        directory = %canonical_directory.display(),
+        keep,
+        removed_count,
+        "pruned successful backup generations"
+    );
     Ok(())
 }

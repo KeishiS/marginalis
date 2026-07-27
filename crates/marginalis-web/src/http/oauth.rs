@@ -217,6 +217,16 @@ pub(super) async fn mcp_register_client(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
+    let result = mcp_register_client_inner(state, headers, body).await;
+    log_mcp_oauth_result("registration", &result);
+    result
+}
+
+async fn mcp_register_client_inner(
+    state: ApiState,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, Response> {
     if !content_type_is(&headers, "application/json") {
         return Err(oauth_error_response(
             StatusCode::BAD_REQUEST,
@@ -334,7 +344,9 @@ pub(super) async fn mcp_authorize(
         raw_query.as_deref().unwrap_or_default(),
         AUTHORIZATION_PARAMETERS,
     );
-    mcp_authorize_request(&state, &headers, parameters).await
+    let result = mcp_authorize_request(&state, &headers, parameters).await;
+    log_mcp_oauth_result("authorization", &result);
+    result
 }
 
 /// OAuth clientからの初回POSTはqueryとform bodyの両方を受け付けるが、状態を変更しない。
@@ -366,7 +378,9 @@ pub(super) async fn mcp_authorize_post(
         })?;
         parameters.append(encoded, AUTHORIZATION_PARAMETERS);
     }
-    mcp_authorize_request(&state, &headers, parameters).await
+    let result = mcp_authorize_request(&state, &headers, parameters).await;
+    log_mcp_oauth_result("authorization", &result);
+    result
 }
 
 async fn mcp_authorize_request(
@@ -535,6 +549,16 @@ pub(super) async fn mcp_authorize_consent(
     State(state): State<ApiState>,
     headers: HeaderMap,
     Form(form): Form<McpAuthorizeForm>,
+) -> Result<Response, Response> {
+    let result = mcp_authorize_consent_inner(state, headers, form).await;
+    log_mcp_oauth_result("consent", &result);
+    result
+}
+
+async fn mcp_authorize_consent_inner(
+    state: ApiState,
+    headers: HeaderMap,
+    form: McpAuthorizeForm,
 ) -> Result<Response, Response> {
     let endpoint = mcp_endpoint(&state).map_err(|error| error.into_response())?;
     let actor = authenticated_form_actor(&headers, &state, &form.csrf_token)
@@ -869,6 +893,28 @@ pub(super) async fn revoke_mcp_authorization(
     Path(client_id): Path<String>,
     headers: HeaderMap,
 ) -> HandlerResult<StatusCode> {
+    let result = revoke_mcp_authorization_inner(state, client_id, headers).await;
+    match &result {
+        Ok(_) => tracing::info!(
+            event = "mcp.oauth.operation.completed",
+            operation = "revocation",
+            "MCP OAuth operation succeeded"
+        ),
+        Err((status, _)) => tracing::warn!(
+            event = "mcp.oauth.operation.failed",
+            operation = "revocation",
+            status = status.as_u16(),
+            "MCP OAuth operation failed"
+        ),
+    }
+    result
+}
+
+async fn revoke_mcp_authorization_inner(
+    state: ApiState,
+    client_id: String,
+    headers: HeaderMap,
+) -> HandlerResult<StatusCode> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let endpoint = mcp_endpoint(&state)?;
     if client_id.trim().is_empty() {
@@ -886,4 +932,20 @@ pub(super) async fn revoke_mcp_authorization(
         )
     })?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn log_mcp_oauth_result<T>(operation: &'static str, result: &Result<T, Response>) {
+    match result {
+        Ok(_) => tracing::info!(
+            event = "mcp.oauth.operation.completed",
+            operation,
+            "MCP OAuth operation succeeded"
+        ),
+        Err(response) => tracing::warn!(
+            event = "mcp.oauth.operation.failed",
+            operation,
+            status = response.status().as_u16(),
+            "MCP OAuth operation failed"
+        ),
+    }
 }

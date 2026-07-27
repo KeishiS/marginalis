@@ -159,8 +159,18 @@ databaseを作成・移行せず、OIDC client secret、Cookie、token、ノー�
 - service起動: `service.listening`
 - OIDC discovery成功・失敗: `oidc.discovery.completed`、`oidc.discovery.failed`
 - MCP OAuth token成功・失敗: `mcp.oauth.token.completed`、`mcp.oauth.token.failed`
+- MCP OAuth処理成功・失敗: `mcp.oauth.operation.completed`、`mcp.oauth.operation.failed`
+  （`operation`は`registration`、`authorization`、`consent`、`revocation`）
 - purge成功・失敗: `maintenance.purge.completed`、`maintenance.purge.failed`
 - backup成功・失敗: `maintenance.backup.completed`、`maintenance.backup.failed`
+- archive検証成功・失敗: `maintenance.archive_validation.completed`、
+  `maintenance.archive_validation.failed`
+- 復元検証成功・失敗: `maintenance.restore_verification.completed`、
+  `maintenance.restore_verification.failed`
+- backup検証成功・失敗: `maintenance.backup_verification.completed`、
+  `maintenance.backup_verification.failed`
+- backup世代整理成功・失敗: `maintenance.backup_prune.completed`、
+  `maintenance.backup_prune.failed`
 - command失敗: `command.failed`（`command` fieldで保守処理を識別）
 
 ```bash
