@@ -270,8 +270,8 @@ mod tests {
                     tags: vec!["trim", "unicode_nfc"],
                 },
                 syntax: NoteProfileSyntax {
-                    allowed_blocks: vec!["paragraph"],
-                    allowed_inlines: Vec::new(),
+                    common_blocks: vec!["paragraph"],
+                    common_inlines: Vec::new(),
                     source_language_optional: true,
                     allowed_math_languages: vec!["latexmath"],
                     title_forbidden: vec!["empty"],
@@ -486,21 +486,21 @@ mod tests {
             _resource_uri: String,
         ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
             Ok(
-                matches!(token.as_str(), "valid-token" | "read-token").then(|| {
+                matches!(token.as_str(), "valid-token" | "read-token" | "write-token").then(|| {
                     McpAuthenticatedActor {
                         actor: Actor {
                             issuer: "https://kanidm.example.test".into(),
                             subject: "alice".into(),
                             is_administrator: false,
                         },
-                        scopes: if token == "read-token" {
-                            vec!["notes:read".into()]
-                        } else {
-                            vec![
+                        scopes: match token.as_str() {
+                            "read-token" => vec!["notes:read".into()],
+                            "write-token" => vec!["notes:write".into()],
+                            _ => vec![
                                 "notes:read".into(),
                                 "notes:write".into(),
                                 "notes:delete".into(),
-                            ]
+                            ],
                         },
                     }
                 }),
@@ -1024,6 +1024,20 @@ mod tests {
                         && value.contains("scope=\"notes:write\"")
                 })
         );
+
+        let write_only_profile = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, "Bearer write-token")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_note_profile","arguments":{}}}"#,
+            ))
+            .expect("request");
+        let allowed = mcp_app()
+            .oneshot(write_only_profile)
+            .await
+            .expect("response");
+        assert_eq!(allowed.status(), StatusCode::OK);
     }
 
     #[tokio::test]

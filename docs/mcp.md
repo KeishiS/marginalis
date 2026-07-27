@@ -120,7 +120,7 @@ MCP transportは[JSON-RPC 2.0](https://www.jsonrpc.org/specification)の`jsonrpc
 
 | tool | scope | 用途 |
 | --- | --- | --- |
-| `get_note_profile` | `notes:read` | 現行の入力制約、禁止規則、許可言語、動作例の取得 |
+| `get_note_profile` | `notes:read`または`notes:write` | 現行の入力制約、禁止規則、許可言語、動作例の取得 |
 | `list_notes` | `notes:read` | 可視ノートの一覧 |
 | `get_note` | `notes:read` | 可視ノートの取得 |
 | `create_note` | `notes:write` | ノートの作成 |

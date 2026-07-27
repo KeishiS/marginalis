@@ -90,9 +90,9 @@ impl McpTool {
                 "name":"create_note",
                 "description":"Create a note. Call get_note_profile first to obtain the current authoring rules.",
                 "inputSchema":{"type":"object","required":["title","body","tags"],"properties":{
-                    "title":{"type":"string","minLength":1,"maxLength":profile.limits.max_title_characters},
+                    "title":{"type":"string"},
                     "body":{"type":"string","x-maxBytes":profile.limits.max_body_bytes},
-                    "tags":{"type":"array","maxItems":profile.limits.max_tags,"items":{"type":"string","maxLength":profile.limits.max_tag_characters}}
+                    "tags":{"type":"array","maxItems":profile.limits.max_tags,"items":{"type":"string"}}
                 },"additionalProperties":false}
             }),
             Self::UpdateNote => serde_json::json!({
@@ -100,9 +100,9 @@ impl McpTool {
                 "description":"Update a note at its current revision. Call get_note_profile first to obtain the current authoring rules.",
                 "inputSchema":{"type":"object","required":["note_id","title","body","tags","expected_revision"],"properties":{
                     "note_id":{"type":"string","format":"uuid"},
-                    "title":{"type":"string","minLength":1,"maxLength":profile.limits.max_title_characters},
+                    "title":{"type":"string"},
                     "body":{"type":"string","x-maxBytes":profile.limits.max_body_bytes},
-                    "tags":{"type":"array","maxItems":profile.limits.max_tags,"items":{"type":"string","maxLength":profile.limits.max_tag_characters}},
+                    "tags":{"type":"array","maxItems":profile.limits.max_tags,"items":{"type":"string"}},
                     "expected_revision":{"type":"integer","minimum":1}
                 },"additionalProperties":false}
             }),
@@ -649,6 +649,7 @@ fn note_profile_json(profile: NoteProfile) -> serde_json::Value {
         "profile_version": profile.profile_version,
         "adocweave_package_version": profile.adocweave_package_version,
         "limits": {
+            "applies_after_normalization": true,
             "max_title_characters": profile.limits.max_title_characters,
             "max_body_bytes": profile.limits.max_body_bytes,
             "max_tags": profile.limits.max_tags,
@@ -659,8 +660,8 @@ fn note_profile_json(profile: NoteProfile) -> serde_json::Value {
             "tags": profile.normalization.tags,
         },
         "syntax": {
-            "allowed_blocks": profile.syntax.allowed_blocks,
-            "allowed_inlines": profile.syntax.allowed_inlines,
+            "common_blocks": profile.syntax.common_blocks,
+            "common_inlines": profile.syntax.common_inlines,
             "source_language_optional": profile.syntax.source_language_optional,
             "allowed_math_languages": profile.syntax.allowed_math_languages,
             "title_forbidden": profile.syntax.title_forbidden,
