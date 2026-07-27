@@ -2,7 +2,8 @@
 
 ## 状態
 
-計画済み。Issue 045と独立して実装でき、`v0.3.1`のrelease gateへ追加する。
+自動化範囲は実装完了。実Kanidm、Playwright、MCP test client、相互運用fixture、
+秘密情報を除去した失敗証跡をrelease gateへ追加した。外部clientの結果はIssue 048へ記録する。
 
 ## 目的
 
