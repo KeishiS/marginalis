@@ -11,10 +11,10 @@ URL安全性を維持しながら、責務別の公開設定へ移行します�
 
 | 固定入力 | 0.10.1 | 0.11.0 | 判断 |
 | --- | --- | --- | --- |
-| `snake_&#96;code&#96;`と日本語・絵文字内のmonospace | 同じHTML断片 | 同じHTML断片 | 保存・描画規則の維持 |
+| `snake_&#96;code&#96;`と日本語・絵文字内のmonospace | 固定HTML全体 | 完全一致 | 保存・描画規則の維持 |
 | header指定のない表 | 暗黙のheader | 暗黙のheader | 表規則の維持 |
 | `[%noheader]`の表 | headerなし | headerなし | 表規則の維持 |
-| 日本語本文と未許可source言語 | UTF-8 byte位置付き拒否 | 同じ安定codeと位置で拒否 | REST・MCP診断の維持 |
+| 日本語本文と未許可source言語 | 診断全項目を固定 | code、対象、UTF-8 byte位置、message、順序が完全一致 | REST・MCP診断の維持 |
 | include、passthrough、外部Resource、外部xref | 拒否 | 拒否 | note profileの維持 |
 | 不正schemeと相対URL | 拒否 | 拒否 | 執筆時・描画時URL規則の維持 |
 
@@ -37,6 +37,6 @@ URL安全性を維持しながら、責務別の公開設定へ移行します�
 AdocWeaveのerrorと独自のnote profile違反だけを保存拒否へ写像するため、この警告追加は保存可否や
 公開する安定診断codeを変更しません。任意規則の`macro-boundary`は有効化しません。
 
-以上からnote profile版`1`を維持します。SQLiteへ解析cacheを保存せず、archiveの構造も変わらないため、
-SQLite schema 4と`marginalis-archive-3`も維持します。archive identityのAdocWeave package版だけを
-`0.11.0`へ更新し、0.10.1のarchiveは暗黙に読み替えず拒否します。
+以上からnote profile版`1`とSQLite schema 4を維持します。一方、同じformat名で復元互換性だけを
+失う状態を避けるため、archive identityを`marginalis-archive-4`へ更新します。0.10.1のarchiveは
+暗黙に読み替えず拒否します。

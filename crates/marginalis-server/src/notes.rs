@@ -48,6 +48,8 @@ impl NoteUseCases for ServerNoteUseCases {
     }
 
     async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
+        marginalis_domain::validate_identity(&actor.issuer, &actor.subject)
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
         let draft = marginalis_asciidoc::validate_note_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
         let now = SystemClock.now();

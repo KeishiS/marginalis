@@ -5,30 +5,27 @@
       "name": "monospace boundaries",
       "body": "snake_`code`\n\n日本``和文``日本 😀``emoji``😀",
       "accepted": true,
-      "html_contains": [
-        "snake_`code`",
-        "日本<code>和文</code>日本",
-        "😀<code>emoji</code>😀"
-      ],
+      "html": "<h1 class=\"document-title\" id=\"_a_title\">A title</h1>\n<p>snake_`code`</p>\n<p>日本<code>和文</code>日本 😀<code>emoji</code>😀</p>\n",
       "diagnostics": []
     },
     {
       "name": "implicit table header",
       "body": "|===\n|Name |Value\n\n|alpha |one\n|===",
       "accepted": true,
-      "html_contains": ["<thead>", "<th class="],
+      "html": "<h1 class=\"document-title\" id=\"_a_title\">A title</h1>\n<table class=\"table-frame-all table-grid-all table-stripes-none\">\n<thead>\n<tr>\n<th class=\"table-align-left table-valign-top\">Name</th>\n<th class=\"table-align-left table-valign-top\">Value</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td class=\"table-align-left table-valign-top\">alpha</td>\n<td class=\"table-align-left table-valign-top\">one</td>\n</tr>\n</tbody>\n</table>\n",
       "diagnostics": []
     },
     {
       "name": "unsupported source language with UTF-8 prefix",
       "body": "日本\n\n[source,brainfuck]\n----\n+\n----",
       "accepted": false,
-      "html_contains": [],
       "diagnostics": [
         {
           "code": "unsupported_source_language",
+          "target": "body",
           "start": 16,
-          "end": 25
+          "end": 25,
+          "message": "the source block language is not allowed"
         }
       ]
     },
@@ -36,12 +33,13 @@
       "name": "unsafe authored URL",
       "body": "link:javascript:alert(1)[unsafe]",
       "accepted": false,
-      "html_contains": [],
       "diagnostics": [
         {
           "code": "invalid_url_scheme",
+          "target": "body",
           "start": 5,
-          "end": 24
+          "end": 24,
+          "message": "the authored link target is not allowed"
         }
       ]
     }

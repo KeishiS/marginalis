@@ -2,7 +2,7 @@
 
 use std::{collections::HashSet, str::FromStr};
 
-use marginalis_domain::{EntityId, Note};
+use marginalis_domain::{EntityId, Note, validate_identity};
 use sqlx::Sqlite;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
@@ -34,8 +34,7 @@ impl SqliteDatabase {
                 return Err(SqliteStoreError::CorruptData);
             }
             if EntityId::from_str(&note.note_id.to_string()).is_err()
-                || note.creator_issuer.trim().is_empty()
-                || note.creator_subject.trim().is_empty()
+                || validate_identity(&note.creator_issuer, &note.creator_subject).is_err()
                 || note.created_at > note.updated_at
                 || note
                     .deleted_at

@@ -122,7 +122,10 @@ description = "Verify release version, tag, changelog, and declared dual-license
 script_runner = "@shell"
 script = '''
 set -eu
-expected_version="0.5.0"
+expected_version="$(
+  cargo metadata --locked --no-deps --format-version 1 |
+    jq -er '[.packages[].version] | unique | if length == 1 then .[0] else error("workspace package versions differ") end'
+)"
 release_tag="${MARGINALIS_RELEASE_TAG:-}"
 test -s LICENSE-MIT
 test -s LICENSE-APACHE

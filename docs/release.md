@@ -11,8 +11,10 @@
    現行運用では、最新archiveを本番から隔離した空databaseへ復元する試験も実施する。
 5. OpenAPI、MCP、NixOS、受入文書が同じ仕様を説明していることを確認する。
 6. Pull Request を作成し、目的・主な差分・検証結果を記載して rebase auto-merge を設定する。
-7. `main`へのマージ後、対象commitでrelease-gate workflowを実行し、成功を確認する。
-8. 必須gateが成功した対象commitへrelease tagを作成する。
+7. `main`へのマージ後、`main`の先端でrelease-gate workflowを手動実行する。`release_tag`には
+   作成予定のタグを入力し、成功を確認する。
+8. 必須gateが成功した`main`の先端へrelease tagを作成する。タグのpushで再実行される
+   release-gateも成功することを確認する。
 
 現行運用では日次backup、30世代保持、四半期の週末復元試験を運用基準とします。復元先は
 本番databaseから隔離し、既存databaseを暗黙に上書きしてはなりません。詳細は

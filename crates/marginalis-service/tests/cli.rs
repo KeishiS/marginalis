@@ -62,7 +62,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-3");
+    assert_eq!(archive_json["format"], "marginalis-archive-4");
     assert_eq!(archive_json["adocweave_package_version"], "0.11.0");
     assert_eq!(archive_json["note_profile_version"], 1);
 
@@ -130,10 +130,25 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
         .output()
         .expect("validate incompatible archive");
     assert!(!result.status.success());
+    let incompatible_target = directory.join("incompatible-target.sqlite");
+    let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["import-archive", "--input"])
+        .arg(&incompatible_archive)
+        .env(
+            "MARGINALIS_DATABASE_URL",
+            format!("sqlite://{}?mode=rwc", incompatible_target.display()),
+        )
+        .output()
+        .expect("import incompatible archive");
+    assert!(!result.status.success());
+    assert!(
+        !incompatible_target.exists(),
+        "incompatible archive must be rejected before opening the target database"
+    );
 
     let previous_archive = directory.join("previous-format.json");
     let mut previous_json = archive_json.clone();
-    previous_json["format"] = "marginalis-archive-2".into();
+    previous_json["format"] = "marginalis-archive-3".into();
     fs::write(
         &previous_archive,
         serde_json::to_vec(&previous_json).expect("serialize previous archive"),

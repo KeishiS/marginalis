@@ -4,7 +4,8 @@
 
 - 単一NixOS host、SQLite、同時利用者10名、約1,000ノート
 - Kanidm 1.10によるOIDC本人確認とgroup管理
-- 旧`dataDir`を完全に削除した空databaseからの初期化
+- 新規配備では空databaseからの初期化
+- v0.5.0からの更新ではschema 4の`dataDir`を保持
 
 ## 確定要件
 
@@ -23,8 +24,8 @@
 - 本文はUTF-8で512 KiB以下とし、上限超過時はAsciiDoc解析を開始せず拒否します。
 - NixOS moduleはSQLite、OIDC client、MCP、backup destinationを設定でき、client secretを
   systemd credentialで渡します。
-- SQLite schema 4と`marginalis-archive-3`だけを受理します。旧schemaと旧archiveの移行は
-  提供しません。
+- SQLite schema 4と`marginalis-archive-4`だけを受理します。v0.5.0のschema 4 databaseは
+  継続利用できます。旧schemaと旧archiveの移行は提供しません。
 
 実装上の不変条件は[アーキテクチャ](architecture.md)、HTTP仕様は
 [OpenAPI](openapi.json)を参照してください。v0.3.0時点の要件と設計判断は
