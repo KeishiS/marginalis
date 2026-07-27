@@ -1,0 +1,138 @@
+//! Archive commandと復元検証。
+
+use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
+use crate::cli::required_absolute_file_argument;
+use marginalis_asciidoc::validate_archive_notes;
+use marginalis_domain::Archive;
+use marginalis_server::StorageConfig;
+use marginalis_sqlite::SqliteDatabase;
+use std::{
+    fs::{DirBuilder, File, OpenOptions},
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+/// SQLite正本をACL・削除状態を含む検証可能なarchiveとして出力する。
+pub(crate) async fn export_archive(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let output = required_absolute_file_argument(&mut arguments, "--output")?;
+    if output.exists() {
+        return Err(format!("archive output already exists: {}", output.display()).into());
+    }
+    let configuration = StorageConfig::from_environment()?;
+    let archive = SqliteDatabase::connect(&configuration.database_url)
+        .await?
+        .export_archive()
+        .await?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(PRIVATE_FILE_MODE)
+        .open(&output)?;
+    serde_json::to_writer_pretty(&file, &archive)?;
+    file.sync_all()?;
+    sync_parent_directory(&output)?;
+    tracing::info!(event = "archive.export.completed", output = %output.display(), note_count = archive.notes.len(), "exported archive");
+    Ok(())
+}
+
+/// archiveを全件検証してから空のSQLite databaseへ一transactionで取り込む。
+pub(crate) async fn import_archive(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let input = required_absolute_file_argument(&mut arguments, "--input")?;
+    let archive = read_validated_archive(&input)?;
+    let configuration = StorageConfig::from_environment()?;
+    SqliteDatabase::connect(&configuration.database_url)
+        .await?
+        .import_archive(&archive)
+        .await?;
+    tracing::info!(event = "archive.import.completed", input = %input.display(), "imported archive");
+    Ok(())
+}
+
+/// archiveのformat、全ノート、ACL、削除状態、revisionを読み取り専用で検証する。
+pub(crate) async fn validate_archive(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let input = required_absolute_file_argument(&mut arguments, "--input")?;
+    let archive = read_validated_archive(&input)?;
+    verify_archive_in_memory(&archive).await?;
+    tracing::info!(input = %input.display(), note_count = archive.notes.len(), "validated archive");
+    Ok(())
+}
+
+/// archiveを隔離した一時SQLite databaseへ復元し、論理内容の一致を検証する。
+pub(crate) async fn verify_restore(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let input = required_absolute_file_argument(&mut arguments, "--input")?;
+    let archive = read_validated_archive(&input)?;
+    verify_archive_in_isolated_database(&archive).await?;
+    tracing::info!(input = %input.display(), note_count = archive.notes.len(), "verified isolated archive restore");
+    Ok(())
+}
+
+pub(super) fn read_validated_archive(path: &Path) -> Result<Archive, Box<dyn std::error::Error>> {
+    let file = File::open(path)?;
+    let archive: Archive = serde_json::from_reader(file)?;
+    validate_archive_notes(&archive)?;
+    Ok(archive)
+}
+
+pub(super) async fn verify_archive_in_memory(
+    archive: &Archive,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let database = SqliteDatabase::connect("sqlite::memory:").await?;
+    database.import_archive(archive).await?;
+    if database.export_archive().await? != *archive {
+        return Err("archive logical round-trip validation failed".into());
+    }
+    Ok(())
+}
+
+pub(super) async fn verify_archive_in_isolated_database(
+    archive: &Archive,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (directory, database_path) = create_isolated_database_path()?;
+    let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
+    let result = async {
+        let database = SqliteDatabase::connect(&database_url).await?;
+        database.import_archive(archive).await?;
+        let restored = database.export_archive().await?;
+        if restored != *archive {
+            return Err("restored archive does not match the source archive".into());
+        }
+        Ok::<_, Box<dyn std::error::Error>>(())
+    }
+    .await;
+    if let Err(error) = std::fs::remove_dir_all(&directory) {
+        tracing::warn!(path = %directory.display(), error = %error, "failed to remove isolated restore directory");
+    }
+    result
+}
+
+fn create_isolated_database_path() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
+    let base = std::env::temp_dir();
+    let seed = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    for attempt in 0_u8..16 {
+        let directory = base.join(format!(
+            "marginalis-restore-check-{}-{seed}-{attempt}",
+            std::process::id()
+        ));
+        match DirBuilder::new()
+            .mode(PRIVATE_DIRECTORY_MODE)
+            .create(&directory)
+        {
+            Ok(()) => {
+                let database_path = directory.join("restored.sqlite");
+                return Ok((directory, database_path));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err("could not allocate an isolated restore directory".into())
+}
