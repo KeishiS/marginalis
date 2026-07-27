@@ -66,7 +66,15 @@
           default = rustPlatform.buildRustPackage {
             pname = "marginalis";
             version = "0.3.1";
-            src = ./.;
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions [
+                ./Cargo.toml
+                ./Cargo.lock
+                ./crates
+                ./docs/openapi.json
+              ];
+            };
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
