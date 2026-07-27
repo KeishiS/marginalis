@@ -62,7 +62,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-2");
+    assert_eq!(archive_json["format"], "marginalis-archive-3");
     assert_eq!(archive_json["adocweave_package_version"], "0.10.1");
     assert_eq!(archive_json["note_profile_version"], 1);
 
@@ -131,6 +131,21 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
         .expect("validate incompatible archive");
     assert!(!result.status.success());
 
+    let previous_archive = directory.join("previous-format.json");
+    let mut previous_json = archive_json.clone();
+    previous_json["format"] = "marginalis-archive-2".into();
+    fs::write(
+        &previous_archive,
+        serde_json::to_vec(&previous_json).expect("serialize previous archive"),
+    )
+    .expect("write previous archive");
+    let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["validate-archive", "--input"])
+        .arg(&previous_archive)
+        .output()
+        .expect("validate previous archive");
+    assert!(!result.status.success());
+
     let unknown_field_archive = directory.join("unknown-field.json");
     incompatible_json["adocweave_package_version"] = "0.10.1".into();
     incompatible_json["unexpected"] = true.into();
@@ -148,63 +163,54 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
 
     let mut nested_base = archive_json.clone();
     nested_base["notes"] = serde_json::json!([{
-        "note": {
-            "note_id": "0197c9bc-0000-7000-8000-000000000001",
-            "creator_issuer": "https://id.example.test",
-            "creator_subject": "alice",
-            "title": "Title",
-            "body": "Body.",
-            "tags": [],
-            "created_at": 0,
-            "updated_at": 0,
-            "revision": 1,
-            "deleted_at": null
-        },
-        "acl": [{
-            "issuer": "https://id.example.test",
-            "subject": "alice",
-            "permission": "Read"
-        }]
+        "note_id": "0197c9bc-0000-7000-8000-000000000001",
+        "creator_issuer": "https://id.example.test",
+        "creator_subject": "alice",
+        "title": "Title",
+        "body": "Body.",
+        "tags": [],
+        "created_at": 0,
+        "updated_at": 0,
+        "revision": 1,
+        "deleted_at": null
     }]);
-    for (name, pointer) in [
-        ("unknown-bundle-field", "/notes/0"),
-        ("unknown-note-field", "/notes/0/note"),
-    ] {
-        let mut nested_json = nested_base.clone();
-        nested_json
-            .pointer_mut(pointer)
-            .and_then(serde_json::Value::as_object_mut)
-            .expect("archive object")
-            .insert("unexpected".into(), true.into());
-        let nested_archive = directory.join(format!("{name}.json"));
-        fs::write(
-            &nested_archive,
-            serde_json::to_vec(&nested_json).expect("serialize nested unknown field"),
-        )
-        .expect("write nested unknown field");
-        let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
-            .args(["validate-archive", "--input"])
-            .arg(&nested_archive)
-            .output()
-            .expect("validate nested unknown field");
-        assert!(!result.status.success(), "{name} must be rejected");
-    }
-    let mut unknown_acl_json = nested_base;
-    unknown_acl_json["notes"][0]["acl"][0]["unexpected"] = true.into();
-    let unknown_acl_archive = directory.join("unknown-acl-field.json");
+    let mut unknown_note_json = nested_base.clone();
+    unknown_note_json["notes"][0]["unexpected"] = true.into();
+    let unknown_note_archive = directory.join("unknown-note-field.json");
     fs::write(
-        &unknown_acl_archive,
-        serde_json::to_vec(&unknown_acl_json).expect("serialize unknown ACL field"),
+        &unknown_note_archive,
+        serde_json::to_vec(&unknown_note_json).expect("serialize unknown note field"),
     )
-    .expect("write unknown ACL field");
+    .expect("write unknown note field");
     let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
         .args(["validate-archive", "--input"])
-        .arg(&unknown_acl_archive)
+        .arg(&unknown_note_archive)
         .output()
-        .expect("validate unknown ACL field");
+        .expect("validate unknown note field");
     assert!(
         !result.status.success(),
-        "unknown ACL field must be rejected"
+        "unknown note field must be rejected"
+    );
+
+    let mut old_bundle_json = nested_base;
+    old_bundle_json["notes"][0] = serde_json::json!({
+        "note": old_bundle_json["notes"][0].clone(),
+        "acl": []
+    });
+    let old_bundle_archive = directory.join("old-bundle-shape.json");
+    fs::write(
+        &old_bundle_archive,
+        serde_json::to_vec(&old_bundle_json).expect("serialize old bundle shape"),
+    )
+    .expect("write old bundle shape");
+    let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["validate-archive", "--input"])
+        .arg(&old_bundle_archive)
+        .output()
+        .expect("validate old bundle shape");
+    assert!(
+        !result.status.success(),
+        "old bundle shape must be rejected"
     );
 
     fs::remove_dir_all(&directory).expect("remove test directory");
@@ -390,7 +396,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 3);
+    assert_eq!(report["database"]["schema"]["actual"], 4);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
 
     fs::remove_dir_all(&directory).expect("remove test directory");

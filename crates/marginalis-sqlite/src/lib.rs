@@ -30,9 +30,7 @@ pub struct SqliteDatabase {
 pub enum SqliteStoreError {
     NotFound,
     Conflict,
-    LastAdmin,
     ArchiveTargetNotEmpty,
-    ArchiveMissingAdmin,
     CorruptData,
     Database(String),
 }
@@ -42,12 +40,8 @@ impl fmt::Display for SqliteStoreError {
         match self {
             Self::NotFound => formatter.write_str("note was not found or is not accessible"),
             Self::Conflict => formatter.write_str("note revision does not match"),
-            Self::LastAdmin => formatter.write_str("a note must retain one direct administrator"),
             Self::ArchiveTargetNotEmpty => {
                 formatter.write_str("archive import target must be empty")
-            }
-            Self::ArchiveMissingAdmin => {
-                formatter.write_str("every archived note must retain one direct administrator")
             }
             Self::CorruptData => formatter.write_str("stored data is invalid"),
             Self::Database(_) => formatter.write_str("database query failed"),
@@ -58,7 +52,7 @@ impl fmt::Display for SqliteStoreError {
 impl std::error::Error for SqliteStoreError {}
 
 impl SqliteDatabase {
-    /// v0.3.0専用のSQLite schemaへ接続する。
+    /// 現行のSQLite schemaへ接続する。
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
         let options = database_url
             .parse::<SqliteConnectOptions>()?
@@ -93,8 +87,8 @@ mod tests {
         OidcLoginAttempt, OidcLoginAttemptStore,
     };
     use marginalis_domain::{
-        Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry, NoteDraft,
-        NoteId, NotePermission, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
+        Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, Note, NoteDraft, NoteId,
+        SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
     };
 
     use super::*;
@@ -141,7 +135,7 @@ mod tests {
             .execute(&pool)
             .await
             .expect("migration table");
-        sqlx::query("INSERT INTO schema_migrations (version) VALUES (2)")
+        sqlx::query("INSERT INTO schema_migrations (version) VALUES (3)")
             .execute(&pool)
             .await
             .expect("old version");
@@ -152,7 +146,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("unsupported database schema version 2; expected 3")
+                .contains("unsupported database schema version 3; expected 4")
         );
     }
 
@@ -179,42 +173,14 @@ mod tests {
         database.create_note(&note).await.expect("create note");
         assert_eq!(database.note(note_id, false).await, Ok(Some(note.clone())));
         assert_eq!(
-            database.note_acl(note_id).await.expect("owner ACL"),
-            vec![NoteAclEntry {
-                issuer: "https://id.example.test".into(),
-                subject: "alice".into(),
-                permission: NotePermission::Admin,
-            }]
-        );
-        assert_eq!(
-            database
-                .set_note_permission(
-                    note_id,
-                    "https://id.example.test",
-                    "alice",
-                    Some(NotePermission::Write),
-                )
-                .await,
-            Err(SqliteStoreError::LastAdmin)
-        );
-        database
-            .set_note_permission(
-                note_id,
-                "https://id.example.test",
-                "bob",
-                Some(NotePermission::Admin),
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'note_acl'"
             )
+            .fetch_one(&database.pool)
             .await
-            .expect("add second administrator");
-        database
-            .set_note_permission(
-                note_id,
-                "https://id.example.test",
-                "alice",
-                Some(NotePermission::Write),
-            )
-            .await
-            .expect("downgrade after second administrator");
+            .expect("schema query"),
+            0
+        );
         let alice = Actor {
             issuer: "https://id.example.test".into(),
             subject: "alice".into(),
@@ -225,6 +191,11 @@ mod tests {
             subject: "charlie".into(),
             is_administrator: false,
         };
+        let same_subject_different_issuer = Actor {
+            issuer: "https://other-id.example.test".into(),
+            subject: "alice".into(),
+            is_administrator: false,
+        };
         let administrator = Actor {
             issuer: "https://id.example.test".into(),
             subject: "administrator".into(),
@@ -232,16 +203,39 @@ mod tests {
         };
         assert!(
             database
-                .visible_note(&alice, note_id, NotePermission::Read)
+                .visible_note(&alice, note_id)
                 .await
-                .expect("owner remains visible")
+                .expect("owner is visible")
                 .is_some()
+        );
+        assert_eq!(database.visible_note(&charlie, note_id).await, Ok(None));
+        assert_eq!(
+            database
+                .visible_note(&same_subject_different_issuer, note_id)
+                .await,
+            Ok(None)
         );
         assert_eq!(
             database
-                .visible_note(&charlie, note_id, NotePermission::Read)
-                .await,
-            Ok(None)
+                .list_visible_notes(&alice)
+                .await
+                .expect("owner list")
+                .len(),
+            1
+        );
+        assert!(
+            database
+                .list_visible_notes(&charlie)
+                .await
+                .expect("non-owner list")
+                .is_empty()
+        );
+        assert!(
+            database
+                .list_visible_notes(&same_subject_different_issuer)
+                .await
+                .expect("different issuer list")
+                .is_empty()
         );
         assert_eq!(
             database
@@ -319,26 +313,23 @@ mod tests {
             .expect("restore note");
         assert_eq!(restored.deleted_at, None);
         assert_eq!(restored.revision, 4);
-        let snapshot = database
-            .export_note_bundles()
-            .await
-            .expect("export snapshot");
+        let snapshot = database.export_notes().await.expect("export snapshot");
         let imported_database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("empty import target");
         imported_database
-            .import_note_bundles(&snapshot)
+            .import_notes(&snapshot)
             .await
             .expect("import snapshot");
         assert_eq!(
             imported_database
-                .export_note_bundles()
+                .export_notes()
                 .await
                 .expect("re-export snapshot"),
             snapshot
         );
         assert_eq!(
-            imported_database.import_note_bundles(&snapshot).await,
+            imported_database.import_notes(&snapshot).await,
             Err(SqliteStoreError::ArchiveTargetNotEmpty)
         );
         let nonempty_auth_database = SqliteDatabase::connect("sqlite::memory:")
@@ -358,23 +349,28 @@ mod tests {
             .await
             .expect("pending login attempt");
         assert_eq!(
-            nonempty_auth_database.import_note_bundles(&snapshot).await,
+            nonempty_auth_database.import_notes(&snapshot).await,
             Err(SqliteStoreError::ArchiveTargetNotEmpty)
         );
         let mut invalid_snapshot = snapshot.clone();
-        invalid_snapshot[0].note.creator_issuer.clear();
+        invalid_snapshot[0].creator_issuer.clear();
         let rejected_database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("empty rejected target");
         assert_eq!(
-            rejected_database
-                .import_note_bundles(&invalid_snapshot)
-                .await,
+            rejected_database.import_notes(&invalid_snapshot).await,
+            Err(SqliteStoreError::CorruptData)
+        );
+        let mut invalid_deleted_at = snapshot.clone();
+        invalid_deleted_at[0].deleted_at =
+            Some(UnixMillis::new(invalid_deleted_at[0].updated_at.get() + 1));
+        assert_eq!(
+            rejected_database.import_notes(&invalid_deleted_at).await,
             Err(SqliteStoreError::CorruptData)
         );
         assert_eq!(
             rejected_database
-                .export_note_bundles()
+                .export_notes()
                 .await
                 .expect("empty snapshot"),
             Vec::new()

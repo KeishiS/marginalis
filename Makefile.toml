@@ -122,7 +122,7 @@ description = "Verify release version, tag, changelog, and declared dual-license
 script_runner = "@shell"
 script = '''
 set -eu
-expected_version="0.4.0"
+expected_version="0.5.0"
 release_tag="${MARGINALIS_RELEASE_TAG:-}"
 test -s LICENSE-MIT
 test -s LICENSE-APACHE

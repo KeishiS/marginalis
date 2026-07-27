@@ -30,8 +30,10 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLite正本は`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは3です。旧versionを自動移行しないため、
-schema version 2以前のdatabaseは読み込まず、空のdatabaseとして再初期化します。
+変更してください。現行のSQLite schema versionは4です。旧versionを自動移行しません。
+v0.5.0への更新時はserviceを停止し、切戻しが必要なら旧版専用として旧`dataDir`を別領域へ退避します。
+その後、配備先の旧`dataDir`全体を削除し、空の`dataDir`から再初期化してください。退避したdatabaseは
+schema 4やarchive v3へimportできません。
 再初期化後はMCP clientの再登録と利用者の再認可が必要です。
 
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
@@ -85,7 +87,7 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 ## Backupの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは`marginalis-archive-2`で、AdocWeave package版とnote profile版を記録します。
+現行archiveは`marginalis-archive-3`で、AdocWeave package版とnote profile版を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 
 ```sh
@@ -122,7 +124,7 @@ service停止中の切替を行います。
      --input /srv/marginalis-backups/backup-<時刻>/marginalis-archive.json
    ```
 
-3. 復元先を再exportし、`validate-archive`で検証します。ノート数、ACL、削除状態、revisionを
+3. 復元先を再exportし、`validate-archive`で検証します。ノート数、所有者、削除状態、revisionを
    運用上の期待値とも照合します。archiveはWeb sessionやMCP tokenなどの認証状態を含まないため、
    切替後は再ログインと必要に応じたMCP再認可が必要です。
 4. maintenance windowでserviceを停止し、現在の`dataDir`を削除せず退避します。復元済みdatabaseを

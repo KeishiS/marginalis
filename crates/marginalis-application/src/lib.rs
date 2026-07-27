@@ -1,4 +1,4 @@
-//! Marginalis v0.3のユースケースと永続化port。
+//! Marginalisのユースケースと永続化port。
 //!
 //! HTTP、SQLite、OIDC clientの具体実装を参照せず、Kanidm主体とSQLite正本の境界だけを定義する。
 

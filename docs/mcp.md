@@ -89,7 +89,7 @@ refresh時のscopeは元のgrantの部分集合だけを許可し、発行する
 rotation の親子関係も、有効な子孫がある間保持します。これは
 [OAuth 2.0 Security Best Current Practice §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
 の replay 検知要件に従うものです。
-現行のschema versionは3です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
+現行のschema versionは4です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
 再初期化し、MCP clientは再登録・再認可してください。
 
 Dynamic Client Registration は 16 KiB の本文上限、redirect originごとに10分あたり30件のrate limit、
@@ -162,7 +162,7 @@ JSONまたはtool引数の構造が不正な場合はJSON-RPC `-32602`です。�
 ```
 
 本リリースのChatGPT、Claude、Codex受入では、互換登録経路としてDynamic Client Registrationを使用します。
-client版と実測結果はrelease issueへ記録するまで未検証として扱います。MCP 2025-11-25が推奨（SHOULD）する
+対象clientごとの成否を記録するまで未検証として扱います。MCP 2025-11-25が推奨（SHOULD）する
 Client ID Metadata Documentには意図的に対応しません。client指定URLをAuthorization Serverから取得する
 方式にはSSRF、名前解決変更、取得制限、cacheの対策が必要であり、受入対象のDCR経路に不要なoutbound HTTP
 依存を増やすためです。対象clientがDCRを廃止した場合は、この判断を再検討します。
@@ -171,8 +171,9 @@ OAuth endpointへ一律のCORSは付与しません。authorization endpointはn
 提供しません。token交換、Dynamic Client Registration、MCP requestはclient backendまたはnative client
 から行うことを受入試験で確認します。browser内JavaScriptから直接呼び出す汎用clientは対象外です。
 
-scope は `notes:read`、`notes:write`、`notes:delete` です。scope だけでは不十分であり、Web と同じ
-ノート ACL が必ず適用されます。`server-admins` はすべてのノートに管理者相当でアクセスします。
+scope は `notes:read`、`notes:write`、`notes:delete` です。scopeは許可する操作を制限しますが、
+所有範囲を拡張しません。通常利用者は自身が作成したノートだけを操作でき、`server-admins`は
+すべてのノートを操作できます。
 
 利用者は Web session と CSRF token を使って、`DELETE /api/v2/mcp-authorizations/{client_id}` から
 個別 client の認可を取り消せます。取り消し後、その client の access token と refresh token は使えません。

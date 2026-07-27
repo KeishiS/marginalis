@@ -1,4 +1,4 @@
-//! v0.3のOIDC group認可、Web session、MCP OAuth、SQLiteノート操作を、本番用adapterと
+//! OIDC group認可、Web session、MCP OAuth、SQLiteノート操作を、本番用adapterと
 //! Axum routerのHTTP境界を通して一気通貫で検証する。
 
 mod support;
@@ -506,7 +506,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         6,
         "create_note",
         serde_json::json!({
-            "title": "v0.3 <integration> note",
+            "title": "Owned <integration> note",
             "body": "Created through the authenticated MCP endpoint.",
             "tags": ["integration"],
         }),
@@ -517,6 +517,129 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     let note_id = created["result"]["structuredContent"]["note_id"]
         .as_str()
         .expect("created note ID");
+
+    let other_user = login(
+        &server,
+        "other-user-subject",
+        &["server-users"],
+        "other-user-login-code",
+    )
+    .await;
+    let other_tokens = authorize_mcp(&server.app, &other_user, &client_id).await;
+    let response = call_mcp(
+        &server.app,
+        &other_tokens.access,
+        7,
+        "list_notes",
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        json_body(response).await["result"]["structuredContent"]["notes"],
+        serde_json::json!([])
+    );
+    let response = call_mcp(
+        &server.app,
+        &other_tokens.access,
+        8,
+        "get_note",
+        serde_json::json!({ "note_id": note_id }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = json_body(response).await;
+    assert_eq!(response["result"]["isError"], true);
+    assert_eq!(response["result"]["structuredContent"]["code"], "not_found");
+    let response = call_mcp(
+        &server.app,
+        &other_tokens.access,
+        9,
+        "update_note",
+        serde_json::json!({
+            "note_id": note_id,
+            "title": "Unauthorized update",
+            "body": "Must not persist.",
+            "tags": [],
+            "expected_revision": 1,
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = json_body(response).await;
+    assert_eq!(response["result"]["isError"], true);
+    assert_eq!(response["result"]["structuredContent"]["code"], "not_found");
+    let response = call_mcp(
+        &server.app,
+        &other_tokens.access,
+        10,
+        "delete_note",
+        serde_json::json!({
+            "note_id": note_id,
+            "expected_revision": 1,
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = json_body(response).await;
+    assert_eq!(response["result"]["isError"], true);
+    assert_eq!(response["result"]["structuredContent"]["code"], "not_found");
+
+    let response = send(
+        &server.app,
+        Request::get("/api/v2/notes")
+            .header(header::COOKIE, other_user.cookies())
+            .body(Body::empty())
+            .expect("other user list request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await, serde_json::json!([]));
+    let response = send(
+        &server.app,
+        Request::get(format!("/api/v2/notes/{note_id}"))
+            .header(header::COOKIE, other_user.cookies())
+            .body(Body::empty())
+            .expect("other user read request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = send(
+        &server.app,
+        Request::put(format!("/api/v2/notes/{note_id}"))
+            .header(header::COOKIE, other_user.cookies())
+            .header(header::ORIGIN, BROWSER_ORIGIN)
+            .header("sec-fetch-site", "same-origin")
+            .header("x-csrf-token", &other_user.csrf)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "title": "Unauthorized REST update",
+                    "body": "Must not persist.",
+                    "tags": [],
+                    "expected_revision": 1,
+                })
+                .to_string(),
+            ))
+            .expect("other user update request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = send(
+        &server.app,
+        Request::delete(format!("/api/v2/notes/{note_id}"))
+            .header(header::COOKIE, other_user.cookies())
+            .header(header::ORIGIN, BROWSER_ORIGIN)
+            .header("sec-fetch-site", "same-origin")
+            .header("x-csrf-token", &other_user.csrf)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({ "expected_revision": 1 }).to_string(),
+            ))
+            .expect("other user delete request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let response = send(
         &server.app,
@@ -553,7 +676,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = text_body(response).await;
-    assert!(body.contains("v0.3 &lt;integration&gt; note"));
+    assert!(body.contains("Owned &lt;integration&gt; note"));
     assert!(!body.contains("<integration>"));
 
     let response = send(

@@ -20,7 +20,9 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
 
 ## 不変条件
 
-- ノート、ACL、削除状態の更新は SQLite transaction で完結する。
+- ノートと削除状態の更新はSQLite transactionで完結する。
+- 通常利用者は、作成者の`(issuer, subject)`が自身のidentityと一致するノートだけを操作できる。
+  `server-admins`は所有者にかかわらずすべてのノートを操作できる。
 - identity は `(issuer, subject)` で識別する。アプリケーションはローカル password、root、登録ポリシーを
   持たない。
 - `server-users` と `server-admins` は、OIDC login 時に署名検証した `groups` claim から決め、その session と
@@ -33,7 +35,7 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
   token pair発行は一つのtransactionで行い、codeまたはrefresh tokenのreplay時はtoken familyを失効する。
   消費済みcodeは対応するtoken familyが残る間だけreplay検知用に保持する。
   MCP clientにKanidm tokenを渡さない。
-- HTTP、MCP、Web UI は可視性・ACL・revision の業務規則を複製しない。
+- HTTP、MCP、Web UIは所有者認可とrevisionの業務規則を複製しない。
 
 ## ソース配置
 
@@ -79,7 +81,7 @@ marginalis-sqlite/src/
 ├── schema.rs        schema検証
 ├── session.rs       Web/OIDC session
 ├── mcp.rs           MCP OAuth永続化
-├── notes.rs         noteとACL
+├── notes.rs         noteと所有者認可
 └── archive.rs       検証済みarchiveの原子的な格納
 ```
 
