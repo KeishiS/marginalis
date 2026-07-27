@@ -388,6 +388,7 @@
           kanidm-discovery-vm = pkgs.testers.nixosTest {
             name = "marginalis-kanidm-discovery";
             nodes.idp = {
+              environment.systemPackages = [ pkgs.kanidm_1_10 ];
               services.kanidm = {
                 package = pkgs.kanidmWithSecretProvisioning_1_10;
                 server = {
@@ -404,11 +405,23 @@
                   enable = true;
                   instanceUrl = "https://localhost:8443";
                   acceptInvalidCerts = true;
+                  idmAdminPasswordFile = pkgs.writeText "marginalis-test-idm-admin-password" "test-idm-admin-password";
+                  groups.server-users = { };
                   systems.oauth2.marginalis = {
                     displayName = "Marginalis test client";
-                    originUrl = "https://marginalis.example.test/marginalis";
+                    originUrl = "https://marginalis.example.test/marginalis/auth/oidc/callback";
                     originLanding = "https://marginalis.example.test/marginalis";
                     basicSecretFile = pkgs.writeText "marginalis-test-oidc-secret" "test-only-secret";
+                    scopeMaps.server-users = [
+                      "openid"
+                      "profile"
+                      "email"
+                      "groups_name"
+                    ];
+                    claimMaps.groups = {
+                      joinType = "array";
+                      valuesByGroup.server-users = [ "server-users" ];
+                    };
                   };
                 };
               };
@@ -425,6 +438,11 @@
                 networking.hosts."127.0.0.1" = [ "marginalis.example.test" ];
                 security.pki.certificateFiles = [ "${kanidmDiscoveryCerts}/ca.pem" ];
                 environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
+                environment.systemPackages = [
+                  pkgs.kanidm_1_10
+                  pkgs.playwright-test
+                  pkgs.playwright-driver.browsers
+                ];
                 services.nginx = {
                   enable = true;
                   virtualHosts."marginalis.example.test" = {
@@ -456,6 +474,14 @@
               idp.wait_until_succeeds(
                 "curl --insecure --resolve id.example.test:8443:127.0.0.1 -Lsf https://id.example.test:8443 | grep Kanidm"
               )
+              idp.succeed(
+                "KANIDM_PASSWORD=test-idm-admin-password "
+                + "kanidm login --accept-invalid-certs -H https://localhost:8443 -D idm_admin"
+              )
+              idp.succeed(
+                "kanidm group add-members --accept-invalid-certs "
+                + "-H https://localhost:8443 -D idm_admin server-users idm_admin"
+              )
               app.start()
               app.wait_for_unit("marginalis.service")
               app.wait_for_unit("nginx.service")
@@ -476,6 +502,10 @@
               app.succeed(
                 "test $(curl --cacert ${kanidmDiscoveryCerts}/ca.pem -sS -o /dev/null -w '%{http_code}' "
                 + "'https://marginalis.example.test/marginalis/auth/oidc/callback?code=invalid&state=invalid') = 401"
+              )
+              app.succeed(
+                "cp ${./tests/browser/kanidm-login.spec.js} /tmp/kanidm-login.spec.js; "
+                + "cd /tmp && playwright test kanidm-login.spec.js --reporter=line --workers=1"
               )
               app.succeed("journalctl -u marginalis.service | grep -q 'Marginalis server listening'")
               app.succeed("! journalctl -u marginalis.service | grep -q 'OIDC discovery is unavailable'")

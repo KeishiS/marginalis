@@ -305,13 +305,31 @@ pub(super) fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) ->
 }
 
 /// OAuth consent may run in a client-controlled popup or sandbox whose `Origin` is absent or
-/// opaque. The session-bound double-submit token remains the authorization boundary here.
+/// opaque. Such requests rely on the session-bound double-submit token. A concrete origin must
+/// still match Marginalis so that a foreign site cannot submit a copied form.
 pub(super) async fn authenticated_form_actor(
     headers: &HeaderMap,
     state: &ApiState,
     csrf_token: &str,
 ) -> HandlerResult<Actor> {
     let actor = authenticated_actor(headers, state).await?;
+    if let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        && origin != "null"
+        && origin != state.browser_origin
+    {
+        tracing::warn!(
+            received_origin = origin,
+            expected_origin = %state.browser_origin,
+            "rejected OAuth consent with a mismatched concrete origin"
+        );
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            "same_origin_required",
+            "same-origin request is required",
+        ));
+    }
     let session_id =
         cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
     if cookie_value(headers, CSRF_COOKIE).as_deref() != Some(csrf_token)
