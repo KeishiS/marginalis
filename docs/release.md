@@ -15,4 +15,4 @@
 `v0.3.1`では日次backup、30世代保持、四半期の週末復元試験を運用基準とする。復元先は
 本番databaseから隔離し、既存databaseを暗黙に上書きしてはならない。詳細は
 [Issue 045](../issues/045-backup-restore-lifecycle.md)と
-[v0.3.1リリース受入](../issues/048-v0.3.1-release-acceptance.md)を参照する。
+[v0.4.0受入確認](acceptance.md)を参照する。

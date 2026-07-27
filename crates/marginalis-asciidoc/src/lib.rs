@@ -201,15 +201,19 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
     } else {
         match adocweave::Engine::new(note_parse_options()).analyze(&draft.body) {
             Ok(analysis) => {
-                errors.extend(analysis.diagnostics().iter().filter_map(|adoc_diagnostic| {
-                    (adoc_diagnostic.severity == Severity::Error).then(|| {
-                        diagnostic(
-                            NoteValidationCode::AsciiDocParseFailed,
-                            NoteValidationTarget::Body,
-                            Some(span(adoc_diagnostic.range)),
-                        )
-                    })
-                }));
+                errors.extend(
+                    analysis
+                        .diagnostics()
+                        .iter()
+                        .filter(|diagnostic| diagnostic.severity == Severity::Error)
+                        .map(|adoc_diagnostic| {
+                            diagnostic(
+                                NoteValidationCode::AsciiDocParseFailed,
+                                NoteValidationTarget::Body,
+                                Some(span(adoc_diagnostic.range)),
+                            )
+                        }),
+                );
                 errors.extend(
                     validate_note_content_profile(&analysis)
                         .into_iter()
