@@ -59,6 +59,6 @@ artifactは公開CIへ無期限に保持せず、リリース調査に必要な�
 
 ## 手動互換確認
 
-リリース前にChatGPT、Claude Code、Codex CLIについて、client名、版、実施日、担当者、fixture名、
-metadata discovery、認可、refresh、tool call、認可取消の結果を
-[リリース受入](acceptance.md)へ記録します。秘密情報や認可URL全体は記録しません。
+リリース前にChatGPT、Claude Code、Codex CLIでmetadata discovery、認可、refresh、tool call、
+認可取消を確認します。[リリース受入](acceptance.md)には必須項目の完了日と成否だけを記録し、
+環境やclientの詳細、秘密情報、認可URL全体は記録しません。

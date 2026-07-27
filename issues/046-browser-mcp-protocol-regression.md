@@ -30,7 +30,7 @@ Kanidm login、subpath、OAuth authorization、MCP Streamable HTTPの主要経�
    独立した通信仕様試験にする。
 6. 失敗時artifactからCookie、token、authorization code、client secretを除去し、request ID、
    server log、画面、遷移先だけを保存する。
-7. ChatGPT、Claude Code、Codex CLIの実client確認は、版と結果をrelease issueへ記録する。
+7. ChatGPT、Claude Code、Codex CLIの実client確認は、完了日と成否だけをrelease issueへ記録する。
 
 ## 対象外
 
