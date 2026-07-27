@@ -310,6 +310,39 @@ in
       };
     };
 
+    # secretやnetworkを必要とせず、SQLiteを変更しない運用診断。
+    systemd.services.marginalis-diagnose = {
+      description = "Diagnose the Marginalis SQLite database and public configuration";
+      environment = {
+        RUST_LOG = cfg.logFilter;
+        MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
+        MARGINALIS_BASE_URL = cfg.baseUrl;
+        MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
+        OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
+        OIDC_CLIENT_ID = cfg.oidc.clientId;
+        OIDC_CA_CERTIFICATE_FILE =
+          if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
+        MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
+        MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${cfg.package}/bin/marginalis diagnose";
+        User = "marginalis";
+        Group = "marginalis";
+        WorkingDirectory = cfg.dataDir;
+        UMask = "0077";
+        NoNewPrivileges = true;
+        CapabilityBoundingSet = "";
+        PrivateDevices = true;
+        PrivateTmp = true;
+        ProtectHome = true;
+        ProtectSystem = "strict";
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        ReadOnlyPaths = [ cfg.dataDir ];
+      };
+    };
+
     # archive exportは一つのSQLite read transactionを使うため、HTTP serverを止めずに一貫した
     # snapshotを取得できる。検証済み世代の作成に成功した後だけ保持処理を実行する。
     systemd.services.marginalis-backup = mkIf (cfg.backupDirectory != null) {

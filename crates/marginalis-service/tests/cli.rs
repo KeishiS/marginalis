@@ -5,6 +5,17 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+fn test_directory(purpose: &str) -> std::path::PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "marginalis-cli-{purpose}-{}-{unique}",
+        std::process::id()
+    ))
+}
+
 #[test]
 fn version_flags_report_the_packaged_version() {
     for flag in ["--version", "-V"] {
@@ -24,14 +35,7 @@ fn version_flags_report_the_packaged_version() {
 
 #[test]
 fn archive_commands_create_private_outputs_without_relying_on_umask() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock")
-        .as_nanos();
-    let directory = std::env::temp_dir().join(format!(
-        "marginalis-cli-permissions-{}-{unique}",
-        std::process::id()
-    ));
+    let directory = test_directory("permissions");
     fs::create_dir(&directory).expect("test directory");
     let database = directory.join("marginalis.sqlite3");
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
@@ -244,4 +248,55 @@ fn corrupted_archive_and_failed_backup_are_not_accepted_as_successes() {
     assert!(!incomplete.join("COMPLETE").exists());
 
     fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
+#[test]
+fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
+    let directory = test_directory("diagnostics");
+    fs::create_dir(&directory).expect("test directory");
+    let database = directory.join("marginalis.sqlite3");
+    let database_url = format!("sqlite://{}?mode=rwc", database.display());
+    let archive = directory.join("archive.json");
+
+    let initialize = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["export-archive", "--output"])
+        .arg(&archive)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("initialize database");
+    assert!(initialize.status.success());
+
+    let healthy = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .arg("diagnose")
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .env("OIDC_CLIENT_SECRET", "must-not-be-reported")
+        .output()
+        .expect("diagnose database");
+    assert!(healthy.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
+    assert_eq!(report["status"], "ok");
+    assert_eq!(report["database"]["schema"]["actual"], 2);
+    assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
+#[test]
+fn diagnose_reports_an_unavailable_database_and_fails() {
+    let directory = test_directory("unavailable-diagnostics");
+    let database_url = format!("sqlite://{}/missing.sqlite3?mode=ro", directory.display());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .arg("diagnose")
+        .env("MARGINALIS_DATABASE_URL", database_url)
+        .output()
+        .expect("diagnose unavailable database");
+
+    assert!(!output.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("diagnostic JSON");
+    assert_eq!(report["status"], "failed");
+    assert_eq!(report["database"]["available"], false);
+    assert_eq!(report["database"]["error"], "connection_failed");
 }

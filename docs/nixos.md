@@ -131,3 +131,48 @@ service停止中の切替を行います。
 戻します。復元先の確認が終わるまで元databaseを上書きまたは削除しないでください。
 
 初回配備後は `GET /api/v2/health`、OIDC login、一般利用者と管理者の可視性、MCP authorization を確認します。
+
+## 障害診断
+
+公開livenessは`GET /api/v2/health`で確認します。この応答はHTTP processの稼働だけを表し、
+外部IdPの一時的な停止では失敗しません。SQLiteと設定はserviceと同じ実行環境で診断します。
+
+```bash
+curl --fail http://127.0.0.1:3000/api/v2/health
+systemctl is-active marginalis.service
+systemctl show marginalis.service -p InvocationID -p ExecMainStatus
+systemctl show marginalis-purge-expired.service -p Result -p ExecMainStatus
+systemctl show marginalis-backup.service -p Result -p ExecMainStatus
+systemctl list-timers marginalis-purge-expired.timer
+systemctl cat marginalis.service
+systemctl start marginalis-diagnose.service
+journalctl -u marginalis-diagnose.service -o cat -n 20
+```
+
+`diagnose`はSQLiteの読み取り可否、schema version、`PRAGMA quick_check`、
+外部キー違反件数と非秘密設定だけをJSONで出力します。全検査が正常な場合だけ終了status 0です。
+databaseを作成・移行せず、OIDC client secret、Cookie、token、ノート本文は出力しません。
+`status`が`failed`の場合は`database.error`と各検査の`actual`、`expected`を確認します。
+
+主要なjournal event名は次のとおりです。
+
+- service起動: `service.listening`
+- OIDC discovery成功・失敗: `oidc.discovery.completed`、`oidc.discovery.failed`
+- MCP OAuth token成功・失敗: `mcp.oauth.token.completed`、`mcp.oauth.token.failed`
+- purge成功・失敗: `maintenance.purge.completed`、`maintenance.purge.failed`
+- backup成功・失敗: `maintenance.backup.completed`、`maintenance.backup.failed`
+- command失敗: `command.failed`（`command` fieldで保守処理を識別）
+
+```bash
+journalctl -u marginalis.service --since today
+journalctl -u marginalis.service _SYSTEMD_INVOCATION_ID="$(systemctl show marginalis.service -p InvocationID --value)"
+journalctl -u marginalis-purge-expired.service -g 'maintenance.purge.'
+journalctl -u marginalis-backup.service -g 'maintenance.backup.'
+find /srv/marginalis-backups -mindepth 1 -maxdepth 1 -type d \
+  -exec test -f '{}/COMPLETE' ';' -print | sort | tail
+```
+
+HTTP logは`request_id`で一連の処理を追跡できます。OIDC到達不能時は
+`oidc.discovery.failed`を記録し、loginだけを503で閉じたままlivenessを維持します。
+保守unitの失敗はHTTP serviceの停止を意味しません。unitの`Result`と同じinvocationのjournalを確認し、
+保存先容量、権限、SQLite診断結果を修正してからunitを再実行します。

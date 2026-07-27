@@ -18,6 +18,7 @@ async fn main() {
     initialize_tracing();
     let result = match command.as_deref() {
         None | Some("serve") => serve::run().await,
+        Some("diagnose") if arguments.next().is_none() => maintenance::diagnose().await,
         Some("purge-expired") => maintenance::purge_expired().await,
         Some("export-archive") => maintenance::export_archive(arguments).await,
         Some("import-archive") => maintenance::import_archive(arguments).await,
@@ -29,7 +30,13 @@ async fn main() {
         Some(_) => Err(cli::USAGE.into()),
     };
     if let Err(error) = result {
-        tracing::error!(error = %error, "Marginalis server terminated");
+        let command = command.as_deref().unwrap_or("serve");
+        tracing::error!(
+            event = "command.failed",
+            command,
+            error = %error,
+            "Marginalis command terminated"
+        );
         std::process::exit(1);
     }
 }
@@ -40,6 +47,7 @@ fn initialize_tracing() {
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
+        .with_writer(std::io::stderr)
         .compact()
         .init();
 }

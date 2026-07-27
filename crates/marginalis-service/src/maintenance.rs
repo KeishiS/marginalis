@@ -19,8 +19,93 @@ const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 
 const UNUSED_MCP_CLIENT_RETENTION_MS: i64 = 24 * 60 * 60 * 1_000;
 
+#[derive(serde::Serialize)]
+struct DiagnosticReport {
+    status: &'static str,
+    event: &'static str,
+    database: marginalis_sqlite::SqliteDiagnosticReport,
+    configuration: PublicConfigurationReport,
+}
+
+#[derive(serde::Serialize)]
+struct PublicConfigurationReport {
+    database_configured: bool,
+    base_url: Option<String>,
+    listen_address: Option<String>,
+    oidc_issuer_url: Option<String>,
+    oidc_client_id_configured: bool,
+    oidc_ca_certificate_file: Option<String>,
+    mcp_enabled: Option<bool>,
+    mcp_allowed_origin_count: usize,
+}
+
+/// SQLiteと公開設定を変更せずに検査し、結果をJSONで出力する。
+pub(crate) async fn diagnose() -> Result<(), Box<dyn std::error::Error>> {
+    let database_url = nonempty_environment_variable("MARGINALIS_DATABASE_URL");
+    let database = match database_url.as_deref() {
+        Some(database_url) => SqliteDatabase::diagnose(database_url).await,
+        None => SqliteDatabase::diagnose("sqlite://configuration-is-missing?mode=ro").await,
+    };
+    let healthy = database.healthy();
+    let report = DiagnosticReport {
+        status: if healthy { "ok" } else { "failed" },
+        event: "diagnostics.completed",
+        database,
+        configuration: public_configuration(),
+    };
+    serde_json::to_writer(std::io::stdout().lock(), &report)?;
+    println!();
+    if healthy {
+        Ok(())
+    } else {
+        Err("diagnostics reported an unhealthy database".into())
+    }
+}
+
+fn public_configuration() -> PublicConfigurationReport {
+    let mcp_allowed_origin_count = std::env::var("MARGINALIS_MCP_ALLOWED_ORIGINS")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .filter(|origin| !origin.trim().is_empty())
+                .count()
+        })
+        .unwrap_or(0);
+    PublicConfigurationReport {
+        database_configured: nonempty_environment_variable("MARGINALIS_DATABASE_URL").is_some(),
+        base_url: nonempty_environment_variable("MARGINALIS_BASE_URL"),
+        listen_address: nonempty_environment_variable("MARGINALIS_LISTEN_ADDR"),
+        oidc_issuer_url: nonempty_environment_variable("OIDC_ISSUER_URL"),
+        oidc_client_id_configured: nonempty_environment_variable("OIDC_CLIENT_ID").is_some(),
+        oidc_ca_certificate_file: nonempty_environment_variable("OIDC_CA_CERTIFICATE_FILE"),
+        mcp_enabled: std::env::var("MARGINALIS_MCP_ENABLE")
+            .ok()
+            .and_then(|value| value.parse().ok()),
+        mcp_allowed_origin_count,
+    }
+}
+
+fn nonempty_environment_variable(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
 /// 保持期限を過ぎたnoteと一時的な認証状態を物理削除する。
 pub(crate) async fn purge_expired() -> Result<(), Box<dyn std::error::Error>> {
+    let result = purge_expired_state().await;
+    if let Err(error) = &result {
+        tracing::error!(
+            event = "maintenance.purge.failed",
+            error = %error,
+            "failed to purge expired persisted state"
+        );
+    }
+    result
+}
+
+async fn purge_expired_state() -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
     let now = SystemClock.now();
@@ -33,6 +118,7 @@ pub(crate) async fn purge_expired() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
     tracing::info!(
+        event = "maintenance.purge.completed",
         note_count,
         web_sessions = auth_counts.web_sessions,
         oidc_login_attempts = auth_counts.oidc_login_attempts,
@@ -67,7 +153,7 @@ pub(crate) async fn export_archive(
     serde_json::to_writer_pretty(&file, &archive)?;
     file.sync_all()?;
     sync_parent_directory(&output)?;
-    tracing::info!(output = %output.display(), note_count = archive.notes.len(), "exported archive");
+    tracing::info!(event = "archive.export.completed", output = %output.display(), note_count = archive.notes.len(), "exported archive");
     Ok(())
 }
 
@@ -82,7 +168,7 @@ pub(crate) async fn import_archive(
         .await?
         .import_archive(&archive)
         .await?;
-    tracing::info!(input = %input.display(), "imported archive");
+    tracing::info!(event = "archive.import.completed", input = %input.display(), "imported archive");
     Ok(())
 }
 
@@ -185,7 +271,7 @@ pub(crate) async fn backup(
 
     let result = backup_into(&output).await;
     if let Err(error) = result {
-        tracing::error!(output = %output.display(), error = %error, "backup failed; incomplete output was retained");
+        tracing::error!(event = "maintenance.backup.failed", output = %output.display(), error = %error, "backup failed; incomplete output was retained");
         return Err(error);
     }
     Ok(())
@@ -224,7 +310,7 @@ async fn backup_into(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     marker.sync_all()?;
     File::open(output)?.sync_all()?;
     let note_count = archive.notes.len();
-    tracing::info!(output = %output.display(), note_count, "backup completed");
+    tracing::info!(event = "maintenance.backup.completed", output = %output.display(), note_count, "backup completed");
     Ok(())
 }
 

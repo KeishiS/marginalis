@@ -43,7 +43,18 @@ impl ServerOidcAuthenticationUseCases {
             self.http_client.clone(),
         )
         .await
-        .map_err(|_| AuthenticationUseCaseError::Unavailable)?;
+        .map_err(|_| {
+            tracing::warn!(
+                event = "oidc.discovery.failed",
+                error_kind = "unavailable",
+                "OIDC discovery retry failed"
+            );
+            AuthenticationUseCaseError::Unavailable
+        })?;
+        tracing::info!(
+            event = "oidc.discovery.completed",
+            "OIDC discovery succeeded"
+        );
         let mut oidc = self.oidc.write().await;
         Ok(oidc.get_or_insert(discovered).clone())
     }

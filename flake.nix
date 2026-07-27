@@ -272,6 +272,15 @@
               machine.succeed("systemctl is-enabled marginalis-purge-expired.timer")
               machine.succeed("systemctl is-enabled marginalis-backup.timer")
               machine.succeed("systemctl is-enabled marginalis-restore-check.timer")
+              machine.succeed("systemctl start marginalis-diagnose.service")
+              machine.succeed(
+                "journalctl -u marginalis-diagnose.service -o cat | "
+                + "grep '^{\"status\":\"ok\"' | tail -1 | jq -e "
+                + "'.database.available and .database.schema.ok and .database.integrity.ok and .database.foreign_keys.ok'"
+              )
+              machine.succeed(
+                "journalctl -u marginalis.service -o cat | grep -q 'event=\"oidc.discovery.failed\"'"
+              )
               machine.succeed("systemctl start marginalis-backup.service")
               machine.succeed("systemctl is-active marginalis.service")
               machine.succeed(
@@ -303,6 +312,21 @@
                 + "MARGINALIS_DATABASE_URL=sqlite:/tmp/restored.sqlite "
                 + "${self.packages.${system}.default}/bin/marginalis import-archive "
                 + "--input \"$backup/marginalis-archive.json\""
+              )
+              machine.succeed("systemctl stop marginalis.service")
+              machine.succeed(
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "'UPDATE schema_migrations SET version = 1'"
+              )
+              machine.fail("systemctl start marginalis-diagnose.service")
+              machine.succeed(
+                "journalctl -u marginalis-diagnose.service -o cat | "
+                + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 2'"
+              )
+              machine.succeed(
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "'UPDATE schema_migrations SET version = 2'"
               )
             '';
           };
