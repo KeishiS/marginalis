@@ -144,8 +144,10 @@ pub struct NoteProfileExample {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteProfileSyntax {
-    pub allowed_blocks: Vec<&'static str>,
-    pub allowed_inlines: Vec<&'static str>,
+    /// 主要な対応blockの案内。許可集合を網羅する一覧ではありません。
+    pub common_blocks: Vec<&'static str>,
+    /// 主要な対応inlineの案内。許可集合を網羅する一覧ではありません。
+    pub common_inlines: Vec<&'static str>,
     pub source_language_optional: bool,
     pub allowed_math_languages: Vec<&'static str>,
     pub title_forbidden: Vec<&'static str>,

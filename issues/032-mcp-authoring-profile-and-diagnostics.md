@@ -38,7 +38,7 @@ MCPクライアントが入力前にノート本文の規則を取得できる�
 
 ### 1. `get_note_profile`を追加する
 
-`get_note_profile`は読み取り専用とし、`notes:read` scopeを要求する。
+`get_note_profile`は読み取り専用とし、`notes:read`または`notes:write` scopeを要求する。
 
 - 機械可読なJSONと短い説明を返す。少なくとも次を含める。
   - 許可するAsciiDoc構文の一覧と、禁止構文の一覧（禁止理由の一行説明つき）。
