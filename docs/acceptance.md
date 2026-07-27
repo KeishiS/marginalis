@@ -32,3 +32,7 @@ PR CIの`verify`と`nixos-e2e`、公開前の`cargo make release-gate`で次を�
    client secret、ノート本文が出ないことを確認します。
 
 実施結果には必須項目の完了日と成否だけを記録し、環境やclient版などの詳細は記録しません。
+
+## 実施結果
+
+- 2026-07-27：成功
