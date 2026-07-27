@@ -1123,7 +1123,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "marginalis-application"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "marginalis-domain",
@@ -1131,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-asciidoc"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "adocweave",
  "marginalis-domain",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-auth-oidc"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "base64 0.22.1",
  "marginalis-application",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-domain"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "uuid",
@@ -1163,7 +1163,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-integration-tests"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1183,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-server"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-service"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "marginalis-application",
@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-sqlite"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "marginalis-application",
  "marginalis-domain",
@@ -1238,7 +1238,7 @@ dependencies = [
 
 [[package]]
 name = "marginalis-web"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "axum",

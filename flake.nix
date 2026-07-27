@@ -65,7 +65,7 @@
         {
           default = rustPlatform.buildRustPackage {
             pname = "marginalis";
-            version = "0.3.0";
+            version = "0.3.1";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;

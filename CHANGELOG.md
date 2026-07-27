@@ -3,6 +3,25 @@
 この文書には利用者に影響する変更だけを記録する。公開 API、データフォーマット、NixOS
 モジュールの動作を変えない内部的な再構成は掲載しない。
 
+## 0.3.1 — 未公開
+
+### 追加
+
+- archiveの構造と論理的な往復を検証するコマンド、隔離した空のSQLite databaseへの復元検証、
+  最新成功backupの検証、安全な世代整理を追加した。
+- NixOS moduleに日次backup、30世代保持、四半期の復元検証timer、読み取り専用の
+  `marginalis diagnose`を追加した。
+- Kanidm 1.10、private CA、nginxのsubpath、実ブラウザー、Dynamic Client Registration、
+  Authorization Code + PKCE、token rotation、MCP初期化、認可取消を通すNixOS VM試験を追加した。
+- backup、復元、purge、OIDC discovery、MCP OAuthをjournaldで追跡する安定event名を追加した。
+
+### セキュリティ
+
+- MCP承認フォームでは不透明Originとの互換性を維持しつつ、異なる具体的Originからの送信を
+  拒否するようにした。
+- protocol回帰試験の失敗出力からCookie、Bearer、認可コード、OAuth token、CSRF token、
+  client secret、PKCE verifierを除去してから保存・表示する検査を追加した。
+
 ## 0.3.0 — 2026-07-25
 
 SQLite を単一の正本とし、Kanidm の署名済み OIDC group claim、閲覧用 Web UI、REST API、
