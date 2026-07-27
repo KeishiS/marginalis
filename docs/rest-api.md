@@ -22,6 +22,24 @@ token を `X-CSRF-Token` で送ります。`Origin` が公開 base URL と一致
 status code は OpenAPI を参照してください。本文はUTF-8で512 KiB以下です。アクセス可否は直接 ACL と
 Kanidm group 認可の両方で決まります。
 
+入力規則に違反した場合は`422`と`validation_failed`を返します。`diagnostics`の各要素は安定した
+`code`、対象field、任意の`span`、説明を持ちます。`span`は送信した`body`を基準とするUTF-8 byteの
+半開区間です。タイトルとタグの診断には本文の疑似位置を付けません。
+
+```json
+{
+  "code": "validation_failed",
+  "message": "note input is invalid",
+  "diagnostics": [
+    {
+      "code": "invalid_title",
+      "target": { "field": "title" },
+      "message": "title must be non-empty, single-line, and at most 200 characters"
+    }
+  ]
+}
+```
+
 ## Web UI
 
 `/` はログイン後の閲覧 UI、`/notes/{note_id}` は個別ノート表示です。HTML 表示と一覧には、当該利用者が

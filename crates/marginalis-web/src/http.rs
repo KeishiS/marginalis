@@ -159,8 +159,10 @@ mod tests {
     };
     use marginalis_application::{
         AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
-        McpTokenPair, McpValidatedAuthorizationRequest, NoteUseCaseError, NoteUseCases,
-        OidcAuthenticationUseCases, WebSessionUseCases,
+        McpTokenPair, McpValidatedAuthorizationRequest, NoteProfile, NoteProfileExample,
+        NoteProfileLimits, NoteUseCaseError, NoteUseCases, NoteValidationCode,
+        NoteValidationDiagnostic, NoteValidationTarget, OidcAuthenticationUseCases, Utf8ByteSpan,
+        WebSessionUseCases,
     };
     use marginalis_domain::{
         Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft,
@@ -196,8 +198,24 @@ mod tests {
         async fn create_note(
             &self,
             _actor: Actor,
-            _draft: NoteDraft,
+            draft: NoteDraft,
         ) -> Result<Note, NoteUseCaseError> {
+            if draft.title.is_empty() {
+                return Err(NoteUseCaseError::Validation(vec![
+                    NoteValidationDiagnostic {
+                        code: NoteValidationCode::InvalidTitle,
+                        target: NoteValidationTarget::Title,
+                        span: None,
+                        message: "title is invalid",
+                    },
+                    NoteValidationDiagnostic {
+                        code: NoteValidationCode::UnsupportedSourceLanguage,
+                        target: NoteValidationTarget::Body,
+                        span: Some(Utf8ByteSpan { start: 8, end: 13 }),
+                        message: "source language is not allowed",
+                    },
+                ]));
+            }
             Err(NoteUseCaseError::Unavailable)
         }
 
@@ -235,6 +253,25 @@ mod tests {
 
         fn render_note_html(&self, _note: &Note) -> Result<String, NoteUseCaseError> {
             Err(NoteUseCaseError::Unavailable)
+        }
+
+        fn note_profile(&self) -> NoteProfile {
+            NoteProfile {
+                profile_version: 1,
+                adocweave_package_version: "0.10.1",
+                limits: NoteProfileLimits {
+                    max_title_characters: 200,
+                    max_body_bytes: 524_288,
+                    max_tags: 50,
+                    max_tag_characters: 64,
+                },
+                allowed_source_languages: vec!["rust"],
+                forbidden_rules: Vec::new(),
+                examples: vec![NoteProfileExample {
+                    description: "Paragraph",
+                    body: "Body.",
+                }],
+            }
         }
     }
 
@@ -491,6 +528,16 @@ mod tests {
                 vec!["https://chatgpt.com".into()],
             )),
         )
+    }
+
+    fn authenticated_app() -> Router {
+        router(ApiState::new(
+            Arc::new(Notes),
+            Arc::new(ActiveSessions),
+            Arc::new(Oidc),
+            "/".into(),
+            "https://example.test".into(),
+        ))
     }
 
     fn subpath_mcp_app() -> Router {
@@ -861,6 +908,45 @@ mod tests {
             .expect("request");
         let allowed = mcp_app().oneshot(request).await.expect("response");
         assert_eq!(allowed.status(), StatusCode::OK);
+        let body = to_bytes(allowed.into_body(), usize::MAX)
+            .await
+            .expect("tool catalog body");
+        let catalog: serde_json::Value = serde_json::from_slice(&body).expect("tool catalog");
+        let tools = catalog["result"]["tools"].as_array().expect("tools array");
+        assert!(tools.iter().any(|tool| tool["name"] == "get_note_profile"));
+        assert!(
+            tools
+                .iter()
+                .all(|tool| tool["inputSchema"]["additionalProperties"] == false)
+        );
+
+        let profile = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":"profile","method":"tools/call","params":{"name":"get_note_profile"}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("profile response");
+        let body = to_bytes(profile.into_body(), usize::MAX)
+            .await
+            .expect("profile body");
+        let profile: serde_json::Value = serde_json::from_slice(&body).expect("profile JSON");
+        assert_eq!(
+            profile["result"]["structuredContent"]["adocweave_package_version"],
+            "0.10.1"
+        );
+        assert_eq!(profile["result"]["structuredContent"]["profile_version"], 1);
+        assert!(
+            profile["result"]["structuredContent"]["examples"]
+                .as_array()
+                .is_some_and(|examples| !examples.is_empty())
+        );
 
         let request = Request::post("/mcp")
             .header("content-type", "application/json")
@@ -1060,6 +1146,47 @@ mod tests {
             "unavailable"
         );
         assert!(response.get("error").is_none());
+
+        let validation = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_note","arguments":{"title":"","body":"invalid","tags":[]}}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("validation response");
+        let body = to_bytes(validation.into_body(), usize::MAX)
+            .await
+            .expect("validation body");
+        let validation: serde_json::Value = serde_json::from_slice(&body).expect("validation JSON");
+        assert!(validation.get("error").is_none());
+        assert_eq!(validation["result"]["isError"], true);
+        assert_eq!(
+            validation["result"]["structuredContent"]["code"],
+            "validation_failed"
+        );
+        assert_eq!(
+            validation["result"]["structuredContent"]["diagnostics"][0]["target"]["field"],
+            "title"
+        );
+        assert!(
+            validation["result"]["structuredContent"]["diagnostics"][0]
+                .get("span")
+                .is_none()
+        );
+        assert_eq!(
+            validation["result"]["structuredContent"]["diagnostics"][1]["span"]["unit"],
+            "utf8_byte"
+        );
+        let text: serde_json::Value =
+            serde_json::from_str(validation["result"]["content"][0]["text"].as_str().unwrap())
+                .expect("serialized structured error");
+        assert_eq!(text, validation["result"]["structuredContent"]);
     }
 
     #[tokio::test]
@@ -1259,6 +1386,37 @@ mod tests {
         );
         headers.insert("sec-fetch-site", "cross-site".parse().expect("metadata"));
         assert!(validate_mutation_origin(&headers, &state).is_err());
+    }
+
+    #[tokio::test]
+    async fn rest_validation_returns_the_shared_diagnostic_contract() {
+        let response = authenticated_app()
+            .oneshot(
+                Request::post("/api/v2/notes")
+                    .header("content-type", "application/json")
+                    .header(header::ORIGIN, "https://example.test")
+                    .header("sec-fetch-site", "same-origin")
+                    .header(
+                        header::COOKIE,
+                        "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    )
+                    .header("x-csrf-token", "session-csrf")
+                    .body(Body::from(r#"{"title":"","body":"invalid","tags":[]}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let problem: serde_json::Value = serde_json::from_slice(&body).expect("problem JSON");
+        assert_eq!(problem["code"], "validation_failed");
+        assert_eq!(problem["diagnostics"][0]["code"], "invalid_title");
+        assert_eq!(problem["diagnostics"][0]["target"]["field"], "title");
+        assert!(problem["diagnostics"][0].get("span").is_none());
+        assert_eq!(problem["diagnostics"][1]["target"]["field"], "body");
+        assert_eq!(problem["diagnostics"][1]["span"]["unit"], "utf8_byte");
     }
 
     #[tokio::test]

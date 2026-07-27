@@ -1,7 +1,7 @@
 //! ノートの検証、可視性、revision規則を共有するuse case。
 
 use async_trait::async_trait;
-use marginalis_application::{Clock, NoteUseCaseError, NoteUseCases, Random};
+use marginalis_application::{Clock, NoteProfile, NoteUseCaseError, NoteUseCases, Random};
 use marginalis_domain::{Actor, Note, NoteDraft, NoteId, NotePermission};
 use marginalis_sqlite::{SqliteDatabase, SqliteStoreError};
 
@@ -23,7 +23,7 @@ fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
     match error {
         SqliteStoreError::NotFound => NoteUseCaseError::NotFound,
         SqliteStoreError::Conflict | SqliteStoreError::LastAdmin => NoteUseCaseError::Conflict,
-        SqliteStoreError::CorruptData => NoteUseCaseError::Validation,
+        SqliteStoreError::CorruptData => NoteUseCaseError::Unavailable,
         SqliteStoreError::ArchiveTargetNotEmpty
         | SqliteStoreError::ArchiveMissingAdmin
         | SqliteStoreError::Database(_) => NoteUseCaseError::Unavailable,
@@ -49,7 +49,7 @@ impl NoteUseCases for ServerNoteUseCases {
 
     async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
         let draft = marginalis_asciidoc::validate_note_draft(draft)
-            .map_err(|_| NoteUseCaseError::Validation)?;
+            .map_err(NoteUseCaseError::Validation)?;
         let now = SystemClock.now();
         let note = Note {
             note_id: NoteId::new(SystemRandom.uuid_v7()),
@@ -78,7 +78,7 @@ impl NoteUseCases for ServerNoteUseCases {
         expected_revision: i64,
     ) -> Result<Note, NoteUseCaseError> {
         let draft = marginalis_asciidoc::validate_note_draft(draft)
-            .map_err(|_| NoteUseCaseError::Validation)?;
+            .map_err(NoteUseCaseError::Validation)?;
         self.database
             .update_visible_note(
                 &actor,
@@ -120,13 +120,19 @@ impl NoteUseCases for ServerNoteUseCases {
     }
 
     fn render_note_html(&self, note: &Note) -> Result<String, NoteUseCaseError> {
-        marginalis_asciidoc::render_note_html(note).map_err(|_| NoteUseCaseError::Validation)
+        marginalis_asciidoc::render_note_html(note).map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    fn note_profile(&self) -> NoteProfile {
+        marginalis_asciidoc::note_profile()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use marginalis_application::{NoteUseCaseError, NoteUseCases};
+    use marginalis_application::{
+        NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationTarget,
+    };
     use marginalis_domain::{Actor, NoteDraft};
     use marginalis_sqlite::SqliteDatabase;
 
@@ -195,5 +201,47 @@ mod tests {
             .await
             .expect("restore");
         assert!(restored.deleted_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn validation_diagnostics_cross_the_use_case_boundary_without_loss() {
+        let service = ServerNoteUseCases::new(
+            SqliteDatabase::connect("sqlite::memory:")
+                .await
+                .expect("database"),
+        );
+        let error = service
+            .create_note(
+                Actor {
+                    issuer: "https://id.example.test".into(),
+                    subject: "writer".into(),
+                    is_administrator: false,
+                },
+                NoteDraft {
+                    title: String::new(),
+                    body: "[source,brainfuck]\n----\n+\n----".into(),
+                    tags: vec!["valid".into(), "bad,tag".into()],
+                },
+            )
+            .await
+            .expect_err("invalid draft");
+        let NoteUseCaseError::Validation(diagnostics) = error else {
+            panic!("expected validation diagnostics");
+        };
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == NoteValidationCode::InvalidTitle
+                && diagnostic.target == NoteValidationTarget::Title
+                && diagnostic.span.is_none()
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == NoteValidationCode::InvalidTag
+                && diagnostic.target == NoteValidationTarget::Tag { index: 1 }
+                && diagnostic.span.is_none()
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == NoteValidationCode::UnsupportedSourceLanguage
+                && diagnostic.target == NoteValidationTarget::Body
+                && diagnostic.span.is_some()
+        }));
     }
 }

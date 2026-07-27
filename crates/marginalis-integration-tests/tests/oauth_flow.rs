@@ -456,10 +456,54 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     assert_eq!(unknown["error"]["code"], -32601);
     assert_eq!(unknown["id"], 3);
 
-    let response = call_mcp(
+    let profile = call_mcp(
         &server.app,
         &tokens.access,
         4,
+        "get_note_profile",
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(profile.status(), StatusCode::OK);
+    let profile = json_body(profile).await;
+    assert_eq!(
+        profile["result"]["structuredContent"]["adocweave_package_version"],
+        "0.10.1"
+    );
+    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 1);
+
+    let invalid = call_mcp(
+        &server.app,
+        &tokens.access,
+        5,
+        "create_note",
+        serde_json::json!({
+            "title": "",
+            "body": "[source,brainfuck]\n----\n+\n----",
+            "tags": ["integration"],
+        }),
+    )
+    .await;
+    assert_eq!(invalid.status(), StatusCode::OK);
+    let invalid = json_body(invalid).await;
+    assert_eq!(invalid["result"]["isError"], true);
+    assert_eq!(
+        invalid["result"]["structuredContent"]["code"],
+        "validation_failed"
+    );
+    assert_eq!(
+        invalid["result"]["structuredContent"]["diagnostics"][0]["target"]["field"],
+        "title"
+    );
+    assert_eq!(
+        invalid["result"]["structuredContent"]["diagnostics"][1]["span"]["unit"],
+        "utf8_byte"
+    );
+
+    let response = call_mcp(
+        &server.app,
+        &tokens.access,
+        6,
         "create_note",
         serde_json::json!({
             "title": "v0.3 <integration> note",

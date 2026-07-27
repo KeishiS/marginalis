@@ -1,13 +1,64 @@
 //! HTTP error responseへの変換。
 
 use axum::{Json, http::StatusCode};
-use marginalis_application::{AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError};
+use marginalis_application::{
+    AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, NoteValidationDiagnostic,
+    NoteValidationTarget,
+};
 use serde::Serialize;
 
 #[derive(Serialize)]
 pub(super) struct Problem {
     code: &'static str,
     message: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostics: Option<Vec<ValidationDiagnosticResponse>>,
+}
+
+#[derive(Serialize)]
+pub(super) struct ValidationDiagnosticResponse {
+    code: &'static str,
+    target: DiagnosticTargetResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    span: Option<Utf8ByteSpanResponse>,
+    message: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "field", rename_all = "snake_case")]
+enum DiagnosticTargetResponse {
+    Title,
+    Body,
+    Tag { index: usize },
+    Tags,
+}
+
+#[derive(Serialize)]
+struct Utf8ByteSpanResponse {
+    start: u32,
+    end: u32,
+    unit: &'static str,
+}
+
+impl From<NoteValidationDiagnostic> for ValidationDiagnosticResponse {
+    fn from(diagnostic: NoteValidationDiagnostic) -> Self {
+        let target = match diagnostic.target {
+            NoteValidationTarget::Title => DiagnosticTargetResponse::Title,
+            NoteValidationTarget::Body => DiagnosticTargetResponse::Body,
+            NoteValidationTarget::Tag { index } => DiagnosticTargetResponse::Tag { index },
+            NoteValidationTarget::Tags => DiagnosticTargetResponse::Tags,
+        };
+        Self {
+            code: diagnostic.code.as_str(),
+            target,
+            span: diagnostic.span.map(|span| Utf8ByteSpanResponse {
+                start: span.start,
+                end: span.end,
+                unit: "utf8_byte",
+            }),
+            message: diagnostic.message,
+        }
+    }
 }
 
 pub(super) type HandlerResult<T> = Result<T, (StatusCode, Json<Problem>)>;
@@ -17,7 +68,14 @@ pub(super) fn problem(
     code: &'static str,
     message: &'static str,
 ) -> (StatusCode, Json<Problem>) {
-    (status, Json(Problem { code, message }))
+    (
+        status,
+        Json(Problem {
+            code,
+            message,
+            diagnostics: None,
+        }),
+    )
 }
 
 pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<Problem>) {
@@ -33,10 +91,9 @@ pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<Problem>)
         NoteUseCaseError::Conflict => {
             problem(StatusCode::CONFLICT, "conflict", "note revision conflicts")
         }
-        NoteUseCaseError::Validation => problem(
+        NoteUseCaseError::Validation(diagnostics) => (
             StatusCode::UNPROCESSABLE_ENTITY,
-            "validation_failed",
-            "note is invalid",
+            Json(validation_problem(diagnostics)),
         ),
         NoteUseCaseError::Unavailable => problem(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -44,6 +101,26 @@ pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<Problem>)
             "note operation is unavailable",
         ),
     }
+}
+
+fn validation_problem(diagnostics: Vec<NoteValidationDiagnostic>) -> Problem {
+    Problem {
+        code: "validation_failed",
+        message: "note input is invalid",
+        diagnostics: Some(
+            diagnostics
+                .into_iter()
+                .map(ValidationDiagnosticResponse::from)
+                .collect(),
+        ),
+    }
+}
+
+pub(super) fn validation_problem_json(
+    diagnostics: Vec<NoteValidationDiagnostic>,
+) -> serde_json::Value {
+    serde_json::to_value(validation_problem(diagnostics))
+        .expect("validation problem is serializable")
 }
 
 pub(super) fn authentication_error(

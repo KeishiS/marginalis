@@ -1171,6 +1171,7 @@ name = "marginalis-asciidoc"
 version = "0.3.1"
 dependencies = [
  "adocweave",
+ "marginalis-application",
  "marginalis-domain",
  "time",
  "unicode-normalization",

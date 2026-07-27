@@ -48,6 +48,7 @@ impl From<Note> for NoteResponse {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct NoteInput {
     pub(super) title: String,
     pub(super) body: String,
@@ -55,6 +56,7 @@ pub(super) struct NoteInput {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct NoteUpdateInput {
     title: String,
     body: String,
@@ -63,6 +65,7 @@ pub(super) struct NoteUpdateInput {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct DeleteInput {
     expected_revision: i64,
 }
