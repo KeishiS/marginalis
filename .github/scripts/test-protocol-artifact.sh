@@ -28,6 +28,12 @@ grep -Fq '[REDACTED]' "$sanitized"
 ! grep -Fq 'form-secret-value' "$sanitized"
 "$script_dir/protocol-artifact.sh" check "$sanitized"
 
+if PATH=/nonexistent /usr/bin/bash "$script_dir/protocol-artifact.sh" check "$sanitized" \
+  >/dev/null 2>&1; then
+  echo "検査ツールがない状態を成功として扱いました。" >&2
+  exit 1
+fi
+
 printf '%s\n' \
   'cookie: must-be-detected' \
   '{"cookies":[{"name":"marginalis_session","value":"must-be-detected"}]}' \
