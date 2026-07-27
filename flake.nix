@@ -370,7 +370,10 @@
                 "journalctl -u marginalis-purge-expired.service -o cat | "
                 + "grep -Fq 'maintenance.purge.failed'"
               )
-              machine.succeed("chmod 0600 /var/lib/marginalis/marginalis.sqlite")
+              machine.succeed(
+                "chown marginalis:marginalis /var/lib/marginalis/marginalis.sqlite* && "
+                + "chmod 0600 /var/lib/marginalis/marginalis.sqlite*"
+              )
               machine.succeed("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\"'"
