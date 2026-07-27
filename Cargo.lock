@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "adocweave"
-version = "0.10.1"
-source = "git+https://github.com/KeishiS/AdocWeave.git?rev=3cd213fed631a6855859e71b74ee772134ce5834#3cd213fed631a6855859e71b74ee772134ce5834"
+version = "0.11.0"
+source = "git+https://github.com/KeishiS/AdocWeave.git?rev=778e9da4548f03ea8434677d50c819d7ce665809#778e9da4548f03ea8434677d50c819d7ce665809"
 dependencies = [
  "serde",
  "serde_json",
@@ -1173,6 +1173,7 @@ dependencies = [
  "adocweave",
  "marginalis-application",
  "marginalis-domain",
+ "serde_json",
  "time",
  "unicode-normalization",
 ]

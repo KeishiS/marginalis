@@ -1,8 +1,7 @@
 use std::collections::BTreeSet;
 
-use adocweave::output::html::RenderPolicy;
 use adocweave::preprocess::discover_includes;
-use adocweave::resolution::{ReferenceKey, UrlContext};
+use adocweave::resolution::{AuthoredUrlPolicy, ReferenceKey};
 use adocweave::semantic::{
     Block, DelimitedContent, Inline, MathLanguage, SemanticNode, VerbatimKind, walk,
 };
@@ -252,7 +251,10 @@ fn validate_note_content_profile_with(
     analysis: &adocweave::Analysis,
     profile: &NoteContentProfile,
 ) -> Vec<NoteContentError> {
-    let render_policy = RenderPolicy::default();
+    let authored_url_policy = AuthoredUrlPolicy {
+        allow_relative: false,
+        ..AuthoredUrlPolicy::default()
+    };
     let mut errors = discover_includes(analysis.source())
         .expect("analysis source must have a representable byte length")
         .into_iter()
@@ -323,9 +325,7 @@ fn validate_note_content_profile_with(
                 ));
             }
         }
-        SemanticNode::Inline(Inline::Link(link))
-            if !render_policy.allows_url(&link.target, UrlContext::AuthoredLink) =>
-        {
+        SemanticNode::Inline(Inline::Link(link)) if !authored_url_policy.allows(&link.target) => {
             errors.push(NoteContentError::forbidden(
                 ForbiddenRule::InvalidUrlScheme,
                 link.target_range,

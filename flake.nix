@@ -28,7 +28,7 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-      # AdocWeave v0.10.1 が要求する Rust 1.97.1 を確定的にピンする。
+      # AdocWeave v0.11.0 が要求する Rust 1.97.1 を確定的にピンする。
       rustToolchainFor =
         pkgs:
         pkgs.rust-bin.stable."1.97.1".default.override {
@@ -58,8 +58,8 @@
           # include_str! するため、crate 単位の Cargo vendoring ではこのファイルが
           # 欠落する。依存と同じコミットのファイルを内容ハッシュ付きで補う。
           adocweaveConformanceCases = pkgs.fetchurl {
-            url = "https://raw.githubusercontent.com/KeishiS/AdocWeave/3cd213fed631a6855859e71b74ee772134ce5834/fixtures/conformance/cases.json";
-            hash = "sha256-oKklt1LB7xT5WeQTc1N7ODVJEtVysv/+ADyJc00Sb8U=";
+            url = "https://raw.githubusercontent.com/KeishiS/AdocWeave/778e9da4548f03ea8434677d50c819d7ce665809/fixtures/conformance/cases.json";
+            hash = "sha256-OxHK8NobfmNN9pRj7B3qP94s1b2E26l5y5EQdMQq6aY=";
           };
         in
         {
@@ -78,7 +78,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.10.1" = "sha256-VzPIjkKckbUIUUhDItrWAEOENfXJrrG8PUsRVTYaUHg=";
+                "adocweave-0.11.0" = "sha256-1qCSy6eWSGhIxu1jsLFsRrX2OXNuYgnV6lmTwchGiT4=";
               };
             };
             cargoBuildFlags = [
@@ -309,7 +309,7 @@
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
                 + "jq -e '.format == \"marginalis-archive-3\" "
-                + "and .adocweave_package_version == \"0.10.1\" "
+                + "and .adocweave_package_version == \"0.11.0\" "
                 + "and .note_profile_version == 1 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
                 + "test $(stat -c %a \"$backup\") = 700; "

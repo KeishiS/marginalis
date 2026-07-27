@@ -87,7 +87,7 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 ## Backupの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは`marginalis-archive-3`で、AdocWeave package版とnote profile版を記録します。
+現行archiveは`marginalis-archive-3`で、AdocWeave package版`0.11.0`とnote profile版`1`を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 
 ```sh

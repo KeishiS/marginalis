@@ -258,7 +258,7 @@ mod tests {
         fn note_profile(&self) -> NoteProfile {
             NoteProfile {
                 profile_version: 1,
-                adocweave_package_version: "0.10.1",
+                adocweave_package_version: "0.11.0",
                 limits: NoteProfileLimits {
                     max_title_characters: 200,
                     max_body_bytes: 524_288,
@@ -952,7 +952,7 @@ mod tests {
         let profile: serde_json::Value = serde_json::from_slice(&body).expect("profile JSON");
         assert_eq!(
             profile["result"]["structuredContent"]["adocweave_package_version"],
-            "0.10.1"
+            "0.11.0"
         );
         assert_eq!(profile["result"]["structuredContent"]["profile_version"], 1);
         assert!(

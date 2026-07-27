@@ -50,6 +50,13 @@ REST、MCP、HTMLで診断とURL安全性を一致させ、必要な場合だけ
 SQLiteに解析cacheを保存していないため、保存構造が変わらない限りschemaとarchiveの番号は
 更新しません。認可とOAuthの変更は混在させません。
 
+移行では保存時の`AnalysisOptions`と診断profile、執筆時URLの`AuthoredUrlPolicy`、
+HTML出力時の`RenderPolicy`と`ActiveUrlPolicy`、出力上限を別々に構成します。0.11.0で追加された
+既定lintは警告に留まり、既存の保存可否とMarginalisの安定診断codeを変更しないため、
+note profile版`1`を維持します。`macro-boundary`は任意規則のため採用しません。archiveとschemaの
+構造も変わらないため番号を維持し、archive identityのAdocWeave package版だけを`0.11.0`へ更新します。
+固定入力の比較結果と採否理由は[AdocWeave 0.11移行判断](adocweave-v0.11-migration.md)に記録します。
+
 ## OAuth境界
 
 ChatGPT、Claude Code、Codex CLIを外部Authorization Serverへ接続し、subject、group、

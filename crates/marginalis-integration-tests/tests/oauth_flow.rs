@@ -468,7 +468,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     let profile = json_body(profile).await;
     assert_eq!(
         profile["result"]["structuredContent"]["adocweave_package_version"],
-        "0.10.1"
+        "0.11.0"
     );
     assert_eq!(profile["result"]["structuredContent"]["profile_version"], 1);
 
