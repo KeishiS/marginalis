@@ -301,10 +301,10 @@ description = "Verify the pinned AdocWeave package version and supply-chain iden
 script_runner = "@shell"
 script = '''
 set -eu
-expected_version="0.6.1"
-expected_revision="2a7ec4f7c2df6104ead9a7285ca13fc364ce8dda"
-expected_hash="sha256-FEjYbbpKsk3k5u1NucINXho/Z0Pl6OOFFI8xhTJCIv4="
-expected_fixture_hash="sha256-Mlx66KZinQKdFGkFngC4hJKXKZ7VYGnhEelI8u3lLFg="
+expected_version="0.10.1"
+expected_revision="3cd213fed631a6855859e71b74ee772134ce5834"
+expected_hash="sha256-VzPIjkKckbUIUUhDItrWAEOENfXJrrG8PUsRVTYaUHg="
+expected_fixture_hash="sha256-oKklt1LB7xT5WeQTc1N7ODVJEtVysv/+ADyJc00Sb8U="
 
 cargo metadata --locked --format-version 1 | jq -e \
   --arg version "$expected_version" \
