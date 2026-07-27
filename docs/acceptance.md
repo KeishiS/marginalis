@@ -40,4 +40,4 @@ PR CIの`verify`と`nixos-e2e`、公開前の`cargo make release-gate`で次を�
 
 ## 実施結果
 
-- 未実施
+- 2026-07-27: 成功
