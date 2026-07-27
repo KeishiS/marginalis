@@ -60,7 +60,12 @@ pub(crate) async fn validate_archive(
     let input = required_absolute_file_argument(&mut arguments, "--input")?;
     let archive = read_validated_archive(&input)?;
     verify_archive_in_memory(&archive).await?;
-    tracing::info!(input = %input.display(), note_count = archive.notes.len(), "validated archive");
+    tracing::info!(
+        event = "maintenance.archive_validation.completed",
+        input = %input.display(),
+        note_count = archive.notes.len(),
+        "validated archive"
+    );
     Ok(())
 }
 
@@ -71,7 +76,12 @@ pub(crate) async fn verify_restore(
     let input = required_absolute_file_argument(&mut arguments, "--input")?;
     let archive = read_validated_archive(&input)?;
     verify_archive_in_isolated_database(&archive).await?;
-    tracing::info!(input = %input.display(), note_count = archive.notes.len(), "verified isolated archive restore");
+    tracing::info!(
+        event = "maintenance.restore_verification.completed",
+        input = %input.display(),
+        note_count = archive.notes.len(),
+        "verified isolated archive restore"
+    );
     Ok(())
 }
 

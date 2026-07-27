@@ -31,8 +31,15 @@ async fn main() {
     };
     if let Err(error) = result {
         let command = command.as_deref().unwrap_or("serve");
+        let event = match command {
+            "validate-archive" => "maintenance.archive_validation.failed",
+            "verify-restore" => "maintenance.restore_verification.failed",
+            "verify-latest-backup" => "maintenance.backup_verification.failed",
+            "prune-backups" => "maintenance.backup_prune.failed",
+            _ => "command.failed",
+        };
         tracing::error!(
-            event = "command.failed",
+            event,
             command,
             error = %error,
             "Marginalis command terminated"

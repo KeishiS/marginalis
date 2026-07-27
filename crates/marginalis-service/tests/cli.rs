@@ -103,6 +103,12 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
             "{command} failed: {}",
             String::from_utf8_lossy(&result.stderr)
         );
+        let event = match command {
+            "validate-archive" => "maintenance.archive_validation.completed",
+            "verify-restore" => "maintenance.restore_verification.completed",
+            _ => unreachable!(),
+        };
+        assert!(String::from_utf8_lossy(&result.stderr).contains(event));
     }
 
     fs::remove_dir_all(&directory).expect("remove test directory");
@@ -145,6 +151,10 @@ fn backup_retention_only_removes_old_verified_successes() {
         "latest verification failed: {}",
         String::from_utf8_lossy(&verify.stderr)
     );
+    assert!(
+        String::from_utf8_lossy(&verify.stderr)
+            .contains("maintenance.backup_verification.completed")
+    );
 
     let prune = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
         .args(["prune-backups", "--directory"])
@@ -157,6 +167,7 @@ fn backup_retention_only_removes_old_verified_successes() {
         "prune failed: {}",
         String::from_utf8_lossy(&prune.stderr)
     );
+    assert!(String::from_utf8_lossy(&prune.stderr).contains("maintenance.backup_prune.completed"));
     assert!(!directory.join("backup-100").exists());
     assert!(directory.join("backup-200").exists());
     assert!(directory.join("backup-300").exists());
@@ -201,6 +212,7 @@ fn corrupted_success_generation_prevents_retention_deletion() {
         .output()
         .expect("prune backups");
     assert!(!prune.status.success());
+    assert!(String::from_utf8_lossy(&prune.stderr).contains("maintenance.backup_prune.failed"));
     assert!(directory.join("backup-100").exists());
     assert!(directory.join("backup-200").exists());
 
@@ -228,6 +240,12 @@ fn corrupted_archive_and_failed_backup_are_not_accepted_as_successes() {
             .output()
             .expect("run archive validation");
         assert!(!result.status.success(), "{command} accepted corrupt input");
+        let event = match command {
+            "validate-archive" => "maintenance.archive_validation.failed",
+            "verify-restore" => "maintenance.restore_verification.failed",
+            _ => unreachable!(),
+        };
+        assert!(String::from_utf8_lossy(&result.stderr).contains(event));
     }
 
     let incomplete = directory.join("incomplete");
