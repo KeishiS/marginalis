@@ -159,6 +159,19 @@
                     touch "$3/backup-created"
                     exit 0
                   fi
+                  if [ "''${1-}" = "prune-backups" ]; then
+                    test "$2" = "--directory"
+                    test "$3" = "/var/lib/marginalis-backups/test"
+                    test "$4" = "--keep"
+                    test "$5" = "30"
+                    touch "$3/prune-completed"
+                    exit 0
+                  fi
+                  if [ "''${1-}" = "verify-latest-backup" ]; then
+                    test "$2" = "--directory"
+                    test "$3" = "/var/lib/marginalis-backups/test"
+                    exit 0
+                  fi
                   test -s "$OIDC_CLIENT_SECRET_FILE"
                   touch "$PWD/service-started"
                   exec sleep infinity
@@ -177,6 +190,7 @@
                   package = probeServer;
                   baseUrl = "https://marginalis.example.test";
                   backupDirectory = "/var/lib/marginalis-backups/test";
+                  restoreCheck.enable = true;
                   oidc = {
                     issuerUrl = "https://id.example.test";
                     clientId = "marginalis";
@@ -193,6 +207,10 @@
                 machine.succeed("test -f /var/lib/marginalis/service-started")
                 machine.succeed("systemctl start marginalis-backup.service")
                 machine.succeed("test -f /var/lib/marginalis-backups/test/backup-created")
+                machine.succeed("test -f /var/lib/marginalis-backups/test/prune-completed")
+                machine.succeed("systemctl start marginalis-restore-check.service")
+                machine.succeed("systemctl is-enabled marginalis-backup.timer")
+                machine.succeed("systemctl is-enabled marginalis-restore-check.timer")
                 machine.succeed("systemctl is-active marginalis.service")
               '';
             };
@@ -211,6 +229,7 @@
                 enable = true;
                 baseUrl = "https://marginalis.example.test";
                 backupDirectory = "/var/lib/marginalis-backups/test";
+                restoreCheck.enable = true;
                 oidc = {
                   # networkに依存せず、OIDC未到達時にもlivenessを維持してloginをfail closedにする経路を検証する。
                   issuerUrl = "https://127.0.0.1:1";
@@ -251,6 +270,8 @@
                 + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000002'\") -eq 1"
               )
               machine.succeed("systemctl is-enabled marginalis-purge-expired.timer")
+              machine.succeed("systemctl is-enabled marginalis-backup.timer")
+              machine.succeed("systemctl is-enabled marginalis-restore-check.timer")
               machine.succeed("systemctl start marginalis-backup.service")
               machine.succeed("systemctl is-active marginalis.service")
               machine.succeed(
@@ -265,6 +286,23 @@
                 + "test $(stat -c %a \"$backup\") = 700; "
                 + "test $(stat -c %a \"$backup/COMPLETE\") = 600; "
                 + "test $(stat -c %a \"$backup/marginalis-archive.json\") = 600"
+              )
+              machine.succeed("systemctl start marginalis-restore-check.service")
+              machine.succeed(
+                "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
+                + "MARGINALIS_DATABASE_URL=sqlite:/tmp/restored.sqlite "
+                + "${self.packages.${system}.default}/bin/marginalis import-archive "
+                + "--input \"$backup/marginalis-archive.json\"; "
+                + "test $(sqlite3 /tmp/restored.sqlite 'SELECT COUNT(*) FROM notes') -eq 1; "
+                + "test $(sqlite3 /tmp/restored.sqlite "
+                + "\"SELECT COUNT(*) FROM notes WHERE deleted_at_ms IS NOT NULL AND revision = 1\") -eq 1; "
+                + "test $(sqlite3 /tmp/restored.sqlite 'SELECT COUNT(*) FROM note_acl WHERE permission = 3') -eq 1"
+              )
+              machine.fail(
+                "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
+                + "MARGINALIS_DATABASE_URL=sqlite:/tmp/restored.sqlite "
+                + "${self.packages.${system}.default}/bin/marginalis import-archive "
+                + "--input \"$backup/marginalis-archive.json\""
               )
             '';
           };

@@ -74,6 +74,22 @@ in
       description = "Absolute directory in which marginalis-backup.service creates timestamped backup generations. Set this only after choosing persistent backup storage and retention outside dataDir.";
     };
 
+    backupRetention = mkOption {
+      type = types.ints.positive;
+      default = 30;
+      description = "Number of verified successful backup generations to retain. Incomplete and unrecognized entries are never counted or removed.";
+    };
+
+    restoreCheck = {
+      enable = mkEnableOption "quarterly isolated restore verification";
+
+      calendar = mkOption {
+        type = types.str;
+        default = "Sat *-01,04,07,10-01..07 03:00:00";
+        description = "systemd OnCalendar expression for explicitly enabled isolated restore verification. The default is the first Saturday of each quarter.";
+      };
+    };
+
     oidc = {
       issuerUrl = mkOption {
         type = types.nullOr types.str;
@@ -294,9 +310,8 @@ in
       };
     };
 
-    # backup先は運用者が永続storageとretentionを決めてから明示する。timerは提供しない。
     # archive exportは一つのSQLite read transactionを使うため、HTTP serverを止めずに一貫した
-    # snapshotを取得できる。
+    # snapshotを取得できる。検証済み世代の作成に成功した後だけ保持処理を実行する。
     systemd.services.marginalis-backup = mkIf (cfg.backupDirectory != null) {
       description = "Create a consistent Marginalis backup";
       environment = {
@@ -305,7 +320,10 @@ in
       };
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${cfg.package}/bin/marginalis backup --directory ${lib.escapeShellArg cfg.backupDirectory}";
+        ExecStart = [
+          "${cfg.package}/bin/marginalis backup --directory ${lib.escapeShellArg cfg.backupDirectory}"
+          "${cfg.package}/bin/marginalis prune-backups --directory ${lib.escapeShellArg cfg.backupDirectory} --keep ${toString cfg.backupRetention}"
+        ];
         User = "marginalis";
         Group = "marginalis";
         WorkingDirectory = cfg.dataDir;
@@ -339,5 +357,52 @@ in
         StateDirectoryMode = "0750";
       };
     };
+
+    systemd.timers.marginalis-backup = mkIf (cfg.backupDirectory != null) {
+      description = "Create and retain verified Marginalis backups daily";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "daily";
+        Persistent = true;
+        Unit = "marginalis-backup.service";
+      };
+    };
+
+    systemd.services.marginalis-restore-check =
+      mkIf (cfg.backupDirectory != null && cfg.restoreCheck.enable)
+        {
+          description = "Verify the latest Marginalis backup in an isolated database";
+          environment.RUST_LOG = cfg.logFilter;
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${cfg.package}/bin/marginalis verify-latest-backup --directory ${lib.escapeShellArg cfg.backupDirectory}";
+            User = "marginalis";
+            Group = "marginalis";
+            WorkingDirectory = cfg.dataDir;
+            UMask = "0077";
+            NoNewPrivileges = true;
+            CapabilityBoundingSet = "";
+            PrivateDevices = true;
+            PrivateTmp = true;
+            ProtectHome = true;
+            ProtectSystem = "strict";
+            RestrictNamespaces = true;
+            RestrictRealtime = true;
+            RestrictAddressFamilies = [ "AF_UNIX" ];
+            ReadOnlyPaths = [ cfg.backupDirectory ];
+          };
+        };
+
+    systemd.timers.marginalis-restore-check =
+      mkIf (cfg.backupDirectory != null && cfg.restoreCheck.enable)
+        {
+          description = "Verify a Marginalis backup on the configured quarterly schedule";
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = cfg.restoreCheck.calendar;
+            Persistent = true;
+            Unit = "marginalis-restore-check.service";
+          };
+        };
   };
 }

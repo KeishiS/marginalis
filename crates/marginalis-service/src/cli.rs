@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-pub(crate) const USAGE: &str = "usage: marginalis [--version|serve|purge-expired|export-archive --output <absolute-file>|import-archive --input <absolute-file>|backup (--output <absolute-directory>|--directory <absolute-directory>)]";
+pub(crate) const USAGE: &str = "usage: marginalis [--version|serve|purge-expired|export-archive --output <absolute-file>|import-archive --input <absolute-file>|validate-archive --input <absolute-file>|verify-restore --input <absolute-file>|verify-latest-backup --directory <absolute-directory>|backup (--output <absolute-directory>|--directory <absolute-directory>)|prune-backups --directory <absolute-directory> --keep <positive-count>]";
 
 pub(crate) fn required_absolute_file_argument(
     arguments: &mut impl Iterator<Item = String>,
