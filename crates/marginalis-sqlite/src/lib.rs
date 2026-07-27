@@ -31,7 +31,6 @@ pub enum SqliteStoreError {
     NotFound,
     Conflict,
     LastAdmin,
-    ArchiveFormat,
     ArchiveTargetNotEmpty,
     ArchiveMissingAdmin,
     CorruptData,
@@ -44,7 +43,6 @@ impl fmt::Display for SqliteStoreError {
             Self::NotFound => formatter.write_str("note was not found or is not accessible"),
             Self::Conflict => formatter.write_str("note revision does not match"),
             Self::LastAdmin => formatter.write_str("a note must retain one direct administrator"),
-            Self::ArchiveFormat => formatter.write_str("archive format is unsupported"),
             Self::ArchiveTargetNotEmpty => {
                 formatter.write_str("archive import target must be empty")
             }
@@ -95,9 +93,8 @@ mod tests {
         OidcLoginAttempt, OidcLoginAttemptStore,
     };
     use marginalis_domain::{
-        ARCHIVE_FORMAT, Actor, Archive, EntityId, McpAuthorizationGrant, McpOAuthClient, Note,
-        NoteAclEntry, NoteDraft, NoteId, NotePermission, SOFT_DELETE_RETENTION_MS, UnixMillis,
-        WebSession,
+        Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry, NoteDraft,
+        NoteId, NotePermission, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
     };
 
     use super::*;
@@ -144,7 +141,7 @@ mod tests {
             .execute(&pool)
             .await
             .expect("migration table");
-        sqlx::query("INSERT INTO schema_migrations (version) VALUES (1)")
+        sqlx::query("INSERT INTO schema_migrations (version) VALUES (2)")
             .execute(&pool)
             .await
             .expect("old version");
@@ -155,7 +152,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("unsupported database schema version 1; expected 2")
+                .contains("unsupported database schema version 2; expected 3")
         );
     }
 
@@ -322,23 +319,26 @@ mod tests {
             .expect("restore note");
         assert_eq!(restored.deleted_at, None);
         assert_eq!(restored.revision, 4);
-        let archive = database.export_archive().await.expect("export archive");
+        let snapshot = database
+            .export_note_bundles()
+            .await
+            .expect("export snapshot");
         let imported_database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("empty import target");
         imported_database
-            .import_archive(&archive)
+            .import_note_bundles(&snapshot)
             .await
-            .expect("import archive");
+            .expect("import snapshot");
         assert_eq!(
             imported_database
-                .export_archive()
+                .export_note_bundles()
                 .await
-                .expect("re-export archive"),
-            archive
+                .expect("re-export snapshot"),
+            snapshot
         );
         assert_eq!(
-            imported_database.import_archive(&archive).await,
+            imported_database.import_note_bundles(&snapshot).await,
             Err(SqliteStoreError::ArchiveTargetNotEmpty)
         );
         let nonempty_auth_database = SqliteDatabase::connect("sqlite::memory:")
@@ -358,27 +358,26 @@ mod tests {
             .await
             .expect("pending login attempt");
         assert_eq!(
-            nonempty_auth_database.import_archive(&archive).await,
+            nonempty_auth_database.import_note_bundles(&snapshot).await,
             Err(SqliteStoreError::ArchiveTargetNotEmpty)
         );
-        let mut invalid_archive = archive.clone();
-        invalid_archive.notes[0].note.creator_issuer.clear();
+        let mut invalid_snapshot = snapshot.clone();
+        invalid_snapshot[0].note.creator_issuer.clear();
         let rejected_database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("empty rejected target");
         assert_eq!(
-            rejected_database.import_archive(&invalid_archive).await,
+            rejected_database
+                .import_note_bundles(&invalid_snapshot)
+                .await,
             Err(SqliteStoreError::CorruptData)
         );
         assert_eq!(
             rejected_database
-                .export_archive()
+                .export_note_bundles()
                 .await
-                .expect("empty archive"),
-            Archive {
-                format: ARCHIVE_FORMAT.into(),
-                notes: Vec::new(),
-            }
+                .expect("empty snapshot"),
+            Vec::new()
         );
         database
             .soft_delete_visible_note(&administrator, note_id, 4, UnixMillis::new(400))

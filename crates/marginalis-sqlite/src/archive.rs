@@ -5,9 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use marginalis_domain::{
-    ARCHIVE_FORMAT, Archive, EntityId, Note, NoteAclEntry, NoteBundle, NoteId, NotePermission,
-};
+use marginalis_domain::{EntityId, Note, NoteAclEntry, NoteBundle, NoteId, NotePermission};
 use sqlx::{Row, Sqlite};
 
 use crate::{
@@ -16,8 +14,8 @@ use crate::{
 };
 
 impl SqliteDatabase {
-    /// SQLite正本を可搬 archive の論理表現として取り出す。
-    pub async fn export_archive(&self) -> Result<Archive, SqliteStoreError> {
+    /// SQLite正本を可搬archiveへ格納する論理snapshotとして取り出す。
+    pub async fn export_note_bundles(&self) -> Result<Vec<NoteBundle>, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let rows = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
@@ -58,19 +56,13 @@ impl SqliteDatabase {
             notes.push(NoteBundle { note, acl });
         }
         transaction.commit().await.map_err(database_error)?;
-        Ok(Archive {
-            format: ARCHIVE_FORMAT.into(),
-            notes,
-        })
+        Ok(notes)
     }
 
-    /// 検証済みarchiveを空の v0.3.0 databaseへ一つのtransactionでimportする。
-    pub async fn import_archive(&self, archive: &Archive) -> Result<(), SqliteStoreError> {
-        if archive.format != ARCHIVE_FORMAT {
-            return Err(SqliteStoreError::ArchiveFormat);
-        }
+    /// 検証済みの論理snapshotを空databaseへ一つのtransactionでimportする。
+    pub async fn import_note_bundles(&self, notes: &[NoteBundle]) -> Result<(), SqliteStoreError> {
         let mut note_ids = HashSet::new();
-        for bundle in &archive.notes {
+        for bundle in notes {
             if !note_ids.insert(bundle.note.note_id) {
                 return Err(SqliteStoreError::CorruptData);
             }
@@ -121,7 +113,7 @@ impl SqliteDatabase {
         if target_has_data {
             return Err(SqliteStoreError::ArchiveTargetNotEmpty);
         }
-        for bundle in &archive.notes {
+        for bundle in notes {
             insert_note_row(&mut transaction, &bundle.note).await?;
             for entry in &bundle.acl {
                 sqlx::query(

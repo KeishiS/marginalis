@@ -122,12 +122,15 @@ pub struct NoteBundle {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Archive {
     pub format: String,
+    pub adocweave_package_version: String,
+    pub note_profile_version: u32,
     pub notes: Vec<NoteBundle>,
 }
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-1";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-2";
 pub const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

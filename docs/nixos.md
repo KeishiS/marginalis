@@ -30,8 +30,8 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLite正本は`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは2です。旧versionを自動移行しないため、このOAuth
-再設計より前のdatabaseを使っている場合はarchiveを退避してから空のdatabaseとして再初期化します。
+変更してください。現行のSQLite schema versionは3です。旧versionを自動移行しないため、
+schema version 2以前のdatabaseは読み込まず、空のdatabaseとして再初期化します。
 再初期化後はMCP clientの再登録と利用者の再認可が必要です。
 
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
@@ -85,6 +85,8 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 ## Backupの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
+現行archiveは`marginalis-archive-2`で、AdocWeave package版とnote profile版を記録します。
+形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 
 ```sh
 sudo -u marginalis marginalis validate-archive \

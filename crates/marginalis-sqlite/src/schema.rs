@@ -1,8 +1,8 @@
-//! v0.3の破壊的初期化とschema version検証。
+//! 現行profile専用の破壊的初期化とschema version検証。
 
 use sqlx::SqlitePool;
 
-pub(crate) const SCHEMA_VERSION: i64 = 2;
+pub(crate) const SCHEMA_VERSION: i64 = 3;
 const INITIAL_SCHEMA: &str = include_str!("schema.sql");
 
 pub(crate) async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {

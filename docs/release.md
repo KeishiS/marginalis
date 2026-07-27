@@ -1,7 +1,7 @@
 # リリース手順
 
-v0.3系列では`/api/v2`とSQLite canonical archiveが公開仕様です。v0.2の`/api/v1`、ファイル正本、
-root APIには後方互換性を提供しません。
+`v0.4.0`では`/api/v2`、SQLite schema version 3、`marginalis-archive-2`が公開仕様です。
+旧database、旧archive、`/api/v1`、ファイル正本、root APIには後方互換性を提供しません。
 
 1. 作業ブランチで `cargo make verify`、`cargo make openapi-check`、`nix flake check --no-build` を実行する。
 2. Kanidm 1.10、TLS、サブパスを使う NixOS E2E を実行する。
