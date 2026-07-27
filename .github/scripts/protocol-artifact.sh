@@ -23,6 +23,10 @@ sanitize() {
 
 check() {
   local target=$1
+  if ! command -v rg >/dev/null 2>&1; then
+    echo "失敗証跡の検査にはrgが必要です。" >&2
+    exit 2
+  fi
   if rg --pcre2 -n "$secret_pattern" "$target"; then
     echo "失敗証跡に秘密情報を示す項目が残っています。" >&2
     exit 1

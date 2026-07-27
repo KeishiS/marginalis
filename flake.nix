@@ -442,6 +442,7 @@
                   pkgs.kanidm_1_10
                   pkgs.playwright-test
                   pkgs.playwright-driver.browsers
+                  pkgs.ripgrep
                 ];
                 services.nginx = {
                   enable = true;
