@@ -72,6 +72,31 @@ description = "Validate GitHub Actions workflow syntax"
 command = "actionlint"
 args = [".github/workflows/ci.yml", ".github/workflows/release-gate.yml"]
 
+[tasks.protocol-regression-assets]
+description = "Validate MCP client compatibility fixtures and secret-safe failure artifacts"
+script_runner = "@shell"
+script = '''
+set -eu
+jq -e '
+  .schema == "marginalis-mcp-client-compatibility-1"
+  and (.fixtures | length == 4)
+  and ([.fixtures[].name] | unique | length == 4)
+  and all(.fixtures[]; .classification == "client-compatibility")
+  and any(.fixtures[]; .name == "chatgpt-query-post" and .request.method == "POST")
+  and any(.fixtures[]; .name == "opaque-origin-consent" and .request.origin == "null")
+  and any(.fixtures[];
+    .name == "claude-code-explicit-loopback-port"
+    and (.registration.redirect_uris[0] | test("^http://(localhost|127\\.0\\.0\\.1):[0-9]+/"))
+  )
+  and any(.fixtures[];
+    .name == "codex-cli-native-origin"
+    and .request.origin_header == "omitted"
+    and .request.authorization == "bearer"
+  )
+' crates/marginalis-integration-tests/fixtures/client-compatibility.json >/dev/null
+bash .github/scripts/test-protocol-artifact.sh
+'''
+
 [tasks.docs-check]
 description = "Validate local links and whitespace in Markdown documentation"
 command = "bash"
@@ -134,7 +159,7 @@ fi
 
 [tasks.release-gate]
 description = "Run every automated gate required before an RC or final release"
-dependencies = ["verify", "actionlint", "release-metadata", "nix-release-check", "release-package"]
+dependencies = ["verify", "actionlint", "protocol-regression-assets", "release-metadata", "nix-release-check", "release-package"]
 
 [tasks.dependency-boundaries]
 description = "Reject concrete adapters from transport production dependency graphs"
