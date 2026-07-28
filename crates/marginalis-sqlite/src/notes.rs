@@ -187,14 +187,16 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         if result.rows_affected() != 1 {
-            return Err(classify_failed_mutation(
+            let error = classify_failed_mutation(
                 &mut transaction,
                 actor,
                 note_id,
                 NoteDeletionState::Active,
                 NoteAccess::Edit,
             )
-            .await?);
+            .await?;
+            transaction.rollback().await.map_err(database_error)?;
+            return Err(error);
         }
         let row = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
@@ -288,14 +290,16 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         if result.rows_affected() != 1 {
-            return Err(classify_failed_mutation(
+            let error = classify_failed_mutation(
                 &mut transaction,
                 actor,
                 note_id,
                 NoteDeletionState::Active,
                 NoteAccess::Manage,
             )
-            .await?);
+            .await?;
+            transaction.rollback().await.map_err(database_error)?;
+            return Err(error);
         }
         let row = note_row(&mut transaction, note_id).await?;
         let note = note_from_row(row)?;
@@ -332,14 +336,16 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         if result.rows_affected() != 1 {
-            return Err(classify_failed_mutation(
+            let error = classify_failed_mutation(
                 &mut transaction,
                 actor,
                 note_id,
                 NoteDeletionState::Deleted,
                 NoteAccess::Manage,
             )
-            .await?);
+            .await?;
+            transaction.rollback().await.map_err(database_error)?;
+            return Err(error);
         }
         let row = note_row(&mut transaction, note_id).await?;
         let note = note_from_row(row)?;
@@ -543,14 +549,16 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         if result.rows_affected() != 1 {
-            return Err(classify_failed_mutation(
+            let error = classify_failed_mutation(
                 &mut transaction,
                 actor,
                 note_id,
                 NoteDeletionState::Active,
                 NoteAccess::Manage,
             )
-            .await?);
+            .await?;
+            transaction.rollback().await.map_err(database_error)?;
+            return Err(error);
         }
         sqlx::query("DELETE FROM note_acl WHERE note_id = ?")
             .bind(note_id.to_string())

@@ -452,4 +452,22 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
         .filter(|result| **result == Err(SqliteStoreError::Conflict))
         .count();
     assert_eq!((successes, conflicts), (1, 1));
+
+    let current = database
+        .visible_note(&owner, note_id)
+        .await
+        .expect("read after conflict")
+        .expect("visible note");
+    let retried = database
+        .update_visible_note(
+            &owner,
+            note_id,
+            current.revision(),
+            &second_draft,
+            &[],
+            UnixMillis::new(130),
+        )
+        .await
+        .expect("retry after conflict");
+    assert_eq!(retried.revision().get(), 3);
 }
