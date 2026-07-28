@@ -8,7 +8,10 @@ publish = false
 
 [dependencies]
 async-trait.workspace = true
+base64.workspace = true
 marginalis-domain = { path = "../marginalis-domain" }
+sha2.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

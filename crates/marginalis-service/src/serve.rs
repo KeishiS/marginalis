@@ -1,11 +1,11 @@
 //! HTTP serviceのcomposition root。
 
 use marginalis_application::{
-    NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
+    McpOAuthApplication, NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
-use marginalis_server::{ServerConfig, ServerMcpOAuthService, SystemClock, SystemRandom};
+use marginalis_server::{ServerConfig, SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use std::path::Path;
 
@@ -88,7 +88,12 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
         state.with_mcp(marginalis_web::http::McpEndpoint::new(
-            std::sync::Arc::new(ServerMcpOAuthService::new(database, resource_uri)),
+            std::sync::Arc::new(McpOAuthApplication::new(
+                std::sync::Arc::new(database),
+                std::sync::Arc::new(SystemClock),
+                std::sync::Arc::new(SystemRandom),
+                resource_uri,
+            )),
             &configuration.http.base_url,
             configuration.mcp_allowed_origins,
         ))
