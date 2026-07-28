@@ -3,10 +3,12 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
-## 未公開
+## 0.8.0 — 2026-07-28
 
 ### 破壊的変更
 
+- SQLite schemaを8へ更新した。v0.7.0が作成したschema 6のdatabaseは自動移行せず、更新時は
+  アーカイブを退避して空の`dataDir`から初期化する。archive形式とnote profileは変更しない。
 - サーバー全体の管理者権限を廃止した。`server-users`は利用可否だけを決め、所属グループによって
   個別ノートのACLを迂回する経路は設けない。
 - REST APIを`/api/v3`へ更新した。変更操作の期待revisionはJSON本文ではなく、取得応答の
@@ -17,11 +19,20 @@
 - 一覧、閲覧、編集、共有設定を一つのReactアプリケーションへ統合した。REST型、実行時検査、
   クライアント関数はOpenAPIとMCPツール定義と同じ契約crateから生成する。
 
+### 変更
+
+- domain型の不変条件とapplication境界を整理し、HTTP、SQLite、AsciiDoc、OIDCを用途別の
+  portから利用する構成へ変更した。旧`marginalis-server` crateは削除した。
+- ACL判定、revision確認、削除状態をSQLiteの同一transactionへ拘束し、一覧、詳細、関連ノート、
+  更新、削除、復元、共有設定へ同じ認可決定表を適用した。
+- 要件ID、検証階層、版別受入結果を対応づけ、OpenAPI、生成物、文書、要件対応表を独立して
+  検査するリリースゲートを追加した。
+
 ## 0.7.0 — 2026-07-28
 
 ### 破壊的変更
 
-- SQLite schemaを8へ、archiveを`marginalis-archive-6`へ、note profileを2へ更新した。
+- SQLite schemaを6へ、archiveを`marginalis-archive-6`へ、note profileを2へ更新した。
   以前のdatabaseとarchiveは自動移行せず、更新時は既存データを退避して空の`dataDir`から
   初期化する。
 - ノートの所有者モデルへ`issuer`と`subject`を組み合わせたACLを追加した。`read`は閲覧、
