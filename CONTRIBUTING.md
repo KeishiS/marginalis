@@ -20,10 +20,12 @@ Issueテンプレートに現在と理想の動作例を記載してください
 
 ```text
 cargo make format
-cargo make lint
-cargo make test
 cargo make verify
+cargo make pre-push
 ```
+
+`verify`は開発中の通常検証、`pre-push`はカバレッジ測定とすべてのNixOS VM E2Eテストを
+含むpush前の検証です。
 
 文書だけを変更した場合も`cargo make docs-check`を実行します。公開前の検証と受入は
 [リリース手順](docs/release.md)に従います。

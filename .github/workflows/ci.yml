@@ -16,6 +16,7 @@ permissions:
 jobs:
   changes:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       docs-only: ${{ steps.classify.outputs.docs-only }}
     steps:
@@ -66,6 +67,7 @@ jobs:
   verify:
     needs: changes
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,29 +75,33 @@ jobs:
           fetch-depth: 0
       - name: Check documentation
         if: needs.changes.outputs.docs-only == 'true'
-        run: bash .github/scripts/check-docs.sh
+        run: |
+          bash .github/scripts/check-docs.sh
+          bash .github/scripts/check-traceability.sh
       - name: Install Nix
         if: needs.changes.outputs.docs-only != 'true'
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Verify
         if: needs.changes.outputs.docs-only != 'true'
-        run: nix develop --command cargo make verify
+        run: nix develop --command cargo make ci-verify
 
   coverage:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Nix
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Measure workspace and integration-path coverage
-        run: nix develop --command cargo make coverage
+        run: nix develop --command cargo make ci-coverage
 
   nixos-e2e:
     needs: changes
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out the repository
         if: needs.changes.outputs.docs-only != 'true'
@@ -105,7 +111,7 @@ jobs:
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Run NixOS VM E2E
         if: needs.changes.outputs.docs-only != 'true'
-        run: nix develop --command cargo make nix-release-check
+        run: nix develop --command cargo make ci-nixos-e2e
       - name: Skip NixOS VM E2E for documentation-only changes
         if: needs.changes.outputs.docs-only == 'true'
         run: echo "Documentation-only changes do not affect the NixOS runtime"

@@ -413,6 +413,7 @@ function LineNumberedTextarea({
           {lineNumbers}
         </span>
         <textarea
+          autoFocus
           name="source"
           rows={20}
           wrap="off"
