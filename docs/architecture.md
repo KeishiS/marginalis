@@ -125,6 +125,10 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 副作用の調整を担当し、状態遷移の規則をイベント処理へ分散させません。保存前プレビューの遅延、
 取消、最後に成功したHTMLの保持は`useEditorPreview.ts`へ分離し、編集画面は結果の状態と診断操作
 だけを表示します。
+閲覧画面と編集プレビューは、サーバーが検査・生成したHTMLを`RenderedContent.tsx`だけから
+表示します。この境界でコードの言語表示、表のスクロール領域、MathJax入力への変換と組版失敗通知を
+加えます。外部CDNや未検査のHTMLを追加せず、AdocWeaveが将来同じ表示情報を公開した場合に
+`renderedContentEnhancement.ts`の変換だけを置き換えられる構成とします。
 Viteの成果物はGitで管理せず、開発時は`cargo make`、
 配布時はNixが`frontend/dist`を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
 外部URLはViteで固定せず、Rustの`external_path`でbase URLのサブパスを反映する。

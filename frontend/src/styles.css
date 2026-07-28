@@ -234,6 +234,38 @@ body {
   font: inherit;
 }
 
+.rendered-content blockquote {
+  border-inline-start: 0.25rem solid currentColor;
+  margin-inline: 0;
+  padding-inline-start: 1rem;
+}
+
+.rendered-content table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  min-width: max-content;
+  overflow-x: auto;
+}
+
+.rendered-content th,
+.rendered-content td {
+  border: 0.05rem solid currentColor;
+  padding: 0.4rem 0.6rem;
+  text-align: start;
+}
+
+.rendered-content mjx-container[display="true"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.math-rendering-error {
+  border: 0.1rem solid currentColor;
+  padding: 0.75rem;
+}
+
 .math-display {
   box-sizing: border-box;
   margin-block: 1rem;

@@ -998,6 +998,41 @@ mod tests {
     }
 
     #[test]
+    fn complete_display_fixture_renders_supported_blocks_together() {
+        let source = "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n:sectnums:\n:toc:\n\n== 表示要素\n\n* 箇条書き\n* 二つ目\n\n[quote]\n____\n引用した文章\n____\n\n|===\n|項目 |値\n\n|日本語 |絵文字😀\n|===\n\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n[latexmath]\n++++\nx^2 + y^2\n++++\n\n日本語と絵文字😀\r\n\n*強調した本文*";
+        let draft = validate_note_draft(NoteDraft {
+            title: String::new(),
+            source: source.into(),
+            tags: Vec::new(),
+        })
+        .expect("complete display fixture");
+        let note = Note::restore(
+            NoteId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
+            ),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+            draft.title,
+            draft.source,
+            draft.tags,
+            UnixMillis::new(0),
+            UnixMillis::new(1_000),
+            Revision::INITIAL,
+            None,
+        )
+        .expect("consistent note");
+        let html = render_note_html(&note).expect("render complete display fixture");
+        for expected in [
+            "class=\"toc\"",
+            "<blockquote>",
+            "<table",
+            "language-rust",
+            "math-latex",
+        ] {
+            assert!(html.contains(expected), "missing {expected}: {html}");
+        }
+    }
+
+    #[test]
     fn v011_configuration_keeps_url_and_lint_responsibilities_explicit() {
         use adocweave::output::diagnostics::{
             ASCIIDOC_FILE_LINK, MACRO_BOUNDARY, NON_ASCIIDOC_XREF,

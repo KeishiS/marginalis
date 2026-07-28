@@ -69,7 +69,19 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(
     page.locator(".preview-content pre[data-language='rust']"),
   ).toContainText("fn main() {}");
-  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect
+    .poll(async () => {
+      if ((await page.locator(".preview-content mjx-container").count()) > 0) {
+        return "rendered";
+      }
+      const error = page.getByRole("alert").filter({
+        hasText: "数式を描画できませんでした",
+      });
+      return (await error.count()) > 0
+        ? `failed: ${await error.innerText()}`
+        : "pending";
+    })
+    .toBe("rendered");
 
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();
@@ -84,6 +96,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     page.getByRole("heading", { name: "VMで作成したノート" }),
   ).toBeVisible();
   await expect(page.locator(".page-main")).toContainText("日本語と絵文字😀");
+  await expect(page.locator(".page-main mjx-container")).toBeVisible();
   await page.getByRole("link", { name: "編集" }).click();
 
   await expect(page.locator(".preview-content")).toContainText(
