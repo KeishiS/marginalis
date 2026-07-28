@@ -11,6 +11,11 @@
 `v0.7.0`は2026-07-28に公開しました。React・TypeScriptフロントエンド、identity単位ACL、
 ノート参照を追加し、SQLite schema 8、note profile 2、`marginalis-archive-6`へ更新しました。
 
+公開後の再設計では、domainとapplicationの境界、ACLとSQLite transaction、公開API契約、
+Web UIをこの順に整理しています。REST APIは`/api/v3`へ更新し、OpenAPI、TypeScriptクライアント、
+MCPツール定義を`marginalis-contract`から生成します。一覧、閲覧、編集、共有設定は一つの
+Reactアプリケーションが担当します。
+
 リポジトリ内のIssue管理はGitHub Issuesへ移行しました。v0.5.0以前のローカルIssueは
 [移行対応表](issue-migration.md)から参照できます。
 
@@ -24,6 +29,20 @@
 - 小規模運用におけるSQLite、systemd、journald、既存release gateの継続利用
 
 ## 優先順
+
+現在の再設計は次の順序で進めます。
+
+| 順序 | Issue | 対象 | 状態 |
+| --- | --- | --- | --- |
+| 1 | [#54](https://github.com/KeishiS/marginalis/issues/54) | domain型とapplication境界 | 実装・検証済み |
+| 2 | [#55](https://github.com/KeishiS/marginalis/issues/55) | ACLとSQLite transaction境界 | 実装・検証済み |
+| 3 | [#52](https://github.com/KeishiS/marginalis/issues/52) | 公開契約とTypeScript Web UI | 実装・検証済み |
+| 4 | [#53](https://github.com/KeishiS/marginalis/issues/53) | 要件、試験、受入、リリースゲート | 作業中 |
+
+#19と#22は今回の作業対象から除外します。#24は別の作業セッションで扱い、この順序には
+含めません。
+
+## 公開済みの順序
 
 | 段階 | 公開単位 | 目的 | 次段階へ進む条件 |
 | --- | --- | --- | --- |

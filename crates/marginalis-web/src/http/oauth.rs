@@ -12,6 +12,7 @@ use axum::{
 use marginalis_application::{
     McpAuthorizationRequest, McpOAuthUseCaseError, McpValidatedAuthorizationRequest,
 };
+use marginalis_contract::ProblemCode;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -455,7 +456,7 @@ async fn mcp_authorize_request(
     let csrf = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
         problem(
             StatusCode::FORBIDDEN,
-            "csrf_required",
+            ProblemCode::CsrfRequired,
             "CSRF token is required",
         )
         .into_response()
@@ -920,14 +921,14 @@ async fn revoke_mcp_authorization_inner(
     if client_id.trim().is_empty() {
         return Err(problem(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            ProblemCode::InvalidRequest,
             "client ID is invalid",
         ));
     }
     endpoint.oauth.revoke(actor, client_id).await.map_err(|_| {
         problem(
             StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
+            ProblemCode::Unavailable,
             "OAuth service is unavailable",
         )
     })?;

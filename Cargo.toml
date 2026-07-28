@@ -3,6 +3,7 @@ members = [
     "crates/marginalis-asciidoc",
     "crates/marginalis-application",
     "crates/marginalis-auth-oidc",
+    "crates/marginalis-contract",
     "crates/marginalis-domain",
     "crates/marginalis-integration-tests",
     "crates/marginalis-service",

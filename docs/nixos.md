@@ -146,16 +146,16 @@ service停止中の切替を行います。
 切戻しではserviceを再度停止し、復元後のdatabaseを別名で保全してから、手順4で退避した元の`dataDir`へ
 戻します。復元先の確認が終わるまで元databaseを上書きまたは削除しないでください。
 
-初回配備後は`GET /api/v2/health`、OIDC login、所有者・ACL共有先・対象外利用者の可視性、
+初回配備後は`GET /api/v3/health`、OIDC login、所有者・ACL共有先・対象外利用者の可視性、
 MCP authorizationを確認します。
 
 ## 問題が発生したときの確認
 
-公開livenessは`GET /api/v2/health`で確認します。この応答はHTTP processの稼働だけを表し、
+公開livenessは`GET /api/v3/health`で確認します。この応答はHTTP processの稼働だけを表し、
 外部IdPの一時的な停止では失敗しません。SQLiteと設定はserviceと同じ実行環境で診断します。
 
 ```bash
-curl --fail http://127.0.0.1:3000/api/v2/health
+curl --fail http://127.0.0.1:3000/api/v3/health
 systemctl is-active marginalis.service
 systemctl show marginalis.service -p InvocationID -p ExecMainStatus
 systemctl show marginalis-purge-expired.service -p Result -p ExecMainStatus

@@ -24,7 +24,7 @@ pub use mcp_oauth::{McpOAuthApplication, McpOAuthRepository, McpOAuthRepositoryE
 pub use notes::{
     NoteAclRepository, NoteApplication, NoteCommandRepository, NoteContent, NoteContentError,
     NoteLinkResolver, NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution,
-    NoteRepositoryError,
+    NoteRepositoryError, NoteViewSnapshot,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
@@ -139,6 +139,12 @@ pub struct NoteAclChange {
     pub permission: NotePermission,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteAclState {
+    pub entries: Vec<NoteAclEntry>,
+    pub revision: Revision,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Utf8ByteSpan {
     pub start: u32,
@@ -210,6 +216,7 @@ pub enum NoteUseCaseError {
     Forbidden,
     Conflict,
     Validation(Vec<NoteValidationDiagnostic>),
+    RenderFailed,
     Unavailable,
 }
 
@@ -220,6 +227,7 @@ impl std::fmt::Display for NoteUseCaseError {
             Self::Forbidden => "note operation is not permitted",
             Self::Conflict => "note operation conflicts",
             Self::Validation(_) => "note is invalid",
+            Self::RenderFailed => "note cannot be rendered",
             Self::Unavailable => "note operation is unavailable",
         })
     }
@@ -312,6 +320,14 @@ pub struct RelatedNotes {
     pub incoming: Vec<NoteSummary>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteView {
+    pub note: Note,
+    pub access: NoteAccess,
+    pub html: String,
+    pub related: RelatedNotes,
+}
+
 /// 閲覧可能なノートを取得する問い合わせ境界。
 #[async_trait]
 pub trait NoteQueries: Send + Sync {
@@ -370,6 +386,12 @@ pub trait NotePresentation: Send + Sync {
         note_id: NoteId,
         context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError>;
+    async fn read_note_view(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        context: NoteRenderContext,
+    ) -> Result<NoteView, NoteUseCaseError>;
     fn note_profile(&self) -> NoteProfile;
 }
 
@@ -380,7 +402,7 @@ pub trait NoteAccessControl: Send + Sync {
         &self,
         actor: Actor,
         note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError>;
+    ) -> Result<NoteAclState, NoteUseCaseError>;
     async fn replace_note_acl(
         &self,
         actor: Actor,

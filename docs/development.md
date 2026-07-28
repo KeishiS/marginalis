@@ -55,6 +55,17 @@ Pull Requestからマージします。
 
    coverageの対象と解釈は[本番到達性とカバレッジ](coverage.md)を参照してください。
 
+   RESTまたはMCPの公開契約を変更する場合は、`marginalis-contract`を正本として生成物を更新します。
+
+   ```sh
+   nix develop --command cargo run -p marginalis-contract --bin generate
+   nix develop --command cargo make openapi-check
+   ```
+
+   この処理は`docs/openapi.json`と`frontend/src/generated/contracts.ts`を更新します。生成物を直接
+   編集しないでください。`openapi-check`は生成し直した内容との差分を検査し、契約に含まれる全経路が
+   OpenAPIとHTTPルーターの両方に存在することはRustの単体試験で検査します。
+
    `docs/**`、ルートの案内文書、Issueテンプレートだけを変更する場合は、次の文書検査だけで
    十分です。
 

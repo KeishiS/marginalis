@@ -40,7 +40,9 @@
 ## 接続方法
 
 - REST API、Web UI、MCPでは、同じ所有者の確認と`revision`の規則を使用します。
-- REST APIは`/api/v2`で提供します。
+- REST APIは`/api/v3`で提供します。
+- REST APIの変更操作では、取得時の`ETag`を`If-Match`へ指定し、同時更新による上書きを防ぎます。
+- Web UIの一覧、閲覧、編集、共有設定は、一つのReactアプリケーションからREST APIを利用します。
 - MCPの認可にはOAuth 2.1 Authorization Code + PKCE S256を使用し、動的クライアント登録に
   対応します。
 - MCPの`scope`は許可する操作の種類を制限しますが、操作できるノートの範囲は広げません。

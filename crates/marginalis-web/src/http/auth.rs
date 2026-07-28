@@ -9,6 +9,7 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::AuthenticationUseCaseError;
+use marginalis_contract::ProblemCode;
 use marginalis_domain::{Actor, EntityId, NoteId};
 use serde::Deserialize;
 
@@ -108,7 +109,7 @@ pub(super) async fn begin_login(
             .map_err(|_| {
                 problem(
                     StatusCode::SERVICE_UNAVAILABLE,
-                    "unavailable",
+                    ProblemCode::Unavailable,
                     "authentication is unavailable",
                 )
             })?,
@@ -157,7 +158,7 @@ pub(super) async fn complete_login(
             value.parse().map_err(|_| {
                 problem(
                     StatusCode::SERVICE_UNAVAILABLE,
-                    "unavailable",
+                    ProblemCode::Unavailable,
                     "authentication is unavailable",
                 )
             })?,
@@ -194,7 +195,7 @@ pub(super) async fn logout(
             value.parse().map_err(|_| {
                 problem(
                     StatusCode::SERVICE_UNAVAILABLE,
-                    "unavailable",
+                    ProblemCode::Unavailable,
                     "authentication is unavailable",
                 )
             })?,
@@ -210,7 +211,7 @@ pub(super) async fn authenticated_actor(
     let session_id = cookie_value(headers, SESSION_COOKIE).ok_or_else(|| {
         problem(
             StatusCode::UNAUTHORIZED,
-            "authentication_required",
+            ProblemCode::AuthenticationRequired,
             "authentication is required",
         )
     })?;
@@ -223,7 +224,7 @@ pub(super) async fn authenticated_actor(
         .ok_or_else(|| {
             problem(
                 StatusCode::UNAUTHORIZED,
-                "authentication_required",
+                ProblemCode::AuthenticationRequired,
                 "authentication is required",
             )
         })
@@ -240,7 +241,7 @@ pub(super) async fn authenticated_mutation_actor(
     let csrf_cookie = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
         problem(
             StatusCode::FORBIDDEN,
-            "csrf_required",
+            ProblemCode::CsrfRequired,
             "CSRF token is required",
         )
     })?;
@@ -250,7 +251,7 @@ pub(super) async fn authenticated_mutation_actor(
         .ok_or_else(|| {
             problem(
                 StatusCode::FORBIDDEN,
-                "csrf_required",
+                ProblemCode::CsrfRequired,
                 "CSRF token is required",
             )
         })?;
@@ -263,7 +264,7 @@ pub(super) async fn authenticated_mutation_actor(
     {
         return Err(problem(
             StatusCode::FORBIDDEN,
-            "csrf_invalid",
+            ProblemCode::CsrfInvalid,
             "CSRF token is invalid",
         ));
     }
@@ -282,7 +283,7 @@ pub(super) fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) ->
         );
         return Err(problem(
             StatusCode::FORBIDDEN,
-            "same_origin_required",
+            ProblemCode::SameOriginRequired,
             "same-origin request is required",
         ));
     }
@@ -297,7 +298,7 @@ pub(super) fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) ->
         );
         return Err(problem(
             StatusCode::FORBIDDEN,
-            "same_origin_required",
+            ProblemCode::SameOriginRequired,
             "same-origin request is required",
         ));
     }
@@ -326,7 +327,7 @@ pub(super) async fn authenticated_form_actor(
         );
         return Err(problem(
             StatusCode::FORBIDDEN,
-            "same_origin_required",
+            ProblemCode::SameOriginRequired,
             "same-origin request is required",
         ));
     }
@@ -341,7 +342,7 @@ pub(super) async fn authenticated_form_actor(
     {
         return Err(problem(
             StatusCode::FORBIDDEN,
-            "csrf_invalid",
+            ProblemCode::CsrfInvalid,
             "CSRF token is invalid",
         ));
     }
@@ -349,9 +350,13 @@ pub(super) async fn authenticated_form_actor(
 }
 
 pub(super) fn parse_note_id(value: &str) -> HandlerResult<NoteId> {
-    EntityId::from_str(value)
-        .map(NoteId::new)
-        .map_err(|_| problem(StatusCode::NOT_FOUND, "not_found", "note is not available"))
+    EntityId::from_str(value).map(NoteId::new).map_err(|_| {
+        problem(
+            StatusCode::NOT_FOUND,
+            ProblemCode::NotFound,
+            "note is not available",
+        )
+    })
 }
 
 pub(super) fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {

@@ -22,7 +22,10 @@ test("subjectと権限を指定して共有設定を保存する", async () => {
     .mockResolvedValueOnce(
       new Response(JSON.stringify({ entries: [] }), {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          etag: '"rev-1"',
+        },
       }),
     )
     .mockResolvedValueOnce(
@@ -43,7 +46,7 @@ test("subjectと権限を指定して共有設定を保存する", async () => {
 
   render(
     <AccessControl
-      apiBase="/api/v2"
+      apiBase="/api/v3"
       noteId={NOTE_ID}
       revision={1}
       onRevision={vi.fn()}
@@ -65,8 +68,10 @@ test("subjectと権限を指定して共有設定を保存する", async () => {
   const request = fetchMock.mock.calls[1]?.[1] as RequestInit;
   expect(JSON.parse(String(request.body))).toEqual({
     entries: [{ subject: "reader-subject", permission: "edit" }],
-    expected_revision: 1,
   });
+  expect(request.headers).toEqual(
+    expect.objectContaining({ "if-match": '"rev-1"' }),
+  );
 });
 
 test("revision競合時は再読み込みを案内する", async () => {
@@ -75,7 +80,10 @@ test("revision競合時は再読み込みを案内する", async () => {
     vi
       .fn()
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ entries: [] }), { status: 200 }),
+        new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: { etag: '"rev-1"' },
+        }),
       )
       .mockResolvedValueOnce(
         new Response(
@@ -88,7 +96,7 @@ test("revision競合時は再読み込みを案内する", async () => {
   );
   render(
     <AccessControl
-      apiBase="/api/v2"
+      apiBase="/api/v3"
       noteId={NOTE_ID}
       revision={1}
       onRevision={vi.fn()}

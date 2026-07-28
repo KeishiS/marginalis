@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use marginalis_application::{NoteProfile, NoteUseCaseError, NoteUseCases};
+use marginalis_contract::ProblemCode;
 use marginalis_domain::{Actor, Note, NoteDraft, Revision};
 use serde::Deserialize;
 
@@ -38,15 +39,6 @@ enum McpTool {
 }
 
 impl McpTool {
-    const ALL: [Self; 6] = [
-        Self::ListNotes,
-        Self::GetNoteProfile,
-        Self::GetNote,
-        Self::CreateNote,
-        Self::UpdateNote,
-        Self::DeleteNote,
-    ];
-
     fn from_name(name: &str) -> Self {
         match name {
             "list_notes" => Self::ListNotes,
@@ -66,52 +58,6 @@ impl McpTool {
             Self::CreateNote | Self::UpdateNote => &["notes:write"],
             Self::DeleteNote => &["notes:delete"],
             Self::Unknown => &[],
-        }
-    }
-
-    fn descriptor(self, profile: &NoteProfile) -> serde_json::Value {
-        match self {
-            Self::ListNotes => serde_json::json!({
-                "name":"list_notes",
-                "description":"List notes visible to the authenticated user.",
-                "inputSchema":{"type":"object","properties":{},"additionalProperties":false}
-            }),
-            Self::GetNoteProfile => serde_json::json!({
-                "name":"get_note_profile",
-                "description":"Get the current note authoring rules and examples before calling create_note or update_note.",
-                "inputSchema":{"type":"object","properties":{},"additionalProperties":false}
-            }),
-            Self::GetNote => serde_json::json!({
-                "name":"get_note",
-                "description":"Read one visible note.",
-                "inputSchema":{"type":"object","required":["note_id"],"properties":{"note_id":{"type":"string"}},"additionalProperties":false}
-            }),
-            Self::CreateNote => serde_json::json!({
-                "name":"create_note",
-                "description":"Create a note. Call get_note_profile first to obtain the current authoring rules.",
-                "inputSchema":{"type":"object","required":["title","body","tags"],"properties":{
-                    "title":{"type":"string"},
-                    "body":{"type":"string","x-maxBytes":profile.limits.max_body_bytes},
-                    "tags":{"type":"array","maxItems":profile.limits.max_tags,"items":{"type":"string"}}
-                },"additionalProperties":false}
-            }),
-            Self::UpdateNote => serde_json::json!({
-                "name":"update_note",
-                "description":"Update a note at its current revision. Call get_note_profile first to obtain the current authoring rules.",
-                "inputSchema":{"type":"object","required":["note_id","title","body","tags","expected_revision"],"properties":{
-                    "note_id":{"type":"string","format":"uuid"},
-                    "title":{"type":"string"},
-                    "body":{"type":"string","x-maxBytes":profile.limits.max_body_bytes},
-                    "tags":{"type":"array","maxItems":profile.limits.max_tags,"items":{"type":"string"}},
-                    "expected_revision":{"type":"integer","minimum":1}
-                },"additionalProperties":false}
-            }),
-            Self::DeleteNote => serde_json::json!({
-                "name":"delete_note",
-                "description":"Soft-delete a note at its current revision.",
-                "inputSchema":{"type":"object","required":["note_id","expected_revision"],"properties":{"note_id":{"type":"string","format":"uuid"},"expected_revision":{"type":"integer","minimum":1}},"additionalProperties":false}
-            }),
-            Self::Unknown => unreachable!("unknown tools are not advertised"),
         }
     }
 }
@@ -271,7 +217,7 @@ fn validate_mcp_origin(
     let origin = value.to_str().map_err(|_| {
         problem(
             StatusCode::FORBIDDEN,
-            "origin_not_allowed",
+            ProblemCode::OriginNotAllowed,
             "MCP browser request origin is not allowed",
         )
     })?;
@@ -289,7 +235,7 @@ fn validate_mcp_origin(
     );
     Err(problem(
         StatusCode::FORBIDDEN,
-        "origin_not_allowed",
+        ProblemCode::OriginNotAllowed,
         "MCP browser request origin is not allowed",
     ))
 }
@@ -445,7 +391,7 @@ pub(super) async fn mcp_post(
         "tools/list" if valid_tools_list_params(request.params.as_ref()) => {
             JsonRpcResponse::success(
                 id,
-                serde_json::json!({"tools": McpTool::ALL.map(|tool| tool.descriptor(&state.notes.note_profile()))}),
+                serde_json::json!({"tools": marginalis_contract::mcp_tool_contracts()}),
             )
         }
         "tools/list" => JsonRpcResponse::error(id, -32602, "Invalid params"),
@@ -632,6 +578,10 @@ fn mcp_tool_error(id: serde_json::Value, error: NoteUseCaseError) -> JsonRpcResp
         NoteUseCaseError::Conflict => {
             serde_json::json!({"code":"conflict","message":"note revision conflicts"})
         }
+        NoteUseCaseError::RenderFailed => serde_json::json!({
+            "code":"render_failed",
+            "message":"note cannot be rendered safely"
+        }),
         NoteUseCaseError::Unavailable => serde_json::json!({
             "code":"unavailable",
             "message":"note service is unavailable"

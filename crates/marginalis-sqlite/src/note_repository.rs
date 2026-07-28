@@ -2,7 +2,8 @@
 
 use async_trait::async_trait;
 use marginalis_application::{
-    NoteAclRepository, NoteCommandRepository, NoteQueryRepository, NoteRepositoryError,
+    NoteAclRepository, NoteAclState, NoteCommandRepository, NoteQueryRepository,
+    NoteRepositoryError, NoteViewSnapshot,
 };
 use marginalis_domain::{
     Actor, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteSummary, Revision, UnixMillis,
@@ -57,6 +58,16 @@ impl NoteQueryRepository for SqliteDatabase {
         note_id: NoteId,
     ) -> Result<Option<NoteAccess>, NoteRepositoryError> {
         SqliteDatabase::note_access(self, actor, note_id)
+            .await
+            .map_err(map_error)
+    }
+
+    async fn note_view_snapshot(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<NoteViewSnapshot>, NoteRepositoryError> {
+        SqliteDatabase::note_view_snapshot(self, actor, note_id)
             .await
             .map_err(map_error)
     }
@@ -127,7 +138,7 @@ impl NoteAclRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, NoteRepositoryError> {
+    ) -> Result<NoteAclState, NoteRepositoryError> {
         SqliteDatabase::read_note_acl(self, actor, note_id)
             .await
             .map_err(map_error)

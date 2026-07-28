@@ -215,6 +215,7 @@ actual=$(
 expected='marginalis-application
 marginalis-asciidoc
 marginalis-auth-oidc
+marginalis-contract
 marginalis-domain
 marginalis-service
 marginalis-sqlite
@@ -296,13 +297,9 @@ printf '\ncoverage reports: %s\n' "$report_dir"
 '''
 
 [tasks.openapi-check]
-description = "Validate the published v0.3 OpenAPI document and required REST paths"
-command = "jq"
-args = [
-  "-e",
-  ".openapi == \"3.1.0\" and .info.version == \"v2\" and .info[\"x-adocweave-package-version\"] == \"0.11.0\" and .info[\"x-note-profile-version\"] == 2 and (.paths[\"/api/v2/health\"] | has(\"get\")) and (.paths[\"/api/v2/notes\"] | has(\"get\") and has(\"post\")) and (.paths[\"/api/v2/notes/preview\"] | has(\"post\")) and (.paths[\"/api/v2/notes/{note_id}\"] | has(\"get\") and has(\"put\") and has(\"delete\")) and (.paths[\"/api/v2/notes/{note_id}/source\"] | has(\"get\")) and (.paths[\"/api/v2/notes/{note_id}/restore\"] | has(\"post\")) and (.paths[\"/api/v2/notes/{note_id}/acl\"] | has(\"get\") and has(\"put\")) and (.paths[\"/api/v2/mcp-authorizations/{client_id}\"] | has(\"delete\")) and (.components.schemas.Note.required | contains([\"note_id\", \"revision\"])) and (.components.schemas.NoteAclUpdate.required | contains([\"entries\", \"expected_revision\"])) and (.components.schemas.NotePreview.required | contains([\"html\"])) and (.components.schemas.ValidationProblem.required | contains([\"code\", \"message\", \"diagnostics\"])) and (.components.schemas.ValidationDiagnostic.required | contains([\"code\", \"target\", \"message\"])) and (.components.schemas.Utf8ByteSpan.properties.unit.const == \"utf8_byte\") and (.components.responses.ValidationFailed.content[\"application/json\"].schema[\"$ref\"] == \"#/components/schemas/ValidationProblem\") and (.components.parameters.CsrfToken.required == true)",
-  "docs/openapi.json",
-]
+description = "Verify generated OpenAPI and TypeScript contracts"
+command = "cargo"
+args = ["run", "-p", "marginalis-contract", "--bin", "generate", "--", "--check"]
 
 [tasks.adocweave-version-check]
 description = "Verify the pinned AdocWeave package version and supply-chain identity"

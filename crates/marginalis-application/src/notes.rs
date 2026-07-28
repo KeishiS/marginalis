@@ -11,9 +11,9 @@ use marginalis_domain::{
 };
 
 use crate::{
-    Clock, NoteAccessControl, NoteAclChange, NoteCommands, NotePresentation, NoteProfile,
-    NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
-    NoteValidationTarget, Random, RelatedNotes,
+    Clock, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NotePresentation,
+    NoteProfile, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
+    NoteValidationDiagnostic, NoteValidationTarget, Random, RelatedNotes,
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。
@@ -52,6 +52,19 @@ pub trait NoteQueryRepository: Send + Sync {
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Option<NoteAccess>, NoteRepositoryError>;
+    async fn note_view_snapshot(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<NoteViewSnapshot>, NoteRepositoryError>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteViewSnapshot {
+    pub note: Note,
+    pub access: NoteAccess,
+    pub reference_targets: Vec<Note>,
+    pub related: RelatedNotes,
 }
 
 /// 認可、revision、削除状態を一つのtransactionへ拘束する変更port。
@@ -94,7 +107,7 @@ pub trait NoteAclRepository: Send + Sync {
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, NoteRepositoryError>;
+    ) -> Result<NoteAclState, NoteRepositoryError>;
     async fn replace_note_acl(
         &self,
         actor: &Actor,
@@ -207,28 +220,19 @@ impl NoteApplication {
             .ok_or(NoteUseCaseError::NotFound)
     }
 
-    async fn reference_resolutions(
+    fn reference_resolutions(
         &self,
-        actor: &Actor,
         note: &Note,
+        targets: &[Note],
         context: &NoteRenderContext,
     ) -> Result<Vec<NoteReferenceResolution>, NoteUseCaseError> {
         let queries = self
             .content
             .reference_queries(note.body())
             .map_err(|_| NoteUseCaseError::Unavailable)?;
-        let target_ids = queries
+        let targets = targets
             .iter()
-            .map(|query| query.target_note_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let targets = self
-            .queries
-            .visible_notes_by_id(actor, &target_ids)
-            .await
-            .map_err(map_repository_error)?
-            .into_iter()
+            .cloned()
             .map(|note| (note.note_id(), note))
             .collect::<HashMap<_, _>>();
         let mut resolutions = Vec::with_capacity(queries.len());
@@ -401,10 +405,16 @@ impl NotePresentation for NoteApplication {
             draft,
             now,
         );
-        let resolutions = self.reference_resolutions(&actor, &note, &context).await?;
+        let target_ids = reference_targets(self.content.as_ref(), note.body())?;
+        let targets = self
+            .queries
+            .visible_notes_by_id(&actor, &target_ids)
+            .await
+            .map_err(map_repository_error)?;
+        let resolutions = self.reference_resolutions(&note, &targets, &context)?;
         self.content
             .render(&note, &resolutions)
-            .map_err(|_| NoteUseCaseError::Unavailable)
+            .map_err(|_| NoteUseCaseError::RenderFailed)
     }
 
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
@@ -419,15 +429,39 @@ impl NotePresentation for NoteApplication {
         note_id: NoteId,
         context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError> {
-        let note = self.read_visible_note(&actor, note_id).await?;
-        let resolutions = self.reference_resolutions(&actor, &note, &context).await?;
-        self.content
-            .render(&note, &resolutions)
-            .map_err(|_| NoteUseCaseError::Unavailable)
+        Ok(self.read_note_view(actor, note_id, context).await?.html)
     }
 
     fn note_profile(&self) -> NoteProfile {
         self.content.profile()
+    }
+
+    async fn read_note_view(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        context: NoteRenderContext,
+    ) -> Result<crate::NoteView, NoteUseCaseError> {
+        let mut snapshot = self
+            .queries
+            .note_view_snapshot(&actor, note_id)
+            .await
+            .map_err(map_repository_error)?
+            .ok_or(NoteUseCaseError::NotFound)?;
+        sort_related_notes(&mut snapshot.related.outgoing);
+        sort_related_notes(&mut snapshot.related.incoming);
+        let resolutions =
+            self.reference_resolutions(&snapshot.note, &snapshot.reference_targets, &context)?;
+        let html = self
+            .content
+            .render(&snapshot.note, &resolutions)
+            .map_err(|_| NoteUseCaseError::RenderFailed)?;
+        Ok(crate::NoteView {
+            note: snapshot.note,
+            access: snapshot.access,
+            html,
+            related: snapshot.related,
+        })
     }
 }
 
@@ -437,7 +471,7 @@ impl NoteAccessControl for NoteApplication {
         &self,
         actor: Actor,
         note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+    ) -> Result<NoteAclState, NoteUseCaseError> {
         self.access_control
             .read_note_acl(&actor, note_id)
             .await
@@ -601,6 +635,14 @@ mod tests {
         ) -> Result<Option<NoteAccess>, NoteRepositoryError> {
             Ok(None)
         }
+
+        async fn note_view_snapshot(
+            &self,
+            _actor: &Actor,
+            _note_id: NoteId,
+        ) -> Result<Option<NoteViewSnapshot>, NoteRepositoryError> {
+            Ok(None)
+        }
     }
 
     #[async_trait]
@@ -653,8 +695,11 @@ mod tests {
             &self,
             _actor: &Actor,
             _note_id: NoteId,
-        ) -> Result<Vec<NoteAclEntry>, NoteRepositoryError> {
-            Ok(Vec::new())
+        ) -> Result<NoteAclState, NoteRepositoryError> {
+            Ok(NoteAclState {
+                entries: Vec::new(),
+                revision: Revision::INITIAL,
+            })
         }
 
         async fn replace_note_acl(

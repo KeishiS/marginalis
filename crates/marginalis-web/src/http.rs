@@ -10,7 +10,6 @@ mod html;
 mod mcp_transport;
 mod notes;
 mod oauth;
-mod related_notes;
 mod security;
 mod state;
 mod ui;
@@ -31,6 +30,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use marginalis_contract::ProblemCode;
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, info_span};
 
@@ -41,7 +41,7 @@ use self::{
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
         create_note, delete_note, export_note, list_notes, preview_note, read_note, read_note_acl,
-        replace_note_acl, restore_note, session, update_note,
+        read_note_view, replace_note_acl, restore_note, session, update_note,
     },
     oauth::{
         mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
@@ -51,7 +51,7 @@ use self::{
     ui::{access_note_page, create_note_page, edit_note_page, home, view_note},
 };
 
-pub const API_VERSION: &str = "v2";
+pub use marginalis_contract::API_VERSION;
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
 
 /// 配備先のサブパスを保ったノートURLを生成するHTTP adapter。
@@ -97,7 +97,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/assets/editor.js", get(editor_javascript))
         .route("/assets/editor.css", get(editor_stylesheet))
         .route("/assets/page.js", get(page_javascript))
-        .route("/api/v2/openapi.json", get(openapi))
+        .route("/api/v3/openapi.json", get(openapi))
         .route("/auth/oidc/login", get(begin_login))
         .route("/auth/oidc/callback", get(complete_login))
         .route("/auth/logout", post(logout))
@@ -126,22 +126,23 @@ pub fn router(state: ApiState) -> Router {
                 .delete(mcp_unsupported_method)
                 .layer(DefaultBodyLimit::max(1024 * 1024)),
         )
-        .route("/api/v2/health", get(health))
-        .route("/api/v2/session", get(session))
-        .route("/api/v2/notes", get(list_notes).post(create_note))
-        .route("/api/v2/notes/preview", post(preview_note))
+        .route("/api/v3/health", get(health))
+        .route("/api/v3/session", get(session))
+        .route("/api/v3/notes", get(list_notes).post(create_note))
+        .route("/api/v3/notes/preview", post(preview_note))
         .route(
-            "/api/v2/notes/{note_id}",
+            "/api/v3/notes/{note_id}",
             get(read_note).put(update_note).delete(delete_note),
         )
-        .route("/api/v2/notes/{note_id}/restore", post(restore_note))
+        .route("/api/v3/notes/{note_id}/view", get(read_note_view))
+        .route("/api/v3/notes/{note_id}/restore", post(restore_note))
         .route(
-            "/api/v2/notes/{note_id}/acl",
+            "/api/v3/notes/{note_id}/acl",
             get(read_note_acl).put(replace_note_acl),
         )
-        .route("/api/v2/notes/{note_id}/source", get(export_note))
+        .route("/api/v3/notes/{note_id}/source", get(export_note))
         .route(
-            "/api/v2/mcp-authorizations/{client_id}",
+            "/api/v3/mcp-authorizations/{client_id}",
             axum::routing::delete(revoke_mcp_authorization),
         );
     if let Some(endpoint) = state.mcp.as_ref() {
@@ -189,13 +190,19 @@ async fn openapi() -> Response {
         .into_response()
 }
 
-async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({"status": "ok", "api_version": API_VERSION}))
+async fn health() -> Json<marginalis_contract::HealthResponse> {
+    Json(marginalis_contract::HealthResponse {
+        status: "ok".into(),
+        api_version: API_VERSION.into(),
+    })
 }
 
 fn mcp_endpoint(state: &ApiState) -> HandlerResult<&Arc<McpEndpoint>> {
-    state
-        .mcp
-        .as_ref()
-        .ok_or_else(|| problem(StatusCode::NOT_FOUND, "not_found", "MCP is not available"))
+    state.mcp.as_ref().ok_or_else(|| {
+        problem(
+            StatusCode::NOT_FOUND,
+            ProblemCode::NotFound,
+            "MCP is not available",
+        )
+    })
 }
