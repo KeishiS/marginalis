@@ -350,7 +350,6 @@ impl NoteCommands for NoteApplication {
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
-        self.read_visible_note(&actor, note_id).await?;
         let reference_targets = reference_targets(self.content.as_ref(), &draft.source)?;
         self.commands
             .update_visible_note(

@@ -6,30 +6,31 @@
 
 ## 現在地
 
-`v0.7.0`は2026-07-28に公開しました。後方互換性と移行コストを制約にせず進めた再設計は、
-`v0.8.0`として統合します。
+`v0.8.0`は2026-07-28に公開しました。現在は、日常的なノート操作を補強する`v0.9.0`を
+準備しています。保存形式とREST APIの世代は`v0.8.0`から変更せず、Web UIの一覧、編集、
+プレビュー、閲覧表示と、変更を継続しやすくする検証構成を改善します。
 
 | 順序 | Issue | 対象 | 状態 |
 | --- | --- | --- | --- |
-| 1 | [#54](https://github.com/KeishiS/marginalis/issues/54) | domain型とapplication境界 | 実装・検証済み |
-| 2 | [#55](https://github.com/KeishiS/marginalis/issues/55) | ACLとSQLite transaction境界 | 実装・検証済み |
-| 3 | [#52](https://github.com/KeishiS/marginalis/issues/52) | 公開契約とTypeScript Web UI | 実装・検証済み |
-| 4 | [#53](https://github.com/KeishiS/marginalis/issues/53) | 要件、試験、受入、リリースゲート | 実装・自動検証済み |
+| 1 | [#65](https://github.com/KeishiS/marginalis/issues/65) | 一覧の情報、絞り込み、ページ分割 | 実装・検証済み |
+| 2 | [#66](https://github.com/KeishiS/marginalis/issues/66) | 編集状態、入力診断、プレビュー継続 | 実装・検証済み |
+| 3 | [#67](https://github.com/KeishiS/marginalis/issues/67) | 表、コード、数式を含む表示回帰 | 実装・検証中 |
+| 4 | [#68](https://github.com/KeishiS/marginalis/issues/68) | 設計、CI、文書の横断監査 | 作業中 |
+| 5 | [#64](https://github.com/KeishiS/marginalis/issues/64) | `v0.9.0`統合とリリース判断 | 未完了 |
 
-`v0.8.0`のREST APIは`/api/v3`だけを提供します。OpenAPI、TypeScriptクライアント、MCPツール定義は
-`marginalis-contract`から生成し、一覧、閲覧、編集、共有設定は一つのReactアプリケーションが
-担当します。Issue #57以降では完全なAsciiDoc文書を保存の正本とします。SQLite schemaは9、
-note profileは3、アーカイブは`marginalis-archive-7`です。
+現行のREST APIは`/api/v3`、SQLite schemaは9、note profileは3、アーカイブは
+`marginalis-archive-7`です。完全なAsciiDoc文書を保存の正本とし、OpenAPI、TypeScript
+クライアント、MCPツール定義を`marginalis-contract`から生成します。
 
 ## 次の判断
 
-#53の自動検証ゲートは成功しました。次の公開候補を作るかは、人手受入を含む次の条件で判断します。
+`v0.9.0`を公開するかは、#68の横断監査後に次の条件で判断します。
 
-- `cargo make verify`と対象NixOS VMの成功
+- `cargo make pre-push`とリリースゲートの成功
 - OpenAPI、TypeScript、MCP、実ルーターの契約一致
 - [要件と検証の対応表](traceability.md)の記載漏れなし
 - [受入基準](acceptance.md)に従った版別結果と証跡
-- 破壊的変更、保存形式、再初期化手順の変更履歴への記載
+- 変更履歴と運用文書の現行実装との一致
 
 ## 今回扱わない作業
 

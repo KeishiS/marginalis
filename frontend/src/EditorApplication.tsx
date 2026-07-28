@@ -10,17 +10,13 @@ import {
 } from "react";
 
 import {
-  ApiError,
   Problem,
   ValidationDiagnostic,
   createNote,
   readNote,
   updateNote,
 } from "./api";
-import {
-  utf8ByteOffsetToLineColumn,
-  utf8ByteOffsetToTextOffset,
-} from "./textPosition";
+import { utf8ByteOffsetToTextOffset } from "./textPosition";
 import {
   EditorForm as FormState,
   editorReducer,
@@ -33,6 +29,16 @@ import {
 } from "./editorActivityState";
 import { RenderedContent } from "./RenderedContent";
 import { useEditorPreview } from "./useEditorPreview";
+import { alignThreeVersions } from "./editorConflict";
+import {
+  canSelectDiagnostic,
+  diagnosticLocation,
+  diagnosticMessage,
+  editorStatus,
+  problemMessage,
+  toProblem,
+} from "./editorPresentation";
+import { externalPath } from "./paths";
 
 export interface EditorConfig {
   mode: "create" | "edit";
@@ -311,11 +317,7 @@ function BodyConflictTable({
   editing: string;
   current: string;
 }) {
-  const rows = alignThreeVersions(
-    splitLines(editingStarted),
-    splitLines(editing),
-    splitLines(current),
-  );
+  const rows = alignThreeVersions(editingStarted, editing, current);
   return (
     <div
       className="conflict-body-scroll"
@@ -505,250 +507,4 @@ function PreviewPanel({
 function SafePreview({ html }: { html: string }) {
   // 同じ保存規則とRenderPolicyを通ったサーバー生成HTMLだけを受け取る。
   return <RenderedContent html={html} preview />;
-}
-
-function splitLines(value: string): string[] {
-  return value.split(/\r\n|\r|\n/);
-}
-
-interface AlignedLines {
-  insertions: string[][];
-  matches: Array<string | null>;
-}
-
-interface ConflictLine {
-  line: string;
-  status: string;
-  changed: boolean;
-  editingStarted: string | null;
-  editing: string | null;
-  current: string | null;
-}
-
-function alignThreeVersions(
-  baseline: string[],
-  editing: string[],
-  current: string[],
-): ConflictLine[] {
-  const editingAligned = alignToBaseline(baseline, editing);
-  const currentAligned = alignToBaseline(baseline, current);
-  const rows: ConflictLine[] = [];
-  for (
-    let baselineIndex = 0;
-    baselineIndex <= baseline.length;
-    baselineIndex++
-  ) {
-    const editingInsertions = editingAligned.insertions[baselineIndex] ?? [];
-    const currentInsertions = currentAligned.insertions[baselineIndex] ?? [];
-    const insertionCount = Math.max(
-      editingInsertions.length,
-      currentInsertions.length,
-    );
-    for (
-      let insertionIndex = 0;
-      insertionIndex < insertionCount;
-      insertionIndex++
-    ) {
-      const editingLine = editingInsertions[insertionIndex] ?? null;
-      const currentLine = currentInsertions[insertionIndex] ?? null;
-      rows.push({
-        line: "追加",
-        status:
-          editingLine !== null && currentLine !== null
-            ? "編集中と現在の内容に追加"
-            : editingLine !== null
-              ? "編集中に追加"
-              : "現在の内容に追加",
-        changed: true,
-        editingStarted: null,
-        editing: editingLine,
-        current: currentLine,
-      });
-    }
-    if (baselineIndex === baseline.length) {
-      continue;
-    }
-    const editingLine = editingAligned.matches[baselineIndex] ?? null;
-    const currentLine = currentAligned.matches[baselineIndex] ?? null;
-    const deletions = [
-      editingLine === null ? "編集中から削除" : "",
-      currentLine === null ? "現在の内容から削除" : "",
-    ].filter(Boolean);
-    rows.push({
-      line: String(baselineIndex + 1),
-      status: deletions.length > 0 ? deletions.join("、") : "変更なし",
-      changed: deletions.length > 0,
-      editingStarted: baseline[baselineIndex] ?? "",
-      editing: editingLine,
-      current: currentLine,
-    });
-  }
-  return rows;
-}
-
-function alignToBaseline(baseline: string[], variant: string[]): AlignedLines {
-  if (baseline.length * variant.length > 250_000) {
-    return alignLargeDocument(baseline, variant);
-  }
-  const lengths = Array.from({ length: baseline.length + 1 }, () =>
-    Array<number>(variant.length + 1).fill(0),
-  );
-  for (let left = baseline.length - 1; left >= 0; left--) {
-    for (let right = variant.length - 1; right >= 0; right--) {
-      lengths[left]![right] =
-        baseline[left] === variant[right]
-          ? (lengths[left + 1]?.[right + 1] ?? 0) + 1
-          : Math.max(
-              lengths[left + 1]?.[right] ?? 0,
-              lengths[left]?.[right + 1] ?? 0,
-            );
-    }
-  }
-  const insertions = Array.from(
-    { length: baseline.length + 1 },
-    () => [] as string[],
-  );
-  const matches = Array<string | null>(baseline.length).fill(null);
-  let left = 0;
-  let right = 0;
-  while (left < baseline.length && right < variant.length) {
-    if (baseline[left] === variant[right]) {
-      matches[left] = variant[right] ?? "";
-      left++;
-      right++;
-    } else if (
-      (lengths[left]?.[right + 1] ?? 0) >= (lengths[left + 1]?.[right] ?? 0)
-    ) {
-      insertions[left]?.push(variant[right] ?? "");
-      right++;
-    } else {
-      left++;
-    }
-  }
-  while (right < variant.length) {
-    insertions[baseline.length]?.push(variant[right] ?? "");
-    right++;
-  }
-  return { insertions, matches };
-}
-
-function alignLargeDocument(
-  baseline: string[],
-  variant: string[],
-): AlignedLines {
-  const insertions = Array.from(
-    { length: baseline.length + 1 },
-    () => [] as string[],
-  );
-  const matches = baseline.map((line, index) =>
-    variant[index] === line ? line : null,
-  );
-  for (let index = 0; index < variant.length; index++) {
-    if (matches[index] === null || index >= baseline.length) {
-      insertions[Math.min(index, baseline.length)]?.push(variant[index] ?? "");
-    }
-  }
-  return { insertions, matches };
-}
-
-function toProblem(error: unknown): Problem {
-  if (error instanceof ApiError) {
-    return error.problem;
-  }
-  return {
-    code: "network_error",
-    message: "通信に失敗しました。入力内容を保ったまま再試行できます。",
-  };
-}
-
-function problemMessage(problem: Problem): string {
-  switch (problem.code) {
-    case "validation_failed":
-      return "入力内容を確認してください。";
-    case "conflict":
-      return "ほかの操作でノートが更新されました。";
-    case "authentication_required":
-      return "ログインの有効期限が切れました。再度ログインしてください。";
-    default:
-      return problem.message;
-  }
-}
-
-function diagnosticLocation(
-  body: string,
-  diagnostic: ValidationDiagnostic,
-): string {
-  if (
-    diagnostic.target.field !== "source" ||
-    diagnostic.span?.unit !== "utf8_byte"
-  ) {
-    return "";
-  }
-  const location = utf8ByteOffsetToLineColumn(body, diagnostic.span.start);
-  return `${location.line}行${location.column}列: `;
-}
-
-function canSelectDiagnostic(diagnostic: ValidationDiagnostic): boolean {
-  return (
-    diagnostic.target.field === "source" &&
-    diagnostic.span?.unit === "utf8_byte"
-  );
-}
-
-function editorStatus({
-  saving,
-  isDirty,
-  failed,
-  conflicted,
-  notice,
-}: {
-  saving: boolean;
-  isDirty: boolean;
-  failed: boolean;
-  conflicted: boolean;
-  notice: string;
-}): string {
-  if (saving) return "保存しています…";
-  if (conflicted) return "更新内容の競合を解消してください。";
-  if (failed) return "保存に失敗しました。入力内容は維持されています。";
-  if (notice) return notice;
-  return isDirty ? "未保存の変更があります。" : "変更は保存されています。";
-}
-
-function diagnosticMessage(code: string): string {
-  switch (code) {
-    case "invalid_title":
-      return "題名を入力し、改行と上限を超える文字を取り除いてください。";
-    case "invalid_tag":
-      return "タグの空欄、改行、重複、または長さを確認してください。";
-    case "too_many_tags":
-      return "タグの数が上限を超えています。";
-    case "source_too_large":
-      return "AsciiDoc文書のデータ量が上限を超えています。";
-    case "asciidoc_parse_failed":
-      return "AsciiDoc本文を解析できませんでした。";
-    case "include_directive_disabled":
-      return "includeディレクティブは使用できません。";
-    case "inline_passthrough_disabled":
-    case "block_passthrough_disabled":
-      return "未検証の内容を直接出力する記法は使用できません。";
-    case "duplicate_anchor":
-      return "同じアンカーが複数あります。";
-    case "external_reference_disabled":
-      return "外部の参照先は使用できません。";
-    case "invalid_url_scheme":
-      return "許可されていない形式のURLです。";
-    case "resource_disabled":
-      return "外部リソースは使用できません。";
-    case "unsupported_math_language":
-      return "対応していない数式形式です。";
-    case "unsupported_source_language":
-      return "対応していないソースコード言語です。";
-    default:
-      return "入力内容を確認してください。";
-  }
-}
-
-function externalPath(basePath: string, path: string): string {
-  return basePath === "/" ? path : `${basePath.replace(/\/$/, "")}${path}`;
 }

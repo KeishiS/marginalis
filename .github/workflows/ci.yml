@@ -41,26 +41,10 @@ jobs:
 
           docs_only=false
           if [[ -n "$base" && "$base" != "$zero" ]] && git cat-file -e "$base^{commit}"; then
-            docs_only=true
-            changed=false
-            while IFS= read -r path; do
-              changed=true
-              case "$path" in
-                docs/openapi.json)
-                  docs_only=false
-                  break
-                  ;;
-                docs/* | README.md | CONTRIBUTING.md | AGENTS.md | CHANGELOG.md | .github/ISSUE_TEMPLATE/*)
-                  ;;
-                *)
-                  docs_only=false
-                  break
-                  ;;
-              esac
-            done < <(git diff --name-only "$base" "$GITHUB_SHA")
-            if [[ "$changed" == false ]]; then
-              docs_only=false
-            fi
+            docs_only="$(
+              git diff --name-only -z "$base" "$GITHUB_SHA" |
+                bash .github/scripts/classify-docs-only.sh
+            )"
           fi
           echo "docs-only=$docs_only" >>"$GITHUB_OUTPUT"
 

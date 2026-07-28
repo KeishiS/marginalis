@@ -1,4 +1,4 @@
-//! Marginalis v0.3のHTTP境界。
+//! MarginalisのHTTP境界。
 //!
 //! 公開面は`/api/v3`、閲覧UI、OIDC、MCP OAuthおよびStreamable HTTPだけである。
 

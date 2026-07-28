@@ -6,7 +6,8 @@ Kanidmで利用者の認証とグループ管理を行い、Web UI、REST API、
 ## 仕様
 
 - ノートの本文、題名、タグ、アクセス権限、削除状態はSQLiteで管理します。
-  ノート単位のAsciiDoc書き出しと、全データのJSON形式での読み込み・書き出しができます。
+  ノート単位のAsciiDoc書き出しと、ノート、ACL、削除状態を含むJSONアーカイブの読み込み・
+  書き出しができます。WebセッションやMCPトークンなどの認証状態はアーカイブに含めません。
 - Kanidmの`server-users`グループに属する利用者がアクセスできます。ノートは所有者と、
   所有者がACLで直接共有した利用者だけが閲覧できます。
 - `/api/v3`は公開REST APIです。仕様は[OpenAPI](docs/openapi.json)を参照してください。
@@ -44,6 +45,11 @@ cargo make format
 cargo make lint
 cargo make test
 cargo make verify
+cargo make pre-push
 ```
+
+`verify`は開発中の通常検証、`pre-push`はカバレッジとすべてのNixOS VM E2Eを含む
+push前検証です。Nix開発環境の準備とPull Requestの手順は
+[GitHubを使う開発手順](docs/development.md)を参照してください。
 
 詳細は[文書案内](docs/README.md)を参照してください。
