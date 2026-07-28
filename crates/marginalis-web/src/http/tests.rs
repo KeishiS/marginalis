@@ -9,7 +9,8 @@ use marginalis_application::{
     McpTokenPair, McpValidatedAuthorizationRequest, NoteProfile, NoteProfileExample,
     NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteRenderContext,
     NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic,
-    NoteValidationTarget, OidcAuthenticationUseCases, Utf8ByteSpan, WebSessionUseCases,
+    NoteValidationTarget, OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan,
+    WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft, NoteId,
@@ -117,6 +118,17 @@ impl NoteUseCases for Notes {
         _context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
+    }
+
+    async fn related_notes(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+    ) -> Result<RelatedNotes, NoteUseCaseError> {
+        Ok(RelatedNotes {
+            outgoing: Vec::new(),
+            incoming: Vec::new(),
+        })
     }
 
     fn note_profile(&self) -> NoteProfile {
@@ -231,6 +243,23 @@ impl NoteUseCases for UiNotes {
         } else {
             Ok("<article><p>描画済み本文</p></article>".into())
         }
+    }
+
+    async fn related_notes(
+        &self,
+        _actor: Actor,
+        note_id: NoteId,
+    ) -> Result<RelatedNotes, NoteUseCaseError> {
+        let related = self
+            .notes
+            .iter()
+            .filter(|note| note.note_id != note_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        Ok(RelatedNotes {
+            outgoing: related.clone(),
+            incoming: related,
+        })
     }
 
     fn note_profile(&self) -> NoteProfile {
@@ -672,6 +701,41 @@ async fn note_view_preserves_rendered_html_and_subpath_navigation() {
     assert!(body.contains("href=\"/marginalis/\">一覧</a>"));
     assert!(body.contains("href=\"/marginalis/assets/editor.css\""));
     assert!(body.contains("<article><p>描画済み本文</p></article>"));
+    assert!(body.contains("このノートが参照しているノート"));
+    assert!(body.contains("参照しているノートはありません。"));
+    assert!(body.contains("このノートを参照しているノートはありません。"));
+}
+
+#[tokio::test]
+async fn note_view_lists_related_note_metadata_with_collapsible_overflow() {
+    let source = ui_note("閲覧中");
+    let mut notes = vec![source.clone()];
+    for index in 2..=13 {
+        let mut note = ui_note(&format!("関連ノート{index}"));
+        note.note_id = NoteId::new(
+            format!("0197c9bc-0000-7000-8000-{index:012x}")
+                .parse()
+                .expect("note ID"),
+        );
+        note.tags = vec!["z".into(), "a".into(), "m".into(), "<危険>".into()];
+        note.updated_at = UnixMillis::new(index);
+        notes.push(note);
+    }
+    let response = ui_app(notes, false, "/marginalis")
+        .oneshot(authenticated_request(&format!("/notes/{}", source.note_id)))
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body = String::from_utf8(body.to_vec()).expect("HTML");
+    assert!(body.contains("<summary>さらに表示</summary>"));
+    assert!(body.contains("<summary>+2</summary>"));
+    assert!(body.contains("&lt;危険&gt;"));
+    assert!(body.contains("更新日時: <time datetime=\"1970-01-01T00:00:00.002Z\">"));
+    assert!(body.contains("href=\"/marginalis/notes/0197c9bc-0000-7000-8000-00000000000d\""));
 }
 
 #[tokio::test]
