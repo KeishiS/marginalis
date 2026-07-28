@@ -333,7 +333,7 @@ grep -Fq "pub const ADOCWEAVE_SOURCE_REVISION: &str = \"$expected_revision\";" \
 grep -Fq "pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = \"$expected_version\";" \
   crates/marginalis-asciidoc/src/lib.rs
 grep -Fq "\"adocweave-$expected_version\" = \"$expected_hash\";" flake.nix
-grep -Fq "AdocWeave/$expected_revision/fixtures/conformance/cases.json" flake.nix
+grep -Fq "adocweave/$expected_revision/fixtures/conformance/cases.json" flake.nix
 grep -Fq "hash = \"$expected_fixture_hash\";" flake.nix
 
 if grep -Eq 'WASM_API_VERSION|PINNED_CONTRACTS|CONTRACT_VERSION|contractVersion' \
