@@ -63,7 +63,7 @@
           };
           frontend = pkgs.buildNpmPackage {
             pname = "marginalis-web-ui";
-            version = "0.6.0";
+            version = "0.7.0";
             src = ./frontend;
             npmDepsHash = "sha256-LFrGXjc7wsKkon1drJOwimQPg264RSEDnuEUgPR5NVw=";
             nodejs = pkgs.nodejs_22;
@@ -77,7 +77,7 @@
           inherit frontend;
           default = rustPlatform.buildRustPackage {
             pname = "marginalis";
-            version = "0.6.0";
+            version = "0.7.0";
             src = pkgs.lib.fileset.toSource {
               root = ./.;
               fileset = pkgs.lib.fileset.unions [

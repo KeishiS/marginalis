@@ -2,14 +2,14 @@
 
 ## 目的と対象
 
-この文書は、v0.6.0公開後の方向、着手順、公開単位を示します。個別作業と完了条件は
+この文書は、v0.7.0公開後の方向、着手順、公開単位を示します。個別作業と完了条件は
 [GitHub Issues](https://github.com/KeishiS/marginalis/issues)で管理し、公開済みの利用者影響は
 [変更履歴](../CHANGELOG.md)を参照します。
 
 ## 現在地
 
-`v0.6.0`は2026-07-27に公開しました。SQLiteスキーマ4とnote profileバージョン`1`を維持し、
-AdocWeave 0.11.0と`marginalis-archive-4`へ更新しました。
+`v0.7.0`は2026-07-28に公開しました。React・TypeScriptフロントエンド、subject単位ACL、
+ノート参照を追加し、SQLite schema 6、note profile 2、`marginalis-archive-5`へ更新しました。
 
 リポジトリ内のIssue管理はGitHub Issuesへ移行しました。v0.5.0以前のローカルIssueは
 [移行対応表](issue-migration.md)から参照できます。
@@ -30,8 +30,8 @@ AdocWeave 0.11.0と`marginalis-archive-4`へ更新しました。
 | 0（完了） | `v0.5.0` | 所有者モデルへの認可単純化 | 完了（2026-07-27、`v0.5.0`タグ） |
 | 1 | リポジトリ保守 | 文書とIssueの管理先整理 | GitHub Issue #9、#10の完了 |
 | 2（完了） | `v0.6.0` | AdocWeave 0.11の処理別設定へ移行 | 完了（2026-07-27、`v0.6.0`タグ） |
-| 3 | 評価・ADR | 外部Authorization Serverへの移行可否 | [GitHub Issue #24](https://github.com/KeishiS/marginalis/issues/24)の接続matrixとADR |
-| 4 | `v0.7.0`候補 | OAuth境界の単純化または運用強化 | 段階3の採否に対応する実装と受入 |
+| 3（完了） | `v0.7.0` | Web編集、subject単位ACL、ノート参照 | 完了（2026-07-28、`v0.7.0`タグ） |
+| 4 | 評価・ADR | 外部Authorization Serverへの移行可否 | [GitHub Issue #24](https://github.com/KeishiS/marginalis/issues/24)の接続matrixとADR |
 | 5 | 検索評価 | 再発見できない固定例から最小方式を選択 | [GitHub Issue #19](https://github.com/KeishiS/marginalis/issues/19)の評価結果 |
 | 6 | `v0.8.0`候補 | 評価結果に基づく検索改善 | 固定評価集合、所有者認可、運用試験の成功 |
 | 7 | 条件付き機能 | 参照、Resource、Web編集、グラフ | 独立した需要と安全な公開仕様の確定 |
