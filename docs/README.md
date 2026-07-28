@@ -29,6 +29,7 @@
 
 - [変更履歴](../CHANGELOG.md)
 - [ロードマップ](roadmap.md)
+- [MCP向けAuthorization Serverの評価手順](mcp-authorization-server-evaluation.md)
 - [GitHub Issues](https://github.com/KeishiS/marginalis/issues)
 - [旧ローカルIssue移行対応表](issue-migration.md)
 - [要件ヒアリング記録](interviews.md)
