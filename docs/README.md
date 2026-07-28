@@ -19,6 +19,7 @@
 
 - [GitHubを使う開発手順](development.md)
 - [文書管理方針](documentation.md)
+- [リポジトリ文書のAsciiDoc化評価](repository-asciidoc-evaluation.md)
 - [カバレッジ](coverage.md)
 - [セキュリティ](security.md)
 - [要件定義](requirements.md)
