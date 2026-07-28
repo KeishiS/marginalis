@@ -14,6 +14,14 @@ CREATE INDEX notes_owner_listing_idx
 ON notes (creator_issuer, creator_subject, updated_at_ms DESC, note_id)
 WHERE deleted_at_ms IS NULL;
 
+CREATE TABLE note_references (
+    source_note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+    target_note_id TEXT NOT NULL,
+    PRIMARY KEY (source_note_id, target_note_id)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX note_references_target_idx
+ON note_references (target_note_id, source_note_id);
+
 CREATE TABLE web_sessions (
     session_id_hash BLOB PRIMARY KEY NOT NULL,
     csrf_token_hash BLOB NOT NULL,

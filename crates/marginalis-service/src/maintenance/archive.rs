@@ -7,6 +7,7 @@ use marginalis_domain::Archive;
 use marginalis_server::StorageConfig;
 use marginalis_sqlite::SqliteDatabase;
 use std::{
+    collections::HashSet,
     fs::{DirBuilder, File, OpenOptions},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
@@ -48,7 +49,7 @@ pub(crate) async fn import_archive(
     let configuration = StorageConfig::from_environment()?;
     SqliteDatabase::connect(&configuration.database_url)
         .await?
-        .import_notes(&archive.notes)
+        .import_notes(&archive.notes, &archive_references(&archive)?)
         .await?;
     tracing::info!(event = "archive.import.completed", input = %input.display(), "imported archive");
     Ok(())
@@ -97,7 +98,9 @@ pub(super) async fn verify_archive_in_memory(
     archive: &Archive,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let database = SqliteDatabase::connect("sqlite::memory:").await?;
-    database.import_notes(&archive.notes).await?;
+    database
+        .import_notes(&archive.notes, &archive_references(archive)?)
+        .await?;
     if create_archive(database.export_notes().await?) != *archive {
         return Err("archive logical round-trip validation failed".into());
     }
@@ -111,7 +114,9 @@ pub(super) async fn verify_archive_in_isolated_database(
     let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
     let result = async {
         let database = SqliteDatabase::connect(&database_url).await?;
-        database.import_notes(&archive.notes).await?;
+        database
+            .import_notes(&archive.notes, &archive_references(archive)?)
+            .await?;
         let restored = create_archive(database.export_notes().await?);
         if restored != *archive {
             return Err("restored archive does not match the source archive".into());
@@ -123,6 +128,21 @@ pub(super) async fn verify_archive_in_isolated_database(
         tracing::warn!(path = %directory.display(), error = %error, "failed to remove isolated restore directory");
     }
     result
+}
+
+fn archive_references(
+    archive: &Archive,
+) -> Result<Vec<(marginalis_domain::NoteId, marginalis_domain::NoteId)>, Box<dyn std::error::Error>>
+{
+    let mut references = HashSet::new();
+    for note in &archive.notes {
+        for query in marginalis_asciidoc::note_reference_queries(note)
+            .map_err(|_| "validated archive note could not be analyzed")?
+        {
+            references.insert((note.note_id, query.target_note_id));
+        }
+    }
+    Ok(references.into_iter().collect())
 }
 
 fn create_isolated_database_path() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {

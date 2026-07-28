@@ -10,6 +10,7 @@ mod html;
 mod mcp_transport;
 mod notes;
 mod oauth;
+mod related_notes;
 mod security;
 mod state;
 mod ui;
@@ -34,7 +35,7 @@ use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, info_span};
 
 use self::{
-    assets::{editor_javascript, editor_stylesheet},
+    assets::{editor_javascript, editor_stylesheet, page_javascript},
     auth::{begin_login, complete_login, logout},
     error::{HandlerResult, problem},
     mcp_transport::{mcp_post, mcp_unsupported_method},
@@ -60,6 +61,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/notes/{note_id}", get(view_note))
         .route("/assets/editor.js", get(editor_javascript))
         .route("/assets/editor.css", get(editor_stylesheet))
+        .route("/assets/page.js", get(page_javascript))
         .route("/api/v2/openapi.json", get(openapi))
         .route("/auth/oidc/login", get(begin_login))
         .route("/auth/oidc/callback", get(complete_login))

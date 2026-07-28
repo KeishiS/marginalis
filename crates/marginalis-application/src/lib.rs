@@ -7,7 +7,7 @@ use std::future::Future;
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpAuthorizationGrant,
-    McpOAuthClient, Note, NoteDraft, NoteId, UnixMillis, WebSession,
+    McpOAuthClient, Note, NoteDraft, NoteId, NoteSummary, UnixMillis, WebSession,
 };
 
 pub trait Clock: Send + Sync {
@@ -276,8 +276,8 @@ pub struct NoteRenderContext {
 /// 閲覧中のノートと明示的な参照で直接つながる、現在の利用者に可視なノート。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelatedNotes {
-    pub outgoing: Vec<Note>,
-    pub incoming: Vec<Note>,
+    pub outgoing: Vec<NoteSummary>,
+    pub incoming: Vec<NoteSummary>,
 }
 
 /// SQLite正本を扱うノート操作境界。HTTP、MCP、Web UIはこの可視性規則を共有する。

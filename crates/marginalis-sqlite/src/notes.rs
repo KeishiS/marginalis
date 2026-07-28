@@ -1,17 +1,24 @@
 //! ノート正本、所有者認可、ソフトデリートの永続化。
 
+use std::str::FromStr;
+
 use marginalis_domain::{
-    Actor, EntityId, Note, NoteDraft, NoteId, SOFT_DELETE_RETENTION_MS, UnixMillis,
+    Actor, EntityId, Note, NoteDraft, NoteId, NoteSummary, SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
-use sqlx::Row;
+use sqlx::{Row, Sqlite};
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error};
 
 impl SqliteDatabase {
     /// 作成主体を変更不能な所有者として正本へ記録する。
-    pub async fn create_note(&self, note: &Note) -> Result<(), SqliteStoreError> {
+    pub async fn create_note(
+        &self,
+        note: &Note,
+        reference_targets: &[NoteId],
+    ) -> Result<(), SqliteStoreError> {
         let tags_json =
             serde_json::to_string(&note.tags).map_err(|_| SqliteStoreError::CorruptData)?;
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
         sqlx::query(
             "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -26,9 +33,11 @@ impl SqliteDatabase {
         .bind(note.updated_at.get())
         .bind(note.revision)
         .bind(note.deleted_at.map(UnixMillis::get))
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
+        replace_reference_rows(&mut transaction, note.note_id, reference_targets).await?;
+        transaction.commit().await.map_err(database_error)?;
         Ok(())
     }
 
@@ -106,6 +115,7 @@ impl SqliteDatabase {
         note_id: NoteId,
         expected_revision: i64,
         draft: &NoteDraft,
+        reference_targets: &[NoteId],
         updated_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
         let tags_json =
@@ -144,8 +154,56 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         let note = note_from_row(row)?;
+        replace_reference_rows(&mut transaction, note_id, reference_targets).await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
+    }
+
+    /// 現在可視なノートだけを対象に、直接参照先と参照元の概要を返す。
+    pub async fn directly_related_notes(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), SqliteStoreError> {
+        let outgoing = sqlx::query(
+            "SELECT target.note_id, target.title, target.tags_json, target.updated_at_ms
+             FROM note_references reference
+             JOIN notes target ON target.note_id = reference.target_note_id
+             WHERE reference.source_note_id = ?
+               AND target.deleted_at_ms IS NULL
+               AND (? OR (target.creator_issuer = ? AND target.creator_subject = ?))
+             ORDER BY target.updated_at_ms DESC, target.note_id ASC",
+        )
+        .bind(note_id.to_string())
+        .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(database_error)?
+        .into_iter()
+        .map(note_summary_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+        let incoming = sqlx::query(
+            "SELECT source.note_id, source.title, source.tags_json, source.updated_at_ms
+             FROM note_references reference
+             JOIN notes source ON source.note_id = reference.source_note_id
+             WHERE reference.target_note_id = ?
+               AND source.deleted_at_ms IS NULL
+               AND (? OR (source.creator_issuer = ? AND source.creator_subject = ?))
+             ORDER BY source.updated_at_ms DESC, source.note_id ASC",
+        )
+        .bind(note_id.to_string())
+        .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(database_error)?
+        .into_iter()
+        .map(note_summary_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok((outgoing, incoming))
     }
 
     /// 所有者または管理者の認可とソフトデリートを同一transactionで行う。
@@ -234,6 +292,43 @@ impl SqliteDatabase {
         transaction.commit().await.map_err(database_error)?;
         Ok(result.rows_affected())
     }
+}
+
+async fn replace_reference_rows(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    source_note_id: NoteId,
+    targets: &[NoteId],
+) -> Result<(), SqliteStoreError> {
+    sqlx::query("DELETE FROM note_references WHERE source_note_id = ?")
+        .bind(source_note_id.to_string())
+        .execute(&mut **transaction)
+        .await
+        .map_err(database_error)?;
+    for target in targets {
+        sqlx::query(
+            "INSERT OR IGNORE INTO note_references (source_note_id, target_note_id) VALUES (?, ?)",
+        )
+        .bind(source_note_id.to_string())
+        .bind(target.to_string())
+        .execute(&mut **transaction)
+        .await
+        .map_err(database_error)?;
+    }
+    Ok(())
+}
+
+fn note_summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<NoteSummary, SqliteStoreError> {
+    let note_id = NoteId::new(
+        EntityId::from_str(row.try_get("note_id").map_err(database_error)?)
+            .map_err(|_| SqliteStoreError::CorruptData)?,
+    );
+    let tags_json: String = row.try_get("tags_json").map_err(database_error)?;
+    Ok(NoteSummary {
+        note_id,
+        title: row.try_get("title").map_err(database_error)?,
+        tags: serde_json::from_str(&tags_json).map_err(|_| SqliteStoreError::CorruptData)?,
+        updated_at: UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
+    })
 }
 
 enum NoteDeletionState {

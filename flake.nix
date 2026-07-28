@@ -392,7 +392,7 @@
                 "chown marginalis:marginalis /var/lib/marginalis/marginalis.sqlite* && "
                 + "chmod 0600 /var/lib/marginalis/marginalis.sqlite*"
               )
-              machine.succeed("systemctl start marginalis.service")
+              machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\"'"
               )
@@ -405,11 +405,11 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 4'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 5'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 4; PRAGMA journal_mode=WAL'"
+                + "'UPDATE schema_migrations SET version = 5; PRAGMA journal_mode=WAL'"
               )
               machine.succeed("rm -f /var/lib/marginalis/marginalis.sqlite*")
               machine.succeed(
@@ -430,21 +430,17 @@
                 "chown marginalis:marginalis /var/lib/marginalis/marginalis.sqlite && "
                 + "chmod 0600 /var/lib/marginalis/marginalis.sqlite"
               )
-              machine.succeed("systemctl start marginalis.service")
+              machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
-                "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\"'"
+                "journalctl -u marginalis.service -o cat | "
+                + "grep -F 'unsupported database schema version 4; expected 5'"
               )
-              machine.succeed(
-                "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000050' "
-                + "AND creator_subject = 'v0.5-user' AND title = 'v0.5 note' "
-                + "AND body = 'kept across update' AND revision = 3\") -eq 1"
-              )
-              machine.succeed("systemctl start marginalis-diagnose.service")
+              machine.succeed("systemctl stop marginalis.service")
+              machine.fail("systemctl start marginalis-diagnose.service")
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
-                + "grep '^{\"status\":\"ok\"' | tail -1 | jq -e "
-                + "'.database.schema.ok and .database.schema.actual == 4 and .database.schema.expected == 4'"
+                + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
+                + "'.database.schema.ok == false and .database.schema.actual == 4 and .database.schema.expected == 5'"
               )
             '';
           };

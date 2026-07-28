@@ -103,6 +103,26 @@ pub struct Note {
     pub deleted_at: Option<UnixMillis>,
 }
 
+/// 一覧表示に必要な、本文と所有者情報を含まないノート概要。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NoteSummary {
+    pub note_id: NoteId,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub updated_at: UnixMillis,
+}
+
+impl From<&Note> for NoteSummary {
+    fn from(note: &Note) -> Self {
+        Self {
+            note_id: note.note_id,
+            title: note.title.clone(),
+            tags: note.tags.clone(),
+            updated_at: note.updated_at,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NoteDraft {
     pub title: String,
