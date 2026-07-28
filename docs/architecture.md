@@ -124,7 +124,10 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 `accessControlState.ts`の純粋なreducerへ置きます。Reactコンポーネントは入力、REST呼び出し、
 副作用の調整を担当し、状態遷移の規則をイベント処理へ分散させません。保存前プレビューの遅延、
 取消、最後に成功したHTMLの保持は`useEditorPreview.ts`へ分離し、編集画面は結果の状態と診断操作
-だけを表示します。
+だけを表示します。競合する三つの文書の行対応は`editorConflict.ts`、問題と診断の表示規則は
+`editorPresentation.ts`へ置きます。これらはReactや通信に依存しないため、大きな文書を含む
+境界条件を単体試験で確認します。base URLのサブパスを画面内URLへ反映する規則は`paths.ts`へ
+集約し、一覧と編集画面で同じ処理を使います。
 閲覧画面と編集プレビューは、サーバーが検査・生成したHTMLを`RenderedContent.tsx`だけから
 表示します。この境界でコードの言語表示、表のスクロール領域、MathJax入力への変換と組版失敗通知を
 加えます。外部CDNや未検査のHTMLを追加せず、AdocWeaveが将来同じ表示情報を公開した場合に

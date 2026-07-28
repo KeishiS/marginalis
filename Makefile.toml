@@ -67,14 +67,19 @@ command = "cargo"
 args = ["build", "--workspace", "--all-targets", "--all-features"]
 
 [tasks.flake-check]
-description = "Evaluate the Nix flake without building every output"
+description = "Evaluate every declared Nix flake system without building outputs"
 command = "nix"
-args = ["--extra-experimental-features", "nix-command flakes", "flake", "check", "--no-build"]
+args = ["--extra-experimental-features", "nix-command flakes", "flake", "check", "--all-systems", "--no-build"]
 
 [tasks.actionlint]
 description = "Validate GitHub Actions workflow syntax"
 command = "actionlint"
 args = [".github/workflows/ci.yml", ".github/workflows/release-gate.yml"]
+
+[tasks.ci-path-classifier]
+description = "Validate the documentation-only CI path classification"
+command = "bash"
+args = [".github/scripts/test-classify-docs-only.sh"]
 
 [tasks.protocol-regression-assets]
 description = "Validate MCP client compatibility fixtures and secret-safe failure artifacts"
@@ -146,7 +151,12 @@ cargo metadata --locked --no-deps --format-version 1 | jq -e \
     and .license == "MIT OR Apache-2.0"
     and .publish == [])
 '
-grep -Fq "version = \"$expected_version\";" flake.nix
+test "$(
+  nix eval --raw .#packages.x86_64-linux.default.version
+)" = "$expected_version"
+test "$(
+  nix eval --raw .#packages.x86_64-linux.frontend.version
+)" = "$expected_version"
 awk -v heading="## $expected_version — " '
   index($0, heading) == 1 {
     status = substr($0, length(heading) + 1)
@@ -172,7 +182,7 @@ fi
 
 [tasks.release-gate]
 description = "Run every automated gate required before an RC or final release"
-dependencies = ["verify", "release-metadata", "nix-release-check", "release-package"]
+dependencies = ["verify", "coverage", "release-metadata", "nix-release-check", "release-package"]
 
 [tasks.dependency-boundaries]
 description = "Reject concrete adapters from transport production dependency graphs"
@@ -367,7 +377,7 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, unit and integration tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "protocol-regression-assets", "flake-check"]
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check"]
 
 [tasks.ci-verify]
 description = "Run the GitHub Actions verify suite"

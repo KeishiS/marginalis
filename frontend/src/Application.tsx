@@ -18,6 +18,7 @@ import {
   parseNoteListQuery,
   selectNoteListPage,
 } from "./noteListState";
+import { externalPath } from "./paths";
 
 export interface ApplicationConfig {
   apiBase: string;
@@ -80,7 +81,7 @@ function NoteList({ config }: { config: ApplicationConfig }) {
       <div className="editor-heading">
         <h1>ノート</h1>
         <a
-          href={`${path(config.basePath, "/notes/new")}${canonicalSearch(config.search)}`}
+          href={`${externalPath(config.basePath, "/notes/new")}${canonicalSearch(config.search)}`}
         >
           新規ノート
         </a>
@@ -105,7 +106,7 @@ function NoteList({ config }: { config: ApplicationConfig }) {
             {page?.notes.map((note) => (
               <li key={note.note_id}>
                 <a
-                  href={`${path(config.basePath, `/notes/${note.note_id}`)}${canonicalSearch(config.search)}`}
+                  href={`${externalPath(config.basePath, `/notes/${note.note_id}`)}${canonicalSearch(config.search)}`}
                 >
                   {note.title}
                 </a>
@@ -168,7 +169,7 @@ function NoteListFilters({
   return (
     <form
       className="note-list-filters"
-      action={path(config.basePath, "/")}
+      action={externalPath(config.basePath, "/")}
       method="get"
       onSubmit={resetPage}
     >
@@ -192,7 +193,7 @@ function NoteListFilters({
       <input name="page" type="hidden" value="1" readOnly />
       <button type="submit">絞り込む</button>
       {(query.tags.length > 0 || query.updatedAfter) && (
-        <a href={path(config.basePath, "/")}>条件を解除</a>
+        <a href={externalPath(config.basePath, "/")}>条件を解除</a>
       )}
     </form>
   );
@@ -219,19 +220,24 @@ function NoteViewer({
   return (
     <>
       <nav aria-label="ノート操作">
-        <a href={path(config.basePath, `/${canonicalSearch(config.search)}`)}>
+        <a
+          href={externalPath(
+            config.basePath,
+            `/${canonicalSearch(config.search)}`,
+          )}
+        >
           一覧
         </a>{" "}
         {view.access !== "read" && (
           <a
-            href={`${path(config.basePath, `/notes/${noteId}/edit`)}${canonicalSearch(config.search)}`}
+            href={`${externalPath(config.basePath, `/notes/${noteId}/edit`)}${canonicalSearch(config.search)}`}
           >
             編集
           </a>
         )}{" "}
         {view.access === "manage" && (
           <a
-            href={`${path(config.basePath, `/notes/${noteId}/access`)}${canonicalSearch(config.search)}`}
+            href={`${externalPath(config.basePath, `/notes/${noteId}/access`)}${canonicalSearch(config.search)}`}
           >
             共有設定
           </a>
@@ -266,7 +272,7 @@ function RelatedNotes({
               {notes.map((note) => (
                 <li key={note.note_id}>
                   <a
-                    href={`${path(config.basePath, `/notes/${note.note_id}`)}${canonicalSearch(config.search)}`}
+                    href={`${externalPath(config.basePath, `/notes/${note.note_id}`)}${canonicalSearch(config.search)}`}
                   >
                     {note.title}
                   </a>
@@ -300,7 +306,7 @@ function AccessPage({
     <>
       <nav aria-label="ノート操作">
         <a
-          href={`${path(config.basePath, `/notes/${noteId}`)}${canonicalSearch(config.search)}`}
+          href={`${externalPath(config.basePath, `/notes/${noteId}`)}${canonicalSearch(config.search)}`}
         >
           閲覧画面へ戻る
         </a>
@@ -326,17 +332,12 @@ function parseRoute(pathname: string): Route {
   return { kind: "view", noteId };
 }
 
-function path(basePath: string, suffix: string): string {
-  const base = basePath === "/" ? "" : basePath.replace(/\/$/, "");
-  return `${base}${suffix}`;
-}
-
 function listPath(
   config: ApplicationConfig,
   query: NoteListQuery,
   page: number,
 ): string {
-  return path(config.basePath, `/${noteListSearch(query, page)}`);
+  return externalPath(config.basePath, `/${noteListSearch(query, page)}`);
 }
 
 function canonicalSearch(search: string): string {

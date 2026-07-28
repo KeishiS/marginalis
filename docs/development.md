@@ -94,7 +94,8 @@ Pull Requestからマージします。
    `coverage`とNixOS VMの実行を省略します。プログラムが参照する公開仕様
    `docs/openapi.json`は
    この省略対象に含めません。`.github/**`、`Makefile.toml`、Nix、Rust、OpenAPIその他のファイルを
-   同時に変更した場合は、通常の検証をすべて実行します。
+   同時に変更した場合は、通常の検証をすべて実行します。この判定規則は
+   `.github/scripts/classify-docs-only.sh`に集約し、`cargo make verify`から境界例を検査します。
 
    新しい作業項目はGitHub Issuesへ作成します。リポジトリ内にIssueファイルを追加しません。
    v0.5.0以前のローカルIssueとの対応は[移行対応表](issue-migration.md)を参照してください。

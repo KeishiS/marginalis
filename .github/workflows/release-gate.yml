@@ -17,6 +17,7 @@ permissions:
 jobs:
   release-gate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,13 +30,15 @@ jobs:
         run: |
           set -eu
           test -n "$RELEASE_TAG"
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             test "$GITHUB_REF" = "refs/heads/main"
-            git fetch --no-tags origin main
-            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
           fi
           printf 'MARGINALIS_RELEASE_TAG=%s\n' "$RELEASE_TAG" >> "$GITHUB_ENV"
       - name: Install Nix
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Validate release metadata
+        run: nix develop --command cargo make release-metadata
       - name: Run automated release gate
         run: nix develop --command cargo make release-gate

@@ -18,9 +18,9 @@
       systems = [
         "aarch64-darwin"
         "aarch64-linux"
-        "x86_64-darwin"
         "x86_64-linux"
       ];
+      version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
       forAllSystems = nixpkgs.lib.genAttrs systems;
       pkgsFor =
         system:
@@ -63,7 +63,7 @@
           };
           frontend = pkgs.buildNpmPackage {
             pname = "marginalis-web-ui";
-            version = "0.8.0";
+            inherit version;
             src = ./frontend;
             npmDepsHash = "sha256-DlnCeMz3ppt8bTHt5pAjmg8ZanNSyCCeystYaXm1BeM=";
             nodejs = pkgs.nodejs_22;
@@ -77,7 +77,7 @@
           inherit frontend;
           default = rustPlatform.buildRustPackage {
             pname = "marginalis";
-            version = "0.8.0";
+            inherit version;
             src = pkgs.lib.fileset.toSource {
               root = ./.;
               fileset = pkgs.lib.fileset.unions [
