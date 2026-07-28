@@ -1183,12 +1183,14 @@ dependencies = [
 name = "marginalis-auth-oidc"
 version = "0.7.0"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "marginalis-application",
  "marginalis-domain",
  "openidconnect",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
  "url",
 ]
@@ -1231,7 +1233,6 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "marginalis-application",
- "marginalis-auth-oidc",
  "marginalis-domain",
  "marginalis-sqlite",
  "rand 0.8.7",

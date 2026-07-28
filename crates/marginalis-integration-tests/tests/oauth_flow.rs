@@ -12,14 +12,13 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    NoteApplication, OidcAuthenticationUseCases, SessionLifetime, WebSessionApplication,
+    NoteApplication, OidcAuthenticationApplication, OidcAuthenticationUseCases, SessionLifetime,
+    WebSessionApplication,
 };
 use marginalis_asciidoc::AsciiDocNoteContent;
-use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
+use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
 use marginalis_integration_tests::MockIdentityProvider;
-use marginalis_server::{
-    ServerMcpOAuthService, ServerOidcAuthenticationUseCases, SystemClock, SystemRandom,
-};
+use marginalis_server::{ServerMcpOAuthService, SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::http::{ApiState, McpEndpoint, router};
 use sha2::{Digest, Sha256};
@@ -74,11 +73,18 @@ impl TestServer {
         let discovered = OidcAuthentication::discover(&configuration)
             .await
             .expect("OIDC discovery");
-        let oidc = Arc::new(ServerOidcAuthenticationUseCases::new(
-            database.clone(),
+        let provider = OidcIdentityProvider::new(
+            database.oidc_login_attempt_store(),
+            SystemClock,
+            SystemRandom,
             configuration,
             reqwest::Client::new(),
             Some(discovered),
+        );
+        let oidc = Arc::new(OidcAuthenticationApplication::new(
+            Arc::new(provider),
+            "server-users",
+            "server-admins",
         ));
         let sessions = Arc::new(WebSessionApplication::new(
             Arc::new(database.clone()),
@@ -886,12 +892,16 @@ async fn oidc_discovery_is_retried_with_the_configured_http_client() {
         BROWSER_ORIGIN,
     )
     .expect("OIDC configuration");
-    let authentication = ServerOidcAuthenticationUseCases::new(
-        database,
+    let provider = OidcIdentityProvider::new(
+        database.oidc_login_attempt_store(),
+        SystemClock,
+        SystemRandom,
         configuration,
         reqwest::Client::new(),
         None,
     );
+    let authentication =
+        OidcAuthenticationApplication::new(Arc::new(provider), "server-users", "server-admins");
 
     assert!(authentication.begin_login().await.is_ok());
 }

@@ -1,12 +1,11 @@
 //! HTTP serviceのcomposition root。
 
-use marginalis_application::{NoteApplication, WebSessionApplication};
-use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
-use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
-use marginalis_server::{
-    ServerConfig, ServerMcpOAuthService, ServerOidcAuthenticationUseCases, SystemClock,
-    SystemRandom,
+use marginalis_application::{
+    NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
 };
+use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
+use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
+use marginalis_server::{ServerConfig, ServerMcpOAuthService, SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use std::path::Path;
 
@@ -49,11 +48,18 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
     tracing::info!(event = "service.listening", address = %configuration.http.listen_address, "Marginalis server listening");
     let cookie_path = cookie_path(&configuration.http.base_url);
-    let oidc = std::sync::Arc::new(ServerOidcAuthenticationUseCases::new(
-        database.clone(),
+    let oidc_provider = OidcIdentityProvider::new(
+        database.oidc_login_attempt_store(),
+        SystemClock,
+        SystemRandom,
         oidc_configuration,
         oidc_http_client,
         oidc,
+    );
+    let oidc = std::sync::Arc::new(OidcAuthenticationApplication::new(
+        std::sync::Arc::new(oidc_provider),
+        "server-users",
+        "server-admins",
     ));
     let sessions = std::sync::Arc::new(WebSessionApplication::new(
         std::sync::Arc::new(database.clone()),

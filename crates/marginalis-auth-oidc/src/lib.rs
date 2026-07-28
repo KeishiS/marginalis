@@ -1,10 +1,14 @@
 //! OIDC provider接続の設定境界。HTTP handlerやSQLiteへは依存しない。
 
 use core::fmt;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
+use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use marginalis_application::{Clock, OidcLoginAttempt, OidcLoginAttemptStore, Random};
+use marginalis_application::{
+    Clock, ExternalIdentity, IdentityProvider, IdentityProviderError, OidcLoginAttempt,
+    OidcLoginAttemptStore, Random,
+};
 use marginalis_domain::UnixMillis;
 use openidconnect::{
     AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
@@ -214,6 +218,10 @@ impl VerifiedOidcGroups {
     pub fn is_administrator(&self, administrator_group: &str) -> bool {
         self.groups.contains(administrator_group)
     }
+
+    pub fn into_names(self) -> Vec<String> {
+        self.groups.into_iter().collect()
+    }
 }
 
 #[derive(Deserialize)]
@@ -385,6 +393,98 @@ impl OidcAuthentication {
             issuer: claims.issuer().as_str().to_owned(),
             subject: claims.subject().as_str().to_owned(),
             groups,
+        })
+    }
+}
+
+/// OIDC通信とlogin attempt保存をapplicationのidentity provider portへ接続するadapter。
+pub struct OidcIdentityProvider<Attempts, Time, Entropy> {
+    attempts: Attempts,
+    clock: Time,
+    random: Entropy,
+    configuration: OidcConfiguration,
+    http_client: reqwest::Client,
+    discovered: Arc<tokio::sync::RwLock<Option<OidcAuthentication>>>,
+}
+
+impl<Attempts, Time, Entropy> OidcIdentityProvider<Attempts, Time, Entropy> {
+    pub fn new(
+        attempts: Attempts,
+        clock: Time,
+        random: Entropy,
+        configuration: OidcConfiguration,
+        http_client: reqwest::Client,
+        discovered: Option<OidcAuthentication>,
+    ) -> Self {
+        Self {
+            attempts,
+            clock,
+            random,
+            configuration,
+            http_client,
+            discovered: Arc::new(tokio::sync::RwLock::new(discovered)),
+        }
+    }
+
+    async fn oidc(&self) -> Result<OidcAuthentication, IdentityProviderError> {
+        if let Some(oidc) = self.discovered.read().await.clone() {
+            return Ok(oidc);
+        }
+        let oidc = OidcAuthentication::discover_with_http_client(
+            &self.configuration,
+            self.http_client.clone(),
+        )
+        .await
+        .map_err(|_| {
+            tracing::warn!(
+                event = "oidc.discovery.failed",
+                error_kind = "unavailable",
+                "OIDC discovery retry failed"
+            );
+            IdentityProviderError::Unavailable
+        })?;
+        tracing::info!(
+            event = "oidc.discovery.completed",
+            "OIDC discovery succeeded"
+        );
+        let mut discovered = self.discovered.write().await;
+        Ok(discovered.get_or_insert(oidc).clone())
+    }
+}
+
+#[async_trait]
+impl<Attempts, Time, Entropy> IdentityProvider for OidcIdentityProvider<Attempts, Time, Entropy>
+where
+    Attempts: OidcLoginAttemptStore + Send + Sync,
+    Time: Clock + Send + Sync,
+    Entropy: Random + Send + Sync,
+{
+    async fn begin_login(&self) -> Result<String, IdentityProviderError> {
+        self.oidc()
+            .await?
+            .begin_login(&self.attempts, &self.random, &self.clock)
+            .await
+            .map_err(|_| IdentityProviderError::Unavailable)
+    }
+
+    async fn complete_login(
+        &self,
+        code: &str,
+        state: &str,
+    ) -> Result<ExternalIdentity, IdentityProviderError> {
+        let identity = self
+            .oidc()
+            .await?
+            .complete_login(&self.attempts, &self.clock, code, state, "groups")
+            .await
+            .map_err(|error| match error {
+                OidcCallbackError::Rejected(_) => IdentityProviderError::Rejected,
+                OidcCallbackError::Unavailable => IdentityProviderError::Unavailable,
+            })?;
+        Ok(ExternalIdentity {
+            issuer: identity.issuer,
+            subject: identity.subject,
+            groups: identity.groups.into_names(),
         })
     }
 }
