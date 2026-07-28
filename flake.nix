@@ -293,9 +293,9 @@
               machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM notes'")
               machine.succeed(
                 "sqlite3 /var/lib/marginalis/marginalis.sqlite \"INSERT INTO notes "
-                + "(note_id,creator_issuer,creator_subject,title,body,tags_json,created_at_ms,updated_at_ms,revision,deleted_at_ms) VALUES "
-                + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale','stale','body','[]',0,0,1,0),"
-                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent','recent','body','[]',0,4102444800000,1,4102444800000);\""
+                + "(note_id,creator_issuer,creator_subject,title,source,tags_json,created_at_ms,updated_at_ms,revision,deleted_at_ms) VALUES "
+                + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale','stale','= stale','[]',0,0,1,0),"
+                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent','recent','= recent','[]',0,4102444800000,1,4102444800000);\""
               )
               machine.succeed("systemctl start marginalis-purge-expired.service")
               machine.succeed(
