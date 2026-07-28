@@ -5,31 +5,20 @@
 
 ## 未リリース
 
-### 破壊的変更
-
-- ノートの作成・更新入力を`title`、`body`、`tags`から、一つの完全なAsciiDoc文書を表す
-  `source`へ変更した。題名とタグは文書ヘッダーから導出し、`:sectnums:`など許可した表示属性を
-  文書ヘッダーで使用できる。
-- SQLite schemaを9、archiveを`marginalis-archive-7`、note profileを3へ更新した。旧形式の
-  自動移行は提供しない。
-
-### 変更
-
-- Web UIの題名、本文、タグの入力欄を一つのAsciiDoc文書編集欄へ統合した。競合時も完全な文書を
-  行単位で比較する。
-- 識別子、所有者、時刻、revision、ACL、削除状態をAsciiDoc文書から分離し、利用者が
-  サーバー管理属性を記述した場合は位置付きの入力エラーを返す。
-
 ## 0.8.0 — 2026-07-28
 
 ### 破壊的変更
 
-- SQLite schemaを8へ更新した。v0.7.0が作成したschema 6のdatabaseは自動移行せず、更新時は
-  アーカイブを退避して空の`dataDir`から初期化する。archive形式とnote profileは変更しない。
+- SQLite schemaを9、archiveを`marginalis-archive-7`、note profileを3へ更新した。v0.7.0が
+  作成したschema 6のdatabaseとarchive 6は自動移行せず、更新時はデータを退避して空の
+  `dataDir`から初期化する。
 - サーバー全体の管理者権限を廃止した。`server-users`は利用可否だけを決め、所属グループによって
   個別ノートのACLを迂回する経路は設けない。
 - REST APIを`/api/v3`へ更新した。変更操作の期待revisionはJSON本文ではなく、取得応答の
   `ETag`を指定する`If-Match`ヘッダーで受け取る。
+- ノートの作成・更新入力を`title`、`body`、`tags`から、一つの完全なAsciiDoc文書を表す
+  `source`へ変更した。題名とタグは文書ヘッダーから導出し、`:sectnums:`など許可した表示属性を
+  文書ヘッダーで使用できる。
 
 ### 追加
 
@@ -42,6 +31,10 @@
   portから利用する構成へ変更した。旧`marginalis-server` crateは削除した。
 - ACL判定、revision確認、削除状態をSQLiteの同一transactionへ拘束し、一覧、詳細、関連ノート、
   更新、削除、復元、共有設定へ同じ認可決定表を適用した。
+- Web UIの題名、本文、タグの入力欄を一つのAsciiDoc文書編集欄へ統合した。競合時も完全な文書を
+  行単位で比較する。
+- 識別子、所有者、時刻、revision、ACL、削除状態をAsciiDoc文書から分離し、利用者が
+  サーバー管理属性を記述した場合は位置付きの入力エラーを返す。
 - 要件ID、検証階層、版別受入結果を対応づけ、OpenAPI、生成物、文書、要件対応表を独立して
   検査するリリースゲートを追加した。
 
