@@ -383,12 +383,16 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
 }
 
 /// SQLiteの論理snapshotへ現行のarchive identityを付与する。
-pub fn create_archive(notes: Vec<Note>) -> Archive {
+pub fn create_archive(
+    notes: Vec<Note>,
+    note_acl: Vec<marginalis_domain::ArchivedNoteAclEntry>,
+) -> Archive {
     Archive {
         format: ARCHIVE_FORMAT.into(),
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION.into(),
         note_profile_version: NOTE_PROFILE_VERSION,
         notes,
+        note_acl,
     }
 }
 
@@ -590,13 +594,13 @@ mod tests {
     fn archive_validation_rejects_non_normalized_notes() {
         let mut archived_note = note("safe body");
         archived_note.tags = vec![" duplicate ".into(), "duplicate".into()];
-        let archive = create_archive(vec![archived_note]);
+        let archive = create_archive(vec![archived_note], Vec::new());
         assert_eq!(validate_archive(&archive), Err(ArchiveValidationError));
     }
 
     #[test]
     fn archive_validation_requires_exact_contract_identity() {
-        let archive = create_archive(Vec::new());
+        let archive = create_archive(Vec::new(), Vec::new());
         assert_eq!(archive.format, ARCHIVE_FORMAT);
         assert_eq!(
             archive.adocweave_package_version,

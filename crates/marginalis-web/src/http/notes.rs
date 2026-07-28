@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use marginalis_application::NoteRenderContext;
-use marginalis_domain::{Note, NoteDraft};
+use marginalis_domain::{Note, NoteAclEntry, NoteDraft};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -73,6 +73,18 @@ pub(super) struct NoteUpdateInput {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct DeleteInput {
+    expected_revision: i64,
+}
+
+#[derive(Serialize)]
+pub(super) struct NoteAclResponse {
+    entries: Vec<NoteAclEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct NoteAclInput {
+    entries: Vec<NoteAclEntry>,
     expected_revision: i64,
 }
 
@@ -177,6 +189,40 @@ pub(super) async fn update_note(
                 body: input.body,
                 tags: input.tags,
             },
+            input.expected_revision,
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(Json(note.into()))
+}
+
+pub(super) async fn read_note_acl(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> HandlerResult<Json<NoteAclResponse>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let entries = state
+        .notes
+        .read_note_acl(actor, parse_note_id(&note_id)?)
+        .await
+        .map_err(note_error)?;
+    Ok(Json(NoteAclResponse { entries }))
+}
+
+pub(super) async fn replace_note_acl(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+    Json(input): Json<NoteAclInput>,
+) -> HandlerResult<Json<NoteResponse>> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let note = state
+        .notes
+        .replace_note_acl(
+            actor,
+            parse_note_id(&note_id)?,
+            input.entries,
             input.expected_revision,
         )
         .await

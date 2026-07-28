@@ -40,15 +40,15 @@ use self::{
     error::{HandlerResult, problem},
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
-        create_note, delete_note, export_note, list_notes, preview_note, read_note, restore_note,
-        session, update_note,
+        create_note, delete_note, export_note, list_notes, preview_note, read_note, read_note_acl,
+        replace_note_acl, restore_note, session, update_note,
     },
     oauth::{
         mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
         mcp_resource_metadata, mcp_server_metadata, mcp_token, revoke_mcp_authorization,
     },
     security::security_headers,
-    ui::{create_note_page, edit_note_page, home, view_note},
+    ui::{access_note_page, create_note_page, edit_note_page, home, view_note},
 };
 
 pub const API_VERSION: &str = "v2";
@@ -58,6 +58,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/", get(home))
         .route("/notes/new", get(create_note_page))
         .route("/notes/{note_id}/edit", get(edit_note_page))
+        .route("/notes/{note_id}/access", get(access_note_page))
         .route("/notes/{note_id}", get(view_note))
         .route("/assets/editor.js", get(editor_javascript))
         .route("/assets/editor.css", get(editor_stylesheet))
@@ -100,6 +101,10 @@ pub fn router(state: ApiState) -> Router {
             get(read_note).put(update_note).delete(delete_note),
         )
         .route("/api/v2/notes/{note_id}/restore", post(restore_note))
+        .route(
+            "/api/v2/notes/{note_id}/acl",
+            get(read_note_acl).put(replace_note_acl),
+        )
         .route("/api/v2/notes/{note_id}/source", get(export_note))
         .route(
             "/api/v2/mcp-authorizations/{client_id}",

@@ -7,7 +7,8 @@ use std::future::Future;
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpAuthorizationGrant,
-    McpOAuthClient, Note, NoteDraft, NoteId, NoteSummary, UnixMillis, WebSession,
+    McpOAuthClient, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary,
+    UnixMillis, WebSession,
 };
 
 pub trait Clock: Send + Sync {
@@ -323,6 +324,32 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
         note_id: NoteId,
     ) -> Result<RelatedNotes, NoteUseCaseError>;
+    async fn note_capabilities(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+    ) -> Result<NoteCapabilities, NoteUseCaseError> {
+        Ok(NoteCapabilities {
+            can_edit: true,
+            can_manage_acl: false,
+        })
+    }
+    async fn read_note_acl(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+        Err(NoteUseCaseError::Forbidden)
+    }
+    async fn replace_note_acl(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _entries: Vec<NoteAclEntry>,
+        _expected_revision: i64,
+    ) -> Result<Note, NoteUseCaseError> {
+        Err(NoteUseCaseError::Forbidden)
+    }
     fn note_profile(&self) -> NoteProfile;
 }
 

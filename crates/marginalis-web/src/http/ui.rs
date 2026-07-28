@@ -68,6 +68,11 @@ pub(super) async fn view_note(
         .read_note(actor.clone(), parse_note_id(&note_id)?)
         .await
         .map_err(note_error)?;
+    let capabilities = state
+        .notes
+        .note_capabilities(actor.clone(), note.note_id)
+        .await
+        .map_err(note_error)?;
     let body = state
         .notes
         .render_note_html(
@@ -90,14 +95,78 @@ pub(super) async fn view_note(
         .related_notes(actor, note.note_id)
         .await
         .map_err(note_error)?;
+    let edit_link = if capabilities.can_edit {
+        format!(
+            " <a href=\"{}\">編集</a>",
+            external_path(&state.cookie_path, &format!("/notes/{}/edit", note.note_id)),
+        )
+    } else {
+        String::new()
+    };
+    let access_link = if capabilities.can_manage_acl {
+        format!(
+            " <a href=\"{}\">共有設定</a>",
+            external_path(
+                &state.cookie_path,
+                &format!("/notes/{}/access", note.note_id)
+            ),
+        )
+    } else {
+        String::new()
+    };
     let content = format!(
-        "<nav aria-label=\"ノート操作\"><a href=\"{}\">一覧</a> <a href=\"{}\">編集</a></nav>{}{}",
+        "<nav aria-label=\"ノート操作\"><a href=\"{}\">一覧</a>{edit_link}{access_link}</nav>{}{}",
         external_path(&state.cookie_path, "/"),
-        external_path(&state.cookie_path, &format!("/notes/{}/edit", note.note_id)),
         body,
         related_notes_html(&state.cookie_path, related)
     );
     Ok(Html(page_document(&note.title, &state.cookie_path, &content)).into_response())
+}
+
+pub(super) async fn access_note_page(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    let return_to = external_path(&state.cookie_path, &format!("/notes/{note_id}/access"));
+    let actor = match authenticated_ui_actor(&headers, &state, &return_to).await {
+        Ok(actor) => actor,
+        Err(response) => return Ok(response),
+    };
+    let note_id = parse_note_id(&note_id)?;
+    let note = state
+        .notes
+        .read_note(actor.clone(), note_id)
+        .await
+        .map_err(note_error)?;
+    let capabilities = state
+        .notes
+        .note_capabilities(actor.clone(), note_id)
+        .await
+        .map_err(note_error)?;
+    if !capabilities.can_manage_acl {
+        return Err(note_error(
+            marginalis_application::NoteUseCaseError::NotFound,
+        ));
+    }
+    let config = serde_json::json!({
+        "apiBase": external_path(&state.cookie_path, "/api/v2"),
+        "noteId": note_id.to_string(),
+        "revision": note.revision,
+    })
+    .to_string();
+    let content = format!(
+        "<nav aria-label=\"ノート操作\"><a href=\"{}\">閲覧画面へ戻る</a></nav><div data-access-root data-access-config=\"{}\"><p>共有設定を読み込んでいます。</p></div>",
+        external_path(&state.cookie_path, &format!("/notes/{note_id}")),
+        escape_html(&config),
+    );
+    Ok(Html(page_document_with_script(
+        "共有設定",
+        &state.cookie_path,
+        &content,
+        Some("/assets/editor.js"),
+    ))
+    .into_response())
 }
 
 pub(super) async fn create_note_page(
@@ -124,9 +193,19 @@ pub(super) async fn edit_note_page(
     let note_id = parse_note_id(&note_id)?;
     state
         .notes
-        .read_note(actor, note_id)
+        .read_note(actor.clone(), note_id)
         .await
         .map_err(note_error)?;
+    let capabilities = state
+        .notes
+        .note_capabilities(actor, note_id)
+        .await
+        .map_err(note_error)?;
+    if !capabilities.can_edit {
+        return Err(note_error(
+            marginalis_application::NoteUseCaseError::NotFound,
+        ));
+    }
     Ok(editor_page(&state, Some(note_id)))
 }
 

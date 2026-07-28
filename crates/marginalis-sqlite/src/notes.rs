@@ -3,7 +3,8 @@
 use std::str::FromStr;
 
 use marginalis_domain::{
-    Actor, EntityId, Note, NoteDraft, NoteId, NoteSummary, SOFT_DELETE_RETENTION_MS, UnixMillis,
+    Actor, EntityId, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NotePermission,
+    NoteSummary, SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
 use sqlx::{Row, Sqlite};
 
@@ -78,10 +79,15 @@ impl SqliteDatabase {
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
              WHERE note_id = ? AND deleted_at_ms IS NULL
-               AND (? OR (creator_issuer = ? AND creator_subject = ?))",
+               AND (? OR (creator_issuer = ? AND creator_subject = ?)
+                    OR (creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl
+                               WHERE note_acl.note_id = notes.note_id
+                                 AND note_acl.subject = ?)))",
         )
         .bind(note_id.to_string())
         .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
         .bind(&actor.issuer)
         .bind(&actor.subject)
         .fetch_optional(&self.pool)
@@ -96,10 +102,15 @@ impl SqliteDatabase {
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
              WHERE deleted_at_ms IS NULL
-               AND (? OR (creator_issuer = ? AND creator_subject = ?))
+               AND (? OR (creator_issuer = ? AND creator_subject = ?)
+                    OR (creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl
+                               WHERE note_acl.note_id = notes.note_id
+                                 AND note_acl.subject = ?)))
              ORDER BY updated_at_ms DESC, note_id ASC",
         )
         .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
         .bind(&actor.issuer)
         .bind(&actor.subject)
         .fetch_all(&self.pool)
@@ -121,13 +132,7 @@ impl SqliteDatabase {
         let tags_json =
             serde_json::to_string(&draft.tags).map_err(|_| SqliteStoreError::CorruptData)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        require_note_owner_or_administrator(
-            &mut transaction,
-            actor,
-            note_id,
-            NoteDeletionState::Active,
-        )
-        .await?;
+        require_note_editor(&mut transaction, actor, note_id).await?;
         let result = sqlx::query(
             "UPDATE notes
              SET title = ?, body = ?, tags_json = ?, updated_at_ms = ?, revision = revision + 1
@@ -171,11 +176,16 @@ impl SqliteDatabase {
              JOIN notes target ON target.note_id = reference.target_note_id
              WHERE reference.source_note_id = ?
                AND target.deleted_at_ms IS NULL
-               AND (? OR (target.creator_issuer = ? AND target.creator_subject = ?))
+               AND (? OR (target.creator_issuer = ? AND target.creator_subject = ?)
+                    OR (target.creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl acl
+                               WHERE acl.note_id = target.note_id AND acl.subject = ?))
+                   )
              ORDER BY target.updated_at_ms DESC, target.note_id ASC",
         )
         .bind(note_id.to_string())
         .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
         .bind(&actor.issuer)
         .bind(&actor.subject)
         .fetch_all(&self.pool)
@@ -190,11 +200,16 @@ impl SqliteDatabase {
              JOIN notes source ON source.note_id = reference.source_note_id
              WHERE reference.target_note_id = ?
                AND source.deleted_at_ms IS NULL
-               AND (? OR (source.creator_issuer = ? AND source.creator_subject = ?))
+               AND (? OR (source.creator_issuer = ? AND source.creator_subject = ?)
+                    OR (source.creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl acl
+                               WHERE acl.note_id = source.note_id AND acl.subject = ?))
+                   )
              ORDER BY source.updated_at_ms DESC, source.note_id ASC",
         )
         .bind(note_id.to_string())
         .bind(actor.is_administrator)
+        .bind(&actor.issuer)
+        .bind(&actor.subject)
         .bind(&actor.issuer)
         .bind(&actor.subject)
         .fetch_all(&self.pool)
@@ -292,6 +307,161 @@ impl SqliteDatabase {
         transaction.commit().await.map_err(database_error)?;
         Ok(result.rows_affected())
     }
+
+    pub async fn note_capabilities(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<NoteCapabilities>, SqliteStoreError> {
+        let row = sqlx::query(
+            "SELECT creator_issuer, creator_subject,
+                    (SELECT permission FROM note_acl
+                     WHERE note_acl.note_id = notes.note_id AND subject = ?) AS permission
+             FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL",
+        )
+        .bind(&actor.subject)
+        .bind(note_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(database_error)?;
+        let Some(row) = row else { return Ok(None) };
+        let owner = row
+            .try_get::<String, _>("creator_issuer")
+            .map_err(database_error)?
+            == actor.issuer
+            && row
+                .try_get::<String, _>("creator_subject")
+                .map_err(database_error)?
+                == actor.subject;
+        let permission = row
+            .try_get::<Option<String>, _>("permission")
+            .map_err(database_error)?;
+        let same_issuer = row
+            .try_get::<String, _>("creator_issuer")
+            .map_err(database_error)?
+            == actor.issuer;
+        let visible = actor.is_administrator || owner || same_issuer && permission.is_some();
+        Ok(visible.then_some(NoteCapabilities {
+            can_edit: actor.is_administrator
+                || owner
+                || same_issuer && permission.as_deref() == Some("edit"),
+            can_manage_acl: actor.is_administrator || owner,
+        }))
+    }
+
+    pub async fn read_note_acl(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<NoteAclEntry>, SqliteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        require_note_owner_or_administrator(
+            &mut transaction,
+            actor,
+            note_id,
+            NoteDeletionState::Active,
+        )
+        .await?;
+        let rows = sqlx::query(
+            "SELECT subject, permission FROM note_acl WHERE note_id = ? ORDER BY subject",
+        )
+        .bind(note_id.to_string())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        rows.into_iter()
+            .map(|row| {
+                let permission = match row
+                    .try_get::<String, _>("permission")
+                    .map_err(database_error)?
+                    .as_str()
+                {
+                    "read" => NotePermission::Read,
+                    "edit" => NotePermission::Edit,
+                    _ => return Err(SqliteStoreError::CorruptData),
+                };
+                Ok(NoteAclEntry {
+                    subject: row.try_get("subject").map_err(database_error)?,
+                    permission,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn replace_note_acl(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        entries: &[NoteAclEntry],
+        expected_revision: i64,
+        updated_at: UnixMillis,
+    ) -> Result<Note, SqliteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        require_note_owner_or_administrator(
+            &mut transaction,
+            actor,
+            note_id,
+            NoteDeletionState::Active,
+        )
+        .await?;
+        let result = sqlx::query(
+            "UPDATE notes SET revision = revision + 1, updated_at_ms = ?
+             WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL",
+        )
+        .bind(updated_at.get())
+        .bind(note_id.to_string())
+        .bind(expected_revision)
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        if result.rows_affected() != 1 {
+            return Err(SqliteStoreError::Conflict);
+        }
+        sqlx::query("DELETE FROM note_acl WHERE note_id = ?")
+            .bind(note_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        for entry in entries {
+            sqlx::query("INSERT INTO note_acl (note_id, subject, permission) VALUES (?, ?, ?)")
+                .bind(note_id.to_string())
+                .bind(&entry.subject)
+                .bind(match entry.permission {
+                    NotePermission::Read => "read",
+                    NotePermission::Edit => "edit",
+                })
+                .execute(&mut *transaction)
+                .await
+                .map_err(database_error)?;
+        }
+        let note = note_from_row(note_row(&mut transaction, note_id).await?)?;
+        transaction.commit().await.map_err(database_error)?;
+        Ok(note)
+    }
+}
+
+async fn require_note_editor(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    actor: &Actor,
+    note_id: NoteId,
+) -> Result<(), SqliteStoreError> {
+    let allowed = sqlx::query_scalar::<_, i64>(
+        "SELECT 1 FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL
+         AND (? OR (creator_issuer = ? AND creator_subject = ?)
+              OR (creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl
+                         WHERE note_acl.note_id = notes.note_id
+                           AND note_acl.subject = ? AND permission = 'edit')))",
+    )
+    .bind(note_id.to_string())
+    .bind(actor.is_administrator)
+    .bind(&actor.issuer)
+    .bind(&actor.subject)
+    .bind(&actor.issuer)
+    .bind(&actor.subject)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    allowed.map(|_| ()).ok_or(SqliteStoreError::NotFound)
 }
 
 async fn replace_reference_rows(

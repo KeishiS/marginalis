@@ -26,7 +26,9 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
 ## 一貫して満たすべき設計条件
 
 - ノートと削除状態の更新はSQLite transactionで完結する。
-- 通常利用者は、作成者の`(issuer, subject)`が自身のidentityと一致するノートだけを操作できる。
+- 通常利用者は、作成者の`(issuer, subject)`が自身のidentityと一致するノートを所有する。同じ
+  `issuer`の個人subjectへ付与されたACLの`read`は閲覧、`edit`は閲覧と本文更新を許可する。
+  所有者は変更不能であり、ACL変更と削除・復元は所有者または`server-admins`だけに許可する。
   `server-admins`は所有者にかかわらずすべてのノートを操作できる。
 - identity は `(issuer, subject)` で識別する。アプリケーションはローカル password、root、登録ポリシーを
   持たない。`issuer`はuserinfo、query、fragment、制御文字を含まない絶対HTTP(S) URL、
@@ -41,7 +43,7 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
   token pair発行は一つのtransactionで行い、codeまたはrefresh tokenのreplay時はtoken familyを失効する。
   消費済みcodeは対応するtoken familyが残る間だけreplay検知用に保持する。
   MCP clientにKanidm tokenを渡さない。
-- HTTP、MCP、Web UIは所有者認可とrevisionの業務規則を複製しない。
+- HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を複製しない。
 
 ## ソース配置
 
@@ -81,8 +83,9 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 
 閲覧画面の直接参照一覧は、保存時に本文と同じtransactionで置換した参照先IDだけを投影へ持つ。
 閲覧時は投影を現在の認可と削除状態に結合し、題名、タグ、更新日時だけを取得する。本文更新、
-権限変更、ソフトデリート、復元、物理削除へ追従しながら、不可視なノートの存在や件数を漏らさず、
-閲覧ごとの全本文解析も行わない。archiveには派生データを含めず、復元時に検証済み本文から再構築する。
+ACL変更、ソフトデリート、復元、物理削除へ追従しながら、不可視なノートの存在や件数を漏らさず、
+閲覧ごとの全本文解析も行わない。archiveにはACLを含め、派生する参照投影は含めず、復元時に
+検証済み本文から再構築する。
 
 主要な外側のadapterは、変更理由に対応して次のmoduleへ分ける。
 
