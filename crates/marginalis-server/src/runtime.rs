@@ -21,7 +21,7 @@ pub struct SystemRandom;
 
 impl Random for SystemRandom {
     fn uuid_v7(&self) -> EntityId {
-        EntityId::from_uuid_v7(Uuid::now_v7())
+        EntityId::try_from_uuid(Uuid::now_v7()).expect("Uuid::now_v7 must generate UUIDv7")
     }
 
     fn opaque_token(&self) -> String {

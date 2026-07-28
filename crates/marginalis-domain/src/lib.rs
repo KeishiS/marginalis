@@ -2,7 +2,7 @@
 
 use core::{fmt, str::FromStr};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use url::Url;
 use uuid::Uuid;
 
@@ -19,7 +19,7 @@ impl UnixMillis {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct EntityId(Uuid);
 
@@ -43,12 +43,18 @@ impl EntityId {
         }
     }
 
-    pub const fn from_uuid_v7(value: Uuid) -> Self {
-        Self(value)
-    }
-
     pub const fn as_uuid(self) -> Uuid {
         self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for EntityId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Uuid::deserialize(deserializer)?;
+        Self::try_from_uuid(value).map_err(de::Error::custom)
     }
 }
 
@@ -256,6 +262,23 @@ mod tests {
     #[test]
     fn entity_id_rejects_non_v7_uuid() {
         assert_eq!(EntityId::try_from_uuid(Uuid::nil()), Err(InvalidEntityId));
+    }
+
+    #[test]
+    fn entity_id_deserialization_uses_the_same_uuid_v7_validation() {
+        let valid = Uuid::now_v7();
+        assert_eq!(
+            serde_json::from_str::<EntityId>(&format!("\"{valid}\""))
+                .expect("UUIDv7 should deserialize")
+                .as_uuid(),
+            valid
+        );
+        assert!(
+            serde_json::from_str::<EntityId>("\"00000000-0000-0000-0000-000000000000\"").is_err()
+        );
+        assert!(
+            serde_json::from_str::<NoteId>("\"00000000-0000-0000-0000-000000000000\"").is_err()
+        );
     }
 
     #[test]
