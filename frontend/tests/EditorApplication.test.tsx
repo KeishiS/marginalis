@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -32,6 +33,7 @@ const NOTE: Note = {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
 });
@@ -122,6 +124,83 @@ test("競合時も編集中の完全な文書を維持する", async () => {
   expect(editor).toHaveValue(local);
   expect(screen.getByRole("table")).toHaveTextContent("編集中");
   expect(screen.getByRole("table")).toHaveTextContent("現在");
+});
+
+test("診断からUTF-8位置に対応する入力範囲へ移動する", async () => {
+  const source = "= 題名\n\n日本語";
+  const start = new TextEncoder().encode("= 題名\n\n").length;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          code: "validation_failed",
+          message: "invalid",
+          diagnostics: [
+            {
+              code: "asciidoc_parse_failed",
+              target: { field: "source" },
+              span: { start, end: start + 6, unit: "utf8_byte" },
+              message: "invalid source",
+            },
+          ],
+        },
+        422,
+      ),
+    ),
+  );
+  render(<EditorApplication config={CONFIG} />);
+  const editor = screen.getByRole<HTMLTextAreaElement>("textbox", {
+    name: "AsciiDoc文書",
+  });
+  fireEvent.change(editor, { target: { value: source } });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: "入力位置へ移動" }),
+  );
+  expect(editor).toHaveFocus();
+  expect(editor.value.slice(editor.selectionStart, editor.selectionEnd)).toBe(
+    "日本",
+  );
+});
+
+test("プレビュー失敗時も最後に成功した表示を残す", async () => {
+  vi.useFakeTimers();
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse({ html: "<p>成功した表示</p>" }))
+    .mockResolvedValueOnce(
+      jsonResponse(
+        {
+          code: "validation_failed",
+          message: "invalid",
+          diagnostics: [],
+        },
+        422,
+      ),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  render(<EditorApplication config={CONFIG} />);
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(350);
+  });
+  expect(screen.getByText("成功した表示")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("textbox", { name: "AsciiDoc文書" }), {
+    target: { value: "= 不正\n\ninclude::secret[]" },
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(350);
+  });
+  expect(
+    screen.getByText("最後に成功したプレビューを表示しています。"),
+  ).toBeInTheDocument();
+  expect(screen.getByText("成功した表示")).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "プレビューできませんでした" }),
+  ).toBeInTheDocument();
 });
 
 function jsonResponse(body: unknown, status = 200): Response {
