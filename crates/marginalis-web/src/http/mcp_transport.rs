@@ -569,10 +569,6 @@ fn mcp_tool_error(id: serde_json::Value, error: NoteUseCaseError) -> JsonRpcResp
         NoteUseCaseError::NotFound => {
             serde_json::json!({"code":"not_found","message":"note was not found"})
         }
-        NoteUseCaseError::Forbidden => serde_json::json!({
-            "code":"forbidden",
-            "message":"note operation is not permitted"
-        }),
         NoteUseCaseError::Conflict => {
             serde_json::json!({"code":"conflict","message":"note revision conflicts"})
         }

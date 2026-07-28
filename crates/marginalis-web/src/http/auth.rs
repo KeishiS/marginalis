@@ -61,8 +61,7 @@ pub(super) async fn authenticated_ui_actor(
     };
     match state.sessions.authenticate_session(session_id).await {
         Ok(Some(session)) => Ok(session.actor),
-        Ok(None)
-        | Err(AuthenticationUseCaseError::Rejected | AuthenticationUseCaseError::NotFound) => {
+        Ok(None) | Err(AuthenticationUseCaseError::Rejected) => {
             Err(login_redirect(state, return_to))
         }
         Err(AuthenticationUseCaseError::Unavailable) => {

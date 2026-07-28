@@ -43,16 +43,6 @@ pub trait NoteQueryRepository: Send + Sync {
         actor: &Actor,
         note_ids: &[NoteId],
     ) -> Result<Vec<Note>, NoteRepositoryError>;
-    async fn directly_related_notes(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError>;
-    async fn note_access(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<Option<NoteAccess>, NoteRepositoryError>;
     async fn note_view_snapshot(
         &self,
         actor: &Actor,
@@ -287,34 +277,6 @@ impl NoteQueries for NoteApplication {
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
         self.read_visible_note(&actor, note_id).await
     }
-
-    async fn related_notes(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<RelatedNotes, NoteUseCaseError> {
-        self.read_visible_note(&actor, note_id).await?;
-        let (mut outgoing, mut incoming) = self
-            .queries
-            .directly_related_notes(&actor, note_id)
-            .await
-            .map_err(map_repository_error)?;
-        sort_related_notes(&mut outgoing);
-        sort_related_notes(&mut incoming);
-        Ok(RelatedNotes { outgoing, incoming })
-    }
-
-    async fn note_access(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<NoteAccess, NoteUseCaseError> {
-        self.queries
-            .note_access(&actor, note_id)
-            .await
-            .map_err(map_repository_error)?
-            .ok_or(NoteUseCaseError::NotFound)
-    }
 }
 
 #[async_trait]
@@ -424,15 +386,6 @@ impl NotePresentation for NoteApplication {
         self.content
             .export(note)
             .map_err(|_| NoteUseCaseError::Unavailable)
-    }
-
-    async fn render_note_html(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-        context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError> {
-        Ok(self.read_note_view(actor, note_id, context).await?.html)
     }
 
     fn note_profile(&self) -> NoteProfile {
@@ -624,22 +577,6 @@ mod tests {
                 }
             }
             Ok(notes)
-        }
-
-        async fn directly_related_notes(
-            &self,
-            _actor: &Actor,
-            _note_id: NoteId,
-        ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError> {
-            Ok((Vec::new(), Vec::new()))
-        }
-
-        async fn note_access(
-            &self,
-            _actor: &Actor,
-            _note_id: NoteId,
-        ) -> Result<Option<NoteAccess>, NoteRepositoryError> {
-            Ok(None)
         }
 
         async fn note_view_snapshot(

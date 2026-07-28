@@ -6,8 +6,7 @@ use marginalis_application::{
     NoteRepositoryError, NoteViewSnapshot,
 };
 use marginalis_domain::{
-    Actor, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteSummary, Revision,
-    UnixMillis,
+    Actor, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, Revision, UnixMillis,
 };
 
 use crate::{SqliteDatabase, SqliteStoreError};
@@ -39,26 +38,6 @@ impl NoteQueryRepository for SqliteDatabase {
         note_ids: &[NoteId],
     ) -> Result<Vec<Note>, NoteRepositoryError> {
         SqliteDatabase::visible_notes_by_id(self, actor, note_ids)
-            .await
-            .map_err(map_error)
-    }
-
-    async fn directly_related_notes(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError> {
-        SqliteDatabase::directly_related_notes(self, actor, note_id)
-            .await
-            .map_err(map_error)
-    }
-
-    async fn note_access(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<Option<NoteAccess>, NoteRepositoryError> {
-        SqliteDatabase::note_access(self, actor, note_id)
             .await
             .map_err(map_error)
     }

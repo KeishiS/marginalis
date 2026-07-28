@@ -37,22 +37,6 @@ macro_rules! implement_note_boundaries {
             ) -> Result<Note, NoteUseCaseError> {
                 <$type>::read_note(self, actor, note_id).await
             }
-
-            async fn related_notes(
-                &self,
-                actor: Actor,
-                note_id: NoteId,
-            ) -> Result<RelatedNotes, NoteUseCaseError> {
-                <$type>::related_notes(self, actor, note_id).await
-            }
-
-            async fn note_access(
-                &self,
-                actor: Actor,
-                note_id: NoteId,
-            ) -> Result<NoteAccess, NoteUseCaseError> {
-                <$type>::note_access(self, actor, note_id).await
-            }
         }
 
         #[async_trait]
@@ -109,31 +93,13 @@ macro_rules! implement_note_boundaries {
                 <$type>::export_note_source(self, note)
             }
 
-            async fn render_note_html(
-                &self,
-                actor: Actor,
-                note_id: NoteId,
-                context: NoteRenderContext,
-            ) -> Result<String, NoteUseCaseError> {
-                <$type>::render_note_html(self, actor, note_id, context).await
-            }
-
             async fn read_note_view(
                 &self,
                 actor: Actor,
                 note_id: NoteId,
                 context: NoteRenderContext,
             ) -> Result<NoteView, NoteUseCaseError> {
-                let note = <$type>::read_note(self, actor.clone(), note_id).await?;
-                let access = <$type>::note_access(self, actor.clone(), note_id).await?;
-                let html = <$type>::render_note_html(self, actor.clone(), note_id, context).await?;
-                let related = <$type>::related_notes(self, actor, note_id).await?;
-                Ok(NoteView {
-                    note,
-                    access,
-                    html,
-                    related,
-                })
+                <$type>::read_note_view(self, actor, note_id, context).await
             }
 
             fn note_profile(&self) -> NoteProfile {
@@ -258,31 +224,12 @@ impl Notes {
         Err(NoteUseCaseError::Unavailable)
     }
 
-    async fn render_note_html(
+    async fn read_note_view(
         &self,
         _actor: Actor,
         _note_id: NoteId,
         _context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError> {
-        Err(NoteUseCaseError::Unavailable)
-    }
-
-    async fn related_notes(
-        &self,
-        _actor: Actor,
-        _note_id: NoteId,
-    ) -> Result<RelatedNotes, NoteUseCaseError> {
-        Ok(RelatedNotes {
-            outgoing: Vec::new(),
-            incoming: Vec::new(),
-        })
-    }
-
-    async fn note_access(
-        &self,
-        _actor: Actor,
-        _note_id: NoteId,
-    ) -> Result<NoteAccess, NoteUseCaseError> {
+    ) -> Result<NoteView, NoteUseCaseError> {
         Err(NoteUseCaseError::NotFound)
     }
 
@@ -291,7 +238,7 @@ impl Notes {
         _actor: Actor,
         _note_id: NoteId,
     ) -> Result<NoteAclState, NoteUseCaseError> {
-        Err(NoteUseCaseError::Forbidden)
+        Err(NoteUseCaseError::NotFound)
     }
 
     async fn replace_note_acl(
@@ -301,7 +248,7 @@ impl Notes {
         _entries: Vec<NoteAclChange>,
         _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
-        Err(NoteUseCaseError::Forbidden)
+        Err(NoteUseCaseError::NotFound)
     }
 
     fn note_profile(&self) -> NoteProfile {
@@ -414,43 +361,32 @@ impl UiNotes {
         Err(NoteUseCaseError::Unavailable)
     }
 
-    async fn render_note_html(
-        &self,
-        _actor: Actor,
-        _note_id: NoteId,
-        _context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError> {
-        if self.render_fails {
-            Err(NoteUseCaseError::RenderFailed)
-        } else {
-            Ok("<article><p>描画済み本文</p></article>".into())
-        }
-    }
-
-    async fn related_notes(
-        &self,
-        _actor: Actor,
-        note_id: NoteId,
-    ) -> Result<RelatedNotes, NoteUseCaseError> {
-        let related = self
-            .notes
-            .iter()
-            .filter(|note| note.note_id() != note_id)
-            .map(NoteSummary::from)
-            .collect::<Vec<_>>();
-        Ok(RelatedNotes {
-            outgoing: related.clone(),
-            incoming: related,
-        })
-    }
-
-    async fn note_access(
+    async fn read_note_view(
         &self,
         actor: Actor,
         note_id: NoteId,
-    ) -> Result<NoteAccess, NoteUseCaseError> {
-        self.read_note(actor, note_id).await?;
-        Ok(NoteAccess::Edit)
+        _context: NoteRenderContext,
+    ) -> Result<NoteView, NoteUseCaseError> {
+        let note = self.read_note(actor, note_id).await?;
+        if self.render_fails {
+            Err(NoteUseCaseError::RenderFailed)
+        } else {
+            let related = self
+                .notes
+                .iter()
+                .filter(|candidate| candidate.note_id() != note_id)
+                .map(NoteSummary::from)
+                .collect::<Vec<_>>();
+            Ok(NoteView {
+                note,
+                access: NoteAccess::Edit,
+                html: "<article><p>描画済み本文</p></article>".into(),
+                related: RelatedNotes {
+                    outgoing: related.clone(),
+                    incoming: related,
+                },
+            })
+        }
     }
 
     async fn read_note_acl(
@@ -458,7 +394,7 @@ impl UiNotes {
         _actor: Actor,
         _note_id: NoteId,
     ) -> Result<NoteAclState, NoteUseCaseError> {
-        Err(NoteUseCaseError::Forbidden)
+        Err(NoteUseCaseError::NotFound)
     }
 
     async fn replace_note_acl(
@@ -468,7 +404,7 @@ impl UiNotes {
         _entries: Vec<NoteAclChange>,
         _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
-        Err(NoteUseCaseError::Forbidden)
+        Err(NoteUseCaseError::NotFound)
     }
 
     fn note_profile(&self) -> NoteProfile {

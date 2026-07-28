@@ -75,7 +75,6 @@ pub struct SessionLifetime {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthenticationUseCaseError {
     Rejected,
-    NotFound,
     Unavailable,
 }
 
@@ -216,7 +215,6 @@ pub struct NoteProfile {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NoteUseCaseError {
     NotFound,
-    Forbidden,
     Conflict,
     Validation(Vec<NoteValidationDiagnostic>),
     RenderFailed,
@@ -227,7 +225,6 @@ impl std::fmt::Display for NoteUseCaseError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::NotFound => "note is not available",
-            Self::Forbidden => "note operation is not permitted",
             Self::Conflict => "note operation conflicts",
             Self::Validation(_) => "note is invalid",
             Self::RenderFailed => "note cannot be rendered",
@@ -339,16 +336,6 @@ pub trait NoteQueries: Send + Sync {
         actor: Actor,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError>;
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
-    async fn related_notes(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<RelatedNotes, NoteUseCaseError>;
-    async fn note_access(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<NoteAccess, NoteUseCaseError>;
 }
 
 /// ノートの内容と削除状態を変更するcommand境界。
@@ -386,12 +373,6 @@ pub trait NotePresentation: Send + Sync {
         context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError>;
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError>;
-    async fn render_note_html(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-        context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError>;
     async fn read_note_view(
         &self,
         actor: Actor,
