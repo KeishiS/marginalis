@@ -124,6 +124,17 @@ pub enum NoteAccessValue {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct NoteListEntryResponse {
+    pub note_id: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub updated_at_ms: i64,
+    pub revision: i64,
+    pub access: NoteAccessValue,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RelatedNotesResponse {
     pub outgoing: Vec<NoteSummaryResponse>,
     pub incoming: Vec<NoteSummaryResponse>,
@@ -354,6 +365,19 @@ pub fn openapi_document() -> Value {
             "revision": revision_schema()
         }
     });
+    let note_list_entry = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["note_id", "title", "tags", "updated_at_ms", "revision", "access"],
+        "properties": {
+            "note_id": note_id_schema(),
+            "title": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "updated_at_ms": {"type": "integer"},
+            "revision": revision_schema(),
+            "access": {"enum": ["read", "edit", "manage"]}
+        }
+    });
     json!({
         "openapi": "3.1.0",
         "info": {
@@ -383,6 +407,7 @@ pub fn openapi_document() -> Value {
                 "NoteDraft": note_draft_schema(),
                 "Note": note,
                 "NoteSummary": note_summary,
+                "NoteListEntry": note_list_entry,
                 "NoteView": {
                     "type": "object", "additionalProperties": false,
                     "required": ["note", "access", "html", "related"],
@@ -456,7 +481,7 @@ fn rest_paths() -> Value {
         },
         "/api/v3/notes": {
             "get": operation("List visible note summaries", &[], None, responses(&[
-                ("200", array_response("visible note summaries", "NoteSummary")),
+                ("200", array_response("visible note summaries", "NoteListEntry")),
                 ("401", response_ref("AuthenticationRequired"))
             ])),
             "post": operation("Create a note", &["CsrfToken"], Some("NoteDraft"), responses(&[

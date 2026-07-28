@@ -7,8 +7,8 @@ use std::future::Future;
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpAuthorizationGrant,
-    McpOAuthClient, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NotePermission, NoteSummary,
-    Revision, UnixMillis, WebSession,
+    McpOAuthClient, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
+    NotePermission, NoteSummary, Revision, UnixMillis, WebSession,
 };
 
 mod identity;
@@ -334,7 +334,10 @@ pub struct NoteView {
 /// 閲覧可能なノートを取得する問い合わせ境界。
 #[async_trait]
 pub trait NoteQueries: Send + Sync {
-    async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<NoteSummary>, NoteUseCaseError>;
+    async fn list_visible_notes(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError>;
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
     async fn related_notes(
         &self,

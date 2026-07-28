@@ -30,6 +30,7 @@
 | REQ-API-005 | MCP scope結合試験 | MCP権限照合 |
 | REQ-UI-001 | React単体試験、ブラウザー試験 | 主要画面 |
 | REQ-UI-002 | TypeScript実行時検査試験 | 異常応答表示 |
+| REQ-UI-003 | React状態・画面単体試験、ブラウザー試験 | 一覧の復帰 |
 | REQ-ACL-001 | application・SQLite・React試験 | 共有操作 |
 | REQ-ACL-002 | 公開契約検査 | なし |
 | REQ-ACL-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |

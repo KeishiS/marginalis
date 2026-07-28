@@ -242,6 +242,13 @@ pub struct NoteSummary {
     pub revision: Revision,
 }
 
+/// 一覧表示用の概要と、現在の利用者に対する実効アクセス水準。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteListEntry {
+    pub summary: NoteSummary,
+    pub access: NoteAccess,
+}
+
 impl From<&Note> for NoteSummary {
     fn from(note: &Note) -> Self {
         Self {

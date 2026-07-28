@@ -96,6 +96,25 @@ async fn authenticated_home_serves_only_the_react_application_shell() {
 }
 
 #[tokio::test]
+async fn authenticated_home_preserves_list_query_in_application_config() {
+    let response = ui_app(Vec::new(), false, "/marginalis")
+        .oneshot(authenticated_request(
+            "/?tag=research&updated_after=2026-07-01",
+        ))
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body = String::from_utf8(body.to_vec()).expect("HTML");
+    assert!(body.contains(
+        "&quot;search&quot;:&quot;?tag=research&amp;updated_after=2026-07-01&quot;"
+    ));
+}
+
+#[tokio::test]
 async fn authenticated_home_defers_the_empty_state_to_react() {
     let response = ui_app(Vec::new(), false, "/")
         .oneshot(authenticated_request("/"))

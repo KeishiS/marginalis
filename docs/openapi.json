@@ -262,6 +262,48 @@
         ],
         "type": "object"
       },
+      "NoteListEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "enum": [
+              "read",
+              "edit",
+              "manage"
+            ]
+          },
+          "note_id": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at_ms": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "note_id",
+          "title",
+          "tags",
+          "updated_at_ms",
+          "revision",
+          "access"
+        ],
+        "type": "object"
+      },
       "NotePreview": {
         "additionalProperties": false,
         "properties": {
@@ -455,7 +497,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/NoteSummary"
+                    "$ref": "#/components/schemas/NoteListEntry"
                   },
                   "type": "array"
                 }

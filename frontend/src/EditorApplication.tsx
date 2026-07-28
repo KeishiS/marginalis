@@ -31,6 +31,7 @@ export interface EditorConfig {
   noteId: string;
   apiBase: string;
   basePath: string;
+  search: string;
 }
 
 export function EditorApplication({ config }: { config: EditorConfig }) {
@@ -147,7 +148,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         window.history.replaceState(
           null,
           "",
-          externalPath(config.basePath, `/notes/${note.note_id}/edit`),
+          `${externalPath(config.basePath, `/notes/${note.note_id}/edit`)}${config.search}`,
         );
       }
     } catch (error: unknown) {
@@ -182,7 +183,9 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
             headingId="load-problem-heading"
           />
         )}
-        <a href={externalPath(config.basePath, "/")}>一覧へ戻る</a>
+        <a href={`${externalPath(config.basePath, "/")}${config.search}`}>
+          一覧へ戻る
+        </a>
       </section>
     );
   }
@@ -201,8 +204,8 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         <a
           href={
             noteId
-              ? externalPath(config.basePath, `/notes/${noteId}`)
-              : externalPath(config.basePath, "/")
+              ? `${externalPath(config.basePath, `/notes/${noteId}`)}${config.search}`
+              : `${externalPath(config.basePath, "/")}${config.search}`
           }
         >
           {noteId ? "閲覧画面へ戻る" : "一覧へ戻る"}

@@ -14,7 +14,7 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note, NoteAccess,
-    NoteDraft, NoteId, NoteSummary, Revision, UnixMillis, WebSession,
+    NoteDraft, NoteId, NoteListEntry, NoteSummary, Revision, UnixMillis, WebSession,
 };
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
@@ -26,7 +26,7 @@ macro_rules! implement_note_boundaries {
             async fn list_visible_notes(
                 &self,
                 actor: Actor,
-            ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
+            ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
                 <$type>::list_visible_notes(self, actor).await
             }
 
@@ -178,7 +178,7 @@ impl Notes {
     async fn list_visible_notes(
         &self,
         _actor: Actor,
-    ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
         Ok(Vec::new())
     }
 
@@ -346,8 +346,15 @@ impl UiNotes {
     async fn list_visible_notes(
         &self,
         _actor: Actor,
-    ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
-        Ok(self.notes.iter().map(NoteSummary::from).collect())
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+        Ok(self
+            .notes
+            .iter()
+            .map(|note| NoteListEntry {
+                summary: NoteSummary::from(note),
+                access: NoteAccess::Edit,
+            })
+            .collect())
     }
 
     async fn read_note(&self, _actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {

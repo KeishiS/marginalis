@@ -7,7 +7,8 @@ use std::{
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteSummary, Revision,
+    Actor, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteSummary,
+    Revision,
 };
 
 use crate::{
@@ -31,7 +32,7 @@ pub trait NoteQueryRepository: Send + Sync {
     async fn list_visible_notes(
         &self,
         actor: &Actor,
-    ) -> Result<Vec<NoteSummary>, NoteRepositoryError>;
+    ) -> Result<Vec<NoteListEntry>, NoteRepositoryError>;
     async fn visible_note(
         &self,
         actor: &Actor,
@@ -273,7 +274,10 @@ impl NoteApplication {
 
 #[async_trait]
 impl NoteQueries for NoteApplication {
-    async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
+    async fn list_visible_notes(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
         self.queries
             .list_visible_notes(&actor)
             .await
@@ -582,13 +586,16 @@ mod tests {
         async fn list_visible_notes(
             &self,
             _actor: &Actor,
-        ) -> Result<Vec<NoteSummary>, NoteRepositoryError> {
+        ) -> Result<Vec<NoteListEntry>, NoteRepositoryError> {
             Ok(self
                 .notes
                 .lock()
                 .expect("notes lock")
                 .iter()
-                .map(NoteSummary::from)
+                .map(|note| NoteListEntry {
+                    summary: NoteSummary::from(note),
+                    access: NoteAccess::Manage,
+                })
                 .collect())
         }
 
