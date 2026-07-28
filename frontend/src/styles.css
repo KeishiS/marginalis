@@ -336,6 +336,17 @@ body {
   margin-block-start: 0;
 }
 
+.diagnostic-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: LinkText;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
 .related-notes {
   border-top: 0.1rem solid currentColor;
   margin-block-start: 2rem;
