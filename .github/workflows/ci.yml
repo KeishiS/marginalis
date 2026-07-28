@@ -82,6 +82,32 @@ jobs:
       - name: Measure workspace and integration-path coverage
         run: nix develop --command cargo make ci-coverage
 
+  native-aarch64:
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Check all Rust targets natively
+        run: nix develop --command cargo make native-check
+
+  browser-smoke:
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Check the production Web UI in Chromium
+        run: nix develop --command cargo make browser-smoke
+
   nixos-e2e:
     needs: changes
     runs-on: ubuntu-24.04
