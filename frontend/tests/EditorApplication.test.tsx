@@ -136,17 +136,12 @@ test("revision競合時に三つの内容を比較し、明示操作後に再保
     tags: ["研究", "試験"],
     revision: 5,
   };
-  const fetchMock = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(jsonResponse(NOTE))
-    .mockResolvedValueOnce(
-      jsonResponse(
-        { code: "conflict", message: "note revision conflicts" },
-        409,
-      ),
-    )
-    .mockResolvedValueOnce(jsonResponse(current))
-    .mockResolvedValueOnce(jsonResponse(saved));
+  const fetchMock = mockEditorResponses(
+    jsonResponse(NOTE),
+    jsonResponse({ code: "conflict", message: "note revision conflicts" }, 409),
+    jsonResponse(current),
+    jsonResponse(saved),
+  );
   vi.stubGlobal("fetch", fetchMock);
   render(
     <EditorApplication
@@ -193,7 +188,7 @@ test("revision競合時に三つの内容を比較し、明示操作後に再保
   fireEvent.click(
     screen.getByRole("button", { name: "更新番号4を編集の基準にする" }),
   );
-  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(editorCalls(fetchMock)).toHaveLength(3);
   expect(
     screen.getByText(
       "更新番号4を基準にしました。内容を確認して保存してください。",
@@ -204,8 +199,8 @@ test("revision競合時に三つの内容を比較し、明示操作後に再保
   );
 
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-  expect(fetchMock.mock.calls[3]?.[1]).toEqual(
+  await waitFor(() => expect(editorCalls(fetchMock)).toHaveLength(4));
+  expect(editorCalls(fetchMock)[3]?.[1]).toEqual(
     expect.objectContaining({
       method: "PUT",
       body: JSON.stringify({
@@ -222,23 +217,13 @@ test("revision競合時に三つの内容を比較し、明示操作後に再保
 test("競合確認後に再更新された場合も最新revisionを再取得する", async () => {
   const current4 = { ...NOTE, title: "現在4", revision: 4 };
   const current5 = { ...NOTE, title: "現在5", revision: 5 };
-  const fetchMock = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(jsonResponse(NOTE))
-    .mockResolvedValueOnce(
-      jsonResponse(
-        { code: "conflict", message: "note revision conflicts" },
-        409,
-      ),
-    )
-    .mockResolvedValueOnce(jsonResponse(current4))
-    .mockResolvedValueOnce(
-      jsonResponse(
-        { code: "conflict", message: "note revision conflicts" },
-        409,
-      ),
-    )
-    .mockResolvedValueOnce(jsonResponse(current5));
+  const fetchMock = mockEditorResponses(
+    jsonResponse(NOTE),
+    jsonResponse({ code: "conflict", message: "note revision conflicts" }, 409),
+    jsonResponse(current4),
+    jsonResponse({ code: "conflict", message: "note revision conflicts" }, 409),
+    jsonResponse(current5),
+  );
   vi.stubGlobal("fetch", fetchMock);
   render(
     <EditorApplication
@@ -263,7 +248,7 @@ test("競合確認後に再更新された場合も最新revisionを再取得す
       name: "更新番号5を編集の基準にする",
     }),
   ).toBeInTheDocument();
-  expect(fetchMock.mock.calls[3]?.[1]).toEqual(
+  expect(editorCalls(fetchMock)[3]?.[1]).toEqual(
     expect.objectContaining({
       body: expect.stringContaining('"expected_revision":4'),
     }),
@@ -274,16 +259,11 @@ test("競合確認後に再更新された場合も最新revisionを再取得す
 test("挿入と削除をLCSで整列し、変更状態を文字で表示する", async () => {
   const baseline = { ...NOTE, body: "A\r\nB" };
   const current = { ...NOTE, body: "A\nB\nY", revision: 4 };
-  const fetchMock = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(jsonResponse(baseline))
-    .mockResolvedValueOnce(
-      jsonResponse(
-        { code: "conflict", message: "note revision conflicts" },
-        409,
-      ),
-    )
-    .mockResolvedValueOnce(jsonResponse(current));
+  const fetchMock = mockEditorResponses(
+    jsonResponse(baseline),
+    jsonResponse({ code: "conflict", message: "note revision conflicts" }, 409),
+    jsonResponse(current),
+  );
   vi.stubGlobal("fetch", fetchMock);
   render(
     <EditorApplication
@@ -311,21 +291,11 @@ test("挿入と削除をLCSで整列し、変更状態を文字で表示する",
 });
 
 test("競合後に最新内容を閲覧できない場合は比較情報を表示しない", async () => {
-  const fetchMock = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(jsonResponse(NOTE))
-    .mockResolvedValueOnce(
-      jsonResponse(
-        { code: "conflict", message: "note revision conflicts" },
-        409,
-      ),
-    )
-    .mockResolvedValueOnce(
-      jsonResponse(
-        { code: "not_found", message: "note is not available" },
-        404,
-      ),
-    );
+  const fetchMock = mockEditorResponses(
+    jsonResponse(NOTE),
+    jsonResponse({ code: "conflict", message: "note revision conflicts" }, 409),
+    jsonResponse({ code: "not_found", message: "note is not available" }, 404),
+  );
   vi.stubGlobal("fetch", fetchMock);
   render(
     <EditorApplication
@@ -470,6 +440,39 @@ function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
     headers: { "content-type": "application/json" },
+  });
+}
+
+function mockEditorResponses(...responses: Response[]) {
+  let responseIndex = 0;
+  return vi.fn<typeof fetch>(async (input) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (url.endsWith("/notes/preview")) {
+      return jsonResponse({ html: "<p>プレビュー</p>" });
+    }
+    const response = responses[responseIndex];
+    responseIndex += 1;
+    if (!response) {
+      throw new Error(`想定外のリクエストです: ${url}`);
+    }
+    return response;
+  });
+}
+
+function editorCalls(fetchMock: ReturnType<typeof mockEditorResponses>) {
+  return fetchMock.mock.calls.filter(([input]) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    return !url.endsWith("/notes/preview");
   });
 }
 
