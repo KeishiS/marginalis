@@ -6,7 +6,8 @@ use marginalis_application::{
     NoteRepositoryError, NoteViewSnapshot,
 };
 use marginalis_domain::{
-    Actor, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteSummary, Revision, UnixMillis,
+    Actor, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteSummary, Revision,
+    UnixMillis,
 };
 
 use crate::{SqliteDatabase, SqliteStoreError};
@@ -16,7 +17,7 @@ impl NoteQueryRepository for SqliteDatabase {
     async fn list_visible_notes(
         &self,
         actor: &Actor,
-    ) -> Result<Vec<NoteSummary>, NoteRepositoryError> {
+    ) -> Result<Vec<NoteListEntry>, NoteRepositoryError> {
         SqliteDatabase::list_visible_notes(self, actor)
             .await
             .map_err(map_error)

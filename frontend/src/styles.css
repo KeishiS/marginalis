@@ -36,6 +36,94 @@ body {
   justify-content: space-between;
 }
 
+.note-list-filters {
+  align-items: end;
+  border-block: 0.1rem solid light-dark(#c8ced6, #4c5561);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-block: 1rem;
+  padding-block: 1rem;
+}
+
+.note-list-filters label {
+  display: grid;
+  font-weight: 600;
+  gap: 0.25rem;
+}
+
+.note-list-filters input,
+.note-list-filters button {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+}
+
+.list-result-count {
+  color: light-dark(#566170, #b8c0ca);
+}
+
+.note-list {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.note-list > li {
+  border: 0.1rem solid light-dark(#c8ced6, #4c5561);
+  border-radius: 0.4rem;
+  padding: 0.9rem;
+}
+
+.note-list > li > a {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.note-list dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin-block: 0.5rem;
+}
+
+.note-list dl > div {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.note-list dt {
+  color: light-dark(#566170, #b8c0ca);
+  font-weight: 600;
+}
+
+.note-list dd {
+  margin: 0;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tag-list li {
+  background: light-dark(#e9edf2, #292f38);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+}
+
+.pagination {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-block: 1.5rem;
+}
+
 .editor-form {
   display: grid;
   gap: 1rem;

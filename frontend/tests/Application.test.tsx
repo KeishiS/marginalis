@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Application } from "../src/Application";
@@ -7,9 +7,11 @@ const config = {
   apiBase: "/marginalis/api/v3",
   basePath: "/marginalis",
   path: "/",
+  search: "",
 };
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -27,6 +29,7 @@ describe("Application", () => {
               tags: [],
               updated_at_ms: 1,
               revision: 1,
+              access: "manage",
             },
           ]),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -40,6 +43,56 @@ describe("Application", () => {
     expect(link).toHaveAttribute(
       "href",
       "/marginalis/notes/0197c9bc-0000-7000-8000-000000000001",
+    );
+  });
+
+  it("一覧のタグ、更新日時、アクセス水準と絞り込み状態を表示する", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify([
+            {
+              note_id: "0197c9bc-0000-7000-8000-000000000001",
+              title: "Rustメモ",
+              tags: ["research", "rust"],
+              updated_at_ms: Date.parse("2026-07-28T12:00:00Z"),
+              revision: 1,
+              access: "edit",
+            },
+            {
+              note_id: "0197c9bc-0000-7000-8000-000000000002",
+              title: "対象外",
+              tags: ["other"],
+              updated_at_ms: Date.parse("2026-07-28T12:00:00Z"),
+              revision: 1,
+              access: "read",
+            },
+          ]),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    render(
+      <Application
+        config={{ ...config, search: "?tag=research&updated_after=2026-07-01" }}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "Rustメモ" }),
+    ).toHaveAttribute(
+      "href",
+      "/marginalis/notes/0197c9bc-0000-7000-8000-000000000001?tag=research&updated_after=2026-07-01",
+    );
+    expect(
+      screen.queryByRole("link", { name: "対象外" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("編集")).toBeInTheDocument();
+    expect(screen.getByText("rust")).toBeInTheDocument();
+    expect(screen.getByLabelText("タグ", { selector: "input" })).toHaveValue(
+      "research",
     );
   });
 

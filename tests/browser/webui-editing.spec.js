@@ -183,4 +183,15 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(
     page.getByRole("complementary", { name: "関連ノート" }),
   ).toContainText("競合後に保存する題名");
+
+  const listQuery = new URLSearchParams({ tag: "受入試験" });
+  await page.goto(`${baseUrl}/?${listQuery}`);
+  await expect(page.getByLabel("タグ", { exact: true })).toHaveValue(
+    "受入試験",
+  );
+  await expect(page.getByRole("status")).toContainText("1件のノート");
+  await expect(page.getByText("所有")).toBeVisible();
+  await page.getByRole("link", { name: "競合後に保存する題名" }).click();
+  await page.getByRole("link", { name: "一覧", exact: true }).click();
+  await expect(page).toHaveURL(`${baseUrl}/?${listQuery}`);
 });

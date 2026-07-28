@@ -463,10 +463,10 @@ async fn mcp_tool_call(
             serde_json::json!({
                 "notes": notes
                     .into_iter()
-                    .map(|note| serde_json::json!({
-                        "note_id": note.note_id.to_string(),
-                        "title": note.title,
-                        "revision": note.revision.get(),
+                    .map(|entry| serde_json::json!({
+                        "note_id": entry.summary.note_id.to_string(),
+                        "title": entry.summary.title,
+                        "revision": entry.summary.revision.get(),
                     }))
                     .collect::<Vec<_>>()
             })

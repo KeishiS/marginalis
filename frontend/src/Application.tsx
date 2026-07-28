@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { AccessControl } from "./AccessControl";
 import { EditorApplication } from "./EditorApplication";
 import {
   Note,
+  NoteListEntry,
   NoteSummary,
   NoteView,
   listNotes,
@@ -11,11 +12,18 @@ import {
   readNoteView,
 } from "./api";
 import { RenderedContent } from "./RenderedContent";
+import {
+  NoteListQuery,
+  noteListSearch,
+  parseNoteListQuery,
+  selectNoteListPage,
+} from "./noteListState";
 
 export interface ApplicationConfig {
   apiBase: string;
   basePath: string;
   path: string;
+  search: string;
 }
 
 type Route =
@@ -51,8 +59,12 @@ export function Application({ config }: { config: ApplicationConfig }) {
 }
 
 function NoteList({ config }: { config: ApplicationConfig }) {
-  const [notes, setNotes] = useState<NoteSummary[] | null>(null);
+  const [notes, setNotes] = useState<NoteListEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const query = useMemo(
+    () => parseNoteListQuery(config.search),
+    [config.search],
+  );
   useEffect(() => {
     let current = true;
     listNotes(config.apiBase)
@@ -62,30 +74,127 @@ function NoteList({ config }: { config: ApplicationConfig }) {
       current = false;
     };
   }, [config.apiBase]);
+  const page = notes === null ? null : selectNoteListPage(notes, query);
   return (
     <>
       <div className="editor-heading">
         <h1>ノート</h1>
-        <a href={path(config.basePath, "/notes/new")}>新規ノート</a>
+        <a
+          href={`${path(config.basePath, "/notes/new")}${canonicalSearch(config.search)}`}
+        >
+          新規ノート
+        </a>
       </div>
+      <NoteListFilters config={config} query={query} />
       {failed ? (
         <p role="alert">ノート一覧を読み込めませんでした。</p>
       ) : notes === null ? (
-        <p>ノート一覧を読み込んでいます。</p>
-      ) : notes.length === 0 ? (
-        <p>閲覧できるノートはありません。</p>
+        <p role="status">ノート一覧を読み込んでいます。</p>
+      ) : page?.total === 0 ? (
+        <p>
+          {notes.length === 0
+            ? "閲覧できるノートはありません。"
+            : "条件に一致するノートはありません。"}
+        </p>
       ) : (
-        <ul>
-          {notes.map((note) => (
-            <li key={note.note_id}>
-              <a href={path(config.basePath, `/notes/${note.note_id}`)}>
-                {note.title}
-              </a>
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="list-result-count" role="status">
+            {page?.total}件のノート
+          </p>
+          <ul className="note-list">
+            {page?.notes.map((note) => (
+              <li key={note.note_id}>
+                <a
+                  href={`${path(config.basePath, `/notes/${note.note_id}`)}${canonicalSearch(config.search)}`}
+                >
+                  {note.title}
+                </a>
+                <dl>
+                  <div>
+                    <dt>更新</dt>
+                    <dd>
+                      <time
+                        dateTime={new Date(note.updated_at_ms).toISOString()}
+                      >
+                        {formatDateTime(note.updated_at_ms)}
+                      </time>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>アクセス</dt>
+                    <dd>{accessLabel(note.access)}</dd>
+                  </div>
+                </dl>
+                {note.tags.length > 0 && (
+                  <ul className="tag-list" aria-label="タグ">
+                    {note.tags.map((tag) => (
+                      <li key={tag}>{tag}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+          {page && page.pageCount > 1 && (
+            <nav className="pagination" aria-label="ノート一覧のページ">
+              {page.page > 1 && (
+                <a href={listPath(config, query, page.page - 1)}>前へ</a>
+              )}
+              <span>
+                {page.page} / {page.pageCount}
+              </span>
+              {page.page < page.pageCount && (
+                <a href={listPath(config, query, page.page + 1)}>次へ</a>
+              )}
+            </nav>
+          )}
+        </>
       )}
     </>
+  );
+}
+
+function NoteListFilters({
+  config,
+  query,
+}: {
+  config: ApplicationConfig;
+  query: NoteListQuery;
+}) {
+  function resetPage(event: FormEvent<HTMLFormElement>) {
+    const page = event.currentTarget.elements.namedItem("page");
+    if (page instanceof HTMLInputElement) page.value = "1";
+  }
+  return (
+    <form
+      className="note-list-filters"
+      action={path(config.basePath, "/")}
+      method="get"
+      onSubmit={resetPage}
+    >
+      <label>
+        タグ
+        <input
+          name="tag"
+          type="text"
+          defaultValue={query.tags.join(", ")}
+          placeholder="research, rust"
+        />
+      </label>
+      <label>
+        この日以降に更新
+        <input
+          name="updated_after"
+          type="date"
+          defaultValue={query.updatedAfter}
+        />
+      </label>
+      <input name="page" type="hidden" value="1" readOnly />
+      <button type="submit">絞り込む</button>
+      {(query.tags.length > 0 || query.updatedAfter) && (
+        <a href={path(config.basePath, "/")}>条件を解除</a>
+      )}
+    </form>
   );
 }
 
@@ -110,12 +219,20 @@ function NoteViewer({
   return (
     <>
       <nav aria-label="ノート操作">
-        <a href={path(config.basePath, "/")}>一覧</a>{" "}
+        <a href={path(config.basePath, `/${canonicalSearch(config.search)}`)}>
+          一覧
+        </a>{" "}
         {view.access !== "read" && (
-          <a href={path(config.basePath, `/notes/${noteId}/edit`)}>編集</a>
+          <a
+            href={`${path(config.basePath, `/notes/${noteId}/edit`)}${canonicalSearch(config.search)}`}
+          >
+            編集
+          </a>
         )}{" "}
         {view.access === "manage" && (
-          <a href={path(config.basePath, `/notes/${noteId}/access`)}>
+          <a
+            href={`${path(config.basePath, `/notes/${noteId}/access`)}${canonicalSearch(config.search)}`}
+          >
             共有設定
           </a>
         )}
@@ -148,7 +265,9 @@ function RelatedNotes({
             <ul>
               {notes.map((note) => (
                 <li key={note.note_id}>
-                  <a href={path(config.basePath, `/notes/${note.note_id}`)}>
+                  <a
+                    href={`${path(config.basePath, `/notes/${note.note_id}`)}${canonicalSearch(config.search)}`}
+                  >
                     {note.title}
                   </a>
                 </li>
@@ -180,7 +299,11 @@ function AccessPage({
   return (
     <>
       <nav aria-label="ノート操作">
-        <a href={path(config.basePath, `/notes/${noteId}`)}>閲覧画面へ戻る</a>
+        <a
+          href={`${path(config.basePath, `/notes/${noteId}`)}${canonicalSearch(config.search)}`}
+        >
+          閲覧画面へ戻る
+        </a>
       </nav>
       <AccessControl
         apiBase={config.apiBase}
@@ -206,4 +329,34 @@ function parseRoute(pathname: string): Route {
 function path(basePath: string, suffix: string): string {
   const base = basePath === "/" ? "" : basePath.replace(/\/$/, "");
   return `${base}${suffix}`;
+}
+
+function listPath(
+  config: ApplicationConfig,
+  query: NoteListQuery,
+  page: number,
+): string {
+  return path(config.basePath, `/${noteListSearch(query, page)}`);
+}
+
+function canonicalSearch(search: string): string {
+  return noteListSearch(parseNoteListQuery(search));
+}
+
+function accessLabel(access: NoteListEntry["access"]): string {
+  switch (access) {
+    case "read":
+      return "閲覧";
+    case "edit":
+      return "編集";
+    case "manage":
+      return "所有";
+  }
+}
+
+function formatDateTime(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
 }

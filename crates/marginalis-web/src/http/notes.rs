@@ -9,8 +9,8 @@ use axum::{
 use marginalis_application::{NoteAclChange, NoteRenderContext, NoteView};
 use marginalis_contract::{
     NoteAccessValue, NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
-    NotePermissionValue, NotePreviewResponse, NoteResponse, NoteSummaryResponse, NoteViewResponse,
-    ProblemCode, RelatedNotesResponse, SessionResponse,
+    NoteListEntryResponse, NotePermissionValue, NotePreviewResponse, NoteResponse,
+    NoteSummaryResponse, NoteViewResponse, ProblemCode, RelatedNotesResponse, SessionResponse,
 };
 use marginalis_domain::{Note, NoteAccess, NoteDraft, NotePermission, NoteSummary, Revision};
 
@@ -36,14 +36,26 @@ pub(super) async fn session(
 pub(super) async fn list_notes(
     State(state): State<ApiState>,
     headers: HeaderMap,
-) -> HandlerResult<Json<Vec<NoteSummaryResponse>>> {
+) -> HandlerResult<Json<Vec<NoteListEntryResponse>>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let notes = state
         .notes
         .list_visible_notes(actor)
         .await
         .map_err(note_error)?;
-    Ok(Json(notes.into_iter().map(note_summary_response).collect()))
+    Ok(Json(
+        notes
+            .into_iter()
+            .map(|entry| NoteListEntryResponse {
+                note_id: entry.summary.note_id.to_string(),
+                title: entry.summary.title,
+                tags: entry.summary.tags,
+                updated_at_ms: entry.summary.updated_at.get(),
+                revision: entry.summary.revision.get(),
+                access: note_access_response(entry.access),
+            })
+            .collect(),
+    ))
 }
 
 pub(super) async fn read_note(
@@ -306,11 +318,7 @@ fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
 fn note_view_response(view: NoteView) -> NoteViewResponse {
     NoteViewResponse {
         note: note_response(view.note),
-        access: match view.access {
-            NoteAccess::Read => NoteAccessValue::Read,
-            NoteAccess::Edit => NoteAccessValue::Edit,
-            NoteAccess::Manage => NoteAccessValue::Manage,
-        },
+        access: note_access_response(view.access),
         html: view.html,
         related: RelatedNotesResponse {
             outgoing: view
@@ -326,6 +334,14 @@ fn note_view_response(view: NoteView) -> NoteViewResponse {
                 .map(note_summary_response)
                 .collect(),
         },
+    }
+}
+
+fn note_access_response(access: NoteAccess) -> NoteAccessValue {
+    match access {
+        NoteAccess::Read => NoteAccessValue::Read,
+        NoteAccess::Edit => NoteAccessValue::Edit,
+        NoteAccess::Manage => NoteAccessValue::Manage,
     }
 }
 

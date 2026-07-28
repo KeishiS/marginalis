@@ -99,10 +99,11 @@ SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出
 タグは保存時にAdocWeaveで解析し、一覧と検索に使う投影としてSQLiteへ同時に保存します。APIから
 題名やタグだけを独立して更新する経路は設けません。
 
-一覧のportはAsciiDoc文書を含まない`NoteSummary`だけを返します。文書中の参照先はID集合を一度に
-repositoryへ渡して取得し、参照数に比例してSQL問い合わせを繰り返しません。変更操作は認可、
-削除状態、期待revisionを一つの条件付きSQLへ含めます。条件に一致しなかった場合だけ、同じ
-transaction内で不可視と競合を分類します。
+一覧のportはAsciiDoc文書を含まない`NoteSummary`と、現在の利用者の`NoteAccess`を組にした
+`NoteListEntry`を返します。SQLiteでは概要と実効アクセス水準を一つの問い合わせで取得し、
+ノート数に比例して問い合わせを繰り返しません。文書中の参照先もID集合を一度にrepositoryへ渡して
+取得します。変更操作は認可、削除状態、期待revisionを一つの条件付きSQLへ含めます。条件に
+一致しなかった場合だけ、同じtransaction内で不可視と競合を分類します。
 閲覧画面に必要な正本、実効アクセス水準、参照先、関連概要は、一つのSQLite読み取りtransactionで
 取得します。描画はこのスナップショットだけを使うため、一画面の途中で別の更新結果が混ざりません。
 

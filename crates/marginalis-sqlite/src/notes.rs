@@ -4,8 +4,8 @@ use std::str::FromStr;
 
 use marginalis_application::{NoteAclState, NoteViewSnapshot, RelatedNotes};
 use marginalis_domain::{
-    Actor, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NotePermission,
-    NoteSummary, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis,
+    Actor, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
+    NotePermission, NoteSummary, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
 use sqlx::{QueryBuilder, Row, Sqlite};
 
@@ -135,22 +135,22 @@ impl SqliteDatabase {
     pub async fn list_visible_notes(
         &self,
         actor: &Actor,
-    ) -> Result<Vec<NoteSummary>, SqliteStoreError> {
+    ) -> Result<Vec<NoteListEntry>, SqliteStoreError> {
         let rows = sqlx::query(
-            "SELECT note_id, title, tags_json, updated_at_ms, revision
+            "SELECT notes.note_id, notes.title, notes.tags_json, notes.updated_at_ms,
+                    notes.revision, access.access_level
              FROM notes
-             WHERE deleted_at_ms IS NULL
-               AND EXISTS (SELECT 1 FROM note_access access
-                           WHERE access.note_id = notes.note_id
-                             AND access.issuer = ? AND access.subject = ?)
-             ORDER BY updated_at_ms DESC, note_id ASC",
+             JOIN note_access access ON access.note_id = notes.note_id
+             WHERE notes.deleted_at_ms IS NULL
+               AND access.issuer = ? AND access.subject = ?
+             ORDER BY notes.updated_at_ms DESC, notes.note_id ASC",
         )
         .bind(actor.issuer())
         .bind(actor.subject())
         .fetch_all(&self.pool)
         .await
         .map_err(database_error)?;
-        rows.into_iter().map(note_summary_from_row).collect()
+        rows.into_iter().map(note_list_entry_from_row).collect()
     }
 
     /// 認可確認と楽観的更新を同一transactionで行う。
@@ -614,6 +614,19 @@ fn note_summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<NoteSummary, Sq
         updated_at: UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
         revision: Revision::new(row.try_get("revision").map_err(database_error)?)
             .map_err(|_| SqliteStoreError::CorruptData)?,
+    })
+}
+
+fn note_list_entry_from_row(
+    row: sqlx::sqlite::SqliteRow,
+) -> Result<NoteListEntry, SqliteStoreError> {
+    let access = access_from_level(
+        row.try_get::<i64, _>("access_level")
+            .map_err(database_error)?,
+    )?;
+    Ok(NoteListEntry {
+        summary: note_summary_from_row(row)?,
+        access,
     })
 }
 

@@ -16,6 +16,9 @@ export interface NoteSummary {
   revision: number;
 }
 export type NoteAccess = "read" | "edit" | "manage";
+export interface NoteListEntry extends NoteSummary {
+  access: NoteAccess;
+}
 export interface RelatedNotes {
   outgoing: NoteSummary[];
   incoming: NoteSummary[];
@@ -109,6 +112,21 @@ export function parseNoteSummary(value: unknown): NoteSummary {
 export function parseNoteSummaries(value: unknown): NoteSummary[] {
   if (!Array.isArray(value)) throw new Error("note summaries are invalid");
   return value.map(parseNoteSummary);
+}
+
+export function parseNoteListEntry(value: unknown): NoteListEntry {
+  const summary = parseNoteSummary(value);
+  const object = record(value, "note list entry");
+  const access = object.access;
+  if (access !== "read" && access !== "edit" && access !== "manage") {
+    throw new Error("note list entry.access is invalid");
+  }
+  return { ...summary, access };
+}
+
+export function parseNoteListEntries(value: unknown): NoteListEntry[] {
+  if (!Array.isArray(value)) throw new Error("note list entries are invalid");
+  return value.map(parseNoteListEntry);
 }
 
 export function parseNoteView(value: unknown): NoteView {
@@ -243,8 +261,8 @@ function parseUtf8ByteSpan(
   };
 }
 
-export async function listNotes(apiBase: string): Promise<NoteSummary[]> {
-  return requestJson(`${apiBase}/notes`, undefined, parseNoteSummaries);
+export async function listNotes(apiBase: string): Promise<NoteListEntry[]> {
+  return requestJson(`${apiBase}/notes`, undefined, parseNoteListEntries);
 }
 
 export async function readNote(

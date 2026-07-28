@@ -47,14 +47,12 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .await,
         Ok(None)
     );
-    assert_eq!(
-        database
-            .list_visible_notes(&alice)
-            .await
-            .expect("owner list")
-            .len(),
-        1
-    );
+    let owner_list = database
+        .list_visible_notes(&alice)
+        .await
+        .expect("owner list");
+    assert_eq!(owner_list.len(), 1);
+    assert_eq!(owner_list[0].access, NoteAccess::Manage);
     assert!(
         database
             .list_visible_notes(&charlie)

@@ -18,7 +18,7 @@ pub(super) async fn home(
     uri: Uri,
     headers: HeaderMap,
 ) -> HandlerResult<Response> {
-    application_shell(&state, &headers, uri.path()).await
+    application_shell(&state, &headers, &uri).await
 }
 
 pub(super) async fn view_note(
@@ -26,7 +26,7 @@ pub(super) async fn view_note(
     uri: Uri,
     headers: HeaderMap,
 ) -> HandlerResult<Response> {
-    application_shell(&state, &headers, uri.path()).await
+    application_shell(&state, &headers, &uri).await
 }
 
 pub(super) async fn access_note_page(
@@ -34,7 +34,7 @@ pub(super) async fn access_note_page(
     uri: Uri,
     headers: HeaderMap,
 ) -> HandlerResult<Response> {
-    application_shell(&state, &headers, uri.path()).await
+    application_shell(&state, &headers, &uri).await
 }
 
 pub(super) async fn create_note_page(
@@ -42,7 +42,7 @@ pub(super) async fn create_note_page(
     uri: Uri,
     headers: HeaderMap,
 ) -> HandlerResult<Response> {
-    application_shell(&state, &headers, uri.path()).await
+    application_shell(&state, &headers, &uri).await
 }
 
 pub(super) async fn edit_note_page(
@@ -50,15 +50,15 @@ pub(super) async fn edit_note_page(
     uri: Uri,
     headers: HeaderMap,
 ) -> HandlerResult<Response> {
-    application_shell(&state, &headers, uri.path()).await
+    application_shell(&state, &headers, &uri).await
 }
 
 async fn application_shell(
     state: &ApiState,
     headers: &HeaderMap,
-    request_path: &str,
+    uri: &Uri,
 ) -> HandlerResult<Response> {
-    let internal_path = internal_path(&state.cookie_path, request_path);
+    let internal_path = internal_path(&state.cookie_path, uri.path());
     let return_to = external_path(&state.cookie_path, &internal_path);
     if let Err(response) = authenticated_ui_actor(headers, state, &return_to).await {
         return Ok(response);
@@ -67,6 +67,7 @@ async fn application_shell(
         "apiBase": external_path(&state.cookie_path, "/api/v3"),
         "basePath": state.cookie_path,
         "path": internal_path,
+        "search": uri.query().map_or(String::new(), |query| format!("?{query}")),
     })
     .to_string();
     let content = format!(

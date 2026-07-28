@@ -15,6 +15,7 @@ const CONFIG: EditorConfig = {
   noteId: "",
   apiBase: "/marginalis/api/v3",
   basePath: "/marginalis",
+  search: "",
 };
 
 const SOURCE =
