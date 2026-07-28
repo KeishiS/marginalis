@@ -22,7 +22,9 @@ SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
 `marginalis-sqlite`は永続化port、`marginalis-asciidoc`は文書の検証・描画port、
 `marginalis-web`は外部URL生成portを実装します。これにより、ノート操作の単体試験ではSQLite、
 AsciiDoc engine、HTTP serverを起動する必要がありません。
-`marginalis-server`は認証とOAuthの移行前のapplication serviceを保持します。
+`marginalis-auth-oidc`は外部identity provider portを実装し、OIDC discovery・code exchange・
+ID token検証を担当します。利用を許可するグループと管理者グループの判断はapplicationが
+担当します。`marginalis-server`は移行前のMCP OAuth application serviceだけを保持します。
 `marginalis-auth-oidc` は OIDC discovery・code exchange・ID token 検証を担当します。MCP の
 JSON-RPC wire 型は、それを利用する唯一の transport である `marginalis-web::mcp` に置きます。
 実行バイナリは `marginalis-service` です。
@@ -60,7 +62,7 @@ crates/
 ├── marginalis-asciidoc        AsciiDoc検証・描画・export
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
 ├── marginalis-sqlite          SQLite adapter
-├── marginalis-server          移行前の認証・OAuth application service
+├── marginalis-server          移行前のMCP OAuth application service
 ├── marginalis-web             HTTP adapter
 ├── marginalis-service         composition rootと実行バイナリ
 └── marginalis-integration-tests
