@@ -6,7 +6,11 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use adocweave::OutputLimits;
 use adocweave::output::diagnostics::Severity;
-use adocweave::output::html::render;
+use adocweave::output::html::render_with_inputs;
+use adocweave::resolution::{
+    ReferenceKey, RenderInputs, ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind,
+    ResolvedReference, ResolverFailure,
+};
 #[cfg(test)]
 use marginalis_application::Utf8ByteSpan;
 use marginalis_application::{NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget};
@@ -42,11 +46,33 @@ pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
 /// 本アプリが受理するAdocWeaveの完全一致パッケージ版。
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.11.0";
 /// Marginalisが保存時に適用するノート入力規則の版。
-pub const NOTE_PROFILE_VERSION: u32 = 1;
+pub const NOTE_PROFILE_VERSION: u32 = 2;
 pub const MAX_TITLE_CHARACTERS: usize = 200;
 pub const MAX_NOTE_BODY_BYTES: usize = 512 * 1024;
 pub const MAX_TAGS: usize = 50;
 pub const MAX_TAG_CHARACTERS: usize = 64;
+
+/// ホストがACL判定するノート参照。順序は文書内の出現順です。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteReferenceQuery {
+    pub reference_index: usize,
+    pub target_note_id: marginalis_domain::NoteId,
+    pub anchor: Option<String>,
+}
+
+/// ホストが確定したノート参照の表示結果。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NoteReferenceResolution {
+    Visible {
+        reference_index: usize,
+        href: String,
+        title: String,
+        missing_anchor: bool,
+    },
+    Hidden {
+        reference_index: usize,
+    },
+}
 
 /// 固定した仕様と実行時の仕様が異なる場合に返すエラー。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,6 +150,11 @@ pub fn export_note(note: &Note) -> Result<String, ExportError> {
 
 /// SQLite正本を再検証した上で、固定RenderPolicyの安全なHTMLへ変換する。
 pub fn render_note_html(note: &Note) -> Result<String, RenderError> {
+    render_note_html_with_references(note, &[])
+}
+
+/// ノート参照を抽出し、ホスト側でACL判定するための問い合わせを返す。
+pub fn note_reference_queries(note: &Note) -> Result<Vec<NoteReferenceQuery>, RenderError> {
     let source = export_note(note).map_err(|_| RenderError)?;
     let analysis = adocweave::Engine::new(note_analysis_options())
         .analyze(&source)
@@ -136,7 +167,106 @@ pub fn render_note_html(note: &Note) -> Result<String, RenderError> {
     {
         return Err(RenderError);
     }
-    let output = render(analysis.document(), &note_render_policy());
+    analysis
+        .reference_queries()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(reference_index, query)| match query.target {
+            ReferenceKey::Scheme {
+                scheme,
+                locator,
+                anchor,
+            } if scheme == "note" => Some(
+                locator
+                    .parse::<marginalis_domain::EntityId>()
+                    .map(|id| NoteReferenceQuery {
+                        reference_index,
+                        target_note_id: marginalis_domain::NoteId::new(id),
+                        anchor,
+                    })
+                    .map_err(|_| RenderError),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 指定したanchorが対象ノートの参照先として存在するかを返す。
+pub fn note_has_anchor(note: &Note, anchor: &str) -> Result<bool, RenderError> {
+    let source = export_note(note).map_err(|_| RenderError)?;
+    let analysis = adocweave::Engine::new(note_analysis_options())
+        .analyze(&source)
+        .map_err(|_| RenderError)?;
+    if analysis
+        .diagnostics()
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Error)
+        || !validate_note_content_profile(&analysis).is_empty()
+    {
+        return Err(RenderError);
+    }
+    Ok(analysis
+        .reference_targets()
+        .iter()
+        .any(|target| target.id == anchor))
+}
+
+/// ACL判定済みの参照だけを安全なHTMLへ反映する。
+pub fn render_note_html_with_references(
+    note: &Note,
+    resolutions: &[NoteReferenceResolution],
+) -> Result<String, RenderError> {
+    let source = export_note(note).map_err(|_| RenderError)?;
+    let analysis = adocweave::Engine::new(note_analysis_options())
+        .analyze(&source)
+        .map_err(|_| RenderError)?;
+    if analysis
+        .diagnostics()
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Error)
+        || !validate_note_content_profile(&analysis).is_empty()
+    {
+        return Err(RenderError);
+    }
+    let queries = analysis.reference_queries();
+    let references = resolutions
+        .iter()
+        .map(|resolution| {
+            let reference_index = match resolution {
+                NoteReferenceResolution::Visible {
+                    reference_index, ..
+                }
+                | NoteReferenceResolution::Hidden { reference_index } => *reference_index,
+            };
+            let query = queries.get(reference_index).ok_or(RenderError)?;
+            Ok(match resolution {
+                NoteReferenceResolution::Visible {
+                    href,
+                    title,
+                    missing_anchor,
+                    ..
+                } => {
+                    let resolved = ResolvedReference::resolved(query.source_range, href)
+                        .with_display_text(title);
+                    if *missing_anchor {
+                        resolved.with_notices(vec![ResolutionNotice {
+                            kind: ResolutionNoticeKind::Fallback,
+                        }])
+                    } else {
+                        resolved
+                    }
+                }
+                NoteReferenceResolution::Hidden { .. } => ResolvedReference::failed(
+                    query.source_range,
+                    ResolverFailure {
+                        kind: ResolutionFailureKind::MissingTarget,
+                    },
+                ),
+            })
+        })
+        .collect::<Result<Vec<_>, RenderError>>()?;
+    let inputs = RenderInputs::new(references, Vec::new());
+    let output = render_with_inputs(analysis.document(), &note_render_policy(), &inputs);
     if output
         .diagnostics
         .iter()
@@ -501,7 +631,6 @@ mod tests {
             "link:javascript:alert(1)[unsafe]",
             "image::https://example.test/a.png[]",
             "xref:../other.adoc[relative]",
-            "xref:note:0197c9bc-0000-7000-8000-000000000001[note]",
         ] {
             assert!(
                 validate_note_draft(NoteDraft {
@@ -654,7 +783,7 @@ mod tests {
         let rendering = note_render_policy();
         assert!(!rendering.active_urls.allow_authored_relative);
         assert!(!rendering.active_urls.allow_resolved_relative);
-        assert!(!rendering.active_urls.allow_resolved_root_relative);
+        assert!(rendering.active_urls.allow_resolved_root_relative);
         assert!(!rendering.active_urls.allow_data_uris);
         assert_eq!(
             rendering.active_urls.allowed_schemes,
@@ -743,5 +872,85 @@ mod tests {
                 .iter()
                 .any(|error| error.code == NoteValidationCode::UnsupportedSourceLanguage)
         );
+    }
+
+    #[test]
+    fn note_scheme_accepts_only_uuid_v7_targets() {
+        let target = "0197c9bc-0000-7000-8000-000000000002";
+        let body = format!("xref:note:{target}#evidence[根拠]");
+        assert!(
+            validate_note_draft(NoteDraft {
+                title: "Title".into(),
+                body: body.clone(),
+                tags: Vec::new(),
+            })
+            .is_ok()
+        );
+        let queries = note_reference_queries(&note(&body)).expect("reference queries");
+        assert_eq!(queries.len(), 1);
+        assert_eq!(queries[0].target_note_id.to_string(), target);
+        assert_eq!(queries[0].anchor.as_deref(), Some("evidence"));
+
+        for forbidden in [
+            "xref:note:not-a-uuid[invalid]",
+            "xref:note:550e8400-e29b-41d4-a716-446655440000[v4]",
+            "xref:https:example.test[unknown scheme]",
+            "xref:other.adoc[document]",
+        ] {
+            let errors = validate_note_draft(NoteDraft {
+                title: "Title".into(),
+                body: forbidden.into(),
+                tags: Vec::new(),
+            })
+            .expect_err("external reference");
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.code == NoteValidationCode::ExternalReferenceDisabled),
+                "{forbidden}: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_note_references_fill_titles_and_hide_missing_targets() {
+        let target = "0197c9bc-0000-7000-8000-000000000002";
+        let source = note(&format!(
+            "xref:note:{target}[] xref:note:{target}[指定ラベル]"
+        ));
+        let html = render_note_html_with_references(
+            &source,
+            &[
+                NoteReferenceResolution::Visible {
+                    reference_index: 0,
+                    href: format!("/marginalis/notes/{target}"),
+                    title: "参照先タイトル".into(),
+                    missing_anchor: false,
+                },
+                NoteReferenceResolution::Visible {
+                    reference_index: 1,
+                    href: format!("/marginalis/notes/{target}"),
+                    title: "参照先タイトル".into(),
+                    missing_anchor: false,
+                },
+            ],
+        )
+        .expect("resolved HTML");
+        assert!(html.contains(&format!("href=\"/marginalis/notes/{target}\"")));
+        assert!(html.contains(">参照先タイトル</a>"));
+        assert!(html.contains(">指定ラベル</a>"));
+
+        let hidden = render_note_html_with_references(
+            &source,
+            &[
+                NoteReferenceResolution::Hidden { reference_index: 0 },
+                NoteReferenceResolution::Hidden { reference_index: 1 },
+            ],
+        )
+        .expect("hidden HTML");
+        assert!(!hidden.contains(target));
+        assert!(!hidden.contains("参照先タイトル"));
+        assert!(hidden.contains("指定ラベル"));
+        assert!(!hidden.contains("href="));
     }
 }

@@ -70,7 +70,7 @@ impl ForbiddenRule {
             Self::InlinePassthrough => "inline passthrough is not allowed",
             Self::BlockPassthrough => "block passthrough is not allowed",
             Self::DuplicateAnchor => "anchor IDs must be unique within a note",
-            Self::ExternalReference => "cross-document and scheme references are not allowed",
+            Self::ExternalReference => "references other than the note scheme are not allowed",
             Self::InvalidUrlScheme => "the authored link target is not allowed",
             Self::Resource => "external media resources are not allowed",
             Self::UnsupportedMathLanguage => "only latexmath formulas are allowed",
@@ -184,6 +184,7 @@ pub fn note_profile() -> NoteProfile {
                 "monospace",
                 "local_anchor",
                 "local_cross_reference",
+                "note_reference",
                 "safe_link",
                 "inline_math",
             ],
@@ -205,6 +206,11 @@ pub fn note_profile() -> NoteProfile {
                 kind: "local_reference",
                 description: "Section, local anchor, and local cross-reference",
                 body: "== Result\n\n[[evidence]]\nEvidence.\n\nSee <<evidence>>.",
+            },
+            NoteProfileExample {
+                kind: "note_reference",
+                description: "Reference to another note",
+                body: "xref:note:0197c9bc-0000-7000-8000-000000000001[Related note]",
             },
             NoteProfileExample {
                 kind: "source_block",
@@ -265,7 +271,13 @@ fn validate_note_content_profile_with(
         analysis
             .reference_queries()
             .into_iter()
-            .filter(|query| !matches!(query.target, ReferenceKey::Local { .. }))
+            .filter(|query| match &query.target {
+                ReferenceKey::Local { .. } => false,
+                ReferenceKey::Scheme {
+                    scheme, locator, ..
+                } => scheme != "note" || locator.parse::<marginalis_domain::EntityId>().is_err(),
+                ReferenceKey::Document { .. } => true,
+            })
             .map(|query| {
                 NoteContentError::forbidden(ForbiddenRule::ExternalReference, query.source_range)
             }),

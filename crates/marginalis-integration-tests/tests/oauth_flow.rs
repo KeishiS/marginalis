@@ -470,7 +470,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         profile["result"]["structuredContent"]["adocweave_package_version"],
         "0.11.0"
     );
-    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 1);
+    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 2);
 
     let invalid = call_mcp(
         &server.app,

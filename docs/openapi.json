@@ -4,7 +4,7 @@
     "title": "Marginalis API",
     "version": "v2",
     "x-adocweave-package-version": "0.11.0",
-    "x-note-profile-version": 1,
+    "x-note-profile-version": 2,
     "description": "SQLite canonical-note REST API. Browser requests use the OIDC session cookie; every state-changing request also requires a same-origin CSRF token in X-CSRF-Token."
   },
   "paths": {

@@ -6,6 +6,7 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use marginalis_application::NoteRenderContext;
 use marginalis_domain::{Note, NoteDraft};
 use serde::{Deserialize, Serialize};
 
@@ -149,6 +150,9 @@ pub(super) async fn preview_note(
                 title: input.title,
                 body: input.body,
                 tags: input.tags,
+            },
+            NoteRenderContext {
+                note_path_prefix: super::auth::external_path(&state.cookie_path, "/notes"),
             },
         )
         .await

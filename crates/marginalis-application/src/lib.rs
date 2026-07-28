@@ -267,6 +267,12 @@ pub enum McpRefreshTokenRotationOutcome {
     InvalidScope,
 }
 
+/// HTML内のノート参照へ付与するtransport固有の公開パス。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteRenderContext {
+    pub note_path_prefix: String,
+}
+
 /// SQLite正本を扱うノート操作境界。HTTP、MCP、Web UIはこの可視性規則を共有する。
 #[async_trait]
 pub trait NoteUseCases: Send + Sync {
@@ -284,6 +290,7 @@ pub trait NoteUseCases: Send + Sync {
         &self,
         actor: Actor,
         draft: NoteDraft,
+        context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError>;
     async fn soft_delete_note(
         &self,
@@ -298,7 +305,12 @@ pub trait NoteUseCases: Send + Sync {
         expected_revision: i64,
     ) -> Result<Note, NoteUseCaseError>;
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError>;
-    fn render_note_html(&self, note: &Note) -> Result<String, NoteUseCaseError>;
+    async fn render_note_html(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        context: NoteRenderContext,
+    ) -> Result<String, NoteUseCaseError>;
     fn note_profile(&self) -> NoteProfile;
 }
 

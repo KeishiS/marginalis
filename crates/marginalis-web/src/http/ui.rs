@@ -5,6 +5,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
 };
+use marginalis_application::NoteRenderContext;
 
 use super::{
     auth::{authenticated_ui_actor, external_path, parse_note_id},
@@ -63,16 +64,26 @@ pub(super) async fn view_note(
     };
     let note = state
         .notes
-        .read_note(actor, parse_note_id(&note_id)?)
+        .read_note(actor.clone(), parse_note_id(&note_id)?)
         .await
         .map_err(note_error)?;
-    let body = state.notes.render_note_html(&note).map_err(|_| {
-        problem(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "render_failed",
-            "note cannot be rendered safely",
+    let body = state
+        .notes
+        .render_note_html(
+            actor,
+            note.note_id,
+            NoteRenderContext {
+                note_path_prefix: external_path(&state.cookie_path, "/notes"),
+            },
         )
-    })?;
+        .await
+        .map_err(|_| {
+            problem(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "render_failed",
+                "note cannot be rendered safely",
+            )
+        })?;
     let content = format!(
         "<nav aria-label=\"ノート操作\"><a href=\"{}\">一覧</a> <a href=\"{}\">編集</a></nav>{}",
         external_path(&state.cookie_path, "/"),
