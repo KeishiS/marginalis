@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import mathJaxUrl from "mathjax/tex-svg.js?url";
 import { enhanceCodeBlocks, prepareMath } from "./renderedContentEnhancement";
@@ -25,12 +25,17 @@ export function RenderedContent({
   preview?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const [failedHtml, setFailedHtml] = useState<string | null>(null);
 
   useEffect(() => {
     const element = container.current;
     if (!element) return;
     enhanceCodeBlocks(element);
     if (!prepareMath(element)) return;
+    if (failedHtml === html) {
+      element.dataset.mathStatus = "failed";
+      return;
+    }
 
     let current = true;
     void loadMathJax()
@@ -39,20 +44,31 @@ export function RenderedContent({
         mathJax.typesetClear?.([element]);
         await mathJax.typesetPromise([element]);
       })
-      .catch(() => {
-        if (current) element.dataset.mathStatus = "failed";
+      .catch((error: unknown) => {
+        if (current) {
+          element.dataset.mathStatus = "failed";
+          console.error("MathJaxによる数式の組版に失敗しました。", error);
+          setFailedHtml(html);
+        }
       });
     return () => {
       current = false;
     };
-  }, [html]);
+  }, [failedHtml, html]);
 
   return (
-    <div
-      ref={container}
-      className={`rendered-content${preview ? " preview-content" : ""}`}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      {failedHtml === html && (
+        <p className="math-rendering-error" role="alert">
+          数式を描画できませんでした。LaTeXの内容を確認するか、画面を再読み込みしてください。
+        </p>
+      )}
+      <div
+        ref={container}
+        className={`rendered-content${preview ? " preview-content" : ""}`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </>
   );
 }
 
@@ -63,7 +79,14 @@ async function loadMathJax(): Promise<MathJaxRuntime> {
   mathJaxLoader = new Promise<MathJaxRuntime>((resolve, reject) => {
     window.MathJax = {
       startup: { typeset: false },
-      options: { enableMenu: false },
+      // enrichmentはexplorerを有効化し、読み上げ用領域のinline styleを挿入する。
+      // Marginalisはstyle-srcを同一originに限定するため、任意の対話機能を無効にする。
+      options: {
+        enableEnrichment: false,
+        enableExplorer: false,
+        enableMenu: false,
+        menuOptions: { settings: { enrich: false } },
+      },
       svg: { fontCache: "local" },
     };
     const script = document.createElement("script");
