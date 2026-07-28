@@ -11,13 +11,14 @@ use axum::{
     http::{Request, Response, StatusCode, header},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use marginalis_application::{NoteApplication, OidcAuthenticationUseCases, SessionLifetime};
+use marginalis_application::{
+    NoteApplication, OidcAuthenticationUseCases, SessionLifetime, WebSessionApplication,
+};
 use marginalis_asciidoc::AsciiDocNoteContent;
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_integration_tests::MockIdentityProvider;
 use marginalis_server::{
-    ServerMcpOAuthService, ServerOidcAuthenticationUseCases, ServerWebSessionUseCases, SystemClock,
-    SystemRandom,
+    ServerMcpOAuthService, ServerOidcAuthenticationUseCases, SystemClock, SystemRandom,
 };
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::http::{ApiState, McpEndpoint, router};
@@ -79,8 +80,10 @@ impl TestServer {
             reqwest::Client::new(),
             Some(discovered),
         ));
-        let sessions = Arc::new(ServerWebSessionUseCases::new(
-            database.clone(),
+        let sessions = Arc::new(WebSessionApplication::new(
+            Arc::new(database.clone()),
+            Arc::new(SystemClock),
+            Arc::new(SystemRandom),
             SessionLifetime {
                 idle_timeout_ms: 24 * 60 * 60 * 1_000,
                 absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,

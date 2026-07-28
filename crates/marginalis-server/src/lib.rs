@@ -4,7 +4,6 @@ mod config;
 mod mcp_oauth;
 mod oidc;
 mod runtime;
-mod session;
 
 pub use config::{
     ConfigurationError, HttpConfig, OidcConfig, SecretConfig, ServerConfig, StorageConfig,
@@ -12,4 +11,3 @@ pub use config::{
 pub use mcp_oauth::ServerMcpOAuthService;
 pub use oidc::ServerOidcAuthenticationUseCases;
 pub use runtime::{SystemClock, SystemRandom};
-pub use session::ServerWebSessionUseCases;
