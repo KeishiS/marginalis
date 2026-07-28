@@ -6,8 +6,8 @@
 
 ## 現在地
 
-`v0.7.0`は2026-07-28に公開しました。公開後は、後方互換性と移行コストを制約にせず、
-持続的に変更できる境界へ再設計しています。
+`v0.7.0`は2026-07-28に公開しました。後方互換性と移行コストを制約にせず進めた再設計は、
+`v0.8.0`として統合します。
 
 | 順序 | Issue | 対象 | 状態 |
 | --- | --- | --- | --- |
@@ -16,7 +16,7 @@
 | 3 | [#52](https://github.com/KeishiS/marginalis/issues/52) | 公開契約とTypeScript Web UI | 実装・検証済み |
 | 4 | [#53](https://github.com/KeishiS/marginalis/issues/53) | 要件、試験、受入、リリースゲート | 実装・自動検証済み |
 
-再設計後のREST APIは`/api/v3`だけを提供します。OpenAPI、TypeScriptクライアント、MCPツール定義は
+`v0.8.0`のREST APIは`/api/v3`だけを提供します。OpenAPI、TypeScriptクライアント、MCPツール定義は
 `marginalis-contract`から生成し、一覧、閲覧、編集、共有設定は一つのReactアプリケーションが
 担当します。SQLite schemaは8、note profileは2、アーカイブは`marginalis-archive-6`です。
 
