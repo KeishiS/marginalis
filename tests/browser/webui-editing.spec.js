@@ -57,15 +57,11 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(
     page.getByRole("heading", { name: "ノートの作成" }),
   ).toBeVisible();
-  const title = page.getByRole("textbox", { name: "題名" });
-  const body = page.getByRole("textbox", { name: "本文（AsciiDoc）" });
-  const tags = page.getByRole("textbox", {
-    name: "タグ（コンマ区切り）",
-  });
-  await expect(title).toBeFocused();
-  await title.fill("VMで作成したノート");
-  await body.fill("日本語と絵文字😀\r\n\n*強調した本文*");
-  await tags.fill("受入試験, 日本語");
+  const source = page.getByRole("textbox", { name: "AsciiDoc文書" });
+  await expect(source).toBeFocused();
+  await source.fill(
+    "= VMで作成したノート\n:tags: 受入試験, 日本語\n\n日本語と絵文字😀\r\n\n*強調した本文*",
+  );
   await expect(page.getByText("未保存の変更があります。")).toBeVisible();
   await expect(page.locator(".preview-content")).toContainText(
     "日本語と絵文字😀",
@@ -86,12 +82,12 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(page.locator(".page-main")).toContainText("日本語と絵文字😀");
   await page.getByRole("link", { name: "編集" }).click();
 
-  await body.fill("include::secret[]");
+  await source.fill("= VMで作成したノート\n\ninclude::secret[]");
   await expect(
     page.getByRole("heading", { name: "プレビューできませんでした" }),
   ).toBeVisible();
   await expect(page.getByText(/includeディレクティブ/)).toBeVisible();
-  await body.fill("更新した本文\n\n== 結果\n\n成功😀");
+  await source.fill("= VMで作成したノート\n\n更新した本文\n\n== 結果\n\n成功😀");
   await expect(page.locator(".preview-content")).toContainText("成功😀");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("更新番号: 2")).toBeVisible();
@@ -105,9 +101,10 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     `${baseUrl}/api/v3/notes/${noteId}`,
     {
       data: {
-        title: "別操作で更新した題名",
-        body: current.body,
-        tags: current.tags,
+        source: current.source.replace(
+          "= VMで作成したノート",
+          "= 別操作で更新した題名",
+        ),
       },
       headers: {
         Origin: "https://marginalis.example.test",
@@ -120,19 +117,31 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   );
   expect(externalUpdate.status()).toBe(200);
 
-  await title.fill("競合後に保存する題名");
+  await source.fill(
+    (await source.inputValue()).replace(
+      "= VMで作成したノート",
+      "= 競合後に保存する題名",
+    ),
+  );
   await page.getByRole("button", { name: "保存" }).click();
   const conflictHeading = page.getByRole("heading", {
     name: "更新内容の競合",
   });
   await expect(conflictHeading).toBeVisible();
   await expect(conflictHeading).toBeFocused();
+  const conflictTable = page.getByRole("table", {
+    name: "本文の行単位比較",
+  });
   await expect(
-    page.getByRole("region", { name: "編集中" }),
-  ).toContainText("競合後に保存する題名");
+    conflictTable.getByRole("columnheader", { name: "編集中" }),
+  ).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "現在保存されている内容" }),
-  ).toContainText("別操作で更新した題名");
+    conflictTable.getByRole("columnheader", {
+      name: "現在保存されている内容",
+    }),
+  ).toBeVisible();
+  await expect(conflictTable).toContainText("競合後に保存する題名");
+  await expect(conflictTable).toContainText("別操作で更新した題名");
 
   await page
     .getByRole("button", { name: /更新番号3を編集の基準にする/ })
@@ -142,23 +151,24 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
       "更新番号3を基準にしました。内容を確認して保存してください。",
     ),
   ).toBeVisible();
-  await expect(title).toHaveValue("競合後に保存する題名");
+  await expect(source).toHaveValue(/= 競合後に保存する題名/);
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("更新番号: 4")).toBeVisible();
   await expect(page.getByText("変更は保存されています。")).toBeVisible();
 
   await page.goto(`${baseUrl}/notes/new`);
-  await page.getByRole("textbox", { name: "題名" }).fill("参照先ノート");
   await page
-    .getByRole("textbox", { name: "本文（AsciiDoc）" })
-    .fill("参照先の本文");
+    .getByRole("textbox", { name: "AsciiDoc文書" })
+    .fill("= 参照先ノート\n\n参照先の本文");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();
   const targetId = page.url().match(/\/notes\/([^/]+)\/edit$/)?.[1];
   expect(targetId).toBeTruthy();
 
   await page.goto(`${baseUrl}/notes/${noteId}/edit`);
-  await body.fill(`xref:note:${targetId}[参照先へ]`);
+  await source.fill(
+    `= 競合後に保存する題名\n:tags: 受入試験, 日本語\n\nxref:note:${targetId}[参照先へ]`,
+  );
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("変更は保存されています。")).toBeVisible();
   await page.getByRole("link", { name: "閲覧画面へ戻る" }).click();

@@ -48,8 +48,9 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
 }) => {
   await loginOwner(page);
   await page.getByRole("link", { name: "新規ノート" }).click();
-  await page.getByRole("textbox", { name: "題名" }).fill("ACL受入試験");
-  await page.getByRole("textbox", { name: "本文（AsciiDoc）" }).fill("共有前の本文");
+  await page
+    .getByRole("textbox", { name: "AsciiDoc文書" })
+    .fill("= ACL受入試験\n\n共有前の本文");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();
   const noteId = page.url().match(/\/notes\/([^/]+)\/edit$/)?.[1];
@@ -82,9 +83,7 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
           "if-match": '"rev-2"',
         },
         body: JSON.stringify({
-          title: "変更不可",
-          body: "変更不可",
-          tags: [],
+          source: "= 変更不可\n\n変更不可",
         }),
       });
       return response.status;
@@ -99,7 +98,9 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   await expect(editorPage.getByRole("link", { name: "編集" })).toBeVisible();
   await expect(editorPage.getByRole("link", { name: "共有設定" })).toHaveCount(0);
   await editorPage.getByRole("link", { name: "編集" }).click();
-  await editorPage.getByRole("textbox", { name: "題名" }).fill("編集者が更新した題名");
+  await editorPage
+    .getByRole("textbox", { name: "AsciiDoc文書" })
+    .fill("= 編集者が更新した題名\n\n共有前の本文");
   await editorPage.getByRole("button", { name: "保存" }).click();
   await expect(editorPage.getByText("更新番号: 3")).toBeVisible();
   const editorDeleteStatus = await editorPage.evaluate(

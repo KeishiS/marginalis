@@ -46,12 +46,17 @@ Pull Requestからマージします。
    git switch -c codex/<purpose>
    ```
 
-3. 変更を独立した単位でコミットし、関連する検証を実行します。
+3. 変更を独立した単位でコミットし、push前の検証を実行します。
 
    ```sh
-   nix develop --command cargo make verify
-   nix develop --command cargo make coverage
+   nix develop --command cargo make pre-push
    ```
+
+   `pre-push`はGitHub Actionsの`ci-verify`、`ci-coverage`、`ci-nixos-e2e`をまとめて実行し、
+   通常検証、カバレッジ測定、すべてのNixOS VM E2Eテストを確認します。`cargo make`を
+   タスク名なしで実行した場合も同じ検証を行います。
+   開発中に短い周期で確認する場合は`cargo make verify`を使用し、push前には
+   `pre-push`を省略しないでください。
 
    coverageの対象と解釈は[本番到達性とカバレッジ](coverage.md)を参照してください。
 

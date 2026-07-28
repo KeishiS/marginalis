@@ -3,7 +3,7 @@ default_to_workspace = false
 skip_core_tasks = true
 
 [tasks.default]
-alias = "verify"
+alias = "pre-push"
 
 [tasks.fmt]
 description = "Format Rust, Nix, and frontend source files"
@@ -69,7 +69,7 @@ args = ["build", "--workspace", "--all-targets", "--all-features"]
 [tasks.flake-check]
 description = "Evaluate the Nix flake without building every output"
 command = "nix"
-args = ["flake", "check", "--no-build"]
+args = ["--extra-experimental-features", "nix-command flakes", "flake", "check", "--no-build"]
 
 [tasks.actionlint]
 description = "Validate GitHub Actions workflow syntax"
@@ -118,14 +118,14 @@ command = "cargo"
 args = ["audit", "--ignore", "RUSTSEC-2023-0071"]
 
 [tasks.nix-release-check]
-description = "Build and run the Nix flake checks, including the NixOS VM test"
+description = "Build and run every Nix flake check, including all NixOS VM E2E tests"
 command = "nix"
-args = ["flake", "check", "-L"]
+args = ["--extra-experimental-features", "nix-command flakes", "flake", "check", "-L"]
 
 [tasks.release-package]
 description = "Build the Linux release package without creating a result symlink"
 command = "nix"
-args = ["build", ".#packages.x86_64-linux.default", "--no-link"]
+args = ["--extra-experimental-features", "nix-command flakes", "build", ".#packages.x86_64-linux.default", "--no-link"]
 
 [tasks.release-metadata]
 description = "Verify release version, tag, changelog, and declared dual-license files"
@@ -172,7 +172,7 @@ fi
 
 [tasks.release-gate]
 description = "Run every automated gate required before an RC or final release"
-dependencies = ["verify", "actionlint", "protocol-regression-assets", "release-metadata", "nix-release-check", "release-package"]
+dependencies = ["verify", "release-metadata", "nix-release-check", "release-package"]
 
 [tasks.dependency-boundaries]
 description = "Reject concrete adapters from transport production dependency graphs"
@@ -366,8 +366,28 @@ fi
 '''
 
 [tasks.verify]
-description = "Run formatting, static analysis, tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "traceability-check", "flake-check"]
+description = "Run formatting, static analysis, unit and integration tests, and flake evaluation"
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "protocol-regression-assets", "flake-check"]
+
+[tasks.ci-verify]
+description = "Run the GitHub Actions verify suite"
+alias = "verify"
+
+[tasks.ci-coverage]
+description = "Run the GitHub Actions coverage suite"
+alias = "coverage"
+
+[tasks.ci-nixos-e2e]
+description = "Run the GitHub Actions NixOS E2E suite"
+alias = "nix-release-check"
+
+[tasks.ci]
+description = "Run every GitHub Actions validation suite"
+dependencies = ["ci-verify", "ci-coverage", "ci-nixos-e2e"]
+
+[tasks.pre-push]
+description = "Run every GitHub Actions validation required before pushing code"
+alias = "ci"
 
 [tasks.frontend-install]
 description = "Install the locked frontend dependencies"
