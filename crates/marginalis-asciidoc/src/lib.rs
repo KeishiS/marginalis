@@ -66,9 +66,9 @@ impl NoteContent for AsciiDocNoteContent {
 
     fn reference_queries(
         &self,
-        note: &Note,
+        body: &str,
     ) -> Result<Vec<marginalis_application::NoteReferenceQuery>, NoteContentError> {
-        note_reference_queries(note)
+        note_reference_queries(body)
             .map_err(|_| NoteContentError)
             .map(|queries| {
                 queries
@@ -82,8 +82,8 @@ impl NoteContent for AsciiDocNoteContent {
             })
     }
 
-    fn has_anchor(&self, note: &Note, anchor: &str) -> Result<bool, NoteContentError> {
-        note_has_anchor(note, anchor).map_err(|_| NoteContentError)
+    fn has_anchor(&self, body: &str, anchor: &str) -> Result<bool, NoteContentError> {
+        note_has_anchor(body, anchor).map_err(|_| NoteContentError)
     }
 
     fn render(
@@ -203,20 +203,20 @@ impl std::error::Error for ExportError {}
 /// headerは永続化しない。`note-id`、作成者、時刻、タグは正本から毎回生成するため、利用者が
 /// server管理属性を偽装する経路を作らない。
 pub fn export_note(note: &Note) -> Result<String, ExportError> {
-    validate_identity(&note.creator_issuer, &note.creator_subject)
+    validate_identity(note.creator_issuer(), note.creator_subject())
         .map_err(|_| ExportError::InvalidIdentity)?;
-    let created_at = format_unix_millis(note.created_at)?;
-    let updated_at = format_unix_millis(note.updated_at)?;
+    let created_at = format_unix_millis(note.created_at())?;
+    let updated_at = format_unix_millis(note.updated_at())?;
     Ok(format!(
         "= {}\n:note-id: {}\n:creator-issuer: {}\n:creator-subject: {}\n:created-at: {}\n:updated-at: {}\n:tags: {}\n\n{}",
-        note.title,
-        note.note_id,
-        note.creator_issuer,
-        note.creator_subject,
+        note.title(),
+        note.note_id(),
+        note.creator_issuer(),
+        note.creator_subject(),
         created_at,
         updated_at,
-        note.tags.join(","),
-        note.body,
+        note.tags().join(","),
+        note.body(),
     ))
 }
 
@@ -226,10 +226,9 @@ pub fn render_note_html(note: &Note) -> Result<String, RenderError> {
 }
 
 /// ノート参照を抽出し、ホスト側でACL判定するための問い合わせを返す。
-pub fn note_reference_queries(note: &Note) -> Result<Vec<NoteReferenceQuery>, RenderError> {
-    let source = export_note(note).map_err(|_| RenderError)?;
+pub fn note_reference_queries(body: &str) -> Result<Vec<NoteReferenceQuery>, RenderError> {
     let analysis = adocweave::Engine::new(note_analysis_options())
-        .analyze(&source)
+        .analyze(body)
         .map_err(|_| RenderError)?;
     if analysis
         .diagnostics()
@@ -264,10 +263,9 @@ pub fn note_reference_queries(note: &Note) -> Result<Vec<NoteReferenceQuery>, Re
 }
 
 /// 指定したanchorが対象ノートの参照先として存在するかを返す。
-pub fn note_has_anchor(note: &Note, anchor: &str) -> Result<bool, RenderError> {
-    let source = export_note(note).map_err(|_| RenderError)?;
+pub fn note_has_anchor(body: &str, anchor: &str) -> Result<bool, RenderError> {
     let analysis = adocweave::Engine::new(note_analysis_options())
-        .analyze(&source)
+        .analyze(body)
         .map_err(|_| RenderError)?;
     if analysis
         .diagnostics()
@@ -481,14 +479,14 @@ pub fn validate_archive(archive: &Archive) -> Result<(), ArchiveValidationError>
     }
     for note in &archive.notes {
         let normalized = validate_note_draft(NoteDraft {
-            title: note.title.clone(),
-            body: note.body.clone(),
-            tags: note.tags.clone(),
+            title: note.title().to_owned(),
+            body: note.body().to_owned(),
+            tags: note.tags().to_vec(),
         })
         .map_err(|_| ArchiveValidationError)?;
-        if normalized.title != note.title
-            || normalized.body != note.body
-            || normalized.tags != note.tags
+        if normalized.title != note.title()
+            || normalized.body != note.body()
+            || normalized.tags != note.tags()
         {
             return Err(ArchiveValidationError);
         }
@@ -519,25 +517,25 @@ fn format_unix_millis(value: UnixMillis) -> Result<String, ExportError> {
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{Archive, EntityId, NoteId};
+    use marginalis_domain::{Archive, EntityId, Identity, NoteId};
 
     use super::*;
 
     fn note(body: &str) -> Note {
-        Note {
-            note_id: NoteId::new(
+        Note::restore(
+            NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
-            creator_issuer: "https://id.example.test".into(),
-            creator_subject: "alice".into(),
-            title: "A title".into(),
-            body: body.into(),
-            tags: vec!["Research".into()],
-            created_at: UnixMillis::new(0),
-            updated_at: UnixMillis::new(1_000),
-            revision: 1,
-            deleted_at: None,
-        }
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+            "A title".into(),
+            body.into(),
+            vec!["Research".into()],
+            UnixMillis::new(0),
+            UnixMillis::new(1_000),
+            1,
+            None,
+        )
+        .expect("consistent note")
     }
 
     #[test]
@@ -555,11 +553,10 @@ mod tests {
     }
 
     #[test]
-    fn export_rejects_identity_attribute_injection() {
-        let mut unsafe_note = note("body");
-        unsafe_note.creator_subject = "alice\n:admin: true".into();
-        assert_eq!(export_note(&unsafe_note), Err(ExportError::InvalidIdentity));
-        assert_eq!(render_note_html(&unsafe_note), Err(RenderError));
+    fn note_deserialization_rejects_identity_attribute_injection() {
+        let mut serialized = serde_json::to_value(note("body")).expect("serialize note");
+        serialized["creator_subject"] = "alice\n:admin: true".into();
+        assert!(serde_json::from_value::<Note>(serialized).is_err());
     }
 
     #[test]
@@ -664,8 +661,19 @@ mod tests {
 
     #[test]
     fn archive_validation_rejects_non_normalized_notes() {
-        let mut archived_note = note("safe body");
-        archived_note.tags = vec![" duplicate ".into(), "duplicate".into()];
+        let base = note("safe body");
+        let archived_note = Note::restore(
+            base.note_id(),
+            base.owner().clone(),
+            base.title().to_owned(),
+            base.body().to_owned(),
+            vec![" duplicate ".into(), "duplicate".into()],
+            base.created_at(),
+            base.updated_at(),
+            base.revision(),
+            base.deleted_at(),
+        )
+        .expect("structurally consistent note");
         let archive = create_archive(vec![archived_note], Vec::new());
         assert_eq!(validate_archive(&archive), Err(ArchiveValidationError));
     }
@@ -965,7 +973,7 @@ mod tests {
             })
             .is_ok()
         );
-        let queries = note_reference_queries(&note(&body)).expect("reference queries");
+        let queries = note_reference_queries(&body).expect("reference queries");
         assert_eq!(queries.len(), 1);
         assert_eq!(queries[0].target_note_id.to_string(), target);
         assert_eq!(queries[0].anchor.as_deref(), Some("evidence"));

@@ -34,8 +34,8 @@ pub(super) async fn home(
         .map(|note| {
             format!(
                 "<li><a href=\"{}\">{}</a></li>",
-                external_path(&state.cookie_path, &format!("/notes/{}", note.note_id)),
-                escape_html(&note.title)
+                external_path(&state.cookie_path, &format!("/notes/{}", note.note_id())),
+                escape_html(note.title())
             )
         })
         .collect::<String>();
@@ -70,14 +70,14 @@ pub(super) async fn view_note(
         .map_err(note_error)?;
     let capabilities = state
         .notes
-        .note_capabilities(actor.clone(), note.note_id)
+        .note_capabilities(actor.clone(), note.note_id())
         .await
         .map_err(note_error)?;
     let body = state
         .notes
         .render_note_html(
             actor.clone(),
-            note.note_id,
+            note.note_id(),
             NoteRenderContext {
                 note_path_prefix: external_path(&state.cookie_path, "/notes"),
             },
@@ -92,13 +92,16 @@ pub(super) async fn view_note(
         })?;
     let related = state
         .notes
-        .related_notes(actor, note.note_id)
+        .related_notes(actor, note.note_id())
         .await
         .map_err(note_error)?;
     let edit_link = if capabilities.can_edit {
         format!(
             " <a href=\"{}\">編集</a>",
-            external_path(&state.cookie_path, &format!("/notes/{}/edit", note.note_id)),
+            external_path(
+                &state.cookie_path,
+                &format!("/notes/{}/edit", note.note_id())
+            ),
         )
     } else {
         String::new()
@@ -108,7 +111,7 @@ pub(super) async fn view_note(
             " <a href=\"{}\">共有設定</a>",
             external_path(
                 &state.cookie_path,
-                &format!("/notes/{}/access", note.note_id)
+                &format!("/notes/{}/access", note.note_id())
             ),
         )
     } else {
@@ -120,7 +123,7 @@ pub(super) async fn view_note(
         body,
         related_notes_html(&state.cookie_path, related)
     );
-    Ok(Html(page_document(&note.title, &state.cookie_path, &content)).into_response())
+    Ok(Html(page_document(note.title(), &state.cookie_path, &content)).into_response())
 }
 
 pub(super) async fn access_note_page(
@@ -152,7 +155,7 @@ pub(super) async fn access_note_page(
     let config = serde_json::json!({
         "apiBase": external_path(&state.cookie_path, "/api/v2"),
         "noteId": note_id.to_string(),
-        "revision": note.revision,
+        "revision": note.revision(),
     })
     .to_string();
     let content = format!(

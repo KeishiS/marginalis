@@ -1,6 +1,6 @@
 //! 全ノートの可搬archive import/export。
 
-use std::{collections::HashSet, str::FromStr};
+use std::collections::HashSet;
 
 use marginalis_domain::{
     ArchivedNoteAclEntry, EntityId, Note, NoteId, NotePermission, validate_identity,
@@ -71,20 +71,7 @@ impl SqliteDatabase {
     ) -> Result<(), SqliteStoreError> {
         let mut note_ids = HashSet::new();
         for note in notes {
-            if !note_ids.insert(note.note_id) {
-                return Err(SqliteStoreError::CorruptData);
-            }
-            if EntityId::from_str(&note.note_id.to_string()).is_err()
-                || validate_identity(&note.creator_issuer, &note.creator_subject).is_err()
-                || note.created_at > note.updated_at
-                || note
-                    .deleted_at
-                    .is_some_and(|deleted_at| deleted_at < note.created_at)
-                || note
-                    .deleted_at
-                    .is_some_and(|deleted_at| deleted_at > note.updated_at)
-                || note.revision <= 0
-            {
+            if !note_ids.insert(note.note_id()) {
                 return Err(SqliteStoreError::CorruptData);
             }
         }
@@ -123,11 +110,11 @@ impl SqliteDatabase {
             .map_err(database_error)?;
         }
         for entry in note_acl {
-            let Some(note) = notes.iter().find(|note| note.note_id == entry.note_id) else {
+            let Some(note) = notes.iter().find(|note| note.note_id() == entry.note_id) else {
                 return Err(SqliteStoreError::CorruptData);
             };
-            if validate_identity(&note.creator_issuer, &entry.subject).is_err()
-                || entry.subject == note.creator_subject
+            if validate_identity(note.creator_issuer(), &entry.subject).is_err()
+                || entry.subject == note.creator_subject()
             {
                 return Err(SqliteStoreError::CorruptData);
             }
@@ -150,21 +137,22 @@ async fn insert_note_row(
     transaction: &mut sqlx::Transaction<'_, Sqlite>,
     note: &Note,
 ) -> Result<(), SqliteStoreError> {
-    let tags_json = serde_json::to_string(&note.tags).map_err(|_| SqliteStoreError::CorruptData)?;
+    let tags_json =
+        serde_json::to_string(note.tags()).map_err(|_| SqliteStoreError::CorruptData)?;
     sqlx::query(
         "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(note.note_id.to_string())
-    .bind(&note.creator_issuer)
-    .bind(&note.creator_subject)
-    .bind(&note.title)
-    .bind(&note.body)
+    .bind(note.note_id().to_string())
+    .bind(note.creator_issuer())
+    .bind(note.creator_subject())
+    .bind(note.title())
+    .bind(note.body())
     .bind(tags_json)
-    .bind(note.created_at.get())
-    .bind(note.updated_at.get())
-    .bind(note.revision)
-    .bind(note.deleted_at.map(marginalis_domain::UnixMillis::get))
+    .bind(note.created_at().get())
+    .bind(note.updated_at().get())
+    .bind(note.revision())
+    .bind(note.deleted_at().map(marginalis_domain::UnixMillis::get))
     .execute(&mut **transaction)
     .await
     .map_err(database_error)?;

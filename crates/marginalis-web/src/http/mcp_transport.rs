@@ -520,9 +520,9 @@ async fn mcp_tool_call(
                 "notes": notes
                     .into_iter()
                     .map(|note| serde_json::json!({
-                        "note_id": note.note_id.to_string(),
-                        "title": note.title,
-                        "revision": note.revision,
+                        "note_id": note.note_id().to_string(),
+                        "title": note.title(),
+                        "revision": note.revision(),
                     }))
                     .collect::<Vec<_>>()
             })
@@ -545,11 +545,11 @@ async fn mcp_tool_call(
             };
             notes.read_note(actor, note_id).await.map(|note| {
                 serde_json::json!({
-                    "note_id": note.note_id.to_string(),
-                    "title": note.title,
-                    "body": note.body,
-                    "tags": note.tags,
-                    "revision": note.revision,
+                    "note_id": note.note_id().to_string(),
+                    "title": note.title(),
+                    "body": note.body(),
+                    "tags": note.tags(),
+                    "revision": note.revision(),
                 })
             })
         }
@@ -682,7 +682,7 @@ fn note_profile_json(profile: NoteProfile) -> serde_json::Value {
 
 fn note_revision_json(note: Note) -> serde_json::Value {
     serde_json::json!({
-        "note_id": note.note_id.to_string(),
-        "revision": note.revision,
+        "note_id": note.note_id().to_string(),
+        "revision": note.revision(),
     })
 }

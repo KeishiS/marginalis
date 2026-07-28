@@ -123,8 +123,8 @@ impl std::error::Error for NoteContentError {}
 /// AsciiDocなどの文書形式に依存する処理を受け持つport。
 pub trait NoteContent: Send + Sync {
     fn validate_draft(&self, draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>>;
-    fn reference_queries(&self, note: &Note) -> Result<Vec<NoteReferenceQuery>, NoteContentError>;
-    fn has_anchor(&self, note: &Note, anchor: &str) -> Result<bool, NoteContentError>;
+    fn reference_queries(&self, body: &str) -> Result<Vec<NoteReferenceQuery>, NoteContentError>;
+    fn has_anchor(&self, body: &str, anchor: &str) -> Result<bool, NoteContentError>;
     fn render(
         &self,
         note: &Note,
@@ -190,7 +190,7 @@ impl NoteApplication {
     ) -> Result<Vec<NoteReferenceResolution>, NoteUseCaseError> {
         let queries = self
             .content
-            .reference_queries(note)
+            .reference_queries(note.body())
             .map_err(|_| NoteUseCaseError::Unavailable)?;
         let mut resolutions = Vec::with_capacity(queries.len());
         for query in queries {
@@ -208,7 +208,7 @@ impl NoteApplication {
             let missing_anchor = match query.anchor.as_deref() {
                 Some(anchor) => !self
                     .content
-                    .has_anchor(&target, anchor)
+                    .has_anchor(target.body(), anchor)
                     .map_err(|_| NoteUseCaseError::Unavailable)?,
                 None => false,
             };
@@ -216,7 +216,7 @@ impl NoteApplication {
                 .links
                 .href(
                     context,
-                    target.note_id,
+                    target.note_id(),
                     (!missing_anchor)
                         .then_some(query.anchor.as_deref())
                         .flatten(),
@@ -225,7 +225,7 @@ impl NoteApplication {
             resolutions.push(NoteReferenceResolution::Visible {
                 reference_index: query.reference_index,
                 href,
-                title: target.title,
+                title: target.title().to_owned(),
                 missing_anchor,
             });
         }
@@ -252,19 +252,13 @@ impl NoteUseCases for NoteApplication {
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
         let now = self.clock.now();
-        let note = Note {
-            note_id: NoteId::new(self.random.uuid_v7()),
-            creator_issuer: actor.issuer().to_owned(),
-            creator_subject: actor.subject().to_owned(),
-            title: draft.title,
-            body: draft.body,
-            tags: draft.tags,
-            created_at: now,
-            updated_at: now,
-            revision: 1,
-            deleted_at: None,
-        };
-        let reference_targets = reference_targets(self.content.as_ref(), &note)?;
+        let note = Note::create(
+            NoteId::new(self.random.uuid_v7()),
+            actor.identity(),
+            draft,
+            now,
+        );
+        let reference_targets = reference_targets(self.content.as_ref(), note.body())?;
         self.repository
             .create_note(&note, &reference_targets)
             .await
@@ -283,9 +277,8 @@ impl NoteUseCases for NoteApplication {
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
-        let mut projected_note = self.read_visible_note(&actor, note_id).await?;
-        projected_note.body.clone_from(&draft.body);
-        let reference_targets = reference_targets(self.content.as_ref(), &projected_note)?;
+        self.read_visible_note(&actor, note_id).await?;
+        let reference_targets = reference_targets(self.content.as_ref(), &draft.body)?;
         self.repository
             .update_visible_note(
                 &actor,
@@ -310,18 +303,12 @@ impl NoteUseCases for NoteApplication {
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
         let now = self.clock.now();
-        let note = Note {
-            note_id: NoteId::new(self.random.uuid_v7()),
-            creator_issuer: actor.issuer().to_owned(),
-            creator_subject: actor.subject().to_owned(),
-            title: draft.title,
-            body: draft.body,
-            tags: draft.tags,
-            created_at: now,
-            updated_at: now,
-            revision: 1,
-            deleted_at: None,
-        };
+        let note = Note::create(
+            NoteId::new(self.random.uuid_v7()),
+            actor.identity(),
+            draft,
+            now,
+        );
         let resolutions = self.reference_resolutions(&actor, &note, &context).await?;
         self.content
             .render(&note, &resolutions)
@@ -420,9 +407,9 @@ impl NoteUseCases for NoteApplication {
         let note = self.read_visible_note(&actor, note_id).await?;
         entries.sort_by(|left, right| left.subject.cmp(&right.subject));
         for (index, entry) in entries.iter().enumerate() {
-            validate_identity(&note.creator_issuer, &entry.subject)
+            validate_identity(note.creator_issuer(), &entry.subject)
                 .map_err(|_| acl_validation(index, NoteValidationCode::InvalidAclSubject))?;
-            if entry.subject == note.creator_subject {
+            if entry.subject == note.creator_subject() {
                 return Err(acl_validation(index, NoteValidationCode::OwnerInAcl));
             }
             if index > 0 && entries[index - 1].subject == entry.subject {
@@ -476,10 +463,10 @@ fn acl_validation(index: usize, code: NoteValidationCode) -> NoteUseCaseError {
 
 fn reference_targets(
     content: &dyn NoteContent,
-    note: &Note,
+    body: &str,
 ) -> Result<Vec<NoteId>, NoteUseCaseError> {
     Ok(content
-        .reference_queries(note)
+        .reference_queries(body)
         .map_err(|_| NoteUseCaseError::Unavailable)?
         .into_iter()
         .map(|query| query.target_note_id)
@@ -529,7 +516,7 @@ mod tests {
                 .lock()
                 .expect("notes lock")
                 .iter()
-                .find(|note| note.note_id == note_id)
+                .find(|note| note.note_id() == note_id)
                 .cloned())
         }
 
@@ -622,12 +609,12 @@ mod tests {
 
         fn reference_queries(
             &self,
-            _note: &Note,
+            _body: &str,
         ) -> Result<Vec<NoteReferenceQuery>, NoteContentError> {
             Ok(Vec::new())
         }
 
-        fn has_anchor(&self, _note: &Note, _anchor: &str) -> Result<bool, NoteContentError> {
+        fn has_anchor(&self, _body: &str, _anchor: &str) -> Result<bool, NoteContentError> {
             Ok(false)
         }
 
@@ -706,11 +693,11 @@ mod tests {
             .await
             .expect("create note");
 
-        assert_eq!(created.creator_subject, "alice");
-        assert_eq!(created.revision, 1);
+        assert_eq!(created.creator_subject(), "alice");
+        assert_eq!(created.revision(), 1);
         assert_eq!(
             application
-                .read_note(actor, created.note_id)
+                .read_note(actor, created.note_id())
                 .await
                 .expect("read created note"),
             created

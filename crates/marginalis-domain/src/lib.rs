@@ -2,7 +2,7 @@
 
 use core::{fmt, str::FromStr};
 
-use serde::{Deserialize, Deserializer, Serialize, de};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use url::Url;
 use uuid::Uuid;
 
@@ -94,19 +94,196 @@ impl fmt::Display for NoteId {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(try_from = "SerializedNote")]
 pub struct Note {
-    pub note_id: NoteId,
-    pub creator_issuer: String,
-    pub creator_subject: String,
-    pub title: String,
-    pub body: String,
-    pub tags: Vec<String>,
-    pub created_at: UnixMillis,
-    pub updated_at: UnixMillis,
-    pub revision: i64,
-    pub deleted_at: Option<UnixMillis>,
+    note_id: NoteId,
+    owner: Identity,
+    title: String,
+    body: String,
+    tags: Vec<String>,
+    created_at: UnixMillis,
+    updated_at: UnixMillis,
+    revision: i64,
+    deleted_at: Option<UnixMillis>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerializedNote {
+    note_id: NoteId,
+    creator_issuer: String,
+    creator_subject: String,
+    title: String,
+    body: String,
+    tags: Vec<String>,
+    created_at: UnixMillis,
+    updated_at: UnixMillis,
+    revision: i64,
+    deleted_at: Option<UnixMillis>,
+}
+
+#[derive(Serialize)]
+struct SerializedNoteRef<'a> {
+    note_id: NoteId,
+    creator_issuer: &'a str,
+    creator_subject: &'a str,
+    title: &'a str,
+    body: &'a str,
+    tags: &'a [String],
+    created_at: UnixMillis,
+    updated_at: UnixMillis,
+    revision: i64,
+    deleted_at: Option<UnixMillis>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidNote;
+
+impl fmt::Display for InvalidNote {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("note metadata is inconsistent")
+    }
+}
+
+impl std::error::Error for InvalidNote {}
+
+impl Note {
+    pub fn create(
+        note_id: NoteId,
+        owner: &Identity,
+        draft: NoteDraft,
+        created_at: UnixMillis,
+    ) -> Self {
+        Self {
+            note_id,
+            owner: owner.clone(),
+            title: draft.title,
+            body: draft.body,
+            tags: draft.tags,
+            created_at,
+            updated_at: created_at,
+            revision: 1,
+            deleted_at: None,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        note_id: NoteId,
+        owner: Identity,
+        title: String,
+        body: String,
+        tags: Vec<String>,
+        created_at: UnixMillis,
+        updated_at: UnixMillis,
+        revision: i64,
+        deleted_at: Option<UnixMillis>,
+    ) -> Result<Self, InvalidNote> {
+        if revision <= 0
+            || created_at > updated_at
+            || deleted_at
+                .is_some_and(|deleted_at| deleted_at < created_at || deleted_at > updated_at)
+        {
+            return Err(InvalidNote);
+        }
+        Ok(Self {
+            note_id,
+            owner,
+            title,
+            body,
+            tags,
+            created_at,
+            updated_at,
+            revision,
+            deleted_at,
+        })
+    }
+
+    pub const fn note_id(&self) -> NoteId {
+        self.note_id
+    }
+
+    pub const fn owner(&self) -> &Identity {
+        &self.owner
+    }
+
+    pub fn creator_issuer(&self) -> &str {
+        self.owner.issuer()
+    }
+
+    pub fn creator_subject(&self) -> &str {
+        self.owner.subject()
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn tags(&self) -> &[String] {
+        &self.tags
+    }
+
+    pub const fn created_at(&self) -> UnixMillis {
+        self.created_at
+    }
+
+    pub const fn updated_at(&self) -> UnixMillis {
+        self.updated_at
+    }
+
+    pub const fn revision(&self) -> i64 {
+        self.revision
+    }
+
+    pub const fn deleted_at(&self) -> Option<UnixMillis> {
+        self.deleted_at
+    }
+}
+
+impl TryFrom<SerializedNote> for Note {
+    type Error = InvalidNote;
+
+    fn try_from(note: SerializedNote) -> Result<Self, Self::Error> {
+        let owner =
+            Identity::new(note.creator_issuer, note.creator_subject).map_err(|_| InvalidNote)?;
+        Self::restore(
+            note.note_id,
+            owner,
+            note.title,
+            note.body,
+            note.tags,
+            note.created_at,
+            note.updated_at,
+            note.revision,
+            note.deleted_at,
+        )
+    }
+}
+
+impl Serialize for Note {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SerializedNoteRef {
+            note_id: self.note_id,
+            creator_issuer: self.owner.issuer(),
+            creator_subject: self.owner.subject(),
+            title: &self.title,
+            body: &self.body,
+            tags: &self.tags,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            revision: self.revision,
+            deleted_at: self.deleted_at,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// 一覧表示に必要な、本文と所有者情報を含まないノート概要。
@@ -121,10 +298,10 @@ pub struct NoteSummary {
 impl From<&Note> for NoteSummary {
     fn from(note: &Note) -> Self {
         Self {
-            note_id: note.note_id,
-            title: note.title.clone(),
-            tags: note.tags.clone(),
-            updated_at: note.updated_at,
+            note_id: note.note_id(),
+            title: note.title().to_owned(),
+            tags: note.tags().to_vec(),
+            updated_at: note.updated_at(),
         }
     }
 }
@@ -362,5 +539,62 @@ mod tests {
             ),
             Err(InvalidIdentity)
         );
+    }
+
+    #[test]
+    fn note_restoration_enforces_revision_and_time_ordering() {
+        let note_id = NoteId::new(EntityId::try_from_uuid(Uuid::now_v7()).expect("UUIDv7"));
+        let owner =
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner");
+        let restore = |created_at, updated_at, revision, deleted_at: Option<i64>| {
+            Note::restore(
+                note_id,
+                owner.clone(),
+                "Title".into(),
+                "Body".into(),
+                Vec::new(),
+                UnixMillis::new(created_at),
+                UnixMillis::new(updated_at),
+                revision,
+                deleted_at.map(UnixMillis::new),
+            )
+        };
+
+        assert!(restore(100, 100, 1, None).is_ok());
+        assert_eq!(restore(100, 100, 0, None), Err(InvalidNote));
+        assert_eq!(restore(101, 100, 1, None), Err(InvalidNote));
+        assert_eq!(restore(100, 200, 1, Some(99)), Err(InvalidNote));
+        assert_eq!(restore(100, 200, 1, Some(201)), Err(InvalidNote));
+    }
+
+    #[test]
+    fn note_deserialization_uses_the_same_invariants() {
+        let note_id = Uuid::now_v7();
+        let base = serde_json::json!({
+            "note_id": note_id,
+            "creator_issuer": "https://id.example.test",
+            "creator_subject": "alice",
+            "title": "Title",
+            "body": "Body",
+            "tags": [],
+            "created_at": 100,
+            "updated_at": 100,
+            "revision": 1,
+            "deleted_at": null
+        });
+        assert!(serde_json::from_value::<Note>(base.clone()).is_ok());
+
+        for (field, value) in [
+            (
+                "creator_subject",
+                serde_json::json!("alice\n:attribute: value"),
+            ),
+            ("revision", serde_json::json!(0)),
+            ("updated_at", serde_json::json!(99)),
+        ] {
+            let mut invalid = base.clone();
+            invalid[field] = value;
+            assert!(serde_json::from_value::<Note>(invalid).is_err());
+        }
     }
 }

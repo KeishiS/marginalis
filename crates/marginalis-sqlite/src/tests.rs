@@ -5,8 +5,8 @@ use marginalis_application::{
     OidcLoginAttempt, OidcLoginAttemptStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry, NoteDraft, NoteId,
-    NotePermission, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
+    Actor, EntityId, Identity, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry,
+    NoteDraft, NoteId, NotePermission, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
 };
 
 use super::*;
@@ -80,18 +80,18 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     let note_id = NoteId::new(
         EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("v7 note ID"),
     );
-    let note = Note {
+    let note = Note::restore(
         note_id,
-        creator_issuer: "https://id.example.test".into(),
-        creator_subject: "alice".into(),
-        title: "First title".into(),
-        body: "first body".into(),
-        tags: vec!["research".into()],
-        created_at: UnixMillis::new(100),
-        updated_at: UnixMillis::new(100),
-        revision: 1,
-        deleted_at: None,
-    };
+        Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+        "First title".into(),
+        "first body".into(),
+        vec!["research".into()],
+        UnixMillis::new(100),
+        UnixMillis::new(100),
+        1,
+        None,
+    )
+    .expect("consistent note");
     database.create_note(&note, &[]).await.expect("create note");
     assert_eq!(database.note(note_id, false).await, Ok(Some(note.clone())));
     assert_eq!(
@@ -173,7 +173,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .await
             .expect("note query")
             .expect("note remains")
-            .title,
+            .title(),
         "First title"
     );
 
@@ -192,8 +192,8 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         )
         .await
         .expect("update note");
-    assert_eq!(updated.revision, 2);
-    assert_eq!(updated.title, "Updated title");
+    assert_eq!(updated.revision(), 2);
+    assert_eq!(updated.title(), "Updated title");
     assert_eq!(
         database
             .soft_delete_visible_note(&alice, note_id, 1, UnixMillis::new(300))
@@ -204,22 +204,22 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .soft_delete_visible_note(&alice, note_id, 2, UnixMillis::new(300))
         .await
         .expect("soft delete");
-    assert_eq!(deleted.deleted_at, Some(UnixMillis::new(300)));
+    assert_eq!(deleted.deleted_at(), Some(UnixMillis::new(300)));
     assert_eq!(database.note(note_id, false).await, Ok(None));
     let deleted = database
         .note(note_id, true)
         .await
         .expect("read deleted")
         .expect("deleted note remains");
-    assert_eq!(deleted.deleted_at, Some(UnixMillis::new(300)));
-    assert_eq!(deleted.revision, 3);
+    assert_eq!(deleted.deleted_at(), Some(UnixMillis::new(300)));
+    assert_eq!(deleted.revision(), 3);
 
     let restored = database
         .restore_visible_note(&alice, note_id, 3, UnixMillis::new(350))
         .await
         .expect("restore note");
-    assert_eq!(restored.deleted_at, None);
-    assert_eq!(restored.revision, 4);
+    assert_eq!(restored.deleted_at(), None);
+    assert_eq!(restored.revision(), 4);
     database
         .replace_note_acl(
             &alice,
@@ -282,34 +282,9 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .await,
         Err(SqliteStoreError::ArchiveTargetNotEmpty)
     );
-    let mut invalid_snapshot = snapshot.clone();
-    invalid_snapshot[0].creator_issuer.clear();
     let rejected_database = SqliteDatabase::connect("sqlite::memory:")
         .await
         .expect("empty rejected target");
-    assert_eq!(
-        rejected_database
-            .import_notes(&invalid_snapshot, &[], &[])
-            .await,
-        Err(SqliteStoreError::CorruptData)
-    );
-    let mut injected_identity = snapshot.clone();
-    injected_identity[0].creator_subject = "alice\n:admin: true".into();
-    assert_eq!(
-        rejected_database
-            .import_notes(&injected_identity, &[], &[])
-            .await,
-        Err(SqliteStoreError::CorruptData)
-    );
-    let mut invalid_deleted_at = snapshot.clone();
-    invalid_deleted_at[0].deleted_at =
-        Some(UnixMillis::new(invalid_deleted_at[0].updated_at.get() + 1));
-    assert_eq!(
-        rejected_database
-            .import_notes(&invalid_deleted_at, &[], &[])
-            .await,
-        Err(SqliteStoreError::CorruptData)
-    );
     let (empty_notes, empty_acl) = rejected_database
         .export_archive_snapshot()
         .await
