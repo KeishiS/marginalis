@@ -125,10 +125,74 @@ body {
 }
 
 .notice,
-.problem {
+.problem,
+.conflict-panel {
   border: 0.1rem solid currentColor;
   margin-block: 1rem;
   padding: 0.75rem;
+}
+
+.conflict-fields {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.conflict-fields section {
+  border: 0.1rem solid currentColor;
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.conflict-fields h3,
+.conflict-fields dl {
+  margin-block: 0 0.5rem;
+}
+
+.conflict-fields dd {
+  margin-inline-start: 0;
+  overflow-wrap: anywhere;
+}
+
+.change-status {
+  font-weight: 700;
+}
+
+.conflict-body-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.conflict-body {
+  border-collapse: collapse;
+  min-width: 64rem;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.conflict-body th,
+.conflict-body td {
+  border: 0.1rem solid currentColor;
+  padding: 0.35rem 0.5rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.conflict-body th:first-child {
+  width: 3rem;
+}
+
+.conflict-body th:nth-child(2) {
+  width: 12rem;
+}
+
+.conflict-body td {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.conflict-body .changed {
+  background: color-mix(in srgb, currentColor 10%, transparent);
 }
 
 .problem h2 {
@@ -146,6 +210,10 @@ body {
     border-top: 0.1rem solid currentColor;
     padding-block-start: 1rem;
     padding-inline-start: 0;
+  }
+
+  .conflict-fields {
+    grid-template-columns: 1fr;
   }
 }
 
