@@ -473,6 +473,7 @@
                   acceptInvalidCerts = true;
                   idmAdminPasswordFile = pkgs.writeText "marginalis-test-idm-admin-password" "test-idm-admin-password";
                   groups.server-users = { };
+                  groups.server-admins = { };
                   systems.oauth2.marginalis = {
                     displayName = "Marginalis test client";
                     originUrl = "https://marginalis.example.test/marginalis/auth/oidc/callback";
@@ -484,9 +485,16 @@
                       "email"
                       "groups_name"
                     ];
+                    scopeMaps.server-admins = [
+                      "openid"
+                      "profile"
+                      "email"
+                      "groups_name"
+                    ];
                     claimMaps.groups = {
                       joinType = "array";
                       valuesByGroup.server-users = [ "server-users" ];
+                      valuesByGroup.server-admins = [ "server-admins" ];
                     };
                   };
                 };
@@ -509,6 +517,7 @@
                   pkgs.playwright-test
                   pkgs.playwright-driver.browsers
                   pkgs.ripgrep
+                  pkgs.sqlite
                 ];
                 services.nginx = {
                   enable = true;
@@ -549,6 +558,10 @@
                 "kanidm group add-members --accept-invalid-certs "
                 + "-H https://localhost:8443 -D idm_admin server-users idm_admin"
               )
+              idp.succeed(
+                "kanidm group add-members --accept-invalid-certs "
+                + "-H https://localhost:8443 -D idm_admin server-admins idm_admin"
+              )
               app.start()
               app.wait_for_unit("marginalis.service")
               app.wait_for_unit("nginx.service")
@@ -571,10 +584,19 @@
                 + "'https://marginalis.example.test/marginalis/auth/oidc/callback?code=invalid&state=invalid') = 401"
               )
               app.succeed(
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite \""
+                + "INSERT INTO web_sessions "
+                + "(session_id_hash,csrf_token_hash,issuer,subject,is_administrator,issued_at_ms,last_seen_at_ms,idle_expires_at_ms,absolute_expires_at_ms) VALUES "
+                + "(X'9257575af58c9bed123fb881f8ed8ddac43449f996542b47d3f8ebd74affc997',X'06f4c546d56505fc3365ad0af9315b19674c857a5aa0eb07a4b520a373d5bb80','https://id.example.test:8443/oauth2/openid/marginalis','reader-subject',0,1000000000000,1000000000000,4000000000000,4000000000000),"
+                + "(X'2af479431a32c17ea66d6eec48a390ca8051630ffea1b2ae75f7deff228286c7',X'2ac2f8b7dbd2b4547e48f2c6d78535c68977644aa94ebacf1334bf1d4069c5cb','https://id.example.test:8443/oauth2/openid/marginalis','editor-subject',0,1000000000000,1000000000000,4000000000000,4000000000000),"
+                + "(X'621388f1a111b5f664f87a25c012d3f1776eb8e53bd0bfe95b7524b536e27d64',X'c635ac885a14aa3b00a3d3fcfc7c158a0975139fdc42defcebb751da43c436a8','https://id.example.test:8443/oauth2/openid/marginalis','outsider-subject',0,1000000000000,1000000000000,4000000000000,4000000000000);\""
+              )
+              app.succeed(
                 "cp ${./tests/browser/kanidm-login.spec.js} /tmp/kanidm-login.spec.js; "
                 + "cp ${./tests/browser/webui-editing.spec.js} /tmp/webui-editing.spec.js; "
+                + "cp ${./tests/browser/webui-acl.spec.js} /tmp/webui-acl.spec.js; "
                 + "cd /tmp; "
-                + "set +e; playwright test kanidm-login.spec.js webui-editing.spec.js --reporter=line --workers=1 "
+                + "set +e; playwright test kanidm-login.spec.js webui-editing.spec.js webui-acl.spec.js --reporter=line --workers=1 "
                 + ">/tmp/playwright-raw.log 2>&1; status=$?; set -e; "
                 + "bash ${./.github/scripts/protocol-artifact.sh} sanitize "
                 + "/tmp/playwright-raw.log /tmp/playwright.log; "
