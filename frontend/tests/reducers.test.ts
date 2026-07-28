@@ -4,6 +4,10 @@ import {
   accessControlReducer,
   initialAccessControlState,
 } from "../src/accessControlState";
+import {
+  editorActivityReducer,
+  initialEditorActivityState,
+} from "../src/editorActivityState";
 import { editorReducer, initialEditorState } from "../src/editorState";
 
 const note = {
@@ -47,6 +51,23 @@ describe("editorReducer", () => {
     expect(rebased.form.source).toContain("編集中の本文");
     expect(rebased.baseline.source).toContain("他の更新");
     expect(rebased.revision).toBe(3);
+  });
+});
+
+describe("editorActivityReducer", () => {
+  it("保存の開始、失敗、入力再開を一貫した状態へ遷移させる", () => {
+    const saving = editorActivityReducer(initialEditorActivityState, {
+      type: "save-started",
+    });
+    expect(saving).toMatchObject({ saving: true, problem: null, notice: "" });
+    const failed = editorActivityReducer(saving, {
+      type: "save-failed",
+      problem: { code: "network_error", message: "通信失敗" },
+    });
+    expect(failed).toMatchObject({ saving: false, notice: "" });
+    expect(editorActivityReducer(failed, { type: "clear-feedback" })).toEqual(
+      initialEditorActivityState,
+    );
   });
 });
 
