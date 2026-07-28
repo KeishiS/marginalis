@@ -2,7 +2,7 @@ const { test, expect } = require("@playwright/test");
 
 const baseUrl = "https://marginalis.example.test/marginalis";
 
-async function loginAdministrator(page) {
+async function loginOwner(page) {
   await page.goto(`${baseUrl}/auth/oidc/login?next=%2Fmarginalis%2F`);
   await page.getByRole("textbox", { name: "Username", exact: true }).fill("idm_admin");
   await page.getByRole("textbox", { name: "Username", exact: true }).press("Enter");
@@ -42,11 +42,11 @@ async function actorContext(browser, session, csrf) {
   return context;
 }
 
-test("ACLは閲覧者、編集者、部外者、管理者の境界を保つ", async ({
+test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を保つ", async ({
   page,
   browser,
 }) => {
-  await loginAdministrator(page);
+  await loginOwner(page);
   await page.getByRole("link", { name: "新規ノート" }).click();
   await page.getByRole("textbox", { name: "題名" }).fill("ACL受入試験");
   await page.getByRole("textbox", { name: "本文（AsciiDoc）" }).fill("共有前の本文");

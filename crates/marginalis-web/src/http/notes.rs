@@ -20,7 +20,6 @@ use super::{
 pub(super) struct SessionResponse {
     issuer: String,
     subject: String,
-    is_administrator: bool,
 }
 
 #[derive(Serialize)]
@@ -94,9 +93,8 @@ pub(super) async fn session(
 ) -> HandlerResult<Json<SessionResponse>> {
     let actor = authenticated_actor(&headers, &state).await?;
     Ok(Json(SessionResponse {
-        issuer: actor.issuer,
-        subject: actor.subject,
-        is_administrator: actor.is_administrator,
+        issuer: actor.issuer().to_owned(),
+        subject: actor.subject().to_owned(),
     }))
 }
 

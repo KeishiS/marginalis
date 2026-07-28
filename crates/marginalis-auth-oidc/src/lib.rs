@@ -215,10 +215,6 @@ impl VerifiedOidcGroups {
         self.groups.contains(user_group)
     }
 
-    pub fn is_administrator(&self, administrator_group: &str) -> bool {
-        self.groups.contains(administrator_group)
-    }
-
     pub fn into_names(self) -> Vec<String> {
         self.groups.into_iter().collect()
     }
@@ -511,11 +507,10 @@ mod tests {
     #[test]
     fn parses_a_configured_group_claim_after_token_verification() {
         let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#);
-        let payload = URL_SAFE_NO_PAD.encode(r#"{"groups":["server-users","server-admins"]}"#);
+        let payload = URL_SAFE_NO_PAD.encode(r#"{"groups":["server-users"]}"#);
         let token = format!("{header}.{payload}.signature");
         let groups = groups_from_verified_id_token(&token, "groups").expect("groups");
         assert!(groups.is_user("server-users"));
-        assert!(groups.is_administrator("server-admins"));
     }
 
     #[test]

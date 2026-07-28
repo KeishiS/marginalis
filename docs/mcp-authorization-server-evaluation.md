@@ -27,7 +27,6 @@ Marginalis以外のシステムへの適性は扱いません。
 | --- | --- | --- |
 | `user-a` | `server-users` | 自身が所有するノートの操作 |
 | `user-b` | `server-users` | 他の通常利用者が所有するノートの非開示確認 |
-| `administrator` | `server-users`、`server-admins` | 全ノートの管理 |
 | `denied-user` | なし | Marginalisを利用できないことの確認 |
 
 `user-a`が所有する`note-a`と、`user-b`が所有する`note-b`を用意します。題名と本文には秘密情報を
@@ -44,7 +43,8 @@ Marginalis以外のシステムへの適性は扱いません。
 | 全操作 | `notes:read notes:write notes:delete` | 読み書きとソフトデリートが成功 |
 
 scopeを持っていても所有範囲は拡張しません。`user-a`による`note-b`の取得、更新、削除は拒否し、
-存在も開示しないことを確認します。`administrator`は同じ操作に成功することを確認します。
+存在も開示しないことを確認します。ACLで`user-a`へ共有した場合だけ、付与した権限の範囲で
+取得または更新に成功することを確認します。
 
 ## クライアントごとの接続確認
 

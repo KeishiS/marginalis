@@ -361,11 +361,8 @@ impl WebSessionUseCases for ActiveSessions {
     ) -> Result<Option<AuthenticatedSession>, AuthenticationUseCaseError> {
         Ok(
             (session_id == "active-session").then(|| AuthenticatedSession {
-                actor: Actor {
-                    issuer: "https://id.example.test".into(),
-                    subject: "alice".into(),
-                    is_administrator: false,
-                },
+                actor: Actor::try_new("https://id.example.test".into(), "alice".into())
+                    .expect("valid actor"),
                 idle_expires_at: UnixMillis::new(i64::MAX - 1),
                 absolute_expires_at: UnixMillis::new(i64::MAX),
             }),
@@ -508,11 +505,8 @@ impl McpOAuthUseCases for Mcp {
         Ok(
             matches!(token.as_str(), "valid-token" | "read-token" | "write-token").then(|| {
                 McpAuthenticatedActor {
-                    actor: Actor {
-                        issuer: "https://kanidm.example.test".into(),
-                        subject: "alice".into(),
-                        is_administrator: false,
-                    },
+                    actor: Actor::try_new("https://kanidm.example.test".into(), "alice".into())
+                        .expect("valid actor"),
                     scopes: match token.as_str() {
                         "read-token" => vec!["notes:read".into()],
                         "write-token" => vec!["notes:write".into()],

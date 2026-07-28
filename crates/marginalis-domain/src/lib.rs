@@ -210,11 +210,57 @@ pub fn validate_identity(issuer: &str, subject: &str) -> Result<(), InvalidIdent
     }
 }
 
+/// 外部identity providerが発行した、検証済みの主体識別子。
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Identity {
+    issuer: String,
+    subject: String,
+}
+
+impl Identity {
+    pub fn new(issuer: String, subject: String) -> Result<Self, InvalidIdentity> {
+        validate_identity(&issuer, &subject)?;
+        Ok(Self { issuer, subject })
+    }
+
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+
+    pub fn into_parts(self) -> (String, String) {
+        (self.issuer, self.subject)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Actor {
-    pub issuer: String,
-    pub subject: String,
-    pub is_administrator: bool,
+    identity: Identity,
+}
+
+impl Actor {
+    pub const fn new(identity: Identity) -> Self {
+        Self { identity }
+    }
+
+    pub fn try_new(issuer: String, subject: String) -> Result<Self, InvalidIdentity> {
+        Ok(Self::new(Identity::new(issuer, subject)?))
+    }
+
+    pub const fn identity(&self) -> &Identity {
+        &self.identity
+    }
+
+    pub fn issuer(&self) -> &str {
+        self.identity.issuer()
+    }
+
+    pub fn subject(&self) -> &str {
+        self.identity.subject()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -247,8 +247,6 @@ impl NoteUseCases for NoteApplication {
     }
 
     async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
-        validate_identity(&actor.issuer, &actor.subject)
-            .map_err(|_| NoteUseCaseError::Unavailable)?;
         let draft = self
             .content
             .validate_draft(draft)
@@ -256,8 +254,8 @@ impl NoteUseCases for NoteApplication {
         let now = self.clock.now();
         let note = Note {
             note_id: NoteId::new(self.random.uuid_v7()),
-            creator_issuer: actor.issuer.clone(),
-            creator_subject: actor.subject.clone(),
+            creator_issuer: actor.issuer().to_owned(),
+            creator_subject: actor.subject().to_owned(),
             title: draft.title,
             body: draft.body,
             tags: draft.tags,
@@ -307,8 +305,6 @@ impl NoteUseCases for NoteApplication {
         draft: NoteDraft,
         context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError> {
-        validate_identity(&actor.issuer, &actor.subject)
-            .map_err(|_| NoteUseCaseError::Unavailable)?;
         let draft = self
             .content
             .validate_draft(draft)
@@ -316,8 +312,8 @@ impl NoteUseCases for NoteApplication {
         let now = self.clock.now();
         let note = Note {
             note_id: NoteId::new(self.random.uuid_v7()),
-            creator_issuer: actor.issuer.clone(),
-            creator_subject: actor.subject.clone(),
+            creator_issuer: actor.issuer().to_owned(),
+            creator_subject: actor.subject().to_owned(),
             title: draft.title,
             body: draft.body,
             tags: draft.tags,
@@ -695,11 +691,8 @@ mod tests {
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
         );
-        let actor = Actor {
-            issuer: "https://id.example.test".into(),
-            subject: "alice".into(),
-            is_administrator: false,
-        };
+        let actor =
+            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
 
         let created = application
             .create_note(

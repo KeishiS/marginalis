@@ -35,7 +35,6 @@ CREATE TABLE web_sessions (
     csrf_token_hash BLOB NOT NULL,
     issuer TEXT NOT NULL,
     subject TEXT NOT NULL,
-    is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)),
     issued_at_ms INTEGER NOT NULL,
     last_seen_at_ms INTEGER NOT NULL,
     idle_expires_at_ms INTEGER NOT NULL,
@@ -67,7 +66,6 @@ CREATE TABLE mcp_authorization_codes (
     resource_uri TEXT NOT NULL,
     issuer TEXT NOT NULL,
     subject TEXT NOT NULL,
-    is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)),
     scopes TEXT NOT NULL,
     code_challenge TEXT NOT NULL,
     expires_at_ms INTEGER NOT NULL,
@@ -81,7 +79,6 @@ CREATE TABLE mcp_access_tokens (
     resource_uri TEXT NOT NULL,
     issuer TEXT NOT NULL,
     subject TEXT NOT NULL,
-    is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)),
     scopes TEXT NOT NULL,
     expires_at_ms INTEGER NOT NULL,
     revoked_at_ms INTEGER,
@@ -102,7 +99,6 @@ CREATE TABLE mcp_refresh_tokens (
     expires_at_ms INTEGER NOT NULL,
     rotated_at_ms INTEGER,
     revoked_at_ms INTEGER,
-    is_administrator INTEGER NOT NULL CHECK (is_administrator IN (0, 1)),
     token_family_id BLOB NOT NULL CHECK (length(token_family_id) = 32)
 ) STRICT;
 CREATE INDEX mcp_refresh_family_idx ON mcp_refresh_tokens (token_family_id);

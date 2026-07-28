@@ -35,9 +35,9 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは6です。旧versionを自動移行しません。
-schema 5のdatabaseとarchive v4は直接取り込めません。更新前の実行環境と`dataDir`を保全し、
-schema 6は空のdatabaseから開始してください。起動後はhealthと`marginalis diagnose`を確認し、
+変更してください。現行のSQLite schema versionは7です。旧versionを自動移行しません。
+schema 6以前のdatabaseとarchive v4は直接取り込めません。更新前の実行環境と`dataDir`を保全し、
+schema 7は空のdatabaseから開始してください。起動後はhealthと`marginalis diagnose`を確認し、
 新しいarchive v5を作成してください。
 
 切戻す場合はserviceを停止し、v0.6.0で作成したdatabaseを保全してから、更新前に退避した`dataDir`を
@@ -53,16 +53,16 @@ reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を�
 
 ## Kanidmから受け取るグループ情報
 
-Marginalis は OIDC callback で署名検証済み ID token の `groups` claim を読む。`server-users` がなければ
-ログインを拒否し、`server-admins` があれば発行する Web session と MCP authorization を管理者として固定する。
-Kanidm の group 変更は次回 OIDC login から反映され、既存の Web session と MCP token は有効期限または
-明示的な認可取消までその時点の権限を保つ。
+MarginalisはOIDC callbackで署名検証済みID tokenの`groups` claimを読み、`server-users`がなければ
+ログインを拒否します。サーバー全体の管理者グループは使用しません。Kanidmのgroup変更は次回の
+OIDC loginから反映され、既存のWeb sessionとMCP tokenは有効期限または明示的な認可取消まで
+login時のidentityを保持します。
 Web session は最終利用から24時間で失効し、ログインから7日を絶対期限とする。継続利用中は
 アイドル期限だけを延長するため、group変更を直ちに反映する必要がある場合は、対象利用者に再ログインを
 依頼するか、7日の絶対期限まで待つ。
 
-Kanidm の OAuth2 client は `groups_name` scope を許可し、文字列配列の `groups` claim に `server-users` と
-`server-admins` を含めるよう設定する。管理者も必ず `server-users` の member にする。
+KanidmのOAuth2 clientは`groups_name` scopeを許可し、文字列配列の`groups` claimに
+`server-users`を含めるよう設定します。
 
 ```bash
 kanidm system oauth2 add-redirect-url marginalis \
@@ -137,12 +137,14 @@ service停止中の切替を行います。
    切替後は再ログインと必要に応じたMCP再認可が必要です。
 4. maintenance windowでserviceを停止し、現在の`dataDir`を削除せず退避します。復元済みdatabaseを
    新しい`dataDir`へ配置して所有者とmodeを確認した後、serviceを起動します。
-5. health、OIDC login、一般利用者と管理者の可視性、ソフトデリート状態、MCP authorizationを確認します。
+5. health、OIDC login、所有者・ACL共有先・対象外利用者の可視性、ソフトデリート状態、
+   MCP authorizationを確認します。
 
 切戻しではserviceを再度停止し、復元後のdatabaseを別名で保全してから、手順4で退避した元の`dataDir`へ
 戻します。復元先の確認が終わるまで元databaseを上書きまたは削除しないでください。
 
-初回配備後は `GET /api/v2/health`、OIDC login、一般利用者と管理者の可視性、MCP authorization を確認します。
+初回配備後は`GET /api/v2/health`、OIDC login、所有者・ACL共有先・対象外利用者の可視性、
+MCP authorizationを確認します。
 
 ## 問題が発生したときの確認
 

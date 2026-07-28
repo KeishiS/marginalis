@@ -11,6 +11,10 @@ use marginalis_domain::{
 
 use super::*;
 
+fn actor(issuer: &str, subject: &str) -> Actor {
+    Actor::try_new(issuer.into(), subject.into()).expect("valid test actor")
+}
+
 #[tokio::test]
 async fn initialization_rejects_a_database_with_unknown_tables() {
     let pool = SqlitePoolOptions::new()
@@ -64,7 +68,7 @@ async fn initialization_rejects_the_previous_schema_version() {
     assert!(
         error
             .to_string()
-            .contains("unsupported database schema version 3; expected 6")
+            .contains("unsupported database schema version 3; expected 7")
     );
 }
 
@@ -99,26 +103,10 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .expect("schema query"),
         1
     );
-    let alice = Actor {
-        issuer: "https://id.example.test".into(),
-        subject: "alice".into(),
-        is_administrator: false,
-    };
-    let charlie = Actor {
-        issuer: "https://id.example.test".into(),
-        subject: "charlie".into(),
-        is_administrator: false,
-    };
-    let same_subject_different_issuer = Actor {
-        issuer: "https://other-id.example.test".into(),
-        subject: "alice".into(),
-        is_administrator: false,
-    };
-    let administrator = Actor {
-        issuer: "https://id.example.test".into(),
-        subject: "administrator".into(),
-        is_administrator: true,
-    };
+    let alice = actor("https://id.example.test", "alice");
+    let charlie = actor("https://id.example.test", "charlie");
+    let same_subject_different_issuer = actor("https://other-id.example.test", "alice");
+    let former_administrator = actor("https://id.example.test", "administrator");
     assert!(
         database
             .visible_note(&alice, note_id)
@@ -155,13 +143,12 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .expect("different issuer list")
             .is_empty()
     );
-    assert_eq!(
+    assert!(
         database
-            .list_visible_notes(&administrator)
+            .list_visible_notes(&former_administrator)
             .await
-            .expect("administrator list")
-            .len(),
-        1
+            .expect("unshared former administrator list")
+            .is_empty()
     );
     assert_eq!(
         database
@@ -209,12 +196,12 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     assert_eq!(updated.title, "Updated title");
     assert_eq!(
         database
-            .soft_delete_visible_note(&administrator, note_id, 1, UnixMillis::new(300))
+            .soft_delete_visible_note(&alice, note_id, 1, UnixMillis::new(300))
             .await,
         Err(SqliteStoreError::Conflict)
     );
     let deleted = database
-        .soft_delete_visible_note(&administrator, note_id, 2, UnixMillis::new(300))
+        .soft_delete_visible_note(&alice, note_id, 2, UnixMillis::new(300))
         .await
         .expect("soft delete");
     assert_eq!(deleted.deleted_at, Some(UnixMillis::new(300)));
@@ -228,7 +215,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     assert_eq!(deleted.revision, 3);
 
     let restored = database
-        .restore_visible_note(&administrator, note_id, 3, UnixMillis::new(350))
+        .restore_visible_note(&alice, note_id, 3, UnixMillis::new(350))
         .await
         .expect("restore note");
     assert_eq!(restored.deleted_at, None);
@@ -330,13 +317,13 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     assert!(empty_notes.is_empty());
     assert!(empty_acl.is_empty());
     database
-        .soft_delete_visible_note(&administrator, note_id, 5, UnixMillis::new(400))
+        .soft_delete_visible_note(&alice, note_id, 5, UnixMillis::new(400))
         .await
         .expect("delete before purge");
     assert_eq!(
         database
             .restore_visible_note(
-                &administrator,
+                &alice,
                 note_id,
                 6,
                 UnixMillis::new(400 + SOFT_DELETE_RETENTION_MS + 1)
@@ -355,18 +342,14 @@ async fn single_source_updates_and_purges_notes_transactionally() {
 }
 
 #[tokio::test]
-async fn sessions_retain_login_time_group_snapshot() {
+async fn sessions_retain_the_validated_identity() {
     let database = SqliteDatabase::connect("sqlite::memory:")
         .await
         .expect("schema initialization succeeds");
     let session = WebSession {
         session_id: "session-token".into(),
         csrf_token: "csrf-token".into(),
-        actor: Actor {
-            issuer: "https://id.example.test".into(),
-            subject: "alice".into(),
-            is_administrator: false,
-        },
+        actor: actor("https://id.example.test", "alice"),
         idle_expires_at: UnixMillis::new(1_000),
         absolute_expires_at: UnixMillis::new(2_000),
     };
@@ -391,7 +374,6 @@ async fn sessions_retain_login_time_group_snapshot() {
         .await
         .expect("lookup")
         .expect("active session");
-    assert!(!authenticated.actor.is_administrator);
     assert_eq!(authenticated.idle_expires_at, UnixMillis::new(1_100));
     assert_eq!(
         database
@@ -550,11 +532,7 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
         Some(client.clone())
     );
     let grant = McpAuthorizationGrant {
-        actor: Actor {
-            issuer: "https://id.example.test".into(),
-            subject: "alice".into(),
-            is_administrator: false,
-        },
+        actor: actor("https://id.example.test", "alice"),
         client_id: client.client_id.clone(),
         redirect_uri: client.redirect_uris[0].clone(),
         resource_uri: "https://notes.example.test/mcp".into(),
@@ -809,11 +787,7 @@ async fn authorization_code_replay_revokes_the_issued_token_family() {
         .await
         .expect("client");
     let grant = McpAuthorizationGrant {
-        actor: Actor {
-            issuer: "https://id.example".into(),
-            subject: "alice".into(),
-            is_administrator: false,
-        },
+        actor: actor("https://id.example", "alice"),
         client_id: client.client_id.clone(),
         redirect_uri: client.redirect_uris[0].clone(),
         resource_uri: "https://notes.example/mcp".into(),
@@ -924,11 +898,7 @@ async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
         .await
         .expect("client");
     let grant = McpAuthorizationGrant {
-        actor: Actor {
-            issuer: "https://id.example".into(),
-            subject: "alice".into(),
-            is_administrator: false,
-        },
+        actor: actor("https://id.example", "alice"),
         client_id: client.client_id.clone(),
         redirect_uri: client.redirect_uris[0].clone(),
         resource_uri: "https://notes.example/mcp".into(),

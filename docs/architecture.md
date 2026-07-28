@@ -23,8 +23,8 @@ SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
 `marginalis-web`は外部URL生成portを実装します。これにより、ノート操作の単体試験ではSQLite、
 AsciiDoc engine、HTTP serverを起動する必要がありません。
 `marginalis-auth-oidc`は外部identity provider portを実装し、OIDC discovery・code exchange・
-ID token検証を担当します。利用を許可するグループと管理者グループの判断はapplicationが
-担当します。MCP OAuthのclient、認可code、token familyの規則もapplicationに置き、
+ID token検証を担当します。利用を許可する`server-users`所属の判断はapplicationが担当します。
+MCP OAuthのclient、認可code、token familyの規則もapplicationに置き、
 SQLiteはその永続化portを実装します。
 `marginalis-auth-oidc` は OIDC discovery・code exchange・ID token 検証を担当します。MCP の
 JSON-RPC wire 型は、それを利用する唯一の transport である `marginalis-web::mcp` に置きます。
@@ -35,15 +35,15 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
 - ノートと削除状態の更新はSQLite transactionで完結する。
 - 通常利用者は、作成者の`(issuer, subject)`が自身のidentityと一致するノートを所有する。同じ
   `issuer`の個人subjectへ付与されたACLの`read`は閲覧、`edit`は閲覧と本文更新を許可する。
-  所有者は変更不能であり、ACL変更と削除・復元は所有者または`server-admins`だけに許可する。
-  `server-admins`は所有者にかかわらずすべてのノートを操作できる。
+  所有者は変更不能であり、ACL変更と削除・復元は所有者だけに許可する。サーバー全体の管理者権限や、
+  ACLを迂回して全ノートを閲覧する権限は設けない。
 - identity は `(issuer, subject)` で識別する。アプリケーションはローカル password、root、登録ポリシーを
   持たない。`issuer`はuserinfo、query、fragment、制御文字を含まない絶対HTTP(S) URL、
   `subject`は空でなく制御文字を含まない値とし、長さ上限をdomainで一元検証する。
 - ノートなどの永続的な識別子にはUUIDv7だけを受理する。文字列、JSON、データベースからの復元を
   含むすべての入力経路で同じ検査を行い、検査を省略する公開constructorは設けない。
-- `server-users` と `server-admins` は、OIDC login 時に署名検証した `groups` claim から決め、その session と
-  MCP authorization の有効期間は固定する。
+- `server-users`所属は、OIDC login時に署名検証した`groups` claimから決める。発行したsessionと
+  MCP authorizationは、login時に検証したidentityを有効期間中保持する。
 - Web session は24時間のsliding idle期限と7日の絶対期限を持つ。未完了OIDC login attemptは10分で失効し、
   発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
 - OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う`ES256`だけを許可する。別の署名方式を

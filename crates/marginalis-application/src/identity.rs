@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use marginalis_domain::{Actor, validate_identity};
+use marginalis_domain::{Actor, Identity};
 
 use crate::{AuthenticationUseCaseError, OidcAuthenticationUseCases};
 
@@ -34,19 +34,13 @@ pub trait IdentityProvider: Send + Sync {
 pub struct OidcAuthenticationApplication {
     provider: Arc<dyn IdentityProvider>,
     user_group: String,
-    administrator_group: String,
 }
 
 impl OidcAuthenticationApplication {
-    pub fn new(
-        provider: Arc<dyn IdentityProvider>,
-        user_group: impl Into<String>,
-        administrator_group: impl Into<String>,
-    ) -> Self {
+    pub fn new(provider: Arc<dyn IdentityProvider>, user_group: impl Into<String>) -> Self {
         Self {
             provider,
             user_group: user_group.into(),
-            administrator_group: administrator_group.into(),
         }
     }
 }
@@ -77,16 +71,9 @@ impl OidcAuthenticationUseCases for OidcAuthenticationApplication {
         {
             return Err(AuthenticationUseCaseError::Rejected);
         }
-        validate_identity(&identity.issuer, &identity.subject)
+        let actor_identity = Identity::new(identity.issuer, identity.subject)
             .map_err(|_| AuthenticationUseCaseError::Rejected)?;
-        Ok(Actor {
-            issuer: identity.issuer,
-            subject: identity.subject,
-            is_administrator: identity
-                .groups
-                .iter()
-                .any(|group| group == &self.administrator_group),
-        })
+        Ok(Actor::new(actor_identity))
     }
 }
 

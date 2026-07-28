@@ -18,9 +18,9 @@ impl SqliteDatabase {
         code_challenge: &str,
         expires_at: UnixMillis,
     ) -> Result<(), SqliteStoreError> {
-        sqlx::query("INSERT INTO mcp_authorization_codes (code_hash, client_id, redirect_uri, resource_uri, issuer, subject, is_administrator, scopes, code_challenge, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO mcp_authorization_codes (code_hash, client_id, redirect_uri, resource_uri, issuer, subject, scopes, code_challenge, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(hash_token(code)).bind(&grant.client_id).bind(&grant.redirect_uri).bind(&grant.resource_uri)
-            .bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator)
+            .bind(grant.actor.issuer()).bind(grant.actor.subject())
             .bind(grant.scopes.join(" ")).bind(code_challenge).bind(expires_at.get())
             .execute(&self.pool).await.map_err(database_error)?;
         Ok(())
@@ -103,7 +103,7 @@ impl SqliteDatabase {
                AND (? IS NULL OR redirect_uri = ?)
                AND resource_uri = ? AND code_challenge = ?
                AND consumed_at_ms IS NULL AND expires_at_ms > ?
-             RETURNING redirect_uri, issuer, subject, is_administrator, scopes",
+             RETURNING redirect_uri, issuer, subject, scopes",
         )
         .bind(now.get())
         .bind(&code_hash)
@@ -152,11 +152,7 @@ impl SqliteDatabase {
             return Ok(None);
         };
         let grant = McpAuthorizationGrant {
-            actor: Actor {
-                issuer: row.try_get("issuer").map_err(database_error)?,
-                subject: row.try_get("subject").map_err(database_error)?,
-                is_administrator: row.try_get("is_administrator").map_err(database_error)?,
-            },
+            actor: actor_from_row(&row)?,
             client_id: exchange.client_id,
             redirect_uri: row.try_get("redirect_uri").map_err(database_error)?,
             resource_uri: exchange.resource_uri,
@@ -169,10 +165,10 @@ impl SqliteDatabase {
         };
         let scopes = grant.scopes.join(" ");
         let token_family_id = hash_token(&exchange.refresh_token);
-        sqlx::query("INSERT INTO mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&exchange.access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(&scopes).bind(exchange.access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
-        sqlx::query("INSERT INTO mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&exchange.refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(scopes).bind(exchange.refresh_expires_at.get()).bind(grant.actor.is_administrator).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
+        sqlx::query("INSERT INTO mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(&exchange.access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(grant.actor.issuer()).bind(grant.actor.subject()).bind(&scopes).bind(exchange.access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
+        sqlx::query("INSERT INTO mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(&exchange.refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(grant.actor.issuer()).bind(grant.actor.subject()).bind(scopes).bind(exchange.refresh_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
         sqlx::query("UPDATE mcp_authorization_codes SET token_family_id = ? WHERE code_hash = ?")
             .bind(token_family_id)
             .bind(code_hash)
@@ -189,15 +185,11 @@ impl SqliteDatabase {
         resource_uri: &str,
         now: UnixMillis,
     ) -> Result<Option<McpAuthenticatedActor>, SqliteStoreError> {
-        let row = sqlx::query("SELECT issuer, subject, is_administrator, scopes FROM mcp_access_tokens WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ?")
+        let row = sqlx::query("SELECT issuer, subject, scopes FROM mcp_access_tokens WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ?")
             .bind(hash_token(token)).bind(resource_uri).bind(now.get()).fetch_optional(&self.pool).await.map_err(database_error)?;
         row.map(|r| {
             Ok(McpAuthenticatedActor {
-                actor: Actor {
-                    issuer: r.try_get("issuer").map_err(database_error)?,
-                    subject: r.try_get("subject").map_err(database_error)?,
-                    is_administrator: r.try_get("is_administrator").map_err(database_error)?,
-                },
+                actor: actor_from_row(&r)?,
                 scopes: r
                     .try_get::<String, _>("scopes")
                     .map_err(database_error)?
@@ -220,7 +212,7 @@ impl SqliteDatabase {
             "UPDATE mcp_refresh_tokens SET rotated_at_ms = ?
              WHERE token_hash = ? AND client_id = ? AND resource_uri = ?
                AND rotated_at_ms IS NULL AND revoked_at_ms IS NULL AND expires_at_ms > ?
-             RETURNING issuer, subject, is_administrator, scopes, token_family_id",
+             RETURNING issuer, subject, scopes, token_family_id",
         )
         .bind(now.get())
         .bind(hash_token(&rotation.refresh_token))
@@ -280,11 +272,7 @@ impl SqliteDatabase {
             return Ok(McpRefreshTokenRotationOutcome::InvalidScope);
         }
         let grant = McpAuthorizationGrant {
-            actor: Actor {
-                issuer: row.try_get("issuer").map_err(database_error)?,
-                subject: row.try_get("subject").map_err(database_error)?,
-                is_administrator: row.try_get("is_administrator").map_err(database_error)?,
-            },
+            actor: actor_from_row(&row)?,
             client_id: rotation.client_id,
             redirect_uri: String::new(),
             resource_uri: rotation.resource_uri,
@@ -292,10 +280,10 @@ impl SqliteDatabase {
         };
         let access_scope_value = access_scopes.join(" ");
         let refresh_scope_value = grant.scopes.join(" ");
-        sqlx::query("INSERT INTO mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, is_administrator, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&rotation.new_access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(grant.actor.is_administrator).bind(access_scope_value).bind(rotation.access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
-        sqlx::query("INSERT INTO mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, is_administrator, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&rotation.new_refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(&grant.actor.issuer).bind(&grant.actor.subject).bind(refresh_scope_value).bind(rotation.refresh_expires_at.get()).bind(grant.actor.is_administrator).bind(token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
+        sqlx::query("INSERT INTO mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(&rotation.new_access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(grant.actor.issuer()).bind(grant.actor.subject()).bind(access_scope_value).bind(rotation.access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
+        sqlx::query("INSERT INTO mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(&rotation.new_refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(grant.actor.issuer()).bind(grant.actor.subject()).bind(refresh_scope_value).bind(rotation.refresh_expires_at.get()).bind(token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
         transaction.commit().await.map_err(database_error)?;
         Ok(McpRefreshTokenRotationOutcome::Rotated {
             grant,
@@ -326,4 +314,12 @@ impl SqliteDatabase {
         }
         transaction.commit().await.map_err(database_error)
     }
+}
+
+fn actor_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Actor, SqliteStoreError> {
+    Actor::try_new(
+        row.try_get("issuer").map_err(database_error)?,
+        row.try_get("subject").map_err(database_error)?,
+    )
+    .map_err(|_| SqliteStoreError::CorruptData)
 }

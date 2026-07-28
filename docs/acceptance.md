@@ -1,7 +1,7 @@
 # Web UIとACLの受入確認
 
 この文書は、v0.7.0で追加したWeb UI、ノート参照、subject単位ACLの受入項目と結果を記録します。
-SQLite schemaは6、archive形式は`marginalis-archive-5`、note profileは2です。以前のdatabaseと
+SQLite schemaは7、archive形式は`marginalis-archive-5`、note profileは2です。以前のdatabaseと
 archiveは自動で移行しません。
 
 ## 自動テスト
@@ -12,7 +12,7 @@ PR CIと公開前の`release-gate`で次を確認します。
 - ノートの作成、編集、安全なプレビュー、入力診断、revision競合の比較と再保存
 - 日本語、絵文字、CRLF、高頻度入力、入力上限、解析失敗
 - ノート参照の保存時索引化、参照元・参照先の表示、削除・復元・物理削除との整合
-- 所有者、閲覧者、編集者、対象外利用者、`server-admins`の表示・REST操作・情報非漏洩
+- 所有者、閲覧者、編集者、対象外利用者の表示・REST操作・情報非漏洩
 - ACL更新の同一オリジン、CSRFトークン、revision確認
 - ノートとACLを同じSQLite読み取りtransactionから取得するarchive snapshot
 - Kanidm 1.10、TLS、nginxサブパス、OIDC、MCP OAuth、backup、purge、障害診断
@@ -24,9 +24,8 @@ PR CIと公開前の`release-gate`で次を確認します。
 2. revision競合で三つの内容を比較し、修正後に最新revisionへ再保存します。
 3. 所有者が閲覧者と編集者をACLへ追加し、それぞれの表示と操作範囲を確認します。
 4. 対象外利用者にノートと関連情報が表示されず、直接指定した操作も`404`になることを確認します。
-5. `server-admins`がノートとACLを管理できることを確認します。
-6. ChatGPT、Claude Code、Codex CLIからMCPへ接続し、ACLと同じ閲覧・更新結果になることを確認します。
-7. archiveを隔離した空databaseへ復元し、ノート、ACL、参照、削除状態、revisionが一致することを
+5. ChatGPT、Claude Code、Codex CLIからMCPへ接続し、ACLと同じ閲覧・更新結果になることを確認します。
+6. archiveを隔離した空databaseへ復元し、ノート、ACL、参照、削除状態、revisionが一致することを
    確認します。
 
 実施結果には完了日と成否だけを記録し、秘密情報やノート本文は記録しません。

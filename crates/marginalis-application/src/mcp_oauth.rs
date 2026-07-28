@@ -346,7 +346,7 @@ impl McpOAuthApplication {
 
     pub async fn revoke(&self, actor: &Actor, client_id: &str) -> Result<(), McpOAuthError> {
         self.repository
-            .revoke_client_tokens(&actor.issuer, &actor.subject, client_id, self.clock.now())
+            .revoke_client_tokens(actor.issuer(), actor.subject(), client_id, self.clock.now())
             .await
             .map_err(|_| McpOAuthError::Unavailable)
     }

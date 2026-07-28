@@ -108,7 +108,7 @@ refresh時のscopeは元のgrantの部分集合だけを許可し、発行する
 rotation の親子関係も、有効な子孫がある間保持します。これは
 [OAuth 2.0 Security Best Current Practice §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
 の replay 検知要件に従うものです。
-現行のschema versionは4です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
+現行のschema versionは7です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
 再初期化し、MCP clientは再登録・再認可してください。
 
 ## クライアント登録の制限
@@ -203,11 +203,11 @@ OAuth endpointへ一律のCORSは付与しません。authorization endpointはn
 ## 権限と認可の取消
 
 scope は `notes:read`、`notes:write`、`notes:delete` です。scopeは許可する操作を制限しますが、
-所有範囲を拡張しません。通常利用者は自身が作成したノートだけを操作でき、`server-admins`は
-すべてのノートを操作できます。
+所有範囲を拡張しません。利用者は自身が作成したノートと、ACLで直接共有されたノートだけを
+scopeの範囲で操作できます。
 
 利用者は Web session と CSRF token を使って、`DELETE /api/v2/mcp-authorizations/{client_id}` から
 個別 client の認可を取り消せます。取り消し後、その client の access token と refresh token は使えません。
 
-OIDC login 時に検証した `groups` claim を Web session と MCP authorization の権限スナップショットとします。
-group 変更は次回 login から反映され、既存 token は有効期限または認可取消まで発行時の権限を保持します。
+OIDC login時に検証したidentityをWeb sessionとMCP authorizationへ保存します。`server-users`所属の
+変更は次回loginから反映され、既存tokenは有効期限または認可取消まで発行時のidentityを保持します。
