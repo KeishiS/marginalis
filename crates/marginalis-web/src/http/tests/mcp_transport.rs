@@ -350,7 +350,7 @@ async fn mcp_bearer_scheme_is_case_insensitive_and_scope_failures_are_forbidden(
             .header(header::ACCEPT, "application/json, text/event-stream")
             .header(header::AUTHORIZATION, "Bearer read-token")
             .body(Body::from(
-                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_note","arguments":{"title":"Title","body":"Body","tags":[]}}}"#,
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_note","arguments":{"source":"= Title\n\nBody"}}}"#,
             ))
             .expect("request");
     let denied = mcp_app()
@@ -498,7 +498,7 @@ async fn mcp_rejects_invalid_json_rpc_envelopes_and_reports_tool_errors_as_resul
                     .header(header::ACCEPT, "application/json, text/event-stream")
                     .header(header::AUTHORIZATION, "Bearer valid-token")
                     .body(Body::from(
-                        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_note","arguments":{"title":"Title","body":"Body","tags":[]}}}"#,
+                        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_note","arguments":{"source":"= Title\n\nBody"}}}"#,
                     ))
                     .expect("request"),
             )
@@ -523,7 +523,7 @@ async fn mcp_rejects_invalid_json_rpc_envelopes_and_reports_tool_errors_as_resul
                     .header(header::ACCEPT, "application/json, text/event-stream")
                     .header(header::AUTHORIZATION, "Bearer valid-token")
                     .body(Body::from(
-                        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_note","arguments":{"title":"","body":"invalid","tags":[]}}}"#,
+                        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_note","arguments":{"source":"invalid"}}}"#,
                     ))
                     .expect("request"),
             )
@@ -541,7 +541,7 @@ async fn mcp_rejects_invalid_json_rpc_envelopes_and_reports_tool_errors_as_resul
     );
     assert_eq!(
         validation["result"]["structuredContent"]["diagnostics"][0]["target"]["field"],
-        "title"
+        "source"
     );
     assert!(
         validation["result"]["structuredContent"]["diagnostics"][0]
@@ -755,4 +755,3 @@ fn browser_mutations_require_the_application_origin() {
     headers.insert("sec-fetch-site", "cross-site".parse().expect("metadata"));
     assert!(validate_mutation_origin(&headers, &state).is_err());
 }
-

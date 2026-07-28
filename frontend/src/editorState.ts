@@ -1,9 +1,7 @@
 import { Note } from "./api";
 
 export interface EditorForm {
-  title: string;
-  body: string;
-  tagsText: string;
+  source: string;
 }
 
 export interface EditorConflict {
@@ -26,7 +24,9 @@ export type EditorAction =
   | { type: "clear-conflict" }
   | { type: "rebase"; note: Note };
 
-const EMPTY_FORM: EditorForm = { title: "", body: "", tagsText: "" };
+const EMPTY_FORM: EditorForm = {
+  source: "= 新規ノート\n:tags:\n:sectnums:\n\n== 見出し1\n\n",
+};
 
 export function initialEditorState(noteId: string): EditorState {
   return {
@@ -77,8 +77,6 @@ export function editorReducer(
 
 export function noteToForm(note: Note): EditorForm {
   return {
-    title: note.title,
-    body: note.body,
-    tagsText: note.tags.join(", "),
+    source: note.source,
   };
 }

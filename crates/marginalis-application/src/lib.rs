@@ -84,7 +84,7 @@ pub enum NoteValidationCode {
     InvalidTitle,
     InvalidTag,
     TooManyTags,
-    BodyTooLarge,
+    SourceTooLarge,
     AsciiDocParseFailed,
     IncludeDirectiveDisabled,
     InlinePassthroughDisabled,
@@ -95,6 +95,7 @@ pub enum NoteValidationCode {
     ResourceDisabled,
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
+    UnsupportedDocumentAttribute,
     InvalidAclSubject,
     DuplicateAclSubject,
     OwnerInAcl,
@@ -106,7 +107,7 @@ impl NoteValidationCode {
             Self::InvalidTitle => "invalid_title",
             Self::InvalidTag => "invalid_tag",
             Self::TooManyTags => "too_many_tags",
-            Self::BodyTooLarge => "body_too_large",
+            Self::SourceTooLarge => "source_too_large",
             Self::AsciiDocParseFailed => "asciidoc_parse_failed",
             Self::IncludeDirectiveDisabled => "include_directive_disabled",
             Self::InlinePassthroughDisabled => "inline_passthrough_disabled",
@@ -117,6 +118,7 @@ impl NoteValidationCode {
             Self::ResourceDisabled => "resource_disabled",
             Self::UnsupportedMathLanguage => "unsupported_math_language",
             Self::UnsupportedSourceLanguage => "unsupported_source_language",
+            Self::UnsupportedDocumentAttribute => "unsupported_document_attribute",
             Self::InvalidAclSubject => "invalid_acl_subject",
             Self::DuplicateAclSubject => "duplicate_acl_subject",
             Self::OwnerInAcl => "owner_in_acl",
@@ -126,6 +128,7 @@ impl NoteValidationCode {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NoteValidationTarget {
+    Source,
     Title,
     Body,
     Tag { index: usize },
@@ -162,7 +165,7 @@ pub struct NoteValidationDiagnostic {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteProfileLimits {
     pub max_title_characters: usize,
-    pub max_body_bytes: usize,
+    pub max_source_bytes: usize,
     pub max_tags: usize,
     pub max_tag_characters: usize,
 }

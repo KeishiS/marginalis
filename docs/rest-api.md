@@ -35,8 +35,18 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 
 ## ノートの入力と権限
 
-ノートの作成・更新では、JSON形式の`title`、`body`、`tags`を送信します。本文はUTF-8で
-512 KiB以下です。
+ノートの作成・更新では、JSON形式の`source`へ完全なAsciiDoc文書を入れて送信します。題名は
+文書題名、タグは文書ヘッダーの`:tags:`属性として記述します。`source`はUTF-8で512 KiB以下です。
+
+```json
+{
+  "source": "= 新規ノート\n:tags: new, research\n:sectnums:\n\n== 見出し1\n\nこれはテスト用の本文です。"
+}
+```
+
+`:sectnums:`、`:toc:`、`:toclevels:`、`:stem:`は表示用の文書属性として使用できます。
+サーバーが管理する識別子、所有者、時刻、revision、ACLはAsciiDoc文書へ記述せず、APIの別項目で
+扱います。
 
 保存前プレビューにも同じ入力を送り、成功時は安全なHTMLを受け取ります。プレビューは保存処理を
 行いませんが、ログイン中の利用者だけが同一オリジンとCSRFトークンを確認したうえで利用できます。
@@ -56,8 +66,8 @@ MCPではHTTPヘッダーを使わないため、変更ツールの型付き引�
 ## 入力内容の検査
 
 入力規則に違反した場合は、HTTP状態コード`422`と`code: "validation_failed"`を返します。
-`diagnostics`には、問題の種類を表す`code`、対象項目、本文中の位置、説明を含めます。位置は
-UTF-8で符号化した`body`上のバイト範囲です。タイトルとタグの問題には本文中の位置を付けません。
+`diagnostics`には、問題の種類を表す`code`、対象項目、文書中の位置、説明を含めます。位置は
+UTF-8で符号化した`source`上のバイト範囲です。
 ACLの対象が不正、重複、または所有者自身である場合は、対象を`acl_entry`とその添字で示します。
 
 ```json
@@ -67,7 +77,7 @@ ACLの対象が不正、重複、または所有者自身である場合は、�
   "diagnostics": [
     {
       "code": "invalid_title",
-      "target": { "field": "title" },
+      "target": { "field": "source" },
       "message": "title must be non-empty, single-line, and at most 200 characters"
     }
   ]
@@ -77,7 +87,7 @@ ACLの対象が不正、重複、または所有者自身である場合は、�
 ## Web UIとの関係
 
 `/`はログイン後の一覧画面、`/notes/{note_id}`は個別のノートを表示する画面です。
-`/notes/new`でノートを作成し、`/notes/{note_id}/edit`で題名、AsciiDoc本文、タグを編集します。
+`/notes/new`でノートを作成し、`/notes/{note_id}/edit`で完全なAsciiDoc文書を一つの欄で編集します。
 所有者は`/notes/{note_id}/access`でACLを編集します。
 これらはすべて一つのReactアプリケーションを起点に描画します。Rustが返す初期HTMLにはノート本文を
 埋め込まず、生成済みTypeScriptクライアントがREST APIの応答を実行時に検査してから画面へ渡します。

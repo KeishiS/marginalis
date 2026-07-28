@@ -9,7 +9,7 @@ import { editorReducer, initialEditorState } from "../src/editorState";
 const note = {
   note_id: "0197c9bc-0000-7000-8000-000000000001",
   title: "保存済み",
-  body: "本文",
+  source: "= 保存済み\n:tags: 設計\n\n本文",
   tags: ["設計"],
   created_at_ms: 1,
   updated_at_ms: 2,
@@ -20,8 +20,8 @@ describe("editorReducer", () => {
   it("保存応答を編集内容と比較基準へ原子的に反映する", () => {
     const changed = editorReducer(initialEditorState(""), {
       type: "change",
-      field: "title",
-      value: "編集中",
+      field: "source",
+      value: "= 編集中\n",
     });
     const saved = editorReducer(changed, { type: "accept-note", note });
     expect(saved.form).toEqual(saved.baseline);
@@ -36,16 +36,16 @@ describe("editorReducer", () => {
     });
     const editing = editorReducer(loaded, {
       type: "change",
-      field: "body",
-      value: "編集中の本文",
+      field: "source",
+      value: "= 保存済み\n\n編集中の本文",
     });
-    const current = { ...note, body: "他の更新", revision: 3 };
+    const current = { ...note, source: "= 保存済み\n\n他の更新", revision: 3 };
     const rebased = editorReducer(
       editorReducer(editing, { type: "conflict", current }),
       { type: "rebase", note: current },
     );
-    expect(rebased.form.body).toBe("編集中の本文");
-    expect(rebased.baseline.body).toBe("他の更新");
+    expect(rebased.form.source).toContain("編集中の本文");
+    expect(rebased.baseline.source).toContain("他の更新");
     expect(rebased.revision).toBe(3);
   });
 });

@@ -13,7 +13,7 @@ use marginalis_application::{
 };
 
 use crate::{
-    DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_BODY_BYTES, MAX_TAG_CHARACTERS, MAX_TAGS,
+    DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_SOURCE_BYTES, MAX_TAG_CHARACTERS, MAX_TAGS,
     MAX_TITLE_CHARACTERS, NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION,
     configuration::authored_url_policy,
 };
@@ -110,8 +110,9 @@ fn diagnostic_message(code: NoteValidationCode) -> &'static str {
             "tag must be non-empty, single-line, comma-free, and at most 64 characters"
         }
         NoteValidationCode::TooManyTags => "a note may contain at most 50 tags",
-        NoteValidationCode::BodyTooLarge => "body must be at most 524288 UTF-8 bytes",
+        NoteValidationCode::SourceTooLarge => "source must be at most 524288 UTF-8 bytes",
         NoteValidationCode::AsciiDocParseFailed => "body is not valid AsciiDoc",
+        NoteValidationCode::UnsupportedDocumentAttribute => "the document attribute is not allowed",
         forbidden => FORBIDDEN_RULES
             .iter()
             .find_map(|rule| (rule.code() == forbidden).then_some(rule.message()))
@@ -130,11 +131,12 @@ pub(crate) fn diagnostic_sort_key(
     diagnostic: &NoteValidationDiagnostic,
 ) -> (u8, usize, u32, u32, &'static str) {
     let (target, index) = match diagnostic.target {
-        NoteValidationTarget::Title => (0, 0),
-        NoteValidationTarget::Tags => (1, 0),
-        NoteValidationTarget::Tag { index } => (2, index),
-        NoteValidationTarget::Body => (3, 0),
-        NoteValidationTarget::AclEntry { index } => (4, index),
+        NoteValidationTarget::Source => (0, 0),
+        NoteValidationTarget::Title => (1, 0),
+        NoteValidationTarget::Tags => (2, 0),
+        NoteValidationTarget::Tag { index } => (3, index),
+        NoteValidationTarget::Body => (4, 0),
+        NoteValidationTarget::AclEntry { index } => (5, index),
     };
     let span = diagnostic.span.unwrap_or(Utf8ByteSpan { start: 0, end: 0 });
     (
@@ -153,7 +155,7 @@ pub fn note_profile() -> NoteProfile {
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION,
         limits: NoteProfileLimits {
             max_title_characters: MAX_TITLE_CHARACTERS,
-            max_body_bytes: MAX_NOTE_BODY_BYTES,
+            max_source_bytes: MAX_NOTE_SOURCE_BYTES,
             max_tags: MAX_TAGS,
             max_tag_characters: MAX_TAG_CHARACTERS,
         },

@@ -117,7 +117,7 @@ pub struct Note {
     note_id: NoteId,
     owner: Identity,
     title: String,
-    body: String,
+    source: String,
     tags: Vec<String>,
     created_at: UnixMillis,
     updated_at: UnixMillis,
@@ -147,7 +147,7 @@ impl Note {
             note_id,
             owner: owner.clone(),
             title: draft.title,
-            body: draft.body,
+            source: draft.source,
             tags: draft.tags,
             created_at,
             updated_at: created_at,
@@ -161,7 +161,7 @@ impl Note {
         note_id: NoteId,
         owner: Identity,
         title: String,
-        body: String,
+        source: String,
         tags: Vec<String>,
         created_at: UnixMillis,
         updated_at: UnixMillis,
@@ -178,7 +178,7 @@ impl Note {
             note_id,
             owner,
             title,
-            body,
+            source,
             tags,
             created_at,
             updated_at,
@@ -207,8 +207,8 @@ impl Note {
         &self.title
     }
 
-    pub fn body(&self) -> &str {
-        &self.body
+    pub fn source(&self) -> &str {
+        &self.source
     }
 
     pub fn tags(&self) -> &[String] {
@@ -256,8 +256,11 @@ impl From<&Note> for NoteSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteDraft {
+    /// 利用者が記述した完全なAsciiDoc文書。
+    pub source: String,
+    /// `source`の文書題名から検証時に導出した値。
     pub title: String,
-    pub body: String,
+    /// `source`の`tags`属性から検証時に導出した値。
     pub tags: Vec<String>,
 }
 

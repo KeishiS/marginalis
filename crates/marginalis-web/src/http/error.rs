@@ -12,6 +12,7 @@ use marginalis_contract::{
 
 fn diagnostic_response(diagnostic: NoteValidationDiagnostic) -> ValidationDiagnosticResponse {
     let target = match diagnostic.target {
+        NoteValidationTarget::Source => ValidationTargetResponse::Source,
         NoteValidationTarget::Title => ValidationTargetResponse::Title,
         NoteValidationTarget::Body => ValidationTargetResponse::Body,
         NoteValidationTarget::Tag { index } => ValidationTargetResponse::Tag { index },

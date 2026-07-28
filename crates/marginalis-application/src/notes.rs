@@ -228,7 +228,7 @@ impl NoteApplication {
     ) -> Result<Vec<NoteReferenceResolution>, NoteUseCaseError> {
         let queries = self
             .content
-            .reference_queries(note.body())
+            .reference_queries(note.source())
             .map_err(|_| NoteUseCaseError::Unavailable)?;
         let targets = targets
             .iter()
@@ -246,7 +246,7 @@ impl NoteApplication {
             let missing_anchor = match query.anchor.as_deref() {
                 Some(anchor) => !self
                     .content
-                    .has_anchor(target.body(), anchor)
+                    .has_anchor(target.source(), anchor)
                     .map_err(|_| NoteUseCaseError::Unavailable)?,
                 None => false,
             };
@@ -327,7 +327,7 @@ impl NoteCommands for NoteApplication {
             draft,
             now,
         );
-        let reference_targets = reference_targets(self.content.as_ref(), note.body())?;
+        let reference_targets = reference_targets(self.content.as_ref(), note.source())?;
         self.commands
             .create_note(&note, &reference_targets)
             .await
@@ -347,7 +347,7 @@ impl NoteCommands for NoteApplication {
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
         self.read_visible_note(&actor, note_id).await?;
-        let reference_targets = reference_targets(self.content.as_ref(), &draft.body)?;
+        let reference_targets = reference_targets(self.content.as_ref(), &draft.source)?;
         self.commands
             .update_visible_note(
                 &actor,
@@ -405,7 +405,7 @@ impl NotePresentation for NoteApplication {
             draft,
             now,
         );
-        let target_ids = reference_targets(self.content.as_ref(), note.body())?;
+        let target_ids = reference_targets(self.content.as_ref(), note.source())?;
         let targets = self
             .queries
             .visible_notes_by_id(&actor, &target_ids)
@@ -804,8 +804,8 @@ mod tests {
             .create_note(
                 actor.clone(),
                 NoteDraft {
+                    source: "= Portで作成\n:tags: 設計\n\n本文".into(),
                     title: "Portで作成".into(),
-                    body: "本文".into(),
                     tags: vec!["設計".into()],
                 },
             )

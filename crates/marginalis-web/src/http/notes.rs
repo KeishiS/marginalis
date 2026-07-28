@@ -96,9 +96,9 @@ pub(super) async fn create_note(
         .create_note(
             actor,
             NoteDraft {
-                title: input.title,
-                body: input.body,
-                tags: input.tags,
+                source: input.source,
+                title: String::new(),
+                tags: Vec::new(),
             },
         )
         .await
@@ -117,9 +117,9 @@ pub(super) async fn preview_note(
         .preview_note(
             actor,
             NoteDraft {
-                title: input.title,
-                body: input.body,
-                tags: input.tags,
+                source: input.source,
+                title: String::new(),
+                tags: Vec::new(),
             },
             NoteRenderContext {
                 note_path_prefix: super::auth::external_path(&state.cookie_path, "/notes"),
@@ -143,9 +143,9 @@ pub(super) async fn update_note(
             actor,
             parse_note_id(&note_id)?,
             NoteDraft {
-                title: input.title,
-                body: input.body,
-                tags: input.tags,
+                source: input.source,
+                title: String::new(),
+                tags: Vec::new(),
             },
             expected_revision(&headers)?,
         )
@@ -285,7 +285,7 @@ fn note_response(note: Note) -> NoteResponse {
     NoteResponse {
         note_id: note.note_id().to_string(),
         title: note.title().to_owned(),
-        body: note.body().to_owned(),
+        source: note.source().to_owned(),
         tags: note.tags().to_vec(),
         created_at_ms: note.created_at().get(),
         updated_at_ms: note.updated_at().get(),

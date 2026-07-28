@@ -2,7 +2,7 @@
 export interface Note {
   note_id: string;
   title: string;
-  body: string;
+  source: string;
   tags: string[];
   created_at_ms: number;
   updated_at_ms: number;
@@ -27,9 +27,7 @@ export interface NoteView {
   related: RelatedNotes;
 }
 export interface NoteDraft {
-  title: string;
-  body: string;
-  tags: string[];
+  source: string;
 }
 export interface NotePreview {
   html: string;
@@ -84,7 +82,7 @@ export function parseNote(value: unknown): Note {
   return {
     note_id: text(object.note_id, "note.note_id"),
     title: text(object.title, "note.title"),
-    body: text(object.body, "note.body"),
+    source: text(object.source, "note.source"),
     tags: textArray(object.tags, "note.tags"),
     created_at_ms: integer(object.created_at_ms, "note.created_at_ms"),
     updated_at_ms: integer(object.updated_at_ms, "note.updated_at_ms"),

@@ -22,14 +22,14 @@ impl SqliteDatabase {
             serde_json::to_string(note.tags()).map_err(|_| SqliteStoreError::CorruptData)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         sqlx::query(
-            "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
+            "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(note.note_id().to_string())
         .bind(note.creator_issuer())
         .bind(note.creator_subject())
         .bind(note.title())
-        .bind(note.body())
+        .bind(note.source())
         .bind(tags_json)
         .bind(note.created_at().get())
         .bind(note.updated_at().get())
@@ -51,7 +51,7 @@ impl SqliteDatabase {
     ) -> Result<Option<Note>, SqliteStoreError> {
         let row = if include_deleted {
             sqlx::query(
-                "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+                "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
                  FROM notes WHERE note_id = ?",
             )
             .bind(note_id.to_string())
@@ -59,7 +59,7 @@ impl SqliteDatabase {
             .await
         } else {
             sqlx::query(
-                "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+                "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
                  FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL",
             )
             .bind(note_id.to_string())
@@ -77,7 +77,7 @@ impl SqliteDatabase {
         note_id: NoteId,
     ) -> Result<Option<Note>, SqliteStoreError> {
         let row = sqlx::query(
-            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+            "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
              WHERE note_id = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
@@ -103,7 +103,7 @@ impl SqliteDatabase {
             return Ok(Vec::new());
         }
         let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json,
+            "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json,
                     created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
              WHERE deleted_at_ms IS NULL AND note_id IN (",
@@ -168,7 +168,7 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let result = sqlx::query(
             "UPDATE notes
-             SET title = ?, body = ?, tags_json = ?, updated_at_ms = ?, revision = revision + 1
+             SET title = ?, source = ?, tags_json = ?, updated_at_ms = ?, revision = revision + 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
@@ -176,7 +176,7 @@ impl SqliteDatabase {
                              AND access.access_level >= 2)",
         )
         .bind(&draft.title)
-        .bind(&draft.body)
+        .bind(&draft.source)
         .bind(tags_json)
         .bind(updated_at.get())
         .bind(note_id.to_string())
@@ -197,7 +197,7 @@ impl SqliteDatabase {
             .await?);
         }
         let row = sqlx::query(
-            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+            "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes WHERE note_id = ?",
         )
         .bind(note_id.to_string())
@@ -390,7 +390,7 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let row = sqlx::query(
             "SELECT notes.note_id, notes.creator_issuer, notes.creator_subject, notes.title,
-                    notes.body, notes.tags_json, notes.created_at_ms, notes.updated_at_ms,
+                    notes.source, notes.tags_json, notes.created_at_ms, notes.updated_at_ms,
                     notes.revision, notes.deleted_at_ms, access.access_level
              FROM notes
              JOIN note_access access ON access.note_id = notes.note_id
@@ -414,7 +414,7 @@ impl SqliteDatabase {
         let note = note_from_row(row)?;
         let reference_targets = sqlx::query(
             "SELECT target.note_id, target.creator_issuer, target.creator_subject, target.title,
-                    target.body, target.tags_json, target.created_at_ms, target.updated_at_ms,
+                    target.source, target.tags_json, target.created_at_ms, target.updated_at_ms,
                     target.revision, target.deleted_at_ms
              FROM note_references reference
              JOIN notes target ON target.note_id = reference.target_note_id
@@ -689,7 +689,7 @@ async fn note_row(
     note_id: NoteId,
 ) -> Result<sqlx::sqlite::SqliteRow, SqliteStoreError> {
     sqlx::query(
-        "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+        "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
          FROM notes WHERE note_id = ?",
     )
     .bind(note_id.to_string())
@@ -718,7 +718,7 @@ pub(crate) fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Note, Sqlite
         note_id,
         owner,
         row.try_get("title").map_err(database_error)?,
-        row.try_get("body").map_err(database_error)?,
+        row.try_get("source").map_err(database_error)?,
         tags,
         UnixMillis::new(row.try_get("created_at_ms").map_err(database_error)?),
         UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),

@@ -46,20 +46,12 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewProblem, setPreviewProblem] = useState<Problem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const titleInput = useRef<HTMLInputElement>(null);
   const initialFocusApplied = useRef(false);
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(baseline),
     [baseline, form],
   );
-  const draft = useMemo(
-    () => ({
-      title: form.title,
-      body: form.body,
-      tags: parseTags(form.tagsText),
-    }),
-    [form],
-  );
+  const draft = useMemo(() => ({ source: form.source }), [form.source]);
 
   useEffect(() => {
     if (config.mode !== "edit") {
@@ -87,7 +79,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   useEffect(() => {
     if (!loading && !initialFocusApplied.current) {
       initialFocusApplied.current = true;
-      titleInput.current?.focus();
     }
   }, [loading]);
 
@@ -247,44 +238,13 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
 
       <div className="editor-workspace">
         <form className="editor-form" onSubmit={save}>
-          <label>
-            題名
-            <input
-              ref={titleInput}
-              name="title"
-              value={form.title}
-              onChange={(event) =>
-                dispatch({
-                  type: "change",
-                  field: "title",
-                  value: event.target.value,
-                })
-              }
-              disabled={saving}
-            />
-          </label>
           <LineNumberedTextarea
-            value={form.body}
+            value={form.source}
             disabled={saving}
-            onChange={(body) =>
-              dispatch({ type: "change", field: "body", value: body })
+            onChange={(source) =>
+              dispatch({ type: "change", field: "source", value: source })
             }
           />
-          <label>
-            タグ（コンマ区切り）
-            <input
-              name="tags"
-              value={form.tagsText}
-              onChange={(event) =>
-                dispatch({
-                  type: "change",
-                  field: "tagsText",
-                  value: event.target.value,
-                })
-              }
-              disabled={saving}
-            />
-          </label>
           <div className="editor-actions">
             <button type="submit" disabled={saving || !isDirty}>
               {saving ? "保存しています…" : "保存"}
@@ -297,7 +257,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           </div>
         </form>
         <PreviewPanel
-          body={form.body}
+          body={form.source}
           html={previewHtml}
           loading={previewLoading}
           problem={previewProblem}
@@ -330,16 +290,11 @@ function ConflictPanel({
       <p>
         編集中の内容は維持されています。三つの内容を比較し、必要な修正を行ってください。
       </p>
-      <ConflictFields
-        editingStarted={editingStarted}
-        editing={editing}
-        current={current}
-      />
-      <h3>本文の行単位比較</h3>
+      <h3>AsciiDoc文書の行単位比較</h3>
       <BodyConflictTable
-        editingStarted={editingStarted.body}
-        editing={editing.body}
-        current={current.body}
+        editingStarted={editingStarted.source}
+        editing={editing.source}
+        current={current.source}
       />
       <button type="button" onClick={onUseCurrentRevision}>
         更新番号{currentRevision}を編集の基準にする
@@ -348,47 +303,6 @@ function ConflictPanel({
         この操作では保存しません。比較後にフォームの「保存」を選んでください。
       </p>
     </section>
-  );
-}
-
-function ConflictFields({
-  editingStarted,
-  editing,
-  current,
-}: {
-  editingStarted: FormState;
-  editing: FormState;
-  current: FormState;
-}) {
-  const values = [
-    { label: "編集開始時点", form: editingStarted },
-    { label: "編集中", form: editing },
-    { label: "現在保存されている内容", form: current },
-  ];
-  return (
-    <div className="conflict-fields">
-      {values.map(({ label, form }) => (
-        <section key={label} aria-label={label}>
-          <h3>{label}</h3>
-          <dl>
-            <dt>題名</dt>
-            <dd>{form.title || "（空欄）"}</dd>
-            <dd className="change-status">
-              {fieldStatus(label, form.title, editingStarted.title)}
-            </dd>
-            <dt>タグ</dt>
-            <dd>{form.tagsText || "（なし）"}</dd>
-            <dd className="change-status">
-              {fieldStatus(
-                label,
-                normalizedTags(form.tagsText),
-                normalizedTags(editingStarted.tagsText),
-              )}
-            </dd>
-          </dl>
-        </section>
-      ))}
-    </div>
   );
 }
 
@@ -489,7 +403,7 @@ function LineNumberedTextarea({
 
   return (
     <label>
-      本文（AsciiDoc）
+      AsciiDoc文書
       <span className="source-editor">
         <span
           aria-hidden="true"
@@ -499,7 +413,7 @@ function LineNumberedTextarea({
           {lineNumbers}
         </span>
         <textarea
-          name="body"
+          name="source"
           rows={20}
           wrap="off"
           value={value}
@@ -567,20 +481,6 @@ function SafePreview({ html }: { html: string }) {
 
 function splitLines(value: string): string[] {
   return value.split(/\r\n|\r|\n/);
-}
-
-function fieldStatus(label: string, value: string, baseline: string): string {
-  if (label === "編集開始時点") {
-    return "比較基準";
-  }
-  return value === baseline ? "変更なし" : "変更あり";
-}
-
-function normalizedTags(value: string): string {
-  return parseTags(value)
-    .map((tag) => tag.toLocaleLowerCase())
-    .sort()
-    .join("\u0000");
 }
 
 interface AlignedLines {
@@ -723,13 +623,6 @@ function alignLargeDocument(
   return { insertions, matches };
 }
 
-function parseTags(value: string): string[] {
-  return value
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter((tag) => tag.length > 0);
-}
-
 function toProblem(error: unknown): Problem {
   if (error instanceof ApiError) {
     return error.problem;
@@ -758,7 +651,7 @@ function diagnosticLocation(
   diagnostic: ValidationDiagnostic,
 ): string {
   if (
-    diagnostic.target.field !== "body" ||
+    diagnostic.target.field !== "source" ||
     diagnostic.span?.unit !== "utf8_byte"
   ) {
     return "";
@@ -775,8 +668,8 @@ function diagnosticMessage(code: string): string {
       return "タグの空欄、改行、重複、または長さを確認してください。";
     case "too_many_tags":
       return "タグの数が上限を超えています。";
-    case "body_too_large":
-      return "本文のデータ量が上限を超えています。";
+    case "source_too_large":
+      return "AsciiDoc文書のデータ量が上限を超えています。";
     case "asciidoc_parse_failed":
       return "AsciiDoc本文を解析できませんでした。";
     case "include_directive_disabled":

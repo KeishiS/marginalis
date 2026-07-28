@@ -11,7 +11,7 @@ impl SqliteDatabase {
     pub async fn export_archive_snapshot(&self) -> Result<LogicalSnapshot, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let rows = sqlx::query(
-            "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+            "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes ORDER BY note_id ASC",
         )
         .fetch_all(&mut *transaction)
@@ -122,14 +122,14 @@ async fn insert_note_row(
     let tags_json =
         serde_json::to_string(note.tags()).map_err(|_| SqliteStoreError::CorruptData)?;
     sqlx::query(
-        "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
+        "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(note.note_id().to_string())
     .bind(note.creator_issuer())
     .bind(note.creator_subject())
     .bind(note.title())
-    .bind(note.body())
+    .bind(note.source())
     .bind(tags_json)
     .bind(note.created_at().get())
     .bind(note.updated_at().get())

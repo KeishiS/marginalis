@@ -51,7 +51,6 @@ async fn initialization_rejects_the_previous_schema_version() {
     assert!(
         error
             .to_string()
-            .contains("unsupported database schema version 3; expected 8")
+            .contains("unsupported database schema version 3; expected 9")
     );
 }
-
