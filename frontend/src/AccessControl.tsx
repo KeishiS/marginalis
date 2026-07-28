@@ -1,12 +1,10 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useReducer } from "react";
 
+import { ApiError, readNoteAcl, replaceNoteAcl } from "./api";
 import {
-  ApiError,
-  NoteAclEntry,
-  NotePermission,
-  readNoteAcl,
-  replaceNoteAcl,
-} from "./api";
+  accessControlReducer,
+  initialAccessControlState,
+} from "./accessControlState";
 
 interface Props {
   apiBase: string;
@@ -21,28 +19,40 @@ export function AccessControl({
   revision,
   onRevision,
 }: Props) {
-  const [entries, setEntries] = useState<NoteAclEntry[] | null>(null);
-  const [subject, setSubject] = useState("");
-  const [permission, setPermission] = useState<NotePermission>("read");
-  const [currentRevision, setCurrentRevision] = useState(revision);
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
+  const [state, dispatch] = useReducer(
+    accessControlReducer,
+    revision,
+    initialAccessControlState,
+  );
+  const {
+    entries,
+    subject,
+    permission,
+    revision: currentRevision,
+    notice,
+    error,
+  } = state;
 
   useEffect(() => {
     readNoteAcl(apiBase, noteId)
-      .then(({ entries }) => {
-        if (Array.isArray(entries)) {
-          setEntries(entries);
-        }
-      })
+      .then(({ entries, revision }) =>
+        dispatch({ type: "loaded", entries, revision }),
+      )
       .catch((reason: unknown) => {
         if (
           reason instanceof ApiError &&
           (reason.status === 403 || reason.status === 404)
         ) {
+          dispatch({
+            type: "error",
+            message: "共有設定を利用できません。",
+          });
           return;
         }
-        setError("共有設定を読み込めませんでした。");
+        dispatch({
+          type: "error",
+          message: "共有設定を読み込めませんでした。",
+        });
       });
   }, [apiBase, noteId]);
 
@@ -53,18 +63,7 @@ export function AccessControl({
 
   function add(event: FormEvent) {
     event.preventDefault();
-    const normalized = subject.trim();
-    if (!normalized) {
-      setError("共有する利用者のsubjectを入力してください。");
-      return;
-    }
-    setEntries((current) => [
-      ...(current ?? []).filter((entry) => entry.subject !== normalized),
-      { subject: normalized, permission },
-    ]);
-    setSubject("");
-    setError("");
-    setNotice("未保存の共有設定があります。");
+    dispatch({ type: "add" });
   }
 
   async function save() {
@@ -78,16 +77,16 @@ export function AccessControl({
         })),
         currentRevision,
       );
-      setCurrentRevision(note.revision);
+      dispatch({ type: "saved", revision: note.revision });
       onRevision(note.revision);
-      setNotice("共有設定を保存しました。");
-      setError("");
     } catch (reason: unknown) {
-      setError(
-        reason instanceof ApiError && reason.status === 409
-          ? "別の操作で更新されています。画面を再読み込みしてください。"
-          : "共有設定を保存できませんでした。",
-      );
+      dispatch({
+        type: "error",
+        message:
+          reason instanceof ApiError && reason.status === 409
+            ? "別の操作で更新されています。画面を再読み込みしてください。"
+            : "共有設定を保存できませんでした。",
+      });
     }
   }
 
@@ -102,10 +101,9 @@ export function AccessControl({
             {entry.permission === "edit" ? "閲覧・編集" : "閲覧"}）
             <button
               type="button"
-              onClick={() => {
-                setEntries(currentEntries.filter((item) => item !== entry));
-                setNotice("未保存の共有設定があります。");
-              }}
+              onClick={() =>
+                dispatch({ type: "remove", subject: entry.subject })
+              }
             >
               削除
             </button>
@@ -117,7 +115,9 @@ export function AccessControl({
           利用者subject
           <input
             value={subject}
-            onChange={(event) => setSubject(event.target.value)}
+            onChange={(event) =>
+              dispatch({ type: "subject", value: event.target.value })
+            }
           />
         </label>
         <label>
@@ -125,7 +125,10 @@ export function AccessControl({
           <select
             value={permission}
             onChange={(event) =>
-              setPermission(event.target.value as NotePermission)
+              dispatch({
+                type: "permission",
+                value: event.target.value === "edit" ? "edit" : "read",
+              })
             }
           >
             <option value="read">閲覧</option>

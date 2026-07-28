@@ -7,7 +7,9 @@
 ## 構成
 
 ```text
-Web UI / REST (/api/v2) / MCP (Streamable HTTP)
+Web UI / REST (/api/v3) / MCP (Streamable HTTP)
+                    │
+       marginalis-contract（公開契約）
                     │
           application use cases
                     │
@@ -17,6 +19,8 @@ SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
 ```
 
 `marginalis-web`はHTTP、Cookie、CSRF、OAuthのリクエストを受け付けます。
+`marginalis-contract`はRESTのデータ型とOpenAPI、TypeScriptクライアント、MCPツール定義の
+生成元です。公開形式を変える場合はこのcrateを変更し、生成物との差分検査を通します。
 `marginalis-application`はノート操作の手順と業務上の失敗理由を定義します。
 ここでいうportは、applicationが外側の実装へ要求する小さなinterfaceです。
 `marginalis-sqlite`は永続化port、`marginalis-asciidoc`は文書の検証・描画port、
@@ -64,6 +68,7 @@ MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`mar
 ```text
 crates/
 ├── marginalis-domain          値と設計条件
+├── marginalis-contract        REST・MCP・TypeScriptの公開契約
 ├── marginalis-application     use case実装と内向き・外向きport
 ├── marginalis-asciidoc        AsciiDoc検証・描画・export
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
@@ -94,6 +99,8 @@ SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出
 repositoryへ渡して取得し、参照数に比例してSQL問い合わせを繰り返しません。変更操作は認可、
 削除状態、期待revisionを一つの条件付きSQLへ含めます。条件に一致しなかった場合だけ、同じ
 transaction内で不可視と競合を分類します。
+閲覧画面に必要な正本、実効アクセス水準、参照先、関連概要は、一つのSQLite読み取りtransactionで
+取得します。描画はこのスナップショットだけを使うため、一画面の途中で別の更新結果が混ざりません。
 
 アーカイブのJSON項目を表す型は、形式を解釈する`marginalis-asciidoc`に置きます。JSONから復元した
 `Note`とACLは、`marginalis-application`の`LogicalSnapshot`でノートIDの重複、ACLの参照先、
@@ -106,7 +113,12 @@ crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはco
 実行経路と公開型を短く一覧できる状態に保つ。
 
 Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセットの配信を担当し、Reactは
-編集画面のブラウザー内状態を担当する。Viteの成果物はGitで管理せず、開発時は`cargo make`、
+画面遷移とブラウザー内状態を担当します。RESTのTypeScript型、実行時の応答検査、クライアント関数は
+`marginalis-contract`から`frontend/src/generated/contracts.ts`へ生成し、手書きで複製しません。
+編集内容と共有設定の状態遷移は、それぞれ`editorState.ts`と`accessControlState.ts`の純粋なreducerへ
+置きます。Reactコンポーネントは入力、REST呼び出し、副作用の調整を担当し、状態遷移の規則を
+イベント処理へ分散させません。
+Viteの成果物はGitで管理せず、開発時は`cargo make`、
 配布時はNixが`frontend/dist`を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
 外部URLはViteで固定せず、Rustの`external_path`でbase URLのサブパスを反映する。
 

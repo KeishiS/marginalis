@@ -1200,6 +1200,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "marginalis-contract"
+version = "0.7.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "marginalis-domain"
 version = "0.7.0"
 dependencies = [
@@ -1276,6 +1284,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "marginalis-application",
+ "marginalis-contract",
  "marginalis-domain",
  "serde",
  "serde_json",

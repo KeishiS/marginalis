@@ -3,13 +3,13 @@ import {
   UIEvent,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
 
 import {
   ApiError,
-  Note,
   Problem,
   ValidationDiagnostic,
   createNote,
@@ -18,6 +18,12 @@ import {
   updateNote,
 } from "./api";
 import { utf8ByteOffsetToLineColumn } from "./textPosition";
+import {
+  EditorForm as FormState,
+  editorReducer,
+  initialEditorState,
+  noteToForm,
+} from "./editorState";
 
 export interface EditorConfig {
   mode: "create" | "edit";
@@ -26,29 +32,17 @@ export interface EditorConfig {
   basePath: string;
 }
 
-interface FormState {
-  title: string;
-  body: string;
-  tagsText: string;
-}
-
-interface ConflictState {
-  editingStarted: FormState;
-  current: Note;
-}
-
-const EMPTY_FORM: FormState = { title: "", body: "", tagsText: "" };
-
 export function EditorApplication({ config }: { config: EditorConfig }) {
-  const [noteId, setNoteId] = useState(config.noteId);
-  const [revision, setRevision] = useState<number | null>(null);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [baseline, setBaseline] = useState<FormState>(EMPTY_FORM);
+  const [editor, dispatch] = useReducer(
+    editorReducer,
+    config.noteId,
+    initialEditorState,
+  );
+  const { noteId, revision, form, baseline, conflict } = editor;
   const [loading, setLoading] = useState(config.mode === "edit");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [notice, setNotice] = useState("");
-  const [conflict, setConflict] = useState<ConflictState | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewProblem, setPreviewProblem] = useState<Problem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -74,7 +68,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     const controller = new AbortController();
     readNote(config.apiBase, config.noteId, controller.signal)
       .then((note) => {
-        applyNote(note, setForm, setBaseline, setRevision);
+        dispatch({ type: "accept-note", note });
         setProblem(null);
       })
       .catch((error: unknown) => {
@@ -155,9 +149,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         revision === null
           ? await createNote(config.apiBase, draft)
           : await updateNote(config.apiBase, noteId, draft, revision);
-      setNoteId(note.note_id);
-      applyNote(note, setForm, setBaseline, setRevision);
-      setConflict(null);
+      dispatch({ type: "accept-note", note });
       setNotice("保存しました。");
       if (revision === null) {
         window.history.replaceState(
@@ -172,10 +164,10 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       if (nextProblem.code === "conflict" && noteId) {
         try {
           const current = await readNote(config.apiBase, noteId);
-          setConflict({ editingStarted: baseline, current });
+          dispatch({ type: "conflict", current });
         } catch (refreshError: unknown) {
           setProblem(toProblem(refreshError));
-          setConflict(null);
+          dispatch({ type: "clear-conflict" });
         }
       }
     } finally {
@@ -244,9 +236,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           current={noteToForm(conflict.current)}
           currentRevision={conflict.current.revision}
           onUseCurrentRevision={() => {
-            setBaseline(noteToForm(conflict.current));
-            setRevision(conflict.current.revision);
-            setConflict(null);
+            dispatch({ type: "rebase", note: conflict.current });
             setProblem(null);
             setNotice(
               `更新番号${conflict.current.revision}を基準にしました。内容を確認して保存してください。`,
@@ -264,10 +254,11 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
               name="title"
               value={form.title}
               onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  title: event.target.value,
-                }))
+                dispatch({
+                  type: "change",
+                  field: "title",
+                  value: event.target.value,
+                })
               }
               disabled={saving}
             />
@@ -276,10 +267,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
             value={form.body}
             disabled={saving}
             onChange={(body) =>
-              setForm((current) => ({
-                ...current,
-                body,
-              }))
+              dispatch({ type: "change", field: "body", value: body })
             }
           />
           <label>
@@ -288,10 +276,11 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
               name="tags"
               value={form.tagsText}
               onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  tagsText: event.target.value,
-                }))
+                dispatch({
+                  type: "change",
+                  field: "tagsText",
+                  value: event.target.value,
+                })
               }
               disabled={saving}
             />
@@ -574,26 +563,6 @@ function SafePreview({ html }: { html: string }) {
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
-}
-
-function applyNote(
-  note: Note,
-  setForm: (form: FormState) => void,
-  setBaseline: (form: FormState) => void,
-  setRevision: (revision: number) => void,
-) {
-  const next = noteToForm(note);
-  setForm(next);
-  setBaseline(next);
-  setRevision(note.revision);
-}
-
-function noteToForm(note: Note): FormState {
-  return {
-    title: note.title,
-    body: note.body,
-    tagsText: note.tags.join(", "),
-  };
 }
 
 function splitLines(value: string): string[] {

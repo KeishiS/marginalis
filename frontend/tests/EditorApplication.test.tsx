@@ -15,7 +15,7 @@ import { utf8ByteOffsetToLineColumn } from "../src/textPosition";
 const CREATE_CONFIG: EditorConfig = {
   mode: "create",
   noteId: "",
-  apiBase: "/marginalis/api/v2",
+  apiBase: "/marginalis/api/v3",
   basePath: "/marginalis",
 };
 
@@ -66,7 +66,7 @@ test("新規ノートを明示的に保存してIDと更新番号を反映する
   expect(await screen.findByText("保存しました。")).toBeInTheDocument();
   expect(screen.getByText("更新番号: 3")).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith(
-    "/marginalis/api/v2/notes",
+    "/marginalis/api/v3/notes",
     expect.objectContaining({
       method: "POST",
       credentials: "same-origin",
@@ -105,15 +105,15 @@ test("既存ノートを取得し、読み込んだrevisionで更新する", asy
 
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   expect(fetchMock.mock.calls[1]).toEqual([
-    `/marginalis/api/v2/notes/${NOTE.note_id}`,
+    `/marginalis/api/v3/notes/${NOTE.note_id}`,
     expect.objectContaining({
       method: "PUT",
       body: JSON.stringify({
         title: "更新後",
         body: "既存の本文",
         tags: ["研究", "試験"],
-        expected_revision: 3,
       }),
+      headers: expect.objectContaining({ "if-match": '"rev-3"' }),
     }),
   ]);
   expect(await screen.findByText("更新番号: 4")).toBeInTheDocument();
@@ -207,8 +207,8 @@ test("revision競合時に三つの内容を比較し、明示操作後に再保
         title: "編集中の題名",
         body: localBody,
         tags: ["研究", "試験"],
-        expected_revision: 4,
       }),
+      headers: expect.objectContaining({ "if-match": '"rev-4"' }),
     }),
   );
   expect(await screen.findByText("更新番号: 5")).toBeInTheDocument();
@@ -250,7 +250,7 @@ test("競合確認後に再更新された場合も最新revisionを再取得す
   ).toBeInTheDocument();
   expect(editorCalls(fetchMock)[3]?.[1]).toEqual(
     expect.objectContaining({
-      body: expect.stringContaining('"expected_revision":4'),
+      headers: expect.objectContaining({ "if-match": '"rev-4"' }),
     }),
   );
   expect(screen.getByDisplayValue("編集中")).toBeInTheDocument();

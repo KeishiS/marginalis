@@ -5,118 +5,87 @@ use marginalis_application::{
     AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, NoteValidationDiagnostic,
     NoteValidationTarget,
 };
-use serde::Serialize;
+use marginalis_contract::{
+    ProblemCode, ProblemResponse, Utf8ByteSpanResponse, Utf8ByteUnit, ValidationDiagnosticResponse,
+    ValidationTargetResponse,
+};
 
-#[derive(Serialize)]
-pub(super) struct Problem {
-    code: &'static str,
-    message: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    diagnostics: Option<Vec<ValidationDiagnosticResponse>>,
-}
-
-#[derive(Serialize)]
-pub(super) struct ValidationDiagnosticResponse {
-    code: &'static str,
-    target: DiagnosticTargetResponse,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    span: Option<Utf8ByteSpanResponse>,
-    message: &'static str,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "field", rename_all = "snake_case")]
-enum DiagnosticTargetResponse {
-    Title,
-    Body,
-    Tag { index: usize },
-    Tags,
-    AclEntry { index: usize },
-}
-
-#[derive(Serialize)]
-struct Utf8ByteSpanResponse {
-    start: u32,
-    end: u32,
-    unit: &'static str,
-}
-
-impl From<NoteValidationDiagnostic> for ValidationDiagnosticResponse {
-    fn from(diagnostic: NoteValidationDiagnostic) -> Self {
-        let target = match diagnostic.target {
-            NoteValidationTarget::Title => DiagnosticTargetResponse::Title,
-            NoteValidationTarget::Body => DiagnosticTargetResponse::Body,
-            NoteValidationTarget::Tag { index } => DiagnosticTargetResponse::Tag { index },
-            NoteValidationTarget::Tags => DiagnosticTargetResponse::Tags,
-            NoteValidationTarget::AclEntry { index } => {
-                DiagnosticTargetResponse::AclEntry { index }
-            }
-        };
-        Self {
-            code: diagnostic.code.as_str(),
-            target,
-            span: diagnostic.span.map(|span| Utf8ByteSpanResponse {
-                start: span.start,
-                end: span.end,
-                unit: "utf8_byte",
-            }),
-            message: diagnostic.message,
-        }
+fn diagnostic_response(diagnostic: NoteValidationDiagnostic) -> ValidationDiagnosticResponse {
+    let target = match diagnostic.target {
+        NoteValidationTarget::Title => ValidationTargetResponse::Title,
+        NoteValidationTarget::Body => ValidationTargetResponse::Body,
+        NoteValidationTarget::Tag { index } => ValidationTargetResponse::Tag { index },
+        NoteValidationTarget::Tags => ValidationTargetResponse::Tags,
+        NoteValidationTarget::AclEntry { index } => ValidationTargetResponse::AclEntry { index },
+    };
+    ValidationDiagnosticResponse {
+        code: diagnostic.code.as_str().into(),
+        target,
+        span: diagnostic.span.map(|span| Utf8ByteSpanResponse {
+            start: span.start,
+            end: span.end,
+            unit: Utf8ByteUnit::Utf8Byte,
+        }),
+        message: diagnostic.message.into(),
     }
 }
 
-pub(super) type HandlerResult<T> = Result<T, (StatusCode, Json<Problem>)>;
+pub(super) type HandlerResult<T> = Result<T, (StatusCode, Json<ProblemResponse>)>;
 
 pub(super) fn problem(
     status: StatusCode,
-    code: &'static str,
+    code: ProblemCode,
     message: &'static str,
-) -> (StatusCode, Json<Problem>) {
+) -> (StatusCode, Json<ProblemResponse>) {
     (
         status,
-        Json(Problem {
+        Json(ProblemResponse {
             code,
-            message,
-            diagnostics: None,
+            message: message.into(),
+            diagnostics: Vec::new(),
         }),
     )
 }
 
-pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<Problem>) {
+pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemResponse>) {
     match error {
-        NoteUseCaseError::NotFound => {
-            problem(StatusCode::NOT_FOUND, "not_found", "note is not available")
-        }
+        NoteUseCaseError::NotFound => problem(
+            StatusCode::NOT_FOUND,
+            ProblemCode::NotFound,
+            "note is not available",
+        ),
         NoteUseCaseError::Forbidden => problem(
             StatusCode::FORBIDDEN,
-            "forbidden",
+            ProblemCode::Forbidden,
             "note operation is not permitted",
         ),
-        NoteUseCaseError::Conflict => {
-            problem(StatusCode::CONFLICT, "conflict", "note revision conflicts")
-        }
+        NoteUseCaseError::Conflict => problem(
+            StatusCode::CONFLICT,
+            ProblemCode::Conflict,
+            "note revision conflicts",
+        ),
         NoteUseCaseError::Validation(diagnostics) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(validation_problem(diagnostics)),
         ),
+        NoteUseCaseError::RenderFailed => problem(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ProblemCode::RenderFailed,
+            "note cannot be rendered safely",
+        ),
         NoteUseCaseError::Unavailable => problem(
             StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
+            ProblemCode::Unavailable,
             "note operation is unavailable",
         ),
     }
 }
 
-fn validation_problem(diagnostics: Vec<NoteValidationDiagnostic>) -> Problem {
-    Problem {
-        code: "validation_failed",
-        message: "note input is invalid",
-        diagnostics: Some(
-            diagnostics
-                .into_iter()
-                .map(ValidationDiagnosticResponse::from)
-                .collect(),
-        ),
+fn validation_problem(diagnostics: Vec<NoteValidationDiagnostic>) -> ProblemResponse {
+    ProblemResponse {
+        code: ProblemCode::ValidationFailed,
+        message: "note input is invalid".into(),
+        diagnostics: diagnostics.into_iter().map(diagnostic_response).collect(),
     }
 }
 
@@ -129,22 +98,22 @@ pub(super) fn validation_problem_json(
 
 pub(super) fn authentication_error(
     error: AuthenticationUseCaseError,
-) -> (StatusCode, Json<Problem>) {
+) -> (StatusCode, Json<ProblemResponse>) {
     match error {
         AuthenticationUseCaseError::Rejected | AuthenticationUseCaseError::NotFound => problem(
             StatusCode::UNAUTHORIZED,
-            "authentication_required",
+            ProblemCode::AuthenticationRequired,
             "authentication is required",
         ),
         AuthenticationUseCaseError::Unavailable => problem(
             StatusCode::SERVICE_UNAVAILABLE,
-            "authentication_unavailable",
+            ProblemCode::AuthenticationUnavailable,
             "authentication is unavailable",
         ),
     }
 }
 
-pub(super) fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Problem>) {
+pub(super) fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<ProblemResponse>) {
     match error {
         McpOAuthUseCaseError::InvalidRequest
         | McpOAuthUseCaseError::InvalidClient
@@ -153,12 +122,12 @@ pub(super) fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<Proble
         | McpOAuthUseCaseError::InvalidTarget
         | McpOAuthUseCaseError::InvalidGrant => problem(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            ProblemCode::InvalidRequest,
             "OAuth request is invalid",
         ),
         McpOAuthUseCaseError::Unavailable => problem(
             StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
+            ProblemCode::Unavailable,
             "OAuth service is unavailable",
         ),
     }

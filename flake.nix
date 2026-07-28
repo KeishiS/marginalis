@@ -282,13 +282,13 @@
             testScript = ''
               machine.wait_for_unit("marginalis.service")
               machine.wait_until_succeeds(
-                  "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\" and .api_version == \"v2\"'"
+                  "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\" and .api_version == \"v2\"'"
               )
               machine.succeed(
                   "test $(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/oidc/login) = 503"
               )
               machine.succeed(
-                  "curl -fsS http://127.0.0.1:3000/api/v2/openapi.json | jq -e '.openapi == \"3.1.0\"'"
+                  "curl -fsS http://127.0.0.1:3000/api/v3/openapi.json | jq -e '.openapi == \"3.1.0\"'"
               )
               machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM notes'")
               machine.succeed(
@@ -394,7 +394,7 @@
               )
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
-                "curl -fsS http://127.0.0.1:3000/api/v2/health | jq -e '.status == \"ok\"'"
+                "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\"'"
               )
               machine.succeed("systemctl stop marginalis.service")
               machine.succeed(
@@ -565,7 +565,7 @@
               app.start()
               app.wait_for_unit("marginalis.service")
               app.wait_for_unit("nginx.service")
-              app.wait_until_succeeds("curl -fsS http://127.0.0.1:3000/api/v2/health | grep -q '\"api_version\":\"v2\"'")
+              app.wait_until_succeeds("curl -fsS http://127.0.0.1:3000/api/v3/health | grep -q '\"api_version\":\"v2\"'")
               app.succeed(
                 "curl --cacert ${kanidmDiscoveryCerts}/ca.pem -fsS https://marginalis.example.test/.well-known/oauth-authorization-server/marginalis | ${pkgs.jq}/bin/jq -e '.issuer == \"https://marginalis.example.test/marginalis\"'"
               )

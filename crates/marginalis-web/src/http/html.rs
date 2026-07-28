@@ -11,10 +11,6 @@ pub(super) fn escape_html(value: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-pub(super) fn page_document(title: &str, cookie_path: &str, content: &str) -> String {
-    page_document_with_script(title, cookie_path, content, None)
-}
-
 pub(super) fn page_document_with_script(
     title: &str,
     cookie_path: &str,
@@ -43,7 +39,7 @@ pub(super) fn page_document_with_script(
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_html, page_document, page_document_with_script};
+    use super::{escape_html, page_document_with_script};
 
     #[test]
     fn escapes_text_for_html_contexts() {
@@ -55,7 +51,7 @@ mod tests {
 
     #[test]
     fn page_document_uses_japanese_language_and_subpath_assets() {
-        let document = page_document("<題名>", "/marginalis", "<h1>本文</h1>");
+        let document = page_document_with_script("<題名>", "/marginalis", "<h1>本文</h1>", None);
 
         assert!(document.contains("<html lang=\"ja\">"));
         assert!(document.contains("<title>&lt;題名&gt;</title>"));

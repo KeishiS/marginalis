@@ -635,7 +635,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
 
     let response = send(
         &server.app,
-        Request::get("/api/v2/notes")
+        Request::get("/api/v3/notes")
             .header(header::COOKIE, other_user.cookies())
             .body(Body::empty())
             .expect("other user list request"),
@@ -645,7 +645,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     assert_eq!(json_body(response).await, serde_json::json!([]));
     let response = send(
         &server.app,
-        Request::get(format!("/api/v2/notes/{note_id}"))
+        Request::get(format!("/api/v3/notes/{note_id}"))
             .header(header::COOKIE, other_user.cookies())
             .body(Body::empty())
             .expect("other user read request"),
@@ -654,18 +654,18 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let response = send(
         &server.app,
-        Request::put(format!("/api/v2/notes/{note_id}"))
+        Request::put(format!("/api/v3/notes/{note_id}"))
             .header(header::COOKIE, other_user.cookies())
             .header(header::ORIGIN, BROWSER_ORIGIN)
             .header("sec-fetch-site", "same-origin")
             .header("x-csrf-token", &other_user.csrf)
+            .header(header::IF_MATCH, "\"rev-1\"")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
                 serde_json::json!({
                     "title": "Unauthorized REST update",
                     "body": "Must not persist.",
                     "tags": [],
-                    "expected_revision": 1,
                 })
                 .to_string(),
             ))
@@ -675,15 +675,13 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let response = send(
         &server.app,
-        Request::delete(format!("/api/v2/notes/{note_id}"))
+        Request::delete(format!("/api/v3/notes/{note_id}"))
             .header(header::COOKIE, other_user.cookies())
             .header(header::ORIGIN, BROWSER_ORIGIN)
             .header("sec-fetch-site", "same-origin")
             .header("x-csrf-token", &other_user.csrf)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(
-                serde_json::json!({ "expected_revision": 1 }).to_string(),
-            ))
+            .header(header::IF_MATCH, "\"rev-1\"")
+            .body(Body::empty())
             .expect("other user delete request"),
     )
     .await;
@@ -691,7 +689,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
 
     let response = send(
         &server.app,
-        Request::get("/api/v2/notes")
+        Request::get("/api/v3/notes")
             .header(header::COOKIE, user.cookies())
             .body(Body::empty())
             .expect("REST list request"),
@@ -703,7 +701,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
 
     let response = send(
         &server.app,
-        Request::get("/api/v2/session")
+        Request::get("/api/v3/session")
             .header(header::COOKIE, user.cookies())
             .body(Body::empty())
             .expect("session request"),
@@ -724,8 +722,8 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = text_body(response).await;
-    assert!(body.contains("Owned &lt;integration&gt; note"));
-    assert!(!body.contains("<integration>"));
+    assert!(body.contains("data-application-root"));
+    assert!(!body.contains("Owned"));
 
     let response = send(
         &server.app,
@@ -736,38 +734,56 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+    assert!(text_body(response).await.contains("data-application-root"));
+
+    let response = send(
+        &server.app,
+        Request::get(format!("/api/v3/notes/{note_id}/view"))
+            .header(header::COOKIE, user.cookies())
+            .body(Body::empty())
+            .expect("rendered view request"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let view = json_body(response).await;
+    assert_eq!(view["note"]["title"], "Owned <integration> note");
     assert!(
-        text_body(response)
-            .await
+        view["html"]
+            .as_str()
+            .expect("rendered HTML")
             .contains("Created through the authenticated MCP endpoint.")
     );
 
     let response = send(
         &server.app,
-        Request::get(format!("/api/v2/notes/{note_id}"))
+        Request::get(format!("/api/v3/notes/{note_id}"))
             .header(header::COOKIE, user.cookies())
             .body(Body::empty())
             .expect("REST read request"),
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::ETAG),
+        Some(&"\"rev-1\"".parse().expect("ETag"))
+    );
     let note = json_body(response).await;
     let revision = note["revision"].as_i64().expect("revision");
 
     let response = send(
         &server.app,
-        Request::put(format!("/api/v2/notes/{note_id}"))
+        Request::put(format!("/api/v3/notes/{note_id}"))
             .header(header::COOKIE, user.cookies())
             .header(header::ORIGIN, BROWSER_ORIGIN)
             .header("sec-fetch-site", "same-origin")
             .header("x-csrf-token", &user.csrf)
+            .header(header::IF_MATCH, format!("\"rev-{revision}\""))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
                 serde_json::json!({
                     "title": "Updated integration note",
                     "body": "Updated through REST.",
                     "tags": ["integration", "updated"],
-                    "expected_revision": revision,
                 })
                 .to_string(),
             ))
@@ -775,12 +791,16 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::ETAG),
+        Some(&format!("\"rev-{}\"", revision + 1).parse().expect("ETag"))
+    );
     let updated = json_body(response).await;
     let revision = updated["revision"].as_i64().expect("updated revision");
 
     let response = send(
         &server.app,
-        Request::get(format!("/api/v2/notes/{note_id}/source"))
+        Request::get(format!("/api/v3/notes/{note_id}/source"))
             .header(header::COOKIE, user.cookies())
             .body(Body::empty())
             .expect("REST export request"),
@@ -795,15 +815,13 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
 
     let response = send(
         &server.app,
-        Request::delete(format!("/api/v2/notes/{note_id}"))
+        Request::delete(format!("/api/v3/notes/{note_id}"))
             .header(header::COOKIE, user.cookies())
             .header(header::ORIGIN, BROWSER_ORIGIN)
             .header("sec-fetch-site", "same-origin")
             .header("x-csrf-token", &user.csrf)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(
-                serde_json::json!({ "expected_revision": revision }).to_string(),
-            ))
+            .header(header::IF_MATCH, format!("\"rev-{revision}\""))
+            .body(Body::empty())
             .expect("REST delete request"),
     )
     .await;
@@ -813,15 +831,13 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
 
     let response = send(
         &server.app,
-        Request::post(format!("/api/v2/notes/{note_id}/restore"))
+        Request::post(format!("/api/v3/notes/{note_id}/restore"))
             .header(header::COOKIE, user.cookies())
             .header(header::ORIGIN, BROWSER_ORIGIN)
             .header("sec-fetch-site", "same-origin")
             .header("x-csrf-token", &user.csrf)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(
-                serde_json::json!({ "expected_revision": revision }).to_string(),
-            ))
+            .header(header::IF_MATCH, format!("\"rev-{revision}\""))
+            .body(Body::empty())
             .expect("REST restore request"),
     )
     .await;
@@ -834,13 +850,13 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     let member_with_an_unrelated_group = login(
         &server,
         "unrelated-group-subject",
-        &["server-users", "server-admins"],
+        &["server-users", "unrelated-group"],
         "unrelated-group-login-code",
     )
     .await;
     let response = send(
         &server.app,
-        Request::get("/api/v2/notes")
+        Request::get("/api/v3/notes")
             .header(header::COOKIE, member_with_an_unrelated_group.cookies())
             .body(Body::empty())
             .expect("unrelated group member list request"),
@@ -857,7 +873,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
 
     let response = send(
         &server.app,
-        Request::delete(format!("/api/v2/mcp-authorizations/{client_id}"))
+        Request::delete(format!("/api/v3/mcp-authorizations/{client_id}"))
             .header(header::COOKIE, user.cookies())
             .header(header::ORIGIN, BROWSER_ORIGIN)
             .header("sec-fetch-site", "same-origin")
@@ -901,8 +917,8 @@ async fn oidc_rejects_a_subject_without_server_users_membership() {
     let server = TestServer::start().await;
     let response = login_response(
         &server,
-        "administrator-only-subject",
-        &["server-admins"],
+        "non-member-subject",
+        &["unrelated-group"],
         "rejected-login-code",
     )
     .await;

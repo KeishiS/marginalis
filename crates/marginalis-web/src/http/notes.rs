@@ -3,12 +3,16 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::{NoteAclChange, NoteRenderContext};
-use marginalis_domain::{Note, NoteAclEntry, NoteDraft, NotePermission, NoteSummary, Revision};
-use serde::{Deserialize, Serialize};
+use marginalis_application::{NoteAclChange, NoteRenderContext, NoteView};
+use marginalis_contract::{
+    NoteAccessValue, NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
+    NotePermissionValue, NotePreviewResponse, NoteResponse, NoteSummaryResponse, NoteViewResponse,
+    ProblemCode, RelatedNotesResponse, SessionResponse,
+};
+use marginalis_domain::{Note, NoteAccess, NoteDraft, NotePermission, NoteSummary, Revision};
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor, parse_note_id},
@@ -16,146 +20,7 @@ use super::{
     state::ApiState,
 };
 
-#[derive(Serialize)]
-pub(super) struct SessionResponse {
-    issuer: String,
-    subject: String,
-}
-
-#[derive(Serialize)]
-pub(super) struct NoteResponse {
-    note_id: String,
-    title: String,
-    body: String,
-    tags: Vec<String>,
-    created_at_ms: i64,
-    updated_at_ms: i64,
-    revision: i64,
-}
-
-#[derive(Serialize)]
-pub(super) struct NoteSummaryResponse {
-    note_id: String,
-    title: String,
-    tags: Vec<String>,
-    updated_at_ms: i64,
-    revision: i64,
-}
-
-#[derive(Serialize)]
-pub(super) struct NotePreviewResponse {
-    html: String,
-}
-
-impl From<Note> for NoteResponse {
-    fn from(note: Note) -> Self {
-        Self {
-            note_id: note.note_id().to_string(),
-            title: note.title().to_owned(),
-            body: note.body().to_owned(),
-            tags: note.tags().to_vec(),
-            created_at_ms: note.created_at().get(),
-            updated_at_ms: note.updated_at().get(),
-            revision: note.revision().get(),
-        }
-    }
-}
-
-impl From<NoteSummary> for NoteSummaryResponse {
-    fn from(note: NoteSummary) -> Self {
-        Self {
-            note_id: note.note_id.to_string(),
-            title: note.title,
-            tags: note.tags,
-            updated_at_ms: note.updated_at.get(),
-            revision: note.revision.get(),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct NoteInput {
-    pub(super) title: String,
-    pub(super) body: String,
-    pub(super) tags: Vec<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct NoteUpdateInput {
-    title: String,
-    body: String,
-    tags: Vec<String>,
-    expected_revision: i64,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct DeleteInput {
-    expected_revision: i64,
-}
-
-#[derive(Serialize)]
-pub(super) struct NoteAclResponse {
-    entries: Vec<NoteAclEntryResponse>,
-}
-
-#[derive(Serialize)]
-pub(super) struct NoteAclEntryResponse {
-    issuer: String,
-    subject: String,
-    permission: RestNotePermission,
-}
-
-impl From<NoteAclEntry> for NoteAclEntryResponse {
-    fn from(entry: NoteAclEntry) -> Self {
-        Self {
-            issuer: entry.identity().issuer().to_owned(),
-            subject: entry.identity().subject().to_owned(),
-            permission: RestNotePermission::from(entry.permission()),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum RestNotePermission {
-    Read,
-    Edit,
-}
-
-impl From<NotePermission> for RestNotePermission {
-    fn from(permission: NotePermission) -> Self {
-        match permission {
-            NotePermission::Read => Self::Read,
-            NotePermission::Edit => Self::Edit,
-        }
-    }
-}
-
-impl From<RestNotePermission> for NotePermission {
-    fn from(permission: RestNotePermission) -> Self {
-        match permission {
-            RestNotePermission::Read => Self::Read,
-            RestNotePermission::Edit => Self::Edit,
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct NoteAclEntryInput {
-    subject: String,
-    permission: RestNotePermission,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct NoteAclInput {
-    entries: Vec<NoteAclEntryInput>,
-    expected_revision: i64,
-}
+pub(super) type NoteInput = NoteDraftInput;
 
 pub(super) async fn session(
     State(state): State<ApiState>,
@@ -178,30 +43,53 @@ pub(super) async fn list_notes(
         .list_visible_notes(actor)
         .await
         .map_err(note_error)?;
-    Ok(Json(
-        notes.into_iter().map(NoteSummaryResponse::from).collect(),
-    ))
+    Ok(Json(notes.into_iter().map(note_summary_response).collect()))
 }
 
 pub(super) async fn read_note(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-) -> HandlerResult<Json<NoteResponse>> {
+) -> HandlerResult<Response> {
     let actor = authenticated_actor(&headers, &state).await?;
     let note = state
         .notes
         .read_note(actor, parse_note_id(&note_id)?)
         .await
         .map_err(note_error)?;
-    Ok(Json(note.into()))
+    Ok(note_json(StatusCode::OK, note))
+}
+
+pub(super) async fn read_note_view(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let view = state
+        .notes
+        .read_note_view(
+            actor,
+            parse_note_id(&note_id)?,
+            NoteRenderContext {
+                note_path_prefix: super::auth::external_path(&state.cookie_path, "/notes"),
+            },
+        )
+        .await
+        .map_err(note_error)?;
+    let revision = view.note.revision();
+    Ok((
+        [(header::ETAG, etag(revision))],
+        Json(note_view_response(view)),
+    )
+        .into_response())
 }
 
 pub(super) async fn create_note(
     State(state): State<ApiState>,
     headers: HeaderMap,
     Json(input): Json<NoteInput>,
-) -> HandlerResult<(StatusCode, Json<NoteResponse>)> {
+) -> HandlerResult<Response> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -215,7 +103,7 @@ pub(super) async fn create_note(
         )
         .await
         .map_err(note_error)?;
-    Ok((StatusCode::CREATED, Json(note.into())))
+    Ok(note_json(StatusCode::CREATED, note))
 }
 
 pub(super) async fn preview_note(
@@ -246,8 +134,8 @@ pub(super) async fn update_note(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-    Json(input): Json<NoteUpdateInput>,
-) -> HandlerResult<Json<NoteResponse>> {
+    Json(input): Json<NoteDraftInput>,
+) -> HandlerResult<Response> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -259,38 +147,44 @@ pub(super) async fn update_note(
                 body: input.body,
                 tags: input.tags,
             },
-            revision(input.expected_revision)?,
+            expected_revision(&headers)?,
         )
         .await
         .map_err(note_error)?;
-    Ok(Json(note.into()))
+    Ok(note_json(StatusCode::OK, note))
 }
 
 pub(super) async fn read_note_acl(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-) -> HandlerResult<Json<NoteAclResponse>> {
+) -> HandlerResult<Response> {
     let actor = authenticated_actor(&headers, &state).await?;
-    let entries = state
+    let acl = state
         .notes
         .read_note_acl(actor, parse_note_id(&note_id)?)
         .await
         .map_err(note_error)?;
-    Ok(Json(NoteAclResponse {
-        entries: entries
+    let response = NoteAclResponse {
+        entries: acl
+            .entries
             .into_iter()
-            .map(NoteAclEntryResponse::from)
+            .map(|entry| NoteAclGrantResponse {
+                issuer: entry.identity().issuer().to_owned(),
+                subject: entry.identity().subject().to_owned(),
+                permission: permission_response(entry.permission()),
+            })
             .collect(),
-    }))
+    };
+    Ok(([(header::ETAG, etag(acl.revision))], Json(response)).into_response())
 }
 
 pub(super) async fn replace_note_acl(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-    Json(input): Json<NoteAclInput>,
-) -> HandlerResult<Json<NoteResponse>> {
+    Json(input): Json<NoteAclUpdateInput>,
+) -> HandlerResult<Response> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
@@ -302,62 +196,151 @@ pub(super) async fn replace_note_acl(
                 .into_iter()
                 .map(|entry| NoteAclChange {
                     subject: entry.subject,
-                    permission: entry.permission.into(),
+                    permission: permission(entry.permission),
                 })
                 .collect(),
-            revision(input.expected_revision)?,
+            expected_revision(&headers)?,
         )
         .await
         .map_err(note_error)?;
-    Ok(Json(note.into()))
+    Ok(note_json(StatusCode::OK, note))
 }
 
 pub(super) async fn delete_note(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-    Json(input): Json<DeleteInput>,
-) -> HandlerResult<Json<NoteResponse>> {
+) -> HandlerResult<Response> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
         .soft_delete_note(
             actor,
             parse_note_id(&note_id)?,
-            revision(input.expected_revision)?,
+            expected_revision(&headers)?,
         )
         .await
         .map_err(note_error)?;
-    Ok(Json(note.into()))
+    Ok(note_json(StatusCode::OK, note))
 }
 
 pub(super) async fn restore_note(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
     headers: HeaderMap,
-    Json(input): Json<DeleteInput>,
-) -> HandlerResult<Json<NoteResponse>> {
+) -> HandlerResult<Response> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
         .restore_note(
             actor,
             parse_note_id(&note_id)?,
-            revision(input.expected_revision)?,
+            expected_revision(&headers)?,
         )
         .await
         .map_err(note_error)?;
-    Ok(Json(note.into()))
+    Ok(note_json(StatusCode::OK, note))
 }
 
-fn revision(value: i64) -> HandlerResult<Revision> {
-    Revision::new(value).map_err(|_| {
+fn expected_revision(headers: &HeaderMap) -> HandlerResult<Revision> {
+    let value = headers.get(header::IF_MATCH).ok_or_else(|| {
         problem(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "expected_revision must be positive",
+            StatusCode::PRECONDITION_REQUIRED,
+            ProblemCode::PreconditionRequired,
+            "If-Match is required",
         )
-    })
+    })?;
+    let value = value.to_str().ok().and_then(|value| {
+        value
+            .strip_prefix("\"rev-")
+            .and_then(|value| value.strip_suffix('"'))
+            .and_then(|value| value.parse::<i64>().ok())
+    });
+    value
+        .and_then(|value| Revision::new(value).ok())
+        .ok_or_else(|| {
+            problem(
+                StatusCode::BAD_REQUEST,
+                ProblemCode::InvalidRequest,
+                "If-Match must contain one strong note revision",
+            )
+        })
+}
+
+fn etag(revision: Revision) -> HeaderValue {
+    HeaderValue::from_str(&format!("\"rev-{}\"", revision.get())).expect("valid ETag")
+}
+
+fn note_json(status: StatusCode, note: Note) -> Response {
+    let revision = note.revision();
+    (
+        status,
+        [(header::ETAG, etag(revision))],
+        Json(note_response(note)),
+    )
+        .into_response()
+}
+
+fn note_response(note: Note) -> NoteResponse {
+    NoteResponse {
+        note_id: note.note_id().to_string(),
+        title: note.title().to_owned(),
+        body: note.body().to_owned(),
+        tags: note.tags().to_vec(),
+        created_at_ms: note.created_at().get(),
+        updated_at_ms: note.updated_at().get(),
+        revision: note.revision().get(),
+    }
+}
+
+fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
+    NoteSummaryResponse {
+        note_id: note.note_id.to_string(),
+        title: note.title,
+        tags: note.tags,
+        updated_at_ms: note.updated_at.get(),
+        revision: note.revision.get(),
+    }
+}
+
+fn note_view_response(view: NoteView) -> NoteViewResponse {
+    NoteViewResponse {
+        note: note_response(view.note),
+        access: match view.access {
+            NoteAccess::Read => NoteAccessValue::Read,
+            NoteAccess::Edit => NoteAccessValue::Edit,
+            NoteAccess::Manage => NoteAccessValue::Manage,
+        },
+        html: view.html,
+        related: RelatedNotesResponse {
+            outgoing: view
+                .related
+                .outgoing
+                .into_iter()
+                .map(note_summary_response)
+                .collect(),
+            incoming: view
+                .related
+                .incoming
+                .into_iter()
+                .map(note_summary_response)
+                .collect(),
+        },
+    }
+}
+
+fn permission(value: NotePermissionValue) -> NotePermission {
+    match value {
+        NotePermissionValue::Read => NotePermission::Read,
+        NotePermissionValue::Edit => NotePermission::Edit,
+    }
+}
+
+fn permission_response(value: NotePermission) -> NotePermissionValue {
+    match value {
+        NotePermission::Read => NotePermissionValue::Read,
+        NotePermission::Edit => NotePermissionValue::Edit,
+    }
 }
 
 pub(super) async fn export_note(
@@ -374,7 +357,7 @@ pub(super) async fn export_note(
     let source = state.notes.export_note_source(&note).map_err(|_| {
         problem(
             StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
+            ProblemCode::Unavailable,
             "note export is unavailable",
         )
     })?;

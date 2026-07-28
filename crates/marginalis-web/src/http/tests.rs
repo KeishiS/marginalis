@@ -6,15 +6,15 @@ use axum::{
 };
 use marginalis_application::{
     AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
-    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteCommands,
-    NotePresentation, NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
-    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
-    NoteValidationDiagnostic, NoteValidationTarget, OidcAuthenticationUseCases, RelatedNotes,
-    Utf8ByteSpan, WebSessionUseCases,
+    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
+    NoteCommands, NotePresentation, NoteProfile, NoteProfileExample, NoteProfileLimits,
+    NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError,
+    NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget, NoteView,
+    OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note, NoteAccess,
-    NoteAclEntry, NoteDraft, NoteId, NoteSummary, Revision, UnixMillis, WebSession,
+    NoteDraft, NoteId, NoteSummary, Revision, UnixMillis, WebSession,
 };
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
@@ -118,6 +118,24 @@ macro_rules! implement_note_boundaries {
                 <$type>::render_note_html(self, actor, note_id, context).await
             }
 
+            async fn read_note_view(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                context: NoteRenderContext,
+            ) -> Result<NoteView, NoteUseCaseError> {
+                let note = <$type>::read_note(self, actor.clone(), note_id).await?;
+                let access = <$type>::note_access(self, actor.clone(), note_id).await?;
+                let html = <$type>::render_note_html(self, actor.clone(), note_id, context).await?;
+                let related = <$type>::related_notes(self, actor, note_id).await?;
+                Ok(NoteView {
+                    note,
+                    access,
+                    html,
+                    related,
+                })
+            }
+
             fn note_profile(&self) -> NoteProfile {
                 <$type>::note_profile(self)
             }
@@ -129,7 +147,7 @@ macro_rules! implement_note_boundaries {
                 &self,
                 actor: Actor,
                 note_id: NoteId,
-            ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+            ) -> Result<NoteAclState, NoteUseCaseError> {
                 <$type>::read_note_acl(self, actor, note_id).await
             }
 
@@ -272,7 +290,7 @@ impl Notes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+    ) -> Result<NoteAclState, NoteUseCaseError> {
         Err(NoteUseCaseError::Forbidden)
     }
 
@@ -396,7 +414,7 @@ impl UiNotes {
         _context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError> {
         if self.render_fails {
-            Err(NoteUseCaseError::Unavailable)
+            Err(NoteUseCaseError::RenderFailed)
         } else {
             Ok("<article><p>描画済み本文</p></article>".into())
         }
@@ -432,7 +450,7 @@ impl UiNotes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+    ) -> Result<NoteAclState, NoteUseCaseError> {
         Err(NoteUseCaseError::Forbidden)
     }
 
@@ -774,7 +792,7 @@ fn external_paths_preserve_the_configured_subpath() {
 async fn health_is_public_but_notes_require_a_session() {
     let health = app()
         .oneshot(
-            Request::get("/api/v2/health")
+            Request::get("/api/v3/health")
                 .body(Body::empty())
                 .expect("request"),
         )
@@ -799,7 +817,7 @@ async fn health_is_public_but_notes_require_a_session() {
     );
     let notes = app()
         .oneshot(
-            Request::get("/api/v2/notes")
+            Request::get("/api/v3/notes")
                 .body(Body::empty())
                 .expect("request"),
         )
@@ -821,7 +839,7 @@ async fn health_is_public_but_notes_require_a_session() {
 }
 
 #[tokio::test]
-async fn authenticated_home_lists_escaped_note_titles() {
+async fn authenticated_home_serves_only_the_react_application_shell() {
     let note = ui_note("安全 <script>alert(\"x\")</script> & '題名'");
     let response = ui_app(vec![note], false, "/")
         .oneshot(authenticated_request("/"))
@@ -838,17 +856,14 @@ async fn authenticated_home_lists_escaped_note_titles() {
         .expect("response body");
     let body = String::from_utf8(body.to_vec()).expect("HTML");
     assert!(body.contains("<html lang=\"ja\">"));
-    assert!(body.contains("href=\"/notes/0197c9bc-0000-7000-8000-000000000001\""));
-    assert!(
-        body.contains(
-            "安全 &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;題名&#39;"
-        )
-    );
+    assert!(body.contains("data-application-root"));
+    assert!(body.contains("&quot;path&quot;:&quot;/&quot;"));
+    assert!(!body.contains("安全"));
     assert!(!body.contains("<script>alert"));
 }
 
 #[tokio::test]
-async fn authenticated_home_has_an_explicit_empty_state() {
+async fn authenticated_home_defers_the_empty_state_to_react() {
     let response = ui_app(Vec::new(), false, "/")
         .oneshot(authenticated_request("/"))
         .await
@@ -859,12 +874,12 @@ async fn authenticated_home_has_an_explicit_empty_state() {
         .await
         .expect("response body");
     let body = String::from_utf8(body.to_vec()).expect("HTML");
-    assert!(body.contains("閲覧できるノートはありません。"));
+    assert!(body.contains("画面を読み込んでいます。"));
     assert!(!body.contains("<li>"));
 }
 
 #[tokio::test]
-async fn note_view_preserves_rendered_html_and_subpath_navigation() {
+async fn note_view_serves_the_react_shell_with_subpath_configuration() {
     let note = ui_note("<安全な題名>");
     let response = ui_app(vec![note], false, "/marginalis")
         .oneshot(authenticated_request(
@@ -878,17 +893,17 @@ async fn note_view_preserves_rendered_html_and_subpath_navigation() {
         .await
         .expect("response body");
     let body = String::from_utf8(body.to_vec()).expect("HTML");
-    assert!(body.contains("<title>&lt;安全な題名&gt;</title>"));
-    assert!(body.contains("href=\"/marginalis/\">一覧</a>"));
+    assert!(body.contains("<title>Marginalis</title>"));
     assert!(body.contains("href=\"/marginalis/assets/editor.css\""));
-    assert!(body.contains("<article><p>描画済み本文</p></article>"));
-    assert!(body.contains("このノートが参照しているノート"));
-    assert!(body.contains("参照しているノートはありません。"));
-    assert!(body.contains("このノートを参照しているノートはありません。"));
+    assert!(body.contains("&quot;apiBase&quot;:&quot;/marginalis/api/v3&quot;"));
+    assert!(
+        body.contains("&quot;path&quot;:&quot;/notes/0197c9bc-0000-7000-8000-000000000001&quot;")
+    );
+    assert!(!body.contains("描画済み本文"));
 }
 
 #[tokio::test]
-async fn note_view_lists_related_note_metadata_with_collapsible_overflow() {
+async fn rendered_note_view_api_returns_related_note_metadata() {
     let source = ui_note("閲覧中");
     let mut notes = vec![source.clone()];
     for index in 2..=13 {
@@ -912,7 +927,7 @@ async fn note_view_lists_related_note_metadata_with_collapsible_overflow() {
     }
     let response = ui_app(notes, false, "/marginalis")
         .oneshot(authenticated_request(&format!(
-            "/notes/{}",
+            "/api/v3/notes/{}/view",
             source.note_id()
         )))
         .await
@@ -922,21 +937,25 @@ async fn note_view_lists_related_note_metadata_with_collapsible_overflow() {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body");
-    let body = String::from_utf8(body.to_vec()).expect("HTML");
-    assert!(body.contains("このノートが参照しているノートをさらに表示"));
-    assert!(body.contains("「関連ノート2」の残りのタグ2件"));
-    assert!(body.contains("&lt;危険&gt;"));
-    assert!(
-        body.contains("更新日時: <time datetime=\"1970-01-01T00:00:00.002Z\" data-local-time>")
+    let payload: serde_json::Value = serde_json::from_slice(&body).expect("view JSON");
+    assert_eq!(payload["html"], "<article><p>描画済み本文</p></article>");
+    assert_eq!(payload["access"], "edit");
+    assert_eq!(
+        payload["related"]["outgoing"]
+            .as_array()
+            .expect("outgoing notes")
+            .len(),
+        12
     );
-    assert!(body.contains("href=\"/marginalis/notes/0197c9bc-0000-7000-8000-00000000000d\""));
+    assert_eq!(payload["related"]["outgoing"][0]["title"], "関連ノート2");
+    assert!(payload["note"]["body"].is_string());
 }
 
 #[tokio::test]
-async fn note_view_maps_missing_and_render_failed_notes_to_stable_errors() {
+async fn rendered_note_view_api_maps_missing_and_render_failed_notes_to_stable_errors() {
     let missing = ui_app(Vec::new(), false, "/")
         .oneshot(authenticated_request(
-            "/notes/0197c9bc-0000-7000-8000-000000000001",
+            "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/view",
         ))
         .await
         .expect("missing response");
@@ -944,7 +963,7 @@ async fn note_view_maps_missing_and_render_failed_notes_to_stable_errors() {
 
     let render_failed = ui_app(vec![ui_note("題名")], true, "/")
         .oneshot(authenticated_request(
-            "/notes/0197c9bc-0000-7000-8000-000000000001",
+            "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/view",
         ))
         .await
         .expect("render response");
@@ -1024,9 +1043,10 @@ async fn editor_pages_embed_subpath_configuration_without_note_content() {
         .await
         .expect("create body");
     let body = String::from_utf8(body.to_vec()).expect("HTML");
-    assert!(body.contains("data-mode=\"create\""));
-    assert!(body.contains("data-api-base=\"/marginalis/api/v2\""));
-    assert!(body.contains("data-base-path=\"/marginalis\""));
+    assert!(body.contains("data-application-root"));
+    assert!(body.contains("&quot;apiBase&quot;:&quot;/marginalis/api/v3&quot;"));
+    assert!(body.contains("&quot;basePath&quot;:&quot;/marginalis&quot;"));
+    assert!(body.contains("&quot;path&quot;:&quot;/notes/new&quot;"));
     assert!(body.contains("src=\"/marginalis/assets/editor.js\""));
     assert!(body.contains("<noscript>"));
 
@@ -1041,13 +1061,16 @@ async fn editor_pages_embed_subpath_configuration_without_note_content() {
         .await
         .expect("edit body");
     let body = String::from_utf8(body.to_vec()).expect("HTML");
-    assert!(body.contains("data-mode=\"edit\""));
-    assert!(body.contains("data-note-id=\"0197c9bc-0000-7000-8000-000000000001\""));
+    assert!(
+        body.contains(
+            "&quot;path&quot;:&quot;/notes/0197c9bc-0000-7000-8000-000000000001/edit&quot;"
+        )
+    );
     assert!(!body.contains("非公開の本文を埋め込まない"));
 }
 
 #[tokio::test]
-async fn edit_page_checks_note_visibility_before_loading_the_application() {
+async fn edit_page_defers_note_visibility_to_the_rest_api() {
     let response = ui_app(Vec::new(), false, "/")
         .oneshot(authenticated_request(
             "/notes/0197c9bc-0000-7000-8000-000000000001/edit",
@@ -1055,14 +1078,14 @@ async fn edit_page_checks_note_visibility_before_loading_the_application() {
         .await
         .expect("response");
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
 async fn openapi_is_served_from_the_embedded_specification() {
     let response = app()
         .oneshot(
-            Request::get("/api/v2/openapi.json")
+            Request::get("/api/v3/openapi.json")
                 .body(Body::empty())
                 .expect("request"),
         )
@@ -1073,6 +1096,36 @@ async fn openapi_is_served_from_the_embedded_specification() {
         OPENAPI_DOCUMENT,
         include_str!("../../../../docs/openapi.json")
     );
+}
+
+#[tokio::test]
+async fn every_rest_contract_has_a_registered_router_method() {
+    for contract in marginalis_contract::REST_ROUTE_CONTRACTS {
+        let request = Request::builder()
+            .method(contract.method)
+            .uri(contract.probe_path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}"))
+            .expect("contract probe request");
+        let response = app()
+            .oneshot(request)
+            .await
+            .expect("contract probe response");
+        assert_ne!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "{} {} is not registered",
+            contract.method,
+            contract.probe_path
+        );
+        assert_ne!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{} {} has no matching method",
+            contract.method,
+            contract.probe_path
+        );
+    }
 }
 
 #[tokio::test]
@@ -1837,7 +1890,7 @@ fn browser_mutations_require_the_application_origin() {
 async fn rest_validation_returns_the_shared_diagnostic_contract() {
     let response = authenticated_app()
         .oneshot(
-            Request::post("/api/v2/notes")
+            Request::post("/api/v3/notes")
                 .header("content-type", "application/json")
                 .header(header::ORIGIN, "https://example.test")
                 .header("sec-fetch-site", "same-origin")
@@ -1865,10 +1918,41 @@ async fn rest_validation_returns_the_shared_diagnostic_contract() {
 }
 
 #[tokio::test]
+async fn rest_mutations_require_one_strong_revision_etag() {
+    let request = |if_match: Option<&str>| {
+        let mut request = Request::put("/api/v3/notes/0197c9bc-0000-7000-8000-000000000001")
+            .header("content-type", "application/json")
+            .header(header::ORIGIN, "https://example.test")
+            .header("sec-fetch-site", "same-origin")
+            .header(
+                header::COOKIE,
+                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+            )
+            .header("x-csrf-token", "session-csrf");
+        if let Some(value) = if_match {
+            request = request.header(header::IF_MATCH, value);
+        }
+        request
+            .body(Body::from(r#"{"title":"題名","body":"本文","tags":[]}"#))
+            .expect("request")
+    };
+    let missing = authenticated_app()
+        .oneshot(request(None))
+        .await
+        .expect("response");
+    assert_eq!(missing.status(), StatusCode::PRECONDITION_REQUIRED);
+    let invalid = authenticated_app()
+        .oneshot(request(Some("rev-1")))
+        .await
+        .expect("response");
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
     let valid = authenticated_app()
         .oneshot(
-            Request::post("/api/v2/notes/preview")
+            Request::post("/api/v3/notes/preview")
                 .header("content-type", "application/json")
                 .header(header::ORIGIN, "https://example.test")
                 .header("sec-fetch-site", "same-origin")
@@ -1893,7 +1977,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
 
     let invalid = authenticated_app()
         .oneshot(
-            Request::post("/api/v2/notes/preview")
+            Request::post("/api/v3/notes/preview")
                 .header("content-type", "application/json")
                 .header(header::ORIGIN, "https://example.test")
                 .header("sec-fetch-site", "same-origin")

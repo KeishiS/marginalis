@@ -2,6 +2,7 @@
 
 use std::str::FromStr;
 
+use marginalis_application::{NoteAclState, NoteViewSnapshot, RelatedNotes};
 use marginalis_domain::{
     Actor, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NotePermission,
     NoteSummary, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis,
@@ -377,21 +378,96 @@ impl SqliteDatabase {
         .fetch_optional(&self.pool)
         .await
         .map_err(database_error)?;
-        access
-            .map(|access| match access {
-                1 => Ok(NoteAccess::Read),
-                2 => Ok(NoteAccess::Edit),
-                3 => Ok(NoteAccess::Manage),
-                _ => Err(SqliteStoreError::CorruptData),
-            })
-            .transpose()
+        access.map(access_from_level).transpose()
+    }
+
+    /// 閲覧に必要な正本、権限、参照先、関連概要を一つの読み取りtransactionから取得する。
+    pub async fn note_view_snapshot(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<NoteViewSnapshot>, SqliteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        let row = sqlx::query(
+            "SELECT notes.note_id, notes.creator_issuer, notes.creator_subject, notes.title,
+                    notes.body, notes.tags_json, notes.created_at_ms, notes.updated_at_ms,
+                    notes.revision, notes.deleted_at_ms, access.access_level
+             FROM notes
+             JOIN note_access access ON access.note_id = notes.note_id
+             WHERE notes.note_id = ? AND notes.deleted_at_ms IS NULL
+               AND access.issuer = ? AND access.subject = ?",
+        )
+        .bind(note_id.to_string())
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let Some(row) = row else {
+            transaction.commit().await.map_err(database_error)?;
+            return Ok(None);
+        };
+        let access = access_from_level(
+            row.try_get::<i64, _>("access_level")
+                .map_err(database_error)?,
+        )?;
+        let note = note_from_row(row)?;
+        let reference_targets = sqlx::query(
+            "SELECT target.note_id, target.creator_issuer, target.creator_subject, target.title,
+                    target.body, target.tags_json, target.created_at_ms, target.updated_at_ms,
+                    target.revision, target.deleted_at_ms
+             FROM note_references reference
+             JOIN notes target ON target.note_id = reference.target_note_id
+             WHERE reference.source_note_id = ? AND target.deleted_at_ms IS NULL
+               AND EXISTS (SELECT 1 FROM note_access access
+                           WHERE access.note_id = target.note_id
+                             AND access.issuer = ? AND access.subject = ?)
+             ORDER BY target.note_id",
+        )
+        .bind(note_id.to_string())
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?
+        .into_iter()
+        .map(note_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+        let outgoing = reference_targets.iter().map(NoteSummary::from).collect();
+        let incoming = sqlx::query(
+            "SELECT source.note_id, source.title, source.tags_json, source.updated_at_ms,
+                    source.revision
+             FROM note_references reference
+             JOIN notes source ON source.note_id = reference.source_note_id
+             WHERE reference.target_note_id = ? AND source.deleted_at_ms IS NULL
+               AND EXISTS (SELECT 1 FROM note_access access
+                           WHERE access.note_id = source.note_id
+                             AND access.issuer = ? AND access.subject = ?)
+             ORDER BY source.updated_at_ms DESC, source.note_id ASC",
+        )
+        .bind(note_id.to_string())
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?
+        .into_iter()
+        .map(note_summary_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit().await.map_err(database_error)?;
+        Ok(Some(NoteViewSnapshot {
+            note,
+            access,
+            reference_targets,
+            related: RelatedNotes { outgoing, incoming },
+        }))
     }
 
     pub async fn read_note_acl(
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, SqliteStoreError> {
+    ) -> Result<NoteAclState, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         require_note_access(
             &mut transaction,
@@ -409,7 +485,8 @@ impl SqliteDatabase {
         .fetch_all(&mut *transaction)
         .await
         .map_err(database_error)?;
-        rows.into_iter()
+        let entries = rows
+            .into_iter()
             .map(|row| {
                 let permission = match row
                     .try_get::<String, _>("permission")
@@ -427,7 +504,17 @@ impl SqliteDatabase {
                 .map_err(|_| SqliteStoreError::CorruptData)?;
                 Ok(NoteAclEntry::new(identity, permission))
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        let revision = Revision::new(
+            sqlx::query_scalar::<_, i64>("SELECT revision FROM notes WHERE note_id = ?")
+                .bind(note_id.to_string())
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(database_error)?,
+        )
+        .map_err(|_| SqliteStoreError::CorruptData)?;
+        transaction.commit().await.map_err(database_error)?;
+        Ok(NoteAclState { entries, revision })
     }
 
     pub async fn replace_note_acl(
@@ -585,6 +672,15 @@ const fn access_level(access: NoteAccess) -> i64 {
         NoteAccess::Read => 1,
         NoteAccess::Edit => 2,
         NoteAccess::Manage => 3,
+    }
+}
+
+fn access_from_level(level: i64) -> Result<NoteAccess, SqliteStoreError> {
+    match level {
+        1 => Ok(NoteAccess::Read),
+        2 => Ok(NoteAccess::Edit),
+        3 => Ok(NoteAccess::Manage),
+        _ => Err(SqliteStoreError::CorruptData),
     }
 }
 
