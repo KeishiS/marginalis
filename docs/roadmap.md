@@ -45,7 +45,8 @@ GitHub Issueの前提と完了条件を見直します。
 - **PostgreSQL**: 複数process、高可用性、またはSQLiteで満たせない規模が実測された場合に再検討
 - **添付Resource**: 保存先、MIME type、容量、認可、バックアップを一つの公開契約として
   定義できる場合に再検討
-- **文書のAsciiDoc化**: 形式変更に見合う保守上の便益を測定できる場合に再検討
+- **文書のAsciiDoc化**: [評価結果](repository-asciidoc-evaluation.md)に基づき、Markdownでは
+  解決できない具体例と、変換後に強化できる検査がそろった場合に再検討
 
 ## 継続監視
 
