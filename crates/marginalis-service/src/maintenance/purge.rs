@@ -1,8 +1,8 @@
 //! 保持期限を過ぎた永続状態の削除。
 
+use crate::{config::StorageConfig, runtime::SystemClock};
 use marginalis_application::Clock;
 use marginalis_domain::{SOFT_DELETE_RETENTION_MS, UnixMillis};
-use marginalis_server::{StorageConfig, SystemClock};
 use marginalis_sqlite::SqliteDatabase;
 
 const UNUSED_MCP_CLIENT_RETENTION_MS: i64 = 24 * 60 * 60 * 1_000;

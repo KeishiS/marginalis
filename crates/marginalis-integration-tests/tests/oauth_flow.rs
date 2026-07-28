@@ -12,13 +12,13 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    McpOAuthApplication, NoteApplication, OidcAuthenticationApplication,
-    OidcAuthenticationUseCases, SessionLifetime, WebSessionApplication,
+    Clock, McpOAuthApplication, NoteApplication, OidcAuthenticationApplication,
+    OidcAuthenticationUseCases, Random, SessionLifetime, WebSessionApplication,
 };
 use marginalis_asciidoc::AsciiDocNoteContent;
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
+use marginalis_domain::{EntityId, UnixMillis};
 use marginalis_integration_tests::MockIdentityProvider;
-use marginalis_server::{SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::http::{ApiState, McpEndpoint, router};
 use sha2::{Digest, Sha256};
@@ -32,6 +32,32 @@ const CLIENT_ID: &str = "marginalis-test-client";
 const CLIENT_SECRET: &str = "integration-client-secret";
 const MCP_RESOURCE: &str = "https://marginalis.example.test/mcp";
 const MCP_CALLBACK: &str = "http://localhost:48123/callback";
+
+#[derive(Clone, Copy)]
+struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> UnixMillis {
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("current time must follow the Unix epoch")
+            .as_millis();
+        UnixMillis::new(i64::try_from(millis).expect("current time must fit i64 milliseconds"))
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SystemRandom;
+
+impl Random for SystemRandom {
+    fn uuid_v7(&self) -> EntityId {
+        EntityId::try_from_uuid(uuid::Uuid::now_v7()).expect("Uuid::now_v7 must generate UUIDv7")
+    }
+
+    fn opaque_token(&self) -> String {
+        URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
+    }
+}
 
 struct TestServer {
     idp: MockIdentityProvider,

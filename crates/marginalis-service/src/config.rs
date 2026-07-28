@@ -1,4 +1,4 @@
-//! 環境変数から読み込む公開設定とsecret設定。
+//! composition rootが環境変数から読み込む公開設定とsecret設定。
 
 use core::fmt;
 use std::{env, net::SocketAddr, path::PathBuf};

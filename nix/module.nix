@@ -76,7 +76,7 @@ in
     logFilter = mkOption {
       type = types.str;
       default = "info,marginalis_auth_oidc=info";
-      example = "info,marginalis_server=debug,marginalis_auth_oidc=debug";
+      example = "info,marginalis_application=debug,marginalis_auth_oidc=debug";
       description = "RUST_LOG filter for structured tracing output. Do not enable request-body or secret logging.";
     };
 

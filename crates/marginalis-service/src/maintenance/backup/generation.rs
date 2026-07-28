@@ -5,7 +5,7 @@ use super::super::{
     archive::{read_validated_archive, verify_archive_in_memory},
     sync_parent_directory,
 };
-use marginalis_server::StorageConfig;
+use crate::config::StorageConfig;
 use marginalis_sqlite::SqliteDatabase;
 use std::{
     fs::{DirBuilder, File, OpenOptions},

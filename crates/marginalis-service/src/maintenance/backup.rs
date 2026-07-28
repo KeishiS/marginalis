@@ -5,8 +5,8 @@ mod repository;
 
 use super::archive::{read_validated_archive, verify_archive_in_isolated_database};
 use crate::cli::required_absolute_file_argument;
+use crate::runtime::SystemClock;
 use marginalis_application::Clock;
-use marginalis_server::SystemClock;
 use std::{fs::File, path::PathBuf};
 
 /// backupDirectory内の最新成功世代を隔離復元して検証する。

@@ -1,7 +1,9 @@
 //! Marginalisのcomposition root。commandの選択とprocess lifecycleだけを担う。
 
 mod cli;
+mod config;
 mod maintenance;
+mod runtime;
 mod serve;
 
 use tracing_subscriber::EnvFilter;

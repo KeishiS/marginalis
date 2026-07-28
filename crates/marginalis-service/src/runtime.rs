@@ -5,7 +5,7 @@ use marginalis_application::{Clock, Random};
 use marginalis_domain::{EntityId, UnixMillis};
 use uuid::Uuid;
 
-/// server組立時に使うUTC millisecond clock。
+/// production組立時に使うUTC millisecond clock。
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemClock;
 
