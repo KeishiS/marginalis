@@ -86,7 +86,7 @@
     "/api/v2/notes/{note_id}/acl": {
       "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
       "get": {
-        "summary": "Read the note ACL as its owner or an administrator",
+        "summary": "Read the note ACL as its owner",
         "responses": { "200": { "description": "ACL entries", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteAcl" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } }
       },
       "put": {
@@ -129,7 +129,7 @@
     },
     "schemas": {
       "Health": { "type": "object", "required": ["status", "api_version"], "properties": { "status": { "const": "ok" }, "api_version": { "const": "v2" } } },
-      "Session": { "type": "object", "required": ["issuer", "subject", "is_administrator"], "properties": { "issuer": { "type": "string", "format": "uri" }, "subject": { "type": "string" }, "is_administrator": { "type": "boolean" } } },
+      "Session": { "type": "object", "additionalProperties": false, "required": ["issuer", "subject"], "properties": { "issuer": { "type": "string", "format": "uri" }, "subject": { "type": "string" } } },
       "NoteDraft": { "type": "object", "required": ["title", "body", "tags"], "properties": { "title": { "type": "string" }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string" } } }, "additionalProperties": false },
       "NoteUpdate": { "type": "object", "required": ["title", "body", "tags", "expected_revision"], "properties": { "title": { "type": "string" }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string" } }, "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },

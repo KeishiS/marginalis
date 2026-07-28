@@ -31,15 +31,14 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         sqlx::query(
             "INSERT INTO web_sessions
-             (session_id_hash, csrf_token_hash, issuer, subject, is_administrator,
+             (session_id_hash, csrf_token_hash, issuer, subject,
               issued_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(hash_token(&session.session_id))
         .bind(hash_token(&session.csrf_token))
-        .bind(&session.actor.issuer)
-        .bind(&session.actor.subject)
-        .bind(session.actor.is_administrator)
+        .bind(session.actor.issuer())
+        .bind(session.actor.subject())
         .bind(now.get())
         .bind(now.get())
         .bind(session.idle_expires_at.get())
@@ -61,7 +60,7 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let hash = hash_token(session_id);
         let row = sqlx::query(
-            "SELECT issuer, subject, is_administrator, idle_expires_at_ms, absolute_expires_at_ms
+            "SELECT issuer, subject, idle_expires_at_ms, absolute_expires_at_ms
              FROM web_sessions WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
         )
         .bind(&hash)
@@ -147,13 +146,11 @@ fn session_from_row(
     row: sqlx::sqlite::SqliteRow,
 ) -> Result<AuthenticatedSession, SqliteStoreError> {
     Ok(AuthenticatedSession {
-        actor: Actor {
-            issuer: row.try_get("issuer").map_err(database_error)?,
-            subject: row.try_get("subject").map_err(database_error)?,
-            is_administrator: row
-                .try_get::<bool, _>("is_administrator")
-                .map_err(database_error)?,
-        },
+        actor: Actor::try_new(
+            row.try_get("issuer").map_err(database_error)?,
+            row.try_get("subject").map_err(database_error)?,
+        )
+        .map_err(|_| SqliteStoreError::CorruptData)?,
         idle_expires_at: UnixMillis::new(
             row.try_get("idle_expires_at_ms").map_err(database_error)?,
         ),

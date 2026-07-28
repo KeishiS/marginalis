@@ -69,7 +69,7 @@ impl SqliteDatabase {
         row.map(note_from_row).transpose()
     }
 
-    /// 管理者または所有者だけに、削除済みでない正本を返す。
+    /// 所有者またはACLで共有された利用者だけに、削除済みでない正本を返す。
     pub async fn visible_note(
         &self,
         actor: &Actor,
@@ -79,40 +79,38 @@ impl SqliteDatabase {
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
              WHERE note_id = ? AND deleted_at_ms IS NULL
-               AND (? OR (creator_issuer = ? AND creator_subject = ?)
+               AND ((creator_issuer = ? AND creator_subject = ?)
                     OR (creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl
                                WHERE note_acl.note_id = notes.note_id
                                  AND note_acl.subject = ?)))",
         )
         .bind(note_id.to_string())
-        .bind(actor.is_administrator)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .bind(actor.issuer())
+        .bind(actor.subject())
         .fetch_optional(&self.pool)
         .await
         .map_err(database_error)?;
         row.map(note_from_row).transpose()
     }
 
-    /// 削除済みでない、管理者または所有者に可視なノートを安定した順序で返す。
+    /// 削除済みでない、所有者またはACL共有先に可視なノートを安定した順序で返す。
     pub async fn list_visible_notes(&self, actor: &Actor) -> Result<Vec<Note>, SqliteStoreError> {
         let rows = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
              FROM notes
              WHERE deleted_at_ms IS NULL
-               AND (? OR (creator_issuer = ? AND creator_subject = ?)
+               AND ((creator_issuer = ? AND creator_subject = ?)
                     OR (creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl
                                WHERE note_acl.note_id = notes.note_id
                                  AND note_acl.subject = ?)))
              ORDER BY updated_at_ms DESC, note_id ASC",
         )
-        .bind(actor.is_administrator)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .bind(actor.issuer())
+        .bind(actor.subject())
         .fetch_all(&self.pool)
         .await
         .map_err(database_error)?;
@@ -176,18 +174,17 @@ impl SqliteDatabase {
              JOIN notes target ON target.note_id = reference.target_note_id
              WHERE reference.source_note_id = ?
                AND target.deleted_at_ms IS NULL
-               AND (? OR (target.creator_issuer = ? AND target.creator_subject = ?)
+               AND ((target.creator_issuer = ? AND target.creator_subject = ?)
                     OR (target.creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl acl
                                WHERE acl.note_id = target.note_id AND acl.subject = ?))
                    )
              ORDER BY target.updated_at_ms DESC, target.note_id ASC",
         )
         .bind(note_id.to_string())
-        .bind(actor.is_administrator)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .bind(actor.issuer())
+        .bind(actor.subject())
         .fetch_all(&self.pool)
         .await
         .map_err(database_error)?
@@ -200,18 +197,17 @@ impl SqliteDatabase {
              JOIN notes source ON source.note_id = reference.source_note_id
              WHERE reference.target_note_id = ?
                AND source.deleted_at_ms IS NULL
-               AND (? OR (source.creator_issuer = ? AND source.creator_subject = ?)
+               AND ((source.creator_issuer = ? AND source.creator_subject = ?)
                     OR (source.creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl acl
                                WHERE acl.note_id = source.note_id AND acl.subject = ?))
                    )
              ORDER BY source.updated_at_ms DESC, source.note_id ASC",
         )
         .bind(note_id.to_string())
-        .bind(actor.is_administrator)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .bind(actor.issuer())
+        .bind(actor.subject())
         .fetch_all(&self.pool)
         .await
         .map_err(database_error)?
@@ -221,7 +217,7 @@ impl SqliteDatabase {
         Ok((outgoing, incoming))
     }
 
-    /// 所有者または管理者の認可とソフトデリートを同一transactionで行う。
+    /// 所有者の認可とソフトデリートを同一transactionで行う。
     pub async fn soft_delete_visible_note(
         &self,
         actor: &Actor,
@@ -230,13 +226,7 @@ impl SqliteDatabase {
         deleted_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        require_note_owner_or_administrator(
-            &mut transaction,
-            actor,
-            note_id,
-            NoteDeletionState::Active,
-        )
-        .await?;
+        require_note_owner(&mut transaction, actor, note_id, NoteDeletionState::Active).await?;
         let result = sqlx::query(
             "UPDATE notes SET deleted_at_ms = ?, updated_at_ms = ?, revision = revision + 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL",
@@ -257,7 +247,7 @@ impl SqliteDatabase {
         Ok(note)
     }
 
-    /// 所有者または管理者の認可と復元を同一transactionで行う。
+    /// 所有者の認可と復元を同一transactionで行う。
     pub async fn restore_visible_note(
         &self,
         actor: &Actor,
@@ -266,13 +256,7 @@ impl SqliteDatabase {
         restored_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        require_note_owner_or_administrator(
-            &mut transaction,
-            actor,
-            note_id,
-            NoteDeletionState::Deleted,
-        )
-        .await?;
+        require_note_owner(&mut transaction, actor, note_id, NoteDeletionState::Deleted).await?;
         let retention_cutoff = restored_at.get().saturating_sub(SOFT_DELETE_RETENTION_MS);
         let result = sqlx::query(
             "UPDATE notes SET deleted_at_ms = NULL, updated_at_ms = ?, revision = revision + 1
@@ -319,7 +303,7 @@ impl SqliteDatabase {
                      WHERE note_acl.note_id = notes.note_id AND subject = ?) AS permission
              FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL",
         )
-        .bind(&actor.subject)
+        .bind(actor.subject())
         .bind(note_id.to_string())
         .fetch_optional(&self.pool)
         .await
@@ -328,24 +312,22 @@ impl SqliteDatabase {
         let owner = row
             .try_get::<String, _>("creator_issuer")
             .map_err(database_error)?
-            == actor.issuer
+            == actor.issuer()
             && row
                 .try_get::<String, _>("creator_subject")
                 .map_err(database_error)?
-                == actor.subject;
+                == actor.subject();
         let permission = row
             .try_get::<Option<String>, _>("permission")
             .map_err(database_error)?;
         let same_issuer = row
             .try_get::<String, _>("creator_issuer")
             .map_err(database_error)?
-            == actor.issuer;
-        let visible = actor.is_administrator || owner || same_issuer && permission.is_some();
+            == actor.issuer();
+        let visible = owner || same_issuer && permission.is_some();
         Ok(visible.then_some(NoteCapabilities {
-            can_edit: actor.is_administrator
-                || owner
-                || same_issuer && permission.as_deref() == Some("edit"),
-            can_manage_acl: actor.is_administrator || owner,
+            can_edit: owner || same_issuer && permission.as_deref() == Some("edit"),
+            can_manage_acl: owner,
         }))
     }
 
@@ -355,13 +337,7 @@ impl SqliteDatabase {
         note_id: NoteId,
     ) -> Result<Vec<NoteAclEntry>, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        require_note_owner_or_administrator(
-            &mut transaction,
-            actor,
-            note_id,
-            NoteDeletionState::Active,
-        )
-        .await?;
+        require_note_owner(&mut transaction, actor, note_id, NoteDeletionState::Active).await?;
         let rows = sqlx::query(
             "SELECT subject, permission FROM note_acl WHERE note_id = ? ORDER BY subject",
         )
@@ -397,13 +373,7 @@ impl SqliteDatabase {
         updated_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        require_note_owner_or_administrator(
-            &mut transaction,
-            actor,
-            note_id,
-            NoteDeletionState::Active,
-        )
-        .await?;
+        require_note_owner(&mut transaction, actor, note_id, NoteDeletionState::Active).await?;
         let result = sqlx::query(
             "UPDATE notes SET revision = revision + 1, updated_at_ms = ?
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL",
@@ -447,17 +417,16 @@ async fn require_note_editor(
 ) -> Result<(), SqliteStoreError> {
     let allowed = sqlx::query_scalar::<_, i64>(
         "SELECT 1 FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL
-         AND (? OR (creator_issuer = ? AND creator_subject = ?)
+         AND ((creator_issuer = ? AND creator_subject = ?)
               OR (creator_issuer = ? AND EXISTS (SELECT 1 FROM note_acl
                          WHERE note_acl.note_id = notes.note_id
                            AND note_acl.subject = ? AND permission = 'edit')))",
     )
     .bind(note_id.to_string())
-    .bind(actor.is_administrator)
-    .bind(&actor.issuer)
-    .bind(&actor.subject)
-    .bind(&actor.issuer)
-    .bind(&actor.subject)
+    .bind(actor.issuer())
+    .bind(actor.subject())
+    .bind(actor.issuer())
+    .bind(actor.subject())
     .fetch_optional(&mut **transaction)
     .await
     .map_err(database_error)?;
@@ -506,7 +475,7 @@ enum NoteDeletionState {
     Deleted,
 }
 
-async fn require_note_owner_or_administrator(
+async fn require_note_owner(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     actor: &Actor,
     note_id: NoteId,
@@ -519,13 +488,12 @@ async fn require_note_owner_or_administrator(
     let query = format!(
         "SELECT 1 FROM notes
          WHERE note_id = ? AND {deletion_predicate}
-           AND (? OR (creator_issuer = ? AND creator_subject = ?))"
+           AND creator_issuer = ? AND creator_subject = ?"
     );
     let visible = sqlx::query_scalar::<_, i64>(&query)
         .bind(note_id.to_string())
-        .bind(actor.is_administrator)
-        .bind(&actor.issuer)
-        .bind(&actor.subject)
+        .bind(actor.issuer())
+        .bind(actor.subject())
         .fetch_optional(&mut **transaction)
         .await
         .map_err(database_error)?;

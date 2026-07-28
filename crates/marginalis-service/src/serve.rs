@@ -62,7 +62,6 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let oidc = std::sync::Arc::new(OidcAuthenticationApplication::new(
         std::sync::Arc::new(oidc_provider),
         "server-users",
-        "server-admins",
     ));
     let sessions = std::sync::Arc::new(WebSessionApplication::new(
         std::sync::Arc::new(database.clone()),

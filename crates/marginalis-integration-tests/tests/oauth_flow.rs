@@ -110,7 +110,6 @@ impl TestServer {
         let oidc = Arc::new(OidcAuthenticationApplication::new(
             Arc::new(provider),
             "server-users",
-            "server-admins",
         ));
         let sessions = Arc::new(WebSessionApplication::new(
             Arc::new(database.clone()),
@@ -711,7 +710,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     assert_eq!(response.status(), StatusCode::OK);
     let session = json_body(response).await;
     assert_eq!(session["subject"], "user-subject");
-    assert_eq!(session["is_administrator"], false);
+    assert!(session.get("is_administrator").is_none());
 
     let response = send(
         &server.app,
@@ -830,29 +829,28 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         "Updated integration note"
     );
 
-    let administrator = login(
+    let member_with_an_unrelated_group = login(
         &server,
-        "administrator-subject",
+        "unrelated-group-subject",
         &["server-users", "server-admins"],
-        "administrator-login-code",
+        "unrelated-group-login-code",
     )
     .await;
     let response = send(
         &server.app,
         Request::get("/api/v2/notes")
-            .header(header::COOKIE, administrator.cookies())
+            .header(header::COOKIE, member_with_an_unrelated_group.cookies())
             .body(Body::empty())
-            .expect("administrator list request"),
+            .expect("unrelated group member list request"),
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
+    assert!(
         json_body(response)
             .await
             .as_array()
-            .expect("administrator notes")
-            .len(),
-        1
+            .expect("unrelated group member notes")
+            .is_empty()
     );
 
     let response = send(
@@ -931,8 +929,7 @@ async fn oidc_discovery_is_retried_with_the_configured_http_client() {
         reqwest::Client::new(),
         None,
     );
-    let authentication =
-        OidcAuthenticationApplication::new(Arc::new(provider), "server-users", "server-admins");
+    let authentication = OidcAuthenticationApplication::new(Arc::new(provider), "server-users");
 
     assert!(authentication.begin_login().await.is_ok());
 }

@@ -9,7 +9,7 @@
 ## 現在地
 
 `v0.7.0`は2026-07-28に公開しました。React・TypeScriptフロントエンド、subject単位ACL、
-ノート参照を追加し、SQLite schema 6、note profile 2、`marginalis-archive-5`へ更新しました。
+ノート参照を追加し、SQLite schema 7、note profile 2、`marginalis-archive-5`へ更新しました。
 
 リポジトリ内のIssue管理はGitHub Issuesへ移行しました。v0.5.0以前のローカルIssueは
 [移行対応表](issue-migration.md)から参照できます。
@@ -84,7 +84,7 @@ refresh tokenと関連tableを一つの破壊的リリースで削除します�
 ## 継続監視
 
 - ChatGPT、Claude Code、Codex CLIのMCP接続とtool resultの解釈
-- 所有者と`server-admins`のtransport横断認可
+- 所有者と直接ACL共有先のtransport横断認可
 - AdocWeave package版、note profile、OpenAPI、MCP tool schemaの一致
 - backup最終成功時刻、保存世代数、四半期復元試験
 - database容量、ノート数、revision conflict、検索失敗例
