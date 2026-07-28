@@ -52,6 +52,8 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewProblem, setPreviewProblem] = useState<Problem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const titleInput = useRef<HTMLInputElement>(null);
+  const initialFocusApplied = useRef(false);
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(baseline),
     [baseline, form],
@@ -87,6 +89,13 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       });
     return () => controller.abort();
   }, [config.apiBase, config.mode, config.noteId]);
+
+  useEffect(() => {
+    if (!loading && !initialFocusApplied.current) {
+      initialFocusApplied.current = true;
+      titleInput.current?.focus();
+    }
+  }, [loading]);
 
   useEffect(() => {
     const warnAboutUnsavedChanges = (event: BeforeUnloadEvent) => {
@@ -251,6 +260,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           <label>
             題名
             <input
+              ref={titleInput}
               name="title"
               value={form.title}
               onChange={(event) =>

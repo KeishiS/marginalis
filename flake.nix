@@ -572,8 +572,9 @@
               )
               app.succeed(
                 "cp ${./tests/browser/kanidm-login.spec.js} /tmp/kanidm-login.spec.js; "
+                + "cp ${./tests/browser/webui-editing.spec.js} /tmp/webui-editing.spec.js; "
                 + "cd /tmp; "
-                + "set +e; playwright test kanidm-login.spec.js --reporter=line --workers=1 "
+                + "set +e; playwright test kanidm-login.spec.js webui-editing.spec.js --reporter=line --workers=1 "
                 + ">/tmp/playwright-raw.log 2>&1; status=$?; set -e; "
                 + "bash ${./.github/scripts/protocol-artifact.sh} sanitize "
                 + "/tmp/playwright-raw.log /tmp/playwright.log; "
