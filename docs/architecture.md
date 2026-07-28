@@ -26,6 +26,10 @@ SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
 `marginalis-sqlite`は永続化port、`marginalis-asciidoc`は文書の検証・描画port、
 `marginalis-web`は外部URL生成portを実装します。これにより、ノート操作の単体試験ではSQLite、
 AsciiDoc engine、HTTP serverを起動する必要がありません。
+`marginalis-asciidoc`の内部では、文書の解析と検査、ACL判定済み参照を使うHTML描画、JSON
+archive変換を別々のmoduleへ分けます。AdocWeaveの解析・描画設定とnote profileの安全性規則は
+それぞれ一か所に置き、各moduleが同じ設定を使用します。crate外にはapplication portの実装と、
+保守コマンドに必要なarchiveおよび参照抽出だけを公開します。
 `marginalis-auth-oidc`は外部identity provider portを実装し、OIDC discovery・code exchange・
 ID token検証を担当します。利用を許可する`server-users`所属の判断はapplicationが担当します。
 MCP OAuthのclient、認可code、token familyの規則もapplicationに置き、

@@ -73,3 +73,41 @@ pub(crate) const fn output_limits() -> OutputLimits {
 pub(crate) fn html_is_within_output_limits(html: &str, limits: &OutputLimits) -> bool {
     u32::try_from(html.len()).is_ok_and(|length| length <= limits.max_output_bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use adocweave::output::diagnostics::{ASCIIDOC_FILE_LINK, MACRO_BOUNDARY, NON_ASCIIDOC_XREF};
+
+    use super::*;
+
+    #[test]
+    fn note_profile_keeps_url_rendering_and_lint_rules_together() {
+        let analysis = analysis_options();
+        assert!(!analysis.diagnostics.lint.authored_url_policy.allow_relative);
+        assert!(analysis.diagnostics.lint.rule(ASCIIDOC_FILE_LINK).enabled);
+        assert!(analysis.diagnostics.lint.rule(NON_ASCIIDOC_XREF).enabled);
+        assert!(!analysis.diagnostics.lint.rule(MACRO_BOUNDARY).enabled);
+
+        let rendering = render_policy();
+        assert!(!rendering.active_urls.allow_authored_relative);
+        assert!(!rendering.active_urls.allow_resolved_relative);
+        assert!(rendering.active_urls.allow_resolved_root_relative);
+        assert!(!rendering.active_urls.allow_data_uris);
+        assert!(!rendering.resources.images);
+        assert!(!rendering.resources.media);
+        assert_eq!(
+            rendering.source_languages.unknown,
+            UnknownSourceLanguage::Diagnostic
+        );
+        assert_eq!(output_limits().max_output_bytes, 50 * 1024 * 1024);
+    }
+
+    #[test]
+    fn rendered_output_limit_is_inclusive() {
+        let limits = OutputLimits {
+            max_output_bytes: 4,
+        };
+        assert!(html_is_within_output_limits("1234", &limits));
+        assert!(!html_is_within_output_limits("12345", &limits));
+    }
+}
