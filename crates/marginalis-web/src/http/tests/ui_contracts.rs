@@ -250,6 +250,24 @@ async fn frontend_assets_are_served_with_explicit_content_types() {
         )
     );
 
+    let mathjax_javascript = app()
+        .oneshot(
+            Request::get("/assets/tex-svg.js")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("MathJax response");
+    assert_eq!(mathjax_javascript.status(), StatusCode::OK);
+    assert_eq!(
+        mathjax_javascript.headers().get(header::CONTENT_TYPE),
+        Some(
+            &"text/javascript; charset=utf-8"
+                .parse()
+                .expect("content type")
+        )
+    );
+
     let stylesheet = app()
         .oneshot(
             Request::get("/assets/editor.css")

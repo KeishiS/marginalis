@@ -107,8 +107,56 @@ body {
   justify-content: space-between;
 }
 
-.preview-content {
+.rendered-content {
   overflow-wrap: anywhere;
+}
+
+.rendered-content pre {
+  background: light-dark(#f4f6f8, #171a1f);
+  border: 0.05rem solid light-dark(#c8ced6, #4c5561);
+  border-radius: 0.4rem;
+  box-sizing: border-box;
+  color: light-dark(#20242a, #f2f4f7);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  line-height: 1.5;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 1rem;
+  tab-size: 4;
+  white-space: pre;
+}
+
+.rendered-content pre[data-language] {
+  padding-block-start: 0.5rem;
+}
+
+.rendered-content pre[data-language]::before {
+  color: light-dark(#566170, #b8c0ca);
+  content: attr(data-language);
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-block-end: 0.6rem;
+  text-transform: uppercase;
+}
+
+.rendered-content pre code {
+  font: inherit;
+}
+
+.math-display {
+  box-sizing: border-box;
+  margin-block: 1rem;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-block: 0.5rem;
+}
+
+.math-inline {
+  display: inline-block;
+  max-width: 100%;
 }
 
 .editor-form textarea {

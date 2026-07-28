@@ -60,12 +60,16 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   const source = page.getByRole("textbox", { name: "AsciiDoc文書" });
   await expect(source).toBeFocused();
   await source.fill(
-    "= VMで作成したノート\n:tags: 受入試験, 日本語\n\n日本語と絵文字😀\r\n\n*強調した本文*",
+    "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*",
   );
   await expect(page.getByText("未保存の変更があります。")).toBeVisible();
   await expect(page.locator(".preview-content")).toContainText(
     "日本語と絵文字😀",
   );
+  await expect(
+    page.locator(".preview-content pre[data-language='rust']"),
+  ).toContainText("fn main() {}");
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
 
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();

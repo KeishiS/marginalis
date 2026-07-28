@@ -10,6 +10,7 @@ import {
   readNote,
   readNoteView,
 } from "./api";
+import { RenderedContent } from "./RenderedContent";
 
 export interface ApplicationConfig {
   apiBase: string;
@@ -119,7 +120,7 @@ function NoteViewer({
           </a>
         )}
       </nav>
-      <div dangerouslySetInnerHTML={{ __html: view.html }} />
+      <RenderedContent html={view.html} />
       <RelatedNotes config={config} view={view} />
     </>
   );

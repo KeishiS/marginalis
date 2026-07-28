@@ -24,6 +24,7 @@ import {
   initialEditorState,
   noteToForm,
 } from "./editorState";
+import { RenderedContent } from "./RenderedContent";
 
 export interface EditorConfig {
   mode: "create" | "edit";
@@ -472,12 +473,7 @@ function PreviewPanel({
 
 function SafePreview({ html }: { html: string }) {
   // 同じ保存規則とRenderPolicyを通ったサーバー生成HTMLだけを受け取る。
-  return (
-    <div
-      className="preview-content"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
+  return <RenderedContent html={html} preview />;
 }
 
 function splitLines(value: string): string[] {
