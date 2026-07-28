@@ -6,8 +6,8 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::NoteRenderContext;
-use marginalis_domain::{Note, NoteAclEntry, NoteDraft, Revision};
+use marginalis_application::{NoteAclChange, NoteRenderContext};
+use marginalis_domain::{Note, NoteAclEntry, NoteDraft, NotePermission, NoteSummary, Revision};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -34,6 +34,15 @@ pub(super) struct NoteResponse {
 }
 
 #[derive(Serialize)]
+pub(super) struct NoteSummaryResponse {
+    note_id: String,
+    title: String,
+    tags: Vec<String>,
+    updated_at_ms: i64,
+    revision: i64,
+}
+
+#[derive(Serialize)]
 pub(super) struct NotePreviewResponse {
     html: String,
 }
@@ -52,6 +61,18 @@ impl From<Note> for NoteResponse {
     }
 }
 
+impl From<NoteSummary> for NoteSummaryResponse {
+    fn from(note: NoteSummary) -> Self {
+        Self {
+            note_id: note.note_id.to_string(),
+            title: note.title,
+            tags: note.tags,
+            updated_at_ms: note.updated_at.get(),
+            revision: note.revision.get(),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct NoteInput {
@@ -66,25 +87,74 @@ pub(super) struct NoteUpdateInput {
     title: String,
     body: String,
     tags: Vec<String>,
-    expected_revision: Revision,
+    expected_revision: i64,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct DeleteInput {
-    expected_revision: Revision,
+    expected_revision: i64,
 }
 
 #[derive(Serialize)]
 pub(super) struct NoteAclResponse {
-    entries: Vec<NoteAclEntry>,
+    entries: Vec<NoteAclEntryResponse>,
+}
+
+#[derive(Serialize)]
+pub(super) struct NoteAclEntryResponse {
+    issuer: String,
+    subject: String,
+    permission: RestNotePermission,
+}
+
+impl From<NoteAclEntry> for NoteAclEntryResponse {
+    fn from(entry: NoteAclEntry) -> Self {
+        Self {
+            issuer: entry.identity().issuer().to_owned(),
+            subject: entry.identity().subject().to_owned(),
+            permission: RestNotePermission::from(entry.permission()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum RestNotePermission {
+    Read,
+    Edit,
+}
+
+impl From<NotePermission> for RestNotePermission {
+    fn from(permission: NotePermission) -> Self {
+        match permission {
+            NotePermission::Read => Self::Read,
+            NotePermission::Edit => Self::Edit,
+        }
+    }
+}
+
+impl From<RestNotePermission> for NotePermission {
+    fn from(permission: RestNotePermission) -> Self {
+        match permission {
+            RestNotePermission::Read => Self::Read,
+            RestNotePermission::Edit => Self::Edit,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct NoteAclEntryInput {
+    subject: String,
+    permission: RestNotePermission,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct NoteAclInput {
-    entries: Vec<NoteAclEntry>,
-    expected_revision: Revision,
+    entries: Vec<NoteAclEntryInput>,
+    expected_revision: i64,
 }
 
 pub(super) async fn session(
@@ -101,14 +171,16 @@ pub(super) async fn session(
 pub(super) async fn list_notes(
     State(state): State<ApiState>,
     headers: HeaderMap,
-) -> HandlerResult<Json<Vec<NoteResponse>>> {
+) -> HandlerResult<Json<Vec<NoteSummaryResponse>>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let notes = state
         .notes
         .list_visible_notes(actor)
         .await
         .map_err(note_error)?;
-    Ok(Json(notes.into_iter().map(NoteResponse::from).collect()))
+    Ok(Json(
+        notes.into_iter().map(NoteSummaryResponse::from).collect(),
+    ))
 }
 
 pub(super) async fn read_note(
@@ -187,7 +259,7 @@ pub(super) async fn update_note(
                 body: input.body,
                 tags: input.tags,
             },
-            input.expected_revision,
+            revision(input.expected_revision)?,
         )
         .await
         .map_err(note_error)?;
@@ -205,7 +277,12 @@ pub(super) async fn read_note_acl(
         .read_note_acl(actor, parse_note_id(&note_id)?)
         .await
         .map_err(note_error)?;
-    Ok(Json(NoteAclResponse { entries }))
+    Ok(Json(NoteAclResponse {
+        entries: entries
+            .into_iter()
+            .map(NoteAclEntryResponse::from)
+            .collect(),
+    }))
 }
 
 pub(super) async fn replace_note_acl(
@@ -220,8 +297,15 @@ pub(super) async fn replace_note_acl(
         .replace_note_acl(
             actor,
             parse_note_id(&note_id)?,
-            input.entries,
-            input.expected_revision,
+            input
+                .entries
+                .into_iter()
+                .map(|entry| NoteAclChange {
+                    subject: entry.subject,
+                    permission: entry.permission.into(),
+                })
+                .collect(),
+            revision(input.expected_revision)?,
         )
         .await
         .map_err(note_error)?;
@@ -237,7 +321,11 @@ pub(super) async fn delete_note(
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
-        .soft_delete_note(actor, parse_note_id(&note_id)?, input.expected_revision)
+        .soft_delete_note(
+            actor,
+            parse_note_id(&note_id)?,
+            revision(input.expected_revision)?,
+        )
         .await
         .map_err(note_error)?;
     Ok(Json(note.into()))
@@ -252,10 +340,24 @@ pub(super) async fn restore_note(
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let note = state
         .notes
-        .restore_note(actor, parse_note_id(&note_id)?, input.expected_revision)
+        .restore_note(
+            actor,
+            parse_note_id(&note_id)?,
+            revision(input.expected_revision)?,
+        )
         .await
         .map_err(note_error)?;
     Ok(Json(note.into()))
+}
+
+fn revision(value: i64) -> HandlerResult<Revision> {
+    Revision::new(value).map_err(|_| {
+        problem(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "expected_revision must be positive",
+        )
+    })
 }
 
 pub(super) async fn export_note(

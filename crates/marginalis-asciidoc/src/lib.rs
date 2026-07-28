@@ -457,7 +457,7 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
     }
 }
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-5";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-6";
 
 /// JSON archiveの転送形式。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -489,6 +489,7 @@ pub struct ArchiveNote {
 #[serde(deny_unknown_fields)]
 pub struct ArchiveAclEntry {
     pub note_id: String,
+    pub issuer: String,
     pub subject: String,
     pub permission: ArchivePermission,
 }
@@ -527,7 +528,8 @@ pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
             .iter()
             .map(|entry| ArchiveAclEntry {
                 note_id: entry.note_id().to_string(),
-                subject: entry.subject().to_owned(),
+                issuer: entry.identity().issuer().to_owned(),
+                subject: entry.identity().subject().to_owned(),
                 permission: match entry.permission() {
                     NotePermission::Read => ArchivePermission::Read,
                     NotePermission::Edit => ArchivePermission::Edit,
@@ -594,7 +596,8 @@ pub fn validate_archive(archive: &Archive) -> Result<LogicalSnapshot, ArchiveVal
                 .map_err(|_| ArchiveValidationError)?;
             Ok(NoteAclSnapshotEntry::new(
                 note_id,
-                entry.subject.clone(),
+                Identity::new(entry.issuer.clone(), entry.subject.clone())
+                    .map_err(|_| ArchiveValidationError)?,
                 match entry.permission {
                     ArchivePermission::Read => NotePermission::Read,
                     ArchivePermission::Edit => NotePermission::Edit,
@@ -661,13 +664,6 @@ mod tests {
         assert!(exported.contains(":note-id: 0197c9bc-0000-7000-8000-000000000001"));
         assert!(exported.contains(":creator-subject: alice"));
         assert!(exported.ends_with("\n\nbody"));
-    }
-
-    #[test]
-    fn note_deserialization_rejects_identity_attribute_injection() {
-        let mut serialized = serde_json::to_value(note("body")).expect("serialize note");
-        serialized["creator_subject"] = "alice\n:admin: true".into();
-        assert!(serde_json::from_value::<Note>(serialized).is_err());
     }
 
     #[test]
@@ -806,6 +802,25 @@ mod tests {
         ] {
             assert_eq!(validate_archive(&invalid), Err(ArchiveValidationError));
         }
+    }
+
+    #[test]
+    fn archive_acl_round_trip_preserves_the_complete_identity() {
+        let note = note("safe body");
+        let reader =
+            Identity::new(note.creator_issuer().into(), "reader".into()).expect("reader identity");
+        let snapshot = LogicalSnapshot::new(
+            vec![note.clone()],
+            vec![NoteAclSnapshotEntry::new(
+                note.note_id(),
+                reader,
+                NotePermission::Read,
+            )],
+        )
+        .expect("snapshot");
+        let archive = create_archive(&snapshot);
+        assert_eq!(archive.note_acl[0].issuer, note.creator_issuer());
+        assert_eq!(validate_archive(&archive), Ok(snapshot));
     }
 
     #[test]

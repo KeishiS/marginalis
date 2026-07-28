@@ -56,6 +56,8 @@ MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`mar
   消費済みcodeは対応するtoken familyが残る間だけreplay検知用に保持する。
   MCP clientにKanidm tokenを渡さない。
 - HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を複製しない。
+- 実効アクセス水準は`Read < Edit < Manage`の順序で表す。SQLiteの`note_access`投影が、
+  所有者の`Manage`とACLの`Read`または`Edit`を同じ判断表へまとめる。
 
 ## ソース配置
 
@@ -87,6 +89,11 @@ applicationから永続化へ要求する外向きportも、読み取りの`Note
 `NoteCommandRepository`、ACL操作の`NoteAclRepository`に分けます。具象的には同じSQLite adapterが
 三つを実装しますが、application serviceは用途ごとに必要なportだけを受け取ります。
 SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出しません。
+
+一覧のportは本文を含まない`NoteSummary`だけを返します。本文中の参照先はID集合を一度に
+repositoryへ渡して取得し、参照数に比例してSQL問い合わせを繰り返しません。変更操作は認可、
+削除状態、期待revisionを一つの条件付きSQLへ含めます。条件に一致しなかった場合だけ、同じ
+transaction内で不可視と競合を分類します。
 
 アーカイブのJSON項目を表す型は、形式を解釈する`marginalis-asciidoc`に置きます。JSONから復元した
 `Note`とACLは、`marginalis-application`の`LogicalSnapshot`でノートIDの重複、ACLの参照先、

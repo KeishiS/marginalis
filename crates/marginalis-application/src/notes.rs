@@ -1,16 +1,18 @@
 //! ノート操作の業務処理と、外側の実装に要求するport。
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision,
-    validate_identity,
+    Actor, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteSummary, Revision,
 };
 
 use crate::{
-    Clock, NoteAccessControl, NoteCommands, NotePresentation, NoteProfile, NoteQueries,
-    NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
+    Clock, NoteAccessControl, NoteAclChange, NoteCommands, NotePresentation, NoteProfile,
+    NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
     NoteValidationTarget, Random, RelatedNotes,
 };
 
@@ -26,22 +28,30 @@ pub enum NoteRepositoryError {
 /// 可視性を適用してノートを読み取るport。
 #[async_trait]
 pub trait NoteQueryRepository: Send + Sync {
-    async fn list_visible_notes(&self, actor: &Actor) -> Result<Vec<Note>, NoteRepositoryError>;
+    async fn list_visible_notes(
+        &self,
+        actor: &Actor,
+    ) -> Result<Vec<NoteSummary>, NoteRepositoryError>;
     async fn visible_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Option<Note>, NoteRepositoryError>;
+    async fn visible_notes_by_id(
+        &self,
+        actor: &Actor,
+        note_ids: &[NoteId],
+    ) -> Result<Vec<Note>, NoteRepositoryError>;
     async fn directly_related_notes(
         &self,
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError>;
-    async fn note_capabilities(
+    async fn note_access(
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Option<NoteCapabilities>, NoteRepositoryError>;
+    ) -> Result<Option<NoteAccess>, NoteRepositoryError>;
 }
 
 /// 認可、revision、削除状態を一つのtransactionへ拘束する変更port。
@@ -207,14 +217,23 @@ impl NoteApplication {
             .content
             .reference_queries(note.body())
             .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let target_ids = queries
+            .iter()
+            .map(|query| query.target_note_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let targets = self
+            .queries
+            .visible_notes_by_id(actor, &target_ids)
+            .await
+            .map_err(map_repository_error)?
+            .into_iter()
+            .map(|note| (note.note_id(), note))
+            .collect::<HashMap<_, _>>();
         let mut resolutions = Vec::with_capacity(queries.len());
         for query in queries {
-            let Some(target) = self
-                .queries
-                .visible_note(actor, query.target_note_id)
-                .await
-                .map_err(map_repository_error)?
-            else {
+            let Some(target) = targets.get(&query.target_note_id) else {
                 resolutions.push(NoteReferenceResolution::Hidden {
                     reference_index: query.reference_index,
                 });
@@ -250,7 +269,7 @@ impl NoteApplication {
 
 #[async_trait]
 impl NoteQueries for NoteApplication {
-    async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
+    async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
         self.queries
             .list_visible_notes(&actor)
             .await
@@ -277,13 +296,13 @@ impl NoteQueries for NoteApplication {
         Ok(RelatedNotes { outgoing, incoming })
     }
 
-    async fn note_capabilities(
+    async fn note_access(
         &self,
         actor: Actor,
         note_id: NoteId,
-    ) -> Result<NoteCapabilities, NoteUseCaseError> {
+    ) -> Result<NoteAccess, NoteUseCaseError> {
         self.queries
-            .note_capabilities(&actor, note_id)
+            .note_access(&actor, note_id)
             .await
             .map_err(map_repository_error)?
             .ok_or(NoteUseCaseError::NotFound)
@@ -429,14 +448,16 @@ impl NoteAccessControl for NoteApplication {
         &self,
         actor: Actor,
         note_id: NoteId,
-        mut entries: Vec<NoteAclEntry>,
+        mut entries: Vec<NoteAclChange>,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         let note = self.read_visible_note(&actor, note_id).await?;
         entries.sort_by(|left, right| left.subject.cmp(&right.subject));
+        let mut grants = Vec::with_capacity(entries.len());
         for (index, entry) in entries.iter().enumerate() {
-            validate_identity(note.creator_issuer(), &entry.subject)
-                .map_err(|_| acl_validation(index, NoteValidationCode::InvalidAclSubject))?;
+            let identity =
+                Identity::new(note.creator_issuer().to_owned(), entry.subject.clone())
+                    .map_err(|_| acl_validation(index, NoteValidationCode::InvalidAclSubject))?;
             if entry.subject == note.creator_subject() {
                 return Err(acl_validation(index, NoteValidationCode::OwnerInAcl));
             }
@@ -446,12 +467,13 @@ impl NoteAccessControl for NoteApplication {
                     NoteValidationCode::DuplicateAclSubject,
                 ));
             }
+            grants.push(NoteAclEntry::new(identity, entry.permission));
         }
         self.access_control
             .replace_note_acl(
                 &actor,
                 note_id,
-                &entries,
+                &grants,
                 expected_revision,
                 self.clock.now(),
             )
@@ -526,8 +548,14 @@ mod tests {
         async fn list_visible_notes(
             &self,
             _actor: &Actor,
-        ) -> Result<Vec<Note>, NoteRepositoryError> {
-            Ok(self.notes.lock().expect("notes lock").clone())
+        ) -> Result<Vec<NoteSummary>, NoteRepositoryError> {
+            Ok(self
+                .notes
+                .lock()
+                .expect("notes lock")
+                .iter()
+                .map(NoteSummary::from)
+                .collect())
         }
 
         async fn visible_note(
@@ -544,6 +572,20 @@ mod tests {
                 .cloned())
         }
 
+        async fn visible_notes_by_id(
+            &self,
+            actor: &Actor,
+            note_ids: &[NoteId],
+        ) -> Result<Vec<Note>, NoteRepositoryError> {
+            let mut notes = Vec::new();
+            for note_id in note_ids {
+                if let Some(note) = self.visible_note(actor, *note_id).await? {
+                    notes.push(note);
+                }
+            }
+            Ok(notes)
+        }
+
         async fn directly_related_notes(
             &self,
             _actor: &Actor,
@@ -552,11 +594,11 @@ mod tests {
             Ok((Vec::new(), Vec::new()))
         }
 
-        async fn note_capabilities(
+        async fn note_access(
             &self,
             _actor: &Actor,
             _note_id: NoteId,
-        ) -> Result<Option<NoteCapabilities>, NoteRepositoryError> {
+        ) -> Result<Option<NoteAccess>, NoteRepositoryError> {
             Ok(None)
         }
     }

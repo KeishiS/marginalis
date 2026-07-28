@@ -119,7 +119,7 @@ fn unavailable(error: &str) -> SqliteDiagnosticReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::migrate;
+    use crate::schema::initialize_or_validate_schema;
 
     async fn migrated_database() -> SqlitePool {
         let pool = SqlitePoolOptions::new()
@@ -127,7 +127,9 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .expect("database");
-        migrate(&pool).await.expect("schema migration");
+        initialize_or_validate_schema(&pool)
+            .await
+            .expect("schema migration");
         pool
     }
 

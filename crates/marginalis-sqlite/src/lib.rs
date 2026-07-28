@@ -16,7 +16,7 @@ pub use cleanup::AuthStatePurgeCounts;
 pub use diagnostics::SqliteDiagnosticReport;
 pub use session::SqliteOidcLoginAttemptStore;
 
-use crate::schema::migrate;
+use crate::schema::initialize_or_validate_schema;
 use std::{fmt, time::Duration};
 
 use sqlx::{
@@ -67,7 +67,7 @@ impl SqliteDatabase {
             .max_connections(5)
             .connect_with(options)
             .await?;
-        migrate(&pool).await?;
+        initialize_or_validate_schema(&pool).await?;
         Ok(Self { pool })
     }
 

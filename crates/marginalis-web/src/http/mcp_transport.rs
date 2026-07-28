@@ -490,14 +490,14 @@ struct McpUpdate {
     title: String,
     body: String,
     tags: Vec<String>,
-    expected_revision: Revision,
+    expected_revision: i64,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct McpDelete {
     note_id: String,
-    expected_revision: Revision,
+    expected_revision: i64,
 }
 
 async fn mcp_tool_call(
@@ -520,9 +520,9 @@ async fn mcp_tool_call(
                 "notes": notes
                     .into_iter()
                     .map(|note| serde_json::json!({
-                        "note_id": note.note_id().to_string(),
-                        "title": note.title(),
-                        "revision": note.revision(),
+                        "note_id": note.note_id.to_string(),
+                        "title": note.title,
+                        "revision": note.revision.get(),
                     }))
                     .collect::<Vec<_>>()
             })
@@ -549,7 +549,7 @@ async fn mcp_tool_call(
                     "title": note.title(),
                     "body": note.body(),
                     "tags": note.tags(),
-                    "revision": note.revision(),
+                    "revision": note.revision().get(),
                 })
             })
         }
@@ -576,6 +576,9 @@ async fn mcp_tool_call(
             let Some(note_id) = parse_note_id(&input.note_id).ok() else {
                 return JsonRpcResponse::error(id, -32602, "note_id is invalid");
             };
+            let Ok(expected_revision) = Revision::new(input.expected_revision) else {
+                return JsonRpcResponse::error(id, -32602, "expected_revision is invalid");
+            };
             notes
                 .update_note(
                     actor,
@@ -585,7 +588,7 @@ async fn mcp_tool_call(
                         body: input.body,
                         tags: input.tags,
                     },
-                    input.expected_revision,
+                    expected_revision,
                 )
                 .await
                 .map(note_revision_json)
@@ -597,8 +600,11 @@ async fn mcp_tool_call(
             let Some(note_id) = parse_note_id(&input.note_id).ok() else {
                 return JsonRpcResponse::error(id, -32602, "note_id is invalid");
             };
+            let Ok(expected_revision) = Revision::new(input.expected_revision) else {
+                return JsonRpcResponse::error(id, -32602, "expected_revision is invalid");
+            };
             notes
-                .soft_delete_note(actor, note_id, input.expected_revision)
+                .soft_delete_note(actor, note_id, expected_revision)
                 .await
                 .map(note_revision_json)
         }
@@ -683,6 +689,6 @@ fn note_profile_json(profile: NoteProfile) -> serde_json::Value {
 fn note_revision_json(note: Note) -> serde_json::Value {
     serde_json::json!({
         "note_id": note.note_id().to_string(),
-        "revision": note.revision(),
+        "revision": note.revision().get(),
     })
 }

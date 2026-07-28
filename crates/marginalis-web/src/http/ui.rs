@@ -6,6 +6,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use marginalis_application::NoteRenderContext;
+use marginalis_domain::NoteAccess;
 
 use super::{
     auth::{authenticated_ui_actor, external_path, parse_note_id},
@@ -34,8 +35,8 @@ pub(super) async fn home(
         .map(|note| {
             format!(
                 "<li><a href=\"{}\">{}</a></li>",
-                external_path(&state.cookie_path, &format!("/notes/{}", note.note_id())),
-                escape_html(note.title())
+                external_path(&state.cookie_path, &format!("/notes/{}", note.note_id)),
+                escape_html(&note.title)
             )
         })
         .collect::<String>();
@@ -68,9 +69,9 @@ pub(super) async fn view_note(
         .read_note(actor.clone(), parse_note_id(&note_id)?)
         .await
         .map_err(note_error)?;
-    let capabilities = state
+    let access = state
         .notes
-        .note_capabilities(actor.clone(), note.note_id())
+        .note_access(actor.clone(), note.note_id())
         .await
         .map_err(note_error)?;
     let body = state
@@ -95,7 +96,7 @@ pub(super) async fn view_note(
         .related_notes(actor, note.note_id())
         .await
         .map_err(note_error)?;
-    let edit_link = if capabilities.can_edit {
+    let edit_link = if access.allows(NoteAccess::Edit) {
         format!(
             " <a href=\"{}\">編集</a>",
             external_path(
@@ -106,7 +107,7 @@ pub(super) async fn view_note(
     } else {
         String::new()
     };
-    let access_link = if capabilities.can_manage_acl {
+    let access_link = if access.allows(NoteAccess::Manage) {
         format!(
             " <a href=\"{}\">共有設定</a>",
             external_path(
@@ -142,12 +143,12 @@ pub(super) async fn access_note_page(
         .read_note(actor.clone(), note_id)
         .await
         .map_err(note_error)?;
-    let capabilities = state
+    let access = state
         .notes
-        .note_capabilities(actor.clone(), note_id)
+        .note_access(actor.clone(), note_id)
         .await
         .map_err(note_error)?;
-    if !capabilities.can_manage_acl {
+    if !access.allows(NoteAccess::Manage) {
         return Err(note_error(
             marginalis_application::NoteUseCaseError::NotFound,
         ));
@@ -155,7 +156,7 @@ pub(super) async fn access_note_page(
     let config = serde_json::json!({
         "apiBase": external_path(&state.cookie_path, "/api/v2"),
         "noteId": note_id.to_string(),
-        "revision": note.revision(),
+        "revision": note.revision().get(),
     })
     .to_string();
     let content = format!(
@@ -199,12 +200,12 @@ pub(super) async fn edit_note_page(
         .read_note(actor.clone(), note_id)
         .await
         .map_err(note_error)?;
-    let capabilities = state
+    let access = state
         .notes
-        .note_capabilities(actor, note_id)
+        .note_access(actor, note_id)
         .await
         .map_err(note_error)?;
-    if !capabilities.can_edit {
+    if !access.allows(NoteAccess::Edit) {
         return Err(note_error(
             marginalis_application::NoteUseCaseError::NotFound,
         ));
