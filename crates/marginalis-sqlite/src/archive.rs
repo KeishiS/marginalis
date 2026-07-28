@@ -10,8 +10,10 @@ use sqlx::Sqlite;
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
 
 impl SqliteDatabase {
-    /// SQLite正本を可搬archiveへ格納する論理snapshotとして取り出す。
-    pub async fn export_notes(&self) -> Result<Vec<Note>, SqliteStoreError> {
+    /// SQLite正本のノートとACLを同じ読み取りtransactionから取り出す。
+    pub async fn export_archive_snapshot(
+        &self,
+    ) -> Result<(Vec<Note>, Vec<ArchivedNoteAclEntry>), SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let rows = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
@@ -24,18 +26,14 @@ impl SqliteDatabase {
             .into_iter()
             .map(note_from_row)
             .collect::<Result<Vec<_>, _>>()?;
-        transaction.commit().await.map_err(database_error)?;
-        Ok(notes)
-    }
-
-    pub async fn export_note_acl(&self) -> Result<Vec<ArchivedNoteAclEntry>, SqliteStoreError> {
         let rows = sqlx::query(
             "SELECT note_id, subject, permission FROM note_acl ORDER BY note_id, subject",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(database_error)?;
-        rows.into_iter()
+        let note_acl = rows
+            .into_iter()
             .map(|row| {
                 use sqlx::Row;
                 let note_id = row
@@ -59,7 +57,9 @@ impl SqliteDatabase {
                     permission,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit().await.map_err(database_error)?;
+        Ok((notes, note_acl))
     }
 
     /// 検証済みの論理snapshotを空databaseへ一つのtransactionでimportする。

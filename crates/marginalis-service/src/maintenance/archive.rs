@@ -24,10 +24,8 @@ pub(crate) async fn export_archive(
     }
     let configuration = StorageConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
-    let archive = create_archive(
-        database.export_notes().await?,
-        database.export_note_acl().await?,
-    );
+    let (notes, note_acl) = database.export_archive_snapshot().await?;
+    let archive = create_archive(notes, note_acl);
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -109,11 +107,8 @@ pub(super) async fn verify_archive_in_memory(
             &archive.note_acl,
         )
         .await?;
-    if create_archive(
-        database.export_notes().await?,
-        database.export_note_acl().await?,
-    ) != *archive
-    {
+    let (notes, note_acl) = database.export_archive_snapshot().await?;
+    if create_archive(notes, note_acl) != *archive {
         return Err("archive logical round-trip validation failed".into());
     }
     Ok(())
@@ -133,10 +128,8 @@ pub(super) async fn verify_archive_in_isolated_database(
                 &archive.note_acl,
             )
             .await?;
-        let restored = create_archive(
-            database.export_notes().await?,
-            database.export_note_acl().await?,
-        );
+        let (notes, note_acl) = database.export_archive_snapshot().await?;
+        let restored = create_archive(notes, note_acl);
         if restored != *archive {
             return Err("restored archive does not match the source archive".into());
         }

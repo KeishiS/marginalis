@@ -134,6 +134,7 @@ pub(crate) fn diagnostic_sort_key(
         NoteValidationTarget::Tags => (1, 0),
         NoteValidationTarget::Tag { index } => (2, index),
         NoteValidationTarget::Body => (3, 0),
+        NoteValidationTarget::AclEntry { index } => (4, index),
     };
     let span = diagnostic.span.unwrap_or(Utf8ByteSpan { start: 0, end: 0 });
     (

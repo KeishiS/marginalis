@@ -13,8 +13,8 @@ use marginalis_application::{
     WebSessionUseCases,
 };
 use marginalis_domain::{
-    Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft, NoteId,
-    NoteSummary, UnixMillis, WebSession,
+    Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteAclEntry,
+    NoteCapabilities, NoteDraft, NoteId, NoteSummary, UnixMillis, WebSession,
 };
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
@@ -129,6 +129,32 @@ impl NoteUseCases for Notes {
             outgoing: Vec::new(),
             incoming: Vec::new(),
         })
+    }
+
+    async fn note_capabilities(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+    ) -> Result<NoteCapabilities, NoteUseCaseError> {
+        Err(NoteUseCaseError::NotFound)
+    }
+
+    async fn read_note_acl(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+        Err(NoteUseCaseError::Forbidden)
+    }
+
+    async fn replace_note_acl(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _entries: Vec<NoteAclEntry>,
+        _expected_revision: i64,
+    ) -> Result<Note, NoteUseCaseError> {
+        Err(NoteUseCaseError::Forbidden)
     }
 
     fn note_profile(&self) -> NoteProfile {
@@ -260,6 +286,36 @@ impl NoteUseCases for UiNotes {
             outgoing: related.clone(),
             incoming: related,
         })
+    }
+
+    async fn note_capabilities(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteCapabilities, NoteUseCaseError> {
+        self.read_note(actor, note_id).await?;
+        Ok(NoteCapabilities {
+            can_edit: true,
+            can_manage_acl: false,
+        })
+    }
+
+    async fn read_note_acl(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+        Err(NoteUseCaseError::Forbidden)
+    }
+
+    async fn replace_note_acl(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _entries: Vec<NoteAclEntry>,
+        _expected_revision: i64,
+    ) -> Result<Note, NoteUseCaseError> {
+        Err(NoteUseCaseError::Forbidden)
     }
 
     fn note_profile(&self) -> NoteProfile {
