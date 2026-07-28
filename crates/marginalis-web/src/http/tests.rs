@@ -699,6 +699,51 @@ async fn frontend_assets_are_served_with_explicit_content_types() {
 }
 
 #[tokio::test]
+async fn editor_pages_embed_subpath_configuration_without_note_content() {
+    let create = ui_app(Vec::new(), false, "/marginalis")
+        .oneshot(authenticated_request("/notes/new"))
+        .await
+        .expect("create page");
+    assert_eq!(create.status(), StatusCode::OK);
+    let body = to_bytes(create.into_body(), usize::MAX)
+        .await
+        .expect("create body");
+    let body = String::from_utf8(body.to_vec()).expect("HTML");
+    assert!(body.contains("data-mode=\"create\""));
+    assert!(body.contains("data-api-base=\"/marginalis/api/v2\""));
+    assert!(body.contains("data-base-path=\"/marginalis\""));
+    assert!(body.contains("src=\"/marginalis/assets/editor.js\""));
+    assert!(body.contains("<noscript>"));
+
+    let edit = ui_app(vec![ui_note("非公開の本文を埋め込まない")], false, "/")
+        .oneshot(authenticated_request(
+            "/notes/0197c9bc-0000-7000-8000-000000000001/edit",
+        ))
+        .await
+        .expect("edit page");
+    assert_eq!(edit.status(), StatusCode::OK);
+    let body = to_bytes(edit.into_body(), usize::MAX)
+        .await
+        .expect("edit body");
+    let body = String::from_utf8(body.to_vec()).expect("HTML");
+    assert!(body.contains("data-mode=\"edit\""));
+    assert!(body.contains("data-note-id=\"0197c9bc-0000-7000-8000-000000000001\""));
+    assert!(!body.contains("非公開の本文を埋め込まない"));
+}
+
+#[tokio::test]
+async fn edit_page_checks_note_visibility_before_loading_the_application() {
+    let response = ui_app(Vec::new(), false, "/")
+        .oneshot(authenticated_request(
+            "/notes/0197c9bc-0000-7000-8000-000000000001/edit",
+        ))
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn openapi_is_served_from_the_embedded_specification() {
     let response = app()
         .oneshot(

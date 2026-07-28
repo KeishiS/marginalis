@@ -47,7 +47,7 @@ use self::{
         mcp_resource_metadata, mcp_server_metadata, mcp_token, revoke_mcp_authorization,
     },
     security::security_headers,
-    ui::{home, view_note},
+    ui::{create_note_page, edit_note_page, home, view_note},
 };
 
 pub const API_VERSION: &str = "v2";
@@ -55,6 +55,8 @@ pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
 pub fn router(state: ApiState) -> Router {
     let mut router = Router::new()
         .route("/", get(home))
+        .route("/notes/new", get(create_note_page))
+        .route("/notes/{note_id}/edit", get(edit_note_page))
         .route("/notes/{note_id}", get(view_note))
         .route("/assets/editor.js", get(editor_javascript))
         .route("/assets/editor.css", get(editor_stylesheet))

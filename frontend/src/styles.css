@@ -27,6 +27,66 @@ body {
   justify-content: space-between;
 }
 
+.editor-heading,
+.editor-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.editor-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.editor-form label {
+  display: grid;
+  font-weight: 600;
+  gap: 0.3rem;
+}
+
+.editor-form input,
+.editor-form textarea,
+.editor-form button {
+  font: inherit;
+}
+
+.editor-form input,
+.editor-form textarea {
+  border: 0.1rem solid currentColor;
+  border-radius: 0.25rem;
+  box-sizing: border-box;
+  padding: 0.6rem;
+  width: 100%;
+}
+
+.editor-form textarea {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  resize: vertical;
+}
+
+.editor-form button {
+  padding: 0.5rem 1rem;
+}
+
+.metadata {
+  margin-block: -0.8rem 0;
+}
+
+.notice,
+.problem {
+  border: 0.1rem solid currentColor;
+  margin-block: 1rem;
+  padding: 0.75rem;
+}
+
+.problem h2 {
+  font-size: 1rem;
+  margin-block-start: 0;
+}
+
 a,
 button {
   outline-offset: 0.2rem;
