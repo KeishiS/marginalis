@@ -4,6 +4,7 @@ mod archive;
 mod cleanup;
 mod diagnostics;
 mod mcp;
+mod note_repository;
 mod notes;
 mod schema;
 mod session;

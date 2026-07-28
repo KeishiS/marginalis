@@ -1,10 +1,11 @@
 //! HTTP serviceのcomposition root。
 
-use marginalis_asciidoc::verify_runtime_package_version;
+use marginalis_application::NoteApplication;
+use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_server::{
-    ServerConfig, ServerMcpOAuthService, ServerNoteUseCases, ServerOidcAuthenticationUseCases,
-    ServerWebSessionUseCases,
+    ServerConfig, ServerMcpOAuthService, ServerOidcAuthenticationUseCases,
+    ServerWebSessionUseCases, SystemClock, SystemRandom,
 };
 use marginalis_sqlite::SqliteDatabase;
 use std::path::Path;
@@ -61,7 +62,13 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
         },
     ));
-    let notes = std::sync::Arc::new(ServerNoteUseCases::new(database.clone()));
+    let notes = std::sync::Arc::new(NoteApplication::new(
+        std::sync::Arc::new(database.clone()),
+        std::sync::Arc::new(AsciiDocNoteContent),
+        std::sync::Arc::new(marginalis_web::http::HttpNoteLinkResolver),
+        std::sync::Arc::new(SystemClock),
+        std::sync::Arc::new(SystemRandom),
+    ));
     let state = marginalis_web::http::ApiState::new(
         notes.clone(),
         sessions,

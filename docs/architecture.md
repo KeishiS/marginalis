@@ -16,9 +16,13 @@ SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
           marginalis-service + NixOS module
 ```
 
-`marginalis-web`はHTTP、Cookie、CSRF、OAuthのリクエストを受け付けます。`marginalis-server`は
-設定と外部接続用の処理をアプリケーション層へ接続し、`marginalis-sqlite`はSQLiteへの保存を
-担当します。
+`marginalis-web`はHTTP、Cookie、CSRF、OAuthのリクエストを受け付けます。
+`marginalis-application`はノート操作の手順と業務上の失敗理由を定義します。
+ここでいうportは、applicationが外側の実装へ要求する小さなinterfaceです。
+`marginalis-sqlite`は永続化port、`marginalis-asciidoc`は文書の検証・描画port、
+`marginalis-web`は外部URL生成portを実装します。これにより、ノート操作の単体試験ではSQLite、
+AsciiDoc engine、HTTP serverを起動する必要がありません。
+`marginalis-server`は認証とOAuthの移行前のapplication serviceを保持します。
 `marginalis-auth-oidc` は OIDC discovery・code exchange・ID token 検証を担当します。MCP の
 JSON-RPC wire 型は、それを利用する唯一の transport である `marginalis-web::mcp` に置きます。
 実行バイナリは `marginalis-service` です。
@@ -52,11 +56,11 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
 ```text
 crates/
 ├── marginalis-domain          値と設計条件
-├── marginalis-application     portとuse case interface
+├── marginalis-application     use case実装と内向き・外向きport
 ├── marginalis-asciidoc        AsciiDoc検証・描画・export
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
 ├── marginalis-sqlite          SQLite adapter
-├── marginalis-server          production adapterの組立部品
+├── marginalis-server          移行前の認証・OAuth application service
 ├── marginalis-web             HTTP adapter
 ├── marginalis-service         composition rootと実行バイナリ
 └── marginalis-integration-tests
@@ -68,7 +72,13 @@ frontend/
 
 依存は概ね上から下ではなく、外側から`domain`と`application`へ向かう。
 `domain`は他のMarginalis crateへ依存せず、`application`は`domain`だけへ依存する。
-HTTPとSQLiteは互いに依存せず、`service`が`server`を介して組み立てる。
+HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのportを実装する。
+`service`だけが具象的なadapterを選び、application serviceへ接続する。
+
+ノート操作では、HTTPやMCPから呼び出す`NoteUseCases`を内向きport、applicationから
+永続化へ要求する`NoteRepository`を外向きportと呼ぶ。前者は利用者の操作を表し、後者は
+認可とrevisionを含む一つの原子的な保存操作を表す。SQLiteのエラー型やAsciiDoc engineの型は
+applicationの公開境界へ出さない。
 
 crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
 crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはcomposition rootとして、

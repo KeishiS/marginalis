@@ -13,7 +13,10 @@ use adocweave::resolution::{
 };
 #[cfg(test)]
 use marginalis_application::Utf8ByteSpan;
-use marginalis_application::{NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget};
+use marginalis_application::{
+    NoteContent, NoteContentError, NoteProfile, NoteValidationCode, NoteValidationDiagnostic,
+    NoteValidationTarget,
+};
 use marginalis_domain::{ARCHIVE_FORMAT, Archive, Note, NoteDraft, UnixMillis, validate_identity};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
@@ -51,6 +54,75 @@ pub const MAX_TITLE_CHARACTERS: usize = 200;
 pub const MAX_NOTE_BODY_BYTES: usize = 512 * 1024;
 pub const MAX_TAGS: usize = 50;
 pub const MAX_TAG_CHARACTERS: usize = 64;
+
+/// 固定したAsciiDoc profileをノートapplicationへ接続するadapter。
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AsciiDocNoteContent;
+
+impl NoteContent for AsciiDocNoteContent {
+    fn validate_draft(&self, draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>> {
+        validate_note_draft(draft)
+    }
+
+    fn reference_queries(
+        &self,
+        note: &Note,
+    ) -> Result<Vec<marginalis_application::NoteReferenceQuery>, NoteContentError> {
+        note_reference_queries(note)
+            .map_err(|_| NoteContentError)
+            .map(|queries| {
+                queries
+                    .into_iter()
+                    .map(|query| marginalis_application::NoteReferenceQuery {
+                        reference_index: query.reference_index,
+                        target_note_id: query.target_note_id,
+                        anchor: query.anchor,
+                    })
+                    .collect()
+            })
+    }
+
+    fn has_anchor(&self, note: &Note, anchor: &str) -> Result<bool, NoteContentError> {
+        note_has_anchor(note, anchor).map_err(|_| NoteContentError)
+    }
+
+    fn render(
+        &self,
+        note: &Note,
+        resolutions: &[marginalis_application::NoteReferenceResolution],
+    ) -> Result<String, NoteContentError> {
+        let resolutions = resolutions
+            .iter()
+            .map(|resolution| match resolution {
+                marginalis_application::NoteReferenceResolution::Visible {
+                    reference_index,
+                    href,
+                    title,
+                    missing_anchor,
+                } => NoteReferenceResolution::Visible {
+                    reference_index: *reference_index,
+                    href: href.clone(),
+                    title: title.clone(),
+                    missing_anchor: *missing_anchor,
+                },
+                marginalis_application::NoteReferenceResolution::Hidden { reference_index } => {
+                    NoteReferenceResolution::Hidden {
+                        reference_index: *reference_index,
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        render_note_html_with_references(note, &resolutions).map_err(|_| NoteContentError)
+    }
+
+    fn export(&self, note: &Note) -> Result<String, NoteContentError> {
+        export_note(note).map_err(|_| NoteContentError)
+    }
+
+    fn profile(&self) -> NoteProfile {
+        note_profile()
+    }
+}
 
 /// ホストがACL判定するノート参照。順序は文書内の出現順です。
 #[derive(Clone, Debug, Eq, PartialEq)]

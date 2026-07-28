@@ -53,6 +53,40 @@ use self::{
 
 pub const API_VERSION: &str = "v2";
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
+
+/// 配備先のサブパスを保ったノートURLを生成するHTTP adapter。
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HttpNoteLinkResolver;
+
+impl marginalis_application::NoteLinkResolver for HttpNoteLinkResolver {
+    fn href(
+        &self,
+        context: &marginalis_application::NoteRenderContext,
+        note_id: marginalis_domain::NoteId,
+        anchor: Option<&str>,
+    ) -> Option<String> {
+        let prefix = &context.note_path_prefix;
+        if !prefix.starts_with('/') || prefix.starts_with("//") || prefix.contains(['?', '#']) {
+            return None;
+        }
+        let prefix = prefix.trim_end_matches('/');
+        let path = format!("{prefix}/{note_id}");
+        let mut url = url::Url::parse("https://marginalis.invalid")
+            .ok()?
+            .join(&path)
+            .ok()?;
+        if url.path() != path {
+            return None;
+        }
+        url.set_fragment(anchor);
+        Some(
+            url.as_str()
+                .strip_prefix("https://marginalis.invalid")?
+                .to_owned(),
+        )
+    }
+}
+
 pub fn router(state: ApiState) -> Router {
     let mut router = Router::new()
         .route("/", get(home))
