@@ -188,7 +188,7 @@ test("Kanidm login and MCP OAuth lifecycle work through the subpath", async ({
   );
   expect(csrf).toBeTruthy();
   const revoked = await context.request.delete(
-    `${baseUrl}/api/v2/mcp-authorizations/${encodeURIComponent(clientId)}`,
+    `${baseUrl}/api/v3/mcp-authorizations/${encodeURIComponent(clientId)}`,
     {
       headers: {
         Origin: "https://marginalis.example.test",

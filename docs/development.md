@@ -66,12 +66,24 @@ Pull Requestからマージします。
    編集しないでください。`openapi-check`は生成し直した内容との差分を検査し、契約に含まれる全経路が
    OpenAPIとHTTPルーターの両方に存在することはRustの単体試験で検査します。
 
+   失敗した責務だけを再実行する場合は、suite名を指定します。
+
+   ```sh
+   nix develop --command cargo test -p marginalis-web http::tests::rest_notes
+   nix develop --command cargo test -p marginalis-sqlite tests::notes
+   nix develop --command cargo test -p marginalis-integration-tests --test oauth_flow full_flow
+   ```
+
    `docs/**`、ルートの案内文書、Issueテンプレートだけを変更する場合は、次の文書検査だけで
    十分です。
 
    ```sh
    nix develop --command cargo make docs-check
+   nix develop --command cargo make traceability-check
    ```
+
+   `docs-check`は空白とローカルリンク、`traceability-check`は要件IDの対応と版別受入証跡を
+   独立して検査します。
 
    CIは変更pathを判定し、文書だけのPull Requestでは`verify`を文書検査へ縮退し、
    `coverage`とNixOS VMの実行を省略します。プログラムが参照する公開仕様

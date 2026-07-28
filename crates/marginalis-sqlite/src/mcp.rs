@@ -48,25 +48,21 @@ impl SqliteDatabase {
     ) -> Result<bool, SqliteStoreError> {
         let redirect_uris = serde_json::to_string(&client.redirect_uris)
             .map_err(|_| SqliteStoreError::CorruptData)?;
-        let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM mcp_clients")
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(database_error)?;
-        if count >= maximum_clients {
-            transaction.commit().await.map_err(database_error)?;
-            return Ok(false);
-        }
-        sqlx::query("INSERT INTO mcp_clients (client_id, display_name, redirect_uris_json, registered_at_ms) VALUES (?, ?, ?, ?)")
-            .bind(&client.client_id)
-            .bind(&client.display_name)
-            .bind(redirect_uris)
-            .bind(now.get())
-            .execute(&mut *transaction)
-            .await
-            .map_err(database_error)?;
-        transaction.commit().await.map_err(database_error)?;
-        Ok(true)
+        let result = sqlx::query(
+            "INSERT INTO mcp_clients
+                 (client_id, display_name, redirect_uris_json, registered_at_ms)
+             SELECT ?, ?, ?, ?
+             WHERE (SELECT COUNT(*) FROM mcp_clients) < ?",
+        )
+        .bind(&client.client_id)
+        .bind(&client.display_name)
+        .bind(redirect_uris)
+        .bind(now.get())
+        .bind(maximum_clients)
+        .execute(&self.pool)
+        .await
+        .map_err(database_error)?;
+        Ok(result.rows_affected() == 1)
     }
 
     pub async fn mcp_client(

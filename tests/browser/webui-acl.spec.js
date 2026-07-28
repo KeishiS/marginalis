@@ -74,17 +74,17 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   await expect(readerPage.getByRole("link", { name: "共有設定" })).toHaveCount(0);
   const readerUpdateStatus = await readerPage.evaluate(
     async ({ baseUrl, noteId }) => {
-      const response = await fetch(`${baseUrl}/api/v2/notes/${noteId}`, {
+      const response = await fetch(`${baseUrl}/api/v3/notes/${noteId}`, {
         method: "PUT",
         headers: {
           "content-type": "application/json",
           "x-csrf-token": "reader-csrf",
+          "if-match": '"rev-2"',
         },
         body: JSON.stringify({
           title: "変更不可",
           body: "変更不可",
           tags: [],
-          expected_revision: 2,
         }),
       });
       return response.status;
@@ -104,13 +104,13 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   await expect(editorPage.getByText("更新番号: 3")).toBeVisible();
   const editorDeleteStatus = await editorPage.evaluate(
     async ({ baseUrl, noteId }) => {
-      const response = await fetch(`${baseUrl}/api/v2/notes/${noteId}`, {
+      const response = await fetch(`${baseUrl}/api/v3/notes/${noteId}`, {
         method: "DELETE",
         headers: {
           "content-type": "application/json",
           "x-csrf-token": "editor-csrf",
+          "if-match": '"rev-3"',
         },
-        body: JSON.stringify({ expected_revision: 3 }),
       });
       return response.status;
     },
@@ -121,7 +121,17 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   const outsider = await actorContext(browser, "outsider-session", "outsider-csrf");
   const outsiderPage = await outsider.newPage();
   const hidden = await outsiderPage.goto(`${baseUrl}/notes/${noteId}`);
-  expect(hidden.status()).toBe(404);
+  expect(hidden.status()).toBe(200);
+  await expect(
+    outsiderPage.getByRole("alert").filter({
+      hasText: "ノートを読み込めませんでした。",
+    }),
+  ).toBeVisible();
+  await expect(
+    outsiderPage.getByRole("heading", { name: "編集者が更新した題名" }),
+  ).toHaveCount(0);
+  const hiddenApi = await outsider.request.get(`${baseUrl}/api/v3/notes/${noteId}`);
+  expect(hiddenApi.status()).toBe(404);
   await outsiderPage.goto(`${baseUrl}/`);
   await expect(outsiderPage.getByText("ACL受入試験")).toHaveCount(0);
   await expect(outsiderPage.getByText("編集者が更新した題名")).toHaveCount(0);

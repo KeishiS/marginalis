@@ -13,7 +13,7 @@
 
 - [NixOSでの運用](nixos.md)
 - [リリース手順](release.md)
-- [現在のバージョンの受入確認](acceptance.md)
+- [受入基準と版別結果](acceptance.md)
 
 ## 設計・開発向け
 
@@ -22,6 +22,7 @@
 - [カバレッジ](coverage.md)
 - [セキュリティ](security.md)
 - [要件定義](requirements.md)
+- [要件と検証の対応表](traceability.md)
 - [アーキテクチャ](architecture.md)
 - [ブラウザーとMCPプロトコルの回帰テスト](protocol-regression.md)
 

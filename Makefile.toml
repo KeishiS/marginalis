@@ -106,6 +106,11 @@ description = "Validate local links and whitespace in Markdown documentation"
 command = "bash"
 args = [".github/scripts/check-docs.sh"]
 
+[tasks.traceability-check]
+description = "Validate requirement coverage and versioned acceptance evidence"
+command = "bash"
+args = [".github/scripts/check-traceability.sh"]
+
 [tasks.security-audit]
 description = "Check Cargo.lock against the current RustSec advisory database"
 dependencies = ["frontend-security-audit"]
@@ -236,7 +241,7 @@ fi
 '''
 
 [tasks.coverage]
-description = "Generate separate workspace and v0.3 integration-path coverage reports"
+description = "Generate separate workspace and service integration-path coverage reports"
 dependencies = ["frontend-build"]
 script_runner = "@shell"
 script = '''
@@ -273,7 +278,7 @@ cargo llvm-cov \
   --json --output-path "$report_dir/.integration-test.json"
 cargo llvm-cov report \
   --ignore-filename-regex "$ignored_sources" \
-  --json --output-path "$report_dir/v0.3-integration-path.json"
+  --json --output-path "$report_dir/service-integration-path.json"
 rm "$report_dir/.integration-test.json"
 jq -r '
   def row($name; $summary):
@@ -287,19 +292,40 @@ jq -r '
       "functions", "covered", "function_%"] | @tsv),
     ($report.data[0].files[] | row(.filename; .summary)),
     row("TOTAL"; $report.data[0].totals)
-' "$report_dir/v0.3-integration-path.json" >"$report_dir/v0.3-integration-path-summary.txt"
+' "$report_dir/service-integration-path.json" >"$report_dir/service-integration-path-summary.txt"
 
 printf '\nworkspace coverage\n'
 cat "$report_dir/workspace-summary.txt"
-printf '\nv0.3 integration-path coverage\n'
-cat "$report_dir/v0.3-integration-path-summary.txt"
+printf '\nservice integration-path coverage\n'
+cat "$report_dir/service-integration-path-summary.txt"
 printf '\ncoverage reports: %s\n' "$report_dir"
 '''
 
 [tasks.openapi-check]
 description = "Verify generated OpenAPI and TypeScript contracts"
+dependencies = ["openapi-validate"]
 command = "cargo"
 args = ["run", "-p", "marginalis-contract", "--bin", "generate", "--", "--check"]
+
+[tasks.openapi-validate]
+description = "Validate the generated OpenAPI structure and local references"
+script_runner = "@shell"
+script = '''
+set -eu
+jq -e '
+  def local_ref_resolves($root):
+    if startswith("#/")
+    then split("/")[1:] as $path | ($root | getpath($path)) != null
+    else true
+    end;
+  . as $root
+  | .openapi == "3.1.0"
+    and (.info.title | type == "string")
+    and (.info.version | type == "string")
+    and (.paths | type == "object" and length > 0)
+    and ([.. | objects | select(has("$ref")) | ."$ref" | local_ref_resolves($root)] | all)
+' docs/openapi.json >/dev/null
+'''
 
 [tasks.adocweave-version-check]
 description = "Verify the pinned AdocWeave package version and supply-chain identity"
@@ -341,7 +367,7 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "flake-check"]
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "traceability-check", "flake-check"]
 
 [tasks.frontend-install]
 description = "Install the locked frontend dependencies"
