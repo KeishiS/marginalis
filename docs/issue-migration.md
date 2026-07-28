@@ -75,15 +75,15 @@
 
 | 旧番号 | 採用結果 | 保存先 |
 | --- | --- | --- |
-| [upstream/001](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/001-resolved-url-policy-and-wasm-parity.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/AdocWeave) |
-| [upstream/002](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/002-external-link-attributes.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/AdocWeave) |
-| [upstream/003](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/003-resolved-reference-display.md) | AdocWeave v0.1.0で採用 | [v0.1.0](https://github.com/KeishiS/AdocWeave/releases/tag/v0.1.0) |
-| [upstream/004](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/004-reference-resolution-notices.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/AdocWeave) |
-| [upstream/005](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/005-source-language-policy.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/AdocWeave) |
-| [upstream/006](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/006-math-projection-api.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/AdocWeave) |
-| [upstream/007](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/007-stem-language-profile.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/AdocWeave) |
-| [upstream/008](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/008-resource-profile.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/AdocWeave) |
-| [upstream/009](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/009-public-document-attribute-occurrences.md) | AdocWeave v0.6.0で採用 | [v0.6.0](https://github.com/KeishiS/AdocWeave/releases/tag/v0.6.0) |
+| [upstream/001](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/001-resolved-url-policy-and-wasm-parity.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/adocweave) |
+| [upstream/002](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/002-external-link-attributes.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/adocweave) |
+| [upstream/003](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/003-resolved-reference-display.md) | AdocWeave v0.1.0で採用 | [v0.1.0](https://github.com/KeishiS/adocweave/releases/tag/v0.1.0) |
+| [upstream/004](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/004-reference-resolution-notices.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/adocweave) |
+| [upstream/005](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/005-source-language-policy.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/adocweave) |
+| [upstream/006](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/006-math-projection-api.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/adocweave) |
+| [upstream/007](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/007-stem-language-profile.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/adocweave) |
+| [upstream/008](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/008-resource-profile.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/adocweave) |
+| [upstream/009](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/009-public-document-attribute-occurrences.md) | AdocWeave v0.6.0で採用 | [v0.6.0](https://github.com/KeishiS/adocweave/releases/tag/v0.6.0) |
 
 ## 移行後の管理方針
 

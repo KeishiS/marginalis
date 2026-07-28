@@ -58,7 +58,7 @@
           # include_str! するため、crate 単位の Cargo vendoring ではこのファイルが
           # 欠落する。依存と同じコミットのファイルを内容ハッシュ付きで補う。
           adocweaveConformanceCases = pkgs.fetchurl {
-            url = "https://raw.githubusercontent.com/KeishiS/AdocWeave/778e9da4548f03ea8434677d50c819d7ce665809/fixtures/conformance/cases.json";
+            url = "https://raw.githubusercontent.com/KeishiS/adocweave/778e9da4548f03ea8434677d50c819d7ce665809/fixtures/conformance/cases.json";
             hash = "sha256-OxHK8NobfmNN9pRj7B3qP94s1b2E26l5y5EQdMQq6aY=";
           };
           frontend = pkgs.buildNpmPackage {
