@@ -8,9 +8,12 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      input: "src/main.tsx",
+      input: {
+        editor: "src/main.tsx",
+        page: "src/page.ts",
+      },
       output: {
-        entryFileNames: "assets/editor.js",
+        entryFileNames: "assets/[name].js",
         assetFileNames: "assets/editor.[ext]",
       },
     },

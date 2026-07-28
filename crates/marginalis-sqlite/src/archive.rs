@@ -2,7 +2,7 @@
 
 use std::{collections::HashSet, str::FromStr};
 
-use marginalis_domain::{EntityId, Note, validate_identity};
+use marginalis_domain::{EntityId, Note, NoteId, validate_identity};
 use sqlx::Sqlite;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
@@ -27,7 +27,11 @@ impl SqliteDatabase {
     }
 
     /// 検証済みの論理snapshotを空databaseへ一つのtransactionでimportする。
-    pub async fn import_notes(&self, notes: &[Note]) -> Result<(), SqliteStoreError> {
+    pub async fn import_notes(
+        &self,
+        notes: &[Note],
+        references: &[(NoteId, NoteId)],
+    ) -> Result<(), SqliteStoreError> {
         let mut note_ids = HashSet::new();
         for note in notes {
             if !note_ids.insert(note.note_id) {
@@ -67,6 +71,19 @@ impl SqliteDatabase {
         }
         for note in notes {
             insert_note_row(&mut transaction, note).await?;
+        }
+        for (source, target) in references {
+            if !note_ids.contains(source) {
+                return Err(SqliteStoreError::CorruptData);
+            }
+            sqlx::query(
+                "INSERT OR IGNORE INTO note_references (source_note_id, target_note_id) VALUES (?, ?)",
+            )
+            .bind(source.to_string())
+            .bind(target.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
         }
         transaction.commit().await.map_err(database_error)
     }

@@ -64,7 +64,7 @@ async fn initialization_rejects_the_previous_schema_version() {
     assert!(
         error
             .to_string()
-            .contains("unsupported database schema version 3; expected 4")
+            .contains("unsupported database schema version 3; expected 5")
     );
 }
 
@@ -88,7 +88,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         revision: 1,
         deleted_at: None,
     };
-    database.create_note(&note).await.expect("create note");
+    database.create_note(&note, &[]).await.expect("create note");
     assert_eq!(database.note(note_id, false).await, Ok(Some(note.clone())));
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
@@ -174,6 +174,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
                     body: "must not persist".into(),
                     tags: vec![],
                 },
+                &[],
                 UnixMillis::new(150),
             )
             .await,
@@ -199,6 +200,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
                 body: "updated body".into(),
                 tags: vec!["research".into(), "v3".into()],
             },
+            &[],
             UnixMillis::new(200),
         )
         .await
@@ -236,7 +238,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .await
         .expect("empty import target");
     imported_database
-        .import_notes(&snapshot)
+        .import_notes(&snapshot, &[(note_id, note_id)])
         .await
         .expect("import snapshot");
     assert_eq!(
@@ -246,8 +248,14 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .expect("re-export snapshot"),
         snapshot
     );
+    let (outgoing, incoming) = imported_database
+        .directly_related_notes(&alice, note_id)
+        .await
+        .expect("imported references");
+    assert_eq!(outgoing.len(), 1);
+    assert_eq!(incoming.len(), 1);
     assert_eq!(
-        imported_database.import_notes(&snapshot).await,
+        imported_database.import_notes(&snapshot, &[]).await,
         Err(SqliteStoreError::ArchiveTargetNotEmpty)
     );
     let nonempty_auth_database = SqliteDatabase::connect("sqlite::memory:")
@@ -267,7 +275,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .await
         .expect("pending login attempt");
     assert_eq!(
-        nonempty_auth_database.import_notes(&snapshot).await,
+        nonempty_auth_database.import_notes(&snapshot, &[]).await,
         Err(SqliteStoreError::ArchiveTargetNotEmpty)
     );
     let mut invalid_snapshot = snapshot.clone();
@@ -276,20 +284,24 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .await
         .expect("empty rejected target");
     assert_eq!(
-        rejected_database.import_notes(&invalid_snapshot).await,
+        rejected_database.import_notes(&invalid_snapshot, &[]).await,
         Err(SqliteStoreError::CorruptData)
     );
     let mut injected_identity = snapshot.clone();
     injected_identity[0].creator_subject = "alice\n:admin: true".into();
     assert_eq!(
-        rejected_database.import_notes(&injected_identity).await,
+        rejected_database
+            .import_notes(&injected_identity, &[])
+            .await,
         Err(SqliteStoreError::CorruptData)
     );
     let mut invalid_deleted_at = snapshot.clone();
     invalid_deleted_at[0].deleted_at =
         Some(UnixMillis::new(invalid_deleted_at[0].updated_at.get() + 1));
     assert_eq!(
-        rejected_database.import_notes(&invalid_deleted_at).await,
+        rejected_database
+            .import_notes(&invalid_deleted_at, &[])
+            .await,
         Err(SqliteStoreError::CorruptData)
     );
     assert_eq!(

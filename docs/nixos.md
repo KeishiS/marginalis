@@ -35,13 +35,12 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは4です。旧versionを自動移行しません。
-v0.5.0からv0.6.0への更新ではschema 4を維持するため、serviceを停止して`dataDir`を退避した後、
-同じ`dataDir`をv0.6.0で使用できます。起動後はhealthと`marginalis diagnose`を確認し、新しいarchive
-v4を作成してください。v0.5.0のarchive v3はv0.6.0へimportできません。
+変更してください。現行のSQLite schema versionは5です。旧versionを自動移行しません。
+schema 4のdatabaseは起動前にarchiveへ書き出し、空のschema 5 databaseへ取り込んでください。
+起動後はhealthと`marginalis diagnose`を確認し、新しいarchive v4を作成してください。
 
 切戻す場合はserviceを停止し、v0.6.0で作成したdatabaseを保全してから、更新前に退避した`dataDir`を
-v0.5.0へ戻します。schemaは同じですが、異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
+v0.5.0へ戻します。異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
 v0.5.0より前のschemaやarchiveには自動移行を提供しません。
 
 reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。

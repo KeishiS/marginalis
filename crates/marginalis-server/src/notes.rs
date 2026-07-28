@@ -134,8 +134,9 @@ impl NoteUseCases for ServerNoteUseCases {
             revision: 1,
             deleted_at: None,
         };
+        let reference_targets = reference_targets(&note)?;
         self.database
-            .create_note(&note)
+            .create_note(&note, &reference_targets)
             .await
             .map_err(map_note_error)?;
         Ok(note)
@@ -150,12 +151,16 @@ impl NoteUseCases for ServerNoteUseCases {
     ) -> Result<Note, NoteUseCaseError> {
         let draft = marginalis_asciidoc::validate_note_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
+        let mut projected_note = self.read_note(actor.clone(), note_id).await?;
+        projected_note.body.clone_from(&draft.body);
+        let reference_targets = reference_targets(&projected_note)?;
         self.database
             .update_visible_note(
                 &actor,
                 note_id,
                 expected_revision,
                 &draft,
+                &reference_targets,
                 SystemClock.now(),
             )
             .await
@@ -235,34 +240,39 @@ impl NoteUseCases for ServerNoteUseCases {
         actor: Actor,
         note_id: NoteId,
     ) -> Result<RelatedNotes, NoteUseCaseError> {
-        let source = self.read_note(actor.clone(), note_id).await?;
-        let visible = self.list_visible_notes(actor).await?;
-        let outgoing_ids = marginalis_asciidoc::note_reference_queries(&source)
-            .map_err(|_| NoteUseCaseError::Unavailable)?
-            .into_iter()
-            .map(|query| query.target_note_id)
-            .collect::<HashSet<_>>();
-
-        let mut outgoing = Vec::new();
-        let mut incoming = Vec::new();
-        for candidate in visible {
-            if outgoing_ids.contains(&candidate.note_id) {
-                outgoing.push(candidate.clone());
-            }
-            let references_source = marginalis_asciidoc::note_reference_queries(&candidate)
-                .map_err(|_| NoteUseCaseError::Unavailable)?
-                .into_iter()
-                .any(|query| query.target_note_id == source.note_id);
-            if references_source {
-                incoming.push(candidate);
-            }
-        }
+        self.read_note(actor.clone(), note_id).await?;
+        let (mut outgoing, mut incoming) = self
+            .database
+            .directly_related_notes(&actor, note_id)
+            .await
+            .map_err(map_note_error)?;
+        sort_related_notes(&mut outgoing);
+        sort_related_notes(&mut incoming);
         Ok(RelatedNotes { outgoing, incoming })
     }
 
     fn note_profile(&self) -> NoteProfile {
         marginalis_asciidoc::note_profile()
     }
+}
+
+fn reference_targets(note: &Note) -> Result<Vec<NoteId>, NoteUseCaseError> {
+    Ok(marginalis_asciidoc::note_reference_queries(note)
+        .map_err(|_| NoteUseCaseError::Unavailable)?
+        .into_iter()
+        .map(|query| query.target_note_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect())
+}
+
+fn sort_related_notes(notes: &mut [marginalis_domain::NoteSummary]) {
+    notes.sort_by(|left, right| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| left.note_id.to_string().cmp(&right.note_id.to_string()))
+    });
 }
 
 #[cfg(test)]
@@ -280,7 +290,7 @@ mod tests {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
-        let service = ServerNoteUseCases::new(database);
+        let service = ServerNoteUseCases::new(database.clone());
         let owner = Actor {
             issuer: "https://kanidm.example.test/oauth2/openid/marginalis".into(),
             subject: "owner".into(),
@@ -603,7 +613,7 @@ mod tests {
         let database = SqliteDatabase::connect("sqlite::memory:")
             .await
             .expect("database");
-        let service = ServerNoteUseCases::new(database);
+        let service = ServerNoteUseCases::new(database.clone());
         let owner = Actor {
             issuer: "https://id.example.test".into(),
             subject: "owner".into(),
@@ -662,6 +672,34 @@ mod tests {
             vec![source.note_id]
         );
 
+        let deleted = service
+            .soft_delete_note(owner.clone(), target.note_id, target.revision)
+            .await
+            .expect("delete target");
+        assert!(
+            service
+                .related_notes(owner.clone(), source.note_id)
+                .await
+                .expect("relations after delete")
+                .outgoing
+                .is_empty()
+        );
+        let restored = service
+            .restore_note(owner.clone(), target.note_id, deleted.revision)
+            .await
+            .expect("restore target");
+        assert_eq!(
+            service
+                .related_notes(owner.clone(), source.note_id)
+                .await
+                .expect("relations after restore")
+                .outgoing
+                .iter()
+                .map(|note| note.note_id)
+                .collect::<Vec<_>>(),
+            vec![target.note_id]
+        );
+
         service
             .update_note(
                 owner.clone(),
@@ -677,10 +715,30 @@ mod tests {
             .expect("update source");
         assert!(
             service
-                .related_notes(owner, target.note_id)
+                .related_notes(owner.clone(), target.note_id)
                 .await
                 .expect("updated relations")
                 .incoming
+                .is_empty()
+        );
+
+        service
+            .soft_delete_note(owner.clone(), target.note_id, restored.revision)
+            .await
+            .expect("delete target before purge");
+        assert_eq!(
+            database
+                .purge_deleted_before(marginalis_domain::UnixMillis::new(i64::MAX))
+                .await
+                .expect("purge target"),
+            1
+        );
+        assert!(
+            service
+                .related_notes(owner, source.note_id)
+                .await
+                .expect("relations after purge")
+                .outgoing
                 .is_empty()
         );
     }

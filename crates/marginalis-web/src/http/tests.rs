@@ -14,7 +14,7 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft, NoteId,
-    UnixMillis, WebSession,
+    NoteSummary, UnixMillis, WebSession,
 };
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
@@ -254,7 +254,7 @@ impl NoteUseCases for UiNotes {
             .notes
             .iter()
             .filter(|note| note.note_id != note_id)
-            .cloned()
+            .map(NoteSummary::from)
             .collect::<Vec<_>>();
         Ok(RelatedNotes {
             outgoing: related.clone(),
@@ -731,10 +731,12 @@ async fn note_view_lists_related_note_metadata_with_collapsible_overflow() {
         .await
         .expect("response body");
     let body = String::from_utf8(body.to_vec()).expect("HTML");
-    assert!(body.contains("<summary>さらに表示</summary>"));
-    assert!(body.contains("<summary>+2</summary>"));
+    assert!(body.contains("このノートが参照しているノートをさらに表示"));
+    assert!(body.contains("「関連ノート2」の残りのタグ2件"));
     assert!(body.contains("&lt;危険&gt;"));
-    assert!(body.contains("更新日時: <time datetime=\"1970-01-01T00:00:00.002Z\">"));
+    assert!(
+        body.contains("更新日時: <time datetime=\"1970-01-01T00:00:00.002Z\" data-local-time>")
+    );
     assert!(body.contains("href=\"/marginalis/notes/0197c9bc-0000-7000-8000-00000000000d\""));
 }
 
@@ -784,6 +786,24 @@ async fn frontend_assets_are_served_with_explicit_content_types() {
     assert_eq!(
         javascript.headers().get(header::CACHE_CONTROL),
         Some(&"no-store".parse().expect("cache control"))
+    );
+
+    let page_javascript = app()
+        .oneshot(
+            Request::get("/assets/page.js")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("page JavaScript response");
+    assert_eq!(page_javascript.status(), StatusCode::OK);
+    assert_eq!(
+        page_javascript.headers().get(header::CONTENT_TYPE),
+        Some(
+            &"text/javascript; charset=utf-8"
+                .parse()
+                .expect("content type")
+        )
     );
 
     let stylesheet = app()
