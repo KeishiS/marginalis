@@ -6,8 +6,8 @@ skip_core_tasks = true
 alias = "verify"
 
 [tasks.fmt]
-description = "Format Rust and Nix source files"
-dependencies = ["fmt-rust", "fmt-nix"]
+description = "Format Rust, Nix, and frontend source files"
+dependencies = ["fmt-rust", "fmt-nix", "frontend-format"]
 
 [tasks.format]
 alias = "fmt"
@@ -23,8 +23,8 @@ command = "nixfmt"
 args = ["flake.nix", "nix/module.nix"]
 
 [tasks.fmt-check]
-description = "Check Rust and Nix formatting without modifying files"
-dependencies = ["fmt-check-rust", "fmt-check-nix"]
+description = "Check Rust, Nix, and frontend formatting without modifying files"
+dependencies = ["fmt-check-rust", "fmt-check-nix", "frontend-format-check"]
 
 [tasks.format-check]
 alias = "fmt-check"
@@ -41,11 +41,13 @@ args = ["--check", "flake.nix", "nix/module.nix"]
 
 [tasks.check]
 description = "Type-check all workspace targets and features"
+dependencies = ["frontend-build"]
 command = "cargo"
 args = ["check", "--workspace", "--all-targets", "--all-features"]
 
 [tasks.clippy]
 description = "Run Clippy with warnings denied"
+dependencies = ["frontend-build"]
 command = "cargo"
 args = ["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]
 
@@ -54,11 +56,13 @@ alias = "clippy"
 
 [tasks.test]
 description = "Run all workspace tests"
+dependencies = ["frontend-build"]
 command = "cargo"
 args = ["test", "--workspace", "--all-features"]
 
 [tasks.build]
 description = "Build all workspace targets and features"
+dependencies = ["frontend-build"]
 command = "cargo"
 args = ["build", "--workspace", "--all-targets", "--all-features"]
 
@@ -104,6 +108,7 @@ args = [".github/scripts/check-docs.sh"]
 
 [tasks.security-audit]
 description = "Check Cargo.lock against the current RustSec advisory database"
+dependencies = ["frontend-security-audit"]
 command = "cargo"
 args = ["audit", "--ignore", "RUSTSEC-2023-0071"]
 
@@ -232,6 +237,7 @@ fi
 
 [tasks.coverage]
 description = "Generate separate workspace and v0.3 integration-path coverage reports"
+dependencies = ["frontend-build"]
 script_runner = "@shell"
 script = '''
 set -eu
@@ -343,4 +349,63 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, tests, and flake evaluation"
-dependencies = ["fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "flake-check"]
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "flake-check"]
+
+[tasks.frontend-install]
+description = "Install the locked frontend dependencies"
+cwd = "frontend"
+command = "npm"
+args = ["ci"]
+
+[tasks.frontend-format]
+description = "Format frontend source files"
+dependencies = ["frontend-install"]
+cwd = "frontend"
+command = "npm"
+args = ["run", "format"]
+
+[tasks.frontend-format-check]
+description = "Check frontend formatting without modifying files"
+dependencies = ["frontend-install"]
+cwd = "frontend"
+command = "npm"
+args = ["run", "format:check"]
+
+[tasks.frontend-lint]
+description = "Run frontend static analysis"
+dependencies = ["frontend-install"]
+cwd = "frontend"
+command = "npm"
+args = ["run", "lint"]
+
+[tasks.frontend-typecheck]
+description = "Type-check frontend source and tests"
+dependencies = ["frontend-install"]
+cwd = "frontend"
+command = "npm"
+args = ["run", "typecheck"]
+
+[tasks.frontend-test]
+description = "Run frontend unit tests"
+dependencies = ["frontend-install"]
+cwd = "frontend"
+command = "npm"
+args = ["test"]
+
+[tasks.frontend-security-audit]
+description = "Check locked frontend dependencies for known vulnerabilities"
+dependencies = ["frontend-install"]
+cwd = "frontend"
+command = "npm"
+args = ["audit", "--audit-level=high"]
+
+[tasks.frontend-build]
+description = "Build browser assets for embedding in the Rust server"
+dependencies = ["frontend-install"]
+cwd = "frontend"
+command = "npm"
+args = ["run", "build"]
+
+[tasks.frontend-verify]
+description = "Run frontend formatting, analysis, tests, audit, and build"
+dependencies = ["frontend-format-check", "frontend-lint", "frontend-typecheck", "frontend-test", "frontend-security-audit", "frontend-build"]

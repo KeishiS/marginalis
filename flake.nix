@@ -61,8 +61,20 @@
             url = "https://raw.githubusercontent.com/KeishiS/AdocWeave/778e9da4548f03ea8434677d50c819d7ce665809/fixtures/conformance/cases.json";
             hash = "sha256-OxHK8NobfmNN9pRj7B3qP94s1b2E26l5y5EQdMQq6aY=";
           };
+          frontend = pkgs.buildNpmPackage {
+            pname = "marginalis-web-ui";
+            version = "0.6.0";
+            src = ./frontend;
+            npmDepsHash = "sha256-LFrGXjc7wsKkon1drJOwimQPg264RSEDnuEUgPR5NVw=";
+            nodejs = pkgs.nodejs_22;
+            installPhase = ''
+              mkdir -p $out
+              cp -r dist $out/dist
+            '';
+          };
         in
         {
+          inherit frontend;
           default = rustPlatform.buildRustPackage {
             pname = "marginalis";
             version = "0.6.0";
@@ -73,6 +85,7 @@
                 ./Cargo.lock
                 ./crates
                 ./docs/openapi.json
+                ./frontend
               ];
             };
             cargoLock = {
@@ -89,6 +102,8 @@
             ];
             preBuild = ''
               install -Dm444 ${adocweaveConformanceCases} ../fixtures/conformance/cases.json
+              mkdir -p frontend
+              cp -r ${frontend}/dist frontend/dist
             '';
             doCheck = false;
             installPhase = ''
@@ -605,6 +620,7 @@
               lld
               nix
               nixfmt
+              nodejs_22
               ripgrep
               sqlite
               wasm-bindgen-cli
