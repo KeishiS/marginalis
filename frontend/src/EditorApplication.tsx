@@ -1,5 +1,6 @@
 import {
   FormEvent,
+  type RefObject,
   UIEvent,
   useEffect,
   useMemo,
@@ -13,18 +14,25 @@ import {
   Problem,
   ValidationDiagnostic,
   createNote,
-  previewNote,
   readNote,
   updateNote,
 } from "./api";
-import { utf8ByteOffsetToLineColumn } from "./textPosition";
+import {
+  utf8ByteOffsetToLineColumn,
+  utf8ByteOffsetToTextOffset,
+} from "./textPosition";
 import {
   EditorForm as FormState,
   editorReducer,
   initialEditorState,
   noteToForm,
 } from "./editorState";
+import {
+  editorActivityReducer,
+  initialEditorActivityState,
+} from "./editorActivityState";
 import { RenderedContent } from "./RenderedContent";
+import { useEditorPreview } from "./useEditorPreview";
 
 export interface EditorConfig {
   mode: "create" | "edit";
@@ -42,18 +50,24 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   );
   const { noteId, revision, form, baseline, conflict } = editor;
   const [loading, setLoading] = useState(config.mode === "edit");
-  const [saving, setSaving] = useState(false);
-  const [problem, setProblem] = useState<Problem | null>(null);
-  const [notice, setNotice] = useState("");
-  const [previewHtml, setPreviewHtml] = useState("");
-  const [previewProblem, setPreviewProblem] = useState<Problem | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const initialFocusApplied = useRef(false);
+  const [loadProblem, setLoadProblem] = useState<Problem | null>(null);
+  const [activity, dispatchActivity] = useReducer(
+    editorActivityReducer,
+    initialEditorActivityState,
+  );
+  const { saving, problem, notice } = activity;
+  const sourceInput = useRef<HTMLTextAreaElement>(null);
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(baseline),
     [baseline, form],
   );
   const draft = useMemo(() => ({ source: form.source }), [form.source]);
+  const preview = useEditorPreview(
+    config.apiBase,
+    form.source,
+    !loading && (config.mode !== "edit" || revision !== null),
+    toProblem,
+  );
 
   useEffect(() => {
     if (config.mode !== "edit") {
@@ -63,11 +77,11 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     readNote(config.apiBase, config.noteId, controller.signal)
       .then((note) => {
         dispatch({ type: "accept-note", note });
-        setProblem(null);
+        setLoadProblem(null);
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
-          setProblem(toProblem(error));
+          setLoadProblem(toProblem(error));
         }
       })
       .finally(() => {
@@ -77,12 +91,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       });
     return () => controller.abort();
   }, [config.apiBase, config.mode, config.noteId]);
-
-  useEffect(() => {
-    if (!loading && !initialFocusApplied.current) {
-      initialFocusApplied.current = true;
-    }
-  }, [loading]);
 
   useEffect(() => {
     const warnAboutUnsavedChanges = (event: BeforeUnloadEvent) => {
@@ -95,55 +103,37 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       window.removeEventListener("beforeunload", warnAboutUnsavedChanges);
   }, [isDirty]);
 
-  useEffect(() => {
-    if (loading || (config.mode === "edit" && revision === null)) {
+  function selectDiagnostic(diagnostic: ValidationDiagnostic) {
+    const span = diagnostic.span;
+    if (diagnostic.target.field !== "source" || span?.unit !== "utf8_byte") {
       return;
     }
-    const controller = new AbortController();
-    let current = true;
-    const timer = window.setTimeout(() => {
-      setPreviewLoading(true);
-      previewNote(config.apiBase, draft, controller.signal)
-        .then((preview) => {
-          if (current) {
-            setPreviewHtml(preview.html);
-            setPreviewProblem(null);
-          }
-        })
-        .catch((error: unknown) => {
-          if (current && !controller.signal.aborted) {
-            setPreviewHtml("");
-            setPreviewProblem(toProblem(error));
-          }
-        })
-        .finally(() => {
-          if (current) {
-            setPreviewLoading(false);
-          }
-        });
-    }, 350);
-    return () => {
-      current = false;
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [config.apiBase, config.mode, draft, loading, revision]);
+    const input = sourceInput.current;
+    if (!input) return;
+    const start = utf8ByteOffsetToTextOffset(form.source, span.start);
+    const end = utf8ByteOffsetToTextOffset(form.source, span.end);
+    input.focus();
+    input.setSelectionRange(start, Math.max(start, end));
+  }
+
+  function changeSource(source: string) {
+    dispatch({ type: "change", field: "source", value: source });
+    dispatchActivity({ type: "clear-feedback" });
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault();
     if (saving) {
       return;
     }
-    setSaving(true);
-    setProblem(null);
-    setNotice("");
+    dispatchActivity({ type: "save-started" });
     try {
       const note =
         revision === null
           ? await createNote(config.apiBase, draft)
           : await updateNote(config.apiBase, noteId, draft, revision);
       dispatch({ type: "accept-note", note });
-      setNotice("保存しました。");
+      dispatchActivity({ type: "save-succeeded" });
       if (revision === null) {
         window.history.replaceState(
           null,
@@ -153,18 +143,19 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       }
     } catch (error: unknown) {
       const nextProblem = toProblem(error);
-      setProblem(nextProblem);
+      dispatchActivity({ type: "save-failed", problem: nextProblem });
       if (nextProblem.code === "conflict" && noteId) {
         try {
           const current = await readNote(config.apiBase, noteId);
           dispatch({ type: "conflict", current });
         } catch (refreshError: unknown) {
-          setProblem(toProblem(refreshError));
+          dispatchActivity({
+            type: "save-failed",
+            problem: toProblem(refreshError),
+          });
           dispatch({ type: "clear-conflict" });
         }
       }
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -176,9 +167,9 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     return (
       <section aria-labelledby="editor-heading">
         <h1 id="editor-heading">ノートの編集</h1>
-        {problem && (
+        {loadProblem && (
           <ProblemMessage
-            problem={problem}
+            problem={loadProblem}
             heading="ノートを読み込めませんでした"
             headingId="load-problem-heading"
           />
@@ -217,12 +208,9 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           problem={problem}
           heading="保存できませんでした"
           headingId="save-problem-heading"
+          source={form.source}
+          onSelectDiagnostic={selectDiagnostic}
         />
-      )}
-      {notice && (
-        <p className="notice" role="status">
-          {notice}
-        </p>
       )}
       {conflict && (
         <ConflictPanel
@@ -232,10 +220,10 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           currentRevision={conflict.current.revision}
           onUseCurrentRevision={() => {
             dispatch({ type: "rebase", note: conflict.current });
-            setProblem(null);
-            setNotice(
-              `更新番号${conflict.current.revision}を基準にしました。内容を確認して保存してください。`,
-            );
+            dispatchActivity({
+              type: "notice",
+              message: `更新番号${conflict.current.revision}を基準にしました。内容を確認して保存してください。`,
+            });
           }}
         />
       )}
@@ -243,28 +231,32 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       <div className="editor-workspace">
         <form className="editor-form" onSubmit={save}>
           <LineNumberedTextarea
+            inputRef={sourceInput}
             value={form.source}
             disabled={saving}
-            onChange={(source) =>
-              dispatch({ type: "change", field: "source", value: source })
-            }
+            onChange={changeSource}
           />
           <div className="editor-actions">
             <button type="submit" disabled={saving || !isDirty}>
               {saving ? "保存しています…" : "保存"}
             </button>
             <span role="status">
-              {isDirty
-                ? "未保存の変更があります。"
-                : "変更は保存されています。"}
+              {editorStatus({
+                saving,
+                isDirty,
+                failed: problem !== null,
+                conflicted: conflict !== null,
+                notice,
+              })}
             </span>
           </div>
         </form>
         <PreviewPanel
           body={form.source}
-          html={previewHtml}
-          loading={previewLoading}
-          problem={previewProblem}
+          html={preview.html}
+          loading={preview.loading}
+          problem={preview.problem}
+          onSelectDiagnostic={selectDiagnostic}
         />
       </div>
     </section>
@@ -365,10 +357,14 @@ function ProblemMessage({
   problem,
   heading,
   headingId,
+  source,
+  onSelectDiagnostic,
 }: {
   problem: Problem;
   heading: string;
   headingId: string;
+  source?: string;
+  onSelectDiagnostic?: (diagnostic: ValidationDiagnostic) => void;
 }) {
   return (
     <section className="problem" aria-labelledby={headingId} role="alert">
@@ -378,7 +374,17 @@ function ProblemMessage({
         <ul>
           {problem.diagnostics.map((diagnostic, index) => (
             <li key={`${diagnostic.code}-${index}`}>
-              {diagnosticMessage(diagnostic.code)}
+              {source ? diagnosticLocation(source, diagnostic) : ""}
+              {diagnosticMessage(diagnostic.code)}{" "}
+              {canSelectDiagnostic(diagnostic) && onSelectDiagnostic && (
+                <button
+                  type="button"
+                  className="diagnostic-link"
+                  onClick={() => onSelectDiagnostic(diagnostic)}
+                >
+                  入力位置へ移動
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -388,10 +394,12 @@ function ProblemMessage({
 }
 
 function LineNumberedTextarea({
+  inputRef,
   value,
   disabled,
   onChange,
 }: {
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   value: string;
   disabled: boolean;
   onChange: (value: string) => void;
@@ -417,6 +425,7 @@ function LineNumberedTextarea({
           {lineNumbers}
         </span>
         <textarea
+          ref={inputRef}
           autoFocus
           name="source"
           rows={20}
@@ -436,17 +445,27 @@ function PreviewPanel({
   html,
   loading,
   problem,
+  onSelectDiagnostic,
 }: {
   body: string;
   html: string;
   loading: boolean;
   problem: Problem | null;
+  onSelectDiagnostic: (diagnostic: ValidationDiagnostic) => void;
 }) {
   return (
     <section className="preview-panel" aria-labelledby="preview-heading">
       <div className="preview-heading">
         <h2 id="preview-heading">プレビュー</h2>
-        <span role="status">{loading ? "更新しています…" : "最新です。"}</span>
+        <span role="status">
+          {loading
+            ? "更新しています…"
+            : problem && html
+              ? "最後に成功したプレビューを表示しています。"
+              : problem
+                ? "更新に失敗しました。"
+                : "最新です。"}
+        </span>
       </div>
       {problem && (
         <section
@@ -461,15 +480,24 @@ function PreviewPanel({
               {problem.diagnostics.map((diagnostic, index) => (
                 <li key={`${diagnostic.code}-${index}`}>
                   {diagnosticLocation(body, diagnostic)}
-                  {diagnosticMessage(diagnostic.code)}
+                  {diagnosticMessage(diagnostic.code)}{" "}
+                  {canSelectDiagnostic(diagnostic) && (
+                    <button
+                      type="button"
+                      className="diagnostic-link"
+                      onClick={() => onSelectDiagnostic(diagnostic)}
+                    >
+                      入力位置へ移動
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </section>
       )}
-      {!problem && html && <SafePreview html={html} />}
-      {!problem && !html && !loading && <p>プレビューはありません。</p>}
+      {html && <SafePreview html={html} />}
+      {!html && !loading && !problem && <p>プレビューはありません。</p>}
     </section>
   );
 }
@@ -658,6 +686,33 @@ function diagnosticLocation(
   }
   const location = utf8ByteOffsetToLineColumn(body, diagnostic.span.start);
   return `${location.line}行${location.column}列: `;
+}
+
+function canSelectDiagnostic(diagnostic: ValidationDiagnostic): boolean {
+  return (
+    diagnostic.target.field === "source" &&
+    diagnostic.span?.unit === "utf8_byte"
+  );
+}
+
+function editorStatus({
+  saving,
+  isDirty,
+  failed,
+  conflicted,
+  notice,
+}: {
+  saving: boolean;
+  isDirty: boolean;
+  failed: boolean;
+  conflicted: boolean;
+  notice: string;
+}): string {
+  if (saving) return "保存しています…";
+  if (conflicted) return "更新内容の競合を解消してください。";
+  if (failed) return "保存に失敗しました。入力内容は維持されています。";
+  if (notice) return notice;
+  return isDirty ? "未保存の変更があります。" : "変更は保存されています。";
 }
 
 function diagnosticMessage(code: string): string {

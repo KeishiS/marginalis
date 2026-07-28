@@ -120,9 +120,11 @@ crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはco
 Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセットの配信を担当し、Reactは
 画面遷移とブラウザー内状態を担当します。RESTのTypeScript型、実行時の応答検査、クライアント関数は
 `marginalis-contract`から`frontend/src/generated/contracts.ts`へ生成し、手書きで複製しません。
-編集内容と共有設定の状態遷移は、それぞれ`editorState.ts`と`accessControlState.ts`の純粋なreducerへ
-置きます。Reactコンポーネントは入力、REST呼び出し、副作用の調整を担当し、状態遷移の規則を
-イベント処理へ分散させません。
+編集内容、保存処理、共有設定の状態遷移は、それぞれ`editorState.ts`、`editorActivityState.ts`、
+`accessControlState.ts`の純粋なreducerへ置きます。Reactコンポーネントは入力、REST呼び出し、
+副作用の調整を担当し、状態遷移の規則をイベント処理へ分散させません。保存前プレビューの遅延、
+取消、最後に成功したHTMLの保持は`useEditorPreview.ts`へ分離し、編集画面は結果の状態と診断操作
+だけを表示します。
 Viteの成果物はGitで管理せず、開発時は`cargo make`、
 配布時はNixが`frontend/dist`を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
 外部URLはViteで固定せず、Rustの`external_path`でbase URLのサブパスを反映する。
