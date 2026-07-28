@@ -6,11 +6,11 @@ use axum::{
 };
 use marginalis_application::{
     AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
-    McpTokenPair, McpValidatedAuthorizationRequest, NoteProfile, NoteProfileExample,
-    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteRenderContext,
-    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic,
-    NoteValidationTarget, OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan,
-    WebSessionUseCases,
+    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteCommands,
+    NotePresentation, NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
+    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
+    NoteValidationDiagnostic, NoteValidationTarget, OidcAuthenticationUseCases, RelatedNotes,
+    Utf8ByteSpan, WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note,
@@ -19,6 +19,133 @@ use marginalis_domain::{
 };
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
+
+macro_rules! implement_note_boundaries {
+    ($type:ty) => {
+        #[async_trait]
+        impl NoteQueries for $type {
+            async fn list_visible_notes(
+                &self,
+                actor: Actor,
+            ) -> Result<Vec<Note>, NoteUseCaseError> {
+                <$type>::list_visible_notes(self, actor).await
+            }
+
+            async fn read_note(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+            ) -> Result<Note, NoteUseCaseError> {
+                <$type>::read_note(self, actor, note_id).await
+            }
+
+            async fn related_notes(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+            ) -> Result<RelatedNotes, NoteUseCaseError> {
+                <$type>::related_notes(self, actor, note_id).await
+            }
+
+            async fn note_capabilities(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+            ) -> Result<NoteCapabilities, NoteUseCaseError> {
+                <$type>::note_capabilities(self, actor, note_id).await
+            }
+        }
+
+        #[async_trait]
+        impl NoteCommands for $type {
+            async fn create_note(
+                &self,
+                actor: Actor,
+                draft: NoteDraft,
+            ) -> Result<Note, NoteUseCaseError> {
+                <$type>::create_note(self, actor, draft).await
+            }
+
+            async fn update_note(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                draft: NoteDraft,
+                expected_revision: Revision,
+            ) -> Result<Note, NoteUseCaseError> {
+                <$type>::update_note(self, actor, note_id, draft, expected_revision).await
+            }
+
+            async fn soft_delete_note(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                expected_revision: Revision,
+            ) -> Result<Note, NoteUseCaseError> {
+                <$type>::soft_delete_note(self, actor, note_id, expected_revision).await
+            }
+
+            async fn restore_note(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                expected_revision: Revision,
+            ) -> Result<Note, NoteUseCaseError> {
+                <$type>::restore_note(self, actor, note_id, expected_revision).await
+            }
+        }
+
+        #[async_trait]
+        impl NotePresentation for $type {
+            async fn preview_note(
+                &self,
+                actor: Actor,
+                draft: NoteDraft,
+                context: NoteRenderContext,
+            ) -> Result<String, NoteUseCaseError> {
+                <$type>::preview_note(self, actor, draft, context).await
+            }
+
+            fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
+                <$type>::export_note_source(self, note)
+            }
+
+            async fn render_note_html(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                context: NoteRenderContext,
+            ) -> Result<String, NoteUseCaseError> {
+                <$type>::render_note_html(self, actor, note_id, context).await
+            }
+
+            fn note_profile(&self) -> NoteProfile {
+                <$type>::note_profile(self)
+            }
+        }
+
+        #[async_trait]
+        impl NoteAccessControl for $type {
+            async fn read_note_acl(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+            ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+                <$type>::read_note_acl(self, actor, note_id).await
+            }
+
+            async fn replace_note_acl(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                entries: Vec<NoteAclEntry>,
+                expected_revision: Revision,
+            ) -> Result<Note, NoteUseCaseError> {
+                <$type>::replace_note_acl(self, actor, note_id, entries, expected_revision).await
+            }
+        }
+    };
+}
 
 use super::{
     auth::{
@@ -30,8 +157,7 @@ use super::{
 
 struct Notes;
 
-#[async_trait]
-impl NoteUseCases for Notes {
+impl Notes {
     async fn list_visible_notes(&self, _actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
         Ok(Vec::new())
     }
@@ -196,8 +322,7 @@ struct UiNotes {
     render_fails: bool,
 }
 
-#[async_trait]
-impl NoteUseCases for UiNotes {
+impl UiNotes {
     async fn list_visible_notes(&self, _actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
         Ok(self.notes.clone())
     }
@@ -323,6 +448,9 @@ impl NoteUseCases for UiNotes {
         Notes.note_profile()
     }
 }
+
+implement_note_boundaries!(Notes);
+implement_note_boundaries!(UiNotes);
 
 struct Sessions;
 

@@ -74,6 +74,8 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let notes = std::sync::Arc::new(NoteApplication::new(
         std::sync::Arc::new(database.clone()),
+        std::sync::Arc::new(database.clone()),
+        std::sync::Arc::new(database.clone()),
         std::sync::Arc::new(AsciiDocNoteContent),
         std::sync::Arc::new(marginalis_web::http::HttpNoteLinkResolver),
         std::sync::Arc::new(SystemClock),

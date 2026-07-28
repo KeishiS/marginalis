@@ -9,8 +9,9 @@ use marginalis_domain::{
 };
 
 use crate::{
-    Clock, NoteProfile, NoteRenderContext, NoteUseCaseError, NoteUseCases, NoteValidationCode,
-    NoteValidationDiagnostic, NoteValidationTarget, Random, RelatedNotes,
+    Clock, NoteAccessControl, NoteCommands, NotePresentation, NoteProfile, NoteQueries,
+    NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
+    NoteValidationTarget, Random, RelatedNotes,
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。
@@ -22,18 +23,30 @@ pub enum NoteRepositoryError {
     Unavailable,
 }
 
-/// ノートaggregateを原子的に保存する永続化port。
-///
-/// 認可、期待revision、削除状態を伴う変更は、一つのmethod呼び出しを一つのtransactionとして
-/// 実装する必要があります。
+/// 可視性を適用してノートを読み取るport。
 #[async_trait]
-pub trait NoteRepository: Send + Sync {
+pub trait NoteQueryRepository: Send + Sync {
     async fn list_visible_notes(&self, actor: &Actor) -> Result<Vec<Note>, NoteRepositoryError>;
     async fn visible_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Option<Note>, NoteRepositoryError>;
+    async fn directly_related_notes(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError>;
+    async fn note_capabilities(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<NoteCapabilities>, NoteRepositoryError>;
+}
+
+/// 認可、revision、削除状態を一つのtransactionへ拘束する変更port。
+#[async_trait]
+pub trait NoteCommandRepository: Send + Sync {
     async fn create_note(
         &self,
         note: &Note,
@@ -62,16 +75,11 @@ pub trait NoteRepository: Send + Sync {
         expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, NoteRepositoryError>;
-    async fn directly_related_notes(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError>;
-    async fn note_capabilities(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<Option<NoteCapabilities>, NoteRepositoryError>;
+}
+
+/// 所有者だけが利用できるACL操作port。
+#[async_trait]
+pub trait NoteAclRepository: Send + Sync {
     async fn read_note_acl(
         &self,
         actor: &Actor,
@@ -147,7 +155,9 @@ pub trait NoteLinkResolver: Send + Sync {
 
 /// transportへ公開するノート操作のapplication service。
 pub struct NoteApplication {
-    repository: Arc<dyn NoteRepository>,
+    queries: Arc<dyn NoteQueryRepository>,
+    commands: Arc<dyn NoteCommandRepository>,
+    access_control: Arc<dyn NoteAclRepository>,
     content: Arc<dyn NoteContent>,
     links: Arc<dyn NoteLinkResolver>,
     clock: Arc<dyn Clock>,
@@ -156,14 +166,18 @@ pub struct NoteApplication {
 
 impl NoteApplication {
     pub fn new(
-        repository: Arc<dyn NoteRepository>,
+        queries: Arc<dyn NoteQueryRepository>,
+        commands: Arc<dyn NoteCommandRepository>,
+        access_control: Arc<dyn NoteAclRepository>,
         content: Arc<dyn NoteContent>,
         links: Arc<dyn NoteLinkResolver>,
         clock: Arc<dyn Clock>,
         random: Arc<dyn Random>,
     ) -> Self {
         Self {
-            repository,
+            queries,
+            commands,
+            access_control,
             content,
             links,
             clock,
@@ -176,7 +190,7 @@ impl NoteApplication {
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Note, NoteUseCaseError> {
-        self.repository
+        self.queries
             .visible_note(actor, note_id)
             .await
             .map_err(map_repository_error)?
@@ -196,7 +210,7 @@ impl NoteApplication {
         let mut resolutions = Vec::with_capacity(queries.len());
         for query in queries {
             let Some(target) = self
-                .repository
+                .queries
                 .visible_note(actor, query.target_note_id)
                 .await
                 .map_err(map_repository_error)?
@@ -235,9 +249,9 @@ impl NoteApplication {
 }
 
 #[async_trait]
-impl NoteUseCases for NoteApplication {
+impl NoteQueries for NoteApplication {
     async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
-        self.repository
+        self.queries
             .list_visible_notes(&actor)
             .await
             .map_err(map_repository_error)
@@ -247,6 +261,37 @@ impl NoteUseCases for NoteApplication {
         self.read_visible_note(&actor, note_id).await
     }
 
+    async fn related_notes(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<RelatedNotes, NoteUseCaseError> {
+        self.read_visible_note(&actor, note_id).await?;
+        let (mut outgoing, mut incoming) = self
+            .queries
+            .directly_related_notes(&actor, note_id)
+            .await
+            .map_err(map_repository_error)?;
+        sort_related_notes(&mut outgoing);
+        sort_related_notes(&mut incoming);
+        Ok(RelatedNotes { outgoing, incoming })
+    }
+
+    async fn note_capabilities(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteCapabilities, NoteUseCaseError> {
+        self.queries
+            .note_capabilities(&actor, note_id)
+            .await
+            .map_err(map_repository_error)?
+            .ok_or(NoteUseCaseError::NotFound)
+    }
+}
+
+#[async_trait]
+impl NoteCommands for NoteApplication {
     async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
         let draft = self
             .content
@@ -260,7 +305,7 @@ impl NoteUseCases for NoteApplication {
             now,
         );
         let reference_targets = reference_targets(self.content.as_ref(), note.body())?;
-        self.repository
+        self.commands
             .create_note(&note, &reference_targets)
             .await
             .map_err(map_repository_error)?;
@@ -280,7 +325,7 @@ impl NoteUseCases for NoteApplication {
             .map_err(NoteUseCaseError::Validation)?;
         self.read_visible_note(&actor, note_id).await?;
         let reference_targets = reference_targets(self.content.as_ref(), &draft.body)?;
-        self.repository
+        self.commands
             .update_visible_note(
                 &actor,
                 note_id,
@@ -293,6 +338,33 @@ impl NoteUseCases for NoteApplication {
             .map_err(map_repository_error)
     }
 
+    async fn soft_delete_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+    ) -> Result<Note, NoteUseCaseError> {
+        self.commands
+            .soft_delete_visible_note(&actor, note_id, expected_revision, self.clock.now())
+            .await
+            .map_err(map_repository_error)
+    }
+
+    async fn restore_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+    ) -> Result<Note, NoteUseCaseError> {
+        self.commands
+            .restore_visible_note(&actor, note_id, expected_revision, self.clock.now())
+            .await
+            .map_err(map_repository_error)
+    }
+}
+
+#[async_trait]
+impl NotePresentation for NoteApplication {
     async fn preview_note(
         &self,
         actor: Actor,
@@ -316,30 +388,6 @@ impl NoteUseCases for NoteApplication {
             .map_err(|_| NoteUseCaseError::Unavailable)
     }
 
-    async fn soft_delete_note(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-        expected_revision: Revision,
-    ) -> Result<Note, NoteUseCaseError> {
-        self.repository
-            .soft_delete_visible_note(&actor, note_id, expected_revision, self.clock.now())
-            .await
-            .map_err(map_repository_error)
-    }
-
-    async fn restore_note(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-        expected_revision: Revision,
-    ) -> Result<Note, NoteUseCaseError> {
-        self.repository
-            .restore_visible_note(&actor, note_id, expected_revision, self.clock.now())
-            .await
-            .map_err(map_repository_error)
-    }
-
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
         self.content
             .export(note)
@@ -359,40 +407,19 @@ impl NoteUseCases for NoteApplication {
             .map_err(|_| NoteUseCaseError::Unavailable)
     }
 
-    async fn related_notes(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<RelatedNotes, NoteUseCaseError> {
-        self.read_visible_note(&actor, note_id).await?;
-        let (mut outgoing, mut incoming) = self
-            .repository
-            .directly_related_notes(&actor, note_id)
-            .await
-            .map_err(map_repository_error)?;
-        sort_related_notes(&mut outgoing);
-        sort_related_notes(&mut incoming);
-        Ok(RelatedNotes { outgoing, incoming })
+    fn note_profile(&self) -> NoteProfile {
+        self.content.profile()
     }
+}
 
-    async fn note_capabilities(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<NoteCapabilities, NoteUseCaseError> {
-        self.repository
-            .note_capabilities(&actor, note_id)
-            .await
-            .map_err(map_repository_error)?
-            .ok_or(NoteUseCaseError::NotFound)
-    }
-
+#[async_trait]
+impl NoteAccessControl for NoteApplication {
     async fn read_note_acl(
         &self,
         actor: Actor,
         note_id: NoteId,
     ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
-        self.repository
+        self.access_control
             .read_note_acl(&actor, note_id)
             .await
             .map_err(map_repository_error)
@@ -420,7 +447,7 @@ impl NoteUseCases for NoteApplication {
                 ));
             }
         }
-        self.repository
+        self.access_control
             .replace_note_acl(
                 &actor,
                 note_id,
@@ -430,10 +457,6 @@ impl NoteUseCases for NoteApplication {
             )
             .await
             .map_err(map_repository_error)
-    }
-
-    fn note_profile(&self) -> NoteProfile {
-        self.content.profile()
     }
 }
 
@@ -499,7 +522,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl NoteRepository for MemoryNotes {
+    impl NoteQueryRepository for MemoryNotes {
         async fn list_visible_notes(
             &self,
             _actor: &Actor,
@@ -521,6 +544,25 @@ mod tests {
                 .cloned())
         }
 
+        async fn directly_related_notes(
+            &self,
+            _actor: &Actor,
+            _note_id: NoteId,
+        ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError> {
+            Ok((Vec::new(), Vec::new()))
+        }
+
+        async fn note_capabilities(
+            &self,
+            _actor: &Actor,
+            _note_id: NoteId,
+        ) -> Result<Option<NoteCapabilities>, NoteRepositoryError> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
+    impl NoteCommandRepository for MemoryNotes {
         async fn create_note(
             &self,
             note: &Note,
@@ -561,23 +603,10 @@ mod tests {
         ) -> Result<Note, NoteRepositoryError> {
             Err(NoteRepositoryError::Unavailable)
         }
+    }
 
-        async fn directly_related_notes(
-            &self,
-            _actor: &Actor,
-            _note_id: NoteId,
-        ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError> {
-            Ok((Vec::new(), Vec::new()))
-        }
-
-        async fn note_capabilities(
-            &self,
-            _actor: &Actor,
-            _note_id: NoteId,
-        ) -> Result<Option<NoteCapabilities>, NoteRepositoryError> {
-            Ok(None)
-        }
-
+    #[async_trait]
+    impl NoteAclRepository for MemoryNotes {
         async fn read_note_acl(
             &self,
             _actor: &Actor,
@@ -673,6 +702,8 @@ mod tests {
     async fn creates_a_note_using_only_application_ports() {
         let repository = Arc::new(MemoryNotes::default());
         let application = NoteApplication::new(
+            repository.clone(),
+            repository.clone(),
             repository.clone(),
             Arc::new(AcceptContent),
             Arc::new(NoLinks),

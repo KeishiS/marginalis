@@ -1,7 +1,9 @@
 //! applicationのノートrepository portに対するSQLite実装。
 
 use async_trait::async_trait;
-use marginalis_application::{NoteRepository, NoteRepositoryError};
+use marginalis_application::{
+    NoteAclRepository, NoteCommandRepository, NoteQueryRepository, NoteRepositoryError,
+};
 use marginalis_domain::{
     Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision,
     UnixMillis,
@@ -10,7 +12,7 @@ use marginalis_domain::{
 use crate::{SqliteDatabase, SqliteStoreError};
 
 #[async_trait]
-impl NoteRepository for SqliteDatabase {
+impl NoteQueryRepository for SqliteDatabase {
     async fn list_visible_notes(&self, actor: &Actor) -> Result<Vec<Note>, NoteRepositoryError> {
         SqliteDatabase::list_visible_notes(self, actor)
             .await
@@ -27,6 +29,29 @@ impl NoteRepository for SqliteDatabase {
             .map_err(map_error)
     }
 
+    async fn directly_related_notes(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError> {
+        SqliteDatabase::directly_related_notes(self, actor, note_id)
+            .await
+            .map_err(map_error)
+    }
+
+    async fn note_capabilities(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<NoteCapabilities>, NoteRepositoryError> {
+        SqliteDatabase::note_capabilities(self, actor, note_id)
+            .await
+            .map_err(map_error)
+    }
+}
+
+#[async_trait]
+impl NoteCommandRepository for SqliteDatabase {
     async fn create_note(
         &self,
         note: &Note,
@@ -82,27 +107,10 @@ impl NoteRepository for SqliteDatabase {
             .await
             .map_err(map_error)
     }
+}
 
-    async fn directly_related_notes(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), NoteRepositoryError> {
-        SqliteDatabase::directly_related_notes(self, actor, note_id)
-            .await
-            .map_err(map_error)
-    }
-
-    async fn note_capabilities(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<Option<NoteCapabilities>, NoteRepositoryError> {
-        SqliteDatabase::note_capabilities(self, actor, note_id)
-            .await
-            .map_err(map_error)
-    }
-
+#[async_trait]
+impl NoteAclRepository for SqliteDatabase {
     async fn read_note_acl(
         &self,
         actor: &Actor,

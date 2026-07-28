@@ -21,8 +21,9 @@ pub use identity::{
 };
 pub use mcp_oauth::{McpOAuthApplication, McpOAuthRepository, McpOAuthRepositoryError};
 pub use notes::{
-    NoteApplication, NoteContent, NoteContentError, NoteLinkResolver, NoteReferenceQuery,
-    NoteReferenceResolution, NoteRepository, NoteRepositoryError,
+    NoteAclRepository, NoteApplication, NoteCommandRepository, NoteContent, NoteContentError,
+    NoteLinkResolver, NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution,
+    NoteRepositoryError,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 
@@ -303,11 +304,26 @@ pub struct RelatedNotes {
     pub incoming: Vec<NoteSummary>,
 }
 
-/// SQLite正本を扱うノート操作境界。HTTP、MCP、Web UIはこの可視性規則を共有する。
+/// 閲覧可能なノートを取得する問い合わせ境界。
 #[async_trait]
-pub trait NoteUseCases: Send + Sync {
+pub trait NoteQueries: Send + Sync {
     async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<Note>, NoteUseCaseError>;
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
+    async fn related_notes(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<RelatedNotes, NoteUseCaseError>;
+    async fn note_capabilities(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteCapabilities, NoteUseCaseError>;
+}
+
+/// ノートの内容と削除状態を変更するcommand境界。
+#[async_trait]
+pub trait NoteCommands: Send + Sync {
     async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError>;
     async fn update_note(
         &self,
@@ -316,12 +332,6 @@ pub trait NoteUseCases: Send + Sync {
         draft: NoteDraft,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
-    async fn preview_note(
-        &self,
-        actor: Actor,
-        draft: NoteDraft,
-        context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError>;
     async fn soft_delete_note(
         &self,
         actor: Actor,
@@ -334,6 +344,17 @@ pub trait NoteUseCases: Send + Sync {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
+}
+
+/// ノートの検証、描画、書き出しを扱う表示境界。
+#[async_trait]
+pub trait NotePresentation: Send + Sync {
+    async fn preview_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+        context: NoteRenderContext,
+    ) -> Result<String, NoteUseCaseError>;
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError>;
     async fn render_note_html(
         &self,
@@ -341,16 +362,12 @@ pub trait NoteUseCases: Send + Sync {
         note_id: NoteId,
         context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError>;
-    async fn related_notes(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<RelatedNotes, NoteUseCaseError>;
-    async fn note_capabilities(
-        &self,
-        actor: Actor,
-        note_id: NoteId,
-    ) -> Result<NoteCapabilities, NoteUseCaseError>;
+    fn note_profile(&self) -> NoteProfile;
+}
+
+/// ノートごとの直接ACLを管理する境界。
+#[async_trait]
+pub trait NoteAccessControl: Send + Sync {
     async fn read_note_acl(
         &self,
         actor: Actor,
@@ -363,7 +380,17 @@ pub trait NoteUseCases: Send + Sync {
         entries: Vec<NoteAclEntry>,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
-    fn note_profile(&self) -> NoteProfile;
+}
+
+/// 複数transportへまとめて渡す場合のfacade。
+pub trait NoteUseCases:
+    NoteQueries + NoteCommands + NotePresentation + NoteAccessControl + Send + Sync
+{
+}
+
+impl<T> NoteUseCases for T where
+    T: NoteQueries + NoteCommands + NotePresentation + NoteAccessControl + Send + Sync
+{
 }
 
 /// Kanidm groupはOIDC login時に検証し、このCookie sessionの有効期間はsnapshotとして固定する。
