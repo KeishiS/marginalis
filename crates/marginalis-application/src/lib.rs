@@ -11,9 +11,13 @@ use marginalis_domain::{
     UnixMillis, WebSession,
 };
 
+mod identity;
 mod notes;
 mod session;
 
+pub use identity::{
+    ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
+};
 pub use notes::{
     NoteApplication, NoteContent, NoteContentError, NoteLinkResolver, NoteReferenceQuery,
     NoteReferenceResolution, NoteRepository, NoteRepositoryError,
