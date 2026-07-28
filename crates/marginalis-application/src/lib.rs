@@ -77,6 +77,9 @@ pub enum NoteValidationCode {
     ResourceDisabled,
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
+    InvalidAclSubject,
+    DuplicateAclSubject,
+    OwnerInAcl,
 }
 
 impl NoteValidationCode {
@@ -96,6 +99,9 @@ impl NoteValidationCode {
             Self::ResourceDisabled => "resource_disabled",
             Self::UnsupportedMathLanguage => "unsupported_math_language",
             Self::UnsupportedSourceLanguage => "unsupported_source_language",
+            Self::InvalidAclSubject => "invalid_acl_subject",
+            Self::DuplicateAclSubject => "duplicate_acl_subject",
+            Self::OwnerInAcl => "owner_in_acl",
         }
     }
 }
@@ -106,6 +112,7 @@ pub enum NoteValidationTarget {
     Body,
     Tag { index: usize },
     Tags,
+    AclEntry { index: usize },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -326,30 +333,21 @@ pub trait NoteUseCases: Send + Sync {
     ) -> Result<RelatedNotes, NoteUseCaseError>;
     async fn note_capabilities(
         &self,
-        _actor: Actor,
-        _note_id: NoteId,
-    ) -> Result<NoteCapabilities, NoteUseCaseError> {
-        Ok(NoteCapabilities {
-            can_edit: true,
-            can_manage_acl: false,
-        })
-    }
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteCapabilities, NoteUseCaseError>;
     async fn read_note_acl(
         &self,
-        _actor: Actor,
-        _note_id: NoteId,
-    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
-        Err(NoteUseCaseError::Forbidden)
-    }
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError>;
     async fn replace_note_acl(
         &self,
-        _actor: Actor,
-        _note_id: NoteId,
-        _entries: Vec<NoteAclEntry>,
-        _expected_revision: i64,
-    ) -> Result<Note, NoteUseCaseError> {
-        Err(NoteUseCaseError::Forbidden)
-    }
+        actor: Actor,
+        note_id: NoteId,
+        entries: Vec<NoteAclEntry>,
+        expected_revision: i64,
+    ) -> Result<Note, NoteUseCaseError>;
     fn note_profile(&self) -> NoteProfile;
 }
 

@@ -28,6 +28,8 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 | ノート削除 | `DELETE /api/v2/notes/{note_id}` | `expected_revision`が必要 |
 | AsciiDoc書き出し | `GET /api/v2/notes/{note_id}/source` | 閲覧できるノートだけ |
 | ノート復元 | `POST /api/v2/notes/{note_id}/restore` | 削除後30日以内 |
+| ACL取得 | `GET /api/v2/notes/{note_id}/acl` | 所有者または管理者だけ |
+| ACL更新 | `PUT /api/v2/notes/{note_id}/acl` | CSRFトークンと`expected_revision`が必要 |
 | MCP認可の取消 | `DELETE /api/v2/mcp-authorizations/{client_id}` | 関連するトークンも失効 |
 
 ## ノートの入力と権限
@@ -39,15 +41,17 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 行いませんが、ログイン中の利用者だけが同一オリジンとCSRFトークンを確認したうえで利用できます。
 入力規則に違反した場合の診断は、作成・更新と同じ形式です。
 
-通常利用者は、自身が作成したノートだけを操作できます。`server-admins`グループに属する利用者は、
-すべてのノートを操作できます。権限のないノートは、存在を推測できないよう、HTTP状態コード`404`と
-`code: "not_found"`を返します。
+通常利用者は、自身が作成したノートと、同じ発行者内でACLにより共有されたノートを操作できます。
+`read`は閲覧、`edit`は閲覧と内容の更新を許可します。ACL管理と削除・復元は所有者または
+`server-admins`だけが実行できます。権限のないノートは、存在を推測できないよう、HTTP状態コード
+`404`と`code: "not_found"`を返します。
 
 ## 入力内容の検査
 
 入力規則に違反した場合は、HTTP状態コード`422`と`code: "validation_failed"`を返します。
 `diagnostics`には、問題の種類を表す`code`、対象項目、本文中の位置、説明を含めます。位置は
 UTF-8で符号化した`body`上のバイト範囲です。タイトルとタグの問題には本文中の位置を付けません。
+ACLの対象が不正、重複、または所有者自身である場合は、対象を`acl_entry`とその添字で示します。
 
 ```json
 {
@@ -67,6 +71,7 @@ UTF-8で符号化した`body`上のバイト範囲です。タイトルとタグ
 
 `/`はログイン後の一覧画面、`/notes/{note_id}`は個別のノートを表示する画面です。
 `/notes/new`でノートを作成し、`/notes/{note_id}/edit`で題名、AsciiDoc本文、タグを編集します。
+所有者または管理者は`/notes/{note_id}/access`でACLを編集します。
 編集画面はこの文書で説明するREST APIを利用し、明示的な保存操作でCSRF tokenと現在の
 `revision`を送信します。入力検査に失敗した場合も、ブラウザー内の編集内容を維持します。
 

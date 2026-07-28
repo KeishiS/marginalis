@@ -246,8 +246,10 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         )
         .await
         .expect("store ACL");
-    let snapshot = database.export_notes().await.expect("export snapshot");
-    let snapshot_acl = database.export_note_acl().await.expect("export ACL");
+    let (snapshot, snapshot_acl) = database
+        .export_archive_snapshot()
+        .await
+        .expect("export snapshot");
     let imported_database = SqliteDatabase::connect("sqlite::memory:")
         .await
         .expect("empty import target");
@@ -255,20 +257,12 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .import_notes(&snapshot, &[(note_id, note_id)], &snapshot_acl)
         .await
         .expect("import snapshot");
-    assert_eq!(
-        imported_database
-            .export_notes()
-            .await
-            .expect("re-export snapshot"),
-        snapshot
-    );
-    assert_eq!(
-        imported_database
-            .export_note_acl()
-            .await
-            .expect("re-export ACL"),
-        snapshot_acl
-    );
+    let (restored_snapshot, restored_acl) = imported_database
+        .export_archive_snapshot()
+        .await
+        .expect("re-export snapshot");
+    assert_eq!(restored_snapshot, snapshot);
+    assert_eq!(restored_acl, snapshot_acl);
     let (outgoing, incoming) = imported_database
         .directly_related_notes(&alice, note_id)
         .await
@@ -329,13 +323,12 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .await,
         Err(SqliteStoreError::CorruptData)
     );
-    assert_eq!(
-        rejected_database
-            .export_notes()
-            .await
-            .expect("empty snapshot"),
-        Vec::new()
-    );
+    let (empty_notes, empty_acl) = rejected_database
+        .export_archive_snapshot()
+        .await
+        .expect("empty snapshot");
+    assert!(empty_notes.is_empty());
+    assert!(empty_acl.is_empty());
     database
         .soft_delete_visible_note(&administrator, note_id, 5, UnixMillis::new(400))
         .await

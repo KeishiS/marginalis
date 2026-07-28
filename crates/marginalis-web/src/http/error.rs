@@ -31,6 +31,7 @@ enum DiagnosticTargetResponse {
     Body,
     Tag { index: usize },
     Tags,
+    AclEntry { index: usize },
 }
 
 #[derive(Serialize)]
@@ -47,6 +48,9 @@ impl From<NoteValidationDiagnostic> for ValidationDiagnosticResponse {
             NoteValidationTarget::Body => DiagnosticTargetResponse::Body,
             NoteValidationTarget::Tag { index } => DiagnosticTargetResponse::Tag { index },
             NoteValidationTarget::Tags => DiagnosticTargetResponse::Tags,
+            NoteValidationTarget::AclEntry { index } => {
+                DiagnosticTargetResponse::AclEntry { index }
+            }
         };
         Self {
             code: diagnostic.code.as_str(),

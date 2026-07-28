@@ -2,7 +2,8 @@
 
 use async_trait::async_trait;
 use marginalis_application::{
-    Clock, NoteProfile, NoteRenderContext, NoteUseCaseError, NoteUseCases, Random, RelatedNotes,
+    Clock, NoteProfile, NoteRenderContext, NoteUseCaseError, NoteUseCases, NoteValidationCode,
+    NoteValidationDiagnostic, NoteValidationTarget, Random, RelatedNotes,
 };
 use marginalis_domain::{
     Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, validate_identity,
@@ -287,11 +288,15 @@ impl NoteUseCases for ServerNoteUseCases {
         entries.sort_by(|a, b| a.subject.cmp(&b.subject));
         for (index, entry) in entries.iter().enumerate() {
             validate_identity(&note.creator_issuer, &entry.subject)
-                .map_err(|_| NoteUseCaseError::Validation(Vec::new()))?;
-            if entry.subject == note.creator_subject
-                || index > 0 && entries[index - 1].subject == entry.subject
-            {
-                return Err(NoteUseCaseError::Validation(Vec::new()));
+                .map_err(|_| acl_validation(index, NoteValidationCode::InvalidAclSubject))?;
+            if entry.subject == note.creator_subject {
+                return Err(acl_validation(index, NoteValidationCode::OwnerInAcl));
+            }
+            if index > 0 && entries[index - 1].subject == entry.subject {
+                return Err(acl_validation(
+                    index,
+                    NoteValidationCode::DuplicateAclSubject,
+                ));
             }
         }
         self.database
@@ -309,6 +314,21 @@ impl NoteUseCases for ServerNoteUseCases {
     fn note_profile(&self) -> NoteProfile {
         marginalis_asciidoc::note_profile()
     }
+}
+
+fn acl_validation(index: usize, code: NoteValidationCode) -> NoteUseCaseError {
+    let message = match code {
+        NoteValidationCode::InvalidAclSubject => "ACL subject is invalid",
+        NoteValidationCode::DuplicateAclSubject => "ACL subject is duplicated",
+        NoteValidationCode::OwnerInAcl => "note owner must not be included in ACL",
+        _ => unreachable!("ACL validation uses an ACL-specific code"),
+    };
+    NoteUseCaseError::Validation(vec![NoteValidationDiagnostic {
+        code,
+        target: NoteValidationTarget::AclEntry { index },
+        span: None,
+        message,
+    }])
 }
 
 fn reference_targets(note: &Note) -> Result<Vec<NoteId>, NoteUseCaseError> {
@@ -584,6 +604,76 @@ mod tests {
                 .await,
             Err(NoteUseCaseError::NotFound),
         );
+    }
+
+    #[tokio::test]
+    async fn invalid_acl_entries_return_actionable_diagnostics() {
+        let service = ServerNoteUseCases::new(
+            SqliteDatabase::connect("sqlite::memory:")
+                .await
+                .expect("database"),
+        );
+        let owner = Actor {
+            issuer: "https://id.example.test".into(),
+            subject: "owner".into(),
+            is_administrator: false,
+        };
+        let note = service
+            .create_note(
+                owner.clone(),
+                NoteDraft {
+                    title: "共有ノート".into(),
+                    body: "本文".into(),
+                    tags: Vec::new(),
+                },
+            )
+            .await
+            .expect("create");
+        let cases = [
+            (
+                vec![NoteAclEntry {
+                    subject: String::new(),
+                    permission: NotePermission::Read,
+                }],
+                NoteValidationCode::InvalidAclSubject,
+            ),
+            (
+                vec![NoteAclEntry {
+                    subject: owner.subject.clone(),
+                    permission: NotePermission::Read,
+                }],
+                NoteValidationCode::OwnerInAcl,
+            ),
+            (
+                vec![
+                    NoteAclEntry {
+                        subject: "reader".into(),
+                        permission: NotePermission::Read,
+                    },
+                    NoteAclEntry {
+                        subject: "reader".into(),
+                        permission: NotePermission::Edit,
+                    },
+                ],
+                NoteValidationCode::DuplicateAclSubject,
+            ),
+        ];
+
+        for (entries, expected_code) in cases {
+            let error = service
+                .replace_note_acl(owner.clone(), note.note_id, entries, note.revision)
+                .await
+                .expect_err("invalid ACL");
+            let NoteUseCaseError::Validation(diagnostics) = error else {
+                panic!("expected validation error");
+            };
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].code, expected_code);
+            assert!(matches!(
+                diagnostics[0].target,
+                NoteValidationTarget::AclEntry { .. }
+            ));
+        }
     }
 
     #[tokio::test]

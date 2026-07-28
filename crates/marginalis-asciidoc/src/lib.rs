@@ -744,6 +744,9 @@ mod tests {
                                     serde_json::json!({ "tag": index })
                                 }
                                 NoteValidationTarget::Tags => serde_json::json!("tags"),
+                                NoteValidationTarget::AclEntry { .. } => {
+                                    unreachable!("AsciiDoc validation does not inspect ACL entries")
+                                }
                             };
                             let span = error.span.expect("fixture body diagnostic span");
                             serde_json::json!({
