@@ -7,8 +7,8 @@ use std::future::Future;
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpAuthorizationGrant,
-    McpOAuthClient, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision,
-    UnixMillis, WebSession,
+    McpOAuthClient, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NotePermission, NoteSummary,
+    Revision, UnixMillis, WebSession,
 };
 
 mod identity;
@@ -131,6 +131,12 @@ pub enum NoteValidationTarget {
     Tag { index: usize },
     Tags,
     AclEntry { index: usize },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteAclChange {
+    pub subject: String,
+    pub permission: NotePermission,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -309,18 +315,18 @@ pub struct RelatedNotes {
 /// 閲覧可能なノートを取得する問い合わせ境界。
 #[async_trait]
 pub trait NoteQueries: Send + Sync {
-    async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<Note>, NoteUseCaseError>;
+    async fn list_visible_notes(&self, actor: Actor) -> Result<Vec<NoteSummary>, NoteUseCaseError>;
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
     async fn related_notes(
         &self,
         actor: Actor,
         note_id: NoteId,
     ) -> Result<RelatedNotes, NoteUseCaseError>;
-    async fn note_capabilities(
+    async fn note_access(
         &self,
         actor: Actor,
         note_id: NoteId,
-    ) -> Result<NoteCapabilities, NoteUseCaseError>;
+    ) -> Result<NoteAccess, NoteUseCaseError>;
 }
 
 /// ノートの内容と削除状態を変更するcommand境界。
@@ -379,7 +385,7 @@ pub trait NoteAccessControl: Send + Sync {
         &self,
         actor: Actor,
         note_id: NoteId,
-        entries: Vec<NoteAclEntry>,
+        entries: Vec<NoteAclChange>,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
 }

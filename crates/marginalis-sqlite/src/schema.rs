@@ -2,10 +2,10 @@
 
 use sqlx::SqlitePool;
 
-pub(crate) const SCHEMA_VERSION: i64 = 7;
+pub(crate) const SCHEMA_VERSION: i64 = 8;
 const INITIAL_SCHEMA: &str = include_str!("schema.sql");
 
-pub(crate) async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+pub(crate) async fn initialize_or_validate_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let mut transaction = pool.begin().await?;
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY NOT NULL) STRICT",

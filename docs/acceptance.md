@@ -1,7 +1,7 @@
 # Web UIとACLの受入確認
 
-この文書は、v0.7.0で追加したWeb UI、ノート参照、subject単位ACLの受入項目と結果を記録します。
-SQLite schemaは7、archive形式は`marginalis-archive-5`、note profileは2です。以前のdatabaseと
+この文書は、v0.7.0で追加したWeb UI、ノート参照、identity単位ACLの受入項目と結果を記録します。
+SQLite schemaは8、archive形式は`marginalis-archive-6`、note profileは2です。以前のdatabaseと
 archiveは自動で移行しません。
 
 ## 自動テスト
@@ -14,7 +14,7 @@ PR CIと公開前の`release-gate`で次を確認します。
 - ノート参照の保存時索引化、参照元・参照先の表示、削除・復元・物理削除との整合
 - 所有者、閲覧者、編集者、対象外利用者の表示・REST操作・情報非漏洩
 - ACL更新の同一オリジン、CSRFトークン、revision確認
-- ノートとACLを同じSQLite読み取りtransactionから取得するarchive snapshot
+- ノートとACLを同じSQLite読み取りtransactionから取得する論理スナップショット
 - Kanidm 1.10、TLS、nginxサブパス、OIDC、MCP OAuth、backup、purge、障害診断
 - 空のdatabaseへのNixOS配備と、旧schemaを自動移行せず拒否すること
 

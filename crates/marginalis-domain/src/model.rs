@@ -2,11 +2,10 @@
 
 use core::{fmt, str::FromStr};
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use url::Url;
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct UnixMillis(i64);
 
 impl UnixMillis {
@@ -20,8 +19,7 @@ impl UnixMillis {
 }
 
 /// 1から始まり、更新のたびに増えるノートの版番号。
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Revision(i64);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,18 +49,7 @@ impl Revision {
     }
 }
 
-impl<'de> Deserialize<'de> for Revision {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = i64::deserialize(deserializer)?;
-        Self::new(value).map_err(de::Error::custom)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct EntityId(Uuid);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,16 +77,6 @@ impl EntityId {
     }
 }
 
-impl<'de> Deserialize<'de> for EntityId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = Uuid::deserialize(deserializer)?;
-        Self::try_from_uuid(value).map_err(de::Error::custom)
-    }
-}
-
 impl FromStr for EntityId {
     type Err = InvalidEntityId;
 
@@ -116,8 +93,7 @@ impl fmt::Display for EntityId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct NoteId(EntityId);
 
 impl NoteId {
@@ -136,43 +112,13 @@ impl fmt::Display for NoteId {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(try_from = "SerializedNote")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Note {
     note_id: NoteId,
     owner: Identity,
     title: String,
     body: String,
     tags: Vec<String>,
-    created_at: UnixMillis,
-    updated_at: UnixMillis,
-    revision: Revision,
-    deleted_at: Option<UnixMillis>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SerializedNote {
-    note_id: NoteId,
-    creator_issuer: String,
-    creator_subject: String,
-    title: String,
-    body: String,
-    tags: Vec<String>,
-    created_at: UnixMillis,
-    updated_at: UnixMillis,
-    revision: Revision,
-    deleted_at: Option<UnixMillis>,
-}
-
-#[derive(Serialize)]
-struct SerializedNoteRef<'a> {
-    note_id: NoteId,
-    creator_issuer: &'a str,
-    creator_subject: &'a str,
-    title: &'a str,
-    body: &'a str,
-    tags: &'a [String],
     created_at: UnixMillis,
     updated_at: UnixMillis,
     revision: Revision,
@@ -286,54 +232,14 @@ impl Note {
     }
 }
 
-impl TryFrom<SerializedNote> for Note {
-    type Error = InvalidNote;
-
-    fn try_from(note: SerializedNote) -> Result<Self, Self::Error> {
-        let owner =
-            Identity::new(note.creator_issuer, note.creator_subject).map_err(|_| InvalidNote)?;
-        Self::restore(
-            note.note_id,
-            owner,
-            note.title,
-            note.body,
-            note.tags,
-            note.created_at,
-            note.updated_at,
-            note.revision,
-            note.deleted_at,
-        )
-    }
-}
-
-impl Serialize for Note {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        SerializedNoteRef {
-            note_id: self.note_id,
-            creator_issuer: self.owner.issuer(),
-            creator_subject: self.owner.subject(),
-            title: &self.title,
-            body: &self.body,
-            tags: &self.tags,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            revision: self.revision,
-            deleted_at: self.deleted_at,
-        }
-        .serialize(serializer)
-    }
-}
-
 /// 一覧表示に必要な、本文と所有者情報を含まないノート概要。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteSummary {
     pub note_id: NoteId,
     pub title: String,
     pub tags: Vec<String>,
     pub updated_at: UnixMillis,
+    pub revision: Revision,
 }
 
 impl From<&Note> for NoteSummary {
@@ -343,35 +249,59 @@ impl From<&Note> for NoteSummary {
             title: note.title().to_owned(),
             tags: note.tags().to_vec(),
             updated_at: note.updated_at(),
+            revision: note.revision(),
         }
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteDraft {
     pub title: String,
     pub body: String,
     pub tags: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum NotePermission {
     Read,
     Edit,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclEntry {
-    pub subject: String,
-    pub permission: NotePermission,
+    identity: Identity,
+    permission: NotePermission,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NoteCapabilities {
-    pub can_edit: bool,
-    pub can_manage_acl: bool,
+impl NoteAclEntry {
+    pub const fn new(identity: Identity, permission: NotePermission) -> Self {
+        Self {
+            identity,
+            permission,
+        }
+    }
+
+    pub const fn identity(&self) -> &Identity {
+        &self.identity
+    }
+
+    pub const fn permission(&self) -> NotePermission {
+        self.permission
+    }
+}
+
+/// ノートに対する実効アクセス水準。大きい水準は小さい水準の操作を含む。
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum NoteAccess {
+    Read,
+    Edit,
+    Manage,
+}
+
+impl NoteAccess {
+    pub const fn allows(self, required: Self) -> bool {
+        self as u8 >= required as u8
+    }
 }
 
 pub const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -510,23 +440,6 @@ mod tests {
     }
 
     #[test]
-    fn entity_id_deserialization_uses_the_same_uuid_v7_validation() {
-        let valid = Uuid::now_v7();
-        assert_eq!(
-            serde_json::from_str::<EntityId>(&format!("\"{valid}\""))
-                .expect("UUIDv7 should deserialize")
-                .as_uuid(),
-            valid
-        );
-        assert!(
-            serde_json::from_str::<EntityId>("\"00000000-0000-0000-0000-000000000000\"").is_err()
-        );
-        assert!(
-            serde_json::from_str::<NoteId>("\"00000000-0000-0000-0000-000000000000\"").is_err()
-        );
-    }
-
-    #[test]
     fn identity_rejects_active_content_and_unbounded_values() {
         assert_eq!(
             validate_identity("https://id.example.test", "alice"),
@@ -593,36 +506,5 @@ mod tests {
             restore(100, 200, Revision::INITIAL, Some(201)),
             Err(InvalidNote)
         );
-    }
-
-    #[test]
-    fn note_deserialization_uses_the_same_invariants() {
-        let note_id = Uuid::now_v7();
-        let base = serde_json::json!({
-            "note_id": note_id,
-            "creator_issuer": "https://id.example.test",
-            "creator_subject": "alice",
-            "title": "Title",
-            "body": "Body",
-            "tags": [],
-            "created_at": 100,
-            "updated_at": 100,
-            "revision": 1,
-            "deleted_at": null
-        });
-        assert!(serde_json::from_value::<Note>(base.clone()).is_ok());
-
-        for (field, value) in [
-            (
-                "creator_subject",
-                serde_json::json!("alice\n:attribute: value"),
-            ),
-            ("revision", serde_json::json!(0)),
-            ("updated_at", serde_json::json!(99)),
-        ] {
-            let mut invalid = base.clone();
-            invalid[field] = value;
-            assert!(serde_json::from_value::<Note>(invalid).is_err());
-        }
     }
 }

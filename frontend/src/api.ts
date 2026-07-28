@@ -23,6 +23,9 @@ export interface NoteAclEntry {
   subject: string;
   permission: NotePermission;
 }
+export interface NoteAclGrant extends NoteAclEntry {
+  issuer: string;
+}
 
 export interface ValidationDiagnostic {
   code: string;
@@ -92,7 +95,7 @@ export async function previewNote(
 export async function readNoteAcl(
   apiBase: string,
   noteId: string,
-): Promise<{ entries: NoteAclEntry[] }> {
+): Promise<{ entries: NoteAclGrant[] }> {
   return requestJson(`${apiBase}/notes/${encodeURIComponent(noteId)}/acl`);
 }
 

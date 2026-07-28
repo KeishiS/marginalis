@@ -28,7 +28,7 @@
       "get": {
         "summary": "List visible notes",
         "responses": {
-          "200": { "description": "notes visible to the current actor", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Note" } } } } },
+          "200": { "description": "notes visible to the current actor", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/NoteSummary" } } } } },
           "401": { "$ref": "#/components/responses/AuthenticationRequired" }
         }
       },
@@ -134,9 +134,11 @@
       "NoteUpdate": { "type": "object", "required": ["title", "body", "tags", "expected_revision"], "properties": { "title": { "type": "string" }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string" } }, "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "NoteAclEntry": { "type": "object", "required": ["subject", "permission"], "properties": { "subject": { "type": "string", "minLength": 1, "maxLength": 1024 }, "permission": { "enum": ["read", "edit"] } }, "additionalProperties": false },
-      "NoteAcl": { "type": "object", "required": ["entries"], "properties": { "entries": { "type": "array", "items": { "$ref": "#/components/schemas/NoteAclEntry" } } }, "additionalProperties": false },
+      "NoteAclGrant": { "type": "object", "required": ["issuer", "subject", "permission"], "properties": { "issuer": { "type": "string", "format": "uri", "maxLength": 2048 }, "subject": { "type": "string", "minLength": 1, "maxLength": 1024 }, "permission": { "enum": ["read", "edit"] } }, "additionalProperties": false },
+      "NoteAcl": { "type": "object", "required": ["entries"], "properties": { "entries": { "type": "array", "items": { "$ref": "#/components/schemas/NoteAclGrant" } } }, "additionalProperties": false },
       "NoteAclUpdate": { "type": "object", "required": ["entries", "expected_revision"], "properties": { "entries": { "type": "array", "items": { "$ref": "#/components/schemas/NoteAclEntry" } }, "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "Note": { "type": "object", "required": ["note_id", "title", "body", "tags", "created_at_ms", "updated_at_ms", "revision"], "properties": { "note_id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "body": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "created_at_ms": { "type": "integer" }, "updated_at_ms": { "type": "integer" }, "revision": { "type": "integer", "minimum": 1 } } },
+      "NoteSummary": { "type": "object", "required": ["note_id", "title", "tags", "updated_at_ms", "revision"], "properties": { "note_id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "updated_at_ms": { "type": "integer" }, "revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "NotePreview": { "type": "object", "required": ["html"], "properties": { "html": { "type": "string" } }, "additionalProperties": false },
       "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } }, "additionalProperties": false },
       "ValidationProblem": { "type": "object", "required": ["code", "message", "diagnostics"], "properties": { "code": { "const": "validation_failed" }, "message": { "type": "string" }, "diagnostics": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/ValidationDiagnostic" } } }, "additionalProperties": false },

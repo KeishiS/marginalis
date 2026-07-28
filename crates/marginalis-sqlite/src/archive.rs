@@ -1,7 +1,7 @@
 //! 全ノートの可搬archive import/export。
 
 use marginalis_application::{LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
-use marginalis_domain::{EntityId, Note, NoteId, NotePermission};
+use marginalis_domain::{EntityId, Identity, Note, NoteId, NotePermission};
 use sqlx::Sqlite;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
@@ -22,7 +22,8 @@ impl SqliteDatabase {
             .map(note_from_row)
             .collect::<Result<Vec<_>, _>>()?;
         let rows = sqlx::query(
-            "SELECT note_id, subject, permission FROM note_acl ORDER BY note_id, subject",
+            "SELECT note_id, issuer, subject, permission
+             FROM note_acl ORDER BY note_id, issuer, subject",
         )
         .fetch_all(&mut *transaction)
         .await
@@ -48,7 +49,11 @@ impl SqliteDatabase {
                 };
                 Ok(NoteAclSnapshotEntry::new(
                     note_id,
-                    row.try_get("subject").map_err(database_error)?,
+                    Identity::new(
+                        row.try_get("issuer").map_err(database_error)?,
+                        row.try_get("subject").map_err(database_error)?,
+                    )
+                    .map_err(|_| SqliteStoreError::CorruptData)?,
                     permission,
                 ))
             })
@@ -92,16 +97,19 @@ impl SqliteDatabase {
             .map_err(database_error)?;
         }
         for entry in plan.snapshot().note_acl() {
-            sqlx::query("INSERT INTO note_acl (note_id, subject, permission) VALUES (?, ?, ?)")
-                .bind(entry.note_id().to_string())
-                .bind(entry.subject())
-                .bind(match entry.permission() {
-                    NotePermission::Read => "read",
-                    NotePermission::Edit => "edit",
-                })
-                .execute(&mut *transaction)
-                .await
-                .map_err(database_error)?;
+            sqlx::query(
+                "INSERT INTO note_acl (note_id, issuer, subject, permission) VALUES (?, ?, ?, ?)",
+            )
+            .bind(entry.note_id().to_string())
+            .bind(entry.identity().issuer())
+            .bind(entry.identity().subject())
+            .bind(match entry.permission() {
+                NotePermission::Read => "read",
+                NotePermission::Edit => "edit",
+            })
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
         }
         transaction.commit().await.map_err(database_error)
     }

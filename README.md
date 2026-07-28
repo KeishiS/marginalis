@@ -7,8 +7,8 @@ Kanidmで利用者の認証とグループ管理を行い、Web UI、REST API、
 
 - ノートの本文、題名、タグ、アクセス権限、削除状態はSQLiteで管理します。
   ノート単位のAsciiDoc書き出しと、全データのJSON形式での読み込み・書き出しができます。
-- Kanidmの`server-users`グループに属する利用者がアクセスできます。
-  `server-admins`グループに属する利用者は、すべてのノートを閲覧・管理できます。
+- Kanidmの`server-users`グループに属する利用者がアクセスできます。ノートは所有者と、
+  所有者がACLで直接共有した利用者だけが閲覧できます。
 - `/api/v2`は公開REST APIです。仕様は[OpenAPI](docs/openapi.json)を参照してください。
 - MCPは同一オリジンのStreamable HTTPエンドポイントとOAuth 2.1 Authorization Code + PKCE
   S256を提供します。クライアントはDynamic Client Registration（動的クライアント登録）を

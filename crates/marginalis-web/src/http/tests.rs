@@ -6,16 +6,15 @@ use axum::{
 };
 use marginalis_application::{
     AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
-    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteCommands,
+    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteCommands,
     NotePresentation, NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
     NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
     NoteValidationDiagnostic, NoteValidationTarget, OidcAuthenticationUseCases, RelatedNotes,
     Utf8ByteSpan, WebSessionUseCases,
 };
 use marginalis_domain::{
-    Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note,
-    NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision, UnixMillis,
-    WebSession,
+    Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note, NoteAccess,
+    NoteAclEntry, NoteDraft, NoteId, NoteSummary, Revision, UnixMillis, WebSession,
 };
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
@@ -27,7 +26,7 @@ macro_rules! implement_note_boundaries {
             async fn list_visible_notes(
                 &self,
                 actor: Actor,
-            ) -> Result<Vec<Note>, NoteUseCaseError> {
+            ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
                 <$type>::list_visible_notes(self, actor).await
             }
 
@@ -47,12 +46,12 @@ macro_rules! implement_note_boundaries {
                 <$type>::related_notes(self, actor, note_id).await
             }
 
-            async fn note_capabilities(
+            async fn note_access(
                 &self,
                 actor: Actor,
                 note_id: NoteId,
-            ) -> Result<NoteCapabilities, NoteUseCaseError> {
-                <$type>::note_capabilities(self, actor, note_id).await
+            ) -> Result<NoteAccess, NoteUseCaseError> {
+                <$type>::note_access(self, actor, note_id).await
             }
         }
 
@@ -138,7 +137,7 @@ macro_rules! implement_note_boundaries {
                 &self,
                 actor: Actor,
                 note_id: NoteId,
-                entries: Vec<NoteAclEntry>,
+                entries: Vec<NoteAclChange>,
                 expected_revision: Revision,
             ) -> Result<Note, NoteUseCaseError> {
                 <$type>::replace_note_acl(self, actor, note_id, entries, expected_revision).await
@@ -158,7 +157,10 @@ use super::{
 struct Notes;
 
 impl Notes {
-    async fn list_visible_notes(&self, _actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
+    async fn list_visible_notes(
+        &self,
+        _actor: Actor,
+    ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
         Ok(Vec::new())
     }
 
@@ -258,11 +260,11 @@ impl Notes {
         })
     }
 
-    async fn note_capabilities(
+    async fn note_access(
         &self,
         _actor: Actor,
         _note_id: NoteId,
-    ) -> Result<NoteCapabilities, NoteUseCaseError> {
+    ) -> Result<NoteAccess, NoteUseCaseError> {
         Err(NoteUseCaseError::NotFound)
     }
 
@@ -278,7 +280,7 @@ impl Notes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-        _entries: Vec<NoteAclEntry>,
+        _entries: Vec<NoteAclChange>,
         _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Forbidden)
@@ -323,8 +325,11 @@ struct UiNotes {
 }
 
 impl UiNotes {
-    async fn list_visible_notes(&self, _actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
-        Ok(self.notes.clone())
+    async fn list_visible_notes(
+        &self,
+        _actor: Actor,
+    ) -> Result<Vec<NoteSummary>, NoteUseCaseError> {
+        Ok(self.notes.iter().map(NoteSummary::from).collect())
     }
 
     async fn read_note(&self, _actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
@@ -414,16 +419,13 @@ impl UiNotes {
         })
     }
 
-    async fn note_capabilities(
+    async fn note_access(
         &self,
         actor: Actor,
         note_id: NoteId,
-    ) -> Result<NoteCapabilities, NoteUseCaseError> {
+    ) -> Result<NoteAccess, NoteUseCaseError> {
         self.read_note(actor, note_id).await?;
-        Ok(NoteCapabilities {
-            can_edit: true,
-            can_manage_acl: false,
-        })
+        Ok(NoteAccess::Edit)
     }
 
     async fn read_note_acl(
@@ -438,7 +440,7 @@ impl UiNotes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-        _entries: Vec<NoteAclEntry>,
+        _entries: Vec<NoteAclChange>,
         _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Forbidden)

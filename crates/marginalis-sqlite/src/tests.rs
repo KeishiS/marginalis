@@ -5,8 +5,9 @@ use marginalis_application::{
     OidcLoginAttempt, OidcLoginAttemptStore, RestorePlan,
 };
 use marginalis_domain::{
-    Actor, EntityId, Identity, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry,
-    NoteDraft, NoteId, NotePermission, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
+    Actor, EntityId, Identity, McpAuthorizationGrant, McpOAuthClient, Note, NoteAccess,
+    NoteAclEntry, NoteDraft, NoteId, NotePermission, Revision, SOFT_DELETE_RETENTION_MS,
+    UnixMillis, WebSession,
 };
 
 use super::*;
@@ -31,7 +32,7 @@ async fn initialization_rejects_a_database_with_unknown_tables() {
         .await
         .expect("unknown table");
 
-    let error = migrate(&pool)
+    let error = initialize_or_validate_schema(&pool)
         .await
         .expect_err("non-empty database must be rejected");
     assert!(
@@ -66,13 +67,13 @@ async fn initialization_rejects_the_previous_schema_version() {
         .await
         .expect("old version");
 
-    let error = migrate(&pool)
+    let error = initialize_or_validate_schema(&pool)
         .await
         .expect_err("old schema must be rejected");
     assert!(
         error
             .to_string()
-            .contains("unsupported database schema version 3; expected 7")
+            .contains("unsupported database schema version 3; expected 8")
     );
 }
 
@@ -228,10 +229,11 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .replace_note_acl(
             &alice,
             note_id,
-            &[NoteAclEntry {
-                subject: "bob".into(),
-                permission: NotePermission::Read,
-            }],
+            &[NoteAclEntry::new(
+                Identity::new("https://id.example.test".into(), "bob".into())
+                    .expect("ACL identity"),
+                NotePermission::Read,
+            )],
             revision(4),
             UnixMillis::new(360),
         )
@@ -317,6 +319,220 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         1
     );
     assert_eq!(database.note(note_id, true).await, Ok(None));
+}
+
+#[tokio::test]
+async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let note_id = NoteId::new(
+        EntityId::from_str("0197c9bc-0000-7000-8000-000000000011").expect("v7 note ID"),
+    );
+    let owner_identity =
+        Identity::new("https://id.example.test".into(), "owner".into()).expect("owner");
+    let note = Note::restore(
+        note_id,
+        owner_identity.clone(),
+        "Title".into(),
+        "Body".into(),
+        Vec::new(),
+        UnixMillis::new(100),
+        UnixMillis::new(100),
+        Revision::INITIAL,
+        None,
+    )
+    .expect("note");
+    database.create_note(&note, &[]).await.expect("create");
+
+    let owner = Actor::new(owner_identity);
+    let reader = actor("https://id.example.test", "reader");
+    let same_subject_other_issuer = actor("https://other-id.example.test", "reader");
+    assert_eq!(
+        database.note_access(&owner, note_id).await,
+        Ok(Some(NoteAccess::Manage))
+    );
+    assert_eq!(database.note_access(&reader, note_id).await, Ok(None));
+
+    let read_grant = NoteAclEntry::new(
+        Identity::new("https://id.example.test".into(), "reader".into()).expect("reader"),
+        NotePermission::Read,
+    );
+    let changed = database
+        .replace_note_acl(
+            &owner,
+            note_id,
+            &[read_grant],
+            Revision::INITIAL,
+            UnixMillis::new(110),
+        )
+        .await
+        .expect("read ACL");
+    assert_eq!(
+        database.note_access(&reader, note_id).await,
+        Ok(Some(NoteAccess::Read))
+    );
+    assert_eq!(
+        database
+            .note_access(&same_subject_other_issuer, note_id)
+            .await,
+        Ok(None)
+    );
+    assert_eq!(
+        database
+            .update_visible_note(
+                &reader,
+                note_id,
+                changed.revision(),
+                &NoteDraft {
+                    title: "Denied".into(),
+                    body: "Denied".into(),
+                    tags: Vec::new(),
+                },
+                &[],
+                UnixMillis::new(120),
+            )
+            .await,
+        Err(SqliteStoreError::NotFound)
+    );
+
+    let invalid_cross_issuer = NoteAclEntry::new(
+        Identity::new("https://other-id.example.test".into(), "reader".into())
+            .expect("other issuer"),
+        NotePermission::Edit,
+    );
+    assert!(
+        database
+            .replace_note_acl(
+                &owner,
+                note_id,
+                &[invalid_cross_issuer],
+                changed.revision(),
+                UnixMillis::new(130),
+            )
+            .await
+            .is_err()
+    );
+    let unchanged = database
+        .visible_note(&owner, note_id)
+        .await
+        .expect("read after rollback")
+        .expect("note");
+    assert_eq!(unchanged.revision(), changed.revision());
+    assert_eq!(
+        database.note_access(&reader, note_id).await,
+        Ok(Some(NoteAccess::Read))
+    );
+
+    let edit_grant = NoteAclEntry::new(
+        Identity::new("https://id.example.test".into(), "reader".into()).expect("reader"),
+        NotePermission::Edit,
+    );
+    let changed = database
+        .replace_note_acl(
+            &owner,
+            note_id,
+            &[edit_grant],
+            unchanged.revision(),
+            UnixMillis::new(140),
+        )
+        .await
+        .expect("edit ACL");
+    assert_eq!(
+        database.note_access(&reader, note_id).await,
+        Ok(Some(NoteAccess::Edit))
+    );
+    assert!(
+        database
+            .update_visible_note(
+                &reader,
+                note_id,
+                changed.revision(),
+                &NoteDraft {
+                    title: "Edited".into(),
+                    body: "Edited".into(),
+                    tags: Vec::new(),
+                },
+                &[],
+                UnixMillis::new(150),
+            )
+            .await
+            .is_ok()
+    );
+    assert_eq!(
+        database
+            .replace_note_acl(
+                &reader,
+                note_id,
+                &[],
+                Revision::new(changed.revision().get() + 1).expect("revision"),
+                UnixMillis::new(160),
+            )
+            .await,
+        Err(SqliteStoreError::NotFound)
+    );
+}
+
+#[tokio::test]
+async fn concurrent_note_updates_accept_only_one_expected_revision() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let note_id = NoteId::new(
+        EntityId::from_str("0197c9bc-0000-7000-8000-000000000012").expect("v7 note ID"),
+    );
+    let owner_identity =
+        Identity::new("https://id.example.test".into(), "owner".into()).expect("owner");
+    let note = Note::restore(
+        note_id,
+        owner_identity.clone(),
+        "Title".into(),
+        "Body".into(),
+        Vec::new(),
+        UnixMillis::new(100),
+        UnixMillis::new(100),
+        Revision::INITIAL,
+        None,
+    )
+    .expect("note");
+    database.create_note(&note, &[]).await.expect("create");
+    let owner = Actor::new(owner_identity);
+    let first_draft = NoteDraft {
+        title: "First".into(),
+        body: "First".into(),
+        tags: Vec::new(),
+    };
+    let second_draft = NoteDraft {
+        title: "Second".into(),
+        body: "Second".into(),
+        tags: Vec::new(),
+    };
+    let first = database.update_visible_note(
+        &owner,
+        note_id,
+        Revision::INITIAL,
+        &first_draft,
+        &[],
+        UnixMillis::new(110),
+    );
+    let second = database.update_visible_note(
+        &owner,
+        note_id,
+        Revision::INITIAL,
+        &second_draft,
+        &[],
+        UnixMillis::new(120),
+    );
+    let results = tokio::join!(first, second);
+    let successes = [&results.0, &results.1]
+        .into_iter()
+        .filter(|result| result.is_ok())
+        .count();
+    let conflicts = [&results.0, &results.1]
+        .into_iter()
+        .filter(|result| **result == Err(SqliteStoreError::Conflict))
+        .count();
+    assert_eq!((successes, conflicts), (1, 1));
 }
 
 #[tokio::test]

@@ -8,7 +8,8 @@ CREATE TABLE notes (
     created_at_ms INTEGER NOT NULL,
     updated_at_ms INTEGER NOT NULL,
     revision INTEGER NOT NULL CHECK (revision > 0),
-    deleted_at_ms INTEGER
+    deleted_at_ms INTEGER,
+    UNIQUE (note_id, creator_issuer)
 ) STRICT;
 CREATE INDEX notes_owner_listing_idx
 ON notes (creator_issuer, creator_subject, updated_at_ms DESC, note_id)
@@ -23,12 +24,33 @@ CREATE INDEX note_references_target_idx
 ON note_references (target_note_id, source_note_id);
 
 CREATE TABLE note_acl (
-    note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+    note_id TEXT NOT NULL,
+    issuer TEXT NOT NULL,
     subject TEXT NOT NULL,
     permission TEXT NOT NULL CHECK (permission IN ('read', 'edit')),
-    PRIMARY KEY (note_id, subject)
+    PRIMARY KEY (note_id, issuer, subject),
+    FOREIGN KEY (note_id, issuer) REFERENCES notes(note_id, creator_issuer) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
-CREATE INDEX note_acl_subject_idx ON note_acl (subject, note_id);
+CREATE INDEX note_acl_identity_idx ON note_acl (issuer, subject, note_id);
+CREATE TRIGGER note_acl_reject_owner
+BEFORE INSERT ON note_acl
+WHEN EXISTS (
+    SELECT 1 FROM notes
+    WHERE notes.note_id = NEW.note_id
+      AND notes.creator_issuer = NEW.issuer
+      AND notes.creator_subject = NEW.subject
+)
+BEGIN
+    SELECT RAISE(ABORT, 'note owner cannot be stored in note_acl');
+END;
+
+CREATE VIEW note_access AS
+SELECT note_id, creator_issuer AS issuer, creator_subject AS subject, 3 AS access_level
+FROM notes
+UNION ALL
+SELECT note_id, issuer, subject,
+       CASE permission WHEN 'read' THEN 1 WHEN 'edit' THEN 2 END AS access_level
+FROM note_acl;
 
 CREATE TABLE web_sessions (
     session_id_hash BLOB PRIMARY KEY NOT NULL,

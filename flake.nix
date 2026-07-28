@@ -327,7 +327,7 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-5\" "
+                + "jq -e '.format == \"marginalis-archive-6\" "
                 + "and .adocweave_package_version == \"0.11.0\" "
                 + "and .note_profile_version == 2 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "

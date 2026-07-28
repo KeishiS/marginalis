@@ -72,7 +72,10 @@ export function AccessControl({
       const note = await replaceNoteAcl(
         apiBase,
         noteId,
-        currentEntries,
+        currentEntries.map(({ subject, permission }) => ({
+          subject,
+          permission,
+        })),
         currentRevision,
       );
       setCurrentRevision(note.revision);

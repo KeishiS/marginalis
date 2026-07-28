@@ -7,11 +7,11 @@
 
 ### 破壊的変更
 
-- SQLite schemaを6へ、archiveを`marginalis-archive-5`へ、note profileを2へ更新した。
+- SQLite schemaを8へ、archiveを`marginalis-archive-6`へ、note profileを2へ更新した。
   以前のdatabaseとarchiveは自動移行せず、更新時は既存データを退避して空の`dataDir`から
   初期化する。
-- ノートの所有者モデルへsubject単位のACLを追加した。`read`は閲覧、`edit`は閲覧と内容更新を
-  許可し、ACL管理と削除・復元は所有者または`server-admins`だけが実行できる。
+- ノートの所有者モデルへ`issuer`と`subject`を組み合わせたACLを追加した。`read`は閲覧、
+  `edit`は閲覧と内容更新を許可し、ACL管理と削除・復元は所有者だけが実行できる。
 
 ### 追加
 
@@ -20,7 +20,7 @@
 - revision競合時に編集開始時点、編集中、現在保存済みの内容を比較し、最新revisionを取得して
   修正後に再保存できる画面を追加した。
 - ノート参照を保存時に索引化し、現在の利用者に見える直接参照元・参照先を閲覧画面へ追加した。
-- 所有者、閲覧者、編集者、対象外利用者、`server-admins`の権限境界を実Kanidm環境で確認する
+- 所有者、閲覧者、編集者、対象外利用者の権限境界を実Kanidm環境で確認する
   NixOSブラウザー試験を追加した。
 
 ### セキュリティ

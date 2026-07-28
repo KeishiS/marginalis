@@ -5,15 +5,17 @@ use marginalis_application::{
     NoteAclRepository, NoteCommandRepository, NoteQueryRepository, NoteRepositoryError,
 };
 use marginalis_domain::{
-    Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision,
-    UnixMillis,
+    Actor, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteSummary, Revision, UnixMillis,
 };
 
 use crate::{SqliteDatabase, SqliteStoreError};
 
 #[async_trait]
 impl NoteQueryRepository for SqliteDatabase {
-    async fn list_visible_notes(&self, actor: &Actor) -> Result<Vec<Note>, NoteRepositoryError> {
+    async fn list_visible_notes(
+        &self,
+        actor: &Actor,
+    ) -> Result<Vec<NoteSummary>, NoteRepositoryError> {
         SqliteDatabase::list_visible_notes(self, actor)
             .await
             .map_err(map_error)
@@ -29,6 +31,16 @@ impl NoteQueryRepository for SqliteDatabase {
             .map_err(map_error)
     }
 
+    async fn visible_notes_by_id(
+        &self,
+        actor: &Actor,
+        note_ids: &[NoteId],
+    ) -> Result<Vec<Note>, NoteRepositoryError> {
+        SqliteDatabase::visible_notes_by_id(self, actor, note_ids)
+            .await
+            .map_err(map_error)
+    }
+
     async fn directly_related_notes(
         &self,
         actor: &Actor,
@@ -39,12 +51,12 @@ impl NoteQueryRepository for SqliteDatabase {
             .map_err(map_error)
     }
 
-    async fn note_capabilities(
+    async fn note_access(
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Option<NoteCapabilities>, NoteRepositoryError> {
-        SqliteDatabase::note_capabilities(self, actor, note_id)
+    ) -> Result<Option<NoteAccess>, NoteRepositoryError> {
+        SqliteDatabase::note_access(self, actor, note_id)
             .await
             .map_err(map_error)
     }

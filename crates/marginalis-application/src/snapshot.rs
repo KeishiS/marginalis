@@ -7,15 +7,15 @@ use marginalis_domain::{Identity, Note, NoteId, NotePermission};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclSnapshotEntry {
     note_id: NoteId,
-    subject: String,
+    identity: Identity,
     permission: NotePermission,
 }
 
 impl NoteAclSnapshotEntry {
-    pub fn new(note_id: NoteId, subject: String, permission: NotePermission) -> Self {
+    pub const fn new(note_id: NoteId, identity: Identity, permission: NotePermission) -> Self {
         Self {
             note_id,
-            subject,
+            identity,
             permission,
         }
     }
@@ -24,8 +24,8 @@ impl NoteAclSnapshotEntry {
         self.note_id
     }
 
-    pub fn subject(&self) -> &str {
-        &self.subject
+    pub const fn identity(&self) -> &Identity {
+        &self.identity
     }
 
     pub const fn permission(&self) -> NotePermission {
@@ -69,10 +69,9 @@ impl LogicalSnapshot {
                 .iter()
                 .find(|note| note.note_id() == entry.note_id)
                 .ok_or(InvalidSnapshot)?;
-            Identity::new(note.creator_issuer().to_owned(), entry.subject.clone())
-                .map_err(|_| InvalidSnapshot)?;
-            if entry.subject == note.creator_subject()
-                || !acl_keys.insert((entry.note_id, entry.subject.clone()))
+            if entry.identity.issuer() != note.creator_issuer()
+                || entry.identity == *note.owner()
+                || !acl_keys.insert((entry.note_id, entry.identity.clone()))
             {
                 return Err(InvalidSnapshot);
             }
@@ -167,7 +166,8 @@ mod tests {
     #[test]
     fn snapshot_rejects_dangling_duplicate_and_owner_acl_entries() {
         let note = note();
-        let read = NoteAclSnapshotEntry::new(note.note_id(), "bob".into(), NotePermission::Read);
+        let bob = Identity::new("https://id.example.test".into(), "bob".into()).expect("identity");
+        let read = NoteAclSnapshotEntry::new(note.note_id(), bob, NotePermission::Read);
         assert!(LogicalSnapshot::new(vec![note.clone()], vec![read.clone()]).is_ok());
         assert_eq!(
             LogicalSnapshot::new(vec![note.clone(), note.clone()], Vec::new()),
@@ -182,7 +182,7 @@ mod tests {
                 vec![note.clone()],
                 vec![NoteAclSnapshotEntry::new(
                     note.note_id(),
-                    "alice".into(),
+                    note.owner().clone(),
                     NotePermission::Edit,
                 )],
             ),
