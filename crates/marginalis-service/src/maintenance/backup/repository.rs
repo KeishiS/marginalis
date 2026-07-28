@@ -45,7 +45,10 @@ pub(super) async fn validated_successful_generations(
         {
             continue;
         }
-        let expected_marker = format!("Marginalis backup {}\n", marginalis_domain::ARCHIVE_FORMAT);
+        let expected_marker = format!(
+            "Marginalis backup {}\n",
+            marginalis_asciidoc::ARCHIVE_FORMAT
+        );
         if std::fs::read_to_string(&marker)? != expected_marker {
             continue;
         }

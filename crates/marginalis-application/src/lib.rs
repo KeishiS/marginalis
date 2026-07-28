@@ -15,6 +15,7 @@ mod identity;
 mod mcp_oauth;
 mod notes;
 mod session;
+mod snapshot;
 
 pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
@@ -26,6 +27,7 @@ pub use notes::{
     NoteRepositoryError,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
+pub use snapshot::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> UnixMillis;

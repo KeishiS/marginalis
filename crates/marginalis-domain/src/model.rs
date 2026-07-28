@@ -374,25 +374,6 @@ pub struct NoteCapabilities {
     pub can_manage_acl: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ArchivedNoteAclEntry {
-    pub note_id: NoteId,
-    pub subject: String,
-    pub permission: NotePermission,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Archive {
-    pub format: String,
-    pub adocweave_package_version: String,
-    pub note_profile_version: u32,
-    pub notes: Vec<Note>,
-    pub note_acl: Vec<ArchivedNoteAclEntry>,
-}
-
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-5";
 pub const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 pub const MAX_IDENTITY_ISSUER_BYTES: usize = 2_048;
 pub const MAX_IDENTITY_SUBJECT_BYTES: usize = 1_024;

@@ -1,19 +1,14 @@
 //! 全ノートの可搬archive import/export。
 
-use std::collections::HashSet;
-
-use marginalis_domain::{
-    ArchivedNoteAclEntry, EntityId, Note, NoteId, NotePermission, validate_identity,
-};
+use marginalis_application::{LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
+use marginalis_domain::{EntityId, Note, NoteId, NotePermission};
 use sqlx::Sqlite;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
 
 impl SqliteDatabase {
     /// SQLite正本のノートとACLを同じ読み取りtransactionから取り出す。
-    pub async fn export_archive_snapshot(
-        &self,
-    ) -> Result<(Vec<Note>, Vec<ArchivedNoteAclEntry>), SqliteStoreError> {
+    pub async fn export_archive_snapshot(&self) -> Result<LogicalSnapshot, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let rows = sqlx::query(
             "SELECT note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
@@ -51,30 +46,20 @@ impl SqliteDatabase {
                     "edit" => NotePermission::Edit,
                     _ => return Err(SqliteStoreError::CorruptData),
                 };
-                Ok(ArchivedNoteAclEntry {
+                Ok(NoteAclSnapshotEntry::new(
                     note_id,
-                    subject: row.try_get("subject").map_err(database_error)?,
+                    row.try_get("subject").map_err(database_error)?,
                     permission,
-                })
+                ))
             })
             .collect::<Result<Vec<_>, _>>()?;
         transaction.commit().await.map_err(database_error)?;
-        Ok((notes, note_acl))
+        LogicalSnapshot::new(notes, note_acl).map_err(|_| SqliteStoreError::CorruptData)
     }
 
-    /// 検証済みの論理snapshotを空databaseへ一つのtransactionでimportする。
-    pub async fn import_notes(
-        &self,
-        notes: &[Note],
-        references: &[(NoteId, NoteId)],
-        note_acl: &[ArchivedNoteAclEntry],
-    ) -> Result<(), SqliteStoreError> {
-        let mut note_ids = HashSet::new();
-        for note in notes {
-            if !note_ids.insert(note.note_id()) {
-                return Err(SqliteStoreError::CorruptData);
-            }
-        }
+    /// 検証済みの復元計画を空databaseへ一つのtransactionで適用する。
+    pub async fn restore(&self, plan: &RestorePlan) -> Result<(), SqliteStoreError> {
+        let notes = plan.snapshot().notes();
 
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let target_has_data = sqlx::query_scalar::<_, bool>(
@@ -96,10 +81,7 @@ impl SqliteDatabase {
         for note in notes {
             insert_note_row(&mut transaction, note).await?;
         }
-        for (source, target) in references {
-            if !note_ids.contains(source) {
-                return Err(SqliteStoreError::CorruptData);
-            }
+        for (source, target) in plan.references() {
             sqlx::query(
                 "INSERT OR IGNORE INTO note_references (source_note_id, target_note_id) VALUES (?, ?)",
             )
@@ -109,19 +91,11 @@ impl SqliteDatabase {
             .await
             .map_err(database_error)?;
         }
-        for entry in note_acl {
-            let Some(note) = notes.iter().find(|note| note.note_id() == entry.note_id) else {
-                return Err(SqliteStoreError::CorruptData);
-            };
-            if validate_identity(note.creator_issuer(), &entry.subject).is_err()
-                || entry.subject == note.creator_subject()
-            {
-                return Err(SqliteStoreError::CorruptData);
-            }
+        for entry in plan.snapshot().note_acl() {
             sqlx::query("INSERT INTO note_acl (note_id, subject, permission) VALUES (?, ?, ?)")
-                .bind(entry.note_id.to_string())
-                .bind(&entry.subject)
-                .bind(match entry.permission {
+                .bind(entry.note_id().to_string())
+                .bind(entry.subject())
+                .bind(match entry.permission() {
                     NotePermission::Read => "read",
                     NotePermission::Edit => "edit",
                 })

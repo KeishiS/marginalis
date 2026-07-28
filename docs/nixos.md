@@ -97,6 +97,9 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
 現行archiveは`marginalis-archive-5`で、AdocWeave package版`0.11.0`とnote profile版`2`を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
+同じ段階で、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と重複も検証します。
+本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
+書き込まれることはありません。
 
 ```sh
 sudo -u marginalis marginalis validate-archive \
