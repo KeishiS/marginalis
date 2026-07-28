@@ -122,6 +122,8 @@ impl TestServer {
         ));
         let notes = Arc::new(NoteApplication::new(
             Arc::new(database.clone()),
+            Arc::new(database.clone()),
+            Arc::new(database.clone()),
             Arc::new(AsciiDocNoteContent),
             Arc::new(marginalis_web::http::HttpNoteLinkResolver),
             Arc::new(SystemClock),

@@ -80,10 +80,13 @@ frontend/
 HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのportを実装する。
 `service`だけが具象的なadapterを選び、application serviceへ接続する。
 
-ノート操作では、HTTPやMCPから呼び出す`NoteUseCases`を内向きport、applicationから
-永続化へ要求する`NoteRepository`を外向きportと呼ぶ。前者は利用者の操作を表し、後者は
-認可とrevisionを含む一つの原子的な保存操作を表す。SQLiteのエラー型やAsciiDoc engineの型は
-applicationの公開境界へ出さない。
+ノート操作の内向きportは、問い合わせの`NoteQueries`、変更の`NoteCommands`、表示変換の
+`NotePresentation`、ACL管理の`NoteAccessControl`に分けます。複数のtransportへ同じ実装を渡す
+場合だけ、これらをまとめた`NoteUseCases`をfacadeとして使います。
+applicationから永続化へ要求する外向きportも、読み取りの`NoteQueryRepository`、原子的な変更の
+`NoteCommandRepository`、ACL操作の`NoteAclRepository`に分けます。具象的には同じSQLite adapterが
+三つを実装しますが、application serviceは用途ごとに必要なportだけを受け取ります。
+SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出しません。
 
 crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
 crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはcomposition rootとして、
