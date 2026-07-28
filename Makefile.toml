@@ -216,7 +216,6 @@ expected='marginalis-application
 marginalis-asciidoc
 marginalis-auth-oidc
 marginalis-domain
-marginalis-server
 marginalis-service
 marginalis-sqlite
 marginalis-web'
@@ -337,12 +336,8 @@ grep -Fq "adocweave/$expected_revision/fixtures/conformance/cases.json" flake.ni
 grep -Fq "hash = \"$expected_fixture_hash\";" flake.nix
 
 if grep -Eq 'WASM_API_VERSION|PINNED_CONTRACTS|CONTRACT_VERSION|contractVersion' \
-  crates/marginalis-asciidoc/src/lib.rs crates/marginalis-server/src/lib.rs; then
+  crates/marginalis-asciidoc/src/lib.rs; then
   echo "legacy AdocWeave version identity remains" >&2
-  exit 1
-fi
-if grep -Eq '^adocweave[.]workspace' crates/marginalis-server/Cargo.toml; then
-  echo "marginalis-server directly depends on AdocWeave" >&2
   exit 1
 fi
 '''

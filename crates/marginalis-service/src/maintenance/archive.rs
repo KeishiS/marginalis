@@ -2,9 +2,9 @@
 
 use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
 use crate::cli::required_absolute_file_argument;
+use crate::config::StorageConfig;
 use marginalis_asciidoc::{create_archive, validate_archive as validate_archive_contract};
 use marginalis_domain::Archive;
-use marginalis_server::StorageConfig;
 use marginalis_sqlite::SqliteDatabase;
 use std::{
     collections::HashSet,

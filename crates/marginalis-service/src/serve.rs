@@ -5,10 +5,13 @@ use marginalis_application::{
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
-use marginalis_server::{ServerConfig, SystemClock, SystemRandom};
 use marginalis_sqlite::SqliteDatabase;
 use std::path::Path;
 
+use crate::{
+    config::ServerConfig,
+    runtime::{SystemClock, SystemRandom},
+};
 pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     verify_runtime_package_version()?;
     let (configuration, secrets) = ServerConfig::from_environment()?;

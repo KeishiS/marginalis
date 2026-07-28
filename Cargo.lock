@@ -1217,29 +1217,16 @@ dependencies = [
  "marginalis-application",
  "marginalis-asciidoc",
  "marginalis-auth-oidc",
- "marginalis-server",
+ "marginalis-domain",
  "marginalis-sqlite",
  "marginalis-web",
  "p256",
+ "rand 0.8.7",
  "reqwest",
  "serde_json",
  "sha2 0.10.9",
  "tokio",
  "tower",
- "url",
-]
-
-[[package]]
-name = "marginalis-server"
-version = "0.7.0"
-dependencies = [
- "base64 0.22.1",
- "marginalis-application",
- "marginalis-domain",
- "rand 0.8.7",
- "time",
- "tokio",
- "tracing",
  "url",
  "uuid",
 ]
@@ -1249,20 +1236,23 @@ name = "marginalis-service"
 version = "0.7.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "marginalis-application",
  "marginalis-asciidoc",
  "marginalis-auth-oidc",
  "marginalis-domain",
- "marginalis-server",
  "marginalis-sqlite",
  "marginalis-web",
+ "rand 0.8.7",
  "reqwest",
  "serde",
  "serde_json",
+ "time",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
