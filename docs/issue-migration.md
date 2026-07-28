@@ -2,14 +2,15 @@
 
 ## 目的と範囲
 
-この文書は、`v0.5.0`まで`issues/`で管理していた記録の移行先を示す非規範の履歴索引です。
+この文書は、`v0.5.0`まで`issues/`で管理していた過去の記録と、現在の関連資料を対応付けます。
+現在の仕様を定める文書ではありません。
 現在の作業項目は[GitHub Issues](https://github.com/KeishiS/marginalis/issues)、現行仕様は
-[文書案内](README.md)を正とします。
+[資料案内](README.md)から確認してください。
 
 原文は削除せず、`v0.5.0`タグ上に固定して保存します。表の「旧記録」から当時の全文を参照できます。
 旧番号とGitHub Issue番号は別体系であり、同じ番号として扱いません。
 
-## Marginalisの旧Issue
+## Marginalisの移行前のIssue
 
 旧索引は
 [v0.5.0時点のIssue一覧](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/README.md)に
@@ -46,7 +47,7 @@
 | [027](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/027-search-reference-and-rendering-projections.md) | 統合済み課題 | [GitHub Issue #19](https://github.com/KeishiS/marginalis/issues/19) |
 | [028](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/028-contract-and-maintenance-reconciliation.md) | 完了履歴 | [要件定義](requirements.md) |
 | [029](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/029-adocweave-v0.6.1-migration.md) | 完了履歴 | [v0.2.0変更履歴](../CHANGELOG.md#020--2026-07-24) |
-| [030](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/030-end-to-end-test-automation-readiness.md) | 完了履歴 | [protocol回帰試験](protocol-regression.md) |
+| [030](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/030-end-to-end-test-automation-readiness.md) | 完了履歴 | [プロトコル回帰テスト](protocol-regression.md) |
 | [031](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/031-postgresql-storage-backend-feasibility.md) | 現行課題 | [GitHub Issue #20](https://github.com/KeishiS/marginalis/issues/20) |
 | [032](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/032-mcp-authoring-profile-and-diagnostics.md) | 完了履歴 | [v0.4.0変更履歴](../CHANGELOG.md#040--2026-07-27) |
 | [033](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/033-repository-documentation-asciidoc-migration.md) | 現行課題 | [GitHub Issue #21](https://github.com/KeishiS/marginalis/issues/21) |
@@ -62,7 +63,7 @@
 | [043](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/043-production-reachability-and-test-coverage.md) | 完了履歴 | [カバレッジ](coverage.md) |
 | [044](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/044-source-layout-and-documentation-boundaries.md) | 完了履歴 | [アーキテクチャ](architecture.md) |
 | [045](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/045-backup-restore-lifecycle.md) | 完了履歴 | [NixOSでの運用](nixos.md) |
-| [046](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/046-browser-mcp-protocol-regression.md) | 完了履歴 | [protocol回帰試験](protocol-regression.md) |
+| [046](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/046-browser-mcp-protocol-regression.md) | 完了履歴 | [プロトコル回帰テスト](protocol-regression.md) |
 | [047](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/047-runtime-operability-diagnostics.md) | 完了履歴 | [NixOSでの運用](nixos.md) |
 | [048](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/048-v0.3.1-release-acceptance.md) | 完了履歴 | [v0.3.1変更履歴](../CHANGELOG.md#031--2026-07-27) |
 
@@ -84,9 +85,9 @@
 | [upstream/008](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/008-resource-profile.md) | AdocWeave RC.3で採用 | [AdocWeave](https://github.com/KeishiS/AdocWeave) |
 | [upstream/009](https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream/009-public-document-attribute-occurrences.md) | AdocWeave v0.6.0で採用 | [v0.6.0](https://github.com/KeishiS/AdocWeave/releases/tag/v0.6.0) |
 
-## 移行方針
+## 移行後の管理方針
 
-- GitHub Issuesを今後の作業項目の唯一の正本とします。
+- 今後の作業項目はGitHub Issuesだけで管理します。
 - 完了済み記録は現行仕様へ書き換えず、タグ上の原文と公開履歴を保持します。
 - 旧リンクを見つけた場合は、この表または表に記載した移行先へ置き換えます。
 - 新しい上流提案は対象リポジトリのIssueとして作成し、Marginalis側のIssueから関連付けます。

@@ -1,38 +1,45 @@
-# 本番到達性とカバレッジ
+# 本番コードの到達性とカバレッジ
 
-## 実行
+この文書は、開発者に向けて、テストで実行されたコードの計測方法と、本番から利用されないコードを
+検出する方法を説明します。カバレッジの数値だけでコードの必要性や品質を判断しません。
 
-Nix開発環境から次の一commandで計測します。
+## カバレッジの実行
+
+Nix開発環境で次のコマンドを実行します。
 
 ```sh
 nix develop --command cargo make coverage
 ```
 
-`target/coverage/`へ次の二組を生成し、同じsummaryを標準出力にも表示します。
+`target/coverage/`へ次のファイルを生成し、同じ概要を標準出力にも表示します。
 
-- `workspace.{json,summary.txt}`: workspaceのunit・integration testを実行した結果
-- `v0.3-integration-path.{json,summary.txt}`: 実行バイナリと現行HTTP・OIDC・MCP結合試験の結果
+| ファイル | 内容 |
+| --- | --- |
+| `workspace.{json,summary.txt}` | ワークスペースの単体テストと結合テスト |
+| `v0.3-integration-path.{json,summary.txt}` | 実行バイナリとHTTP・OIDC・MCPの結合テスト |
 
-`tests/`以下の外部test sourceと`marginalis-integration-tests` crateはreportの分母から除外します。
-`#[cfg(test)]`をproduction module末尾へ置くRustのunit testは同じsource fileとしてLLVMに
-instrumentされるため、file全体の数値にはtest bodyも含まれます。この数値を「未使用コード率」や
-厳密な「production code coverage」とは呼びません。未実行箇所をHTMLまたはJSONで確認し、
-本番到達性、試験不足、意図的なerror pathの順に分類します。
+`tests/`以下のテストコードと`marginalis-integration-tests`クレートは、計測率の分母から除外します。
+一方、`#[cfg(test)]`を本番モジュールの末尾へ置いた単体テストは、同じソースファイルとしてLLVMに
+計測されるため、ファイル全体の数値に含まれます。
 
-## 本番到達性
+この数値を「未使用コード率」や厳密な「本番コードのカバレッジ」とは呼びません。未実行箇所は
+HTMLまたはJSONで確認し、本番から利用されないコード、テスト不足、意図的なエラー処理に分類します。
 
-coverageは、本番から到達不能なコードの検出器ではありません。次の静的検査を別に実行します。
+## 本番から利用されないコードの検査
+
+カバレッジだけでは、本番から到達できないコードを判定できません。次の検査を別に実行します。
 
 ```sh
 nix develop --command cargo make production-reachability
 ```
 
-この検査は`marginalis-service`が依存するworkspace crateをallowlistと照合し、旧公開API、
-ローカル管理者、ファイル正本、所属定期監視に由来する禁止symbolの復帰を拒否します。
-`cargo make verify`にも含まれます。
+この検査は、`marginalis-service`が依存するクレートを許可一覧と照合します。また、廃止した公開API、
+ローカル管理者、ファイルを保存元とする旧構成、グループの定期照会に由来する識別子が復活して
+いないことを確認します。`cargo make verify`にも同じ検査を含めます。
 
-## CI方針
+## CIでの扱い
 
-coverageは通常の`verify`と独立した`coverage` jobで実行します。初期baselineでは一律の
-合格率を設定せず、summaryはCI logだけへ出力しartifactとして保存しません。秘密値、token、
-Cookie、実利用者データを試験fixtureやreportへ含めてはいけません。
+カバレッジは、通常の`verify`とは独立した`coverage`ジョブで実行します。導入時点では一律の
+合格率を設定しません。概要はCIログだけへ出力し、成果物として保存しません。
+
+秘密情報、トークン、Cookie、実際の利用者データを、テストデータやレポートへ含めてはいけません。

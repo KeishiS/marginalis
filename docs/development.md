@@ -1,5 +1,8 @@
 # GitHubを使う開発手順
 
+この文書は、AIエージェントを含む開発参加者に向けて、作業ブランチの作成からPull Requestの
+マージまでを説明します。リリースの詳しい操作は[リリース手順](release.md)を参照してください。
+
 ## 開発環境
 
 開発コマンドはNix開発環境で実行します。`gh`はPATHから直接実行します。
@@ -49,8 +52,9 @@ Pull Requestからマージします。
    ```
 
    CIは変更pathを判定し、文書だけのPull Requestでは`verify`を文書検査へ縮退し、
-   `coverage`とNixOS VMの実行を省略します。機械可読な公開仕様である`docs/openapi.json`は
-   この省略対象に含めません。`.github/**`、`Makefile.toml`、Nix、Rust、OpenAPIその他のpathを
+   `coverage`とNixOS VMの実行を省略します。プログラムが参照する公開仕様
+   `docs/openapi.json`は
+   この省略対象に含めません。`.github/**`、`Makefile.toml`、Nix、Rust、OpenAPIその他のファイルを
    同時に変更した場合は、通常の検証をすべて実行します。
 
    新しい作業項目はGitHub Issuesへ作成します。リポジトリ内にIssueファイルを追加しません。

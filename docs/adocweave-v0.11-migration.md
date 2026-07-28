@@ -2,10 +2,10 @@
 
 ## 目的
 
-AdocWeave 0.10.1から0.11.0への移行で、Marginalisの保存可否、安定診断、HTMLおよび
-URL安全性を維持しながら、責務別の公開設定へ移行します。
+この文書は、AdocWeave 0.10.1から0.11.0への移行判断を記録します。同じ入力に対して報告する
+問題の種類と位置、HTML、URLの安全性を維持しながら、処理ごとに分けた公開設定へ移行しました。
 
-## 固定入力比較
+## 同じ入力による比較
 
 0.10.1で固定した既存試験を0.11.0でも実行し、次の結果を確認しました。
 
@@ -21,7 +21,7 @@ URL安全性を維持しながら、責務別の公開設定へ移行します�
 0.11.0で不正percent escapeとnetwork-path URLの拒否が明確化されました。これらは従来から
 許可対象ではなく、安全性の明確化として扱います。
 
-## 設定責務
+## 処理ごとに使用する設定
 
 - 保存時解析: Strict modeと解析上限を持つ`AnalysisOptions`
 - 保存時診断: 執筆時URLを検査する`DiagnosticProfile`と`AuthoredUrlPolicy`
@@ -31,11 +31,11 @@ URL安全性を維持しながら、責務別の公開設定へ移行します�
 相対URLは`AuthoredUrlPolicy`の0.11.0既定値に依存せず、明示的に無効化します。描画時も
 執筆由来、解決済み相対URL、root相対URLおよびdata URLを明示的に無効化します。
 
-## lintと版の判断
+## lint規則とバージョン番号の判断
 
 `asciidoc-file-link`と`non-asciidoc-xref`は0.11.0の既定警告として有効にします。Marginalisは
 AdocWeaveのerrorと独自のnote profile違反だけを保存拒否へ写像するため、この警告追加は保存可否や
-公開する安定診断codeを変更しません。任意規則の`macro-boundary`は有効化しません。
+公開している問題識別用の`code`を変更しません。任意規則の`macro-boundary`は有効化しません。
 
 以上からnote profile版`1`とSQLite schema 4を維持します。一方、同じformat名で復元互換性だけを
 失う状態を避けるため、archive identityを`marginalis-archive-4`へ更新します。0.10.1のarchiveは

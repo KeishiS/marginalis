@@ -1,9 +1,14 @@
-# MCP と OAuth
+# MCPとOAuth
 
-Marginalis は MCP の OAuth Authorization Server と Protected Resource を同一オリジンで提供します。
-Kanidm token を MCP client に渡すことはありません。
+この文書は、MCPを利用する人と運用者に向けて、クライアントの接続方法、許可する操作、OAuthの
+仕組み、MCPの通信仕様を説明します。MCPとOAuthの基本用語は[用語集](glossary.md)を参照してください。
 
-| 対象 | endpoint |
+Marginalisは、MCPクライアントへKanidmのトークンや利用者のパスワードを渡しません。ブラウザーで
+Marginalisへログインし、クライアントに許可する操作を承認します。
+
+## OAuthの接続先
+
+| 対象 | 接続先 |
 | --- | --- |
 | MCP | `POST B/mcp` |
 | Protected Resource Metadata | RFC 9728で`B/mcp`から導出するURL |
@@ -13,9 +18,11 @@ Kanidm token を MCP client に渡すことはありません。
 | Marginalis承認確定 | `POST B/oauth/authorize/consent` |
 | Token | `POST B/oauth/token` |
 
-ここで `B` は外部 base URL です。クライアントは Dynamic Client Registration を行い、Authorization
-Code + PKCE S256 を使います。未ログインで authorization endpoint を開いた場合は OIDC login へ移動し、
-認可リクエストへ安全に戻ります。
+ここで`B`は外部から利用するベースURLです。クライアントは動的クライアント登録を行い、
+Authorization Code + PKCE S256を使います。未ログインの場合はOIDCログインへ移動し、ログイン後に
+認可処理へ戻ります。
+
+## 認可の開始と承認
 
 OAuth clientからの認可開始はquery付き`GET`とform-encoded `POST`の両方を受け付けます。POSTのOAuth
 parameterはURL queryとform bodyのどちらにあってもよいですが、同じparameterを複数回送ると値が同じでも
@@ -28,6 +35,8 @@ ChatGPTやClaudeがclient originから送る初回POSTにclient自身のCSRF fie
 OAuth clientのpopupやsandboxでは`Origin`が欠落またはopaqueになり得るため、このendpointは
 同一session、CSRF cookie、Marginalisが発行してsessionへ紐付けたform tokenの一致を必須とします。
 外部clientの認可開始endpointと状態変更endpointを分け、field名による推測では分類しません。
+
+## メタデータURL
 
 well-known suffixはhostとsubject pathの間へ挿入します。base URLがhost rootかsubpathかで
 URLが次のように変わります。
@@ -43,10 +52,16 @@ URLが次のように変わります。
 これはRFC 9728とRFC 8414のpath付きsubject規則です。KanidmのOIDC `issuerUrl`は外部Identity
 ProviderのURLであり、Marginalis自身のOAuth metadata URLの導出には使いません。
 
+## MCPへのリクエスト元
+
 `/mcp` は Cookie を使わず、すべての request を `Authorization: Bearer` で認可します。`Origin` がある
 browser client は DNS rebinding 対策として完全一致の許可リストで検証します。NixOS module の既定値は
 空であり、ChatGPT Web UIを使う場合は`https://chatgpt.com`を明示します。Codex CLI と Claude Code の
 ように `Origin` を送らない native client はこの制約の対象外です。
+
+## クライアント別の接続方法
+
+### Claude Code
 
 Claude Codeは次のようにremote Streamable HTTP serverとして追加し、Claude Code内の`/mcp`から
 browser認証します。
@@ -65,11 +80,15 @@ listenerへ到達できる構成が別途必要です。
 RFC 8252がIP literalを推奨する一方、`localhost`はClaude Code互換性のために許容し、承認画面でlocal
 applicationへのredirectであることを明示します。
 
+### Claude.ai
+
 Claude.aiのWeb UIでは、`Customize`の`Connectors`からcustom connectorとして
 `https://marginalis.sandi05.com/mcp`を追加します。この接続はAnthropicのcloudから行われ、OAuthの
 browser loginと承認を経ます。Claude.ai subscriptionでClaude Codeへログインしている場合は、Claude.aiで
 追加したconnectorがClaude Codeにも表示されます。API key、Amazon Bedrock、Google Vertex AIで認証した
 Claude CodeにはClaude.ai側のconnectorは同期されないため、上記の`claude mcp add`を使います。
+
+## OAuthの安全性とトークン
 
 この許可リストは MCP transport 専用です。OAuth の承認画面は Marginalis が表示する Authorization Server
 との操作ですが、clientのpopupやsandboxに依存しないよう`Origin`を認可根拠にはしません。
@@ -92,6 +111,8 @@ rotation の親子関係も、有効な子孫がある間保持します。こ�
 現行のschema versionは4です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
 再初期化し、MCP clientは再登録・再認可してください。
 
+## クライアント登録の制限
+
 Dynamic Client Registration は 16 KiB の本文上限、redirect originごとに10分あたり30件のrate limit、
 最大1,000 clientの永続化上限を持ちます。grantを取得しない登録は24時間後の日次保守で削除します。登録・token
 endpointが受理したprotocol/application errorはOAuthの`error` / `error_description`形式で返します。
@@ -101,6 +122,8 @@ MCP requestでは無効または失効済みtokenを`401 invalid_token`、必要
 含めます。
 public client専用token endpointでHTTP認証を試みた場合は`401 invalid_client`と、提示された認証schemeの
 `WWW-Authenticate`を返します。
+
+## MCPの通信仕様
 
 MCP transportは[JSON-RPC 2.0](https://www.jsonrpc.org/specification)の`jsonrpc`、method、params、idを
 厳密に検証します。[MCP base protocol](https://modelcontextprotocol.io/specification/2025-11-25/basic)
@@ -163,15 +186,21 @@ JSONまたはtool引数の構造が不正な場合はJSON-RPC `-32602`です。�
 }
 ```
 
+## 対応範囲
+
 本リリースのChatGPT、Claude、Codex受入では、互換登録経路としてDynamic Client Registrationを使用します。
 対象clientごとの成否を記録するまで未検証として扱います。MCP 2025-11-25が推奨（SHOULD）する
 Client ID Metadata Documentには意図的に対応しません。client指定URLをAuthorization Serverから取得する
 方式にはSSRF、名前解決変更、取得制限、cacheの対策が必要であり、受入対象のDCR経路に不要なoutbound HTTP
 依存を増やすためです。対象clientがDCRを廃止した場合は、この判断を再検討します。
 
+## ブラウザーからの直接利用
+
 OAuth endpointへ一律のCORSは付与しません。authorization endpointはnavigation/form送信を受け、CORSを
 提供しません。token交換、Dynamic Client Registration、MCP requestはclient backendまたはnative client
 から行うことを受入試験で確認します。browser内JavaScriptから直接呼び出す汎用clientは対象外です。
+
+## 権限と認可の取消
 
 scope は `notes:read`、`notes:write`、`notes:delete` です。scopeは許可する操作を制限しますが、
 所有範囲を拡張しません。通常利用者は自身が作成したノートだけを操作でき、`server-admins`は

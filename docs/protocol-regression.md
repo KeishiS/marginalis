@@ -1,12 +1,12 @@
-# browser・MCP protocol回帰試験
+# ブラウザーとMCPプロトコルの回帰テスト
 
 ## 目的
 
-OIDC login、OAuth authorization、MCP Streamable HTTPの公開仕様と、主要clientに必要な互換経路を
-分離して検証します。外部サービスのUIは自動操作せず、実clientの版と手動確認結果はリリース受入へ
-記録します。
+この文書は、開発者に向けて、ブラウザーでのログイン、OAuth認可、MCP Streamable HTTPの仕様を
+継続して確認する方法を説明します。外部サービスのUIは自動操作せず、実際のクライアントを使った
+確認結果はリリース受入へ記録します。
 
-## 自動試験
+## 自動テスト
 
 `oauth_flow`は本番adapterとAxum routerのHTTP境界を通し、次を検証します。
 
@@ -29,7 +29,7 @@ nix build -L .#checks.x86_64-linux.kanidm-discovery-vm
 nix develop --command cargo make protocol-regression-assets
 ```
 
-## client相互運用fixture
+## クライアントとの接続確認に使うテストデータ
 
 [client-compatibility.json](../crates/marginalis-integration-tests/fixtures/client-compatibility.json)
 は標準仕様の試験データではなく、client相互運用fixtureです。
@@ -41,7 +41,7 @@ nix develop --command cargo make protocol-regression-assets
 
 fixtureは観測したrequest形状だけを固定し、client固有の非標準挙動を一般仕様として許可しません。
 
-## 失敗証跡
+## テスト失敗時に保存する情報
 
 失敗証跡にはrequest ID、HTTP status、遷移先のscheme・host・path、秘密情報を除いたserver log、
 必要な場合の画面だけを保存します。Cookie、access token、refresh token、ID token、authorization
@@ -57,7 +57,7 @@ bash .github/scripts/protocol-artifact.sh check artifact.log
 URLのqueryは原則として保存しません。調査に必要な場合も、`code`などをsanitizeした後に保存します。
 artifactは公開CIへ無期限に保持せず、リリース調査に必要な期間だけアクセス制限付きで保持します。
 
-## 手動互換確認
+## 実際のクライアントを使う確認
 
 リリース前にChatGPT、Claude Code、Codex CLIでmetadata discovery、認可、refresh、tool call、
 認可取消を確認します。[リリース受入](acceptance.md)には必須項目の完了日と成否だけを記録し、

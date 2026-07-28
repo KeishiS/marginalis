@@ -1,31 +1,48 @@
 # REST API
 
-## 現行仕様
+この文書は、REST APIを利用する人に向けて、認証、主な接続先、権限、入力エラーを説明します。
+正式な入出力は[OpenAPI 3.1](openapi.json)で定めています。
 
-公開 API は `/api/v2` です。機械可読な正本は [OpenAPI 3.1](openapi.json) であり、実行中の
-`GET /api/v2/openapi.json` は同じ内容を返します。`/api/v1` とroot管理APIは提供しません。
+## 概要
 
-ブラウザー API は OIDC session Cookie を用います。変更操作には session と同時に発行される CSRF
-token を `X-CSRF-Token` で送ります。`Origin` が公開 base URL と一致しない要求は拒否されます。
+REST APIは`/api/v2`で提供します。実行中の`GET /api/v2/openapi.json`からもOpenAPIを取得できます。
+`/api/v1`とローカル`root`用の管理APIは提供しません。
 
-| 操作 | endpoint | 備考 |
+## 認証と変更操作
+
+Web UIからREST APIを利用する場合は、OIDCログイン時に発行したセッションCookieを使用します。
+作成、更新、削除などの変更操作では、同時に発行したCSRFトークンを`X-CSRF-Token`ヘッダーで
+送信してください。リクエストの`Origin`が公開ベースURLと一致しない場合は拒否します。
+
+## 主な接続先
+
+| 操作 | 接続先 | 備考 |
 | --- | --- | --- |
-| liveness | `GET /api/v2/health` | 認証不要 |
-| session | `GET /api/v2/session` | Kanidm subject と管理者フラグ |
-| ノート一覧・作成 | `GET` / `POST /api/v2/notes` | 作成は CSRF 必須 |
-| 取得・更新・削除 | `GET` / `PUT` / `DELETE /api/v2/notes/{note_id}` | 更新・削除は `expected_revision` 必須 |
-| AsciiDoc export | `GET /api/v2/notes/{note_id}/source` | 可視ノートだけ |
-| 復元 | `POST /api/v2/notes/{note_id}/restore` | 30 日以内の削除済みノート |
-| MCP 認可取消 | `DELETE /api/v2/mcp-authorizations/{client_id}` | CSRF 必須。token family を失効 |
+| 稼働確認 | `GET /api/v2/health` | 認証不要 |
+| セッション確認 | `GET /api/v2/session` | Kanidmの利用者識別子と管理者フラグ |
+| ノート一覧 | `GET /api/v2/notes` | 閲覧できるノートだけ |
+| ノート作成 | `POST /api/v2/notes` | CSRFトークンが必要 |
+| ノート取得 | `GET /api/v2/notes/{note_id}` | 閲覧できるノートだけ |
+| ノート更新 | `PUT /api/v2/notes/{note_id}` | `expected_revision`が必要 |
+| ノート削除 | `DELETE /api/v2/notes/{note_id}` | `expected_revision`が必要 |
+| AsciiDoc書き出し | `GET /api/v2/notes/{note_id}/source` | 閲覧できるノートだけ |
+| ノート復元 | `POST /api/v2/notes/{note_id}/restore` | 削除後30日以内 |
+| MCP認可の取消 | `DELETE /api/v2/mcp-authorizations/{client_id}` | 関連するトークンも失効 |
 
-ノートの作成・更新は JSON の `title`、`body`、`tags` を受け取ります。成功応答の詳細な形式、エラー、
-status code は OpenAPI を参照してください。本文はUTF-8で512 KiB以下です。通常利用者は作成者の
-`(issuer, subject)`が自身と一致するノートだけを操作でき、`server-admins`はすべてのノートを操作できます。
-権限のないノートは、存在の推測を防ぐため`404 not_found`として扱います。
+## ノートの入力と権限
 
-入力規則に違反した場合は`422`と`validation_failed`を返します。`diagnostics`の各要素は安定した
-`code`、対象field、任意の`span`、説明を持ちます。`span`は送信した`body`を基準とするUTF-8 byteの
-半開区間です。タイトルとタグの診断には本文の疑似位置を付けません。
+ノートの作成・更新では、JSON形式の`title`、`body`、`tags`を送信します。本文はUTF-8で
+512 KiB以下です。
+
+通常利用者は、自身が作成したノートだけを操作できます。`server-admins`グループに属する利用者は、
+すべてのノートを操作できます。権限のないノートは、存在を推測できないよう、HTTP状態コード`404`と
+`code: "not_found"`を返します。
+
+## 入力内容の検査
+
+入力規則に違反した場合は、HTTP状態コード`422`と`code: "validation_failed"`を返します。
+`diagnostics`には、問題の種類を表す`code`、対象項目、本文中の位置、説明を含めます。位置は
+UTF-8で符号化した`body`上のバイト範囲です。タイトルとタグの問題には本文中の位置を付けません。
 
 ```json
 {
@@ -41,7 +58,7 @@ status code は OpenAPI を参照してください。本文はUTF-8で512 KiB�
 }
 ```
 
-## Web UI
+## Web UIとの関係
 
-`/` はログイン後の閲覧 UI、`/notes/{note_id}` は個別ノート表示です。HTML 表示と一覧には、当該利用者が
-閲覧可能なノートだけを出します。
+`/`はログイン後の一覧画面、`/notes/{note_id}`は個別のノートを表示する画面です。REST APIと
+Web UIには同じ権限確認を適用し、現在の利用者が閲覧できるノートだけを表示します。

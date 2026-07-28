@@ -1,10 +1,10 @@
 # AdocWeave 0.11移行の受入確認
 
-この受入はAdocWeave 0.11.0への移行を対象とします。SQLite schema 4と
-`marginalis-archive-4`へ互換identityを更新し、所有者認可およびnote profile版`1`は維持します。
-AdocWeave package版が異なるarchiveは暗黙に移行しません。
+この文書は、AdocWeave 0.11.0へ移行したv0.6.0の受入項目と結果を記録します。SQLiteスキーマ4と
+note profileバージョン`1`は維持し、アーカイブ形式を`marginalis-archive-4`へ更新しました。
+AdocWeaveのバージョンが異なるアーカイブは自動で移行しません。
 
-## 自動証跡
+## 自動テスト
 
 PR CIの`verify`と`nixos-e2e`、公開前の`cargo make release-gate`で次を確認します。
 
@@ -13,7 +13,7 @@ PR CIの`verify`と`nixos-e2e`、公開前の`cargo make release-gate`で次を�
 - 所有者identityがissuerとsubjectの完全一致であること
 - 所有者、非所有者、`server-admins`の一覧・取得・更新・削除・復元
 - MCP scopeが所有権を拡張しないこと
-- archiveの隔離復元と論理的な往復
+- アーカイブを隔離した環境へ復元し、再度書き出したデータが一致すること
 - v0.5.0のschema定義で作成したdatabaseからの起動と既存ノートの保持
 - 0.10.1のarchiveをimportした場合の、保存先作成前の拒否
 - Kanidm、OIDC、OAuth、backup、purge、障害診断の回帰

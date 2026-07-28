@@ -1,21 +1,30 @@
 # リリース手順
 
-この文書は、版に依存しない公開手順を定めます。対象版の互換性、移行、schema、archiveは
-[変更履歴](../CHANGELOG.md)と[受入確認](acceptance.md)を正とします。破壊的リリースではserviceを
-停止し、必要な退避を行った後、対象版の手順どおりに`dataDir`を初期化します。
+この文書は、各バージョンに共通するリリース手順を定めます。バージョンごとの互換性と移行方法は
+[変更履歴](../CHANGELOG.md)を確認してください。変更履歴にデータの退避や`dataDir`の初期化が
+指示されている場合だけ、その手順を実施します。
 
-1. 作業ブランチで `cargo make verify`、`cargo make openapi-check`、`nix flake check --no-build` を実行する。
-2. Kanidm 1.10、TLS、サブパスを使う NixOS E2E を実行する。
-3. ChatGPT、Claude Code、Codex CLI の MCP OAuth read/write/revoke を受入確認する。
-4. 空databaseからのNixOS配備、backup destination、purge timerを確認する。
-   現行運用では、最新archiveを本番から隔離した空databaseへ復元する試験も実施する。
-5. OpenAPI、MCP、NixOS、受入文書が同じ仕様を説明していることを確認する。
-6. Pull Request を作成し、目的・主な差分・検証結果を記載して rebase auto-merge を設定する。
-7. `main`へのマージ後、`main`の先端でrelease-gate workflowを手動実行する。`release_tag`には
-   作成予定のタグを入力し、成功を確認する。
-8. 必須gateが成功した`main`の先端へrelease tagを作成する。タグのpushで再実行される
-   release-gateも成功することを確認する。
+## 事前検証
 
-現行運用では日次backup、30世代保持、四半期の週末復元試験を運用基準とします。復元先は
-本番databaseから隔離し、既存databaseを暗黙に上書きしてはなりません。詳細は
-[NixOSでの運用](nixos.md)と[受入確認](acceptance.md)を参照してください。
+1. 作業ブランチで`cargo make verify`、`cargo make openapi-check`、
+   `nix flake check --no-build`を実行します。
+2. Kanidm 1.10、TLS、サブパスを使うNixOSのE2Eテストを実行します。
+3. ChatGPT、Claude Code、Codex CLIからMCPへ接続し、読み取り、書き込み、認可取消を確認します。
+4. 空のデータベースからNixOSへ配備できること、バックアップ先、削除用タイマーを確認します。
+5. 最新のアーカイブを、本番から隔離した空のデータベースへ復元します。
+6. OpenAPI、MCP、NixOS、受入資料が同じ仕様を説明していることを確認します。
+
+## Pull Request
+
+1. Pull Requestを作成し、目的、主な差分、検証結果を記載します。
+2. 必須チェックとレビューの完了後にrebase方式で自動マージされるよう設定します。
+
+## リリース検証とタグ
+
+1. `main`へのマージ後、先端のコミットで`release-gate`ワークフローを手動実行します。
+2. `release_tag`には作成予定のタグを入力し、検証の成功を確認します。
+3. 検証した`main`の先端へリリースタグを作成してプッシュします。
+4. タグのプッシュによって再実行される`release-gate`も成功することを確認します。
+
+日次バックアップ、30世代の保持、四半期の復元確認については
+[NixOSでの運用](nixos.md)を参照してください。

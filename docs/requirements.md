@@ -1,32 +1,61 @@
 # 現行要件
 
-## 仮定
+この文書は、現在のMarginalisが提供する機能と運用上の前提を定めます。対象読者はシステム責任者と
+開発者です。実装方法は[アーキテクチャ](architecture.md)、REST APIの入出力は
+[OpenAPI](openapi.json)を参照してください。
 
-- 単一NixOS host、SQLite、同時利用者10名、約1,000ノート
-- Kanidm 1.10によるOIDC本人確認とgroup管理
-- 新規配備では空databaseからの初期化
-- v0.5.0からの更新ではschema 4の`dataDir`を保持
+## 想定する運用環境
 
-## 確定要件
+- 単一のNixOSホスト
+- SQLiteデータベース
+- 同時利用者10名程度
+- 約1,000ノート
+- Kanidm 1.10による利用者の認証とグループ管理
 
-- SQLiteは本文、メタデータ、所有者、削除状態の単一正本です。AsciiDocはノート単位のexport、
-  JSON archiveは全体のimport/export形式であり、稼働時の正本ではありません。
-- ノート所有者は作成時の`(issuer, subject)`であり変更できません。所有者と`server-admins`だけが
-  ノートを閲覧・管理できます。その他の利用者には存在を開示しません。
-- `server-users`に属する主体だけが利用できます。署名検証済みOIDC ID tokenの`groups` claimを
-  login時の権限snapshotとし、group変更は次回loginから反映します。
-- Web sessionは最終利用から24時間、loginから7日で失効します。期限切れまたは失効済みの認証状態は
-  日次保守で削除します。
-- REST、Web UI、MCPは同じ所有者認可とrevision規則を使います。REST APIは`/api/v2`、MCPは
-  OAuth 2.1 Authorization Code + PKCE S256とDynamic Client Registrationを提供します。
-- MCP scopeは操作種別を制限しますが、ノート所有権を拡張しません。
-- 削除は30日のソフトデリートです。本文履歴は保存せず、期限後に日次timerで物理削除します。
-- 本文はUTF-8で512 KiB以下とし、上限超過時はAsciiDoc解析を開始せず拒否します。
-- NixOS moduleはSQLite、OIDC client、MCP、backup destinationを設定でき、client secretを
-  systemd credentialで渡します。
-- SQLite schema 4と`marginalis-archive-4`だけを受理します。v0.5.0のschema 4 databaseは
-  継続利用できます。旧schemaと旧archiveの移行は提供しません。
+新規に導入する場合は、空のデータベースから初期化します。v0.5.0から更新する場合は、スキーマ4の
+`dataDir`を引き続き使用できます。
 
-実装上の不変条件は[アーキテクチャ](architecture.md)、HTTP仕様は
-[OpenAPI](openapi.json)を参照してください。v0.3.0時点の要件と設計判断は
-[再設計判断記録](v0.3.0-design.md)を履歴として参照します。
+## データ管理
+
+- 稼働中のノートはSQLiteへ保存します。保存対象は本文、メタデータ、所有者、削除状態です。
+- 個別のノートはAsciiDoc形式で書き出せます。全データはJSON形式のアーカイブとして読み込み・
+  書き出しができます。
+- 本文はUTF-8で512 KiB以下とします。上限を超えた場合は、AsciiDocの解析を始める前に拒否します。
+- 本文の変更履歴は保存しません。
+
+## 利用者と権限
+
+- Kanidmの`server-users`グループに属する利用者だけがMarginalisを利用できます。
+- ノートの所有者は、作成時のOIDC issuerとsubjectの組み合わせで決まり、後から変更できません。
+- 所有者と`server-admins`グループに属する利用者だけが、ノートを閲覧・管理できます。その他の
+  利用者には、ノートが存在することも開示しません。
+- ログイン時に署名を検証したID tokenからグループ情報を読み取り、そのセッション中の権限として
+  使用します。Kanidmでグループを変更した場合は、次回のログインから反映します。
+- Webセッションは、最後の利用から24時間、ログインから最長7日で失効します。期限切れまたは
+  取り消された認証情報は日次処理で削除します。
+
+## 接続方法
+
+- REST API、Web UI、MCPでは、同じ所有者の確認と`revision`の規則を使用します。
+- REST APIは`/api/v2`で提供します。
+- MCPの認可にはOAuth 2.1 Authorization Code + PKCE S256を使用し、動的クライアント登録に
+  対応します。
+- MCPの`scope`は許可する操作の種類を制限しますが、操作できるノートの範囲は広げません。
+
+## 削除と定期処理
+
+削除したノートは30日間、復元できる状態で保管します。期限を過ぎたノートは、日次タイマーが
+データベースから完全に削除します。
+
+## NixOSでの配備
+
+NixOSモジュールでは、SQLite、OIDCクライアント、MCP、バックアップ先を設定できます。OIDCの
+クライアントシークレットは、systemdが秘密情報を安全に渡すcredential機構を使用します。
+
+## 対応する保存形式
+
+SQLiteスキーマ4と`marginalis-archive-4`に対応します。v0.5.0のスキーマ4のデータベースは
+継続して使用できます。以前のスキーマとアーカイブを自動で移行する機能は提供しません。
+
+一貫して満たすべき設計条件は[アーキテクチャ](architecture.md)を参照してください。v0.3.0時点の
+要件と設計判断は[再設計判断記録](v0.3.0-design.md)に保存しています。
