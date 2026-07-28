@@ -1,4 +1,11 @@
-import { FormEvent, UIEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  UIEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   ApiError,
@@ -25,6 +32,11 @@ interface FormState {
   tagsText: string;
 }
 
+interface ConflictState {
+  editingStarted: FormState;
+  current: Note;
+}
+
 const EMPTY_FORM: FormState = { title: "", body: "", tagsText: "" };
 
 export function EditorApplication({ config }: { config: EditorConfig }) {
@@ -36,6 +48,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [notice, setNotice] = useState("");
+  const [conflict, setConflict] = useState<ConflictState | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewProblem, setPreviewProblem] = useState<Problem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -135,6 +148,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           : await updateNote(config.apiBase, noteId, draft, revision);
       setNoteId(note.note_id);
       applyNote(note, setForm, setBaseline, setRevision);
+      setConflict(null);
       setNotice("保存しました。");
       if (revision === null) {
         window.history.replaceState(
@@ -144,7 +158,17 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         );
       }
     } catch (error: unknown) {
-      setProblem(toProblem(error));
+      const nextProblem = toProblem(error);
+      setProblem(nextProblem);
+      if (nextProblem.code === "conflict" && noteId) {
+        try {
+          const current = await readNote(config.apiBase, noteId);
+          setConflict({ editingStarted: baseline, current });
+        } catch (refreshError: unknown) {
+          setProblem(toProblem(refreshError));
+          setConflict(null);
+        }
+      }
     } finally {
       setSaving(false);
     }
@@ -203,6 +227,23 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         <p className="notice" role="status">
           {notice}
         </p>
+      )}
+      {conflict && (
+        <ConflictPanel
+          editingStarted={conflict.editingStarted}
+          editing={form}
+          current={noteToForm(conflict.current)}
+          currentRevision={conflict.current.revision}
+          onUseCurrentRevision={() => {
+            setBaseline(noteToForm(conflict.current));
+            setRevision(conflict.current.revision);
+            setConflict(null);
+            setProblem(null);
+            setNotice(
+              `更新番号${conflict.current.revision}を基準にしました。内容を確認して保存してください。`,
+            );
+          }}
+        />
       )}
 
       <div className="editor-workspace">
@@ -264,6 +305,142 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         />
       </div>
     </section>
+  );
+}
+
+function ConflictPanel({
+  editingStarted,
+  editing,
+  current,
+  currentRevision,
+  onUseCurrentRevision,
+}: {
+  editingStarted: FormState;
+  editing: FormState;
+  current: FormState;
+  currentRevision: number;
+  onUseCurrentRevision: () => void;
+}) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), []);
+  return (
+    <section className="conflict-panel" aria-labelledby="conflict-heading">
+      <h2 id="conflict-heading" ref={heading} tabIndex={-1}>
+        更新内容の競合
+      </h2>
+      <p>
+        編集中の内容は維持されています。三つの内容を比較し、必要な修正を行ってください。
+      </p>
+      <ConflictFields
+        editingStarted={editingStarted}
+        editing={editing}
+        current={current}
+      />
+      <h3>本文の行単位比較</h3>
+      <BodyConflictTable
+        editingStarted={editingStarted.body}
+        editing={editing.body}
+        current={current.body}
+      />
+      <button type="button" onClick={onUseCurrentRevision}>
+        更新番号{currentRevision}を編集の基準にする
+      </button>
+      <p>
+        この操作では保存しません。比較後にフォームの「保存」を選んでください。
+      </p>
+    </section>
+  );
+}
+
+function ConflictFields({
+  editingStarted,
+  editing,
+  current,
+}: {
+  editingStarted: FormState;
+  editing: FormState;
+  current: FormState;
+}) {
+  const values = [
+    { label: "編集開始時点", form: editingStarted },
+    { label: "編集中", form: editing },
+    { label: "現在保存されている内容", form: current },
+  ];
+  return (
+    <div className="conflict-fields">
+      {values.map(({ label, form }) => (
+        <section key={label} aria-label={label}>
+          <h3>{label}</h3>
+          <dl>
+            <dt>題名</dt>
+            <dd>{form.title || "（空欄）"}</dd>
+            <dd className="change-status">
+              {fieldStatus(label, form.title, editingStarted.title)}
+            </dd>
+            <dt>タグ</dt>
+            <dd>{form.tagsText || "（なし）"}</dd>
+            <dd className="change-status">
+              {fieldStatus(
+                label,
+                normalizedTags(form.tagsText),
+                normalizedTags(editingStarted.tagsText),
+              )}
+            </dd>
+          </dl>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function BodyConflictTable({
+  editingStarted,
+  editing,
+  current,
+}: {
+  editingStarted: string;
+  editing: string;
+  current: string;
+}) {
+  const rows = alignThreeVersions(
+    splitLines(editingStarted),
+    splitLines(editing),
+    splitLines(current),
+  );
+  return (
+    <div
+      className="conflict-body-scroll"
+      tabIndex={0}
+      aria-label="本文比較表のスクロール領域"
+    >
+      <table className="conflict-body">
+        <caption>本文の行単位比較</caption>
+        <thead>
+          <tr>
+            <th scope="col">行</th>
+            <th scope="col">状態</th>
+            <th scope="col">編集開始時点</th>
+            <th scope="col">編集中</th>
+            <th scope="col">現在保存されている内容</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr className={row.changed ? "changed" : undefined} key={index}>
+              <th scope="row">{row.line}</th>
+              <td className="change-status">{row.status}</td>
+              {[row.editingStarted, row.editing, row.current].map(
+                (value, column) => (
+                  <td key={column}>
+                    <code>{value ?? "\u00a0"}</code>
+                  </td>
+                ),
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -395,14 +572,176 @@ function applyNote(
   setBaseline: (form: FormState) => void,
   setRevision: (revision: number) => void,
 ) {
-  const next = {
+  const next = noteToForm(note);
+  setForm(next);
+  setBaseline(next);
+  setRevision(note.revision);
+}
+
+function noteToForm(note: Note): FormState {
+  return {
     title: note.title,
     body: note.body,
     tagsText: note.tags.join(", "),
   };
-  setForm(next);
-  setBaseline(next);
-  setRevision(note.revision);
+}
+
+function splitLines(value: string): string[] {
+  return value.split(/\r\n|\r|\n/);
+}
+
+function fieldStatus(label: string, value: string, baseline: string): string {
+  if (label === "編集開始時点") {
+    return "比較基準";
+  }
+  return value === baseline ? "変更なし" : "変更あり";
+}
+
+function normalizedTags(value: string): string {
+  return parseTags(value)
+    .map((tag) => tag.toLocaleLowerCase())
+    .sort()
+    .join("\u0000");
+}
+
+interface AlignedLines {
+  insertions: string[][];
+  matches: Array<string | null>;
+}
+
+interface ConflictLine {
+  line: string;
+  status: string;
+  changed: boolean;
+  editingStarted: string | null;
+  editing: string | null;
+  current: string | null;
+}
+
+function alignThreeVersions(
+  baseline: string[],
+  editing: string[],
+  current: string[],
+): ConflictLine[] {
+  const editingAligned = alignToBaseline(baseline, editing);
+  const currentAligned = alignToBaseline(baseline, current);
+  const rows: ConflictLine[] = [];
+  for (
+    let baselineIndex = 0;
+    baselineIndex <= baseline.length;
+    baselineIndex++
+  ) {
+    const editingInsertions = editingAligned.insertions[baselineIndex] ?? [];
+    const currentInsertions = currentAligned.insertions[baselineIndex] ?? [];
+    const insertionCount = Math.max(
+      editingInsertions.length,
+      currentInsertions.length,
+    );
+    for (
+      let insertionIndex = 0;
+      insertionIndex < insertionCount;
+      insertionIndex++
+    ) {
+      const editingLine = editingInsertions[insertionIndex] ?? null;
+      const currentLine = currentInsertions[insertionIndex] ?? null;
+      rows.push({
+        line: "追加",
+        status:
+          editingLine !== null && currentLine !== null
+            ? "編集中と現在の内容に追加"
+            : editingLine !== null
+              ? "編集中に追加"
+              : "現在の内容に追加",
+        changed: true,
+        editingStarted: null,
+        editing: editingLine,
+        current: currentLine,
+      });
+    }
+    if (baselineIndex === baseline.length) {
+      continue;
+    }
+    const editingLine = editingAligned.matches[baselineIndex] ?? null;
+    const currentLine = currentAligned.matches[baselineIndex] ?? null;
+    const deletions = [
+      editingLine === null ? "編集中から削除" : "",
+      currentLine === null ? "現在の内容から削除" : "",
+    ].filter(Boolean);
+    rows.push({
+      line: String(baselineIndex + 1),
+      status: deletions.length > 0 ? deletions.join("、") : "変更なし",
+      changed: deletions.length > 0,
+      editingStarted: baseline[baselineIndex] ?? "",
+      editing: editingLine,
+      current: currentLine,
+    });
+  }
+  return rows;
+}
+
+function alignToBaseline(baseline: string[], variant: string[]): AlignedLines {
+  if (baseline.length * variant.length > 250_000) {
+    return alignLargeDocument(baseline, variant);
+  }
+  const lengths = Array.from({ length: baseline.length + 1 }, () =>
+    Array<number>(variant.length + 1).fill(0),
+  );
+  for (let left = baseline.length - 1; left >= 0; left--) {
+    for (let right = variant.length - 1; right >= 0; right--) {
+      lengths[left]![right] =
+        baseline[left] === variant[right]
+          ? (lengths[left + 1]?.[right + 1] ?? 0) + 1
+          : Math.max(
+              lengths[left + 1]?.[right] ?? 0,
+              lengths[left]?.[right + 1] ?? 0,
+            );
+    }
+  }
+  const insertions = Array.from(
+    { length: baseline.length + 1 },
+    () => [] as string[],
+  );
+  const matches = Array<string | null>(baseline.length).fill(null);
+  let left = 0;
+  let right = 0;
+  while (left < baseline.length && right < variant.length) {
+    if (baseline[left] === variant[right]) {
+      matches[left] = variant[right] ?? "";
+      left++;
+      right++;
+    } else if (
+      (lengths[left]?.[right + 1] ?? 0) >= (lengths[left + 1]?.[right] ?? 0)
+    ) {
+      insertions[left]?.push(variant[right] ?? "");
+      right++;
+    } else {
+      left++;
+    }
+  }
+  while (right < variant.length) {
+    insertions[baseline.length]?.push(variant[right] ?? "");
+    right++;
+  }
+  return { insertions, matches };
+}
+
+function alignLargeDocument(
+  baseline: string[],
+  variant: string[],
+): AlignedLines {
+  const insertions = Array.from(
+    { length: baseline.length + 1 },
+    () => [] as string[],
+  );
+  const matches = baseline.map((line, index) =>
+    variant[index] === line ? line : null,
+  );
+  for (let index = 0; index < variant.length; index++) {
+    if (matches[index] === null || index >= baseline.length) {
+      insertions[Math.min(index, baseline.length)]?.push(variant[index] ?? "");
+    }
+  }
+  return { insertions, matches };
 }
 
 function parseTags(value: string): string[] {

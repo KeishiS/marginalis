@@ -119,6 +119,235 @@ test("既存ノートを取得し、読み込んだrevisionで更新する", asy
   expect(await screen.findByText("更新番号: 4")).toBeInTheDocument();
 });
 
+test("revision競合時に三つの内容を比較し、明示操作後に再保存する", async () => {
+  document.cookie = "marginalis_csrf=test-csrf";
+  const localBody = `編集中😀\n${"長い行".repeat(80)}`;
+  const current = {
+    ...NOTE,
+    title: "現在の題名",
+    body: "現在の本文\n追加行",
+    tags: ["共有", "更新済み"],
+    revision: 4,
+  };
+  const saved = {
+    ...current,
+    title: "編集中の題名",
+    body: localBody,
+    tags: ["研究", "試験"],
+    revision: 5,
+  };
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse(NOTE))
+    .mockResolvedValueOnce(
+      jsonResponse(
+        { code: "conflict", message: "note revision conflicts" },
+        409,
+      ),
+    )
+    .mockResolvedValueOnce(jsonResponse(current))
+    .mockResolvedValueOnce(jsonResponse(saved));
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <EditorApplication
+      config={{ ...CREATE_CONFIG, mode: "edit", noteId: NOTE.note_id }}
+    />,
+  );
+
+  expect(await screen.findByDisplayValue("既存の題名")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", { name: "題名" }), {
+    target: { value: "編集中の題名" },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "本文（AsciiDoc）" }), {
+    target: { value: localBody },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+  const conflictHeading = await screen.findByRole("heading", {
+    name: "更新内容の競合",
+  });
+  expect(conflictHeading).toHaveFocus();
+  expect(
+    screen.getByRole("region", { name: "編集開始時点" }),
+  ).toHaveTextContent("既存の題名");
+  expect(screen.getByRole("region", { name: "編集中" })).toHaveTextContent(
+    "編集中の題名",
+  );
+  const currentRegion = screen.getByRole("region", {
+    name: "現在保存されている内容",
+  });
+  expect(currentRegion).toHaveTextContent("現在の題名");
+  expect(currentRegion).toHaveTextContent("共有, 更新済み");
+  expect(currentRegion).toHaveTextContent("変更あり");
+  expect(screen.getByRole("table")).toHaveTextContent("編集中😀");
+  expect(screen.getByRole("table")).toHaveTextContent("追加行");
+  expect(screen.getByLabelText("本文比較表のスクロール領域")).toHaveAttribute(
+    "tabindex",
+    "0",
+  );
+  expect(screen.getByRole("textbox", { name: "本文（AsciiDoc）" })).toHaveValue(
+    localBody,
+  );
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "更新番号4を編集の基準にする" }),
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(
+    screen.getByText(
+      "更新番号4を基準にしました。内容を確認して保存してください。",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "本文（AsciiDoc）" })).toHaveValue(
+    localBody,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+  expect(fetchMock.mock.calls[3]?.[1]).toEqual(
+    expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({
+        title: "編集中の題名",
+        body: localBody,
+        tags: ["研究", "試験"],
+        expected_revision: 4,
+      }),
+    }),
+  );
+  expect(await screen.findByText("更新番号: 5")).toBeInTheDocument();
+});
+
+test("競合確認後に再更新された場合も最新revisionを再取得する", async () => {
+  const current4 = { ...NOTE, title: "現在4", revision: 4 };
+  const current5 = { ...NOTE, title: "現在5", revision: 5 };
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse(NOTE))
+    .mockResolvedValueOnce(
+      jsonResponse(
+        { code: "conflict", message: "note revision conflicts" },
+        409,
+      ),
+    )
+    .mockResolvedValueOnce(jsonResponse(current4))
+    .mockResolvedValueOnce(
+      jsonResponse(
+        { code: "conflict", message: "note revision conflicts" },
+        409,
+      ),
+    )
+    .mockResolvedValueOnce(jsonResponse(current5));
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <EditorApplication
+      config={{ ...CREATE_CONFIG, mode: "edit", noteId: NOTE.note_id }}
+    />,
+  );
+
+  expect(await screen.findByDisplayValue("既存の題名")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", { name: "題名" }), {
+    target: { value: "編集中" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "更新番号4を編集の基準にする",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+  expect(
+    await screen.findByRole("button", {
+      name: "更新番号5を編集の基準にする",
+    }),
+  ).toBeInTheDocument();
+  expect(fetchMock.mock.calls[3]?.[1]).toEqual(
+    expect.objectContaining({
+      body: expect.stringContaining('"expected_revision":4'),
+    }),
+  );
+  expect(screen.getByDisplayValue("編集中")).toBeInTheDocument();
+});
+
+test("挿入と削除をLCSで整列し、変更状態を文字で表示する", async () => {
+  const baseline = { ...NOTE, body: "A\r\nB" };
+  const current = { ...NOTE, body: "A\nB\nY", revision: 4 };
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse(baseline))
+    .mockResolvedValueOnce(
+      jsonResponse(
+        { code: "conflict", message: "note revision conflicts" },
+        409,
+      ),
+    )
+    .mockResolvedValueOnce(jsonResponse(current));
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <EditorApplication
+      config={{ ...CREATE_CONFIG, mode: "edit", noteId: NOTE.note_id }}
+    />,
+  );
+
+  expect(await screen.findByDisplayValue("既存の題名")).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "本文（AsciiDoc）" })).toHaveValue(
+    "A\nB",
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "本文（AsciiDoc）" }), {
+    target: { value: "X\nA\nB" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+  const table = await screen.findByRole("table", {
+    name: "本文の行単位比較",
+  });
+  expect(table).toHaveTextContent("編集中に追加");
+  expect(table).toHaveTextContent("現在の内容に追加");
+  expect(table.querySelectorAll("tr.changed")).toHaveLength(2);
+  expect(table).not.toHaveTextContent("編集中から削除");
+  expect(table).not.toHaveTextContent("現在の内容から削除");
+});
+
+test("競合後に最新内容を閲覧できない場合は比較情報を表示しない", async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse(NOTE))
+    .mockResolvedValueOnce(
+      jsonResponse(
+        { code: "conflict", message: "note revision conflicts" },
+        409,
+      ),
+    )
+    .mockResolvedValueOnce(
+      jsonResponse(
+        { code: "not_found", message: "note is not available" },
+        404,
+      ),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <EditorApplication
+      config={{ ...CREATE_CONFIG, mode: "edit", noteId: NOTE.note_id }}
+    />,
+  );
+
+  expect(await screen.findByDisplayValue("既存の題名")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", { name: "題名" }), {
+    target: { value: "保持する編集中の題名" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+  expect(await screen.findByText("note is not available")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("保持する編集中の題名")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: "更新内容の競合" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /編集の基準にする/ }),
+  ).not.toBeInTheDocument();
+});
+
 test("入力検証に失敗しても編集内容と診断を保持する", async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
     jsonResponse(
