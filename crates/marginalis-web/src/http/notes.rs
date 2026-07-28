@@ -33,6 +33,11 @@ pub(super) struct NoteResponse {
     revision: i64,
 }
 
+#[derive(Serialize)]
+pub(super) struct NotePreviewResponse {
+    html: String,
+}
+
 impl From<Note> for NoteResponse {
     fn from(note: Note) -> Self {
         Self {
@@ -128,6 +133,27 @@ pub(super) async fn create_note(
         .await
         .map_err(note_error)?;
     Ok((StatusCode::CREATED, Json(note.into())))
+}
+
+pub(super) async fn preview_note(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(input): Json<NoteInput>,
+) -> HandlerResult<Json<NotePreviewResponse>> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let html = state
+        .notes
+        .preview_note(
+            actor,
+            NoteDraft {
+                title: input.title,
+                body: input.body,
+                tags: input.tags,
+            },
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(Json(NotePreviewResponse { html }))
 }
 
 pub(super) async fn update_note(

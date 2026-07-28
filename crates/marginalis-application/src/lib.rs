@@ -280,6 +280,11 @@ pub trait NoteUseCases: Send + Sync {
         draft: NoteDraft,
         expected_revision: i64,
     ) -> Result<Note, NoteUseCaseError>;
+    async fn preview_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+    ) -> Result<String, NoteUseCaseError>;
     async fn soft_delete_note(
         &self,
         actor: Actor,

@@ -14,6 +14,10 @@ export interface NoteDraft {
   tags: string[];
 }
 
+export interface NotePreview {
+  html: string;
+}
+
 export interface ValidationDiagnostic {
   code: string;
   target: { field: string; index?: number };
@@ -66,6 +70,17 @@ export async function updateNote(
       expected_revision: expectedRevision,
     }),
   );
+}
+
+export async function previewNote(
+  apiBase: string,
+  draft: NoteDraft,
+  signal?: AbortSignal,
+): Promise<NotePreview> {
+  return requestJson(`${apiBase}/notes/preview`, {
+    ...mutationRequest("POST", draft),
+    signal,
+  });
 }
 
 function mutationRequest(method: "POST" | "PUT", body: unknown): RequestInit {

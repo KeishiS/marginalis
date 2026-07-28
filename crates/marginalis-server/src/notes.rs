@@ -93,6 +93,31 @@ impl NoteUseCases for ServerNoteUseCases {
             .map_err(map_note_error)
     }
 
+    async fn preview_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+    ) -> Result<String, NoteUseCaseError> {
+        marginalis_domain::validate_identity(&actor.issuer, &actor.subject)
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let draft = marginalis_asciidoc::validate_note_draft(draft)
+            .map_err(NoteUseCaseError::Validation)?;
+        let now = SystemClock.now();
+        let note = Note {
+            note_id: NoteId::new(SystemRandom.uuid_v7()),
+            creator_issuer: actor.issuer,
+            creator_subject: actor.subject,
+            title: draft.title,
+            body: draft.body,
+            tags: draft.tags,
+            created_at: now,
+            updated_at: now,
+            revision: 1,
+            deleted_at: None,
+        };
+        marginalis_asciidoc::render_note_html(&note).map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
     async fn soft_delete_note(
         &self,
         actor: Actor,
@@ -305,5 +330,34 @@ mod tests {
                 && diagnostic.target == NoteValidationTarget::Body
                 && diagnostic.span.is_some()
         }));
+    }
+
+    #[tokio::test]
+    async fn preview_and_saved_note_use_the_same_html_rules() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let service = ServerNoteUseCases::new(database);
+        let actor = Actor {
+            issuer: "https://kanidm.example.test/oauth2/openid/marginalis".into(),
+            subject: "previewer".into(),
+            is_administrator: false,
+        };
+        let draft = NoteDraft {
+            title: "プレビュー".into(),
+            body: "日本語と絵文字😀を含む *本文*。".into(),
+            tags: vec!["表示".into()],
+        };
+
+        let preview = service
+            .preview_note(actor.clone(), draft.clone())
+            .await
+            .expect("preview");
+        let saved = service.create_note(actor, draft).await.expect("create");
+
+        assert_eq!(
+            preview,
+            service.render_note_html(&saved).expect("saved HTML")
+        );
     }
 }

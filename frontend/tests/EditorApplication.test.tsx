@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,6 +10,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { EditorApplication, EditorConfig } from "../src/EditorApplication";
 import { Note } from "../src/api";
+import { utf8ByteOffsetToLineColumn } from "../src/textPosition";
 
 const CREATE_CONFIG: EditorConfig = {
   mode: "create",
@@ -30,6 +32,7 @@ const NOTE: Note = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   window.history.replaceState(null, "", "/");
 });
 
@@ -185,9 +188,68 @@ test("既存ノートの読込失敗時に新規作成として保存できな�
   );
 });
 
+test("入力停止後に最新のプレビューだけを表示する", async () => {
+  vi.useFakeTimers();
+  const first = deferred<Response>();
+  const second = deferred<Response>();
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  vi.stubGlobal("fetch", fetchMock);
+  const { container } = render(<EditorApplication config={CREATE_CONFIG} />);
+
+  fireEvent.change(screen.getByRole("textbox", { name: "本文（AsciiDoc）" }), {
+    target: { value: "最初" },
+  });
+  await act(() => vi.advanceTimersByTimeAsync(350));
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+
+  fireEvent.change(screen.getByRole("textbox", { name: "本文（AsciiDoc）" }), {
+    target: { value: "最新" },
+  });
+  await act(() => vi.advanceTimersByTimeAsync(350));
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+
+  await act(async () => {
+    second.resolve(jsonResponse({ html: "<p>最新の表示</p>" }));
+  });
+  expect(container.querySelector(".preview-content")).toHaveTextContent(
+    "最新の表示",
+  );
+
+  await act(async () => {
+    first.resolve(jsonResponse({ html: "<p>古い表示</p>" }));
+  });
+  expect(container.querySelector(".preview-content")).toHaveTextContent(
+    "最新の表示",
+  );
+});
+
+test("UTF-8バイト位置を日本語、絵文字、CRLFの行と列へ変換する", () => {
+  const body = "日本語😀\r\n次の行";
+  const offset = new TextEncoder().encode("日本語😀\r\n次").length;
+
+  expect(utf8ByteOffsetToLineColumn(body, offset)).toEqual({
+    line: 2,
+    column: 2,
+  });
+});
+
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((fulfill) => {
+    resolve = fulfill;
+  });
+  return { promise, resolve };
 }

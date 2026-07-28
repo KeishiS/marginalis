@@ -39,8 +39,8 @@ use self::{
     error::{HandlerResult, problem},
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
-        create_note, delete_note, export_note, list_notes, read_note, restore_note, session,
-        update_note,
+        create_note, delete_note, export_note, list_notes, preview_note, read_note, restore_note,
+        session, update_note,
     },
     oauth::{
         mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
@@ -92,6 +92,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v2/health", get(health))
         .route("/api/v2/session", get(session))
         .route("/api/v2/notes", get(list_notes).post(create_note))
+        .route("/api/v2/notes/preview", post(preview_note))
         .route(
             "/api/v2/notes/{note_id}",
             get(read_note).put(update_note).delete(delete_note),
