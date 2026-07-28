@@ -13,8 +13,8 @@ use marginalis_application::{
     WebSessionUseCases,
 };
 use marginalis_domain::{
-    Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteAclEntry,
-    NoteCapabilities, NoteDraft, NoteId, NoteSummary, UnixMillis, WebSession,
+    Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note,
+    NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, UnixMillis, WebSession,
 };
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
@@ -204,7 +204,7 @@ impl NoteUseCases for UiNotes {
     async fn read_note(&self, _actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
         self.notes
             .iter()
-            .find(|note| note.note_id == note_id)
+            .find(|note| note.note_id() == note_id)
             .cloned()
             .ok_or(NoteUseCaseError::NotFound)
     }
@@ -279,7 +279,7 @@ impl NoteUseCases for UiNotes {
         let related = self
             .notes
             .iter()
-            .filter(|note| note.note_id != note_id)
+            .filter(|note| note.note_id() != note_id)
             .map(NoteSummary::from)
             .collect::<Vec<_>>();
         Ok(RelatedNotes {
@@ -564,22 +564,22 @@ fn authenticated_app() -> Router {
 }
 
 fn ui_note(title: &str) -> Note {
-    Note {
-        note_id: NoteId::new(
+    Note::restore(
+        NoteId::new(
             "0197c9bc-0000-7000-8000-000000000001"
                 .parse()
                 .expect("note ID"),
         ),
-        creator_issuer: "https://id.example.test".into(),
-        creator_subject: "alice".into(),
-        title: title.into(),
-        body: "本文".into(),
-        tags: vec!["試験".into()],
-        created_at: UnixMillis::new(1),
-        updated_at: UnixMillis::new(2),
-        revision: 1,
-        deleted_at: None,
-    }
+        Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+        title.into(),
+        "本文".into(),
+        vec!["試験".into()],
+        UnixMillis::new(1),
+        UnixMillis::new(2),
+        1,
+        None,
+    )
+    .expect("consistent note")
 }
 
 fn ui_app(notes: Vec<Note>, render_fails: bool, cookie_path: &str) -> Router {
@@ -761,18 +761,29 @@ async fn note_view_lists_related_note_metadata_with_collapsible_overflow() {
     let source = ui_note("閲覧中");
     let mut notes = vec![source.clone()];
     for index in 2..=13 {
-        let mut note = ui_note(&format!("関連ノート{index}"));
-        note.note_id = NoteId::new(
-            format!("0197c9bc-0000-7000-8000-{index:012x}")
-                .parse()
-                .expect("note ID"),
-        );
-        note.tags = vec!["z".into(), "a".into(), "m".into(), "<危険>".into()];
-        note.updated_at = UnixMillis::new(index);
+        let note = Note::restore(
+            NoteId::new(
+                format!("0197c9bc-0000-7000-8000-{index:012x}")
+                    .parse()
+                    .expect("note ID"),
+            ),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+            format!("関連ノート{index}"),
+            "本文".into(),
+            vec!["z".into(), "a".into(), "m".into(), "<危険>".into()],
+            UnixMillis::new(1),
+            UnixMillis::new(index),
+            1,
+            None,
+        )
+        .expect("consistent note");
         notes.push(note);
     }
     let response = ui_app(notes, false, "/marginalis")
-        .oneshot(authenticated_request(&format!("/notes/{}", source.note_id)))
+        .oneshot(authenticated_request(&format!(
+            "/notes/{}",
+            source.note_id()
+        )))
         .await
         .expect("response");
 

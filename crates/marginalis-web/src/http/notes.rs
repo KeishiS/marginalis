@@ -41,13 +41,13 @@ pub(super) struct NotePreviewResponse {
 impl From<Note> for NoteResponse {
     fn from(note: Note) -> Self {
         Self {
-            note_id: note.note_id.to_string(),
-            title: note.title,
-            body: note.body,
-            tags: note.tags,
-            created_at_ms: note.created_at.get(),
-            updated_at_ms: note.updated_at.get(),
-            revision: note.revision,
+            note_id: note.note_id().to_string(),
+            title: note.title().to_owned(),
+            body: note.body().to_owned(),
+            tags: note.tags().to_vec(),
+            created_at_ms: note.created_at().get(),
+            updated_at_ms: note.updated_at().get(),
+            revision: note.revision(),
         }
     }
 }

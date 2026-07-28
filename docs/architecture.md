@@ -26,9 +26,8 @@ AsciiDoc engine、HTTP serverを起動する必要がありません。
 ID token検証を担当します。利用を許可する`server-users`所属の判断はapplicationが担当します。
 MCP OAuthのclient、認可code、token familyの規則もapplicationに置き、
 SQLiteはその永続化portを実装します。
-`marginalis-auth-oidc` は OIDC discovery・code exchange・ID token 検証を担当します。MCP の
-JSON-RPC wire 型は、それを利用する唯一の transport である `marginalis-web::mcp` に置きます。
-実行バイナリは `marginalis-service` です。
+MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`marginalis-web::mcp`に置きます。
+実行バイナリは`marginalis-service`です。
 
 ## 一貫して満たすべき設計条件
 
@@ -42,6 +41,10 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
   `subject`は空でなく制御文字を含まない値とし、長さ上限をdomainで一元検証する。
 - ノートなどの永続的な識別子にはUUIDv7だけを受理する。文字列、JSON、データベースからの復元を
   含むすべての入力経路で同じ検査を行い、検査を省略する公開constructorは設けない。
+- `Note`は検証済みの所有者identityを保持し、正のrevision、作成日時から更新日時までの順序、
+  削除日時の範囲を生成時と復元時に検査する。フィールドを直接変更する公開APIは設けない。
+  SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
+  検査しない。
 - `server-users`所属は、OIDC login時に署名検証した`groups` claimから決める。発行したsessionと
   MCP authorizationは、login時に検証したidentityを有効期間中保持する。
 - Web session は24時間のsliding idle期限と7日の絶対期限を持つ。未完了OIDC login attemptは10分で失効し、

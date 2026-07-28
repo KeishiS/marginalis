@@ -148,10 +148,10 @@ fn archive_references(
 {
     let mut references = HashSet::new();
     for note in &archive.notes {
-        for query in marginalis_asciidoc::note_reference_queries(note)
+        for query in marginalis_asciidoc::note_reference_queries(note.body())
             .map_err(|_| "validated archive note could not be analyzed")?
         {
-            references.insert((note.note_id, query.target_note_id));
+            references.insert((note.note_id(), query.target_note_id));
         }
     }
     Ok(references.into_iter().collect())

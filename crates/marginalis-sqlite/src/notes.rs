@@ -3,8 +3,8 @@
 use std::str::FromStr;
 
 use marginalis_domain::{
-    Actor, EntityId, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NotePermission,
-    NoteSummary, SOFT_DELETE_RETENTION_MS, UnixMillis,
+    Actor, EntityId, Identity, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId,
+    NotePermission, NoteSummary, SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
 use sqlx::{Row, Sqlite};
 
@@ -18,26 +18,26 @@ impl SqliteDatabase {
         reference_targets: &[NoteId],
     ) -> Result<(), SqliteStoreError> {
         let tags_json =
-            serde_json::to_string(&note.tags).map_err(|_| SqliteStoreError::CorruptData)?;
+            serde_json::to_string(note.tags()).map_err(|_| SqliteStoreError::CorruptData)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         sqlx::query(
             "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, body, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(note.note_id.to_string())
-        .bind(&note.creator_issuer)
-        .bind(&note.creator_subject)
-        .bind(&note.title)
-        .bind(&note.body)
+        .bind(note.note_id().to_string())
+        .bind(note.creator_issuer())
+        .bind(note.creator_subject())
+        .bind(note.title())
+        .bind(note.body())
         .bind(tags_json)
-        .bind(note.created_at.get())
-        .bind(note.updated_at.get())
-        .bind(note.revision)
-        .bind(note.deleted_at.map(UnixMillis::get))
+        .bind(note.created_at().get())
+        .bind(note.updated_at().get())
+        .bind(note.revision())
+        .bind(note.deleted_at().map(UnixMillis::get))
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
-        replace_reference_rows(&mut transaction, note.note_id, reference_targets).await?;
+        replace_reference_rows(&mut transaction, note.note_id(), reference_targets).await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(())
     }
@@ -525,19 +525,23 @@ pub(crate) fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Note, Sqlite
         .try_get::<String, _>("tags_json")
         .map_err(database_error)?;
     let tags = serde_json::from_str(&tags_json).map_err(|_| SqliteStoreError::CorruptData)?;
-    Ok(Note {
+    let owner = Identity::new(
+        row.try_get("creator_issuer").map_err(database_error)?,
+        row.try_get("creator_subject").map_err(database_error)?,
+    )
+    .map_err(|_| SqliteStoreError::CorruptData)?;
+    Note::restore(
         note_id,
-        creator_issuer: row.try_get("creator_issuer").map_err(database_error)?,
-        creator_subject: row.try_get("creator_subject").map_err(database_error)?,
-        title: row.try_get("title").map_err(database_error)?,
-        body: row.try_get("body").map_err(database_error)?,
+        owner,
+        row.try_get("title").map_err(database_error)?,
+        row.try_get("body").map_err(database_error)?,
         tags,
-        created_at: UnixMillis::new(row.try_get("created_at_ms").map_err(database_error)?),
-        updated_at: UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
-        revision: row.try_get("revision").map_err(database_error)?,
-        deleted_at: row
-            .try_get::<Option<i64>, _>("deleted_at_ms")
+        UnixMillis::new(row.try_get("created_at_ms").map_err(database_error)?),
+        UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
+        row.try_get("revision").map_err(database_error)?,
+        row.try_get::<Option<i64>, _>("deleted_at_ms")
             .map_err(database_error)?
             .map(UnixMillis::new),
-    })
+    )
+    .map_err(|_| SqliteStoreError::CorruptData)
 }
