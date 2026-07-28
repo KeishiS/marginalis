@@ -4,7 +4,8 @@ use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, validate_identity,
+    Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision,
+    validate_identity,
 };
 
 use crate::{
@@ -42,7 +43,7 @@ pub trait NoteRepository: Send + Sync {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         draft: &NoteDraft,
         reference_targets: &[NoteId],
         now: marginalis_domain::UnixMillis,
@@ -51,14 +52,14 @@ pub trait NoteRepository: Send + Sync {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, NoteRepositoryError>;
     async fn restore_visible_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, NoteRepositoryError>;
     async fn directly_related_notes(
@@ -81,7 +82,7 @@ pub trait NoteRepository: Send + Sync {
         actor: &Actor,
         note_id: NoteId,
         entries: &[NoteAclEntry],
-        expected_revision: i64,
+        expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, NoteRepositoryError>;
 }
@@ -271,7 +272,7 @@ impl NoteUseCases for NoteApplication {
         actor: Actor,
         note_id: NoteId,
         draft: NoteDraft,
-        expected_revision: i64,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         let draft = self
             .content
@@ -319,7 +320,7 @@ impl NoteUseCases for NoteApplication {
         &self,
         actor: Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         self.repository
             .soft_delete_visible_note(&actor, note_id, expected_revision, self.clock.now())
@@ -331,7 +332,7 @@ impl NoteUseCases for NoteApplication {
         &self,
         actor: Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         self.repository
             .restore_visible_note(&actor, note_id, expected_revision, self.clock.now())
@@ -402,7 +403,7 @@ impl NoteUseCases for NoteApplication {
         actor: Actor,
         note_id: NoteId,
         mut entries: Vec<NoteAclEntry>,
-        expected_revision: i64,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         let note = self.read_visible_note(&actor, note_id).await?;
         entries.sort_by(|left, right| left.subject.cmp(&right.subject));
@@ -488,7 +489,7 @@ fn sort_related_notes(notes: &mut [NoteSummary]) {
 mod tests {
     use std::{str::FromStr, sync::Mutex};
 
-    use marginalis_domain::{EntityId, UnixMillis};
+    use marginalis_domain::{EntityId, Revision, UnixMillis};
 
     use super::*;
 
@@ -533,7 +534,7 @@ mod tests {
             &self,
             _actor: &Actor,
             _note_id: NoteId,
-            _expected_revision: i64,
+            _expected_revision: Revision,
             _draft: &NoteDraft,
             _reference_targets: &[NoteId],
             _now: UnixMillis,
@@ -545,7 +546,7 @@ mod tests {
             &self,
             _actor: &Actor,
             _note_id: NoteId,
-            _expected_revision: i64,
+            _expected_revision: Revision,
             _now: UnixMillis,
         ) -> Result<Note, NoteRepositoryError> {
             Err(NoteRepositoryError::Unavailable)
@@ -555,7 +556,7 @@ mod tests {
             &self,
             _actor: &Actor,
             _note_id: NoteId,
-            _expected_revision: i64,
+            _expected_revision: Revision,
             _now: UnixMillis,
         ) -> Result<Note, NoteRepositoryError> {
             Err(NoteRepositoryError::Unavailable)
@@ -590,7 +591,7 @@ mod tests {
             _actor: &Actor,
             _note_id: NoteId,
             _entries: &[NoteAclEntry],
-            _expected_revision: i64,
+            _expected_revision: Revision,
             _now: UnixMillis,
         ) -> Result<Note, NoteRepositoryError> {
             Err(NoteRepositoryError::Unavailable)
@@ -694,7 +695,7 @@ mod tests {
             .expect("create note");
 
         assert_eq!(created.creator_subject(), "alice");
-        assert_eq!(created.revision(), 1);
+        assert_eq!(created.revision().get(), 1);
         assert_eq!(
             application
                 .read_note(actor, created.note_id())

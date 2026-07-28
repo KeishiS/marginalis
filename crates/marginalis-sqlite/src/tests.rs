@@ -6,13 +6,17 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     Actor, EntityId, Identity, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry,
-    NoteDraft, NoteId, NotePermission, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
+    NoteDraft, NoteId, NotePermission, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
 };
 
 use super::*;
 
 fn actor(issuer: &str, subject: &str) -> Actor {
     Actor::try_new(issuer.into(), subject.into()).expect("valid test actor")
+}
+
+fn revision(value: i64) -> Revision {
+    Revision::new(value).expect("positive test revision")
 }
 
 #[tokio::test]
@@ -88,7 +92,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         vec!["research".into()],
         UnixMillis::new(100),
         UnixMillis::new(100),
-        1,
+        Revision::INITIAL,
         None,
     )
     .expect("consistent note");
@@ -155,7 +159,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .update_visible_note(
                 &charlie,
                 note_id,
-                1,
+                revision(1),
                 &NoteDraft {
                     title: "Unauthorized title".into(),
                     body: "must not persist".into(),
@@ -181,7 +185,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .update_visible_note(
             &alice,
             note_id,
-            1,
+            revision(1),
             &NoteDraft {
                 title: "Updated title".into(),
                 body: "updated body".into(),
@@ -192,16 +196,16 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         )
         .await
         .expect("update note");
-    assert_eq!(updated.revision(), 2);
+    assert_eq!(updated.revision().get(), 2);
     assert_eq!(updated.title(), "Updated title");
     assert_eq!(
         database
-            .soft_delete_visible_note(&alice, note_id, 1, UnixMillis::new(300))
+            .soft_delete_visible_note(&alice, note_id, revision(1), UnixMillis::new(300))
             .await,
         Err(SqliteStoreError::Conflict)
     );
     let deleted = database
-        .soft_delete_visible_note(&alice, note_id, 2, UnixMillis::new(300))
+        .soft_delete_visible_note(&alice, note_id, revision(2), UnixMillis::new(300))
         .await
         .expect("soft delete");
     assert_eq!(deleted.deleted_at(), Some(UnixMillis::new(300)));
@@ -212,14 +216,14 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .expect("read deleted")
         .expect("deleted note remains");
     assert_eq!(deleted.deleted_at(), Some(UnixMillis::new(300)));
-    assert_eq!(deleted.revision(), 3);
+    assert_eq!(deleted.revision().get(), 3);
 
     let restored = database
-        .restore_visible_note(&alice, note_id, 3, UnixMillis::new(350))
+        .restore_visible_note(&alice, note_id, revision(3), UnixMillis::new(350))
         .await
         .expect("restore note");
     assert_eq!(restored.deleted_at(), None);
-    assert_eq!(restored.revision(), 4);
+    assert_eq!(restored.revision().get(), 4);
     database
         .replace_note_acl(
             &alice,
@@ -228,7 +232,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
                 subject: "bob".into(),
                 permission: NotePermission::Read,
             }],
-            4,
+            revision(4),
             UnixMillis::new(360),
         )
         .await
@@ -292,7 +296,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     assert!(empty_notes.is_empty());
     assert!(empty_acl.is_empty());
     database
-        .soft_delete_visible_note(&alice, note_id, 5, UnixMillis::new(400))
+        .soft_delete_visible_note(&alice, note_id, revision(5), UnixMillis::new(400))
         .await
         .expect("delete before purge");
     assert_eq!(
@@ -300,7 +304,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .restore_visible_note(
                 &alice,
                 note_id,
-                6,
+                revision(6),
                 UnixMillis::new(400 + SOFT_DELETE_RETENTION_MS + 1)
             )
             .await,

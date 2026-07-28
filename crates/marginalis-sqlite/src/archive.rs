@@ -151,7 +151,7 @@ async fn insert_note_row(
     .bind(tags_json)
     .bind(note.created_at().get())
     .bind(note.updated_at().get())
-    .bind(note.revision())
+    .bind(note.revision().get())
     .bind(note.deleted_at().map(marginalis_domain::UnixMillis::get))
     .execute(&mut **transaction)
     .await

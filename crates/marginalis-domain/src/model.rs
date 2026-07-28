@@ -19,6 +19,48 @@ impl UnixMillis {
     }
 }
 
+/// 1から始まり、更新のたびに増えるノートの版番号。
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct Revision(i64);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidRevision;
+
+impl fmt::Display for InvalidRevision {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a revision must be a positive integer")
+    }
+}
+
+impl std::error::Error for InvalidRevision {}
+
+impl Revision {
+    pub const INITIAL: Self = Self(1);
+
+    pub const fn new(value: i64) -> Result<Self, InvalidRevision> {
+        if value > 0 {
+            Ok(Self(value))
+        } else {
+            Err(InvalidRevision)
+        }
+    }
+
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Revision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = i64::deserialize(deserializer)?;
+        Self::new(value).map_err(de::Error::custom)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct EntityId(Uuid);
@@ -104,7 +146,7 @@ pub struct Note {
     tags: Vec<String>,
     created_at: UnixMillis,
     updated_at: UnixMillis,
-    revision: i64,
+    revision: Revision,
     deleted_at: Option<UnixMillis>,
 }
 
@@ -119,7 +161,7 @@ struct SerializedNote {
     tags: Vec<String>,
     created_at: UnixMillis,
     updated_at: UnixMillis,
-    revision: i64,
+    revision: Revision,
     deleted_at: Option<UnixMillis>,
 }
 
@@ -133,7 +175,7 @@ struct SerializedNoteRef<'a> {
     tags: &'a [String],
     created_at: UnixMillis,
     updated_at: UnixMillis,
-    revision: i64,
+    revision: Revision,
     deleted_at: Option<UnixMillis>,
 }
 
@@ -163,7 +205,7 @@ impl Note {
             tags: draft.tags,
             created_at,
             updated_at: created_at,
-            revision: 1,
+            revision: Revision::INITIAL,
             deleted_at: None,
         }
     }
@@ -177,11 +219,10 @@ impl Note {
         tags: Vec<String>,
         created_at: UnixMillis,
         updated_at: UnixMillis,
-        revision: i64,
+        revision: Revision,
         deleted_at: Option<UnixMillis>,
     ) -> Result<Self, InvalidNote> {
-        if revision <= 0
-            || created_at > updated_at
+        if created_at > updated_at
             || deleted_at
                 .is_some_and(|deleted_at| deleted_at < created_at || deleted_at > updated_at)
         {
@@ -236,7 +277,7 @@ impl Note {
         self.updated_at
     }
 
-    pub const fn revision(&self) -> i64 {
+    pub const fn revision(&self) -> Revision {
         self.revision
     }
 
@@ -560,11 +601,17 @@ mod tests {
             )
         };
 
-        assert!(restore(100, 100, 1, None).is_ok());
-        assert_eq!(restore(100, 100, 0, None), Err(InvalidNote));
-        assert_eq!(restore(101, 100, 1, None), Err(InvalidNote));
-        assert_eq!(restore(100, 200, 1, Some(99)), Err(InvalidNote));
-        assert_eq!(restore(100, 200, 1, Some(201)), Err(InvalidNote));
+        assert_eq!(Revision::new(0), Err(InvalidRevision));
+        assert!(restore(100, 100, Revision::INITIAL, None).is_ok());
+        assert_eq!(restore(101, 100, Revision::INITIAL, None), Err(InvalidNote));
+        assert_eq!(
+            restore(100, 200, Revision::INITIAL, Some(99)),
+            Err(InvalidNote)
+        );
+        assert_eq!(
+            restore(100, 200, Revision::INITIAL, Some(201)),
+            Err(InvalidNote)
+        );
     }
 
     #[test]

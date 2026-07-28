@@ -3,7 +3,8 @@
 use async_trait::async_trait;
 use marginalis_application::{NoteRepository, NoteRepositoryError};
 use marginalis_domain::{
-    Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, UnixMillis,
+    Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision,
+    UnixMillis,
 };
 
 use crate::{SqliteDatabase, SqliteStoreError};
@@ -40,7 +41,7 @@ impl NoteRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         draft: &NoteDraft,
         reference_targets: &[NoteId],
         now: UnixMillis,
@@ -62,7 +63,7 @@ impl NoteRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         now: UnixMillis,
     ) -> Result<Note, NoteRepositoryError> {
         SqliteDatabase::soft_delete_visible_note(self, actor, note_id, expected_revision, now)
@@ -74,7 +75,7 @@ impl NoteRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         now: UnixMillis,
     ) -> Result<Note, NoteRepositoryError> {
         SqliteDatabase::restore_visible_note(self, actor, note_id, expected_revision, now)
@@ -117,7 +118,7 @@ impl NoteRepository for SqliteDatabase {
         actor: &Actor,
         note_id: NoteId,
         entries: &[NoteAclEntry],
-        expected_revision: i64,
+        expected_revision: Revision,
         now: UnixMillis,
     ) -> Result<Note, NoteRepositoryError> {
         SqliteDatabase::replace_note_acl(self, actor, note_id, entries, expected_revision, now)

@@ -7,7 +7,7 @@ use std::future::Future;
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpAuthorizationGrant,
-    McpOAuthClient, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary,
+    McpOAuthClient, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision,
     UnixMillis, WebSession,
 };
 
@@ -314,7 +314,7 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
         note_id: NoteId,
         draft: NoteDraft,
-        expected_revision: i64,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
     async fn preview_note(
         &self,
@@ -326,13 +326,13 @@ pub trait NoteUseCases: Send + Sync {
         &self,
         actor: Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
     async fn restore_note(
         &self,
         actor: Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError>;
     async fn render_note_html(
@@ -361,7 +361,7 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
         note_id: NoteId,
         entries: Vec<NoteAclEntry>,
-        expected_revision: i64,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
     fn note_profile(&self) -> NoteProfile;
 }
