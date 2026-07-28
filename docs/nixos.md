@@ -1,7 +1,10 @@
-# NixOS での運用
+# NixOSでの運用
 
-本書を現行のNixOS設定と日常運用の正本とします。v0.2 の root、`dataDir` 内の
-AsciiDoc 正本、`/api/v1` の手順は適用しません。
+この文書は、NixOSでMarginalisを配備・運用する人に向けて、設定、秘密情報、データの保存、
+バックアップ、復元、問題発生時の確認方法を説明します。以前のバージョンから更新する場合は、
+[変更履歴](../CHANGELOG.md)も確認してください。
+
+## 基本設定
 
 ```nix
 services.marginalis = {
@@ -25,10 +28,12 @@ services.marginalis = {
 };
 ```
 
+## 秘密情報とデータの保存先
+
 `clientSecretFile` は systemd credential として渡され、Nix store に現れてはなりません。内部 CA の
 Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し、OIDC Discovery と token exchange
 に適用します。
-SQLite正本は`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
+SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
 変更してください。現行のSQLite schema versionは4です。旧versionを自動移行しません。
 v0.5.0からv0.6.0への更新ではschema 4を維持するため、serviceを停止して`dataDir`を退避した後、
@@ -46,7 +51,7 @@ reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を�
 `mcp.allowedOrigins` は HTTPS origin の完全一致であり、path、query、userinfo を含む値や HTTP origin は
 起動時に拒否されます。この設定は `/oauth/authorize` の承認 form には適用されません。
 
-## Kanidm の group claim
+## Kanidmから受け取るグループ情報
 
 Marginalis は OIDC callback で署名検証済み ID token の `groups` claim を読む。`server-users` がなければ
 ログインを拒否し、`server-admins` があれば発行する Web session と MCP authorization を管理者として固定する。
@@ -87,7 +92,7 @@ service account、API token、custom ACP は不要である。
 保存媒体のsnapshot、off-site複製、暗号化はhost側で構成します。30世代に加え、復元用の一時databaseと
 SQLiteの一時領域を確保してください。必要量の目安は、正本と最大archiveの合計に作業余裕を加えた容量です。
 
-## Backupの確認
+## バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
 現行archiveは`marginalis-archive-4`で、AdocWeave package版`0.11.0`とnote profile版`1`を記録します。
@@ -139,7 +144,7 @@ service停止中の切替を行います。
 
 初回配備後は `GET /api/v2/health`、OIDC login、一般利用者と管理者の可視性、MCP authorization を確認します。
 
-## 障害診断
+## 問題が発生したときの確認
 
 公開livenessは`GET /api/v2/health`で確認します。この応答はHTTP processの稼働だけを表し、
 外部IdPの一時的な停止では失敗しません。SQLiteと設定はserviceと同じ実行環境で診断します。

@@ -1,5 +1,9 @@
 # Marginalis アーキテクチャ
 
+この文書は、開発者に向けて、コンポーネントの役割、依存関係、一貫して満たすべき設計条件を
+説明します。利用者向けの機能は[現行要件](requirements.md)、HTTPの入出力は
+[OpenAPI](openapi.json)を参照してください。
+
 ## 構成
 
 ```text
@@ -12,13 +16,14 @@ SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
           marginalis-service + NixOS module
 ```
 
-`marginalis-web` は HTTP、Cookie、CSRF、OAuth の境界を担当します。`marginalis-server` は設定と
-adapter を application port に接続し、`marginalis-sqlite` は単一の SQLite database を実装します。
+`marginalis-web`はHTTP、Cookie、CSRF、OAuthのリクエストを受け付けます。`marginalis-server`は
+設定と外部接続用の処理をアプリケーション層へ接続し、`marginalis-sqlite`はSQLiteへの保存を
+担当します。
 `marginalis-auth-oidc` は OIDC discovery・code exchange・ID token 検証を担当します。MCP の
 JSON-RPC wire 型は、それを利用する唯一の transport である `marginalis-web::mcp` に置きます。
 実行バイナリは `marginalis-service` です。
 
-## 不変条件
+## 一貫して満たすべき設計条件
 
 - ノートと削除状態の更新はSQLite transactionで完結する。
 - 通常利用者は、作成者の`(issuer, subject)`が自身のidentityと一致するノートだけを操作できる。
@@ -42,7 +47,7 @@ JSON-RPC wire 型は、それを利用する唯一の transport である `margi
 
 ```text
 crates/
-├── marginalis-domain          値・不変条件
+├── marginalis-domain          値と設計条件
 ├── marginalis-application     portとuse case interface
 ├── marginalis-asciidoc        AsciiDoc検証・描画・export
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
@@ -83,7 +88,7 @@ marginalis-sqlite/src/
 ├── session.rs       Web/OIDC session
 ├── mcp.rs           MCP OAuth永続化
 ├── notes.rs         noteと所有者認可
-└── archive.rs       検証済みarchiveの原子的な格納
+└── archive.rs       検証済みarchiveを一つのトランザクションで格納
 ```
 
 公開routeは`marginalis-web/src/http.rs`、公開型は各crateの`lib.rs`から追跡する。unit testは

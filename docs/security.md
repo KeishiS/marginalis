@@ -1,23 +1,36 @@
-# セキュリティ
+# セキュリティー
 
-本書を依存脆弱性と暗号方式の運用判断の正本とします。認証・認可の業務上の不変条件は
-[アーキテクチャ](architecture.md)、NixOSの秘密情報とservice hardeningは
-[NixOSでの運用](nixos.md)を参照してください。
+この文書は、開発者と監査担当者に向けて、依存ライブラリの脆弱性と暗号方式に関する例外判断を
+記録します。認証・認可の設計条件は[アーキテクチャ](architecture.md)、NixOSの秘密情報と
+systemdサービスの保護設定は[NixOSでの運用](nixos.md)を参照してください。
 
-`cargo make verify`は最新のRustSec advisory databaseに対して`Cargo.lock`を検査します。
-例外はadvisory IDを明示し、到達不能である根拠と解除条件を本書へ記録します。
+`cargo make verify`は、RustSecの最新の脆弱性データベースを使って`Cargo.lock`を検査します。例外を
+設ける場合は、脆弱性情報のID、影響を受けない根拠、例外を解除する条件をこの文書へ記録します。
 
 ## RUSTSEC-2023-0071
 
-`openidconnect 4.0.1`は`rsa 0.9.10`へ推移依存し、RSA秘密鍵演算のタイミング漏洩
+### 事実
+
+`openidconnect 4.0.1`は`rsa 0.9.10`へ間接的に依存しています。このバージョンには、RSA秘密鍵の
+処理時間から情報を推測できる可能性がある
 [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html)が報告されています。
 修正版はありません。
 
-MarginalisはOIDC providerの秘密鍵を保持せず、ID tokenの公開鍵検証だけを行います。さらに
-provider discovery後、ID token署名方式をKanidm 1.10と結合試験が使う`ES256`だけに制限し、
-RSA署名経路を受け付けません。このため、advisoryが対象とするRSA秘密鍵演算は実行経路に
-ありません。`cargo audit`ではこのIDだけを例外にし、他のadvisoryは失敗させます。
+### 影響の評価
 
-`openidconnect`から`rsa`依存が除去される、修正版へ更新できる、またはadvisoryの影響範囲が変わった
-時点で例外を削除します。Kanidmの署名方式を変更する場合は、許可方式を広げる前にこの判断を
-再評価します。
+MarginalisはOIDC Providerの秘密鍵を保持せず、ID tokenの公開鍵による検証だけを行います。また、
+Kanidm 1.10が使用する`ES256`だけを署名方式として許可し、RSA署名を受け付けません。このため、
+報告されたRSA秘密鍵の処理は実行されません。
+
+### 現在の対応
+
+`cargo audit`では、このIDだけを例外として扱います。その他の脆弱性情報を検出した場合は失敗します。
+
+### 再評価する条件
+
+次のいずれかに該当した場合は、この例外を再評価します。
+
+- `openidconnect`から`rsa`への依存がなくなった場合
+- 修正版へ更新できるようになった場合
+- 脆弱性の影響範囲が変わった場合
+- Kanidmで許可する署名方式を変更する場合
