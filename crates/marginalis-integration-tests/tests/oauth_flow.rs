@@ -11,12 +11,13 @@ use axum::{
     http::{Request, Response, StatusCode, header},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use marginalis_application::{OidcAuthenticationUseCases, SessionLifetime};
+use marginalis_application::{NoteApplication, OidcAuthenticationUseCases, SessionLifetime};
+use marginalis_asciidoc::AsciiDocNoteContent;
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_integration_tests::MockIdentityProvider;
 use marginalis_server::{
-    ServerMcpOAuthService, ServerNoteUseCases, ServerOidcAuthenticationUseCases,
-    ServerWebSessionUseCases,
+    ServerMcpOAuthService, ServerOidcAuthenticationUseCases, ServerWebSessionUseCases, SystemClock,
+    SystemRandom,
 };
 use marginalis_sqlite::SqliteDatabase;
 use marginalis_web::http::{ApiState, McpEndpoint, router};
@@ -85,7 +86,13 @@ impl TestServer {
                 absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
             },
         ));
-        let notes = Arc::new(ServerNoteUseCases::new(database.clone()));
+        let notes = Arc::new(NoteApplication::new(
+            Arc::new(database.clone()),
+            Arc::new(AsciiDocNoteContent),
+            Arc::new(marginalis_web::http::HttpNoteLinkResolver),
+            Arc::new(SystemClock),
+            Arc::new(SystemRandom),
+        ));
         let oauth = Arc::new(ServerMcpOAuthService::new(database, MCP_RESOURCE.into()));
         let base_url = url::Url::parse(BROWSER_ORIGIN).expect("base URL");
         let state =

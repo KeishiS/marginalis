@@ -11,6 +11,13 @@ use marginalis_domain::{
     UnixMillis, WebSession,
 };
 
+mod notes;
+
+pub use notes::{
+    NoteApplication, NoteContent, NoteContentError, NoteLinkResolver, NoteReferenceQuery,
+    NoteReferenceResolution, NoteRepository, NoteRepositoryError,
+};
+
 pub trait Clock: Send + Sync {
     fn now(&self) -> UnixMillis;
 }
