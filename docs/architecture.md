@@ -162,8 +162,10 @@ marginalis-sqlite/src/
 └── archive.rs       検証済みarchiveを一つのトランザクションで格納
 ```
 
-公開routeは`marginalis-web/src/http.rs`、公開型は各crateの`lib.rs`から追跡する。unit testは
-対象moduleの末尾へ置き、HTTP・OIDC・MCPを一気通貫で通す試験だけを
-`marginalis-integration-tests/tests/`へ置く。
+公開routeは`marginalis-web/src/http.rs`、公開型は各crateの`lib.rs`から追跡します。小さな単体試験は
+対象moduleの末尾へ置きます。共有fixtureが大きいHTTP試験は`http/tests/`でUI・REST・MCP・OAuth、
+SQLite試験は`marginalis-sqlite/src/tests/`でschema・ノート・session・OAuthに分けます。
+複数crateを接続するOIDC・MCP試験だけを`marginalis-integration-tests/tests/`へ置き、
+完全な認証経路、利用条件、discoveryを別suiteとして単独実行できるようにします。
 
 設計を確定した経緯は[再設計判断記録](v0.3.0-design.md)を参照してください。

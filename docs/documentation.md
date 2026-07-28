@@ -17,6 +17,7 @@
 | `docs/README.md` | 全読者 | 読者別の資料案内と、優先して参照する資料の提示 | 文書の追加、移動、役割変更 |
 | `docs/glossary.md` | 全読者 | リポジトリ内で使用する用語の説明 | 用語の追加、意味、使用方法の変更 |
 | `docs/requirements.md` | システム責任者・開発者 | 現行の確定要件 | 要件の採用、変更、削除 |
+| `docs/traceability.md` | 開発者・受入担当者 | 要件IDと検証階層の対応 | 要件または検証方法の変更 |
 | `docs/architecture.md` | 開発者 | コンポーネントの責務と、一貫して満たすべき設計条件 | コンポーネントの役割分担、認可、データの整合性の変更 |
 | `docs/openapi.json` | API利用者・ツール | REST APIの正式な仕様 | route、schema、statusの変更 |
 | `docs/rest-api.md` | API利用者 | REST APIの説明と動作例 | REST APIの仕様または利用例の変更 |
@@ -24,7 +25,8 @@
 | `docs/nixos.md` | 運用者 | 配備、秘密情報、backup、復元、診断 | module optionまたは運用jobの変更 |
 | `docs/development.md` | 開発者 | 開発環境、GitHub、検証、マージの詳細手順 | CIまたは開発フローの変更 |
 | `docs/release.md` | 保守担当者 | 各バージョンに共通するリリース手順 | gateまたは公開手順の変更 |
-| `docs/acceptance.md` | 受入担当者 | 現在のバージョンの受入項目と結果 | リリース候補または受入結果の変更 |
+| `docs/acceptance.md` | 受入担当者 | 各バージョンに共通する受入基準 | 恒久的な受入基準の変更 |
+| `docs/acceptance-results/` | 受入担当者・保守担当者 | 版別の実施日、結果、証跡、公開判断 | リリース候補の受入実施 |
 | `docs/roadmap.md` | 保守担当者・開発者 | 現在地、優先順位、公開単位 | 優先順位または評価結果の変更 |
 | `docs/security.md` | 開発者・監査者 | 外部から受け取る情報の検査とセキュリティー上の例外判断 | 脅威、依存、暗号経路の変更 |
 | `docs/coverage.md` | 開発者 | coverageと本番到達性の検証方針 | 計測または検査方法の変更 |

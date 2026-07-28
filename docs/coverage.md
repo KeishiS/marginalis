@@ -16,7 +16,7 @@ nix develop --command cargo make coverage
 | ファイル | 内容 |
 | --- | --- |
 | `workspace.{json,summary.txt}` | ワークスペースの単体テストと結合テスト |
-| `v0.3-integration-path.{json,summary.txt}` | 実行バイナリとHTTP・OIDC・MCPの結合テスト |
+| `service-integration-path.{json,summary.txt}` | 実行バイナリとHTTP・OIDC・MCPの結合テスト |
 
 `tests/`以下のテストコードと`marginalis-integration-tests`クレートは、計測率の分母から除外します。
 一方、`#[cfg(test)]`を本番モジュールの末尾へ置いた単体テストは、同じソースファイルとしてLLVMに

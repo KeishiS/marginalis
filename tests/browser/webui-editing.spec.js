@@ -97,23 +97,23 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(page.getByText("更新番号: 2")).toBeVisible();
 
   const currentResponse = await context.request.get(
-    `${baseUrl}/api/v2/notes/${noteId}`,
+    `${baseUrl}/api/v3/notes/${noteId}`,
   );
   expect(currentResponse.status()).toBe(200);
   const current = await currentResponse.json();
   const externalUpdate = await context.request.put(
-    `${baseUrl}/api/v2/notes/${noteId}`,
+    `${baseUrl}/api/v3/notes/${noteId}`,
     {
       data: {
         title: "別操作で更新した題名",
         body: current.body,
         tags: current.tags,
-        expected_revision: current.revision,
       },
       headers: {
         Origin: "https://marginalis.example.test",
         "Sec-Fetch-Site": "same-origin",
         "X-CSRF-Token": await csrfToken(context),
+        "If-Match": `"rev-${current.revision}"`,
       },
       failOnStatusCode: false,
     },
@@ -162,15 +162,11 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("変更は保存されています。")).toBeVisible();
   await page.getByRole("link", { name: "閲覧画面へ戻る" }).click();
-  const outgoing = page.getByRole("region", {
-    name: "このノートが参照しているノート",
-  });
-  await expect(outgoing).toContainText("参照先ノート");
-  await outgoing.getByRole("link", { name: "参照先ノート" }).click();
+  const relatedNotes = page.getByRole("complementary", { name: "関連ノート" });
+  await expect(relatedNotes).toContainText("参照先ノート");
+  await relatedNotes.getByRole("link", { name: "参照先ノート" }).click();
   await expect(page).toHaveURL(`${baseUrl}/notes/${targetId}`);
   await expect(
-    page.getByRole("region", {
-      name: "このノートを参照しているノート",
-    }),
+    page.getByRole("complementary", { name: "関連ノート" }),
   ).toContainText("競合後に保存する題名");
 });
