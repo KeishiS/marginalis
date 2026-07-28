@@ -273,6 +273,13 @@ pub struct NoteRenderContext {
     pub note_path_prefix: String,
 }
 
+/// 閲覧中のノートと明示的な参照で直接つながる、現在の利用者に可視なノート。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelatedNotes {
+    pub outgoing: Vec<Note>,
+    pub incoming: Vec<Note>,
+}
+
 /// SQLite正本を扱うノート操作境界。HTTP、MCP、Web UIはこの可視性規則を共有する。
 #[async_trait]
 pub trait NoteUseCases: Send + Sync {
@@ -311,6 +318,11 @@ pub trait NoteUseCases: Send + Sync {
         note_id: NoteId,
         context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError>;
+    async fn related_notes(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<RelatedNotes, NoteUseCaseError>;
     fn note_profile(&self) -> NoteProfile;
 }
 

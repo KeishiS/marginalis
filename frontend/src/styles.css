@@ -200,6 +200,39 @@ body {
   margin-block-start: 0;
 }
 
+.related-notes {
+  border-top: 0.1rem solid currentColor;
+  margin-block-start: 2rem;
+  padding-block-start: 1rem;
+}
+
+.related-notes section > ul,
+.related-notes section > details > ul {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.related-notes section > ul > li,
+.related-notes section > details > ul > li {
+  border: 0.1rem solid currentColor;
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+}
+
+.related-notes [aria-label="タグ"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+}
+
+.related-notes details > summary {
+  cursor: pointer;
+}
+
 @media (max-width: 60rem) {
   .editor-workspace {
     grid-template-columns: 1fr;

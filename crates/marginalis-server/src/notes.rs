@@ -2,10 +2,11 @@
 
 use async_trait::async_trait;
 use marginalis_application::{
-    Clock, NoteProfile, NoteRenderContext, NoteUseCaseError, NoteUseCases, Random,
+    Clock, NoteProfile, NoteRenderContext, NoteUseCaseError, NoteUseCases, Random, RelatedNotes,
 };
 use marginalis_domain::{Actor, Note, NoteDraft, NoteId};
 use marginalis_sqlite::{SqliteDatabase, SqliteStoreError};
+use std::collections::HashSet;
 use url::Url;
 
 use crate::{SystemClock, SystemRandom};
@@ -227,6 +228,36 @@ impl NoteUseCases for ServerNoteUseCases {
         let resolutions = self.reference_resolutions(&actor, &note, &context).await?;
         marginalis_asciidoc::render_note_html_with_references(&note, &resolutions)
             .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    async fn related_notes(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<RelatedNotes, NoteUseCaseError> {
+        let source = self.read_note(actor.clone(), note_id).await?;
+        let visible = self.list_visible_notes(actor).await?;
+        let outgoing_ids = marginalis_asciidoc::note_reference_queries(&source)
+            .map_err(|_| NoteUseCaseError::Unavailable)?
+            .into_iter()
+            .map(|query| query.target_note_id)
+            .collect::<HashSet<_>>();
+
+        let mut outgoing = Vec::new();
+        let mut incoming = Vec::new();
+        for candidate in visible {
+            if outgoing_ids.contains(&candidate.note_id) {
+                outgoing.push(candidate.clone());
+            }
+            let references_source = marginalis_asciidoc::note_reference_queries(&candidate)
+                .map_err(|_| NoteUseCaseError::Unavailable)?
+                .into_iter()
+                .any(|query| query.target_note_id == source.note_id);
+            if references_source {
+                incoming.push(candidate);
+            }
+        }
+        Ok(RelatedNotes { outgoing, incoming })
     }
 
     fn note_profile(&self) -> NoteProfile {
@@ -525,13 +556,133 @@ mod tests {
             .await
             .expect("other source");
         let hidden = service
-            .render_note_html(other, other_source.note_id, context)
+            .render_note_html(other.clone(), other_source.note_id, context)
             .await
             .expect("hidden HTML");
         assert!(hidden.contains("固定ラベル"));
         assert!(!hidden.contains(&target.note_id.to_string()));
         assert!(!hidden.contains("非公開の参照先"));
         assert!(!hidden.contains("href="));
+
+        let hidden_relations = service
+            .related_notes(other, other_source.note_id)
+            .await
+            .expect("hidden relations");
+        assert!(hidden_relations.outgoing.is_empty());
+        assert_eq!(
+            service
+                .related_notes(owner.clone(), target.note_id)
+                .await
+                .expect("owner relations")
+                .incoming
+                .iter()
+                .map(|note| note.note_id)
+                .collect::<Vec<_>>(),
+            vec![source.note_id]
+        );
+        let administrator = Actor {
+            issuer: owner.issuer,
+            subject: "administrator".into(),
+            is_administrator: true,
+        };
+        let administrator_relations = service
+            .related_notes(administrator, target.note_id)
+            .await
+            .expect("administrator relations");
+        assert_eq!(administrator_relations.incoming.len(), 2);
+        assert!(
+            administrator_relations
+                .incoming
+                .iter()
+                .any(|note| note.note_id == other_source.note_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn related_notes_are_deduplicated_and_follow_current_note_state() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let service = ServerNoteUseCases::new(database);
+        let owner = Actor {
+            issuer: "https://id.example.test".into(),
+            subject: "owner".into(),
+            is_administrator: false,
+        };
+        let target = service
+            .create_note(
+                owner.clone(),
+                NoteDraft {
+                    title: "参照先".into(),
+                    body: "本文".into(),
+                    tags: vec!["z".into(), "a".into()],
+                },
+            )
+            .await
+            .expect("target");
+        let source = service
+            .create_note(
+                owner.clone(),
+                NoteDraft {
+                    title: "参照元".into(),
+                    body: format!(
+                        "xref:note:{}[一つ目]\n\nxref:note:{}[二つ目]",
+                        target.note_id, target.note_id
+                    ),
+                    tags: Vec::new(),
+                },
+            )
+            .await
+            .expect("source");
+
+        let source_related = service
+            .related_notes(owner.clone(), source.note_id)
+            .await
+            .expect("source relations");
+        assert_eq!(
+            source_related
+                .outgoing
+                .iter()
+                .map(|note| note.note_id)
+                .collect::<Vec<_>>(),
+            vec![target.note_id]
+        );
+        assert!(source_related.incoming.is_empty());
+
+        let target_related = service
+            .related_notes(owner.clone(), target.note_id)
+            .await
+            .expect("target relations");
+        assert_eq!(
+            target_related
+                .incoming
+                .iter()
+                .map(|note| note.note_id)
+                .collect::<Vec<_>>(),
+            vec![source.note_id]
+        );
+
+        service
+            .update_note(
+                owner.clone(),
+                source.note_id,
+                NoteDraft {
+                    title: source.title,
+                    body: "参照を削除しました。".into(),
+                    tags: source.tags,
+                },
+                source.revision,
+            )
+            .await
+            .expect("update source");
+        assert!(
+            service
+                .related_notes(owner, target.note_id)
+                .await
+                .expect("updated relations")
+                .incoming
+                .is_empty()
+        );
     }
 
     #[test]
