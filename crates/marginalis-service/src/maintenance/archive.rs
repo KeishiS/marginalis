@@ -23,11 +23,11 @@ pub(crate) async fn export_archive(
         return Err(format!("archive output already exists: {}", output.display()).into());
     }
     let configuration = StorageConfig::from_environment()?;
-    let notes = SqliteDatabase::connect(&configuration.database_url)
-        .await?
-        .export_notes()
-        .await?;
-    let archive = create_archive(notes);
+    let database = SqliteDatabase::connect(&configuration.database_url).await?;
+    let archive = create_archive(
+        database.export_notes().await?,
+        database.export_note_acl().await?,
+    );
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -49,7 +49,11 @@ pub(crate) async fn import_archive(
     let configuration = StorageConfig::from_environment()?;
     SqliteDatabase::connect(&configuration.database_url)
         .await?
-        .import_notes(&archive.notes, &archive_references(&archive)?)
+        .import_notes(
+            &archive.notes,
+            &archive_references(&archive)?,
+            &archive.note_acl,
+        )
         .await?;
     tracing::info!(event = "archive.import.completed", input = %input.display(), "imported archive");
     Ok(())
@@ -99,9 +103,17 @@ pub(super) async fn verify_archive_in_memory(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let database = SqliteDatabase::connect("sqlite::memory:").await?;
     database
-        .import_notes(&archive.notes, &archive_references(archive)?)
+        .import_notes(
+            &archive.notes,
+            &archive_references(archive)?,
+            &archive.note_acl,
+        )
         .await?;
-    if create_archive(database.export_notes().await?) != *archive {
+    if create_archive(
+        database.export_notes().await?,
+        database.export_note_acl().await?,
+    ) != *archive
+    {
         return Err("archive logical round-trip validation failed".into());
     }
     Ok(())
@@ -115,9 +127,16 @@ pub(super) async fn verify_archive_in_isolated_database(
     let result = async {
         let database = SqliteDatabase::connect(&database_url).await?;
         database
-            .import_notes(&archive.notes, &archive_references(archive)?)
+            .import_notes(
+                &archive.notes,
+                &archive_references(archive)?,
+                &archive.note_acl,
+            )
             .await?;
-        let restored = create_archive(database.export_notes().await?);
+        let restored = create_archive(
+            database.export_notes().await?,
+            database.export_note_acl().await?,
+        );
         if restored != *archive {
             return Err("restored archive does not match the source archive".into());
         }

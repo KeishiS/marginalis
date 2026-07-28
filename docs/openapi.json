@@ -83,6 +83,19 @@
         "responses": { "200": { "description": "canonical AsciiDoc export", "content": { "text/asciidoc": { "schema": { "type": "string" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } }
       }
     },
+    "/api/v2/notes/{note_id}/acl": {
+      "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
+      "get": {
+        "summary": "Read the note ACL as its owner or an administrator",
+        "responses": { "200": { "description": "ACL entries", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteAcl" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "put": {
+        "summary": "Replace the note ACL using an optimistic revision",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteAclUpdate" } } } },
+        "responses": { "200": { "description": "note with incremented revision", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } }, "401": { "$ref": "#/components/responses/AuthenticationRequired" }, "403": { "$ref": "#/components/responses/CsrfRejected" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "422": { "$ref": "#/components/responses/ValidationFailed" } }
+      }
+    },
     "/api/v2/notes/{note_id}/restore": {
       "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
       "post": {
@@ -120,6 +133,9 @@
       "NoteDraft": { "type": "object", "required": ["title", "body", "tags"], "properties": { "title": { "type": "string" }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string" } } }, "additionalProperties": false },
       "NoteUpdate": { "type": "object", "required": ["title", "body", "tags", "expected_revision"], "properties": { "title": { "type": "string" }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string" } }, "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
+      "NoteAclEntry": { "type": "object", "required": ["subject", "permission"], "properties": { "subject": { "type": "string", "minLength": 1, "maxLength": 1024 }, "permission": { "enum": ["read", "edit"] } }, "additionalProperties": false },
+      "NoteAcl": { "type": "object", "required": ["entries"], "properties": { "entries": { "type": "array", "items": { "$ref": "#/components/schemas/NoteAclEntry" } } }, "additionalProperties": false },
+      "NoteAclUpdate": { "type": "object", "required": ["entries", "expected_revision"], "properties": { "entries": { "type": "array", "items": { "$ref": "#/components/schemas/NoteAclEntry" } }, "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "Note": { "type": "object", "required": ["note_id", "title", "body", "tags", "created_at_ms", "updated_at_ms", "revision"], "properties": { "note_id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "body": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "created_at_ms": { "type": "integer" }, "updated_at_ms": { "type": "integer" }, "revision": { "type": "integer", "minimum": 1 } } },
       "NotePreview": { "type": "object", "required": ["html"], "properties": { "html": { "type": "string" } }, "additionalProperties": false },
       "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } }, "additionalProperties": false },

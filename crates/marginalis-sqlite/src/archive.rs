@@ -2,7 +2,9 @@
 
 use std::{collections::HashSet, str::FromStr};
 
-use marginalis_domain::{EntityId, Note, NoteId, validate_identity};
+use marginalis_domain::{
+    ArchivedNoteAclEntry, EntityId, Note, NoteId, NotePermission, validate_identity,
+};
 use sqlx::Sqlite;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
@@ -26,11 +28,46 @@ impl SqliteDatabase {
         Ok(notes)
     }
 
+    pub async fn export_note_acl(&self) -> Result<Vec<ArchivedNoteAclEntry>, SqliteStoreError> {
+        let rows = sqlx::query(
+            "SELECT note_id, subject, permission FROM note_acl ORDER BY note_id, subject",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(database_error)?;
+        rows.into_iter()
+            .map(|row| {
+                use sqlx::Row;
+                let note_id = row
+                    .try_get::<String, _>("note_id")
+                    .map_err(database_error)?
+                    .parse::<EntityId>()
+                    .map(NoteId::new)
+                    .map_err(|_| SqliteStoreError::CorruptData)?;
+                let permission = match row
+                    .try_get::<String, _>("permission")
+                    .map_err(database_error)?
+                    .as_str()
+                {
+                    "read" => NotePermission::Read,
+                    "edit" => NotePermission::Edit,
+                    _ => return Err(SqliteStoreError::CorruptData),
+                };
+                Ok(ArchivedNoteAclEntry {
+                    note_id,
+                    subject: row.try_get("subject").map_err(database_error)?,
+                    permission,
+                })
+            })
+            .collect()
+    }
+
     /// 検証済みの論理snapshotを空databaseへ一つのtransactionでimportする。
     pub async fn import_notes(
         &self,
         notes: &[Note],
         references: &[(NoteId, NoteId)],
+        note_acl: &[ArchivedNoteAclEntry],
     ) -> Result<(), SqliteStoreError> {
         let mut note_ids = HashSet::new();
         for note in notes {
@@ -84,6 +121,26 @@ impl SqliteDatabase {
             .execute(&mut *transaction)
             .await
             .map_err(database_error)?;
+        }
+        for entry in note_acl {
+            let Some(note) = notes.iter().find(|note| note.note_id == entry.note_id) else {
+                return Err(SqliteStoreError::CorruptData);
+            };
+            if validate_identity(&note.creator_issuer, &entry.subject).is_err()
+                || entry.subject == note.creator_subject
+            {
+                return Err(SqliteStoreError::CorruptData);
+            }
+            sqlx::query("INSERT INTO note_acl (note_id, subject, permission) VALUES (?, ?, ?)")
+                .bind(entry.note_id.to_string())
+                .bind(&entry.subject)
+                .bind(match entry.permission {
+                    NotePermission::Read => "read",
+                    NotePermission::Edit => "edit",
+                })
+                .execute(&mut *transaction)
+                .await
+                .map_err(database_error)?;
         }
         transaction.commit().await.map_err(database_error)
     }

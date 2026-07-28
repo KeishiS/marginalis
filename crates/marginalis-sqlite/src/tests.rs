@@ -5,8 +5,8 @@ use marginalis_application::{
     OidcLoginAttempt, OidcLoginAttemptStore,
 };
 use marginalis_domain::{
-    Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, Note, NoteDraft, NoteId,
-    SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
+    Actor, EntityId, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry, NoteDraft, NoteId,
+    NotePermission, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
 };
 
 use super::*;
@@ -64,7 +64,7 @@ async fn initialization_rejects_the_previous_schema_version() {
     assert!(
         error
             .to_string()
-            .contains("unsupported database schema version 3; expected 5")
+            .contains("unsupported database schema version 3; expected 6")
     );
 }
 
@@ -97,7 +97,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .fetch_one(&database.pool)
         .await
         .expect("schema query"),
-        0
+        1
     );
     let alice = Actor {
         issuer: "https://id.example.test".into(),
@@ -233,12 +233,26 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .expect("restore note");
     assert_eq!(restored.deleted_at, None);
     assert_eq!(restored.revision, 4);
+    database
+        .replace_note_acl(
+            &alice,
+            note_id,
+            &[NoteAclEntry {
+                subject: "bob".into(),
+                permission: NotePermission::Read,
+            }],
+            4,
+            UnixMillis::new(360),
+        )
+        .await
+        .expect("store ACL");
     let snapshot = database.export_notes().await.expect("export snapshot");
+    let snapshot_acl = database.export_note_acl().await.expect("export ACL");
     let imported_database = SqliteDatabase::connect("sqlite::memory:")
         .await
         .expect("empty import target");
     imported_database
-        .import_notes(&snapshot, &[(note_id, note_id)])
+        .import_notes(&snapshot, &[(note_id, note_id)], &snapshot_acl)
         .await
         .expect("import snapshot");
     assert_eq!(
@@ -248,6 +262,13 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .expect("re-export snapshot"),
         snapshot
     );
+    assert_eq!(
+        imported_database
+            .export_note_acl()
+            .await
+            .expect("re-export ACL"),
+        snapshot_acl
+    );
     let (outgoing, incoming) = imported_database
         .directly_related_notes(&alice, note_id)
         .await
@@ -255,7 +276,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     assert_eq!(outgoing.len(), 1);
     assert_eq!(incoming.len(), 1);
     assert_eq!(
-        imported_database.import_notes(&snapshot, &[]).await,
+        imported_database.import_notes(&snapshot, &[], &[]).await,
         Err(SqliteStoreError::ArchiveTargetNotEmpty)
     );
     let nonempty_auth_database = SqliteDatabase::connect("sqlite::memory:")
@@ -275,7 +296,9 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .await
         .expect("pending login attempt");
     assert_eq!(
-        nonempty_auth_database.import_notes(&snapshot, &[]).await,
+        nonempty_auth_database
+            .import_notes(&snapshot, &[], &[])
+            .await,
         Err(SqliteStoreError::ArchiveTargetNotEmpty)
     );
     let mut invalid_snapshot = snapshot.clone();
@@ -284,14 +307,16 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .await
         .expect("empty rejected target");
     assert_eq!(
-        rejected_database.import_notes(&invalid_snapshot, &[]).await,
+        rejected_database
+            .import_notes(&invalid_snapshot, &[], &[])
+            .await,
         Err(SqliteStoreError::CorruptData)
     );
     let mut injected_identity = snapshot.clone();
     injected_identity[0].creator_subject = "alice\n:admin: true".into();
     assert_eq!(
         rejected_database
-            .import_notes(&injected_identity, &[])
+            .import_notes(&injected_identity, &[], &[])
             .await,
         Err(SqliteStoreError::CorruptData)
     );
@@ -300,7 +325,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         Some(UnixMillis::new(invalid_deleted_at[0].updated_at.get() + 1));
     assert_eq!(
         rejected_database
-            .import_notes(&invalid_deleted_at, &[])
+            .import_notes(&invalid_deleted_at, &[], &[])
             .await,
         Err(SqliteStoreError::CorruptData)
     );
@@ -312,7 +337,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         Vec::new()
     );
     database
-        .soft_delete_visible_note(&administrator, note_id, 4, UnixMillis::new(400))
+        .soft_delete_visible_note(&administrator, note_id, 5, UnixMillis::new(400))
         .await
         .expect("delete before purge");
     assert_eq!(
@@ -320,7 +345,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             .restore_visible_note(
                 &administrator,
                 note_id,
-                5,
+                6,
                 UnixMillis::new(400 + SOFT_DELETE_RETENTION_MS + 1)
             )
             .await,

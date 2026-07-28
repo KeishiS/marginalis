@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use marginalis_application::{
     Clock, NoteProfile, NoteRenderContext, NoteUseCaseError, NoteUseCases, Random, RelatedNotes,
 };
-use marginalis_domain::{Actor, Note, NoteDraft, NoteId};
+use marginalis_domain::{
+    Actor, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, validate_identity,
+};
 use marginalis_sqlite::{SqliteDatabase, SqliteStoreError};
 use std::collections::HashSet;
 use url::Url;
@@ -251,6 +253,59 @@ impl NoteUseCases for ServerNoteUseCases {
         Ok(RelatedNotes { outgoing, incoming })
     }
 
+    async fn note_capabilities(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteCapabilities, NoteUseCaseError> {
+        self.database
+            .note_capabilities(&actor, note_id)
+            .await
+            .map_err(map_note_error)?
+            .ok_or(NoteUseCaseError::NotFound)
+    }
+
+    async fn read_note_acl(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<NoteAclEntry>, NoteUseCaseError> {
+        self.database
+            .read_note_acl(&actor, note_id)
+            .await
+            .map_err(map_note_error)
+    }
+
+    async fn replace_note_acl(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        mut entries: Vec<NoteAclEntry>,
+        expected_revision: i64,
+    ) -> Result<Note, NoteUseCaseError> {
+        let note = self.read_note(actor.clone(), note_id).await?;
+        entries.sort_by(|a, b| a.subject.cmp(&b.subject));
+        for (index, entry) in entries.iter().enumerate() {
+            validate_identity(&note.creator_issuer, &entry.subject)
+                .map_err(|_| NoteUseCaseError::Validation(Vec::new()))?;
+            if entry.subject == note.creator_subject
+                || index > 0 && entries[index - 1].subject == entry.subject
+            {
+                return Err(NoteUseCaseError::Validation(Vec::new()));
+            }
+        }
+        self.database
+            .replace_note_acl(
+                &actor,
+                note_id,
+                &entries,
+                expected_revision,
+                SystemClock.now(),
+            )
+            .await
+            .map_err(map_note_error)
+    }
+
     fn note_profile(&self) -> NoteProfile {
         marginalis_asciidoc::note_profile()
     }
@@ -280,7 +335,7 @@ mod tests {
     use marginalis_application::{
         NoteRenderContext, NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationTarget,
     };
-    use marginalis_domain::{Actor, NoteDraft};
+    use marginalis_domain::{Actor, NoteAclEntry, NoteDraft, NotePermission};
     use marginalis_sqlite::SqliteDatabase;
 
     use super::{ServerNoteUseCases, note_href};
@@ -408,6 +463,127 @@ mod tests {
             .await
             .expect("restore");
         assert!(restored.deleted_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn acl_separates_read_edit_and_management_permissions() {
+        let service = ServerNoteUseCases::new(
+            SqliteDatabase::connect("sqlite::memory:")
+                .await
+                .expect("database"),
+        );
+        let owner = Actor {
+            issuer: "https://id.example.test".into(),
+            subject: "owner".into(),
+            is_administrator: false,
+        };
+        let reader = Actor {
+            subject: "reader".into(),
+            ..owner.clone()
+        };
+        let editor = Actor {
+            subject: "editor".into(),
+            ..owner.clone()
+        };
+        let outsider = Actor {
+            subject: "outsider".into(),
+            ..owner.clone()
+        };
+        let other_issuer = Actor {
+            issuer: "https://other.example.test".into(),
+            subject: "reader".into(),
+            is_administrator: false,
+        };
+        let note = service
+            .create_note(
+                owner.clone(),
+                NoteDraft {
+                    title: "共有ノート".into(),
+                    body: "本文".into(),
+                    tags: Vec::new(),
+                },
+            )
+            .await
+            .expect("create");
+        let note = service
+            .replace_note_acl(
+                owner.clone(),
+                note.note_id,
+                vec![
+                    NoteAclEntry {
+                        subject: reader.subject.clone(),
+                        permission: NotePermission::Read,
+                    },
+                    NoteAclEntry {
+                        subject: editor.subject.clone(),
+                        permission: NotePermission::Edit,
+                    },
+                ],
+                note.revision,
+            )
+            .await
+            .expect("share");
+
+        assert!(
+            service
+                .read_note(reader.clone(), note.note_id)
+                .await
+                .is_ok()
+        );
+        assert!(
+            service
+                .read_note(editor.clone(), note.note_id)
+                .await
+                .is_ok()
+        );
+        assert_eq!(
+            service.read_note(outsider, note.note_id).await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        assert_eq!(
+            service.read_note(other_issuer, note.note_id).await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        assert_eq!(
+            service
+                .update_note(
+                    reader.clone(),
+                    note.note_id,
+                    NoteDraft {
+                        title: "不可".into(),
+                        body: "不可".into(),
+                        tags: Vec::new(),
+                    },
+                    note.revision
+                )
+                .await,
+            Err(NoteUseCaseError::NotFound),
+        );
+        let edited = service
+            .update_note(
+                editor.clone(),
+                note.note_id,
+                NoteDraft {
+                    title: "編集済み".into(),
+                    body: "本文".into(),
+                    tags: Vec::new(),
+                },
+                note.revision,
+            )
+            .await
+            .expect("editor update");
+        assert_eq!(
+            service
+                .replace_note_acl(editor, note.note_id, Vec::new(), edited.revision)
+                .await,
+            Err(NoteUseCaseError::NotFound),
+        );
+        assert_eq!(
+            service
+                .soft_delete_note(reader, note.note_id, edited.revision)
+                .await,
+            Err(NoteUseCaseError::NotFound),
+        );
     }
 
     #[tokio::test]

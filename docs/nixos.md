@@ -35,9 +35,10 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは5です。旧versionを自動移行しません。
-schema 4のdatabaseは起動前にarchiveへ書き出し、空のschema 5 databaseへ取り込んでください。
-起動後はhealthと`marginalis diagnose`を確認し、新しいarchive v4を作成してください。
+変更してください。現行のSQLite schema versionは6です。旧versionを自動移行しません。
+schema 5のdatabaseとarchive v4は直接取り込めません。更新前の実行環境と`dataDir`を保全し、
+schema 6は空のdatabaseから開始してください。起動後はhealthと`marginalis diagnose`を確認し、
+新しいarchive v5を作成してください。
 
 切戻す場合はserviceを停止し、v0.6.0で作成したdatabaseを保全してから、更新前に退避した`dataDir`を
 v0.5.0へ戻します。異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
@@ -94,7 +95,7 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 ## バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは`marginalis-archive-4`で、AdocWeave package版`0.11.0`とnote profile版`2`を記録します。
+現行archiveは`marginalis-archive-5`で、AdocWeave package版`0.11.0`とnote profile版`2`を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 
 ```sh

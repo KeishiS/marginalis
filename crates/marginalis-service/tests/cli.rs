@@ -62,7 +62,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-4");
+    assert_eq!(archive_json["format"], "marginalis-archive-5");
     assert_eq!(archive_json["adocweave_package_version"], "0.11.0");
     assert_eq!(archive_json["note_profile_version"], 2);
 
@@ -411,7 +411,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 5);
+    assert_eq!(report["database"]["schema"]["actual"], 6);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
 
     fs::remove_dir_all(&directory).expect("remove test directory");

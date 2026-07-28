@@ -18,6 +18,12 @@ export interface NotePreview {
   html: string;
 }
 
+export type NotePermission = "read" | "edit";
+export interface NoteAclEntry {
+  subject: string;
+  permission: NotePermission;
+}
+
 export interface ValidationDiagnostic {
   code: string;
   target: { field: string; index?: number };
@@ -81,6 +87,25 @@ export async function previewNote(
     ...mutationRequest("POST", draft),
     signal,
   });
+}
+
+export async function readNoteAcl(
+  apiBase: string,
+  noteId: string,
+): Promise<{ entries: NoteAclEntry[] }> {
+  return requestJson(`${apiBase}/notes/${encodeURIComponent(noteId)}/acl`);
+}
+
+export async function replaceNoteAcl(
+  apiBase: string,
+  noteId: string,
+  entries: NoteAclEntry[],
+  expectedRevision: number,
+): Promise<Note> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/acl`,
+    mutationRequest("PUT", { entries, expected_revision: expectedRevision }),
+  );
 }
 
 function mutationRequest(method: "POST" | "PUT", body: unknown): RequestInit {

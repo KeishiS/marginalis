@@ -22,6 +22,14 @@ CREATE TABLE note_references (
 CREATE INDEX note_references_target_idx
 ON note_references (target_note_id, source_note_id);
 
+CREATE TABLE note_acl (
+    note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+    subject TEXT NOT NULL,
+    permission TEXT NOT NULL CHECK (permission IN ('read', 'edit')),
+    PRIMARY KEY (note_id, subject)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX note_acl_subject_idx ON note_acl (subject, note_id);
+
 CREATE TABLE web_sessions (
     session_id_hash BLOB PRIMARY KEY NOT NULL,
     csrf_token_hash BLOB NOT NULL,

@@ -327,7 +327,7 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-4\" "
+                + "jq -e '.format == \"marginalis-archive-5\" "
                 + "and .adocweave_package_version == \"0.11.0\" "
                 + "and .note_profile_version == 2 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
@@ -346,7 +346,7 @@
                 + "\"SELECT COUNT(*) FROM notes WHERE deleted_at_ms IS NOT NULL AND revision = 1 "
                 + "AND creator_issuer = 'https://id.example.test' AND creator_subject = 'recent'\") -eq 1; "
                 + "test $(sqlite3 /tmp/restored.sqlite "
-                + "\"SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'note_acl'\") -eq 0"
+                + "\"SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'note_acl'\") -eq 1"
               )
               machine.fail(
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
@@ -405,11 +405,11 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 5'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 6'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 5; PRAGMA journal_mode=WAL'"
+                + "'UPDATE schema_migrations SET version = 6; PRAGMA journal_mode=WAL'"
               )
               machine.succeed("rm -f /var/lib/marginalis/marginalis.sqlite*")
               machine.succeed(
@@ -419,6 +419,10 @@
               )
               machine.succeed(
                 "sqlite3 /var/lib/marginalis/marginalis.sqlite < ${marginalisV050Schema}"
+              )
+              machine.succeed(
+                "sqlite3 /var/lib/marginalis/marginalis.sqlite "
+                + "\"UPDATE schema_migrations SET version = 5;\""
               )
               machine.succeed(
                 "sqlite3 /var/lib/marginalis/marginalis.sqlite \"INSERT INTO notes "
@@ -433,14 +437,14 @@
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "journalctl -u marginalis.service -o cat | "
-                + "grep -F 'unsupported database schema version 4; expected 5'"
+                + "grep -F 'unsupported database schema version 5; expected 6'"
               )
               machine.succeed("systemctl stop marginalis.service")
               machine.fail("systemctl start marginalis-diagnose.service")
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 4 and .database.schema.expected == 5'"
+                + "'.database.schema.ok == false and .database.schema.actual == 5 and .database.schema.expected == 6'"
               )
             '';
           };
