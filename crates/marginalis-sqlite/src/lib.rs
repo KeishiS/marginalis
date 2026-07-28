@@ -9,6 +9,7 @@ mod notes;
 mod schema;
 mod session;
 mod token;
+mod web_session_repository;
 
 pub use cleanup::AuthStatePurgeCounts;
 pub use diagnostics::SqliteDiagnosticReport;

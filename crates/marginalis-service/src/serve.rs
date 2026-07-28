@@ -1,11 +1,11 @@
 //! HTTP serviceのcomposition root。
 
-use marginalis_application::NoteApplication;
+use marginalis_application::{NoteApplication, WebSessionApplication};
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration};
 use marginalis_server::{
-    ServerConfig, ServerMcpOAuthService, ServerOidcAuthenticationUseCases,
-    ServerWebSessionUseCases, SystemClock, SystemRandom,
+    ServerConfig, ServerMcpOAuthService, ServerOidcAuthenticationUseCases, SystemClock,
+    SystemRandom,
 };
 use marginalis_sqlite::SqliteDatabase;
 use std::path::Path;
@@ -55,8 +55,10 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         oidc_http_client,
         oidc,
     ));
-    let sessions = std::sync::Arc::new(ServerWebSessionUseCases::new(
-        database.clone(),
+    let sessions = std::sync::Arc::new(WebSessionApplication::new(
+        std::sync::Arc::new(database.clone()),
+        std::sync::Arc::new(SystemClock),
+        std::sync::Arc::new(SystemRandom),
         marginalis_application::SessionLifetime {
             idle_timeout_ms: 24 * 60 * 60 * 1_000,
             absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
