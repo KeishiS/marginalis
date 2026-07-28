@@ -68,6 +68,25 @@ impl NoteUseCases for Notes {
         Err(NoteUseCaseError::Unavailable)
     }
 
+    async fn preview_note(
+        &self,
+        _actor: Actor,
+        draft: NoteDraft,
+    ) -> Result<String, NoteUseCaseError> {
+        if draft.title.is_empty() {
+            Err(NoteUseCaseError::Validation(vec![
+                NoteValidationDiagnostic {
+                    code: NoteValidationCode::InvalidTitle,
+                    target: NoteValidationTarget::Title,
+                    span: None,
+                    message: "title is invalid",
+                },
+            ]))
+        } else {
+            Ok("<article><p>プレビュー</p></article>".into())
+        }
+    }
+
     async fn soft_delete_note(
         &self,
         _actor: Actor,
@@ -161,6 +180,14 @@ impl NoteUseCases for UiNotes {
         _draft: NoteDraft,
         _expected_revision: i64,
     ) -> Result<Note, NoteUseCaseError> {
+        Err(NoteUseCaseError::Unavailable)
+    }
+
+    async fn preview_note(
+        &self,
+        _actor: Actor,
+        _draft: NoteDraft,
+    ) -> Result<String, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
 
@@ -1547,6 +1574,58 @@ async fn rest_validation_returns_the_shared_diagnostic_contract() {
     assert!(problem["diagnostics"][0].get("span").is_none());
     assert_eq!(problem["diagnostics"][1]["target"]["field"], "body");
     assert_eq!(problem["diagnostics"][1]["span"]["unit"], "utf8_byte");
+}
+
+#[tokio::test]
+async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
+    let valid = authenticated_app()
+        .oneshot(
+            Request::post("/api/v2/notes/preview")
+                .header("content-type", "application/json")
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::from(
+                    r#"{"title":"題名","body":"本文","tags":["試験"]}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(valid.status(), StatusCode::OK);
+    let body = to_bytes(valid.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let preview: serde_json::Value = serde_json::from_slice(&body).expect("preview JSON");
+    assert_eq!(preview["html"], "<article><p>プレビュー</p></article>");
+
+    let invalid = authenticated_app()
+        .oneshot(
+            Request::post("/api/v2/notes/preview")
+                .header("content-type", "application/json")
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::from(r#"{"title":"","body":"本文","tags":[]}"#))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(invalid.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = to_bytes(invalid.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let problem: serde_json::Value = serde_json::from_slice(&body).expect("problem JSON");
+    assert_eq!(problem["code"], "validation_failed");
+    assert_eq!(problem["diagnostics"][0]["code"], "invalid_title");
 }
 
 #[tokio::test]

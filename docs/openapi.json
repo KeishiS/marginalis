@@ -44,6 +44,19 @@
         }
       }
     },
+    "/api/v2/notes/preview": {
+      "post": {
+        "summary": "Validate and render an unsaved note",
+        "parameters": [{ "$ref": "#/components/parameters/CsrfToken" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteDraft" } } } },
+        "responses": {
+          "200": { "description": "safe HTML preview", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotePreview" } } } },
+          "401": { "$ref": "#/components/responses/AuthenticationRequired" },
+          "403": { "$ref": "#/components/responses/CsrfRejected" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
     "/api/v2/notes/{note_id}": {
       "parameters": [{ "$ref": "#/components/parameters/NoteId" }],
       "get": {
@@ -108,6 +121,7 @@
       "NoteUpdate": { "type": "object", "required": ["title", "body", "tags", "expected_revision"], "properties": { "title": { "type": "string" }, "body": { "type": "string", "x-maxBytes": 524288 }, "tags": { "type": "array", "maxItems": 50, "items": { "type": "string" } }, "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "Revision": { "type": "object", "required": ["expected_revision"], "properties": { "expected_revision": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
       "Note": { "type": "object", "required": ["note_id", "title", "body", "tags", "created_at_ms", "updated_at_ms", "revision"], "properties": { "note_id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "body": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "created_at_ms": { "type": "integer" }, "updated_at_ms": { "type": "integer" }, "revision": { "type": "integer", "minimum": 1 } } },
+      "NotePreview": { "type": "object", "required": ["html"], "properties": { "html": { "type": "string" } }, "additionalProperties": false },
       "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } }, "additionalProperties": false },
       "ValidationProblem": { "type": "object", "required": ["code", "message", "diagnostics"], "properties": { "code": { "const": "validation_failed" }, "message": { "type": "string" }, "diagnostics": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/ValidationDiagnostic" } } }, "additionalProperties": false },
       "ValidationDiagnostic": { "type": "object", "required": ["code", "target", "message"], "properties": { "code": { "enum": ["invalid_title", "invalid_tag", "too_many_tags", "body_too_large", "asciidoc_parse_failed", "include_directive_disabled", "inline_passthrough_disabled", "block_passthrough_disabled", "duplicate_anchor", "external_reference_disabled", "invalid_url_scheme", "resource_disabled", "unsupported_math_language", "unsupported_source_language"] }, "target": { "$ref": "#/components/schemas/ValidationTarget" }, "span": { "$ref": "#/components/schemas/Utf8ByteSpan" }, "message": { "type": "string" } }, "additionalProperties": false },

@@ -1,13 +1,16 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, UIEvent, useEffect, useMemo, useState } from "react";
 
 import {
   ApiError,
   Note,
   Problem,
+  ValidationDiagnostic,
   createNote,
+  previewNote,
   readNote,
   updateNote,
 } from "./api";
+import { utf8ByteOffsetToLineColumn } from "./textPosition";
 
 export interface EditorConfig {
   mode: "create" | "edit";
@@ -33,9 +36,20 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [notice, setNotice] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [previewProblem, setPreviewProblem] = useState<Problem | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(baseline),
     [baseline, form],
+  );
+  const draft = useMemo(
+    () => ({
+      title: form.title,
+      body: form.body,
+      tags: parseTags(form.tagsText),
+    }),
+    [form],
   );
 
   useEffect(() => {
@@ -72,6 +86,40 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       window.removeEventListener("beforeunload", warnAboutUnsavedChanges);
   }, [isDirty]);
 
+  useEffect(() => {
+    if (loading || (config.mode === "edit" && revision === null)) {
+      return;
+    }
+    const controller = new AbortController();
+    let current = true;
+    const timer = window.setTimeout(() => {
+      setPreviewLoading(true);
+      previewNote(config.apiBase, draft, controller.signal)
+        .then((preview) => {
+          if (current) {
+            setPreviewHtml(preview.html);
+            setPreviewProblem(null);
+          }
+        })
+        .catch((error: unknown) => {
+          if (current && !controller.signal.aborted) {
+            setPreviewHtml("");
+            setPreviewProblem(toProblem(error));
+          }
+        })
+        .finally(() => {
+          if (current) {
+            setPreviewLoading(false);
+          }
+        });
+    }, 350);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [config.apiBase, config.mode, draft, loading, revision]);
+
   async function save(event: FormEvent) {
     event.preventDefault();
     if (saving) {
@@ -80,11 +128,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     setSaving(true);
     setProblem(null);
     setNotice("");
-    const draft = {
-      title: form.title,
-      body: form.body,
-      tags: parseTags(form.tagsText),
-    };
     try {
       const note =
         revision === null
@@ -119,6 +162,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           <ProblemMessage
             problem={problem}
             heading="ノートを読み込めませんでした"
+            headingId="load-problem-heading"
           />
         )}
         <a href={externalPath(config.basePath, "/")}>一覧へ戻る</a>
@@ -149,7 +193,11 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       </div>
 
       {problem && (
-        <ProblemMessage problem={problem} heading="保存できませんでした" />
+        <ProblemMessage
+          problem={problem}
+          heading="保存できませんでした"
+          headingId="save-problem-heading"
+        />
       )}
       {notice && (
         <p className="notice" role="status">
@@ -157,59 +205,64 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         </p>
       )}
 
-      <form className="editor-form" onSubmit={save}>
-        <label>
-          題名
-          <input
-            name="title"
-            value={form.title}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                title: event.target.value,
-              }))
-            }
-            disabled={saving}
-          />
-        </label>
-        <label>
-          本文（AsciiDoc）
-          <textarea
-            name="body"
-            rows={20}
+      <div className="editor-workspace">
+        <form className="editor-form" onSubmit={save}>
+          <label>
+            題名
+            <input
+              name="title"
+              value={form.title}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }))
+              }
+              disabled={saving}
+            />
+          </label>
+          <LineNumberedTextarea
             value={form.body}
-            onChange={(event) =>
+            disabled={saving}
+            onChange={(body) =>
               setForm((current) => ({
                 ...current,
-                body: event.target.value,
+                body,
               }))
             }
-            disabled={saving}
           />
-        </label>
-        <label>
-          タグ（コンマ区切り）
-          <input
-            name="tags"
-            value={form.tagsText}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                tagsText: event.target.value,
-              }))
-            }
-            disabled={saving}
-          />
-        </label>
-        <div className="editor-actions">
-          <button type="submit" disabled={saving || !isDirty}>
-            {saving ? "保存しています…" : "保存"}
-          </button>
-          <span role="status">
-            {isDirty ? "未保存の変更があります。" : "変更は保存されています。"}
-          </span>
-        </div>
-      </form>
+          <label>
+            タグ（コンマ区切り）
+            <input
+              name="tags"
+              value={form.tagsText}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  tagsText: event.target.value,
+                }))
+              }
+              disabled={saving}
+            />
+          </label>
+          <div className="editor-actions">
+            <button type="submit" disabled={saving || !isDirty}>
+              {saving ? "保存しています…" : "保存"}
+            </button>
+            <span role="status">
+              {isDirty
+                ? "未保存の変更があります。"
+                : "変更は保存されています。"}
+            </span>
+          </div>
+        </form>
+        <PreviewPanel
+          body={form.body}
+          html={previewHtml}
+          loading={previewLoading}
+          problem={previewProblem}
+        />
+      </div>
     </section>
   );
 }
@@ -217,13 +270,15 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
 function ProblemMessage({
   problem,
   heading,
+  headingId,
 }: {
   problem: Problem;
   heading: string;
+  headingId: string;
 }) {
   return (
-    <section className="problem" aria-labelledby="problem-heading" role="alert">
-      <h2 id="problem-heading">{heading}</h2>
+    <section className="problem" aria-labelledby={headingId} role="alert">
+      <h2 id={headingId}>{heading}</h2>
       <p>{problemMessage(problem)}</p>
       {problem.diagnostics && problem.diagnostics.length > 0 && (
         <ul>
@@ -235,6 +290,102 @@ function ProblemMessage({
         </ul>
       )}
     </section>
+  );
+}
+
+function LineNumberedTextarea({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const lineNumbers = Array.from(
+    { length: Math.max(1, value.split(/\r\n|\r|\n/).length) },
+    (_, index) => index + 1,
+  ).join("\n");
+  const syncScroll = (event: UIEvent<HTMLTextAreaElement>) => {
+    setScrollTop(event.currentTarget.scrollTop);
+  };
+
+  return (
+    <label>
+      本文（AsciiDoc）
+      <span className="source-editor">
+        <span
+          aria-hidden="true"
+          className="line-numbers"
+          style={{ transform: `translateY(-${scrollTop}px)` }}
+        >
+          {lineNumbers}
+        </span>
+        <textarea
+          name="body"
+          rows={20}
+          wrap="off"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onScroll={syncScroll}
+          disabled={disabled}
+        />
+      </span>
+    </label>
+  );
+}
+
+function PreviewPanel({
+  body,
+  html,
+  loading,
+  problem,
+}: {
+  body: string;
+  html: string;
+  loading: boolean;
+  problem: Problem | null;
+}) {
+  return (
+    <section className="preview-panel" aria-labelledby="preview-heading">
+      <div className="preview-heading">
+        <h2 id="preview-heading">プレビュー</h2>
+        <span role="status">{loading ? "更新しています…" : "最新です。"}</span>
+      </div>
+      {problem && (
+        <section
+          className="problem"
+          aria-labelledby="preview-problem-heading"
+          role="alert"
+        >
+          <h3 id="preview-problem-heading">プレビューできませんでした</h3>
+          <p>{problemMessage(problem)}</p>
+          {problem.diagnostics && (
+            <ul>
+              {problem.diagnostics.map((diagnostic, index) => (
+                <li key={`${diagnostic.code}-${index}`}>
+                  {diagnosticLocation(body, diagnostic)}
+                  {diagnosticMessage(diagnostic.code)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      {!problem && html && <SafePreview html={html} />}
+      {!problem && !html && !loading && <p>プレビューはありません。</p>}
+    </section>
+  );
+}
+
+function SafePreview({ html }: { html: string }) {
+  // 同じ保存規則とRenderPolicyを通ったサーバー生成HTMLだけを受け取る。
+  return (
+    <div
+      className="preview-content"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
 
@@ -282,6 +433,20 @@ function problemMessage(problem: Problem): string {
     default:
       return problem.message;
   }
+}
+
+function diagnosticLocation(
+  body: string,
+  diagnostic: ValidationDiagnostic,
+): string {
+  if (
+    diagnostic.target.field !== "body" ||
+    diagnostic.span?.unit !== "utf8_byte"
+  ) {
+    return "";
+  }
+  const location = utf8ByteOffsetToLineColumn(body, diagnostic.span.start);
+  return `${location.line}行${location.column}列: `;
 }
 
 function diagnosticMessage(code: string): string {

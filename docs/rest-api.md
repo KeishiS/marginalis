@@ -22,6 +22,7 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 | セッション確認 | `GET /api/v2/session` | Kanidmの利用者識別子と管理者フラグ |
 | ノート一覧 | `GET /api/v2/notes` | 閲覧できるノートだけ |
 | ノート作成 | `POST /api/v2/notes` | CSRFトークンが必要 |
+| 保存前プレビュー | `POST /api/v2/notes/preview` | 保存と同じ検査・HTML変換 |
 | ノート取得 | `GET /api/v2/notes/{note_id}` | 閲覧できるノートだけ |
 | ノート更新 | `PUT /api/v2/notes/{note_id}` | `expected_revision`が必要 |
 | ノート削除 | `DELETE /api/v2/notes/{note_id}` | `expected_revision`が必要 |
@@ -33,6 +34,10 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 
 ノートの作成・更新では、JSON形式の`title`、`body`、`tags`を送信します。本文はUTF-8で
 512 KiB以下です。
+
+保存前プレビューにも同じ入力を送り、成功時は安全なHTMLを受け取ります。プレビューは保存処理を
+行いませんが、ログイン中の利用者だけが同一オリジンとCSRFトークンを確認したうえで利用できます。
+入力規則に違反した場合の診断は、作成・更新と同じ形式です。
 
 通常利用者は、自身が作成したノートだけを操作できます。`server-admins`グループに属する利用者は、
 すべてのノートを操作できます。権限のないノートは、存在を推測できないよう、HTTP状態コード`404`と
