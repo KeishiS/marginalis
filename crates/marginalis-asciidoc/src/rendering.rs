@@ -1,0 +1,138 @@
+use adocweave::output::diagnostics::Severity;
+use adocweave::output::html::render_with_inputs;
+use adocweave::resolution::{
+    RenderInputs, ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind, ResolvedReference,
+    ResolverFailure,
+};
+use marginalis_application::NoteReferenceResolution;
+use marginalis_domain::Note;
+
+use crate::RenderError;
+use crate::analysis::analyze_valid_source;
+use crate::configuration::{html_is_within_output_limits, output_limits, render_policy};
+
+pub(crate) fn render_note(
+    note: &Note,
+    resolutions: &[NoteReferenceResolution],
+) -> Result<String, RenderError> {
+    let analysis = analyze_valid_source(note.source())?;
+    let queries = analysis.reference_queries();
+    let references = resolutions
+        .iter()
+        .map(|resolution| {
+            let reference_index = match resolution {
+                NoteReferenceResolution::Visible {
+                    reference_index, ..
+                }
+                | NoteReferenceResolution::Hidden { reference_index } => *reference_index,
+            };
+            let query = queries.get(reference_index).ok_or(RenderError)?;
+            Ok(match resolution {
+                NoteReferenceResolution::Visible {
+                    href,
+                    title,
+                    missing_anchor,
+                    ..
+                } => {
+                    let resolved = ResolvedReference::resolved(query.source_range, href)
+                        .with_display_text(title);
+                    if *missing_anchor {
+                        resolved.with_notices(vec![ResolutionNotice {
+                            kind: ResolutionNoticeKind::Fallback,
+                        }])
+                    } else {
+                        resolved
+                    }
+                }
+                NoteReferenceResolution::Hidden { .. } => ResolvedReference::failed(
+                    query.source_range,
+                    ResolverFailure {
+                        kind: ResolutionFailureKind::MissingTarget,
+                    },
+                ),
+            })
+        })
+        .collect::<Result<Vec<_>, RenderError>>()?;
+    let inputs = RenderInputs::new(references, Vec::new());
+    let output = render_with_inputs(analysis.document(), &render_policy(), &inputs);
+    if output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Error)
+        || !html_is_within_output_limits(&output.html, &output_limits())
+    {
+        return Err(RenderError);
+    }
+    Ok(output.html)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use marginalis_domain::{EntityId, Identity, Note, NoteId, Revision, UnixMillis};
+
+    use super::*;
+
+    fn note(body: &str) -> Note {
+        Note::restore(
+            NoteId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
+            ),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            "A title".into(),
+            format!("= A title\n\n{body}"),
+            Vec::new(),
+            UnixMillis::new(0),
+            UnixMillis::new(1),
+            Revision::INITIAL,
+            None,
+        )
+        .expect("note")
+    }
+
+    #[test]
+    fn supported_blocks_render_without_raw_markup() {
+        let html = render_note(
+            &note("[[local]]\nA *safe* paragraph. See <<local>>.\n\n[source,rust]\n----\nfn main() {}\n----"),
+            &[],
+        )
+        .expect("render");
+        assert!(html.contains("<strong>safe</strong>"));
+        assert!(html.contains("language-rust"));
+        assert!(html.contains("href=\"#local\""));
+    }
+
+    #[test]
+    fn resolved_and_hidden_note_references_preserve_acl_decisions() {
+        let target = "0197c9bc-0000-7000-8000-000000000002";
+        let source = note(&format!("xref:note:{target}[]"));
+        let visible = render_note(
+            &source,
+            &[NoteReferenceResolution::Visible {
+                reference_index: 0,
+                href: format!("/notes/{target}"),
+                title: "参照先".into(),
+                missing_anchor: false,
+            }],
+        )
+        .expect("visible");
+        assert!(visible.contains(">参照先</a>"));
+
+        let hidden = render_note(
+            &source,
+            &[NoteReferenceResolution::Hidden { reference_index: 0 }],
+        )
+        .expect("hidden");
+        assert!(!hidden.contains("href="));
+        assert!(!hidden.contains(target));
+    }
+
+    #[test]
+    fn invalid_source_is_rejected_before_rendering() {
+        assert_eq!(
+            render_note(&note("include::secret[]"), &[]),
+            Err(RenderError)
+        );
+    }
+}
