@@ -162,7 +162,12 @@ marginalis-web/src/http/
 ├── assets.rs        埋め込み静的アセット
 ├── auth.rs          browser session、Cookie、CSRF
 ├── html.rs          共通HTMLレイアウト
-├── oauth.rs         MCP OAuth endpoint
+├── oauth/           MCP OAuth endpoint
+│   ├── authorization.rs 認可要求と同意
+│   ├── registration.rs  client登録
+│   ├── token.rs         token発行と更新
+│   ├── revocation.rs    認可の失効
+│   └── common.rs        OAuth入力解析とerror応答
 ├── mcp_transport.rs MCP Streamable HTTP
 ├── notes.rs         REST note API
 ├── ui.rs            閲覧UI
