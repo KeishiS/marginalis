@@ -170,8 +170,9 @@ test("revision競合時に三つの内容を比較し、明示操作後に再保
   expect(
     screen.getByRole("region", { name: "編集開始時点" }),
   ).toHaveTextContent("既存の題名");
+  expect(screen.getByDisplayValue("編集中の題名")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "編集中" })).toHaveTextContent(
-    "編集中の題名",
+    "編集中",
   );
   const currentRegion = screen.getByRole("region", {
     name: "現在保存されている内容",
