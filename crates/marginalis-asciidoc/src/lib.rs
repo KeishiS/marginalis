@@ -13,11 +13,16 @@ use adocweave::resolution::{
 };
 #[cfg(test)]
 use marginalis_application::Utf8ByteSpan;
+use marginalis_application::{LogicalSnapshot, NoteAclSnapshotEntry};
 use marginalis_application::{
     NoteContent, NoteContentError, NoteProfile, NoteValidationCode, NoteValidationDiagnostic,
     NoteValidationTarget,
 };
-use marginalis_domain::{ARCHIVE_FORMAT, Archive, Note, NoteDraft, UnixMillis, validate_identity};
+use marginalis_domain::{
+    EntityId, Identity, Note, NoteDraft, NoteId, NotePermission, Revision, UnixMillis,
+    validate_identity,
+};
+use serde::{Deserialize, Serialize};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
 
@@ -452,46 +457,152 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
     }
 }
 
-/// SQLiteの論理snapshotへ現行のarchive identityを付与する。
-pub fn create_archive(
-    notes: Vec<Note>,
-    note_acl: Vec<marginalis_domain::ArchivedNoteAclEntry>,
-) -> Archive {
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-5";
+
+/// JSON archiveの転送形式。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Archive {
+    pub format: String,
+    pub adocweave_package_version: String,
+    pub note_profile_version: u32,
+    pub notes: Vec<ArchiveNote>,
+    pub note_acl: Vec<ArchiveAclEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveNote {
+    pub note_id: String,
+    pub creator_issuer: String,
+    pub creator_subject: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub revision: i64,
+    pub deleted_at_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveAclEntry {
+    pub note_id: String,
+    pub subject: String,
+    pub permission: ArchivePermission,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchivePermission {
+    Read,
+    Edit,
+}
+
+/// 論理スナップショットへ現行のarchive識別情報を付与する。
+pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
     Archive {
         format: ARCHIVE_FORMAT.into(),
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION.into(),
         note_profile_version: NOTE_PROFILE_VERSION,
-        notes,
-        note_acl,
+        notes: snapshot
+            .notes()
+            .iter()
+            .map(|note| ArchiveNote {
+                note_id: note.note_id().to_string(),
+                creator_issuer: note.creator_issuer().to_owned(),
+                creator_subject: note.creator_subject().to_owned(),
+                title: note.title().to_owned(),
+                body: note.body().to_owned(),
+                tags: note.tags().to_vec(),
+                created_at_ms: note.created_at().get(),
+                updated_at_ms: note.updated_at().get(),
+                revision: note.revision().get(),
+                deleted_at_ms: note.deleted_at().map(UnixMillis::get),
+            })
+            .collect(),
+        note_acl: snapshot
+            .note_acl()
+            .iter()
+            .map(|entry| ArchiveAclEntry {
+                note_id: entry.note_id().to_string(),
+                subject: entry.subject().to_owned(),
+                permission: match entry.permission() {
+                    NotePermission::Read => ArchivePermission::Read,
+                    NotePermission::Edit => ArchivePermission::Edit,
+                },
+            })
+            .collect(),
     }
 }
 
-/// archiveのidentityと全ノートが現行のAsciiDoc profileに一致することを検証する。
-///
-/// ID、時刻、format markerの構造検証は永続化adapterが担う。本関数はparserを必要とする
-/// content policyだけを入力境界で検証し、SQLite adapterをAsciiDoc実装から独立させる。
-pub fn validate_archive(archive: &Archive) -> Result<(), ArchiveValidationError> {
+/// JSON archiveを検証し、保存方式に依存しない論理スナップショットへ変換する。
+pub fn validate_archive(archive: &Archive) -> Result<LogicalSnapshot, ArchiveValidationError> {
     if archive.format != ARCHIVE_FORMAT
         || archive.adocweave_package_version != PINNED_ADOCWEAVE_PACKAGE_VERSION
         || archive.note_profile_version != NOTE_PROFILE_VERSION
     {
         return Err(ArchiveValidationError);
     }
-    for note in &archive.notes {
-        let normalized = validate_note_draft(NoteDraft {
-            title: note.title().to_owned(),
-            body: note.body().to_owned(),
-            tags: note.tags().to_vec(),
+    let notes = archive
+        .notes
+        .iter()
+        .map(|note| {
+            let normalized = validate_note_draft(NoteDraft {
+                title: note.title.clone(),
+                body: note.body.clone(),
+                tags: note.tags.clone(),
+            })
+            .map_err(|_| ArchiveValidationError)?;
+            if normalized.title != note.title
+                || normalized.body != note.body
+                || normalized.tags != note.tags
+            {
+                return Err(ArchiveValidationError);
+            }
+            let note_id = note
+                .note_id
+                .parse::<EntityId>()
+                .map(NoteId::new)
+                .map_err(|_| ArchiveValidationError)?;
+            let creator = Identity::new(note.creator_issuer.clone(), note.creator_subject.clone())
+                .map_err(|_| ArchiveValidationError)?;
+            let revision = Revision::new(note.revision).map_err(|_| ArchiveValidationError)?;
+            Note::restore(
+                note_id,
+                creator,
+                note.title.clone(),
+                note.body.clone(),
+                note.tags.clone(),
+                UnixMillis::new(note.created_at_ms),
+                UnixMillis::new(note.updated_at_ms),
+                revision,
+                note.deleted_at_ms.map(UnixMillis::new),
+            )
+            .map_err(|_| ArchiveValidationError)
         })
-        .map_err(|_| ArchiveValidationError)?;
-        if normalized.title != note.title()
-            || normalized.body != note.body()
-            || normalized.tags != note.tags()
-        {
-            return Err(ArchiveValidationError);
-        }
-    }
-    Ok(())
+        .collect::<Result<Vec<_>, _>>()?;
+    let note_acl = archive
+        .note_acl
+        .iter()
+        .map(|entry| {
+            let note_id = entry
+                .note_id
+                .parse::<EntityId>()
+                .map(NoteId::new)
+                .map_err(|_| ArchiveValidationError)?;
+            Ok(NoteAclSnapshotEntry::new(
+                note_id,
+                entry.subject.clone(),
+                match entry.permission {
+                    ArchivePermission::Read => NotePermission::Read,
+                    ArchivePermission::Edit => NotePermission::Edit,
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, ArchiveValidationError>>()?;
+    LogicalSnapshot::new(notes, note_acl).map_err(|_| ArchiveValidationError)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -499,7 +610,7 @@ pub struct ArchiveValidationError;
 
 impl fmt::Display for ArchiveValidationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("archive contains a note outside the current AsciiDoc profile")
+        formatter.write_str("archive is inconsistent with the current archive contract")
     }
 }
 
@@ -517,7 +628,7 @@ fn format_unix_millis(value: UnixMillis) -> Result<String, ExportError> {
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{Archive, EntityId, Identity, NoteId, Revision};
+    use marginalis_domain::{EntityId, Identity, NoteId, Revision};
 
     use super::*;
 
@@ -661,33 +772,23 @@ mod tests {
 
     #[test]
     fn archive_validation_rejects_non_normalized_notes() {
-        let base = note("safe body");
-        let archived_note = Note::restore(
-            base.note_id(),
-            base.owner().clone(),
-            base.title().to_owned(),
-            base.body().to_owned(),
-            vec![" duplicate ".into(), "duplicate".into()],
-            base.created_at(),
-            base.updated_at(),
-            base.revision(),
-            base.deleted_at(),
-        )
-        .expect("structurally consistent note");
-        let archive = create_archive(vec![archived_note], Vec::new());
+        let snapshot = LogicalSnapshot::new(vec![note("safe body")], Vec::new()).expect("snapshot");
+        let mut archive = create_archive(&snapshot);
+        archive.notes[0].tags = vec![" duplicate ".into(), "duplicate".into()];
         assert_eq!(validate_archive(&archive), Err(ArchiveValidationError));
     }
 
     #[test]
     fn archive_validation_requires_exact_contract_identity() {
-        let archive = create_archive(Vec::new(), Vec::new());
+        let snapshot = LogicalSnapshot::new(Vec::new(), Vec::new()).expect("empty snapshot");
+        let archive = create_archive(&snapshot);
         assert_eq!(archive.format, ARCHIVE_FORMAT);
         assert_eq!(
             archive.adocweave_package_version,
             PINNED_ADOCWEAVE_PACKAGE_VERSION
         );
         assert_eq!(archive.note_profile_version, NOTE_PROFILE_VERSION);
-        assert_eq!(validate_archive(&archive), Ok(()));
+        assert_eq!(validate_archive(&archive), Ok(snapshot));
 
         for invalid in [
             Archive {

@@ -88,6 +88,12 @@ applicationから永続化へ要求する外向きportも、読み取りの`Note
 三つを実装しますが、application serviceは用途ごとに必要なportだけを受け取ります。
 SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出しません。
 
+アーカイブのJSON項目を表す型は、形式を解釈する`marginalis-asciidoc`に置きます。JSONから復元した
+`Note`とACLは、`marginalis-application`の`LogicalSnapshot`でノートIDの重複、ACLの参照先、
+所有者と共有先の関係を一度だけ検証します。本文から再構築する参照索引も検証した
+`RestorePlan`だけをSQLite adapterへ渡します。これにより、ドメイン型を外部形式へ直接公開せず、
+SQLite adapterはJSON形式やAsciiDocの解析方法に依存しません。
+
 crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
 crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはcomposition rootとして、
 実行経路と公開型を短く一覧できる状態に保つ。
@@ -105,7 +111,8 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 閲覧時は投影を現在の認可と削除状態に結合し、題名、タグ、更新日時だけを取得する。本文更新、
 ACL変更、ソフトデリート、復元、物理削除へ追従しながら、不可視なノートの存在や件数を漏らさず、
 閲覧ごとの全本文解析も行わない。archiveにはACLを含め、派生する参照投影は含めず、復元時に
-検証済み本文から再構築する。
+検証済み本文から再構築する。復元処理は、ノート、ACL、参照索引を検証済みの復元計画として受け取り、
+空のdatabaseへ一つのtransactionで格納する。
 
 主要な外側のadapterは、変更理由に対応して次のmoduleへ分ける。
 

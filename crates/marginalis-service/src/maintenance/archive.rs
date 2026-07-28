@@ -3,8 +3,8 @@
 use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
 use crate::cli::required_absolute_file_argument;
 use crate::config::StorageConfig;
-use marginalis_asciidoc::{create_archive, validate_archive as validate_archive_contract};
-use marginalis_domain::Archive;
+use marginalis_application::{LogicalSnapshot, RestorePlan};
+use marginalis_asciidoc::{Archive, create_archive, validate_archive as validate_archive_contract};
 use marginalis_sqlite::SqliteDatabase;
 use std::{
     collections::HashSet,
@@ -24,8 +24,8 @@ pub(crate) async fn export_archive(
     }
     let configuration = StorageConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
-    let (notes, note_acl) = database.export_archive_snapshot().await?;
-    let archive = create_archive(notes, note_acl);
+    let snapshot = database.export_archive_snapshot().await?;
+    let archive = create_archive(&snapshot);
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -43,15 +43,11 @@ pub(crate) async fn import_archive(
     mut arguments: impl Iterator<Item = String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let input = required_absolute_file_argument(&mut arguments, "--input")?;
-    let archive = read_validated_archive(&input)?;
+    let validated = read_validated_archive(&input)?;
     let configuration = StorageConfig::from_environment()?;
     SqliteDatabase::connect(&configuration.database_url)
         .await?
-        .import_notes(
-            &archive.notes,
-            &archive_references(&archive)?,
-            &archive.note_acl,
-        )
+        .restore(&validated.plan)
         .await?;
     tracing::info!(event = "archive.import.completed", input = %input.display(), "imported archive");
     Ok(())
@@ -62,12 +58,12 @@ pub(crate) async fn validate_archive(
     mut arguments: impl Iterator<Item = String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let input = required_absolute_file_argument(&mut arguments, "--input")?;
-    let archive = read_validated_archive(&input)?;
-    verify_archive_in_memory(&archive).await?;
+    let validated = read_validated_archive(&input)?;
+    verify_archive_in_memory(&validated).await?;
     tracing::info!(
         event = "maintenance.archive_validation.completed",
         input = %input.display(),
-        note_count = archive.notes.len(),
+        note_count = validated.archive.notes.len(),
         "validated archive"
     );
     Ok(())
@@ -78,59 +74,55 @@ pub(crate) async fn verify_restore(
     mut arguments: impl Iterator<Item = String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let input = required_absolute_file_argument(&mut arguments, "--input")?;
-    let archive = read_validated_archive(&input)?;
-    verify_archive_in_isolated_database(&archive).await?;
+    let validated = read_validated_archive(&input)?;
+    verify_archive_in_isolated_database(&validated).await?;
     tracing::info!(
         event = "maintenance.restore_verification.completed",
         input = %input.display(),
-        note_count = archive.notes.len(),
+        note_count = validated.archive.notes.len(),
         "verified isolated archive restore"
     );
     Ok(())
 }
 
-pub(super) fn read_validated_archive(path: &Path) -> Result<Archive, Box<dyn std::error::Error>> {
+pub(super) struct ValidatedArchive {
+    pub(super) archive: Archive,
+    pub(super) plan: RestorePlan,
+}
+
+pub(super) fn read_validated_archive(
+    path: &Path,
+) -> Result<ValidatedArchive, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let archive: Archive = serde_json::from_reader(file)?;
-    validate_archive_contract(&archive)?;
-    Ok(archive)
+    let snapshot = validate_archive_contract(&archive)?;
+    let plan = restore_plan(snapshot)?;
+    Ok(ValidatedArchive { archive, plan })
 }
 
 pub(super) async fn verify_archive_in_memory(
-    archive: &Archive,
+    validated: &ValidatedArchive,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let database = SqliteDatabase::connect("sqlite::memory:").await?;
-    database
-        .import_notes(
-            &archive.notes,
-            &archive_references(archive)?,
-            &archive.note_acl,
-        )
-        .await?;
-    let (notes, note_acl) = database.export_archive_snapshot().await?;
-    if create_archive(notes, note_acl) != *archive {
+    database.restore(&validated.plan).await?;
+    let snapshot = database.export_archive_snapshot().await?;
+    if create_archive(&snapshot) != validated.archive {
         return Err("archive logical round-trip validation failed".into());
     }
     Ok(())
 }
 
 pub(super) async fn verify_archive_in_isolated_database(
-    archive: &Archive,
+    validated: &ValidatedArchive,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (directory, database_path) = create_isolated_database_path()?;
     let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
     let result = async {
         let database = SqliteDatabase::connect(&database_url).await?;
-        database
-            .import_notes(
-                &archive.notes,
-                &archive_references(archive)?,
-                &archive.note_acl,
-            )
-            .await?;
-        let (notes, note_acl) = database.export_archive_snapshot().await?;
-        let restored = create_archive(notes, note_acl);
-        if restored != *archive {
+        database.restore(&validated.plan).await?;
+        let snapshot = database.export_archive_snapshot().await?;
+        let restored = create_archive(&snapshot);
+        if restored != validated.archive {
             return Err("restored archive does not match the source archive".into());
         }
         Ok::<_, Box<dyn std::error::Error>>(())
@@ -142,19 +134,19 @@ pub(super) async fn verify_archive_in_isolated_database(
     result
 }
 
-fn archive_references(
-    archive: &Archive,
-) -> Result<Vec<(marginalis_domain::NoteId, marginalis_domain::NoteId)>, Box<dyn std::error::Error>>
-{
+fn restore_plan(snapshot: LogicalSnapshot) -> Result<RestorePlan, Box<dyn std::error::Error>> {
     let mut references = HashSet::new();
-    for note in &archive.notes {
+    for note in snapshot.notes() {
         for query in marginalis_asciidoc::note_reference_queries(note.body())
             .map_err(|_| "validated archive note could not be analyzed")?
         {
             references.insert((note.note_id(), query.target_note_id));
         }
     }
-    Ok(references.into_iter().collect())
+    Ok(RestorePlan::new(
+        snapshot,
+        references.into_iter().collect(),
+    )?)
 }
 
 fn create_isolated_database_path() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {

@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use marginalis_application::{
     McpAuthorizationCodeExchange, McpRefreshTokenRotation, McpRefreshTokenRotationOutcome,
-    OidcLoginAttempt, OidcLoginAttemptStore,
+    OidcLoginAttempt, OidcLoginAttemptStore, RestorePlan,
 };
 use marginalis_domain::{
     Actor, EntityId, Identity, McpAuthorizationGrant, McpOAuthClient, Note, NoteAclEntry,
@@ -237,23 +237,24 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         )
         .await
         .expect("store ACL");
-    let (snapshot, snapshot_acl) = database
+    let snapshot = database
         .export_archive_snapshot()
         .await
         .expect("export snapshot");
+    let plan =
+        RestorePlan::new(snapshot.clone(), vec![(note_id, note_id)]).expect("valid restore plan");
     let imported_database = SqliteDatabase::connect("sqlite::memory:")
         .await
         .expect("empty import target");
     imported_database
-        .import_notes(&snapshot, &[(note_id, note_id)], &snapshot_acl)
+        .restore(&plan)
         .await
         .expect("import snapshot");
-    let (restored_snapshot, restored_acl) = imported_database
+    let restored_snapshot = imported_database
         .export_archive_snapshot()
         .await
         .expect("re-export snapshot");
     assert_eq!(restored_snapshot, snapshot);
-    assert_eq!(restored_acl, snapshot_acl);
     let (outgoing, incoming) = imported_database
         .directly_related_notes(&alice, note_id)
         .await
@@ -261,7 +262,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     assert_eq!(outgoing.len(), 1);
     assert_eq!(incoming.len(), 1);
     assert_eq!(
-        imported_database.import_notes(&snapshot, &[], &[]).await,
+        imported_database.restore(&plan).await,
         Err(SqliteStoreError::ArchiveTargetNotEmpty)
     );
     let nonempty_auth_database = SqliteDatabase::connect("sqlite::memory:")
@@ -281,20 +282,18 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .await
         .expect("pending login attempt");
     assert_eq!(
-        nonempty_auth_database
-            .import_notes(&snapshot, &[], &[])
-            .await,
+        nonempty_auth_database.restore(&plan).await,
         Err(SqliteStoreError::ArchiveTargetNotEmpty)
     );
     let rejected_database = SqliteDatabase::connect("sqlite::memory:")
         .await
         .expect("empty rejected target");
-    let (empty_notes, empty_acl) = rejected_database
+    let empty_snapshot = rejected_database
         .export_archive_snapshot()
         .await
         .expect("empty snapshot");
-    assert!(empty_notes.is_empty());
-    assert!(empty_acl.is_empty());
+    assert!(empty_snapshot.notes().is_empty());
+    assert!(empty_snapshot.note_acl().is_empty());
     database
         .soft_delete_visible_note(&alice, note_id, revision(5), UnixMillis::new(400))
         .await

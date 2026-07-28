@@ -37,8 +37,8 @@ pub(super) async fn create(output: &Path) -> Result<(), Box<dyn std::error::Erro
 async fn populate(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
-    let (notes, note_acl) = database.export_archive_snapshot().await?;
-    let archive = marginalis_asciidoc::create_archive(notes, note_acl);
+    let snapshot = database.export_archive_snapshot().await?;
+    let archive = marginalis_asciidoc::create_archive(&snapshot);
     let archive_path = output.join("marginalis-archive.json");
     let archive_file = OpenOptions::new()
         .write(true)
@@ -48,7 +48,7 @@ async fn populate(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     serde_json::to_writer_pretty(&archive_file, &archive)?;
     archive_file.sync_all()?;
     let written_archive = read_validated_archive(&archive_path)?;
-    if written_archive != archive {
+    if written_archive.archive != archive {
         return Err("written backup archive does not match the database snapshot".into());
     }
     verify_archive_in_memory(&written_archive).await?;
@@ -60,7 +60,7 @@ async fn populate(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     writeln!(
         &marker,
         "Marginalis backup {}",
-        marginalis_domain::ARCHIVE_FORMAT
+        marginalis_asciidoc::ARCHIVE_FORMAT
     )?;
     marker.sync_all()?;
     File::open(output)?.sync_all()?;
