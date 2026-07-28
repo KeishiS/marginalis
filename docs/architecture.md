@@ -75,6 +75,10 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 配布時はNixが`frontend/dist`を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
 外部URLはViteで固定せず、Rustの`external_path`でbase URLのサブパスを反映する。
 
+`frontend/tests`は入力、プレビュー、保存、競合などの画面状態と組合せをブラウザーなしで高速に
+検証する。`tests/browser`は実Kanidm、TLS、サブパスを組み立てるNixOS VMで、ログインから主要な
+利用経路までの接続を検証する。細かな入力の組合せはNixOS VMへ重複させない。
+
 主要な外側のadapterは、変更理由に対応して次のmoduleへ分ける。
 
 ```text
