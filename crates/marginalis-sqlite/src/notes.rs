@@ -210,57 +210,6 @@ impl SqliteDatabase {
         Ok(note)
     }
 
-    /// 現在可視なノートだけを対象に、直接参照先と参照元の概要を返す。
-    pub async fn directly_related_notes(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<(Vec<NoteSummary>, Vec<NoteSummary>), SqliteStoreError> {
-        let outgoing = sqlx::query(
-            "SELECT target.note_id, target.title, target.tags_json, target.updated_at_ms,
-                    target.revision
-             FROM note_references reference
-             JOIN notes target ON target.note_id = reference.target_note_id
-             WHERE reference.source_note_id = ?
-               AND target.deleted_at_ms IS NULL
-               AND EXISTS (SELECT 1 FROM note_access access
-                           WHERE access.note_id = target.note_id
-                             AND access.issuer = ? AND access.subject = ?)
-             ORDER BY target.updated_at_ms DESC, target.note_id ASC",
-        )
-        .bind(note_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(database_error)?
-        .into_iter()
-        .map(note_summary_from_row)
-        .collect::<Result<Vec<_>, _>>()?;
-        let incoming = sqlx::query(
-            "SELECT source.note_id, source.title, source.tags_json, source.updated_at_ms,
-                    source.revision
-             FROM note_references reference
-             JOIN notes source ON source.note_id = reference.source_note_id
-             WHERE reference.target_note_id = ?
-               AND source.deleted_at_ms IS NULL
-               AND EXISTS (SELECT 1 FROM note_access access
-                           WHERE access.note_id = source.note_id
-                             AND access.issuer = ? AND access.subject = ?)
-             ORDER BY source.updated_at_ms DESC, source.note_id ASC",
-        )
-        .bind(note_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(database_error)?
-        .into_iter()
-        .map(note_summary_from_row)
-        .collect::<Result<Vec<_>, _>>()?;
-        Ok((outgoing, incoming))
-    }
-
     /// 所有者の認可とソフトデリートを同一transactionで行う。
     pub async fn soft_delete_visible_note(
         &self,
@@ -358,27 +307,6 @@ impl SqliteDatabase {
                 .map_err(database_error)?;
         transaction.commit().await.map_err(database_error)?;
         Ok(result.rows_affected())
-    }
-
-    pub async fn note_access(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<Option<NoteAccess>, SqliteStoreError> {
-        let access = sqlx::query_scalar::<_, i64>(
-            "SELECT access.access_level
-             FROM notes
-             JOIN note_access access ON access.note_id = notes.note_id
-             WHERE notes.note_id = ? AND notes.deleted_at_ms IS NULL
-               AND access.issuer = ? AND access.subject = ?",
-        )
-        .bind(note_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(database_error)?;
-        access.map(access_from_level).transpose()
     }
 
     /// 閲覧に必要な正本、権限、参照先、関連概要を一つの読み取りtransactionから取得する。

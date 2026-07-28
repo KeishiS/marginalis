@@ -55,11 +55,6 @@ pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemRe
             ProblemCode::NotFound,
             "note is not available",
         ),
-        NoteUseCaseError::Forbidden => problem(
-            StatusCode::FORBIDDEN,
-            ProblemCode::Forbidden,
-            "note operation is not permitted",
-        ),
         NoteUseCaseError::Conflict => problem(
             StatusCode::CONFLICT,
             ProblemCode::Conflict,
@@ -101,7 +96,7 @@ pub(super) fn authentication_error(
     error: AuthenticationUseCaseError,
 ) -> (StatusCode, Json<ProblemResponse>) {
     match error {
-        AuthenticationUseCaseError::Rejected | AuthenticationUseCaseError::NotFound => problem(
+        AuthenticationUseCaseError::Rejected => problem(
             StatusCode::UNAUTHORIZED,
             ProblemCode::AuthenticationRequired,
             "authentication is required",

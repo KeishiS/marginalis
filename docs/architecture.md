@@ -90,6 +90,9 @@ HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのpor
 ノート操作の内向きportは、問い合わせの`NoteQueries`、変更の`NoteCommands`、表示変換の
 `NotePresentation`、ACL管理の`NoteAccessControl`に分けます。複数のtransportへ同じ実装を渡す
 場合だけ、これらをまとめた`NoteUseCases`をfacadeとして使います。
+閲覧画面は`NotePresentation::read_note_view`だけを呼び出し、ノート、実効アクセス水準、描画HTML、
+関連概要を個別の問い合わせから組み立てません。試験用adapterもこの境界を直接実装し、実際には
+存在しない分割問い合わせを模倣しません。
 applicationから永続化へ要求する外向きportも、読み取りの`NoteQueryRepository`、原子的な変更の
 `NoteCommandRepository`、ACL操作の`NoteAclRepository`に分けます。具象的には同じSQLite adapterが
 三つを実装しますが、application serviceは用途ごとに必要なportだけを受け取ります。

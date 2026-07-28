@@ -1,3 +1,14 @@
+async fn snapshot_access(
+    database: &SqliteDatabase,
+    actor: &Actor,
+    note_id: NoteId,
+) -> Result<Option<NoteAccess>, SqliteStoreError> {
+    Ok(database
+        .note_view_snapshot(actor, note_id)
+        .await?
+        .map(|snapshot| snapshot.access))
+}
+
 #[tokio::test]
 async fn single_source_updates_and_purges_notes_transactionally() {
     let database = SqliteDatabase::connect("sqlite::memory:")
@@ -176,12 +187,13 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .await
         .expect("re-export snapshot");
     assert_eq!(restored_snapshot, snapshot);
-    let (outgoing, incoming) = imported_database
-        .directly_related_notes(&alice, note_id)
+    let view = imported_database
+        .note_view_snapshot(&alice, note_id)
         .await
-        .expect("imported references");
-    assert_eq!(outgoing.len(), 1);
-    assert_eq!(incoming.len(), 1);
+        .expect("imported view")
+        .expect("imported note is visible");
+    assert_eq!(view.related.outgoing.len(), 1);
+    assert_eq!(view.related.incoming.len(), 1);
     assert_eq!(
         imported_database.restore(&plan).await,
         Err(SqliteStoreError::ArchiveTargetNotEmpty)
@@ -268,10 +280,10 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
     let reader = actor("https://id.example.test", "reader");
     let same_subject_other_issuer = actor("https://other-id.example.test", "reader");
     assert_eq!(
-        database.note_access(&owner, note_id).await,
+        snapshot_access(&database, &owner, note_id).await,
         Ok(Some(NoteAccess::Manage))
     );
-    assert_eq!(database.note_access(&reader, note_id).await, Ok(None));
+    assert_eq!(snapshot_access(&database, &reader, note_id).await, Ok(None));
 
     let read_grant = NoteAclEntry::new(
         Identity::new("https://id.example.test".into(), "reader".into()).expect("reader"),
@@ -288,13 +300,11 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
         .await
         .expect("read ACL");
     assert_eq!(
-        database.note_access(&reader, note_id).await,
+        snapshot_access(&database, &reader, note_id).await,
         Ok(Some(NoteAccess::Read))
     );
     assert_eq!(
-        database
-            .note_access(&same_subject_other_issuer, note_id)
-            .await,
+        snapshot_access(&database, &same_subject_other_issuer, note_id).await,
         Ok(None)
     );
     assert_eq!(
@@ -339,7 +349,7 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
         .expect("note");
     assert_eq!(unchanged.revision(), changed.revision());
     assert_eq!(
-        database.note_access(&reader, note_id).await,
+        snapshot_access(&database, &reader, note_id).await,
         Ok(Some(NoteAccess::Read))
     );
 
@@ -358,7 +368,7 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
         .await
         .expect("edit ACL");
     assert_eq!(
-        database.note_access(&reader, note_id).await,
+        snapshot_access(&database, &reader, note_id).await,
         Ok(Some(NoteAccess::Edit))
     );
     assert!(
