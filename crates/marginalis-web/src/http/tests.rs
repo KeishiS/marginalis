@@ -14,7 +14,8 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note,
-    NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, UnixMillis, WebSession,
+    NoteAclEntry, NoteCapabilities, NoteDraft, NoteId, NoteSummary, Revision, UnixMillis,
+    WebSession,
 };
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
@@ -64,7 +65,7 @@ impl NoteUseCases for Notes {
         _actor: Actor,
         _note_id: NoteId,
         _draft: NoteDraft,
-        _expected_revision: i64,
+        _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
@@ -93,7 +94,7 @@ impl NoteUseCases for Notes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-        _expected_revision: i64,
+        _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
@@ -102,7 +103,7 @@ impl NoteUseCases for Notes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-        _expected_revision: i64,
+        _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
@@ -152,7 +153,7 @@ impl NoteUseCases for Notes {
         _actor: Actor,
         _note_id: NoteId,
         _entries: Vec<NoteAclEntry>,
-        _expected_revision: i64,
+        _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Forbidden)
     }
@@ -222,7 +223,7 @@ impl NoteUseCases for UiNotes {
         _actor: Actor,
         _note_id: NoteId,
         _draft: NoteDraft,
-        _expected_revision: i64,
+        _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
@@ -240,7 +241,7 @@ impl NoteUseCases for UiNotes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-        _expected_revision: i64,
+        _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
@@ -249,7 +250,7 @@ impl NoteUseCases for UiNotes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-        _expected_revision: i64,
+        _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
@@ -313,7 +314,7 @@ impl NoteUseCases for UiNotes {
         _actor: Actor,
         _note_id: NoteId,
         _entries: Vec<NoteAclEntry>,
-        _expected_revision: i64,
+        _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Forbidden)
     }
@@ -576,7 +577,7 @@ fn ui_note(title: &str) -> Note {
         vec!["試験".into()],
         UnixMillis::new(1),
         UnixMillis::new(2),
-        1,
+        Revision::INITIAL,
         None,
     )
     .expect("consistent note")
@@ -773,7 +774,7 @@ async fn note_view_lists_related_note_metadata_with_collapsible_overflow() {
             vec!["z".into(), "a".into(), "m".into(), "<危険>".into()],
             UnixMillis::new(1),
             UnixMillis::new(index),
-            1,
+            Revision::INITIAL,
             None,
         )
         .expect("consistent note");

@@ -517,7 +517,7 @@ fn format_unix_millis(value: UnixMillis) -> Result<String, ExportError> {
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{Archive, EntityId, Identity, NoteId};
+    use marginalis_domain::{Archive, EntityId, Identity, NoteId, Revision};
 
     use super::*;
 
@@ -532,7 +532,7 @@ mod tests {
             vec!["Research".into()],
             UnixMillis::new(0),
             UnixMillis::new(1_000),
-            1,
+            Revision::INITIAL,
             None,
         )
         .expect("consistent note")

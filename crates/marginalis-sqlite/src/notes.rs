@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use marginalis_domain::{
     Actor, EntityId, Identity, Note, NoteAclEntry, NoteCapabilities, NoteDraft, NoteId,
-    NotePermission, NoteSummary, SOFT_DELETE_RETENTION_MS, UnixMillis,
+    NotePermission, NoteSummary, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
 use sqlx::{Row, Sqlite};
 
@@ -32,7 +32,7 @@ impl SqliteDatabase {
         .bind(tags_json)
         .bind(note.created_at().get())
         .bind(note.updated_at().get())
-        .bind(note.revision())
+        .bind(note.revision().get())
         .bind(note.deleted_at().map(UnixMillis::get))
         .execute(&mut *transaction)
         .await
@@ -122,7 +122,7 @@ impl SqliteDatabase {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         draft: &NoteDraft,
         reference_targets: &[NoteId],
         updated_at: UnixMillis,
@@ -141,7 +141,7 @@ impl SqliteDatabase {
         .bind(tags_json)
         .bind(updated_at.get())
         .bind(note_id.to_string())
-        .bind(expected_revision)
+        .bind(expected_revision.get())
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -222,7 +222,7 @@ impl SqliteDatabase {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         deleted_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
@@ -234,7 +234,7 @@ impl SqliteDatabase {
         .bind(deleted_at.get())
         .bind(deleted_at.get())
         .bind(note_id.to_string())
-        .bind(expected_revision)
+        .bind(expected_revision.get())
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -252,7 +252,7 @@ impl SqliteDatabase {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        expected_revision: i64,
+        expected_revision: Revision,
         restored_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
@@ -265,7 +265,7 @@ impl SqliteDatabase {
         )
         .bind(restored_at.get())
         .bind(note_id.to_string())
-        .bind(expected_revision)
+        .bind(expected_revision.get())
         .bind(retention_cutoff)
         .execute(&mut *transaction)
         .await
@@ -369,7 +369,7 @@ impl SqliteDatabase {
         actor: &Actor,
         note_id: NoteId,
         entries: &[NoteAclEntry],
-        expected_revision: i64,
+        expected_revision: Revision,
         updated_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
@@ -380,7 +380,7 @@ impl SqliteDatabase {
         )
         .bind(updated_at.get())
         .bind(note_id.to_string())
-        .bind(expected_revision)
+        .bind(expected_revision.get())
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -538,7 +538,8 @@ pub(crate) fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Note, Sqlite
         tags,
         UnixMillis::new(row.try_get("created_at_ms").map_err(database_error)?),
         UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
-        row.try_get("revision").map_err(database_error)?,
+        Revision::new(row.try_get("revision").map_err(database_error)?)
+            .map_err(|_| SqliteStoreError::CorruptData)?,
         row.try_get::<Option<i64>, _>("deleted_at_ms")
             .map_err(database_error)?
             .map(UnixMillis::new),

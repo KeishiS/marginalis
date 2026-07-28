@@ -41,7 +41,7 @@ MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`mar
   `subject`は空でなく制御文字を含まない値とし、長さ上限をdomainで一元検証する。
 - ノートなどの永続的な識別子にはUUIDv7だけを受理する。文字列、JSON、データベースからの復元を
   含むすべての入力経路で同じ検査を行い、検査を省略する公開constructorは設けない。
-- `Note`は検証済みの所有者identityを保持し、正のrevision、作成日時から更新日時までの順序、
+- `Note`は検証済みの所有者identityと正の値だけを表す`Revision`を保持し、作成日時から更新日時までの順序、
   削除日時の範囲を生成時と復元時に検査する。フィールドを直接変更する公開APIは設けない。
   SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
   検査しない。

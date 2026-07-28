@@ -8,7 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use marginalis_application::{NoteProfile, NoteUseCaseError, NoteUseCases};
-use marginalis_domain::{Actor, Note, NoteDraft};
+use marginalis_domain::{Actor, Note, NoteDraft, Revision};
 use serde::Deserialize;
 
 use crate::mcp::{JsonRpcRequest, JsonRpcResponse, MCP_PROTOCOL_VERSION};
@@ -109,7 +109,7 @@ impl McpTool {
             Self::DeleteNote => serde_json::json!({
                 "name":"delete_note",
                 "description":"Soft-delete a note at its current revision.",
-                "inputSchema":{"type":"object","required":["note_id","expected_revision"],"properties":{"note_id":{"type":"string"},"expected_revision":{"type":"integer"}},"additionalProperties":false}
+                "inputSchema":{"type":"object","required":["note_id","expected_revision"],"properties":{"note_id":{"type":"string","format":"uuid"},"expected_revision":{"type":"integer","minimum":1}},"additionalProperties":false}
             }),
             Self::Unknown => unreachable!("unknown tools are not advertised"),
         }
@@ -490,14 +490,14 @@ struct McpUpdate {
     title: String,
     body: String,
     tags: Vec<String>,
-    expected_revision: i64,
+    expected_revision: Revision,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct McpDelete {
     note_id: String,
-    expected_revision: i64,
+    expected_revision: Revision,
 }
 
 async fn mcp_tool_call(

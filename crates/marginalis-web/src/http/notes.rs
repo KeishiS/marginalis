@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use marginalis_application::NoteRenderContext;
-use marginalis_domain::{Note, NoteAclEntry, NoteDraft};
+use marginalis_domain::{Note, NoteAclEntry, NoteDraft, Revision};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -47,7 +47,7 @@ impl From<Note> for NoteResponse {
             tags: note.tags().to_vec(),
             created_at_ms: note.created_at().get(),
             updated_at_ms: note.updated_at().get(),
-            revision: note.revision(),
+            revision: note.revision().get(),
         }
     }
 }
@@ -66,13 +66,13 @@ pub(super) struct NoteUpdateInput {
     title: String,
     body: String,
     tags: Vec<String>,
-    expected_revision: i64,
+    expected_revision: Revision,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct DeleteInput {
-    expected_revision: i64,
+    expected_revision: Revision,
 }
 
 #[derive(Serialize)]
@@ -84,7 +84,7 @@ pub(super) struct NoteAclResponse {
 #[serde(deny_unknown_fields)]
 pub(super) struct NoteAclInput {
     entries: Vec<NoteAclEntry>,
-    expected_revision: i64,
+    expected_revision: Revision,
 }
 
 pub(super) async fn session(
