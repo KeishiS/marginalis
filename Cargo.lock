@@ -1163,8 +1163,11 @@ name = "marginalis-application"
 version = "0.7.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "marginalis-domain",
+ "sha2 0.10.9",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1230,14 +1233,10 @@ dependencies = [
 name = "marginalis-server"
 version = "0.7.0"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "marginalis-application",
  "marginalis-domain",
- "marginalis-sqlite",
  "rand 0.8.7",
- "reqwest",
- "sha2 0.10.9",
  "time",
  "tokio",
  "tracing",

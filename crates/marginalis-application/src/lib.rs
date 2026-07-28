@@ -12,12 +12,14 @@ use marginalis_domain::{
 };
 
 mod identity;
+mod mcp_oauth;
 mod notes;
 mod session;
 
 pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
 };
+pub use mcp_oauth::{McpOAuthApplication, McpOAuthRepository, McpOAuthRepositoryError};
 pub use notes::{
     NoteApplication, NoteContent, NoteContentError, NoteLinkResolver, NoteReferenceQuery,
     NoteReferenceResolution, NoteRepository, NoteRepositoryError,
