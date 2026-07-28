@@ -151,11 +151,11 @@ MCP transportは[JSON-RPC 2.0](https://www.jsonrpc.org/specification)の`jsonrpc
 | `delete_note` | `notes:delete` | revisionを指定したソフトデリート |
 
 `create_note`または`update_note`の前に`get_note_profile`を呼び出してください。profileには
-AdocWeave package版`0.11.0`とMarginalis note profile版`1`を別々に含めます。相対link、文書間xref、scheme付きxref、
-include、passthroughおよび外部Resourceは現行profileでは保存できません。ローカルanchorへの参照は
-利用できます。AdocWeave 0.11.0で追加された`asciidoc-file-link`と`non-asciidoc-xref`は既定の
-警告として有効ですが、現行profileの保存可否は変更しません。`macro-boundary`は任意規則のため
-有効化しません。
+AdocWeave package版`0.11.0`とMarginalis note profile版`2`を別々に含めます。ローカルanchorと
+`xref:note:<ノートID>#<アンカーID>[表示ラベル]`形式のノート参照を利用できます。相対link、
+それ以外の文書間xrefとscheme付きxref、include、passthroughおよび外部Resourceは保存できません。
+AdocWeave 0.11.0で追加された`asciidoc-file-link`と`non-asciidoc-xref`は既定の警告として有効ですが、
+現行profileの保存可否は変更しません。`macro-boundary`は任意規則のため有効化しません。
 
 JSONまたはtool引数の構造が不正な場合はJSON-RPC `-32602`です。構造が正しく、ノート規則に違反する場合は
 次のようにtool実行結果で返します。`span`は利用者が送った`body`を基準とするUTF-8 byteの半開区間です。
