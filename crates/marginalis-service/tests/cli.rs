@@ -64,7 +64,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
     assert_eq!(archive_json["format"], "marginalis-archive-4");
     assert_eq!(archive_json["adocweave_package_version"], "0.11.0");
-    assert_eq!(archive_json["note_profile_version"], 1);
+    assert_eq!(archive_json["note_profile_version"], 2);
 
     let backup = directory.join("backup");
     let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))

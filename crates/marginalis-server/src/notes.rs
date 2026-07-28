@@ -1,9 +1,12 @@
 //! ノートの検証、可視性、revision規則を共有するuse case。
 
 use async_trait::async_trait;
-use marginalis_application::{Clock, NoteProfile, NoteUseCaseError, NoteUseCases, Random};
+use marginalis_application::{
+    Clock, NoteProfile, NoteRenderContext, NoteUseCaseError, NoteUseCases, Random,
+};
 use marginalis_domain::{Actor, Note, NoteDraft, NoteId};
 use marginalis_sqlite::{SqliteDatabase, SqliteStoreError};
+use url::Url;
 
 use crate::{SystemClock, SystemRandom};
 
@@ -17,6 +20,71 @@ impl ServerNoteUseCases {
     pub fn new(database: SqliteDatabase) -> Self {
         Self { database }
     }
+
+    async fn reference_resolutions(
+        &self,
+        actor: &Actor,
+        note: &Note,
+        context: &NoteRenderContext,
+    ) -> Result<Vec<marginalis_asciidoc::NoteReferenceResolution>, NoteUseCaseError> {
+        let queries = marginalis_asciidoc::note_reference_queries(note)
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let mut resolutions = Vec::with_capacity(queries.len());
+        for query in queries {
+            let Some(target) = self
+                .database
+                .visible_note(actor, query.target_note_id)
+                .await
+                .map_err(map_note_error)?
+            else {
+                resolutions.push(marginalis_asciidoc::NoteReferenceResolution::Hidden {
+                    reference_index: query.reference_index,
+                });
+                continue;
+            };
+            let missing_anchor = match query.anchor.as_deref() {
+                Some(anchor) => !marginalis_asciidoc::note_has_anchor(&target, anchor)
+                    .map_err(|_| NoteUseCaseError::Unavailable)?,
+                None => false,
+            };
+            let href = note_href(
+                &context.note_path_prefix,
+                target.note_id,
+                (!missing_anchor)
+                    .then_some(query.anchor.as_deref())
+                    .flatten(),
+            )
+            .ok_or(NoteUseCaseError::Unavailable)?;
+            resolutions.push(marginalis_asciidoc::NoteReferenceResolution::Visible {
+                reference_index: query.reference_index,
+                href,
+                title: target.title,
+                missing_anchor,
+            });
+        }
+        Ok(resolutions)
+    }
+}
+
+fn note_href(prefix: &str, note_id: NoteId, anchor: Option<&str>) -> Option<String> {
+    if !prefix.starts_with('/') || prefix.starts_with("//") || prefix.contains(['?', '#']) {
+        return None;
+    }
+    let prefix = prefix.trim_end_matches('/');
+    let path = format!("{prefix}/{note_id}");
+    let mut url = Url::parse("https://marginalis.invalid")
+        .ok()?
+        .join(&path)
+        .ok()?;
+    if url.path() != path {
+        return None;
+    }
+    url.set_fragment(anchor);
+    Some(
+        url.as_str()
+            .strip_prefix("https://marginalis.invalid")?
+            .to_owned(),
+    )
 }
 
 fn map_note_error(error: SqliteStoreError) -> NoteUseCaseError {
@@ -97,6 +165,7 @@ impl NoteUseCases for ServerNoteUseCases {
         &self,
         actor: Actor,
         draft: NoteDraft,
+        context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError> {
         marginalis_domain::validate_identity(&actor.issuer, &actor.subject)
             .map_err(|_| NoteUseCaseError::Unavailable)?;
@@ -105,8 +174,8 @@ impl NoteUseCases for ServerNoteUseCases {
         let now = SystemClock.now();
         let note = Note {
             note_id: NoteId::new(SystemRandom.uuid_v7()),
-            creator_issuer: actor.issuer,
-            creator_subject: actor.subject,
+            creator_issuer: actor.issuer.clone(),
+            creator_subject: actor.subject.clone(),
             title: draft.title,
             body: draft.body,
             tags: draft.tags,
@@ -115,7 +184,9 @@ impl NoteUseCases for ServerNoteUseCases {
             revision: 1,
             deleted_at: None,
         };
-        marginalis_asciidoc::render_note_html(&note).map_err(|_| NoteUseCaseError::Unavailable)
+        let resolutions = self.reference_resolutions(&actor, &note, &context).await?;
+        marginalis_asciidoc::render_note_html_with_references(&note, &resolutions)
+            .map_err(|_| NoteUseCaseError::Unavailable)
     }
 
     async fn soft_delete_note(
@@ -146,8 +217,16 @@ impl NoteUseCases for ServerNoteUseCases {
         marginalis_asciidoc::export_note(note).map_err(|_| NoteUseCaseError::Unavailable)
     }
 
-    fn render_note_html(&self, note: &Note) -> Result<String, NoteUseCaseError> {
-        marginalis_asciidoc::render_note_html(note).map_err(|_| NoteUseCaseError::Unavailable)
+    async fn render_note_html(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        context: NoteRenderContext,
+    ) -> Result<String, NoteUseCaseError> {
+        let note = self.read_note(actor.clone(), note_id).await?;
+        let resolutions = self.reference_resolutions(&actor, &note, &context).await?;
+        marginalis_asciidoc::render_note_html_with_references(&note, &resolutions)
+            .map_err(|_| NoteUseCaseError::Unavailable)
     }
 
     fn note_profile(&self) -> NoteProfile {
@@ -158,12 +237,12 @@ impl NoteUseCases for ServerNoteUseCases {
 #[cfg(test)]
 mod tests {
     use marginalis_application::{
-        NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationTarget,
+        NoteRenderContext, NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationTarget,
     };
     use marginalis_domain::{Actor, NoteDraft};
     use marginalis_sqlite::SqliteDatabase;
 
-    use super::ServerNoteUseCases;
+    use super::{ServerNoteUseCases, note_href};
 
     #[tokio::test]
     async fn owner_identity_hides_notes_from_other_identities() {
@@ -350,14 +429,131 @@ mod tests {
         };
 
         let preview = service
-            .preview_note(actor.clone(), draft.clone())
+            .preview_note(
+                actor.clone(),
+                draft.clone(),
+                NoteRenderContext {
+                    note_path_prefix: "/notes".into(),
+                },
+            )
             .await
             .expect("preview");
-        let saved = service.create_note(actor, draft).await.expect("create");
+        let saved = service
+            .create_note(actor.clone(), draft)
+            .await
+            .expect("create");
 
         assert_eq!(
             preview,
-            service.render_note_html(&saved).expect("saved HTML")
+            service
+                .render_note_html(
+                    actor,
+                    saved.note_id,
+                    NoteRenderContext {
+                        note_path_prefix: "/notes".into(),
+                    },
+                )
+                .await
+                .expect("saved HTML")
         );
+    }
+
+    #[tokio::test]
+    async fn note_references_share_acl_anchor_and_subpath_rules() {
+        let database = SqliteDatabase::connect("sqlite::memory:")
+            .await
+            .expect("database");
+        let service = ServerNoteUseCases::new(database);
+        let owner = Actor {
+            issuer: "https://id.example.test".into(),
+            subject: "owner".into(),
+            is_administrator: false,
+        };
+        let other = Actor {
+            issuer: owner.issuer.clone(),
+            subject: "other".into(),
+            is_administrator: false,
+        };
+        let target = service
+            .create_note(
+                owner.clone(),
+                NoteDraft {
+                    title: "非公開の参照先".into(),
+                    body: "[[evidence]]\n根拠".into(),
+                    tags: Vec::new(),
+                },
+            )
+            .await
+            .expect("target");
+        let source = service
+            .create_note(
+                owner.clone(),
+                NoteDraft {
+                    title: "参照元".into(),
+                    body: format!(
+                        "xref:note:{}#evidence[] xref:note:{}#missing[欠落]",
+                        target.note_id, target.note_id
+                    ),
+                    tags: Vec::new(),
+                },
+            )
+            .await
+            .expect("source");
+        let context = NoteRenderContext {
+            note_path_prefix: "/marginalis/notes".into(),
+        };
+        let html = service
+            .render_note_html(owner.clone(), source.note_id, context.clone())
+            .await
+            .expect("HTML");
+        assert!(html.contains(&format!(
+            "href=\"/marginalis/notes/{}#evidence\"",
+            target.note_id
+        )));
+        assert!(html.contains(&format!("href=\"/marginalis/notes/{}\"", target.note_id)));
+        assert!(html.contains("非公開の参照先"));
+
+        let other_source = service
+            .create_note(
+                other.clone(),
+                NoteDraft {
+                    title: "別利用者の参照元".into(),
+                    body: format!("xref:note:{}[固定ラベル]", target.note_id),
+                    tags: Vec::new(),
+                },
+            )
+            .await
+            .expect("other source");
+        let hidden = service
+            .render_note_html(other, other_source.note_id, context)
+            .await
+            .expect("hidden HTML");
+        assert!(hidden.contains("固定ラベル"));
+        assert!(!hidden.contains(&target.note_id.to_string()));
+        assert!(!hidden.contains("非公開の参照先"));
+        assert!(!hidden.contains("href="));
+    }
+
+    #[test]
+    fn note_href_rejects_unsafe_prefixes_and_encodes_fragments() {
+        let note_id = marginalis_domain::NoteId::new(
+            "0197c9bc-0000-7000-8000-000000000001"
+                .parse()
+                .expect("UUIDv7"),
+        );
+        assert_eq!(
+            note_href("/marginalis/notes", note_id, Some("日本 語")),
+            Some(format!(
+                "/marginalis/notes/{note_id}#%E6%97%A5%E6%9C%AC%20%E8%AA%9E"
+            ))
+        );
+        for prefix in [
+            "https://example.test/notes",
+            "//example.test",
+            "/notes?x=1",
+            "/a/../notes",
+        ] {
+            assert_eq!(note_href(prefix, note_id, None), None, "{prefix}");
+        }
     }
 }

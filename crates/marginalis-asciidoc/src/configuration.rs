@@ -2,7 +2,7 @@
 
 use adocweave::output::html::{
     MathLanguagePolicy, RenderPolicy, ResourceCapabilities, SourceLanguagePolicy,
-    UnknownSourceLanguage,
+    UnknownSourceLanguage, UnresolvedReferencePresentation,
 };
 use adocweave::resolution::{ActiveUrlPolicy, AuthoredUrlPolicy};
 use adocweave::semantic::MathLanguage;
@@ -40,7 +40,7 @@ pub(crate) fn render_policy() -> RenderPolicy {
             allowed_schemes: ["http".to_owned(), "https".to_owned()].into(),
             allow_authored_relative: false,
             allow_resolved_relative: false,
-            allow_resolved_root_relative: false,
+            allow_resolved_root_relative: true,
             allow_data_uris: false,
         },
         source_languages: SourceLanguagePolicy {
@@ -59,6 +59,7 @@ pub(crate) fn render_policy() -> RenderPolicy {
             images: false,
             media: false,
         },
+        unresolved_references: UnresolvedReferencePresentation::LabelOnly,
         ..RenderPolicy::default()
     }
 }

@@ -7,9 +7,9 @@ use axum::{
 use marginalis_application::{
     AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
     McpTokenPair, McpValidatedAuthorizationRequest, NoteProfile, NoteProfileExample,
-    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteUseCaseError, NoteUseCases,
-    NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget, OidcAuthenticationUseCases,
-    Utf8ByteSpan, WebSessionUseCases,
+    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteRenderContext,
+    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic,
+    NoteValidationTarget, OidcAuthenticationUseCases, Utf8ByteSpan, WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, McpAuthenticatedActor, McpOAuthClient, Note, NoteDraft, NoteId,
@@ -72,6 +72,7 @@ impl NoteUseCases for Notes {
         &self,
         _actor: Actor,
         draft: NoteDraft,
+        _context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError> {
         if draft.title.is_empty() {
             Err(NoteUseCaseError::Validation(vec![
@@ -109,13 +110,18 @@ impl NoteUseCases for Notes {
         Err(NoteUseCaseError::Unavailable)
     }
 
-    fn render_note_html(&self, _note: &Note) -> Result<String, NoteUseCaseError> {
+    async fn render_note_html(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _context: NoteRenderContext,
+    ) -> Result<String, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
 
     fn note_profile(&self) -> NoteProfile {
         NoteProfile {
-            profile_version: 1,
+            profile_version: 2,
             adocweave_package_version: "0.11.0",
             limits: NoteProfileLimits {
                 max_title_characters: 200,
@@ -187,6 +193,7 @@ impl NoteUseCases for UiNotes {
         &self,
         _actor: Actor,
         _draft: NoteDraft,
+        _context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
@@ -213,7 +220,12 @@ impl NoteUseCases for UiNotes {
         Err(NoteUseCaseError::Unavailable)
     }
 
-    fn render_note_html(&self, _note: &Note) -> Result<String, NoteUseCaseError> {
+    async fn render_note_html(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _context: NoteRenderContext,
+    ) -> Result<String, NoteUseCaseError> {
         if self.render_fails {
             Err(NoteUseCaseError::Unavailable)
         } else {
@@ -1087,7 +1099,7 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         profile["result"]["structuredContent"]["adocweave_package_version"],
         "0.11.0"
     );
-    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 1);
+    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 2);
     assert!(
         profile["result"]["structuredContent"]["examples"]
             .as_array()
