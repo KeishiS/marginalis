@@ -623,6 +623,8 @@
               actionlint
               cargo-audit
               cargo-llvm-cov
+              dejavu_fonts
+              fontconfig
               rustToolchain
               cargo-make
               git
@@ -632,12 +634,16 @@
               nix
               nixfmt
               nodejs_22
+              playwright-driver.browsers
+              playwright-test
               ripgrep
               sqlite
               wasm-bindgen-cli
             ];
 
             RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+            FONTCONFIG_FILE = "${pkgs.fontconfig.out}/etc/fonts/fonts.conf";
+            FONTCONFIG_PATH = "${pkgs.fontconfig.out}/etc/fonts";
           };
         }
       );

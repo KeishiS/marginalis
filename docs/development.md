@@ -52,11 +52,26 @@ Pull Requestからマージします。
    nix develop --command cargo make pre-push
    ```
 
-   `pre-push`はGitHub Actionsの`ci-verify`、`ci-coverage`、`ci-nixos-e2e`をまとめて実行し、
-   通常検証、カバレッジ測定、すべてのNixOS VM E2Eテストを確認します。`cargo make`を
-   タスク名なしで実行した場合も同じ検証を行います。
+   `pre-push`はGitHub Actionsの`ci-verify`、`ci-early`、`ci-coverage`、
+   `ci-nixos-e2e`をまとめて実行し、通常検証、現在のCPU上でのnativeコンパイル、
+   軽量ブラウザー試験、カバレッジ測定、すべてのNixOS VM E2Eテストを確認します。
+   `cargo make`をタスク名なしで実行した場合も同じ検証を行います。
    開発中に短い周期で確認する場合は`cargo make verify`を使用し、push前には
    `pre-push`を省略しないでください。
+
+   CIでは、包括的なNixOS VMと並列に、早期検出用の二つの検査も実行します。
+
+   - `native-aarch64`はGitHubの`ubuntu-24.04-arm`標準runnerで`cargo make native-check`を
+     実行し、aarch64 Linux上で全Rust targetとfeatureをコンパイルします。x86_64上でも
+     同じtaskを実行できますが、CPU固有の問題を再現するにはaarch64環境が必要です。
+   - `browser-smoke`は`cargo make browser-smoke`を実行し、production用Web UIをChromiumで
+     開いて、起動、API応答の表示、主要なリンク、ブラウザー例外の不在を確認します。APIは
+     試験内で模擬するため、Kanidm、TLS、Cookie、実データベースは検査しません。
+
+   これらは包括的なNixOS VMと依存関係を持たせず並列実行します。そのため、正常時の完了時刻を
+   遅らせず、CPU固有のコンパイル失敗や画面の基本回帰をVMの完了前に確認できます。
+   認証、認可、サブパス、TLS、永続化を含む統合動作は、引き続き`cargo make
+   ci-nixos-e2e`が検査します。
 
    coverageの対象と解釈は[本番到達性とカバレッジ](coverage.md)を参照してください。
 
@@ -117,6 +132,8 @@ Pull Requestからマージします。
    GitHub Actionsの`verify`と`nixos-e2e`が必須であるため、このチェックと必要なレビューが完了するまで
    実際のマージは行われません。文書だけの変更でもチェック名は維持し、`verify`は文書検査、
    `nixos-e2e`は明示的な省略成功として完了するため、必須チェックが待機状態に残りません。
+   `native-aarch64`と`browser-smoke`は、継続的に安定して完了することを確認してからrulesetの
+   必須チェックへ追加します。追加前も失敗を無視せず、原因を解消してからマージします。
 
    ```sh
    gh pr merge --auto --rebase --delete-branch

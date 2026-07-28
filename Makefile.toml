@@ -383,6 +383,22 @@ dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "secu
 description = "Run the GitHub Actions verify suite"
 alias = "verify"
 
+[tasks.native-check]
+description = "Compile every Rust target and feature on the current native architecture"
+dependencies = ["frontend-build"]
+command = "cargo"
+args = ["check", "--workspace", "--all-targets", "--all-features", "--locked"]
+
+[tasks.browser-smoke]
+description = "Run the lightweight browser smoke test without Kanidm or a NixOS VM"
+dependencies = ["frontend-build"]
+command = "playwright"
+args = ["test", "--config", "tests/browser/playwright.smoke.config.js"]
+
+[tasks.ci-early]
+description = "Run architecture-native compilation and the lightweight browser smoke test"
+dependencies = ["native-check", "browser-smoke"]
+
 [tasks.ci-coverage]
 description = "Run the GitHub Actions coverage suite"
 alias = "coverage"
@@ -393,7 +409,7 @@ alias = "nix-release-check"
 
 [tasks.ci]
 description = "Run every GitHub Actions validation suite"
-dependencies = ["ci-verify", "ci-coverage", "ci-nixos-e2e"]
+dependencies = ["ci-verify", "ci-early", "ci-coverage", "ci-nixos-e2e"]
 
 [tasks.pre-push]
 description = "Run every GitHub Actions validation required before pushing code"
