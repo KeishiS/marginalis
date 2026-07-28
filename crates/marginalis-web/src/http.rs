@@ -35,7 +35,7 @@ use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, info_span};
 
 use self::{
-    assets::{editor_javascript, editor_stylesheet, page_javascript},
+    assets::{editor_javascript, editor_stylesheet, mathjax_javascript, page_javascript},
     auth::{begin_login, complete_login, logout},
     error::{HandlerResult, problem},
     mcp_transport::{mcp_post, mcp_unsupported_method},
@@ -96,6 +96,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/notes/{note_id}", get(view_note))
         .route("/assets/editor.js", get(editor_javascript))
         .route("/assets/editor.css", get(editor_stylesheet))
+        .route("/assets/tex-svg.js", get(mathjax_javascript))
         .route("/assets/page.js", get(page_javascript))
         .route("/api/v3/openapi.json", get(openapi))
         .route("/auth/oidc/login", get(begin_login))

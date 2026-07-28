@@ -7,6 +7,7 @@ use axum::{
 
 const EDITOR_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/editor.js");
 const EDITOR_STYLESHEET: &[u8] = include_bytes!("../../../../frontend/dist/assets/editor.css");
+const MATHJAX_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/tex-svg.js");
 const PAGE_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/page.js");
 
 pub(super) async fn editor_javascript() -> Response {
@@ -15,6 +16,10 @@ pub(super) async fn editor_javascript() -> Response {
 
 pub(super) async fn editor_stylesheet() -> Response {
     asset("text/css; charset=utf-8", EDITOR_STYLESHEET)
+}
+
+pub(super) async fn mathjax_javascript() -> Response {
+    asset("text/javascript; charset=utf-8", MATHJAX_JAVASCRIPT)
 }
 
 pub(super) async fn page_javascript() -> Response {

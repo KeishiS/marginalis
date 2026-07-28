@@ -45,6 +45,9 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 ```
 
 `:sectnums:`、`:toc:`、`:toclevels:`、`:stem:`は表示用の文書属性として使用できます。
+`[source,言語名]`のコードブロックは言語名付きの枠内へ表示し、長い行はコードブロック内で
+横にスクロールできます。`:stem: latexmath`を指定した`stem:[]`と`[latexmath]`の数式は、
+サーバー内に固定したMathJaxで組版します。外部のCDNへは接続しません。
 サーバーが管理する識別子、所有者、時刻、revision、ACLはAsciiDoc文書へ記述せず、APIの別項目で
 扱います。
 

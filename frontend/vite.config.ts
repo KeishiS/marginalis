@@ -2,6 +2,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  base: "./",
   plugins: [react()],
   build: {
     manifest: "manifest.json",
@@ -14,7 +15,7 @@ export default defineConfig({
       },
       output: {
         entryFileNames: "assets/[name].js",
-        assetFileNames: "assets/editor.[ext]",
+        assetFileNames: "assets/[name].[ext]",
       },
     },
   },
