@@ -33,7 +33,7 @@ test("subjectと権限を指定して共有設定を保存する", async () => {
         JSON.stringify({
           note_id: NOTE_ID,
           title: "共有",
-          body: "本文",
+          source: "= 共有\n\n本文",
           tags: [],
           created_at_ms: 1,
           updated_at_ms: 2,

@@ -3,7 +3,7 @@ CREATE TABLE notes (
     creator_issuer TEXT NOT NULL,
     creator_subject TEXT NOT NULL,
     title TEXT NOT NULL,
-    body TEXT NOT NULL,
+    source TEXT NOT NULL,
     tags_json TEXT NOT NULL,
     created_at_ms INTEGER NOT NULL,
     updated_at_ms INTEGER NOT NULL,

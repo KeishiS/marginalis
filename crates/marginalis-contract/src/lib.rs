@@ -89,9 +89,7 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NoteDraftInput {
-    pub title: String,
-    pub body: String,
-    pub tags: Vec<String>,
+    pub source: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -99,7 +97,7 @@ pub struct NoteDraftInput {
 pub struct NoteResponse {
     pub note_id: String,
     pub title: String,
-    pub body: String,
+    pub source: String,
     pub tags: Vec<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
@@ -256,6 +254,7 @@ pub struct ValidationDiagnosticResponse {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "field", rename_all = "snake_case")]
 pub enum ValidationTargetResponse {
+    Source,
     Title,
     Body,
     Tag { index: usize },
@@ -308,12 +307,10 @@ pub fn mcp_tool_contracts() -> Value {
             "inputSchema": object_schema(
                 json!({
                     "note_id": note_id_schema(),
-                    "title": {"type": "string"},
-                    "body": {"type": "string", "maxLength": 524288},
-                    "tags": {"type": "array", "maxItems": 50, "items": {"type": "string"}},
+                    "source": {"type": "string", "maxLength": 524288},
                     "expected_revision": revision_schema()
                 }),
-                &["note_id", "title", "body", "tags", "expected_revision"]
+                &["note_id", "source", "expected_revision"]
             )
         },
         {
@@ -334,11 +331,11 @@ pub fn openapi_document() -> Value {
     let note = json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["note_id", "title", "body", "tags", "created_at_ms", "updated_at_ms", "revision"],
+        "required": ["note_id", "title", "source", "tags", "created_at_ms", "updated_at_ms", "revision"],
         "properties": {
             "note_id": note_id_schema(),
             "title": {"type": "string"},
-            "body": {"type": "string"},
+            "source": {"type": "string"},
             "tags": {"type": "array", "items": {"type": "string"}},
             "created_at_ms": {"type": "integer"},
             "updated_at_ms": {"type": "integer"},
@@ -596,11 +593,9 @@ fn problem_schema() -> Value {
 fn note_draft_schema() -> Value {
     object_schema(
         json!({
-            "title": {"type": "string"},
-            "body": {"type": "string", "x-maxBytes": 524288},
-            "tags": {"type": "array", "maxItems": 50, "items": {"type": "string"}}
+            "source": {"type": "string", "x-maxBytes": 524288}
         }),
-        &["title", "body", "tags"],
+        &["source"],
     )
 }
 

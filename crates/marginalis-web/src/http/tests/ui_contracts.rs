@@ -181,7 +181,7 @@ async fn rendered_note_view_api_returns_related_note_metadata() {
         12
     );
     assert_eq!(payload["related"]["outgoing"][0]["title"], "関連ノート2");
-    assert!(payload["note"]["body"].is_string());
+    assert!(payload["note"]["source"].is_string());
 }
 
 #[tokio::test]

@@ -10,7 +10,7 @@ use adocweave::{
     AnalysisLimits, AnalysisOptions, DiagnosticProfile, OutputLimits, SyntaxMode, SyntaxOptions,
 };
 
-use crate::{DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_BODY_BYTES};
+use crate::{DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_SOURCE_BYTES};
 
 pub(crate) fn authored_url_policy() -> AuthoredUrlPolicy {
     AuthoredUrlPolicy {
@@ -26,7 +26,7 @@ pub(crate) fn analysis_options() -> AnalysisOptions {
         syntax: SyntaxOptions {
             syntax_mode: SyntaxMode::Strict,
             limits: AnalysisLimits {
-                max_input_bytes: MAX_NOTE_BODY_BYTES as u32,
+                max_input_bytes: MAX_NOTE_SOURCE_BYTES as u32,
                 ..AnalysisLimits::default()
             },
         },

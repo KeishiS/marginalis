@@ -84,7 +84,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
                 revision(1),
                 &NoteDraft {
                     title: "Unauthorized title".into(),
-                    body: "must not persist".into(),
+                    source: "= Denied\n\nmust not persist".into(),
                     tags: vec![],
                 },
                 &[],
@@ -110,7 +110,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
             revision(1),
             &NoteDraft {
                 title: "Updated title".into(),
-                body: "updated body".into(),
+                source: "= Updated\n\nupdated body".into(),
                 tags: vec!["research".into(), "v3".into()],
             },
             &[],
@@ -307,7 +307,7 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
                 changed.revision(),
                 &NoteDraft {
                     title: "Denied".into(),
-                    body: "Denied".into(),
+                    source: "= Denied\n".into(),
                     tags: Vec::new(),
                 },
                 &[],
@@ -371,7 +371,7 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
                 changed.revision(),
                 &NoteDraft {
                     title: "Edited".into(),
-                    body: "Edited".into(),
+                    source: "= Edited\n".into(),
                     tags: Vec::new(),
                 },
                 &[],
@@ -420,12 +420,12 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
     let owner = Actor::new(owner_identity);
     let first_draft = NoteDraft {
         title: "First".into(),
-        body: "First".into(),
+        source: "= First\n".into(),
         tags: Vec::new(),
     };
     let second_draft = NoteDraft {
         title: "Second".into(),
-        body: "Second".into(),
+        source: "= Second\n".into(),
         tags: Vec::new(),
     };
     let first = database.update_visible_note(
@@ -455,4 +455,3 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
         .count();
     assert_eq!((successes, conflicts), (1, 1));
 }
-

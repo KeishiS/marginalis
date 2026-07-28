@@ -108,7 +108,7 @@ refresh時のscopeは元のgrantの部分集合だけを許可し、発行する
 rotation の親子関係も、有効な子孫がある間保持します。これは
 [OAuth 2.0 Security Best Current Practice §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
 の replay 検知要件に従うものです。
-現行のschema versionは8です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
+現行のschema versionは9です。旧schemaのdatabaseは起動時に移行せず拒否します。空の現行databaseで
 再初期化し、MCP clientは再登録・再認可してください。
 
 ## クライアント登録の制限
@@ -151,15 +151,16 @@ MCP transportは[JSON-RPC 2.0](https://www.jsonrpc.org/specification)の`jsonrpc
 | `delete_note` | `notes:delete` | revisionを指定したソフトデリート |
 
 `create_note`または`update_note`の前に`get_note_profile`を呼び出してください。profileには
-AdocWeave package版`0.11.0`とMarginalis note profile版`2`を別々に含めます。ローカルanchorと
+AdocWeave package版`0.11.0`とMarginalis note profile版`3`を別々に含めます。`create_note`と
+`update_note`には、題名と`:tags:`などの文書属性を含む完全なAsciiDoc文書を`source`で渡します。ローカルanchorと
 `xref:note:<ノートID>#<アンカーID>[表示ラベル]`形式のノート参照を利用できます。相対link、
 それ以外の文書間xrefとscheme付きxref、include、passthroughおよび外部Resourceは保存できません。
 AdocWeave 0.11.0で追加された`asciidoc-file-link`と`non-asciidoc-xref`は既定の警告として有効ですが、
 現行profileの保存可否は変更しません。`macro-boundary`は任意規則のため有効化しません。
 
 JSONまたはtool引数の構造が不正な場合はJSON-RPC `-32602`です。構造が正しく、ノート規則に違反する場合は
-次のようにtool実行結果で返します。`span`は利用者が送った`body`を基準とするUTF-8 byteの半開区間です。
-タイトルやタグなど本文位置を持たない診断では`span`を省略します。`content`のtextには
+次のようにtool実行結果で返します。`span`は利用者が送った`source`を基準とするUTF-8 byteの半開区間です。
+位置を特定できない診断では`span`を省略します。`content`のtextには
 `structuredContent`と同じJSONを直列化して返します。
 
 ```json
@@ -167,7 +168,7 @@ JSONまたはtool引数の構造が不正な場合はJSON-RPC `-32602`です。�
   "content": [
     {
       "type": "text",
-      "text": "{\"code\":\"validation_failed\",\"message\":\"note input is invalid\",\"diagnostics\":[{\"code\":\"unsupported_source_language\",\"target\":{\"field\":\"body\"},\"span\":{\"start\":8,\"end\":17,\"unit\":\"utf8_byte\"},\"message\":\"the source block language is not allowed\"}]}"
+      "text": "{\"code\":\"validation_failed\",\"message\":\"note input is invalid\",\"diagnostics\":[{\"code\":\"unsupported_source_language\",\"target\":{\"field\":\"source\"},\"span\":{\"start\":8,\"end\":17,\"unit\":\"utf8_byte\"},\"message\":\"the source block language is not allowed\"}]}"
     }
   ],
   "structuredContent": {
@@ -176,7 +177,7 @@ JSONまたはtool引数の構造が不正な場合はJSON-RPC `-32602`です。�
     "diagnostics": [
       {
         "code": "unsupported_source_language",
-        "target": { "field": "body" },
+        "target": { "field": "source" },
         "span": { "start": 8, "end": 17, "unit": "utf8_byte" },
         "message": "the source block language is not allowed"
       }

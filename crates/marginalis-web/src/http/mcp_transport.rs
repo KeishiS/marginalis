@@ -433,9 +433,7 @@ struct McpGet {
 #[serde(deny_unknown_fields)]
 struct McpUpdate {
     note_id: String,
-    title: String,
-    body: String,
-    tags: Vec<String>,
+    source: String,
     expected_revision: i64,
 }
 
@@ -493,7 +491,7 @@ async fn mcp_tool_call(
                 serde_json::json!({
                     "note_id": note.note_id().to_string(),
                     "title": note.title(),
-                    "body": note.body(),
+                    "source": note.source(),
                     "tags": note.tags(),
                     "revision": note.revision().get(),
                 })
@@ -507,9 +505,9 @@ async fn mcp_tool_call(
                 .create_note(
                     actor,
                     NoteDraft {
-                        title: input.title,
-                        body: input.body,
-                        tags: input.tags,
+                        source: input.source,
+                        title: String::new(),
+                        tags: Vec::new(),
                     },
                 )
                 .await
@@ -530,9 +528,9 @@ async fn mcp_tool_call(
                     actor,
                     note_id,
                     NoteDraft {
-                        title: input.title,
-                        body: input.body,
-                        tags: input.tags,
+                        source: input.source,
+                        title: String::new(),
+                        tags: Vec::new(),
                     },
                     expected_revision,
                 )
@@ -607,7 +605,7 @@ fn note_profile_json(profile: NoteProfile) -> serde_json::Value {
         "limits": {
             "applies_after_normalization": true,
             "max_title_characters": profile.limits.max_title_characters,
-            "max_body_bytes": profile.limits.max_body_bytes,
+            "max_source_bytes": profile.limits.max_source_bytes,
             "max_tags": profile.limits.max_tags,
             "max_tag_characters": profile.limits.max_tag_characters,
         },

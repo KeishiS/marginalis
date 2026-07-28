@@ -68,7 +68,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         profile["result"]["structuredContent"]["adocweave_package_version"],
         "0.11.0"
     );
-    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 2);
+    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 3);
 
     let invalid = call_mcp(
         &server.app,
@@ -76,9 +76,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         5,
         "create_note",
         serde_json::json!({
-            "title": "",
-            "body": "[source,brainfuck]\n----\n+\n----",
-            "tags": ["integration"],
+            "source": "= Invalid\n\n[source,brainfuck]\n----\n+\n----",
         }),
     )
     .await;
@@ -91,10 +89,10 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     );
     assert_eq!(
         invalid["result"]["structuredContent"]["diagnostics"][0]["target"]["field"],
-        "title"
+        "source"
     );
     assert_eq!(
-        invalid["result"]["structuredContent"]["diagnostics"][1]["span"]["unit"],
+        invalid["result"]["structuredContent"]["diagnostics"][0]["span"]["unit"],
         "utf8_byte"
     );
 
@@ -104,9 +102,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         6,
         "create_note",
         serde_json::json!({
-            "title": "Owned <integration> note",
-            "body": "Created through the authenticated MCP endpoint.",
-            "tags": ["integration"],
+            "source": "= Owned <integration> note\n:tags: integration\n\nCreated through the authenticated MCP endpoint.",
         }),
     )
     .await;
@@ -156,9 +152,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
         "update_note",
         serde_json::json!({
             "note_id": note_id,
-            "title": "Unauthorized update",
-            "body": "Must not persist.",
-            "tags": [],
+            "source": "= Unauthorized update\n\nMust not persist.",
             "expected_revision": 1,
         }),
     )
@@ -213,9 +207,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
                 serde_json::json!({
-                    "title": "Unauthorized REST update",
-                    "body": "Must not persist.",
-                    "tags": [],
+                    "source": "= Unauthorized REST update\n\nMust not persist.",
                 })
                 .to_string(),
             ))
@@ -331,9 +323,7 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
                 serde_json::json!({
-                    "title": "Updated integration note",
-                    "body": "Updated through REST.",
-                    "tags": ["integration", "updated"],
+                    "source": "= Updated integration note\n:tags: integration, updated\n\nUpdated through REST.",
                 })
                 .to_string(),
             ))
@@ -461,4 +451,3 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(json_body(response).await["error"], "invalid_grant");
 }
-

@@ -132,9 +132,6 @@
       "Note": {
         "additionalProperties": false,
         "properties": {
-          "body": {
-            "type": "string"
-          },
           "created_at_ms": {
             "type": "integer"
           },
@@ -146,6 +143,9 @@
           "revision": {
             "minimum": 1,
             "type": "integer"
+          },
+          "source": {
+            "type": "string"
           },
           "tags": {
             "items": {
@@ -163,7 +163,7 @@
         "required": [
           "note_id",
           "title",
-          "body",
+          "source",
           "tags",
           "created_at_ms",
           "updated_at_ms",
@@ -252,25 +252,13 @@
       "NoteDraft": {
         "additionalProperties": false,
         "properties": {
-          "body": {
+          "source": {
             "type": "string",
             "x-maxBytes": 524288
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 50,
-            "type": "array"
-          },
-          "title": {
-            "type": "string"
           }
         },
         "required": [
-          "title",
-          "body",
-          "tags"
+          "source"
         ],
         "type": "object"
       },

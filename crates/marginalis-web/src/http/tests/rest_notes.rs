@@ -11,7 +11,7 @@ async fn rest_validation_returns_the_shared_diagnostic_contract() {
                     "marginalis_session=active-session; marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
-                .body(Body::from(r#"{"title":"","body":"invalid","tags":[]}"#))
+                .body(Body::from(r#"{"source":"本文だけ"}"#))
                 .expect("request"),
         )
         .await
@@ -23,10 +23,8 @@ async fn rest_validation_returns_the_shared_diagnostic_contract() {
     let problem: serde_json::Value = serde_json::from_slice(&body).expect("problem JSON");
     assert_eq!(problem["code"], "validation_failed");
     assert_eq!(problem["diagnostics"][0]["code"], "invalid_title");
-    assert_eq!(problem["diagnostics"][0]["target"]["field"], "title");
+    assert_eq!(problem["diagnostics"][0]["target"]["field"], "source");
     assert!(problem["diagnostics"][0].get("span").is_none());
-    assert_eq!(problem["diagnostics"][1]["target"]["field"], "body");
-    assert_eq!(problem["diagnostics"][1]["span"]["unit"], "utf8_byte");
 }
 
 #[tokio::test]
@@ -45,7 +43,7 @@ async fn rest_mutations_require_one_strong_revision_etag() {
             request = request.header(header::IF_MATCH, value);
         }
         request
-            .body(Body::from(r#"{"title":"題名","body":"本文","tags":[]}"#))
+            .body(Body::from(r#"{"source":"= 題名\n\n本文"}"#))
             .expect("request")
     };
     let missing = authenticated_app()
@@ -74,7 +72,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::from(
-                    r#"{"title":"題名","body":"本文","tags":["試験"]}"#,
+                    r#"{"source":"= 題名\n:tags: 試験\n\n本文"}"#,
                 ))
                 .expect("request"),
         )
@@ -98,7 +96,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
                     "marginalis_session=active-session; marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
-                .body(Body::from(r#"{"title":"","body":"本文","tags":[]}"#))
+                .body(Body::from(r#"{"source":"本文"}"#))
                 .expect("request"),
         )
         .await
@@ -111,4 +109,3 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
     assert_eq!(problem["code"], "validation_failed");
     assert_eq!(problem["diagnostics"][0]["code"], "invalid_title");
 }
-

@@ -18,7 +18,8 @@
 
 `v0.8.0`のREST APIは`/api/v3`だけを提供します。OpenAPI、TypeScriptクライアント、MCPツール定義は
 `marginalis-contract`から生成し、一覧、閲覧、編集、共有設定は一つのReactアプリケーションが
-担当します。SQLite schemaは8、note profileは2、アーカイブは`marginalis-archive-6`です。
+担当します。Issue #57以降では完全なAsciiDoc文書を保存の正本とします。SQLite schemaは9、
+note profileは3、アーカイブは`marginalis-archive-7`です。
 
 ## 次の判断
 

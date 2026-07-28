@@ -12,7 +12,7 @@ describe("生成済みREST応答検査", () => {
       parseNote({
         note_id: "0197c9bc-0000-7000-8000-000000000001",
         title: "題名",
-        body: "本文",
+        source: "= 題名\n\n本文",
         tags: [],
         created_at_ms: 1,
         updated_at_ms: 1,
@@ -33,7 +33,7 @@ describe("生成済みREST応答検査", () => {
         note: {
           note_id: "0197c9bc-0000-7000-8000-000000000001",
           title: "題名",
-          body: "本文",
+          source: "= 題名\n\n本文",
           tags: [],
           created_at_ms: 1,
           updated_at_ms: 1,

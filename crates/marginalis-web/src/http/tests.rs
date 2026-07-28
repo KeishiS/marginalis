@@ -187,17 +187,17 @@ impl Notes {
     }
 
     async fn create_note(&self, _actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
-        if draft.title.is_empty() {
+        if !draft.source.starts_with("= ") {
             return Err(NoteUseCaseError::Validation(vec![
                 NoteValidationDiagnostic {
                     code: NoteValidationCode::InvalidTitle,
-                    target: NoteValidationTarget::Title,
+                    target: NoteValidationTarget::Source,
                     span: None,
                     message: "title is invalid",
                 },
                 NoteValidationDiagnostic {
                     code: NoteValidationCode::UnsupportedSourceLanguage,
-                    target: NoteValidationTarget::Body,
+                    target: NoteValidationTarget::Source,
                     span: Some(Utf8ByteSpan { start: 8, end: 13 }),
                     message: "source language is not allowed",
                 },
@@ -222,11 +222,11 @@ impl Notes {
         draft: NoteDraft,
         _context: NoteRenderContext,
     ) -> Result<String, NoteUseCaseError> {
-        if draft.title.is_empty() {
+        if !draft.source.starts_with("= ") {
             Err(NoteUseCaseError::Validation(vec![
                 NoteValidationDiagnostic {
                     code: NoteValidationCode::InvalidTitle,
-                    target: NoteValidationTarget::Title,
+                    target: NoteValidationTarget::Source,
                     span: None,
                     message: "title is invalid",
                 },
@@ -310,7 +310,7 @@ impl Notes {
             adocweave_package_version: "0.11.0",
             limits: NoteProfileLimits {
                 max_title_characters: 200,
-                max_body_bytes: 524_288,
+                max_source_bytes: 524_288,
                 max_tags: 50,
                 max_tag_characters: 64,
             },

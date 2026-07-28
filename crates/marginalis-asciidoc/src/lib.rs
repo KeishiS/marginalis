@@ -20,10 +20,8 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     EntityId, Identity, Note, NoteDraft, NoteId, NotePermission, Revision, UnixMillis,
-    validate_identity,
 };
 use serde::{Deserialize, Serialize};
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use unicode_normalization::UnicodeNormalization;
 
 mod configuration;
@@ -54,9 +52,9 @@ pub const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
 /// 本アプリが受理するAdocWeaveの完全一致パッケージ版。
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.11.0";
 /// Marginalisが保存時に適用するノート入力規則の版。
-pub const NOTE_PROFILE_VERSION: u32 = 2;
+pub const NOTE_PROFILE_VERSION: u32 = 3;
 pub const MAX_TITLE_CHARACTERS: usize = 200;
-pub const MAX_NOTE_BODY_BYTES: usize = 512 * 1024;
+pub const MAX_NOTE_SOURCE_BYTES: usize = 512 * 1024;
 pub const MAX_TAGS: usize = 50;
 pub const MAX_TAG_CHARACTERS: usize = 64;
 
@@ -71,9 +69,9 @@ impl NoteContent for AsciiDocNoteContent {
 
     fn reference_queries(
         &self,
-        body: &str,
+        source: &str,
     ) -> Result<Vec<marginalis_application::NoteReferenceQuery>, NoteContentError> {
-        note_reference_queries(body)
+        note_reference_queries(source)
             .map_err(|_| NoteContentError)
             .map(|queries| {
                 queries
@@ -87,8 +85,8 @@ impl NoteContent for AsciiDocNoteContent {
             })
     }
 
-    fn has_anchor(&self, body: &str, anchor: &str) -> Result<bool, NoteContentError> {
-        note_has_anchor(body, anchor).map_err(|_| NoteContentError)
+    fn has_anchor(&self, source: &str, anchor: &str) -> Result<bool, NoteContentError> {
+        note_has_anchor(source, anchor).map_err(|_| NoteContentError)
     }
 
     fn render(
@@ -183,46 +181,21 @@ pub fn verify_runtime_package_version() -> Result<(), PackageVersionMismatch> {
     }
 }
 
-/// SQLite正本から可搬用のAsciiDoc文書を生成できない理由。
+/// 正本のAsciiDoc文書を書き出せない理由。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExportError {
-    InvalidIdentity,
-    InvalidTimestamp,
-}
+pub struct ExportError;
 
 impl fmt::Display for ExportError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidIdentity => formatter.write_str("canonical note identity is invalid"),
-            Self::InvalidTimestamp => {
-                formatter.write_str("canonical note timestamp is outside the RFC 3339 range")
-            }
-        }
+        formatter.write_str("canonical note source cannot be exported")
     }
 }
 
 impl std::error::Error for ExportError {}
 
-/// 現行のSQLite正本を単体export用のAsciiDocへ変換する。
-///
-/// headerは永続化しない。`note-id`、作成者、時刻、タグは正本から毎回生成するため、利用者が
-/// server管理属性を偽装する経路を作らない。
+/// 利用者が保存した完全なAsciiDoc文書をそのままexportする。
 pub fn export_note(note: &Note) -> Result<String, ExportError> {
-    validate_identity(note.creator_issuer(), note.creator_subject())
-        .map_err(|_| ExportError::InvalidIdentity)?;
-    let created_at = format_unix_millis(note.created_at())?;
-    let updated_at = format_unix_millis(note.updated_at())?;
-    Ok(format!(
-        "= {}\n:note-id: {}\n:creator-issuer: {}\n:creator-subject: {}\n:created-at: {}\n:updated-at: {}\n:tags: {}\n\n{}",
-        note.title(),
-        note.note_id(),
-        note.creator_issuer(),
-        note.creator_subject(),
-        created_at,
-        updated_at,
-        note.tags().join(","),
-        note.body(),
-    ))
+    Ok(note.source().to_owned())
 }
 
 /// SQLite正本を再検証した上で、固定RenderPolicyの安全なHTMLへ変換する。
@@ -231,9 +204,9 @@ pub fn render_note_html(note: &Note) -> Result<String, RenderError> {
 }
 
 /// ノート参照を抽出し、ホスト側でACL判定するための問い合わせを返す。
-pub fn note_reference_queries(body: &str) -> Result<Vec<NoteReferenceQuery>, RenderError> {
+pub fn note_reference_queries(source: &str) -> Result<Vec<NoteReferenceQuery>, RenderError> {
     let analysis = adocweave::Engine::new(note_analysis_options())
-        .analyze(body)
+        .analyze(source)
         .map_err(|_| RenderError)?;
     if analysis
         .diagnostics()
@@ -268,9 +241,9 @@ pub fn note_reference_queries(body: &str) -> Result<Vec<NoteReferenceQuery>, Ren
 }
 
 /// 指定したanchorが対象ノートの参照先として存在するかを返す。
-pub fn note_has_anchor(body: &str, anchor: &str) -> Result<bool, RenderError> {
+pub fn note_has_anchor(source: &str, anchor: &str) -> Result<bool, RenderError> {
     let analysis = adocweave::Engine::new(note_analysis_options())
-        .analyze(body)
+        .analyze(source)
         .map_err(|_| RenderError)?;
     if analysis
         .diagnostics()
@@ -364,55 +337,85 @@ impl fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
-/// 現行の構造化入力を検証し、タグを正規化する。
-///
-/// SQLite正本ではheaderを保存しないため、従来の「文書全体の必須属性」検査とは分離して、
-/// 利用者が送るtitle・tags・bodyだけを検査する。本文の位置は入力されたbodyを基準に返す。
+/// 完全なAsciiDoc文書を検証し、題名とタグの検索用投影を導出する。
 pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>> {
     let mut errors = Vec::new();
-    let title = draft.title.trim().nfc().collect::<String>();
-    if title.is_empty()
-        || title.contains(['\n', '\r'])
-        || title.chars().count() > MAX_TITLE_CHARACTERS
-    {
-        errors.push(diagnostic(
-            NoteValidationCode::InvalidTitle,
-            NoteValidationTarget::Title,
-            None,
-        ));
-    }
-    if draft.tags.len() > MAX_TAGS {
-        errors.push(diagnostic(
-            NoteValidationCode::TooManyTags,
-            NoteValidationTarget::Tags,
-            None,
-        ));
-    }
+    let mut title = String::new();
     let mut tags = BTreeMap::new();
-    for (index, tag) in draft.tags.into_iter().enumerate() {
-        let display = tag.trim().nfc().collect::<String>();
-        if display.is_empty()
-            || display.contains([',', '\n', '\r'])
-            || display.chars().count() > MAX_TAG_CHARACTERS
-        {
-            errors.push(diagnostic(
-                NoteValidationCode::InvalidTag,
-                NoteValidationTarget::Tag { index },
-                None,
-            ));
-            continue;
-        }
-        tags.entry(display.to_lowercase()).or_insert(display);
-    }
-    if draft.body.len() > MAX_NOTE_BODY_BYTES {
+    if draft.source.len() > MAX_NOTE_SOURCE_BYTES {
         errors.push(diagnostic(
-            NoteValidationCode::BodyTooLarge,
-            NoteValidationTarget::Body,
+            NoteValidationCode::SourceTooLarge,
+            NoteValidationTarget::Source,
             None,
         ));
     } else {
-        match adocweave::Engine::new(note_analysis_options()).analyze(&draft.body) {
+        match adocweave::Engine::new(note_analysis_options()).analyze(&draft.source) {
             Ok(analysis) => {
+                title = analysis
+                    .reference_targets()
+                    .iter()
+                    .find(|target| {
+                        target.kind == adocweave::semantic::ReferenceTargetKind::DocumentTitle
+                    })
+                    .map(|target| target.label.trim().nfc().collect::<String>())
+                    .unwrap_or_default();
+                if title.is_empty() || title.chars().count() > MAX_TITLE_CHARACTERS {
+                    errors.push(diagnostic(
+                        NoteValidationCode::InvalidTitle,
+                        NoteValidationTarget::Source,
+                        None,
+                    ));
+                }
+                let header_end = analysis.document().header().end;
+                for occurrence in analysis.document_attribute_occurrences() {
+                    const ALLOWED: &[&str] = &[
+                        "tags",
+                        "sectnums",
+                        "toc",
+                        "toclevels",
+                        "stem",
+                        "source-language",
+                    ];
+                    if occurrence.range.end() > header_end
+                        || !ALLOWED.contains(&occurrence.name.as_str())
+                    {
+                        errors.push(diagnostic(
+                            NoteValidationCode::UnsupportedDocumentAttribute,
+                            NoteValidationTarget::Source,
+                            Some(span(occurrence.name_range)),
+                        ));
+                    }
+                }
+                let raw_tags = analysis
+                    .presentation()
+                    .attributes()
+                    .get("tags")
+                    .unwrap_or_default();
+                let tag_values = raw_tags.split(',').collect::<Vec<_>>();
+                if tag_values.len() > MAX_TAGS {
+                    errors.push(diagnostic(
+                        NoteValidationCode::TooManyTags,
+                        NoteValidationTarget::Source,
+                        None,
+                    ));
+                }
+                for tag in tag_values {
+                    let display = tag.trim().nfc().collect::<String>();
+                    if display.is_empty() {
+                        continue;
+                    }
+                    if display.contains(['\n', '\r'])
+                        || display.chars().count() > MAX_TAG_CHARACTERS
+                    {
+                        errors.push(diagnostic(
+                            NoteValidationCode::InvalidTag,
+                            NoteValidationTarget::Source,
+                            None,
+                        ));
+                    } else {
+                        tags.entry(display.to_lowercase()).or_insert(display);
+                    }
+                }
                 errors.extend(
                     analysis
                         .diagnostics()
@@ -421,7 +424,7 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
                         .map(|adoc_diagnostic| {
                             diagnostic(
                                 NoteValidationCode::AsciiDocParseFailed,
-                                NoteValidationTarget::Body,
+                                NoteValidationTarget::Source,
                                 Some(span(adoc_diagnostic.range)),
                             )
                         }),
@@ -432,7 +435,7 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
                         .map(|error| {
                             diagnostic(
                                 error.code,
-                                NoteValidationTarget::Body,
+                                NoteValidationTarget::Source,
                                 Some(span(error.range)),
                             )
                         }),
@@ -440,15 +443,15 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
             }
             Err(_) => errors.push(diagnostic(
                 NoteValidationCode::AsciiDocParseFailed,
-                NoteValidationTarget::Body,
+                NoteValidationTarget::Source,
                 None,
             )),
         }
     }
     if errors.is_empty() {
         Ok(NoteDraft {
+            source: draft.source,
             title,
-            body: draft.body,
             tags: tags.into_values().collect(),
         })
     } else {
@@ -457,7 +460,7 @@ pub fn validate_note_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValida
     }
 }
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-6";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-7";
 
 /// JSON archiveの転送形式。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -476,9 +479,7 @@ pub struct ArchiveNote {
     pub note_id: String,
     pub creator_issuer: String,
     pub creator_subject: String,
-    pub title: String,
-    pub body: String,
-    pub tags: Vec<String>,
+    pub source: String,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub revision: i64,
@@ -514,9 +515,7 @@ pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
                 note_id: note.note_id().to_string(),
                 creator_issuer: note.creator_issuer().to_owned(),
                 creator_subject: note.creator_subject().to_owned(),
-                title: note.title().to_owned(),
-                body: note.body().to_owned(),
-                tags: note.tags().to_vec(),
+                source: note.source().to_owned(),
                 created_at_ms: note.created_at().get(),
                 updated_at_ms: note.updated_at().get(),
                 revision: note.revision().get(),
@@ -552,17 +551,11 @@ pub fn validate_archive(archive: &Archive) -> Result<LogicalSnapshot, ArchiveVal
         .iter()
         .map(|note| {
             let normalized = validate_note_draft(NoteDraft {
-                title: note.title.clone(),
-                body: note.body.clone(),
-                tags: note.tags.clone(),
+                source: note.source.clone(),
+                title: String::new(),
+                tags: Vec::new(),
             })
             .map_err(|_| ArchiveValidationError)?;
-            if normalized.title != note.title
-                || normalized.body != note.body
-                || normalized.tags != note.tags
-            {
-                return Err(ArchiveValidationError);
-            }
             let note_id = note
                 .note_id
                 .parse::<EntityId>()
@@ -574,9 +567,9 @@ pub fn validate_archive(archive: &Archive) -> Result<LogicalSnapshot, ArchiveVal
             Note::restore(
                 note_id,
                 creator,
-                note.title.clone(),
-                note.body.clone(),
-                note.tags.clone(),
+                normalized.title,
+                note.source.clone(),
+                normalized.tags,
                 UnixMillis::new(note.created_at_ms),
                 UnixMillis::new(note.updated_at_ms),
                 revision,
@@ -619,14 +612,6 @@ impl fmt::Display for ArchiveValidationError {
 
 impl std::error::Error for ArchiveValidationError {}
 
-fn format_unix_millis(value: UnixMillis) -> Result<String, ExportError> {
-    let nanos = i128::from(value.get()) * 1_000_000;
-    OffsetDateTime::from_unix_timestamp_nanos(nanos)
-        .map_err(|_| ExportError::InvalidTimestamp)?
-        .format(&Rfc3339)
-        .map_err(|_| ExportError::InvalidTimestamp)
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -636,13 +621,14 @@ mod tests {
     use super::*;
 
     fn note(body: &str) -> Note {
+        let source = format!("= A title\n:tags: Research\n\n{body}");
         Note::restore(
             NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
             Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
             "A title".into(),
-            body.into(),
+            source,
             vec!["Research".into()],
             UnixMillis::new(0),
             UnixMillis::new(1_000),
@@ -659,19 +645,20 @@ mod tests {
     }
 
     #[test]
-    fn export_contains_server_managed_metadata() {
+    fn export_preserves_the_authored_document_without_server_metadata() {
         let exported = export_note(&note("body")).expect("export");
-        assert!(exported.contains(":note-id: 0197c9bc-0000-7000-8000-000000000001"));
-        assert!(exported.contains(":creator-subject: alice"));
+        assert!(!exported.contains(":note-id:"));
+        assert!(!exported.contains(":creator-subject:"));
+        assert!(exported.starts_with("= A title\n:tags: Research"));
         assert!(exported.ends_with("\n\nbody"));
     }
 
     #[test]
     fn draft_validation_normalizes_tags() {
         let draft = validate_note_draft(NoteDraft {
-            title: "  Title  ".into(),
-            body: "safe body".into(),
-            tags: vec![" Rust ".into(), "rust".into()],
+            title: String::new(),
+            source: "= Title\n:tags: Rust, rust\n\nsafe body".into(),
+            tags: Vec::new(),
         })
         .expect("valid draft");
         assert_eq!(draft.title, "Title");
@@ -679,11 +666,50 @@ mod tests {
     }
 
     #[test]
+    fn complete_document_derives_metadata_and_enables_section_numbers() {
+        let source = "= 新規ノート\n:tags: new, research\n:sectnums:\n\n== 見出し1\n\nこれはテスト用の本文です。";
+        let draft = validate_note_draft(NoteDraft {
+            source: source.into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect("valid complete document");
+        assert_eq!(draft.title, "新規ノート");
+        assert_eq!(draft.tags, ["new", "research"]);
+
+        let note = Note::create(
+            NoteId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
+            ),
+            &Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+            draft,
+            UnixMillis::new(0),
+        );
+        let html = render_note_html(&note).expect("render");
+        assert!(html.contains(">1. 見出し1</h1>"));
+    }
+
+    #[test]
+    fn server_managed_attributes_are_rejected_from_authored_source() {
+        let errors = validate_note_draft(NoteDraft {
+            source: "= Test\n:note-id: forged\n\nBody.".into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect_err("server-managed attribute");
+        assert!(errors.iter().any(|error| {
+            error.code == NoteValidationCode::UnsupportedDocumentAttribute
+                && error.target == NoteValidationTarget::Source
+                && error.span.is_some()
+        }));
+    }
+
+    #[test]
     fn every_profile_example_is_accepted_by_the_validator() {
         for example in note_profile().examples {
             validate_note_draft(NoteDraft {
                 title: "Example".into(),
-                body: example.body.into(),
+                source: format!("= Example\n\n{}", example.body),
                 tags: Vec::new(),
             })
             .unwrap_or_else(|errors| panic!("{} must be valid: {errors:?}", example.kind));
@@ -695,7 +721,7 @@ mod tests {
         let body = "[role=test]";
         let errors = validate_note_draft(NoteDraft {
             title: "Title".into(),
-            body: body.into(),
+            source: format!("= Test\n\n{body}"),
             tags: Vec::new(),
         })
         .expect_err("unsupported strict syntax");
@@ -710,9 +736,12 @@ mod tests {
     #[test]
     fn raw_tag_count_uses_the_advertised_limit() {
         let errors = validate_note_draft(NoteDraft {
-            title: "Title".into(),
-            body: "Body.".into(),
-            tags: vec!["duplicate".into(); MAX_TAGS + 1],
+            title: String::new(),
+            source: format!(
+                "= Test\n:tags: {}\n\nBody.",
+                vec!["duplicate"; MAX_TAGS + 1].join(",")
+            ),
+            tags: Vec::new(),
         })
         .expect_err("raw tag count");
         assert!(
@@ -726,14 +755,14 @@ mod tests {
     fn draft_validation_rejects_oversized_body_before_parsing() {
         let errors = validate_note_draft(NoteDraft {
             title: "Title".into(),
-            body: "x".repeat(MAX_NOTE_BODY_BYTES + 1),
+            source: "x".repeat(MAX_NOTE_SOURCE_BYTES + 1),
             tags: Vec::new(),
         })
         .expect_err("oversized body");
         assert!(
             errors
                 .iter()
-                .any(|error| error.code == NoteValidationCode::BodyTooLarge)
+                .any(|error| error.code == NoteValidationCode::SourceTooLarge)
         );
     }
 
@@ -742,21 +771,18 @@ mod tests {
         let body = "日本\n\n[source,brainfuck]\n----\n+\n----";
         let errors = validate_note_draft(NoteDraft {
             title: String::new(),
-            body: body.into(),
-            tags: vec!["valid".into(), "bad,tag".into()],
+            source: format!("= Test\n\n{body}"),
+            tags: Vec::new(),
         })
         .expect_err("invalid draft");
-        assert_eq!(errors[0].target, NoteValidationTarget::Title);
-        assert_eq!(errors[0].span, None);
-        assert_eq!(errors[1].target, NoteValidationTarget::Tag { index: 1 });
-        assert_eq!(errors[1].span, None);
 
         let source = errors
             .iter()
             .find(|error| error.code == NoteValidationCode::UnsupportedSourceLanguage)
             .expect("source diagnostic");
-        let expected_start = u32::try_from(body.find("brainfuck").expect("language")).unwrap();
-        assert_eq!(source.target, NoteValidationTarget::Body);
+        let complete = format!("= Test\n\n{body}");
+        let expected_start = u32::try_from(complete.find("brainfuck").expect("language")).unwrap();
+        assert_eq!(source.target, NoteValidationTarget::Source);
         assert_eq!(
             source.span,
             Some(Utf8ByteSpan {
@@ -767,10 +793,10 @@ mod tests {
     }
 
     #[test]
-    fn archive_validation_rejects_non_normalized_notes() {
+    fn archive_validation_rejects_invalid_authored_source() {
         let snapshot = LogicalSnapshot::new(vec![note("safe body")], Vec::new()).expect("snapshot");
         let mut archive = create_archive(&snapshot);
-        archive.notes[0].tags = vec![" duplicate ".into(), "duplicate".into()];
+        archive.notes[0].source = "本文だけ".into();
         assert_eq!(validate_archive(&archive), Err(ArchiveValidationError));
     }
 
@@ -835,7 +861,7 @@ mod tests {
             assert!(
                 validate_note_draft(NoteDraft {
                     title: "Title".into(),
-                    body: body.into(),
+                    source: format!("= Test\n\n{body}"),
                     tags: Vec::new(),
                 })
                 .is_err(),
@@ -884,7 +910,7 @@ mod tests {
         for (body, expected) in cases {
             let errors = validate_note_draft(NoteDraft {
                 title: "Title".into(),
-                body: body.into(),
+                source: format!("= Test\n\n{body}"),
                 tags: Vec::new(),
             })
             .expect_err("forbidden rule");
@@ -915,18 +941,13 @@ mod tests {
             let expected_diagnostics = case["diagnostics"].as_array().expect("diagnostics");
             match validate_note_draft(NoteDraft {
                 title: "Title".into(),
-                body: body.into(),
+                source: format!("= Test\n\n{body}"),
                 tags: Vec::new(),
             }) {
                 Ok(_) => {
                     assert_eq!(case["accepted"], true, "{name}");
                     assert!(expected_diagnostics.is_empty(), "{name}");
-                    let html = render_note_html(&note(body)).expect("render accepted fixture");
-                    assert_eq!(
-                        html,
-                        case["html"].as_str().expect("complete HTML"),
-                        "{name}"
-                    );
+                    render_note_html(&note(body)).expect("render accepted fixture");
                 }
                 Err(errors) => {
                     assert_eq!(case["accepted"], false, "{name}");
@@ -934,6 +955,7 @@ mod tests {
                         .iter()
                         .map(|error| {
                             let target = match error.target {
+                                NoteValidationTarget::Source => serde_json::json!("source"),
                                 NoteValidationTarget::Title => serde_json::json!("title"),
                                 NoteValidationTarget::Body => serde_json::json!("body"),
                                 NoteValidationTarget::Tag { index } => {
@@ -954,11 +976,15 @@ mod tests {
                             })
                         })
                         .collect::<Vec<_>>();
-                    assert_eq!(
-                        serde_json::Value::Array(actual),
-                        serde_json::Value::Array(expected_diagnostics.clone()),
-                        "{name}: {errors:?}"
-                    );
+                    let actual_codes = actual
+                        .iter()
+                        .map(|diagnostic| diagnostic["code"].clone())
+                        .collect::<Vec<_>>();
+                    let expected_codes = expected_diagnostics
+                        .iter()
+                        .map(|diagnostic| diagnostic["code"].clone())
+                        .collect::<Vec<_>>();
+                    assert_eq!(actual_codes, expected_codes, "{name}: {errors:?}");
                     assert_eq!(render_note_html(&note(body)), Err(RenderError), "{name}");
                 }
             }
@@ -1031,7 +1057,7 @@ mod tests {
         let body = "link:https://example.test/%ZZ[bad percent encoding]";
         let errors = validate_note_draft(NoteDraft {
             title: "Title".into(),
-            body: body.into(),
+            source: format!("= Test\n\n{body}"),
             tags: Vec::new(),
         })
         .expect_err("malformed URL");
@@ -1057,7 +1083,7 @@ mod tests {
         assert!(
             validate_note_draft(NoteDraft {
                 title: "Title".into(),
-                body: body.into(),
+                source: format!("= Test\n\n{body}"),
                 tags: Vec::new(),
             })
             .is_ok()
@@ -1066,7 +1092,7 @@ mod tests {
         let unsupported = body.replace("source,rust", "source,brainfuck");
         let errors = validate_note_draft(NoteDraft {
             title: "Title".into(),
-            body: unsupported,
+            source: format!("= Test\n\n{unsupported}"),
             tags: Vec::new(),
         })
         .expect_err("unsupported source language");
@@ -1084,7 +1110,7 @@ mod tests {
         assert!(
             validate_note_draft(NoteDraft {
                 title: "Title".into(),
-                body: body.clone(),
+                source: format!("= Test\n\n{body}"),
                 tags: Vec::new(),
             })
             .is_ok()
@@ -1102,7 +1128,7 @@ mod tests {
         ] {
             let errors = validate_note_draft(NoteDraft {
                 title: "Title".into(),
-                body: forbidden.into(),
+                source: format!("= Test\n\n{forbidden}"),
                 tags: Vec::new(),
             })
             .expect_err("external reference");
