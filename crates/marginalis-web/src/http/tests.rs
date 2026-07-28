@@ -127,6 +127,78 @@ impl NoteUseCases for Notes {
     }
 }
 
+struct UiNotes {
+    notes: Vec<Note>,
+    render_fails: bool,
+}
+
+#[async_trait]
+impl NoteUseCases for UiNotes {
+    async fn list_visible_notes(&self, _actor: Actor) -> Result<Vec<Note>, NoteUseCaseError> {
+        Ok(self.notes.clone())
+    }
+
+    async fn read_note(&self, _actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
+        self.notes
+            .iter()
+            .find(|note| note.note_id == note_id)
+            .cloned()
+            .ok_or(NoteUseCaseError::NotFound)
+    }
+
+    async fn create_note(
+        &self,
+        _actor: Actor,
+        _draft: NoteDraft,
+    ) -> Result<Note, NoteUseCaseError> {
+        Err(NoteUseCaseError::Unavailable)
+    }
+
+    async fn update_note(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _draft: NoteDraft,
+        _expected_revision: i64,
+    ) -> Result<Note, NoteUseCaseError> {
+        Err(NoteUseCaseError::Unavailable)
+    }
+
+    async fn soft_delete_note(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _expected_revision: i64,
+    ) -> Result<Note, NoteUseCaseError> {
+        Err(NoteUseCaseError::Unavailable)
+    }
+
+    async fn restore_note(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _expected_revision: i64,
+    ) -> Result<Note, NoteUseCaseError> {
+        Err(NoteUseCaseError::Unavailable)
+    }
+
+    fn export_note_source(&self, _note: &Note) -> Result<String, NoteUseCaseError> {
+        Err(NoteUseCaseError::Unavailable)
+    }
+
+    fn render_note_html(&self, _note: &Note) -> Result<String, NoteUseCaseError> {
+        if self.render_fails {
+            Err(NoteUseCaseError::Unavailable)
+        } else {
+            Ok("<article><p>描画済み本文</p></article>".into())
+        }
+    }
+
+    fn note_profile(&self) -> NoteProfile {
+        Notes.note_profile()
+    }
+}
+
 struct Sessions;
 
 #[async_trait]
@@ -373,6 +445,45 @@ fn authenticated_app() -> Router {
     ))
 }
 
+fn ui_note(title: &str) -> Note {
+    Note {
+        note_id: NoteId::new(
+            "0197c9bc-0000-7000-8000-000000000001"
+                .parse()
+                .expect("note ID"),
+        ),
+        creator_issuer: "https://id.example.test".into(),
+        creator_subject: "alice".into(),
+        title: title.into(),
+        body: "本文".into(),
+        tags: vec!["試験".into()],
+        created_at: UnixMillis::new(1),
+        updated_at: UnixMillis::new(2),
+        revision: 1,
+        deleted_at: None,
+    }
+}
+
+fn ui_app(notes: Vec<Note>, render_fails: bool, cookie_path: &str) -> Router {
+    router(ApiState::new(
+        Arc::new(UiNotes {
+            notes,
+            render_fails,
+        }),
+        Arc::new(ActiveSessions),
+        Arc::new(Oidc),
+        cookie_path.into(),
+        "https://example.test".into(),
+    ))
+}
+
+fn authenticated_request(uri: &str) -> Request<Body> {
+    Request::get(uri)
+        .header(header::COOKIE, "marginalis_session=active-session")
+        .body(Body::empty())
+        .expect("request")
+}
+
 fn subpath_mcp_app() -> Router {
     let base_url = url::Url::parse("https://example.test/marginalis").expect("base URL");
     router(
@@ -457,6 +568,133 @@ async fn health_is_public_but_notes_require_a_session() {
             .get(header::LOCATION)
             .and_then(|value| value.to_str().ok())
             .is_some_and(|location| location.starts_with("/auth/oidc/login?next="))
+    );
+}
+
+#[tokio::test]
+async fn authenticated_home_lists_escaped_note_titles() {
+    let note = ui_note("安全 <script>alert(\"x\")</script> & '題名'");
+    let response = ui_app(vec![note], false, "/")
+        .oneshot(authenticated_request("/"))
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE),
+        Some(&"text/html; charset=utf-8".parse().expect("content type"))
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body = String::from_utf8(body.to_vec()).expect("HTML");
+    assert!(body.contains("<html lang=\"ja\">"));
+    assert!(body.contains("href=\"/notes/0197c9bc-0000-7000-8000-000000000001\""));
+    assert!(
+        body.contains(
+            "安全 &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;題名&#39;"
+        )
+    );
+    assert!(!body.contains("<script>alert"));
+}
+
+#[tokio::test]
+async fn authenticated_home_has_an_explicit_empty_state() {
+    let response = ui_app(Vec::new(), false, "/")
+        .oneshot(authenticated_request("/"))
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body = String::from_utf8(body.to_vec()).expect("HTML");
+    assert!(body.contains("閲覧できるノートはありません。"));
+    assert!(!body.contains("<li>"));
+}
+
+#[tokio::test]
+async fn note_view_preserves_rendered_html_and_subpath_navigation() {
+    let note = ui_note("<安全な題名>");
+    let response = ui_app(vec![note], false, "/marginalis")
+        .oneshot(authenticated_request(
+            "/notes/0197c9bc-0000-7000-8000-000000000001",
+        ))
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body = String::from_utf8(body.to_vec()).expect("HTML");
+    assert!(body.contains("<title>&lt;安全な題名&gt;</title>"));
+    assert!(body.contains("href=\"/marginalis/\">一覧</a>"));
+    assert!(body.contains("href=\"/marginalis/assets/editor.css\""));
+    assert!(body.contains("<article><p>描画済み本文</p></article>"));
+}
+
+#[tokio::test]
+async fn note_view_maps_missing_and_render_failed_notes_to_stable_errors() {
+    let missing = ui_app(Vec::new(), false, "/")
+        .oneshot(authenticated_request(
+            "/notes/0197c9bc-0000-7000-8000-000000000001",
+        ))
+        .await
+        .expect("missing response");
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+    let render_failed = ui_app(vec![ui_note("題名")], true, "/")
+        .oneshot(authenticated_request(
+            "/notes/0197c9bc-0000-7000-8000-000000000001",
+        ))
+        .await
+        .expect("render response");
+    assert_eq!(render_failed.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = to_bytes(render_failed.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let problem: serde_json::Value = serde_json::from_slice(&body).expect("problem JSON");
+    assert_eq!(problem["code"], "render_failed");
+}
+
+#[tokio::test]
+async fn frontend_assets_are_served_with_explicit_content_types() {
+    let javascript = app()
+        .oneshot(
+            Request::get("/assets/editor.js")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("JavaScript response");
+    assert_eq!(javascript.status(), StatusCode::OK);
+    assert_eq!(
+        javascript.headers().get(header::CONTENT_TYPE),
+        Some(
+            &"text/javascript; charset=utf-8"
+                .parse()
+                .expect("content type")
+        )
+    );
+    assert_eq!(
+        javascript.headers().get(header::CACHE_CONTROL),
+        Some(&"no-store".parse().expect("cache control"))
+    );
+
+    let stylesheet = app()
+        .oneshot(
+            Request::get("/assets/editor.css")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("stylesheet response");
+    assert_eq!(stylesheet.status(), StatusCode::OK);
+    assert_eq!(
+        stylesheet.headers().get(header::CONTENT_TYPE),
+        Some(&"text/css; charset=utf-8".parse().expect("content type"))
     );
 }
 

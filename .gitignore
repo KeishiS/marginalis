@@ -1,2 +1,4 @@
 /target/
 /result
+/frontend/dist/
+/frontend/node_modules/

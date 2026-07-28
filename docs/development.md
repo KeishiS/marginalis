@@ -13,6 +13,17 @@ nix develop
 gh auth status
 ```
 
+開発shellには固定したNode.jsとnpmも含まれます。フロントエンドだけを変更する場合は、
+次のコマンドで整形、静的解析、型検査、単体試験、依存監査、production buildをまとめて
+確認できます。
+
+```sh
+cargo make frontend-verify
+```
+
+通常の`cargo make verify`と`cargo make coverage`は必要なフロントエンドアセットを先に
+構築します。`frontend/dist`と`frontend/node_modules`は生成物であり、Gitへ追加しません。
+
 `gh auth status`で、操作対象のGitHubアカウントとホストを確認してください。認証情報や
 アクセストークンをコマンド、ログ、Issue、Pull Requestへ記録してはいけません。
 本書では、GitHub上の本リポジトリを指すGitリモート名を`upstream`とします。

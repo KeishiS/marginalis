@@ -56,6 +56,10 @@ crates/
 ├── marginalis-web             HTTP adapter
 ├── marginalis-service         composition rootと実行バイナリ
 └── marginalis-integration-tests
+
+frontend/
+├── src                        React・TypeScriptの実装
+└── tests                      ブラウザーに依存しないUI試験
 ```
 
 依存は概ね上から下ではなく、外側から`domain`と`application`へ向かう。
@@ -65,6 +69,11 @@ HTTPとSQLiteは互いに依存せず、`service`が`server`を介して組み�
 crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
 crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはcomposition rootとして、
 実行経路と公開型を短く一覧できる状態に保つ。
+
+Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセットの配信を担当し、Reactは
+編集画面のブラウザー内状態を担当する。Viteの成果物はGitで管理せず、開発時は`cargo make`、
+配布時はNixが`frontend/dist`を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
+外部URLはViteで固定せず、Rustの`external_path`でbase URLのサブパスを反映する。
 
 主要な外側のadapterは、変更理由に対応して次のmoduleへ分ける。
 
@@ -76,7 +85,9 @@ marginalis-service/src/
 └── maintenance.rs   purge、archive、backup
 
 marginalis-web/src/http/
+├── assets.rs        埋め込み静的アセット
 ├── auth.rs          browser session、Cookie、CSRF
+├── html.rs          共通HTMLレイアウト
 ├── oauth.rs         MCP OAuth endpoint
 ├── mcp_transport.rs MCP Streamable HTTP
 ├── notes.rs         REST note API

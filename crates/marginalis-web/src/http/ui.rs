@@ -9,7 +9,7 @@ use axum::{
 use super::{
     auth::{authenticated_ui_actor, external_path, parse_note_id},
     error::{HandlerResult, note_error, problem},
-    html::escape_html,
+    html::{escape_html, page_document},
     state::ApiState,
 };
 
@@ -37,10 +37,12 @@ pub(super) async fn home(
             )
         })
         .collect::<String>();
-    Ok(Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>Marginalis</title><main><h1>Marginalis</h1><p>閲覧できるノート</p><ul>{list}</ul></main>"
-    ))
-    .into_response())
+    let content = if list.is_empty() {
+        "<h1>ノート</h1><p>閲覧できるノートはありません。</p>".to_owned()
+    } else {
+        format!("<h1>ノート</h1><p>閲覧できるノート</p><ul>{list}</ul>")
+    };
+    Ok(Html(page_document("Marginalis", &state.cookie_path, &content)).into_response())
 }
 
 pub(super) async fn view_note(
@@ -65,11 +67,10 @@ pub(super) async fn view_note(
             "note cannot be rendered safely",
         )
     })?;
-    Ok(Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>{}</title><main><p><a href=\"{}\">一覧</a></p>{}</main>",
-        escape_html(&note.title),
+    let content = format!(
+        "<p><a href=\"{}\">一覧</a></p>{}",
         external_path(&state.cookie_path, "/"),
         body
-    ))
-    .into_response())
+    );
+    Ok(Html(page_document(&note.title, &state.cookie_path, &content)).into_response())
 }
