@@ -60,6 +60,7 @@ pub(super) fn problem(
     code: ProblemCode,
     message: &'static str,
 ) -> (StatusCode, Json<ProblemResponse>) {
+    record_problem_code(code);
     (
         status,
         Json(ProblemResponse {
@@ -82,10 +83,13 @@ pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemRe
             ProblemCode::Conflict,
             "note revision conflicts",
         ),
-        NoteUseCaseError::Validation(diagnostics) => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(validation_problem(diagnostics)),
-        ),
+        NoteUseCaseError::Validation(diagnostics) => {
+            record_problem_code(ProblemCode::ValidationFailed);
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(validation_problem(diagnostics)),
+            )
+        }
         NoteUseCaseError::RenderFailed => problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             ProblemCode::RenderFailed,
@@ -97,6 +101,10 @@ pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemRe
             "note operation is unavailable",
         ),
     }
+}
+
+fn record_problem_code(code: ProblemCode) {
+    tracing::Span::current().record("problem_code", code.as_str());
 }
 
 fn validation_problem(diagnostics: Vec<NoteValidationDiagnostic>) -> ProblemResponse {

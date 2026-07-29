@@ -32,20 +32,13 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          zero=0000000000000000000000000000000000000000
           if [[ "$EVENT_NAME" == pull_request ]]; then
             base="$PULL_REQUEST_BASE_SHA"
           else
             base="$BEFORE_SHA"
           fi
 
-          docs_only=false
-          if [[ -n "$base" && "$base" != "$zero" ]] && git cat-file -e "$base^{commit}"; then
-            docs_only="$(
-              git diff --name-only -z "$base" "$GITHUB_SHA" |
-                bash .github/scripts/classify-docs-only.sh
-            )"
-          fi
+          docs_only="$(bash .github/scripts/classify-ci-change.sh "$base" "$GITHUB_SHA")"
           echo "docs-only=$docs_only" >>"$GITHUB_OUTPUT"
 
   verify:
@@ -81,6 +74,16 @@ jobs:
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Measure workspace and integration-path coverage
         run: nix develop --command cargo make ci-coverage
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            target/coverage/workspace-summary.txt
+            target/coverage/workspace.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   native-aarch64:
     needs: changes
@@ -107,6 +110,14 @@ jobs:
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Check the production Web UI in Chromium
         run: nix develop --command cargo make browser-smoke
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-smoke-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/browser-smoke
+          if-no-files-found: ignore
+          retention-days: 7
 
   nixos-e2e:
     needs: changes
@@ -121,7 +132,26 @@ jobs:
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Run NixOS VM E2E
         if: needs.changes.outputs.docs-only != 'true'
-        run: nix develop --command cargo make ci-nixos-e2e
+        run: |
+          raw_log="$(mktemp)"
+          trap 'rm -f "$raw_log"' EXIT
+          set +e
+          nix develop --command cargo make ci-nixos-e2e 2>&1 | tee "$raw_log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          if [ "$status" -ne 0 ]; then
+            bash .github/scripts/protocol-artifact.sh sanitize "$raw_log" nixos-e2e.log
+            bash .github/scripts/protocol-artifact.sh check nixos-e2e.log
+          fi
+          exit "$status"
+      - name: Upload NixOS E2E failure log
+        if: failure() && needs.changes.outputs.docs-only != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nixos-e2e-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: nixos-e2e.log
+          if-no-files-found: error
+          retention-days: 7
       - name: Skip NixOS VM E2E for documentation-only changes
         if: needs.changes.outputs.docs-only == 'true'
         run: echo "Documentation-only changes do not affect the NixOS runtime"

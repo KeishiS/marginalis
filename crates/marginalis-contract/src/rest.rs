@@ -246,6 +246,26 @@ impl ProblemCode {
         Self::RenderFailed,
         Self::Unavailable,
     ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AuthenticationRequired => "authentication_required",
+            Self::AuthenticationUnavailable => "authentication_unavailable",
+            Self::CsrfRejected => "csrf_rejected",
+            Self::CsrfRequired => "csrf_required",
+            Self::CsrfInvalid => "csrf_invalid",
+            Self::SameOriginRequired => "same_origin_required",
+            Self::OriginNotAllowed => "origin_not_allowed",
+            Self::NotFound => "not_found",
+            Self::Forbidden => "forbidden",
+            Self::Conflict => "conflict",
+            Self::PreconditionRequired => "precondition_required",
+            Self::InvalidRequest => "invalid_request",
+            Self::ValidationFailed => "validation_failed",
+            Self::RenderFailed => "render_failed",
+            Self::Unavailable => "unavailable",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

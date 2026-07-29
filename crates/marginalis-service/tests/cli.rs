@@ -34,6 +34,22 @@ fn version_flags_report_the_packaged_version() {
 }
 
 #[test]
+fn unknown_command_is_normalized_before_logging() {
+    let secret_command = "secret-command-value";
+    let output = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .arg(secret_command)
+        .output()
+        .expect("run marginalis");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8 stderr");
+    assert!(stderr.contains("event=\"command.failed\""));
+    assert!(stderr.contains("command=\"unknown\""));
+    assert!(!stderr.contains(secret_command));
+}
+
+#[test]
 fn archive_commands_create_private_outputs_without_relying_on_umask() {
     let directory = test_directory("permissions");
     fs::create_dir(&directory).expect("test directory");

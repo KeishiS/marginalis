@@ -78,8 +78,12 @@ args = [".github/workflows/ci.yml", ".github/workflows/release-gate.yml"]
 
 [tasks.ci-path-classifier]
 description = "Validate the documentation-only CI path classification"
-command = "bash"
-args = [".github/scripts/test-classify-docs-only.sh"]
+script_runner = "@shell"
+script = '''
+set -eu
+bash .github/scripts/test-classify-docs-only.sh
+bash .github/scripts/test-classify-ci-change.sh
+'''
 
 [tasks.protocol-regression-assets]
 description = "Validate secret-safe protocol failure artifacts"
@@ -91,13 +95,21 @@ bash .github/scripts/test-protocol-artifact.sh
 
 [tasks.docs-check]
 description = "Validate local links and whitespace in Markdown documentation"
-command = "bash"
-args = [".github/scripts/check-docs.sh"]
+script_runner = "@shell"
+script = '''
+set -eu
+bash .github/scripts/test-markdown-links.sh
+bash .github/scripts/check-docs.sh
+'''
 
 [tasks.traceability-check]
 description = "Validate requirement coverage and versioned acceptance evidence"
-command = "bash"
-args = [".github/scripts/check-traceability.sh"]
+script_runner = "@shell"
+script = '''
+set -eu
+bash .github/scripts/test-traceability.sh
+bash .github/scripts/check-traceability.sh
+'''
 
 [tasks.security-audit]
 description = "Check Cargo.lock against the current RustSec advisory database"
@@ -177,16 +189,21 @@ description = "Run every automated gate required before an RC or final release"
 dependencies = ["verify", "coverage", "release-metadata", "nix-release-check", "release-package"]
 
 [tasks.dependency-boundaries]
-description = "Reject concrete adapters from transport production dependency graphs"
+description = "Verify every workspace production dependency against the architecture boundary"
 script_runner = "@shell"
 script = '''
 set -eu
-for package in marginalis-web; do
-  if cargo tree -p "$package" -e normal | grep -E 'marginalis-(sqlite|files|asciidoc|auth-oidc|server)|(^| )sqlx |(^| )adocweave |(^| )openidconnect |(^| )reqwest ' >/dev/null; then
-    echo "concrete adapter leaked into $package production dependencies" >&2
-    exit 1
-  fi
-done
+bash .github/scripts/test-dependency-boundaries.sh
+bash .github/scripts/check-dependency-boundaries.sh
+'''
+
+[tasks.observability-check]
+description = "Require stable event fields and reject sensitive fields in production logs"
+script_runner = "@shell"
+script = '''
+set -eu
+bash .github/scripts/test-observability.sh
+bash .github/scripts/check-observability.sh
 '''
 
 [tasks.production-reachability]
@@ -371,7 +388,7 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, unit and integration tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check"]
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "observability-check", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check"]
 
 [tasks.ci-verify]
 description = "Run the GitHub Actions verify suite"

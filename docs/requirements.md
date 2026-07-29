@@ -19,6 +19,10 @@
   外部キー違反件数を報告すること。未対応schemaの起動拒否後も実際の版を繰り返し報告し、
   データベース、WAL、SHMの内容と権限を変更しないこと。SQLを実行できない場合は、schema不一致と
   区別できる検査名、失敗分類、SQLite result codeを、ノート本文や秘密情報を含めずに報告すること。
+- **REQ-OPS-007 — 構造化ログ**: productionログは安定した`event`で処理を識別し、結果と判定可能な
+  原因分類をfieldで示すこと。HTTP完了ログはrequest ID、method、queryを除くpath、status、
+  latencyを含むこと。Cookie、token、認可code、client secret、利用者identity、ノートの識別子と
+  内容、HTTP headerとbodyを記録しないこと。
 
 ## データ管理
 

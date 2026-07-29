@@ -13,13 +13,31 @@ use super::super::{
     state::{ApiState, McpEndpoint},
 };
 
-pub(super) fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
+pub(super) enum BearerToken<'a> {
+    Missing,
+    Malformed,
+    Value(&'a str),
+}
+
+pub(super) fn bearer_token(headers: &HeaderMap) -> BearerToken<'_> {
+    let Some(value) = headers.get(header::AUTHORIZATION) else {
+        return BearerToken::Missing;
+    };
+    let Ok(value) = value.to_str() else {
+        return BearerToken::Malformed;
+    };
     let mut parts = value.split_ascii_whitespace();
-    let scheme = parts.next()?;
-    let token = parts.next()?;
-    (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty() && parts.next().is_none())
-        .then_some(token)
+    let Some(scheme) = parts.next() else {
+        return BearerToken::Malformed;
+    };
+    let Some(token) = parts.next() else {
+        return BearerToken::Malformed;
+    };
+    if scheme.eq_ignore_ascii_case("bearer") && !token.is_empty() && parts.next().is_none() {
+        BearerToken::Value(token)
+    } else {
+        BearerToken::Malformed
+    }
 }
 
 pub(super) fn authentication_challenge(
@@ -52,6 +70,11 @@ pub(super) fn validate_mcp_origin(
         return Ok(());
     };
     let origin = value.to_str().map_err(|_| {
+        tracing::warn!(
+            event = "mcp.request.rejected",
+            reason = "invalid-origin",
+            "rejected MCP browser request with an invalid origin header"
+        );
         problem(
             StatusCode::FORBIDDEN,
             ProblemCode::OriginNotAllowed,
@@ -67,7 +90,8 @@ pub(super) fn validate_mcp_origin(
         return Ok(());
     }
     tracing::warn!(
-        received_origin = origin,
+        event = "mcp.request.rejected",
+        reason = "origin-not-allowed",
         "rejected MCP browser request from an untrusted origin"
     );
     Err(problem(

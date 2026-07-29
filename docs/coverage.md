@@ -39,6 +39,8 @@ nix develop --command cargo make production-reachability
 ## CIでの扱い
 
 カバレッジは、通常の`verify`とは独立した`coverage`ジョブで実行します。導入時点では一律の
-合格率を設定しません。概要はCIログだけへ出力し、成果物として保存しません。
+合格率を設定しません。概要はCIログへ出力し、概要とLLVM JSONを`coverage-*` artifactとして
+14日間保存します。Pull Request間の単純な数値比較ではなく、変更した責務の未実行箇所を調べるために
+使用します。
 
 秘密情報、トークン、Cookie、実際の利用者データを、テストデータやレポートへ含めてはいけません。

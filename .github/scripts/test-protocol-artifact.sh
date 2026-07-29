@@ -9,7 +9,7 @@ fixture="$work_dir/raw.log"
 sanitized="$work_dir/artifact.log"
 printf '%s\n' \
   'x-request-id: 01910000-0000-7000-8000-000000000001' \
-  'location: https://client.example/callback?code=authorization-code-value&state=state-value' \
+  'location: https://client.example/callback?code=authorization-code-value&state=state-value&nonce=nonce-value&code_challenge=challenge-value' \
   'authorization: Bearer access-token-value' \
   'set-cookie: marginalis_session=session-value; Secure' \
   '{"access_token":"access-token-value","refresh_token":"refresh-token-value","csrf_token":"csrf-value","code_verifier":"pkce-value"}' \
@@ -26,6 +26,9 @@ grep -Fq '[REDACTED]' "$sanitized"
 ! grep -Fq 'pkce-value' "$sanitized"
 ! grep -Fq 'form-code-value' "$sanitized"
 ! grep -Fq 'form-secret-value' "$sanitized"
+! grep -Fq 'state-value' "$sanitized"
+! grep -Fq 'nonce-value' "$sanitized"
+! grep -Fq 'challenge-value' "$sanitized"
 "$script_dir/protocol-artifact.sh" check "$sanitized"
 
 if PATH=/nonexistent /usr/bin/bash "$script_dir/protocol-artifact.sh" check "$sanitized" \

@@ -26,12 +26,7 @@ pub(super) async fn create(output: &Path) -> Result<(), Box<dyn std::error::Erro
         .create(output)?;
     sync_parent_directory(output)?;
 
-    let result = populate(output).await;
-    if let Err(error) = result {
-        tracing::error!(event = "maintenance.backup.failed", output = %output.display(), error = %error, "backup failed; incomplete output was retained");
-        return Err(error);
-    }
-    Ok(())
+    populate(output).await
 }
 
 async fn populate(output: &Path) -> Result<(), Box<dyn std::error::Error>> {

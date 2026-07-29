@@ -7,15 +7,7 @@ use marginalis_sqlite::SqliteDatabase;
 
 /// 保持期限を過ぎたnoteと一時的な認証状態を物理削除する。
 pub(crate) async fn purge_expired() -> Result<(), Box<dyn std::error::Error>> {
-    let result = purge_expired_state().await;
-    if let Err(error) = &result {
-        tracing::error!(
-            event = "maintenance.purge.failed",
-            error = %error,
-            "failed to purge expired persisted state"
-        );
-    }
-    result
+    purge_expired_state().await
 }
 
 async fn purge_expired_state() -> Result<(), Box<dyn std::error::Error>> {

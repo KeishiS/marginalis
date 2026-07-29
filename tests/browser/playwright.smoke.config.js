@@ -3,10 +3,13 @@ const { defineConfig } = require("@playwright/test");
 module.exports = defineConfig({
   testDir: ".",
   testMatch: "webui-smoke.spec.js",
+  outputDir: "../../test-results/browser-smoke",
   timeout: 15_000,
   use: {
     baseURL: "http://127.0.0.1:42877",
     browserName: process.env.MARGINALIS_BROWSER || "chromium",
+    screenshot: "only-on-failure",
+    trace: "retain-on-failure",
   },
   webServer: {
     command:

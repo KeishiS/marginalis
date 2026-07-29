@@ -229,31 +229,9 @@ SQLを実行できなかった場合は、`database.failures`の`check`で失敗
 数値コードです。schema版が古いだけの場合は`schema.ok`が`false`になりますが、
 `database.failures`は出力されません。
 
-主要なjournal event名は次のとおりです。
-
-- service起動: `service.listening`
-- OIDC discovery成功・失敗: `oidc.discovery.completed`、`oidc.discovery.failed`
-- Auth0 discovery成功・失敗: `mcp.authorization.discovery.completed`、
-  `mcp.authorization.discovery.failed`
-- JWKS更新成功・失敗: `mcp.authorization.jwks_refresh.completed`、
-  `mcp.authorization.jwks_refresh.failed`
-- MCP token拒否・検証基盤障害: `mcp.authentication.failed`、
-  `mcp.authentication.unavailable`
-- MCP scope不足: `mcp.authorization.failed`
-- purge成功・失敗: `maintenance.purge.completed`、`maintenance.purge.failed`
-- backup成功・失敗: `maintenance.backup.completed`、`maintenance.backup.failed`
-- archive検証成功・失敗: `maintenance.archive_validation.completed`、
-  `maintenance.archive_validation.failed`
-- archive移行成功・失敗: `maintenance.archive_migration.completed`、
-  `maintenance.archive_migration.failed`
-- 復元検証成功・失敗: `maintenance.restore_verification.completed`、
-  `maintenance.restore_verification.failed`
-- backup検証成功・失敗: `maintenance.backup_verification.completed`、
-  `maintenance.backup_verification.failed`
-- backup世代整理成功・失敗: `maintenance.backup_prune.completed`、
-  `maintenance.backup_prune.failed`
-- SQLite診断失敗: `maintenance.diagnostics.failed`
-- command失敗: `command.failed`（`command` fieldで保守処理を識別）
+安定したjournal event名、共通field、記録禁止情報、障害時の絞り込み方は
+[ログと障害診断](observability.md)を参照してください。監視や通知では、人向けのログ本文ではなく
+`event`を使用します。
 
 ```bash
 journalctl -u marginalis.service --since today
@@ -264,10 +242,8 @@ find /srv/marginalis-backups -mindepth 1 -maxdepth 1 -type d \
   -exec test -f '{}/COMPLETE' ';' -print | sort | tail
 ```
 
-HTTP logは`request_id`で一連の処理を追跡できます。OIDC到達不能時は
-`oidc.discovery.failed`を記録し、loginだけを503で閉じたままlivenessを維持します。
-ノートのプレビューに成功したHTTP logでは、`note_diagnostic_count`が保存を妨げない診断の件数を
-示します。このfieldと診断・保守eventには、ノート本文、ノートID、利用者identity、Cookie、
-token、認可code、client secretを記録しません。
+HTTP logは`request_id`で一連の処理を追跡できます。OIDC到達不能時もloginだけを503で閉じたまま
+livenessを維持します。ノートのプレビューに成功したHTTP logでは、`note_diagnostic_count`が
+保存を妨げない診断の件数を示します。
 保守unitの失敗はHTTP serviceの停止を意味しません。unitの`Result`と同じinvocationのjournalを確認し、
 保存先容量、権限、SQLite診断結果を修正してからunitを再実行します。
