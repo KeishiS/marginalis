@@ -9,7 +9,8 @@ Webブラウザーのconsole、GitHub Actionsの標準出力は対象外です�
 ## ログの契約
 
 通常のログは標準エラーへ出力し、NixOSではjournalへ保存します。`RUST_LOG`は出力対象を選ぶ
-filterであり、fieldや秘密情報の出力を有効にする設定ではありません。
+filterであり、fieldや秘密情報の出力を有効にする設定ではありません。端末の色を表す制御文字は
+出力せず、端末とCIとjournalで同じfield表記を使用します。
 
 Marginalis自身が出力するすべてのproductionログは、次の規則に従います。依存ライブラリのログを
 `RUST_LOG`で明示的に有効化した場合、そのライブラリ固有のfieldはこの契約の対象外です。
