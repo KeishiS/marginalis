@@ -12,6 +12,7 @@ base64.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-contract = { path = "../marginalis-contract" }
 marginalis-domain = { path = "../marginalis-domain" }
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tower-http.workspace = true

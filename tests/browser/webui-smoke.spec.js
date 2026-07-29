@@ -34,9 +34,7 @@ test("production build starts and renders a note returned by the API", async ({
   await expect(page.getByRole("status")).toContainText("1件のノート");
 });
 
-test("CodeMirrorで表示切替、入力補助、日本語入力状態を扱う", async ({
-  page,
-}) => {
+test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", async ({ page }) => {
   await page.route("**/api/v3/notes/preview", async (route) => {
     const source = (await route.request().postDataJSON()).source;
     await route.fulfill({
@@ -50,13 +48,18 @@ test("CodeMirrorで表示切替、入力補助、日本語入力状態を扱う"
   await page.goto("/notes/new");
   const editor = page.getByRole("textbox", { name: "AsciiDoc文書" });
   await expect(editor).toBeFocused();
-  await editor.fill("= 編集画面\n\n選択した文字列");
-  await editor.press("Control+a");
-  await page.getByRole("button", { name: "リンク" }).click();
-  await expect(editor).toContainText("https://example.com[= 編集画面");
-  await expect(editor).toContainText("選択した文字列]");
-  await editor.press("Control+z");
-  await expect(editor).toContainText("選択した文字列");
+  await editor.fill("= 編集画面\n\n1行目\n2行目");
+  const firstLine = page.locator(".cm-line").first();
+  const firstLineNumber = page.locator(".cm-lineNumbers .cm-gutterElement").nth(1);
+  await expect(firstLineNumber).toHaveText("1");
+  const linePosition = await firstLine.boundingBox();
+  const lineNumberPosition = await firstLineNumber.boundingBox();
+  expect(linePosition).not.toBeNull();
+  expect(lineNumberPosition).not.toBeNull();
+  expect(lineNumberPosition.x + lineNumberPosition.width).toBeLessThanOrEqual(
+    linePosition.x,
+  );
+  await expect(page.getByRole("toolbar", { name: "入力補助" })).toHaveCount(0);
 
   await editor.evaluate((element) =>
     element.dispatchEvent(
@@ -66,7 +69,6 @@ test("CodeMirrorで表示切替、入力補助、日本語入力状態を扱う"
       }),
     ),
   );
-  await expect(page.getByRole("button", { name: "リンク" })).toBeDisabled();
   await expect(page.getByText("日本語入力を確定してください。")).toBeVisible();
   await editor.evaluate((element) =>
     element.dispatchEvent(
@@ -76,7 +78,6 @@ test("CodeMirrorで表示切替、入力補助、日本語入力状態を扱う"
       }),
     ),
   );
-  await expect(page.getByRole("button", { name: "リンク" })).toBeEnabled();
 
   await expect(page.locator(".editor-page")).toHaveScreenshot(
     "editor-wide-split.png",

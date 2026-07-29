@@ -71,7 +71,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   );
   await page.getByRole("button", { name: "分割" }).click();
   await source.fill(
-    "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust,linenums,start=7]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*",
+    "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*",
   );
   await expect(page.getByText("未保存の変更があります。")).toBeVisible();
   await expect(page.locator(".preview-content")).toContainText(
@@ -82,17 +82,9 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   ).toContainText("fn main() {}");
   const previewSource = page.locator(".preview-content figure.source-block");
   await expect(previewSource.locator("figcaption")).toHaveText("実行例");
-  await expect(previewSource.locator("pre")).toHaveAttribute(
-    "data-line-numbers",
-    "true",
-  );
-  await expect(previewSource.locator("pre")).toHaveAttribute(
-    "data-line-start",
-    "7",
-  );
   await expect(previewSource.locator(".source-line")).toHaveAttribute(
     "data-line-number",
-    "7",
+    "1",
   );
   await expect
     .poll(async () => {
@@ -121,17 +113,9 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(page.locator(".page-main")).toContainText("日本語と絵文字😀");
   const renderedSource = page.locator(".page-main figure.source-block");
   await expect(renderedSource.locator("figcaption")).toHaveText("実行例");
-  await expect(renderedSource.locator("pre")).toHaveAttribute(
-    "data-line-numbers",
-    "true",
-  );
-  await expect(renderedSource.locator("pre")).toHaveAttribute(
-    "data-line-start",
-    "7",
-  );
   await expect(renderedSource.locator(".source-line")).toHaveAttribute(
     "data-line-number",
-    "7",
+    "1",
   );
   await expect(page.locator(".page-main mjx-container")).toBeVisible();
   await page.getByRole("link", { name: "編集" }).click();

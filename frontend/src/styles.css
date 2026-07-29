@@ -213,16 +213,6 @@ body {
   font: inherit;
 }
 
-.editor-input-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.editor-input-toolbar button {
-  padding: 0.35rem 0.6rem;
-}
-
 .ascii-doc-editor {
   border: 0.1rem solid currentColor;
   border-radius: 0.25rem;

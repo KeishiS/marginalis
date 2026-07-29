@@ -10,7 +10,6 @@ import {
 } from "react";
 
 import { AsciiDocEditor, type AsciiDocEditorHandle } from "./AsciiDocEditor";
-import { ASCII_DOC_COMMANDS, type AsciiDocCommand } from "./asciiDocEditing";
 import {
   Problem,
   NoteDiagnostic,
@@ -49,6 +48,7 @@ export interface EditorConfig {
   apiBase: string;
   basePath: string;
   search: string;
+  styleNonce: string;
 }
 
 type EditorViewMode = "write" | "split" | "preview";
@@ -151,17 +151,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     if (mode !== "preview") {
       window.requestAnimationFrame(() => sourceEditor.current?.focus());
     }
-  }
-
-  function applyEditorCommand(command: AsciiDocCommand) {
-    if (effectiveViewMode === "preview") {
-      setViewMode("write");
-      window.requestAnimationFrame(() =>
-        sourceEditor.current?.applyCommand(command),
-      );
-      return;
-    }
-    sourceEditor.current?.applyCommand(command);
   }
 
   function synchronizeFromEditor(ratio: number) {
@@ -319,10 +308,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
             onEditorWidthChange={setEditorWidth}
             onSyncScrollChange={setSyncScroll}
           />
-          <EditorInputToolbar
-            disabled={saving || isComposing}
-            onCommand={applyEditorCommand}
-          />
         </div>
         <div
           className="editor-workspace"
@@ -346,6 +331,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
                 onCompositionChange={setIsComposing}
                 onSave={() => editorForm.current?.requestSubmit()}
                 onScroll={synchronizeFromEditor}
+                styleNonce={config.styleNonce}
               />
             </div>
           </div>
@@ -383,40 +369,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         </div>
       </form>
     </section>
-  );
-}
-
-const EDITOR_COMMAND_LABELS: Record<AsciiDocCommand, string> = {
-  title: "題名",
-  section: "節",
-  list: "箇条書き",
-  link: "リンク",
-  "code-block": "コードブロック",
-  "inline-math": "インライン数式",
-  "block-math": "ブロック数式",
-  "note-reference": "ノート参照",
-};
-
-function EditorInputToolbar({
-  disabled,
-  onCommand,
-}: {
-  disabled: boolean;
-  onCommand: (command: AsciiDocCommand) => void;
-}) {
-  return (
-    <div className="editor-input-toolbar" role="toolbar" aria-label="入力補助">
-      {ASCII_DOC_COMMANDS.map((command) => (
-        <button
-          key={command}
-          type="button"
-          disabled={disabled}
-          onClick={() => onCommand(command)}
-        >
-          {EDITOR_COMMAND_LABELS[command]}
-        </button>
-      ))}
-    </div>
   );
 }
 

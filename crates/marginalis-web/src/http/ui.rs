@@ -10,6 +10,7 @@ use super::{
     auth::{authenticated_ui_actor, external_path},
     error::HandlerResult,
     html::{escape_html, page_document_with_script},
+    security::ContentSecurityPolicyNonce,
     state::ApiState,
 };
 
@@ -63,24 +64,28 @@ async fn application_shell(
     if let Err(response) = authenticated_ui_actor(headers, state, &return_to).await {
         return Ok(response);
     }
+    let style_nonce = ContentSecurityPolicyNonce::generate();
     let config = serde_json::json!({
         "apiBase": external_path(&state.cookie_path, "/api/v3"),
         "basePath": state.cookie_path,
         "path": internal_path,
         "search": uri.query().map_or(String::new(), |query| format!("?{query}")),
+        "styleNonce": style_nonce.as_str(),
     })
     .to_string();
     let content = format!(
         "<div data-application-root data-application-config=\"{}\"><p>画面を読み込んでいます。</p></div><noscript>Marginalisの利用にはJavaScriptが必要です。</noscript>",
         escape_html(&config),
     );
-    Ok(Html(page_document_with_script(
+    let mut response = Html(page_document_with_script(
         "Marginalis",
         &state.cookie_path,
         &content,
         Some("/assets/editor.js"),
     ))
-    .into_response())
+    .into_response();
+    response.extensions_mut().insert(style_nonce);
+    Ok(response)
 }
 
 fn internal_path(cookie_path: &str, request_path: &str) -> String {

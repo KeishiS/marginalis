@@ -23,7 +23,7 @@
 | `docs/openapi.json` | API利用者・ツール | REST APIの正式な仕様 | route、schema、statusの変更 |
 | `docs/mcp-tools.json` | MCP利用者・ツール | MCP toolの入力と成功出力の正式なJSON Schema | tool、入力、成功出力の変更 |
 | `docs/rest-api.md` | API利用者 | REST APIの説明と動作例 | REST APIの仕様または利用例の変更 |
-| `docs/web-ui-editor.md` | Web UI利用者・開発者 | AsciiDoc編集画面の操作、入力補助、表示上の制約 | 編集操作、表示方式、キーボード操作の変更 |
+| `docs/web-ui-editor.md` | Web UI利用者・開発者 | AsciiDoc編集画面の操作と表示上の制約 | 編集操作、表示方式、キーボード操作の変更 |
 | `docs/mcp.md` | MCP利用者・運用者 | MCP tool、scope、OAuth接続の説明と利用方法 | tool、scope、OAuthの変更 |
 | `docs/nixos.md` | 運用者 | 配備、秘密情報、backup、復元、診断 | module optionまたは運用jobの変更 |
 | `docs/development.md` | 開発者 | 開発環境、GitHub、検証、マージの詳細手順 | CIまたは開発フローの変更 |

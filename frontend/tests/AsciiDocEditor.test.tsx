@@ -5,30 +5,11 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { useRef, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import {
-  AsciiDocEditor,
-  type AsciiDocEditorHandle,
-} from "../src/AsciiDocEditor";
+import { AsciiDocEditor } from "../src/AsciiDocEditor";
 
 afterEach(cleanup);
-
-test("入力補助を一つの編集履歴として適用して元に戻せる", async () => {
-  render(<EditorHarness />);
-  const editor = screen.getByRole("textbox", { name: "AsciiDoc文書" });
-
-  fireEvent.click(screen.getByRole("button", { name: "節を挿入" }));
-  await waitFor(() =>
-    expect(screen.getByTestId("source")).toHaveTextContent("== 節題= 初期文書"),
-  );
-
-  fireEvent.keyDown(editor, { key: "z", ctrlKey: true });
-  await waitFor(() =>
-    expect(screen.getByTestId("source")).toHaveTextContent("= 初期文書"),
-  );
-});
 
 test("日本語IMEの変換状態と保存ショートカットを親へ通知する", () => {
   const composition = vi.fn();
@@ -42,6 +23,7 @@ test("日本語IMEの変換状態と保存ショートカットを親へ通知�
       onCompositionChange={composition}
       onSave={save}
       onScroll={() => {}}
+      styleNonce="test-style-nonce"
     />,
     {
       wrapper: ({ children }) => (
@@ -61,6 +43,14 @@ test("日本語IMEの変換状態と保存ショートカットを親へ通知�
   expect(composition).toHaveBeenNthCalledWith(1, true);
 });
 
+test("CodeMirrorが生成する基礎CSSへCSP nonceを設定する", () => {
+  render(<LabelledEditor value="= 文書" onChange={() => {}} />);
+
+  expect(
+    document.head.querySelector("style[nonce='test-style-nonce']"),
+  ).toBeTruthy();
+});
+
 test("外部から確定した文書を履歴へ加えず同期する", async () => {
   const onChange = vi.fn();
   const { rerender } = render(
@@ -70,33 +60,6 @@ test("外部から確定した文書を履歴へ加えず同期する", async ()
 
   await waitFor(() => expect(editorText()).toBe("= 外部更新"));
 });
-
-function EditorHarness() {
-  const [source, setSource] = useState("= 初期文書");
-  const editor = useRef<AsciiDocEditorHandle>(null);
-  return (
-    <>
-      <span id="harness-editor-label">AsciiDoc文書</span>
-      <AsciiDocEditor
-        ref={editor}
-        value={source}
-        disabled={false}
-        labelledBy="harness-editor-label"
-        onChange={setSource}
-        onCompositionChange={() => {}}
-        onSave={() => {}}
-        onScroll={() => {}}
-      />
-      <button
-        type="button"
-        onClick={() => editor.current?.applyCommand("section")}
-      >
-        節を挿入
-      </button>
-      <output data-testid="source">{source}</output>
-    </>
-  );
-}
 
 function LabelledEditor({
   value,
@@ -116,6 +79,7 @@ function LabelledEditor({
         onCompositionChange={() => {}}
         onSave={() => {}}
         onScroll={() => {}}
+        styleNonce="test-style-nonce"
       />
     </>
   );

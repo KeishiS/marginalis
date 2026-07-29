@@ -16,8 +16,10 @@ Web UIのAsciiDoc入力にCodeMirror 6を採用します。依存は`@codemirror
 CodeMirrorとの接続は`AsciiDocEditor.tsx`へ閉じ込め、Reactのフォーム状態とは完全な文字列だけを
 受け渡します。
 
-AsciiDocの解析、診断、HTML生成はサーバー側のAdocWeaveを唯一の実装とします。入力補助は
-AsciiDocを構造化された別形式へ変換せず、一回の文字列置換としてCodeMirrorの編集履歴へ加えます。
+AsciiDocの解析、診断、HTML生成はサーバー側のAdocWeaveを唯一の実装とします。CodeMirrorが
+実行時に生成する基礎CSSには、HTMLごとに生成したContent Security Policy（CSP）のnonceを
+設定します。nonceは、そのHTMLで実行を許可するstyle要素を識別する一回限りの値です。
+`unsafe-inline`は許可しません。
 
 ## 代替案
 

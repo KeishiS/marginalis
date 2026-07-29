@@ -32,8 +32,6 @@ import {
   useRef,
 } from "react";
 
-import { asciiDocCommandEdit, type AsciiDocCommand } from "./asciiDocEditing";
-
 const adaptiveTheme = EditorView.theme({
   "&": {
     backgroundColor: "light-dark(#ffffff, #111418)",
@@ -58,7 +56,6 @@ const adaptiveTheme = EditorView.theme({
 });
 
 export interface AsciiDocEditorHandle {
-  applyCommand: (command: AsciiDocCommand) => void;
   focus: () => void;
   selectRange: (anchor: number, head: number) => void;
   setScrollRatio: (ratio: number) => void;
@@ -72,6 +69,7 @@ interface AsciiDocEditorProps {
   onCompositionChange: (composing: boolean) => void;
   onSave: () => void;
   onScroll: (ratio: number) => void;
+  styleNonce: string;
 }
 
 export const AsciiDocEditor = forwardRef<
@@ -86,6 +84,7 @@ export const AsciiDocEditor = forwardRef<
     onCompositionChange,
     onSave,
     onScroll,
+    styleNonce,
   },
   forwardedRef,
 ) {
@@ -93,6 +92,7 @@ export const AsciiDocEditor = forwardRef<
   const view = useRef<EditorView>(null);
   const initialValue = useRef(value);
   const initialLabel = useRef(labelledBy);
+  const initialStyleNonce = useRef(styleNonce);
   const onChangeRef = useRef(onChange);
   const onCompositionChangeRef = useRef(onCompositionChange);
   const onSaveRef = useRef(onSave);
@@ -126,6 +126,7 @@ export const AsciiDocEditor = forwardRef<
           highlightActiveLine(),
           highlightSelectionMatches(),
           adaptiveTheme,
+          EditorView.cspNonce.of(initialStyleNonce.current),
           EditorView.lineWrapping,
           EditorState.tabSize.of(4),
           readOnly.current.of(EditorState.readOnly.of(false)),
@@ -207,33 +208,6 @@ export const AsciiDocEditor = forwardRef<
   useImperativeHandle(
     forwardedRef,
     () => ({
-      applyCommand(command) {
-        const editor = view.current;
-        if (!editor || editor.state.readOnly || editor.compositionStarted) {
-          return;
-        }
-        const range = editor.state.selection.main;
-        const edit = asciiDocCommandEdit(
-          command,
-          editor.state.doc.toString(),
-          range.anchor,
-          range.head,
-        );
-        editor.dispatch({
-          changes: {
-            from: edit.from,
-            to: edit.to,
-            insert: edit.insert,
-          },
-          selection: EditorSelection.range(
-            edit.selection.anchor,
-            edit.selection.head,
-          ),
-          scrollIntoView: true,
-          userEvent: "input.complete",
-        });
-        editor.focus();
-      },
       focus() {
         view.current?.focus();
       },

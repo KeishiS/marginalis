@@ -44,8 +44,9 @@ AsciiDoc、HTTPおよびブラウザーの試験で継続して検査します�
 - `pre`の`data-language`
 - `data-line-numbers="true"`と`data-line-start`による行番号指定
 
-Web UIは行番号指定がある`pre`だけを処理し、`code`の`textContent`を行へ分けて番号を表示します。
-元の改行と本文を保ち、classから言語や行番号の有無を推測しません。
+Web UIは`figure.source-block`内の`code`を処理し、`textContent`を行へ分けてすべてのコード
+ブロックへ行番号を表示します。`data-line-start`がある場合はその値を開始行とし、ない場合は
+1から始めます。元の改行と本文を保ち、言語名や開始行をclassから推測しません。
 
 数式は`data-math-language="latexmath"`と`data-math-display="inline|block"`を選択条件とし、
 要素名、class、親子関係から表示形式を推測しません。MathJaxへ渡す内容は生成HTMLの

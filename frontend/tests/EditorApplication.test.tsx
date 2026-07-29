@@ -31,7 +31,6 @@ vi.mock("../src/AsciiDocEditor", async () => {
         onSave: () => void;
       },
       forwardedRef: React.ForwardedRef<{
-        applyCommand: () => void;
         focus: () => void;
         selectRange: (anchor: number, head: number) => void;
         setScrollRatio: () => void;
@@ -41,7 +40,6 @@ vi.mock("../src/AsciiDocEditor", async () => {
       React.useImperativeHandle(
         forwardedRef,
         () => ({
-          applyCommand() {},
           focus() {
             input.current?.focus();
           },
@@ -83,6 +81,7 @@ const CONFIG: EditorConfig = {
   apiBase: "/marginalis/api/v3",
   basePath: "/marginalis",
   search: "",
+  styleNonce: "test-style-nonce",
 };
 
 const SOURCE =
