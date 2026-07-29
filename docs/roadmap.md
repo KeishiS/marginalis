@@ -6,43 +6,26 @@
 
 ## 現在地
 
-`v0.11.0`は2026-07-29に公開しました。MCPのAuthorization ServerにはAuth0を使用し、
+`v0.12.0`は2026-07-29に公開しました。MCPのAuthorization ServerにはAuth0を使用し、
 MarginalisはProtected Resourceの責務だけを担います。採用理由は
 [ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)を参照してください。
 
-現在は`v0.12.0`のリリース候補を準備しています。対象は次の三つです。
+受入結果と証跡は[v0.12.0受入結果](acceptance-results/v0.12.0.md)へ記録しています。
 
-- [#104](https://github.com/KeishiS/marginalis/issues/104): 未対応SQLite schemaを拒否した直後も、
-  データベースを変更せず実際の版を安定して報告する診断
-- [#102](https://github.com/KeishiS/marginalis/issues/102): MCPクライアント向けの参考文献付き
-  AsciiDoc例と、書誌情報を推測しない執筆指針
-- [#103](https://github.com/KeishiS/marginalis/issues/103): 保存を妨げないAdocWeave診断の
-  REST契約と編集画面
+現在は[#99](https://github.com/KeishiS/marginalis/issues/99)の長文編集画面を進めています。
 
-SQLite schema 11と`marginalis-archive-8`は変更しません。MCPとOpenAPIが示すnote profileは、
-参考文献例と入力診断を含む版5へ更新します。archive内のノート受理規則は版4を維持します。
+## 長文編集画面
 
-## v0.12.0の完了条件
+#99ではCodeMirror 6を採用し、次の範囲を一つの編集契約として整備します。
 
-- Pull Requestの通常CIと、`main`へマージしたコミットに対するリリースゲートの成功
-- 配備したWeb UIでの警告表示、入力位置への移動、警告を含む保存、修正後の警告消去
-- ChatGPT、Claude Code、Codex CLIでの入力規則取得、参考文献付きノートの作成と取得
-- 旧schemaの起動拒否後における反復診断と、データベース、WAL、SHMの不変性
-- `marginalis-archive-8`を本番から隔離した空のschema 11へ復元する確認
+- 執筆、左右分割、プレビューの表示方式と画面幅への対応
+- キーボード操作、日本語IME、AsciiDoc入力補助
+- 相対スクロール同期と診断位置への移動
+- 5,000行の性能、アクセシビリティー、固定画像によるブラウザー受入
 
-実施結果と証跡は[v0.12.0受入結果](acceptance-results/v0.12.0.md)へ記録します。
-
-## 次の編集機能
-
-v0.12.0の後は、[#99](https://github.com/KeishiS/marginalis/issues/99)の長文編集画面を進めます。
-#99は追跡用Issueとして残し、着手前に次の独立した実装単位へ分割します。
-
-- 編集、分割、プレビューの表示方式と画面幅への対応
-- キーボード操作、IME、入力補助
-- スクロール同期と診断位置への移動
-- 大規模文書の性能、アクセシビリティ、ブラウザー受入
-
-v0.12.0で追加する診断契約と位置移動を、この編集画面でも維持します。
+採用理由は[CodeMirror採用判断](adr/0003-codemirrorをasciidoc編集基盤に採用.md)、操作と制約は
+[AsciiDoc編集画面](web-ui-editor.md)で説明します。v0.12.0で追加した診断契約、最後に成功した
+プレビュー、保存競合の動作を維持します。
 
 ## 検索と関係グラフの評価
 

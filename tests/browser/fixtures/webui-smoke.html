@@ -4,12 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Marginalis browser smoke</title>
+    <link rel="stylesheet" href="/assets/editor.css" />
   </head>
   <body>
     <main
+      class="page-main"
       data-application-root
       data-application-config='{"apiBase":"/api/v3","basePath":"","path":"/","search":""}'
     ></main>
+    <script>
+      const applicationRoot = document.querySelector("[data-application-root]");
+      const applicationConfig = JSON.parse(
+        applicationRoot.dataset.applicationConfig,
+      );
+      applicationConfig.path = window.location.pathname;
+      applicationConfig.search = window.location.search;
+      applicationRoot.dataset.applicationConfig =
+        JSON.stringify(applicationConfig);
+    </script>
     <script type="module" src="/assets/editor.js"></script>
   </body>
 </html>

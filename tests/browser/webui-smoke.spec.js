@@ -33,3 +33,142 @@ test("production build starts and renders a note returned by the API", async ({
   ).toHaveAttribute("href", "/notes/0197c9bc-0000-7000-8000-000000000001");
   await expect(page.getByRole("status")).toContainText("1件のノート");
 });
+
+test("CodeMirrorで表示切替、入力補助、日本語入力状態を扱う", async ({
+  page,
+}) => {
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    const source = (await route.request().postDataJSON()).source;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: `<div class="preview-content"><p>${escapeHtml(source)}</p></div>`,
+        diagnostics: [],
+      }),
+    });
+  });
+  await page.goto("/notes/new");
+  const editor = page.getByRole("textbox", { name: "AsciiDoc文書" });
+  await expect(editor).toBeFocused();
+  await editor.fill("= 編集画面\n\n選択した文字列");
+  await editor.press("Control+a");
+  await page.getByRole("button", { name: "リンク" }).click();
+  await expect(editor).toContainText("https://example.com[= 編集画面");
+  await expect(editor).toContainText("選択した文字列]");
+  await editor.press("Control+z");
+  await expect(editor).toContainText("選択した文字列");
+
+  await editor.evaluate((element) =>
+    element.dispatchEvent(
+      new CompositionEvent("compositionstart", {
+        bubbles: true,
+        data: "編集中",
+      }),
+    ),
+  );
+  await expect(page.getByRole("button", { name: "リンク" })).toBeDisabled();
+  await expect(page.getByText("日本語入力を確定してください。")).toBeVisible();
+  await editor.evaluate((element) =>
+    element.dispatchEvent(
+      new CompositionEvent("compositionend", {
+        bubbles: true,
+        data: "確定",
+      }),
+    ),
+  );
+  await expect(page.getByRole("button", { name: "リンク" })).toBeEnabled();
+
+  await expect(page.locator(".editor-page")).toHaveScreenshot(
+    "editor-wide-split.png",
+    { animations: "disabled" },
+  );
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator(".editor-page")).toHaveScreenshot(
+    "editor-wide-split-dark.png",
+    { animations: "disabled" },
+  );
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect(page.locator(".editor-workspace")).toHaveAttribute(
+    "data-view-mode",
+    "write",
+  );
+  await expect(page.getByRole("button", { name: "分割" })).toBeDisabled();
+  await expect(page.locator(".editor-page")).toHaveScreenshot(
+    "editor-narrow-write.png",
+    { animations: "disabled" },
+  );
+});
+
+test("5,000行の文書を編集して保存できる", async ({ page }) => {
+  test.setTimeout(30_000);
+  const source = [
+    "= 長文試験",
+    "",
+    ...Array.from(
+      { length: 4998 },
+      (_, index) => `${index + 3}行目の日本語とemoji😀`,
+    ),
+  ].join("\n");
+  expect(Buffer.byteLength(source, "utf8")).toBeLessThanOrEqual(512 * 1024);
+
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: '<div class="preview-content"><p>長文プレビュー</p></div>',
+        diagnostics: [],
+      }),
+    });
+  });
+  await page.route("**/api/v3/notes", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    const input = await route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        note_id: "0197c9bc-0000-7000-8000-000000000099",
+        title: "長文試験",
+        source: input.source,
+        tags: [],
+        created_at_ms: 1,
+        updated_at_ms: 1,
+        revision: 1,
+      }),
+    });
+  });
+  await page.goto("/notes/new");
+  const editor = page.getByRole("textbox", { name: "AsciiDoc文書" });
+  await editor.focus();
+  await editor.press("Control+a");
+  const insertionTime = await editor.evaluate((element, input) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/plain", input);
+    const started = performance.now();
+    element.dispatchEvent(
+      new ClipboardEvent("paste", {
+        bubbles: true,
+        clipboardData,
+      }),
+    );
+    return performance.now() - started;
+  }, source);
+  expect(insertionTime).toBeLessThan(5_000);
+  await expect(page.getByText("未保存の変更があります。")).toBeVisible();
+  await page.getByRole("button", { name: "プレビュー" }).click();
+  await page.getByRole("button", { name: "執筆" }).click();
+  await expect(editor).toBeFocused();
+  await editor.press("Control+s");
+  await expect(page.getByText("保存しました。")).toBeVisible();
+});
+
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}

@@ -5,6 +5,7 @@ export default defineConfig({
   base: "./",
   plugins: [react()],
   build: {
+    chunkSizeWarningLimit: 600,
     manifest: "manifest.json",
     outDir: "dist",
     emptyOutDir: true,

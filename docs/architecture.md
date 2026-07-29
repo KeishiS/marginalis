@@ -156,6 +156,12 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 取消、最後に成功したHTMLの保持、入力変更時の古い診断の破棄は`useEditorPreview.ts`へ分離し、
 編集画面は結果の状態と診断操作だけを表示します。保存を拒否する診断と保存を妨げない診断は
 application層でそれぞれ`NoteValidationDiagnostic`と`NoteAdvisoryDiagnostic`に分けます。
+AsciiDoc文書の入力は`AsciiDocEditor.tsx`へ閉じ込めたCodeMirrorが担当し、Reactのフォーム状態には
+常に完全な文字列を渡します。CodeMirror側でAsciiDocを別の文書モデルへ変換しません。入力補助は
+`asciiDocEditing.ts`が返す一回の文字列編集として適用し、解析とHTML生成は引き続きサーバー側の
+AdocWeaveだけが担当します。採用理由と操作上の制約は
+[CodeMirror採用判断](adr/0003-codemirrorをasciidoc編集基盤に採用.md)と
+[AsciiDoc編集画面](web-ui-editor.md)を参照してください。
 成功型は`error`を保持できず、失敗型はHTTP境界で常に`error`へ変換します。RESTでは位置と重大度を
 共通の`NoteDiagnostic`契約として返し、成功したプレビューも診断を失わず画面へ渡します。
 検証時に抽出したノート参照は作成、更新、プレビューで再利用し、同じ入力を参照抽出のためだけに

@@ -11,6 +11,72 @@ import { afterEach, expect, test, vi } from "vitest";
 import { EditorApplication, EditorConfig } from "../src/EditorApplication";
 import { Note } from "../src/api";
 
+vi.mock("../src/AsciiDocEditor", async () => {
+  const React = await import("react");
+  return {
+    AsciiDocEditor: React.forwardRef(function MockAsciiDocEditor(
+      {
+        value,
+        disabled,
+        labelledBy,
+        onChange,
+        onCompositionChange,
+        onSave,
+      }: {
+        value: string;
+        disabled: boolean;
+        labelledBy: string;
+        onChange: (value: string) => void;
+        onCompositionChange: (composing: boolean) => void;
+        onSave: () => void;
+      },
+      forwardedRef: React.ForwardedRef<{
+        applyCommand: () => void;
+        focus: () => void;
+        selectRange: (anchor: number, head: number) => void;
+        setScrollRatio: () => void;
+      }>,
+    ) {
+      const input = React.useRef<HTMLTextAreaElement>(null);
+      React.useImperativeHandle(
+        forwardedRef,
+        () => ({
+          applyCommand() {},
+          focus() {
+            input.current?.focus();
+          },
+          selectRange(anchor, head) {
+            input.current?.focus();
+            input.current?.setSelectionRange(anchor, head);
+          },
+          setScrollRatio() {},
+        }),
+        [],
+      );
+      return (
+        <textarea
+          ref={input}
+          aria-labelledby={labelledBy}
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          onCompositionStart={() => onCompositionChange(true)}
+          onCompositionEnd={() => onCompositionChange(false)}
+          onKeyDown={(event) => {
+            if (
+              (event.ctrlKey || event.metaKey) &&
+              event.key.toLowerCase() === "s"
+            ) {
+              event.preventDefault();
+              onSave();
+            }
+          }}
+        />
+      );
+    }),
+  };
+});
+
 const CONFIG: EditorConfig = {
   mode: "create",
   noteId: "",
@@ -155,16 +221,23 @@ test("診断からUTF-8位置に対応する入力範囲へ移動する", async 
     name: "AsciiDoc文書",
   });
   fireEvent.change(editor, { target: { value: source } });
+  fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "エラー: 3行1列: AsciiDoc本文を解析できませんでした。",
   );
   fireEvent.click(screen.getByRole("button", { name: "入力位置へ移動" }));
-  expect(editor).toHaveFocus();
-  expect(editor.value.slice(editor.selectionStart, editor.selectionEnd)).toBe(
-    "日本",
+  expect(document.querySelector(".editor-workspace")).toHaveAttribute(
+    "data-view-mode",
+    "write",
   );
+  await waitFor(() => {
+    expect(editor).toHaveFocus();
+    expect(editor.value.slice(editor.selectionStart, editor.selectionEnd)).toBe(
+      "日本",
+    );
+  });
 });
 
 test("プレビュー警告を表示して修正後にすぐ取り除く", async () => {
@@ -267,6 +340,60 @@ test("プレビュー失敗時も最後に成功した表示を残す", async ()
   expect(
     screen.getByRole("heading", { name: "プレビューできませんでした" }),
   ).toBeInTheDocument();
+});
+
+test("表示を切り替えても入力欄を維持する", async () => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>());
+  render(<EditorApplication config={CONFIG} />);
+
+  const workspace = document.querySelector(".editor-workspace");
+  const editor = screen.getByRole("textbox", { name: "AsciiDoc文書" });
+  expect(workspace).toHaveAttribute("data-view-mode", "split");
+  expect(screen.getByRole("button", { name: "分割" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
+  expect(workspace).toHaveAttribute("data-view-mode", "preview");
+  expect(editor).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "執筆" }));
+  expect(workspace).toHaveAttribute("data-view-mode", "write");
+  await waitFor(() => expect(editor).toHaveFocus());
+});
+
+test("狭い画面では分割せず執筆とプレビューを明示的に切り替える", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: true,
+      media: "(max-width: 60rem)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>());
+  render(<EditorApplication config={CONFIG} />);
+
+  expect(document.querySelector(".editor-workspace")).toHaveAttribute(
+    "data-view-mode",
+    "write",
+  );
+  expect(screen.getByRole("button", { name: "分割" })).toBeDisabled();
+  expect(
+    screen.getByText("この画面幅では執筆表示に切り替えています。"),
+  ).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
+  expect(document.querySelector(".editor-workspace")).toHaveAttribute(
+    "data-view-mode",
+    "preview",
+  );
 });
 
 function jsonResponse(body: unknown, status = 200): Response {

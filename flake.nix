@@ -58,7 +58,7 @@
             pname = "marginalis-web-ui";
             inherit version;
             src = ./frontend;
-            npmDepsHash = "sha256-DlnCeMz3ppt8bTHt5pAjmg8ZanNSyCCeystYaXm1BeM=";
+            npmDepsHash = "sha256-hNqAruwc5MacgCuzQtYh/JP4Gub9QL0u4rP4oBlHc3I=";
             nodejs = pkgs.nodejs_22;
             installPhase = ''
               mkdir -p $out

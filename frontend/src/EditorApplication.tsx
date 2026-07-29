@@ -1,6 +1,6 @@
 import {
+  type CSSProperties,
   FormEvent,
-  type RefObject,
   UIEvent,
   useEffect,
   useMemo,
@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 
+import { AsciiDocEditor, type AsciiDocEditorHandle } from "./AsciiDocEditor";
+import { ASCII_DOC_COMMANDS, type AsciiDocCommand } from "./asciiDocEditing";
 import {
   Problem,
   NoteDiagnostic,
@@ -49,6 +51,8 @@ export interface EditorConfig {
   search: string;
 }
 
+type EditorViewMode = "write" | "split" | "preview";
+
 export function EditorApplication({ config }: { config: EditorConfig }) {
   const [editor, dispatch] = useReducer(
     editorReducer,
@@ -63,7 +67,17 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     initialEditorActivityState,
   );
   const { saving, problem, notice } = activity;
-  const sourceInput = useRef<HTMLTextAreaElement>(null);
+  const editorForm = useRef<HTMLFormElement>(null);
+  const sourceEditor = useRef<AsciiDocEditorHandle>(null);
+  const previewScroll = useRef<HTMLDivElement>(null);
+  const scrollSource = useRef<"editor" | "preview" | null>(null);
+  const [isComposing, setIsComposing] = useState(false);
+  const [viewMode, setViewMode] = useState<EditorViewMode>("split");
+  const [editorWidth, setEditorWidth] = useState(50);
+  const [syncScroll, setSyncScroll] = useState(true);
+  const narrowViewport = useMediaQuery("(max-width: 60rem)");
+  const effectiveViewMode =
+    narrowViewport && viewMode === "split" ? "write" : viewMode;
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(baseline),
     [baseline, form],
@@ -72,7 +86,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const preview = useEditorPreview(
     config.apiBase,
     form.source,
-    !loading && (config.mode !== "edit" || revision !== null),
+    !isComposing && !loading && (config.mode !== "edit" || revision !== null),
     toProblem,
   );
 
@@ -115,17 +129,75 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     if (diagnostic.target.field !== "source" || span?.unit !== "utf8_byte") {
       return;
     }
-    const input = sourceInput.current;
-    if (!input) return;
     const start = utf8ByteOffsetToTextOffset(form.source, span.start);
     const end = utf8ByteOffsetToTextOffset(form.source, span.end);
-    input.focus();
-    input.setSelectionRange(start, Math.max(start, end));
+    const select = () =>
+      sourceEditor.current?.selectRange(start, Math.max(start, end));
+    if (effectiveViewMode === "preview") {
+      setViewMode("write");
+      window.requestAnimationFrame(select);
+    } else {
+      select();
+    }
   }
 
   function changeSource(source: string) {
     dispatch({ type: "change", field: "source", value: source });
     dispatchActivity({ type: "clear-feedback" });
+  }
+
+  function changeViewMode(mode: EditorViewMode) {
+    setViewMode(mode);
+    if (mode !== "preview") {
+      window.requestAnimationFrame(() => sourceEditor.current?.focus());
+    }
+  }
+
+  function applyEditorCommand(command: AsciiDocCommand) {
+    if (effectiveViewMode === "preview") {
+      setViewMode("write");
+      window.requestAnimationFrame(() =>
+        sourceEditor.current?.applyCommand(command),
+      );
+      return;
+    }
+    sourceEditor.current?.applyCommand(command);
+  }
+
+  function synchronizeFromEditor(ratio: number) {
+    if (
+      !syncScroll ||
+      effectiveViewMode !== "split" ||
+      scrollSource.current === "preview"
+    ) {
+      return;
+    }
+    const preview = previewScroll.current;
+    if (!preview) return;
+    scrollSource.current = "editor";
+    const maximum = Math.max(0, preview.scrollHeight - preview.clientHeight);
+    preview.scrollTop = ratio * maximum;
+    window.requestAnimationFrame(() => {
+      if (scrollSource.current === "editor") scrollSource.current = null;
+    });
+  }
+
+  function synchronizeFromPreview(event: UIEvent<HTMLDivElement>) {
+    if (
+      !syncScroll ||
+      effectiveViewMode !== "split" ||
+      scrollSource.current === "editor"
+    ) {
+      return;
+    }
+    const preview = event.currentTarget;
+    const maximum = preview.scrollHeight - preview.clientHeight;
+    const ratio = maximum > 0 ? preview.scrollTop / maximum : 0;
+    scrollSource.current = "preview";
+    sourceEditor.current?.setScrollRatio(ratio);
+    window.requestAnimationFrame(() => {
+      if (scrollSource.current === "preview") scrollSource.current = null;
+    });
   }
 
   async function save(event: FormEvent) {
@@ -189,7 +261,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   }
 
   return (
-    <section aria-labelledby="editor-heading">
+    <section className="editor-page" aria-labelledby="editor-heading">
       <div className="editor-heading">
         <div>
           <h1 id="editor-heading">
@@ -235,40 +307,211 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         />
       )}
 
-      <div className="editor-workspace">
-        <form className="editor-form" onSubmit={save}>
-          <LineNumberedTextarea
-            inputRef={sourceInput}
-            value={form.source}
-            disabled={saving}
-            onChange={changeSource}
+      <form className="editor-form" onSubmit={save} ref={editorForm}>
+        <div className="editor-controls">
+          <EditorViewToolbar
+            mode={effectiveViewMode}
+            requestedMode={viewMode}
+            narrow={narrowViewport}
+            editorWidth={editorWidth}
+            syncScroll={syncScroll}
+            onModeChange={changeViewMode}
+            onEditorWidthChange={setEditorWidth}
+            onSyncScrollChange={setSyncScroll}
           />
-          <div className="editor-actions">
-            <button type="submit" disabled={saving || !isDirty}>
-              {saving ? "保存しています…" : "保存"}
-            </button>
-            <span role="status">
-              {editorStatus({
-                saving,
-                isDirty,
-                failed: problem !== null,
-                conflicted: conflict !== null,
-                notice,
-              })}
-            </span>
+          <EditorInputToolbar
+            disabled={saving || isComposing}
+            onCommand={applyEditorCommand}
+          />
+        </div>
+        <div
+          className="editor-workspace"
+          data-view-mode={effectiveViewMode}
+          style={
+            {
+              "--editor-width": `${editorWidth}fr`,
+              "--preview-width": `${100 - editorWidth}fr`,
+            } as CSSProperties
+          }
+        >
+          <div className="editor-source-pane">
+            <div className="source-editor-field">
+              <span id="source-editor-label">AsciiDoc文書</span>
+              <AsciiDocEditor
+                ref={sourceEditor}
+                value={form.source}
+                disabled={saving}
+                onChange={changeSource}
+                labelledBy="source-editor-label"
+                onCompositionChange={setIsComposing}
+                onSave={() => editorForm.current?.requestSubmit()}
+                onScroll={synchronizeFromEditor}
+              />
+            </div>
           </div>
-        </form>
-        <PreviewPanel
-          body={form.source}
-          html={preview.html}
-          diagnostics={preview.diagnostics}
-          loading={preview.loading}
-          problem={preview.problem}
-          onSelectDiagnostic={selectDiagnostic}
-        />
-      </div>
+          <div className="editor-divider" aria-hidden="true" />
+          <div
+            className="preview-scroll"
+            ref={previewScroll}
+            onScroll={synchronizeFromPreview}
+          >
+            <PreviewPanel
+              body={form.source}
+              html={preview.html}
+              diagnostics={preview.diagnostics}
+              loading={preview.loading}
+              problem={preview.problem}
+              onSelectDiagnostic={selectDiagnostic}
+            />
+          </div>
+        </div>
+        <div className="editor-actions">
+          <button type="submit" disabled={saving || !isDirty || isComposing}>
+            {saving ? "保存しています…" : "保存"}
+          </button>
+          <span role="status">
+            {isComposing
+              ? "日本語入力を確定してください。"
+              : editorStatus({
+                  saving,
+                  isDirty,
+                  failed: problem !== null,
+                  conflicted: conflict !== null,
+                  notice,
+                })}
+          </span>
+        </div>
+      </form>
     </section>
   );
+}
+
+const EDITOR_COMMAND_LABELS: Record<AsciiDocCommand, string> = {
+  title: "題名",
+  section: "節",
+  list: "箇条書き",
+  link: "リンク",
+  "code-block": "コードブロック",
+  "inline-math": "インライン数式",
+  "block-math": "ブロック数式",
+  "note-reference": "ノート参照",
+};
+
+function EditorInputToolbar({
+  disabled,
+  onCommand,
+}: {
+  disabled: boolean;
+  onCommand: (command: AsciiDocCommand) => void;
+}) {
+  return (
+    <div className="editor-input-toolbar" role="toolbar" aria-label="入力補助">
+      {ASCII_DOC_COMMANDS.map((command) => (
+        <button
+          key={command}
+          type="button"
+          disabled={disabled}
+          onClick={() => onCommand(command)}
+        >
+          {EDITOR_COMMAND_LABELS[command]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EditorViewToolbar({
+  mode,
+  requestedMode,
+  narrow,
+  editorWidth,
+  syncScroll,
+  onModeChange,
+  onEditorWidthChange,
+  onSyncScrollChange,
+}: {
+  mode: EditorViewMode;
+  requestedMode: EditorViewMode;
+  narrow: boolean;
+  editorWidth: number;
+  syncScroll: boolean;
+  onModeChange: (mode: EditorViewMode) => void;
+  onEditorWidthChange: (width: number) => void;
+  onSyncScrollChange: (enabled: boolean) => void;
+}) {
+  const modes: ReadonlyArray<{ mode: EditorViewMode; label: string }> = [
+    { mode: "write", label: "執筆" },
+    { mode: "split", label: "分割" },
+    { mode: "preview", label: "プレビュー" },
+  ];
+  return (
+    <div className="editor-view-toolbar" aria-label="表示設定">
+      <div className="editor-view-buttons" role="group" aria-label="表示">
+        {modes.map((item) => (
+          <button
+            key={item.mode}
+            type="button"
+            aria-pressed={mode === item.mode}
+            disabled={item.mode === "split" && narrow}
+            onClick={() => onModeChange(item.mode)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {mode === "split" && (
+        <>
+          <label className="editor-width-control">
+            執筆欄の幅
+            <input
+              type="range"
+              min="30"
+              max="70"
+              step="5"
+              value={editorWidth}
+              onChange={(event) =>
+                onEditorWidthChange(Number(event.currentTarget.value))
+              }
+            />
+            <output>{editorWidth}%</output>
+          </label>
+          <label className="scroll-sync-control">
+            <input
+              type="checkbox"
+              checked={syncScroll}
+              onChange={(event) =>
+                onSyncScrollChange(event.currentTarget.checked)
+              }
+            />
+            相対位置でスクロールを同期
+          </label>
+          <span className="editor-view-note">
+            文書全体に対する位置の割合を合わせるため、見出しや図表の高さによって位置がずれます。
+          </span>
+        </>
+      )}
+      {narrow && requestedMode === "split" && (
+        <span className="editor-view-note" role="status">
+          この画面幅では執筆表示に切り替えています。
+        </span>
+      )}
+    </div>
+  );
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => window.matchMedia?.(query).matches ?? false,
+  );
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (!media) return;
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
 }
 
 function ConflictPanel({
@@ -397,53 +640,6 @@ function ProblemMessage({
         </ul>
       )}
     </section>
-  );
-}
-
-function LineNumberedTextarea({
-  inputRef,
-  value,
-  disabled,
-  onChange,
-}: {
-  inputRef: RefObject<HTMLTextAreaElement | null>;
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  const [scrollTop, setScrollTop] = useState(0);
-  const lineNumbers = Array.from(
-    { length: Math.max(1, value.split(/\r\n|\r|\n/).length) },
-    (_, index) => index + 1,
-  ).join("\n");
-  const syncScroll = (event: UIEvent<HTMLTextAreaElement>) => {
-    setScrollTop(event.currentTarget.scrollTop);
-  };
-
-  return (
-    <label>
-      AsciiDoc文書
-      <span className="source-editor">
-        <span
-          aria-hidden="true"
-          className="line-numbers"
-          style={{ transform: `translateY(-${scrollTop}px)` }}
-        >
-          {lineNumbers}
-        </span>
-        <textarea
-          ref={inputRef}
-          autoFocus
-          name="source"
-          rows={20}
-          wrap="off"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onScroll={syncScroll}
-          disabled={disabled}
-        />
-      </span>
-    </label>
   );
 }
 
