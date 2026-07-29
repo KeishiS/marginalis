@@ -158,7 +158,8 @@
                 nativeBuildInputs = [ pkgs.openssl ];
               }
               ''
-                openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+                # Nix storeのfixtureは複数日にわたり再利用されるため、短期証明書にしない。
+                openssl req -x509 -newkey rsa:2048 -nodes -days 36500 \
                   -subj '/CN=Marginalis Kanidm Test CA' \
                   -addext 'basicConstraints=critical,CA:TRUE' \
                   -addext 'keyUsage=critical,keyCertSign' \
@@ -168,7 +169,7 @@
                   -addext 'subjectAltName=DNS:id.example.test' \
                   -keyout $out-key.pem -out request.pem
                 openssl x509 -req -in request.pem -CA ca-cert.pem -CAkey ca-key.pem \
-                  -CAcreateserial -days 1 -out $out-cert.pem \
+                  -CAcreateserial -days 36500 -out $out-cert.pem \
                   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:id.example.test')
                 mkdir -p $out
                 mv $out-key.pem $out/id-key.pem
@@ -178,7 +179,7 @@
                   -addext 'subjectAltName=DNS:marginalis.example.test' \
                   -keyout $out/app-key.pem -out app-request.pem
                 openssl x509 -req -in app-request.pem -CA ca-cert.pem -CAkey ca-key.pem \
-                  -CAserial ca-cert.srl -days 1 -out $out/app-cert.pem \
+                  -CAserial ca-cert.srl -days 36500 -out $out/app-cert.pem \
                   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:marginalis.example.test')
                 mv ca-cert.pem $out/ca.pem
               '';
@@ -194,7 +195,8 @@
               }
               ''
                 mkdir -p $out
-                openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+                # Nix storeのfixtureは複数日にわたり再利用されるため、短期証明書にしない。
+                openssl req -x509 -newkey rsa:2048 -nodes -days 36500 \
                   -subj '/CN=Marginalis MCP Test CA' \
                   -addext 'basicConstraints=critical,CA:TRUE' \
                   -addext 'keyUsage=critical,keyCertSign' \
@@ -204,7 +206,7 @@
                   -addext 'subjectAltName=DNS:auth.example.test' \
                   -keyout $out/server-key.pem -out server-request.pem
                 openssl x509 -req -in server-request.pem -CA $out/ca.pem -CAkey ca-key.pem \
-                  -CAcreateserial -days 1 -out $out/server-cert.pem \
+                  -CAcreateserial -days 36500 -out $out/server-cert.pem \
                   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:auth.example.test')
                 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
                   -out $out/signing-key.pem
