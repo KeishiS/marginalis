@@ -411,6 +411,44 @@ async fn oidc_mcp_and_revocation_form_one_http_flow() {
             .is_empty()
     );
 
+    let former_administrator = login(
+        &server,
+        "former-administrator-subject",
+        &["server-users", "server-admins"],
+        "former-administrator-login-code",
+    )
+    .await;
+    let former_administrator_tokens =
+        authorize_mcp(&server.app, &former_administrator, &client_id).await;
+    let response = call_mcp(
+        &server.app,
+        &former_administrator_tokens.access,
+        11,
+        "list_notes",
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        json_body(response)
+            .await["result"]["structuredContent"]["notes"]
+            .as_array()
+            .expect("former administrator notes")
+            .is_empty()
+    );
+    let response = call_mcp(
+        &server.app,
+        &former_administrator_tokens.access,
+        12,
+        "get_note",
+        serde_json::json!({ "note_id": note_id }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = json_body(response).await;
+    assert_eq!(response["result"]["isError"], true);
+    assert_eq!(response["result"]["structuredContent"]["code"], "not_found");
+
     let response = send(
         &server.app,
         Request::delete(format!("/api/v3/mcp-authorizations/{client_id}"))
