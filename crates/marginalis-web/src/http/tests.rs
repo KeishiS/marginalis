@@ -296,6 +296,7 @@ impl Notes {
                 title_forbidden: vec!["empty"],
                 tag_forbidden: vec!["empty"],
             },
+            authoring_guidance: vec!["Do not invent bibliographic metadata."],
             allowed_source_languages: vec!["rust"],
             forbidden_rules: Vec::new(),
             examples: vec![NoteProfileExample {

@@ -165,6 +165,7 @@ pub struct McpNoteProfileOutput {
     pub limits: McpNoteProfileLimits,
     pub normalization: McpNoteProfileNormalization,
     pub syntax: McpNoteProfileSyntax,
+    pub authoring_guidance: Vec<String>,
     pub allowed_source_languages: Vec<String>,
     pub forbidden_rules: Vec<McpNoteProfileRule>,
     pub examples: Vec<McpNoteProfileExample>,

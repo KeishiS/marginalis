@@ -140,6 +140,21 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             .as_array()
             .is_some_and(|examples| !examples.is_empty())
     );
+    assert_eq!(
+        profile["result"]["structuredContent"]["authoring_guidance"],
+        serde_json::json!(["Do not invent bibliographic metadata."])
+    );
+    let profile_output: marginalis_contract::McpNoteProfileOutput =
+        serde_json::from_value(profile["result"]["structuredContent"].clone())
+            .expect("typed profile output");
+    assert_eq!(
+        profile_output.authoring_guidance,
+        ["Do not invent bibliographic metadata."]
+    );
+    let text: serde_json::Value =
+        serde_json::from_str(profile["result"]["content"][0]["text"].as_str().expect("text"))
+            .expect("serialized profile output");
+    assert_eq!(text, profile["result"]["structuredContent"]);
 
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
