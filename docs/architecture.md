@@ -113,6 +113,9 @@ marginalis-web/src/http/mcp_transport/
 `domain`は他のMarginalis crateへ依存せず、`application`は`domain`だけへ依存する。
 HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのportを実装する。
 `service`だけが具象的なadapterを選び、application serviceへ接続する。
+`cargo make dependency-boundaries`は、すべてのworkspace crateのproduction依存をこの対応へ固定し、
+違反時に期待する依存と実際の依存の差を表示します。新しいcrateまたは依存方向が必要な場合は、
+検査だけを緩めず、この設計と依存表を同じ変更で更新します。
 
 ノート操作の内向きportは、問い合わせの`NoteQueries`、変更の`NoteCommands`、表示変換の
 `NotePresentation`、ACL管理の`NoteAccessControl`に分けます。複数のtransportへ同じ実装を渡す
@@ -124,6 +127,11 @@ applicationから永続化へ要求する外向きportも、読み取りの`Note
 `NoteCommandRepository`、ACL操作の`NoteAclRepository`に分けます。具象的には同じSQLite adapterが
 三つを実装しますが、application serviceは用途ごとに必要なportだけを受け取ります。
 SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出しません。
+
+構造化ログはtransportやadapter内で、外部との通信結果と運用処理の結果だけを記録します。
+domainとapplicationの値を観測目的で公開し直さず、利用者identity、ノート識別子、ノート内容を
+ログへ渡しません。安定したeventとfieldの契約は[ログと障害診断](observability.md)を正とし、
+`cargo make observability-check`でproductionのログ呼出しを検査します。
 
 ノートの正本は、文書題名、`:tags:`などの文書属性、本文を含む完全なAsciiDoc文書です。題名と
 タグは保存時にAdocWeaveで解析し、一覧と検索に使う投影としてSQLiteへ同時に保存します。APIから
