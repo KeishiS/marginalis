@@ -11,6 +11,7 @@
 | REQ-OPS-003 | SQLite契約試験 | 実運用監視 |
 | REQ-OPS-004 | OIDC結合試験、Kanidm VM | ログイン |
 | REQ-OPS-005 | 旧schema拒否、archive移行の入力不変・出力非上書き・安全な失敗位置試験 | 更新前退避 |
+| REQ-OPS-006 | SQLiteファイル診断・CLI秘密情報非記録試験、NixOS VM反復診断・ファイル不変性試験 | 障害診断 |
 | REQ-DATA-001 | domain・SQLite・属性環境単体試験 | アーカイブ照合 |
 | REQ-DATA-002 | archive・CLI試験 | 隔離復元 |
 | REQ-DATA-003 | AsciiDoc単体試験 | なし |

@@ -34,7 +34,7 @@ export interface NoteDraft {
 }
 export interface NotePreview {
   html: string;
-  diagnostics: ValidationDiagnostic[];
+  diagnostics: NoteDiagnostic[];
 }
 export type NotePermission = "read" | "edit";
 export interface NoteAclEntry {
@@ -44,7 +44,7 @@ export interface NoteAclEntry {
 export interface NoteAclGrant extends NoteAclEntry {
   issuer: string;
 }
-export interface ValidationDiagnostic {
+export interface NoteDiagnostic {
   code: string;
   severity: "error" | "warning" | "information" | "hint";
   target: ValidationTarget;
@@ -73,7 +73,7 @@ export type ProblemCode =
 export interface Problem {
   code: ProblemCode | "invalid_response" | "network_error";
   message: string;
-  diagnostics?: ValidationDiagnostic[];
+  diagnostics?: NoteDiagnostic[];
 }
 
 export class ApiError extends Error {
@@ -102,7 +102,7 @@ export function parseNotePreview(value: unknown): NotePreview {
   const object = record(value, "preview");
   return {
     html: text(object.html, "preview.html"),
-    diagnostics: parseValidationDiagnostics(
+    diagnostics: parseNoteDiagnostics(
       object.diagnostics,
       "preview.diagnostics",
     ),
@@ -186,7 +186,7 @@ export function parseProblem(value: unknown): Problem {
     code,
     message: text(object.message, "problem.message"),
     diagnostics: Array.isArray(object.diagnostics)
-      ? parseValidationDiagnostics(object.diagnostics, "problem.diagnostics")
+      ? parseNoteDiagnostics(object.diagnostics, "problem.diagnostics")
       : undefined,
   };
 }
@@ -214,21 +214,18 @@ function problemCode(value: unknown): ProblemCode {
   return value;
 }
 
-function parseValidationDiagnostics(
-  value: unknown,
-  path: string,
-): ValidationDiagnostic[] {
+function parseNoteDiagnostics(value: unknown, path: string): NoteDiagnostic[] {
   if (!Array.isArray(value)) throw new Error(`${path} is invalid`);
   return value.map((diagnostic, index) =>
-    parseValidationDiagnostic(diagnostic, index, path),
+    parseNoteDiagnostic(diagnostic, index, path),
   );
 }
 
-function parseValidationDiagnostic(
+function parseNoteDiagnostic(
   value: unknown,
   index: number,
   path: string,
-): ValidationDiagnostic {
+): NoteDiagnostic {
   const diagnosticPath = `${path}[${index}]`;
   const diagnostic = record(value, diagnosticPath);
   const target = record(diagnostic.target, `${diagnosticPath}.target`);
@@ -286,7 +283,7 @@ function parseValidationTarget(
 function parseUtf8ByteSpan(
   value: unknown,
   diagnosticPath: string,
-): ValidationDiagnostic["span"] {
+): NoteDiagnostic["span"] {
   const span = record(value, `${diagnosticPath}.span`);
   if (span.unit !== "utf8_byte") {
     throw new Error(`${diagnosticPath}.span.unit is invalid`);

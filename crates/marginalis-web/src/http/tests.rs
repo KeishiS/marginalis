@@ -275,6 +275,8 @@ impl Notes {
     }
 
     fn note_profile(&self) -> NoteProfile {
+        const BIBLIOGRAPHY_GUIDANCE: &str = "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.";
+        const BIBLIOGRAPHY_EXAMPLE: &str = "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]";
         NoteProfile {
             profile_version: 5,
             adocweave_package_version: "0.17.0",
@@ -296,13 +298,13 @@ impl Notes {
                 title_forbidden: vec!["empty"],
                 tag_forbidden: vec!["empty"],
             },
-            authoring_guidance: vec!["Do not invent bibliographic metadata."],
+            authoring_guidance: vec![BIBLIOGRAPHY_GUIDANCE],
             allowed_source_languages: vec!["rust"],
             forbidden_rules: Vec::new(),
             examples: vec![NoteProfileExample {
-                kind: "paragraph",
-                description: "Paragraph",
-                body: "Body.",
+                kind: "bibliography",
+                description: "Complete document with a bibliography entry and an in-text reference",
+                body: BIBLIOGRAPHY_EXAMPLE,
             }],
         }
     }

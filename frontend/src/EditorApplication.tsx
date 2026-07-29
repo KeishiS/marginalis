@@ -11,7 +11,7 @@ import {
 
 import {
   Problem,
-  ValidationDiagnostic,
+  NoteDiagnostic,
   createNote,
   readNote,
   updateNote,
@@ -110,7 +110,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       window.removeEventListener("beforeunload", warnAboutUnsavedChanges);
   }, [isDirty]);
 
-  function selectDiagnostic(diagnostic: ValidationDiagnostic) {
+  function selectDiagnostic(diagnostic: NoteDiagnostic) {
     const span = diagnostic.span;
     if (diagnostic.target.field !== "source" || span?.unit !== "utf8_byte") {
       return;
@@ -368,7 +368,7 @@ function ProblemMessage({
   heading: string;
   headingId: string;
   source?: string;
-  onSelectDiagnostic?: (diagnostic: ValidationDiagnostic) => void;
+  onSelectDiagnostic?: (diagnostic: NoteDiagnostic) => void;
 }) {
   return (
     <section className="problem" aria-labelledby={headingId} role="alert">
@@ -378,6 +378,9 @@ function ProblemMessage({
         <ul>
           {problem.diagnostics.map((diagnostic, index) => (
             <li key={`${diagnostic.code}-${index}`}>
+              <span className="diagnostic-severity">
+                {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
+              </span>
               {source ? diagnosticLocation(source, diagnostic) : ""}
               {diagnosticMessage(diagnostic.code)}{" "}
               {canSelectDiagnostic(diagnostic) && onSelectDiagnostic && (
@@ -454,10 +457,10 @@ function PreviewPanel({
 }: {
   body: string;
   html: string;
-  diagnostics: ValidationDiagnostic[];
+  diagnostics: NoteDiagnostic[];
   loading: boolean;
   problem: Problem | null;
-  onSelectDiagnostic: (diagnostic: ValidationDiagnostic) => void;
+  onSelectDiagnostic: (diagnostic: NoteDiagnostic) => void;
 }) {
   return (
     <section className="preview-panel" aria-labelledby="preview-heading">
@@ -485,6 +488,9 @@ function PreviewPanel({
             <ul>
               {problem.diagnostics.map((diagnostic, index) => (
                 <li key={`${diagnostic.code}-${index}`}>
+                  <span className="diagnostic-severity">
+                    {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
+                  </span>
                   {diagnosticLocation(body, diagnostic)}
                   {diagnosticMessage(diagnostic.code)}{" "}
                   {canSelectDiagnostic(diagnostic) && (
@@ -505,9 +511,9 @@ function PreviewPanel({
       {!problem && diagnostics.length > 0 && (
         <section
           className="warnings"
-          aria-labelledby="preview-warnings-heading"
+          aria-labelledby="preview-diagnostics-heading"
         >
-          <h3 id="preview-warnings-heading">入力時の警告</h3>
+          <h3 id="preview-diagnostics-heading">入力時の診断</h3>
           <ul>
             {diagnostics.map((diagnostic, index) => (
               <li key={`${diagnostic.code}-${index}`}>

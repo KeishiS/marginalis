@@ -266,5 +266,8 @@ find /srv/marginalis-backups -mindepth 1 -maxdepth 1 -type d \
 
 HTTP logは`request_id`で一連の処理を追跡できます。OIDC到達不能時は
 `oidc.discovery.failed`を記録し、loginだけを503で閉じたままlivenessを維持します。
+ノートのプレビューに成功したHTTP logでは、`note_diagnostic_count`が保存を妨げない診断の件数を
+示します。このfieldと診断・保守eventには、ノート本文、ノートID、利用者identity、Cookie、
+token、認可code、client secretを記録しません。
 保守unitの失敗はHTTP serviceの停止を意味しません。unitの`Result`と同じinvocationのjournalを確認し、
 保存先容量、権限、SQLite診断結果を修正してからunitを再実行します。

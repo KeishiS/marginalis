@@ -6,11 +6,11 @@ use marginalis_application::{
     NoteValidationTarget,
 };
 use marginalis_contract::{
-    DiagnosticSeverityResponse, ProblemCode, ProblemResponse, Utf8ByteSpanResponse, Utf8ByteUnit,
-    ValidationDiagnosticResponse, ValidationTargetResponse,
+    DiagnosticSeverityResponse, NoteDiagnosticResponse, ProblemCode, ProblemResponse,
+    Utf8ByteSpanResponse, Utf8ByteUnit, ValidationTargetResponse,
 };
 
-pub(super) fn diagnostic_response(diagnostic: NoteDiagnostic) -> ValidationDiagnosticResponse {
+pub(super) fn diagnostic_response(diagnostic: NoteDiagnostic) -> NoteDiagnosticResponse {
     let target = match diagnostic.target {
         NoteValidationTarget::Source => ValidationTargetResponse::Source,
         NoteValidationTarget::Title => ValidationTargetResponse::Title,
@@ -19,7 +19,7 @@ pub(super) fn diagnostic_response(diagnostic: NoteDiagnostic) -> ValidationDiagn
         NoteValidationTarget::Tags => ValidationTargetResponse::Tags,
         NoteValidationTarget::AclEntry { index } => ValidationTargetResponse::AclEntry { index },
     };
-    ValidationDiagnosticResponse {
+    NoteDiagnosticResponse {
         code: diagnostic.code,
         severity: match diagnostic.severity {
             NoteDiagnosticSeverity::Error => DiagnosticSeverityResponse::Error,

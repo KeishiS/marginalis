@@ -249,6 +249,95 @@
         ],
         "type": "object"
       },
+      "NoteDiagnostic": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "information",
+              "hint"
+            ]
+          },
+          "span": {
+            "additionalProperties": false,
+            "properties": {
+              "end": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "start": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "unit": {
+                "const": "utf8_byte"
+              }
+            },
+            "required": [
+              "start",
+              "end",
+              "unit"
+            ],
+            "type": "object"
+          },
+          "target": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "enum": [
+                      "source",
+                      "title",
+                      "body",
+                      "tags"
+                    ]
+                  }
+                },
+                "required": [
+                  "field"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "enum": [
+                      "tag",
+                      "acl_entry"
+                    ]
+                  },
+                  "index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "field",
+                  "index"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "target",
+          "message"
+        ],
+        "type": "object"
+      },
       "NoteDraft": {
         "additionalProperties": false,
         "properties": {
@@ -309,7 +398,7 @@
         "properties": {
           "diagnostics": {
             "items": {
-              "$ref": "#/components/schemas/ValidationDiagnostic"
+              "$ref": "#/components/schemas/NoteDiagnostic"
             },
             "type": "array"
           },
@@ -428,7 +517,7 @@
           },
           "diagnostics": {
             "items": {
-              "$ref": "#/components/schemas/ValidationDiagnostic"
+              "$ref": "#/components/schemas/NoteDiagnostic"
             },
             "type": "array"
           },
@@ -456,95 +545,6 @@
         "required": [
           "issuer",
           "subject"
-        ],
-        "type": "object"
-      },
-      "ValidationDiagnostic": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "severity": {
-            "enum": [
-              "error",
-              "warning",
-              "information",
-              "hint"
-            ]
-          },
-          "span": {
-            "additionalProperties": false,
-            "properties": {
-              "end": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "start": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "unit": {
-                "const": "utf8_byte"
-              }
-            },
-            "required": [
-              "start",
-              "end",
-              "unit"
-            ],
-            "type": "object"
-          },
-          "target": {
-            "oneOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "field": {
-                    "enum": [
-                      "source",
-                      "title",
-                      "body",
-                      "tags"
-                    ]
-                  }
-                },
-                "required": [
-                  "field"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "field": {
-                    "enum": [
-                      "tag",
-                      "acl_entry"
-                    ]
-                  },
-                  "index": {
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "field",
-                  "index"
-                ],
-                "type": "object"
-              }
-            ]
-          }
-        },
-        "required": [
-          "code",
-          "severity",
-          "target",
-          "message"
         ],
         "type": "object"
       }

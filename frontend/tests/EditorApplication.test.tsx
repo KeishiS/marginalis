@@ -157,9 +157,10 @@ test("診断からUTF-8位置に対応する入力範囲へ移動する", async 
   fireEvent.change(editor, { target: { value: source } });
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
-  fireEvent.click(
-    await screen.findByRole("button", { name: "入力位置へ移動" }),
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "エラー: 3行1列: AsciiDoc本文を解析できませんでした。",
   );
+  fireEvent.click(screen.getByRole("button", { name: "入力位置へ移動" }));
   expect(editor).toHaveFocus();
   expect(editor.value.slice(editor.selectionStart, editor.selectionEnd)).toBe(
     "日本",
@@ -202,10 +203,10 @@ test("プレビュー警告を表示して修正後にすぐ取り除く", async
   });
 
   expect(
-    screen.getByRole("heading", { name: "入力時の警告" }),
+    screen.getByRole("heading", { name: "入力時の診断" }),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("heading", { name: "入力時の警告" }).parentElement,
+    screen.getByRole("heading", { name: "入力時の診断" }).parentElement,
   ).toHaveTextContent(
     "警告: 3行6列: インラインマクロの前に空白を入れてください。",
   );
@@ -218,13 +219,13 @@ test("プレビュー警告を表示して修正後にすぐ取り除く", async
     target: { value: source.replace("はxref:", "は xref:") },
   });
   expect(
-    screen.queryByRole("heading", { name: "入力時の警告" }),
+    screen.queryByRole("heading", { name: "入力時の診断" }),
   ).not.toBeInTheDocument();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(350);
   });
   expect(
-    screen.queryByRole("heading", { name: "入力時の警告" }),
+    screen.queryByRole("heading", { name: "入力時の診断" }),
   ).not.toBeInTheDocument();
 });
 

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
-import { Problem, ValidationDiagnostic, previewNote } from "./api";
+import { NoteDiagnostic, Problem, previewNote } from "./api";
 
 export interface EditorPreview {
   html: string;
-  diagnostics: ValidationDiagnostic[];
+  diagnostics: NoteDiagnostic[];
   loading: boolean;
   problem: Problem | null;
 }
