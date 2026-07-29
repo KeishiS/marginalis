@@ -2,3 +2,5 @@
 /result
 /frontend/dist/
 /frontend/node_modules/
+
+.codex/config.toml
