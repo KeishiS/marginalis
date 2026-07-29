@@ -135,9 +135,9 @@ fn validate_archive_contents(archive: &Archive) -> Result<LogicalSnapshot, Archi
             Note::restore(
                 note_id,
                 creator,
-                normalized.title,
+                normalized.draft.title,
                 note.source.clone(),
-                normalized.tags,
+                normalized.draft.tags,
                 UnixMillis::new(note.created_at_ms),
                 UnixMillis::new(note.updated_at_ms),
                 revision,
@@ -257,7 +257,8 @@ mod tests {
                 title: String::new(),
                 tags: Vec::new(),
             })
-            .expect("draft"),
+            .expect("draft")
+            .draft,
             UnixMillis::new(0),
         )
     }

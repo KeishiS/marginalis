@@ -86,6 +86,8 @@ export function diagnosticMessage(code: string): string {
       return "同じアンカーが複数あります。";
     case "external_reference_disabled":
       return "外部の参照先は使用できません。";
+    case "invalid_note_reference":
+      return "ノート参照には正しいノートIDを指定してください。";
     case "invalid_url_scheme":
       return "許可されていない形式のURLです。";
     case "resource_disabled":
@@ -94,7 +96,34 @@ export function diagnosticMessage(code: string): string {
       return "対応していない数式形式です。";
     case "unsupported_source_language":
       return "対応していないソースコード言語です。";
+    case "trailing-whitespace":
+      return "行末の不要な空白を取り除いてください。";
+    case "excessive-blank-lines":
+      return "連続する空行を減らしてください。";
+    case "heading-marker-space":
+      return "見出し記号の後に空白を入れてください。";
+    case "asciidoc-file-link":
+      return "AsciiDoc文書への参照にはxrefを使用してください。";
+    case "non-asciidoc-xref":
+      return "AsciiDoc以外の参照先には通常のリンクを使用してください。";
+    case "macro-boundary":
+      return "インラインマクロの前に空白を入れてください。";
     default:
       return "入力内容を確認してください。";
+  }
+}
+
+export function diagnosticSeverityLabel(
+  severity: ValidationDiagnostic["severity"],
+): string {
+  switch (severity) {
+    case "error":
+      return "エラー";
+    case "warning":
+      return "警告";
+    case "information":
+      return "情報";
+    case "hint":
+      return "ヒント";
   }
 }

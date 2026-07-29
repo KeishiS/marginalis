@@ -34,6 +34,7 @@ export interface NoteDraft {
 }
 export interface NotePreview {
   html: string;
+  diagnostics: ValidationDiagnostic[];
 }
 export type NotePermission = "read" | "edit";
 export interface NoteAclEntry {
@@ -45,10 +46,14 @@ export interface NoteAclGrant extends NoteAclEntry {
 }
 export interface ValidationDiagnostic {
   code: string;
-  target: { field: string; index?: number };
+  severity: "error" | "warning" | "information" | "hint";
+  target: ValidationTarget;
   span?: { start: number; end: number; unit: "utf8_byte" };
   message: string;
 }
+export type ValidationTarget =
+  | { field: "source" | "title" | "body" | "tags" }
+  | { field: "tag" | "acl_entry"; index: number };
 export type ProblemCode =
   | "authentication_required"
   | "authentication_unavailable"
@@ -95,7 +100,13 @@ export function parseNote(value: unknown): Note {
 
 export function parseNotePreview(value: unknown): NotePreview {
   const object = record(value, "preview");
-  return { html: text(object.html, "preview.html") };
+  return {
+    html: text(object.html, "preview.html"),
+    diagnostics: parseValidationDiagnostics(
+      object.diagnostics,
+      "preview.diagnostics",
+    ),
+  };
 }
 
 export function parseNoteSummary(value: unknown): NoteSummary {
@@ -175,7 +186,7 @@ export function parseProblem(value: unknown): Problem {
     code,
     message: text(object.message, "problem.message"),
     diagnostics: Array.isArray(object.diagnostics)
-      ? object.diagnostics.map(parseValidationDiagnostic)
+      ? parseValidationDiagnostics(object.diagnostics, "problem.diagnostics")
       : undefined,
   };
 }
@@ -203,60 +214,91 @@ function problemCode(value: unknown): ProblemCode {
   return value;
 }
 
+function parseValidationDiagnostics(
+  value: unknown,
+  path: string,
+): ValidationDiagnostic[] {
+  if (!Array.isArray(value)) throw new Error(`${path} is invalid`);
+  return value.map((diagnostic, index) =>
+    parseValidationDiagnostic(diagnostic, index, path),
+  );
+}
+
 function parseValidationDiagnostic(
   value: unknown,
   index: number,
+  path: string,
 ): ValidationDiagnostic {
-  const diagnostic = record(value, `problem.diagnostics[${index}]`);
-  const target = record(
-    diagnostic.target,
-    `problem.diagnostics[${index}].target`,
+  const diagnosticPath = `${path}[${index}]`;
+  const diagnostic = record(value, diagnosticPath);
+  const target = record(diagnostic.target, `${diagnosticPath}.target`);
+  const validationTarget = parseValidationTarget(
+    target,
+    `${diagnosticPath}.target`,
   );
-  const field = text(
-    target.field,
-    `problem.diagnostics[${index}].target.field`,
-  );
-  const targetIndex =
-    target.index === undefined
-      ? undefined
-      : nonNegativeInteger(
-          target.index,
-          `problem.diagnostics[${index}].target.index`,
-        );
   const span =
     diagnostic.span === undefined
       ? undefined
-      : parseUtf8ByteSpan(diagnostic.span, index);
+      : parseUtf8ByteSpan(diagnostic.span, diagnosticPath);
+  const severity = diagnostic.severity;
+  if (
+    severity !== "error" &&
+    severity !== "warning" &&
+    severity !== "information" &&
+    severity !== "hint"
+  ) {
+    throw new Error(`${diagnosticPath}.severity is invalid`);
+  }
   return {
-    code: text(diagnostic.code, `problem.diagnostics[${index}].code`),
-    target: {
-      field,
-      ...(targetIndex === undefined ? {} : { index: targetIndex }),
-    },
+    code: text(diagnostic.code, `${diagnosticPath}.code`),
+    severity,
+    target: validationTarget,
     ...(span === undefined ? {} : { span }),
-    message: text(diagnostic.message, `problem.diagnostics[${index}].message`),
+    message: text(diagnostic.message, `${diagnosticPath}.message`),
   };
+}
+
+function parseValidationTarget(
+  target: Record<string, unknown>,
+  path: string,
+): ValidationTarget {
+  const field = text(target.field, `${path}.field`);
+  if (
+    field === "source" ||
+    field === "title" ||
+    field === "body" ||
+    field === "tags"
+  ) {
+    if (target.index !== undefined) {
+      throw new Error(`${path}.index is not allowed`);
+    }
+    return { field };
+  }
+  if (field === "tag" || field === "acl_entry") {
+    return {
+      field,
+      index: nonNegativeInteger(target.index, `${path}.index`),
+    };
+  }
+  throw new Error(`${path}.field is invalid`);
 }
 
 function parseUtf8ByteSpan(
   value: unknown,
-  diagnosticIndex: number,
+  diagnosticPath: string,
 ): ValidationDiagnostic["span"] {
-  const span = record(value, `problem.diagnostics[${diagnosticIndex}].span`);
+  const span = record(value, `${diagnosticPath}.span`);
   if (span.unit !== "utf8_byte") {
-    throw new Error(
-      `problem.diagnostics[${diagnosticIndex}].span.unit is invalid`,
-    );
+    throw new Error(`${diagnosticPath}.span.unit is invalid`);
+  }
+  const start = nonNegativeInteger(span.start, `${diagnosticPath}.span.start`);
+  const end = nonNegativeInteger(span.end, `${diagnosticPath}.span.end`);
+  if (end < start) {
+    throw new Error(`${diagnosticPath}.span.end is before span.start`);
   }
   return {
-    start: nonNegativeInteger(
-      span.start,
-      `problem.diagnostics[${diagnosticIndex}].span.start`,
-    ),
-    end: nonNegativeInteger(
-      span.end,
-      `problem.diagnostics[${diagnosticIndex}].span.end`,
-    ),
+    start,
+    end,
     unit: span.unit,
   };
 }

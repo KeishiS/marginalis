@@ -6,11 +6,11 @@ use axum::{
 };
 use marginalis_application::{
     AuthenticationUseCaseError, McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator,
-    NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NotePresentation, NoteProfile,
-    NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax,
-    NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
-    NoteValidationTarget, NoteView, OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan,
-    WebSessionUseCases,
+    NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NoteDiagnostic,
+    NoteDiagnosticSeverity, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
+    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
+    NoteUseCaseError, NoteValidationCode, NoteValidationTarget, NoteView,
+    OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, Note, NoteAccess, NoteDraft,
@@ -84,7 +84,7 @@ macro_rules! implement_note_boundaries {
                 actor: Actor,
                 draft: NoteDraft,
                 context: NoteRenderContext,
-            ) -> Result<String, NoteUseCaseError> {
+            ) -> Result<NotePreview, NoteUseCaseError> {
                 <$type>::preview_note(self, actor, draft, context).await
             }
 
@@ -157,17 +157,21 @@ impl Notes {
     async fn create_note(&self, _actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
         if !draft.source.starts_with("= ") {
             return Err(NoteUseCaseError::Validation(vec![
-                NoteValidationDiagnostic {
-                    code: NoteValidationCode::InvalidTitle,
+                NoteDiagnostic {
+                    code: NoteValidationCode::InvalidTitle.as_str().into(),
+                    severity: NoteDiagnosticSeverity::Error,
                     target: NoteValidationTarget::Source,
                     span: None,
-                    message: "title is invalid",
+                    message: "title is invalid".into(),
                 },
-                NoteValidationDiagnostic {
-                    code: NoteValidationCode::UnsupportedSourceLanguage,
+                NoteDiagnostic {
+                    code: NoteValidationCode::UnsupportedSourceLanguage
+                        .as_str()
+                        .into(),
+                    severity: NoteDiagnosticSeverity::Error,
                     target: NoteValidationTarget::Source,
                     span: Some(Utf8ByteSpan { start: 8, end: 13 }),
-                    message: "source language is not allowed",
+                    message: "source language is not allowed".into(),
                 },
             ]));
         }
@@ -189,18 +193,35 @@ impl Notes {
         _actor: Actor,
         draft: NoteDraft,
         _context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError> {
+    ) -> Result<NotePreview, NoteUseCaseError> {
         if !draft.source.starts_with("= ") {
-            Err(NoteUseCaseError::Validation(vec![
-                NoteValidationDiagnostic {
-                    code: NoteValidationCode::InvalidTitle,
-                    target: NoteValidationTarget::Source,
-                    span: None,
-                    message: "title is invalid",
-                },
-            ]))
+            Err(NoteUseCaseError::Validation(vec![NoteDiagnostic {
+                code: NoteValidationCode::InvalidTitle.as_str().into(),
+                severity: NoteDiagnosticSeverity::Error,
+                target: NoteValidationTarget::Source,
+                span: None,
+                message: "title is invalid".into(),
+            }]))
         } else {
-            Ok("<article><p>プレビュー</p></article>".into())
+            let diagnostics = draft
+                .source
+                .find("xref")
+                .map(|start| NoteDiagnostic {
+                    code: "macro-boundary".into(),
+                    severity: NoteDiagnosticSeverity::Warning,
+                    target: NoteValidationTarget::Source,
+                    span: Some(Utf8ByteSpan {
+                        start: start as u32,
+                        end: start as u32 + 4,
+                    }),
+                    message: "a space is required before the inline macro".into(),
+                })
+                .into_iter()
+                .collect();
+            Ok(NotePreview {
+                html: "<article><p>プレビュー</p></article>".into(),
+                diagnostics,
+            })
         }
     }
 
@@ -337,7 +358,7 @@ impl UiNotes {
         _actor: Actor,
         _draft: NoteDraft,
         _context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError> {
+    ) -> Result<NotePreview, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
 

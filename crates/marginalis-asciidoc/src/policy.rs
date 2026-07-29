@@ -7,9 +7,9 @@ use adocweave::semantic::{
 };
 use adocweave::text::TextRange;
 use marginalis_application::{
-    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileRule,
-    NoteProfileSyntax, NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget,
-    Utf8ByteSpan,
+    NoteDiagnostic, NoteDiagnosticSeverity, NoteProfile, NoteProfileExample, NoteProfileLimits,
+    NoteProfileNormalization, NoteProfileRule, NoteProfileSyntax, NoteValidationCode,
+    NoteValidationTarget, Utf8ByteSpan,
 };
 
 use crate::{
@@ -92,12 +92,29 @@ pub(crate) fn diagnostic(
     code: NoteValidationCode,
     target: NoteValidationTarget,
     span: Option<Utf8ByteSpan>,
-) -> NoteValidationDiagnostic {
-    NoteValidationDiagnostic {
-        code,
+) -> NoteDiagnostic {
+    NoteDiagnostic {
+        code: code.as_str().into(),
+        severity: NoteDiagnosticSeverity::Error,
         target,
         span,
-        message: diagnostic_message(code),
+        message: diagnostic_message(code).into(),
+    }
+}
+
+pub(crate) fn warning_diagnostic(
+    code: &str,
+    message: &str,
+    severity: NoteDiagnosticSeverity,
+    target: NoteValidationTarget,
+    span: Option<Utf8ByteSpan>,
+) -> NoteDiagnostic {
+    NoteDiagnostic {
+        code: code.into(),
+        severity,
+        target,
+        span,
+        message: message.into(),
     }
 }
 
@@ -112,6 +129,9 @@ fn diagnostic_message(code: NoteValidationCode) -> &'static str {
         NoteValidationCode::TooManyTags => "a note may contain at most 50 tags",
         NoteValidationCode::SourceTooLarge => "source must be at most 524288 UTF-8 bytes",
         NoteValidationCode::AsciiDocParseFailed => "body is not valid AsciiDoc",
+        NoteValidationCode::InvalidNoteReference => {
+            "note reference locator must be a valid note ID"
+        }
         NoteValidationCode::UnsupportedDocumentAttribute => "the document attribute is not allowed",
         forbidden => FORBIDDEN_RULES
             .iter()
@@ -127,9 +147,7 @@ pub(crate) const fn span(range: TextRange) -> Utf8ByteSpan {
     }
 }
 
-pub(crate) fn diagnostic_sort_key(
-    diagnostic: &NoteValidationDiagnostic,
-) -> (u8, usize, u32, u32, &'static str) {
+pub(crate) fn diagnostic_sort_key(diagnostic: &NoteDiagnostic) -> (u8, usize, u32, u32, String) {
     let (target, index) = match diagnostic.target {
         NoteValidationTarget::Source => (0, 0),
         NoteValidationTarget::Title => (1, 0),
@@ -139,13 +157,7 @@ pub(crate) fn diagnostic_sort_key(
         NoteValidationTarget::AclEntry { index } => (5, index),
     };
     let span = diagnostic.span.unwrap_or(Utf8ByteSpan { start: 0, end: 0 });
-    (
-        target,
-        index,
-        span.start,
-        span.end,
-        diagnostic.code.as_str(),
-    )
+    (target, index, span.start, span.end, diagnostic.code.clone())
 }
 
 /// 検証器と同じ正本から生成する機械可読なノート入力規則。

@@ -34,6 +34,7 @@ import {
   canSelectDiagnostic,
   diagnosticLocation,
   diagnosticMessage,
+  diagnosticSeverityLabel,
   editorStatus,
   problemMessage,
   toProblem,
@@ -260,6 +261,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         <PreviewPanel
           body={form.source}
           html={preview.html}
+          diagnostics={preview.diagnostics}
           loading={preview.loading}
           problem={preview.problem}
           onSelectDiagnostic={selectDiagnostic}
@@ -445,12 +447,14 @@ function LineNumberedTextarea({
 function PreviewPanel({
   body,
   html,
+  diagnostics,
   loading,
   problem,
   onSelectDiagnostic,
 }: {
   body: string;
   html: string;
+  diagnostics: ValidationDiagnostic[];
   loading: boolean;
   problem: Problem | null;
   onSelectDiagnostic: (diagnostic: ValidationDiagnostic) => void;
@@ -496,6 +500,34 @@ function PreviewPanel({
               ))}
             </ul>
           )}
+        </section>
+      )}
+      {!problem && diagnostics.length > 0 && (
+        <section
+          className="warnings"
+          aria-labelledby="preview-warnings-heading"
+        >
+          <h3 id="preview-warnings-heading">入力時の警告</h3>
+          <ul>
+            {diagnostics.map((diagnostic, index) => (
+              <li key={`${diagnostic.code}-${index}`}>
+                <span className="diagnostic-severity">
+                  {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
+                </span>
+                {diagnosticLocation(body, diagnostic)}
+                {diagnosticMessage(diagnostic.code)}{" "}
+                {canSelectDiagnostic(diagnostic) && (
+                  <button
+                    type="button"
+                    className="diagnostic-link"
+                    onClick={() => onSelectDiagnostic(diagnostic)}
+                  >
+                    入力位置へ移動
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
       {html && <SafePreview html={html} />}

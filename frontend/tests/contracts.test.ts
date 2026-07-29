@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   parseNote,
+  parseNotePreview,
   parseNoteView,
   parseProblem,
 } from "../src/generated/contracts";
@@ -42,6 +43,47 @@ describe("生成済みREST応答検査", () => {
         access: "read",
         html: "<article></article>",
         related: { outgoing: [{ title: "IDなし" }], incoming: [] },
+      }),
+    ).toThrow();
+  });
+
+  it("成功したプレビューの診断形式を検査する", () => {
+    const preview = {
+      html: "<p>本文</p>",
+      diagnostics: [
+        {
+          code: "macro-boundary",
+          severity: "warning",
+          target: { field: "source" },
+          span: { start: 10, end: 14, unit: "utf8_byte" },
+          message: "warning",
+        },
+      ],
+    };
+    expect(parseNotePreview(preview).diagnostics).toHaveLength(1);
+    expect(() =>
+      parseNotePreview({
+        ...preview,
+        diagnostics: [{ ...preview.diagnostics[0], severity: "unknown" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      parseNotePreview({
+        ...preview,
+        diagnostics: [
+          { ...preview.diagnostics[0], target: { field: "unknown" } },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      parseNotePreview({
+        ...preview,
+        diagnostics: [
+          {
+            ...preview.diagnostics[0],
+            span: { start: 14, end: 10, unit: "utf8_byte" },
+          },
+        ],
       }),
     ).toThrow();
   });

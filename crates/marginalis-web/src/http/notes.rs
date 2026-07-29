@@ -124,7 +124,7 @@ pub(super) async fn preview_note(
     Json(input): Json<NoteInput>,
 ) -> HandlerResult<Json<NotePreviewResponse>> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
-    let html = state
+    let preview = state
         .notes
         .preview_note(
             actor,
@@ -139,7 +139,15 @@ pub(super) async fn preview_note(
         )
         .await
         .map_err(note_error)?;
-    Ok(Json(NotePreviewResponse { html }))
+    tracing::Span::current().record("note_diagnostic_count", preview.diagnostics.len());
+    Ok(Json(NotePreviewResponse {
+        html: preview.html,
+        diagnostics: preview
+            .diagnostics
+            .into_iter()
+            .map(super::error::diagnostic_response)
+            .collect(),
+    }))
 }
 
 pub(super) async fn update_note(

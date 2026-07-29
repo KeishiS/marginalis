@@ -1,5 +1,6 @@
 //! Marginalis note profileで使うAdocWeave設定の単一正本。
 
+use adocweave::output::diagnostics::{MACRO_BOUNDARY, RuleSettings, Severity};
 use adocweave::output::html::{
     MathLanguagePolicy, RenderPolicy, ResourceCapabilities, SourceLanguagePolicy,
     UnknownSourceLanguage, UnresolvedReferencePresentation,
@@ -23,6 +24,13 @@ pub(crate) fn authored_url_policy() -> AuthoredUrlPolicy {
 pub(crate) fn analysis_options() -> AnalysisOptions {
     let mut diagnostics = DiagnosticProfile::default();
     diagnostics.lint.authored_url_policy = authored_url_policy();
+    diagnostics.lint.set_rule(
+        MACRO_BOUNDARY,
+        RuleSettings {
+            enabled: true,
+            severity: Severity::Warning,
+        },
+    );
     AnalysisOptions {
         syntax: SyntaxOptions {
             syntax_mode: SyntaxMode::Strict,
@@ -88,7 +96,11 @@ mod tests {
         assert!(!analysis.diagnostics.lint.authored_url_policy.allow_relative);
         assert!(analysis.diagnostics.lint.rule(ASCIIDOC_FILE_LINK).enabled);
         assert!(analysis.diagnostics.lint.rule(NON_ASCIIDOC_XREF).enabled);
-        assert!(!analysis.diagnostics.lint.rule(MACRO_BOUNDARY).enabled);
+        assert!(analysis.diagnostics.lint.rule(MACRO_BOUNDARY).enabled);
+        assert_eq!(
+            analysis.diagnostics.lint.rule(MACRO_BOUNDARY).severity,
+            Severity::Warning
+        );
 
         let rendering = render_policy();
         assert!(!rendering.active_urls.allow_authored_relative);

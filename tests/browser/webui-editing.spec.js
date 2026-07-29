@@ -241,4 +241,31 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await page.getByRole("link", { name: "競合後に保存する題名" }).click();
   await page.getByRole("link", { name: "一覧", exact: true }).click();
   await expect(page).toHaveURL(`${baseUrl}/?${listQuery}`);
+
+  await page.goto(`${baseUrl}/notes/new`);
+  const warningSource = page.getByRole("textbox", {
+    name: "AsciiDoc文書",
+  });
+  await warningSource.fill(
+    "= 警告を確認するノート\n\nこの結果はxref:note:0197c9bc-0000-7000-8000-000000000002[参照]に記載されています。",
+  );
+  await expect(
+    page.getByRole("heading", { name: "入力時の警告" }),
+  ).toBeVisible();
+  await expect(page.getByText(/インラインマクロの前に空白/)).toBeVisible();
+  await page.getByRole("button", { name: "入力位置へ移動" }).click();
+  expect(
+    await warningSource.evaluate(
+      (element) =>
+        element.value.slice(element.selectionStart, element.selectionEnd),
+    ),
+  ).toBe("xref");
+  await page.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByText("保存しました。")).toBeVisible();
+  await warningSource.fill(
+    (await warningSource.inputValue()).replace("はxref:", "は xref:"),
+  );
+  await expect(
+    page.getByRole("heading", { name: "入力時の警告" }),
+  ).toHaveCount(0);
 });

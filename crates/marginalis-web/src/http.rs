@@ -142,6 +142,7 @@ pub fn router(state: ApiState) -> Router {
                         request_id,
                         method = %request.method(),
                         path = request.uri().path(),
+                        note_diagnostic_count = tracing::field::Empty,
                     )
                 })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),

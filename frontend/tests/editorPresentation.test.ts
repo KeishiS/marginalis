@@ -26,6 +26,7 @@ test("UTF-8 byte位置を行と列へ変換する", () => {
   expect(
     diagnosticLocation(source, {
       code: "asciidoc_parse_failed",
+      severity: "error",
       target: { field: "source" },
       span: { start, end: start + 3, unit: "utf8_byte" },
       message: "invalid",
