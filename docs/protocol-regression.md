@@ -24,6 +24,7 @@ Kanidmへの遷移先を確認します。OIDC nonceとstateはCookieではな�
 依存させません。
 
 ```sh
+nix develop --command cargo make frontend-build
 nix develop --command cargo test -p marginalis-integration-tests --test oauth_flow
 nix build -L .#checks.x86_64-linux.kanidm-discovery-vm
 nix develop --command cargo make protocol-regression-assets

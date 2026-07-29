@@ -27,6 +27,7 @@ Marginalis以外のシステムへの適性は扱いません。
 | --- | --- | --- |
 | `user-a` | `server-users` | 自身が所有するノートの操作 |
 | `user-b` | `server-users` | 他の通常利用者が所有するノートの非開示確認 |
+| `former-admin` | `server-users`、`server-admins` | groupによって個別ノートのACLを迂回できないことの確認 |
 | `denied-user` | なし | Marginalisを利用できないことの確認 |
 
 `user-a`が所有する`note-a`と、`user-b`が所有する`note-b`を用意します。題名と本文には秘密情報を
@@ -44,7 +45,26 @@ Marginalis以外のシステムへの適性は扱いません。
 
 scopeを持っていても所有範囲は拡張しません。`user-a`による`note-b`の取得、更新、削除は拒否し、
 存在も開示しないことを確認します。ACLで`user-a`へ共有した場合だけ、付与した権限の範囲で
-取得または更新に成功することを確認します。
+取得または更新に成功することを確認します。`former-admin`も通常利用者と同じ規則を適用し、
+所有または共有されていないノートの存在を開示しません。
+
+## 実接続前の自動検査
+
+内蔵実装では、実クライアントを接続する前に次の試験を実行します。
+
+```sh
+nix develop --command cargo make protocol-regression-assets
+nix develop --command cargo make frontend-build
+nix develop --command cargo test -p marginalis-integration-tests --test oauth_flow --all-features
+```
+
+前者はChatGPTのブラウザー送信、Claude Codeのloopback redirect URI、Codex CLIの`Origin`を
+送らない通信を表す固定データを検査します。後者は動的クライアント登録、Authorization Codeと
+PKCE S256、`resource`、scope、所有者認可、token更新、認可取消を本番用adapterとHTTP境界で
+検査します。
+
+これらの成功はMarginalis側の事前条件を示すだけです。対象クライアントの実際の版が同じ通信を行い、
+接続と再接続に成功したことを示さないため、接続結果は「未実施」のままとします。
 
 ## クライアントごとの接続確認
 

@@ -291,6 +291,21 @@ async fn assert_cross_origin_authorization_post_starts_login(app: &Router, clien
 }
 
 async fn authorize_mcp(app: &Router, browser: &BrowserSession, client_id: &str) -> McpTokens {
+    authorize_mcp_with_scopes(
+        app,
+        browser,
+        client_id,
+        "notes:read notes:write notes:delete",
+    )
+    .await
+}
+
+async fn authorize_mcp_with_scopes(
+    app: &Router,
+    browser: &BrowserSession,
+    client_id: &str,
+    scopes: &str,
+) -> McpTokens {
     let verifier = "integration-pkce-verifier-with-more-than-forty-three-characters";
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let query = url::form_urlencoded::Serializer::new(String::new())
@@ -298,7 +313,7 @@ async fn authorize_mcp(app: &Router, browser: &BrowserSession, client_id: &str) 
         .append_pair("client_id", client_id)
         .append_pair("redirect_uri", MCP_CALLBACK)
         .append_pair("resource", MCP_RESOURCE)
-        .append_pair("scope", "notes:read notes:write notes:delete")
+        .append_pair("scope", scopes)
         .append_pair("code_challenge", &challenge)
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", "client-state")
@@ -325,7 +340,7 @@ async fn authorize_mcp(app: &Router, browser: &BrowserSession, client_id: &str) 
         .append_pair("client_id", client_id)
         .append_pair("redirect_uri", MCP_CALLBACK)
         .append_pair("resource", MCP_RESOURCE)
-        .append_pair("scope", "notes:read notes:write notes:delete")
+        .append_pair("scope", scopes)
         .append_pair("code_challenge", &challenge)
         .append_pair("state", "client-state")
         .append_pair("csrf_token", &browser.csrf)
@@ -458,6 +473,12 @@ mod membership {
     use super::*;
 
     include!("oauth_flow/membership.rs");
+}
+
+mod scopes {
+    use super::*;
+
+    include!("oauth_flow/scopes.rs");
 }
 
 mod discovery {
