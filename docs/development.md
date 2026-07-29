@@ -75,6 +75,26 @@ Pull Requestからマージします。
 
    coverageの対象と解釈は[本番到達性とカバレッジ](coverage.md)を参照してください。
 
+   CI jobの責務とローカルでの再実行方法は次のとおりです。jobを追加するときは、既存jobへ
+   含められない独立した責務と、失敗時に残す証拠をこの表へ追加します。
+
+   | job | 責務 | ローカルでの再実行 | 失敗時または完了時の証拠 |
+   | --- | --- | --- | --- |
+   | `changes` | 文書だけの変更かを一か所の規則で分類 | `bash .github/scripts/classify-ci-change.sh upstream/main HEAD` | path分類stepの標準出力 |
+   | `verify` | 整形、静的解析、単体・結合試験、依存・ログ・公開契約・文書・Nix評価 | `cargo make ci-verify` | 失敗したtask名と標準出力 |
+   | `coverage` | workspaceと統合経路のcoverage測定 | `cargo make ci-coverage` | `coverage-*` artifactの概要とJSON |
+   | `native-aarch64` | aarch64 Linux上の全Rust target・featureのコンパイル | `cargo make native-check` | Cargoの診断 |
+   | `browser-smoke` | production用Web UIの起動、主要操作、固定画像、ブラウザー例外 | `cargo make browser-smoke` | 失敗時の`browser-smoke-failure-*` artifactにscreenshotとtrace |
+   | `nixos-e2e` | Nix package、module、TLS、Kanidm、Auth0 token、永続化、保守unit | `cargo make ci-nixos-e2e` | 試験実行失敗時の`nixos-e2e-failure-*` artifactに、秘密情報を除去したrunner出力 |
+   | `release-gate` | 公開対象の版、受入結果、全検証、Nix packageを公開前に確認 | `MARGINALIS_RELEASE_TAG=vX.Y.Z cargo make release-gate` | 失敗したtask名と標準出力 |
+
+   GitHub Actionsのartifactは試験環境のデータだけを含みます。実環境のログ、token、Cookie、
+   ノート本文を追加しません。NixOS E2Eのrunner出力は、保存前に秘密情報を除去して検査します。
+   coverageは14日、失敗時のブラウザーとVMの証拠は7日保持します。環境準備中の失敗などで
+   試験成果物を生成できない場合は、GitHub Actionsのstep出力を確認します。
+   各jobの`timeout-minutes`は停止上限であり、通常時間の目標ではありません。継続して上限の半分を
+   超える場合は、責務を弱めずcache、並列化、重複buildを見直します。
+
    RESTまたはMCPの公開契約を変更する場合は、`marginalis-contract`を正本として生成物を更新します。
 
    ```sh
@@ -113,6 +133,7 @@ Pull Requestからマージします。
    `docs/openapi.json`と`docs/mcp-tools.json`は、この省略対象に含めません。`.github/**`、
    `Makefile.toml`、Nix、Rust、公開仕様その他のファイルを同時に変更した場合は、通常の検証を
    すべて実行します。この判定規則は
+   `.github/scripts/classify-ci-change.sh`と、その入力を判定する
    `.github/scripts/classify-docs-only.sh`に集約し、`cargo make verify`から境界例を検査します。
 
    新しい作業項目はGitHub Issuesへ作成します。リポジトリ内にIssueファイルを追加しません。

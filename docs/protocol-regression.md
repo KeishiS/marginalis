@@ -45,7 +45,7 @@ Claude Code、Codex CLIごとに実接続を確認し、client固有のrequest�
 
 失敗証跡にはrequest ID、HTTP status、遷移先のscheme・host・path、秘密情報を除いたserver log、
 必要な場合の画面だけを保存します。Cookie、access token、refresh token、ID token、authorization
-code、client secretは保存しません。
+code、client secret、state、nonce、PKCEの値は保存しません。
 
 生ログを保存する前に、次のようにsanitizeと漏洩検査を実行します。
 
