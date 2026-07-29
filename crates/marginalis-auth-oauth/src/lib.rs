@@ -116,7 +116,25 @@ pub struct McpAccessTokenAuthenticatorAdapter {
     jwks_uri: Url,
     jwks: Arc<RwLock<JwkSet>>,
     jwks_refresh: Arc<Mutex<()>>,
-    last_jwks_refresh_attempt: Arc<RwLock<Instant>>,
+    last_jwks_refresh: Arc<RwLock<JwksRefreshState>>,
+}
+
+#[derive(Clone, Copy)]
+enum JwksRefreshState {
+    Successful(Instant),
+    Failed(Instant, McpAccessTokenAuthenticationError),
+}
+
+impl JwksRefreshState {
+    fn recent_result(self) -> Option<Result<(), McpAccessTokenAuthenticationError>> {
+        match self {
+            Self::Successful(at) if at.elapsed() < MINIMUM_JWKS_REFRESH_INTERVAL => Some(Ok(())),
+            Self::Failed(at, error) if at.elapsed() < MINIMUM_JWKS_REFRESH_INTERVAL => {
+                Some(Err(error))
+            }
+            Self::Successful(_) | Self::Failed(_, _) => None,
+        }
+    }
 }
 
 impl McpAccessTokenAuthenticatorAdapter {
@@ -167,7 +185,9 @@ impl McpAccessTokenAuthenticatorAdapter {
             jwks_uri,
             jwks: Arc::new(RwLock::new(jwks)),
             jwks_refresh: Arc::new(Mutex::new(())),
-            last_jwks_refresh_attempt: Arc::new(RwLock::new(Instant::now())),
+            last_jwks_refresh: Arc::new(RwLock::new(JwksRefreshState::Successful(
+                Instant::now() - MINIMUM_JWKS_REFRESH_INTERVAL,
+            ))),
         })
     }
 
@@ -190,17 +210,29 @@ impl McpAccessTokenAuthenticatorAdapter {
                 return decoding_key(key).map(Some);
             }
         }
-        if self.last_jwks_refresh_attempt.read().await.elapsed() < MINIMUM_JWKS_REFRESH_INTERVAL {
+        if let Some(result) = self.last_jwks_refresh.read().await.recent_result() {
+            result?;
             return Ok(None);
         }
         let _refresh = self.jwks_refresh.lock().await;
-        if self.last_jwks_refresh_attempt.read().await.elapsed() < MINIMUM_JWKS_REFRESH_INTERVAL {
+        if let Some(result) = self.last_jwks_refresh.read().await.recent_result() {
+            result?;
             return Ok(None);
         }
-        *self.last_jwks_refresh_attempt.write().await = Instant::now();
-        let refreshed = match fetch_json::<JwkSet>(&self.client, self.jwks_uri.clone()).await {
-            Ok(refreshed) => refreshed,
+        let refresh_result = async {
+            let refreshed = fetch_json::<JwkSet>(&self.client, self.jwks_uri.clone()).await?;
+            validate_jwks(&refreshed)?;
+            let key = matching_key(&refreshed, key_id)
+                .map(decoding_key)
+                .transpose()?;
+            Ok::<_, McpAccessTokenAuthenticationError>((refreshed, key))
+        }
+        .await;
+        let (refreshed, key) = match refresh_result {
+            Ok(result) => result,
             Err(error) => {
+                *self.last_jwks_refresh.write().await =
+                    JwksRefreshState::Failed(Instant::now(), error);
                 tracing::error!(
                     event = "mcp.authorization.jwks_refresh.failed",
                     reason = authentication_error_reason(error),
@@ -209,11 +241,8 @@ impl McpAccessTokenAuthenticatorAdapter {
                 return Err(error);
             }
         };
-        validate_jwks(&refreshed)?;
-        let key = matching_key(&refreshed, key_id)
-            .map(decoding_key)
-            .transpose()?;
         *self.jwks.write().await = refreshed;
+        *self.last_jwks_refresh.write().await = JwksRefreshState::Successful(Instant::now());
         tracing::info!(
             event = "mcp.authorization.jwks_refresh.completed",
             "MCP Authorization Server signing keys were refreshed"
@@ -330,22 +359,37 @@ fn matching_key<'a>(jwks: &'a JwkSet, key_id: &str) -> Option<&'a Jwk> {
 }
 
 fn validate_jwks(jwks: &JwkSet) -> Result<(), McpAccessTokenAuthenticationError> {
-    let has_usable_key = jwks.keys.iter().any(|key| {
+    let mut key_ids = BTreeSet::new();
+    for key in &jwks.keys {
+        let is_rs256_signing_key =
+            key.common
+                .key_algorithm
+                .is_none_or(|algorithm| algorithm == KeyAlgorithm::RS256)
+                && key.common.public_key_use.as_ref().is_none_or(|usage| {
+                    matches!(usage, jsonwebtoken::jwk::PublicKeyUse::Signature)
+                });
+        if !is_rs256_signing_key {
+            continue;
+        }
         let rsa_parameters_are_present = matches!(
             &key.algorithm,
             AlgorithmParameters::RSA(parameters)
                 if !parameters.n.is_empty() && !parameters.e.is_empty()
         );
-        key.common.key_id.as_ref().is_some_and(|key_id| {
-            rsa_parameters_are_present
-                && matching_key(jwks, key_id)
-                    .is_some_and(|matched| DecodingKey::from_jwk(matched).is_ok())
-        })
-    });
-    if has_usable_key {
-        Ok(())
-    } else {
+        let Some(key_id) = key.common.key_id.as_ref() else {
+            return Err(McpAccessTokenAuthenticationError::Discovery);
+        };
+        if !rsa_parameters_are_present
+            || DecodingKey::from_jwk(key).is_err()
+            || !key_ids.insert(key_id)
+        {
+            return Err(McpAccessTokenAuthenticationError::Discovery);
+        }
+    }
+    if key_ids.is_empty() {
         Err(McpAccessTokenAuthenticationError::Discovery)
+    } else {
+        Ok(())
     }
 }
 
@@ -604,22 +648,19 @@ mod tests {
             jwks_uri: Url::parse("http://127.0.0.1:9/jwks").expect("JWKS URL"),
             jwks: Arc::new(RwLock::new(JwkSet { keys: Vec::new() })),
             jwks_refresh: Arc::new(Mutex::new(())),
-            last_jwks_refresh_attempt: Arc::new(RwLock::new(
+            last_jwks_refresh: Arc::new(RwLock::new(JwksRefreshState::Successful(
                 Instant::now() - MINIMUM_JWKS_REFRESH_INTERVAL,
-            )),
+            ))),
         };
 
         assert!(matches!(
             authenticator.decoding_key(&token).await,
             Err(McpAccessTokenAuthenticationError::Unavailable)
         ));
-        assert!(
-            authenticator
-                .decoding_key(&token)
-                .await
-                .expect("refresh backoff")
-                .is_none()
-        );
+        assert!(matches!(
+            authenticator.decoding_key(&token).await,
+            Err(McpAccessTokenAuthenticationError::Unavailable)
+        ));
     }
 
     #[test]
@@ -641,6 +682,34 @@ mod tests {
         .expect("JWKS");
         assert_eq!(
             validate_jwks(&unusable),
+            Err(McpAccessTokenAuthenticationError::Discovery)
+        );
+
+        let private_key = RsaPrivateKey::new(&mut rand::thread_rng(), 2_048).expect("test RSA key");
+        let public_key = private_key.to_public_key();
+        let duplicate: JwkSet = serde_json::from_value(serde_json::json!({
+            "keys": [
+                {
+                    "kty": "RSA",
+                    "kid": "duplicate",
+                    "use": "sig",
+                    "alg": "RS256",
+                    "n": URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be()),
+                    "e": URL_SAFE_NO_PAD.encode(public_key.e().to_bytes_be())
+                },
+                {
+                    "kty": "RSA",
+                    "kid": "duplicate",
+                    "use": "sig",
+                    "alg": "RS256",
+                    "n": URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be()),
+                    "e": URL_SAFE_NO_PAD.encode(public_key.e().to_bytes_be())
+                }
+            ]
+        }))
+        .expect("duplicate JWKS");
+        assert_eq!(
+            validate_jwks(&duplicate),
             Err(McpAccessTokenAuthenticationError::Discovery)
         );
     }
@@ -669,7 +738,7 @@ mod tests {
                 .expect("JWKS URL"),
             jwks: Arc::new(RwLock::new(jwks)),
             jwks_refresh: Arc::new(Mutex::new(())),
-            last_jwks_refresh_attempt: Arc::new(RwLock::new(Instant::now())),
+            last_jwks_refresh: Arc::new(RwLock::new(JwksRefreshState::Successful(Instant::now()))),
         };
         let now = jsonwebtoken::get_current_timestamp();
         let token_claims = serde_json::json!({
