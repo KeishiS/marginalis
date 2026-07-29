@@ -518,7 +518,7 @@ fn acl_validation(index: usize, code: NoteValidationCode) -> NoteUseCaseError {
 
 fn reference_targets(queries: &[NoteReferenceQuery]) -> Vec<NoteId> {
     queries
-        .into_iter()
+        .iter()
         .map(|query| query.target_note_id)
         .collect::<HashSet<_>>()
         .into_iter()

@@ -163,7 +163,8 @@ mod tests {
             title: String::new(),
             tags: Vec::new(),
         })
-        .expect("the published example must be accepted by create_note");
+        .expect("the published example must be accepted by create_note")
+        .draft;
         assert_eq!(draft.title, "先行研究の整理");
         assert_eq!(draft.tags, ["文献", "研究"]);
 
