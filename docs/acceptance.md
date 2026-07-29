@@ -53,6 +53,7 @@ Pull Requestと公開前の`release-gate`で次を確認します。
 
 ## 記録
 
+- [v0.12.0](acceptance-results/v0.12.0.md)
 - [v0.11.0](acceptance-results/v0.11.0.md)
 - [v0.10.0](acceptance-results/v0.10.0.md)
 - [v0.9.0](acceptance-results/v0.9.0.md)

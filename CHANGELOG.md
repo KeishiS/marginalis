@@ -3,6 +3,30 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
+## 0.12.0 — 2026-07-29
+
+### 破壊的変更
+
+- `POST /api/v3/notes/preview`の成功応答へ必須の`diagnostics`を追加し、入力診断へ必須の
+  `severity`を追加した。重大度は`error`、`warning`、`information`、`hint`のいずれかである。
+  AdocWeave由来の診断は、`macro-boundary`などAdocWeaveのcodeをそのまま返す。
+- MCPとOpenAPIが示すnote profileを5へ更新した。archiveのノート受理規則は版4のままであり、
+  `marginalis-archive-8`の互換性は変わらない。
+
+### 追加
+
+- MCPの`get_note_profile`へ、本文から参考文献を参照して相互に移動できる完全なAsciiDoc例を
+  追加した。利用者または参照元から得た書誌情報だけを使用し、不明な著者名、題名、発行年、
+  DOIなどを推測しない指針も同じ応答で返す。
+- 保存を妨げないAdocWeaveの診断を、安全なHTMLと同時に編集画面へ表示するようにした。位置付きの
+  診断から入力範囲へ移動でき、入力を修正すると古い診断を直ちに取り除く。
+
+### 修正
+
+- 未対応の古いSQLite schemaを確認する接続が、schemaを拒否する前にデータベースをWAL modeへ
+  変更しないようにした。診断はschema不一致とSQL実行失敗を区別し、失敗した検査、分類、
+  SQLite result codeを本文や認証情報を含めずに報告する。
+
 ## 0.11.0 — 2026-07-29
 
 ### 破壊的変更
