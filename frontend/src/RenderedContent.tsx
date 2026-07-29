@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import mathJaxUrl from "mathjax/tex-svg.js?url";
 import { enhanceSourceBlocks, prepareMath } from "./renderedContentEnhancement";
@@ -28,6 +28,12 @@ export function RenderedContent({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [failedHtml, setFailedHtml] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    const element = container.current;
+    // MathJaxとコード表示処理が子要素を変更するため、HTMLが変わった時だけ置き換える。
+    if (element) element.innerHTML = html;
+  }, [html]);
 
   useEffect(() => {
     const element = container.current;
@@ -68,7 +74,6 @@ export function RenderedContent({
       <div
         ref={container}
         className={`rendered-content${preview ? " preview-content" : ""}`}
-        dangerouslySetInnerHTML={{ __html: html }}
       />
     </>
   );

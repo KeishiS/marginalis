@@ -111,6 +111,24 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     page.locator(".preview-content [data-math-prepared='true']"),
   ).toHaveCount(1);
   await page.getByRole("button", { name: "分割" }).click();
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(
+    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+  ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "執筆" }).click();
+  await source.fill(`${documentSource}\n\n分割表示用の更新`);
+  await expect(
+    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "分割" }).click();
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await page.getByRole("button", { name: "プレビュー" }).click();
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(
+    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "分割" }).click();
 
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();

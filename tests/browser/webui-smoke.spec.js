@@ -101,13 +101,16 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
   );
 });
 
-test("執筆表示中に届いた数式をプレビュー表示時に組版する", async ({
+test("数式を組版したまま分割表示とプレビュー表示を切り替える", async ({
   page,
 }) => {
   await page.route("**/api/v3/notes/preview", async (route) => {
     const source = (await route.request().postDataJSON()).source;
     const html = source.includes(String.raw`stem:[\lambda]`)
-      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code>のチェックです。</p>`
+      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code>のチェックです。</p>` +
+        (source.includes("プレビューから分割への確認")
+          ? "<p>プレビューから分割への確認</p>"
+          : "")
       : "<p>プレビュー</p>";
     await route.fulfill({
       contentType: "application/json",
@@ -131,12 +134,42 @@ test("執筆表示中に届いた数式をプレビュー表示時に組版す�
   await expect(
     page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
   ).toHaveCount(1);
-  await page.getByRole("button", { name: "プレビュー" }).click();
+  await page.getByRole("button", { name: "分割" }).click();
 
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(
     page.locator(".preview-content [data-math-prepared='true']"),
   ).toHaveCount(1);
+  await page.getByRole("button", { name: "プレビュー" }).click();
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(
+    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+  ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "執筆" }).click();
+  await page
+    .getByRole("textbox", { name: "AsciiDoc文書" })
+    .fill(
+      String.raw`= 新規ノート
+:tags:
+:sectnums:
+
+== 見出し1
+
+インライン数式 stem:[\lambda]のチェックです。
+
+プレビューから分割への確認`,
+    );
+  await expect(
+    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "プレビュー" }).click();
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await page.getByRole("button", { name: "分割" }).click();
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(
+    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+  ).toHaveCount(0);
 });
 
 test("5,000行の文書を編集して保存できる", async ({ page }) => {

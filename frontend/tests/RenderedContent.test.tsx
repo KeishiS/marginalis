@@ -140,6 +140,30 @@ test("非表示中に届いた数式を再表示時に組版する", async () =>
   );
 });
 
+test("組版済みの数式を表示方式の切り替え後も維持する", async () => {
+  const typesetPromise = vi.fn(async ([element]: HTMLElement[]) => {
+    const formula = element.querySelector(".math-inline");
+    const rendered = document.createElement("mjx-container");
+    formula?.replaceWith(rendered);
+  });
+  window.MathJax = {
+    startup: { promise: Promise.resolve() },
+    typesetPromise,
+  };
+  const html = String.raw`<p>数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code></p>`;
+  const { rerender } = render(<RenderedContent active html={html} preview />);
+
+  await waitFor(() =>
+    expect(document.querySelector("mjx-container")).toBeInTheDocument(),
+  );
+
+  rerender(<RenderedContent active html={html} />);
+
+  expect(document.querySelector("mjx-container")).toBeInTheDocument();
+  expect(document.querySelector(".math-latex")).not.toBeInTheDocument();
+  expect(typesetPromise).toHaveBeenCalledOnce();
+});
+
 test("MathJaxの組版失敗を利用者へ通知する", async () => {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   window.MathJax = {
