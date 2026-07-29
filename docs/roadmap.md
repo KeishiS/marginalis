@@ -6,26 +6,13 @@
 
 ## 現在地
 
-`v0.12.0`は2026-07-29に公開しました。MCPのAuthorization ServerにはAuth0を使用し、
-MarginalisはProtected Resourceの責務だけを担います。採用理由は
-[ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)を参照してください。
-
-受入結果と証跡は[v0.12.0受入結果](acceptance-results/v0.12.0.md)へ記録しています。
-
-現在は[#99](https://github.com/KeishiS/marginalis/issues/99)の長文編集画面を進めています。
-
-## 長文編集画面
-
-#99ではCodeMirror 6を採用し、次の範囲を一つの編集契約として整備します。
-
-- 執筆、左右分割、プレビューの表示方式と画面幅への対応
-- キーボード操作、日本語IME、AsciiDoc入力補助
-- 相対スクロール同期と診断位置への移動
-- 5,000行の性能、アクセシビリティー、固定画像によるブラウザー受入
+`v0.13.0`は公開準備中です。[#99](https://github.com/KeishiS/marginalis/issues/99)でCodeMirror 6を
+採用し、長いAsciiDoc文書を執筆、分割、プレビューの表示を切り替えながら編集できる画面を
+整備しました。
 
 採用理由は[CodeMirror採用判断](adr/0003-codemirrorをasciidoc編集基盤に採用.md)、操作と制約は
-[AsciiDoc編集画面](web-ui-editor.md)で説明します。v0.12.0で追加した診断契約、最後に成功した
-プレビュー、保存競合の動作を維持します。
+[AsciiDoc編集画面](web-ui-editor.md)で説明します。版別の確認結果は
+[v0.13.0受入結果](acceptance-results/v0.13.0.md)へ記録します。
 
 ## 検索と関係グラフの評価
 
