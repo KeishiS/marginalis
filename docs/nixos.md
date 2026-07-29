@@ -44,6 +44,8 @@ SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下�
 schema 9以前のdatabaseとarchive v6以前は直接取り込めません。更新前の実行環境と`dataDir`を保全し、
 schema 10は空のdatabaseから開始してください。起動後はhealthと`marginalis diagnose`を確認し、
 新しいarchive v7を作成してください。
+schema 9から更新する経路は、v0.9.0で作成したarchive v7をschema 10へ取り込み、ノート、所有者、
+削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
 切戻す場合はserviceを停止し、更新後に作成したdatabaseを保全してから、更新前に退避した`dataDir`と
 実行環境を組み合わせて戻します。異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
