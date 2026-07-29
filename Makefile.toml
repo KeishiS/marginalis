@@ -233,6 +233,7 @@ actual=$(
 )
 expected='marginalis-application
 marginalis-asciidoc
+marginalis-auth-oauth
 marginalis-auth-oidc
 marginalis-contract
 marginalis-domain

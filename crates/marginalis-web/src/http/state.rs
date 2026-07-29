@@ -7,7 +7,8 @@ use std::{
 };
 
 use marginalis_application::{
-    McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
+    McpAccessTokenAuthenticator, McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases,
+    WebSessionUseCases,
 };
 
 #[derive(Clone)]
@@ -67,6 +68,7 @@ impl McpRegistrationRateLimiter {
 
 pub struct McpEndpoint {
     pub(super) oauth: Arc<dyn McpOAuthUseCases>,
+    pub(super) external_access_token_authenticator: Option<Arc<dyn McpAccessTokenAuthenticator>>,
     /// MCP requests that carry `Origin` are restricted to these exact values. Backend and native
     /// clients normally omit `Origin` and authenticate every request with a Bearer token.
     pub(super) allowed_origins: Vec<String>,
@@ -87,6 +89,7 @@ impl McpEndpoint {
         let resource_uri = base_url_at(base_url, "mcp");
         Self {
             oauth,
+            external_access_token_authenticator: None,
             allowed_origins,
             metadata_uri: well_known_url(&resource_uri, "oauth-protected-resource").to_string(),
             authorization_server_uri: base_url.to_string(),
@@ -104,7 +107,39 @@ impl McpEndpoint {
     pub fn resource_uri_for(base_url: &url::Url) -> String {
         base_url_at(base_url, "mcp").to_string()
     }
+
+    pub fn with_external_authorization_server(
+        mut self,
+        authorization_server_uri: String,
+        authenticator: Arc<dyn McpAccessTokenAuthenticator>,
+    ) -> Result<Self, ExternalAuthorizationServerConfigurationError> {
+        let issuer = url::Url::parse(&authorization_server_uri)
+            .map_err(|_| ExternalAuthorizationServerConfigurationError)?;
+        if issuer.scheme() != "https"
+            || issuer.host_str().is_none()
+            || !issuer.username().is_empty()
+            || issuer.password().is_some()
+            || issuer.query().is_some()
+            || issuer.fragment().is_some()
+        {
+            return Err(ExternalAuthorizationServerConfigurationError);
+        }
+        self.authorization_server_uri = authorization_server_uri;
+        self.external_access_token_authenticator = Some(authenticator);
+        Ok(self)
+    }
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExternalAuthorizationServerConfigurationError;
+
+impl core::fmt::Display for ExternalAuthorizationServerConfigurationError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("external authorization server URL is invalid")
+    }
+}
+
+impl std::error::Error for ExternalAuthorizationServerConfigurationError {}
 
 impl ApiState {
     pub fn new(

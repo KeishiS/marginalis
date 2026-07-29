@@ -12,6 +12,7 @@ pub struct ServerConfig {
     pub oidc: OidcConfig,
     pub mcp_enabled: bool,
     pub mcp_allowed_origins: Vec<String>,
+    pub external_mcp_authorization: Option<ExternalMcpAuthorizationConfig>,
 }
 
 /// HTTP transportだけが必要とする公開設定。
@@ -35,6 +36,14 @@ pub struct OidcConfig {
     pub issuer_url: Url,
     pub client_id: String,
     pub ca_certificate_file: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalMcpAuthorizationConfig {
+    pub issuer: String,
+    pub upstream_issuer_claim: String,
+    pub upstream_subject_claim: String,
+    pub groups_claim: String,
 }
 
 /// secret値は公開設定から分離する。Debugを実装せずログ出力を防ぐ。
@@ -112,12 +121,26 @@ impl ServerConfig {
             mcp_allowed_origins: validate_mcp_allowed_origins(optional_csv(
                 "MARGINALIS_MCP_ALLOWED_ORIGINS",
             )?)?,
+            external_mcp_authorization: external_mcp_authorization()?,
         };
         let secrets = SecretConfig {
             oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
         };
         Ok((configuration, secrets))
     }
+}
+
+fn external_mcp_authorization() -> Result<Option<ExternalMcpAuthorizationConfig>, ConfigurationError>
+{
+    let Some(issuer) = optional("MARGINALIS_MCP_EXTERNAL_ISSUER")? else {
+        return Ok(None);
+    };
+    Ok(Some(ExternalMcpAuthorizationConfig {
+        issuer,
+        upstream_issuer_claim: required("MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM")?,
+        upstream_subject_claim: required("MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM")?,
+        groups_claim: required("MARGINALIS_MCP_GROUPS_CLAIM")?,
+    }))
 }
 
 impl StorageConfig {
@@ -137,6 +160,15 @@ fn optional_bool(name: &'static str) -> Result<Option<bool>, ConfigurationError>
         },
         Err(env::VarError::NotPresent) => Ok(None),
         Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpEnable),
+    }
+}
+
+fn optional(name: &'static str) -> Result<Option<String>, ConfigurationError> {
+    match env::var(name) {
+        Ok(value) if value.is_empty() => Ok(None),
+        Ok(value) => Ok(Some(value)),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::MissingEnvironment(name)),
     }
 }
 
