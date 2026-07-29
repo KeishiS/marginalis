@@ -5,7 +5,7 @@ changed=false
 while IFS= read -r -d '' path; do
   changed=true
   case "$path" in
-    docs/openapi.json)
+    docs/openapi.json | docs/mcp-tools.json)
       printf '%s\n' false
       exit 0
       ;;

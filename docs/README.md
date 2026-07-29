@@ -8,6 +8,7 @@
 - [OpenAPI 3.1](openapi.json)
 - [REST API](rest-api.md)
 - [MCPとOAuth](mcp.md)
+- [MCP toolのJSON Schema](mcp-tools.json)
 
 ## 運用者向け
 

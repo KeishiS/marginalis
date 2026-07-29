@@ -25,4 +25,5 @@ assert_classification true \
   .github/ISSUE_TEMPLATE/feature.yml
 assert_classification false docs/architecture.md frontend/src/Application.tsx
 assert_classification false docs/openapi.json
+assert_classification false docs/mcp-tools.json
 assert_classification true $'docs/architecture.md\nfrontend/src/Application.tsx'

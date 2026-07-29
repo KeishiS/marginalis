@@ -19,8 +19,10 @@ SQLite canonical store ─ AsciiDoc ─ Kanidm OIDC ─ Auth0 token検証
 ```
 
 `marginalis-web`はHTTP、Cookie、CSRF、MCPのリクエストを受け付けます。
-`marginalis-contract`はRESTのデータ型とOpenAPI、TypeScriptクライアント、MCPツール定義の
-生成元です。公開形式を変える場合はこのcrateを変更し、生成物との差分検査を通します。
+`marginalis-contract`はRESTのデータ型とOpenAPI、TypeScriptクライアント、MCP toolの入出力型と
+JSON Schemaの生成元です。公開形式を変える場合はこのcrateを変更し、生成物との差分検査を通します。
+MCPのtool一覧と実行時応答も同じ`McpToolName`と出力型を使用し、HTTP adapterが公開JSONを手で
+組み立てません。
 `marginalis-application`はノート操作の手順と業務上の失敗理由を定義します。
 ここでいうportは、applicationが外側の実装へ要求する小さなinterfaceです。
 `marginalis-sqlite`は永続化port、`marginalis-asciidoc`は文書の検証・描画port、
@@ -36,6 +38,9 @@ ID token検証を担当します。利用を許可する`server-users`所属の�
 group、scopeを検証するadapterです。クライアント登録、認可、token発行、refresh token、取消は
 Auth0の責務であり、MarginalisのapplicationとSQLiteへ状態を持ちません。
 MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`marginalis-web::mcp`に置きます。
+Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条件の検査、tool実行は
+`marginalis-web::http::mcp_transport`内の別moduleに置きます。これにより、公開toolを変更するときに
+認証処理を、認証方式を変更するときにノート出力変換を読み替える必要がありません。
 実行バイナリは`marginalis-service`です。
 
 ## 一貫して満たすべき設計条件
@@ -85,6 +90,21 @@ crates/
 frontend/
 ├── src                        React・TypeScriptの実装
 └── tests                      ブラウザーに依存しないUI試験
+```
+
+公開契約とMCP通信のcrate内moduleは、次の責務に分けます。
+
+```text
+marginalis-contract/src/
+├── lib.rs          RESTとMCP契約の短い公開入口
+├── rest.rs         REST型、OpenAPI、TypeScript生成元
+└── mcp.rs          tool名、入出力型、JSON Schema
+
+marginalis-web/src/http/mcp_transport/
+├── mod.rs           Streamable HTTPとJSON-RPCの処理順序
+├── authorization.rs Bearer token、scope、browser origin
+├── protocol.rs      media type、初期化、protocol version
+└── tools.rs         入力検査、use case呼出し、契約型への変換
 ```
 
 依存は概ね上から下ではなく、外側から`domain`と`application`へ向かう。
@@ -170,7 +190,7 @@ marginalis-web/src/http/
 ├── assets.rs        埋め込み静的アセット
 ├── auth.rs          browser session、Cookie、CSRF
 ├── html.rs          共通HTMLレイアウト
-├── mcp_transport.rs Protected Resource MetadataとMCP Streamable HTTP
+├── mcp_transport/  Protected Resource Metadata、Streamable HTTP、認証、tool実行
 ├── notes.rs         REST note API
 ├── ui.rs            閲覧UI
 └── security.rs      HTTP security policy

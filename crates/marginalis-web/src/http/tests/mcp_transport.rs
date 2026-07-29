@@ -107,6 +107,11 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             .iter()
             .all(|tool| tool["inputSchema"]["additionalProperties"] == false)
     );
+    assert!(
+        tools
+            .iter()
+            .all(|tool| tool["outputSchema"]["additionalProperties"] == false)
+    );
 
     let profile = mcp_app()
             .oneshot(
@@ -150,8 +155,69 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         .await
         .expect("response body");
     let listed: serde_json::Value = serde_json::from_slice(&body).expect("JSON-RPC response");
-    assert!(listed["result"]["structuredContent"].is_object());
-    assert!(listed["result"]["structuredContent"]["notes"].is_array());
+    let listed_output: marginalis_contract::McpListNotesOutput =
+        serde_json::from_value(listed["result"]["structuredContent"].clone())
+            .expect("typed list output");
+    assert_eq!(
+        listed_output,
+        marginalis_contract::McpListNotesOutput {
+            notes: vec![marginalis_contract::McpNoteSummary {
+                note_id: "0197c9bc-0000-7000-8000-000000000002".into(),
+                title: "同期ノート".into(),
+                tags: vec!["同期".into(), "試験".into()],
+                updated_at_ms: 2_000,
+                revision: 3,
+            }],
+        }
+    );
+    let text: serde_json::Value =
+        serde_json::from_str(listed["result"]["content"][0]["text"].as_str().expect("text"))
+            .expect("serialized list output");
+    assert_eq!(text, listed["result"]["structuredContent"]);
+
+    let request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer valid-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":"get","method":"tools/call","params":{"name":"get_note","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002"}}}"#,
+        ))
+        .expect("request");
+    let fetched = mcp_app().oneshot(request).await.expect("response");
+    assert_eq!(fetched.status(), StatusCode::OK);
+    let body = to_bytes(fetched.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let fetched: serde_json::Value = serde_json::from_slice(&body).expect("JSON-RPC response");
+    let fetched_output: marginalis_contract::McpGetNoteOutput =
+        serde_json::from_value(fetched["result"]["structuredContent"].clone())
+            .expect("typed get output");
+    assert_eq!(fetched_output.updated_at_ms, 2_000);
+    assert_eq!(fetched_output.tags, vec!["同期", "試験"]);
+    assert_eq!(fetched_output.revision, 3);
+    let text: serde_json::Value =
+        serde_json::from_str(fetched["result"]["content"][0]["text"].as_str().expect("text"))
+            .expect("serialized get output");
+    assert_eq!(text, fetched["result"]["structuredContent"]);
+
+    let request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer valid-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":"hidden","method":"tools/call","params":{"name":"get_note","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000003"}}}"#,
+        ))
+        .expect("request");
+    let hidden = mcp_app().oneshot(request).await.expect("response");
+    let body = to_bytes(hidden.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let hidden: serde_json::Value = serde_json::from_slice(&body).expect("JSON-RPC response");
+    assert_eq!(hidden["result"]["isError"], true);
+    assert_eq!(
+        hidden["result"]["structuredContent"],
+        serde_json::json!({"code": "not_found", "message": "note was not found"})
+    );
 
     let request = Request::post("/mcp")
         .header("content-type", "Application/JSON")
