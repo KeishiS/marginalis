@@ -2,8 +2,7 @@
 
 use axum::{Json, http::StatusCode};
 use marginalis_application::{
-    AuthenticationUseCaseError, McpOAuthUseCaseError, NoteUseCaseError, NoteValidationDiagnostic,
-    NoteValidationTarget,
+    AuthenticationUseCaseError, NoteUseCaseError, NoteValidationDiagnostic, NoteValidationTarget,
 };
 use marginalis_contract::{
     ProblemCode, ProblemResponse, Utf8ByteSpanResponse, Utf8ByteUnit, ValidationDiagnosticResponse,
@@ -105,26 +104,6 @@ pub(super) fn authentication_error(
             StatusCode::SERVICE_UNAVAILABLE,
             ProblemCode::AuthenticationUnavailable,
             "authentication is unavailable",
-        ),
-    }
-}
-
-pub(super) fn mcp_error(error: McpOAuthUseCaseError) -> (StatusCode, Json<ProblemResponse>) {
-    match error {
-        McpOAuthUseCaseError::InvalidRequest
-        | McpOAuthUseCaseError::InvalidClient
-        | McpOAuthUseCaseError::InvalidRedirectUri
-        | McpOAuthUseCaseError::InvalidScope
-        | McpOAuthUseCaseError::InvalidTarget
-        | McpOAuthUseCaseError::InvalidGrant => problem(
-            StatusCode::BAD_REQUEST,
-            ProblemCode::InvalidRequest,
-            "OAuth request is invalid",
-        ),
-        McpOAuthUseCaseError::Unavailable => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            ProblemCode::Unavailable,
-            "OAuth service is unavailable",
         ),
     }
 }

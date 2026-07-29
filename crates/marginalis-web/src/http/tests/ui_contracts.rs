@@ -1,22 +1,22 @@
 #[test]
 fn external_paths_preserve_the_configured_subpath() {
     assert_eq!(external_path("/", "/notes/123"), "/notes/123");
-    assert!(valid_return_to("/oauth/authorize?client_id=client", "/"));
+    assert!(valid_return_to("/notes/new?from=home", "/"));
     assert_eq!(
         external_path("/marginalis", "/notes/123"),
         "/marginalis/notes/123"
     );
     assert!(valid_return_to(
-        "/marginalis/oauth/authorize?client_id=client",
+        "/marginalis/notes/new?from=home",
         "/marginalis"
     ));
     assert!(!valid_return_to(
-        "/oauth/authorize?client_id=client",
+        "/notes/new?from=home",
         "/marginalis"
     ));
-    assert!(!valid_return_to("//oauth/authorize?client_id=client", "/"));
+    assert!(!valid_return_to("//notes.example.test/new", "/"));
     assert!(!valid_return_to(
-        "/oauth/authorize?client_id=client\r\nLocation:%20https://evil.test",
+        "/notes/new?from=home\r\nLocation:%20https://evil.test",
         "/"
     ));
 }

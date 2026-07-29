@@ -1220,6 +1220,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
  "url",
 ]
 
@@ -1251,29 +1252,6 @@ dependencies = [
 name = "marginalis-domain"
 version = "0.9.0"
 dependencies = [
- "url",
- "uuid",
-]
-
-[[package]]
-name = "marginalis-integration-tests"
-version = "0.9.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "marginalis-application",
- "marginalis-asciidoc",
- "marginalis-auth-oidc",
- "marginalis-domain",
- "marginalis-sqlite",
- "marginalis-web",
- "p256",
- "rand 0.8.7",
- "reqwest",
- "serde_json",
- "sha2 0.10.9",
- "tokio",
- "tower",
  "url",
  "uuid",
 ]

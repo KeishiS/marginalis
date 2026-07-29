@@ -7,7 +7,9 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::{NoteProfile, NoteUseCaseError, NoteUseCases};
+use marginalis_application::{
+    McpAccessTokenAuthenticationError, NoteProfile, NoteUseCaseError, NoteUseCases,
+};
 use marginalis_contract::ProblemCode;
 use marginalis_domain::{Actor, Note, NoteDraft, Revision};
 use serde::Deserialize;
@@ -16,11 +18,24 @@ use crate::mcp::{JsonRpcRequest, JsonRpcResponse, MCP_PROTOCOL_VERSION};
 
 use super::{
     auth::parse_note_id,
-    error::{HandlerResult, mcp_error, problem, validation_problem_json},
+    error::{HandlerResult, problem, validation_problem_json},
     mcp_endpoint,
     notes::NoteInput,
     state::{ApiState, McpEndpoint},
 };
+
+pub(super) async fn mcp_resource_metadata(
+    State(state): State<ApiState>,
+) -> HandlerResult<Json<serde_json::Value>> {
+    let endpoint = mcp_endpoint(&state)?;
+    Ok(Json(serde_json::json!({
+        "resource": endpoint.resource_uri,
+        "resource_name": "Marginalis MCP",
+        "authorization_servers": [endpoint.authorization_server_uri],
+        "bearer_methods_supported": ["header"],
+        "scopes_supported": ["notes:read", "notes:write", "notes:delete"]
+    })))
+}
 
 struct McpToolCall {
     tool: McpTool,
@@ -256,6 +271,14 @@ pub(super) async fn mcp_post(
 ) -> HandlerResult<Response> {
     let endpoint = mcp_endpoint(&state)?;
     validate_mcp_origin(&state, endpoint, &headers)?;
+    if bearer_token(&headers).is_none() {
+        return Ok(mcp_authentication_error(
+            endpoint,
+            StatusCode::UNAUTHORIZED,
+            None,
+            "notes:read",
+        ));
+    }
     if !accepts_media_type(&headers, "application/json")
         || !accepts_media_type(&headers, "text/event-stream")
     {
@@ -324,20 +347,50 @@ pub(super) async fn mcp_post(
             challenged_scope,
         ));
     };
-    let authenticated =
-        if let Some(authenticator) = endpoint.external_access_token_authenticator.as_ref() {
-            authenticator
-                .authenticate_access_token(token.into(), endpoint.resource_uri.clone())
-                .await
-                .map_err(|_| mcp_error(marginalis_application::McpOAuthUseCaseError::Unavailable))?
-        } else {
-            endpoint
-                .oauth
-                .authenticate(token.into(), endpoint.resource_uri.clone())
-                .await
-                .map_err(mcp_error)?
-        };
+    let authenticated = match endpoint
+        .access_token_authenticator
+        .authenticate_access_token(token.into(), endpoint.resource_uri.clone())
+        .await
+    {
+        Ok(authenticated) => authenticated,
+        Err(McpAccessTokenAuthenticationError::Rejected(reason)) => {
+            tracing::warn!(
+                event = "mcp.authentication.failed",
+                reason = reason.log_reason(),
+                "MCP access token was rejected"
+            );
+            return Ok(mcp_authentication_error(
+                endpoint,
+                StatusCode::UNAUTHORIZED,
+                Some("invalid_token"),
+                challenged_scope,
+            ));
+        }
+        Err(error) => {
+            let reason = match error {
+                McpAccessTokenAuthenticationError::Configuration => "configuration",
+                McpAccessTokenAuthenticationError::Discovery => "discovery",
+                McpAccessTokenAuthenticationError::Unavailable => "upstream-unavailable",
+                McpAccessTokenAuthenticationError::Rejected(_) => unreachable!(),
+            };
+            tracing::error!(
+                event = "mcp.authentication.unavailable",
+                reason,
+                "MCP access token authentication is unavailable"
+            );
+            return Err(problem(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ProblemCode::Unavailable,
+                "MCP authentication is unavailable",
+            ));
+        }
+    };
     let Some(authenticated) = authenticated else {
+        tracing::warn!(
+            event = "mcp.authentication.failed",
+            reason = "invalid-token",
+            "MCP access token was rejected"
+        );
         return Ok(mcp_authentication_error(
             endpoint,
             StatusCode::UNAUTHORIZED,
@@ -350,6 +403,12 @@ pub(super) async fn mcp_post(
             .iter()
             .any(|required| authenticated.scopes.iter().any(|scope| scope == required))
     {
+        tracing::warn!(
+            event = "mcp.authorization.failed",
+            reason = "insufficient-scope",
+            required_scope = challenged_scope,
+            "MCP access token has insufficient scope"
+        );
         return Ok(mcp_authentication_error(
             endpoint,
             StatusCode::FORBIDDEN,

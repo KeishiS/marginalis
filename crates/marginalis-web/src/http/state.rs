@@ -1,14 +1,9 @@
 //! HTTP adapterの共有状態とMCP endpoint設定。
 
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
 
 use marginalis_application::{
-    McpAccessTokenAuthenticator, McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases,
-    WebSessionUseCases,
+    McpAccessTokenAuthenticator, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
 };
 
 #[derive(Clone)]
@@ -19,102 +14,27 @@ pub struct ApiState {
     pub cookie_path: String,
     pub browser_origin: String,
     pub mcp: Option<Arc<McpEndpoint>>,
-    pub(super) mcp_registration_limiter: McpRegistrationRateLimiter,
-}
-
-#[derive(Clone)]
-pub(super) struct McpRegistrationRateLimiter {
-    attempts_by_redirect_origin: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
-    limit: usize,
-    window: Duration,
-}
-
-impl McpRegistrationRateLimiter {
-    pub(super) fn new(limit: usize, window: Duration) -> Self {
-        Self {
-            attempts_by_redirect_origin: Arc::new(Mutex::new(HashMap::new())),
-            limit,
-            window,
-        }
-    }
-
-    pub(super) fn allow(&self, redirect_origin: &str, now: Instant) -> bool {
-        let Ok(mut attempts_by_origin) = self.attempts_by_redirect_origin.lock() else {
-            return false;
-        };
-        let cutoff = now.checked_sub(self.window).unwrap_or(now);
-        for attempts in attempts_by_origin.values_mut() {
-            while attempts.front().is_some_and(|attempt| *attempt <= cutoff) {
-                attempts.pop_front();
-            }
-        }
-        attempts_by_origin.retain(|_, attempts| !attempts.is_empty());
-        if !attempts_by_origin.contains_key(redirect_origin) && attempts_by_origin.len() >= 1_024 {
-            return false;
-        }
-        let attempts = attempts_by_origin
-            .entry(redirect_origin.to_owned())
-            .or_default();
-        while attempts.front().is_some_and(|attempt| *attempt <= cutoff) {
-            attempts.pop_front();
-        }
-        if attempts.len() >= self.limit {
-            return false;
-        }
-        attempts.push_back(now);
-        true
-    }
 }
 
 pub struct McpEndpoint {
-    pub(super) oauth: Arc<dyn McpOAuthUseCases>,
-    pub(super) external_access_token_authenticator: Option<Arc<dyn McpAccessTokenAuthenticator>>,
+    pub(super) access_token_authenticator: Arc<dyn McpAccessTokenAuthenticator>,
     /// MCP requests that carry `Origin` are restricted to these exact values. Backend and native
     /// clients normally omit `Origin` and authenticate every request with a Bearer token.
     pub(super) allowed_origins: Vec<String>,
     pub(super) resource_uri: String,
     pub(super) metadata_uri: String,
     pub(super) authorization_server_uri: String,
-    pub(super) authorization_server_metadata_uri: String,
-    pub(super) authorization_endpoint_uri: String,
-    pub(super) token_endpoint_uri: String,
 }
 
 impl McpEndpoint {
     pub fn new(
-        oauth: Arc<dyn McpOAuthUseCases>,
         base_url: &url::Url,
         allowed_origins: Vec<String>,
-    ) -> Self {
-        let resource_uri = base_url_at(base_url, "mcp");
-        Self {
-            oauth,
-            external_access_token_authenticator: None,
-            allowed_origins,
-            metadata_uri: well_known_url(&resource_uri, "oauth-protected-resource").to_string(),
-            authorization_server_uri: base_url.to_string(),
-            authorization_server_metadata_uri: well_known_url(
-                base_url,
-                "oauth-authorization-server",
-            )
-            .to_string(),
-            authorization_endpoint_uri: base_url_at(base_url, "oauth/authorize").to_string(),
-            token_endpoint_uri: base_url_at(base_url, "oauth/token").to_string(),
-            resource_uri: resource_uri.to_string(),
-        }
-    }
-
-    pub fn resource_uri_for(base_url: &url::Url) -> String {
-        base_url_at(base_url, "mcp").to_string()
-    }
-
-    pub fn with_external_authorization_server(
-        mut self,
         authorization_server_uri: String,
-        authenticator: Arc<dyn McpAccessTokenAuthenticator>,
-    ) -> Result<Self, ExternalAuthorizationServerConfigurationError> {
+        access_token_authenticator: Arc<dyn McpAccessTokenAuthenticator>,
+    ) -> Result<Self, McpAuthorizationServerConfigurationError> {
         let issuer = url::Url::parse(&authorization_server_uri)
-            .map_err(|_| ExternalAuthorizationServerConfigurationError)?;
+            .map_err(|_| McpAuthorizationServerConfigurationError)?;
         if issuer.scheme() != "https"
             || issuer.host_str().is_none()
             || !issuer.username().is_empty()
@@ -122,24 +42,33 @@ impl McpEndpoint {
             || issuer.query().is_some()
             || issuer.fragment().is_some()
         {
-            return Err(ExternalAuthorizationServerConfigurationError);
+            return Err(McpAuthorizationServerConfigurationError);
         }
-        self.authorization_server_uri = authorization_server_uri;
-        self.external_access_token_authenticator = Some(authenticator);
-        Ok(self)
+        let resource_uri = base_url_at(base_url, "mcp");
+        Ok(Self {
+            access_token_authenticator,
+            allowed_origins,
+            metadata_uri: well_known_url(&resource_uri, "oauth-protected-resource").to_string(),
+            authorization_server_uri,
+            resource_uri: resource_uri.to_string(),
+        })
+    }
+
+    pub fn resource_uri_for(base_url: &url::Url) -> String {
+        base_url_at(base_url, "mcp").to_string()
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ExternalAuthorizationServerConfigurationError;
+pub struct McpAuthorizationServerConfigurationError;
 
-impl core::fmt::Display for ExternalAuthorizationServerConfigurationError {
+impl core::fmt::Display for McpAuthorizationServerConfigurationError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("external authorization server URL is invalid")
+        formatter.write_str("MCP Authorization Server URL is invalid")
     }
 }
 
-impl std::error::Error for ExternalAuthorizationServerConfigurationError {}
+impl std::error::Error for McpAuthorizationServerConfigurationError {}
 
 impl ApiState {
     pub fn new(
@@ -156,10 +85,6 @@ impl ApiState {
             cookie_path,
             browser_origin,
             mcp: None,
-            mcp_registration_limiter: McpRegistrationRateLimiter::new(
-                30,
-                Duration::from_secs(10 * 60),
-            ),
         }
     }
 

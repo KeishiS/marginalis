@@ -20,6 +20,7 @@ struct PublicConfigurationReport {
     oidc_ca_certificate_file: Option<String>,
     mcp_enabled: Option<bool>,
     mcp_allowed_origin_count: usize,
+    mcp_authorization_configured: bool,
 }
 
 /// SQLiteと公開設定を変更せずに検査し、結果をJSONで出力する。
@@ -66,6 +67,10 @@ fn public_configuration() -> PublicConfigurationReport {
             .ok()
             .and_then(|value| value.parse().ok()),
         mcp_allowed_origin_count,
+        mcp_authorization_configured: nonempty_environment_variable(
+            "MARGINALIS_MCP_AUTHORIZATION_ISSUER",
+        )
+        .is_some(),
     }
 }
 
