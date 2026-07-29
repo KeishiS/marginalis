@@ -13,7 +13,7 @@ nix develop
 gh auth status
 ```
 
-開発shellには固定したNode.jsとnpmも含まれます。フロントエンドだけを変更する場合は、
+開発shellには固定したNode.jsとpnpmも含まれます。フロントエンドだけを変更する場合は、
 次のコマンドで整形、静的解析、型検査、単体試験、依存監査、production buildをまとめて
 確認できます。
 

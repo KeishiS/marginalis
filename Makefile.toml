@@ -429,56 +429,56 @@ alias = "ci"
 [tasks.frontend-install]
 description = "Install the locked frontend dependencies"
 cwd = "frontend"
-command = "npm"
-args = ["ci"]
+command = "pnpm"
+args = ["install", "--frozen-lockfile"]
 
 [tasks.frontend-format]
 description = "Format frontend source files"
 dependencies = ["frontend-install"]
 cwd = "frontend"
-command = "npm"
+command = "pnpm"
 args = ["run", "format"]
 
 [tasks.frontend-format-check]
 description = "Check frontend formatting without modifying files"
 dependencies = ["frontend-install"]
 cwd = "frontend"
-command = "npm"
+command = "pnpm"
 args = ["run", "format:check"]
 
 [tasks.frontend-lint]
 description = "Run frontend static analysis"
 dependencies = ["frontend-install"]
 cwd = "frontend"
-command = "npm"
+command = "pnpm"
 args = ["run", "lint"]
 
 [tasks.frontend-typecheck]
 description = "Type-check frontend source and tests"
 dependencies = ["frontend-install"]
 cwd = "frontend"
-command = "npm"
+command = "pnpm"
 args = ["run", "typecheck"]
 
 [tasks.frontend-test]
 description = "Run frontend unit tests"
 dependencies = ["frontend-install"]
 cwd = "frontend"
-command = "npm"
+command = "pnpm"
 args = ["test"]
 
 [tasks.frontend-security-audit]
 description = "Check locked frontend dependencies for known vulnerabilities"
 dependencies = ["frontend-install"]
 cwd = "frontend"
-command = "npm"
+command = "pnpm"
 args = ["audit", "--audit-level=high"]
 
 [tasks.frontend-build]
 description = "Build browser assets for embedding in the Rust server"
 dependencies = ["frontend-install"]
 cwd = "frontend"
-command = "npm"
+command = "pnpm"
 args = ["run", "build"]
 
 [tasks.frontend-bundle-size]

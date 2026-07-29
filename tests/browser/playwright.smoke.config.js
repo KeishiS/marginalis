@@ -13,7 +13,7 @@ module.exports = defineConfig({
   },
   webServer: {
     command:
-      "cp fixtures/webui-smoke.html ../../frontend/dist/index.html && cd ../../frontend && npm exec -- vite preview --host 127.0.0.1 --port 42877",
+      "cp fixtures/webui-smoke.html ../../frontend/dist/index.html && cd ../../frontend && pnpm exec vite preview --host 127.0.0.1 --port 42877",
     url: "http://127.0.0.1:42877",
     reuseExistingServer: false,
     timeout: 15_000,

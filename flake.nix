@@ -53,18 +53,39 @@
         system:
         let
           pkgs = pkgsFor system;
+          pnpm = pkgs.pnpm_11.override { nodejs-slim = pkgs.nodejs-slim_22; };
           rustPlatform = rustPlatformFor pkgs;
-          frontend = pkgs.buildNpmPackage {
+          frontend = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
             pname = "marginalis-web-ui";
             inherit version;
             src = ./frontend;
-            npmDepsHash = "sha256-hNqAruwc5MacgCuzQtYh/JP4Gub9QL0u4rP4oBlHc3I=";
-            nodejs = pkgs.nodejs_22;
+            pnpmDeps = pkgs.fetchPnpmDeps {
+              inherit (finalAttrs)
+                pname
+                version
+                src
+                ;
+              inherit pnpm;
+              fetcherVersion = 4;
+              hash = "sha256-/STThorgKRv/HCycnw8swG7r7J7hoirB4o3P+HQB+aA=";
+            };
+            nativeBuildInputs = [
+              pkgs.nodejs_22
+              pkgs.pnpmConfigHook
+              pnpm
+            ];
+            buildPhase = ''
+              runHook preBuild
+              pnpm build
+              runHook postBuild
+            '';
             installPhase = ''
+              runHook preInstall
               mkdir -p $out
               cp -r dist $out/dist
+              runHook postInstall
             '';
-          };
+          });
         in
         {
           inherit frontend;
@@ -1059,6 +1080,7 @@
         system:
         let
           pkgs = pkgsFor system;
+          pnpm = pkgs.pnpm_11.override { nodejs-slim = pkgs.nodejs-slim_22; };
           rustToolchain = rustToolchainFor pkgs;
         in
         {
@@ -1079,6 +1101,7 @@
               nix
               nixfmt
               nodejs_22
+              pnpm
               playwright-driver.browsers
               playwright-test
               ripgrep
