@@ -375,12 +375,19 @@ fn claim_scope(claims: &Claims) -> Result<Vec<String>, McpAccessTokenAuthenticat
         || scopes.len() > MAX_SCOPES
         || scopes.iter().any(|scope| {
             scope.len() > MAX_SCOPE_BYTES
-                || !matches!(*scope, "notes:read" | "notes:write" | "notes:delete")
+                || !matches!(
+                    *scope,
+                    "notes:read" | "notes:write" | "notes:delete" | "offline_access"
+                )
         })
     {
         return Err(McpAccessTokenAuthenticationError::Rejected);
     }
-    Ok(scopes.into_iter().map(str::to_owned).collect())
+    Ok(scopes
+        .into_iter()
+        .filter(|scope| scope.starts_with("notes:"))
+        .map(str::to_owned)
+        .collect())
 }
 
 #[cfg(test)]
@@ -447,7 +454,7 @@ mod tests {
                 serde_json::json!(configuration.upstream_issuer),
                 serde_json::json!("user-a"),
                 serde_json::json!(["server-users", "server-admins"]),
-                serde_json::json!("notes:write notes:read"),
+                serde_json::json!("notes:write offline_access notes:read"),
             ),
         )
         .expect("valid claims");
