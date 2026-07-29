@@ -3,8 +3,9 @@
 ## 目的と対象
 
 この文書は、[Issue #24](https://github.com/KeishiS/marginalis/issues/24)で外部Authorization Serverへの
-移行可否を判断するために、候補ごとに同じ接続条件と認可条件を確認する手順を定めます。評価結果と
-最終判断はこの文書ではなく、Issue #24と承認済みのADRへ記録します。
+移行可否を判断するために、候補ごとに同じ接続条件と認可条件を確認した手順と、再利用できる
+Auth0の設定上の注意点を記録します。最終判断は
+[ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)を正とします。
 
 対象はWorkOS AuthKit、Auth0、Keycloak、現在のMarginalis内蔵実装です。候補製品の一般的な機能比較や、
 Marginalis以外のシステムへの適性は扱いません。
@@ -55,7 +56,8 @@ scopeを持っていても所有範囲は拡張しません。`user-a`による`
 ```sh
 nix develop --command cargo make protocol-regression-assets
 nix develop --command cargo make frontend-build
-nix develop --command cargo test -p marginalis-integration-tests --test oauth_flow --all-features
+nix develop --command cargo test -p marginalis-auth-oauth
+nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
 ```
 
 前者はChatGPTのブラウザー送信、Claude Codeのloopback redirect URI、Codex CLIの`Origin`を
@@ -182,14 +184,14 @@ HTTP 406の後に401が続く場合は、406だけで接続失敗と判断せず
 検証できなかったことを示します。秘密情報をログへ追加せず、Authorization Serverのtoken交換成功と
 型だけを記録するAction診断を照合して原因を絞ります。
 
-NixOSでは、通常のMCP設定に加えて次の評価用optionを設定します。claim名はAuth0 Actionで設定した
+NixOSでは、MCP設定に次のoptionを設定します。claim名はAuth0 Actionで設定した
 名前空間付きcustom claimと完全に一致させます。4項目の一部だけを設定した構成と、MCPを無効にした
 構成はモジュール評価時に拒否されます。
 
 ```nix
 services.marginalis.mcp = {
   enable = true;
-  externalAuthorization = {
+  authorization = {
     issuer = "https://評価用tenantのdomain/";
     upstreamIssuerClaim = "https://評価用Marginalisのホスト/claims/upstream-issuer";
     upstreamSubjectClaim = "https://評価用Marginalisのホスト/claims/upstream-subject";
@@ -222,9 +224,13 @@ Auth0へ問い合わせて即時に無効化する仕組みはありません。
 通知処理を追加すると、外部化によって実装と保存データを減らす目的に反するため、評価adapterには
 追加しません。
 
-このadapterはIssue #24の評価用です。実接続の結果とADRが承認されるまでは、本番設定へ追加せず、
-内蔵Authorization Serverを削除しません。外部設定中も内蔵OAuth endpoint自体は応答しますが、
-そこで発行したtokenはMCP endpointで拒否されます。
+ChatGPT Web UIでは、DCR、Kanidmでのログイン、scope同意、MCP接続、ノートの作成・更新・削除を
+実環境で確認しました。所有者identityにはAuth0固有の`sub`ではなくKanidm由来claimが使用され、
+既存の所有者・ACL認可と一致することも確認しました。tenant domain、connection名、利用者情報、
+tokenなどの環境固有値は記録しません。
+
+この結果を基にAuth0を採用し、内蔵Authorization Serverを撤去しました。Claude Code、Codex CLI、
+取消遅延の実測はリリース前の人手受入として残します。
 
 Auth0の設定では、次の公式資料を参照します。
 

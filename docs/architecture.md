@@ -7,18 +7,18 @@
 ## 構成
 
 ```text
-Web UI / REST (/api/v3) / MCP (Streamable HTTP)
+Web UI / REST (/api/v3) / MCP Protected Resource
                     │
        marginalis-contract（公開契約）
                     │
           application use cases
                     │
-SQLite canonical store ─ AsciiDoc import/export ─ Kanidm OIDC
+SQLite canonical store ─ AsciiDoc ─ Kanidm OIDC ─ Auth0 token検証
                     │
           marginalis-service + NixOS module
 ```
 
-`marginalis-web`はHTTP、Cookie、CSRF、OAuthのリクエストを受け付けます。
+`marginalis-web`はHTTP、Cookie、CSRF、MCPのリクエストを受け付けます。
 `marginalis-contract`はRESTのデータ型とOpenAPI、TypeScriptクライアント、MCPツール定義の
 生成元です。公開形式を変える場合はこのcrateを変更し、生成物との差分検査を通します。
 `marginalis-application`はノート操作の手順と業務上の失敗理由を定義します。
@@ -32,8 +32,9 @@ archive変換を別々のmoduleへ分けます。AdocWeaveの解析・描画設�
 保守コマンドに必要なarchiveおよび参照抽出だけを公開します。
 `marginalis-auth-oidc`は外部identity provider portを実装し、OIDC discovery・code exchange・
 ID token検証を担当します。利用を許可する`server-users`所属の判断はapplicationが担当します。
-MCP OAuthのclient、認可code、token familyの規則もapplicationに置き、
-SQLiteはその永続化portを実装します。
+`marginalis-auth-oauth`はAuth0のmetadataとJWKSを取得し、MCP access tokenからKanidm identity、
+group、scopeを検証するadapterです。クライアント登録、認可、token発行、refresh token、取消は
+Auth0の責務であり、MarginalisのapplicationとSQLiteへ状態を持ちません。
 MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`marginalis-web::mcp`に置きます。
 実行バイナリは`marginalis-service`です。
 
@@ -53,16 +54,16 @@ MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`mar
   削除日時の範囲を生成時と復元時に検査する。フィールドを直接変更する公開APIは設けない。
   SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
   検査しない。
-- `server-users`所属は、OIDC login時に署名検証した`groups` claimから決める。発行したsessionと
-  MCP authorizationは、login時に検証したidentityを有効期間中保持する。
+- `server-users`所属は、WebではKanidmの署名検証済みID token、MCPではAuth0の署名検証済みaccess
+  tokenに格納したKanidm由来claimから決める。どちらも同じ上流`(issuer, subject)`を所有者identityに
+  使用する。
 - Web session は24時間のsliding idle期限と7日の絶対期限を持つ。未完了OIDC login attemptは10分で失効し、
   発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
 - OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う`ES256`だけを許可する。別の署名方式を
   追加する場合は[セキュリティ](security.md)の依存脆弱性判断を先に更新する。
-- authorization code、access token、refresh tokenはhashだけをSQLiteに保存する。認可codeの消費と
-  token pair発行は一つのtransactionで行い、codeまたはrefresh tokenのreplay時はtoken familyを失効する。
-  消費済みcodeは対応するtoken familyが残る間だけreplay検知用に保持する。
-  MCP clientにKanidm tokenを渡さない。
+- MarginalisはMCPのauthorization code、access token、refresh token、client登録を保存しない。
+  Auth0 access tokenはrequestの検証中だけ扱い、ログや永続領域へ出力しない。MCP clientにKanidm
+  tokenを渡さない。
 - HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を複製しない。
 - 実効アクセス水準は`Read < Edit < Manage`の順序で表す。SQLiteの`note_access`投影が、
   所有者の`Manage`とACLの`Read`または`Edit`を同じ判断表へまとめる。
@@ -76,10 +77,10 @@ crates/
 ├── marginalis-application     use case実装と内向き・外向きport
 ├── marginalis-asciidoc        AsciiDoc検証・描画・export
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
+├── marginalis-auth-oauth      Auth0 access token検証adapter
 ├── marginalis-sqlite          SQLite adapter
 ├── marginalis-web             HTTP adapter
-├── marginalis-service         composition rootと実行バイナリ
-└── marginalis-integration-tests
+└── marginalis-service         composition rootと実行バイナリ
 
 frontend/
 ├── src                        React・TypeScriptの実装
@@ -169,13 +170,7 @@ marginalis-web/src/http/
 ├── assets.rs        埋め込み静的アセット
 ├── auth.rs          browser session、Cookie、CSRF
 ├── html.rs          共通HTMLレイアウト
-├── oauth/           MCP OAuth endpoint
-│   ├── authorization.rs 認可要求と同意
-│   ├── registration.rs  client登録
-│   ├── token.rs         token発行と更新
-│   ├── revocation.rs    認可の失効
-│   └── common.rs        OAuth入力解析とerror応答
-├── mcp_transport.rs MCP Streamable HTTP
+├── mcp_transport.rs Protected Resource MetadataとMCP Streamable HTTP
 ├── notes.rs         REST note API
 ├── ui.rs            閲覧UI
 └── security.rs      HTTP security policy
@@ -183,15 +178,13 @@ marginalis-web/src/http/
 marginalis-sqlite/src/
 ├── schema.rs        schema検証
 ├── session.rs       Web/OIDC session
-├── mcp.rs           MCP OAuth永続化
 ├── notes.rs         noteと所有者認可
 └── archive.rs       検証済みarchiveを一つのトランザクションで格納
 ```
 
 公開routeは`marginalis-web/src/http.rs`、公開型は各crateの`lib.rs`から追跡します。小さな単体試験は
-対象moduleの末尾へ置きます。共有fixtureが大きいHTTP試験は`http/tests/`でUI・REST・MCP・OAuth、
-SQLite試験は`marginalis-sqlite/src/tests/`でschema・ノート・session・OAuthに分けます。
-複数crateを接続するOIDC・MCP試験だけを`marginalis-integration-tests/tests/`へ置き、
-完全な認証経路、利用条件、discoveryを別suiteとして単独実行できるようにします。
+対象moduleの末尾へ置きます。共有fixtureが大きいHTTP試験は`http/tests/`でUI・REST・MCP、
+SQLite試験は`marginalis-sqlite/src/tests/`でschema・ノート・sessionに分けます。OIDCとAuth0
+access token検証は各認証adapterでmetadata、署名、claimの境界を試験します。
 
 設計を確定した経緯は[再設計判断記録](v0.3.0-design.md)を参照してください。

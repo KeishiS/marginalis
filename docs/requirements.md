@@ -51,8 +51,10 @@
 - **REQ-API-002 — REST版**: REST APIを`/api/v3`だけで提供すること。
 - **REQ-API-003 — 条件付き変更**: RESTの変更操作では取得時の`ETag`を`If-Match`へ指定し、
   同時更新による上書きを防ぐこと。
-- **REQ-API-004 — MCP認可**: OAuth 2.1 Authorization CodeとPKCE S256を使用し、動的な
-  クライアント登録に対応すること。
+- **REQ-API-004 — MCP認可**: Auth0をAuthorization ServerとしてOAuth 2.1 Authorization Codeと
+  PKCE S256を使用し、Auth0の動的なクライアント登録に対応すること。MarginalisはProtected Resource
+  Metadataを公開し、Auth0が発行したaccess tokenの署名、issuer、audience、scope、Kanidm由来の
+  identityとgroupを検証すること。
 - **REQ-API-005 — MCP権限範囲**: MCPの`scope`は操作の種類だけを制限し、操作できる
   ノートの範囲を広げないこと。
 - **REQ-UI-001 — React画面**: 一覧、閲覧、編集、共有設定を一つのReactアプリケーションから
@@ -86,12 +88,12 @@
 
 ## NixOSでの配備
 
-- **REQ-DEPLOY-001 — NixOSモジュール**: SQLite、OIDCクライアント、MCP、バックアップ先を
-  設定でき、OIDCクライアントシークレットをsystemd credentialで渡すこと。
+- **REQ-DEPLOY-001 — NixOSモジュール**: SQLite、OIDCクライアント、MCPのAuth0 issuerとclaim名、
+  バックアップ先を設定でき、OIDCクライアントシークレットをsystemd credentialで渡すこと。
 
 ## 対応する保存形式
 
-- **REQ-FORMAT-001 — 現行形式**: SQLiteスキーマ9と`marginalis-archive-7`だけを受理し、
+- **REQ-FORMAT-001 — 現行形式**: SQLiteスキーマ10と`marginalis-archive-7`だけを受理し、
   以前のスキーマとアーカイブを自動移行しないこと。
 
 一貫して満たすべき設計条件は[アーキテクチャ](architecture.md)を参照してください。v0.3.0時点の

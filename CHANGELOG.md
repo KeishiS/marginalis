@@ -3,6 +3,21 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
+## 未公開
+
+### 破壊的変更
+
+- MCPのAuthorization Serverを内蔵実装からAuth0へ変更した。`/oauth/*`と
+  `DELETE /api/v3/mcp-authorizations/{client_id}`を削除し、MCPを有効にする場合はNixOSの
+  `mcp.authorization`設定を必須とした。
+- SQLite schemaを10へ更新し、MCP client、認可code、access token、refresh tokenのテーブルを
+  削除した。schema 9以前のdatabaseは自動移行せず、archiveを書き出して空の`dataDir`へ復元する。
+
+### 変更
+
+- Auth0 access tokenの署名、issuer、MCP URLのaudience、scope、Kanidm由来identityとgroupを
+  Marginalisで検証する。token拒否と認証基盤障害を区別する診断ログを追加した。
+
 ## 0.9.0 — 2026-07-28
 
 ### 追加

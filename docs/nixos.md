@@ -22,8 +22,13 @@ services.marginalis = {
   };
   mcp = {
     enable = true;
-    # /mcp を browser から呼ぶ client の HTTPS origin だけを列挙する。
     allowedOrigins = [ "https://chatgpt.com" ];
+    authorization = {
+      issuer = "https://example.auth0.com/";
+      upstreamIssuerClaim = "https://notes.example.test/claims/upstream-issuer";
+      upstreamSubjectClaim = "https://notes.example.test/claims/upstream-subject";
+      groupsClaim = "https://notes.example.test/claims/groups";
+    };
   };
 };
 ```
@@ -35,24 +40,30 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは9です。旧versionを自動移行しません。
-schema 8以前のdatabaseとarchive v6以前は直接取り込めません。更新前の実行環境と`dataDir`を保全し、
-schema 9は空のdatabaseから開始してください。起動後はhealthと`marginalis diagnose`を確認し、
+変更してください。現行のSQLite schema versionは10です。旧versionを自動移行しません。
+schema 9以前のdatabaseとarchive v6以前は直接取り込めません。更新前の実行環境と`dataDir`を保全し、
+schema 10は空のdatabaseから開始してください。起動後はhealthと`marginalis diagnose`を確認し、
 新しいarchive v7を作成してください。
 
 切戻す場合はserviceを停止し、更新後に作成したdatabaseを保全してから、更新前に退避した`dataDir`と
 実行環境を組み合わせて戻します。異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
 以前のschemaやarchiveには自動移行を提供しません。
 
-reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を同一オリジンへ転送します。
+reverse proxyは`/auth/`、`/api/`、`/mcp`、`/.well-known/`を同一オリジンへ転送します。
 サブパスでは通常endpointの外部prefixをupstreamへ渡す前に除去します。一方、RFC 8414/9728の
 `/.well-known/` URLはhost rootから始まりsubject pathを末尾に持つため、pathを除去せずupstreamへ渡します。
 `baseUrl` と OIDC redirect URI は一致させます。
 `mcp.allowedOrigins` は HTTPS origin の完全一致であり、path、query、userinfo を含む値や HTTP origin は
-起動時に拒否されます。この設定は `/oauth/authorize` の承認 form には適用されません。
-Issue #24で外部Authorization Serverを評価する場合だけ、
-[MCP向けAuthorization Serverの評価手順](mcp-authorization-server-evaluation.md)に従って
-`mcp.externalAuthorization`を設定します。評価結果とADRが承認されるまでは本番環境で使用しません。
+起動時に拒否されます。
+
+MCPを有効にする場合は`mcp.authorization`の全項目が必須です。`issuer`にはAuth0 tenantのHTTPS issuerを
+末尾の`/`を含めて指定します。三つのclaim名はAuth0 Login Actionがaccess tokenへ格納する名前空間付き
+claimと完全に一致させます。MCP URLは`baseUrl`から自動的に導出され、Auth0 API identifierにも同じ値を
+設定します。
+
+起動時にAuth0のAuthorization Server MetadataとJWKSを取得できない場合、serviceは起動しません。
+Web用Kanidm OIDC discoveryは従来どおり一時的な障害時にfail closedで起動します。二つの挙動を
+混同しないでください。
 
 ## Kanidmから受け取るグループ情報
 
@@ -80,7 +91,7 @@ service account、API token、custom ACP は不要である。
 ## 定期処理
 
 - `marginalis-purge-expired.timer` は毎日実行され、30 日を超えたソフトデリート済みノートと、
-  期限切れ・失効済みのWeb/OIDC/MCP認証状態を削除します。
+  期限切れ・失効済みのWeb/OIDC認証状態を削除します。MCP tokenはAuth0が管理します。
 - `backupDirectory`を設定すると`marginalis-backup.timer`が毎日実行されます。単一のSQLite read
   transactionからsnapshotを取得するため、HTTP serviceを停止しません。
 - 成功世代は`backup-<Unix時刻ミリ秒>`というディレクトリで、`marginalis-archive.json`と
@@ -170,7 +181,8 @@ journalctl -u marginalis-diagnose.service -o cat -n 20
 ```
 
 `diagnose`はSQLiteの読み取り可否、schema version、`PRAGMA quick_check`、
-外部キー違反件数と非秘密設定だけをJSONで出力します。全検査が正常な場合だけ終了status 0です。
+外部キー違反件数と、Auth0設定の有無を含む非秘密設定だけをJSONで出力します。全検査が正常な場合だけ
+終了status 0です。
 databaseを作成・移行せず、OIDC client secret、Cookie、token、ノート本文は出力しません。
 `status`が`failed`の場合は`database.error`と各検査の`actual`、`expected`を確認します。
 
@@ -178,9 +190,13 @@ databaseを作成・移行せず、OIDC client secret、Cookie、token、ノー�
 
 - service起動: `service.listening`
 - OIDC discovery成功・失敗: `oidc.discovery.completed`、`oidc.discovery.failed`
-- MCP OAuth token成功・失敗: `mcp.oauth.token.completed`、`mcp.oauth.token.failed`
-- MCP OAuth処理成功・失敗: `mcp.oauth.operation.completed`、`mcp.oauth.operation.failed`
-  （`operation`は`registration`、`authorization`、`consent`、`revocation`）
+- Auth0 discovery成功・失敗: `mcp.authorization.discovery.completed`、
+  `mcp.authorization.discovery.failed`
+- JWKS更新成功・失敗: `mcp.authorization.jwks_refresh.completed`、
+  `mcp.authorization.jwks_refresh.failed`
+- MCP token拒否・検証基盤障害: `mcp.authentication.failed`、
+  `mcp.authentication.unavailable`
+- MCP scope不足: `mcp.authorization.failed`
 - purge成功・失敗: `maintenance.purge.completed`、`maintenance.purge.failed`
 - backup成功・失敗: `maintenance.backup.completed`、`maintenance.backup.failed`
 - archive検証成功・失敗: `maintenance.archive_validation.completed`、

@@ -6,28 +6,25 @@
 
 ## 現在地
 
-`v0.9.0`は2026-07-28に公開しました。現在は、MCP向けOAuthをMarginalisから外部の
-Authorization Serverへ移すかを
-[#24](https://github.com/KeishiS/marginalis/issues/24)で評価しています。移行可否を決めるまでは
-内蔵実装を維持し、外部候補のために実装を変更しません。
+`v0.9.0`は2026-07-28に公開しました。Issue
+[#24](https://github.com/KeishiS/marginalis/issues/24)の比較と実接続を経て、MCPのAuthorization
+ServerにAuth0を採用しました。現在は内蔵Authorization Serverを撤去し、MarginalisをProtected
+Resourceへ限定する移行を進めています。採用理由は
+[ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)を参照してください。
 
-現行のREST APIは`/api/v3`、SQLite schemaは9、note profileは3、アーカイブは
+現行のREST APIは`/api/v3`、SQLite schemaは10、note profileは3、アーカイブは
 `marginalis-archive-7`です。完全なAsciiDoc文書を保存の正本とし、OpenAPI、TypeScript
 クライアント、MCPツール定義を`marginalis-contract`から生成します。
 
-## 次の判断
+## 移行の完了条件
 
-#24では、[共通の評価手順](mcp-authorization-server-evaluation.md)に従って内蔵実装、
-WorkOS AuthKit、Auth0、Keycloakを比較します。次の条件をすべて実際の接続で確認した候補だけを
-移行対象とします。
+ChatGPT Web UIではDCR、Kanidm login、scope、ノート操作、所有者・ACLを確認済みです。移行の
+公開判断までに、次を完了します。
 
-- ChatGPT、Claude Code、Codex CLIからの接続
-- 利用者、group、`resource`、`audience`、`scope`、失効の検証
-- 所有者とACL共有先だけがノートを操作できること
-- 小規模環境での費用、運用負担、障害時の影響
-
-採否はADRで決定します。移行を採用する場合だけ、削除する内蔵実装と移行手順を別の実装Issueで
-定めます。
+- Claude CodeとCodex CLIからの接続
+- Auth0でのgrant取消後におけるaccess tokenとrefresh tokenの挙動測定
+- schema 10へのarchive経由移行
+- NixOS配備、ログ、障害診断、文書の検証
 
 ## 今回扱わない作業
 
