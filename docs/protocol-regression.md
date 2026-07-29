@@ -2,45 +2,44 @@
 
 ## 目的
 
-この文書は、開発者に向けて、ブラウザーでのログイン、OAuth認可、MCP Streamable HTTPの仕様を
+この文書は、開発者に向けて、ブラウザーでのログイン、Auth0 access token検証、
+MCP Streamable HTTPの仕様を
 継続して確認する方法を説明します。外部サービスのUIは自動操作せず、実際のクライアントを使った
 確認結果はリリース受入へ記録します。
 
 ## 自動テスト
 
-`oauth_flow`は本番adapterとAxum routerのHTTP境界を通し、次を検証します。
+認証adapter、HTTP router、NixOS VMを責務ごとに分け、次を検証します。
 
-- OIDC Authorization Code + PKCE、nonce、group認可、Web session
-- Protected Resource Metadata、Authorization Server Metadata、DCR
-- OAuth Authorization Code + PKCE S256、resource indicator、正常なtoken refreshとrotation
-- consentのCSRF・Origin検証、認可取消後のaccess tokenとrefresh tokenの拒否
+- OIDC Authorization Code + PKCE、nonce、group claim、Web session
+- Protected Resource MetadataとAuth0 issuer
+- Auth0 metadata、JWKS、`RS256`、issuer、audience、期限、上流identity、group、scope
+- 無効なtokenの`401`、scope不足の`403`、認証基盤障害の`503`
 - MCP initialize、protocol version交渉、initialized notification、tool call
 - JSON-RPC error object、batch拒否
 
 NixOS VM試験`kanidm-discovery-vm`は実Kanidm 1.10、private CA、nginx TLS、`/marginalis`
 subpathを構築します。TLS越しのmetadata discoveryとlogin開始を検証し、サブパス復帰用Cookieと
-Kanidmへの遷移先を確認します。OIDC nonceとstateはCookieではなくサーバー側へ保持します。callbackの
-正常経路は決定的なmock IdPを使う`oauth_flow`で検証し、実Kanidmの対話UI変更と認証要素に
-依存させません。
+Kanidmへの遷移先を確認します。OIDC nonceとstateはCookieではなくサーバー側へ保持します。
+
+`mcp-authorization-vm`はTLS付きのfake Authorization Serverを構築し、metadataとJWKSの取得、
+署名tokenによるMCP呼び出し、認証基盤停止時の起動失敗を検証します。Auth0の外部UIとtenant設定は
+自動試験に含めず、この決定的な試験と人手受入を組み合わせます。
 
 ```sh
 nix develop --command cargo make frontend-build
-nix develop --command cargo test -p marginalis-integration-tests --test oauth_flow
+nix develop --command cargo test -p marginalis-auth-oauth
+nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
+nix build -L .#checks.x86_64-linux.mcp-authorization-vm
 nix build -L .#checks.x86_64-linux.kanidm-discovery-vm
 nix develop --command cargo make protocol-regression-assets
 ```
 
 ## クライアントとの接続確認に使うテストデータ
 
-[client-compatibility.json](../crates/marginalis-integration-tests/fixtures/client-compatibility.json)
-は標準仕様の試験データではなく、client相互運用fixtureです。
-
-- ChatGPT型のquery付き`POST /oauth/authorize`
-- opaque Originを持つconsent
-- Claude Code型の明示port付きloopback callback
-- Codex CLI型のOriginを送らないnative client
-
-fixtureは観測したrequest形状だけを固定し、client固有の非標準挙動を一般仕様として許可しません。
+Auth0のDCR、認可画面、callback互換性は外部サービスとclientの組合せに依存します。ChatGPT、
+Claude Code、Codex CLIごとに実接続を確認し、client固有のrequest形状をMarginalisの一般仕様へ
+取り込みません。
 
 ## テスト失敗時に保存する情報
 

@@ -91,7 +91,8 @@ Pull Requestからマージします。
    ```sh
    nix develop --command cargo test -p marginalis-web http::tests::rest_notes
    nix develop --command cargo test -p marginalis-sqlite tests::notes
-   nix develop --command cargo test -p marginalis-integration-tests --test oauth_flow full_flow
+   nix develop --command cargo test -p marginalis-auth-oauth
+   nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
    ```
 
    `docs/**`、ルートの案内文書、Issueテンプレートだけを変更する場合は、次の文書検査だけで

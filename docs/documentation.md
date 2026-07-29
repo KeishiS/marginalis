@@ -19,6 +19,7 @@
 | `docs/requirements.md` | システム責任者・開発者 | 現行の確定要件 | 要件の採用、変更、削除 |
 | `docs/traceability.md` | 開発者・受入担当者 | 要件IDと検証階層の対応 | 要件または検証方法の変更 |
 | `docs/architecture.md` | 開発者 | コンポーネントの責務と、一貫して満たすべき設計条件 | コンポーネントの役割分担、認可、データの整合性の変更 |
+| `docs/adr/` | 設計者・開発者 | 長期に参照する設計判断、代替案、再検討条件 | 採用判断または再検討条件の変更 |
 | `docs/openapi.json` | API利用者・ツール | REST APIの正式な仕様 | route、schema、statusの変更 |
 | `docs/rest-api.md` | API利用者 | REST APIの説明と動作例 | REST APIの仕様または利用例の変更 |
 | `docs/mcp.md` | MCP利用者・運用者 | MCP tool、scope、OAuth接続の説明と利用方法 | tool、scope、OAuthの変更 |

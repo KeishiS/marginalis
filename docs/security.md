@@ -18,9 +18,9 @@ systemdサービスの保護設定は[NixOSでの運用](nixos.md)を参照し�
 
 ### 影響の評価
 
-MarginalisはOIDC Providerの秘密鍵を保持せず、ID tokenの公開鍵による検証だけを行います。また、
-Kanidm 1.10が使用する`ES256`だけを署名方式として許可し、RSA署名を受け付けません。このため、
-報告されたRSA秘密鍵の処理は実行されません。
+MarginalisはOIDC ProviderやAuth0の秘密鍵を保持せず、ID tokenとMCP access tokenの公開鍵による
+検証だけを行います。Web用Kanidm ID tokenは`ES256`、Auth0 access tokenは`RS256`に限定します。
+どちらもRSA秘密鍵の処理を実行しないため、報告された秘密鍵処理の影響を受けません。
 
 ### 現在の対応
 
@@ -33,4 +33,4 @@ Kanidm 1.10が使用する`ES256`だけを署名方式として許可し、RSA�
 - `openidconnect`から`rsa`への依存がなくなった場合
 - 修正版へ更新できるようになった場合
 - 脆弱性の影響範囲が変わった場合
-- Kanidmで許可する署名方式を変更する場合
+- KanidmまたはAuth0で許可する署名方式を変更する場合
