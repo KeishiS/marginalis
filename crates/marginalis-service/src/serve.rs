@@ -1,12 +1,10 @@
 //! HTTP serviceのcomposition root。
 
 use marginalis_application::{
-    McpOAuthApplication, NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
+    NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
-use marginalis_auth_oauth::{
-    ExternalMcpAccessTokenAuthenticator, ExternalMcpAuthorizationConfiguration,
-};
+use marginalis_auth_oauth::{McpAccessTokenAuthenticatorAdapter, McpAuthorizationConfiguration};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
 use marginalis_sqlite::SqliteDatabase;
 use std::path::Path;
@@ -51,8 +49,6 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
-    let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
-    tracing::info!(event = "service.listening", address = %configuration.http.listen_address, "Marginalis server listening");
     let cookie_path = cookie_path(&configuration.http.base_url);
     let oidc_provider = OidcIdentityProvider::new(
         database.oidc_login_attempt_store(),
@@ -91,42 +87,62 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         cookie_path,
         configuration.http.base_url.origin().ascii_serialization(),
     );
-    let state = if configuration.mcp_enabled {
+    let state = if let Some(mcp) = configuration.mcp {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
-        let endpoint = marginalis_web::http::McpEndpoint::new(
-            std::sync::Arc::new(McpOAuthApplication::new(
-                std::sync::Arc::new(database),
-                std::sync::Arc::new(SystemClock),
-                std::sync::Arc::new(SystemRandom),
-                resource_uri.clone(),
-            )),
-            &configuration.http.base_url,
-            configuration.mcp_allowed_origins,
+        let authorization = mcp.authorization;
+        let authenticator =
+            match McpAccessTokenAuthenticatorAdapter::discover(McpAuthorizationConfiguration {
+                issuer: authorization.issuer.clone(),
+                audience: resource_uri,
+                upstream_issuer: configuration.oidc.issuer_url.to_string(),
+                upstream_issuer_claim: authorization.upstream_issuer_claim,
+                upstream_subject_claim: authorization.upstream_subject_claim,
+                groups_claim: authorization.groups_claim,
+                required_user_group: "server-users".into(),
+            })
+            .await
+            {
+                Ok(authenticator) => std::sync::Arc::new(authenticator),
+                Err(error) => {
+                    let reason = match error {
+                    marginalis_application::McpAccessTokenAuthenticationError::Configuration => {
+                        "configuration"
+                    }
+                    marginalis_application::McpAccessTokenAuthenticationError::Discovery => {
+                        "discovery"
+                    }
+                    marginalis_application::McpAccessTokenAuthenticationError::Rejected(_) => {
+                        "rejected"
+                    }
+                    marginalis_application::McpAccessTokenAuthenticationError::Unavailable => {
+                        "upstream-unavailable"
+                    }
+                };
+                    tracing::error!(
+                        event = "mcp.authorization.discovery.failed",
+                        reason,
+                        "MCP Authorization Server discovery failed"
+                    );
+                    return Err(error.into());
+                }
+            };
+        tracing::info!(
+            event = "mcp.authorization.discovery.completed",
+            "MCP Authorization Server discovery succeeded"
         );
-        let endpoint = if let Some(external) = configuration.external_mcp_authorization {
-            let authenticator = std::sync::Arc::new(
-                ExternalMcpAccessTokenAuthenticator::discover(
-                    ExternalMcpAuthorizationConfiguration {
-                        issuer: external.issuer.clone(),
-                        audience: resource_uri,
-                        upstream_issuer: configuration.oidc.issuer_url.to_string(),
-                        upstream_issuer_claim: external.upstream_issuer_claim,
-                        upstream_subject_claim: external.upstream_subject_claim,
-                        groups_claim: external.groups_claim,
-                        required_user_group: "server-users".into(),
-                    },
-                )
-                .await?,
-            );
-            endpoint.with_external_authorization_server(external.issuer, authenticator)?
-        } else {
-            endpoint
-        };
+        let endpoint = marginalis_web::http::McpEndpoint::new(
+            &configuration.http.base_url,
+            mcp.allowed_origins,
+            authorization.issuer,
+            authenticator,
+        )?;
         state.with_mcp(endpoint)
     } else {
         state
     };
+    let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
+    tracing::info!(event = "service.listening", address = %configuration.http.listen_address, "Marginalis server listening");
     axum::serve(
         listener,
         marginalis_web::http::router(state)

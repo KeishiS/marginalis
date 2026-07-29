@@ -1,13 +1,9 @@
 use std::str::FromStr;
 
-use marginalis_application::{
-    McpAuthorizationCodeExchange, McpRefreshTokenRotation, McpRefreshTokenRotationOutcome,
-    OidcLoginAttempt, OidcLoginAttemptStore, RestorePlan,
-};
+use marginalis_application::{OidcLoginAttempt, OidcLoginAttemptStore, RestorePlan};
 use marginalis_domain::{
-    Actor, EntityId, Identity, McpAuthorizationGrant, McpOAuthClient, Note, NoteAccess,
-    NoteAclEntry, NoteDraft, NoteId, NotePermission, Revision, SOFT_DELETE_RETENTION_MS,
-    UnixMillis, WebSession,
+    Actor, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NotePermission,
+    Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
 };
 
 use super::*;
@@ -36,10 +32,4 @@ mod sessions {
     use super::*;
 
     include!("tests/sessions.rs");
-}
-
-mod oauth {
-    use super::*;
-
-    include!("tests/oauth.rs");
 }

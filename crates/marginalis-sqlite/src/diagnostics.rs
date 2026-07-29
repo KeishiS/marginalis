@@ -156,12 +156,8 @@ mod tests {
             .await
             .expect("old schema fixture");
         sqlx::query(
-            "INSERT INTO mcp_authorization_codes \
-             (code_hash, client_id, redirect_uri, resource_uri, issuer, subject, \
-              scopes, code_challenge, expires_at_ms) \
-             VALUES (x'00', 'missing-client', 'https://client.example.test/callback', \
-              'https://marginalis.example.test/mcp', 'https://id.example.test', 'alice', \
-              'notes:read', 'challenge', 1000)",
+            "INSERT INTO note_acl (note_id, issuer, subject, permission)
+             VALUES ('missing-note', 'https://id.example.test', 'alice', 'read')",
         )
         .execute(&pool)
         .await

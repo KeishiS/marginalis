@@ -68,7 +68,7 @@ async fn sessions_retain_the_validated_identity() {
         .await
         .expect("issue replacement session");
     let counts = database
-        .purge_expired_auth_state(UnixMillis::new(2_100), UnixMillis::new(0))
+        .purge_expired_auth_state(UnixMillis::new(2_100))
         .await
         .expect("explicit session cleanup");
     assert_eq!(counts.web_sessions, 1);
@@ -138,7 +138,7 @@ async fn explicit_auth_cleanup_removes_expired_rows_without_new_issuance() {
         None
     );
     let counts = database
-        .purge_expired_auth_state(UnixMillis::new(1_000), UnixMillis::new(0))
+        .purge_expired_auth_state(UnixMillis::new(1_000))
         .await
         .expect("explicit cleanup");
     assert_eq!(counts.oidc_login_attempts, 1);

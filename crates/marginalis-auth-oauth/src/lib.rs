@@ -10,9 +10,11 @@ use std::{
 use async_trait::async_trait;
 use jsonwebtoken::{
     Algorithm, DecodingKey, Validation, decode, decode_header,
-    jwk::{Jwk, JwkSet},
+    jwk::{AlgorithmParameters, Jwk, JwkSet, KeyAlgorithm},
 };
-use marginalis_application::{McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator};
+use marginalis_application::{
+    McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator, McpAccessTokenRejection,
+};
 use marginalis_domain::{Actor, McpAuthenticatedActor};
 use serde::Deserialize;
 use tokio::sync::{Mutex, RwLock};
@@ -29,7 +31,7 @@ const MINIMUM_JWKS_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const TOKEN_TIME_LEEWAY_SECONDS: u64 = 5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExternalMcpAuthorizationConfiguration {
+pub struct McpAuthorizationConfiguration {
     pub issuer: String,
     pub audience: String,
     pub upstream_issuer: String,
@@ -40,7 +42,7 @@ pub struct ExternalMcpAuthorizationConfiguration {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExternalMcpAuthorizationConfigurationError {
+pub enum McpAuthorizationConfigurationError {
     InvalidIssuer,
     InvalidAudience,
     InvalidUpstreamIssuer,
@@ -48,35 +50,35 @@ pub enum ExternalMcpAuthorizationConfigurationError {
     InvalidGroup,
 }
 
-impl fmt::Display for ExternalMcpAuthorizationConfigurationError {
+impl fmt::Display for McpAuthorizationConfigurationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("external MCP authorization configuration is invalid")
+        formatter.write_str("MCP Authorization Server configuration is invalid")
     }
 }
 
-impl std::error::Error for ExternalMcpAuthorizationConfigurationError {}
+impl std::error::Error for McpAuthorizationConfigurationError {}
 
-impl ExternalMcpAuthorizationConfiguration {
-    pub fn validate(self) -> Result<Self, ExternalMcpAuthorizationConfigurationError> {
+impl McpAuthorizationConfiguration {
+    pub fn validate(self) -> Result<Self, McpAuthorizationConfigurationError> {
         validate_https_url(&self.issuer)
-            .map_err(|_| ExternalMcpAuthorizationConfigurationError::InvalidIssuer)?;
+            .map_err(|_| McpAuthorizationConfigurationError::InvalidIssuer)?;
         validate_https_url(&self.audience)
-            .map_err(|_| ExternalMcpAuthorizationConfigurationError::InvalidAudience)?;
+            .map_err(|_| McpAuthorizationConfigurationError::InvalidAudience)?;
         validate_https_url(&self.upstream_issuer)
-            .map_err(|_| ExternalMcpAuthorizationConfigurationError::InvalidUpstreamIssuer)?;
+            .map_err(|_| McpAuthorizationConfigurationError::InvalidUpstreamIssuer)?;
         for claim in [
             &self.upstream_issuer_claim,
             &self.upstream_subject_claim,
             &self.groups_claim,
         ] {
             if claim.is_empty() || claim.len() > MAX_CLAIM_NAME_BYTES {
-                return Err(ExternalMcpAuthorizationConfigurationError::InvalidClaimName);
+                return Err(McpAuthorizationConfigurationError::InvalidClaimName);
             }
         }
         if self.required_user_group.trim().is_empty()
             || self.required_user_group.len() > MAX_GROUP_BYTES
         {
-            return Err(ExternalMcpAuthorizationConfigurationError::InvalidGroup);
+            return Err(McpAuthorizationConfigurationError::InvalidGroup);
         }
         Ok(self)
     }
@@ -108,18 +110,18 @@ struct Claims {
     values: serde_json::Map<String, serde_json::Value>,
 }
 
-pub struct ExternalMcpAccessTokenAuthenticator {
-    configuration: ExternalMcpAuthorizationConfiguration,
+pub struct McpAccessTokenAuthenticatorAdapter {
+    configuration: McpAuthorizationConfiguration,
     client: reqwest::Client,
     jwks_uri: Url,
     jwks: Arc<RwLock<JwkSet>>,
     jwks_refresh: Arc<Mutex<()>>,
-    last_jwks_refresh: Arc<RwLock<Instant>>,
+    last_jwks_refresh_attempt: Arc<RwLock<Instant>>,
 }
 
-impl ExternalMcpAccessTokenAuthenticator {
+impl McpAccessTokenAuthenticatorAdapter {
     pub async fn discover(
-        configuration: ExternalMcpAuthorizationConfiguration,
+        configuration: McpAuthorizationConfiguration,
     ) -> Result<Self, McpAccessTokenAuthenticationError> {
         let configuration = configuration
             .validate()
@@ -133,7 +135,7 @@ impl ExternalMcpAccessTokenAuthenticator {
     }
 
     pub async fn discover_with_client(
-        configuration: ExternalMcpAuthorizationConfiguration,
+        configuration: McpAuthorizationConfiguration,
         client: reqwest::Client,
     ) -> Result<Self, McpAccessTokenAuthenticationError> {
         let configuration = configuration
@@ -158,13 +160,14 @@ impl ExternalMcpAccessTokenAuthenticator {
             return Err(McpAccessTokenAuthenticationError::Discovery);
         }
         let jwks = fetch_json::<JwkSet>(&client, jwks_uri.clone()).await?;
+        validate_jwks(&jwks)?;
         Ok(Self {
             configuration,
             client,
             jwks_uri,
             jwks: Arc::new(RwLock::new(jwks)),
             jwks_refresh: Arc::new(Mutex::new(())),
-            last_jwks_refresh: Arc::new(RwLock::new(Instant::now())),
+            last_jwks_refresh_attempt: Arc::new(RwLock::new(Instant::now())),
         })
     }
 
@@ -172,8 +175,9 @@ impl ExternalMcpAccessTokenAuthenticator {
         &self,
         token: &str,
     ) -> Result<Option<DecodingKey>, McpAccessTokenAuthenticationError> {
-        let header =
-            decode_header(token).map_err(|_| McpAccessTokenAuthenticationError::Rejected)?;
+        let header = decode_header(token).map_err(|_| {
+            McpAccessTokenAuthenticationError::Rejected(McpAccessTokenRejection::TokenFormat)
+        })?;
         if header.alg != Algorithm::RS256 {
             return Ok(None);
         }
@@ -186,19 +190,34 @@ impl ExternalMcpAccessTokenAuthenticator {
                 return decoding_key(key).map(Some);
             }
         }
-        if self.last_jwks_refresh.read().await.elapsed() < MINIMUM_JWKS_REFRESH_INTERVAL {
+        if self.last_jwks_refresh_attempt.read().await.elapsed() < MINIMUM_JWKS_REFRESH_INTERVAL {
             return Ok(None);
         }
         let _refresh = self.jwks_refresh.lock().await;
-        if self.last_jwks_refresh.read().await.elapsed() < MINIMUM_JWKS_REFRESH_INTERVAL {
+        if self.last_jwks_refresh_attempt.read().await.elapsed() < MINIMUM_JWKS_REFRESH_INTERVAL {
             return Ok(None);
         }
-        let refreshed = fetch_json::<JwkSet>(&self.client, self.jwks_uri.clone()).await?;
+        *self.last_jwks_refresh_attempt.write().await = Instant::now();
+        let refreshed = match fetch_json::<JwkSet>(&self.client, self.jwks_uri.clone()).await {
+            Ok(refreshed) => refreshed,
+            Err(error) => {
+                tracing::error!(
+                    event = "mcp.authorization.jwks_refresh.failed",
+                    reason = authentication_error_reason(error),
+                    "MCP Authorization Server signing-key refresh failed"
+                );
+                return Err(error);
+            }
+        };
+        validate_jwks(&refreshed)?;
         let key = matching_key(&refreshed, key_id)
             .map(decoding_key)
             .transpose()?;
         *self.jwks.write().await = refreshed;
-        *self.last_jwks_refresh.write().await = Instant::now();
+        tracing::info!(
+            event = "mcp.authorization.jwks_refresh.completed",
+            "MCP Authorization Server signing keys were refreshed"
+        );
         Ok(key)
     }
 
@@ -220,23 +239,30 @@ impl ExternalMcpAccessTokenAuthenticator {
         validation.validate_exp = true;
         validation.validate_nbf = true;
         validation.leeway = TOKEN_TIME_LEEWAY_SECONDS;
-        let token = decode::<Claims>(token, &key, &validation)
-            .map_err(|_| McpAccessTokenAuthenticationError::Rejected)?;
+        let token = decode::<Claims>(token, &key, &validation).map_err(|_| {
+            McpAccessTokenAuthenticationError::Rejected(McpAccessTokenRejection::StandardClaims)
+        })?;
         claims_to_actor(&self.configuration, token.claims).map(Some)
     }
 }
 
+fn authentication_error_reason(error: McpAccessTokenAuthenticationError) -> &'static str {
+    match error {
+        McpAccessTokenAuthenticationError::Configuration => "configuration",
+        McpAccessTokenAuthenticationError::Discovery => "discovery",
+        McpAccessTokenAuthenticationError::Rejected(reason) => reason.log_reason(),
+        McpAccessTokenAuthenticationError::Unavailable => "upstream-unavailable",
+    }
+}
+
 #[async_trait]
-impl McpAccessTokenAuthenticator for ExternalMcpAccessTokenAuthenticator {
+impl McpAccessTokenAuthenticator for McpAccessTokenAuthenticatorAdapter {
     async fn authenticate_access_token(
         &self,
         token: String,
         resource_uri: String,
     ) -> Result<Option<McpAuthenticatedActor>, McpAccessTokenAuthenticationError> {
-        match self.authenticate_token(&token, &resource_uri).await {
-            Err(McpAccessTokenAuthenticationError::Rejected) => Ok(None),
-            result => result,
-        }
+        self.authenticate_token(&token, &resource_uri).await
     }
 }
 
@@ -293,23 +319,49 @@ fn matching_key<'a>(jwks: &'a JwkSet, key_id: &str) -> Option<&'a Jwk> {
         key.common.key_id.as_deref() == Some(key_id)
             && key
                 .common
+                .key_algorithm
+                .is_none_or(|algorithm| algorithm == KeyAlgorithm::RS256)
+            && key
+                .common
                 .public_key_use
                 .as_ref()
                 .is_none_or(|usage| matches!(usage, jsonwebtoken::jwk::PublicKeyUse::Signature))
     })
 }
 
+fn validate_jwks(jwks: &JwkSet) -> Result<(), McpAccessTokenAuthenticationError> {
+    let has_usable_key = jwks.keys.iter().any(|key| {
+        let rsa_parameters_are_present = matches!(
+            &key.algorithm,
+            AlgorithmParameters::RSA(parameters)
+                if !parameters.n.is_empty() && !parameters.e.is_empty()
+        );
+        key.common.key_id.as_ref().is_some_and(|key_id| {
+            rsa_parameters_are_present
+                && matching_key(jwks, key_id)
+                    .is_some_and(|matched| DecodingKey::from_jwk(matched).is_ok())
+        })
+    });
+    if has_usable_key {
+        Ok(())
+    } else {
+        Err(McpAccessTokenAuthenticationError::Discovery)
+    }
+}
+
 fn decoding_key(key: &Jwk) -> Result<DecodingKey, McpAccessTokenAuthenticationError> {
-    DecodingKey::from_jwk(key).map_err(|_| McpAccessTokenAuthenticationError::Rejected)
+    DecodingKey::from_jwk(key).map_err(|_| McpAccessTokenAuthenticationError::Discovery)
 }
 
 fn claims_to_actor(
-    configuration: &ExternalMcpAuthorizationConfiguration,
+    configuration: &McpAuthorizationConfiguration,
     claims: Claims,
 ) -> Result<McpAuthenticatedActor, McpAccessTokenAuthenticationError> {
     let upstream_issuer = claim_string(&claims, &configuration.upstream_issuer_claim)?;
     if upstream_issuer != configuration.upstream_issuer {
-        return Err(McpAccessTokenAuthenticationError::Rejected);
+        return Err(McpAccessTokenAuthenticationError::Rejected(
+            McpAccessTokenRejection::IdentityClaims,
+        ));
     }
     let upstream_subject = claim_string(&claims, &configuration.upstream_subject_claim)?;
     let groups = claim_strings(
@@ -319,11 +371,15 @@ fn claims_to_actor(
         MAX_GROUP_BYTES,
     )?;
     if !groups.contains(&configuration.required_user_group) {
-        return Err(McpAccessTokenAuthenticationError::Rejected);
+        return Err(McpAccessTokenAuthenticationError::Rejected(
+            McpAccessTokenRejection::GroupsClaim,
+        ));
     }
     let scopes = claim_scope(&claims)?;
-    let actor = Actor::try_new(upstream_issuer.to_owned(), upstream_subject.to_owned())
-        .map_err(|_| McpAccessTokenAuthenticationError::Rejected)?;
+    let actor =
+        Actor::try_new(upstream_issuer.to_owned(), upstream_subject.to_owned()).map_err(|_| {
+            McpAccessTokenAuthenticationError::Rejected(McpAccessTokenRejection::IdentityClaims)
+        })?;
     Ok(McpAuthenticatedActor { actor, scopes })
 }
 
@@ -336,7 +392,9 @@ fn claim_string<'a>(
         .get(name)
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.trim().is_empty())
-        .ok_or(McpAccessTokenAuthenticationError::Rejected)
+        .ok_or(McpAccessTokenAuthenticationError::Rejected(
+            McpAccessTokenRejection::IdentityClaims,
+        ))
 }
 
 fn claim_strings(
@@ -350,7 +408,9 @@ fn claim_strings(
         .get(name)
         .and_then(serde_json::Value::as_array)
         .filter(|values| values.len() <= maximum_values)
-        .ok_or(McpAccessTokenAuthenticationError::Rejected)?;
+        .ok_or(McpAccessTokenAuthenticationError::Rejected(
+            McpAccessTokenRejection::GroupsClaim,
+        ))?;
     values
         .iter()
         .map(|value| {
@@ -358,7 +418,9 @@ fn claim_strings(
                 .as_str()
                 .filter(|value| !value.trim().is_empty() && value.len() <= maximum_bytes)
                 .map(str::to_owned)
-                .ok_or(McpAccessTokenAuthenticationError::Rejected)
+                .ok_or(McpAccessTokenAuthenticationError::Rejected(
+                    McpAccessTokenRejection::GroupsClaim,
+                ))
         })
         .collect()
 }
@@ -368,7 +430,9 @@ fn claim_scope(claims: &Claims) -> Result<Vec<String>, McpAccessTokenAuthenticat
         .values
         .get("scope")
         .and_then(serde_json::Value::as_str)
-        .ok_or(McpAccessTokenAuthenticationError::Rejected)?
+        .ok_or(McpAccessTokenAuthenticationError::Rejected(
+            McpAccessTokenRejection::ScopeClaim,
+        ))?
         .split_ascii_whitespace()
         .collect::<BTreeSet<_>>();
     if scopes.is_empty()
@@ -381,7 +445,9 @@ fn claim_scope(claims: &Claims) -> Result<Vec<String>, McpAccessTokenAuthenticat
                 )
         })
     {
-        return Err(McpAccessTokenAuthenticationError::Rejected);
+        return Err(McpAccessTokenAuthenticationError::Rejected(
+            McpAccessTokenRejection::ScopeClaim,
+        ));
     }
     Ok(scopes
         .into_iter()
@@ -397,8 +463,8 @@ mod tests {
     use jsonwebtoken::{EncodingKey, Header, encode};
     use rsa::{RsaPrivateKey, pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts};
 
-    fn configuration() -> ExternalMcpAuthorizationConfiguration {
-        ExternalMcpAuthorizationConfiguration {
+    fn configuration() -> McpAuthorizationConfiguration {
+        McpAuthorizationConfiguration {
             issuer: "https://evaluation.jp.auth0.com/".into(),
             audience: "https://notes.example.test/mcp".into(),
             upstream_issuer: "https://id.example.test/oauth2/openid/marginalis".into(),
@@ -434,14 +500,14 @@ mod tests {
         invalid.issuer = "http://evaluation.example.test".into();
         assert_eq!(
             invalid.validate(),
-            Err(ExternalMcpAuthorizationConfigurationError::InvalidIssuer)
+            Err(McpAuthorizationConfigurationError::InvalidIssuer)
         );
 
         let mut invalid = configuration();
         invalid.groups_claim = "x".repeat(MAX_CLAIM_NAME_BYTES + 1);
         assert_eq!(
             invalid.validate(),
-            Err(ExternalMcpAuthorizationConfigurationError::InvalidClaimName)
+            Err(McpAuthorizationConfigurationError::InvalidClaimName)
         );
     }
 
@@ -499,10 +565,10 @@ mod tests {
                 serde_json::json!("notes:read"),
             ),
         ] {
-            assert_eq!(
+            assert!(matches!(
                 claims_to_actor(&configuration, rejected),
-                Err(McpAccessTokenAuthenticationError::Rejected)
-            );
+                Err(McpAccessTokenAuthenticationError::Rejected(_))
+            ));
         }
     }
 
@@ -523,6 +589,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn failed_jwks_refresh_is_not_retried_for_each_unknown_key() {
+        let token = format!(
+            "{}.{}.signature",
+            URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","kid":"unknown"}"#),
+            URL_SAFE_NO_PAD.encode(br#"{}"#)
+        );
+        let authenticator = McpAccessTokenAuthenticatorAdapter {
+            configuration: configuration(),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_millis(100))
+                .build()
+                .expect("HTTP client"),
+            jwks_uri: Url::parse("http://127.0.0.1:9/jwks").expect("JWKS URL"),
+            jwks: Arc::new(RwLock::new(JwkSet { keys: Vec::new() })),
+            jwks_refresh: Arc::new(Mutex::new(())),
+            last_jwks_refresh_attempt: Arc::new(RwLock::new(
+                Instant::now() - MINIMUM_JWKS_REFRESH_INTERVAL,
+            )),
+        };
+
+        assert!(matches!(
+            authenticator.decoding_key(&token).await,
+            Err(McpAccessTokenAuthenticationError::Unavailable)
+        ));
+        assert!(
+            authenticator
+                .decoding_key(&token)
+                .await
+                .expect("refresh backoff")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn jwks_requires_a_usable_rs256_signing_key() {
+        assert_eq!(
+            validate_jwks(&JwkSet { keys: Vec::new() }),
+            Err(McpAccessTokenAuthenticationError::Discovery)
+        );
+        let unusable = serde_json::from_value(serde_json::json!({
+            "keys": [{
+                "kty": "RSA",
+                "kid": "broken",
+                "use": "sig",
+                "alg": "RS256",
+                "n": "",
+                "e": ""
+            }]
+        }))
+        .expect("JWKS");
+        assert_eq!(
+            validate_jwks(&unusable),
+            Err(McpAccessTokenAuthenticationError::Discovery)
+        );
+    }
+
+    #[tokio::test]
     async fn rs256_signature_issuer_audience_and_expiry_are_verified() {
         let private_key = RsaPrivateKey::new(&mut rand::thread_rng(), 2_048).expect("test RSA key");
         let private_der = private_key.to_pkcs1_der().expect("private key DER");
@@ -539,14 +662,14 @@ mod tests {
         }))
         .expect("JWKS");
         let configuration = configuration();
-        let authenticator = ExternalMcpAccessTokenAuthenticator {
+        let authenticator = McpAccessTokenAuthenticatorAdapter {
             configuration: configuration.clone(),
             client: reqwest::Client::new(),
             jwks_uri: Url::parse("https://evaluation.jp.auth0.com/.well-known/jwks.json")
                 .expect("JWKS URL"),
             jwks: Arc::new(RwLock::new(jwks)),
             jwks_refresh: Arc::new(Mutex::new(())),
-            last_jwks_refresh: Arc::new(RwLock::new(Instant::now())),
+            last_jwks_refresh_attempt: Arc::new(RwLock::new(Instant::now())),
         };
         let now = jsonwebtoken::get_current_timestamp();
         let token_claims = serde_json::json!({
@@ -596,7 +719,9 @@ mod tests {
                     "https://notes.example.test/mcp".into()
                 )
                 .await,
-            Ok(None)
+            Err(McpAccessTokenAuthenticationError::Rejected(
+                McpAccessTokenRejection::StandardClaims
+            ))
         );
 
         let mut expired_claims = token_claims;
@@ -616,7 +741,9 @@ mod tests {
             authenticator
                 .authenticate_access_token(expired_token, configuration.audience.clone())
                 .await,
-            Ok(None)
+            Err(McpAccessTokenAuthenticationError::Rejected(
+                McpAccessTokenRejection::StandardClaims
+            ))
         );
 
         assert!(

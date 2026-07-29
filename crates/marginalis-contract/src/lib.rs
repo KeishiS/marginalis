@@ -79,11 +79,6 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         specification_path: "/api/v3/notes/{note_id}/source",
         probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/source",
     },
-    RestRouteContract {
-        method: "DELETE",
-        specification_path: "/api/v3/mcp-authorizations/{client_id}",
-        probe_path: "/api/v3/mcp-authorizations/client",
-    },
 ];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -532,9 +527,6 @@ fn rest_paths() -> Value {
                 "summary": "Export canonical AsciiDoc",
                 "responses": {"200": {"description": "AsciiDoc source", "content": {"text/asciidoc": {"schema": {"type": "string"}}}}}
             }
-        },
-        "/api/v3/mcp-authorizations/{client_id}": {
-            "delete": {"summary": "Revoke MCP authorization", "responses": {"204": {"description": "authorization revoked"}}}
         }
     })
 }

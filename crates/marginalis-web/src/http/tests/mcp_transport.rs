@@ -1,298 +1,56 @@
 #[tokio::test]
-async fn mcp_metadata_is_available_when_enabled() {
+async fn protected_resource_metadata_names_the_external_authorization_server() {
     let response = mcp_app()
         .oneshot(
-            Request::get("/.well-known/oauth-authorization-server")
+            Request::get("/.well-known/oauth-protected-resource/mcp")
                 .body(Body::empty())
                 .expect("request"),
         )
         .await
         .expect("response");
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("metadata body");
     let metadata: serde_json::Value = serde_json::from_slice(&body).expect("metadata");
+    assert_eq!(metadata["resource"], "https://example.test/mcp");
+    assert_eq!(
+        metadata["authorization_servers"],
+        serde_json::json!(["https://issuer.example.test/"])
+    );
     assert_eq!(
         metadata["scopes_supported"],
         serde_json::json!(["notes:read", "notes:write", "notes:delete"])
     );
-
-    let protected = mcp_app()
-        .oneshot(
-            Request::get("/.well-known/oauth-protected-resource/mcp")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(protected.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(protected.into_body(), usize::MAX)
-        .await
-        .expect("metadata body");
-    let metadata: serde_json::Value = serde_json::from_slice(&body).expect("metadata");
-    assert_eq!(metadata["resource_name"], "Marginalis MCP");
 }
 
 #[tokio::test]
-async fn external_authorization_changes_discovery_and_access_token_authentication() {
-    let protected = external_mcp_app()
-        .oneshot(
-            Request::get("/.well-known/oauth-protected-resource/mcp")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(protected.status(), StatusCode::OK);
-    let metadata: serde_json::Value = serde_json::from_slice(
-        &axum::body::to_bytes(protected.into_body(), usize::MAX)
-            .await
-            .expect("metadata body"),
-    )
-    .expect("metadata");
-    assert_eq!(
-        metadata["authorization_servers"],
-        serde_json::json!(["https://evaluation.jp.auth0.com/"])
-    );
-
-    let accepted = external_mcp_app()
-        .oneshot(
-            Request::post("/mcp")
-                .header(header::CONTENT_TYPE, "application/json")
-                .header(header::ACCEPT, "application/json, text/event-stream")
-                .header(header::AUTHORIZATION, "Bearer external-token")
-                .body(Body::from(
-                    r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
-                ))
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(accepted.status(), StatusCode::OK);
-
-    let internal_token = external_mcp_app()
-        .oneshot(
-            Request::post("/mcp")
-                .header(header::CONTENT_TYPE, "application/json")
-                .header(header::ACCEPT, "application/json, text/event-stream")
-                .header(header::AUTHORIZATION, "Bearer valid-token")
-                .body(Body::from(
-                    r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
-                ))
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(internal_token.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn mcp_metadata_uses_rfc_well_known_paths_for_a_subpath_issuer() {
+async fn marginalis_does_not_expose_authorization_server_endpoints() {
     for path in [
-        "/.well-known/oauth-protected-resource/marginalis/mcp",
-        "/.well-known/oauth-authorization-server/marginalis",
+        "/.well-known/oauth-authorization-server",
+        "/oauth/authorize",
+        "/oauth/register",
+        "/oauth/token",
     ] {
-        let response = subpath_mcp_app()
+        let response = mcp_app()
             .oneshot(Request::get(path).body(Body::empty()).expect("request"))
             .await
             .expect("response");
-        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
     }
+}
 
-    let non_standard = subpath_mcp_app()
+#[tokio::test]
+async fn protected_resource_metadata_uses_the_rfc_path_for_a_subpath() {
+    let response = subpath_mcp_app()
         .oneshot(
-            Request::get("/marginalis/.well-known/oauth-authorization-server")
+            Request::get("/.well-known/oauth-protected-resource/marginalis/mcp")
                 .body(Body::empty())
                 .expect("request"),
         )
         .await
         .expect("response");
-    assert_eq!(non_standard.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn mcp_authorization_starts_login_when_no_web_session_exists() {
-    let response = mcp_app()
-            .oneshot(
-                Request::get(
-                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%3A48123%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state=opaque",
-                )
-                .body(Body::empty())
-                .expect("request"),
-            )
-            .await
-            .expect("response");
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    let login_location = response
-        .headers()
-        .get(header::LOCATION)
-        .expect("login location")
-        .to_str()
-        .expect("valid location")
-        .to_owned();
-    assert!(login_location.starts_with("/auth/oidc/login?next="));
-
-    let login = mcp_app()
-        .oneshot(
-            Request::get(login_location)
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(login.status(), StatusCode::TEMPORARY_REDIRECT);
-    assert_eq!(
-        login.headers().get(header::LOCATION).expect("location"),
-        "https://id.example.test/authorize"
-    );
-    assert!(
-        login
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .any(|value| value
-                .to_str()
-                .is_ok_and(|value| value.contains(RETURN_TO_COOKIE)))
-    );
-}
-
-#[tokio::test]
-async fn cross_origin_oauth_posts_start_login_without_bypassing_consent_csrf() {
-    let form_post = mcp_app()
-            .oneshot(
-                Request::post("/oauth/authorize")
-                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                    .header(header::ORIGIN, "https://chatgpt.com")
-                    .header("sec-fetch-site", "cross-site")
-                    .body(Body::from(
-                        "response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state=opaque",
-                    ))
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
-    assert_eq!(form_post.status(), StatusCode::SEE_OTHER);
-    assert!(
-        form_post
-            .headers()
-            .get(header::LOCATION)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|location| location.starts_with("/auth/oidc/login?next="))
-    );
-
-    let query_post = mcp_app()
-            .oneshot(
-                Request::post(
-                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state=opaque",
-                )
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::ORIGIN, "https://chatgpt.com")
-                .header("sec-fetch-site", "cross-site")
-                .body(Body::from("csrf_token=client-owned-value"))
-                .expect("request"),
-            )
-            .await
-            .expect("response");
-    assert_eq!(query_post.status(), StatusCode::SEE_OTHER);
-    assert!(
-        query_post
-            .headers()
-            .get(header::LOCATION)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|location| location.starts_with("/auth/oidc/login?next="))
-    );
-
-    let conflicting_post = mcp_app()
-            .oneshot(
-                Request::post(
-                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state=opaque",
-                )
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from("client_id=different-client"))
-                .expect("request"),
-            )
-            .await
-            .expect("response");
-    assert_eq!(conflicting_post.status(), StatusCode::SEE_OTHER);
-    assert!(
-        conflicting_post
-            .headers()
-            .get(header::LOCATION)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|location| location.contains("error=invalid_request"))
-    );
-
-    let forged_approval = mcp_app()
-            .oneshot(
-                Request::post("/oauth/authorize/consent")
-                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                    .header(header::ORIGIN, "https://chatgpt.com")
-                    .header("sec-fetch-site", "cross-site")
-                    .body(Body::from(
-                        "client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&state=opaque&csrf_token=forged&decision=approve",
-                    ))
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
-    assert_eq!(forged_approval.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn authorization_errors_redirect_only_after_client_redirect_validation() {
-    let invalid_target = mcp_app()
-            .oneshot(
-                Request::get(
-                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fother.example%2Fmcp&code_challenge=verifier&code_challenge_method=S256&state=opaque",
-                )
-                .body(Body::empty())
-                .expect("request"),
-            )
-            .await
-            .expect("response");
-    assert_eq!(invalid_target.status(), StatusCode::SEE_OTHER);
-    let location = invalid_target
-        .headers()
-        .get(header::LOCATION)
-        .and_then(|value| value.to_str().ok())
-        .expect("redirect location");
-    assert!(location.starts_with("https://chatgpt.com/connector/oauth/callback?"));
-    assert!(location.contains("error=invalid_target"));
-    assert!(location.contains("state=opaque"));
-
-    let missing_client = mcp_app()
-            .oneshot(
-                Request::get(
-                    "/oauth/authorize?response_type=code&redirect_uri=https%3A%2F%2Fevil.example%2Fcallback",
-                )
-                .body(Body::empty())
-                .expect("request"),
-            )
-            .await
-            .expect("response");
-    assert_eq!(missing_client.status(), StatusCode::BAD_REQUEST);
-    assert!(!missing_client.headers().contains_key(header::LOCATION));
-
-    let oversized_state = "x".repeat(3_000);
-    let oversized_resume = mcp_app()
-            .oneshot(
-                Request::get(format!(
-                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=verifier&code_challenge_method=S256&state={oversized_state}"
-                ))
-                .body(Body::empty())
-                .expect("request"),
-            )
-            .await
-            .expect("response");
-    assert_eq!(oversized_resume.status(), StatusCode::SEE_OTHER);
-    let location = oversized_resume
-        .headers()
-        .get(header::LOCATION)
-        .and_then(|value| value.to_str().ok())
-        .expect("redirect location");
-    assert!(location.starts_with("https://chatgpt.com/connector/oauth/callback?"));
-    assert!(location.contains("error=invalid_request"));
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -307,6 +65,26 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     let denied = mcp_app().oneshot(request).await.expect("response");
     assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
     assert!(denied.headers().contains_key(header::WWW_AUTHENTICATE));
+
+    let denied_before_media_negotiation = mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "text/plain")
+                .header(header::ACCEPT, "application/json")
+                .body(Body::from("not JSON"))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(
+        denied_before_media_negotiation.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(
+        denied_before_media_negotiation
+            .headers()
+            .contains_key(header::WWW_AUTHENTICATE)
+    );
 
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
@@ -383,6 +161,25 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         .expect("request");
     let ping = mcp_app().oneshot(request).await.expect("response");
     assert_eq!(ping.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn authorization_server_failure_returns_service_unavailable() {
+    let response = mcp_app_with_authenticator(Arc::new(UnavailableMcpAuthenticator))
+        .oneshot(
+            Request::post("/mcp")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer opaque-test-token")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(!response.headers().contains_key(header::WWW_AUTHENTICATE));
 }
 
 #[tokio::test]
@@ -491,6 +288,7 @@ async fn mcp_rejects_invalid_json_rpc_envelopes_and_reports_tool_errors_as_resul
                 Request::post("/mcp")
                     .header("content-type", "application/json")
                     .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer valid-token")
                     .body(Body::from(body))
                     .expect("request"),
             )
@@ -696,6 +494,7 @@ async fn mcp_negotiates_initialization_and_validates_the_protocol_header() {
             Request::post("/mcp")
                 .header("content-type", "application/json")
                 .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
                 .body(Body::from(
                     r#"{"jsonrpc":"2.0","id":1,"result":{"unexpected":true}}"#,
                 ))
@@ -710,6 +509,7 @@ async fn mcp_negotiates_initialization_and_validates_the_protocol_header() {
             Request::post("/mcp")
                 .header("content-type", "text/plain")
                 .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
                 .body(Body::from("{}"))
                 .expect("request"),
         )
@@ -766,16 +566,6 @@ async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
     let native_get = Request::get("/mcp").body(Body::empty()).expect("request");
     let unsupported = mcp_app().oneshot(native_get).await.expect("response");
     assert_eq!(unsupported.status(), StatusCode::METHOD_NOT_ALLOWED);
-}
-
-#[test]
-fn mcp_registration_limiter_bounds_a_window() {
-    let limiter = McpRegistrationRateLimiter::new(1, Duration::from_secs(60));
-    let now = Instant::now();
-    assert!(limiter.allow("https://chatgpt.com", now));
-    assert!(!limiter.allow("https://chatgpt.com", now));
-    assert!(limiter.allow("https://claude.ai", now));
-    assert!(limiter.allow("https://chatgpt.com", now + Duration::from_secs(61)));
 }
 
 #[test]

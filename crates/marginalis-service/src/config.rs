@@ -10,9 +10,7 @@ pub struct ServerConfig {
     pub http: HttpConfig,
     pub storage: StorageConfig,
     pub oidc: OidcConfig,
-    pub mcp_enabled: bool,
-    pub mcp_allowed_origins: Vec<String>,
-    pub external_mcp_authorization: Option<ExternalMcpAuthorizationConfig>,
+    pub mcp: Option<McpConfig>,
 }
 
 /// HTTP transportだけが必要とする公開設定。
@@ -39,11 +37,17 @@ pub struct OidcConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExternalMcpAuthorizationConfig {
+pub struct McpAuthorizationConfig {
     pub issuer: String,
     pub upstream_issuer_claim: String,
     pub upstream_subject_claim: String,
     pub groups_claim: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpConfig {
+    pub allowed_origins: Vec<String>,
+    pub authorization: McpAuthorizationConfig,
 }
 
 /// secret値は公開設定から分離する。Debugを実装せずログ出力を防ぐ。
@@ -104,6 +108,7 @@ impl ServerConfig {
         let listen_address = required("MARGINALIS_LISTEN_ADDR")?
             .parse()
             .map_err(|_| ConfigurationError::InvalidListenAddress)?;
+        let mcp_enabled = optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false);
         let configuration = Self {
             http: HttpConfig {
                 base_url,
@@ -117,11 +122,16 @@ impl ServerConfig {
                     .filter(|value| !value.is_empty())
                     .map(PathBuf::from),
             },
-            mcp_enabled: optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false),
-            mcp_allowed_origins: validate_mcp_allowed_origins(optional_csv(
-                "MARGINALIS_MCP_ALLOWED_ORIGINS",
-            )?)?,
-            external_mcp_authorization: external_mcp_authorization()?,
+            mcp: if mcp_enabled {
+                Some(McpConfig {
+                    allowed_origins: validate_mcp_allowed_origins(optional_csv(
+                        "MARGINALIS_MCP_ALLOWED_ORIGINS",
+                    )?)?,
+                    authorization: mcp_authorization()?,
+                })
+            } else {
+                None
+            },
         };
         let secrets = SecretConfig {
             oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
@@ -130,17 +140,13 @@ impl ServerConfig {
     }
 }
 
-fn external_mcp_authorization() -> Result<Option<ExternalMcpAuthorizationConfig>, ConfigurationError>
-{
-    let Some(issuer) = optional("MARGINALIS_MCP_EXTERNAL_ISSUER")? else {
-        return Ok(None);
-    };
-    Ok(Some(ExternalMcpAuthorizationConfig {
-        issuer,
+fn mcp_authorization() -> Result<McpAuthorizationConfig, ConfigurationError> {
+    Ok(McpAuthorizationConfig {
+        issuer: required("MARGINALIS_MCP_AUTHORIZATION_ISSUER")?,
         upstream_issuer_claim: required("MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM")?,
         upstream_subject_claim: required("MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM")?,
         groups_claim: required("MARGINALIS_MCP_GROUPS_CLAIM")?,
-    }))
+    })
 }
 
 impl StorageConfig {
@@ -160,15 +166,6 @@ fn optional_bool(name: &'static str) -> Result<Option<bool>, ConfigurationError>
         },
         Err(env::VarError::NotPresent) => Ok(None),
         Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpEnable),
-    }
-}
-
-fn optional(name: &'static str) -> Result<Option<String>, ConfigurationError> {
-    match env::var(name) {
-        Ok(value) if value.is_empty() => Ok(None),
-        Ok(value) => Ok(Some(value)),
-        Err(env::VarError::NotPresent) => Ok(None),
-        Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::MissingEnvironment(name)),
     }
 }
 

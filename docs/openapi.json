@@ -479,16 +479,6 @@
         "summary": "Liveness check"
       }
     },
-    "/api/v3/mcp-authorizations/{client_id}": {
-      "delete": {
-        "responses": {
-          "204": {
-            "description": "authorization revoked"
-          }
-        },
-        "summary": "Revoke MCP authorization"
-      }
-    },
     "/api/v3/notes": {
       "get": {
         "responses": {

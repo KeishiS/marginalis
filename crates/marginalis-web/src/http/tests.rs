@@ -6,18 +6,16 @@ use axum::{
 };
 use marginalis_application::{
     AuthenticationUseCaseError, McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator,
-    McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair,
-    McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands,
-    NotePresentation, NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
-    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
-    NoteValidationDiagnostic, NoteValidationTarget, NoteView, OidcAuthenticationUseCases,
-    RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
+    NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NotePresentation, NoteProfile,
+    NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax,
+    NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
+    NoteValidationTarget, NoteView, OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan,
+    WebSessionUseCases,
 };
 use marginalis_domain::{
-    Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note, NoteAccess,
-    NoteDraft, NoteId, NoteListEntry, NoteSummary, Revision, UnixMillis, WebSession,
+    Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, Note, NoteAccess, NoteDraft,
+    NoteId, NoteListEntry, NoteSummary, Revision, UnixMillis, WebSession,
 };
-use std::time::{Duration, Instant};
 use tower::ServiceExt;
 
 macro_rules! implement_note_boundaries {
@@ -131,13 +129,7 @@ macro_rules! implement_note_boundaries {
     };
 }
 
-use super::{
-    auth::{
-        RETURN_TO_COOKIE, authenticated_form_actor, external_path, valid_return_to,
-        validate_mutation_origin,
-    },
-    state::McpRegistrationRateLimiter,
-};
+use super::auth::{external_path, valid_return_to, validate_mutation_origin};
 
 struct Notes;
 
@@ -496,146 +488,45 @@ impl OidcAuthenticationUseCases for Oidc {
     }
 }
 
-struct Mcp;
-#[async_trait]
-impl McpOAuthUseCases for Mcp {
-    async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError> {
-        if client
-            .redirect_uris
-            .iter()
-            .any(|uri| uri.starts_with("http://remote.example"))
-        {
-            Err(McpOAuthUseCaseError::InvalidRedirectUri)
-        } else {
-            Ok(())
-        }
-    }
-    async fn resolve_authorization_client(
-        &self,
-        client_id: String,
-        redirect_uri: Option<String>,
-    ) -> Result<McpAuthorizationClient, McpOAuthUseCaseError> {
-        let redirect_uri =
-            redirect_uri.unwrap_or_else(|| "https://client.example.test/callback".into());
-        Ok(McpAuthorizationClient {
-            client: McpOAuthClient {
-                client_id,
-                display_name: "Test MCP client".into(),
-                redirect_uris: vec![redirect_uri.clone()],
-            },
-            redirect_uri,
-        })
-    }
-    async fn validate_authorization_request(
-        &self,
-        request: marginalis_application::McpAuthorizationRequest,
-    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
-        if request.resource_uri != "https://example.test/mcp" {
-            return Err(McpOAuthUseCaseError::InvalidTarget);
-        }
-        let redirect_uri = request
-            .redirect_uri
-            .unwrap_or_else(|| "https://client.example.test/callback".into());
-        Ok(McpValidatedAuthorizationRequest {
-            client: McpOAuthClient {
-                client_id: request.client_id,
-                display_name: "Test MCP client".into(),
-                redirect_uris: vec![redirect_uri.clone()],
-            },
-            redirect_uri,
-            resource_uri: request.resource_uri,
-            scopes: request.scopes,
-            code_challenge: request.code_challenge,
-        })
-    }
-    async fn authorize(
-        &self,
-        _actor: Actor,
-        _request: McpValidatedAuthorizationRequest,
-    ) -> Result<String, McpOAuthUseCaseError> {
-        Err(McpOAuthUseCaseError::InvalidRequest)
-    }
-    async fn exchange_authorization_code(
-        &self,
-        _code: String,
-        _client_id: String,
-        _redirect_uri: Option<String>,
-        _resource_uri: String,
-        _verifier: String,
-    ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
-        Ok(McpTokenPair {
-            access_token: "access-token".into(),
-            refresh_token: "refresh-token".into(),
-            access_expires_in_seconds: 300,
-            scope: "notes:read".into(),
-        })
-    }
-    async fn refresh_access_token(
-        &self,
-        refresh_token: String,
-        _client_id: String,
-        _resource_uri: String,
-        scopes: Option<Vec<String>>,
-    ) -> Result<McpTokenPair, McpOAuthUseCaseError> {
-        if refresh_token == "refresh-ok" {
-            Ok(McpTokenPair {
-                access_token: "downscoped-access".into(),
-                refresh_token: "rotated-refresh".into(),
-                access_expires_in_seconds: 300,
-                scope: scopes
-                    .unwrap_or_else(|| vec!["notes:read".into()])
-                    .join(" "),
-            })
-        } else {
-            Err(McpOAuthUseCaseError::InvalidGrant)
-        }
-    }
-    async fn authenticate(
-        &self,
-        token: String,
-        _resource_uri: String,
-    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
-        Ok(
-            matches!(token.as_str(), "valid-token" | "read-token" | "write-token").then(|| {
-                McpAuthenticatedActor {
-                    actor: Actor::try_new("https://kanidm.example.test".into(), "alice".into())
-                        .expect("valid actor"),
-                    scopes: match token.as_str() {
-                        "read-token" => vec!["notes:read".into()],
-                        "write-token" => vec!["notes:write".into()],
-                        _ => vec![
-                            "notes:read".into(),
-                            "notes:write".into(),
-                            "notes:delete".into(),
-                        ],
-                    },
-                }
-            }),
-        )
-    }
-    async fn revoke(&self, _actor: Actor, _client_id: String) -> Result<(), McpOAuthUseCaseError> {
-        Ok(())
-    }
-}
-
-struct ExternalMcpAuthenticator;
+struct TestMcpAuthenticator;
 
 #[async_trait]
-impl McpAccessTokenAuthenticator for ExternalMcpAuthenticator {
+impl McpAccessTokenAuthenticator for TestMcpAuthenticator {
     async fn authenticate_access_token(
         &self,
         token: String,
         resource_uri: String,
     ) -> Result<Option<McpAuthenticatedActor>, McpAccessTokenAuthenticationError> {
-        Ok(
-            (token == "external-token" && resource_uri == "https://example.test/mcp").then(|| {
-                McpAuthenticatedActor {
-                    actor: Actor::try_new("https://kanidm.example.test".into(), "alice".into())
-                        .expect("valid actor"),
-                    scopes: vec!["notes:read".into()],
-                }
-            }),
-        )
+        Ok((matches!(
+            token.as_str(),
+            "external-token" | "valid-token" | "read-token" | "write-token"
+        ) && resource_uri.ends_with("/mcp"))
+        .then(|| McpAuthenticatedActor {
+            actor: Actor::try_new("https://kanidm.example.test".into(), "alice".into())
+                .expect("valid actor"),
+            scopes: match token.as_str() {
+                "read-token" | "external-token" => vec!["notes:read".into()],
+                "write-token" => vec!["notes:write".into()],
+                _ => vec![
+                    "notes:read".into(),
+                    "notes:write".into(),
+                    "notes:delete".into(),
+                ],
+            },
+        }))
+    }
+}
+
+struct UnavailableMcpAuthenticator;
+
+#[async_trait]
+impl McpAccessTokenAuthenticator for UnavailableMcpAuthenticator {
+    async fn authenticate_access_token(
+        &self,
+        _token: String,
+        _resource_uri: String,
+    ) -> Result<Option<McpAuthenticatedActor>, McpAccessTokenAuthenticationError> {
+        Err(McpAccessTokenAuthenticationError::Unavailable)
     }
 }
 
@@ -650,31 +541,11 @@ fn app() -> Router {
 }
 
 fn mcp_app() -> Router {
-    let base_url = url::Url::parse("https://example.test").expect("base URL");
-    router(
-        ApiState::new(
-            Arc::new(Notes),
-            Arc::new(Sessions),
-            Arc::new(Oidc),
-            "/".into(),
-            "https://example.test".into(),
-        )
-        .with_mcp(McpEndpoint::new(
-            Arc::new(Mcp),
-            &base_url,
-            vec!["https://chatgpt.com".into()],
-        )),
-    )
+    mcp_app_with_authenticator(Arc::new(TestMcpAuthenticator))
 }
 
-fn external_mcp_app() -> Router {
+fn mcp_app_with_authenticator(authenticator: Arc<dyn McpAccessTokenAuthenticator>) -> Router {
     let base_url = url::Url::parse("https://example.test").expect("base URL");
-    let endpoint = McpEndpoint::new(Arc::new(Mcp), &base_url, vec!["https://chatgpt.com".into()])
-        .with_external_authorization_server(
-            "https://evaluation.jp.auth0.com/".into(),
-            Arc::new(ExternalMcpAuthenticator),
-        )
-        .expect("external authorization server");
     router(
         ApiState::new(
             Arc::new(Notes),
@@ -683,7 +554,15 @@ fn external_mcp_app() -> Router {
             "/".into(),
             "https://example.test".into(),
         )
-        .with_mcp(endpoint),
+        .with_mcp(
+            McpEndpoint::new(
+                &base_url,
+                vec!["https://chatgpt.com".into()],
+                "https://issuer.example.test/".into(),
+                authenticator,
+            )
+            .expect("MCP endpoint"),
+        ),
     )
 }
 
@@ -746,7 +625,15 @@ fn subpath_mcp_app() -> Router {
             "/marginalis".into(),
             "https://example.test".into(),
         )
-        .with_mcp(McpEndpoint::new(Arc::new(Mcp), &base_url, vec![])),
+        .with_mcp(
+            McpEndpoint::new(
+                &base_url,
+                vec![],
+                "https://issuer.example.test/".into(),
+                Arc::new(TestMcpAuthenticator),
+            )
+            .expect("MCP endpoint"),
+        ),
     )
 }
 
@@ -766,10 +653,4 @@ mod rest_notes {
     use super::*;
 
     include!("tests/rest_notes.rs");
-}
-
-mod oauth {
-    use super::*;
-
-    include!("tests/oauth.rs");
 }
