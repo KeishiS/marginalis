@@ -18,13 +18,13 @@ Resourceへ限定する移行を進めています。採用理由は
 
 ## 移行の完了条件
 
-ChatGPT Web UIではDCR、Kanidm login、scope、ノート操作、所有者・ACLを確認済みです。移行の
-公開判断までに、次を完了します。
+2026-07-29に移行の外部受入を完了しました。
 
-- Claude CodeとCodex CLIからの接続
-- Auth0でのgrant取消後におけるaccess tokenとrefresh tokenの挙動測定
-- schema 10へのarchive経由移行
-- NixOS配備、ログ、障害診断、文書の検証
+- ChatGPT Web UI、Claude Code、Codex CLIからのDCR、接続、読み取り、作成、更新、削除
+- Kanidm由来identityとgroupによる所有者・ACL認可
+- Auth0でのgrant取消後におけるaccess tokenとrefresh tokenの挙動
+- schema 10へのarchive経由移行とNixOS配備
+- ログ、障害診断、運用文書
 
 ## 今回扱わない作業
 
