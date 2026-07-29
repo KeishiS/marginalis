@@ -526,24 +526,26 @@ async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
         .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer valid-token")
         .header(header::ORIGIN, "https://chatgpt.com")
         .body(Body::from(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
         ))
         .expect("request");
     let allowed = mcp_app().oneshot(request).await.expect("response");
-    assert_eq!(allowed.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(allowed.status(), StatusCode::OK);
 
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
         .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer valid-token")
         .header(header::ORIGIN, "https://example.test")
         .body(Body::from(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
         ))
         .expect("request");
     let same_origin = mcp_app().oneshot(request).await.expect("response");
-    assert_eq!(same_origin.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(same_origin.status(), StatusCode::OK);
 
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
