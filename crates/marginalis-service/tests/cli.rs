@@ -493,6 +493,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     assert_eq!(report["status"], "ok");
     assert_eq!(report["database"]["schema"]["actual"], 11);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
+    assert!(!String::from_utf8_lossy(&healthy.stderr).contains("must-not-be-reported"));
 
     fs::remove_dir_all(&directory).expect("remove test directory");
 }
@@ -505,6 +506,7 @@ fn diagnose_reports_an_unavailable_database_and_fails() {
     let output = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
         .arg("diagnose")
         .env("MARGINALIS_DATABASE_URL", database_url)
+        .env("OIDC_CLIENT_SECRET", "must-not-be-reported")
         .output()
         .expect("diagnose unavailable database");
 
@@ -516,4 +518,6 @@ fn diagnose_reports_an_unavailable_database_and_fails() {
     assert_eq!(report["database"]["error"], "connection_failed");
     assert_eq!(report["database"]["failures"][0]["check"], "connection");
     assert!(String::from_utf8_lossy(&output.stderr).contains("maintenance.diagnostics.failed"));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("must-not-be-reported"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("must-not-be-reported"));
 }

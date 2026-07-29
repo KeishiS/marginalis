@@ -1,4 +1,4 @@
-import { ApiError, Problem, ValidationDiagnostic } from "./api";
+import { ApiError, NoteDiagnostic, Problem } from "./api";
 import { utf8ByteOffsetToLineColumn } from "./textPosition";
 
 export function toProblem(error: unknown): Problem {
@@ -26,7 +26,7 @@ export function problemMessage(problem: Problem): string {
 
 export function diagnosticLocation(
   source: string,
-  diagnostic: ValidationDiagnostic,
+  diagnostic: NoteDiagnostic,
 ): string {
   if (!canSelectDiagnostic(diagnostic)) {
     return "";
@@ -38,7 +38,7 @@ export function diagnosticLocation(
   return `${location.line}行${location.column}列: `;
 }
 
-export function canSelectDiagnostic(diagnostic: ValidationDiagnostic): boolean {
+export function canSelectDiagnostic(diagnostic: NoteDiagnostic): boolean {
   return (
     diagnostic.target.field === "source" &&
     diagnostic.span?.unit === "utf8_byte"
@@ -114,7 +114,7 @@ export function diagnosticMessage(code: string): string {
 }
 
 export function diagnosticSeverityLabel(
-  severity: ValidationDiagnostic["severity"],
+  severity: NoteDiagnostic["severity"],
 ): string {
   switch (severity) {
     case "error":

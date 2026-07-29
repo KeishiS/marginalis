@@ -250,7 +250,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "= 警告を確認するノート\n\nこの結果はxref:note:0197c9bc-0000-7000-8000-000000000002[参照]に記載されています。",
   );
   await expect(
-    page.getByRole("heading", { name: "入力時の警告" }),
+    page.getByRole("heading", { name: "入力時の診断" }),
   ).toBeVisible();
   await expect(page.getByText(/インラインマクロの前に空白/)).toBeVisible();
   await page.getByRole("button", { name: "入力位置へ移動" }).click();
@@ -266,6 +266,6 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     (await warningSource.inputValue()).replace("はxref:", "は xref:"),
   );
   await expect(
-    page.getByRole("heading", { name: "入力時の警告" }),
+    page.getByRole("heading", { name: "入力時の診断" }),
   ).toHaveCount(0);
 });

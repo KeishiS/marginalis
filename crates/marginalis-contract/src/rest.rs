@@ -182,7 +182,7 @@ pub struct NoteAclResponse {
 #[serde(deny_unknown_fields)]
 pub struct NotePreviewResponse {
     pub html: String,
-    pub diagnostics: Vec<ValidationDiagnosticResponse>,
+    pub diagnostics: Vec<NoteDiagnosticResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -205,7 +205,7 @@ pub struct ProblemResponse {
     pub code: ProblemCode,
     pub message: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub diagnostics: Vec<ValidationDiagnosticResponse>,
+    pub diagnostics: Vec<NoteDiagnosticResponse>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -250,7 +250,7 @@ impl ProblemCode {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ValidationDiagnosticResponse {
+pub struct NoteDiagnosticResponse {
     pub code: String,
     pub severity: DiagnosticSeverityResponse,
     pub target: ValidationTargetResponse,
@@ -387,11 +387,11 @@ pub fn openapi_document() -> Value {
                         "html": {"type": "string"},
                         "diagnostics": {
                             "type": "array",
-                            "items": {"$ref": "#/components/schemas/ValidationDiagnostic"}
+                            "items": {"$ref": "#/components/schemas/NoteDiagnostic"}
                         }
                     }
                 },
-                "ValidationDiagnostic": validation_diagnostic_schema(),
+                "NoteDiagnostic": note_diagnostic_schema(),
                 "NoteAclEntry": {
                     "type": "object", "additionalProperties": false, "required": ["subject", "permission"],
                     "properties": {
@@ -574,13 +574,13 @@ fn problem_schema() -> Value {
             "message": {"type": "string"},
             "diagnostics": {
                 "type": "array",
-                "items": {"$ref": "#/components/schemas/ValidationDiagnostic"}
+                "items": {"$ref": "#/components/schemas/NoteDiagnostic"}
             }
         }
     })
 }
 
-fn validation_diagnostic_schema() -> Value {
+fn note_diagnostic_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,

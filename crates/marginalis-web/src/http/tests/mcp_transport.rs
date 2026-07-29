@@ -135,21 +135,24 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         "0.17.0"
     );
     assert_eq!(profile["result"]["structuredContent"]["profile_version"], 5);
-    assert!(
-        profile["result"]["structuredContent"]["examples"]
-            .as_array()
-            .is_some_and(|examples| !examples.is_empty())
+    let bibliography = &profile["result"]["structuredContent"]["examples"][0];
+    assert_eq!(bibliography["kind"], "bibliography");
+    assert_eq!(
+        bibliography["body"],
+        "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]"
     );
     assert_eq!(
         profile["result"]["structuredContent"]["authoring_guidance"],
-        serde_json::json!(["Do not invent bibliographic metadata."])
+        serde_json::json!([
+            "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata."
+        ])
     );
     let profile_output: marginalis_contract::McpNoteProfileOutput =
         serde_json::from_value(profile["result"]["structuredContent"].clone())
             .expect("typed profile output");
     assert_eq!(
         profile_output.authoring_guidance,
-        ["Do not invent bibliographic metadata."]
+        ["Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata."]
     );
     let text: serde_json::Value =
         serde_json::from_str(profile["result"]["content"][0]["text"].as_str().expect("text"))
