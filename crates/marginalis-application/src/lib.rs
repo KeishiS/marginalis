@@ -153,34 +153,45 @@ pub struct Utf8ByteSpan {
     pub end: u32,
 }
 
+/// 保存を拒否しない入力上の指摘の重大度。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NoteDiagnosticSeverity {
-    Error,
+pub enum NoteAdvisorySeverity {
     Warning,
     Information,
     Hint,
 }
 
+/// 入力を拒否する問題。公開時の重大度は常に`error`です。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteDiagnostic {
+pub struct NoteValidationDiagnostic {
     pub code: String,
-    pub severity: NoteDiagnosticSeverity,
     pub target: NoteValidationTarget,
     pub span: Option<Utf8ByteSpan>,
     pub message: String,
 }
 
+/// 保存を拒否せず、成功したプレビューとともに返す指摘。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteAdvisoryDiagnostic {
+    pub code: String,
+    pub severity: NoteAdvisorySeverity,
+    pub target: NoteValidationTarget,
+    pub span: Option<Utf8ByteSpan>,
+    pub message: String,
+}
+
+/// 検証済みの入力と、同じ解析で得た付随情報。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedNoteDraft {
     pub draft: NoteDraft,
-    pub diagnostics: Vec<NoteDiagnostic>,
+    pub diagnostics: Vec<NoteAdvisoryDiagnostic>,
     pub reference_queries: Vec<NoteReferenceQuery>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NotePreview {
     pub html: String,
-    pub diagnostics: Vec<NoteDiagnostic>,
+    pub diagnostics: Vec<NoteAdvisoryDiagnostic>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -239,7 +250,7 @@ pub struct NoteProfile {
 pub enum NoteUseCaseError {
     NotFound,
     Conflict,
-    Validation(Vec<NoteDiagnostic>),
+    Validation(Vec<NoteValidationDiagnostic>),
     RenderFailed,
     Unavailable,
 }

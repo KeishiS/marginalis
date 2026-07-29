@@ -6,10 +6,10 @@ use axum::{
 };
 use marginalis_application::{
     AuthenticationUseCaseError, McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator,
-    NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NoteDiagnostic,
-    NoteDiagnosticSeverity, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
+    NoteAccessControl, NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
+    NoteCommands, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
     NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
-    NoteUseCaseError, NoteValidationCode, NoteValidationTarget, NoteView,
+    NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget, NoteView,
     OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
 };
 use marginalis_domain::{
@@ -157,18 +157,16 @@ impl Notes {
     async fn create_note(&self, _actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
         if !draft.source.starts_with("= ") {
             return Err(NoteUseCaseError::Validation(vec![
-                NoteDiagnostic {
+                NoteValidationDiagnostic {
                     code: NoteValidationCode::InvalidTitle.as_str().into(),
-                    severity: NoteDiagnosticSeverity::Error,
                     target: NoteValidationTarget::Source,
                     span: None,
                     message: "title is invalid".into(),
                 },
-                NoteDiagnostic {
+                NoteValidationDiagnostic {
                     code: NoteValidationCode::UnsupportedSourceLanguage
                         .as_str()
                         .into(),
-                    severity: NoteDiagnosticSeverity::Error,
                     target: NoteValidationTarget::Source,
                     span: Some(Utf8ByteSpan { start: 8, end: 13 }),
                     message: "source language is not allowed".into(),
@@ -195,20 +193,21 @@ impl Notes {
         _context: NoteRenderContext,
     ) -> Result<NotePreview, NoteUseCaseError> {
         if !draft.source.starts_with("= ") {
-            Err(NoteUseCaseError::Validation(vec![NoteDiagnostic {
-                code: NoteValidationCode::InvalidTitle.as_str().into(),
-                severity: NoteDiagnosticSeverity::Error,
-                target: NoteValidationTarget::Source,
-                span: None,
-                message: "title is invalid".into(),
-            }]))
+            Err(NoteUseCaseError::Validation(vec![
+                NoteValidationDiagnostic {
+                    code: NoteValidationCode::InvalidTitle.as_str().into(),
+                    target: NoteValidationTarget::Source,
+                    span: None,
+                    message: "title is invalid".into(),
+                },
+            ]))
         } else {
             let diagnostics = draft
                 .source
                 .find("xref")
-                .map(|start| NoteDiagnostic {
+                .map(|start| NoteAdvisoryDiagnostic {
                     code: "macro-boundary".into(),
-                    severity: NoteDiagnosticSeverity::Warning,
+                    severity: NoteAdvisorySeverity::Warning,
                     target: NoteValidationTarget::Source,
                     span: Some(Utf8ByteSpan {
                         start: start as u32,

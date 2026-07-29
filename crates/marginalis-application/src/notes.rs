@@ -12,10 +12,9 @@ use marginalis_domain::{
 };
 
 use crate::{
-    Clock, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NoteDiagnostic,
-    NoteDiagnosticSeverity, NotePresentation, NotePreview, NoteProfile, NoteQueries,
-    NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationTarget, Random,
-    RelatedNotes, ValidatedNoteDraft,
+    Clock, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NotePresentation,
+    NotePreview, NoteProfile, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
+    NoteValidationDiagnostic, NoteValidationTarget, Random, RelatedNotes, ValidatedNoteDraft,
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。
@@ -146,7 +145,10 @@ impl std::error::Error for NoteContentError {}
 
 /// AsciiDocなどの文書形式に依存する処理を受け持つport。
 pub trait NoteContent: Send + Sync {
-    fn validate_draft(&self, draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec<NoteDiagnostic>>;
+    fn validate_draft(
+        &self,
+        draft: NoteDraft,
+    ) -> Result<ValidatedNoteDraft, Vec<NoteValidationDiagnostic>>;
     fn reference_queries(&self, body: &str) -> Result<Vec<NoteReferenceQuery>, NoteContentError>;
     fn has_anchor(&self, body: &str, anchor: &str) -> Result<bool, NoteContentError>;
     fn render(
@@ -214,14 +216,10 @@ impl NoteApplication {
 
     fn reference_resolutions(
         &self,
-        note: &Note,
         targets: &[Note],
         context: &NoteRenderContext,
+        queries: &[NoteReferenceQuery],
     ) -> Result<Vec<NoteReferenceResolution>, NoteUseCaseError> {
-        let queries = self
-            .content
-            .reference_queries(note.source())
-            .map_err(|_| NoteUseCaseError::Unavailable)?;
         let targets = targets
             .iter()
             .cloned()
@@ -392,7 +390,7 @@ impl NotePresentation for NoteApplication {
             .visible_notes_by_id(&actor, &target_ids)
             .await
             .map_err(map_repository_error)?;
-        let resolutions = self.reference_resolutions(&note, &targets, &context)?;
+        let resolutions = self.reference_resolutions(&targets, &context, &reference_queries)?;
         let html = self
             .content
             .render(&note, &resolutions)
@@ -424,8 +422,12 @@ impl NotePresentation for NoteApplication {
             .ok_or(NoteUseCaseError::NotFound)?;
         sort_related_notes(&mut snapshot.related.outgoing);
         sort_related_notes(&mut snapshot.related.incoming);
+        let reference_queries = self
+            .content
+            .reference_queries(snapshot.note.source())
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
         let resolutions =
-            self.reference_resolutions(&snapshot.note, &snapshot.reference_targets, &context)?;
+            self.reference_resolutions(&snapshot.reference_targets, &context, &reference_queries)?;
         let html = self
             .content
             .render(&snapshot.note, &resolutions)
@@ -507,9 +509,8 @@ fn acl_validation(index: usize, code: NoteValidationCode) -> NoteUseCaseError {
         NoteValidationCode::OwnerInAcl => "note owner must not be included in ACL",
         _ => unreachable!("ACL validation uses an ACL-specific code"),
     };
-    NoteUseCaseError::Validation(vec![NoteDiagnostic {
+    NoteUseCaseError::Validation(vec![NoteValidationDiagnostic {
         code: code.as_str().into(),
-        severity: NoteDiagnosticSeverity::Error,
         target: NoteValidationTarget::AclEntry { index },
         span: None,
         message: message.into(),
@@ -536,9 +537,17 @@ fn sort_related_notes(notes: &mut [NoteSummary]) {
 
 #[cfg(test)]
 mod tests {
-    use std::{str::FromStr, sync::Mutex};
+    use std::{
+        str::FromStr,
+        sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
     use marginalis_domain::{EntityId, Revision, UnixMillis};
+
+    use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity};
 
     use super::*;
 
@@ -671,18 +680,21 @@ mod tests {
         }
     }
 
-    struct AcceptContent;
+    #[derive(Default)]
+    struct AcceptContent {
+        reference_query_calls: AtomicUsize,
+    }
 
     impl NoteContent for AcceptContent {
         fn validate_draft(
             &self,
             draft: NoteDraft,
-        ) -> Result<ValidatedNoteDraft, Vec<NoteDiagnostic>> {
+        ) -> Result<ValidatedNoteDraft, Vec<NoteValidationDiagnostic>> {
             Ok(ValidatedNoteDraft {
                 draft,
-                diagnostics: vec![NoteDiagnostic {
+                diagnostics: vec![NoteAdvisoryDiagnostic {
                     code: "test-advisory".into(),
-                    severity: NoteDiagnosticSeverity::Warning,
+                    severity: NoteAdvisorySeverity::Warning,
                     target: NoteValidationTarget::Source,
                     span: None,
                     message: "test advisory".into(),
@@ -695,6 +707,7 @@ mod tests {
             &self,
             _body: &str,
         ) -> Result<Vec<NoteReferenceQuery>, NoteContentError> {
+            self.reference_query_calls.fetch_add(1, Ordering::Relaxed);
             Ok(Vec::new())
         }
 
@@ -707,7 +720,7 @@ mod tests {
             _note: &Note,
             _resolutions: &[NoteReferenceResolution],
         ) -> Result<String, NoteContentError> {
-            Ok(String::new())
+            Ok("<article><p>preview</p></article>".into())
         }
 
         fn export(&self, _note: &Note) -> Result<String, NoteContentError> {
@@ -759,7 +772,7 @@ mod tests {
             repository.clone(),
             repository.clone(),
             repository.clone(),
-            Arc::new(AcceptContent),
+            Arc::new(AcceptContent::default()),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
@@ -788,6 +801,52 @@ mod tests {
                 .expect("read created note"),
             created
         );
+        assert_eq!(repository.notes.lock().expect("notes lock").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn preview_preserves_advisories_without_reanalyzing_or_blocking_save() {
+        let repository = Arc::new(MemoryNotes::default());
+        let content = Arc::new(AcceptContent::default());
+        let application = NoteApplication::new(
+            repository.clone(),
+            repository.clone(),
+            repository.clone(),
+            content.clone(),
+            Arc::new(NoLinks),
+            Arc::new(FixedClock),
+            Arc::new(FixedRandom),
+        );
+        let actor =
+            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let draft = NoteDraft {
+            source: "= Warning\n\nbody".into(),
+            title: "Warning".into(),
+            tags: Vec::new(),
+        };
+
+        let preview = application
+            .preview_note(
+                actor.clone(),
+                draft.clone(),
+                NoteRenderContext {
+                    note_path_prefix: "/api/v3/notes".into(),
+                },
+            )
+            .await
+            .expect("warning does not reject preview");
+        assert_eq!(preview.diagnostics.len(), 1);
+        assert_eq!(preview.diagnostics[0].code, "test-advisory");
+        assert_eq!(
+            preview.diagnostics[0].severity,
+            NoteAdvisorySeverity::Warning
+        );
+        assert_eq!(content.reference_query_calls.load(Ordering::Relaxed), 0);
+
+        application
+            .create_note(actor, draft)
+            .await
+            .expect("warning does not reject save");
         assert_eq!(repository.notes.lock().expect("notes lock").len(), 1);
     }
 }
