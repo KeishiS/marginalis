@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { RenderedContent } from "../src/RenderedContent";
@@ -91,10 +91,12 @@ test("MathJaxの組版失敗を利用者へ通知する", async () => {
     "data-math-status",
     "failed",
   );
-  expect(document.querySelector(".preview-content pre")).toHaveAttribute(
-    "data-language",
-    "rust",
-  );
+  await waitFor(() => {
+    expect(document.querySelector(".preview-content pre")).toHaveAttribute(
+      "data-language",
+      "rust",
+    );
+  });
   expect(consoleError).toHaveBeenCalledWith(
     "MathJaxによる数式の組版に失敗しました。",
     expect.any(Error),
