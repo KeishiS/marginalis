@@ -121,6 +121,25 @@ Auth0側には、次の値を設定します。API identifierはMarginalisの公
 | 上流subject claim | API identifierと同じ管理下にある名前空間のURL |
 | group claim | API identifierと同じ管理下にある名前空間のURL |
 
+DCRで作成されるapplicationはthird-party applicationとして扱われ、APIがAllow Allでも明示的な
+client grantがなければaccess tokenを取得できません。APIのDefault Permissions for Third Party Appsで
+User-Delegated Accessだけを有効にし、`notes:read`、`notes:write`、`notes:delete`を要求可能なscopeとして
+設定します。Client Accessは有効にせず、利用者を伴わないClient Credentials Flowを許可しません。
+最終的なaccess tokenのscopeが、クライアントの要求、default permission、利用者の同意の共通部分に
+なることを、読み取り・読み書き・全操作の3回に分けて確認します。
+
+評価tenantでは次も確認します。
+
+- Tenant SettingsでDynamic Client RegistrationとResource Parameter Compatibility Profileを有効化します。
+- DCRで作成されたapplicationのclient IDが`tpc_`で始まり、third-partyとして表示されることを確認します。
+- public clientの`token_endpoint_auth_method`が`none`、grant typeが`authorization_code`と
+  `refresh_token`、PKCEが必須であることを確認します。
+- KanidmのOIDC Enterprise Connectionをdomain-level connectionへ昇格し、評価用third-party
+  applicationだけでログインできることを確認します。
+- DCR endpointは認証なしで登録を受け付けるため、作成数とclient IDを秘密情報なしで記録し、
+  評価終了時に作成したapplicationだけを削除します。
+- DCRの5 requests/second/tenantという制限を超えない通常の接続だけを行い、負荷試験は実施しません。
+
 Kanidmは評価用のOIDC Enterprise Connectionとして接続します。claimの元は、その接続で検証した
 KanidmのID tokenまたはUserInfo応答だけに限定します。Auth0の利用者が変更できる
 `user_metadata`や、ほかのconnectionから同名で渡された値は使用しません。Post Login Actionでは
@@ -183,6 +202,8 @@ Auth0の設定では、次の公式資料を参照します。
 - [OIDC Enterprise Connectionのclaim mapping](https://auth0.com/docs/authenticate/identity-providers/enterprise-identity-providers/configure-pkce-claim-mapping-for-oidc)
 - [Access tokenの有効期間](https://auth0.com/docs/secure/tokens/access-tokens/update-access-token-lifetime)
 - [Refresh tokenの取消](https://auth0.com/docs/secure/tokens/refresh-tokens/revoke-refresh-tokens)
+- [Dynamic Client Registration](https://auth0.com/docs/get-started/applications/dynamic-client-registration)
+- [Third-party applicationの設定](https://auth0.com/docs/get-started/applications/third-party-applications/configure-third-party-applications)
 
 ### Keycloak
 
