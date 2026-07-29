@@ -63,6 +63,87 @@ pub(super) async fn mcp_tool_call(
     id: serde_json::Value,
     call: McpToolCall,
 ) -> JsonRpcResponse {
+    let tool = call.tool.map_or("unknown", McpToolName::as_str);
+    match execute_mcp_tool(notes, actor, call).await {
+        Ok(output) => {
+            tracing::info!(
+                event = "mcp.tool.completed",
+                tool,
+                outcome = "success",
+                "MCP tool completed"
+            );
+            mcp_tool_success(id, output)
+        }
+        Err(failure) => {
+            let outcome = failure.outcome();
+            let reason = failure.reason();
+            if outcome == "failure" {
+                tracing::error!(
+                    event = "mcp.tool.completed",
+                    tool,
+                    outcome,
+                    reason,
+                    "MCP tool failed"
+                );
+            } else {
+                tracing::info!(
+                    event = "mcp.tool.completed",
+                    tool,
+                    outcome,
+                    reason,
+                    "MCP tool was rejected"
+                );
+            }
+            match failure {
+                McpToolFailure::InvalidArguments(message) => {
+                    JsonRpcResponse::error(id, -32602, message)
+                }
+                McpToolFailure::UnknownTool => JsonRpcResponse::error(id, -32602, "Unknown tool"),
+                McpToolFailure::UseCase(error) => mcp_tool_error(id, error),
+            }
+        }
+    }
+}
+
+enum McpToolFailure {
+    InvalidArguments(&'static str),
+    UnknownTool,
+    UseCase(NoteUseCaseError),
+}
+
+impl McpToolFailure {
+    fn outcome(&self) -> &'static str {
+        match self {
+            Self::UseCase(NoteUseCaseError::Unavailable) => "failure",
+            Self::InvalidArguments(_)
+            | Self::UnknownTool
+            | Self::UseCase(
+                NoteUseCaseError::Validation(_)
+                | NoteUseCaseError::NotFound
+                | NoteUseCaseError::Conflict
+                | NoteUseCaseError::RenderFailed,
+            ) => "rejected",
+        }
+    }
+
+    fn reason(&self) -> &'static str {
+        match self {
+            Self::InvalidArguments(_) => "invalid-arguments",
+            Self::UnknownTool => "unknown-tool",
+            Self::UseCase(NoteUseCaseError::Validation(_)) => "validation",
+            Self::UseCase(NoteUseCaseError::NotFound) => "not-found",
+            Self::UseCase(NoteUseCaseError::Conflict) => "conflict",
+            Self::UseCase(NoteUseCaseError::RenderFailed) => "render-failed",
+            Self::UseCase(NoteUseCaseError::Unavailable) => "unavailable",
+        }
+    }
+}
+
+async fn execute_mcp_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    call: McpToolCall,
+) -> Result<McpToolOutput, McpToolFailure> {
     let result = match call.tool {
         Some(McpToolName::ListNotes)
             if call
@@ -70,7 +151,9 @@ pub(super) async fn mcp_tool_call(
                 .as_object()
                 .is_none_or(|value| !value.is_empty()) =>
         {
-            return JsonRpcResponse::error(id, -32602, "list arguments are invalid");
+            return Err(McpToolFailure::InvalidArguments(
+                "list arguments are invalid",
+            ));
         }
         Some(McpToolName::ListNotes) => notes.list_visible_notes(actor).await.map(|notes| {
             McpToolOutput::NoteList(McpListNotesOutput {
@@ -92,17 +175,21 @@ pub(super) async fn mcp_tool_call(
                 .as_object()
                 .is_none_or(|value| !value.is_empty()) =>
         {
-            return JsonRpcResponse::error(id, -32602, "profile arguments are invalid");
+            return Err(McpToolFailure::InvalidArguments(
+                "profile arguments are invalid",
+            ));
         }
         Some(McpToolName::GetNoteProfile) => Ok(McpToolOutput::NoteProfile(Box::new(
             note_profile_output(notes.note_profile()),
         ))),
         Some(McpToolName::GetNote) => {
             let Ok(input) = serde_json::from_value::<McpGetNoteInput>(call.arguments) else {
-                return JsonRpcResponse::error(id, -32602, "get arguments are invalid");
+                return Err(McpToolFailure::InvalidArguments(
+                    "get arguments are invalid",
+                ));
             };
             let Some(note_id) = parse_note_id(&input.note_id).ok() else {
-                return JsonRpcResponse::error(id, -32602, "note_id is invalid");
+                return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
             };
             notes.read_note(actor, note_id).await.map(|note| {
                 McpToolOutput::Note(McpGetNoteOutput {
@@ -117,7 +204,9 @@ pub(super) async fn mcp_tool_call(
         }
         Some(McpToolName::CreateNote) => {
             let Ok(input) = serde_json::from_value::<McpCreateNoteInput>(call.arguments) else {
-                return JsonRpcResponse::error(id, -32602, "note arguments are invalid");
+                return Err(McpToolFailure::InvalidArguments(
+                    "note arguments are invalid",
+                ));
             };
             notes
                 .create_note(
@@ -133,13 +222,17 @@ pub(super) async fn mcp_tool_call(
         }
         Some(McpToolName::UpdateNote) => {
             let Ok(input) = serde_json::from_value::<McpUpdateNoteInput>(call.arguments) else {
-                return JsonRpcResponse::error(id, -32602, "update arguments are invalid");
+                return Err(McpToolFailure::InvalidArguments(
+                    "update arguments are invalid",
+                ));
             };
             let Some(note_id) = parse_note_id(&input.note_id).ok() else {
-                return JsonRpcResponse::error(id, -32602, "note_id is invalid");
+                return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
             };
             let Ok(expected_revision) = Revision::new(input.expected_revision) else {
-                return JsonRpcResponse::error(id, -32602, "expected_revision is invalid");
+                return Err(McpToolFailure::InvalidArguments(
+                    "expected_revision is invalid",
+                ));
             };
             notes
                 .update_note(
@@ -157,25 +250,26 @@ pub(super) async fn mcp_tool_call(
         }
         Some(McpToolName::DeleteNote) => {
             let Ok(input) = serde_json::from_value::<McpDeleteNoteInput>(call.arguments) else {
-                return JsonRpcResponse::error(id, -32602, "delete arguments are invalid");
+                return Err(McpToolFailure::InvalidArguments(
+                    "delete arguments are invalid",
+                ));
             };
             let Some(note_id) = parse_note_id(&input.note_id).ok() else {
-                return JsonRpcResponse::error(id, -32602, "note_id is invalid");
+                return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
             };
             let Ok(expected_revision) = Revision::new(input.expected_revision) else {
-                return JsonRpcResponse::error(id, -32602, "expected_revision is invalid");
+                return Err(McpToolFailure::InvalidArguments(
+                    "expected_revision is invalid",
+                ));
             };
             notes
                 .soft_delete_note(actor, note_id, expected_revision)
                 .await
                 .map(note_revision_output)
         }
-        None => return JsonRpcResponse::error(id, -32602, "Unknown tool"),
+        None => return Err(McpToolFailure::UnknownTool),
     };
-    match result {
-        Ok(output) => mcp_tool_success(id, output),
-        Err(error) => mcp_tool_error(id, error),
-    }
+    result.map_err(McpToolFailure::UseCase)
 }
 
 fn mcp_tool_success(id: serde_json::Value, output: McpToolOutput) -> JsonRpcResponse {

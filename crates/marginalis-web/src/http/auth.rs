@@ -276,8 +276,8 @@ pub(super) fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) ->
         .and_then(|value| value.to_str().ok());
     if received_origin != Some(state.browser_origin.as_str()) {
         tracing::warn!(
-            received_origin = ?received_origin,
-            expected_origin = %state.browser_origin,
+            event = "http.request.rejected",
+            reason = "origin-mismatch",
             "rejected browser mutation with a missing or mismatched origin"
         );
         return Err(problem(
@@ -292,7 +292,8 @@ pub(super) fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) ->
         && !matches!(site, "same-origin" | "none")
     {
         tracing::warn!(
-            sec_fetch_site = site,
+            event = "http.request.rejected",
+            reason = "cross-site",
             "rejected browser mutation with cross-site fetch metadata"
         );
         return Err(problem(

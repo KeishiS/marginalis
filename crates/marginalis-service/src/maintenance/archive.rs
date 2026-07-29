@@ -38,7 +38,7 @@ pub(crate) async fn export_archive(
     serde_json::to_writer_pretty(&file, &archive)?;
     file.sync_all()?;
     sync_parent_directory(&output)?;
-    tracing::info!(event = "archive.export.completed", output = %output.display(), note_count = archive.notes.len(), "exported archive");
+    tracing::info!(event = "maintenance.archive_export.completed", output = %output.display(), note_count = archive.notes.len(), "exported archive");
     Ok(())
 }
 
@@ -97,7 +97,7 @@ pub(crate) async fn import_archive(
         .await?
         .restore(&validated.plan)
         .await?;
-    tracing::info!(event = "archive.import.completed", input = %input.display(), "imported archive");
+    tracing::info!(event = "maintenance.archive_import.completed", input = %input.display(), "imported archive");
     Ok(())
 }
 
@@ -177,7 +177,12 @@ pub(super) async fn verify_archive_in_isolated_database(
     }
     .await;
     if let Err(error) = std::fs::remove_dir_all(&directory) {
-        tracing::warn!(path = %directory.display(), error = %error, "failed to remove isolated restore directory");
+        tracing::warn!(
+            event = "maintenance.restore_cleanup.failed",
+            path = %directory.display(),
+            error = %error,
+            "failed to remove isolated restore directory"
+        );
     }
     result
 }

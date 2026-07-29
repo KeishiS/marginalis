@@ -43,7 +43,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Err(_error) => {
             tracing::warn!(
                 event = "oidc.discovery.failed",
-                error_kind = "unavailable",
+                reason = "unavailable",
                 "OIDC discovery is unavailable; login requests will fail closed"
             );
             None
@@ -150,13 +150,22 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     )
     .with_graceful_shutdown(shutdown_signal())
     .await?;
+    tracing::info!(
+        event = "service.shutdown.completed",
+        "HTTP listener stopped after draining requests"
+    );
     Ok(())
 }
 
 async fn shutdown_signal() {
     let interrupt = async {
         if let Err(error) = tokio::signal::ctrl_c().await {
-            tracing::error!(%error, "failed to install Ctrl-C handler");
+            tracing::error!(
+                event = "service.signal_handler.failed",
+                reason = "ctrl-c",
+                error = %error,
+                "failed to install Ctrl-C handler"
+            );
             std::future::pending::<()>().await;
         }
     };
@@ -167,7 +176,12 @@ async fn shutdown_signal() {
                 signal.recv().await;
             }
             Err(error) => {
-                tracing::error!(%error, "failed to install SIGTERM handler");
+                tracing::error!(
+                    event = "service.signal_handler.failed",
+                    reason = "sigterm",
+                    error = %error,
+                    "failed to install SIGTERM handler"
+                );
                 std::future::pending::<()>().await;
             }
         }
@@ -178,7 +192,10 @@ async fn shutdown_signal() {
         () = interrupt => {}
         () = terminate => {}
     }
-    tracing::info!("shutdown signal received; draining HTTP requests");
+    tracing::info!(
+        event = "service.shutdown.started",
+        "shutdown signal received; draining HTTP requests"
+    );
 }
 
 fn kanidm_http_client(

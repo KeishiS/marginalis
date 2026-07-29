@@ -434,7 +434,7 @@ impl<Attempts, Time, Entropy> OidcIdentityProvider<Attempts, Time, Entropy> {
         .map_err(|_| {
             tracing::warn!(
                 event = "oidc.discovery.failed",
-                error_kind = "unavailable",
+                reason = "unavailable",
                 "OIDC discovery retry failed"
             );
             IdentityProviderError::Unavailable
