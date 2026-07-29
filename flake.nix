@@ -572,7 +572,7 @@
             testScript = ''
               machine.wait_for_unit("marginalis.service")
               machine.succeed(
-                "test \"$(/run/current-system/sw/bin/marginalis --version)\" = 'marginalis 0.11.0'"
+                "test \"$(/run/current-system/sw/bin/marginalis --version)\" = 'marginalis 0.12.0'"
               )
               machine.wait_until_succeeds(
                   "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\" and .api_version == \"v3\"'"
