@@ -11,6 +11,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         ),
         (
+            root.join("docs/mcp-tools.json"),
+            format!(
+                "{}\n",
+                serde_json::to_string_pretty(&marginalis_contract::mcp_tool_contracts())?
+            ),
+        ),
+        (
             root.join("frontend/src/generated/contracts.ts"),
             marginalis_contract::typescript_contracts().to_owned(),
         ),

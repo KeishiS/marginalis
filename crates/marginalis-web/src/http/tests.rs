@@ -138,11 +138,20 @@ impl Notes {
         &self,
         _actor: Actor,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
-        Ok(Vec::new())
+        let note = mcp_note();
+        Ok(vec![NoteListEntry {
+            summary: NoteSummary::from(&note),
+            access: NoteAccess::Manage,
+        }])
     }
 
-    async fn read_note(&self, _actor: Actor, _note_id: NoteId) -> Result<Note, NoteUseCaseError> {
-        Err(NoteUseCaseError::NotFound)
+    async fn read_note(&self, _actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
+        let note = mcp_note();
+        if note.note_id() == note_id {
+            Ok(note)
+        } else {
+            Err(NoteUseCaseError::NotFound)
+        }
     }
 
     async fn create_note(&self, _actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
@@ -590,6 +599,25 @@ fn ui_note(title: &str) -> Note {
         UnixMillis::new(1),
         UnixMillis::new(2),
         Revision::INITIAL,
+        None,
+    )
+    .expect("consistent note")
+}
+
+fn mcp_note() -> Note {
+    Note::restore(
+        NoteId::new(
+            "0197c9bc-0000-7000-8000-000000000002"
+                .parse()
+                .expect("note ID"),
+        ),
+        Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+        "同期ノート".into(),
+        "= 同期ノート\n:tags: 同期, 試験\n\n本文".into(),
+        vec!["同期".into(), "試験".into()],
+        UnixMillis::new(1_000),
+        UnixMillis::new(2_000),
+        Revision::new(3).expect("revision"),
         None,
     )
     .expect("consistent note")

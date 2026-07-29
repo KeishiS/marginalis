@@ -6,7 +6,7 @@
 
 ## 事前検証
 
-1. 作業ブランチで`cargo make verify`、`cargo make openapi-check`、
+1. 作業ブランチで`cargo make verify`、`cargo make contract-check`、
    `nix flake check --no-build`を実行します。
 2. Kanidm 1.10、TLS、サブパスを使うNixOSのE2Eテストを実行します。
 3. ChatGPT、Claude Code、Codex CLIからMCPへ接続し、読み取り、書き込み、認可取消を確認します。

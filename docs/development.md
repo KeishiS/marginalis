@@ -79,12 +79,14 @@ Pull Requestからマージします。
 
    ```sh
    nix develop --command cargo run -p marginalis-contract --bin generate
-   nix develop --command cargo make openapi-check
+   nix develop --command cargo make contract-check
    ```
 
-   この処理は`docs/openapi.json`と`frontend/src/generated/contracts.ts`を更新します。生成物を直接
-   編集しないでください。`openapi-check`は生成し直した内容との差分を検査し、契約に含まれる全経路が
-   OpenAPIとHTTPルーターの両方に存在することはRustの単体試験で検査します。
+   この処理は`docs/openapi.json`、`docs/mcp-tools.json`、
+   `frontend/src/generated/contracts.ts`を更新します。生成物を直接編集しないでください。
+   `contract-check`は生成し直した内容との差分を検査します。RESTの全経路がOpenAPIとHTTPルーターの
+   両方に存在することと、MCPのtool名、入出力schema、実行時応答が一致することはRustの契約試験で
+   検査します。
 
    失敗した責務だけを再実行する場合は、suite名を指定します。
 
@@ -108,9 +110,9 @@ Pull Requestからマージします。
 
    CIは変更pathを判定し、文書だけのPull Requestでは`verify`を文書検査へ縮退し、
    `coverage`とNixOS VMの実行を省略します。プログラムが参照する公開仕様
-   `docs/openapi.json`は
-   この省略対象に含めません。`.github/**`、`Makefile.toml`、Nix、Rust、OpenAPIその他のファイルを
-   同時に変更した場合は、通常の検証をすべて実行します。この判定規則は
+   `docs/openapi.json`と`docs/mcp-tools.json`は、この省略対象に含めません。`.github/**`、
+   `Makefile.toml`、Nix、Rust、公開仕様その他のファイルを同時に変更した場合は、通常の検証を
+   すべて実行します。この判定規則は
    `.github/scripts/classify-docs-only.sh`に集約し、`cargo make verify`から境界例を検査します。
 
    新しい作業項目はGitHub Issuesへ作成します。リポジトリ内にIssueファイルを追加しません。

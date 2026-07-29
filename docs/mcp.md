@@ -149,6 +149,27 @@ codex mcp list
 scopeは操作の種類だけを制限し、操作できるノートの範囲を広げません。利用者は自身が作成したノートと、
 ACLで直接共有されたノートだけをscopeの範囲で操作できます。
 
+### ノート取得の出力
+
+`list_notes`は、閲覧できる各ノートについて次の概要を返します。
+
+| 項目 | 内容 |
+| --- | --- |
+| `note_id` | UUIDv7形式のノートID |
+| `title` | AsciiDoc文書から導出した題名 |
+| `tags` | 正規化して保存したタグ。タグがない場合は空配列 |
+| `updated_at_ms` | Unix時刻をミリ秒で表した保存済み更新日時 |
+| `revision` | 1から始まる更新番号 |
+
+`get_note`はこれらのうち`note_id`、`title`、`tags`、`updated_at_ms`、`revision`に加えて、
+完全なAsciiDoc文書である`source`を返します。閲覧できないノートは存在しないノートと同じ
+`not_found`として扱い、題名、タグ、更新日時を返しません。
+
+成功したtool応答では、`structuredContent`に型付きのJSONを返し、`text`には同じJSONを文字列として
+返します。各toolの入力項目、成功出力、必須項目、型を機械的に確認する場合は
+[MCP toolのJSON Schema](mcp-tools.json)を参照してください。JSON Schemaは、JSONに含める項目と型を
+機械処理できる形式で表した仕様です。
+
 Auth0でrefresh tokenやgrantを取り消しても、すでに発行された自己完結型JWT access tokenは有効期限まで
 受理される場合があります。運用上許容する最大遅延と測定方法は
 [評価記録](mcp-authorization-server-evaluation.md)に従います。即時失効が必要になった場合は、

@@ -21,6 +21,7 @@
 | `docs/architecture.md` | 開発者 | コンポーネントの責務と、一貫して満たすべき設計条件 | コンポーネントの役割分担、認可、データの整合性の変更 |
 | `docs/adr/` | 設計者・開発者 | 長期に参照する設計判断、代替案、再検討条件 | 採用判断または再検討条件の変更 |
 | `docs/openapi.json` | API利用者・ツール | REST APIの正式な仕様 | route、schema、statusの変更 |
+| `docs/mcp-tools.json` | MCP利用者・ツール | MCP toolの入力と成功出力の正式なJSON Schema | tool、入力、成功出力の変更 |
 | `docs/rest-api.md` | API利用者 | REST APIの説明と動作例 | REST APIの仕様または利用例の変更 |
 | `docs/mcp.md` | MCP利用者・運用者 | MCP tool、scope、OAuth接続の説明と利用方法 | tool、scope、OAuthの変更 |
 | `docs/nixos.md` | 運用者 | 配備、秘密情報、backup、復元、診断 | module optionまたは運用jobの変更 |
@@ -44,7 +45,8 @@
 ## 資料間の優先関係と不一致
 
 システム要件は`requirements.md`、一貫して満たすべき設計条件は`architecture.md`、公開REST
-APIの正式な仕様は`openapi.json`、各項目の利用方法と運用方法は詳細を定めた文書を正とします。
+APIの正式な仕様は`openapi.json`、MCP toolの入出力は`mcp-tools.json`、各項目の利用方法と
+運用方法は詳細を定めた文書を正とします。
 schema、manifest、コード上の定数は実装または配布物であり、確定した要件より優先しません。
 
 要件、設計、公開仕様、実装が一致しない場合は、優先順位で一方を正しいことにせず欠陥として

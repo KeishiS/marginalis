@@ -296,8 +296,8 @@ cat "$report_dir/workspace-summary.txt"
 printf '\ncoverage reports: %s\n' "$report_dir"
 '''
 
-[tasks.openapi-check]
-description = "Verify generated OpenAPI and TypeScript contracts"
+[tasks.contract-check]
+description = "Verify generated REST, MCP, and TypeScript contracts"
 dependencies = ["openapi-validate"]
 command = "cargo"
 args = ["run", "-p", "marginalis-contract", "--bin", "generate", "--", "--check"]
@@ -362,7 +362,7 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, unit and integration tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "openapi-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check"]
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check"]
 
 [tasks.ci-verify]
 description = "Run the GitHub Actions verify suite"
