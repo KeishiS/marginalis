@@ -28,6 +28,7 @@
 - [アーキテクチャ](architecture.md)
 - [AdocWeave 0.17移行判断](adocweave-v0.17-migration.md)
 - [Auth0をMCPのAuthorization Serverに採用](adr/0001-auth0をmcpのauthorization-serverに採用.md)
+- [SQLiteを正本として維持](adr/0002-sqliteを正本として維持する.md)
 - [ブラウザーとMCPプロトコルの回帰テスト](protocol-regression.md)
 
 ## 過去の記録と今後の計画

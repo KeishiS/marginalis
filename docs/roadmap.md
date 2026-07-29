@@ -36,7 +36,9 @@ GitHub Issueの前提と完了条件を見直します。
 
 ## 保留条件
 
-- **PostgreSQL**: 複数process、高可用性、またはSQLiteで満たせない規模が実測された場合に再検討
+- **PostgreSQL**: 現時点では対応しません。複数ホスト、高可用性、復旧目標、代表負荷などの
+  [再検討条件](adr/0002-sqliteを正本として維持する.md#再検討条件)が実測で成立した場合だけ
+  再検討
 - **添付Resource**: 保存先、MIME type、容量、認可、バックアップを一つの公開契約として
   定義できる場合に再検討
 - **文書のAsciiDoc化**: [評価結果](repository-asciidoc-evaluation.md)に基づき、Markdownでは
