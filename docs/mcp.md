@@ -95,15 +95,43 @@ remote Streamable HTTP serverとして追加し、Claude Code内の`/mcp`からb
 
 ```bash
 claude mcp add --transport http marginalis https://notes.example.test/mcp
+claude mcp get marginalis
 ```
 
 Auth0がClaude Codeのloopback callbackをDCRで受理する必要があります。SSH、container、WSLでは、
-browserからcallback listenerへ到達できる構成も必要です。
+browserからcallback listenerへ到達できる構成も必要です。`claude`を起動して`/mcp`を開き、
+`marginalis`の認証を開始します。
 
 ### Codex CLI
 
 remote Streamable HTTP serverとしてMCP URLを登録し、CodexのOAuth loginを開始します。クライアントが
 送る`resource`が公開MCP URLと完全に一致することを確認します。
+
+```bash
+codex mcp add marginalis --url https://notes.example.test/mcp
+codex mcp login marginalis
+codex mcp list
+```
+
+`codex`を起動した後は`/mcp`で接続状態を確認します。callbackを外部から到達可能にする必要がある場合は、
+`config.toml`の`mcp_oauth_callback_url`を設定します。固定portだけが必要な場合は
+`mcp_oauth_callback_port`を使用します。
+
+### 接続後の受入
+
+クライアントごとに専用の試験ノートを使い、次を同じ順序で確認します。
+
+1. `list_notes`で既存ノートの可視範囲を確認します。
+2. `create_note`で試験ノートを作成し、`get_note`で所有者と内容を確認します。
+3. 取得したrevisionを指定して`update_note`を実行し、変更後のrevisionが増えることを確認します。
+4. 所有者として共有されたノートと、ACLで直接共有されたノートの操作範囲を確認します。
+5. 最新revisionを指定して試験ノートを`delete_note`で削除します。
+
+実施結果には成否と時刻だけを残し、access token、refresh token、authorization code、利用者情報、
+ノート本文を記録しません。
+
+クライアントのコマンドや設定項目が変わった場合は、[CodexのMCP設定](https://learn.chatgpt.com/docs/extend/mcp.md)と
+[Claude CodeのMCP設定](https://docs.anthropic.com/en/docs/claude-code/mcp)を確認します。
 
 ## Scopeとノート認可
 
