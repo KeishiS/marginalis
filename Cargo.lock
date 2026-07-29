@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "adocweave"
-version = "0.11.0"
-source = "git+https://github.com/KeishiS/adocweave.git?rev=778e9da4548f03ea8434677d50c819d7ce665809#778e9da4548f03ea8434677d50c819d7ce665809"
+version = "0.17.0"
+source = "git+https://github.com/KeishiS/adocweave.git?rev=01a5b63032f71d0ecbd173638c7094d2ec05fb17#01a5b63032f71d0ecbd173638c7094d2ec05fb17"
 dependencies = [
  "serde",
  "serde_json",
@@ -1267,6 +1267,7 @@ dependencies = [
  "marginalis-asciidoc",
  "marginalis-auth-oauth",
  "marginalis-auth-oidc",
+ "marginalis-contract",
  "marginalis-domain",
  "marginalis-sqlite",
  "marginalis-web",

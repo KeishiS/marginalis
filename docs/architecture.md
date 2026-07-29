@@ -62,8 +62,10 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 - `server-users`所属は、WebではKanidmの署名検証済みID token、MCPではAuth0の署名検証済みaccess
   tokenに格納したKanidm由来claimから決める。どちらも同じ上流`(issuer, subject)`を所有者identityに
   使用する。
-- Web session は24時間のsliding idle期限と7日の絶対期限を持つ。未完了OIDC login attemptは10分で失効し、
-  発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
+- Web session は24時間のsliding idle期限と7日の絶対期限を持つ。有効性の検証とidle期限の延長は、
+  SQLiteの一つの条件付き更新で行う。読み取り後に同じ遅延transactionを更新へ切り替えず、
+  同じsessionへの並行要求をSQLiteの書き込み待機で直列化する。未完了OIDC login attemptは10分で
+  失効し、発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
 - OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う`ES256`だけを許可する。別の署名方式を
   追加する場合は[セキュリティ](security.md)の依存脆弱性判断を先に更新する。
 - MarginalisはMCPのauthorization code、access token、refresh token、client登録を保存しない。
@@ -157,9 +159,10 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 境界条件を単体試験で確認します。base URLのサブパスを画面内URLへ反映する規則は`paths.ts`へ
 集約し、一覧と編集画面で同じ処理を使います。
 閲覧画面と編集プレビューは、サーバーが検査・生成したHTMLを`RenderedContent.tsx`だけから
-表示します。この境界でコードの言語表示、表のスクロール領域、MathJax入力への変換と組版失敗通知を
-加えます。外部CDNや未検査のHTMLを追加せず、AdocWeaveが将来同じ表示情報を公開した場合に
-`renderedContentEnhancement.ts`の変換だけを置き換えられる構成とします。
+表示します。この境界では、AdocWeaveの公開`data-*`属性だけからコードの言語と行番号、
+数式の言語と表示形式を受け取ります。コード本文はtextとして行へ分け、数式もtextとして
+MathJaxへ渡し、要素名、class、親子関係から意味を推測しません。表と長いコードのスクロール領域、
+MathJaxの組版失敗通知も同じ表示境界へ置きます。外部CDNや未検査のHTMLは追加しません。
 Viteの成果物はGitで管理せず、開発時は`cargo make`、
 配布時はNixが`frontend/dist`を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
 外部URLはViteで固定せず、Rustの`external_path`でbase URLのサブパスを反映する。

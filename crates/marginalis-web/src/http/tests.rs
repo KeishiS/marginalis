@@ -255,8 +255,8 @@ impl Notes {
 
     fn note_profile(&self) -> NoteProfile {
         NoteProfile {
-            profile_version: 2,
-            adocweave_package_version: "0.11.0",
+            profile_version: 4,
+            adocweave_package_version: "0.17.0",
             limits: NoteProfileLimits {
                 max_title_characters: 200,
                 max_source_bytes: 524_288,

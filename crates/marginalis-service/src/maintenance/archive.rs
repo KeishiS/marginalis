@@ -1,14 +1,18 @@
 //! Archive commandと復元検証。
 
 use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
-use crate::cli::required_absolute_file_argument;
+use crate::cli::{required_absolute_file_argument, required_archive_migration_arguments};
 use crate::config::StorageConfig;
 use marginalis_application::{LogicalSnapshot, RestorePlan};
-use marginalis_asciidoc::{Archive, create_archive, validate_archive as validate_archive_contract};
+use marginalis_asciidoc::{
+    Archive, create_archive, migrate_previous_archive,
+    validate_archive as validate_archive_contract,
+};
 use marginalis_sqlite::SqliteDatabase;
 use std::{
     collections::HashSet,
     fs::{DirBuilder, File, OpenOptions},
+    io::Write as _,
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -35,6 +39,50 @@ pub(crate) async fn export_archive(
     file.sync_all()?;
     sync_parent_directory(&output)?;
     tracing::info!(event = "archive.export.completed", output = %output.display(), note_count = archive.notes.len(), "exported archive");
+    Ok(())
+}
+
+/// 直前のarchiveを現行の文書規則で全件再検証し、新しいファイルへ変換する。
+pub(crate) async fn migrate_archive(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (input, output) = required_archive_migration_arguments(&mut arguments)?;
+    if output.exists() {
+        return Err(format!(
+            "archive migration output already exists: {}",
+            output.display()
+        )
+        .into());
+    }
+    let previous: Archive = serde_json::from_reader(File::open(&input)?)?;
+    let migrated = migrate_previous_archive(&previous)?;
+    let snapshot = validate_archive_contract(&migrated)?;
+    let validated = ValidatedArchive {
+        archive: migrated,
+        plan: restore_plan(snapshot)?,
+    };
+    verify_archive_in_memory(&validated).await?;
+
+    let encoded = serde_json::to_vec_pretty(&validated.archive)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(PRIVATE_FILE_MODE)
+        .open(&output)?;
+    file.write_all(&encoded)?;
+    file.sync_all()?;
+    let written = read_validated_archive(&output)?;
+    if written.archive != validated.archive {
+        return Err("written migrated archive does not match the validated result".into());
+    }
+    sync_parent_directory(&output)?;
+    tracing::info!(
+        event = "maintenance.archive_migration.completed",
+        input = %input.display(),
+        output = %output.display(),
+        note_count = written.archive.notes.len(),
+        "migrated archive"
+    );
     Ok(())
 }
 

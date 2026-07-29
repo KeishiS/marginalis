@@ -41,11 +41,31 @@ pub struct LogicalSnapshot {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct InvalidSnapshot;
+pub enum InvalidSnapshot {
+    DuplicateNote { position: usize },
+    InvalidAclEntry { position: usize },
+    InvalidReference { position: usize },
+}
 
 impl std::fmt::Display for InvalidSnapshot {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("logical snapshot or restore plan is inconsistent")
+        match self {
+            Self::DuplicateNote { position } => {
+                write!(formatter, "note at position {position} is duplicated")
+            }
+            Self::InvalidAclEntry { position } => {
+                write!(
+                    formatter,
+                    "ACL entry at position {position} is inconsistent"
+                )
+            }
+            Self::InvalidReference { position } => {
+                write!(
+                    formatter,
+                    "reference at position {position} has no source note"
+                )
+            }
+        }
     }
 }
 
@@ -57,23 +77,27 @@ impl LogicalSnapshot {
         note_acl: Vec<NoteAclSnapshotEntry>,
     ) -> Result<Self, InvalidSnapshot> {
         let mut note_ids = HashSet::new();
-        for note in &notes {
+        for (index, note) in notes.iter().enumerate() {
             if !note_ids.insert(note.note_id()) {
-                return Err(InvalidSnapshot);
+                return Err(InvalidSnapshot::DuplicateNote {
+                    position: index + 1,
+                });
             }
         }
 
         let mut acl_keys = HashSet::new();
-        for entry in &note_acl {
-            let note = notes
-                .iter()
-                .find(|note| note.note_id() == entry.note_id)
-                .ok_or(InvalidSnapshot)?;
+        for (index, entry) in note_acl.iter().enumerate() {
+            let invalid_entry = InvalidSnapshot::InvalidAclEntry {
+                position: index + 1,
+            };
+            let Some(note) = notes.iter().find(|note| note.note_id() == entry.note_id) else {
+                return Err(invalid_entry);
+            };
             if entry.identity.issuer() != note.creator_issuer()
                 || entry.identity == *note.owner()
                 || !acl_keys.insert((entry.note_id, entry.identity.clone()))
             {
-                return Err(InvalidSnapshot);
+                return Err(invalid_entry);
             }
         }
 
@@ -110,11 +134,14 @@ impl RestorePlan {
             .iter()
             .map(Note::note_id)
             .collect::<HashSet<_>>();
-        if references
+        if let Some((index, _)) = references
             .iter()
-            .any(|(source, _)| !note_ids.contains(source))
+            .enumerate()
+            .find(|(_, (source, _))| !note_ids.contains(source))
         {
-            return Err(InvalidSnapshot);
+            return Err(InvalidSnapshot::InvalidReference {
+                position: index + 1,
+            });
         }
         references
             .sort_unstable_by_key(|(source, target)| (source.to_string(), target.to_string()));
@@ -171,11 +198,11 @@ mod tests {
         assert!(LogicalSnapshot::new(vec![note.clone()], vec![read.clone()]).is_ok());
         assert_eq!(
             LogicalSnapshot::new(vec![note.clone(), note.clone()], Vec::new()),
-            Err(InvalidSnapshot)
+            Err(InvalidSnapshot::DuplicateNote { position: 2 })
         );
         assert_eq!(
             LogicalSnapshot::new(vec![note.clone()], vec![read.clone(), read]),
-            Err(InvalidSnapshot)
+            Err(InvalidSnapshot::InvalidAclEntry { position: 2 })
         );
         assert_eq!(
             LogicalSnapshot::new(
@@ -186,7 +213,7 @@ mod tests {
                     NotePermission::Edit,
                 )],
             ),
-            Err(InvalidSnapshot)
+            Err(InvalidSnapshot::InvalidAclEntry { position: 1 })
         );
     }
 
@@ -199,7 +226,7 @@ mod tests {
         );
         assert_eq!(
             RestorePlan::new(snapshot.clone(), vec![(missing, note.note_id())]),
-            Err(InvalidSnapshot)
+            Err(InvalidSnapshot::InvalidReference { position: 1 })
         );
         let plan = RestorePlan::new(
             snapshot,

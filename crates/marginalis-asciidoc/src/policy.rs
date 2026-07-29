@@ -217,8 +217,8 @@ pub fn note_profile() -> NoteProfile {
             },
             NoteProfileExample {
                 kind: "source_block",
-                description: "Rust source block",
-                body: "[source,rust]\n----\nfn main() {}\n----",
+                description: "Titled Rust source block with line numbers starting at 7",
+                body: ".Example\n[source,rust,linenums,start=7]\n----\nfn main() {}\n----",
             },
             NoteProfileExample {
                 kind: "inline_math",

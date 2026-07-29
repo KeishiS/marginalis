@@ -104,6 +104,31 @@ mod tests {
     }
 
     #[test]
+    fn source_and_math_html_use_the_public_adocweave_contract() {
+        let html = render_note(
+            &note(
+                ".Example <source>\n[source,rust,linenums,start=7]\n----\nfn main() {}\n----\n\nInline latexmath:[x < y].\n\n[latexmath]\n++++\nx^2 < y\n++++",
+            ),
+            &[],
+        )
+        .expect("render");
+
+        assert!(html.contains("<figure class=\"source-block\">"));
+        assert!(html.contains("<figcaption>Example &lt;source&gt;</figcaption>"));
+        assert!(html.contains(
+            "<pre data-language=\"rust\" data-line-numbers=\"true\" data-line-start=\"7\"><code class=\"language-rust\">fn main() {}"
+        ));
+        assert!(html.contains(
+            "<code class=\"math-latex\" data-math-language=\"latexmath\" data-math-display=\"inline\">x &lt; y</code>"
+        ));
+        assert!(html.contains(
+            "<pre class=\"math-latex\" data-math-language=\"latexmath\" data-math-display=\"block\"><code>x^2 &lt; y"
+        ));
+        assert!(!html.contains("<source>"));
+        assert!(!html.contains("x < y"));
+    }
+
+    #[test]
     fn resolved_and_hidden_note_references_preserve_acl_decisions() {
         let target = "0197c9bc-0000-7000-8000-000000000002";
         let source = note(&format!("xref:note:{target}[]"));

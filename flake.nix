@@ -28,7 +28,7 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-      # AdocWeave v0.11.0 が要求する Rust 1.97.1 を確定的にピンする。
+      # AdocWeave v0.17.0 が要求する Rust 1.97.1 を確定的にピンする。
       rustToolchainFor =
         pkgs:
         pkgs.rust-bin.stable."1.97.1".default.override {
@@ -54,13 +54,6 @@
         let
           pkgs = pkgsFor system;
           rustPlatform = rustPlatformFor pkgs;
-          # adocweave は通常ビルドでリポジトリ直下の conformance manifest を
-          # include_str! するため、crate 単位の Cargo vendoring ではこのファイルが
-          # 欠落する。依存と同じコミットのファイルを内容ハッシュ付きで補う。
-          adocweaveConformanceCases = pkgs.fetchurl {
-            url = "https://raw.githubusercontent.com/KeishiS/adocweave/778e9da4548f03ea8434677d50c819d7ce665809/fixtures/conformance/cases.json";
-            hash = "sha256-OxHK8NobfmNN9pRj7B3qP94s1b2E26l5y5EQdMQq6aY=";
-          };
           frontend = pkgs.buildNpmPackage {
             pname = "marginalis-web-ui";
             inherit version;
@@ -91,7 +84,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.11.0" = "sha256-1qCSy6eWSGhIxu1jsLFsRrX2OXNuYgnV6lmTwchGiT4=";
+                "adocweave-0.17.0" = "sha256-bMJfPCaFx0IrEqxGkM0tYOIZeDWUrDr7buFWB3gz3/4=";
               };
             };
             cargoBuildFlags = [
@@ -101,7 +94,6 @@
               "marginalis-service"
             ];
             preBuild = ''
-              install -Dm444 ${adocweaveConformanceCases} ../fixtures/conformance/cases.json
               mkdir -p frontend
               cp -r ${frontend}/dist frontend/dist
             '';
@@ -228,8 +220,8 @@
               '';
         in
         pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          schema9-archive-migration =
-            pkgs.runCommand "marginalis-schema9-archive-migration"
+          schema9-to-schema11-archive-migration =
+            pkgs.runCommand "marginalis-schema9-to-schema11-archive-migration"
               {
                 nativeBuildInputs = [
                   pkgs.coreutils
@@ -296,36 +288,52 @@
                     and .revision == 2 and .deleted_at_ms == 6000)
                 ' schema9.json
 
-                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema10.sqlite"
-                ${self.packages.${system}.default}/bin/marginalis \
+                cp schema9.json schema9-original.json
+                export MARGINALIS_DATABASE_URL="sqlite:$PWD/rejected.sqlite"
+                ! ${self.packages.${system}.default}/bin/marginalis \
                   import-archive --input "$PWD/schema9.json"
-                test "$(sqlite3 schema10.sqlite \
-                  'SELECT MAX(version) FROM schema_migrations')" = 10
-                sqlite3 -json schema10.sqlite \
+                test ! -e rejected.sqlite
+                ${self.packages.${system}.default}/bin/marginalis \
+                  migrate-archive --input "$PWD/schema9.json" --output "$PWD/schema11.json"
+                cmp schema9.json schema9-original.json
+                jq -e '
+                  .format == "marginalis-archive-8"
+                  and .adocweave_package_version == "0.17.0"
+                  and .note_profile_version == 4
+                  and (.notes | length) == 2
+                  and (.note_acl | length) == 2
+                ' schema11.json
+
+                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema11.sqlite"
+                ${self.packages.${system}.default}/bin/marginalis \
+                  import-archive --input "$PWD/schema11.json"
+                test "$(sqlite3 schema11.sqlite \
+                  'SELECT MAX(version) FROM schema_migrations')" = 11
+                sqlite3 -json schema11.sqlite \
                   'SELECT note_id, creator_issuer, creator_subject, title, source,
                           tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-                   FROM notes ORDER BY note_id' > schema10-notes.json
-                sqlite3 -json schema10.sqlite \
+                   FROM notes ORDER BY note_id' > schema11-notes.json
+                sqlite3 -json schema11.sqlite \
                   'SELECT source_note_id, target_note_id
                    FROM note_references ORDER BY source_note_id, target_note_id' \
-                  > schema10-references.json
-                sqlite3 -json schema10.sqlite \
+                  > schema11-references.json
+                sqlite3 -json schema11.sqlite \
                   'SELECT note_id, issuer, subject, permission
-                   FROM note_acl ORDER BY note_id, issuer, subject' > schema10-acl.json
-                diff -u schema9-notes.json schema10-notes.json
-                cmp schema9-references.json schema10-references.json
-                cmp schema9-acl.json schema10-acl.json
-                test "$(sqlite3 schema10.sqlite \
+                   FROM note_acl ORDER BY note_id, issuer, subject' > schema11-acl.json
+                diff -u schema9-notes.json schema11-notes.json
+                cmp schema9-references.json schema11-references.json
+                cmp schema9-acl.json schema11-acl.json
+                test "$(sqlite3 schema11.sqlite \
                   "SELECT COUNT(*) FROM sqlite_schema
                    WHERE type = 'table' AND name IN
                      ('mcp_clients', 'mcp_authorization_codes',
                       'mcp_access_tokens', 'mcp_refresh_tokens')")" = 0
 
                 ${self.packages.${system}.default}/bin/marginalis \
-                  export-archive --output "$PWD/schema10.json"
-                cmp schema9.json schema10.json
+                  export-archive --output "$PWD/schema11-roundtrip.json"
+                cmp schema11.json schema11-roundtrip.json
                 ${self.packages.${system}.default}/bin/marginalis \
-                  verify-restore --input "$PWD/schema10.json"
+                  verify-restore --input "$PWD/schema11-roundtrip.json"
                 touch $out
               '';
 
@@ -595,9 +603,9 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-7\" "
-                + "and .adocweave_package_version == \"0.11.0\" "
-                + "and .note_profile_version == 3 and (.notes | length == 1)' "
+                + "jq -e '.format == \"marginalis-archive-8\" "
+                + "and .adocweave_package_version == \"0.17.0\" "
+                + "and .note_profile_version == 4 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
                 + "test $(stat -c %a \"$backup\") = 700; "
                 + "test $(stat -c %a \"$backup/COMPLETE\") = 600; "
@@ -673,7 +681,7 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 10'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 11'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
@@ -705,14 +713,14 @@
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "journalctl -u marginalis.service -o cat | "
-                + "grep -F 'unsupported database schema version 5; expected 10'"
+                + "grep -F 'unsupported database schema version 5; expected 11'"
               )
               machine.succeed("systemctl stop marginalis.service")
               machine.fail("systemctl start marginalis-diagnose.service")
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 5 and .database.schema.expected == 10'"
+                + "'.database.schema.ok == false and .database.schema.actual == 5 and .database.schema.expected == 11'"
               )
             '';
           };

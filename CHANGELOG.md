@@ -5,10 +5,32 @@
 
 ## 未公開
 
+### 破壊的変更
+
+- AdocWeaveを0.17.0へ更新し、SQLite schemaを11、note profileを4、archiveを
+  `marginalis-archive-8`へ更新した。schema 10は直接起動せず、v0.10.0のarchive 7を
+  `migrate-archive`で全件再検証してから空のschema 11へ取り込む。OpenAPIが示すAdocWeave版と
+  note profile版も同じ値へ更新した。
+- 文書属性を出現順に評価し、タグを最終値から導出する。属性参照と複数行値を評価し、
+  header後の属性操作と改行を含むタグを拒否する。
+
+### 追加
+
+- archive 7を変更せずにarchive 8へ変換する`migrate-archive`を追加した。一件でも現行規則に
+  合わないノートがある場合は出力せず、既存ファイルも上書きしない。失敗した項目は本文や
+  識別子をログへ出さず、archive内の位置で示す。
+
 ### 変更
 
 - MCPの`list_notes`へタグと更新日時、`get_note`へ更新日時を追加した。MCP toolの入力と出力の
   JSON Schemaを`docs/mcp-tools.json`として公開し、実行時の応答と同じ型から生成する。
+- コードブロックの題名・言語・行番号指定と数式の言語・表示形式を、AdocWeaveが公開する
+  HTML属性から表示する。Web UIはclassや親子関係からこれらを推測しない。
+
+### 修正
+
+- 同じWebセッションから閲覧とプレビューなどを同時に要求した場合も、セッション期限の延長が
+  SQLiteのsnapshot競合によって503にならないようにした。
 
 ## 0.10.0 — 2026-07-29
 

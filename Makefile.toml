@@ -327,10 +327,9 @@ description = "Verify the pinned AdocWeave package version and supply-chain iden
 script_runner = "@shell"
 script = '''
 set -eu
-expected_version="0.11.0"
-expected_revision="778e9da4548f03ea8434677d50c819d7ce665809"
-expected_hash="sha256-1qCSy6eWSGhIxu1jsLFsRrX2OXNuYgnV6lmTwchGiT4="
-expected_fixture_hash="sha256-OxHK8NobfmNN9pRj7B3qP94s1b2E26l5y5EQdMQq6aY="
+expected_version="0.17.0"
+expected_revision="01a5b63032f71d0ecbd173638c7094d2ec05fb17"
+expected_hash="sha256-bMJfPCaFx0IrEqxGkM0tYOIZeDWUrDr7buFWB3gz3/4="
 
 cargo metadata --locked --format-version 1 | jq -e \
   --arg version "$expected_version" \
@@ -350,8 +349,13 @@ grep -Fq "pub const ADOCWEAVE_SOURCE_REVISION: &str = \"$expected_revision\";" \
 grep -Fq "pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = \"$expected_version\";" \
   crates/marginalis-asciidoc/src/lib.rs
 grep -Fq "\"adocweave-$expected_version\" = \"$expected_hash\";" flake.nix
-grep -Fq "adocweave/$expected_revision/fixtures/conformance/cases.json" flake.nix
-grep -Fq "hash = \"$expected_fixture_hash\";" flake.nix
+
+adocweave_manifest="$(
+  cargo metadata --locked --format-version 1 \
+    | jq -r --arg version "$expected_version" \
+      '.packages[] | select(.name == "adocweave" and .version == $version) | .manifest_path'
+)"
+test -f "$(dirname "$adocweave_manifest")/conformance/cases.json"
 
 if grep -Eq 'WASM_API_VERSION|PINNED_CONTRACTS|CONTRACT_VERSION|contractVersion' \
   crates/marginalis-asciidoc/src/lib.rs; then

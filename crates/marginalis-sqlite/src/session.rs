@@ -57,54 +57,60 @@ impl SqliteDatabase {
         now: UnixMillis,
         idle_timeout_ms: i64,
     ) -> Result<Option<AuthenticatedSession>, SqliteStoreError> {
-        let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let hash = hash_token(session_id);
-        let row = sqlx::query(
-            "SELECT issuer, subject, idle_expires_at_ms, absolute_expires_at_ms
-             FROM web_sessions WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
-        )
-        .bind(&hash)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        let mut session = session_from_row(row)?;
-        if idle_timeout_ms <= 0
-            || session.idle_expires_at <= now
-            || session.absolute_expires_at <= now
-        {
+        if idle_timeout_ms <= 0 {
             sqlx::query(
                 "UPDATE web_sessions SET revoked_at_ms = ? WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
             )
             .bind(now.get())
-            .bind(hash)
-            .execute(&mut *transaction)
+            .bind(&hash)
+            .execute(&self.pool)
             .await
             .map_err(database_error)?;
-            transaction.commit().await.map_err(database_error)?;
             return Ok(None);
         }
-        let next_idle_expires_at = UnixMillis::new(
-            now.get()
-                .saturating_add(idle_timeout_ms)
-                .min(session.absolute_expires_at.get()),
-        );
-        sqlx::query(
+
+        // 有効性の検証と期限延長を一つの書き込みにまとめる。読み取り後に遅延
+        // transactionを更新へ切り替えると、並行要求とのsnapshot競合が即時失敗する。
+        let next_idle_expires_at = now.get().saturating_add(idle_timeout_ms);
+        let row = sqlx::query(
             "UPDATE web_sessions
-             SET last_seen_at_ms = ?, idle_expires_at_ms = ?
-             WHERE session_id_hash = ?",
+             SET last_seen_at_ms = ?,
+                 idle_expires_at_ms = MIN(absolute_expires_at_ms, ?)
+             WHERE session_id_hash = ?
+               AND revoked_at_ms IS NULL
+               AND idle_expires_at_ms > ?
+               AND absolute_expires_at_ms > ?
+             RETURNING issuer, subject, idle_expires_at_ms, absolute_expires_at_ms",
         )
         .bind(now.get())
-        .bind(next_idle_expires_at.get())
-        .bind(hash)
-        .execute(&mut *transaction)
+        .bind(next_idle_expires_at)
+        .bind(&hash)
+        .bind(now.get())
+        .bind(now.get())
+        .fetch_optional(&self.pool)
         .await
         .map_err(database_error)?;
-        transaction.commit().await.map_err(database_error)?;
-        session.idle_expires_at = next_idle_expires_at;
-        Ok(Some(session))
+        if let Some(row) = row {
+            return session_from_row(row).map(Some);
+        }
+
+        // 期限切れの行を失効済みにして、明示的なcleanup前にも再利用できない状態を残す。
+        sqlx::query(
+            "UPDATE web_sessions
+             SET revoked_at_ms = ?
+             WHERE session_id_hash = ?
+               AND revoked_at_ms IS NULL
+               AND (idle_expires_at_ms <= ? OR absolute_expires_at_ms <= ?)",
+        )
+        .bind(now.get())
+        .bind(hash)
+        .bind(now.get())
+        .bind(now.get())
+        .execute(&self.pool)
+        .await
+        .map_err(database_error)?;
+        Ok(None)
     }
 
     pub async fn validate_web_session_csrf(

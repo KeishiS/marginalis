@@ -15,10 +15,11 @@ mod policy;
 mod rendering;
 
 pub use archive::{
-    ARCHIVE_FORMAT, Archive, ArchiveValidationError, create_archive, validate_archive,
+    ARCHIVE_FORMAT, Archive, ArchiveMigrationError, ArchiveValidationError, create_archive,
+    migrate_previous_archive, validate_archive,
 };
 
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "778e9da4548f03ea8434677d50c819d7ce665809";
+pub const ADOCWEAVE_SOURCE_REVISION: &str = "01a5b63032f71d0ecbd173638c7094d2ec05fb17";
 pub(crate) const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
     "rust",
     "typescript",
@@ -30,8 +31,8 @@ pub(crate) const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
     "sql",
     "text",
 ];
-pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.11.0";
-pub(crate) const NOTE_PROFILE_VERSION: u32 = 3;
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.17.0";
+pub const NOTE_PROFILE_VERSION: u32 = 4;
 pub(crate) const MAX_TITLE_CHARACTERS: usize = 200;
 pub(crate) const MAX_NOTE_SOURCE_BYTES: usize = 512 * 1024;
 pub(crate) const MAX_TAGS: usize = 50;
