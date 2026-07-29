@@ -55,7 +55,28 @@ impl std::error::Error for SqliteStoreError {}
 impl SqliteDatabase {
     /// 現行のSQLite schemaへ接続する。
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
-        let options = database_url
+        let validation_options = database_url
+            .parse::<SqliteConnectOptions>()?
+            .create_if_missing(true)
+            .foreign_keys(true)
+            .busy_timeout(Duration::from_secs(5));
+        let in_memory = is_memory_database_url(database_url);
+        let validation_pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(validation_options)
+            .await?;
+        initialize_or_validate_schema(&validation_pool).await?;
+        if in_memory {
+            return Ok(Self {
+                pool: validation_pool,
+            });
+        }
+
+        // WALへの切替はdatabase headerを変更する。対応していない旧schemaを検証するだけの
+        // 接続ではdatabaseを変更しないよう、schemaの受理後にWAL設定済みのpoolを作る。
+        // validation用poolを明示的に閉じ、DELETE modeの接続を運用poolへ残さない。
+        validation_pool.close().await;
+        let operational_options = database_url
             .parse::<SqliteConnectOptions>()?
             .create_if_missing(true)
             .foreign_keys(true)
@@ -63,8 +84,10 @@ impl SqliteDatabase {
             .busy_timeout(Duration::from_secs(5));
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect_with(options)
+            .connect_with(operational_options)
             .await?;
+        // WAL接続上でもschemaを再確認し、最初の業務問い合わせより前にWALと共有メモリーを
+        // 読み取れる状態へする。最初の検証を通ったdatabaseだけがこの処理へ到達する。
         initialize_or_validate_schema(&pool).await?;
         Ok(Self { pool })
     }
@@ -73,6 +96,13 @@ impl SqliteDatabase {
     pub async fn diagnose(database_url: &str) -> SqliteDiagnosticReport {
         diagnostics::diagnose(database_url).await
     }
+}
+
+fn is_memory_database_url(database_url: &str) -> bool {
+    database_url == "sqlite::memory:"
+        || database_url
+            .split_once('?')
+            .is_some_and(|(_, query)| query.split('&').any(|pair| pair == "mode=memory"))
 }
 
 pub(crate) fn database_error(error: sqlx::Error) -> SqliteStoreError {
