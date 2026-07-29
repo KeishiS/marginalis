@@ -82,27 +82,10 @@ command = "bash"
 args = [".github/scripts/test-classify-docs-only.sh"]
 
 [tasks.protocol-regression-assets]
-description = "Validate MCP client compatibility fixtures and secret-safe failure artifacts"
+description = "Validate secret-safe protocol failure artifacts"
 script_runner = "@shell"
 script = '''
 set -eu
-jq -e '
-  .schema == "marginalis-mcp-client-compatibility-1"
-  and (.fixtures | length == 4)
-  and ([.fixtures[].name] | unique | length == 4)
-  and all(.fixtures[]; .classification == "client-compatibility")
-  and any(.fixtures[]; .name == "chatgpt-query-post" and .request.method == "POST")
-  and any(.fixtures[]; .name == "opaque-origin-consent" and .request.origin == "null")
-  and any(.fixtures[];
-    .name == "claude-code-explicit-loopback-port"
-    and (.registration.redirect_uris[0] | test("^http://(localhost|127\\.0\\.0\\.1):[0-9]+/"))
-  )
-  and any(.fixtures[];
-    .name == "codex-cli-native-origin"
-    and .request.origin_header == "omitted"
-    and .request.authorization == "bearer"
-  )
-' crates/marginalis-integration-tests/fixtures/client-compatibility.json >/dev/null
 bash .github/scripts/test-protocol-artifact.sh
 '''
 
@@ -253,16 +236,40 @@ then
   echo "retired v0.2 production symbol or route remains" >&2
   exit 1
 fi
+
+if rg -n \
+  'McpOAuth|mcp_(clients|authorization_codes|access_tokens|refresh_tokens)|mcp-authorizations|/oauth/(authorize|register|token)' \
+  crates \
+  --glob '*.rs' \
+  --glob '!**/tests.rs' \
+  --glob '!**/tests/**'
+then
+  echo "retired built-in MCP Authorization Server symbol or route remains in production code" >&2
+  exit 1
+fi
+
+if rg -n \
+  'MARGINALIS_MCP_EXTERNAL_ISSUER|externalAuthorization' \
+  . \
+  --glob '!docs/frozen/**' \
+  --glob '!Makefile.toml' \
+  --glob '!target/**' \
+  --glob '!test-results/**' \
+  --glob '!.git/**'
+then
+  echo "retired external Authorization Server configuration name remains" >&2
+  exit 1
+fi
 '''
 
 [tasks.coverage]
-description = "Generate separate workspace and service integration-path coverage reports"
+description = "Generate the workspace coverage report"
 dependencies = ["frontend-build"]
 script_runner = "@shell"
 script = '''
 set -eu
 report_dir=target/coverage
-ignored_sources='(^|/)(tests?(/|\.rs$)|marginalis-integration-tests/)'
+ignored_sources='(^|/)tests?(/|\.rs$)'
 mkdir -p "$report_dir"
 
 cargo llvm-cov clean --workspace
@@ -284,35 +291,8 @@ jq -r '
     row("TOTAL"; $report.data[0].totals)
 ' "$report_dir/workspace.json" >"$report_dir/workspace-summary.txt"
 
-cargo llvm-cov clean --workspace
-cargo llvm-cov \
-  --package marginalis-service --all-features --locked --no-report
-cargo llvm-cov \
-  --package marginalis-integration-tests --test oauth_flow --all-features --locked --no-clean \
-  --ignore-filename-regex "$ignored_sources" \
-  --json --output-path "$report_dir/.integration-test.json"
-cargo llvm-cov report \
-  --ignore-filename-regex "$ignored_sources" \
-  --json --output-path "$report_dir/service-integration-path.json"
-rm "$report_dir/.integration-test.json"
-jq -r '
-  def row($name; $summary):
-    [$name,
-     $summary.lines.count, $summary.lines.covered, $summary.lines.percent,
-     $summary.regions.count, $summary.regions.covered, $summary.regions.percent,
-     $summary.functions.count, $summary.functions.covered, $summary.functions.percent]
-    | @tsv;
-  . as $report
-  | (["file", "lines", "covered", "line_%", "regions", "covered", "region_%",
-      "functions", "covered", "function_%"] | @tsv),
-    ($report.data[0].files[] | row(.filename; .summary)),
-    row("TOTAL"; $report.data[0].totals)
-' "$report_dir/service-integration-path.json" >"$report_dir/service-integration-path-summary.txt"
-
 printf '\nworkspace coverage\n'
 cat "$report_dir/workspace-summary.txt"
-printf '\nservice integration-path coverage\n'
-cat "$report_dir/service-integration-path-summary.txt"
 printf '\ncoverage reports: %s\n' "$report_dir"
 '''
 

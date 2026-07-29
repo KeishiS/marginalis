@@ -16,19 +16,19 @@ let
       throw "services.marginalis.listenAddress must end with a TCP port"
     else
       lib.toInt (builtins.elemAt matched 0);
-  externalAuthorizationValues = with cfg.mcp.externalAuthorization; [
+  authorizationValues = with cfg.mcp.authorization; [
     issuer
     upstreamIssuerClaim
     upstreamSubjectClaim
     groupsClaim
   ];
-  externalAuthorizationEnabled = builtins.all (value: value != null) externalAuthorizationValues;
-  externalAuthorizationUnset = builtins.all (value: value == null) externalAuthorizationValues;
-  externalAuthorizationEnvironment = optionalAttrs externalAuthorizationEnabled {
-    MARGINALIS_MCP_EXTERNAL_ISSUER = cfg.mcp.externalAuthorization.issuer;
-    MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM = cfg.mcp.externalAuthorization.upstreamIssuerClaim;
-    MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM = cfg.mcp.externalAuthorization.upstreamSubjectClaim;
-    MARGINALIS_MCP_GROUPS_CLAIM = cfg.mcp.externalAuthorization.groupsClaim;
+  authorizationEnabled = builtins.all (value: value != null) authorizationValues;
+  authorizationUnset = builtins.all (value: value == null) authorizationValues;
+  authorizationEnvironment = optionalAttrs authorizationEnabled {
+    MARGINALIS_MCP_AUTHORIZATION_ISSUER = cfg.mcp.authorization.issuer;
+    MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM = cfg.mcp.authorization.upstreamIssuerClaim;
+    MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM = cfg.mcp.authorization.upstreamSubjectClaim;
+    MARGINALIS_MCP_GROUPS_CLAIM = cfg.mcp.authorization.groupsClaim;
   };
   commonServiceConfig = {
     User = "marginalis";
@@ -164,7 +164,7 @@ in
       enable = mkOption {
         type = types.bool;
         default = false;
-        description = "Whether to expose the OAuth-protected MCP endpoint and authorization server.";
+        description = "Whether to expose the MCP resource protected by an external Authorization Server.";
       };
 
       allowedOrigins = mkOption {
@@ -173,12 +173,12 @@ in
         description = "Exact HTTPS browser origins permitted to call only the MCP endpoint. Native MCP clients omit Origin and use Bearer authentication.";
       };
 
-      externalAuthorization = {
+      authorization = {
         issuer = mkOption {
           type = types.nullOr types.str;
           default = null;
           example = "https://evaluation.jp.auth0.com/";
-          description = "Evaluation-only external Authorization Server issuer. Leave all externalAuthorization options unset to use the built-in server.";
+          description = "Authorization Server issuer used to discover signing keys and validate MCP access tokens.";
         };
 
         upstreamIssuerClaim = mkOption {
@@ -239,12 +239,16 @@ in
         message = "services.marginalis.oidc.caCertificateFile must be an absolute path when set.";
       }
       {
-        assertion = externalAuthorizationUnset || externalAuthorizationEnabled;
-        message = "services.marginalis.mcp.externalAuthorization options must be all set or all unset.";
+        assertion = authorizationUnset || authorizationEnabled;
+        message = "services.marginalis.mcp.authorization options must be all set or all unset.";
       }
       {
-        assertion = !externalAuthorizationEnabled || cfg.mcp.enable;
-        message = "services.marginalis.mcp.enable must be true when externalAuthorization is set.";
+        assertion = !cfg.mcp.enable || authorizationEnabled;
+        message = "services.marginalis.mcp.authorization options must be set when MCP is enabled.";
+      }
+      {
+        assertion = !authorizationEnabled || cfg.mcp.enable;
+        message = "services.marginalis.mcp.enable must be true when authorization is set.";
       }
       {
         assertion =
@@ -294,7 +298,7 @@ in
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
       }
-      // externalAuthorizationEnvironment;
+      // authorizationEnvironment;
       serviceConfig =
         commonServiceConfig
         // {
@@ -366,7 +370,7 @@ in
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
       }
-      // externalAuthorizationEnvironment;
+      // authorizationEnvironment;
       serviceConfig = localServiceConfig // {
         Type = "oneshot";
         ExecStart = "${cfg.package}/bin/marginalis diagnose";
