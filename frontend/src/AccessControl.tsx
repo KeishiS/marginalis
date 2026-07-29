@@ -91,16 +91,26 @@ export function AccessControl({
   }
 
   return (
-    <section aria-labelledby="access-control-heading">
+    <section
+      className="access-control surface"
+      aria-labelledby="access-control-heading"
+    >
       <h2 id="access-control-heading">共有設定</h2>
-      <p>同じ認証基盤の利用者subjectを正確に入力してください。</p>
-      <ul>
+      <p className="section-description">
+        同じ認証基盤の利用者subjectを正確に入力してください。
+      </p>
+      <ul className="access-list">
         {currentEntries.map((entry) => (
           <li key={entry.subject}>
-            <code>{entry.subject}</code>（
-            {entry.permission === "edit" ? "閲覧・編集" : "閲覧"}）
+            <span>
+              <code>{entry.subject}</code>
+              <span className="access-permission">
+                {entry.permission === "edit" ? "閲覧・編集" : "閲覧"}
+              </span>
+            </span>
             <button
               type="button"
+              className="button button-danger button-small"
               onClick={() =>
                 dispatch({ type: "remove", subject: entry.subject })
               }
@@ -110,7 +120,10 @@ export function AccessControl({
           </li>
         ))}
       </ul>
-      <form onSubmit={add}>
+      {currentEntries.length === 0 && (
+        <p className="empty-state">追加の共有先はありません。</p>
+      )}
+      <form className="access-form" onSubmit={add}>
         <label>
           利用者subject
           <input
@@ -135,13 +148,25 @@ export function AccessControl({
             <option value="edit">閲覧・編集</option>
           </select>
         </label>
-        <button type="submit">共有先を追加</button>
+        <button className="button button-secondary" type="submit">
+          共有先を追加
+        </button>
       </form>
-      <button type="button" onClick={save}>
-        共有設定を保存
-      </button>
-      {notice && <p role="status">{notice}</p>}
-      {error && <p role="alert">{error}</p>}
+      <div className="form-actions">
+        <button className="button button-primary" type="button" onClick={save}>
+          共有設定を保存
+        </button>
+        {notice && (
+          <p className="notice-inline" role="status">
+            {notice}
+          </p>
+        )}
+      </div>
+      {error && (
+        <p className="problem-inline" role="alert">
+          {error}
+        </p>
+      )}
     </section>
   );
 }

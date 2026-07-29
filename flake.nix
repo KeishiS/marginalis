@@ -1102,6 +1102,7 @@
               nixfmt
               nodejs_22
               pnpm
+              noto-fonts-cjk-sans
               playwright-driver.browsers
               playwright-test
               ripgrep

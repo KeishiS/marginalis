@@ -27,7 +27,7 @@ export function editorActivityReducer(
     case "save-started":
       return { saving: true, problem: null, notice: "" };
     case "save-succeeded":
-      return { saving: false, problem: null, notice: "保存しました。" };
+      return { saving: false, problem: null, notice: "" };
     case "save-failed":
       return { saving: false, problem: action.problem, notice: "" };
     case "notice":

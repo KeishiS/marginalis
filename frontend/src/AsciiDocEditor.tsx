@@ -175,7 +175,7 @@ export const AsciiDocEditor = forwardRef<
       passive: true,
     });
     view.current = editor;
-    editor.focus();
+    editor.contentDOM.focus({ preventScroll: true });
     return () => {
       editor.scrollDOM.removeEventListener("scroll", reportScroll);
       editor.destroy();

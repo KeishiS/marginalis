@@ -8,6 +8,7 @@
 - [OpenAPI 3.1](openapi.json)
 - [REST API](rest-api.md)
 - [AsciiDoc編集画面](web-ui-editor.md)
+- [Web UIの画面設計](web-ui-design.md)
 - [MCPとOAuth](mcp.md)
 - [MCP toolのJSON Schema](mcp-tools.json)
 

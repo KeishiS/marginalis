@@ -125,6 +125,40 @@ test("完全なAsciiDoc文書を一つの入力として作成する", async () 
   );
 });
 
+test("キーボード保存の成功を右上の通知で伝える", async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse(NOTE, 201))
+    .mockResolvedValueOnce(
+      jsonResponse({ code: "internal_error", message: "failed" }, 500),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  render(<EditorApplication config={CONFIG} />);
+
+  const editor = screen.getByRole("textbox", { name: "AsciiDoc文書" });
+  fireEvent.change(editor, { target: { value: SOURCE } });
+  fireEvent.keyDown(editor, { key: "s", ctrlKey: true });
+
+  const message = await screen.findByText("保存しました。");
+  expect(message.closest(".toast")).toBeInTheDocument();
+  expect(message.closest(".toast-region")).toHaveAttribute(
+    "aria-live",
+    "polite",
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("変更は保存されています。")).toHaveAttribute(
+    "role",
+    "status",
+  );
+
+  fireEvent.change(editor, { target: { value: `${SOURCE}\n\n追記` } });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "保存できませんでした",
+  );
+  expect(screen.queryByText("保存しました。")).not.toBeInTheDocument();
+});
+
 test("既存文書を読み込み、更新番号を付けて保存する", async () => {
   const updatedSource = SOURCE.replace("既存の本文", "更新後");
   const fetchMock = vi

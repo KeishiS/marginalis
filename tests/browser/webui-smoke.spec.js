@@ -23,6 +23,7 @@ test("production build starts and renders a note returned by the API", async ({
 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
   expect(browserErrors).toEqual([]);
 
   await expect(
@@ -32,6 +33,24 @@ test("production build starts and renders a note returned by the API", async ({
     page.getByRole("link", { name: "ブラウザー基本試験" }),
   ).toHaveAttribute("href", "/notes/0197c9bc-0000-7000-8000-000000000001");
   await expect(page.getByRole("status")).toContainText("1件のノート");
+  await expect(
+    page.getByRole("link", { name: "新規ノート" }),
+  ).toHaveCount(1);
+  await expect(page).toHaveScreenshot(
+    "note-list-wide.png",
+    SCREENSHOT_OPTIONS,
+  );
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page).toHaveScreenshot(
+    "note-list-wide-dark.png",
+    SCREENSHOT_OPTIONS,
+  );
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 360, height: 720 });
+  await expect(page).toHaveScreenshot(
+    "note-list-narrow.png",
+    SCREENSHOT_OPTIONS,
+  );
 });
 
 test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", async ({ page }) => {
@@ -79,12 +98,13 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
     ),
   );
 
-  await expect(page.locator(".editor-page")).toHaveScreenshot(
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page).toHaveScreenshot(
     "editor-wide-split.png",
     SCREENSHOT_OPTIONS,
   );
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page.locator(".editor-page")).toHaveScreenshot(
+  await expect(page).toHaveScreenshot(
     "editor-wide-split-dark.png",
     SCREENSHOT_OPTIONS,
   );
@@ -95,7 +115,7 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
     "write",
   );
   await expect(page.getByRole("button", { name: "分割" })).toBeDisabled();
-  await expect(page.locator(".editor-page")).toHaveScreenshot(
+  await expect(page).toHaveScreenshot(
     "editor-narrow-write.png",
     SCREENSHOT_OPTIONS,
   );
@@ -235,7 +255,16 @@ test("5,000行の文書を編集して保存できる", async ({ page }) => {
   await page.getByRole("button", { name: "執筆" }).click();
   await expect(editor).toBeFocused();
   await editor.press("Control+s");
-  await expect(page.getByText("保存しました。")).toBeVisible();
+  const toast = page.locator(".toast");
+  await expect(toast.getByText("保存しました。")).toBeVisible();
+  const toastPosition = await toast.boundingBox();
+  const viewport = page.viewportSize();
+  expect(toastPosition).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(toastPosition.y).toBeLessThan(130);
+  expect(viewport.width - (toastPosition.x + toastPosition.width)).toBeLessThan(
+    40,
+  );
 });
 
 function escapeHtml(value) {

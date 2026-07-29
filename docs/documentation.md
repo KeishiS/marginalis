@@ -24,6 +24,7 @@
 | `docs/mcp-tools.json` | MCP利用者・ツール | MCP toolの入力と成功出力の正式なJSON Schema | tool、入力、成功出力の変更 |
 | `docs/rest-api.md` | API利用者 | REST APIの説明と動作例 | REST APIの仕様または利用例の変更 |
 | `docs/web-ui-editor.md` | Web UI利用者・開発者 | AsciiDoc編集画面の操作と表示上の制約 | 編集操作、表示方式、キーボード操作の変更 |
+| `docs/web-ui-design.md` | Web UI利用者・開発者 | 全画面に共通する構成、視覚表現、状態表示 | 画面構成、共通部品、色、余白、レスポンシブ動作の変更 |
 | `docs/mcp.md` | MCP利用者・運用者 | MCP tool、scope、OAuth接続の説明と利用方法 | tool、scope、OAuthの変更 |
 | `docs/nixos.md` | 運用者 | 配備、秘密情報、backup、復元、診断 | module optionまたは運用jobの変更 |
 | `docs/observability.md` | 運用者・開発者 | 構造化ログのfield、event、秘密情報境界、障害診断 | ログevent、field、level、診断方法の変更 |
