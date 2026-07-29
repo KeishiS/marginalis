@@ -20,16 +20,18 @@ let mathJaxLoader: Promise<MathJaxRuntime> | null = null;
 export function RenderedContent({
   html,
   preview = false,
+  active = true,
 }: {
   html: string;
   preview?: boolean;
+  active?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [failedHtml, setFailedHtml] = useState<string | null>(null);
 
   useEffect(() => {
     const element = container.current;
-    if (!element) return;
+    if (!element || !active) return;
     enhanceSourceBlocks(element);
     if (!prepareMath(element)) return;
     if (failedHtml === html) {
@@ -54,7 +56,7 @@ export function RenderedContent({
     return () => {
       current = false;
     };
-  }, [failedHtml, html]);
+  }, [active, failedHtml, html]);
 
   return (
     <>

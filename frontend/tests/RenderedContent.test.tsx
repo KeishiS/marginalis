@@ -113,6 +113,33 @@ test("対応するAsciiDoc表示要素を一つのfixtureで固定する", () =>
   expect(container.querySelector(".math-display")).toBeTruthy();
 });
 
+test("非表示中に届いた数式を再表示時に組版する", async () => {
+  const typesetClear = vi.fn();
+  const typesetPromise = vi.fn().mockResolvedValue(undefined);
+  window.MathJax = {
+    startup: { promise: Promise.resolve() },
+    typesetClear,
+    typesetPromise,
+  };
+  const html = String.raw`<p>数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code></p>`;
+  const { rerender } = render(
+    <RenderedContent active={false} html={html} preview />,
+  );
+
+  expect(typesetPromise).not.toHaveBeenCalled();
+  expect(document.querySelector(".math-latex")).toHaveTextContent(
+    String.raw`\lambda`,
+  );
+
+  rerender(<RenderedContent active html={html} preview />);
+
+  await waitFor(() => expect(typesetPromise).toHaveBeenCalledOnce());
+  expect(typesetClear).toHaveBeenCalledOnce();
+  expect(document.querySelector(".math-inline")).toHaveTextContent(
+    String.raw`\(\lambda\)`,
+  );
+});
+
 test("MathJaxの組版失敗を利用者へ通知する", async () => {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   window.MathJax = {

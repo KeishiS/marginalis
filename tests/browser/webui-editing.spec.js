@@ -70,9 +70,9 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "preview",
   );
   await page.getByRole("button", { name: "分割" }).click();
-  await source.fill(
-    "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*",
-  );
+  const documentSource =
+    "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*";
+  await source.fill(documentSource);
   await expect(page.getByText("未保存の変更があります。")).toBeVisible();
   await expect(page.locator(".preview-content")).toContainText(
     "日本語と絵文字😀",
@@ -99,6 +99,18 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
         : "pending";
     })
     .toBe("rendered");
+
+  await page.getByRole("button", { name: "執筆" }).click();
+  await source.fill(`${documentSource}\n\n非表示中の更新`);
+  await expect(
+    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "プレビュー" }).click();
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(
+    page.locator(".preview-content [data-math-prepared='true']"),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "分割" }).click();
 
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();

@@ -342,6 +342,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
             onScroll={synchronizeFromPreview}
           >
             <PreviewPanel
+              active={effectiveViewMode !== "write"}
               body={form.source}
               html={preview.html}
               diagnostics={preview.diagnostics}
@@ -596,6 +597,7 @@ function ProblemMessage({
 }
 
 function PreviewPanel({
+  active,
   body,
   html,
   diagnostics,
@@ -603,6 +605,7 @@ function PreviewPanel({
   problem,
   onSelectDiagnostic,
 }: {
+  active: boolean;
   body: string;
   html: string;
   diagnostics: NoteDiagnostic[];
@@ -684,13 +687,13 @@ function PreviewPanel({
           </ul>
         </section>
       )}
-      {html && <SafePreview html={html} />}
+      {html && <SafePreview active={active} html={html} />}
       {!html && !loading && !problem && <p>プレビューはありません。</p>}
     </section>
   );
 }
 
-function SafePreview({ html }: { html: string }) {
+function SafePreview({ active, html }: { active: boolean; html: string }) {
   // 同じ保存規則とRenderPolicyを通ったサーバー生成HTMLだけを受け取る。
-  return <RenderedContent html={html} preview />;
+  return <RenderedContent active={active} html={html} preview />;
 }

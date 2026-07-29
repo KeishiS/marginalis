@@ -101,6 +101,44 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
   );
 });
 
+test("執筆表示中に届いた数式をプレビュー表示時に組版する", async ({
+  page,
+}) => {
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    const source = (await route.request().postDataJSON()).source;
+    const html = source.includes(String.raw`stem:[\lambda]`)
+      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code>のチェックです。</p>`
+      : "<p>プレビュー</p>";
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ html, diagnostics: [] }),
+    });
+  });
+  await page.goto("/notes/new");
+  await page.getByRole("button", { name: "執筆" }).click();
+  await page
+    .getByRole("textbox", { name: "AsciiDoc文書" })
+    .fill(
+      String.raw`= 新規ノート
+:tags:
+:sectnums:
+
+== 見出し1
+
+インライン数式 stem:[\lambda]のチェックです。`,
+    );
+
+  await expect(
+    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "プレビュー" }).click();
+
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(
+    page.locator(".preview-content [data-math-prepared='true']"),
+  ).toHaveCount(1);
+});
+
 test("5,000行の文書を編集して保存できる", async ({ page }) => {
   test.setTimeout(30_000);
   const source = [
