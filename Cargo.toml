@@ -2,6 +2,7 @@
 members = [
     "crates/marginalis-asciidoc",
     "crates/marginalis-application",
+    "crates/marginalis-auth-oauth",
     "crates/marginalis-auth-oidc",
     "crates/marginalis-contract",
     "crates/marginalis-domain",
@@ -32,6 +33,7 @@ sha2 = "0.10.9"
 time = { version = "0.3.54", features = ["formatting", "macros", "parsing"] }
 axum = { version = "0.8.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
 async-trait = "0.1.89"
+jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust_crypto"] }
 openidconnect = { version = "4.0.1", default-features = false, features = ["reqwest", "rustls-tls"] }
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls-native-roots"] }
 serde = { version = "1.0.219", features = ["derive"] }

@@ -4,6 +4,9 @@ use marginalis_application::{
     McpOAuthApplication, NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
+use marginalis_auth_oauth::{
+    ExternalMcpAccessTokenAuthenticator, ExternalMcpAuthorizationConfiguration,
+};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
 use marginalis_sqlite::SqliteDatabase;
 use std::path::Path;
@@ -91,16 +94,36 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let state = if configuration.mcp_enabled {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
-        state.with_mcp(marginalis_web::http::McpEndpoint::new(
+        let endpoint = marginalis_web::http::McpEndpoint::new(
             std::sync::Arc::new(McpOAuthApplication::new(
                 std::sync::Arc::new(database),
                 std::sync::Arc::new(SystemClock),
                 std::sync::Arc::new(SystemRandom),
-                resource_uri,
+                resource_uri.clone(),
             )),
             &configuration.http.base_url,
             configuration.mcp_allowed_origins,
-        ))
+        );
+        let endpoint = if let Some(external) = configuration.external_mcp_authorization {
+            let authenticator = std::sync::Arc::new(
+                ExternalMcpAccessTokenAuthenticator::discover(
+                    ExternalMcpAuthorizationConfiguration {
+                        issuer: external.issuer.clone(),
+                        audience: resource_uri,
+                        upstream_issuer: configuration.oidc.issuer_url.to_string(),
+                        upstream_issuer_claim: external.upstream_issuer_claim,
+                        upstream_subject_claim: external.upstream_subject_claim,
+                        groups_claim: external.groups_claim,
+                        required_user_group: "server-users".into(),
+                    },
+                )
+                .await?,
+            );
+            endpoint.with_external_authorization_server(external.issuer, authenticator)?
+        } else {
+            endpoint
+        };
+        state.with_mcp(endpoint)
     } else {
         state
     };

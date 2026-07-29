@@ -35,6 +35,59 @@ async fn mcp_metadata_is_available_when_enabled() {
 }
 
 #[tokio::test]
+async fn external_authorization_changes_discovery_and_access_token_authentication() {
+    let protected = external_mcp_app()
+        .oneshot(
+            Request::get("/.well-known/oauth-protected-resource/mcp")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(protected.status(), StatusCode::OK);
+    let metadata: serde_json::Value = serde_json::from_slice(
+        &axum::body::to_bytes(protected.into_body(), usize::MAX)
+            .await
+            .expect("metadata body"),
+    )
+    .expect("metadata");
+    assert_eq!(
+        metadata["authorization_servers"],
+        serde_json::json!(["https://evaluation.jp.auth0.com/"])
+    );
+
+    let accepted = external_mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer external-token")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(accepted.status(), StatusCode::OK);
+
+    let internal_token = external_mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(internal_token.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn mcp_metadata_uses_rfc_well_known_paths_for_a_subpath_issuer() {
     for path in [
         "/.well-known/oauth-protected-resource/marginalis/mcp",

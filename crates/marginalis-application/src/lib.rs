@@ -483,3 +483,28 @@ pub trait McpOAuthUseCases: Send + Sync {
     ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError>;
     async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError>;
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum McpAccessTokenAuthenticationError {
+    Configuration,
+    Discovery,
+    Rejected,
+    Unavailable,
+}
+
+impl core::fmt::Display for McpAccessTokenAuthenticationError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("MCP access token authentication failed")
+    }
+}
+
+impl std::error::Error for McpAccessTokenAuthenticationError {}
+
+#[async_trait]
+pub trait McpAccessTokenAuthenticator: Send + Sync {
+    async fn authenticate_access_token(
+        &self,
+        token: String,
+        resource_uri: String,
+    ) -> Result<Option<McpAuthenticatedActor>, McpAccessTokenAuthenticationError>;
+}

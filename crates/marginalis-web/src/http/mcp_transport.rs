@@ -324,12 +324,20 @@ pub(super) async fn mcp_post(
             challenged_scope,
         ));
     };
-    let Some(authenticated) = endpoint
-        .oauth
-        .authenticate(token.into(), endpoint.resource_uri.clone())
-        .await
-        .map_err(mcp_error)?
-    else {
+    let authenticated =
+        if let Some(authenticator) = endpoint.external_access_token_authenticator.as_ref() {
+            authenticator
+                .authenticate_access_token(token.into(), endpoint.resource_uri.clone())
+                .await
+                .map_err(|_| mcp_error(marginalis_application::McpOAuthUseCaseError::Unavailable))?
+        } else {
+            endpoint
+                .oauth
+                .authenticate(token.into(), endpoint.resource_uri.clone())
+                .await
+                .map_err(mcp_error)?
+        };
+    let Some(authenticated) = authenticated else {
         return Ok(mcp_authentication_error(
             endpoint,
             StatusCode::UNAUTHORIZED,

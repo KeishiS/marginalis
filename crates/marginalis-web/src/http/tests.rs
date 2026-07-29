@@ -5,12 +5,13 @@ use axum::{
     http::{HeaderMap, Request},
 };
 use marginalis_application::{
-    AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
-    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
-    NoteCommands, NotePresentation, NoteProfile, NoteProfileExample, NoteProfileLimits,
-    NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError,
-    NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget, NoteView,
-    OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
+    AuthenticationUseCaseError, McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator,
+    McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair,
+    McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands,
+    NotePresentation, NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
+    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
+    NoteValidationDiagnostic, NoteValidationTarget, NoteView, OidcAuthenticationUseCases,
+    RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note, NoteAccess,
@@ -617,6 +618,27 @@ impl McpOAuthUseCases for Mcp {
     }
 }
 
+struct ExternalMcpAuthenticator;
+
+#[async_trait]
+impl McpAccessTokenAuthenticator for ExternalMcpAuthenticator {
+    async fn authenticate_access_token(
+        &self,
+        token: String,
+        resource_uri: String,
+    ) -> Result<Option<McpAuthenticatedActor>, McpAccessTokenAuthenticationError> {
+        Ok(
+            (token == "external-token" && resource_uri == "https://example.test/mcp").then(|| {
+                McpAuthenticatedActor {
+                    actor: Actor::try_new("https://kanidm.example.test".into(), "alice".into())
+                        .expect("valid actor"),
+                    scopes: vec!["notes:read".into()],
+                }
+            }),
+        )
+    }
+}
+
 fn app() -> Router {
     router(ApiState::new(
         Arc::new(Notes),
@@ -642,6 +664,26 @@ fn mcp_app() -> Router {
             &base_url,
             vec!["https://chatgpt.com".into()],
         )),
+    )
+}
+
+fn external_mcp_app() -> Router {
+    let base_url = url::Url::parse("https://example.test").expect("base URL");
+    let endpoint = McpEndpoint::new(Arc::new(Mcp), &base_url, vec!["https://chatgpt.com".into()])
+        .with_external_authorization_server(
+            "https://evaluation.jp.auth0.com/".into(),
+            Arc::new(ExternalMcpAuthenticator),
+        )
+        .expect("external authorization server");
+    router(
+        ApiState::new(
+            Arc::new(Notes),
+            Arc::new(Sessions),
+            Arc::new(Oidc),
+            "/".into(),
+            "https://example.test".into(),
+        )
+        .with_mcp(endpoint),
     )
 }
 

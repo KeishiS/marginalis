@@ -105,6 +105,60 @@ ChatGPT、Claude Code、Codex CLIごとに、次の順序で確認します。
 - Actionまたはclaim設定によるgroupの引き渡し
 - 認可取消とrefresh token rotation
 
+#### 評価環境の設定
+
+Auth0側には、次の値を設定します。API identifierはMarginalisの公開MCP URLと完全に一致させ、
+署名アルゴリズムには`RS256`を使用します。APIには`notes:read`、`notes:write`、
+`notes:delete`を定義します。Resource Parameter Compatibility Profileを有効にし、MCPクライアントが
+送る`resource`をAPI identifierと同じ対象へ結び付けます。
+
+| 設定 | 値 |
+| --- | --- |
+| Auth0 tenant domain | 評価用tenantのdomain |
+| API identifier | `https://評価用Marginalisのホスト/mcp` |
+| 上流issuer claim | API identifierと同じ管理下にある名前空間のURL |
+| 上流subject claim | API identifierと同じ管理下にある名前空間のURL |
+| group claim | API identifierと同じ管理下にある名前空間のURL |
+
+Kanidmは評価用のOIDC Enterprise Connectionとして接続します。claimの元は、その接続で検証した
+KanidmのID tokenまたはUserInfo応答だけに限定します。Auth0の利用者が変更できる
+`user_metadata`や、ほかのconnectionから同名で渡された値は使用しません。Post Login Actionでは
+connectionを名前またはIDで限定し、次の値を名前空間付きcustom claimとしてaccess tokenへ設定します。
+
+- Kanidmの`iss`を上流issuer claimへ設定します。
+- Kanidmの`sub`を上流subject claimへ設定します。
+- Kanidmの`groups`文字列配列をgroup claimへ設定します。
+
+実際のtenantでOIDC claim mapping後の属性名を確認してからActionを確定します。Actionのsource、
+tenant名、client ID、秘密情報はリポジトリへ保存しません。
+
+Marginalis側では、通常のMCP設定に加えて次の環境変数を設定します。claim名はAuth0 Actionで設定した
+名前空間付きcustom claimと完全に一致させます。
+
+```text
+MARGINALIS_MCP_EXTERNAL_ISSUER=https://評価用tenantのdomain/
+MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM=https://評価用Marginalisのホスト/claims/upstream-issuer
+MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM=https://評価用Marginalisのホスト/claims/upstream-subject
+MARGINALIS_MCP_GROUPS_CLAIM=https://評価用Marginalisのホスト/claims/groups
+```
+
+この設定を有効にすると、Protected Resource MetadataはAuth0をAuthorization Serverとして案内し、
+MCP endpointはAuth0が`RS256`で署名したaccess tokenだけを受理します。Marginalisは署名に加えて
+`iss`、公開MCP URLと一致する`aud`、有効期限、上流のKanidm issuer、`server-users`、
+`notes:*` scopeを検証します。Auth0上の`sub`は所有者IDに使用せず、上流issuer claimと
+上流subject claimの組を既存の所有者IDとして使用します。
+
+このadapterはIssue #24の評価用です。実接続の結果とADRが承認されるまでは、本番設定へ追加せず、
+内蔵Authorization Serverを削除しません。外部設定中も内蔵OAuth endpoint自体は応答しますが、
+そこで発行したtokenはMCP endpointで拒否されます。
+
+Auth0の設定では、次の公式資料を参照します。
+
+- [OpenID Connect Discovery](https://auth0.com/docs/get-started/applications/configure-applications-with-oidc-discovery)
+- [JSON Web Key Sets](https://auth0.com/docs/secure/tokens/json-web-tokens/locate-json-web-key-sets)
+- [Access tokenのcustom claim](https://auth0.com/docs/secure/tokens/json-web-tokens/create-custom-claims)
+- [OIDC Enterprise Connectionのclaim mapping](https://auth0.com/docs/authenticate/identity-providers/enterprise-identity-providers/configure-pkce-claim-mapping-for-oidc)
+
 ### Keycloak
 
 - 使用したKeycloakの版と配備方法
