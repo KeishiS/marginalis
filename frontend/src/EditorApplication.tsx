@@ -52,6 +52,7 @@ export interface EditorConfig {
 }
 
 type EditorViewMode = "write" | "split" | "preview";
+const SAVE_TOAST_DURATION_MS = 4_000;
 
 export function EditorApplication({ config }: { config: EditorConfig }) {
   const [editor, dispatch] = useReducer(
@@ -71,7 +72,9 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const sourceEditor = useRef<AsciiDocEditorHandle>(null);
   const previewScroll = useRef<HTMLDivElement>(null);
   const scrollSource = useRef<"editor" | "preview" | null>(null);
+  const toastSequence = useRef(0);
   const [isComposing, setIsComposing] = useState(false);
+  const [saveToast, setSaveToast] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>("split");
   const [editorWidth, setEditorWidth] = useState(50);
   const [syncScroll, setSyncScroll] = useState(true);
@@ -123,6 +126,15 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     return () =>
       window.removeEventListener("beforeunload", warnAboutUnsavedChanges);
   }, [isDirty]);
+
+  useEffect(() => {
+    if (saveToast === null) return;
+    const timeout = window.setTimeout(
+      () => setSaveToast(null),
+      SAVE_TOAST_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [saveToast]);
 
   function selectDiagnostic(diagnostic: NoteDiagnostic) {
     const span = diagnostic.span;
@@ -194,6 +206,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     if (saving) {
       return;
     }
+    setSaveToast(null);
     dispatchActivity({ type: "save-started" });
     try {
       const note =
@@ -202,6 +215,8 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           : await updateNote(config.apiBase, noteId, draft, revision);
       dispatch({ type: "accept-note", note });
       dispatchActivity({ type: "save-succeeded" });
+      toastSequence.current += 1;
+      setSaveToast(toastSequence.current);
       if (revision === null) {
         window.history.replaceState(
           null,
@@ -251,8 +266,9 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
 
   return (
     <section className="editor-page" aria-labelledby="editor-heading">
-      <div className="editor-heading">
+      <div className="page-heading editor-heading">
         <div>
+          <p className="page-eyebrow">Editor</p>
           <h1 id="editor-heading">
             {revision === null ? "ノートの作成" : "ノートの編集"}
           </h1>
@@ -261,6 +277,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           )}
         </div>
         <a
+          className="button button-secondary"
           href={
             noteId
               ? `${externalPath(config.basePath, `/notes/${noteId}`)}${config.search}`
@@ -297,7 +314,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       )}
 
       <form className="editor-form" onSubmit={save} ref={editorForm}>
-        <div className="editor-controls">
+        <div className="editor-controls surface">
           <EditorViewToolbar
             mode={effectiveViewMode}
             requestedMode={viewMode}
@@ -353,10 +370,14 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           </div>
         </div>
         <div className="editor-actions">
-          <button type="submit" disabled={saving || !isDirty || isComposing}>
+          <button
+            className="button button-primary"
+            type="submit"
+            disabled={saving || !isDirty || isComposing}
+          >
             {saving ? "保存しています…" : "保存"}
           </button>
-          <span role="status">
+          <span className="editor-status" role="status">
             {isComposing
               ? "日本語入力を確定してください。"
               : editorStatus({
@@ -369,6 +390,19 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           </span>
         </div>
       </form>
+      <div className="toast-region" aria-live="polite" aria-atomic="true">
+        {saveToast !== null && (
+          <div className="toast toast-success">
+            <span className="toast-mark" aria-hidden="true">
+              ✓
+            </span>
+            <div>
+              <p className="toast-title">保存しました。</p>
+              <p className="toast-description">変更内容は最新です。</p>
+            </div>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -402,6 +436,7 @@ function EditorViewToolbar({
       <div className="editor-view-buttons" role="group" aria-label="表示">
         {modes.map((item) => (
           <button
+            className="button button-segment"
             key={item.mode}
             type="button"
             aria-pressed={mode === item.mode}
@@ -496,7 +531,11 @@ function ConflictPanel({
         editing={editing.source}
         current={current.source}
       />
-      <button type="button" onClick={onUseCurrentRevision}>
+      <button
+        className="button button-secondary"
+        type="button"
+        onClick={onUseCurrentRevision}
+      >
         更新番号{currentRevision}を編集の基準にする
       </button>
       <p>

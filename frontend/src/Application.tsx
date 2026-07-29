@@ -78,14 +78,18 @@ function NoteList({ config }: { config: ApplicationConfig }) {
   }, [config.apiBase]);
   const page = notes === null ? null : selectNoteListPage(notes, query);
   return (
-    <>
-      <div className="editor-heading">
-        <h1>ノート</h1>
-        <a
-          href={`${externalPath(config.basePath, "/notes/new")}${canonicalSearch(config.search)}`}
-        >
-          新規ノート
-        </a>
+    <section
+      className="note-index page-section"
+      aria-labelledby="note-index-heading"
+    >
+      <div className="page-heading">
+        <div>
+          <p className="page-eyebrow">Library</p>
+          <h1 id="note-index-heading">ノート</h1>
+          <p className="page-description">
+            記録した知識を、更新日やタグから見つけられます。
+          </p>
+        </div>
       </div>
       <NoteListFilters config={config} query={query} />
       {failed ? (
@@ -152,7 +156,7 @@ function NoteList({ config }: { config: ApplicationConfig }) {
           )}
         </>
       )}
-    </>
+    </section>
   );
 }
 
@@ -220,8 +224,9 @@ function NoteViewer({
   if (view === null) return <p>ノートを読み込んでいます。</p>;
   return (
     <>
-      <nav aria-label="ノート操作">
+      <nav className="page-actions" aria-label="ノート操作">
         <a
+          className="button button-secondary"
           href={externalPath(
             config.basePath,
             `/${canonicalSearch(config.search)}`,
@@ -231,6 +236,7 @@ function NoteViewer({
         </a>{" "}
         {view.access !== "read" && (
           <a
+            className="button button-primary"
             href={`${externalPath(config.basePath, `/notes/${noteId}/edit`)}${canonicalSearch(config.search)}`}
           >
             編集
@@ -238,13 +244,16 @@ function NoteViewer({
         )}{" "}
         {view.access === "manage" && (
           <a
+            className="button button-secondary"
             href={`${externalPath(config.basePath, `/notes/${noteId}/access`)}${canonicalSearch(config.search)}`}
           >
             共有設定
           </a>
         )}
       </nav>
-      <RenderedContent html={view.html} />
+      <div className="document-surface">
+        <RenderedContent html={view.html} />
+      </div>
       <RelatedNotes config={config} view={view} />
     </>
   );
@@ -304,9 +313,22 @@ function AccessPage({
   if (failed) return <p role="alert">共有設定を読み込めませんでした。</p>;
   if (note === null) return <p>共有設定を読み込んでいます。</p>;
   return (
-    <>
-      <nav aria-label="ノート操作">
+    <section
+      className="access-page page-section"
+      aria-labelledby="access-page-heading"
+    >
+      <div className="page-heading">
+        <div>
+          <p className="page-eyebrow">Access</p>
+          <h1 id="access-page-heading">共有設定</h1>
+          <p className="page-description">
+            このノートを閲覧または編集できる利用者を管理します。
+          </p>
+        </div>
+      </div>
+      <nav className="page-actions" aria-label="ノート操作">
         <a
+          className="button button-secondary"
           href={`${externalPath(config.basePath, `/notes/${noteId}`)}${canonicalSearch(config.search)}`}
         >
           閲覧画面へ戻る
@@ -318,7 +340,7 @@ function AccessPage({
         revision={note.revision}
         onRevision={(revision) => setNote({ ...note, revision })}
       />
-    </>
+    </section>
   );
 }
 
