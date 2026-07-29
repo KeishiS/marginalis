@@ -17,6 +17,7 @@ async function loginOwner(page) {
     await proceed.click();
   }
   await expect(page).toHaveURL(`${baseUrl}/`);
+  await expect(page.getByText("閲覧できるノートはありません。")).toBeVisible();
 }
 
 async function actorContext(browser, session, csrf) {
@@ -134,6 +135,9 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   const hiddenApi = await outsider.request.get(`${baseUrl}/api/v3/notes/${noteId}`);
   expect(hiddenApi.status()).toBe(404);
   await outsiderPage.goto(`${baseUrl}/`);
+  await expect(
+    outsiderPage.getByText("閲覧できるノートはありません。"),
+  ).toBeVisible();
   await expect(outsiderPage.getByText("ACL受入試験")).toHaveCount(0);
   await expect(outsiderPage.getByText("編集者が更新した題名")).toHaveCount(0);
 
