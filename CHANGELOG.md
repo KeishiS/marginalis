@@ -24,6 +24,8 @@
 
 - MCPの`list_notes`へタグと更新日時、`get_note`へ更新日時を追加した。MCP toolの入力と出力の
   JSON Schemaを`docs/mcp-tools.json`として公開し、実行時の応答と同じ型から生成する。
+- NixOSモジュールを有効にすると、サービスと同じ版の`marginalis`管理コマンドをシステムの
+  `PATH`へ追加する。
 - コードブロックの題名・言語・行番号指定と数式の言語・表示形式を、AdocWeaveが公開する
   HTML属性から表示する。Web UIはclassや親子関係からこれらを推測しない。
 
