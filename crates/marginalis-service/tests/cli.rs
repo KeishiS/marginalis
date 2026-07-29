@@ -514,4 +514,6 @@ fn diagnose_reports_an_unavailable_database_and_fails() {
     assert_eq!(report["status"], "failed");
     assert_eq!(report["database"]["available"], false);
     assert_eq!(report["database"]["error"], "connection_failed");
+    assert_eq!(report["database"]["failures"][0]["check"], "connection");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("maintenance.diagnostics.failed"));
 }

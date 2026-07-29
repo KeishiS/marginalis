@@ -31,6 +31,18 @@ pub(crate) async fn diagnose() -> Result<(), Box<dyn std::error::Error>> {
         None => SqliteDatabase::diagnose("sqlite://configuration-is-missing?mode=ro").await,
     };
     let healthy = database.healthy();
+    if !healthy {
+        tracing::warn!(
+            event = "maintenance.diagnostics.failed",
+            database_available = database.available,
+            schema_actual = ?database.schema.actual,
+            schema_expected = ?database.schema.expected,
+            integrity_actual = ?database.integrity.actual,
+            foreign_key_violation_count = ?database.foreign_keys.actual,
+            failures = ?database.failures,
+            "SQLite diagnostics reported an unhealthy database"
+        );
+    }
     let report = DiagnosticReport {
         status: if healthy { "ok" } else { "failed" },
         event: "diagnostics.completed",

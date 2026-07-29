@@ -224,6 +224,10 @@ journalctl -u marginalis-diagnose.service -o cat -n 20
 終了status 0です。
 databaseを作成・移行せず、OIDC client secret、Cookie、token、ノート本文は出力しません。
 `status`が`failed`の場合は`database.error`と各検査の`actual`、`expected`を確認します。
+SQLを実行できなかった場合は、`database.failures`の`check`で失敗した検査、`category`で
+ロック、読み取り専用、入出力エラーなどの分類を確認できます。`sqlite_code`はSQLiteが返した
+数値コードです。schema版が古いだけの場合は`schema.ok`が`false`になりますが、
+`database.failures`は出力されません。
 
 主要なjournal event名は次のとおりです。
 
@@ -248,6 +252,7 @@ databaseを作成・移行せず、OIDC client secret、Cookie、token、ノー�
   `maintenance.backup_verification.failed`
 - backup世代整理成功・失敗: `maintenance.backup_prune.completed`、
   `maintenance.backup_prune.failed`
+- SQLite診断失敗: `maintenance.diagnostics.failed`
 - command失敗: `command.failed`（`command` fieldで保守処理を識別）
 
 ```bash

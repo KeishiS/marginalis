@@ -733,11 +733,38 @@
                 + "grep -F 'unsupported database schema version 5; expected 11'"
               )
               machine.succeed("systemctl stop marginalis.service")
-              machine.fail("systemctl start marginalis-diagnose.service")
+              machine.succeed(
+                "test ! -e /var/lib/marginalis/marginalis.sqlite-wal && "
+                + "test ! -e /var/lib/marginalis/marginalis.sqlite-shm && "
+                + "sha256sum /var/lib/marginalis/marginalis.sqlite > /tmp/schema5.sha256 && "
+                + "stat -c '%a:%U:%G' /var/lib/marginalis/marginalis.sqlite > /tmp/schema5.metadata"
+              )
+              for _ in range(5):
+                  machine.succeed("systemctl reset-failed marginalis-diagnose.service")
+                  machine.fail("systemctl start marginalis-diagnose.service")
+                  machine.succeed(
+                    "journalctl -u marginalis-diagnose.service -o cat | "
+                    + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
+                    + "'.database.schema.ok == false "
+                    + "and .database.schema.actual == 5 "
+                    + "and .database.schema.expected == 11 "
+                    + "and .database.integrity.ok "
+                    + "and .database.integrity.actual == \"ok\" "
+                    + "and .database.foreign_keys.ok "
+                    + "and .database.foreign_keys.actual == 0 "
+                    + "and ((.database.failures // []) | length) == 0 "
+                    + "and (.database.error? == null)'"
+                  )
+              machine.succeed(
+                "sha256sum --check /tmp/schema5.sha256 && "
+                + "test \"$(stat -c '%a:%U:%G' /var/lib/marginalis/marginalis.sqlite)\" "
+                + "= \"$(cat /tmp/schema5.metadata)\" && "
+                + "test ! -e /var/lib/marginalis/marginalis.sqlite-wal && "
+                + "test ! -e /var/lib/marginalis/marginalis.sqlite-shm"
+              )
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
-                + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 5 and .database.schema.expected == 11'"
+                + "grep -Fq 'maintenance.diagnostics.failed'"
               )
             '';
           };
