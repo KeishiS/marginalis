@@ -50,6 +50,9 @@ reverse proxy は `/auth/`、`/api/`、`/mcp`、`/.well-known/`、`/oauth/` を�
 `baseUrl` と OIDC redirect URI は一致させます。
 `mcp.allowedOrigins` は HTTPS origin の完全一致であり、path、query、userinfo を含む値や HTTP origin は
 起動時に拒否されます。この設定は `/oauth/authorize` の承認 form には適用されません。
+Issue #24で外部Authorization Serverを評価する場合だけ、
+[MCP向けAuthorization Serverの評価手順](mcp-authorization-server-evaluation.md)に従って
+`mcp.externalAuthorization`を設定します。評価結果とADRが承認されるまでは本番環境で使用しません。
 
 ## Kanidmから受け取るグループ情報
 

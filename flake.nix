@@ -173,12 +173,84 @@
                         clientId = "marginalis";
                         clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
                       };
+                      mcp = {
+                        enable = true;
+                        externalAuthorization = {
+                          issuer = "https://evaluation.jp.auth0.com/";
+                          upstreamIssuerClaim = "https://marginalis.example.test/claims/upstream-issuer";
+                          upstreamSubjectClaim = "https://marginalis.example.test/claims/upstream-subject";
+                          groupsClaim = "https://marginalis.example.test/claims/groups";
+                        };
+                      };
+                    };
+                  }
+                ];
+              };
+              partialExternalAuthorization = nixpkgs.lib.nixosSystem {
+                inherit system;
+                modules = [
+                  self.nixosModules.default
+                  {
+                    system.stateVersion = "25.11";
+                    services.marginalis = {
+                      enable = true;
+                      baseUrl = "https://marginalis.example.test";
+                      oidc = {
+                        issuerUrl = "https://id.example.test";
+                        clientId = "marginalis";
+                        clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
+                      };
+                      mcp.externalAuthorization.issuer = "https://evaluation.jp.auth0.com/";
+                    };
+                  }
+                ];
+              };
+              externalAuthorizationWithoutMcp = nixpkgs.lib.nixosSystem {
+                inherit system;
+                modules = [
+                  self.nixosModules.default
+                  {
+                    system.stateVersion = "25.11";
+                    services.marginalis = {
+                      enable = true;
+                      baseUrl = "https://marginalis.example.test";
+                      oidc = {
+                        issuerUrl = "https://id.example.test";
+                        clientId = "marginalis";
+                        clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
+                      };
+                      mcp.externalAuthorization = {
+                        issuer = "https://evaluation.jp.auth0.com/";
+                        upstreamIssuerClaim = "https://marginalis.example.test/claims/upstream-issuer";
+                        upstreamSubjectClaim = "https://marginalis.example.test/claims/upstream-subject";
+                        groupsClaim = "https://marginalis.example.test/claims/groups";
+                      };
                     };
                   }
                 ];
               };
             in
             assert evaluated.config.networking.firewall.allowedTCPPorts == [ 3000 ];
+            assert
+              evaluated.config.systemd.services.marginalis.environment.MARGINALIS_MCP_EXTERNAL_ISSUER
+              == "https://evaluation.jp.auth0.com/";
+            assert
+              evaluated.config.systemd.services.marginalis-diagnose.environment.MARGINALIS_MCP_GROUPS_CLAIM
+              == "https://marginalis.example.test/claims/groups";
+            assert builtins.any (
+              assertion:
+              !assertion.assertion
+              &&
+                assertion.message
+                == "services.marginalis.mcp.externalAuthorization options must be all set or all unset."
+            ) partialExternalAuthorization.config.assertions;
+            assert builtins.any (
+              assertion:
+              !assertion.assertion
+              &&
+                assertion.message
+                == "services.marginalis.mcp.enable must be true when externalAuthorization is set."
+            ) externalAuthorizationWithoutMcp.config.assertions;
             assert evaluated.config.systemd.services.marginalis-diagnose.serviceConfig.ProtectKernelTunables;
             assert
               evaluated.config.systemd.services.marginalis-purge-expired.serviceConfig.SystemCallFilter == [

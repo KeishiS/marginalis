@@ -132,14 +132,20 @@ connectionを名前またはIDで限定し、次の値を名前空間付きcusto
 実際のtenantでOIDC claim mapping後の属性名を確認してからActionを確定します。Actionのsource、
 tenant名、client ID、秘密情報はリポジトリへ保存しません。
 
-Marginalis側では、通常のMCP設定に加えて次の環境変数を設定します。claim名はAuth0 Actionで設定した
-名前空間付きcustom claimと完全に一致させます。
+NixOSでは、通常のMCP設定に加えて次の評価用optionを設定します。claim名はAuth0 Actionで設定した
+名前空間付きcustom claimと完全に一致させます。4項目の一部だけを設定した構成と、MCPを無効にした
+構成はモジュール評価時に拒否されます。
 
-```text
-MARGINALIS_MCP_EXTERNAL_ISSUER=https://評価用tenantのdomain/
-MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM=https://評価用Marginalisのホスト/claims/upstream-issuer
-MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM=https://評価用Marginalisのホスト/claims/upstream-subject
-MARGINALIS_MCP_GROUPS_CLAIM=https://評価用Marginalisのホスト/claims/groups
+```nix
+services.marginalis.mcp = {
+  enable = true;
+  externalAuthorization = {
+    issuer = "https://評価用tenantのdomain/";
+    upstreamIssuerClaim = "https://評価用Marginalisのホスト/claims/upstream-issuer";
+    upstreamSubjectClaim = "https://評価用Marginalisのホスト/claims/upstream-subject";
+    groupsClaim = "https://評価用Marginalisのホスト/claims/groups";
+  };
+};
 ```
 
 この設定を有効にすると、Protected Resource MetadataはAuth0をAuthorization Serverとして案内し、

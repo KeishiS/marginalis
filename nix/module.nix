@@ -16,6 +16,20 @@ let
       throw "services.marginalis.listenAddress must end with a TCP port"
     else
       lib.toInt (builtins.elemAt matched 0);
+  externalAuthorizationValues = with cfg.mcp.externalAuthorization; [
+    issuer
+    upstreamIssuerClaim
+    upstreamSubjectClaim
+    groupsClaim
+  ];
+  externalAuthorizationEnabled = builtins.all (value: value != null) externalAuthorizationValues;
+  externalAuthorizationUnset = builtins.all (value: value == null) externalAuthorizationValues;
+  externalAuthorizationEnvironment = optionalAttrs externalAuthorizationEnabled {
+    MARGINALIS_MCP_EXTERNAL_ISSUER = cfg.mcp.externalAuthorization.issuer;
+    MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM = cfg.mcp.externalAuthorization.upstreamIssuerClaim;
+    MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM = cfg.mcp.externalAuthorization.upstreamSubjectClaim;
+    MARGINALIS_MCP_GROUPS_CLAIM = cfg.mcp.externalAuthorization.groupsClaim;
+  };
   commonServiceConfig = {
     User = "marginalis";
     Group = "marginalis";
@@ -158,6 +172,36 @@ in
         default = [ ];
         description = "Exact HTTPS browser origins permitted to call only the MCP endpoint. Native MCP clients omit Origin and use Bearer authentication.";
       };
+
+      externalAuthorization = {
+        issuer = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "https://evaluation.jp.auth0.com/";
+          description = "Evaluation-only external Authorization Server issuer. Leave all externalAuthorization options unset to use the built-in server.";
+        };
+
+        upstreamIssuerClaim = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "https://notes.example.test/claims/upstream-issuer";
+          description = "Namespaced access-token claim containing the verified upstream OIDC issuer.";
+        };
+
+        upstreamSubjectClaim = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "https://notes.example.test/claims/upstream-subject";
+          description = "Namespaced access-token claim containing the verified upstream OIDC subject.";
+        };
+
+        groupsClaim = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "https://notes.example.test/claims/groups";
+          description = "Namespaced access-token claim containing the verified upstream group array.";
+        };
+      };
     };
   };
 
@@ -193,6 +237,14 @@ in
       {
         assertion = cfg.oidc.caCertificateFile == null || lib.hasPrefix "/" cfg.oidc.caCertificateFile;
         message = "services.marginalis.oidc.caCertificateFile must be an absolute path when set.";
+      }
+      {
+        assertion = externalAuthorizationUnset || externalAuthorizationEnabled;
+        message = "services.marginalis.mcp.externalAuthorization options must be all set or all unset.";
+      }
+      {
+        assertion = !externalAuthorizationEnabled || cfg.mcp.enable;
+        message = "services.marginalis.mcp.enable must be true when externalAuthorization is set.";
       }
       {
         assertion =
@@ -241,7 +293,8 @@ in
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
-      };
+      }
+      // externalAuthorizationEnvironment;
       serviceConfig =
         commonServiceConfig
         // {
@@ -312,7 +365,8 @@ in
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
-      };
+      }
+      // externalAuthorizationEnvironment;
       serviceConfig = localServiceConfig // {
         Type = "oneshot";
         ExecStart = "${cfg.package}/bin/marginalis diagnose";
