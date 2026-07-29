@@ -34,7 +34,7 @@ pub struct DiagnosticFailure {
     pub check: &'static str,
     pub category: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sqlite_code: Option<String>,
+    pub sqlite_code: Option<i32>,
 }
 
 impl SqliteDiagnosticReport {
@@ -139,16 +139,9 @@ fn diagnostic_failure(check: &'static str, error: &sqlx::Error) -> DiagnosticFai
     let sqlite_code = error
         .as_database_error()
         .and_then(|error| error.code())
-        .map(|code| code.into_owned());
-    let category = match sqlite_code.as_deref().and_then(sqlite_primary_result_code) {
-        Some(5) => "database_busy",
-        Some(6) => "database_locked",
-        Some(8) => "read_only",
-        Some(10) => "io_error",
-        Some(11) => "corrupt",
-        Some(14) => "cannot_open",
-        Some(26) => "not_a_database",
-        Some(_) => "database_error",
+        .and_then(|code| code.parse::<i32>().ok());
+    let category = match sqlite_code {
+        Some(code) => sqlite_result_category(code),
         None => match error {
             sqlx::Error::Io(_) => "io_error",
             sqlx::Error::Configuration(_) => "configuration_error",
@@ -162,8 +155,17 @@ fn diagnostic_failure(check: &'static str, error: &sqlx::Error) -> DiagnosticFai
     }
 }
 
-fn sqlite_primary_result_code(code: &str) -> Option<i32> {
-    code.parse::<i32>().ok().map(|code| code & 0xff)
+const fn sqlite_result_category(code: i32) -> &'static str {
+    match code & 0xff {
+        5 => "database_busy",
+        6 => "database_locked",
+        8 => "read_only",
+        10 => "io_error",
+        11 => "corrupt",
+        14 => "cannot_open",
+        26 => "not_a_database",
+        _ => "database_error",
+    }
 }
 
 #[cfg(test)]
@@ -276,7 +278,19 @@ mod tests {
         assert_eq!(report.failures.len(), 1);
         assert_eq!(report.failures[0].check, "schema");
         assert_eq!(report.failures[0].category, "database_error");
-        assert_eq!(report.failures[0].sqlite_code.as_deref(), Some("1"));
+        assert_eq!(report.failures[0].sqlite_code, Some(1));
+    }
+
+    #[test]
+    fn sqlite_extended_result_codes_have_stable_categories() {
+        assert_eq!(sqlite_result_category(261), "database_busy");
+        assert_eq!(sqlite_result_category(262), "database_locked");
+        assert_eq!(sqlite_result_category(264), "read_only");
+        assert_eq!(sqlite_result_category(266), "io_error");
+        assert_eq!(sqlite_result_category(267), "corrupt");
+        assert_eq!(sqlite_result_category(270), "cannot_open");
+        assert_eq!(sqlite_result_category(26), "not_a_database");
+        assert_eq!(sqlite_result_category(1), "database_error");
     }
 
     #[tokio::test]
