@@ -29,8 +29,7 @@ async function login(page) {
 async function csrfToken(context) {
   const cookie = (await context.cookies()).find(
     ({ name, domain }) =>
-      name === "marginalis_csrf" &&
-      domain === "marginalis.example.test",
+      name === "marginalis_csrf" && domain === "marginalis.example.test",
   );
   expect(cookie).toBeTruthy();
   return cookie.value;
@@ -42,14 +41,10 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
 }) => {
   await login(page);
 
-  const script = await context.request.get(
-    `${baseUrl}/assets/editor.js`,
-  );
+  const script = await context.request.get(`${baseUrl}/assets/editor.js`);
   expect(script.status()).toBe(200);
   expect(script.headers()["content-type"]).toContain("javascript");
-  const stylesheet = await context.request.get(
-    `${baseUrl}/assets/editor.css`,
-  );
+  const stylesheet = await context.request.get(`${baseUrl}/assets/editor.css`);
   expect(stylesheet.status()).toBe(200);
   expect(stylesheet.headers()["content-type"]).toContain("text/css");
 
@@ -59,6 +54,22 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   ).toBeVisible();
   const source = page.getByRole("textbox", { name: "AsciiDoc文書" });
   await expect(source).toBeFocused();
+  await expect(page.getByRole("button", { name: "分割" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByRole("button", { name: "執筆" }).click();
+  await expect(page.locator(".editor-workspace")).toHaveAttribute(
+    "data-view-mode",
+    "write",
+  );
+  await expect(source).toBeFocused();
+  await page.getByRole("button", { name: "プレビュー" }).click();
+  await expect(page.locator(".editor-workspace")).toHaveAttribute(
+    "data-view-mode",
+    "preview",
+  );
+  await page.getByRole("button", { name: "分割" }).click();
   await source.fill(
     "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust,linenums,start=7]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*",
   );
@@ -99,9 +110,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
 
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();
-  await expect(page).toHaveURL(
-    new RegExp(`${baseUrl}/notes/[0-9a-f-]+/edit$`),
-  );
+  await expect(page).toHaveURL(new RegExp(`${baseUrl}/notes/[0-9a-f-]+/edit$`));
   const noteId = page.url().match(/\/notes\/([^/]+)\/edit$/)?.[1];
   expect(noteId).toBeTruthy();
 
@@ -138,7 +147,9 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(page.locator(".preview-content")).toContainText(
     "日本語と絵文字😀",
   );
-  await source.fill("= VMで作成したノート\n\n更新した本文\n\n== 結果\n\n成功😀");
+  await source.fill(
+    "= VMで作成したノート\n\n更新した本文\n\n== 結果\n\n成功😀",
+  );
   await expect(page.locator(".preview-content")).toContainText("成功😀");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("更新番号: 2")).toBeVisible();
@@ -169,10 +180,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   expect(externalUpdate.status()).toBe(200);
 
   await source.fill(
-    (await source.inputValue()).replace(
-      "= VMで作成したノート",
-      "= 競合後に保存する題名",
-    ),
+    "= 競合後に保存する題名\n\n更新した本文\n\n== 結果\n\n成功😀",
   );
   await page.getByRole("button", { name: "保存" }).click();
   const conflictHeading = page.getByRole("heading", {
@@ -202,7 +210,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
       "更新番号3を基準にしました。内容を確認して保存してください。",
     ),
   ).toBeVisible();
-  await expect(source).toHaveValue(/= 競合後に保存する題名/);
+  await expect(source).toContainText("競合後に保存する題名");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("更新番号: 4")).toBeVisible();
   await expect(page.getByText("保存しました。")).toBeVisible();
@@ -255,17 +263,14 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(page.getByText(/インラインマクロの前に空白/)).toBeVisible();
   await page.getByRole("button", { name: "入力位置へ移動" }).click();
   expect(
-    await warningSource.evaluate(
-      (element) =>
-        element.value.slice(element.selectionStart, element.selectionEnd),
-    ),
+    await warningSource.evaluate(() => window.getSelection()?.toString()),
   ).toBe("xref");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();
   await warningSource.fill(
-    (await warningSource.inputValue()).replace("はxref:", "は xref:"),
+    "= 警告を確認するノート\n\nこの結果は xref:note:0197c9bc-0000-7000-8000-000000000002[参照]に記載されています。",
   );
-  await expect(
-    page.getByRole("heading", { name: "入力時の診断" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "入力時の診断" })).toHaveCount(
+    0,
+  );
 });

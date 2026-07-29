@@ -464,6 +464,19 @@ cwd = "frontend"
 command = "npm"
 args = ["run", "build"]
 
+[tasks.frontend-bundle-size]
+description = "Keep the production Web UI JavaScript within its reviewed size budget"
+dependencies = ["frontend-build"]
+script = '''
+editor_bytes="$(wc -c < frontend/dist/assets/editor.js)"
+maximum_bytes=600000
+if [ "$editor_bytes" -gt "$maximum_bytes" ]; then
+  echo "frontend/dist/assets/editor.js is ${editor_bytes} bytes; the limit is ${maximum_bytes} bytes." >&2
+  exit 1
+fi
+echo "frontend/dist/assets/editor.js: ${editor_bytes}/${maximum_bytes} bytes"
+'''
+
 [tasks.frontend-verify]
 description = "Run frontend formatting, analysis, tests, audit, and build"
-dependencies = ["frontend-format-check", "frontend-lint", "frontend-typecheck", "frontend-test", "frontend-security-audit", "frontend-build"]
+dependencies = ["frontend-format-check", "frontend-lint", "frontend-typecheck", "frontend-test", "frontend-security-audit", "frontend-build", "frontend-bundle-size"]

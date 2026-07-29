@@ -125,67 +125,139 @@ body {
 }
 
 .editor-form {
+  --editor-height: clamp(28rem, calc(100dvh - 18rem), 64rem);
   display: grid;
   gap: 1rem;
 }
 
-.editor-workspace {
+.editor-controls {
+  background: Canvas;
+  border-block: 0.1rem solid light-dark(#c8ced6, #4c5561);
   display: grid;
-  gap: 1.5rem;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.65rem;
+  padding-block: 0.65rem;
 }
 
-.editor-form label {
+.editor-view-toolbar,
+.editor-view-buttons,
+.editor-width-control,
+.scroll-sync-control {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+}
+
+.editor-view-buttons button[aria-pressed="true"] {
+  background: light-dark(#20242a, #f2f4f7);
+  color: light-dark(#f2f4f7, #20242a);
+  font-weight: 700;
+}
+
+.editor-width-control input {
+  inline-size: clamp(7rem, 18vw, 14rem);
+}
+
+.editor-width-control output {
+  min-inline-size: 3ch;
+}
+
+.editor-view-note {
+  color: light-dark(#566170, #b8c0ca);
+}
+
+.editor-workspace {
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--editor-width)) 0.35rem
+    minmax(0, var(--preview-width));
+  min-width: 0;
+}
+
+.editor-workspace[data-view-mode="write"],
+.editor-workspace[data-view-mode="preview"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.editor-workspace[data-view-mode="write"] .editor-divider,
+.editor-workspace[data-view-mode="write"] .preview-scroll,
+.editor-workspace[data-view-mode="preview"] .editor-source-pane,
+.editor-workspace[data-view-mode="preview"] .editor-divider {
+  display: none;
+}
+
+.editor-source-pane,
+.preview-scroll {
+  min-width: 0;
+}
+
+.editor-divider {
+  background: light-dark(#c8ced6, #4c5561);
+  margin-inline: 0.1rem;
+}
+
+.preview-scroll {
+  box-sizing: border-box;
+  height: var(--editor-height);
+  overflow: auto;
+  padding-inline-start: 1.25rem;
+}
+
+.source-editor-field {
   display: grid;
   font-weight: 600;
   gap: 0.3rem;
 }
 
-.editor-form input,
-.editor-form textarea,
 .editor-form button {
   font: inherit;
 }
 
-.editor-form input,
-.editor-form textarea {
-  border: 0.1rem solid currentColor;
-  border-radius: 0.25rem;
-  box-sizing: border-box;
-  padding: 0.6rem;
-  width: 100%;
+.editor-input-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
-.source-editor {
+.editor-input-toolbar button {
+  padding: 0.35rem 0.6rem;
+}
+
+.ascii-doc-editor {
   border: 0.1rem solid currentColor;
   border-radius: 0.25rem;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  max-height: 32rem;
+  min-width: 0;
   overflow: hidden;
 }
 
-.source-editor textarea {
-  border: 0;
-  border-left: 0.1rem solid currentColor;
-  border-radius: 0;
-  line-height: 1.6rem;
-  min-height: 32rem;
+.ascii-doc-editor .cm-editor {
+  height: var(--editor-height);
+  min-height: 0;
+}
+
+.ascii-doc-editor .cm-scroller {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  line-height: 1.6;
   overflow: auto;
 }
 
-.line-numbers {
-  line-height: 1.6rem;
-  min-width: 2.5rem;
-  padding: 0.6rem 0.5rem;
-  text-align: right;
-  white-space: pre;
+.ascii-doc-editor .cm-content {
+  min-height: 100%;
+}
+
+.ascii-doc-editor .cm-gutters {
+  background: light-dark(#f4f6f8, #171a1f);
+  border-inline-end: 0.05rem solid light-dark(#c8ced6, #4c5561);
+  color: light-dark(#566170, #b8c0ca);
+}
+
+.ascii-doc-editor .cm-focused {
+  outline: 0.2rem solid currentColor;
+  outline-offset: -0.2rem;
 }
 
 .preview-panel {
-  border-left: 0.1rem solid currentColor;
   min-width: 0;
-  padding-inline-start: 1.5rem;
 }
 
 .preview-heading {
@@ -308,11 +380,6 @@ body {
 .math-inline {
   display: inline-block;
   max-width: 100%;
-}
-
-.editor-form textarea {
-  font-family: ui-monospace, "Cascadia Code", monospace;
-  resize: vertical;
 }
 
 .editor-form button {
@@ -450,19 +517,33 @@ body {
 }
 
 @media (max-width: 60rem) {
-  .editor-workspace {
-    grid-template-columns: 1fr;
+  .page-header,
+  .page-main {
+    padding-inline: 0.75rem;
   }
 
-  .preview-panel {
-    border-left: 0;
-    border-top: 0.1rem solid currentColor;
-    padding-block-start: 1rem;
+  .editor-form {
+    --editor-height: clamp(24rem, calc(100dvh - 16rem), 52rem);
+  }
+
+  .editor-workspace,
+  .editor-workspace[data-view-mode="write"],
+  .editor-workspace[data-view-mode="preview"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .preview-scroll {
     padding-inline-start: 0;
   }
 
   .conflict-fields {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 72rem) {
+  body:has(.editor-page) .page-main {
+    max-width: 100rem;
   }
 }
 
