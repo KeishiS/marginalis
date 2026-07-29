@@ -70,7 +70,7 @@ pub(crate) fn render_note(
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{EntityId, Identity, Note, NoteId, Revision, UnixMillis};
+    use marginalis_domain::{EntityId, Identity, Note, NoteDraft, NoteId, Revision, UnixMillis};
 
     use super::*;
 
@@ -126,6 +126,68 @@ mod tests {
         ));
         assert!(!html.contains("<source>"));
         assert!(!html.contains("x < y"));
+    }
+
+    #[test]
+    fn published_bibliography_example_validates_and_renders_bidirectional_links() {
+        let profile = crate::policy::note_profile();
+        assert!(profile.syntax.common_blocks.contains(&"bibliography"));
+        assert!(
+            profile
+                .syntax
+                .common_inlines
+                .contains(&"bibliography_anchor")
+        );
+        assert!(
+            profile
+                .syntax
+                .common_inlines
+                .contains(&"bibliography_reference")
+        );
+        assert!(
+            profile
+                .authoring_guidance
+                .iter()
+                .any(|guidance| guidance.contains("Never invent or infer"))
+        );
+        let example = profile
+            .examples
+            .iter()
+            .find(|example| example.kind == "bibliography")
+            .expect("published bibliography example");
+        assert!(example.body.contains("[bibliography]"));
+        assert!(example.body.contains("[[[smith2024]]]"));
+        assert!(example.body.contains("<<smith2024>>"));
+        let draft = crate::validate_note_draft(NoteDraft {
+            source: example.body.into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect("the published example must be accepted by create_note");
+        assert_eq!(draft.title, "先行研究の整理");
+        assert_eq!(draft.tags, ["文献", "研究"]);
+
+        let rendered_note = Note::restore(
+            NoteId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-000000000003").expect("UUIDv7"),
+            ),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            draft.title,
+            draft.source,
+            draft.tags,
+            UnixMillis::new(0),
+            UnixMillis::new(1),
+            Revision::INITIAL,
+            None,
+        )
+        .expect("validated note");
+        let html = render_note(&rendered_note, &[]).expect("render bibliography example");
+
+        assert!(html.contains("href=\"#smith2024\""));
+        assert!(html.contains("id=\"smith2024\" class=\"bibliography-anchor\""));
+        assert!(html.contains("id=\"_bibliography_ref_"));
+        assert!(html.contains("class=\"bibliography-backref\""));
+        assert!(html.contains("href=\"#_bibliography_ref_"));
     }
 
     #[test]

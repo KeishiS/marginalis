@@ -229,6 +229,7 @@ pub struct NoteProfile {
     pub limits: NoteProfileLimits,
     pub normalization: NoteProfileNormalization,
     pub syntax: NoteProfileSyntax,
+    pub authoring_guidance: Vec<&'static str>,
     pub allowed_source_languages: Vec<&'static str>,
     pub forbidden_rules: Vec<NoteProfileRule>,
     pub examples: Vec<NoteProfileExample>,

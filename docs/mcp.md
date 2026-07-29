@@ -123,11 +123,13 @@ codex mcp list
 
 クライアントごとに専用の試験ノートを使い、次を同じ順序で確認します。
 
-1. `list_notes`で既存ノートの可視範囲を確認します。
-2. `create_note`で試験ノートを作成し、`get_note`で所有者と内容を確認します。
-3. 取得したrevisionを指定して`update_note`を実行し、変更後のrevisionが増えることを確認します。
-4. 所有者として共有されたノートと、ACLで直接共有されたノートの操作範囲を確認します。
-5. 最新revisionを指定して試験ノートを`delete_note`で削除します。
+1. `get_note_profile`を取得し、`bibliography`の例と、書誌情報を推測しない注意事項を確認します。
+2. `list_notes`で既存ノートの可視範囲を確認します。
+3. `bibliography`の例にある架空の書誌情報を、確認できた試験用の書誌情報へ置き換えて
+   `create_note`を実行し、`get_note`で完全なAsciiDoc文書を取得します。
+4. 取得したrevisionを指定して`update_note`を実行し、変更後のrevisionが増えることを確認します。
+5. 所有者として共有されたノートと、ACLで直接共有されたノートの操作範囲を確認します。
+6. 最新revisionを指定して試験ノートを`delete_note`で削除します。
 
 実施結果には成否と時刻だけを残し、access token、refresh token、authorization code、利用者情報、
 ノート本文を記録しません。
@@ -192,4 +194,6 @@ HTTP 400で拒否します。現行transportは`MCP-Session-Id`を発行しな�
 
 `create_note`または`update_note`の前に`get_note_profile`を呼び出してください。入力は題名、
 `:tags:`などの文書属性、本文を含む完全なAsciiDoc文書です。詳しい入力制約と診断形式はtoolが返す
-profileを正とします。
+profileを正とします。profileの`examples`には、本文から参考文献を参照し、参考文献から参照箇所へ
+戻れる完全な文書例が含まれます。`authoring_guidance`に従い、著者名、題名、発行年、DOIなどは
+利用者または特定できる参照元から得た値だけを使用し、推測して補いません。

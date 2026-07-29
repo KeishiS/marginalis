@@ -227,6 +227,12 @@
           },
           "type": "array"
         },
+        "authoring_guidance": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "examples": {
           "items": {
             "$ref": "#/$defs/McpNoteProfileExample"
@@ -260,6 +266,7 @@
         "limits",
         "normalization",
         "syntax",
+        "authoring_guidance",
         "allowed_source_languages",
         "forbidden_rules",
         "examples"

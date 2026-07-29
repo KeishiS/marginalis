@@ -281,6 +281,11 @@ fn note_profile_output(profile: NoteProfile) -> McpNoteProfileOutput {
                 .map(str::to_owned)
                 .collect(),
         },
+        authoring_guidance: profile
+            .authoring_guidance
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
         allowed_source_languages: profile
             .allowed_source_languages
             .into_iter()

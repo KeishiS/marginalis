@@ -185,6 +185,7 @@ pub fn note_profile() -> NoteProfile {
                 "paragraph",
                 "section",
                 "list",
+                "bibliography",
                 "table",
                 "admonition",
                 "quote",
@@ -199,6 +200,8 @@ pub fn note_profile() -> NoteProfile {
                 "monospace",
                 "local_anchor",
                 "local_cross_reference",
+                "bibliography_anchor",
+                "bibliography_reference",
                 "note_reference",
                 "safe_link",
                 "inline_math",
@@ -208,6 +211,9 @@ pub fn note_profile() -> NoteProfile {
             title_forbidden: vec!["empty", "line_feed", "carriage_return"],
             tag_forbidden: vec!["empty", "comma", "line_feed", "carriage_return"],
         },
+        authoring_guidance: vec![
+            "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.",
+        ],
         allowed_source_languages: DEFAULT_SOURCE_LANGUAGES.to_vec(),
         forbidden_rules: FORBIDDEN_RULES
             .iter()
@@ -241,6 +247,11 @@ pub fn note_profile() -> NoteProfile {
                 kind: "block_math",
                 description: "LaTeX math block",
                 body: "[latexmath]\n++++\nx^2 + y^2\n++++",
+            },
+            NoteProfileExample {
+                kind: "bibliography",
+                description: "Complete document with a bibliography entry and an in-text reference",
+                body: "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]",
             },
         ],
     }
