@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use adocweave::output::diagnostics::Severity;
 use adocweave::resolution::ReferenceKey;
 use marginalis_application::{
-    NoteDiagnostic, NoteDiagnosticSeverity, NoteReferenceQuery, NoteValidationCode,
+    NoteAdvisorySeverity, NoteReferenceQuery, NoteValidationCode, NoteValidationDiagnostic,
     NoteValidationTarget, Utf8ByteSpan, ValidatedNoteDraft,
 };
 use marginalis_domain::{EntityId, NoteDraft, NoteId};
@@ -11,7 +11,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::configuration::analysis_options;
 use crate::policy::{
-    diagnostic, diagnostic_sort_key, span, validate_note_content_profile, warning_diagnostic,
+    advisory_diagnostic, diagnostic, diagnostic_sort_key, span, validate_note_content_profile,
 };
 use crate::{
     MAX_NOTE_SOURCE_BYTES, MAX_TAG_CHARACTERS, MAX_TAGS, MAX_TITLE_CHARACTERS, RenderError,
@@ -26,6 +26,16 @@ pub(crate) fn analyze_valid_source(source: &str) -> Result<adocweave::Analysis, 
         .iter()
         .any(|diagnostic| diagnostic.severity == Severity::Error)
         || !validate_note_content_profile(&analysis).is_empty()
+        || analysis.reference_queries().into_iter().any(|query| {
+            matches!(
+                query.target,
+                ReferenceKey::Scheme {
+                    ref scheme,
+                    ref locator,
+                    ..
+                } if scheme == "note" && locator.parse::<EntityId>().is_err()
+            )
+        })
     {
         return Err(RenderError);
     }
@@ -33,37 +43,43 @@ pub(crate) fn analyze_valid_source(source: &str) -> Result<adocweave::Analysis, 
 }
 
 pub(crate) fn reference_queries(source: &str) -> Result<Vec<NoteReferenceQuery>, RenderError> {
-    reference_queries_from_analysis(&analyze_valid_source(source)?).map_err(|_| RenderError)
+    let result = reference_queries_from_analysis(&analyze_valid_source(source)?);
+    if result.invalid_spans.is_empty() {
+        Ok(result.queries)
+    } else {
+        Err(RenderError)
+    }
 }
 
-fn reference_queries_from_analysis(
-    analysis: &adocweave::Analysis,
-) -> Result<Vec<NoteReferenceQuery>, Utf8ByteSpan> {
-    analysis
-        .reference_queries()
-        .into_iter()
-        .enumerate()
-        .filter_map(|(reference_index, query)| {
-            let source_span = span(query.source_range);
-            match query.target {
-                ReferenceKey::Scheme {
-                    scheme,
-                    locator,
-                    anchor,
-                } if scheme == "note" => Some(
-                    locator
-                        .parse::<EntityId>()
-                        .map(|id| NoteReferenceQuery {
-                            reference_index,
-                            target_note_id: NoteId::new(id),
-                            anchor,
-                        })
-                        .map_err(|_| source_span),
-                ),
-                _ => None,
+#[derive(Debug, Default)]
+struct ReferenceQueryAnalysis {
+    queries: Vec<NoteReferenceQuery>,
+    invalid_spans: Vec<Utf8ByteSpan>,
+}
+
+fn reference_queries_from_analysis(analysis: &adocweave::Analysis) -> ReferenceQueryAnalysis {
+    let mut result = ReferenceQueryAnalysis::default();
+    for (reference_index, query) in analysis.reference_queries().into_iter().enumerate() {
+        if let ReferenceKey::Scheme {
+            scheme,
+            locator,
+            anchor,
+        } = query.target
+        {
+            if scheme != "note" {
+                continue;
             }
-        })
-        .collect()
+            match locator.parse::<EntityId>() {
+                Ok(id) => result.queries.push(NoteReferenceQuery {
+                    reference_index,
+                    target_note_id: NoteId::new(id),
+                    anchor,
+                }),
+                Err(_) => result.invalid_spans.push(span(query.source_range)),
+            }
+        }
+    }
+    result
 }
 
 pub(crate) fn has_anchor(source: &str, anchor: &str) -> Result<bool, RenderError> {
@@ -73,13 +89,16 @@ pub(crate) fn has_anchor(source: &str, anchor: &str) -> Result<bool, RenderError
         .any(|target| target.id == anchor))
 }
 
-pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec<NoteDiagnostic>> {
-    let mut diagnostics = Vec::new();
+pub(crate) fn validate_draft(
+    draft: NoteDraft,
+) -> Result<ValidatedNoteDraft, Vec<NoteValidationDiagnostic>> {
+    let mut errors = Vec::new();
+    let mut advisories = Vec::new();
     let mut reference_queries = Vec::new();
     let mut title = String::new();
     let mut tags = BTreeMap::new();
     if draft.source.len() > MAX_NOTE_SOURCE_BYTES {
-        diagnostics.push(diagnostic(
+        errors.push(diagnostic(
             NoteValidationCode::SourceTooLarge,
             NoteValidationTarget::Source,
             None,
@@ -87,14 +106,20 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec
     } else {
         match adocweave::Engine::new(analysis_options()).analyze(&draft.source) {
             Ok(analysis) => {
-                match reference_queries_from_analysis(&analysis) {
-                    Ok(queries) => reference_queries = queries,
-                    Err(source_span) => diagnostics.push(diagnostic(
-                        NoteValidationCode::InvalidNoteReference,
-                        NoteValidationTarget::Source,
-                        Some(source_span),
-                    )),
-                }
+                let reference_analysis = reference_queries_from_analysis(&analysis);
+                reference_queries = reference_analysis.queries;
+                errors.extend(
+                    reference_analysis
+                        .invalid_spans
+                        .into_iter()
+                        .map(|source_span| {
+                            diagnostic(
+                                NoteValidationCode::InvalidNoteReference,
+                                NoteValidationTarget::Source,
+                                Some(source_span),
+                            )
+                        }),
+                );
                 title = analysis
                     .reference_targets()
                     .iter()
@@ -104,7 +129,7 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec
                     .map(|target| target.label.trim().nfc().collect::<String>())
                     .unwrap_or_default();
                 if title.is_empty() || title.chars().count() > MAX_TITLE_CHARACTERS {
-                    diagnostics.push(diagnostic(
+                    errors.push(diagnostic(
                         NoteValidationCode::InvalidTitle,
                         NoteValidationTarget::Source,
                         None,
@@ -123,7 +148,7 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec
                     if occurrence.range.end() > header_end
                         || !ALLOWED.contains(&occurrence.name.as_str())
                     {
-                        diagnostics.push(diagnostic(
+                        errors.push(diagnostic(
                             NoteValidationCode::UnsupportedDocumentAttribute,
                             NoteValidationTarget::Source,
                             Some(span(occurrence.name_range)),
@@ -138,7 +163,7 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec
                     .unwrap_or_default();
                 let tag_values = raw_tags.split(',').collect::<Vec<_>>();
                 if tag_values.len() > MAX_TAGS {
-                    diagnostics.push(diagnostic(
+                    errors.push(diagnostic(
                         NoteValidationCode::TooManyTags,
                         NoteValidationTarget::Source,
                         None,
@@ -152,7 +177,7 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec
                     if display.contains(['\n', '\r'])
                         || display.chars().count() > MAX_TAG_CHARACTERS
                     {
-                        diagnostics.push(diagnostic(
+                        errors.push(diagnostic(
                             NoteValidationCode::InvalidTag,
                             NoteValidationTarget::Source,
                             None,
@@ -161,7 +186,7 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec
                         tags.entry(display.to_lowercase()).or_insert(display);
                     }
                 }
-                diagnostics.extend(
+                errors.extend(
                     analysis
                         .diagnostics()
                         .iter()
@@ -174,9 +199,9 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec
                             )
                         }),
                 );
-                diagnostics.extend(analysis.diagnostics().iter().filter_map(|item| {
+                advisories.extend(analysis.diagnostics().iter().filter_map(|item| {
                     public_advisory_severity(item.severity).map(|severity| {
-                        warning_diagnostic(
+                        advisory_diagnostic(
                             item.code.as_str(),
                             &item.message,
                             severity,
@@ -185,55 +210,55 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec
                         )
                     })
                 }));
-                diagnostics.extend(validate_note_content_profile(&analysis).into_iter().map(
-                    |error| {
-                        diagnostic(
-                            error.code,
-                            NoteValidationTarget::Source,
-                            Some(span(error.range)),
-                        )
-                    },
-                ));
+                errors.extend(
+                    validate_note_content_profile(&analysis)
+                        .into_iter()
+                        .map(|error| {
+                            diagnostic(
+                                error.code,
+                                NoteValidationTarget::Source,
+                                Some(span(error.range)),
+                            )
+                        }),
+                );
             }
-            Err(_) => diagnostics.push(diagnostic(
+            Err(_) => errors.push(diagnostic(
                 NoteValidationCode::AsciiDocParseFailed,
                 NoteValidationTarget::Source,
                 None,
             )),
         }
     }
-    diagnostics.sort_by_key(diagnostic_sort_key);
-    if diagnostics
-        .iter()
-        .any(|item| item.severity == NoteDiagnosticSeverity::Error)
-    {
-        Err(diagnostics)
-    } else {
+    errors.sort_by_key(|item| diagnostic_sort_key(&item.target, item.span, &item.code));
+    advisories.sort_by_key(|item| diagnostic_sort_key(&item.target, item.span, &item.code));
+    if errors.is_empty() {
         Ok(ValidatedNoteDraft {
             draft: NoteDraft {
                 source: draft.source,
                 title,
                 tags: tags.into_values().collect(),
             },
-            diagnostics,
+            diagnostics: advisories,
             reference_queries,
         })
+    } else {
+        Err(errors)
     }
 }
 
-const fn public_advisory_severity(severity: Severity) -> Option<NoteDiagnosticSeverity> {
+const fn public_advisory_severity(severity: Severity) -> Option<NoteAdvisorySeverity> {
     match severity {
         Severity::Error => None,
-        Severity::Warning => Some(NoteDiagnosticSeverity::Warning),
-        Severity::Information => Some(NoteDiagnosticSeverity::Information),
-        Severity::Hint => Some(NoteDiagnosticSeverity::Hint),
+        Severity::Warning => Some(NoteAdvisorySeverity::Warning),
+        Severity::Information => Some(NoteAdvisorySeverity::Information),
+        Severity::Hint => Some(NoteAdvisorySeverity::Hint),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use marginalis_application::{
-        NoteDiagnosticSeverity, NoteValidationCode, NoteValidationTarget, Utf8ByteSpan,
+        NoteAdvisorySeverity, NoteValidationCode, NoteValidationTarget, Utf8ByteSpan,
     };
     use marginalis_domain::NoteDraft;
 
@@ -270,7 +295,7 @@ mod tests {
             .iter()
             .find(|item| item.code == "macro-boundary")
             .expect("macro boundary warning");
-        assert_eq!(warning.severity, NoteDiagnosticSeverity::Warning);
+        assert_eq!(warning.severity, NoteAdvisorySeverity::Warning);
         let span = warning.span.expect("source range");
         assert_eq!(&source[span.start as usize..span.end as usize], "xref");
 
@@ -311,6 +336,29 @@ mod tests {
             reference_queries(&format!("xref:note:{target}#evidence[根拠]")).expect("queries");
         assert_eq!(queries[0].target_note_id.to_string(), target);
         assert_eq!(queries[0].anchor.as_deref(), Some("evidence"));
+    }
+
+    #[test]
+    fn every_invalid_note_locator_has_one_dedicated_diagnostic() {
+        let source = "= Test\n\nxref:note:not-a-note[first]\n\nxref:note:also-invalid[second]";
+        let errors = validate_draft(NoteDraft {
+            source: source.into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect_err("invalid note locators");
+
+        let invalid_references = errors
+            .iter()
+            .filter(|error| error.code == NoteValidationCode::InvalidNoteReference.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(invalid_references.len(), 2);
+        assert!(
+            errors
+                .iter()
+                .all(|error| error.code != NoteValidationCode::ExternalReferenceDisabled.as_str())
+        );
+        assert!(invalid_references.iter().all(|error| error.span.is_some()));
     }
 
     #[test]

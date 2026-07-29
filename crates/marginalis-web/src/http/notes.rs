@@ -145,7 +145,7 @@ pub(super) async fn preview_note(
         diagnostics: preview
             .diagnostics
             .into_iter()
-            .map(super::error::diagnostic_response)
+            .map(super::error::advisory_response)
             .collect(),
     }))
 }

@@ -7,9 +7,9 @@ use adocweave::semantic::{
 };
 use adocweave::text::TextRange;
 use marginalis_application::{
-    NoteDiagnostic, NoteDiagnosticSeverity, NoteProfile, NoteProfileExample, NoteProfileLimits,
-    NoteProfileNormalization, NoteProfileRule, NoteProfileSyntax, NoteValidationCode,
-    NoteValidationTarget, Utf8ByteSpan,
+    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile, NoteProfileExample,
+    NoteProfileLimits, NoteProfileNormalization, NoteProfileRule, NoteProfileSyntax,
+    NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget, Utf8ByteSpan,
 };
 
 use crate::{
@@ -92,24 +92,23 @@ pub(crate) fn diagnostic(
     code: NoteValidationCode,
     target: NoteValidationTarget,
     span: Option<Utf8ByteSpan>,
-) -> NoteDiagnostic {
-    NoteDiagnostic {
+) -> NoteValidationDiagnostic {
+    NoteValidationDiagnostic {
         code: code.as_str().into(),
-        severity: NoteDiagnosticSeverity::Error,
         target,
         span,
         message: diagnostic_message(code).into(),
     }
 }
 
-pub(crate) fn warning_diagnostic(
+pub(crate) fn advisory_diagnostic(
     code: &str,
     message: &str,
-    severity: NoteDiagnosticSeverity,
+    severity: NoteAdvisorySeverity,
     target: NoteValidationTarget,
     span: Option<Utf8ByteSpan>,
-) -> NoteDiagnostic {
-    NoteDiagnostic {
+) -> NoteAdvisoryDiagnostic {
+    NoteAdvisoryDiagnostic {
         code: code.into(),
         severity,
         target,
@@ -147,17 +146,21 @@ pub(crate) const fn span(range: TextRange) -> Utf8ByteSpan {
     }
 }
 
-pub(crate) fn diagnostic_sort_key(diagnostic: &NoteDiagnostic) -> (u8, usize, u32, u32, String) {
-    let (target, index) = match diagnostic.target {
+pub(crate) fn diagnostic_sort_key(
+    target: &NoteValidationTarget,
+    span: Option<Utf8ByteSpan>,
+    code: &str,
+) -> (u8, usize, u32, u32, String) {
+    let (target, index) = match target {
         NoteValidationTarget::Source => (0, 0),
         NoteValidationTarget::Title => (1, 0),
         NoteValidationTarget::Tags => (2, 0),
-        NoteValidationTarget::Tag { index } => (3, index),
+        NoteValidationTarget::Tag { index } => (3, *index),
         NoteValidationTarget::Body => (4, 0),
-        NoteValidationTarget::AclEntry { index } => (5, index),
+        NoteValidationTarget::AclEntry { index } => (5, *index),
     };
-    let span = diagnostic.span.unwrap_or(Utf8ByteSpan { start: 0, end: 0 });
-    (target, index, span.start, span.end, diagnostic.code.clone())
+    let span = span.unwrap_or(Utf8ByteSpan { start: 0, end: 0 });
+    (target, index, span.start, span.end, code.to_owned())
 }
 
 /// 検証器と同じ正本から生成する機械可読なノート入力規則。
@@ -299,9 +302,7 @@ fn validate_note_content_profile_with(
             .into_iter()
             .filter(|query| match &query.target {
                 ReferenceKey::Local { .. } => false,
-                ReferenceKey::Scheme {
-                    scheme, locator, ..
-                } => scheme != "note" || locator.parse::<marginalis_domain::EntityId>().is_err(),
+                ReferenceKey::Scheme { scheme, .. } => scheme != "note",
                 ReferenceKey::Document { .. } => true,
             })
             .map(|query| {

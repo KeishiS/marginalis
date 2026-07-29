@@ -218,9 +218,11 @@ mod tests {
 
     #[test]
     fn invalid_source_is_rejected_before_rendering() {
-        assert_eq!(
-            render_note(&note("include::secret[]"), &[]),
-            Err(RenderError)
-        );
+        for body in [
+            "include::secret[]",
+            "xref:note:not-a-note[invalid note reference]",
+        ] {
+            assert_eq!(render_note(&note(body), &[]), Err(RenderError), "{body}");
+        }
     }
 }

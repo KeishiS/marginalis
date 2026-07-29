@@ -2,32 +2,50 @@
 
 use axum::{Json, http::StatusCode};
 use marginalis_application::{
-    AuthenticationUseCaseError, NoteDiagnostic, NoteDiagnosticSeverity, NoteUseCaseError,
-    NoteValidationTarget,
+    AuthenticationUseCaseError, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteUseCaseError,
+    NoteValidationDiagnostic, NoteValidationTarget,
 };
 use marginalis_contract::{
     DiagnosticSeverityResponse, NoteDiagnosticResponse, ProblemCode, ProblemResponse,
     Utf8ByteSpanResponse, Utf8ByteUnit, ValidationTargetResponse,
 };
 
-pub(super) fn diagnostic_response(diagnostic: NoteDiagnostic) -> NoteDiagnosticResponse {
-    let target = match diagnostic.target {
+fn diagnostic_target(target: NoteValidationTarget) -> ValidationTargetResponse {
+    match target {
         NoteValidationTarget::Source => ValidationTargetResponse::Source,
         NoteValidationTarget::Title => ValidationTargetResponse::Title,
         NoteValidationTarget::Body => ValidationTargetResponse::Body,
         NoteValidationTarget::Tag { index } => ValidationTargetResponse::Tag { index },
         NoteValidationTarget::Tags => ValidationTargetResponse::Tags,
         NoteValidationTarget::AclEntry { index } => ValidationTargetResponse::AclEntry { index },
-    };
+    }
+}
+
+pub(super) fn advisory_response(
+    diagnostic: NoteAdvisoryDiagnostic,
+) -> NoteDiagnosticResponse {
     NoteDiagnosticResponse {
         code: diagnostic.code,
         severity: match diagnostic.severity {
-            NoteDiagnosticSeverity::Error => DiagnosticSeverityResponse::Error,
-            NoteDiagnosticSeverity::Warning => DiagnosticSeverityResponse::Warning,
-            NoteDiagnosticSeverity::Information => DiagnosticSeverityResponse::Information,
-            NoteDiagnosticSeverity::Hint => DiagnosticSeverityResponse::Hint,
+            NoteAdvisorySeverity::Warning => DiagnosticSeverityResponse::Warning,
+            NoteAdvisorySeverity::Information => DiagnosticSeverityResponse::Information,
+            NoteAdvisorySeverity::Hint => DiagnosticSeverityResponse::Hint,
         },
-        target,
+        target: diagnostic_target(diagnostic.target),
+        span: diagnostic.span.map(|span| Utf8ByteSpanResponse {
+            start: span.start,
+            end: span.end,
+            unit: Utf8ByteUnit::Utf8Byte,
+        }),
+        message: diagnostic.message,
+    }
+}
+
+fn validation_response(diagnostic: NoteValidationDiagnostic) -> NoteDiagnosticResponse {
+    NoteDiagnosticResponse {
+        code: diagnostic.code,
+        severity: DiagnosticSeverityResponse::Error,
+        target: diagnostic_target(diagnostic.target),
         span: diagnostic.span.map(|span| Utf8ByteSpanResponse {
             start: span.start,
             end: span.end,
@@ -83,15 +101,17 @@ pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemRe
     }
 }
 
-fn validation_problem(diagnostics: Vec<NoteDiagnostic>) -> ProblemResponse {
+fn validation_problem(diagnostics: Vec<NoteValidationDiagnostic>) -> ProblemResponse {
     ProblemResponse {
         code: ProblemCode::ValidationFailed,
         message: "note input is invalid".into(),
-        diagnostics: diagnostics.into_iter().map(diagnostic_response).collect(),
+        diagnostics: diagnostics.into_iter().map(validation_response).collect(),
     }
 }
 
-pub(super) fn validation_problem_json(diagnostics: Vec<NoteDiagnostic>) -> serde_json::Value {
+pub(super) fn validation_problem_json(
+    diagnostics: Vec<NoteValidationDiagnostic>,
+) -> serde_json::Value {
     serde_json::to_value(validation_problem(diagnostics))
         .expect("validation problem is serializable")
 }
