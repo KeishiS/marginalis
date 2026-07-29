@@ -124,6 +124,42 @@
             url = "https://raw.githubusercontent.com/KeishiS/marginalis/v0.5.0/crates/marginalis-sqlite/src/schema.sql";
             hash = "sha256-U8R8xzBYkohX+zKr3TtLlmvTPMhif+EBylhF+2L9u64=";
           };
+          marginalisV090Source = builtins.fetchTarball {
+            url = "https://github.com/KeishiS/marginalis/archive/9a286ebbb0a86065138cc658e46628175ba876e2.tar.gz";
+            sha256 = "sha256-ljexEdr0oaF/u5IiMpWj7W98tdyDthmDeotxfBhj2CM=";
+          };
+          marginalisV090AdocweaveConformanceCases = pkgs.fetchurl {
+            url = "https://raw.githubusercontent.com/KeishiS/adocweave/778e9da4548f03ea8434677d50c819d7ce665809/fixtures/conformance/cases.json";
+            hash = "sha256-OxHK8NobfmNN9pRj7B3qP94s1b2E26l5y5EQdMQq6aY=";
+          };
+          marginalisV090 = (rustPlatformFor pkgs).buildRustPackage {
+            pname = "marginalis";
+            version = "0.9.0";
+            src = marginalisV090Source;
+            cargoLock = {
+              lockFile = "${marginalisV090Source}/Cargo.lock";
+              outputHashes = {
+                "adocweave-0.11.0" = "sha256-1qCSy6eWSGhIxu1jsLFsRrX2OXNuYgnV6lmTwchGiT4=";
+              };
+            };
+            cargoBuildFlags = [
+              "--package"
+              "marginalis-service"
+              "--bin"
+              "marginalis-service"
+            ];
+            preBuild = ''
+              install -Dm444 ${marginalisV090AdocweaveConformanceCases} ../fixtures/conformance/cases.json
+              # Archive CLIはWeb assetを使用しない。v0.9.0のinclude_bytes!に必要な
+              # pathだけを用意し、移行checkで不要なfrontend buildを避ける。
+              mkdir -p frontend/dist/assets
+              touch frontend/dist/assets/{editor.js,editor.css,tex-svg.js,page.js}
+            '';
+            doCheck = false;
+            installPhase = ''
+              install -Dm755 target/${pkgs.stdenv.hostPlatform.rust.cargoShortTarget}/release/marginalis-service $out/bin/marginalis
+            '';
+          };
           kanidmDiscoveryCerts =
             pkgs.runCommand "marginalis-kanidm-discovery-certs"
               {
@@ -192,6 +228,107 @@
               '';
         in
         pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          schema9-archive-migration =
+            pkgs.runCommand "marginalis-schema9-archive-migration"
+              {
+                nativeBuildInputs = [
+                  pkgs.coreutils
+                  pkgs.jq
+                  pkgs.sqlite
+                ];
+              }
+              ''
+                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema9.sqlite"
+                ${marginalisV090}/bin/marginalis export-archive --output "$PWD/empty.json"
+                test "$(sqlite3 schema9.sqlite \
+                  'SELECT MAX(version) FROM schema_migrations')" = 9
+                rm empty.json
+
+                sqlite3 schema9.sqlite <<'SQL'
+                INSERT INTO notes
+                  (note_id, creator_issuer, creator_subject, title, source, tags_json,
+                   created_at_ms, updated_at_ms, revision, deleted_at_ms)
+                VALUES
+                  ('019f0000-0000-7000-8000-000000000091',
+                   'https://id.example.test', 'migration-owner', '移行元',
+                   '= 移行元
+                :tags: 移行, 検証
+
+                xref:note:019f0000-0000-7000-8000-000000000092[移行先]',
+                   '["検証","移行"]', 1000, 4000, 4, NULL),
+                  ('019f0000-0000-7000-8000-000000000092',
+                   'https://id.example.test', 'migration-owner', '移行先',
+                   '= 移行先
+
+                削除済みの本文', '[]', 2000, 6000, 2, 6000);
+                INSERT INTO note_references (source_note_id, target_note_id)
+                VALUES ('019f0000-0000-7000-8000-000000000091',
+                        '019f0000-0000-7000-8000-000000000092');
+                INSERT INTO note_acl (note_id, issuer, subject, permission)
+                VALUES
+                  ('019f0000-0000-7000-8000-000000000091',
+                   'https://id.example.test', 'migration-reader', 'read'),
+                  ('019f0000-0000-7000-8000-000000000091',
+                   'https://id.example.test', 'migration-editor', 'edit');
+                SQL
+                sqlite3 -json schema9.sqlite \
+                  'SELECT note_id, creator_issuer, creator_subject, title, source,
+                          tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+                   FROM notes ORDER BY note_id' > schema9-notes.json
+                sqlite3 -json schema9.sqlite \
+                  'SELECT source_note_id, target_note_id
+                   FROM note_references ORDER BY source_note_id, target_note_id' \
+                  > schema9-references.json
+                sqlite3 -json schema9.sqlite \
+                  'SELECT note_id, issuer, subject, permission
+                   FROM note_acl ORDER BY note_id, issuer, subject' > schema9-acl.json
+
+                ${marginalisV090}/bin/marginalis export-archive --output "$PWD/schema9.json"
+                jq -e '
+                  .format == "marginalis-archive-7"
+                  and (.notes | length) == 2
+                  and (.note_acl | length) == 2
+                  and any(.notes[];
+                    .note_id == "019f0000-0000-7000-8000-000000000091"
+                    and .revision == 4 and .deleted_at_ms == null)
+                  and any(.notes[];
+                    .note_id == "019f0000-0000-7000-8000-000000000092"
+                    and .revision == 2 and .deleted_at_ms == 6000)
+                ' schema9.json
+
+                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema10.sqlite"
+                ${self.packages.${system}.default}/bin/marginalis \
+                  import-archive --input "$PWD/schema9.json"
+                test "$(sqlite3 schema10.sqlite \
+                  'SELECT MAX(version) FROM schema_migrations')" = 10
+                sqlite3 -json schema10.sqlite \
+                  'SELECT note_id, creator_issuer, creator_subject, title, source,
+                          tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+                   FROM notes ORDER BY note_id' > schema10-notes.json
+                sqlite3 -json schema10.sqlite \
+                  'SELECT source_note_id, target_note_id
+                   FROM note_references ORDER BY source_note_id, target_note_id' \
+                  > schema10-references.json
+                sqlite3 -json schema10.sqlite \
+                  'SELECT note_id, issuer, subject, permission
+                   FROM note_acl ORDER BY note_id, issuer, subject' > schema10-acl.json
+                diff -u schema9-notes.json schema10-notes.json
+                cmp schema9-references.json schema10-references.json
+                cmp schema9-acl.json schema10-acl.json
+                test "$(sqlite3 schema10.sqlite \
+                  "SELECT COUNT(*) FROM sqlite_schema
+                   WHERE type = 'table' AND name IN
+                     ('mcp_clients', 'mcp_authorization_codes',
+                      'mcp_access_tokens', 'mcp_refresh_tokens')")" = 0
+
+                ${self.packages.${system}.default}/bin/marginalis \
+                  export-archive --output "$PWD/schema10.json"
+                cmp schema9.json schema10.json
+                ${self.packages.${system}.default}/bin/marginalis \
+                  verify-restore --input "$PWD/schema10.json"
+                touch $out
+              '';
+
           nixos-module =
             let
               evaluated = nixpkgs.lib.nixosSystem {
