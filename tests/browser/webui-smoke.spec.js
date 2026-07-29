@@ -80,12 +80,12 @@ test("CodeMirrorで表示切替、入力補助、日本語入力状態を扱う"
 
   await expect(page.locator(".editor-page")).toHaveScreenshot(
     "editor-wide-split.png",
-    { animations: "disabled" },
+    SCREENSHOT_OPTIONS,
   );
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator(".editor-page")).toHaveScreenshot(
     "editor-wide-split-dark.png",
-    { animations: "disabled" },
+    SCREENSHOT_OPTIONS,
   );
   await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 320, height: 720 });
@@ -96,7 +96,7 @@ test("CodeMirrorで表示切替、入力補助、日本語入力状態を扱う"
   await expect(page.getByRole("button", { name: "分割" })).toBeDisabled();
   await expect(page.locator(".editor-page")).toHaveScreenshot(
     "editor-narrow-write.png",
-    { animations: "disabled" },
+    SCREENSHOT_OPTIONS,
   );
 });
 
@@ -172,3 +172,9 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 }
+
+const SCREENSHOT_OPTIONS = {
+  animations: "disabled",
+  // Linux環境ごとのフォント描画差を許容し、配置の大きな崩れは検出します。
+  maxDiffPixelRatio: 0.03,
+};
