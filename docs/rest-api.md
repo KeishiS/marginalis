@@ -57,9 +57,26 @@ Web UIの配布物へ固定したMathJaxで組版します。外部のCDNへは�
 サーバーが管理する識別子、所有者、時刻、revision、ACLはAsciiDoc文書へ記述せず、APIの別項目で
 扱います。
 
-保存前プレビューにも同じ入力を送り、成功時は安全なHTMLを受け取ります。プレビューは保存処理を
+保存前プレビューにも同じ入力を送り、成功時は安全なHTMLと`diagnostics`を受け取ります。
+`warning`、`information`、`hint`の診断は保存を妨げません。たとえば、文章と`xref:`の間に
+空白がない場合は、AdocWeaveの`macro-boundary`を`warning`として返します。プレビューは保存処理を
 行いませんが、ログイン中の利用者だけが同一オリジンとCSRFトークンを確認したうえで利用できます。
-入力規則に違反した場合の診断は、作成・更新と同じ形式です。
+入力規則に違反した`error`の診断は、作成・更新と同じ形式でHTTP状態コード`422`を返します。
+
+```json
+{
+  "html": "<article><p>安全に変換した本文</p></article>",
+  "diagnostics": [
+    {
+      "code": "macro-boundary",
+      "severity": "warning",
+      "target": { "field": "source" },
+      "span": { "start": 34, "end": 38, "unit": "utf8_byte" },
+      "message": "a space is required before the inline macro"
+    }
+  ]
+}
+```
 
 通常利用者は、自身が作成したノートと、同じ発行者内でACLにより共有されたノートを操作できます。
 `read`は閲覧、`edit`は閲覧と内容の更新を許可します。ACL管理と削除・復元は所有者だけが
@@ -80,8 +97,10 @@ MCPではHTTPヘッダーを使わないため、変更ツールの型付き引�
 ## 入力内容の検査
 
 入力規則に違反した場合は、HTTP状態コード`422`と`code: "validation_failed"`を返します。
-`diagnostics`には、問題の種類を表す`code`、対象項目、文書中の位置、説明を含めます。位置は
-UTF-8で符号化した`source`上のバイト範囲です。
+`diagnostics`には、問題の種類を表す`code`、重大度を表す`severity`、対象項目、文書中の位置、
+説明を含めます。`severity`は`error`、`warning`、`information`、`hint`のいずれかです。位置は
+UTF-8で符号化した`source`上のバイト範囲です。AdocWeave由来の診断では、AdocWeaveの安定した
+`code`をそのまま使用します。画面の日本語表示は英語の`message`ではなく`code`から決定します。
 ACLの対象が不正、重複、または所有者自身である場合は、対象を`acl_entry`とその添字で示します。
 
 ```json
@@ -91,6 +110,7 @@ ACLの対象が不正、重複、または所有者自身である場合は、�
   "diagnostics": [
     {
       "code": "invalid_title",
+      "severity": "error",
       "target": { "field": "source" },
       "message": "title must be non-empty, single-line, and at most 200 characters"
     }
@@ -108,6 +128,8 @@ ACLの対象が不正、重複、または所有者自身である場合は、�
 編集画面はこの文書で説明するREST APIを利用し、明示的な保存操作でCSRFトークンと現在の
 `ETag`を送信します。入力検査に失敗した場合も、ブラウザー内の編集内容を維持します。
 位置を含む診断は、該当するAsciiDoc文書の範囲を入力欄で選択できます。プレビュー更新に失敗した
-場合は、失敗を表示したうえで最後に成功したプレビューを残します。
+場合は、失敗を表示したうえで最後に成功したプレビューを残します。保存できる入力に警告がある
+場合は、安全に変換した最新のプレビューと警告を同時に表示します。入力を変更した時点で古い
+診断を取り除き、新しい入力上の位置として誤って表示しません。
 
 REST APIとWeb UIには同じ権限確認を適用し、現在の利用者が閲覧できるノートだけを表示します。

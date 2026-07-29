@@ -91,7 +91,7 @@
         },
         "description": "If-Match is required"
       },
-      "RenderFailed": {
+      "UnprocessableNote": {
         "content": {
           "application/json": {
             "schema": {
@@ -99,7 +99,7 @@
             }
           }
         },
-        "description": "the note cannot be rendered safely"
+        "description": "the note input is invalid or cannot be rendered safely"
       },
       "ValidationFailed": {
         "content": {
@@ -307,12 +307,19 @@
       "NotePreview": {
         "additionalProperties": false,
         "properties": {
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationDiagnostic"
+            },
+            "type": "array"
+          },
           "html": {
             "type": "string"
           }
         },
         "required": [
-          "html"
+          "html",
+          "diagnostics"
         ],
         "type": "object"
       },
@@ -421,7 +428,7 @@
           },
           "diagnostics": {
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/ValidationDiagnostic"
             },
             "type": "array"
           },
@@ -449,6 +456,95 @@
         "required": [
           "issuer",
           "subject"
+        ],
+        "type": "object"
+      },
+      "ValidationDiagnostic": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "information",
+              "hint"
+            ]
+          },
+          "span": {
+            "additionalProperties": false,
+            "properties": {
+              "end": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "start": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "unit": {
+                "const": "utf8_byte"
+              }
+            },
+            "required": [
+              "start",
+              "end",
+              "unit"
+            ],
+            "type": "object"
+          },
+          "target": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "enum": [
+                      "source",
+                      "title",
+                      "body",
+                      "tags"
+                    ]
+                  }
+                },
+                "required": [
+                  "field"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "enum": [
+                      "tag",
+                      "acl_entry"
+                    ]
+                  },
+                  "index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "field",
+                  "index"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "target",
+          "message"
         ],
         "type": "object"
       }
@@ -542,7 +638,7 @@
             "$ref": "#/components/responses/CsrfRejected"
           },
           "422": {
-            "$ref": "#/components/responses/RenderFailed"
+            "$ref": "#/components/responses/UnprocessableNote"
           }
         },
         "summary": "Create a note"
@@ -576,8 +672,14 @@
             },
             "description": "safe HTML preview"
           },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
           "422": {
-            "$ref": "#/components/responses/ValidationFailed"
+            "$ref": "#/components/responses/UnprocessableNote"
           }
         },
         "summary": "Validate and render an unsaved note"
@@ -621,7 +723,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "422": {
-            "$ref": "#/components/responses/ValidationFailed"
+            "$ref": "#/components/responses/UnprocessableNote"
           },
           "428": {
             "$ref": "#/components/responses/PreconditionRequired"
@@ -706,7 +808,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "422": {
-            "$ref": "#/components/responses/ValidationFailed"
+            "$ref": "#/components/responses/UnprocessableNote"
           },
           "428": {
             "$ref": "#/components/responses/PreconditionRequired"
@@ -793,7 +895,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "422": {
-            "$ref": "#/components/responses/ValidationFailed"
+            "$ref": "#/components/responses/UnprocessableNote"
           },
           "428": {
             "$ref": "#/components/responses/PreconditionRequired"
@@ -845,7 +947,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "422": {
-            "$ref": "#/components/responses/ValidationFailed"
+            "$ref": "#/components/responses/UnprocessableNote"
           },
           "428": {
             "$ref": "#/components/responses/PreconditionRequired"

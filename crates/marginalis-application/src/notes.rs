@@ -12,9 +12,10 @@ use marginalis_domain::{
 };
 
 use crate::{
-    Clock, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NotePresentation,
-    NoteProfile, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
-    NoteValidationDiagnostic, NoteValidationTarget, Random, RelatedNotes,
+    Clock, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NoteDiagnostic,
+    NoteDiagnosticSeverity, NotePresentation, NotePreview, NoteProfile, NoteQueries,
+    NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationTarget, Random,
+    RelatedNotes, ValidatedNoteDraft,
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。
@@ -145,7 +146,7 @@ impl std::error::Error for NoteContentError {}
 
 /// AsciiDocなどの文書形式に依存する処理を受け持つport。
 pub trait NoteContent: Send + Sync {
-    fn validate_draft(&self, draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>>;
+    fn validate_draft(&self, draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec<NoteDiagnostic>>;
     fn reference_queries(&self, body: &str) -> Result<Vec<NoteReferenceQuery>, NoteContentError>;
     fn has_anchor(&self, body: &str, anchor: &str) -> Result<bool, NoteContentError>;
     fn render(
@@ -282,10 +283,15 @@ impl NoteQueries for NoteApplication {
 #[async_trait]
 impl NoteCommands for NoteApplication {
     async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
-        let draft = self
+        let validated = self
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
+        let ValidatedNoteDraft {
+            draft,
+            reference_queries,
+            ..
+        } = validated;
         let now = self.clock.now();
         let note = Note::create(
             NoteId::new(self.random.uuid_v7()),
@@ -293,7 +299,7 @@ impl NoteCommands for NoteApplication {
             draft,
             now,
         );
-        let reference_targets = reference_targets(self.content.as_ref(), note.source())?;
+        let reference_targets = reference_targets(&reference_queries);
         self.commands
             .create_note(&note, &reference_targets)
             .await
@@ -308,11 +314,16 @@ impl NoteCommands for NoteApplication {
         draft: NoteDraft,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
-        let draft = self
+        let validated = self
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
-        let reference_targets = reference_targets(self.content.as_ref(), &draft.source)?;
+        let ValidatedNoteDraft {
+            draft,
+            reference_queries,
+            ..
+        } = validated;
+        let reference_targets = reference_targets(&reference_queries);
         self.commands
             .update_visible_note(
                 &actor,
@@ -358,11 +369,16 @@ impl NotePresentation for NoteApplication {
         actor: Actor,
         draft: NoteDraft,
         context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError> {
-        let draft = self
+    ) -> Result<NotePreview, NoteUseCaseError> {
+        let validated = self
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
+        let ValidatedNoteDraft {
+            draft,
+            diagnostics,
+            reference_queries,
+        } = validated;
         let now = self.clock.now();
         let note = Note::create(
             NoteId::new(self.random.uuid_v7()),
@@ -370,16 +386,18 @@ impl NotePresentation for NoteApplication {
             draft,
             now,
         );
-        let target_ids = reference_targets(self.content.as_ref(), note.source())?;
+        let target_ids = reference_targets(&reference_queries);
         let targets = self
             .queries
             .visible_notes_by_id(&actor, &target_ids)
             .await
             .map_err(map_repository_error)?;
         let resolutions = self.reference_resolutions(&note, &targets, &context)?;
-        self.content
+        let html = self
+            .content
             .render(&note, &resolutions)
-            .map_err(|_| NoteUseCaseError::RenderFailed)
+            .map_err(|_| NoteUseCaseError::RenderFailed)?;
+        Ok(NotePreview { html, diagnostics })
     }
 
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
@@ -489,26 +507,22 @@ fn acl_validation(index: usize, code: NoteValidationCode) -> NoteUseCaseError {
         NoteValidationCode::OwnerInAcl => "note owner must not be included in ACL",
         _ => unreachable!("ACL validation uses an ACL-specific code"),
     };
-    NoteUseCaseError::Validation(vec![NoteValidationDiagnostic {
-        code,
+    NoteUseCaseError::Validation(vec![NoteDiagnostic {
+        code: code.as_str().into(),
+        severity: NoteDiagnosticSeverity::Error,
         target: NoteValidationTarget::AclEntry { index },
         span: None,
-        message,
+        message: message.into(),
     }])
 }
 
-fn reference_targets(
-    content: &dyn NoteContent,
-    body: &str,
-) -> Result<Vec<NoteId>, NoteUseCaseError> {
-    Ok(content
-        .reference_queries(body)
-        .map_err(|_| NoteUseCaseError::Unavailable)?
+fn reference_targets(queries: &[NoteReferenceQuery]) -> Vec<NoteId> {
+    queries
         .into_iter()
         .map(|query| query.target_note_id)
         .collect::<HashSet<_>>()
         .into_iter()
-        .collect())
+        .collect()
 }
 
 fn sort_related_notes(notes: &mut [NoteSummary]) {
@@ -663,8 +677,18 @@ mod tests {
         fn validate_draft(
             &self,
             draft: NoteDraft,
-        ) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>> {
-            Ok(draft)
+        ) -> Result<ValidatedNoteDraft, Vec<NoteDiagnostic>> {
+            Ok(ValidatedNoteDraft {
+                draft,
+                diagnostics: vec![NoteDiagnostic {
+                    code: "test-advisory".into(),
+                    severity: NoteDiagnosticSeverity::Warning,
+                    target: NoteValidationTarget::Source,
+                    span: None,
+                    message: "test advisory".into(),
+                }],
+                reference_queries: Vec::new(),
+            })
         }
 
         fn reference_queries(

@@ -3,8 +3,8 @@
 use core::fmt;
 
 use marginalis_application::{
-    NoteContent, NoteContentError, NoteProfile, NoteReferenceQuery, NoteReferenceResolution,
-    NoteValidationDiagnostic,
+    NoteContent, NoteContentError, NoteDiagnostic, NoteProfile, NoteReferenceQuery,
+    NoteReferenceResolution, ValidatedNoteDraft,
 };
 use marginalis_domain::{Note, NoteDraft};
 
@@ -42,7 +42,7 @@ pub(crate) const MAX_TAG_CHARACTERS: usize = 64;
 pub struct AsciiDocNoteContent;
 
 impl NoteContent for AsciiDocNoteContent {
-    fn validate_draft(&self, draft: NoteDraft) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>> {
+    fn validate_draft(&self, draft: NoteDraft) -> Result<ValidatedNoteDraft, Vec<NoteDiagnostic>> {
         validate_note_draft(draft)
     }
 
@@ -114,7 +114,7 @@ impl std::error::Error for RenderError {}
 
 pub(crate) fn validate_note_draft(
     draft: NoteDraft,
-) -> Result<NoteDraft, Vec<NoteValidationDiagnostic>> {
+) -> Result<ValidatedNoteDraft, Vec<NoteDiagnostic>> {
     analysis::validate_draft(draft)
 }
 

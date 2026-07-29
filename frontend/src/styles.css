@@ -325,6 +325,7 @@ body {
 
 .notice,
 .problem,
+.warnings,
 .conflict-panel {
   border: 0.1rem solid currentColor;
   margin-block: 1rem;
@@ -394,9 +395,14 @@ body {
   background: color-mix(in srgb, currentColor 10%, transparent);
 }
 
-.problem h2 {
+.problem h2,
+.warnings h3 {
   font-size: 1rem;
   margin-block-start: 0;
+}
+
+.diagnostic-severity {
+  font-weight: 700;
 }
 
 .diagnostic-link {

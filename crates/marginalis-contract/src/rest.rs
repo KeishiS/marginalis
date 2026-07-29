@@ -182,6 +182,7 @@ pub struct NoteAclResponse {
 #[serde(deny_unknown_fields)]
 pub struct NotePreviewResponse {
     pub html: String,
+    pub diagnostics: Vec<ValidationDiagnosticResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -251,10 +252,20 @@ impl ProblemCode {
 #[serde(deny_unknown_fields)]
 pub struct ValidationDiagnosticResponse {
     pub code: String,
+    pub severity: DiagnosticSeverityResponse,
     pub target: ValidationTargetResponse,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span: Option<Utf8ByteSpanResponse>,
     pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticSeverityResponse {
+    Error,
+    Warning,
+    Information,
+    Hint,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -370,9 +381,17 @@ pub fn openapi_document() -> Value {
                     }
                 },
                 "NotePreview": {
-                    "type": "object", "additionalProperties": false, "required": ["html"],
-                    "properties": {"html": {"type": "string"}}
+                    "type": "object", "additionalProperties": false,
+                    "required": ["html", "diagnostics"],
+                    "properties": {
+                        "html": {"type": "string"},
+                        "diagnostics": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/ValidationDiagnostic"}
+                        }
+                    }
                 },
+                "ValidationDiagnostic": validation_diagnostic_schema(),
                 "NoteAclEntry": {
                     "type": "object", "additionalProperties": false, "required": ["subject", "permission"],
                     "properties": {
@@ -406,7 +425,7 @@ pub fn openapi_document() -> Value {
                 "AuthenticationRequired": problem_response("OIDC session is required"),
                 "CsrfRejected": problem_response("same-origin or CSRF validation failed"),
                 "ValidationFailed": problem_response("note input is invalid"),
-                "RenderFailed": problem_response("the note cannot be rendered safely")
+                "UnprocessableNote": problem_response("the note input is invalid or cannot be rendered safely")
             }
         }
     })
@@ -432,13 +451,15 @@ fn rest_paths() -> Value {
                 ("201", schema_response_with_etag("created note", "Note")),
                 ("401", response_ref("AuthenticationRequired")),
                 ("403", response_ref("CsrfRejected")),
-                ("422", response_ref("RenderFailed"))
+                ("422", response_ref("UnprocessableNote"))
             ]))
         },
         "/api/v3/notes/preview": {
             "post": operation("Validate and render an unsaved note", &["CsrfToken"], Some("NoteDraft"), responses(&[
                 ("200", schema_response("safe HTML preview", "NotePreview")),
-                ("422", response_ref("ValidationFailed"))
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("422", response_ref("UnprocessableNote"))
             ]))
         },
         "/api/v3/notes/{note_id}": {
@@ -502,7 +523,7 @@ fn mutation_responses(description: &str) -> Value {
         ("409", response_ref("Conflict")),
         ("428", response_ref("PreconditionRequired")),
         ("400", response_ref("BadRequest")),
-        ("422", response_ref("ValidationFailed")),
+        ("422", response_ref("UnprocessableNote")),
     ])
 }
 
@@ -551,7 +572,54 @@ fn problem_schema() -> Value {
         "properties": {
             "code": {"enum": codes},
             "message": {"type": "string"},
-            "diagnostics": {"type": "array", "items": {"type": "object"}}
+            "diagnostics": {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/ValidationDiagnostic"}
+            }
+        }
+    })
+}
+
+fn validation_diagnostic_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "target", "message"],
+        "properties": {
+            "code": {"type": "string"},
+            "severity": {"enum": ["error", "warning", "information", "hint"]},
+            "target": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["field"],
+                        "properties": {
+                            "field": {"enum": ["source", "title", "body", "tags"]}
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["field", "index"],
+                        "properties": {
+                            "field": {"enum": ["tag", "acl_entry"]},
+                            "index": {"type": "integer", "minimum": 0}
+                        }
+                    }
+                ]
+            },
+            "span": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["start", "end", "unit"],
+                "properties": {
+                    "start": {"type": "integer", "minimum": 0},
+                    "end": {"type": "integer", "minimum": 0},
+                    "unit": {"const": "utf8_byte"}
+                }
+            },
+            "message": {"type": "string"}
         }
     })
 }

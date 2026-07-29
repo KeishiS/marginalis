@@ -84,6 +84,35 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
         .expect("response body");
     let preview: serde_json::Value = serde_json::from_slice(&body).expect("preview JSON");
     assert_eq!(preview["html"], "<article><p>プレビュー</p></article>");
+    assert_eq!(preview["diagnostics"], serde_json::json!([]));
+
+    let warning = authenticated_app()
+        .oneshot(
+            Request::post("/api/v3/notes/preview")
+                .header("content-type", "application/json")
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::from(
+                    r#"{"source":"= 題名\n\n本文xref:note:0197c9bc-0000-7000-8000-000000000002[参照]"}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(warning.status(), StatusCode::OK);
+    let body = to_bytes(warning.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let preview: serde_json::Value = serde_json::from_slice(&body).expect("preview JSON");
+    assert_eq!(preview["diagnostics"][0]["code"], "macro-boundary");
+    assert_eq!(preview["diagnostics"][0]["severity"], "warning");
+    assert_eq!(preview["diagnostics"][0]["target"]["field"], "source");
+    assert_eq!(preview["diagnostics"][0]["span"]["unit"], "utf8_byte");
 
     let invalid = authenticated_app()
         .oneshot(

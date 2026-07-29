@@ -88,6 +88,7 @@ pub enum NoteValidationCode {
     BlockPassthroughDisabled,
     DuplicateAnchor,
     ExternalReferenceDisabled,
+    InvalidNoteReference,
     InvalidUrlScheme,
     ResourceDisabled,
     UnsupportedMathLanguage,
@@ -111,6 +112,7 @@ impl NoteValidationCode {
             Self::BlockPassthroughDisabled => "block_passthrough_disabled",
             Self::DuplicateAnchor => "duplicate_anchor",
             Self::ExternalReferenceDisabled => "external_reference_disabled",
+            Self::InvalidNoteReference => "invalid_note_reference",
             Self::InvalidUrlScheme => "invalid_url_scheme",
             Self::ResourceDisabled => "resource_disabled",
             Self::UnsupportedMathLanguage => "unsupported_math_language",
@@ -151,12 +153,34 @@ pub struct Utf8ByteSpan {
     pub end: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteDiagnosticSeverity {
+    Error,
+    Warning,
+    Information,
+    Hint,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteValidationDiagnostic {
-    pub code: NoteValidationCode,
+pub struct NoteDiagnostic {
+    pub code: String,
+    pub severity: NoteDiagnosticSeverity,
     pub target: NoteValidationTarget,
     pub span: Option<Utf8ByteSpan>,
-    pub message: &'static str,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedNoteDraft {
+    pub draft: NoteDraft,
+    pub diagnostics: Vec<NoteDiagnostic>,
+    pub reference_queries: Vec<NoteReferenceQuery>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NotePreview {
+    pub html: String,
+    pub diagnostics: Vec<NoteDiagnostic>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -214,7 +238,7 @@ pub struct NoteProfile {
 pub enum NoteUseCaseError {
     NotFound,
     Conflict,
-    Validation(Vec<NoteValidationDiagnostic>),
+    Validation(Vec<NoteDiagnostic>),
     RenderFailed,
     Unavailable,
 }
@@ -297,7 +321,7 @@ pub trait NotePresentation: Send + Sync {
         actor: Actor,
         draft: NoteDraft,
         context: NoteRenderContext,
-    ) -> Result<String, NoteUseCaseError>;
+    ) -> Result<NotePreview, NoteUseCaseError>;
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError>;
     async fn read_note_view(
         &self,

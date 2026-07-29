@@ -139,6 +139,7 @@ test("診断からUTF-8位置に対応する入力範囲へ移動する", async 
           diagnostics: [
             {
               code: "asciidoc_parse_failed",
+              severity: "error",
               target: { field: "source" },
               span: { start, end: start + 6, unit: "utf8_byte" },
               message: "invalid source",
@@ -165,11 +166,75 @@ test("診断からUTF-8位置に対応する入力範囲へ移動する", async 
   );
 });
 
+test("プレビュー警告を表示して修正後にすぐ取り除く", async () => {
+  vi.useFakeTimers();
+  const source =
+    "= 調査結果\n\nこの結果はxref:note:0197c9bc-0000-7000-8000-000000000002[先行調査]";
+  const start = new TextEncoder().encode("= 調査結果\n\nこの結果は").length;
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      jsonResponse({
+        html: "<p>この結果はxref:...</p>",
+        diagnostics: [
+          {
+            code: "macro-boundary",
+            severity: "warning",
+            target: { field: "source" },
+            span: { start, end: start + 4, unit: "utf8_byte" },
+            message: "a space is required before the inline macro",
+          },
+        ],
+      }),
+    )
+    .mockResolvedValueOnce(
+      jsonResponse({ html: "<p>この結果は xref:...</p>", diagnostics: [] }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  render(<EditorApplication config={CONFIG} />);
+
+  const editor = screen.getByRole<HTMLTextAreaElement>("textbox", {
+    name: "AsciiDoc文書",
+  });
+  fireEvent.change(editor, { target: { value: source } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(350);
+  });
+
+  expect(
+    screen.getByRole("heading", { name: "入力時の警告" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "入力時の警告" }).parentElement,
+  ).toHaveTextContent(
+    "警告: 3行6列: インラインマクロの前に空白を入れてください。",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "入力位置へ移動" }));
+  expect(editor.value.slice(editor.selectionStart, editor.selectionEnd)).toBe(
+    "xref",
+  );
+
+  fireEvent.change(editor, {
+    target: { value: source.replace("はxref:", "は xref:") },
+  });
+  expect(
+    screen.queryByRole("heading", { name: "入力時の警告" }),
+  ).not.toBeInTheDocument();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(350);
+  });
+  expect(
+    screen.queryByRole("heading", { name: "入力時の警告" }),
+  ).not.toBeInTheDocument();
+});
+
 test("プレビュー失敗時も最後に成功した表示を残す", async () => {
   vi.useFakeTimers();
   const fetchMock = vi
     .fn<typeof fetch>()
-    .mockResolvedValueOnce(jsonResponse({ html: "<p>成功した表示</p>" }))
+    .mockResolvedValueOnce(
+      jsonResponse({ html: "<p>成功した表示</p>", diagnostics: [] }),
+    )
     .mockResolvedValueOnce(
       jsonResponse(
         {
