@@ -6,7 +6,7 @@ use marginalis_domain::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION, validate_note_draft};
+use crate::{ARCHIVE_NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION, validate_note_draft};
 
 pub const ARCHIVE_FORMAT: &str = "marginalis-archive-8";
 const PREVIOUS_ARCHIVE_FORMAT: &str = "marginalis-archive-7";
@@ -56,7 +56,7 @@ pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
     Archive {
         format: ARCHIVE_FORMAT.into(),
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION.into(),
-        note_profile_version: NOTE_PROFILE_VERSION,
+        note_profile_version: ARCHIVE_NOTE_PROFILE_VERSION,
         notes: snapshot
             .notes()
             .iter()
@@ -90,7 +90,7 @@ pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
 pub fn validate_archive(archive: &Archive) -> Result<LogicalSnapshot, ArchiveValidationError> {
     if archive.format != ARCHIVE_FORMAT
         || archive.adocweave_package_version != PINNED_ADOCWEAVE_PACKAGE_VERSION
-        || archive.note_profile_version != NOTE_PROFILE_VERSION
+        || archive.note_profile_version != ARCHIVE_NOTE_PROFILE_VERSION
     {
         return Err(ArchiveValidationError);
     }
@@ -278,6 +278,10 @@ mod tests {
         .expect("snapshot");
         let archive = create_archive(&snapshot);
         assert_eq!(archive.format, ARCHIVE_FORMAT);
+        assert_eq!(
+            archive.note_profile_version,
+            ARCHIVE_NOTE_PROFILE_VERSION
+        );
         assert_eq!(validate_archive(&archive), Ok(snapshot));
     }
 

@@ -13,8 +13,8 @@ use marginalis_application::{
 };
 
 use crate::{
-    DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_SOURCE_BYTES, MAX_TAG_CHARACTERS, MAX_TAGS,
-    MAX_TITLE_CHARACTERS, NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION,
+    AUTHORING_PROFILE_VERSION, DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_SOURCE_BYTES, MAX_TAG_CHARACTERS,
+    MAX_TAGS, MAX_TITLE_CHARACTERS, PINNED_ADOCWEAVE_PACKAGE_VERSION,
     configuration::authored_url_policy,
 };
 
@@ -163,7 +163,7 @@ pub(crate) fn diagnostic_sort_key(diagnostic: &NoteDiagnostic) -> (u8, usize, u3
 /// 検証器と同じ正本から生成する機械可読なノート入力規則。
 pub fn note_profile() -> NoteProfile {
     NoteProfile {
-        profile_version: NOTE_PROFILE_VERSION,
+        profile_version: AUTHORING_PROFILE_VERSION,
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION,
         limits: NoteProfileLimits {
             max_title_characters: MAX_TITLE_CHARACTERS,

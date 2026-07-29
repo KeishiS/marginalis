@@ -32,7 +32,10 @@ pub(crate) const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
     "text",
 ];
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.17.0";
-pub const NOTE_PROFILE_VERSION: u32 = 4;
+/// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
+pub const AUTHORING_PROFILE_VERSION: u32 = 5;
+/// archive内のノートを受理できる入力規則の版。
+pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 4;
 pub(crate) const MAX_TITLE_CHARACTERS: usize = 200;
 pub(crate) const MAX_NOTE_SOURCE_BYTES: usize = 512 * 1024;
 pub(crate) const MAX_TAGS: usize = 50;
@@ -130,5 +133,14 @@ mod tests {
     fn package_version_matches_the_pinned_specification() {
         assert_eq!(ADOCWEAVE_SOURCE_REVISION.len(), 40);
         verify_runtime_package_version().expect("pinned version");
+    }
+
+    #[test]
+    fn authoring_profile_has_its_own_public_version() {
+        assert_eq!(
+            AsciiDocNoteContent.profile().profile_version,
+            AUTHORING_PROFILE_VERSION
+        );
+        assert_ne!(AUTHORING_PROFILE_VERSION, ARCHIVE_NOTE_PROFILE_VERSION);
     }
 }
