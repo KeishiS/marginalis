@@ -152,6 +152,36 @@ connectionを名前またはIDで限定し、次の値を名前空間付きcusto
 実際のtenantでOIDC claim mapping後の属性名を確認してからActionを確定します。Actionのsource、
 tenant名、client ID、秘密情報はリポジトリへ保存しません。
 
+#### DCR接続時の障害と確認順序
+
+Auth0の設定項目は、API、Enterprise Connection、tenant、Universal Loginに分かれています。
+MCPクライアントの画面に一般的な接続失敗だけが表示される場合は、次の順序で確認します。
+
+| 症状 | 原因 | 確認と対処 |
+| --- | --- | --- |
+| DCR endpointがHTTP 400で登録を拒否 | tenant全体のDCRが無効 | Tenant SettingsのAdvancedでDynamic Client Registrationを有効化 |
+| 同意前にAPI accessを拒否 | DCRで作成したthird-party applicationにclient grantがない | APIのDefault Permissions for Third Party AppsでUser-Delegated Accessと必要な`notes:*` scopeだけを許可 |
+| Enterprise Connectionを選択できない | third-party applicationから通常のconnectionを利用できない | 対象のOIDC Enterprise Connectionをdomain-level connectionへ昇格 |
+| userinfo用audienceは許可されないという認可エラー | MCPクライアントが送る`resource`をAuth0がAPI identifierとして扱っていない | Resource Parameter Compatibility Profileを有効化し、API identifierとMCP URLの完全一致を確認 |
+| third-party clientではClassic Loginを利用できないというエラー | tenantがClassic Universal Loginを使用 | New Universal Loginへ切り替え、旧Login pageのHTML customizationを無効化 |
+| 同意後のMCP requestがHTTP 401 | access tokenに上流identityまたはgroupのcustom claimがない、または形式が不正 | Post Login Actionのconnection条件と、値ではなく型だけを記録した診断結果を確認 |
+
+OIDC Enterprise Connectionの`use_map`では、上流の配列claimがカンマ区切り文字列としてAuth0の
+利用者属性へ保存される場合があります。Post Login Actionは、group属性が文字列なら空要素を除いて
+配列へ戻し、配列としてcustom claimへ設定します。この変換は、上流のgroup名にカンマを許さないことを
+前提とします。カンマを許すIdentity Providerでは区切り文字による復元を行わず、配列を保持できる
+mapping modeまたは別の属性引き渡し方法を選びます。
+
+Actionの早期終了を調べるときは、connection名とstrategy、subjectの型、groupが配列か、group数だけを
+一時的に記録します。subject、group名、access tokenは記録しません。Actionを修正した後は新しい
+access tokenが必要なため、MCPクライアントで再認可します。
+
+ChatGPT Web UIは接続確認中にAccept headerが異なるrequestを送ることがあります。サーバーログで
+HTTP 406の後に401が続く場合は、406だけで接続失敗と判断せず、Bearer tokenを伴うrequestの401を
+調べます。401は署名、`iss`、`aud`、有効期限、上流identity、`server-users`、scopeのいずれかを
+検証できなかったことを示します。秘密情報をログへ追加せず、Authorization Serverのtoken交換成功と
+型だけを記録するAction診断を照合して原因を絞ります。
+
 NixOSでは、通常のMCP設定に加えて次の評価用optionを設定します。claim名はAuth0 Actionで設定した
 名前空間付きcustom claimと完全に一致させます。4項目の一部だけを設定した構成と、MCPを無効にした
 構成はモジュール評価時に拒否されます。
@@ -207,6 +237,9 @@ Auth0の設定では、次の公式資料を参照します。
 - [Authorization Code + PKCEのtoken交換](https://auth0.com/docs/api/authentication/authorization-code-flow-with-pkce/get-token-pkce)
 - [Dynamic Client Registration](https://auth0.com/docs/get-started/applications/dynamic-client-registration)
 - [Third-party applicationの設定](https://auth0.com/docs/get-started/applications/third-party-applications/configure-third-party-applications)
+- [Resource Parameter Compatibility Profile](https://auth0.com/ai/docs/mcp/guides/resource-param-compatibility-profile)
+- [Third-party applicationの障害対応](https://auth0.com/docs/get-started/applications/third-party-applications/troubleshooting)
+- [OIDC attribute mappingで配列が文字列になる制約](https://support.auth0.com/center/s/article/Arrays-mapped-to-string-in-OIDC-or-Okta-Workforce-connection)
 
 ### Keycloak
 
