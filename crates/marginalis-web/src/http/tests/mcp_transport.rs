@@ -134,7 +134,7 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         profile["result"]["structuredContent"]["adocweave_package_version"],
         "0.17.0"
     );
-    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 4);
+    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 5);
     assert!(
         profile["result"]["structuredContent"]["examples"]
             .as_array()

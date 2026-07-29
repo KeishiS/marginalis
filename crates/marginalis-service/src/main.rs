@@ -74,7 +74,7 @@ mod tests {
         );
         assert_eq!(
             document["info"]["x-note-profile-version"],
-            marginalis_asciidoc::NOTE_PROFILE_VERSION
+            marginalis_asciidoc::AUTHORING_PROFILE_VERSION
         );
     }
 }
