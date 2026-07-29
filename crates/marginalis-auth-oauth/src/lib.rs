@@ -26,6 +26,7 @@ const MAX_SCOPES: usize = 16;
 const MAX_SCOPE_BYTES: usize = 128;
 const MAX_DISCOVERY_RESPONSE_BYTES: usize = 1024 * 1024;
 const MINIMUM_JWKS_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const TOKEN_TIME_LEEWAY_SECONDS: u64 = 5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalMcpAuthorizationConfiguration {
@@ -218,6 +219,7 @@ impl ExternalMcpAccessTokenAuthenticator {
         validation.set_required_spec_claims(&["exp", "iss", "aud"]);
         validation.validate_exp = true;
         validation.validate_nbf = true;
+        validation.leeway = TOKEN_TIME_LEEWAY_SECONDS;
         let token = decode::<Claims>(token, &key, &validation)
             .map_err(|_| McpAccessTokenAuthenticationError::Rejected)?;
         claims_to_actor(&self.configuration, token.claims).map(Some)
@@ -591,7 +593,8 @@ mod tests {
         );
 
         let mut expired_claims = token_claims;
-        expired_claims["exp"] = serde_json::json!(now.saturating_sub(120));
+        expired_claims["exp"] =
+            serde_json::json!(now.saturating_sub(TOKEN_TIME_LEEWAY_SECONDS + 1));
         let expired_token = encode(
             &Header {
                 alg: Algorithm::RS256,
