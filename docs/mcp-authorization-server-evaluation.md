@@ -167,6 +167,7 @@ MCPクライアントの画面に一般的な接続失敗だけが表示され�
 | userinfo用audienceは許可されないという認可エラー | MCPクライアントが送る`resource`をAuth0がAPI identifierとして扱っていない | Resource Parameter Compatibility Profileを有効化し、API identifierとMCP URLの完全一致を確認 |
 | third-party clientではClassic Loginを利用できないというエラー | tenantがClassic Universal Loginを使用 | New Universal Loginへ切り替え、旧Login pageのHTML customizationを無効化 |
 | 同意後のMCP requestがHTTP 401 | access tokenに上流identityまたはgroupのcustom claimがない、または形式が不正 | Post Login Actionのconnection条件と、値ではなく型だけを記録した診断結果を確認 |
+| DCR endpointがHTTP 403とentity上限を返す | 接続の再試行でDCR applicationが蓄積し、tenantのapplication数上限へ到達 | Auth0 Dashboardでclient IDが`tpc_`から始まるthird-party applicationを確認し、利用中の接続を残して不要なものだけを削除 |
 
 OIDC Enterprise Connectionの`use_map`では、上流の配列claimがカンマ区切り文字列としてAuth0の
 利用者属性へ保存される場合があります。Post Login Actionは、group属性が文字列なら空要素を除いて
@@ -233,13 +234,16 @@ Auth0 Dashboardでは対象利用者のAuthorized Applicationsからauthorizatio
 通知処理を追加すると、外部化によって実装と保存データを減らす目的に反するため、評価adapterには
 追加しません。
 
-ChatGPT Web UIでは、DCR、Kanidmでのログイン、scope同意、MCP接続、ノートの作成・更新・削除を
-実環境で確認しました。所有者identityにはAuth0固有の`sub`ではなくKanidm由来claimが使用され、
-既存の所有者・ACL認可と一致することも確認しました。tenant domain、connection名、利用者情報、
-tokenなどの環境固有値は記録しません。
+2026-07-29にChatGPT Web UI、Claude Code、Codex CLIで、DCR、Kanidmでのログイン、scope同意、
+MCP接続、ノートの読み取り・作成・更新・削除を実環境で確認しました。所有者identityにはAuth0固有の
+`sub`ではなくKanidm由来claimが使用され、既存の所有者・ACL認可と一致することも確認しました。
 
-この結果を基にAuth0を採用し、内蔵Authorization Serverを撤去しました。Claude Code、Codex CLI、
-取消遅延の実測はリリース前の人手受入として残します。
+接続解除ではrefresh tokenとauthorization grantが取り消され、既発行access tokenが許容した有効期間の
+範囲内で拒否されること、再認可なしではrefreshによって接続が回復しないことを確認しました。
+tenant domain、connection名、client ID、利用者情報、tokenなどの環境固有値は記録しません。
+
+この結果を基にAuth0を採用し、内蔵Authorization Serverを撤去しました。3種類の対象クライアントに
+よる実接続と認可取消を含む、リリース前の人手受入は完了しています。
 
 Auth0の設定では、次の公式資料を参照します。
 
