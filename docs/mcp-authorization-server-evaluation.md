@@ -212,10 +212,12 @@ Auth0のrefresh tokenまたはgrantを取り消しても、発行済みのJWT ac
 Auth0へ問い合わせて即時に無効化する仕組みはありません。Auth0の公式資料でも、利用者が既存tokenを
 使えなくなるのは現在のaccess tokenが期限切れになった後と説明されています。Marginalisは期限検証に
 5秒だけ時刻差の猶予を設けるため、300秒のtokenでは取消から拒否までの理論上限を305秒とします。
+接続解除でauthorization grant全体を取り消すため、tenant設定の
+`Refresh Token Revocation Deletes Grant`を有効にします。この設定はtenant内の全applicationに影響します。
 実接続では次を秒単位で記録します。
 
 1. 対象クライアントで認可を完了し、MCP読み取りに成功することを確認します。
-2. Auth0で対象applicationへの認可またはrefresh tokenを取り消します。
+2. 対象クライアントからRFC 7009 endpointへ最新refresh tokenの取消要求を送ります。
 3. 再認可せず、同じクライアント接続から10秒ごとにMCP読み取りを実行し、最後に成功した時刻と
    最初に認証失敗となった時刻を記録します。
 4. access tokenの期限後も再認可せずにMCP読み取りを実行し、refreshによって接続が回復しないことを
@@ -224,6 +226,8 @@ Auth0へ問い合わせて即時に無効化する仕組みはありません。
 
 clientが保持するtoken値は取得または記録しません。この測定は、利用者が実際に経験する
 「取消後も操作できる時間」を対象とします。
+Auth0 Dashboardでは対象利用者のAuthorized Applicationsからauthorization grantが削除されたことも
+確認します。
 
 305秒の取消遅延を許容できない場合、Auth0を採用しません。Marginalis側にtoken denylistやAuth0の
 通知処理を追加すると、外部化によって実装と保存データを減らす目的に反するため、評価adapterには

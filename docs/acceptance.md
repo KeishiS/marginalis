@@ -31,7 +31,9 @@ Pull Requestと公開前の`release-gate`で次を確認します。
 7. ChatGPT、Claude Code、Codex CLIからMCPへ接続し、RESTと同じ閲覧・更新結果になることを
    確認します。登録、認証、作成、更新、ACL、削除の順序は
    [MCPクライアントの接続後受入](mcp.md#接続後の受入)に従います。
-8. アーカイブを本番から隔離した空のデータベースへ復元し、ノート、ACL、参照、削除状態、
+8. MCPクライアントの接続解除でrefresh tokenとauthorization grantを取り消し、再認可なしでは
+   refreshできないこと、既発行access tokenが拒否されるまでの時間を確認します。
+9. アーカイブを本番から隔離した空のデータベースへ復元し、ノート、ACL、参照、削除状態、
    revisionが一致することを確認します。
 
 ## 版別結果の記録
