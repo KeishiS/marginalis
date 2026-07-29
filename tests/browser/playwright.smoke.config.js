@@ -7,7 +7,7 @@ module.exports = defineConfig({
   timeout: 15_000,
   use: {
     baseURL: "http://127.0.0.1:42877",
-    browserName: "chromium",
+    browserName: process.env.MARGINALIS_BROWSER || "chromium",
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },

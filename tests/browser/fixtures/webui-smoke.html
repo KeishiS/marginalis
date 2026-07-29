@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'nonce-browser-smoke'; style-src 'self' 'nonce-browser-smoke'; base-uri 'none'"
+    />
     <title>Marginalis browser smoke</title>
     <link rel="stylesheet" href="/assets/editor.css" />
   </head>
@@ -10,9 +14,9 @@
     <main
       class="page-main"
       data-application-root
-      data-application-config='{"apiBase":"/api/v3","basePath":"","path":"/","search":""}'
+      data-application-config='{"apiBase":"/api/v3","basePath":"","path":"/","search":"","styleNonce":"browser-smoke"}'
     ></main>
-    <script>
+    <script nonce="browser-smoke">
       const applicationRoot = document.querySelector("[data-application-root]");
       const applicationConfig = JSON.parse(
         applicationRoot.dataset.applicationConfig,

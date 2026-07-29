@@ -25,6 +25,7 @@ export interface ApplicationConfig {
   basePath: string;
   path: string;
   search: string;
+  styleNonce: string;
 }
 
 type Route =

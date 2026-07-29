@@ -8,6 +8,7 @@ const config = {
   basePath: "/marginalis",
   path: "/",
   search: "",
+  styleNonce: "test-style-nonce",
 };
 
 afterEach(() => {

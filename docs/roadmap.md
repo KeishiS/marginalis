@@ -6,8 +6,10 @@
 
 ## 現在地
 
-`v0.13.0`では、[#99](https://github.com/KeishiS/marginalis/issues/99)でCodeMirror 6を採用し、
-長いAsciiDoc文書を執筆、分割、プレビューの表示を切り替えながら編集できる画面を整備しました。
+`v0.13.0`は公開準備中です。[#99](https://github.com/KeishiS/marginalis/issues/99)でCodeMirror 6を
+採用し、長いAsciiDoc文書を執筆、分割、プレビューの表示を切り替えながら編集できる画面を
+整備しました。[#112](https://github.com/KeishiS/marginalis/issues/112)で公開環境の受入時に
+判明した表示上の問題を修正し、再受入してから公開します。
 
 採用理由は[CodeMirror採用判断](adr/0003-codemirrorをasciidoc編集基盤に採用.md)、操作と制約は
 [AsciiDoc編集画面](web-ui-editor.md)で説明します。版別の確認結果は

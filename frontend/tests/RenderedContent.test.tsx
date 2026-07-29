@@ -40,10 +40,10 @@ test("公開属性で指定されたLaTeX数式をMathJaxの入力へ変換す�
   expect(container.textContent).toBe(prepared);
 });
 
-test("公開属性で指定された開始行からコードの各行へ番号を付ける", () => {
+test("コードブロックへ1から始まる行番号を付ける", () => {
   const container = document.createElement("div");
   container.innerHTML =
-    '<pre data-line-numbers="true" data-line-start="7"><code>first\nsecond\n</code></pre>';
+    '<figure class="source-block"><pre><code>first\nsecond\n</code></pre></figure>';
   const code = container.querySelector("code");
   const source = code?.textContent;
 
@@ -51,9 +51,9 @@ test("公開属性で指定された開始行からコードの各行へ番号�
 
   const rows = container.querySelectorAll(".source-line");
   expect(rows).toHaveLength(2);
-  expect(rows[0]).toHaveAttribute("data-line-number", "7");
+  expect(rows[0]).toHaveAttribute("data-line-number", "1");
   expect(rows[0]).toHaveTextContent("first");
-  expect(rows[1]).toHaveAttribute("data-line-number", "8");
+  expect(rows[1]).toHaveAttribute("data-line-number", "2");
   expect(rows[1]).toHaveTextContent("second");
   expect(code?.textContent).toBe(source);
 
@@ -61,17 +61,20 @@ test("公開属性で指定された開始行からコードの各行へ番号�
   expect(container.querySelectorAll(".source-line")).toHaveLength(2);
 });
 
-test("不正な開始行から行番号を推測しない", () => {
+test("不正な開始行を無視して1から行番号を付ける", () => {
   const container = document.createElement("div");
   container.innerHTML =
-    '<pre data-line-numbers="true" data-line-start="0"><code>first</code></pre>';
+    '<figure class="source-block"><pre data-line-start="0"><code>first</code></pre></figure>';
 
   enhanceSourceBlocks(container);
 
-  expect(container.querySelector(".source-line")).not.toBeInTheDocument();
+  expect(container.querySelector(".source-line")).toHaveAttribute(
+    "data-line-number",
+    "1",
+  );
 });
 
-test("属性がない要素や未対応の数式言語を推測しない", () => {
+test("source blockではないcode要素や未対応の数式言語を推測しない", () => {
   const container = document.createElement("div");
   container.innerHTML =
     '<code class="math-latex">x</code>' +
@@ -108,6 +111,57 @@ test("対応するAsciiDoc表示要素を一つのfixtureで固定する", () =>
   );
   expect(container.querySelector(".math-inline")).toBeTruthy();
   expect(container.querySelector(".math-display")).toBeTruthy();
+});
+
+test("非表示中に届いた数式を再表示時に組版する", async () => {
+  const typesetClear = vi.fn();
+  const typesetPromise = vi.fn().mockResolvedValue(undefined);
+  window.MathJax = {
+    startup: { promise: Promise.resolve() },
+    typesetClear,
+    typesetPromise,
+  };
+  const html = String.raw`<p>数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code></p>`;
+  const { rerender } = render(
+    <RenderedContent active={false} html={html} preview />,
+  );
+
+  expect(typesetPromise).not.toHaveBeenCalled();
+  expect(document.querySelector(".math-latex")).toHaveTextContent(
+    String.raw`\lambda`,
+  );
+
+  rerender(<RenderedContent active html={html} preview />);
+
+  await waitFor(() => expect(typesetPromise).toHaveBeenCalledOnce());
+  expect(typesetClear).toHaveBeenCalledOnce();
+  expect(document.querySelector(".math-inline")).toHaveTextContent(
+    String.raw`\(\lambda\)`,
+  );
+});
+
+test("組版済みの数式を表示方式の切り替え後も維持する", async () => {
+  const typesetPromise = vi.fn(async ([element]: HTMLElement[]) => {
+    const formula = element.querySelector(".math-inline");
+    const rendered = document.createElement("mjx-container");
+    formula?.replaceWith(rendered);
+  });
+  window.MathJax = {
+    startup: { promise: Promise.resolve() },
+    typesetPromise,
+  };
+  const html = String.raw`<p>数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code></p>`;
+  const { rerender } = render(<RenderedContent active html={html} preview />);
+
+  await waitFor(() =>
+    expect(document.querySelector("mjx-container")).toBeInTheDocument(),
+  );
+
+  rerender(<RenderedContent active html={html} />);
+
+  expect(document.querySelector("mjx-container")).toBeInTheDocument();
+  expect(document.querySelector(".math-latex")).not.toBeInTheDocument();
+  expect(typesetPromise).toHaveBeenCalledOnce();
 });
 
 test("MathJaxの組版失敗を利用者へ通知する", async () => {

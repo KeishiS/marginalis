@@ -165,9 +165,9 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 編集画面は結果の状態と診断操作だけを表示します。保存を拒否する診断と保存を妨げない診断は
 application層でそれぞれ`NoteValidationDiagnostic`と`NoteAdvisoryDiagnostic`に分けます。
 AsciiDoc文書の入力は`AsciiDocEditor.tsx`へ閉じ込めたCodeMirrorが担当し、Reactのフォーム状態には
-常に完全な文字列を渡します。CodeMirror側でAsciiDocを別の文書モデルへ変換しません。入力補助は
-`asciiDocEditing.ts`が返す一回の文字列編集として適用し、解析とHTML生成は引き続きサーバー側の
-AdocWeaveだけが担当します。採用理由と操作上の制約は
+常に完全な文字列を渡します。CodeMirror側でAsciiDocを別の文書モデルへ変換しません。解析と
+HTML生成はサーバー側のAdocWeaveだけが担当します。サーバーはHTMLごとにCSP nonceを生成し、
+CodeMirrorが実行時に作る基礎CSSだけを許可します。採用理由と操作上の制約は
 [CodeMirror採用判断](adr/0003-codemirrorをasciidoc編集基盤に採用.md)と
 [AsciiDoc編集画面](web-ui-editor.md)を参照してください。
 成功型は`error`を保持できず、失敗型はHTTP境界で常に`error`へ変換します。RESTでは位置と重大度を
@@ -178,10 +178,10 @@ AdocWeaveだけが担当します。採用理由と操作上の制約は
 境界条件を単体試験で確認します。base URLのサブパスを画面内URLへ反映する規則は`paths.ts`へ
 集約し、一覧と編集画面で同じ処理を使います。
 閲覧画面と編集プレビューは、サーバーが検査・生成したHTMLを`RenderedContent.tsx`だけから
-表示します。この境界では、AdocWeaveの公開`data-*`属性だけからコードの言語と行番号、
-数式の言語と表示形式を受け取ります。コード本文はtextとして行へ分け、数式もtextとして
-MathJaxへ渡し、要素名、class、親子関係から意味を推測しません。表と長いコードのスクロール領域、
-MathJaxの組版失敗通知も同じ表示境界へ置きます。外部CDNや未検査のHTMLは追加しません。
+表示します。この境界では、AdocWeaveが公開する`figure.source-block`と`data-*`属性からコードの
+範囲、言語、開始行、数式の言語と表示形式を受け取ります。コード本文はtextとして行へ分け、
+数式もtextとしてMathJaxへ渡します。表と長いコードのスクロール領域、MathJaxの組版失敗通知も
+同じ表示境界へ置きます。外部CDNや未検査のHTMLは追加しません。
 Viteの成果物はGitで管理せず、開発時は`cargo make`、
 配布時はNixが`frontend/dist`を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
 外部URLはViteで固定せず、Rustの`external_path`でbase URLのサブパスを反映する。

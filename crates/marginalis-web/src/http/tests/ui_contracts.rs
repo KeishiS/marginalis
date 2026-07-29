@@ -309,6 +309,13 @@ async fn editor_pages_embed_subpath_configuration_without_note_content() {
         .await
         .expect("create page");
     assert_eq!(create.status(), StatusCode::OK);
+    let content_security_policy = create
+        .headers()
+        .get(header::CONTENT_SECURITY_POLICY)
+        .expect("Content-Security-Policy")
+        .to_str()
+        .expect("Content-Security-Policy value")
+        .to_owned();
     let body = to_bytes(create.into_body(), usize::MAX)
         .await
         .expect("create body");
@@ -319,6 +326,19 @@ async fn editor_pages_embed_subpath_configuration_without_note_content() {
     assert!(body.contains("&quot;path&quot;:&quot;/notes/new&quot;"));
     assert!(body.contains("src=\"/marginalis/assets/editor.js\""));
     assert!(body.contains("<noscript>"));
+    let nonce = body
+        .split_once("&quot;styleNonce&quot;:&quot;")
+        .and_then(|(_, rest)| rest.split_once("&quot;"))
+        .map(|(nonce, _)| nonce)
+        .expect("application style nonce");
+    assert_eq!(nonce.len(), 22);
+    assert!(
+        nonce
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    );
+    assert!(content_security_policy.contains(&format!("'nonce-{nonce}'")));
+    assert!(!content_security_policy.contains("'unsafe-inline'"));
 
     let edit = ui_app(vec![ui_note("非公開の本文を埋め込まない")], false, "/")
         .oneshot(authenticated_request(

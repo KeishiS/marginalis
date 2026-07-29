@@ -1,12 +1,15 @@
 export function enhanceSourceBlocks(container: HTMLElement) {
   for (const code of container.querySelectorAll<HTMLElement>(
-    "pre[data-line-numbers='true'][data-line-start] > code",
+    "figure.source-block > pre > code",
   )) {
     if (code.dataset.lineNumbersEnhanced === "true") continue;
     const startValue = code.parentElement?.dataset.lineStart;
-    if (!startValue || !/^[1-9][0-9]*$/.test(startValue)) continue;
-    const start = Number(startValue);
-    if (!Number.isSafeInteger(start) || start > 4_294_967_295) continue;
+    const requestedStart =
+      startValue && /^[1-9][0-9]*$/.test(startValue) ? Number(startValue) : 1;
+    const start =
+      Number.isSafeInteger(requestedStart) && requestedStart <= 4_294_967_295
+        ? requestedStart
+        : 1;
 
     const source = code.textContent ?? "";
     const hasTrailingNewline = source.endsWith("\n");

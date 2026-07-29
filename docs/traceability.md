@@ -37,7 +37,7 @@
 | REQ-UI-003 | React状態・画面単体試験、ブラウザー試験 | 一覧の復帰 |
 | REQ-UI-004 | AdocWeave診断、REST契約、TypeScript応答検査、React編集・UTF-8位置単体試験、ブラウザー試験 | 警告表示、診断からの修正 |
 | REQ-UI-005 | AdocWeave公開HTML・React描画fixture・MathJax失敗試験、ブラウザー試験 | 閲覧・プレビュー |
-| REQ-UI-006 | CodeMirror操作・入力補助単体試験、5,000行・320px幅・固定画像ブラウザー試験、配布容量検査 | 長文入力、IME、表示切替、キーボード保存 |
+| REQ-UI-006 | CodeMirror操作・CSP nonce単体試験、5,000行・320px幅・本番CSP・固定画像ブラウザー試験、配布容量検査 | 長文入力、IME、表示切替、キーボード保存 |
 | REQ-ACL-001 | application・SQLite・React試験 | 共有操作 |
 | REQ-ACL-002 | 公開契約検査 | なし |
 | REQ-ACL-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
