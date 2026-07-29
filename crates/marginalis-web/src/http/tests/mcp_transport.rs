@@ -248,6 +248,37 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
 }
 
 #[tokio::test]
+async fn mcp_rejects_malformed_authorization_headers_before_parsing_the_body() {
+    let malformed_headers = [
+        HeaderValue::from_static("Basic credentials"),
+        HeaderValue::from_static("Bearer"),
+        HeaderValue::from_static("Bearer first second"),
+        HeaderValue::from_bytes(&[0xff]).expect("opaque non-UTF-8 header"),
+    ];
+    for authorization in malformed_headers {
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header(header::CONTENT_TYPE, "text/plain")
+                    .header(header::ACCEPT, "application/json")
+                    .header(header::AUTHORIZATION, authorization)
+                    .body(Body::from("not JSON"))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(
+            response
+                .headers()
+                .get(header::WWW_AUTHENTICATE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.contains("error=\"invalid_token\""))
+        );
+    }
+}
+
+#[tokio::test]
 async fn authorization_server_failure_returns_service_unavailable() {
     let response = mcp_app_with_authenticator(Arc::new(UnavailableMcpAuthenticator))
         .oneshot(
@@ -647,6 +678,19 @@ async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
         .body(Body::empty())
         .expect("request");
     let rejected = mcp_app().oneshot(invalid_get).await.expect("response");
+    assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
+
+    let invalid_origin = Request::get("/mcp")
+        .header(
+            header::ORIGIN,
+            HeaderValue::from_bytes(&[0xff]).expect("opaque non-UTF-8 header"),
+        )
+        .body(Body::empty())
+        .expect("request");
+    let rejected = mcp_app()
+        .oneshot(invalid_origin)
+        .await
+        .expect("response");
     assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
 
     let native_get = Request::get("/mcp").body(Body::empty()).expect("request");

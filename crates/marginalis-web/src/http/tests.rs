@@ -2,7 +2,7 @@ use super::*;
 use async_trait::async_trait;
 use axum::{
     body::{Body, to_bytes},
-    http::{HeaderMap, Request},
+    http::{HeaderMap, HeaderValue, Request},
 };
 use marginalis_application::{
     AuthenticationUseCaseError, McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator,
@@ -16,7 +16,254 @@ use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, Note, NoteAccess, NoteDraft,
     NoteId, NoteListEntry, NoteSummary, Revision, UnixMillis, WebSession,
 };
+use std::{
+    io,
+    sync::{Mutex, OnceLock},
+};
 use tower::ServiceExt;
+use tracing_subscriber::fmt::MakeWriter;
+
+#[test]
+fn http_observability_classifies_response_outcomes() {
+    assert_eq!(http_outcome(StatusCode::OK), "success");
+    assert_eq!(http_outcome(StatusCode::FOUND), "success");
+    assert_eq!(http_outcome(StatusCode::NOT_FOUND), "rejected");
+    assert_eq!(http_outcome(StatusCode::SERVICE_UNAVAILABLE), "failure");
+}
+
+#[derive(Clone, Default)]
+struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedLogs {
+    fn clear(&self) {
+        self.0.lock().expect("captured logs").clear();
+    }
+
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().expect("captured logs").clone()).expect("UTF-8 logs")
+    }
+}
+
+impl io::Write for CapturedLogs {
+    fn write(&mut self, input: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_| io::Error::other("captured log lock was poisoned"))?
+            .extend_from_slice(input);
+        Ok(input.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for CapturedLogs {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+fn global_captured_logs() -> CapturedLogs {
+    static LOGS: OnceLock<CapturedLogs> = OnceLock::new();
+    LOGS.get_or_init(|| {
+        let logs = CapturedLogs::default();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .compact()
+            .with_writer(logs.clone())
+            .finish();
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("install captured log subscriber");
+        logs
+    })
+    .clone()
+}
+
+fn assert_log_line(logs: &str, expected_fields: &[&str]) {
+    assert!(
+        logs.lines()
+            .any(|line| expected_fields.iter().all(|field| line.contains(field))),
+        "次のfieldを同じログ行で確認できませんでした: {expected_fields:?}\n{logs}"
+    );
+}
+
+#[test]
+fn observability_logs_safe_http_and_mcp_results() {
+    let logs = global_captured_logs();
+    logs.clear();
+    let note_id = "0197c9bc-0000-7000-8000-000000000001";
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime");
+    runtime.block_on(async {
+        let response = app()
+            .oneshot(
+                Request::get(format!(
+                    "/api/v3/notes/{note_id}?search=must-not-be-logged"
+                ))
+                .header(header::COOKIE, "marginalis_session=secret-cookie")
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer secret-bearer")
+                    .body(Body::from("not-json-secret"))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Basic secret-basic")
+                    .body(Body::from("malformed-auth-body"))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer read-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":"list-id","method":"tools/call","params":{"name":"list_notes"}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer write-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":"unavailable-id","method":"tools/call","params":{"name":"create_note","arguments":{"source":"= Private title\n\nPrivate body"}}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer write-token")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":"private-id","method":"tools/call","params":{"name":"create_note","arguments":{"source":"private source"}}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+    });
+
+    let logs = logs.text();
+    assert_log_line(
+        &logs,
+        &[
+            "event=\"http.request.completed\"",
+            "request_id=",
+            "method=GET",
+            "path=\"/api/v3/notes/{note_id}\"",
+            "problem_code=\"authentication_required\"",
+            "status=401",
+            "outcome=\"rejected\"",
+            "latency_ms=",
+        ],
+    );
+    assert_log_line(
+        &logs,
+        &[
+            "event=\"mcp.request.completed\"",
+            "method=\"unknown\"",
+            "outcome=\"rejected\"",
+            "reason=\"parse-error\"",
+        ],
+    );
+    assert_log_line(
+        &logs,
+        &[
+            "event=\"mcp.authentication.failed\"",
+            "reason=\"token-format\"",
+        ],
+    );
+    assert_log_line(
+        &logs,
+        &[
+            "event=\"mcp.tool.completed\"",
+            "tool=\"list_notes\"",
+            "outcome=\"success\"",
+        ],
+    );
+    assert_log_line(
+        &logs,
+        &[
+            "event=\"mcp.tool.completed\"",
+            "tool=\"create_note\"",
+            "outcome=\"failure\"",
+            "reason=\"unavailable\"",
+        ],
+    );
+    assert_log_line(
+        &logs,
+        &[
+            "event=\"mcp.tool.completed\"",
+            "tool=\"create_note\"",
+            "outcome=\"rejected\"",
+            "reason=\"validation\"",
+        ],
+    );
+    for secret in [
+        note_id,
+        "must-not-be-logged",
+        "secret-cookie",
+        "secret-bearer",
+        "not-json-secret",
+        "private-id",
+        "private source",
+        "secret-basic",
+        "malformed-auth-body",
+        "list-id",
+        "unavailable-id",
+        "Private title",
+        "Private body",
+    ] {
+        assert!(
+            !logs.contains(secret),
+            "logs contain secret fixture: {secret}"
+        );
+    }
+}
 
 macro_rules! implement_note_boundaries {
     ($type:ty) => {

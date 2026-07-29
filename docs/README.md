@@ -14,6 +14,7 @@
 ## 運用者向け
 
 - [NixOSでの運用](nixos.md)
+- [ログと障害診断](observability.md)
 - [リリース手順](release.md)
 - [受入基準と版別結果](acceptance.md)
 
@@ -23,6 +24,7 @@
 - [文書管理方針](documentation.md)
 - [リポジトリ文書のAsciiDoc化評価](repository-asciidoc-evaluation.md)
 - [カバレッジ](coverage.md)
+- [ログと障害診断](observability.md)
 - [セキュリティ](security.md)
 - [要件定義](requirements.md)
 - [要件と検証の対応表](traceability.md)

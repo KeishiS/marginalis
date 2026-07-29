@@ -19,19 +19,19 @@ mod tests;
 pub use state::{ApiState, McpEndpoint};
 
 use super::{RequestId, assign_request_id};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
-    extract::DefaultBodyLimit,
+    extract::{DefaultBodyLimit, MatchedPath},
     http::{StatusCode, header},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use marginalis_contract::ProblemCode;
-use tower_http::trace::{DefaultOnResponse, TraceLayer};
-use tracing::{Level, info_span};
+use tower_http::trace::TraceLayer;
+use tracing::Span;
 
 use self::{
     assets::{editor_javascript, editor_stylesheet, mathjax_javascript, page_javascript},
@@ -137,18 +137,60 @@ pub fn router(state: ApiState) -> Router {
                         .get::<RequestId>()
                         .map(|id| id.0.as_str())
                         .unwrap_or("missing");
-                    info_span!(
+                    let path = request
+                        .extensions()
+                        .get::<MatchedPath>()
+                        .map(MatchedPath::as_str)
+                        .unwrap_or("<unmatched>");
+                    tracing::info_span!(
                         "http_request",
                         request_id,
                         method = %request.method(),
-                        path = request.uri().path(),
+                        path,
+                        problem_code = tracing::field::Empty,
                         note_diagnostic_count = tracing::field::Empty,
                     )
                 })
-                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+                .on_response(log_http_response)
+                .on_failure(()),
         )
         .layer(middleware::from_fn(security_headers))
         .layer(middleware::from_fn(assign_request_id))
+}
+
+fn log_http_response(response: &Response, latency: Duration, span: &Span) {
+    let status = response.status();
+    let outcome = http_outcome(status);
+    let latency_ms = u64::try_from(latency.as_millis()).unwrap_or(u64::MAX);
+    if status.is_server_error() {
+        tracing::error!(
+            parent: span,
+            event = "http.request.completed",
+            outcome,
+            status = status.as_u16(),
+            latency_ms,
+            "HTTP request completed"
+        );
+    } else {
+        tracing::info!(
+            parent: span,
+            event = "http.request.completed",
+            outcome,
+            status = status.as_u16(),
+            latency_ms,
+            "HTTP request completed"
+        );
+    }
+}
+
+fn http_outcome(status: StatusCode) -> &'static str {
+    if status.is_server_error() {
+        "failure"
+    } else if status.is_client_error() {
+        "rejected"
+    } else {
+        "success"
+    }
 }
 
 async fn openapi() -> Response {

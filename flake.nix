@@ -158,7 +158,8 @@
                 nativeBuildInputs = [ pkgs.openssl ];
               }
               ''
-                openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+                # Nix storeに保存されたfixtureを日をまたいで再利用しても失効しないようにする。
+                openssl req -x509 -newkey rsa:2048 -nodes -days 36500 \
                   -subj '/CN=Marginalis Kanidm Test CA' \
                   -addext 'basicConstraints=critical,CA:TRUE' \
                   -addext 'keyUsage=critical,keyCertSign' \
@@ -168,7 +169,7 @@
                   -addext 'subjectAltName=DNS:id.example.test' \
                   -keyout $out-key.pem -out request.pem
                 openssl x509 -req -in request.pem -CA ca-cert.pem -CAkey ca-key.pem \
-                  -CAcreateserial -days 1 -out $out-cert.pem \
+                  -CAcreateserial -days 36500 -out $out-cert.pem \
                   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:id.example.test')
                 mkdir -p $out
                 mv $out-key.pem $out/id-key.pem
@@ -178,7 +179,7 @@
                   -addext 'subjectAltName=DNS:marginalis.example.test' \
                   -keyout $out/app-key.pem -out app-request.pem
                 openssl x509 -req -in app-request.pem -CA ca-cert.pem -CAkey ca-key.pem \
-                  -CAserial ca-cert.srl -days 1 -out $out/app-cert.pem \
+                  -CAserial ca-cert.srl -days 36500 -out $out/app-cert.pem \
                   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:marginalis.example.test')
                 mv ca-cert.pem $out/ca.pem
               '';
@@ -194,7 +195,8 @@
               }
               ''
                 mkdir -p $out
-                openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+                # Nix storeに保存されたfixtureを日をまたいで再利用しても失効しないようにする。
+                openssl req -x509 -newkey rsa:2048 -nodes -days 36500 \
                   -subj '/CN=Marginalis MCP Test CA' \
                   -addext 'basicConstraints=critical,CA:TRUE' \
                   -addext 'keyUsage=critical,keyCertSign' \
@@ -204,7 +206,7 @@
                   -addext 'subjectAltName=DNS:auth.example.test' \
                   -keyout $out/server-key.pem -out server-request.pem
                 openssl x509 -req -in server-request.pem -CA $out/ca.pem -CAkey ca-key.pem \
-                  -CAcreateserial -days 1 -out $out/server-cert.pem \
+                  -CAcreateserial -days 36500 -out $out/server-cert.pem \
                   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:auth.example.test')
                 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
                   -out $out/signing-key.pem
@@ -577,8 +579,17 @@
               machine.wait_until_succeeds(
                   "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\" and .api_version == \"v3\"'"
               )
+              machine.wait_until_succeeds(
+                "systemctl status marginalis.service --no-pager --full | "
+                + "grep -F 'http.request.completed' | grep -F 'outcome=' | grep -Fq success"
+              )
               machine.succeed(
-                  "test $(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/oidc/login) = 503"
+                "test $(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/oidc/login) = 503"
+              )
+              machine.wait_until_succeeds(
+                "systemctl status marginalis.service --no-pager --full | "
+                + "grep -F 'http.request.completed' | grep -F 'status=503' | "
+                + "grep -F 'outcome=' | grep -Fq failure"
               )
               machine.succeed(
                   "curl -fsS http://127.0.0.1:3000/api/v3/openapi.json | jq -e '.openapi == \"3.1.0\"'"
@@ -729,7 +740,7 @@
               )
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
-                "journalctl -u marginalis.service -o cat | "
+                "timeout 5s journalctl --no-pager -u marginalis.service -o cat | "
                 + "grep -F 'unsupported database schema version 5; expected 11'"
               )
               machine.succeed("systemctl stop marginalis.service")
@@ -997,6 +1008,10 @@
               app.wait_for_unit("marginalis.service")
               app.wait_for_unit("nginx.service")
               app.wait_until_succeeds("curl -fsS http://127.0.0.1:3000/api/v3/health | grep -q '\"api_version\":\"v3\"'")
+              app.wait_until_succeeds(
+                "systemctl status marginalis.service --no-pager --full | "
+                + "grep -F 'http.request.completed' | grep -F 'outcome=' | grep -Fq success"
+              )
               app.succeed(
                 "headers=$(mktemp); "
                 + "curl --cacert ${kanidmDiscoveryCerts}/ca.pem -sS -D \"$headers\" -o /dev/null "
@@ -1007,6 +1022,11 @@
               app.succeed(
                 "test $(curl --cacert ${kanidmDiscoveryCerts}/ca.pem -sS -o /dev/null -w '%{http_code}' "
                 + "'https://marginalis.example.test/marginalis/auth/oidc/callback?code=invalid&state=invalid') = 401"
+              )
+              app.wait_until_succeeds(
+                "systemctl status marginalis.service --no-pager --full | "
+                + "grep -F 'http.request.completed' | grep -F 'status=401' | "
+                + "grep -F 'outcome=' | grep -Fq rejected"
               )
               app.succeed(
                 "sqlite3 /var/lib/marginalis/marginalis.sqlite \""
