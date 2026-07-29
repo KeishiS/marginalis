@@ -6,7 +6,7 @@ usage() {
   exit 2
 }
 
-secret_names='access_token|refresh_token|id_token|client_secret|authorization_code|csrf_token|code_verifier'
+secret_names='access_token|refresh_token|id_token|client_secret|authorization_code|csrf_token|code_verifier|state|nonce|code_challenge'
 secret_pattern="([Aa]uthorization:[[:space:]]*(Bearer|Basic)[[:space:]]+(?!\\[REDACTED\\])[^[:space:]]+|([Ss]et-[Cc]ookie:|[Cc]ookie:)[[:space:]]*(?!\\[REDACTED\\])[^[:space:]]+|\"(${secret_names}|code)\"[[:space:]]*:[[:space:]]*\"(?!\\[REDACTED\\])[^\"]+\"|(^|[?&[:space:]])(${secret_names}|code)=(?!\\[REDACTED\\])[^&[:space:]]+|\"(cookies|origins)\"[[:space:]]*:)"
 
 sanitize() {
@@ -16,8 +16,8 @@ sanitize() {
   sed -E \
     -e 's#([Aa]uthorization:[[:space:]]*(Bearer|Basic))[[:space:]]+[^[:space:]]+#\1 [REDACTED]#g' \
     -e 's#([Ss]et-[Cc]ookie:|[Cc]ookie:).*#\1 [REDACTED]#g' \
-    -e 's#("(access_token|refresh_token|id_token|client_secret|authorization_code|csrf_token|code_verifier|code)"[[:space:]]*:[[:space:]]*)"[^"]*"#\1"[REDACTED]"#g' \
-    -e 's#((^|[?&[:space:]])(access_token|refresh_token|id_token|client_secret|authorization_code|csrf_token|code_verifier|code)=)[^&[:space:]]+#\1[REDACTED]#g' \
+    -e 's#("(access_token|refresh_token|id_token|client_secret|authorization_code|csrf_token|code_verifier|state|nonce|code_challenge|code)"[[:space:]]*:[[:space:]]*)"[^"]*"#\1"[REDACTED]"#g' \
+    -e 's#((^|[?&[:space:]])(access_token|refresh_token|id_token|client_secret|authorization_code|csrf_token|code_verifier|state|nonce|code_challenge|code)=)[^&[:space:]]+#\1[REDACTED]#g' \
     "$input" >"$output"
 }
 
