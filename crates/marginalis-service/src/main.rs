@@ -23,6 +23,7 @@ async fn main() {
         Some("diagnose") if arguments.next().is_none() => maintenance::diagnose().await,
         Some("purge-expired") => maintenance::purge_expired().await,
         Some("export-archive") => maintenance::export_archive(arguments).await,
+        Some("migrate-archive") => maintenance::migrate_archive(arguments).await,
         Some("import-archive") => maintenance::import_archive(arguments).await,
         Some("validate-archive") => maintenance::validate_archive(arguments).await,
         Some("verify-restore") => maintenance::verify_restore(arguments).await,
@@ -34,6 +35,7 @@ async fn main() {
     if let Err(error) = result {
         let command = command.as_deref().unwrap_or("serve");
         let event = match command {
+            "migrate-archive" => "maintenance.archive_migration.failed",
             "validate-archive" => "maintenance.archive_validation.failed",
             "verify-restore" => "maintenance.restore_verification.failed",
             "verify-latest-backup" => "maintenance.backup_verification.failed",
@@ -59,4 +61,20 @@ fn initialize_tracing() {
         .with_writer(std::io::stderr)
         .compact()
         .init();
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn openapi_identity_matches_the_configured_note_profile() {
+        let document = marginalis_contract::openapi_document();
+        assert_eq!(
+            document["info"]["x-adocweave-package-version"],
+            marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
+        );
+        assert_eq!(
+            document["info"]["x-note-profile-version"],
+            marginalis_asciidoc::NOTE_PROFILE_VERSION
+        );
+    }
 }

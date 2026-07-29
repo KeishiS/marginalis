@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import mathJaxUrl from "mathjax/tex-svg.js?url";
-import { enhanceCodeBlocks, prepareMath } from "./renderedContentEnhancement";
+import { enhanceSourceBlocks, prepareMath } from "./renderedContentEnhancement";
 
 interface MathJaxRuntime {
   startup: { promise: Promise<void> };
@@ -30,7 +30,7 @@ export function RenderedContent({
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    enhanceCodeBlocks(element);
+    enhanceSourceBlocks(element);
     if (!prepareMath(element)) return;
     if (failedHtml === html) {
       element.dataset.mathStatus = "failed";

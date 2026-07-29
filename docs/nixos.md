@@ -40,16 +40,15 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは10です。旧versionを自動移行しません。
-schema 9以前のdatabaseとarchive v6以前は直接取り込めません。更新前の実行環境と`dataDir`を保全し、
-schema 10は空のdatabaseから開始してください。起動後はhealthと`marginalis diagnose`を確認し、
-新しいarchive v7を作成してください。
-schema 9から更新する経路は、v0.9.0で作成したarchive v7をschema 10へ取り込み、ノート、所有者、
-削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
+変更してください。現行のSQLite schema versionは11です。旧versionを起動時に自動移行しません。
+schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
+現行の`migrate-archive`でarchive 8へ変換してから、空のschema 11へ取り込んでください。
+この経路では全ノートをAdocWeave 0.17.0の規則で再検証し、題名、タグ、参照索引を再構築します。
+ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
 切戻す場合はserviceを停止し、更新後に作成したdatabaseを保全してから、更新前に退避した`dataDir`と
 実行環境を組み合わせて戻します。異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
-以前のschemaやarchiveには自動移行を提供しません。
+archive 7以外の旧archiveには移行操作を提供しません。
 
 reverse proxyは`/auth/`、`/api/`、`/mcp`、`/.well-known/`を同一オリジンへ転送します。
 サブパスでは通常endpointの外部prefixをupstreamへ渡す前に除去します。一方、RFC 8414/9728の
@@ -111,7 +110,7 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 ## バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは`marginalis-archive-7`で、AdocWeave package版`0.11.0`とnote profile版`3`を記録します。
+現行archiveは`marginalis-archive-8`で、AdocWeave package版`0.17.0`とnote profile版`4`を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 同じ段階で、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と重複も検証します。
 本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
@@ -128,6 +127,36 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 保持処理が検出した場合も削除前に失敗します。容量不足、権限、mount状態、SQLite errorを上記journalと
 `systemctl status`で確認し、原因を直してから再実行してください。不完全なディレクトリを削除する場合は、
 `COMPLETE`がないことと対象pathが`backupDirectory`直下であることを運用者が確認します。
+
+## v0.10.0からの移行
+
+v0.10.0のschema 10には、AdocWeave 0.11.0で導出した題名とタグが保存されています。現行版は
+AdocWeave 0.17.0でmetadataを再構築するため、databaseファイルを直接引き継ぎません。
+
+1. v0.10.0のserviceとdatabaseを使ってarchive 7を書き出し、同じ実行環境の
+   `validate-archive`と`verify-restore`を実行します。
+2. v0.10.0のNixOS generation、`dataDir`、archive 7を削除せずに保全します。
+3. 現行版の実行ファイルでarchive 7をarchive 8へ変換します。入力と出力には異なる絶対pathを
+   指定してください。入力は変更されず、既存の出力を上書きしません。
+
+   ```sh
+   sudo -u marginalis <現行版のmarginalis> migrate-archive \
+     --input /srv/marginalis-migration/archive-7.json \
+     --output /srv/marginalis-migration/archive-8.json
+   sudo -u marginalis <現行版のmarginalis> verify-restore \
+     --input /srv/marginalis-migration/archive-8.json
+   ```
+
+4. 移行が失敗した場合はarchive 8を取り込まず、v0.10.0へ戻ります。改行を残す複数行タグや
+   header後の属性操作など、[0.17移行判断](adocweave-v0.17-migration.md)に記載した差を
+   v0.10.0で修正し、archive 7の書き出しからやり直します。エラーに示された`position`は、
+   archiveの`notes`または`note_acl`配列内の1から始まる位置です。診断へ本文や識別子は
+   出力されません。
+5. 成功したarchive 8を、次節の手順で空のschema 11へ取り込みます。
+
+CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行操作を適用し、入力archiveの不変、
+旧archiveの直接取込拒否、schema 11でのノート、ACL、参照、削除状態、revisionの一致、archive 8の
+再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
 
 ## 復元と切戻し
 
@@ -203,6 +232,8 @@ databaseを作成・移行せず、OIDC client secret、Cookie、token、ノー�
 - backup成功・失敗: `maintenance.backup.completed`、`maintenance.backup.failed`
 - archive検証成功・失敗: `maintenance.archive_validation.completed`、
   `maintenance.archive_validation.failed`
+- archive移行成功・失敗: `maintenance.archive_migration.completed`、
+  `maintenance.archive_migration.failed`
 - 復元検証成功・失敗: `maintenance.restore_verification.completed`、
   `maintenance.restore_verification.failed`
 - backup検証成功・失敗: `maintenance.backup_verification.completed`、

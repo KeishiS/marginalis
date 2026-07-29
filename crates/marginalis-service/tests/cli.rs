@@ -62,9 +62,9 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-7");
-    assert_eq!(archive_json["adocweave_package_version"], "0.11.0");
-    assert_eq!(archive_json["note_profile_version"], 3);
+    assert_eq!(archive_json["format"], "marginalis-archive-8");
+    assert_eq!(archive_json["adocweave_package_version"], "0.17.0");
+    assert_eq!(archive_json["note_profile_version"], 4);
 
     let backup = directory.join("backup");
     let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
@@ -162,7 +162,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     assert!(!result.status.success());
 
     let unknown_field_archive = directory.join("unknown-field.json");
-    incompatible_json["adocweave_package_version"] = "0.11.0".into();
+    incompatible_json["adocweave_package_version"] = "0.17.0".into();
     incompatible_json["unexpected"] = true.into();
     fs::write(
         &unknown_field_archive,
@@ -227,6 +227,86 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
         !result.status.success(),
         "old bundle shape must be rejected"
     );
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
+#[test]
+fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
+    let directory = test_directory("archive-migration");
+    fs::create_dir(&directory).expect("test directory");
+    let input = directory.join("archive-7.json");
+    let output = directory.join("archive-8.json");
+    let previous = serde_json::json!({
+        "format": "marginalis-archive-7",
+        "adocweave_package_version": "0.11.0",
+        "note_profile_version": 3,
+        "notes": [{
+            "note_id": "0197c9bc-0000-7000-8000-000000000001",
+            "creator_issuer": "https://id.example.test",
+            "creator_subject": "alice",
+            "source": "= Note\n:source-language: rust\n:tags: {source-language}\n\nbody",
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "revision": 1,
+            "deleted_at_ms": null
+        }],
+        "note_acl": []
+    });
+    let input_bytes = serde_json::to_vec_pretty(&previous).expect("previous archive");
+    fs::write(&input, &input_bytes).expect("write previous archive");
+
+    let migration = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["migrate-archive", "--input"])
+        .arg(&input)
+        .arg("--output")
+        .arg(&output)
+        .output()
+        .expect("migrate archive");
+    assert!(
+        migration.status.success(),
+        "migration failed: {}",
+        String::from_utf8_lossy(&migration.stderr)
+    );
+    assert_eq!(fs::read(&input).expect("unchanged input"), input_bytes);
+    assert_eq!(
+        fs::metadata(&output)
+            .expect("migration output")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    let migrated: serde_json::Value =
+        serde_json::from_slice(&fs::read(&output).expect("read migration output"))
+            .expect("migrated JSON");
+    assert_eq!(migrated["format"], "marginalis-archive-8");
+    assert_eq!(migrated["adocweave_package_version"], "0.17.0");
+    assert_eq!(migrated["note_profile_version"], 4);
+
+    let invalid_input = directory.join("invalid-archive-7.json");
+    let invalid_output = directory.join("invalid-archive-8.json");
+    let mut invalid = previous;
+    invalid["notes"][0]["source"] =
+        concat!("= Note\n:tags: research, + \\", "\n  rust\n\nbody").into();
+    fs::write(
+        &invalid_input,
+        serde_json::to_vec_pretty(&invalid).expect("invalid previous archive"),
+    )
+    .expect("write invalid previous archive");
+    let rejected = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["migrate-archive", "--input"])
+        .arg(&invalid_input)
+        .arg("--output")
+        .arg(&invalid_output)
+        .output()
+        .expect("reject archive migration");
+    assert!(!rejected.status.success());
+    assert!(!invalid_output.exists());
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert!(stderr.contains("maintenance.archive_migration.failed"));
+    assert!(stderr.contains("archive note at position 1"));
+    assert!(!stderr.contains("research"));
 
     fs::remove_dir_all(&directory).expect("remove test directory");
 }
@@ -411,7 +491,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 10);
+    assert_eq!(report["database"]["schema"]["actual"], 11);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
 
     fs::remove_dir_all(&directory).expect("remove test directory");

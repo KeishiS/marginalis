@@ -12,8 +12,8 @@ ServerにAuth0を採用し、内蔵Authorization Serverを撤去しました。M
 Resourceの責務だけを担います。採用理由は
 [ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)を参照してください。
 
-現行のREST APIは`/api/v3`、SQLite schemaは10、note profileは3、アーカイブは
-`marginalis-archive-7`です。完全なAsciiDoc文書を保存の正本とし、OpenAPI、TypeScript
+次の公開候補ではAdocWeave 0.17.0へ移行し、SQLite schemaを11、note profileを4、アーカイブを
+`marginalis-archive-8`へ更新します。完全なAsciiDoc文書を保存の正本とし、OpenAPI、TypeScript
 クライアント、MCPツール定義を`marginalis-contract`から生成します。
 
 ## 移行の完了条件

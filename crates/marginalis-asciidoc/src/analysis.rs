@@ -110,9 +110,10 @@ pub(crate) fn validate_draft(draft: NoteDraft) -> Result<NoteDraft, Vec<NoteVali
                     }
                 }
                 let raw_tags = analysis
-                    .presentation()
-                    .attributes()
+                    .attribute_environment()
+                    .final_values()
                     .get("tags")
+                    .map(String::as_str)
                     .unwrap_or_default();
                 let tag_values = raw_tags.split(',').collect::<Vec<_>>();
                 if tag_values.len() > MAX_TAGS {
@@ -249,5 +250,58 @@ mod tests {
                 end: start + 9,
             })
         );
+    }
+
+    #[test]
+    fn tags_follow_the_final_source_ordered_attribute_environment() {
+        let redefine = validated("= Note\n:tags: research\n:tags: rust\n\nbody");
+        assert_eq!(redefine.tags, ["rust"]);
+
+        let unset = validated("= Note\n:tags: research\n:tags!:\n\nbody");
+        assert!(unset.tags.is_empty());
+
+        let reference =
+            validated("= Note\n:source-language: rust\n:tags: {source-language}\n\nbody");
+        assert_eq!(reference.tags, ["rust"]);
+    }
+
+    #[test]
+    fn multiline_tags_use_folded_values_and_reject_authored_line_breaks() {
+        let soft = validated(concat!("= Note\n:tags: research, \\", "\n  rust\n\nbody"));
+        assert_eq!(soft.tags, ["research", "rust"]);
+
+        let errors = validate_draft(NoteDraft {
+            source: concat!("= Note\n:tags: research, + \\", "\n  rust\n\nbody").into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect_err("hard continuation introduces a forbidden line break");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, NoteValidationCode::InvalidTag);
+    }
+
+    #[test]
+    fn attribute_operations_after_the_header_are_rejected() {
+        let errors = validate_draft(NoteDraft {
+            source: "= Note\n\n:tags: body\nbody".into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect_err("body attribute operation");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].code,
+            NoteValidationCode::UnsupportedDocumentAttribute
+        );
+        assert!(errors[0].span.is_some());
+    }
+
+    fn validated(source: &str) -> NoteDraft {
+        validate_draft(NoteDraft {
+            source: source.into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect("valid draft")
     }
 }

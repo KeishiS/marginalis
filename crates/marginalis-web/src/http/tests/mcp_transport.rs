@@ -132,9 +132,9 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     let profile: serde_json::Value = serde_json::from_slice(&body).expect("profile JSON");
     assert_eq!(
         profile["result"]["structuredContent"]["adocweave_package_version"],
-        "0.11.0"
+        "0.17.0"
     );
-    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 2);
+    assert_eq!(profile["result"]["structuredContent"]["profile_version"], 4);
     assert!(
         profile["result"]["structuredContent"]["examples"]
             .as_array()

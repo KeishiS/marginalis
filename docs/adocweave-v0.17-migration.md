@@ -1,0 +1,74 @@
+# AdocWeave 0.17移行判断
+
+## 目的
+
+この文書は、AdocWeave 0.11.0から0.17.0へ移行するときに確認した意味上の差と、Marginalisの
+保存形式を更新する判断を記録します。現行の入力方法は[REST API](rest-api.md)、データ移行の操作は
+[NixOSでの運用](nixos.md)を参照してください。
+
+## 固定する依存
+
+MarginalisはAdocWeave package版`0.17.0`を、release tagが指すcommit
+`01a5b63032f71d0ecbd173638c7094d2ec05fb17`で使用します。Rust toolchainはAdocWeaveが対応する
+`1.97.1`を維持します。通常のNix buildでは、crate内の`conformance/cases.json`をCargoの
+依存ソースから使用します。旧Marginalisを移行試験用にbuildする処理だけは、0.11.0の
+repository直下にあったfixtureを従来のcommitとハッシュで補います。
+
+## 同じ入力による比較
+
+0.11.0と0.17.0を別の作業コピーで実行し、同じ完全なAsciiDoc文書をMarginalisの保存規則へ
+渡しました。結果は次のとおりです。
+
+| 固定入力 | 0.11.0 | 0.17.0 | 判断 |
+| --- | --- | --- | --- |
+| `:tags:`を`research`から`rust`へ再定義 | 最終タグは`rust` | 最終タグは`rust` | 出現順の最終値を維持 |
+| `:tags!:`による解除 | タグなし | タグなし | 解除を許可 |
+| `\`による複数行のタグ値 | `research`と`\` | `research`と`rust` | 折り畳み後の値を採用 |
+| `+ \`による改行を含むタグ値 | `research`と`+ \` | `invalid_tag`で拒否 | 単一行というタグ規則を適用 |
+| `:tags: {source-language}` | 文字列`{source-language}` | 参照先の`rust` | 定義時点の属性値を採用 |
+| 文書header後の`:tags:` | 通常本文として保存 | 属性位置を示して拒否 | header外の属性操作を拒否 |
+
+再定義と解除は0.11.0でも最終値へ反映されていました。0.17.0では、複数行値と属性参照を
+出現位置に応じて評価するため、タグの導出結果または保存可否が変わります。Marginalisは
+`Analysis::attribute_environment()`の最終値だけからタグを導出し、独自に属性参照を展開しません。
+
+既存の固定入力では、許可する文書構造、include・passthrough・外部resourceの拒否、ノート参照、
+anchor、UTF-8 byte位置を持つ診断、URLの制限、50 MiBのHTML出力上限を維持しました。これらは
+AsciiDoc、HTTPおよびブラウザーの試験で継続して検査します。
+
+## HTML公開契約
+
+コードブロックでは、AdocWeaveの公開適合性fixtureに記載された次の情報だけを利用します。
+
+- `figure.source-block`と`figcaption`による題名
+- `pre`の`data-language`
+- `data-line-numbers="true"`と`data-line-start`による行番号指定
+
+Web UIは行番号指定がある`pre`だけを処理し、`code`の`textContent`を行へ分けて番号を表示します。
+元の改行と本文を保ち、classから言語や行番号の有無を推測しません。
+
+数式は`data-math-language="latexmath"`と`data-math-display="inline|block"`を選択条件とし、
+要素名、class、親子関係から表示形式を推測しません。MathJaxへ渡す内容は生成HTMLの
+`textContent`から取得し、HTMLとして再解釈しません。
+
+試験では公開fixtureの`stableContract`に相当するHTML断片と意味上の値を検査します。JSONのkey順、
+HTML属性の順序や空白など、上流が実装詳細としている項目は独立した契約にしません。
+
+## 保存形式の判断
+
+タグはSQLiteへ導出済みmetadataとして保存します。0.17.0で同じAsciiDoc文書から異なるタグまたは
+診断が得られるため、既存databaseをそのまま開くと、更新前のノートだけが旧規則のmetadataを
+保持します。この混在を避けるため、次の版へ更新します。
+
+- SQLite schema version：`11`
+- note profile version：`4`
+- archive形式：`marginalis-archive-8`
+
+schema 10は起動時に拒否します。更新時はv0.10.0でarchive 7を書き出し、`migrate-archive`で全ノートを
+0.17.0の規則により再検証してarchive 8へ変換し、空のschema 11へ取り込みます。移行処理は入力archiveを
+変更せず、出力先が既に存在する場合も上書きしません。一件でも新しい規則に合わないノートがあれば
+出力を作成せずに失敗します。失敗したノートまたはACL項目はarchive配列内の1から始まる位置で
+報告します。ノート本文、利用者識別子、ノートIDはログへ出力しません。
+
+切戻しでは、変更していないarchive 7、退避したschema 10の`dataDir`、v0.10.0の実行環境を組み合わせて
+使用します。schema 11またはarchive 8を旧実行環境へ読み込ませません。

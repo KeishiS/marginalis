@@ -26,6 +26,7 @@
 - [要件定義](requirements.md)
 - [要件と検証の対応表](traceability.md)
 - [アーキテクチャ](architecture.md)
+- [AdocWeave 0.17移行判断](adocweave-v0.17-migration.md)
 - [Auth0をMCPのAuthorization Serverに採用](adr/0001-auth0をmcpのauthorization-serverに採用.md)
 - [ブラウザーとMCPプロトコルの回帰テスト](protocol-regression.md)
 

@@ -8,6 +8,7 @@ use adocweave::resolution::{ActiveUrlPolicy, AuthoredUrlPolicy};
 use adocweave::semantic::MathLanguage;
 use adocweave::{
     AnalysisLimits, AnalysisOptions, DiagnosticProfile, OutputLimits, SyntaxMode, SyntaxOptions,
+    semantic::ExternalAttributes,
 };
 
 use crate::{DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_SOURCE_BYTES};
@@ -31,6 +32,7 @@ pub(crate) fn analysis_options() -> AnalysisOptions {
             },
         },
         diagnostics,
+        attributes: ExternalAttributes::default(),
     }
 }
 

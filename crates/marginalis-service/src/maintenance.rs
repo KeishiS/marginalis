@@ -5,7 +5,9 @@ mod backup;
 mod diagnostics;
 mod purge;
 
-pub(crate) use archive::{export_archive, import_archive, validate_archive, verify_restore};
+pub(crate) use archive::{
+    export_archive, import_archive, migrate_archive, validate_archive, verify_restore,
+};
 pub(crate) use backup::{backup, prune_backups, verify_latest_backup};
 pub(crate) use diagnostics::diagnose;
 pub(crate) use purge::purge_expired;
