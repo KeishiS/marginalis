@@ -278,10 +278,7 @@ mod tests {
         .expect("snapshot");
         let archive = create_archive(&snapshot);
         assert_eq!(archive.format, ARCHIVE_FORMAT);
-        assert_eq!(
-            archive.note_profile_version,
-            ARCHIVE_NOTE_PROFILE_VERSION
-        );
+        assert_eq!(archive.note_profile_version, ARCHIVE_NOTE_PROFILE_VERSION);
         assert_eq!(validate_archive(&archive), Ok(snapshot));
     }
 

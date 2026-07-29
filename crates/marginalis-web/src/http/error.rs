@@ -21,9 +21,7 @@ fn diagnostic_target(target: NoteValidationTarget) -> ValidationTargetResponse {
     }
 }
 
-pub(super) fn advisory_response(
-    diagnostic: NoteAdvisoryDiagnostic,
-) -> NoteDiagnosticResponse {
+pub(super) fn advisory_response(diagnostic: NoteAdvisoryDiagnostic) -> NoteDiagnosticResponse {
     NoteDiagnosticResponse {
         code: diagnostic.code,
         severity: match diagnostic.severity {
