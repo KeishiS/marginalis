@@ -173,6 +173,8 @@ MCP endpointはAuth0が`RS256`で署名したaccess tokenだけを受理しま�
 `iss`、公開MCP URLと一致する`aud`、有効期限、上流のKanidm issuer、`server-users`、
 `notes:*` scopeを検証します。Auth0上の`sub`は所有者IDに使用せず、上流issuer claimと
 上流subject claimの組を既存の所有者IDとして使用します。
+refresh tokenの発行に必要な`offline_access`は検証後に受理しますが、ノート操作の権限には変換しません。
+それ以外の未知のscopeを含むaccess tokenは拒否します。
 
 Auth0のrefresh tokenまたはgrantを取り消しても、発行済みのJWT access tokenをMarginalisが
 Auth0へ問い合わせて即時に無効化する仕組みはありません。Auth0の公式資料でも、利用者が既存tokenを
@@ -202,6 +204,7 @@ Auth0の設定では、次の公式資料を参照します。
 - [OIDC Enterprise Connectionのclaim mapping](https://auth0.com/docs/authenticate/identity-providers/enterprise-identity-providers/configure-pkce-claim-mapping-for-oidc)
 - [Access tokenの有効期間](https://auth0.com/docs/secure/tokens/access-tokens/update-access-token-lifetime)
 - [Refresh tokenの取消](https://auth0.com/docs/secure/tokens/refresh-tokens/revoke-refresh-tokens)
+- [Authorization Code + PKCEのtoken交換](https://auth0.com/docs/api/authentication/authorization-code-flow-with-pkce/get-token-pkce)
 - [Dynamic Client Registration](https://auth0.com/docs/get-started/applications/dynamic-client-registration)
 - [Third-party applicationの設定](https://auth0.com/docs/get-started/applications/third-party-applications/configure-third-party-applications)
 
