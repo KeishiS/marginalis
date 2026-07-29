@@ -48,21 +48,9 @@ while IFS= read -r -d '' source; do
     status=1
   fi
 
-  while IFS= read -r match; do
-    target="${match#']('}"
-    target="${target%')'}"
-    target="${target%%'#'*}"
-    case "$target" in
-      *://* | mailto:* | "")
-        continue
-        ;;
-    esac
-    resolved="$(dirname "$source")/$target"
-    if [[ ! -f "$resolved" ]]; then
-      echo "broken Markdown link: $source -> $target" >&2
-      status=1
-    fi
-  done < <(grep -oE '\]\([^)]*[.]md(#[^)]*)?\)' "$source" || true)
+  if ! bash .github/scripts/check-markdown-links.sh "$source"; then
+    status=1
+  fi
 done < <(git ls-files --cached --others --exclude-standard -z -- '*.md' | sort -z)
 
 exit "$status"
