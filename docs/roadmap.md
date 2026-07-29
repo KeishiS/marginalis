@@ -6,10 +6,10 @@
 
 ## 現在地
 
-`v0.9.0`は2026-07-28に公開しました。Issue
+`v0.10.0`は2026-07-29に公開しました。Issue
 [#24](https://github.com/KeishiS/marginalis/issues/24)の比較と実接続を経て、MCPのAuthorization
-ServerにAuth0を採用しました。現在は内蔵Authorization Serverを撤去し、MarginalisをProtected
-Resourceへ限定する移行を進めています。採用理由は
+ServerにAuth0を採用し、内蔵Authorization Serverを撤去しました。MarginalisはProtected
+Resourceの責務だけを担います。採用理由は
 [ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)を参照してください。
 
 現行のREST APIは`/api/v3`、SQLite schemaは10、note profileは3、アーカイブは
