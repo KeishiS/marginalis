@@ -155,7 +155,9 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 副作用の調整を担当し、状態遷移の規則をイベント処理へ分散させません。保存前プレビューの遅延、
 取消、最後に成功したHTMLの保持、入力変更時の古い診断の破棄は`useEditorPreview.ts`へ分離し、
 編集画面は結果の状態と診断操作だけを表示します。保存を拒否する診断と保存を妨げない診断は
-application層の共通型で重大度を区別し、成功したプレビューも診断を失わずREST層へ渡します。
+application層でそれぞれ`NoteValidationDiagnostic`と`NoteAdvisoryDiagnostic`に分けます。
+成功型は`error`を保持できず、失敗型はHTTP境界で常に`error`へ変換します。RESTでは位置と重大度を
+共通の`NoteDiagnostic`契約として返し、成功したプレビューも診断を失わず画面へ渡します。
 検証時に抽出したノート参照は作成、更新、プレビューで再利用し、同じ入力を参照抽出のためだけに
 再解析しません。競合する三つの文書の行対応は`editorConflict.ts`、問題と診断の表示規則は
 `editorPresentation.ts`へ置きます。これらはReactや通信に依存しないため、大きな文書を含む
