@@ -339,6 +339,13 @@
 
           nixos-module =
             let
+              disabled = nixpkgs.lib.nixosSystem {
+                inherit system;
+                modules = [
+                  self.nixosModules.default
+                  { system.stateVersion = "25.11"; }
+                ];
+              };
               evaluated = nixpkgs.lib.nixosSystem {
                 inherit system;
                 modules = [
@@ -456,6 +463,10 @@
               && assertion.message == "services.marginalis.mcp.enable must be true when authorization is set."
             ) authorizationWithoutMcp.config.assertions;
             assert evaluated.config.systemd.services.marginalis-diagnose.serviceConfig.ProtectKernelTunables;
+            assert builtins.elem evaluated.config.services.marginalis.package
+              evaluated.config.environment.systemPackages;
+            assert
+              !builtins.elem disabled.config.services.marginalis.package disabled.config.environment.systemPackages;
             assert
               evaluated.config.systemd.services.marginalis-purge-expired.serviceConfig.SystemCallFilter == [
                 "@system-service"
@@ -517,6 +528,9 @@
 
               testScript = ''
                 machine.wait_for_unit("marginalis.service")
+                machine.succeed(
+                  "test $(readlink -f $(command -v marginalis)) = ${probeServer}/bin/marginalis"
+                )
                 machine.succeed("test -f /var/lib/marginalis/service-started")
                 machine.succeed("systemctl restart marginalis.service")
                 machine.wait_for_unit("marginalis.service")
@@ -557,6 +571,9 @@
 
             testScript = ''
               machine.wait_for_unit("marginalis.service")
+              machine.succeed(
+                "test \"$(/run/current-system/sw/bin/marginalis --version)\" = 'marginalis 0.11.0'"
+              )
               machine.wait_until_succeeds(
                   "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\" and .api_version == \"v3\"'"
               )

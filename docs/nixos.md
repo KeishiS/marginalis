@@ -33,6 +33,14 @@ services.marginalis = {
 };
 ```
 
+`services.marginalis.enable = true;`にすると、サービスが使用する`services.marginalis.package`と
+同じパッケージの`marginalis`管理コマンドをシステムの`PATH`へ追加します。別途
+`environment.systemPackages`へ追加する必要はありません。反映後は次のコマンドで版を確認できます。
+
+```sh
+/run/current-system/sw/bin/marginalis --version
+```
+
 ## 秘密情報とデータの保存先
 
 `clientSecretFile` は systemd credential として渡され、Nix store に現れてはなりません。内部 CA の

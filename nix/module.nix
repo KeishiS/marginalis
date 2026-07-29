@@ -280,6 +280,9 @@ in
 
     networking.firewall.allowedTCPPorts = optionals cfg.openFirewall [ listenPort ];
 
+    # 管理コマンドとサービスが常に同じパッケージを使うよう、有効時だけシステムのPATHへ追加する。
+    environment.systemPackages = [ cfg.package ];
+
     systemd.services.marginalis = {
       description = "Marginalis research-note server";
       wantedBy = [ "multi-user.target" ];
