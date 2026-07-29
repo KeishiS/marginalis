@@ -154,6 +154,42 @@
                   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:marginalis.example.test')
                 mv ca-cert.pem $out/ca.pem
               '';
+          mcpAuthorizationFixture =
+            pkgs.runCommand "marginalis-mcp-authorization-fixture"
+              {
+                nativeBuildInputs = [
+                  pkgs.coreutils
+                  pkgs.jq
+                  pkgs.openssl
+                  pkgs.xxd
+                ];
+              }
+              ''
+                mkdir -p $out
+                openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+                  -subj '/CN=Marginalis MCP Test CA' \
+                  -addext 'basicConstraints=critical,CA:TRUE' \
+                  -addext 'keyUsage=critical,keyCertSign' \
+                  -keyout ca-key.pem -out $out/ca.pem
+                openssl req -newkey rsa:2048 -nodes \
+                  -subj '/CN=auth.example.test' \
+                  -addext 'subjectAltName=DNS:auth.example.test' \
+                  -keyout $out/server-key.pem -out server-request.pem
+                openssl x509 -req -in server-request.pem -CA $out/ca.pem -CAkey ca-key.pem \
+                  -CAcreateserial -days 1 -out $out/server-cert.pem \
+                  -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nsubjectAltName=DNS:auth.example.test')
+                openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+                  -out $out/signing-key.pem
+                modulus="$(
+                  openssl rsa -in $out/signing-key.pem -modulus -noout \
+                    | cut -d= -f2 | xxd -r -p | base64 -w0 \
+                    | tr '+/' '-_' | tr -d '='
+                )"
+                jq -n --arg modulus "$modulus" \
+                  '{keys:[{kty:"RSA",use:"sig",kid:"test-key",alg:"RS256",n:$modulus,e:"AQAB"}]}' \
+                  > $out/jwks.json
+                chmod 0400 $out/server-key.pem $out/signing-key.pem
+              '';
         in
         pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           nixos-module =
@@ -175,7 +211,7 @@
                       };
                       mcp = {
                         enable = true;
-                        externalAuthorization = {
+                        authorization = {
                           issuer = "https://evaluation.jp.auth0.com/";
                           upstreamIssuerClaim = "https://marginalis.example.test/claims/upstream-issuer";
                           upstreamSubjectClaim = "https://marginalis.example.test/claims/upstream-subject";
@@ -186,7 +222,7 @@
                   }
                 ];
               };
-              partialExternalAuthorization = nixpkgs.lib.nixosSystem {
+              partialAuthorization = nixpkgs.lib.nixosSystem {
                 inherit system;
                 modules = [
                   self.nixosModules.default
@@ -200,12 +236,12 @@
                         clientId = "marginalis";
                         clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
                       };
-                      mcp.externalAuthorization.issuer = "https://evaluation.jp.auth0.com/";
+                      mcp.authorization.issuer = "https://evaluation.jp.auth0.com/";
                     };
                   }
                 ];
               };
-              externalAuthorizationWithoutMcp = nixpkgs.lib.nixosSystem {
+              mcpWithoutAuthorization = nixpkgs.lib.nixosSystem {
                 inherit system;
                 modules = [
                   self.nixosModules.default
@@ -219,7 +255,26 @@
                         clientId = "marginalis";
                         clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
                       };
-                      mcp.externalAuthorization = {
+                      mcp.enable = true;
+                    };
+                  }
+                ];
+              };
+              authorizationWithoutMcp = nixpkgs.lib.nixosSystem {
+                inherit system;
+                modules = [
+                  self.nixosModules.default
+                  {
+                    system.stateVersion = "25.11";
+                    services.marginalis = {
+                      enable = true;
+                      baseUrl = "https://marginalis.example.test";
+                      oidc = {
+                        issuerUrl = "https://id.example.test";
+                        clientId = "marginalis";
+                        clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
+                      };
+                      mcp.authorization = {
                         issuer = "https://evaluation.jp.auth0.com/";
                         upstreamIssuerClaim = "https://marginalis.example.test/claims/upstream-issuer";
                         upstreamSubjectClaim = "https://marginalis.example.test/claims/upstream-subject";
@@ -232,7 +287,7 @@
             in
             assert evaluated.config.networking.firewall.allowedTCPPorts == [ 3000 ];
             assert
-              evaluated.config.systemd.services.marginalis.environment.MARGINALIS_MCP_EXTERNAL_ISSUER
+              evaluated.config.systemd.services.marginalis.environment.MARGINALIS_MCP_AUTHORIZATION_ISSUER
               == "https://evaluation.jp.auth0.com/";
             assert
               evaluated.config.systemd.services.marginalis-diagnose.environment.MARGINALIS_MCP_GROUPS_CLAIM
@@ -241,16 +296,20 @@
               assertion:
               !assertion.assertion
               &&
-                assertion.message
-                == "services.marginalis.mcp.externalAuthorization options must be all set or all unset."
-            ) partialExternalAuthorization.config.assertions;
+                assertion.message == "services.marginalis.mcp.authorization options must be all set or all unset."
+            ) partialAuthorization.config.assertions;
             assert builtins.any (
               assertion:
               !assertion.assertion
               &&
                 assertion.message
-                == "services.marginalis.mcp.enable must be true when externalAuthorization is set."
-            ) externalAuthorizationWithoutMcp.config.assertions;
+                == "services.marginalis.mcp.authorization options must be set when MCP is enabled."
+            ) mcpWithoutAuthorization.config.assertions;
+            assert builtins.any (
+              assertion:
+              !assertion.assertion
+              && assertion.message == "services.marginalis.mcp.enable must be true when authorization is set."
+            ) authorizationWithoutMcp.config.assertions;
             assert evaluated.config.systemd.services.marginalis-diagnose.serviceConfig.ProtectKernelTunables;
             assert
               evaluated.config.systemd.services.marginalis-purge-expired.serviceConfig.SystemCallFilter == [
@@ -477,11 +536,11 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 9'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 10'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 9; PRAGMA journal_mode=WAL'"
+                + "'UPDATE schema_migrations SET version = 10; PRAGMA journal_mode=WAL'"
               )
               machine.succeed("rm -f /var/lib/marginalis/marginalis.sqlite*")
               machine.succeed(
@@ -509,19 +568,147 @@
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "journalctl -u marginalis.service -o cat | "
-                + "grep -F 'unsupported database schema version 5; expected 9'"
+                + "grep -F 'unsupported database schema version 5; expected 10'"
               )
               machine.succeed("systemctl stop marginalis.service")
               machine.fail("systemctl start marginalis-diagnose.service")
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 5 and .database.schema.expected == 9'"
+                + "'.database.schema.ok == false and .database.schema.actual == 5 and .database.schema.expected == 10'"
               )
             '';
           };
 
-          # 実 Kanidm 1.10、private CA、nginx TLS、subpathを通して、Discoveryと
+          mcp-authorization-vm = pkgs.testers.nixosTest {
+            name = "marginalis-mcp-authorization";
+            nodes.authorization = {
+              networking.firewall.allowedTCPPorts = [ 443 ];
+              environment.systemPackages = [ pkgs.python3 ];
+              systemd.services.mcp-authorization-fixture = {
+                wantedBy = [ "multi-user.target" ];
+                after = [ "network.target" ];
+                serviceConfig.ExecStart = "${pkgs.python3}/bin/python3 ${pkgs.writeText "mcp-authorization-fixture.py" ''
+                  import http.server
+                  import json
+                  import ssl
+
+                  fixture = "${mcpAuthorizationFixture}"
+                  metadata = {
+                      "issuer": "https://auth.example.test/",
+                      "jwks_uri": "https://auth.example.test/jwks.json",
+                  }
+
+                  class Handler(http.server.BaseHTTPRequestHandler):
+                      def do_GET(self):
+                          if self.path == "/.well-known/oauth-authorization-server":
+                              body = json.dumps(metadata).encode()
+                          elif self.path == "/jwks.json":
+                              with open(f"{fixture}/jwks.json", "rb") as source:
+                                  body = source.read()
+                          else:
+                              self.send_error(404)
+                              return
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+
+                      def log_message(self, format, *args):
+                          pass
+
+                  server = http.server.ThreadingHTTPServer(("0.0.0.0", 443), Handler)
+                  context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                  context.load_cert_chain(
+                      f"{fixture}/server-cert.pem", f"{fixture}/server-key.pem"
+                  )
+                  server.socket = context.wrap_socket(server.socket, server_side=True)
+                  server.serve_forever()
+                ''}";
+              };
+            };
+            nodes.app = {
+              imports = [ self.nixosModules.default ];
+              system.stateVersion = "25.11";
+              networking.hosts."192.168.1.2" = [ "auth.example.test" ];
+              security.pki.certificateFiles = [ "${mcpAuthorizationFixture}/ca.pem" ];
+              environment.etc."marginalis-test/oidc-client-secret".text = "test-only-secret";
+              environment.systemPackages = [
+                pkgs.coreutils
+                pkgs.curl
+                pkgs.jq
+                pkgs.openssl
+              ];
+              services.marginalis = {
+                enable = true;
+                baseUrl = "https://marginalis.example.test";
+                oidc = {
+                  issuerUrl = "https://id.example.test";
+                  clientId = "marginalis";
+                  clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
+                };
+                mcp = {
+                  enable = true;
+                  authorization = {
+                    issuer = "https://auth.example.test/";
+                    upstreamIssuerClaim = "https://marginalis.example.test/claims/upstream-issuer";
+                    upstreamSubjectClaim = "https://marginalis.example.test/claims/upstream-subject";
+                    groupsClaim = "https://marginalis.example.test/claims/groups";
+                  };
+                };
+              };
+            };
+
+            testScript = ''
+              authorization.start()
+              authorization.wait_for_unit("mcp-authorization-fixture.service")
+              app.start()
+              app.wait_for_unit("marginalis.service")
+              app.wait_until_succeeds(
+                "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\"'"
+              )
+              app.succeed(
+                "curl -fsS http://127.0.0.1:3000/.well-known/oauth-protected-resource/mcp "
+                + "| jq -e '.resource == \"https://marginalis.example.test/mcp\" "
+                + "and .authorization_servers == [\"https://auth.example.test/\"]'"
+              )
+              app.succeed(
+                "header=$(printf '%s' '{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"test-key\"}' "
+                + "| base64 -w0 | tr '+/' '-_' | tr -d '='); "
+                + "payload=$(printf '%s' '{\"iss\":\"https://auth.example.test/\","
+                + "\"aud\":\"https://marginalis.example.test/mcp\",\"exp\":4102444800,"
+                + "\"https://marginalis.example.test/claims/upstream-issuer\":\"https://id.example.test/\","
+                + "\"https://marginalis.example.test/claims/upstream-subject\":\"test-user\","
+                + "\"https://marginalis.example.test/claims/groups\":[\"server-users\"],"
+                + "\"scope\":\"notes:read notes:write notes:delete\"}' "
+                + "| base64 -w0 | tr '+/' '-_' | tr -d '='); "
+                + "signature=$(printf '%s' \"$header.$payload\" "
+                + "| openssl dgst -sha256 -sign ${mcpAuthorizationFixture}/signing-key.pem "
+                + "| base64 -w0 | tr '+/' '-_' | tr -d '='); "
+                + "token=\"$header.$payload.$signature\"; "
+                + "curl -fsS -H \"Authorization: Bearer $token\" "
+                + "-H 'Accept: application/json, text/event-stream' "
+                + "-H 'Content-Type: application/json' "
+                + "--data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' "
+                + "http://127.0.0.1:3000/mcp "
+                + "| jq -e '.result.tools | length > 0'"
+              )
+              app.succeed(
+                "journalctl -u marginalis.service -o cat "
+                + "| grep -Fq 'mcp.authorization.discovery.completed'"
+              )
+              authorization.succeed("systemctl stop mcp-authorization-fixture.service")
+              app.succeed("systemctl restart marginalis.service || true")
+              app.wait_until_succeeds(
+                "journalctl -u marginalis.service -o cat "
+                + "| grep -Fq 'mcp.authorization.discovery.failed'"
+              )
+              app.succeed("systemctl stop marginalis.service")
+            '';
+          };
+
+          # 実 Kanidm 1.10、private CA、nginx TLS、subpathを通して、Web用OIDC Discoveryと
           # browser login開始を確認する。対話loginとgroup変更は手動受入で扱う。
           kanidm-discovery-vm = pkgs.testers.nixosTest {
             name = "marginalis-kanidm-discovery";
@@ -590,10 +777,6 @@
                     sslCertificate = "${kanidmDiscoveryCerts}/app-cert.pem";
                     sslCertificateKey = "${kanidmDiscoveryCerts}/app-key.pem";
                     locations."/marginalis/".proxyPass = "http://127.0.0.1:3000/";
-                    locations."/.well-known/oauth-authorization-server/marginalis".proxyPass =
-                      "http://127.0.0.1:3000/.well-known/oauth-authorization-server/marginalis";
-                    locations."/.well-known/oauth-protected-resource/marginalis/mcp".proxyPass =
-                      "http://127.0.0.1:3000/.well-known/oauth-protected-resource/marginalis/mcp";
                   };
                 };
                 services.marginalis = {
@@ -605,7 +788,6 @@
                     clientSecretFile = "/etc/marginalis-test/oidc-client-secret";
                     caCertificateFile = "${kanidmDiscoveryCerts}/ca.pem";
                   };
-                  mcp.enable = true;
                 };
               };
             testScript = ''
@@ -626,12 +808,6 @@
               app.wait_for_unit("marginalis.service")
               app.wait_for_unit("nginx.service")
               app.wait_until_succeeds("curl -fsS http://127.0.0.1:3000/api/v3/health | grep -q '\"api_version\":\"v3\"'")
-              app.succeed(
-                "curl --cacert ${kanidmDiscoveryCerts}/ca.pem -fsS https://marginalis.example.test/.well-known/oauth-authorization-server/marginalis | ${pkgs.jq}/bin/jq -e '.issuer == \"https://marginalis.example.test/marginalis\"'"
-              )
-              app.succeed(
-                "curl --cacert ${kanidmDiscoveryCerts}/ca.pem -fsS https://marginalis.example.test/.well-known/oauth-protected-resource/marginalis/mcp | ${pkgs.jq}/bin/jq -e '.resource == \"https://marginalis.example.test/marginalis/mcp\"'"
-              )
               app.succeed(
                 "headers=$(mktemp); "
                 + "curl --cacert ${kanidmDiscoveryCerts}/ca.pem -sS -D \"$headers\" -o /dev/null "
@@ -662,18 +838,6 @@
                 + "/tmp/playwright-raw.log /tmp/playwright.log; "
                 + "bash ${./.github/scripts/protocol-artifact.sh} check /tmp/playwright.log; "
                 + "cat /tmp/playwright.log; exit $status"
-              )
-              for operation in ["registration", "authorization", "consent", "revocation"]:
-                app.succeed(
-                  "journalctl -u marginalis.service "
-                  + "| grep 'mcp.oauth.operation.completed' "
-                  + f"| grep 'operation=\"{operation}\"'"
-                )
-              app.succeed(
-                "journalctl -u marginalis.service "
-                + "| grep 'mcp.oauth.operation.failed' "
-                + "| grep 'operation=\"consent\"' "
-                + "| grep 'status=403'"
               )
               app.succeed("journalctl -u marginalis.service | grep -q 'Marginalis server listening'")
               app.succeed("! journalctl -u marginalis.service | grep -q 'OIDC discovery is unavailable'")
