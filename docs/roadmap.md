@@ -6,15 +6,15 @@
 
 ## 現在地
 
-`v0.10.0`は2026-07-29に公開しました。Issue
+`v0.11.0`は2026-07-29に公開しました。Issue
 [#24](https://github.com/KeishiS/marginalis/issues/24)の比較と実接続を経て、MCPのAuthorization
 ServerにAuth0を採用し、内蔵Authorization Serverを撤去しました。MarginalisはProtected
 Resourceの責務だけを担います。採用理由は
 [ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)を参照してください。
 
-次の公開候補ではAdocWeave 0.17.0へ移行し、SQLite schemaを11、note profileを4、アーカイブを
-`marginalis-archive-8`へ更新します。完全なAsciiDoc文書を保存の正本とし、OpenAPI、TypeScript
-クライアント、MCPツール定義を`marginalis-contract`から生成します。
+v0.11.0ではAdocWeave 0.17.0へ移行し、SQLite schemaを11、note profileを4、アーカイブを
+`marginalis-archive-8`へ更新しました。完全なAsciiDoc文書を保存の正本とし、OpenAPI、
+TypeScriptクライアント、MCPツール定義を`marginalis-contract`から生成します。
 
 ## 移行の完了条件
 
