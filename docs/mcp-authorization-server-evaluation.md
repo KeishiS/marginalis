@@ -110,7 +110,8 @@ ChatGPT、Claude Code、Codex CLIごとに、次の順序で確認します。
 Auth0側には、次の値を設定します。API identifierはMarginalisの公開MCP URLと完全に一致させ、
 署名アルゴリズムには`RS256`を使用します。APIには`notes:read`、`notes:write`、
 `notes:delete`を定義します。Resource Parameter Compatibility Profileを有効にし、MCPクライアントが
-送る`resource`をAPI identifierと同じ対象へ結び付けます。
+送る`resource`をAPI identifierと同じ対象へ結び付けます。Maximum Access Token Lifetimeは評価時に
+`300`秒とし、Refresh Token RotationとAllow Offline Accessを有効にします。
 
 | 設定 | 値 |
 | --- | --- |
@@ -154,6 +155,22 @@ MCP endpointはAuth0が`RS256`で署名したaccess tokenだけを受理しま�
 `notes:*` scopeを検証します。Auth0上の`sub`は所有者IDに使用せず、上流issuer claimと
 上流subject claimの組を既存の所有者IDとして使用します。
 
+Auth0のrefresh tokenまたはgrantを取り消しても、発行済みのJWT access tokenをMarginalisが
+Auth0へ問い合わせて即時に無効化する仕組みはありません。Auth0の公式資料でも、利用者が既存tokenを
+使えなくなるのは現在のaccess tokenが期限切れになった後と説明されています。Marginalisは期限検証に
+5秒だけ時刻差の猶予を設けるため、300秒のtokenでは取消から拒否までの理論上限を305秒とします。
+実接続では次を秒単位で記録します。
+
+1. access tokenとrefresh tokenを発行し、MCP読み取りに成功することを確認します。
+2. Auth0で対象applicationへの認可またはrefresh tokenを取り消します。
+3. 同じaccess tokenを10秒ごとに再送し、最後に成功した時刻と最初に`401`となった時刻を記録します。
+4. 取り消したrefresh tokenによる交換が失敗することを確認します。
+5. 再認可して接続を回復できることを確認します。
+
+305秒の取消遅延を許容できない場合、Auth0を採用しません。Marginalis側にtoken denylistやAuth0の
+通知処理を追加すると、外部化によって実装と保存データを減らす目的に反するため、評価adapterには
+追加しません。
+
 このadapterはIssue #24の評価用です。実接続の結果とADRが承認されるまでは、本番設定へ追加せず、
 内蔵Authorization Serverを削除しません。外部設定中も内蔵OAuth endpoint自体は応答しますが、
 そこで発行したtokenはMCP endpointで拒否されます。
@@ -164,6 +181,8 @@ Auth0の設定では、次の公式資料を参照します。
 - [JSON Web Key Sets](https://auth0.com/docs/secure/tokens/json-web-tokens/locate-json-web-key-sets)
 - [Access tokenのcustom claim](https://auth0.com/docs/secure/tokens/json-web-tokens/create-custom-claims)
 - [OIDC Enterprise Connectionのclaim mapping](https://auth0.com/docs/authenticate/identity-providers/enterprise-identity-providers/configure-pkce-claim-mapping-for-oidc)
+- [Access tokenの有効期間](https://auth0.com/docs/secure/tokens/access-tokens/update-access-token-lifetime)
+- [Refresh tokenの取消](https://auth0.com/docs/secure/tokens/refresh-tokens/revoke-refresh-tokens)
 
 ### Keycloak
 
