@@ -41,6 +41,9 @@ Connection、Login Action、Universal Loginの設定と可用性が運用上の�
 
 Auth0でgrantやrefresh tokenを取り消しても、発行済みJWT access tokenは有効期限まで利用できる場合が
 あります。最大遅延を受入試験で測定し、許容値を運用判断として記録します。
+接続解除ではrefresh tokenだけを残さず、同じ利用者・application・API audienceのauthorization grantも
+削除するため、tenant設定の`Refresh Token Revocation Deletes Grant`を有効にします。この設定が
+tenant内の全applicationへ影響することを運用上の前提とします。
 
 ## 代替案
 

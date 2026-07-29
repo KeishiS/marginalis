@@ -37,6 +37,8 @@ Auth0では、次の設定を一組として管理します。具体的な画面
 - MCP URLと完全に一致するAPI identifier
 - `notes:read`、`notes:write`、`notes:delete`のAPI permission
 - Dynamic Client Registrationと第三者アプリケーション用の既定permission
+- refresh token取消時に同じauthorization grantを削除する
+  `Refresh Token Revocation Deletes Grant`
 - Kanidmへ接続するdomain-level OIDC Enterprise Connection
 - New Universal Login
 - RFC 8707の`resource`をAPI audienceへ対応付けるResource Parameter Compatibility Profile
@@ -151,6 +153,11 @@ Auth0でrefresh tokenやgrantを取り消しても、すでに発行された自
 受理される場合があります。運用上許容する最大遅延と測定方法は
 [評価記録](mcp-authorization-server-evaluation.md)に従います。即時失効が必要になった場合は、
 token denylistまたはtoken introspectionを別途設計します。
+
+`Refresh Token Revocation Deletes Grant`を有効にするため、RFC 7009 endpointでrefresh tokenを
+取り消すと、同じ利用者・application・API audienceのauthorization grantと関連refresh tokenも
+取り消されます。これはtenant全体の動作です。MCPクライアントは接続解除時に最新refresh tokenを
+取り消し、保存したcredentialを削除します。
 
 ## MCPの通信仕様
 

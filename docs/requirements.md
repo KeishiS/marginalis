@@ -57,6 +57,10 @@
   identityとgroupを検証すること。
 - **REQ-API-005 — MCP権限範囲**: MCPの`scope`は操作の種類だけを制限し、操作できる
   ノートの範囲を広げないこと。
+- **REQ-API-006 — MCP接続解除**: MCPクライアントは接続解除時にAuthorization Serverの
+  RFC 7009 endpointで最新refresh tokenとauthorization grantを取り消し、保存したcredentialを
+  削除すること。Marginalisは認可取消APIを公開せず、既発行JWT access tokenが拒否されるまでの
+  時間を運用受入で測定すること。
 - **REQ-UI-001 — React画面**: 一覧、閲覧、編集、共有設定を一つのReactアプリケーションから
   REST APIを利用して提供すること。
 - **REQ-UI-002 — 応答検査**: Web UIはREST応答を実行時に検査し、解釈できない応答を
