@@ -6,19 +6,14 @@
 
 ## 現在地
 
-`v0.14.0`は公開準備中です。[#99](https://github.com/KeishiS/marginalis/issues/99)でCodeMirror 6を
-採用し、長いAsciiDoc文書を執筆、分割、プレビューの表示を切り替えながら編集できる画面を
-整備しました。[#112](https://github.com/KeishiS/marginalis/issues/112)では公開環境の受入時に
-判明した表示上の問題を修正し、再受入を完了しました。
+`v0.14.0`では、CodeMirror 6を採用したAsciiDoc編集画面と、構造化ログの監視契約を公開しました。
+操作と制約は[AsciiDoc編集画面](web-ui-editor.md)、採用理由は
+[CodeMirror採用判断](adr/0003-codemirrorをasciidoc編集基盤に採用.md)で説明します。
 
-[#110](https://github.com/KeishiS/marginalis/issues/110)では構造化ログの監視契約を更新し、
-設計境界、秘密情報、文書、CI経路を継続的に検査できるようにしました。これらの変更が同じ
-`main`にそろったため、v0.13.0は公開せず、[#115](https://github.com/KeishiS/marginalis/issues/115)で
-v0.14.0として公開します。
-
-採用理由は[CodeMirror採用判断](adr/0003-codemirrorをasciidoc編集基盤に採用.md)、操作と制約は
-[AsciiDoc編集画面](web-ui-editor.md)で説明します。版別の確認結果は
-[v0.14.0受入結果](acceptance-results/v0.14.0.md)へ記録します。
+現在は[#121](https://github.com/KeishiS/marginalis/issues/121)で、フロントエンドのパッケージ管理を
+pnpmへ統一し、画面全体のデザイン体系、共通ヘッダー、保存成功時のトーストを追加した`v0.15.0`を
+公開します。画面構成と視覚表現は[Web UIの画面設計](web-ui-design.md)、版別の確認結果は
+[v0.15.0受入結果](acceptance-results/v0.15.0.md)へ記録します。
 
 ## 検索と関係グラフの評価
 
