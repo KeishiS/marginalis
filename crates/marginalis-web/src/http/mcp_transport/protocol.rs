@@ -1,9 +1,29 @@
 //! MCPの初期化とHTTP・JSON-RPC境界の検査。
 
 use axum::http::{HeaderMap, header};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 
-use crate::mcp::MCP_PROTOCOL_VERSION;
+use crate::mcp::{
+    JsonRpcRequest, MCP_PROTOCOL_VERSION, MODERN_MCP_PROTOCOL_VERSION,
+    SUPPORTED_MCP_PROTOCOL_VERSIONS,
+};
+
+const PROTOCOL_VERSION_META: &str = "io.modelcontextprotocol/protocolVersion";
+const CLIENT_CAPABILITIES_META: &str = "io.modelcontextprotocol/clientCapabilities";
+const CLIENT_INFO_META: &str = "io.modelcontextprotocol/clientInfo";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ProtocolEra {
+    Legacy,
+    Modern,
+}
+
+pub(super) enum ProtocolValidationError {
+    HeaderMismatch(&'static str),
+    UnsupportedVersion(String),
+    InvalidMetadata,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,6 +94,121 @@ pub(super) fn valid_tools_list_params(params: Option<&serde_json::Value>) -> boo
     })
 }
 
+pub(super) fn validate_protocol(
+    headers: &HeaderMap,
+    request: &JsonRpcRequest,
+) -> Result<ProtocolEra, ProtocolValidationError> {
+    let header_version = header_value(headers, "mcp-protocol-version");
+    let metadata = request
+        .params
+        .as_ref()
+        .and_then(serde_json::Value::as_object)
+        .and_then(|params| params.get("_meta"))
+        .and_then(serde_json::Value::as_object);
+    let metadata_version = metadata
+        .and_then(|meta| meta.get(PROTOCOL_VERSION_META))
+        .and_then(serde_json::Value::as_str);
+
+    let modern = header_version == Some(MODERN_MCP_PROTOCOL_VERSION)
+        || metadata_version == Some(MODERN_MCP_PROTOCOL_VERSION);
+    if modern {
+        let Some(header_version) = header_version else {
+            return Err(ProtocolValidationError::HeaderMismatch(
+                "MCP-Protocol-Version header is missing",
+            ));
+        };
+        let Some(metadata_version) = metadata_version else {
+            return Err(ProtocolValidationError::HeaderMismatch(
+                "protocol version metadata is missing",
+            ));
+        };
+        if header_version != metadata_version {
+            return Err(ProtocolValidationError::HeaderMismatch(
+                "protocol version header does not match request metadata",
+            ));
+        }
+        if header_version != MODERN_MCP_PROTOCOL_VERSION {
+            return Err(ProtocolValidationError::UnsupportedVersion(
+                header_version.into(),
+            ));
+        }
+        let Some(metadata) = metadata else {
+            return Err(ProtocolValidationError::InvalidMetadata);
+        };
+        if !metadata
+            .get(CLIENT_CAPABILITIES_META)
+            .is_some_and(serde_json::Value::is_object)
+            || metadata.get(CLIENT_INFO_META).is_some_and(
+                |client_info| match serde_json::from_value::<McpClientInfo>(client_info.clone()) {
+                    Ok(info) => info.name.trim().is_empty() || info.version.trim().is_empty(),
+                    Err(_) => true,
+                },
+            )
+        {
+            return Err(ProtocolValidationError::InvalidMetadata);
+        }
+        validate_modern_headers(headers, request)?;
+        return Ok(ProtocolEra::Modern);
+    }
+
+    if let Some(version) = header_version
+        && !matches!(version, MCP_PROTOCOL_VERSION | "2025-03-26")
+    {
+        return Err(ProtocolValidationError::UnsupportedVersion(version.into()));
+    }
+    Ok(ProtocolEra::Legacy)
+}
+
+fn validate_modern_headers(
+    headers: &HeaderMap,
+    request: &JsonRpcRequest,
+) -> Result<(), ProtocolValidationError> {
+    if header_value(headers, "mcp-method") != Some(request.method.as_str()) {
+        return Err(ProtocolValidationError::HeaderMismatch(
+            "Mcp-Method header does not match request method",
+        ));
+    }
+    if request.method == "tools/call" {
+        let body_name = request
+            .params
+            .as_ref()
+            .and_then(serde_json::Value::as_object)
+            .and_then(|params| params.get("name"))
+            .and_then(serde_json::Value::as_str)
+            .ok_or(ProtocolValidationError::InvalidMetadata)?;
+        let header_name = header_value(headers, "mcp-name")
+            .and_then(decode_mcp_name)
+            .ok_or(ProtocolValidationError::HeaderMismatch(
+                "Mcp-Name header is missing or malformed",
+            ))?;
+        if header_name != body_name {
+            return Err(ProtocolValidationError::HeaderMismatch(
+                "Mcp-Name header does not match request name",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn header_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+pub(super) fn decode_mcp_name(value: &str) -> Option<String> {
+    let Some(encoded) = value
+        .strip_prefix("=?base64?")
+        .and_then(|value| value.strip_suffix("?="))
+    else {
+        return Some(value.into());
+    };
+    let bytes = STANDARD.decode(encoded).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+pub(super) fn supported_versions() -> serde_json::Value {
+    serde_json::json!(SUPPORTED_MCP_PROTOCOL_VERSIONS)
+}
+
 pub(super) fn accepts_media_type(headers: &HeaderMap, expected: &str) -> bool {
     headers.get_all(header::ACCEPT).iter().any(|value| {
         value.to_str().ok().is_some_and(|value| {
@@ -104,14 +239,6 @@ pub(super) fn content_type_is_json(headers: &HeaderMap) -> bool {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
         .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
-}
-
-pub(super) fn protocol_version_is_supported(headers: &HeaderMap) -> bool {
-    let protocol_version = headers
-        .get("mcp-protocol-version")
-        .map(|value| value.to_str().ok())
-        .unwrap_or(Some("2025-03-26"));
-    matches!(protocol_version, Some(MCP_PROTOCOL_VERSION | "2025-03-26"))
 }
 
 pub(super) fn detected_request_id(value: &serde_json::Value) -> serde_json::Value {

@@ -19,8 +19,9 @@ use authorization::{
     BearerToken, authenticate, authentication_challenge, bearer_token, validate_mcp_origin,
 };
 use protocol::{
-    accepts_media_type, content_type_is_json, detected_request_id, initialize_result,
-    protocol_version_is_supported, valid_tools_list_params,
+    ProtocolEra, ProtocolValidationError, accepts_media_type, content_type_is_json,
+    detected_request_id, initialize_result, supported_versions, valid_tools_list_params,
+    validate_protocol,
 };
 use tools::{decode_tool_call, mcp_tool_call};
 
@@ -125,10 +126,63 @@ pub(super) async fn mcp_post(
         }
     };
     let method = known_mcp_method(&request.method);
-    if request.method != "initialize" && !protocol_version_is_supported(&headers) {
-        log_mcp_request(method, "rejected", Some("unsupported-version"));
-        return Ok(StatusCode::BAD_REQUEST.into_response());
-    }
+    let protocol_era = match validate_protocol(&headers, &request) {
+        Ok(protocol_era) => protocol_era,
+        Err(ProtocolValidationError::HeaderMismatch(message)) => {
+            log_mcp_request(method, "rejected", Some("header-mismatch"));
+            return Ok((
+                StatusCode::BAD_REQUEST,
+                Json(JsonRpcResponse::error(
+                    request.id.response_value(),
+                    -32020,
+                    message,
+                )),
+            )
+                .into_response());
+        }
+        Err(ProtocolValidationError::UnsupportedVersion(requested)) => {
+            log_mcp_request(method, "rejected", Some("unsupported-version"));
+            return Ok((
+                StatusCode::BAD_REQUEST,
+                Json(JsonRpcResponse::error_with_data(
+                    request.id.response_value(),
+                    -32022,
+                    "Unsupported protocol version",
+                    serde_json::json!({
+                        "supported": supported_versions(),
+                        "requested": requested
+                    }),
+                )),
+            )
+                .into_response());
+        }
+        Err(ProtocolValidationError::InvalidMetadata) => {
+            return Ok(json_rpc_error_response(
+                method,
+                request.id.response_value(),
+                -32602,
+                "Invalid params",
+                "invalid-modern-metadata",
+            ));
+        }
+    };
+    let protocol_version = match protocol_era {
+        ProtocolEra::Modern => "2026-07-28",
+        ProtocolEra::Legacy => headers
+            .get("mcp-protocol-version")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("2025-03-26"),
+    };
+    tracing::info!(
+        event = "mcp.protocol.selected",
+        protocol_era = match protocol_era {
+            ProtocolEra::Modern => "modern",
+            ProtocolEra::Legacy => "legacy",
+        },
+        protocol_version,
+        method,
+        "MCP protocol request was classified"
+    );
 
     let decoded_tool_call =
         (request.method == "tools/call").then(|| decode_tool_call(request.params.clone()));
@@ -169,7 +223,7 @@ pub(super) async fn mcp_post(
     }
     let request_requires_id = matches!(
         request.method.as_str(),
-        "initialize" | "ping" | "tools/list" | "tools/call"
+        "initialize" | "ping" | "server/discover" | "tools/list" | "tools/call"
     );
     if request_requires_id && request.id.is_notification() {
         log_mcp_request(method, "rejected", Some("missing-request-id"));
@@ -184,27 +238,70 @@ pub(super) async fn mcp_post(
             "unexpected-request-id",
         ));
     }
+    if protocol_era == ProtocolEra::Modern && request.id.is_notification() {
+        log_mcp_request(method, "rejected", Some("modern-notification"));
+        return Ok(StatusCode::BAD_REQUEST.into_response());
+    }
 
-    let response = match request.method.as_str() {
-        "initialize" => match initialize_result(request.params) {
+    let mut response = match (protocol_era, request.method.as_str()) {
+        (ProtocolEra::Modern, "server/discover") => JsonRpcResponse::success(
+            id,
+            serde_json::json!({
+                "resultType": "complete",
+                "supportedVersions": supported_versions(),
+                "capabilities": {"tools": {}},
+                "_meta": server_metadata(),
+                "instructions": "Use get_note_profile before creating or updating notes.",
+                "ttlMs": 3600000,
+                "cacheScope": "private"
+            }),
+        ),
+        (ProtocolEra::Modern, "tools/list") if valid_tools_list_params(request.params.as_ref()) => {
+            JsonRpcResponse::success(
+                id,
+                serde_json::json!({
+                    "tools": marginalis_contract::mcp_tool_contracts(),
+                    "ttlMs": 3600000,
+                    "cacheScope": "private"
+                }),
+            )
+        }
+        (ProtocolEra::Modern, "tools/list") => JsonRpcResponse::error(id, -32602, "Invalid params"),
+        (ProtocolEra::Modern, "tools/call") => {
+            match decoded_tool_call.expect("tools/call was decoded") {
+                Ok(call) => {
+                    mcp_tool_call(state.notes.as_ref(), authenticated.actor, id, call).await
+                }
+                Err(()) => JsonRpcResponse::error(id, -32602, "Invalid params"),
+            }
+        }
+        (ProtocolEra::Modern, _) => JsonRpcResponse::error(id, -32601, "Method not found"),
+        (ProtocolEra::Legacy, "initialize") => match initialize_result(request.params) {
             Ok(result) => JsonRpcResponse::success(id, result),
             Err(()) => JsonRpcResponse::error(id, -32602, "Invalid params"),
         },
-        "notifications/initialized" => JsonRpcResponse::success(id, serde_json::json!({})),
-        "ping" => JsonRpcResponse::success(id, serde_json::json!({})),
-        "tools/list" if valid_tools_list_params(request.params.as_ref()) => {
+        (ProtocolEra::Legacy, "notifications/initialized") => {
+            JsonRpcResponse::success(id, serde_json::json!({}))
+        }
+        (ProtocolEra::Legacy, "ping") => JsonRpcResponse::success(id, serde_json::json!({})),
+        (ProtocolEra::Legacy, "tools/list") if valid_tools_list_params(request.params.as_ref()) => {
             JsonRpcResponse::success(
                 id,
                 serde_json::json!({"tools": marginalis_contract::mcp_tool_contracts()}),
             )
         }
-        "tools/list" => JsonRpcResponse::error(id, -32602, "Invalid params"),
-        "tools/call" => match decoded_tool_call.expect("tools/call was decoded") {
+        (ProtocolEra::Legacy, "tools/list") => JsonRpcResponse::error(id, -32602, "Invalid params"),
+        (ProtocolEra::Legacy, "tools/call") => match decoded_tool_call
+            .expect("tools/call was decoded")
+        {
             Ok(call) => mcp_tool_call(state.notes.as_ref(), authenticated.actor, id, call).await,
             Err(()) => JsonRpcResponse::error(id, -32602, "Invalid params"),
         },
-        _ => JsonRpcResponse::error(id, -32601, "Method not found"),
+        (ProtocolEra::Legacy, _) => JsonRpcResponse::error(id, -32601, "Method not found"),
     };
+    if protocol_era == ProtocolEra::Modern {
+        add_modern_result_metadata(&mut response);
+    }
     if let Some(error) = response.error.as_ref() {
         log_mcp_request(method, "rejected", Some(json_rpc_error_reason(error.code)));
     } else {
@@ -213,8 +310,40 @@ pub(super) async fn mcp_post(
     if request.id.is_notification() {
         Ok(StatusCode::ACCEPTED.into_response())
     } else {
-        Ok(Json(response).into_response())
+        if protocol_era == ProtocolEra::Modern
+            && response
+                .error
+                .as_ref()
+                .is_some_and(|error| error.code == -32601)
+        {
+            Ok((StatusCode::NOT_FOUND, Json(response)).into_response())
+        } else {
+            Ok(Json(response).into_response())
+        }
     }
+}
+
+fn server_metadata() -> serde_json::Value {
+    serde_json::json!({
+        "io.modelcontextprotocol/serverInfo": {
+            "name": "marginalis",
+            "version": env!("CARGO_PKG_VERSION")
+        }
+    })
+}
+
+fn add_modern_result_metadata(response: &mut JsonRpcResponse) {
+    let Some(result) = response
+        .result
+        .as_mut()
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    result
+        .entry("resultType")
+        .or_insert_with(|| serde_json::Value::String("complete".into()));
+    result.entry("_meta").or_insert_with(server_metadata);
 }
 
 fn json_rpc_error_response(
@@ -232,6 +361,7 @@ fn known_mcp_method(method: &str) -> &'static str {
     match method {
         "initialize" => "initialize",
         "notifications/initialized" => "notifications/initialized",
+        "server/discover" => "server/discover",
         "ping" => "ping",
         "tools/list" => "tools/list",
         "tools/call" => "tools/call",
@@ -245,6 +375,8 @@ fn json_rpc_error_reason(code: i32) -> &'static str {
         -32600 => "invalid-request",
         -32601 => "method-not-found",
         -32602 => "invalid-params",
+        -32020 => "header-mismatch",
+        -32022 => "unsupported-version",
         _ => "protocol-error",
     }
 }

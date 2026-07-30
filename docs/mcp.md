@@ -202,8 +202,27 @@ MCP tool resultの`isError: true`で返します。
 `text`には`structuredContent`と同じJSONを文字列として返すため、構造化出力を直接扱わない
 クライアントでも診断を取得できます。
 
-初期化時は`2025-11-25`と`2025-03-26`を交渉します。以後の`MCP-Protocol-Version`が未知なら
-HTTP 400で拒否します。現行transportは`MCP-Session-Id`を発行しないstateless構成です。
+MCP仕様`2026-07-28`と、移行期間中の`2025-11-25`、`2025-03-26`に対応します。
+`2026-07-28`のrequestは`initialize`を必要とせず、各POSTの`MCP-Protocol-Version`、
+`Mcp-Method`、必要な場合の`Mcp-Name`と、`params._meta`に含まれるprotocol版、client
+capability、任意のclient情報を照合します。`server/discover`は対応版、tools capability、
+server情報、利用案内、cacheの有効期間と範囲を返します。認証後の結果は認可contextをまたいで
+共有しない`cacheScope: "private"`です。
+
+未対応版はHTTP 400と`UnsupportedProtocolVersionError`（`-32022`）、headerと本文の不一致は
+HTTP 400と`HeaderMismatchError`（`-32020`）で拒否します。modern requestの通常結果には
+`resultType: "complete"`とserver情報を含めます。現行transportは`MCP-Session-Id`を発行せず、
+request間のprotocol状態を持たないstateless構成です。
+
+旧clientは従来どおり`initialize`で`2025-11-25`または`2025-03-26`を交渉できます。旧応答には
+`resultType`を追加しません。`2026-07-28`で削除された`ping`と
+`notifications/initialized`はmodern経路では受理しません。
+
+Dynamic Client RegistrationはMCP仕様`2026-07-28`で非推奨ですが、Auth0と接続するclientが
+Client ID Metadata Documentsへ移行し終えるまではDCR互換を維持します。MarginalisはProtected
+Resourceであり、client登録方式を決定しません。利用するclientとAuth0の両方が対応した組合せから
+移行し、Authorization Serverのissuerが変わった場合は保存済みclient credentialを流用せず、
+再登録してください。
 
 `create_note`または`update_note`の前に`get_note_profile`を呼び出してください。入力は題名、
 `:tags:`などの文書属性、本文を含む完全なAsciiDoc文書です。詳しい入力制約と診断形式はtoolが返す

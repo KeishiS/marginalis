@@ -100,6 +100,8 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         .await
         .expect("tool catalog body");
     let catalog: serde_json::Value = serde_json::from_slice(&body).expect("tool catalog");
+    assert!(catalog["result"].get("resultType").is_none());
+    assert!(catalog["result"].get("_meta").is_none());
     let tools = catalog["result"]["tools"].as_array().expect("tools array");
     assert!(tools.iter().any(|tool| tool["name"] == "get_note_profile"));
     assert!(
@@ -721,6 +723,202 @@ async fn mcp_negotiates_initialization_and_validates_the_protocol_header() {
         wrong_content_type.status(),
         StatusCode::UNSUPPORTED_MEDIA_TYPE
     );
+}
+
+#[tokio::test]
+async fn mcp_2026_requests_are_stateless_self_describing_and_header_checked() {
+    let metadata = serde_json::json!({
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {"name": "test", "version": "1"}
+    });
+    let discover = mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
+                .header("mcp-protocol-version", "2026-07-28")
+                .header("mcp-method", "server/discover")
+                .body(Body::from(
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": "discover",
+                        "method": "server/discover",
+                        "params": {"_meta": metadata.clone()}
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("discover response");
+    assert_eq!(discover.status(), StatusCode::OK);
+    let body = to_bytes(discover.into_body(), usize::MAX)
+        .await
+        .expect("discover body");
+    let discover: serde_json::Value = serde_json::from_slice(&body).expect("discover JSON");
+    assert_eq!(discover["result"]["resultType"], "complete");
+    assert_eq!(
+        discover["result"]["supportedVersions"],
+        serde_json::json!(["2026-07-28", "2025-11-25", "2025-03-26"])
+    );
+    assert_eq!(discover["result"]["capabilities"], serde_json::json!({"tools": {}}));
+    assert_eq!(discover["result"]["cacheScope"], "private");
+    assert_eq!(
+        discover["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+        "marginalis"
+    );
+
+    let list = mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
+                .header("mcp-protocol-version", "2026-07-28")
+                .header("mcp-method", "tools/list")
+                .body(Body::from(
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/list",
+                        "params": {"_meta": metadata.clone()}
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("list response");
+    assert_eq!(list.status(), StatusCode::OK);
+    let body = to_bytes(list.into_body(), usize::MAX)
+        .await
+        .expect("list body");
+    let list: serde_json::Value = serde_json::from_slice(&body).expect("list JSON");
+    assert_eq!(list["result"]["resultType"], "complete");
+    assert_eq!(list["result"]["cacheScope"], "private");
+    assert_eq!(list["result"]["ttlMs"], 3_600_000);
+    assert_eq!(list["result"]["tools"][0]["name"], "list_notes");
+
+    let call = mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
+                .header("mcp-protocol-version", "2026-07-28")
+                .header("mcp-method", "tools/call")
+                .header("mcp-name", "list_notes")
+                .body(Body::from(
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "tools/call",
+                        "params": {
+                            "_meta": metadata.clone(),
+                            "name": "list_notes",
+                            "arguments": {}
+                        }
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("call response");
+    assert_eq!(call.status(), StatusCode::OK);
+    let body = to_bytes(call.into_body(), usize::MAX)
+        .await
+        .expect("call body");
+    let call: serde_json::Value = serde_json::from_slice(&body).expect("call JSON");
+    assert_eq!(call["result"]["resultType"], "complete");
+    assert_eq!(
+        call["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+        "marginalis"
+    );
+    assert!(call["result"]["structuredContent"]["notes"].is_array());
+
+    let mismatch = mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
+                .header("mcp-protocol-version", "2026-07-28")
+                .header("mcp-method", "tools/call")
+                .header("mcp-name", "get_note")
+                .body(Body::from(
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "tools/list",
+                        "params": {"_meta": metadata}
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("mismatch response");
+    assert_eq!(mismatch.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(mismatch.into_body(), usize::MAX)
+        .await
+        .expect("mismatch body");
+    let mismatch: serde_json::Value = serde_json::from_slice(&body).expect("mismatch JSON");
+    assert_eq!(mismatch["error"]["code"], -32020);
+
+    let unsupported = mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
+                .header("mcp-protocol-version", "2099-01-01")
+                .header("mcp-method", "tools/list")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("unsupported response");
+    assert_eq!(unsupported.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(unsupported.into_body(), usize::MAX)
+        .await
+        .expect("unsupported body");
+    let unsupported: serde_json::Value =
+        serde_json::from_slice(&body).expect("unsupported JSON");
+    assert_eq!(unsupported["error"]["code"], -32022);
+    assert_eq!(unsupported["error"]["data"]["requested"], "2099-01-01");
+
+    let unknown = mcp_app()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
+                .header("mcp-protocol-version", "2026-07-28")
+                .header("mcp-method", "ping")
+                .body(Body::from(
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": 5,
+                        "method": "ping",
+                        "params": {"_meta": metadata}
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("unknown response");
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    let body = to_bytes(unknown.into_body(), usize::MAX)
+        .await
+        .expect("unknown body");
+    let unknown: serde_json::Value = serde_json::from_slice(&body).expect("unknown JSON");
+    assert_eq!(unknown["error"]["code"], -32601);
 }
 
 #[tokio::test]

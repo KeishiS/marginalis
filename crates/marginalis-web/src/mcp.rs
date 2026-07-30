@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(crate) const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
+pub(crate) const MODERN_MCP_PROTOCOL_VERSION: &str = "2026-07-28";
+pub(crate) const SUPPORTED_MCP_PROTOCOL_VERSIONS: &[&str] = &[
+    MODERN_MCP_PROTOCOL_VERSION,
+    MCP_PROTOCOL_VERSION,
+    "2025-03-26",
+];
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct JsonRpcRequest {
@@ -68,7 +74,9 @@ pub(crate) struct JsonRpcResponse {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct JsonRpcError {
     pub code: i32,
-    pub message: &'static str,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
 }
 
 impl JsonRpcResponse {
@@ -86,7 +94,29 @@ impl JsonRpcResponse {
             jsonrpc: "2.0",
             id,
             result: None,
-            error: Some(JsonRpcError { code, message }),
+            error: Some(JsonRpcError {
+                code,
+                message: message.into(),
+                data: None,
+            }),
+        }
+    }
+
+    pub(crate) fn error_with_data(
+        id: Value,
+        code: i32,
+        message: impl Into<String>,
+        data: Value,
+    ) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            result: None,
+            error: Some(JsonRpcError {
+                code,
+                message: message.into(),
+                data: Some(data),
+            }),
         }
     }
 }
