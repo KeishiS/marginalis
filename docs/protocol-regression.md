@@ -15,8 +15,10 @@ MCP Streamable HTTPの仕様を
 - Protected Resource MetadataとAuth0 issuer
 - Auth0 metadata、JWKS、`RS256`、issuer、audience、期限、上流identity、group、scope
 - 無効なtokenの`401`、scope不足の`403`、認証基盤障害の`503`
-- MCP initialize、protocol version交渉、initialized notification、tool call
+- MCP `2026-07-28`の`server/discover`、requestごとのmetadata、標準header照合、tool call
+- MCP `2025-11-25`と`2025-03-26`のinitialize、initialized notification、tool call
 - JSON-RPC error object、batch拒否
+- `resultType`、server情報、`ttlMs`、`cacheScope`、`-32020`、`-32022`
 - `create_note`と`update_note`の警告拒否、診断の重大度・位置、`isError`、`text`と
   `structuredContent`の一致
 
@@ -40,9 +42,10 @@ nix develop --command cargo make protocol-regression-assets
 ## クライアントとの接続確認に使うテストデータ
 
 Auth0のDCR、認可画面、callback互換性は外部サービスとclientの組合せに依存します。ChatGPT、
-Claude Code、Codex CLIごとに実接続を確認し、client固有のrequest形状をMarginalisの一般仕様へ
-取り込みません。警告を含む変更toolの回帰試験は、三つのクライアントが共通して解釈できる
-標準MCP tool resultを固定し、client固有の表示文言には依存しません。
+Claude Code、Codex CLIごとに実接続を確認し、使用されたprotocol版とmodern/legacyの別だけを
+記録します。header、token、client情報そのものは保存せず、client固有のrequest形状を
+Marginalisの一般仕様へ取り込みません。警告を含む変更toolの回帰試験は、三つのclientが共通して
+解釈できる標準MCP tool resultを固定し、client固有の表示文言には依存しません。
 
 ## テスト失敗時に保存する情報
 

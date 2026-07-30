@@ -71,12 +71,14 @@ templateを`path`として記録します。未一致の経路は`<unmatched>`�
 | `mcp.authentication.failed` | access tokenの拒否。`reason`は安全な検証段階 |
 | `mcp.authentication.unavailable` | token検証基盤の障害 |
 | `mcp.authorization.failed` | 検証済みtokenのscope不足 |
+| `mcp.protocol.selected` | 固定した`protocol_era`、対応済み`protocol_version`、`method`によるmodern/legacy経路の選択 |
 | `mcp.request.completed` | 固定した`method`、`outcome`、任意の`reason`によるJSON-RPC requestの論理結果 |
 | `mcp.tool.completed` | 固定した`tool`、`outcome`、任意の`reason`によるtool use caseの論理結果 |
 
 JSON-RPC ID、未知のmethod名、未知のtool名、tool引数と応答内容は記録しません。JSON-RPC errorや
-tool結果の`isError`はHTTP 200になる場合があるため、HTTPの`outcome`ではなく上記二つのeventで
-論理的な成功、拒否、障害を判断します。
+tool結果の`isError`はHTTP 200になる場合があるため、HTTPの`outcome`ではなく
+`mcp.request.completed`と`mcp.tool.completed`で論理的な成功、拒否、障害を判断します。
+`mcp.protocol.selected`はclient名やheader値を記録せず、対応しているprotocol版だけを記録します。
 
 ### 保守処理
 

@@ -6,17 +6,11 @@
 
 ## 現在地
 
-`v0.16.0`では、AdocWeave 0.19.0、同一オリジンからのMathJax字体配信、ブラウザー診断のCI監視、
-閲覧画面のタグ表示を公開しました。
+`v0.16.1`では、編集欄の範囲選択と等幅表示、画面全体のNoto系書体、AdocWeave 0.20.0による
+複数行のリスト項目を公開しました。
 
-現在は[#145](https://github.com/KeishiS/marginalis/issues/145)、
-[#146](https://github.com/KeishiS/marginalis/issues/146)、
-[#149](https://github.com/KeishiS/marginalis/issues/149)、
-[#151](https://github.com/KeishiS/marginalis/issues/151)で、編集欄の範囲選択と等幅表示、画面全体の
-Noto系書体、AdocWeave 0.20.0による複数行のリスト項目をまとめた`v0.16.1`を準備しています。
-互換性と移行方法は
-[変更履歴](../CHANGELOG.md)、版別の確認結果は
-[v0.16.1受入結果](acceptance-results/v0.16.1.md)へ記録します。
+現在は[#148](https://github.com/KeishiS/marginalis/issues/148)で、MCP仕様`2026-07-28`へ
+対応しつつ、`2025-11-25`と`2025-03-26`を使う既存clientとの互換性を維持する移行を進めています。
 
 ## 検索と関係グラフの評価
 
