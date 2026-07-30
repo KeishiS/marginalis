@@ -32,6 +32,14 @@ export interface NoteView {
 export interface NoteDraft {
   source: string;
 }
+export interface BibliographyItem {
+  item_id: string;
+  citation_key: string;
+  csl_json: Record<string, unknown>;
+  created_at_ms: number;
+  updated_at_ms: number;
+  revision: number;
+}
 export interface NotePreview {
   html: string;
   diagnostics: NoteDiagnostic[];
@@ -96,6 +104,29 @@ export function parseNote(value: unknown): Note {
     updated_at_ms: integer(object.updated_at_ms, "note.updated_at_ms"),
     revision: positiveInteger(object.revision, "note.revision"),
   };
+}
+
+export function parseBibliographyItem(value: unknown): BibliographyItem {
+  const object = record(value, "bibliography item");
+  return {
+    item_id: text(object.item_id, "bibliography item.item_id"),
+    citation_key: text(object.citation_key, "bibliography item.citation_key"),
+    csl_json: record(object.csl_json, "bibliography item.csl_json"),
+    created_at_ms: integer(
+      object.created_at_ms,
+      "bibliography item.created_at_ms",
+    ),
+    updated_at_ms: integer(
+      object.updated_at_ms,
+      "bibliography item.updated_at_ms",
+    ),
+    revision: positiveInteger(object.revision, "bibliography item.revision"),
+  };
+}
+
+export function parseBibliographyItems(value: unknown): BibliographyItem[] {
+  if (!Array.isArray(value)) throw new Error("bibliography items are invalid");
+  return value.map(parseBibliographyItem);
 }
 
 export function parseNotePreview(value: unknown): NotePreview {
@@ -304,6 +335,65 @@ export async function listNotes(apiBase: string): Promise<NoteListEntry[]> {
   return requestJson(`${apiBase}/notes`, undefined, parseNoteListEntries);
 }
 
+export async function searchBibliography(
+  apiBase: string,
+  query = "",
+): Promise<BibliographyItem[]> {
+  const suffix = query ? `?query=${encodeURIComponent(query)}` : "";
+  return requestJson(
+    `${apiBase}/bibliography${suffix}`,
+    undefined,
+    parseBibliographyItems,
+  );
+}
+
+export async function addBibliographyItem(
+  apiBase: string,
+  cslJson: Record<string, unknown>,
+): Promise<BibliographyItem> {
+  return requestJson(
+    `${apiBase}/bibliography`,
+    mutationRequest("POST", { csl_json: cslJson }),
+    parseBibliographyItem,
+  );
+}
+
+export async function updateBibliographyItem(
+  apiBase: string,
+  itemId: string,
+  cslJson: Record<string, unknown>,
+  expectedRevision: number,
+): Promise<BibliographyItem> {
+  return requestJson(
+    `${apiBase}/bibliography/${encodeURIComponent(itemId)}`,
+    mutationRequest("PUT", { csl_json: cslJson }, expectedRevision),
+    parseBibliographyItem,
+  );
+}
+
+export async function deleteBibliographyItem(
+  apiBase: string,
+  itemId: string,
+  expectedRevision: number,
+): Promise<void> {
+  const response = await fetch(
+    `${apiBase}/bibliography/${encodeURIComponent(itemId)}`,
+    mutationRequest("DELETE", undefined, expectedRevision),
+  );
+  if (!response.ok) {
+    let problem: Problem;
+    try {
+      problem = parseProblem(await response.json());
+    } catch {
+      problem = {
+        code: "invalid_response",
+        message: "サーバーから解釈できない応答を受け取りました。",
+      };
+    }
+    throw new ApiError(response.status, problem);
+  }
+}
+
 export async function readNote(
   apiBase: string,
   noteId: string,
@@ -396,8 +486,8 @@ export async function replaceNoteAcl(
 }
 
 function mutationRequest(
-  method: "POST" | "PUT",
-  body: unknown,
+  method: "POST" | "PUT" | "DELETE",
+  body?: unknown,
   expectedRevision?: number,
 ): RequestInit {
   const csrfToken = readCookie("marginalis_csrf");
@@ -411,7 +501,7 @@ function mutationRequest(
         ? {}
         : { "if-match": `"rev-${expectedRevision}"` }),
     },
-    body: JSON.stringify(body),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   };
 }
 

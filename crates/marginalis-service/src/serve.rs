@@ -80,13 +80,19 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::sync::Arc::new(SystemClock),
         std::sync::Arc::new(SystemRandom),
     ));
+    let bibliography = std::sync::Arc::new(marginalis_application::BibliographyApplication::new(
+        std::sync::Arc::new(database.clone()),
+        std::sync::Arc::new(SystemClock),
+        std::sync::Arc::new(SystemRandom),
+    ));
     let state = marginalis_web::http::ApiState::new(
         notes.clone(),
         sessions,
         oidc,
         cookie_path,
         configuration.http.base_url.origin().ascii_serialization(),
-    );
+    )
+    .with_bibliography(bibliography);
     let state = if let Some(mcp) = configuration.mcp {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);

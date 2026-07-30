@@ -328,6 +328,55 @@ select:hover {
   min-width: min(16rem, 78vw);
 }
 
+.bibliography-search,
+.bibliography-input {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1.5rem;
+}
+
+.bibliography-search label,
+.bibliography-input label {
+  display: grid;
+  gap: 0.45rem;
+  font-weight: 650;
+}
+
+.bibliography-search input,
+.bibliography-input textarea {
+  width: 100%;
+}
+
+.bibliography-input textarea {
+  font-family: var(--font-monospace);
+  resize: vertical;
+}
+
+.bibliography-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bibliography-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.bibliography-list > li > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
 .list-result-count {
   color: var(--color-text-muted);
   font-size: 0.9rem;

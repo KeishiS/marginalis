@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use marginalis_domain::{Identity, Note, NoteId, NotePermission};
+use marginalis_domain::{BibliographyItem, Identity, Note, NoteId, NotePermission};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclSnapshotEntry {
@@ -38,6 +38,7 @@ impl NoteAclSnapshotEntry {
 pub struct LogicalSnapshot {
     notes: Vec<Note>,
     note_acl: Vec<NoteAclSnapshotEntry>,
+    bibliography_items: Vec<BibliographyItem>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,6 +46,7 @@ pub enum InvalidSnapshot {
     DuplicateNote { position: usize },
     InvalidAclEntry { position: usize },
     InvalidReference { position: usize },
+    InvalidBibliographyItem { position: usize },
 }
 
 impl std::fmt::Display for InvalidSnapshot {
@@ -63,6 +65,12 @@ impl std::fmt::Display for InvalidSnapshot {
                 write!(
                     formatter,
                     "reference at position {position} has no source note"
+                )
+            }
+            Self::InvalidBibliographyItem { position } => {
+                write!(
+                    formatter,
+                    "bibliography item at position {position} is duplicated"
                 )
             }
         }
@@ -101,7 +109,30 @@ impl LogicalSnapshot {
             }
         }
 
-        Ok(Self { notes, note_acl })
+        Ok(Self {
+            notes,
+            note_acl,
+            bibliography_items: Vec::new(),
+        })
+    }
+
+    pub fn with_bibliography(
+        mut self,
+        bibliography_items: Vec<BibliographyItem>,
+    ) -> Result<Self, InvalidSnapshot> {
+        let mut ids = HashSet::new();
+        let mut owner_keys = HashSet::new();
+        for (index, item) in bibliography_items.iter().enumerate() {
+            if !ids.insert(item.item_id())
+                || !owner_keys.insert((item.owner().clone(), item.citation_key().to_owned()))
+            {
+                return Err(InvalidSnapshot::InvalidBibliographyItem {
+                    position: index + 1,
+                });
+            }
+        }
+        self.bibliography_items = bibliography_items;
+        Ok(self)
     }
 
     pub fn notes(&self) -> &[Note] {
@@ -110,6 +141,10 @@ impl LogicalSnapshot {
 
     pub fn note_acl(&self) -> &[NoteAclSnapshotEntry] {
         &self.note_acl
+    }
+
+    pub fn bibliography_items(&self) -> &[BibliographyItem] {
+        &self.bibliography_items
     }
 
     pub fn into_parts(self) -> (Vec<Note>, Vec<NoteAclSnapshotEntry>) {

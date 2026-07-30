@@ -31,6 +31,26 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         probe_path: "/api/v3/notes",
     },
     RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/bibliography",
+        probe_path: "/api/v3/bibliography",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/bibliography",
+        probe_path: "/api/v3/bibliography",
+    },
+    RestRouteContract {
+        method: "PUT",
+        specification_path: "/api/v3/bibliography/{item_id}",
+        probe_path: "/api/v3/bibliography/0197c9bc-0000-7000-8000-000000000001",
+    },
+    RestRouteContract {
+        method: "DELETE",
+        specification_path: "/api/v3/bibliography/{item_id}",
+        probe_path: "/api/v3/bibliography/0197c9bc-0000-7000-8000-000000000001",
+    },
+    RestRouteContract {
         method: "POST",
         specification_path: "/api/v3/notes",
         probe_path: "/api/v3/notes",
@@ -86,6 +106,23 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
 #[serde(deny_unknown_fields)]
 pub struct NoteDraftInput {
     pub source: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyItemInput {
+    pub csl_json: Value,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyItemResponse {
+    pub item_id: String,
+    pub citation_key: String,
+    pub csl_json: Value,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub revision: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -381,6 +418,23 @@ pub fn openapi_document() -> Value {
                     "properties": {"issuer": {"type": "string", "format": "uri"}, "subject": {"type": "string"}}
                 },
                 "NoteDraft": note_draft_schema(),
+                "BibliographyItemInput": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["csl_json"],
+                    "properties": {"csl_json": {"type": "object"}}
+                },
+                "BibliographyItem": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["item_id", "citation_key", "csl_json", "created_at_ms", "updated_at_ms", "revision"],
+                    "properties": {
+                        "item_id": note_id_schema(),
+                        "citation_key": {"type": "string"},
+                        "csl_json": {"type": "object"},
+                        "created_at_ms": {"type": "integer"},
+                        "updated_at_ms": {"type": "integer"},
+                        "revision": revision_schema()
+                    }
+                },
                 "Note": note,
                 "NoteSummary": note_summary,
                 "NoteListEntry": note_list_entry,
@@ -473,6 +527,38 @@ fn rest_paths() -> Value {
                 ("401", response_ref("AuthenticationRequired")),
                 ("403", response_ref("CsrfRejected")),
                 ("422", response_ref("UnprocessableNote"))
+            ]))
+        },
+        "/api/v3/bibliography": {
+            "get": operation("Search the current user's bibliography", &[], None, responses(&[
+                ("200", array_response("bibliography items", "BibliographyItem")),
+                ("401", response_ref("AuthenticationRequired"))
+            ])),
+            "post": operation("Add one CSL-JSON bibliography item", &["CsrfToken"], Some("BibliographyItemInput"), responses(&[
+                ("201", schema_response_with_etag("created bibliography item", "BibliographyItem")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("409", response_ref("Conflict")),
+                ("422", response_ref("ValidationFailed"))
+            ]))
+        },
+        "/api/v3/bibliography/{item_id}": {
+            "parameters": [{
+                "name": "item_id", "in": "path", "required": true,
+                "schema": note_id_schema()
+            }],
+            "put": operation("Update an owned CSL-JSON bibliography item", &["CsrfToken", "IfMatch"], Some("BibliographyItemInput"), responses(&[
+                ("200", schema_response_with_etag("updated bibliography item", "BibliographyItem")),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
+                ("422", response_ref("ValidationFailed")),
+                ("428", response_ref("PreconditionRequired"))
+            ])),
+            "delete": operation("Delete an owned bibliography item", &["CsrfToken", "IfMatch"], None, responses(&[
+                ("204", json!({"description": "bibliography item deleted"})),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
+                ("428", response_ref("PreconditionRequired"))
             ]))
         },
         "/api/v3/notes/preview": {

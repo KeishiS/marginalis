@@ -147,6 +147,9 @@ codex mcp list
 | `create_note` | `notes:write` | ノートの作成 |
 | `update_note` | `notes:write` | revisionを指定した更新 |
 | `delete_note` | `notes:delete` | revisionを指定したソフトデリート |
+| `search_bibliography` | `notes:read` | 自分の書誌情報の検索 |
+| `add_bibliography_item` | `notes:write` | CSL-JSON形式の書誌情報の追加 |
+| `delete_bibliography_item` | `notes:delete` | revisionを指定した書誌情報の削除 |
 
 scopeは操作の種類だけを制限し、操作できるノートの範囲を広げません。利用者は自身が作成したノートと、
 ACLで直接共有されたノートだけをscopeの範囲で操作できます。
@@ -171,6 +174,35 @@ ACLで直接共有されたノートだけをscopeの範囲で操作できます
 返します。各toolの入力項目、成功出力、必須項目、型を機械的に確認する場合は
 [MCP toolのJSON Schema](mcp-tools.json)を参照してください。JSON Schemaは、JSONに含める項目と型を
 機械処理できる形式で表した仕様です。
+
+### 書誌ライブラリー
+
+`add_bibliography_item`の`csl_json`には、CSL-JSON Data Modelの一項目をJSON objectとして渡します。
+`id`と`type`は必須です。`id`をAsciiDocの`cite:[smith2024]`で指定するcitation keyとして保存します。
+Marginalisは題名、著者、発行年などを推測せず、受け取ったobjectをそのまま正規化して保存します。
+
+```json
+{
+  "csl_json": {
+    "id": "smith2024",
+    "type": "article-journal",
+    "title": "An Example Article",
+    "author": [
+      {
+        "family": "Smith",
+        "given": "Alex"
+      }
+    ],
+    "issued": {
+      "date-parts": [[2024]]
+    }
+  }
+}
+```
+
+`search_bibliography`は省略可能な`query`で自分の書誌情報を検索します。`delete_bibliography_item`には、
+検索または追加で得た`item_id`と最新の`revision`を指定します。書誌ライブラリーは利用者ごとに分離し、
+ほかの利用者の項目は検索結果やエラーから判別できません。
 
 Auth0でrefresh tokenやgrantを取り消しても、すでに発行された自己完結型JWT access tokenは有効期限まで
 受理される場合があります。運用上許容する最大遅延と測定方法は

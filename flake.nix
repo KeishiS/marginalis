@@ -320,7 +320,7 @@
                   migrate-archive --input "$PWD/schema9.json" --output "$PWD/schema11.json"
                 cmp schema9.json schema9-original.json
                 jq -e '
-                  .format == "marginalis-archive-10"
+                  .format == "marginalis-archive-11"
                   and .adocweave_package_version == "0.20.0"
                   and .note_profile_version == 4
                   and (.notes | length) == 2
@@ -652,7 +652,7 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-10\" "
+                + "jq -e '.format == \"marginalis-archive-11\" "
                 + "and .adocweave_package_version == \"0.20.0\" "
                 + "and .note_profile_version == 4 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
@@ -730,11 +730,11 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 11'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 12'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 10; PRAGMA journal_mode=WAL'"
+                + "'UPDATE schema_migrations SET version = 12; PRAGMA journal_mode=WAL'"
               )
               machine.succeed("rm -f /var/lib/marginalis/marginalis.sqlite*")
               machine.succeed(
@@ -762,7 +762,7 @@
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "timeout 5s journalctl --no-pager -u marginalis.service -o cat | "
-                + "grep -F 'unsupported database schema version 5; expected 11'"
+                + "grep -F 'unsupported database schema version 5; expected 12'"
               )
               machine.succeed("systemctl stop marginalis.service")
               machine.succeed(

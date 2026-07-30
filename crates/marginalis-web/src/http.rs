@@ -5,6 +5,7 @@
 
 mod assets;
 mod auth;
+mod bibliography;
 mod error;
 mod html;
 mod mcp_transport;
@@ -39,6 +40,10 @@ use self::{
         page_javascript, web_font,
     },
     auth::{begin_login, complete_login, logout},
+    bibliography::{
+        add_bibliography_item, delete_bibliography_item, search_bibliography,
+        update_bibliography_item,
+    },
     error::{HandlerResult, problem},
     mcp_transport::{mcp_post, mcp_resource_metadata, mcp_unsupported_method},
     notes::{
@@ -46,7 +51,7 @@ use self::{
         read_note_view, replace_note_acl, restore_note, session, update_note,
     },
     security::security_headers,
-    ui::{access_note_page, create_note_page, edit_note_page, home, view_note},
+    ui::{access_note_page, bibliography_page, create_note_page, edit_note_page, home, view_note},
 };
 
 pub use marginalis_contract::API_VERSION;
@@ -88,6 +93,7 @@ impl marginalis_application::NoteLinkResolver for HttpNoteLinkResolver {
 pub fn router(state: ApiState) -> Router {
     let mut router = Router::new()
         .route("/", get(home))
+        .route("/bibliography", get(bibliography_page))
         .route("/notes/new", get(create_note_page))
         .route("/notes/{note_id}/edit", get(edit_note_page))
         .route("/notes/{note_id}/access", get(access_note_page))
@@ -114,6 +120,14 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/api/v3/health", get(health))
         .route("/api/v3/session", get(session))
+        .route(
+            "/api/v3/bibliography",
+            get(search_bibliography).post(add_bibliography_item),
+        )
+        .route(
+            "/api/v3/bibliography/{item_id}",
+            axum::routing::put(update_bibliography_item).delete(delete_bibliography_item),
+        )
         .route("/api/v3/notes", get(list_notes).post(create_note))
         .route("/api/v3/notes/preview", post(preview_note))
         .route(

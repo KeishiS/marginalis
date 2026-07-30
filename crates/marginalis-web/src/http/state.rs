@@ -3,12 +3,14 @@
 use std::sync::Arc;
 
 use marginalis_application::{
-    McpAccessTokenAuthenticator, NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
+    BibliographyUseCases, McpAccessTokenAuthenticator, NoteUseCases, OidcAuthenticationUseCases,
+    WebSessionUseCases,
 };
 
 #[derive(Clone)]
 pub struct ApiState {
     pub notes: Arc<dyn NoteUseCases>,
+    pub bibliography: Option<Arc<dyn BibliographyUseCases>>,
     pub sessions: Arc<dyn WebSessionUseCases>,
     pub oidc: Arc<dyn OidcAuthenticationUseCases>,
     pub cookie_path: String,
@@ -80,6 +82,7 @@ impl ApiState {
     ) -> Self {
         Self {
             notes,
+            bibliography: None,
             sessions,
             oidc,
             cookie_path,
@@ -90,6 +93,11 @@ impl ApiState {
 
     pub fn with_mcp(mut self, mcp: McpEndpoint) -> Self {
         self.mcp = Some(Arc::new(mcp));
+        self
+    }
+
+    pub fn with_bibliography(mut self, bibliography: Arc<dyn BibliographyUseCases>) -> Self {
+        self.bibliography = Some(bibliography);
         self
     }
 }

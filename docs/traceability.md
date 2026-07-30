@@ -18,6 +18,7 @@
 | REQ-DATA-003 | AsciiDoc単体試験 | なし |
 | REQ-DATA-004 | schema検査 | なし |
 | REQ-DATA-005 | SQLite認可・参照試験、ブラウザー試験 | 非開示確認 |
+| REQ-DATA-006 | application入力検査、SQLite所有者境界・競合・revision試験、REST・MCP公開契約試験 | Web UIでの検索、追加、編集、削除とMCPでの検索、追加、削除 |
 | REQ-AUTH-001 | OIDC単体・結合試験 | ログイン拒否 |
 | REQ-AUTH-002 | domain・archive・SQLite単体試験 | 所有者照合 |
 | REQ-AUTH-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
@@ -45,7 +46,7 @@
 | REQ-ACL-005 | SQLiteスナップショット試験、REST契約試験 | 閲覧整合性 |
 | REQ-LIFE-001 | SQLite・保守CLI・NixOS VM | 削除・復元 |
 | REQ-DEPLOY-001 | NixOS module評価・VM | 本番設定確認 |
-| REQ-FORMAT-001 | schema・archive拒否、archive 7・8から9への移行試験 | 更新前退避 |
+| REQ-FORMAT-001 | schema・archive拒否、archive 7・8・9・10から11への移行試験 | 更新前退避 |
 
 ## 実行単位
 
