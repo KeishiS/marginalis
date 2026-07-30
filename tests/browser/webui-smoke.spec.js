@@ -1,10 +1,13 @@
-const { test, expect } = require("@playwright/test");
+const {
+  browserDiagnostic,
+  diagnosticSummary,
+  expect,
+  test,
+} = require("./fixtures/browser-diagnostics");
 
 test("production build starts and renders a note returned by the API", async ({
   page,
 }) => {
-  const browserErrors = [];
-  page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.route("**/api/v3/notes", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -24,7 +27,6 @@ test("production build starts and renders a note returned by the API", async ({
   await page.goto("/");
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.fonts.ready);
-  expect(browserErrors).toEqual([]);
 
   await expect(
     page.getByRole("heading", { name: "ノート", exact: true }),
@@ -46,6 +48,31 @@ test("production build starts and renders a note returned by the API", async ({
     "note-list-narrow.png",
     SCREENSHOT_OPTIONS,
   );
+});
+
+test("ブラウザー診断を本文やtokenを含まない分類へ変換する", () => {
+  const secret = "Bearer secret-token ノート本文";
+  expect(
+    diagnosticSummary(
+      "console.error",
+      `Refused to load a script because it violates the following directive: ${secret}`,
+    ),
+  ).toBe("Content Security Policy違反");
+  expect(
+    diagnosticSummary(
+      "pageerror",
+      `dynamic file 'double-struck' failed to load: ${secret}`,
+    ),
+  ).toBe("MathJax資源の読み込みまたは組版の失敗");
+
+  const diagnostic = browserDiagnostic("console.error", secret, {
+    url: "https://example.test/notes/private?token=secret-token",
+    lineNumber: 12,
+    columnNumber: 4,
+  });
+  expect(JSON.stringify(diagnostic)).not.toContain("secret-token");
+  expect(JSON.stringify(diagnostic)).not.toContain("ノート本文");
+  expect(diagnostic.source).toBe("private:12:4");
 });
 
 test("閲覧画面でnote IDをコピーし、広い本文を表示する", async ({

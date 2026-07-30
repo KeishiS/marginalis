@@ -1,4 +1,4 @@
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures/browser-diagnostics");
 
 const baseUrl = "https://marginalis.example.test/marginalis";
 
@@ -24,9 +24,7 @@ test("Kanidm login works through the subpath", async ({ page, context }) => {
     .press("Enter");
   await page.getByLabel(/password/i).fill("test-idm-admin-password");
   await page.getByLabel(/password/i).press("Enter");
-  await expect(page).toHaveURL(
-    "https://id.example.test:8443/ui/oauth2/resume",
-  );
+  await expect(page).toHaveURL("https://id.example.test:8443/ui/oauth2/resume");
   await page.getByRole("button", { name: "Proceed", exact: true }).click();
 
   await expect(page).toHaveURL(`${baseUrl}/`);
