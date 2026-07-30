@@ -242,6 +242,13 @@ journalctl -u marginalis-diagnose.service -o cat -n 20
 外部キー違反件数と、Auth0設定の有無を含む非秘密設定だけをJSONで出力します。全検査が正常な場合だけ
 終了status 0です。
 databaseを作成・移行せず、OIDC client secret、Cookie、token、ノート本文は出力しません。
+
+設定の報告は`configuration.variables`に環境変数名を鍵として並びます。各項目の`set`は設定の有無、
+`required`は現在の構成で必須かどうかを示します。`value`は秘密でも保存先でもない変数にだけ付き、
+`element_count`はカンマ区切りの変数の要素数です。`configuration.mcp_enabled`はMCPを有効と判断した
+結果で、`MARGINALIS_MCP_AUTHORIZATION_ISSUER`が設定されているかどうかと一致します。
+serviceの起動処理と`diagnose`は同じ宣言から値を読むため、両者の判断が食い違いません。
+値の前後の空白は取り除いて扱い、空白だけの値は未設定とみなします。
 `status`が`failed`の場合は`database.error`と各検査の`actual`、`expected`を確認します。
 SQLを実行できなかった場合は、`database.failures`の`check`で失敗した検査、`category`で
 ロック、読み取り専用、入出力エラーなどの分類を確認できます。`sqlite_code`はSQLiteが返した

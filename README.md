@@ -26,9 +26,10 @@ Marginalisを直接起動するには、少なくとも次の情報が必要で�
 - `MARGINALIS_DATABASE_URL`
 - `MARGINALIS_BASE_URL`
 - `MARGINALIS_LISTEN_ADDR`
-- `OIDC_ISSUER_URL`
-- `OIDC_CLIENT_ID`
-- OIDCクライアントシークレット
+- `MARGINALIS_OIDC_ISSUER_URL`
+- `MARGINALIS_OIDC_CLIENT_ID`
+- OIDCクライアントシークレット（`MARGINALIS_OIDC_CLIENT_SECRET`または
+  `MARGINALIS_OIDC_CLIENT_SECRET_FILE`）
 
 秘密情報は`*_FILE`または実行環境の認証情報を渡す仕組みを使い、Git、Nix store、SQLite、ログへ
 保存しないでください。

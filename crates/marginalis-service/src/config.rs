@@ -1,8 +1,10 @@
 //! composition rootが環境変数から読み込む公開設定とsecret設定。
 
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::PathBuf};
 
 use url::Url;
+
+use crate::environment;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServerConfig {
@@ -58,35 +60,25 @@ pub struct SecretConfig {
 pub enum ConfigurationError {
     #[error("required environment variable {0} is not set")]
     MissingEnvironment(&'static str),
-    #[error("MARGINALIS_BASE_URL must be an absolute HTTPS URL without query or fragment")]
-    InvalidBaseUrl,
-    #[error("OIDC_ISSUER_URL must be an absolute HTTPS URL")]
-    InvalidIssuerUrl,
-    #[error("MARGINALIS_LISTEN_ADDR is invalid")]
+    #[error("{0} must be an absolute HTTPS URL without userinfo, query, or fragment")]
+    InvalidHttpsUrl(&'static str),
+    #[error("{} is invalid", environment::LISTEN_ADDRESS)]
     InvalidListenAddress,
-    #[error("OIDC_CLIENT_ID must not be empty")]
-    EmptyClientId,
     #[error("secret file for {0} could not be read")]
     UnreadableSecretFile(&'static str),
-    #[error("MARGINALIS_MCP_ENABLE must be `true` or `false`")]
-    InvalidMcpEnable,
-    #[error("MARGINALIS_MCP_ALLOWED_ORIGINS must contain comma-separated HTTPS origins")]
+    #[error("{} must contain comma-separated HTTPS origins", environment::MCP_ALLOWED_ORIGINS)]
     InvalidMcpAllowedOrigin,
 }
 
 impl ServerConfig {
     pub fn from_environment() -> Result<(Self, SecretConfig), ConfigurationError> {
-        let base_url = validate_base_url(required("MARGINALIS_BASE_URL")?)?;
-        let issuer_url = validate_issuer_url(required("OIDC_ISSUER_URL")?)?;
-        let client_id = required("OIDC_CLIENT_ID")?;
-        if client_id.is_empty() {
-            return Err(ConfigurationError::EmptyClientId);
-        }
+        let base_url = validate_https_url(environment::BASE_URL)?;
+        let issuer_url = validate_https_url(environment::OIDC_ISSUER_URL)?;
+        let client_id = required(environment::OIDC_CLIENT_ID)?;
         let storage = StorageConfig::from_environment()?;
-        let listen_address = required("MARGINALIS_LISTEN_ADDR")?
+        let listen_address = required(environment::LISTEN_ADDRESS)?
             .parse()
             .map_err(|_| ConfigurationError::InvalidListenAddress)?;
-        let mcp_enabled = optional_bool("MARGINALIS_MCP_ENABLE")?.unwrap_or(false);
         let configuration = Self {
             http: HttpConfig {
                 base_url,
@@ -96,15 +88,14 @@ impl ServerConfig {
             oidc: OidcConfig {
                 issuer_url,
                 client_id,
-                ca_certificate_file: std::env::var_os("OIDC_CA_CERTIFICATE_FILE")
-                    .filter(|value| !value.is_empty())
+                ca_certificate_file: environment::value(environment::OIDC_CA_CERTIFICATE_FILE)
                     .map(PathBuf::from),
             },
-            mcp: if mcp_enabled {
+            mcp: if environment::mcp_enabled() {
                 Some(McpConfig {
-                    allowed_origins: validate_mcp_allowed_origins(optional_csv(
-                        "MARGINALIS_MCP_ALLOWED_ORIGINS",
-                    )?)?,
+                    allowed_origins: validate_mcp_allowed_origins(environment::comma_separated(
+                        environment::MCP_ALLOWED_ORIGINS,
+                    ))?,
                     authorization: mcp_authorization()?,
                 })
             } else {
@@ -112,7 +103,7 @@ impl ServerConfig {
             },
         };
         let secrets = SecretConfig {
-            oidc_client_secret: required_secret("OIDC_CLIENT_SECRET")?,
+            oidc_client_secret: required_secret(environment::OIDC_CLIENT_SECRET)?,
         };
         Ok((configuration, secrets))
     }
@@ -120,43 +111,18 @@ impl ServerConfig {
 
 fn mcp_authorization() -> Result<McpAuthorizationConfig, ConfigurationError> {
     Ok(McpAuthorizationConfig {
-        issuer: required("MARGINALIS_MCP_AUTHORIZATION_ISSUER")?,
-        upstream_issuer_claim: required("MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM")?,
-        upstream_subject_claim: required("MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM")?,
-        groups_claim: required("MARGINALIS_MCP_GROUPS_CLAIM")?,
+        issuer: required(environment::MCP_AUTHORIZATION_ISSUER)?,
+        upstream_issuer_claim: required(environment::MCP_UPSTREAM_ISSUER_CLAIM)?,
+        upstream_subject_claim: required(environment::MCP_UPSTREAM_SUBJECT_CLAIM)?,
+        groups_claim: required(environment::MCP_GROUPS_CLAIM)?,
     })
 }
 
 impl StorageConfig {
     pub fn from_environment() -> Result<Self, ConfigurationError> {
         Ok(Self {
-            database_url: required("MARGINALIS_DATABASE_URL")?,
+            database_url: required(environment::DATABASE_URL)?,
         })
-    }
-}
-
-fn optional_bool(name: &'static str) -> Result<Option<bool>, ConfigurationError> {
-    match env::var(name) {
-        Ok(value) => match value.as_str() {
-            "true" => Ok(Some(true)),
-            "false" => Ok(Some(false)),
-            _ => Err(ConfigurationError::InvalidMcpEnable),
-        },
-        Err(env::VarError::NotPresent) => Ok(None),
-        Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpEnable),
-    }
-}
-
-fn optional_csv(name: &'static str) -> Result<Vec<String>, ConfigurationError> {
-    match env::var(name) {
-        Ok(value) => Ok(value
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .collect()),
-        Err(env::VarError::NotPresent) => Ok(Vec::new()),
-        Err(env::VarError::NotUnicode(_)) => Err(ConfigurationError::InvalidMcpAllowedOrigin),
     }
 }
 
@@ -188,7 +154,7 @@ fn required_secret(name: &'static str) -> Result<String, ConfigurationError> {
 
 fn optional_secret(name: &'static str) -> Result<Option<String>, ConfigurationError> {
     let file_variable = format!("{name}_FILE");
-    if let Some(path) = env::var_os(file_variable) {
+    if let Some(path) = std::env::var_os(file_variable) {
         let value = std::fs::read_to_string(path)
             .map_err(|_| ConfigurationError::UnreadableSecretFile(name))?
             .trim_end_matches(['\r', '\n'])
@@ -198,18 +164,23 @@ fn optional_secret(name: &'static str) -> Result<Option<String>, ConfigurationEr
             .ok_or(ConfigurationError::MissingEnvironment(name))
             .map(Some);
     }
-    Ok(env::var(name).ok().filter(|value| !value.is_empty()))
+    Ok(environment::value(name))
 }
 
 fn required(name: &'static str) -> Result<String, ConfigurationError> {
-    env::var(name)
-        .ok()
-        .filter(|value| !value.is_empty())
-        .ok_or(ConfigurationError::MissingEnvironment(name))
+    environment::value(name).ok_or(ConfigurationError::MissingEnvironment(name))
 }
 
-fn validate_base_url(value: String) -> Result<Url, ConfigurationError> {
-    let url = Url::parse(&value).map_err(|_| ConfigurationError::InvalidBaseUrl)?;
+/// 外部から到達するURLとして受理できる形式かを検査する。
+///
+/// base URLとOIDC issuer URLは同じ条件で検査する。base URLはサブパスを含められるため、
+/// pathは制限しない。
+fn validate_https_url(name: &'static str) -> Result<Url, ConfigurationError> {
+    parse_https_url(name, &required(name)?)
+}
+
+fn parse_https_url(name: &'static str, value: &str) -> Result<Url, ConfigurationError> {
+    let url = Url::parse(value).map_err(|_| ConfigurationError::InvalidHttpsUrl(name))?;
     if url.scheme() != "https"
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -217,21 +188,7 @@ fn validate_base_url(value: String) -> Result<Url, ConfigurationError> {
         || url.query().is_some()
         || url.fragment().is_some()
     {
-        return Err(ConfigurationError::InvalidBaseUrl);
-    }
-    Ok(url)
-}
-
-fn validate_issuer_url(value: String) -> Result<Url, ConfigurationError> {
-    let url = Url::parse(&value).map_err(|_| ConfigurationError::InvalidIssuerUrl)?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(ConfigurationError::InvalidIssuerUrl);
+        return Err(ConfigurationError::InvalidHttpsUrl(name));
     }
     Ok(url)
 }
@@ -241,32 +198,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn base_url_rejects_non_https() {
+    fn https_url_rejects_non_https() {
         assert_eq!(
-            validate_base_url("http://example.test".into()),
-            Err(ConfigurationError::InvalidBaseUrl)
+            parse_https_url(environment::BASE_URL, "http://example.test"),
+            Err(ConfigurationError::InvalidHttpsUrl(environment::BASE_URL))
         );
     }
 
     #[test]
     fn base_url_accepts_subpath() {
         assert_eq!(
-            validate_base_url("https://example.test/marginalis".into())
+            parse_https_url(environment::BASE_URL, "https://example.test/marginalis")
                 .expect("valid URL")
                 .path(),
             "/marginalis"
         );
     }
 
+    /// 失敗した変数名を利用者へ示せることを確認する。
     #[test]
-    fn issuer_url_rejects_userinfo() {
+    fn https_url_rejects_userinfo_and_names_the_variable() {
         for invalid in [
             "https://user@id.example.test",
             "https://user:password@id.example.test",
         ] {
             assert_eq!(
-                validate_issuer_url(invalid.into()),
-                Err(ConfigurationError::InvalidIssuerUrl)
+                parse_https_url(environment::OIDC_ISSUER_URL, invalid),
+                Err(ConfigurationError::InvalidHttpsUrl(
+                    environment::OIDC_ISSUER_URL
+                ))
             );
         }
     }
