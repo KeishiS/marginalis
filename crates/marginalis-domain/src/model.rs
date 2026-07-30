@@ -10,7 +10,8 @@ use uuid::Uuid;
 /// 公開表現で受理するノートIDなど、永続的な識別子の文字列パターン。
 ///
 /// REST・MCPのJSON Schemaはこの定数を参照し、実装が受理する規則と別に書かない。
-pub const ENTITY_ID_PATTERN: &str = "^[0-9a-fA-F-]{36}$";
+pub const ENTITY_ID_PATTERN: &str =
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct UnixMillis(i64);

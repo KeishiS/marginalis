@@ -6,15 +6,15 @@ use marginalis_application::{
     NoteAdvisorySeverity, NoteReferenceQuery, NoteValidationCode, NoteValidationDiagnostic,
     ValidatedNoteDraft,
 };
-use marginalis_domain::{EntityId, NoteDraft, NoteId, NoteValidationTarget, Utf8ByteSpan};
+use marginalis_domain::{
+    EntityId, NOTE_POLICY, NoteDraft, NoteId, NoteValidationTarget, Utf8ByteSpan,
+};
 use unicode_normalization::UnicodeNormalization;
 
+use crate::RenderError;
 use crate::configuration::analysis_options;
 use crate::policy::{
     advisory_diagnostic, diagnostic, diagnostic_sort_key, span, validate_note_content_profile,
-};
-use crate::{
-    MAX_NOTE_SOURCE_BYTES, MAX_TAG_CHARACTERS, MAX_TAGS, MAX_TITLE_CHARACTERS, RenderError,
 };
 
 pub(crate) fn analyze_valid_source(source: &str) -> Result<adocweave::Analysis, RenderError> {
@@ -97,7 +97,7 @@ pub(crate) fn validate_draft(
     let mut reference_queries = Vec::new();
     let mut title = String::new();
     let mut tags = BTreeMap::new();
-    if draft.source.len() > MAX_NOTE_SOURCE_BYTES {
+    if draft.source.len() > NOTE_POLICY.max_source_bytes {
         errors.push(diagnostic(
             NoteValidationCode::SourceTooLarge,
             NoteValidationTarget::Source,
@@ -128,7 +128,7 @@ pub(crate) fn validate_draft(
                     })
                     .map(|target| target.label.trim().nfc().collect::<String>())
                     .unwrap_or_default();
-                if title.is_empty() || title.chars().count() > MAX_TITLE_CHARACTERS {
+                if title.is_empty() || title.chars().count() > NOTE_POLICY.max_title_characters {
                     errors.push(diagnostic(
                         NoteValidationCode::InvalidTitle,
                         NoteValidationTarget::Source,
@@ -162,7 +162,7 @@ pub(crate) fn validate_draft(
                     .map(String::as_str)
                     .unwrap_or_default();
                 let tag_values = raw_tags.split(',').collect::<Vec<_>>();
-                if tag_values.len() > MAX_TAGS {
+                if tag_values.len() > NOTE_POLICY.max_tags {
                     errors.push(diagnostic(
                         NoteValidationCode::TooManyTags,
                         NoteValidationTarget::Source,
@@ -175,7 +175,7 @@ pub(crate) fn validate_draft(
                         continue;
                     }
                     if display.contains(['\n', '\r'])
-                        || display.chars().count() > MAX_TAG_CHARACTERS
+                        || display.chars().count() > NOTE_POLICY.max_tag_characters
                     {
                         errors.push(diagnostic(
                             NoteValidationCode::InvalidTag,

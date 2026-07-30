@@ -25,7 +25,7 @@
         "required": true,
         "schema": {
           "format": "uuid",
-          "pattern": "^[0-9a-fA-F-]{36}$",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
           "type": "string"
         }
       }
@@ -127,7 +127,7 @@
           },
           "item_id": {
             "format": "uuid",
-            "pattern": "^[0-9a-fA-F-]{36}$",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "revision": {
@@ -184,7 +184,7 @@
           },
           "note_id": {
             "format": "uuid",
-            "pattern": "^[0-9a-fA-F-]{36}$",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "revision": {
@@ -410,7 +410,7 @@
           },
           "note_id": {
             "format": "uuid",
-            "pattern": "^[0-9a-fA-F-]{36}$",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "revision": {
@@ -464,7 +464,7 @@
         "properties": {
           "note_id": {
             "format": "uuid",
-            "pattern": "^[0-9a-fA-F-]{36}$",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "revision": {
@@ -601,7 +601,7 @@
     "title": "Marginalis REST API",
     "version": "v3",
     "x-adocweave-package-version": "0.20.0",
-    "x-note-profile-version": 6
+    "x-note-profile-version": 7
   },
   "openapi": "3.1.0",
   "paths": {
@@ -710,7 +710,7 @@
           "required": true,
           "schema": {
             "format": "uuid",
-            "pattern": "^[0-9a-fA-F-]{36}$",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           }
         }

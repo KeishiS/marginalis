@@ -7,6 +7,14 @@
 
 ### 破壊的変更
 
+- MCPとOpenAPIが示すnote profileを7へ更新した。ノートの入力規則そのものは変えていないが、
+  規則の正本を一か所へ集約したため版を上げる。
+- ノートIDと書誌項目IDの公開JSON Schemaの`pattern`をUUID形式へ厳格化した。従来は36文字の
+  16進数とハイフンの並びであれば通過したため、実装が受理する規則より緩かった。実際に受理する
+  値は変わらない。
+
+### 破壊的変更
+
 - MCP toolが失敗したときの`structuredContent`を、REST APIと同じ失敗表現へそろえた。同じ失敗に
   対する`code`と`message`が接続方法によって変わらない。`get_note`が見つからない場合の`message`は
   `note was not found`から`note is not available`へ、書誌の`add_bibliography_items`で項目ごとに

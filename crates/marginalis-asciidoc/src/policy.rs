@@ -11,12 +11,10 @@ use marginalis_application::{
     NoteProfileLimits, NoteProfileNormalization, NoteProfileRule, NoteProfileSyntax,
     NoteValidationCode, NoteValidationDiagnostic,
 };
-use marginalis_domain::{NoteValidationTarget, Utf8ByteSpan};
+use marginalis_domain::{NOTE_POLICY, NoteValidationTarget, Utf8ByteSpan};
 
 use crate::{
-    AUTHORING_PROFILE_VERSION, DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_SOURCE_BYTES, MAX_TAG_CHARACTERS,
-    MAX_TAGS, MAX_TITLE_CHARACTERS, PINNED_ADOCWEAVE_PACKAGE_VERSION,
-    configuration::authored_url_policy,
+    AUTHORING_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION, configuration::authored_url_policy,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -98,7 +96,7 @@ pub(crate) fn diagnostic(
         code: code.as_str().into(),
         target,
         span,
-        message: diagnostic_message(code).into(),
+        message: diagnostic_message(code),
     }
 }
 
@@ -118,25 +116,25 @@ pub(crate) fn advisory_diagnostic(
     }
 }
 
-fn diagnostic_message(code: NoteValidationCode) -> &'static str {
+/// 診断の説明文。上限値を含む文は[`NOTE_POLICY`]から生成し、値と食い違わせない。
+fn diagnostic_message(code: NoteValidationCode) -> String {
     match code {
-        NoteValidationCode::InvalidTitle => {
-            "title must be non-empty, single-line, and at most 200 characters"
-        }
-        NoteValidationCode::InvalidTag => {
-            "tag must be non-empty, single-line, comma-free, and at most 64 characters"
-        }
-        NoteValidationCode::TooManyTags => "a note may contain at most 50 tags",
-        NoteValidationCode::SourceTooLarge => "source must be at most 524288 UTF-8 bytes",
-        NoteValidationCode::AsciiDocParseFailed => "body is not valid AsciiDoc",
+        NoteValidationCode::InvalidTitle => NOTE_POLICY.invalid_title_message(),
+        NoteValidationCode::InvalidTag => NOTE_POLICY.invalid_tag_message(),
+        NoteValidationCode::TooManyTags => NOTE_POLICY.too_many_tags_message(),
+        NoteValidationCode::SourceTooLarge => NOTE_POLICY.source_too_large_message(),
+        NoteValidationCode::AsciiDocParseFailed => "body is not valid AsciiDoc".to_owned(),
         NoteValidationCode::InvalidNoteReference => {
-            "note reference locator must be a valid note ID"
+            "note reference locator must be a valid note ID".to_owned()
         }
-        NoteValidationCode::UnsupportedDocumentAttribute => "the document attribute is not allowed",
+        NoteValidationCode::UnsupportedDocumentAttribute => {
+            "the document attribute is not allowed".to_owned()
+        }
         forbidden => FORBIDDEN_RULES
             .iter()
             .find_map(|rule| (rule.code() == forbidden).then_some(rule.message()))
-            .unwrap_or("note content is not allowed"),
+            .unwrap_or("note content is not allowed")
+            .to_owned(),
     }
 }
 
@@ -170,10 +168,10 @@ pub fn note_profile() -> NoteProfile {
         profile_version: AUTHORING_PROFILE_VERSION,
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION,
         limits: NoteProfileLimits {
-            max_title_characters: MAX_TITLE_CHARACTERS,
-            max_source_bytes: MAX_NOTE_SOURCE_BYTES,
-            max_tags: MAX_TAGS,
-            max_tag_characters: MAX_TAG_CHARACTERS,
+            max_title_characters: NOTE_POLICY.max_title_characters,
+            max_source_bytes: NOTE_POLICY.max_source_bytes,
+            max_tags: NOTE_POLICY.max_tags,
+            max_tag_characters: NOTE_POLICY.max_tag_characters,
         },
         normalization: NoteProfileNormalization {
             title: vec!["trim", "unicode_nfc"],
@@ -211,14 +209,14 @@ pub fn note_profile() -> NoteProfile {
                 "inline_math",
             ],
             source_language_optional: true,
-            allowed_math_languages: vec!["latexmath"],
+            allowed_math_languages: NOTE_POLICY.allowed_math_languages.to_vec(),
             title_forbidden: vec!["empty", "line_feed", "carriage_return"],
             tag_forbidden: vec!["empty", "comma", "line_feed", "carriage_return"],
         },
         authoring_guidance: vec![
             "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.",
         ],
-        allowed_source_languages: DEFAULT_SOURCE_LANGUAGES.to_vec(),
+        allowed_source_languages: NOTE_POLICY.allowed_source_languages.to_vec(),
         forbidden_rules: FORBIDDEN_RULES
             .iter()
             .map(|rule| NoteProfileRule {
@@ -274,7 +272,8 @@ struct NoteContentProfile {
 impl Default for NoteContentProfile {
     fn default() -> Self {
         Self {
-            allowed_source_languages: DEFAULT_SOURCE_LANGUAGES
+            allowed_source_languages: NOTE_POLICY
+                .allowed_source_languages
                 .iter()
                 .map(|language| (*language).to_owned())
                 .collect(),
@@ -289,6 +288,25 @@ pub(crate) fn validate_note_content_profile(
 }
 
 /// 指定したホスト側プロファイルで、I/O、raw HTMLおよび未許可の表示経路を検証する。
+/// コードブロックの言語が許可集合に含まれるかを検査する。
+///
+/// `[source]`blockと`----`で囲むverbatim blockは、AdocWeaveの表現は異なるが同じ規則を適用する。
+/// AdocWeaveでの表現が異なるため、共通する項目だけを受け取る。
+fn unsupported_source_language(
+    profile: &NoteContentProfile,
+    language: Option<&str>,
+    language_range: Option<TextRange>,
+    attribute_range: TextRange,
+) -> Option<NoteContentError> {
+    let normalized = language?.to_ascii_lowercase();
+    (!profile.allowed_source_languages.contains(&normalized)).then(|| {
+        NoteContentError::forbidden(
+            ForbiddenRule::UnsupportedSourceLanguage,
+            language_range.unwrap_or(attribute_range),
+        )
+    })
+}
+
 fn validate_note_content_profile_with(
     analysis: &adocweave::Analysis,
     profile: &NoteContentProfile,
@@ -342,29 +360,20 @@ fn validate_note_content_profile_with(
             ));
         }
         SemanticNode::Block(Block::Source(source)) => {
-            let Some(language) = source.language.as_deref() else {
-                return;
-            };
-            let normalized = language.to_ascii_lowercase();
-            if !profile.allowed_source_languages.contains(&normalized) {
-                errors.push(NoteContentError::forbidden(
-                    ForbiddenRule::UnsupportedSourceLanguage,
-                    source.language_range.unwrap_or(source.attribute_range),
-                ));
-            }
+            errors.extend(unsupported_source_language(
+                profile,
+                source.language.as_deref(),
+                source.language_range,
+                source.attribute_range,
+            ));
         }
         SemanticNode::Block(Block::Verbatim(block)) => {
-            let VerbatimKind::Source(source) = &block.kind else {
-                return;
-            };
-            let Some(language) = source.language.as_deref() else {
-                return;
-            };
-            let normalized = language.to_ascii_lowercase();
-            if !profile.allowed_source_languages.contains(&normalized) {
-                errors.push(NoteContentError::forbidden(
-                    ForbiddenRule::UnsupportedSourceLanguage,
-                    source.language_range.unwrap_or(source.attribute_range),
+            if let VerbatimKind::Source(source) = &block.kind {
+                errors.extend(unsupported_source_language(
+                    profile,
+                    source.language.as_deref(),
+                    source.language_range,
+                    source.attribute_range,
                 ));
             }
         }
@@ -387,4 +396,149 @@ fn validate_note_content_profile_with(
     }
     errors.sort_by_key(|error| (error.range.start(), error.range.end(), error.code.as_str()));
     errors
+}
+
+#[cfg(test)]
+mod tests {
+    use marginalis_application::NoteValidationCode;
+
+    use super::*;
+
+    /// 固定入力を解析し、禁止規則の検出結果をcodeの一覧として返す。
+    ///
+    /// `analyze_valid_source`は禁止規則を検出した時点で失敗するため、ここでは同じ設定で
+    /// 解析だけを行い、規則の判定結果を取り出す。
+    fn violations(source: &str) -> Vec<NoteValidationCode> {
+        let analysis = adocweave::Engine::new(crate::configuration::analysis_options())
+            .analyze(source)
+            .expect("構文として解析できる入力");
+        validate_note_content_profile(&analysis)
+            .into_iter()
+            .map(|error| error.code)
+            .collect()
+    }
+
+    const HEADER: &str = "= 題名\n\n";
+
+    #[test]
+    fn accepts_content_that_satisfies_every_rule() {
+        let source = format!(
+            "{HEADER}本文です。\n\n\
+             [source,rust]\n----\nfn main() {{}}\n----\n\n\
+             link:https://example.test[例]\n\n\
+             [[anchor-a]]\n== 節A\n\n\
+             stem:[a + b]\n"
+        );
+        assert!(
+            violations(&source).is_empty(),
+            "許可した記法は拒否しません: {:?}",
+            violations(&source)
+        );
+    }
+
+    #[test]
+    fn rejects_source_languages_outside_the_policy() {
+        let source = format!("{HEADER}[source,malbolge]\n----\nx\n----\n");
+        assert!(
+            violations(&source).contains(&NoteValidationCode::UnsupportedSourceLanguage),
+            "許可していない言語を拒否します"
+        );
+    }
+
+    /// `[source]`blockとverbatim blockで同じ規則が適用されることを確認する。
+    ///
+    /// 以前は二つの経路が別々に書かれており、片方だけを変更できる状態だった。
+    #[test]
+    fn applies_the_same_source_language_rule_to_both_block_forms() {
+        for source in [
+            // 単独のコードブロック
+            format!("{HEADER}[source,malbolge]\n----\nx\n----\n"),
+            // リスト継続の中のコードブロック
+            format!("{HEADER}* 項目\n+\n[source,malbolge]\n----\nx\n----\n"),
+        ] {
+            assert!(
+                violations(&source).contains(&NoteValidationCode::UnsupportedSourceLanguage),
+                "どちらの記法でも同じ規則を適用します: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_url_schemes_outside_the_policy() {
+        let source = format!("{HEADER}link:javascript:alert(1)[危険]\n");
+        assert!(violations(&source).contains(&NoteValidationCode::InvalidUrlScheme));
+    }
+
+    #[test]
+    fn rejects_passthrough_and_include_and_resources() {
+        let cases = [
+            (
+                format!("{HEADER}pass:[<script>x</script>]\n"),
+                NoteValidationCode::InlinePassthroughDisabled,
+            ),
+            (
+                format!("{HEADER}++++\n<script>x</script>\n++++\n"),
+                NoteValidationCode::BlockPassthroughDisabled,
+            ),
+            (
+                format!("{HEADER}include::other.adoc[]\n"),
+                NoteValidationCode::IncludeDirectiveDisabled,
+            ),
+            (
+                format!("{HEADER}image::https://example.test/a.png[]\n"),
+                NoteValidationCode::ResourceDisabled,
+            ),
+        ];
+        for (source, expected) in cases {
+            assert!(
+                violations(&source).contains(&expected),
+                "{expected:?}を検出します: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_anchors() {
+        let source = format!("{HEADER}[[same]]\n== 節A\n\n本文A\n\n[[same]]\n== 節B\n\n本文B\n");
+        assert!(violations(&source).contains(&NoteValidationCode::DuplicateAnchor));
+    }
+
+    #[test]
+    fn rejects_references_outside_the_note_scheme() {
+        let source = format!("{HEADER}xref:other:1234[別体系]\n");
+        assert!(violations(&source).contains(&NoteValidationCode::ExternalReferenceDisabled));
+    }
+
+    /// 説明文が[`NOTE_POLICY`]の上限値から生成されることを確認する。
+    #[test]
+    fn diagnostic_messages_carry_the_configured_limits() {
+        assert!(
+            diagnostic_message(NoteValidationCode::SourceTooLarge)
+                .contains(&NOTE_POLICY.max_source_bytes.to_string())
+        );
+        assert!(
+            diagnostic_message(NoteValidationCode::TooManyTags)
+                .contains(&NOTE_POLICY.max_tags.to_string())
+        );
+    }
+
+    /// 公開するprofileが検証器と同じ正本から生成されることを確認する。
+    #[test]
+    fn profile_reports_the_same_policy_that_validation_applies() {
+        let profile = note_profile();
+        assert_eq!(
+            profile.limits.max_source_bytes,
+            NOTE_POLICY.max_source_bytes
+        );
+        assert_eq!(profile.limits.max_tags, NOTE_POLICY.max_tags);
+        assert_eq!(
+            profile.allowed_source_languages,
+            NOTE_POLICY.allowed_source_languages.to_vec()
+        );
+        assert_eq!(
+            profile.syntax.allowed_math_languages,
+            NOTE_POLICY.allowed_math_languages.to_vec()
+        );
+        assert_eq!(profile.profile_version, AUTHORING_PROFILE_VERSION);
+    }
 }

@@ -12,11 +12,40 @@ use adocweave::{
     semantic::ExternalAttributes,
 };
 
-use crate::{DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_SOURCE_BYTES};
+use marginalis_domain::NOTE_POLICY;
+
+/// [`NOTE_POLICY`]が許可するURLスキームの集合。
+fn allowed_url_schemes() -> std::collections::BTreeSet<String> {
+    NOTE_POLICY
+        .allowed_url_schemes
+        .iter()
+        .map(|scheme| (*scheme).to_owned())
+        .collect()
+}
+
+/// AdocWeaveが受け取る入力バイト数の上限。
+///
+/// [`NOTE_POLICY`]の値は`usize`だが、AdocWeaveは`u32`で受け取る。上限を超える設定を
+/// 黙って切り詰めないよう、変換に失敗した場合は`u32`の最大値へ丸めず失敗させる。
+fn source_byte_limit() -> u32 {
+    u32::try_from(NOTE_POLICY.max_source_bytes).expect("source byte limit fits in u32")
+}
+
+/// [`NOTE_POLICY`]が許可する数式言語をAdocWeaveの表現へ対応付ける。
+fn allowed_math_languages() -> std::collections::BTreeSet<MathLanguage> {
+    NOTE_POLICY
+        .allowed_math_languages
+        .iter()
+        .map(|language| match *language {
+            "latexmath" => MathLanguage::Latex,
+            other => panic!("未対応の数式言語がnote policyにあります: {other}"),
+        })
+        .collect()
+}
 
 pub(crate) fn authored_url_policy() -> AuthoredUrlPolicy {
     AuthoredUrlPolicy {
-        allowed_schemes: ["http".to_owned(), "https".to_owned()].into(),
+        allowed_schemes: allowed_url_schemes(),
         allow_relative: false,
     }
 }
@@ -35,7 +64,7 @@ pub(crate) fn analysis_options() -> AnalysisOptions {
         syntax: SyntaxOptions {
             syntax_mode: SyntaxMode::Strict,
             limits: AnalysisLimits {
-                max_input_bytes: MAX_NOTE_SOURCE_BYTES as u32,
+                max_input_bytes: source_byte_limit(),
                 ..AnalysisLimits::default()
             },
         },
@@ -47,7 +76,7 @@ pub(crate) fn analysis_options() -> AnalysisOptions {
 pub(crate) fn render_policy() -> RenderPolicy {
     RenderPolicy {
         active_urls: ActiveUrlPolicy {
-            allowed_schemes: ["http".to_owned(), "https".to_owned()].into(),
+            allowed_schemes: allowed_url_schemes(),
             allow_authored_relative: false,
             allow_resolved_relative: false,
             allow_resolved_root_relative: true,
@@ -55,7 +84,8 @@ pub(crate) fn render_policy() -> RenderPolicy {
         },
         source_languages: SourceLanguagePolicy {
             allowed: Some(
-                DEFAULT_SOURCE_LANGUAGES
+                NOTE_POLICY
+                    .allowed_source_languages
                     .iter()
                     .map(|language| (*language).to_owned())
                     .collect(),
@@ -63,7 +93,7 @@ pub(crate) fn render_policy() -> RenderPolicy {
             unknown: UnknownSourceLanguage::Diagnostic,
         },
         math_languages: MathLanguagePolicy {
-            allowed: [MathLanguage::Latex].into(),
+            allowed: allowed_math_languages(),
         },
         resources: ResourceCapabilities {
             images: false,
@@ -76,7 +106,7 @@ pub(crate) fn render_policy() -> RenderPolicy {
 
 pub(crate) const fn output_limits() -> OutputLimits {
     OutputLimits {
-        max_output_bytes: 50 * 1024 * 1024,
+        max_output_bytes: NOTE_POLICY.max_output_bytes,
     }
 }
 
@@ -113,7 +143,10 @@ mod tests {
             rendering.source_languages.unknown,
             UnknownSourceLanguage::Diagnostic
         );
-        assert_eq!(output_limits().max_output_bytes, 50 * 1024 * 1024);
+        assert_eq!(
+            output_limits().max_output_bytes,
+            NOTE_POLICY.max_output_bytes
+        );
     }
 
     #[test]
