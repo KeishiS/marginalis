@@ -6,14 +6,14 @@
 
 ## 現在地
 
-`v0.14.0`では、CodeMirror 6を採用したAsciiDoc編集画面と、構造化ログの監視契約を公開しました。
-操作と制約は[AsciiDoc編集画面](web-ui-editor.md)、採用理由は
-[CodeMirror採用判断](adr/0003-codemirrorをasciidoc編集基盤に採用.md)で説明します。
+`v0.15.0`では、フロントエンドのパッケージ管理をpnpmへ統一し、画面全体のデザイン体系、
+共通ヘッダー、保存成功時のトーストを公開しました。画面構成と視覚表現は
+[Web UIの画面設計](web-ui-design.md)で説明します。
 
-現在は[#121](https://github.com/KeishiS/marginalis/issues/121)で、フロントエンドのパッケージ管理を
-pnpmへ統一し、画面全体のデザイン体系、共通ヘッダー、保存成功時のトーストを追加した`v0.15.0`を
-公開します。画面構成と視覚表現は[Web UIの画面設計](web-ui-design.md)、版別の確認結果は
-[v0.15.0受入結果](acceptance-results/v0.15.0.md)へ記録します。
+現在は[#141](https://github.com/KeishiS/marginalis/issues/141)で、AdocWeave 0.19.0、
+同一オリジンからのMathJax字体配信、ブラウザー診断のCI監視、閲覧画面のタグ表示をまとめた
+`v0.16.0`を準備しています。互換性と移行方法は[変更履歴](../CHANGELOG.md)、版別の確認結果は
+[v0.16.0受入結果](acceptance-results/v0.16.0.md)へ記録します。
 
 ## 検索と関係グラフの評価
 
