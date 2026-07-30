@@ -1,6 +1,6 @@
 //! MCP toolの名前、入出力型、JSON Schema。
 
-use marginalis_domain::{ENTITY_ID_PATTERN, Revision};
+use marginalis_domain::{ENTITY_ID_PATTERN, NOTE_POLICY, Revision};
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -9,7 +9,7 @@ use crate::ProblemResponse;
 
 const NOTE_ID_PATTERN: &str = ENTITY_ID_PATTERN;
 const MINIMUM_REVISION: i64 = Revision::MINIMUM_VALUE;
-const MAX_SOURCE_BYTES: usize = 524_288;
+const MAX_SOURCE_BYTES: usize = NOTE_POLICY.max_source_bytes;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

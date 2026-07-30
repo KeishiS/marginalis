@@ -18,26 +18,11 @@ pub use archive::{
 };
 
 pub const ADOCWEAVE_SOURCE_REVISION: &str = "35e4a0ebd87094710f09e64a85e5f09e2dd19a7c";
-pub(crate) const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
-    "rust",
-    "typescript",
-    "javascript",
-    "json",
-    "yaml",
-    "toml",
-    "bash",
-    "sql",
-    "text",
-];
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.20.0";
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
-pub const AUTHORING_PROFILE_VERSION: u32 = 6;
+pub const AUTHORING_PROFILE_VERSION: u32 = 7;
 /// archive内のノートを受理できる入力規則の版。
 pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 4;
-pub(crate) const MAX_TITLE_CHARACTERS: usize = 200;
-pub(crate) const MAX_NOTE_SOURCE_BYTES: usize = 512 * 1024;
-pub(crate) const MAX_TAGS: usize = 50;
-pub(crate) const MAX_TAG_CHARACTERS: usize = 64;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsciiDocNoteContent;

@@ -36,9 +36,18 @@ domainの変更が公開表現を変えていないことは、`marginalis-contr
 `marginalis-web`は外部URL生成portを実装します。これにより、ノート操作の単体試験ではSQLite、
 AsciiDoc engine、HTTP serverを起動する必要がありません。
 `marginalis-asciidoc`の内部では、文書の解析と検査、ACL判定済み参照を使うHTML描画、JSON
-archive変換を別々のmoduleへ分けます。AdocWeaveの解析・描画設定とnote profileの安全性規則は
-それぞれ一か所に置き、各moduleが同じ設定を使用します。crate外にはapplication portの実装と、
-保守コマンドに必要なarchiveおよび参照抽出だけを公開します。
+archive変換を別々のmoduleへ分けます。crate外にはapplication portの実装と、保守コマンドに必要な
+archiveおよび参照抽出だけを公開します。
+
+ノート入力に適用する規則は`marginalis-domain`の`NOTE_POLICY`が唯一の正本です。上限値、許可する
+コード言語、数式言語、URLスキームをここで定義し、AdocWeaveへ渡す解析・描画設定、公開JSON Schema、
+診断の説明文、MCPの`get_note_profile`が返す内容をすべてここから導出します。同じ規則を別の場所へ
+書き写しません。AdocWeaveのlintで表現できる規則は設定として渡し、表現できない規則だけを
+`marginalis-asciidoc`が自前で検査します。
+
+なお、AdocWeave packageの版とnote profileの版は入力規則ではなく依存と公開契約の同一性を表すため、
+`NOTE_POLICY`には含めず`marginalis-asciidoc`の定数に置きます。`cargo make adocweave-version-check`が
+`Cargo.lock`と`flake.nix`の固定値との一致を検査します。
 `marginalis-auth-oidc`は外部identity provider portを実装し、OIDC discovery・code exchange・
 ID token検証を担当します。利用を許可する`server-users`所属の判断はapplicationが担当します。
 `marginalis-auth-oauth`はAuth0のmetadataとJWKSを取得し、MCP access tokenからKanidm identity、

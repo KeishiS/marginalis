@@ -4,7 +4,7 @@
 //! [`marginalis_domain`]の定義を参照する。要求と応答の構造だけをこのmoduleで定義する。
 
 use marginalis_domain::{
-    ENTITY_ID_PATTERN, NoteAccess, NotePermission, NoteValidationTarget, Revision,
+    ENTITY_ID_PATTERN, NOTE_POLICY, NoteAccess, NotePermission, NoteValidationTarget, Revision,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -388,7 +388,7 @@ pub fn openapi_document() -> Value {
             "title": "Marginalis REST API",
             "version": API_VERSION,
             "x-adocweave-package-version": "0.20.0",
-            "x-note-profile-version": 6
+            "x-note-profile-version": 7
         },
         "paths": rest_paths(),
         "components": {
@@ -725,7 +725,7 @@ fn note_diagnostic_schema() -> Value {
 fn note_draft_schema() -> Value {
     object_schema(
         json!({
-            "source": {"type": "string", "x-maxBytes": 524288}
+            "source": {"type": "string", "x-maxBytes": NOTE_POLICY.max_source_bytes}
         }),
         &["source"],
     )
