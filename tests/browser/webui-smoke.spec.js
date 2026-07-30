@@ -305,6 +305,13 @@ stem:[\mathbb{R}]`,
 
   await page.goto(`/notes/${noteId}`);
   await expect(page.locator(".rendered-content mjx-container")).toBeVisible();
+  expect(
+    await page
+      .locator("style[id^='MJX-']")
+      .evaluateAll((styles) =>
+        styles.every((style) => style.nonce === "browser-smoke"),
+      ),
+  ).toBe(true);
   expect(fontResponses).toContainEqual({
     url: "http://127.0.0.1:42877/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/double-struck.js",
     status: 200,
