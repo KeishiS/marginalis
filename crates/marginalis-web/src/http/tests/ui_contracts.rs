@@ -358,8 +358,8 @@ async fn editor_pages_embed_subpath_configuration_without_note_content() {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
     );
     assert!(content_security_policy.contains(&format!("'nonce-{nonce}'")));
-    assert!(content_security_policy.contains("style-src-elem 'self' 'nonce-"));
-    assert!(content_security_policy.contains("style-src-attr 'unsafe-inline'"));
+    assert!(content_security_policy.contains("font-src 'self' data:"));
+    assert!(!content_security_policy.contains("'unsafe-inline'"));
 
     let edit = ui_app(vec![ui_note("非公開の本文を埋め込まない")], false, "/")
         .oneshot(authenticated_request(

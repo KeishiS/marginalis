@@ -86,8 +86,13 @@ async function loadMathJax(): Promise<MathJaxRuntime> {
   mathJaxLoader = new Promise<MathJaxRuntime>((resolve, reject) => {
     const mathJaxScriptUrl = new URL(mathJaxUrl, document.baseURI);
     const fontDirectory = new URL("mathjax-fonts", mathJaxScriptUrl).toString();
+    const styleNonce =
+      document.querySelector<HTMLScriptElement>("script[nonce]")?.nonce ?? "";
     window.MathJax = {
-      startup: { typeset: false },
+      startup: {
+        typeset: false,
+        ready: () => initializeMathJaxWithStyleNonce(styleNonce),
+      },
       loader: { paths: { fonts: fontDirectory } },
       // enrichmentはexplorerを有効化し、読み上げ用領域のinline styleを挿入する。
       // Marginalisはstyle-srcを同一originに限定するため、任意の対話機能を無効にする。
@@ -103,13 +108,7 @@ async function loadMathJax(): Promise<MathJaxRuntime> {
     script.src = mathJaxScriptUrl.toString();
     script.async = true;
     script.addEventListener("load", () => {
-      if (!isMathJaxRuntime(window.MathJax)) {
-        reject(new Error("MathJaxを初期化できませんでした。"));
-        return;
-      }
-      void window.MathJax.startup.promise.then(() =>
-        resolve(window.MathJax as MathJaxRuntime),
-      );
+      void waitForMathJaxRuntime().then(resolve, reject);
     });
     script.addEventListener("error", () =>
       reject(new Error("MathJaxを読み込めませんでした。")),
@@ -117,6 +116,100 @@ async function loadMathJax(): Promise<MathJaxRuntime> {
     document.head.append(script);
   });
   return mathJaxLoader;
+}
+
+async function waitForMathJaxRuntime(): Promise<MathJaxRuntime> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const startupPromise = mathJaxStartupPromise(window.MathJax);
+    if (startupPromise) {
+      await startupPromise;
+      if (isMathJaxRuntime(window.MathJax)) return window.MathJax;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+  }
+  throw new Error("MathJaxを初期化できませんでした。");
+}
+
+function mathJaxStartupPromise(value: unknown): Promise<void> | null {
+  if (typeof value !== "object" || value === null) return null;
+  const startup = (value as { startup?: unknown }).startup;
+  if (
+    (typeof startup !== "object" && typeof startup !== "function") ||
+    startup === null
+  )
+    return null;
+  const promise = (startup as { promise?: unknown }).promise;
+  return promise instanceof Promise ? promise : null;
+}
+
+function initializeMathJaxWithStyleNonce(styleNonce: string) {
+  const startup = (window.MathJax as { startup?: unknown })?.startup;
+  if (!hasMathJaxDefaultReady(startup)) {
+    throw new Error("MathJaxの起動処理を初期化できませんでした。");
+  }
+  const appendChild = document.head.appendChild.bind(document.head);
+  document.head.appendChild = ((child: Node) => {
+    if (child instanceof HTMLStyleElement) child.nonce = styleNonce;
+    return appendChild(child);
+  }) as typeof document.head.appendChild;
+  try {
+    startup.defaultReady();
+  } finally {
+    document.head.appendChild = appendChild;
+  }
+  if (!hasMathJaxAdaptor(startup)) {
+    throw new Error("MathJaxのDOM処理を初期化できませんでした。");
+  }
+  const createNode = startup.adaptor.node.bind(startup.adaptor);
+  const appendNode = startup.adaptor.append.bind(startup.adaptor);
+  startup.adaptor.node = (
+    kind: string,
+    attributes: Record<string, unknown> = {},
+    ...rest: unknown[]
+  ) =>
+    createNode(
+      kind,
+      kind === "style" ? { ...attributes, nonce: styleNonce } : attributes,
+      ...rest,
+    );
+  startup.adaptor.append = (parent: unknown, child: unknown) => {
+    if (child instanceof HTMLStyleElement) child.nonce = styleNonce;
+    return appendNode(parent, child);
+  };
+}
+
+function hasMathJaxDefaultReady(
+  value: unknown,
+): value is { defaultReady: () => void } {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    typeof (value as { defaultReady?: unknown }).defaultReady === "function"
+  );
+}
+
+function hasMathJaxAdaptor(value: unknown): value is {
+  adaptor: {
+    node: (
+      kind: string,
+      attributes?: Record<string, unknown>,
+      ...rest: unknown[]
+    ) => unknown;
+    append: (parent: unknown, child: unknown) => unknown;
+  };
+} {
+  if (
+    (typeof value !== "object" && typeof value !== "function") ||
+    value === null
+  )
+    return false;
+  const candidate = value as {
+    adaptor?: { append?: unknown; node?: unknown };
+  };
+  return (
+    typeof candidate.adaptor?.node === "function" &&
+    typeof candidate.adaptor.append === "function"
+  );
 }
 
 function isMathJaxRuntime(value: unknown): value is MathJaxRuntime {
