@@ -39,6 +39,15 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   page,
   context,
 }) => {
+  await page.addInitScript(() => {
+    window.__marginalisCspViolations = [];
+    document.addEventListener("securitypolicyviolation", (event) => {
+      window.__marginalisCspViolations.push({
+        blockedURI: event.blockedURI,
+        effectiveDirective: event.effectiveDirective,
+      });
+    });
+  });
   await login(page);
 
   const script = await context.request.get(`${baseUrl}/assets/editor.js`);
@@ -58,6 +67,28 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "aria-pressed",
     "true",
   );
+  const workspace = page.locator(".editor-workspace");
+  await expect(workspace).not.toHaveAttribute("style", /.+/);
+  await page.getByRole("slider", { name: /執筆欄の幅/ }).fill("65");
+  await expect(workspace).toHaveAttribute("data-editor-width", "65");
+  const paneRatio = await page.evaluate(() => {
+    const sourcePane = document.querySelector(".editor-source-pane");
+    const previewPane = document.querySelector(".preview-scroll");
+    return (
+      sourcePane.getBoundingClientRect().width /
+      previewPane.getBoundingClientRect().width
+    );
+  });
+  expect(paneRatio).toBeCloseTo(65 / 35, 1);
+  expect(
+    await page.evaluate(() =>
+      window.__marginalisCspViolations.filter(
+        ({ effectiveDirective }) =>
+          effectiveDirective === "style-src-attr" ||
+          effectiveDirective === "style-src-elem",
+      ),
+    ),
+  ).toEqual([]);
   await page.getByRole("button", { name: "執筆" }).click();
   await expect(page.locator(".editor-workspace")).toHaveAttribute(
     "data-view-mode",

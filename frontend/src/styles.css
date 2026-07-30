@@ -765,11 +765,41 @@ select:hover {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   display: grid;
-  grid-template-columns:
-    minmax(0, var(--editor-width)) 0.0625rem
-    minmax(0, var(--preview-width));
+  grid-template-columns: minmax(0, 1fr) 0.0625rem minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
+}
+
+.editor-workspace[data-editor-width="30"] {
+  grid-template-columns: minmax(0, 30fr) 0.0625rem minmax(0, 70fr);
+}
+
+.editor-workspace[data-editor-width="35"] {
+  grid-template-columns: minmax(0, 35fr) 0.0625rem minmax(0, 65fr);
+}
+
+.editor-workspace[data-editor-width="40"] {
+  grid-template-columns: minmax(0, 40fr) 0.0625rem minmax(0, 60fr);
+}
+
+.editor-workspace[data-editor-width="45"] {
+  grid-template-columns: minmax(0, 45fr) 0.0625rem minmax(0, 55fr);
+}
+
+.editor-workspace[data-editor-width="55"] {
+  grid-template-columns: minmax(0, 55fr) 0.0625rem minmax(0, 45fr);
+}
+
+.editor-workspace[data-editor-width="60"] {
+  grid-template-columns: minmax(0, 60fr) 0.0625rem minmax(0, 40fr);
+}
+
+.editor-workspace[data-editor-width="65"] {
+  grid-template-columns: minmax(0, 65fr) 0.0625rem minmax(0, 35fr);
+}
+
+.editor-workspace[data-editor-width="70"] {
+  grid-template-columns: minmax(0, 70fr) 0.0625rem minmax(0, 30fr);
 }
 
 .editor-workspace[data-view-mode="write"],
