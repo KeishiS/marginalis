@@ -249,6 +249,13 @@ function NoteViewer({
             >
               コピー
             </button>
+            {view.note.tags.length > 0 && (
+              <ul className="tag-list note-view-tags" aria-label="ノートのタグ">
+                {view.note.tags.map((tag) => (
+                  <li key={tag}>{tag}</li>
+                ))}
+              </ul>
+            )}
           </div>
           {copyStatus !== "idle" && (
             <p
