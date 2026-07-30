@@ -19,10 +19,12 @@ let mathJaxLoader: Promise<MathJaxRuntime> | null = null;
 
 export function RenderedContent({
   html,
+  styleNonce,
   preview = false,
   active = true,
 }: {
   html: string;
+  styleNonce: string;
   preview?: boolean;
   active?: boolean;
 }) {
@@ -46,7 +48,7 @@ export function RenderedContent({
     }
 
     let current = true;
-    void loadMathJax()
+    void loadMathJax(styleNonce)
       .then(async (mathJax) => {
         if (!current) return;
         mathJax.typesetClear?.([element]);
@@ -62,7 +64,7 @@ export function RenderedContent({
     return () => {
       current = false;
     };
-  }, [active, failedHtml, html]);
+  }, [active, failedHtml, html, styleNonce]);
 
   return (
     <>
@@ -79,15 +81,13 @@ export function RenderedContent({
   );
 }
 
-async function loadMathJax(): Promise<MathJaxRuntime> {
+async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {
   if (isMathJaxRuntime(window.MathJax)) return window.MathJax;
   if (mathJaxLoader) return mathJaxLoader;
 
   mathJaxLoader = new Promise<MathJaxRuntime>((resolve, reject) => {
     const mathJaxScriptUrl = new URL(mathJaxUrl, document.baseURI);
     const fontDirectory = new URL("mathjax-fonts", mathJaxScriptUrl).toString();
-    const styleNonce =
-      document.querySelector<HTMLScriptElement>("script[nonce]")?.nonce ?? "";
     window.MathJax = {
       startup: {
         typeset: false,

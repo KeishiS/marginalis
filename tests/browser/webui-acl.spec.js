@@ -52,6 +52,9 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   browser,
   browserDiagnostics,
 }) => {
+  browserDiagnostics.allow(
+    (diagnostic) => diagnostic.summary === "HTTP 404応答",
+  );
   await loginOwner(page);
   await page.getByRole("link", { name: "新規ノート" }).click();
   await page

@@ -38,7 +38,13 @@ async function csrfToken(context) {
 test("Web UI creates, previews, edits, and resolves a revision conflict", async ({
   page,
   context,
+  browserDiagnostics,
 }) => {
+  browserDiagnostics.allow((diagnostic) =>
+    ["HTTP 404応答", "HTTP 409応答", "HTTP 422応答"].includes(
+      diagnostic.summary,
+    ),
+  );
   await page.addInitScript(() => {
     window.__marginalisCspViolations = [];
     document.addEventListener("securitypolicyviolation", (event) => {
@@ -326,4 +332,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "= 警告を確認するノート\n\nこの結果は xref:note:0197c9bc-0000-7000-8000-000000000002[参照]に記載されています。",
   );
   await expect(page.locator(".cm-lintRange-warning")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__marginalisCspViolations)).toEqual(
+    [],
+  );
 });

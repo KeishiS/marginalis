@@ -297,7 +297,7 @@ function NoteViewer({
         </nav>
       </div>
       <div className="document-surface">
-        <RenderedContent html={view.html} />
+        <RenderedContent html={view.html} styleNonce={config.styleNonce} />
       </div>
       <RelatedNotes config={config} view={view} />
     </section>

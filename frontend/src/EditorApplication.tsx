@@ -361,6 +361,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
               loading={preview.loading}
               problem={preview.problem}
               onSelectDiagnostic={selectDiagnostic}
+              styleNonce={config.styleNonce}
             />
           </div>
         </div>
@@ -638,6 +639,7 @@ function PreviewPanel({
   loading,
   problem,
   onSelectDiagnostic,
+  styleNonce,
 }: {
   active: boolean;
   body: string;
@@ -646,6 +648,7 @@ function PreviewPanel({
   loading: boolean;
   problem: Problem | null;
   onSelectDiagnostic: (diagnostic: NoteDiagnostic) => void;
+  styleNonce: string;
 }) {
   const externalDiagnostics = diagnostics.filter(
     (diagnostic) => !canSelectDiagnostic(diagnostic),
@@ -724,13 +727,30 @@ function PreviewPanel({
           </ul>
         </section>
       )}
-      {html && <SafePreview active={active} html={html} />}
+      {html && (
+        <SafePreview active={active} html={html} styleNonce={styleNonce} />
+      )}
       {!html && !loading && !problem && <p>プレビューはありません。</p>}
     </section>
   );
 }
 
-function SafePreview({ active, html }: { active: boolean; html: string }) {
+function SafePreview({
+  active,
+  html,
+  styleNonce,
+}: {
+  active: boolean;
+  html: string;
+  styleNonce: string;
+}) {
   // 同じ保存規則とRenderPolicyを通ったサーバー生成HTMLだけを受け取る。
-  return <RenderedContent active={active} html={html} preview />;
+  return (
+    <RenderedContent
+      active={active}
+      html={html}
+      preview
+      styleNonce={styleNonce}
+    />
+  );
 }
