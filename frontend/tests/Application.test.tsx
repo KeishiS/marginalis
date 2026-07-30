@@ -1,4 +1,11 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Application } from "../src/Application";
@@ -98,6 +105,11 @@ describe("Application", () => {
   });
 
   it("閲覧APIの実効権限に応じて操作リンクを表示する", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      clipboard: { writeText },
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -136,5 +148,66 @@ describe("Application", () => {
       expect(screen.getByRole("link", { name: "編集" })).toBeInTheDocument(),
     );
     expect(screen.getByRole("link", { name: "共有設定" })).toBeInTheDocument();
+    expect(
+      screen.getByText("0197c9bc-0000-7000-8000-000000000001"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "note IDをコピー" }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        "0197c9bc-0000-7000-8000-000000000001",
+      ),
+    );
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
+      "note IDをコピーしました。",
+    );
+  });
+
+  it("note IDをコピーできない場合に失敗を通知する", async () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      clipboard: {
+        writeText: vi.fn().mockRejectedValue(new Error("denied")),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            note: {
+              note_id: "0197c9bc-0000-7000-8000-000000000001",
+              title: "設計メモ",
+              source: "= 設計メモ\n\n本文",
+              tags: [],
+              created_at_ms: 1,
+              updated_at_ms: 1,
+              revision: 1,
+            },
+            access: "read",
+            html: "<article><h1>設計メモ</h1></article>",
+            related: { outgoing: [], incoming: [] },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    render(
+      <Application
+        config={{
+          ...config,
+          path: "/notes/0197c9bc-0000-7000-8000-000000000001",
+        }}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "note IDをコピー" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "note IDをコピーできませんでした。",
+    );
   });
 });

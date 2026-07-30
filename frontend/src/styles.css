@@ -33,7 +33,7 @@
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --content-width: 80rem;
-  --reading-width: 58rem;
+  --reading-width: 72rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -418,7 +418,78 @@ select:hover {
   box-shadow: var(--shadow-sm);
   margin-inline: auto;
   max-width: var(--reading-width);
+  min-width: 0;
   padding: clamp(1.25rem, 4vw, 3rem);
+  width: 100%;
+}
+
+.note-viewer {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.note-view-toolbar {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-inline: auto;
+  max-width: var(--reading-width);
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  width: 100%;
+}
+
+.note-view-toolbar .page-actions {
+  margin: 0;
+}
+
+.note-identity {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.note-identity-label {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.note-identity-value {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.note-identity-value code {
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, "Cascadia Code", "SFMono-Regular", monospace;
+  font-size: 0.82rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 0.4rem 0.55rem;
+  user-select: all;
+}
+
+.copy-feedback {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.copy-feedback-success {
+  color: var(--color-success);
+}
+
+.copy-feedback-failure {
+  color: var(--color-danger);
 }
 
 .rendered-content {
@@ -592,6 +663,8 @@ select:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 2rem auto 0;
   max-width: var(--reading-width);
+  min-width: 0;
+  width: 100%;
 }
 
 .related-notes section {
@@ -1090,6 +1163,14 @@ select,
   .related-notes,
   .conflict-fields {
     grid-template-columns: 1fr;
+  }
+
+  .note-view-toolbar {
+    align-items: stretch;
+  }
+
+  .note-view-toolbar .page-actions {
+    width: 100%;
   }
 
   .note-list-filters {
