@@ -1,5 +1,5 @@
 [package]
-name = "marginalis-asciidoc"
+name = "marginalis-archive"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,13 +7,13 @@ license.workspace = true
 publish = false
 
 [dependencies]
-thiserror.workspace = true
-adocweave.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 serde.workspace = true
 serde_json.workspace = true
-unicode-normalization.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+# 本番の依存はNoteContent portだけである。archive契約の正しさは現行の解析器が
+# 受理する内容に対して定義されるため、試験では実装を注入して確認する。
+marginalis-asciidoc = { path = "../marginalis-asciidoc" }

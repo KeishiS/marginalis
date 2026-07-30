@@ -39,12 +39,13 @@ else
   expected="$temporary_directory/expected"
   cat >"$expected" <<'EOF'
 marginalis-application: marginalis-domain
+marginalis-archive: marginalis-application, marginalis-domain
 marginalis-asciidoc: marginalis-application, marginalis-domain
 marginalis-auth-oauth: marginalis-application, marginalis-domain
 marginalis-auth-oidc: marginalis-application, marginalis-domain
 marginalis-contract: marginalis-domain
 marginalis-domain:
-marginalis-service: marginalis-application, marginalis-asciidoc, marginalis-auth-oauth, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web
+marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-auth-oauth, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web
 marginalis-sqlite: marginalis-application, marginalis-domain
 marginalis-web: marginalis-application, marginalis-contract, marginalis-domain
 EOF

@@ -1195,6 +1195,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "marginalis-archive"
+version = "0.18.0"
+dependencies = [
+ "marginalis-application",
+ "marginalis-asciidoc",
+ "marginalis-domain",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "marginalis-asciidoc"
 version = "0.18.0"
 dependencies = [
@@ -1204,7 +1216,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.19",
- "time",
  "unicode-normalization",
 ]
 
@@ -1273,6 +1284,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "marginalis-application",
+ "marginalis-archive",
  "marginalis-asciidoc",
  "marginalis-auth-oauth",
  "marginalis-auth-oidc",

@@ -2,6 +2,7 @@
 members = [
     "crates/marginalis-asciidoc",
     "crates/marginalis-application",
+    "crates/marginalis-archive",
     "crates/marginalis-auth-oauth",
     "crates/marginalis-auth-oidc",
     "crates/marginalis-contract",
