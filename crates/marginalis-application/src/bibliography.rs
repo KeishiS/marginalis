@@ -11,20 +11,36 @@ use crate::{Clock, Random};
 const MAX_CSL_JSON_BYTES: usize = 131_072;
 const MAX_CITATION_KEY_BYTES: usize = 128;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum BibliographyRepositoryError {
+    #[error("bibliography item was not found")]
     NotFound,
+    #[error("bibliography item conflicts")]
     Conflict,
+    #[error("stored bibliography data is invalid")]
     CorruptData,
+    #[error("bibliography storage is unavailable")]
     Unavailable,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// 書誌ライブラリー操作の失敗理由。
+///
+/// ここでの文言は開発者向けの記録用であり、利用者向けの`code`と`message`は
+/// transport側の写像が決める。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum BibliographyUseCaseError {
+    #[error("CSL-JSON input is invalid")]
     InvalidCslJson,
+    #[error("bibliography item is not available")]
     NotFound,
+    #[error("bibliography item conflicts")]
     Conflict,
+    /// 一時的に処理できない。再試行で解消しうる。
+    #[error("bibliography operation is unavailable")]
     Unavailable,
+    /// 保存済みの内容が現行の規則を満たさない。再試行では解消しない。
+    #[error("stored bibliography data is invalid")]
+    CorruptData,
 }
 
 #[async_trait]
@@ -218,9 +234,8 @@ fn map_repository_error(error: BibliographyRepositoryError) -> BibliographyUseCa
     match error {
         BibliographyRepositoryError::NotFound => BibliographyUseCaseError::NotFound,
         BibliographyRepositoryError::Conflict => BibliographyUseCaseError::Conflict,
-        BibliographyRepositoryError::CorruptData | BibliographyRepositoryError::Unavailable => {
-            BibliographyUseCaseError::Unavailable
-        }
+        BibliographyRepositoryError::CorruptData => BibliographyUseCaseError::CorruptData,
+        BibliographyRepositoryError::Unavailable => BibliographyUseCaseError::Unavailable,
     }
 }
 

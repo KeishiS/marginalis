@@ -16,7 +16,7 @@ pub use diagnostics::SqliteDiagnosticReport;
 pub use session::SqliteOidcLoginAttemptStore;
 
 use crate::schema::initialize_or_validate_schema;
-use std::{fmt, time::Duration};
+use std::time::Duration;
 
 use sqlx::{
     SqlitePool,
@@ -28,30 +28,20 @@ pub struct SqliteDatabase {
     pub(crate) pool: SqlitePool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SqliteStoreError {
+    #[error("note was not found or is not accessible")]
     NotFound,
+    #[error("note revision does not match")]
     Conflict,
+    #[error("archive import target must be empty")]
     ArchiveTargetNotEmpty,
+    #[error("stored data is invalid")]
     CorruptData,
+    // 内部のSQL失敗内容は利用者へ出さないため、Displayでは伏せる。
+    #[error("database query failed")]
     Database(String),
 }
-
-impl fmt::Display for SqliteStoreError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotFound => formatter.write_str("note was not found or is not accessible"),
-            Self::Conflict => formatter.write_str("note revision does not match"),
-            Self::ArchiveTargetNotEmpty => {
-                formatter.write_str("archive import target must be empty")
-            }
-            Self::CorruptData => formatter.write_str("stored data is invalid"),
-            Self::Database(_) => formatter.write_str("database query failed"),
-        }
-    }
-}
-
-impl std::error::Error for SqliteStoreError {}
 
 impl SqliteDatabase {
     /// 現行のSQLite schemaへ接続する。

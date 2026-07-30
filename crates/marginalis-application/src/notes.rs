@@ -18,11 +18,15 @@ use crate::{
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum NoteRepositoryError {
+    #[error("note was not found")]
     NotFound,
+    #[error("note revision conflicts")]
     Conflict,
+    #[error("stored note data is invalid")]
     CorruptData,
+    #[error("note storage is unavailable")]
     Unavailable,
 }
 
@@ -132,16 +136,9 @@ pub enum NoteReferenceResolution {
 }
 
 /// 文書adapterが保存済みの内容を解析または変換できない場合の失敗。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("note content could not be processed")]
 pub struct NoteContentError;
-
-impl std::fmt::Display for NoteContentError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("note content could not be processed")
-    }
-}
-
-impl std::error::Error for NoteContentError {}
 
 /// AsciiDocなどの文書形式に依存する処理を受け持つport。
 pub trait NoteContent: Send + Sync {
@@ -518,9 +515,8 @@ fn map_repository_error(error: NoteRepositoryError) -> NoteUseCaseError {
     match error {
         NoteRepositoryError::NotFound => NoteUseCaseError::NotFound,
         NoteRepositoryError::Conflict => NoteUseCaseError::Conflict,
-        NoteRepositoryError::CorruptData | NoteRepositoryError::Unavailable => {
-            NoteUseCaseError::Unavailable
-        }
+        NoteRepositoryError::CorruptData => NoteUseCaseError::CorruptData,
+        NoteRepositoryError::Unavailable => NoteUseCaseError::Unavailable,
     }
 }
 

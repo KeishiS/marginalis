@@ -61,16 +61,9 @@ impl McpEndpoint {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("MCP Authorization Server URL is invalid")]
 pub struct McpAuthorizationServerConfigurationError;
-
-impl core::fmt::Display for McpAuthorizationServerConfigurationError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("MCP Authorization Server URL is invalid")
-    }
-}
-
-impl std::error::Error for McpAuthorizationServerConfigurationError {}
 
 impl ApiState {
     pub fn new(

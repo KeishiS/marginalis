@@ -7,7 +7,8 @@ use marginalis_domain::{Actor, AuthenticatedSession, UnixMillis, WebSession};
 
 use crate::{AuthenticationUseCaseError, Clock, Random, SessionLifetime, WebSessionUseCases};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("session storage is unavailable")]
 pub struct SessionRepositoryError;
 
 /// Cookie sessionを保存する外向きport。

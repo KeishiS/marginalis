@@ -75,9 +75,11 @@ pub struct SessionLifetime {
     pub absolute_timeout_ms: i64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum AuthenticationUseCaseError {
+    #[error("authentication was rejected")]
     Rejected,
+    #[error("authentication is unavailable")]
     Unavailable,
 }
 
@@ -242,30 +244,32 @@ pub struct NoteProfile {
     pub examples: Vec<NoteProfileExample>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// ノート操作の失敗理由。
+///
+/// ここでの文言は開発者向けの記録用であり、利用者向けの`code`と`message`は
+/// transport側の写像が決める。両者を混同しないこと。
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum NoteUseCaseError {
+    #[error("note is not available")]
     NotFound,
+    #[error("note operation conflicts")]
     Conflict,
+    #[error("note is invalid")]
     Validation(Vec<NoteValidationDiagnostic>),
+    #[error("note input contains warnings")]
     AdvisoriesRejected(Vec<NoteAdvisoryDiagnostic>),
+    #[error("note cannot be rendered")]
     RenderFailed,
+    /// 一時的に処理できない。再試行で解消しうる。
+    #[error("note operation is unavailable")]
     Unavailable,
+    /// 保存済みの内容が現行の規則を満たさない。再試行では解消しない。
+    ///
+    /// 利用者向けの応答は`Unavailable`と同じにして内部状態を開示しないが、運用時に
+    /// 一時障害と区別できるよう型では分ける。
+    #[error("stored note data is invalid")]
+    CorruptData,
 }
-
-impl std::fmt::Display for NoteUseCaseError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::NotFound => "note is not available",
-            Self::Conflict => "note operation conflicts",
-            Self::Validation(_) => "note is invalid",
-            Self::AdvisoriesRejected(_) => "note input contains warnings",
-            Self::RenderFailed => "note cannot be rendered",
-            Self::Unavailable => "note operation is unavailable",
-        })
-    }
-}
-
-impl std::error::Error for NoteUseCaseError {}
 
 /// HTML内のノート参照へ付与するtransport固有の公開パス。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -423,21 +427,14 @@ impl McpAccessTokenRejection {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("MCP access token authentication failed")]
 pub enum McpAccessTokenAuthenticationError {
     Configuration,
     Discovery,
     Rejected(McpAccessTokenRejection),
     Unavailable,
 }
-
-impl core::fmt::Display for McpAccessTokenAuthenticationError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("MCP access token authentication failed")
-    }
-}
-
-impl std::error::Error for McpAccessTokenAuthenticationError {}
 
 #[async_trait]
 pub trait McpAccessTokenAuthenticator: Send + Sync {

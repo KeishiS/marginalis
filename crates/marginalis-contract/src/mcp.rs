@@ -88,26 +88,26 @@ pub struct McpToolContract {
 }
 
 impl McpToolContract {
+    /// 成功出力と失敗出力の両方を宣言したtool契約を作る。
+    ///
+    /// toolはどれも`isError: true`とともに[`ProblemResponse`]を返しうるため、出力schemaは
+    /// 常に成功型との選択とする。これにより`docs/mcp-tools.json`が実行時の失敗応答も表し、
+    /// 契約検査が差を検出できる。
     fn new<Input: JsonSchema, Output: JsonSchema>(
         name: McpToolName,
         description: &'static str,
     ) -> Self {
+        let mut output_schema = schema::<McpToolOutcome<Output>>();
+        output_schema
+            .as_object_mut()
+            .expect("generated MCP output schema is an object")
+            .insert("type".into(), Value::String("object".into()));
         Self {
             name,
             description,
             input_schema: schema::<Input>(),
-            output_schema: schema::<Output>(),
+            output_schema,
         }
-    }
-
-    fn mutation<Input: JsonSchema>(name: McpToolName, description: &'static str) -> Self {
-        let mut contract = Self::new::<Input, McpNoteMutationOutput>(name, description);
-        contract
-            .output_schema
-            .as_object_mut()
-            .expect("generated MCP output schema is an object")
-            .insert("type".into(), Value::String("object".into()));
-        contract
     }
 }
 
@@ -251,12 +251,16 @@ pub struct McpNoteRevisionOutput {
     pub revision: i64,
 }
 
+/// tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(untagged)]
-pub enum McpNoteMutationOutput {
-    Success(McpNoteRevisionOutput),
+pub enum McpToolOutcome<Output> {
+    Success(Output),
     Failure(ProblemResponse),
 }
+
+/// ノートの作成・更新結果。
+pub type McpNoteMutationOutput = McpToolOutcome<McpNoteRevisionOutput>;
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -329,11 +333,11 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
             McpToolName::GetNote,
             "Read one visible note",
         ),
-        McpToolContract::mutation::<McpCreateNoteInput>(
+        McpToolContract::new::<McpCreateNoteInput, McpNoteRevisionOutput>(
             McpToolName::CreateNote,
             "Create a note; warnings reject the write and are returned as diagnostics",
         ),
-        McpToolContract::mutation::<McpUpdateNoteInput>(
+        McpToolContract::new::<McpUpdateNoteInput, McpNoteRevisionOutput>(
             McpToolName::UpdateNote,
             "Update a note at the expected revision; warnings reject the write and are returned as diagnostics",
         ),
@@ -384,32 +388,39 @@ mod tests {
         );
         for contract in contracts {
             assert_eq!(contract.input_schema["additionalProperties"], false);
-            if matches!(
-                contract.name,
-                McpToolName::CreateNote | McpToolName::UpdateNote
-            ) {
-                assert_eq!(contract.output_schema["type"], "object");
-                assert_eq!(
-                    contract.output_schema["anyOf"],
-                    serde_json::json!([
-                        {"$ref": "#/$defs/McpNoteRevisionOutput"},
-                        {"$ref": "#/$defs/ProblemResponse"}
-                    ])
-                );
-                assert_eq!(
-                    contract.output_schema["$defs"]["McpNoteRevisionOutput"]["additionalProperties"],
-                    false
-                );
-                assert_eq!(
-                    contract.output_schema["$defs"]["ProblemResponse"]["additionalProperties"],
-                    false
-                );
-            } else {
-                assert_eq!(contract.output_schema["additionalProperties"], false);
-            }
             assert_eq!(
                 McpToolName::try_from(contract.name.as_str()),
                 Ok(contract.name)
+            );
+        }
+    }
+
+    /// すべてのtoolが、成功出力と共通の失敗出力を宣言することを確認する。
+    ///
+    /// 実行時はどのtoolも`isError: true`とともに`ProblemResponse`を返しうる。以前は
+    /// 作成と更新だけがこれを宣言しており、公開schemaが実行時応答を表していなかった。
+    #[test]
+    fn every_tool_declares_the_shared_failure_output() {
+        for contract in mcp_tool_contracts() {
+            assert_eq!(
+                contract.output_schema["type"],
+                "object",
+                "{}の出力schema",
+                contract.name.as_str()
+            );
+            let alternatives = contract.output_schema["anyOf"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{}の出力schemaはanyOf", contract.name.as_str()));
+            assert_eq!(alternatives.len(), 2);
+            assert_eq!(
+                alternatives[1],
+                serde_json::json!({"$ref": "#/$defs/ProblemResponse"}),
+                "{}は共通の失敗出力を宣言します",
+                contract.name.as_str()
+            );
+            assert_eq!(
+                contract.output_schema["$defs"]["ProblemResponse"]["additionalProperties"],
+                false
             );
         }
     }

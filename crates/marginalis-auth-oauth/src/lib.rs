@@ -2,7 +2,6 @@
 
 use std::{
     collections::BTreeSet,
-    fmt,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -41,7 +40,8 @@ pub struct McpAuthorizationConfiguration {
     pub required_user_group: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("MCP Authorization Server configuration is invalid")]
 pub enum McpAuthorizationConfigurationError {
     InvalidIssuer,
     InvalidAudience,
@@ -49,14 +49,6 @@ pub enum McpAuthorizationConfigurationError {
     InvalidClaimName,
     InvalidGroup,
 }
-
-impl fmt::Display for McpAuthorizationConfigurationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("MCP Authorization Server configuration is invalid")
-    }
-}
-
-impl std::error::Error for McpAuthorizationConfigurationError {}
 
 impl McpAuthorizationConfiguration {
     pub fn validate(self) -> Result<Self, McpAuthorizationConfigurationError> {

@@ -1,6 +1,5 @@
 //! composition rootが環境変数から読み込む公開設定とsecret設定。
 
-use core::fmt;
 use std::{net::SocketAddr, path::PathBuf};
 
 use url::Url;
@@ -57,41 +56,22 @@ pub struct SecretConfig {
     pub oidc_client_secret: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ConfigurationError {
+    #[error("required environment variable {0} is not set")]
     MissingEnvironment(&'static str),
+    #[error("{0} must be an absolute HTTPS URL without userinfo, query, or fragment")]
     InvalidHttpsUrl(&'static str),
+    #[error("{} is invalid", environment::LISTEN_ADDRESS)]
     InvalidListenAddress,
+    #[error("secret file for {0} could not be read")]
     UnreadableSecretFile(&'static str),
+    #[error(
+        "{} must contain comma-separated HTTPS origins",
+        environment::MCP_ALLOWED_ORIGINS
+    )]
     InvalidMcpAllowedOrigin,
 }
-
-impl fmt::Display for ConfigurationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingEnvironment(name) => {
-                write!(formatter, "required environment variable {name} is not set")
-            }
-            Self::InvalidHttpsUrl(name) => write!(
-                formatter,
-                "{name} must be an absolute HTTPS URL without userinfo, query, or fragment"
-            ),
-            Self::InvalidListenAddress => {
-                write!(formatter, "{} is invalid", environment::LISTEN_ADDRESS)
-            }
-            Self::UnreadableSecretFile(name) => {
-                write!(formatter, "secret file for {name} could not be read")
-            }
-            Self::InvalidMcpAllowedOrigin => write!(
-                formatter,
-                "{} must contain comma-separated HTTPS origins",
-                environment::MCP_ALLOWED_ORIGINS
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ConfigurationError {}
 
 impl ServerConfig {
     pub fn from_environment() -> Result<(Self, SecretConfig), ConfigurationError> {

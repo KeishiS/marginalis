@@ -41,43 +41,17 @@ pub struct LogicalSnapshot {
     bibliography_items: Vec<BibliographyItem>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum InvalidSnapshot {
+    #[error("note at position {position} is duplicated")]
     DuplicateNote { position: usize },
+    #[error("ACL entry at position {position} is inconsistent")]
     InvalidAclEntry { position: usize },
+    #[error("reference at position {position} has no source note")]
     InvalidReference { position: usize },
+    #[error("bibliography item at position {position} is duplicated")]
     InvalidBibliographyItem { position: usize },
 }
-
-impl std::fmt::Display for InvalidSnapshot {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::DuplicateNote { position } => {
-                write!(formatter, "note at position {position} is duplicated")
-            }
-            Self::InvalidAclEntry { position } => {
-                write!(
-                    formatter,
-                    "ACL entry at position {position} is inconsistent"
-                )
-            }
-            Self::InvalidReference { position } => {
-                write!(
-                    formatter,
-                    "reference at position {position} has no source note"
-                )
-            }
-            Self::InvalidBibliographyItem { position } => {
-                write!(
-                    formatter,
-                    "bibliography item at position {position} is duplicated"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for InvalidSnapshot {}
 
 impl LogicalSnapshot {
     pub fn new(

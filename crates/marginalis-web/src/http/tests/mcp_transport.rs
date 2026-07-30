@@ -109,25 +109,13 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             .iter()
             .all(|tool| tool["inputSchema"]["additionalProperties"] == false)
     );
+    // すべてのtoolが、成功出力と共通の失敗出力の選択として出力schemaを公開する。
     assert!(tools.iter().all(|tool| {
-        if matches!(
-            tool["name"].as_str(),
-            Some("create_note" | "update_note")
-        ) {
-            tool["outputSchema"]["type"] == "object"
-                && tool["outputSchema"]["anyOf"]
-                    .as_array()
-                    .is_some_and(|variants| {
-                variants.len() == 2
-                    && tool["outputSchema"]["$defs"]["McpNoteRevisionOutput"]
-                        ["additionalProperties"]
-                        == false
-                    && tool["outputSchema"]["$defs"]["ProblemResponse"]["additionalProperties"]
-                        == false
-                    })
-        } else {
-            tool["outputSchema"]["additionalProperties"] == false
-        }
+        tool["outputSchema"]["type"] == "object"
+            && tool["outputSchema"]["anyOf"]
+                .as_array()
+                .is_some_and(|variants| variants.len() == 2)
+            && tool["outputSchema"]["$defs"]["ProblemResponse"]["additionalProperties"] == false
     }));
 
     let profile = mcp_app()
@@ -251,7 +239,7 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert_eq!(hidden["result"]["isError"], true);
     assert_eq!(
         hidden["result"]["structuredContent"],
-        serde_json::json!({"code": "not_found", "message": "note was not found"})
+        serde_json::json!({"code": "not_found", "message": "note is not available"})
     );
 
     let request = Request::post("/mcp")

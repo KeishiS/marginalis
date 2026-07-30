@@ -80,6 +80,10 @@
   `structuredContent`と同じ契約型をJSON化した内容とし、不可視なノートの存在や属性を開示しないこと。
   `create_note`と`update_note`は警告を含む入力を変更前に拒否し、重大度と位置を保った診断を
   `isError: true`のtool結果として返すこと。
+- **REQ-API-008 — 失敗表現の共通化**: 同じ業務上の失敗に対して、REST APIとMCPが同じ`code`と
+  同じ`message`を返すこと。失敗表現は入力と成功出力と同じく公開契約として定義し、`docs/openapi.json`と
+  `docs/mcp-tools.json`へ出力すること。保存内容の破損は一時的な障害と型で区別し、利用者向けの
+  応答では区別を開示しないこと。
 - **REQ-UI-001 — React画面**: 一覧、閲覧、編集、共有設定、書誌ライブラリーを一つのReact
   アプリケーションからREST APIを利用して提供すること。
 - **REQ-UI-002 — 応答検査**: Web UIはREST応答を実行時に検査し、解釈できない応答を

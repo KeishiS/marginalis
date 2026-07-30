@@ -7,6 +7,13 @@
 
 ### 破壊的変更
 
+- MCP toolが失敗したときの`structuredContent`を、REST APIと同じ失敗表現へそろえた。同じ失敗に
+  対する`code`と`message`が接続方法によって変わらない。`get_note`が見つからない場合の`message`は
+  `note was not found`から`note is not available`へ、書誌の`add_bibliography_items`で項目ごとに
+  返す`message`は`CSL-JSON must be an object with valid id and type fields`から
+  `CSL-JSON must contain valid id and type fields`へ変わる。
+- すべてのMCP toolの`outputSchema`が、成功出力と失敗出力の選択になった。以前は`create_note`と
+  `update_note`だけが失敗出力を宣言しており、他のtoolのschemaは実行時の失敗応答を表していなかった。
 - serviceが読み取る環境変数の接頭辞を`MARGINALIS_`へ統一した。`OIDC_ISSUER_URL`、
   `OIDC_CLIENT_ID`、`OIDC_CLIENT_SECRET`、`OIDC_CLIENT_SECRET_FILE`、
   `OIDC_CA_CERTIFICATE_FILE`は、それぞれ`MARGINALIS_`を付けた名前へ変更した。NixOSモジュールが
@@ -21,6 +28,10 @@
 
 ### 変更
 
+- エラー型の表現を`thiserror`で宣言するようにした。`NoteRepositoryError`、
+  `AuthenticationUseCaseError`、`SessionRepositoryError`、`IdentityProviderError`など、
+  これまで表現を持たなかった型にも記録用の文言が付く。利用者向けの`code`と`message`は
+  従来どおりtransport側の写像が決めるため、公開応答は変わらない。
 - MCP toolのJSON Schemaで、入力上の問題の位置を表す定義名を`ValidationTargetResponse`から
   `NoteValidationTarget`へ変更した。`{"field": "source"}`のような実際の値の形式は変わらないため、
   `$ref`を解決して利用するクライアントへの影響はない。schemaから型を生成している場合は、

@@ -6,16 +6,14 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::{BibliographyUseCaseError, BibliographyUseCases};
-use marginalis_contract::{
-    BibliographyItemInput, BibliographyItemResponse, ProblemCode, ProblemResponse,
-};
+use marginalis_application::BibliographyUseCases;
+use marginalis_contract::{BibliographyItemInput, BibliographyItemResponse, ProblemCode};
 use marginalis_domain::{BibliographyItem, BibliographyItemId, EntityId};
 use serde::Deserialize;
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor},
-    error::{HandlerResult, problem},
+    error::{HandlerResult, bibliography_error, problem},
     notes::{etag, expected_revision},
     state::ApiState,
 };
@@ -113,31 +111,6 @@ fn bibliography(state: &ApiState) -> HandlerResult<&dyn BibliographyUseCases> {
             "bibliography service is unavailable",
         )
     })
-}
-
-fn bibliography_error(error: BibliographyUseCaseError) -> (StatusCode, Json<ProblemResponse>) {
-    match error {
-        BibliographyUseCaseError::InvalidCslJson => problem(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            ProblemCode::ValidationFailed,
-            "CSL-JSON must contain valid id and type fields",
-        ),
-        BibliographyUseCaseError::NotFound => problem(
-            StatusCode::NOT_FOUND,
-            ProblemCode::NotFound,
-            "bibliography item was not found",
-        ),
-        BibliographyUseCaseError::Conflict => problem(
-            StatusCode::CONFLICT,
-            ProblemCode::Conflict,
-            "citation key already exists or revision conflicts",
-        ),
-        BibliographyUseCaseError::Unavailable => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            ProblemCode::Unavailable,
-            "bibliography service is unavailable",
-        ),
-    }
 }
 
 fn item_response(item: BibliographyItem) -> BibliographyItemResponse {

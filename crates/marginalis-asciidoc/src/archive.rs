@@ -1,5 +1,3 @@
-use core::fmt;
-
 use marginalis_application::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry};
 use marginalis_domain::{
     BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteDraft, NoteId,
@@ -279,12 +277,17 @@ enum ArchiveContentsError {
     Relationships,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ArchiveMigrationError {
+    #[error("archive is not a supported migration source")]
     UnsupportedContract,
+    #[error("archive note at position {position} does not satisfy the current note profile")]
     InvalidNote { position: usize },
+    #[error("archive ACL entry at position {position} is invalid")]
     InvalidAclEntry { position: usize },
+    #[error("archive bibliography item at position {position} is invalid")]
     InvalidBibliographyItem { position: usize },
+    #[error("archive note and ACL relationships are inconsistent")]
     InvalidRelationships,
 }
 
@@ -301,43 +304,9 @@ impl From<ArchiveContentsError> for ArchiveMigrationError {
     }
 }
 
-impl fmt::Display for ArchiveMigrationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnsupportedContract => {
-                formatter.write_str("archive is not a supported migration source")
-            }
-            Self::InvalidNote { position } => write!(
-                formatter,
-                "archive note at position {position} does not satisfy the current note profile"
-            ),
-            Self::InvalidAclEntry { position } => write!(
-                formatter,
-                "archive ACL entry at position {position} is invalid"
-            ),
-            Self::InvalidBibliographyItem { position } => write!(
-                formatter,
-                "archive bibliography item at position {position} is invalid"
-            ),
-            Self::InvalidRelationships => {
-                formatter.write_str("archive note and ACL relationships are inconsistent")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ArchiveMigrationError {}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("archive is inconsistent with the current archive contract")]
 pub struct ArchiveValidationError;
-
-impl fmt::Display for ArchiveValidationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("archive is inconsistent with the current archive contract")
-    }
-}
-
-impl std::error::Error for ArchiveValidationError {}
 
 #[cfg(test)]
 mod tests {
