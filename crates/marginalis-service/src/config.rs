@@ -66,7 +66,10 @@ pub enum ConfigurationError {
     InvalidListenAddress,
     #[error("secret file for {0} could not be read")]
     UnreadableSecretFile(&'static str),
-    #[error("{} must contain comma-separated HTTPS origins", environment::MCP_ALLOWED_ORIGINS)]
+    #[error(
+        "{} must contain comma-separated HTTPS origins",
+        environment::MCP_ALLOWED_ORIGINS
+    )]
     InvalidMcpAllowedOrigin,
 }
 
