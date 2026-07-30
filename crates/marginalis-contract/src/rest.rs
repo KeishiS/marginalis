@@ -1,5 +1,11 @@
 //! REST APIとTypeScriptクライアントで共有する公開契約。
+//!
+//! 権限、アクセス水準、検証対象など、公開表現が業務モデルと同一である値は
+//! [`marginalis_domain`]の定義を参照する。要求と応答の構造だけをこのmoduleで定義する。
 
+use marginalis_domain::{
+    ENTITY_ID_PATTERN, NoteAccess, NotePermission, NoteValidationTarget, Revision,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -147,14 +153,6 @@ pub struct NoteSummaryResponse {
     pub revision: i64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NoteAccessValue {
-    Read,
-    Edit,
-    Manage,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NoteListEntryResponse {
@@ -163,7 +161,7 @@ pub struct NoteListEntryResponse {
     pub tags: Vec<String>,
     pub updated_at_ms: i64,
     pub revision: i64,
-    pub access: NoteAccessValue,
+    pub access: NoteAccess,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -177,23 +175,16 @@ pub struct RelatedNotesResponse {
 #[serde(deny_unknown_fields)]
 pub struct NoteViewResponse {
     pub note: NoteResponse,
-    pub access: NoteAccessValue,
+    pub access: NoteAccess,
     pub html: String,
     pub related: RelatedNotesResponse,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NotePermissionValue {
-    Read,
-    Edit,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NoteAclEntryInput {
     pub subject: String,
-    pub permission: NotePermissionValue,
+    pub permission: NotePermission,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -207,7 +198,7 @@ pub struct NoteAclUpdateInput {
 pub struct NoteAclGrantResponse {
     pub issuer: String,
     pub subject: String,
-    pub permission: NotePermissionValue,
+    pub permission: NotePermission,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -311,7 +302,7 @@ impl ProblemCode {
 pub struct NoteDiagnosticResponse {
     pub code: String,
     pub severity: DiagnosticSeverityResponse,
-    pub target: ValidationTargetResponse,
+    pub target: NoteValidationTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span: Option<Utf8ByteSpanResponse>,
     pub message: String,
@@ -324,17 +315,6 @@ pub enum DiagnosticSeverityResponse {
     Warning,
     Information,
     Hint,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(tag = "field", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ValidationTargetResponse {
-    Source,
-    Title,
-    Body,
-    Tag { index: usize },
-    Tags,
-    AclEntry { index: usize },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -741,11 +721,11 @@ fn note_draft_schema() -> Value {
 }
 
 fn note_id_schema() -> Value {
-    json!({"type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F-]{36}$"})
+    json!({"type": "string", "format": "uuid", "pattern": ENTITY_ID_PATTERN})
 }
 
 fn revision_schema() -> Value {
-    json!({"type": "integer", "minimum": 1})
+    json!({"type": "integer", "minimum": Revision::MINIMUM_VALUE})
 }
 
 fn object_schema(properties: Value, required: &[&str]) -> Value {
@@ -764,6 +744,59 @@ pub fn typescript_contracts() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// domainが持つ語彙の公開JSON表現を固定する。
+    ///
+    /// domain側で識別子や`serde`属性を変更すると、この試験が公開表現の変化として検出する。
+    /// 公開表現を意図して変える場合だけ、この期待値と生成物を同じ変更で更新する。
+    #[test]
+    fn domain_vocabulary_keeps_its_public_json_representation() {
+        let permissions = [
+            (NotePermission::Read, "read"),
+            (NotePermission::Edit, "edit"),
+        ];
+        for (value, expected) in permissions {
+            assert_eq!(serde_json::to_value(value).expect("permission"), expected);
+        }
+
+        let accesses = [
+            (NoteAccess::Read, "read"),
+            (NoteAccess::Edit, "edit"),
+            (NoteAccess::Manage, "manage"),
+        ];
+        for (value, expected) in accesses {
+            assert_eq!(serde_json::to_value(value).expect("access"), expected);
+        }
+
+        let targets = [
+            (NoteValidationTarget::Source, json!({"field": "source"})),
+            (NoteValidationTarget::Title, json!({"field": "title"})),
+            (NoteValidationTarget::Body, json!({"field": "body"})),
+            (NoteValidationTarget::Tags, json!({"field": "tags"})),
+            (
+                NoteValidationTarget::Tag { index: 2 },
+                json!({"field": "tag", "index": 2}),
+            ),
+            (
+                NoteValidationTarget::AclEntry { index: 3 },
+                json!({"field": "acl_entry", "index": 3}),
+            ),
+        ];
+        for (value, expected) in targets {
+            assert_eq!(serde_json::to_value(&value).expect("target"), expected);
+            assert_eq!(
+                serde_json::from_value::<NoteValidationTarget>(expected).expect("target"),
+                value
+            );
+        }
+    }
+
+    /// ノートIDとrevisionのJSON Schemaが、domainの規則を出典としていることを確認する。
+    #[test]
+    fn generated_schemas_reference_domain_identifier_rules() {
+        assert_eq!(note_id_schema()["pattern"], ENTITY_ID_PATTERN);
+        assert_eq!(revision_schema()["minimum"], Revision::MINIMUM_VALUE);
+    }
 
     #[test]
     fn generated_contracts_use_one_api_version_and_conditional_updates() {

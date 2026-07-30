@@ -8,14 +8,13 @@ use std::{
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteSummary,
-    Revision,
+    NoteValidationTarget, Revision,
 };
 
 use crate::{
     Clock, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NotePresentation,
     NotePreview, NoteProfile, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
-    NoteValidationDiagnostic, NoteValidationTarget, NoteWritePolicy, Random, RelatedNotes,
-    ValidatedNoteDraft,
+    NoteValidationDiagnostic, NoteWritePolicy, Random, RelatedNotes, ValidatedNoteDraft,
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。

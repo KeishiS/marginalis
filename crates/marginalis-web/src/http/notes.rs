@@ -8,11 +8,11 @@ use axum::{
 };
 use marginalis_application::{NoteAclChange, NoteRenderContext, NoteView, NoteWritePolicy};
 use marginalis_contract::{
-    NoteAccessValue, NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
-    NoteListEntryResponse, NotePermissionValue, NotePreviewResponse, NoteResponse,
-    NoteSummaryResponse, NoteViewResponse, ProblemCode, RelatedNotesResponse, SessionResponse,
+    NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
+    NoteListEntryResponse, NotePreviewResponse, NoteResponse, NoteSummaryResponse,
+    NoteViewResponse, ProblemCode, RelatedNotesResponse, SessionResponse,
 };
-use marginalis_domain::{Note, NoteAccess, NoteDraft, NotePermission, NoteSummary, Revision};
+use marginalis_domain::{Note, NoteDraft, NoteSummary, Revision};
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor, parse_note_id},
@@ -52,7 +52,7 @@ pub(super) async fn list_notes(
                 tags: entry.summary.tags,
                 updated_at_ms: entry.summary.updated_at.get(),
                 revision: entry.summary.revision.get(),
-                access: note_access_response(entry.access),
+                access: entry.access,
             })
             .collect(),
     ))
@@ -194,7 +194,7 @@ pub(super) async fn read_note_acl(
             .map(|entry| NoteAclGrantResponse {
                 issuer: entry.identity().issuer().to_owned(),
                 subject: entry.identity().subject().to_owned(),
-                permission: permission_response(entry.permission()),
+                permission: entry.permission(),
             })
             .collect(),
     };
@@ -218,7 +218,7 @@ pub(super) async fn replace_note_acl(
                 .into_iter()
                 .map(|entry| NoteAclChange {
                     subject: entry.subject,
-                    permission: permission(entry.permission),
+                    permission: entry.permission,
                 })
                 .collect(),
             expected_revision(&headers)?,
@@ -328,7 +328,7 @@ fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
 fn note_view_response(view: NoteView) -> NoteViewResponse {
     NoteViewResponse {
         note: note_response(view.note),
-        access: note_access_response(view.access),
+        access: view.access,
         html: view.html,
         related: RelatedNotesResponse {
             outgoing: view
@@ -344,28 +344,6 @@ fn note_view_response(view: NoteView) -> NoteViewResponse {
                 .map(note_summary_response)
                 .collect(),
         },
-    }
-}
-
-fn note_access_response(access: NoteAccess) -> NoteAccessValue {
-    match access {
-        NoteAccess::Read => NoteAccessValue::Read,
-        NoteAccess::Edit => NoteAccessValue::Edit,
-        NoteAccess::Manage => NoteAccessValue::Manage,
-    }
-}
-
-fn permission(value: NotePermissionValue) -> NotePermission {
-    match value {
-        NotePermissionValue::Read => NotePermission::Read,
-        NotePermissionValue::Edit => NotePermission::Edit,
-    }
-}
-
-fn permission_response(value: NotePermission) -> NotePermissionValue {
-    match value {
-        NotePermission::Read => NotePermissionValue::Read,
-        NotePermission::Edit => NotePermissionValue::Edit,
     }
 }
 

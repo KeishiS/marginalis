@@ -4,9 +4,9 @@ use adocweave::output::diagnostics::Severity;
 use adocweave::resolution::ReferenceKey;
 use marginalis_application::{
     NoteAdvisorySeverity, NoteReferenceQuery, NoteValidationCode, NoteValidationDiagnostic,
-    NoteValidationTarget, Utf8ByteSpan, ValidatedNoteDraft,
+    ValidatedNoteDraft,
 };
-use marginalis_domain::{EntityId, NoteDraft, NoteId};
+use marginalis_domain::{EntityId, NoteDraft, NoteId, NoteValidationTarget, Utf8ByteSpan};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::configuration::analysis_options;
@@ -257,10 +257,8 @@ const fn public_advisory_severity(severity: Severity) -> Option<NoteAdvisorySeve
 
 #[cfg(test)]
 mod tests {
-    use marginalis_application::{
-        NoteAdvisorySeverity, NoteValidationCode, NoteValidationTarget, Utf8ByteSpan,
-    };
-    use marginalis_domain::NoteDraft;
+    use marginalis_application::{NoteAdvisorySeverity, NoteValidationCode};
+    use marginalis_domain::{NoteDraft, NoteValidationTarget, Utf8ByteSpan};
 
     use super::*;
 

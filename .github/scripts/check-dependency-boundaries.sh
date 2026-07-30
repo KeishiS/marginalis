@@ -42,7 +42,7 @@ marginalis-application: marginalis-domain
 marginalis-asciidoc: marginalis-application, marginalis-domain
 marginalis-auth-oauth: marginalis-application, marginalis-domain
 marginalis-auth-oidc: marginalis-application, marginalis-domain
-marginalis-contract:
+marginalis-contract: marginalis-domain
 marginalis-domain:
 marginalis-service: marginalis-application, marginalis-asciidoc, marginalis-auth-oauth, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web
 marginalis-sqlite: marginalis-application, marginalis-domain
@@ -52,7 +52,7 @@ fi
 
 if ! diff -u "$expected" "$actual"; then
   echo "workspace crateのproduction依存が設計境界と一致しません。" >&2
-  echo "domainとcontractは内側のcrateへ依存せず、applicationはdomainだけへ依存します。" >&2
+  echo "domainは他のcrateへ依存せず、contractとapplicationはdomainだけへ依存します。" >&2
   echo "adapter同士は依存せず、具象adapterの組み立てはserviceだけで行います。" >&2
   exit 1
 fi

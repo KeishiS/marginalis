@@ -404,7 +404,7 @@
               ]
             },
             "target": {
-              "$ref": "#/$defs/ValidationTargetResponse"
+              "$ref": "#/$defs/NoteValidationTarget"
             }
           },
           "required": [
@@ -415,79 +415,8 @@
           ],
           "type": "object"
         },
-        "ProblemCode": {
-          "enum": [
-            "authentication_required",
-            "authentication_unavailable",
-            "csrf_rejected",
-            "csrf_required",
-            "csrf_invalid",
-            "same_origin_required",
-            "origin_not_allowed",
-            "not_found",
-            "forbidden",
-            "conflict",
-            "precondition_required",
-            "invalid_request",
-            "validation_failed",
-            "render_failed",
-            "unavailable"
-          ],
-          "type": "string"
-        },
-        "ProblemResponse": {
-          "additionalProperties": false,
-          "properties": {
-            "code": {
-              "$ref": "#/$defs/ProblemCode"
-            },
-            "diagnostics": {
-              "items": {
-                "$ref": "#/$defs/NoteDiagnosticResponse"
-              },
-              "type": "array"
-            },
-            "message": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "code",
-            "message"
-          ],
-          "type": "object"
-        },
-        "Utf8ByteSpanResponse": {
-          "additionalProperties": false,
-          "properties": {
-            "end": {
-              "format": "uint32",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "start": {
-              "format": "uint32",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "unit": {
-              "$ref": "#/$defs/Utf8ByteUnit"
-            }
-          },
-          "required": [
-            "start",
-            "end",
-            "unit"
-          ],
-          "type": "object"
-        },
-        "Utf8ByteUnit": {
-          "enum": [
-            "utf8_byte"
-          ],
-          "type": "string"
-        },
-        "ValidationTargetResponse": {
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
           "oneOf": [
             {
               "additionalProperties": false,
@@ -580,6 +509,78 @@
               "type": "object"
             }
           ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -676,7 +677,7 @@
               ]
             },
             "target": {
-              "$ref": "#/$defs/ValidationTargetResponse"
+              "$ref": "#/$defs/NoteValidationTarget"
             }
           },
           "required": [
@@ -687,79 +688,8 @@
           ],
           "type": "object"
         },
-        "ProblemCode": {
-          "enum": [
-            "authentication_required",
-            "authentication_unavailable",
-            "csrf_rejected",
-            "csrf_required",
-            "csrf_invalid",
-            "same_origin_required",
-            "origin_not_allowed",
-            "not_found",
-            "forbidden",
-            "conflict",
-            "precondition_required",
-            "invalid_request",
-            "validation_failed",
-            "render_failed",
-            "unavailable"
-          ],
-          "type": "string"
-        },
-        "ProblemResponse": {
-          "additionalProperties": false,
-          "properties": {
-            "code": {
-              "$ref": "#/$defs/ProblemCode"
-            },
-            "diagnostics": {
-              "items": {
-                "$ref": "#/$defs/NoteDiagnosticResponse"
-              },
-              "type": "array"
-            },
-            "message": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "code",
-            "message"
-          ],
-          "type": "object"
-        },
-        "Utf8ByteSpanResponse": {
-          "additionalProperties": false,
-          "properties": {
-            "end": {
-              "format": "uint32",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "start": {
-              "format": "uint32",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "unit": {
-              "$ref": "#/$defs/Utf8ByteUnit"
-            }
-          },
-          "required": [
-            "start",
-            "end",
-            "unit"
-          ],
-          "type": "object"
-        },
-        "Utf8ByteUnit": {
-          "enum": [
-            "utf8_byte"
-          ],
-          "type": "string"
-        },
-        "ValidationTargetResponse": {
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
           "oneOf": [
             {
               "additionalProperties": false,
@@ -852,6 +782,78 @@
               "type": "object"
             }
           ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
