@@ -2,8 +2,8 @@
 
 use axum::{Json, http::StatusCode};
 use marginalis_application::{
-    AuthenticationUseCaseError, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteUseCaseError,
-    NoteValidationDiagnostic,
+    AuthenticationUseCaseError, BibliographyUseCaseError, NoteAdvisoryDiagnostic,
+    NoteAdvisorySeverity, NoteUseCaseError, NoteValidationDiagnostic,
 };
 use marginalis_contract::{
     DiagnosticSeverityResponse, NoteDiagnosticResponse, ProblemCode, ProblemResponse,
@@ -62,74 +62,102 @@ pub(super) fn problem(
     )
 }
 
-pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemResponse>) {
+/// ノート操作の失敗を公開エラー表現へ写像する唯一の関数。
+///
+/// RESTとMCPはこの結果だけを使い、transportごとに`code`と`message`を組み立てない。
+/// 同じ失敗が接続方法によって別の応答になることを防ぐ。
+pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
     match error {
-        NoteUseCaseError::NotFound => problem(
-            StatusCode::NOT_FOUND,
-            ProblemCode::NotFound,
-            "note is not available",
-        ),
-        NoteUseCaseError::Conflict => problem(
-            StatusCode::CONFLICT,
-            ProblemCode::Conflict,
-            "note revision conflicts",
-        ),
-        NoteUseCaseError::Validation(diagnostics) => {
-            record_problem_code(ProblemCode::ValidationFailed);
-            (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(validation_problem(diagnostics)),
-            )
+        NoteUseCaseError::NotFound => {
+            ProblemResponse::new(ProblemCode::NotFound, "note is not available")
         }
-        NoteUseCaseError::AdvisoriesRejected(diagnostics) => {
-            record_problem_code(ProblemCode::ValidationFailed);
-            (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(advisory_problem(diagnostics)),
-            )
+        NoteUseCaseError::Conflict => {
+            ProblemResponse::new(ProblemCode::Conflict, "note revision conflicts")
         }
-        NoteUseCaseError::RenderFailed => problem(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            ProblemCode::RenderFailed,
-            "note cannot be rendered safely",
-        ),
-        NoteUseCaseError::Unavailable => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            ProblemCode::Unavailable,
-            "note operation is unavailable",
-        ),
+        NoteUseCaseError::Validation(diagnostics) => ProblemResponse {
+            code: ProblemCode::ValidationFailed,
+            message: "note input is invalid".into(),
+            diagnostics: diagnostics.into_iter().map(validation_response).collect(),
+        },
+        NoteUseCaseError::AdvisoriesRejected(diagnostics) => ProblemResponse {
+            code: ProblemCode::ValidationFailed,
+            message: "note input contains warnings".into(),
+            diagnostics: diagnostics.into_iter().map(advisory_response).collect(),
+        },
+        NoteUseCaseError::RenderFailed => {
+            ProblemResponse::new(ProblemCode::RenderFailed, "note cannot be rendered safely")
+        }
+        // 保存内容の破損は運用上は一時障害と区別するが、内部状態を開示しないため
+        // 利用者向けの応答は同じにする。
+        NoteUseCaseError::Unavailable | NoteUseCaseError::CorruptData => {
+            ProblemResponse::new(ProblemCode::Unavailable, "note operation is unavailable")
+        }
     }
 }
 
-fn advisory_problem(diagnostics: Vec<NoteAdvisoryDiagnostic>) -> ProblemResponse {
-    ProblemResponse {
-        code: ProblemCode::ValidationFailed,
-        message: "note input contains warnings".into(),
-        diagnostics: diagnostics.into_iter().map(advisory_response).collect(),
+/// 書誌ライブラリー操作の失敗を公開エラー表現へ写像する唯一の関数。
+pub(super) fn bibliography_problem(error: BibliographyUseCaseError) -> ProblemResponse {
+    match error {
+        BibliographyUseCaseError::InvalidCslJson => ProblemResponse::new(
+            ProblemCode::ValidationFailed,
+            "CSL-JSON must contain valid id and type fields",
+        ),
+        BibliographyUseCaseError::NotFound => {
+            ProblemResponse::new(ProblemCode::NotFound, "bibliography item was not found")
+        }
+        BibliographyUseCaseError::Conflict => ProblemResponse::new(
+            ProblemCode::Conflict,
+            "citation key already exists or revision conflicts",
+        ),
+        BibliographyUseCaseError::Unavailable | BibliographyUseCaseError::CorruptData => {
+            ProblemResponse::new(
+                ProblemCode::Unavailable,
+                "bibliography service is unavailable",
+            )
+        }
     }
+}
+
+/// 公開エラーcodeに対応するHTTP status。RESTだけが使用する。
+pub(super) const fn problem_status(code: ProblemCode) -> StatusCode {
+    match code {
+        ProblemCode::AuthenticationRequired => StatusCode::UNAUTHORIZED,
+        ProblemCode::AuthenticationUnavailable | ProblemCode::Unavailable => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+        ProblemCode::CsrfRejected
+        | ProblemCode::CsrfRequired
+        | ProblemCode::CsrfInvalid
+        | ProblemCode::SameOriginRequired
+        | ProblemCode::OriginNotAllowed
+        | ProblemCode::Forbidden => StatusCode::FORBIDDEN,
+        ProblemCode::NotFound => StatusCode::NOT_FOUND,
+        ProblemCode::Conflict => StatusCode::CONFLICT,
+        ProblemCode::PreconditionRequired => StatusCode::PRECONDITION_REQUIRED,
+        ProblemCode::InvalidRequest => StatusCode::BAD_REQUEST,
+        ProblemCode::ValidationFailed | ProblemCode::RenderFailed => {
+            StatusCode::UNPROCESSABLE_ENTITY
+        }
+    }
+}
+
+fn problem_response(problem: ProblemResponse) -> (StatusCode, Json<ProblemResponse>) {
+    record_problem_code(problem.code);
+    (problem_status(problem.code), Json(problem))
+}
+
+pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemResponse>) {
+    problem_response(note_problem(error))
+}
+
+pub(super) fn bibliography_error(
+    error: BibliographyUseCaseError,
+) -> (StatusCode, Json<ProblemResponse>) {
+    problem_response(bibliography_problem(error))
 }
 
 fn record_problem_code(code: ProblemCode) {
     tracing::Span::current().record("problem_code", code.as_str());
-}
-
-fn validation_problem(diagnostics: Vec<NoteValidationDiagnostic>) -> ProblemResponse {
-    ProblemResponse {
-        code: ProblemCode::ValidationFailed,
-        message: "note input is invalid".into(),
-        diagnostics: diagnostics.into_iter().map(validation_response).collect(),
-    }
-}
-
-pub(super) fn validation_problem_json(
-    diagnostics: Vec<NoteValidationDiagnostic>,
-) -> serde_json::Value {
-    serde_json::to_value(validation_problem(diagnostics))
-        .expect("validation problem is serializable")
-}
-
-pub(super) fn advisory_problem_json(diagnostics: Vec<NoteAdvisoryDiagnostic>) -> serde_json::Value {
-    serde_json::to_value(advisory_problem(diagnostics)).expect("advisory problem is serializable")
 }
 
 pub(super) fn authentication_error(

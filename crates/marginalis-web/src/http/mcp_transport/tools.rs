@@ -11,7 +11,7 @@ use marginalis_contract::{
     McpGetNoteInput, McpGetNoteOutput, McpListNotesOutput, McpNoteProfileExample,
     McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule,
     McpNoteProfileSyntax, McpNoteRevisionOutput, McpNoteSummary, McpSearchBibliographyInput,
-    McpToolName, McpUpdateNoteInput,
+    McpToolName, McpUpdateNoteInput, ProblemResponse,
 };
 use marginalis_domain::{Actor, BibliographyItemId, EntityId, Note, NoteDraft, Revision};
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ use crate::mcp::JsonRpcResponse;
 
 use super::super::{
     auth::parse_note_id,
-    error::{advisory_problem_json, validation_problem_json},
+    error::{bibliography_problem, note_problem},
 };
 
 pub(super) struct McpToolCall {
@@ -130,8 +130,12 @@ enum McpToolFailure {
 impl McpToolFailure {
     fn outcome(&self) -> &'static str {
         match self {
-            Self::UseCase(NoteUseCaseError::Unavailable) => "failure",
-            Self::Bibliography(BibliographyUseCaseError::Unavailable) => "failure",
+            Self::UseCase(NoteUseCaseError::Unavailable | NoteUseCaseError::CorruptData) => {
+                "failure"
+            }
+            Self::Bibliography(
+                BibliographyUseCaseError::Unavailable | BibliographyUseCaseError::CorruptData,
+            ) => "failure",
             Self::InvalidArguments(_)
             | Self::UnknownTool
             | Self::UseCase(
@@ -155,6 +159,8 @@ impl McpToolFailure {
             Self::UseCase(NoteUseCaseError::Conflict) => "conflict",
             Self::UseCase(NoteUseCaseError::RenderFailed) => "render-failed",
             Self::UseCase(NoteUseCaseError::Unavailable) => "unavailable",
+            Self::UseCase(NoteUseCaseError::CorruptData) => "corrupt-data",
+            Self::Bibliography(BibliographyUseCaseError::CorruptData) => "corrupt-data",
             Self::Bibliography(BibliographyUseCaseError::InvalidCslJson) => "invalid-csl-json",
             Self::Bibliography(BibliographyUseCaseError::NotFound) => "not-found",
             Self::Bibliography(BibliographyUseCaseError::Conflict) => "conflict",
@@ -413,25 +419,13 @@ fn bibliography_import_error(
     citation_key: Option<String>,
     error: BibliographyUseCaseError,
 ) -> McpBibliographyImportError {
-    let (code, message) = match error {
-        BibliographyUseCaseError::InvalidCslJson => (
-            "validation_failed",
-            "CSL-JSON must be an object with valid id and type fields",
-        ),
-        BibliographyUseCaseError::NotFound => ("not_found", "bibliography item was not found"),
-        BibliographyUseCaseError::Conflict => (
-            "conflict",
-            "citation key already exists or revision conflicts",
-        ),
-        BibliographyUseCaseError::Unavailable => {
-            ("unavailable", "bibliography service is unavailable")
-        }
-    };
+    // 項目別の失敗も、単独の失敗と同じ写像から`code`と`message`を得る。
+    let problem = bibliography_problem(error);
     McpBibliographyImportError {
         input_index,
         citation_key,
-        code: code.into(),
-        message: message.into(),
+        code: problem.code.as_str().into(),
+        message: problem.message,
     }
 }
 
@@ -450,31 +444,7 @@ fn mcp_bibliography_error(
     id: serde_json::Value,
     error: BibliographyUseCaseError,
 ) -> JsonRpcResponse {
-    let value = match error {
-        BibliographyUseCaseError::InvalidCslJson => serde_json::json!({
-            "code":"validation_failed",
-            "message":"CSL-JSON must be an object with valid id and type fields"
-        }),
-        BibliographyUseCaseError::NotFound => {
-            serde_json::json!({"code":"not_found","message":"bibliography item was not found"})
-        }
-        BibliographyUseCaseError::Conflict => serde_json::json!({
-            "code":"conflict",
-            "message":"citation key already exists or revision conflicts"
-        }),
-        BibliographyUseCaseError::Unavailable => serde_json::json!({
-            "code":"unavailable",
-            "message":"bibliography service is unavailable"
-        }),
-    };
-    JsonRpcResponse::success(
-        id,
-        serde_json::json!({
-            "content":[{"type":"text","text":value.to_string()}],
-            "structuredContent":value,
-            "isError":true
-        }),
-    )
+    mcp_problem_result(id, bibliography_problem(error))
 }
 
 fn mcp_tool_success(id: serde_json::Value, output: McpToolOutput) -> JsonRpcResponse {
@@ -492,27 +462,16 @@ fn mcp_tool_success(id: serde_json::Value, output: McpToolOutput) -> JsonRpcResp
 }
 
 fn mcp_tool_error(id: serde_json::Value, error: NoteUseCaseError) -> JsonRpcResponse {
-    let value = match error {
-        NoteUseCaseError::Validation(diagnostics) => validation_problem_json(diagnostics),
-        NoteUseCaseError::AdvisoriesRejected(diagnostics) => advisory_problem_json(diagnostics),
-        NoteUseCaseError::NotFound => {
-            serde_json::json!({"code":"not_found","message":"note was not found"})
-        }
-        NoteUseCaseError::Conflict => {
-            serde_json::json!({"code":"conflict","message":"note revision conflicts"})
-        }
-        NoteUseCaseError::RenderFailed => serde_json::json!({
-            "code":"render_failed",
-            "message":"note cannot be rendered safely"
-        }),
-        NoteUseCaseError::Unavailable => serde_json::json!({
-            "code":"unavailable",
-            "message":"note service is unavailable"
-        }),
-    };
-    let text = serde_json::to_string(&value).unwrap_or_else(|_| {
-        r#"{"code":"unavailable","message":"note service is unavailable"}"#.into()
-    });
+    mcp_problem_result(id, note_problem(error))
+}
+
+/// 失敗をRESTと同じ`ProblemResponse`として返す。
+///
+/// 手でJSONを組み立てず、`error`moduleの写像だけを使う。`docs/mcp-tools.json`が示す
+/// 失敗出力schemaと同じ型を通すため、契約検査が実行時応答との差を検出できる。
+fn mcp_problem_result(id: serde_json::Value, problem: ProblemResponse) -> JsonRpcResponse {
+    let value = serde_json::to_value(&problem).expect("problem response is serializable");
+    let text = serde_json::to_string(&problem).expect("problem response is serializable");
     JsonRpcResponse::success(
         id,
         serde_json::json!({

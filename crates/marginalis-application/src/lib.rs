@@ -249,7 +249,13 @@ pub enum NoteUseCaseError {
     Validation(Vec<NoteValidationDiagnostic>),
     AdvisoriesRejected(Vec<NoteAdvisoryDiagnostic>),
     RenderFailed,
+    /// 一時的に処理できない。再試行で解消しうる。
     Unavailable,
+    /// 保存済みの内容が現行の規則を満たさない。再試行では解消しない。
+    ///
+    /// 利用者向けの応答は`Unavailable`と同じにして内部状態を開示しないが、運用時に
+    /// 一時障害と区別できるよう型では分ける。
+    CorruptData,
 }
 
 impl std::fmt::Display for NoteUseCaseError {
@@ -260,7 +266,7 @@ impl std::fmt::Display for NoteUseCaseError {
             Self::Validation(_) => "note is invalid",
             Self::AdvisoriesRejected(_) => "note input contains warnings",
             Self::RenderFailed => "note cannot be rendered",
-            Self::Unavailable => "note operation is unavailable",
+            Self::Unavailable | Self::CorruptData => "note operation is unavailable",
         })
     }
 }

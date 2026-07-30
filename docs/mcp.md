@@ -237,9 +237,29 @@ MCP tool resultの`isError: true`で返します。
 この厳格な判定はMCPの変更toolだけに適用します。RESTとWeb UIは、保存を妨げない警告として従来どおり
 扱います。MCPクライアントは診断に従って入力を修正し、同じtoolを再実行してください。拒否された
 `update_note`ではrevisionも変わらないため、修正後も同じ`expected_revision`を使用できます。
-`create_note`と`update_note`の`outputSchema`は、成功時のrevisionと診断付き失敗の両方を表します。
 `text`には`structuredContent`と同じJSONを文字列として返すため、構造化出力を直接扱わない
 クライアントでも診断を取得できます。
+
+## 失敗した場合の応答
+
+すべてのtoolは、失敗すると`isError: true`とともに、REST APIと同じ形式の失敗表現を
+`structuredContent`へ入れて返します。`code`と`message`はREST APIの同じ失敗と一致するため、
+接続方法によって文言が変わりません。`diagnostics`は入力検査に失敗した場合だけ付きます。
+
+```json
+{
+  "code": "not_found",
+  "message": "note is not available"
+}
+```
+
+各toolの`outputSchema`は、成功出力とこの失敗表現の選択として定義します。機械的に確認する場合は
+[MCP toolのJSON Schema](mcp-tools.json)を参照してください。`code`の一覧は
+[OpenAPI](openapi.json)の`ProblemResponse`と同じです。
+
+保存内容が現行の規則を満たさない場合も、利用者向けの応答は一時的な障害と同じ`unavailable`です。
+内部状態を開示しないためで、運用時の区別は`mcp.tool.completed`の`reason`（`corrupt-data`と
+`unavailable`）で確認します。
 
 MCP仕様`2026-07-28`と、移行期間中の`2025-11-25`、`2025-03-26`に対応します。
 `2026-07-28`のrequestは`initialize`を必要とせず、各POSTの`MCP-Protocol-Version`、

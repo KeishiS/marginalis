@@ -10,6 +10,30 @@
     },
     "outputSchema": {
       "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "type": "string"
+        },
+        "McpListNotesOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "notes": {
+              "items": {
+                "$ref": "#/$defs/McpNoteSummary"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "notes"
+          ],
+          "type": "object"
+        },
         "McpNoteSummary": {
           "additionalProperties": false,
           "properties": {
@@ -43,22 +67,220 @@
             "revision"
           ],
           "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "notes": {
-          "items": {
-            "$ref": "#/$defs/McpNoteSummary"
-          },
-          "type": "array"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpListNotesOutput"
+        },
+        {
+          "$ref": "#/$defs/ProblemResponse"
         }
-      },
-      "required": [
-        "notes"
       ],
-      "title": "McpListNotesOutput",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -73,6 +295,15 @@
     },
     "outputSchema": {
       "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "type": "string"
+        },
         "McpNoteProfileExample": {
           "additionalProperties": false,
           "properties": {
@@ -151,6 +382,64 @@
           ],
           "type": "object"
         },
+        "McpNoteProfileOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "adocweave_package_version": {
+              "type": "string"
+            },
+            "allowed_source_languages": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "authoring_guidance": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "examples": {
+              "items": {
+                "$ref": "#/$defs/McpNoteProfileExample"
+              },
+              "type": "array"
+            },
+            "forbidden_rules": {
+              "items": {
+                "$ref": "#/$defs/McpNoteProfileRule"
+              },
+              "type": "array"
+            },
+            "limits": {
+              "$ref": "#/$defs/McpNoteProfileLimits"
+            },
+            "normalization": {
+              "$ref": "#/$defs/McpNoteProfileNormalization"
+            },
+            "profile_version": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "syntax": {
+              "$ref": "#/$defs/McpNoteProfileSyntax"
+            }
+          },
+          "required": [
+            "profile_version",
+            "adocweave_package_version",
+            "limits",
+            "normalization",
+            "syntax",
+            "authoring_guidance",
+            "allowed_source_languages",
+            "forbidden_rules",
+            "examples"
+          ],
+          "type": "object"
+        },
         "McpNoteProfileRule": {
           "additionalProperties": false,
           "properties": {
@@ -213,65 +502,220 @@
             "tag_forbidden"
           ],
           "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "adocweave_package_version": {
-          "type": "string"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpNoteProfileOutput"
         },
-        "allowed_source_languages": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "authoring_guidance": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "examples": {
-          "items": {
-            "$ref": "#/$defs/McpNoteProfileExample"
-          },
-          "type": "array"
-        },
-        "forbidden_rules": {
-          "items": {
-            "$ref": "#/$defs/McpNoteProfileRule"
-          },
-          "type": "array"
-        },
-        "limits": {
-          "$ref": "#/$defs/McpNoteProfileLimits"
-        },
-        "normalization": {
-          "$ref": "#/$defs/McpNoteProfileNormalization"
-        },
-        "profile_version": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "syntax": {
-          "$ref": "#/$defs/McpNoteProfileSyntax"
+        {
+          "$ref": "#/$defs/ProblemResponse"
         }
-      },
-      "required": [
-        "profile_version",
-        "adocweave_package_version",
-        "limits",
-        "normalization",
-        "syntax",
-        "authoring_guidance",
-        "allowed_source_languages",
-        "forbidden_rules",
-        "examples"
       ],
-      "title": "McpNoteProfileOutput",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -294,43 +738,267 @@
       "type": "object"
     },
     "outputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "note_id": {
+      "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
           "type": "string"
         },
-        "revision": {
-          "format": "int64",
-          "minimum": 1,
-          "type": "integer"
-        },
-        "source": {
-          "type": "string"
-        },
-        "tags": {
-          "items": {
-            "type": "string"
+        "McpGetNoteOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "note_id": {
+              "type": "string"
+            },
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "source": {
+              "type": "string"
+            },
+            "tags": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updated_at_ms": {
+              "format": "int64",
+              "type": "integer"
+            }
           },
-          "type": "array"
+          "required": [
+            "note_id",
+            "title",
+            "source",
+            "tags",
+            "updated_at_ms",
+            "revision"
+          ],
+          "type": "object"
         },
-        "title": {
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
           "type": "string"
         },
-        "updated_at_ms": {
-          "format": "int64",
-          "type": "integer"
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
-      "required": [
-        "note_id",
-        "title",
-        "source",
-        "tags",
-        "updated_at_ms",
-        "revision"
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpGetNoteOutput"
+        },
+        {
+          "$ref": "#/$defs/ProblemResponse"
+        }
       ],
-      "title": "McpGetNoteOutput",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -592,7 +1260,8 @@
           "$ref": "#/$defs/ProblemResponse"
         }
       ],
-      "title": "McpNoteMutationOutput",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -865,7 +1534,8 @@
           "$ref": "#/$defs/ProblemResponse"
         }
       ],
-      "title": "McpNoteMutationOutput",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -894,23 +1564,247 @@
       "type": "object"
     },
     "outputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "note_id": {
+      "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
           "type": "string"
         },
-        "revision": {
-          "format": "int64",
-          "minimum": 1,
-          "type": "integer"
+        "McpNoteRevisionOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "note_id": {
+              "type": "string"
+            },
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "note_id",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
-      "required": [
-        "note_id",
-        "revision"
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpNoteRevisionOutput"
+        },
+        {
+          "$ref": "#/$defs/ProblemResponse"
+        }
       ],
-      "title": "McpNoteRevisionOutput",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -932,6 +1826,15 @@
     },
     "outputSchema": {
       "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "type": "string"
+        },
         "McpBibliographyItem": {
           "additionalProperties": false,
           "properties": {
@@ -960,22 +1863,235 @@
             "revision"
           ],
           "type": "object"
+        },
+        "McpBibliographyListOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/McpBibliographyItem"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "items": {
-          "items": {
-            "$ref": "#/$defs/McpBibliographyItem"
-          },
-          "type": "array"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpBibliographyListOutput"
+        },
+        {
+          "$ref": "#/$defs/ProblemResponse"
         }
-      },
-      "required": [
-        "items"
       ],
-      "title": "McpBibliographyListOutput",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -997,34 +2113,258 @@
       "type": "object"
     },
     "outputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "citation_key": {
+      "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
           "type": "string"
         },
-        "csl_json": true,
-        "item_id": {
+        "McpBibliographyItem": {
+          "additionalProperties": false,
+          "properties": {
+            "citation_key": {
+              "type": "string"
+            },
+            "csl_json": true,
+            "item_id": {
+              "type": "string"
+            },
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "updated_at_ms": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "item_id",
+            "citation_key",
+            "csl_json",
+            "updated_at_ms",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
           "type": "string"
         },
-        "revision": {
-          "format": "int64",
-          "minimum": 1,
-          "type": "integer"
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
         },
-        "updated_at_ms": {
-          "format": "int64",
-          "type": "integer"
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
-      "required": [
-        "item_id",
-        "citation_key",
-        "csl_json",
-        "updated_at_ms",
-        "revision"
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpBibliographyItem"
+        },
+        {
+          "$ref": "#/$defs/ProblemResponse"
+        }
       ],
-      "title": "McpBibliographyItem",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -1051,6 +2391,15 @@
     },
     "outputSchema": {
       "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "type": "string"
+        },
         "McpBibliographyImportError": {
           "additionalProperties": false,
           "properties": {
@@ -1079,6 +2428,28 @@
           ],
           "type": "object"
         },
+        "McpBibliographyImportOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "errors": {
+              "items": {
+                "$ref": "#/$defs/McpBibliographyImportError"
+              },
+              "type": "array"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/McpBibliographyItem"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items",
+            "errors"
+          ],
+          "type": "object"
+        },
         "McpBibliographyItem": {
           "additionalProperties": false,
           "properties": {
@@ -1107,29 +2478,220 @@
             "revision"
           ],
           "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "errors": {
-          "items": {
-            "$ref": "#/$defs/McpBibliographyImportError"
-          },
-          "type": "array"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpBibliographyImportOutput"
         },
-        "items": {
-          "items": {
-            "$ref": "#/$defs/McpBibliographyItem"
-          },
-          "type": "array"
+        {
+          "$ref": "#/$defs/ProblemResponse"
         }
-      },
-      "required": [
-        "items",
-        "errors"
       ],
-      "title": "McpBibliographyImportOutput",
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   },
@@ -1158,9 +2720,233 @@
       "type": "object"
     },
     "outputSchema": {
+      "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "type": "string"
+        },
+        "McpEmptyInput": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
+        }
+      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "title": "McpEmptyInput",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpEmptyInput"
+        },
+        {
+          "$ref": "#/$defs/ProblemResponse"
+        }
+      ],
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
       "type": "object"
     }
   }

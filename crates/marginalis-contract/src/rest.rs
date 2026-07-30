@@ -237,6 +237,17 @@ pub struct ProblemResponse {
     pub diagnostics: Vec<NoteDiagnosticResponse>,
 }
 
+impl ProblemResponse {
+    /// 入力診断を伴わない失敗を組み立てる。
+    pub fn new(code: ProblemCode, message: &str) -> Self {
+        Self {
+            code,
+            message: message.to_owned(),
+            diagnostics: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProblemCode {

@@ -24,7 +24,10 @@ pub enum BibliographyUseCaseError {
     InvalidCslJson,
     NotFound,
     Conflict,
+    /// 一時的に処理できない。再試行で解消しうる。
     Unavailable,
+    /// 保存済みの内容が現行の規則を満たさない。再試行では解消しない。
+    CorruptData,
 }
 
 #[async_trait]
@@ -218,9 +221,8 @@ fn map_repository_error(error: BibliographyRepositoryError) -> BibliographyUseCa
     match error {
         BibliographyRepositoryError::NotFound => BibliographyUseCaseError::NotFound,
         BibliographyRepositoryError::Conflict => BibliographyUseCaseError::Conflict,
-        BibliographyRepositoryError::CorruptData | BibliographyRepositoryError::Unavailable => {
-            BibliographyUseCaseError::Unavailable
-        }
+        BibliographyRepositoryError::CorruptData => BibliographyUseCaseError::CorruptData,
+        BibliographyRepositoryError::Unavailable => BibliographyUseCaseError::Unavailable,
     }
 }
 

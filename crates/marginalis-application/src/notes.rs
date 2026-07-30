@@ -518,9 +518,8 @@ fn map_repository_error(error: NoteRepositoryError) -> NoteUseCaseError {
     match error {
         NoteRepositoryError::NotFound => NoteUseCaseError::NotFound,
         NoteRepositoryError::Conflict => NoteUseCaseError::Conflict,
-        NoteRepositoryError::CorruptData | NoteRepositoryError::Unavailable => {
-            NoteUseCaseError::Unavailable
-        }
+        NoteRepositoryError::CorruptData => NoteUseCaseError::CorruptData,
+        NoteRepositoryError::Unavailable => NoteUseCaseError::Unavailable,
     }
 }
 

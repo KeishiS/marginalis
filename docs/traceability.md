@@ -45,6 +45,7 @@
 | REQ-ACL-004 | REST・SQLite契約試験 | 一覧非開示 |
 | REQ-ACL-005 | SQLiteスナップショット試験、REST契約試験 | 閲覧整合性 |
 | REQ-LIFE-001 | SQLite・保守CLI・NixOS VM | 削除・復元 |
+| REQ-API-008 | REST・MCP失敗一致試験、MCP失敗出力schema生成差分 | 異常時のclient表示 |
 | REQ-DEPLOY-001 | NixOS module評価・VM | 本番設定確認 |
 | REQ-FORMAT-001 | schema・archive拒否、archive 7・8・9・10から11への移行試験 | 更新前退避 |
 
