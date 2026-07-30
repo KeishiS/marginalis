@@ -119,7 +119,7 @@ describe("Application", () => {
               note_id: "0197c9bc-0000-7000-8000-000000000001",
               title: "設計メモ",
               source: "= 設計メモ\n\n本文",
-              tags: [],
+              tags: ["研究", "Rust"],
               created_at_ms: 1,
               updated_at_ms: 1,
               revision: 1,
@@ -151,6 +151,19 @@ describe("Application", () => {
     expect(
       screen.getByText("0197c9bc-0000-7000-8000-000000000001"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("list", { name: "ノートのタグ" }).querySelectorAll("li"),
+    ).toHaveLength(2);
+    expect(
+      screen
+        .getByRole("list", { name: "ノートのタグ" })
+        .querySelectorAll("li")[0],
+    ).toHaveTextContent("研究");
+    expect(
+      screen
+        .getByRole("list", { name: "ノートのタグ" })
+        .querySelectorAll("li")[1],
+    ).toHaveTextContent("Rust");
 
     fireEvent.click(screen.getByRole("button", { name: "note IDをコピー" }));
 
@@ -205,6 +218,9 @@ describe("Application", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "note IDをコピー" }),
     );
+    expect(
+      screen.queryByRole("list", { name: "ノートのタグ" }),
+    ).not.toBeInTheDocument();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "note IDをコピーできませんでした。",

@@ -478,6 +478,15 @@ select:hover {
   user-select: all;
 }
 
+.note-view-tags {
+  min-width: 0;
+}
+
+.note-view-tags li {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .copy-feedback {
   color: var(--color-text-muted);
   font-size: 0.8rem;

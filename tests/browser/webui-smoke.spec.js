@@ -64,7 +64,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
           note_id: noteId,
           title: "広い閲覧画面",
           source: "= 広い閲覧画面\n\n本文",
-          tags: ["design"],
+          tags: ["設計", "Rust", "長いタグ名でも狭い画面からはみ出さない"],
           created_at_ms: 1,
           updated_at_ms: 1,
           revision: 1,
@@ -95,6 +95,15 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     noteId,
   );
+  await expect(page.getByRole("list", { name: "ノートのタグ" })).toContainText(
+    "設計",
+  );
+  expect(
+    await page
+      .getByRole("list", { name: "ノートのタグ" })
+      .locator("li")
+      .allTextContents(),
+  ).toEqual(["設計", "Rust", "長いタグ名でも狭い画面からはみ出さない"]);
   await expect(page).toHaveScreenshot("note-view-wide.png", SCREENSHOT_OPTIONS);
 
   await page.emulateMedia({ colorScheme: "dark" });
@@ -108,6 +117,11 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   const narrowPosition = await documentSurface.boundingBox();
   expect(narrowPosition).not.toBeNull();
   expect(narrowPosition.width).toBeLessThanOrEqual(336);
+  const tagPosition = await page
+    .getByRole("list", { name: "ノートのタグ" })
+    .boundingBox();
+  expect(tagPosition).not.toBeNull();
+  expect(tagPosition.x + tagPosition.width).toBeLessThanOrEqual(360);
   await expect(page).toHaveScreenshot(
     "note-view-narrow.png",
     SCREENSHOT_OPTIONS,
