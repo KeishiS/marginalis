@@ -19,7 +19,7 @@ rust-version = "1.97.1"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-adocweave = { git = "https://github.com/KeishiS/adocweave.git", rev = "b4b01c4545c03deb0fbf97c3d6a7e12ada675995", package = "adocweave" }
+adocweave = { git = "https://github.com/KeishiS/adocweave.git", rev = "35e4a0ebd87094710f09e64a85e5f09e2dd19a7c", package = "adocweave" }
 unicode-normalization = "0.1.25"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
 tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }

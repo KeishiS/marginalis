@@ -11,8 +11,10 @@
 
 現在は[#145](https://github.com/KeishiS/marginalis/issues/145)、
 [#146](https://github.com/KeishiS/marginalis/issues/146)、
-[#149](https://github.com/KeishiS/marginalis/issues/149)で、編集欄の範囲選択と等幅表示、画面全体の
-Noto系書体をまとめた`v0.16.1`を準備しています。互換性と移行方法は
+[#149](https://github.com/KeishiS/marginalis/issues/149)、
+[#151](https://github.com/KeishiS/marginalis/issues/151)で、編集欄の範囲選択と等幅表示、画面全体の
+Noto系書体、AdocWeave 0.20.0による複数行のリスト項目をまとめた`v0.16.1`を準備しています。
+互換性と移行方法は
 [変更履歴](../CHANGELOG.md)、版別の確認結果は
 [v0.16.1受入結果](acceptance-results/v0.16.1.md)へ記録します。
 

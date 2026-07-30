@@ -237,6 +237,11 @@ pub fn note_profile() -> NoteProfile {
                 body: "xref:note:0197c9bc-0000-7000-8000-000000000001[Related note]",
             },
             NoteProfileExample {
+                kind: "multiline_list_item",
+                description: "List item wrapped across source lines with an explicit hard break",
+                body: "* First line +\nContinued line\n* Next item",
+            },
+            NoteProfileExample {
                 kind: "source_block",
                 description: "Titled Rust source block with line numbers starting at 7",
                 body: ".Example\n[source,rust,linenums,start=7]\n----\nfn main() {}\n----",

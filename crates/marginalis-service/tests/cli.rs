@@ -78,8 +78,8 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-9");
-    assert_eq!(archive_json["adocweave_package_version"], "0.19.0");
+    assert_eq!(archive_json["format"], "marginalis-archive-10");
+    assert_eq!(archive_json["adocweave_package_version"], "0.20.0");
     assert_eq!(archive_json["note_profile_version"], 4);
 
     let backup = directory.join("backup");
@@ -251,11 +251,11 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
 fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let directory = test_directory("archive-migration");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("archive-8.json");
-    let output = directory.join("archive-9.json");
+    let input = directory.join("archive-9.json");
+    let output = directory.join("archive-10.json");
     let previous = serde_json::json!({
-        "format": "marginalis-archive-8",
-        "adocweave_package_version": "0.17.0",
+        "format": "marginalis-archive-9",
+        "adocweave_package_version": "0.19.0",
         "note_profile_version": 4,
         "notes": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",
@@ -296,12 +296,12 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let migrated: serde_json::Value =
         serde_json::from_slice(&fs::read(&output).expect("read migration output"))
             .expect("migrated JSON");
-    assert_eq!(migrated["format"], "marginalis-archive-9");
-    assert_eq!(migrated["adocweave_package_version"], "0.19.0");
+    assert_eq!(migrated["format"], "marginalis-archive-10");
+    assert_eq!(migrated["adocweave_package_version"], "0.20.0");
     assert_eq!(migrated["note_profile_version"], 4);
 
-    let invalid_input = directory.join("invalid-archive-8.json");
-    let invalid_output = directory.join("invalid-archive-9.json");
+    let invalid_input = directory.join("invalid-archive-9.json");
+    let invalid_output = directory.join("invalid-archive-10.json");
     let mut invalid = previous;
     invalid["notes"][0]["source"] =
         concat!("= Note\n:tags: research, + \\", "\n  rust\n\nbody").into();

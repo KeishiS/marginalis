@@ -8,13 +8,33 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ARCHIVE_NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION, validate_note_draft};
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-9";
-const PREVIOUS_ARCHIVE_FORMAT: &str = "marginalis-archive-8";
-const PREVIOUS_ADOCWEAVE_PACKAGE_VERSION: &str = "0.17.0";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-10";
+const PREVIOUS_ARCHIVE_FORMAT: &str = "marginalis-archive-9";
+const PREVIOUS_ADOCWEAVE_PACKAGE_VERSION: &str = "0.19.0";
 const PREVIOUS_NOTE_PROFILE_VERSION: u32 = 4;
-const LEGACY_ARCHIVE_FORMAT: &str = "marginalis-archive-7";
-const LEGACY_ADOCWEAVE_PACKAGE_VERSION: &str = "0.11.0";
-const LEGACY_NOTE_PROFILE_VERSION: u32 = 3;
+const LEGACY_ARCHIVE_FORMAT: &str = "marginalis-archive-8";
+const LEGACY_ADOCWEAVE_PACKAGE_VERSION: &str = "0.17.0";
+const LEGACY_NOTE_PROFILE_VERSION: u32 = 4;
+const OLDEST_ARCHIVE_FORMAT: &str = "marginalis-archive-7";
+const OLDEST_ADOCWEAVE_PACKAGE_VERSION: &str = "0.11.0";
+const OLDEST_NOTE_PROFILE_VERSION: u32 = 3;
+const SUPPORTED_MIGRATION_CONTRACTS: &[(&str, &str, u32)] = &[
+    (
+        PREVIOUS_ARCHIVE_FORMAT,
+        PREVIOUS_ADOCWEAVE_PACKAGE_VERSION,
+        PREVIOUS_NOTE_PROFILE_VERSION,
+    ),
+    (
+        LEGACY_ARCHIVE_FORMAT,
+        LEGACY_ADOCWEAVE_PACKAGE_VERSION,
+        LEGACY_NOTE_PROFILE_VERSION,
+    ),
+    (
+        OLDEST_ARCHIVE_FORMAT,
+        OLDEST_ADOCWEAVE_PACKAGE_VERSION,
+        OLDEST_NOTE_PROFILE_VERSION,
+    ),
+];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -102,13 +122,14 @@ pub fn validate_archive(archive: &Archive) -> Result<LogicalSnapshot, ArchiveVal
 
 /// 対応する旧archive契約を現行規則で全件再検証し、現行archiveへ変換する。
 pub fn migrate_previous_archive(archive: &Archive) -> Result<Archive, ArchiveMigrationError> {
-    let is_previous = archive.format == PREVIOUS_ARCHIVE_FORMAT
-        && archive.adocweave_package_version == PREVIOUS_ADOCWEAVE_PACKAGE_VERSION
-        && archive.note_profile_version == PREVIOUS_NOTE_PROFILE_VERSION;
-    let is_legacy = archive.format == LEGACY_ARCHIVE_FORMAT
-        && archive.adocweave_package_version == LEGACY_ADOCWEAVE_PACKAGE_VERSION
-        && archive.note_profile_version == LEGACY_NOTE_PROFILE_VERSION;
-    if !is_previous && !is_legacy {
+    let is_supported = SUPPORTED_MIGRATION_CONTRACTS.iter().any(
+        |&(format, adocweave_package_version, note_profile_version)| {
+            archive.format == format
+                && archive.adocweave_package_version == adocweave_package_version
+                && archive.note_profile_version == note_profile_version
+        },
+    );
+    if !is_supported {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
     let snapshot = validate_archive_contents(archive).map_err(ArchiveMigrationError::from)?;
@@ -329,7 +350,34 @@ mod tests {
     }
 
     #[test]
-    fn migration_rejects_source_that_only_the_previous_profile_accepted() {
+    fn oldest_archive_is_revalidated_into_the_current_contract() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let current = create_archive(&snapshot);
+        let mut oldest = current.clone();
+        oldest.format = OLDEST_ARCHIVE_FORMAT.into();
+        oldest.adocweave_package_version = OLDEST_ADOCWEAVE_PACKAGE_VERSION.into();
+        oldest.note_profile_version = OLDEST_NOTE_PROFILE_VERSION;
+
+        assert_eq!(migrate_previous_archive(&oldest), Ok(current));
+        assert_eq!(validate_archive(&oldest), Err(ArchiveValidationError));
+    }
+
+    #[test]
+    fn migration_rejects_a_mixed_historical_contract_identity() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let mut mixed = create_archive(&snapshot);
+        mixed.format = PREVIOUS_ARCHIVE_FORMAT.into();
+        mixed.adocweave_package_version = LEGACY_ADOCWEAVE_PACKAGE_VERSION.into();
+        mixed.note_profile_version = PREVIOUS_NOTE_PROFILE_VERSION;
+
+        assert_eq!(
+            migrate_previous_archive(&mixed),
+            Err(ArchiveMigrationError::UnsupportedContract)
+        );
+    }
+
+    #[test]
+    fn migration_rejects_source_that_does_not_satisfy_the_current_profile() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&snapshot);
         previous.format = PREVIOUS_ARCHIVE_FORMAT.into();
