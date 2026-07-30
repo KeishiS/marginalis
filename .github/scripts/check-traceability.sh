@@ -65,9 +65,9 @@ if [[ "$requirements" == "docs/requirements.md" && "$traceability" == "docs/trac
     fi
   done
   grep -Fq '[tasks.observability-check]' Makefile.toml || status=1
-  rg -q 'fn observability_logs_safe_http_and_mcp_results' crates/marginalis-web/src/http/tests.rs ||
+  grep -Fq 'fn observability_logs_safe_http_and_mcp_results' crates/marginalis-web/src/http/tests.rs ||
     status=1
-  rg -q 'kanidm-discovery-vm' flake.nix || status=1
+  grep -Fq 'kanidm-discovery-vm' flake.nix || status=1
 fi
 
 if [[ -d "$acceptance_directory" ]]; then
