@@ -1,5 +1,4 @@
 import {
-  type CSSProperties,
   FormEvent,
   UIEvent,
   useEffect,
@@ -328,13 +327,8 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         </div>
         <div
           className="editor-workspace"
+          data-editor-width={editorWidth}
           data-view-mode={effectiveViewMode}
-          style={
-            {
-              "--editor-width": `${editorWidth}fr`,
-              "--preview-width": `${100 - editorWidth}fr`,
-            } as CSSProperties
-          }
         >
           <div className="editor-source-pane">
             <div className="source-editor-field">

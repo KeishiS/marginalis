@@ -398,6 +398,23 @@ test("表示を切り替えても入力欄を維持する", async () => {
   await waitFor(() => expect(editor).toHaveFocus());
 });
 
+test("分割幅をinline styleを使わずに変更する", () => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>());
+  render(<EditorApplication config={CONFIG} />);
+
+  const workspace = document.querySelector(".editor-workspace");
+  expect(workspace).toHaveAttribute("data-editor-width", "50");
+  expect(workspace).not.toHaveAttribute("style");
+
+  fireEvent.change(screen.getByRole("slider", { name: /執筆欄の幅/ }), {
+    target: { value: "65" },
+  });
+
+  expect(workspace).toHaveAttribute("data-editor-width", "65");
+  expect(workspace).not.toHaveAttribute("style");
+  expect(screen.getByText("65%")).toBeInTheDocument();
+});
+
 test("狭い画面では分割せず執筆とプレビューを明示的に切り替える", () => {
   vi.stubGlobal(
     "matchMedia",
