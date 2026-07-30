@@ -53,6 +53,75 @@ test("production build starts and renders a note returned by the API", async ({
   );
 });
 
+test("閲覧画面でnote IDをコピーし、広い本文を表示する", async ({
+  page,
+  context,
+}) => {
+  const noteId = "0197c9bc-0000-7000-8000-000000000001";
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: "http://127.0.0.1:42877",
+  });
+  await page.route(`**/api/v3/notes/${noteId}/view`, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        note: {
+          note_id: noteId,
+          title: "広い閲覧画面",
+          source: "= 広い閲覧画面\n\n本文",
+          tags: ["design"],
+          created_at_ms: 1,
+          updated_at_ms: 1,
+          revision: 1,
+        },
+        access: "manage",
+        html:
+          "<article><h1>広い閲覧画面</h1><p>長い文章と表、コード、数式を読みやすい幅で表示します。</p>" +
+          "<table><tr><th>項目</th><th>説明</th><th>確認</th></tr><tr><td>本文幅</td><td>広い画面を活用します</td><td>成功</td></tr></table>" +
+          '<pre data-language="rust"><code>fn main() { println!("wide"); }</code></pre></article>',
+        related: { outgoing: [], incoming: [] },
+      }),
+    });
+  });
+
+  await page.goto(`/notes/${noteId}`);
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  const documentSurface = page.locator(".document-surface");
+  await expect(documentSurface).toBeVisible();
+  const documentPosition = await documentSurface.boundingBox();
+  expect(documentPosition).not.toBeNull();
+  expect(documentPosition.width).toBeGreaterThan(1000);
+
+  await page.getByRole("button", { name: "note IDをコピー" }).click();
+  await expect(page.getByRole("status")).toHaveText(
+    "note IDをコピーしました。",
+  );
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    noteId,
+  );
+  await expect(page).toHaveScreenshot(
+    "note-view-wide.png",
+    SCREENSHOT_OPTIONS,
+  );
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page).toHaveScreenshot(
+    "note-view-wide-dark.png",
+    SCREENSHOT_OPTIONS,
+  );
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 360, height: 720 });
+  await expect(documentSurface).toBeVisible();
+  const narrowPosition = await documentSurface.boundingBox();
+  expect(narrowPosition).not.toBeNull();
+  expect(narrowPosition.width).toBeLessThanOrEqual(336);
+  await expect(page).toHaveScreenshot(
+    "note-view-narrow.png",
+    SCREENSHOT_OPTIONS,
+  );
+});
+
 test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", async ({ page }) => {
   await page.route("**/api/v3/notes/preview", async (route) => {
     const source = (await route.request().postDataJSON()).source;

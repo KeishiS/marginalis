@@ -213,6 +213,9 @@ function NoteViewer({
 }) {
   const [view, setView] = useState<NoteView | null>(null);
   const [failed, setFailed] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "failure">(
+    "idle",
+  );
   useEffect(() => {
     const controller = new AbortController();
     readNoteView(config.apiBase, noteId, controller.signal)
@@ -220,42 +223,77 @@ function NoteViewer({
       .catch(() => !controller.signal.aborted && setFailed(true));
     return () => controller.abort();
   }, [config.apiBase, noteId]);
+  async function copyNoteId() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("unavailable");
+      await navigator.clipboard.writeText(view?.note.note_id ?? noteId);
+      setCopyStatus("success");
+    } catch {
+      setCopyStatus("failure");
+    }
+  }
   if (failed) return <p role="alert">ノートを読み込めませんでした。</p>;
   if (view === null) return <p>ノートを読み込んでいます。</p>;
   return (
-    <>
-      <nav className="page-actions" aria-label="ノート操作">
-        <a
-          className="button button-secondary"
-          href={externalPath(
-            config.basePath,
-            `/${canonicalSearch(config.search)}`,
+    <section className="note-viewer" aria-label="ノートの閲覧">
+      <div className="note-view-toolbar surface">
+        <div className="note-identity">
+          <span className="note-identity-label">note ID</span>
+          <div className="note-identity-value">
+            <code>{view.note.note_id}</code>
+            <button
+              className="button button-secondary button-small"
+              type="button"
+              aria-label="note IDをコピー"
+              onClick={() => void copyNoteId()}
+            >
+              コピー
+            </button>
+          </div>
+          {copyStatus !== "idle" && (
+            <p
+              className={`copy-feedback copy-feedback-${copyStatus}`}
+              role={copyStatus === "failure" ? "alert" : "status"}
+            >
+              {copyStatus === "success"
+                ? "note IDをコピーしました。"
+                : "note IDをコピーできませんでした。"}
+            </p>
           )}
-        >
-          一覧
-        </a>{" "}
-        {view.access !== "read" && (
-          <a
-            className="button button-primary"
-            href={`${externalPath(config.basePath, `/notes/${noteId}/edit`)}${canonicalSearch(config.search)}`}
-          >
-            編集
-          </a>
-        )}{" "}
-        {view.access === "manage" && (
+        </div>
+        <nav className="page-actions" aria-label="ノート操作">
           <a
             className="button button-secondary"
-            href={`${externalPath(config.basePath, `/notes/${noteId}/access`)}${canonicalSearch(config.search)}`}
+            href={externalPath(
+              config.basePath,
+              `/${canonicalSearch(config.search)}`,
+            )}
           >
-            共有設定
+            一覧
           </a>
-        )}
-      </nav>
+          {view.access !== "read" && (
+            <a
+              className="button button-primary"
+              href={`${externalPath(config.basePath, `/notes/${noteId}/edit`)}${canonicalSearch(config.search)}`}
+            >
+              編集
+            </a>
+          )}
+          {view.access === "manage" && (
+            <a
+              className="button button-secondary"
+              href={`${externalPath(config.basePath, `/notes/${noteId}/access`)}${canonicalSearch(config.search)}`}
+            >
+              共有設定
+            </a>
+          )}
+        </nav>
+      </div>
       <div className="document-surface">
         <RenderedContent html={view.html} />
       </div>
       <RelatedNotes config={config} view={view} />
-    </>
+    </section>
   );
 }
 
