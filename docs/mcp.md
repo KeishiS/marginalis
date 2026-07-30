@@ -189,6 +189,19 @@ MCP transportはJSON-RPC 2.0の`jsonrpc`、`method`、`params`、`id`を検証�
 不明methodは`-32601`、不正paramsは`-32602`です。tool実行時の業務エラーはJSON-RPC errorではなく
 MCP tool resultの`isError: true`で返します。
 
+`create_note`と`update_note`は、診断に`warning`が一件でも含まれる場合、ノートを変更せず
+`isError: true`を返します。`structuredContent`の`code`は`validation_failed`で、`diagnostics`には
+同じ解析で得た診断をすべて格納します。各診断は`severity`、`code`、説明、対象項目を持ち、
+位置を特定できる場合はUTF-8 byte単位の`span`も持ちます。`warning`と同時に得た`information`と
+`hint`も省略しません。`information`または`hint`だけの場合は変更を拒否しません。
+
+この厳格な判定はMCPの変更toolだけに適用します。RESTとWeb UIは、保存を妨げない警告として従来どおり
+扱います。MCPクライアントは診断に従って入力を修正し、同じtoolを再実行してください。拒否された
+`update_note`ではrevisionも変わらないため、修正後も同じ`expected_revision`を使用できます。
+`create_note`と`update_note`の`outputSchema`は、成功時のrevisionと診断付き失敗の両方を表します。
+`text`には`structuredContent`と同じJSONを文字列として返すため、構造化出力を直接扱わない
+クライアントでも診断を取得できます。
+
 初期化時は`2025-11-25`と`2025-03-26`を交渉します。以後の`MCP-Protocol-Version`が未知なら
 HTTP 400で拒否します。現行transportは`MCP-Session-Id`を発行しないstateless構成です。
 

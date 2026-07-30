@@ -90,6 +90,13 @@ pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemRe
                 Json(validation_problem(diagnostics)),
             )
         }
+        NoteUseCaseError::AdvisoriesRejected(diagnostics) => {
+            record_problem_code(ProblemCode::ValidationFailed);
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(advisory_problem(diagnostics)),
+            )
+        }
         NoteUseCaseError::RenderFailed => problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             ProblemCode::RenderFailed,
@@ -100,6 +107,14 @@ pub(super) fn note_error(error: NoteUseCaseError) -> (StatusCode, Json<ProblemRe
             ProblemCode::Unavailable,
             "note operation is unavailable",
         ),
+    }
+}
+
+fn advisory_problem(diagnostics: Vec<NoteAdvisoryDiagnostic>) -> ProblemResponse {
+    ProblemResponse {
+        code: ProblemCode::ValidationFailed,
+        message: "note input contains warnings".into(),
+        diagnostics: diagnostics.into_iter().map(advisory_response).collect(),
     }
 }
 
@@ -120,6 +135,10 @@ pub(super) fn validation_problem_json(
 ) -> serde_json::Value {
     serde_json::to_value(validation_problem(diagnostics))
         .expect("validation problem is serializable")
+}
+
+pub(super) fn advisory_problem_json(diagnostics: Vec<NoteAdvisoryDiagnostic>) -> serde_json::Value {
+    serde_json::to_value(advisory_problem(diagnostics)).expect("advisory problem is serializable")
 }
 
 pub(super) fn authentication_error(

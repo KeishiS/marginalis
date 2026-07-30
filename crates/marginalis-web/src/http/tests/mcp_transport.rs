@@ -107,11 +107,26 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             .iter()
             .all(|tool| tool["inputSchema"]["additionalProperties"] == false)
     );
-    assert!(
-        tools
-            .iter()
-            .all(|tool| tool["outputSchema"]["additionalProperties"] == false)
-    );
+    assert!(tools.iter().all(|tool| {
+        if matches!(
+            tool["name"].as_str(),
+            Some("create_note" | "update_note")
+        ) {
+            tool["outputSchema"]["type"] == "object"
+                && tool["outputSchema"]["anyOf"]
+                    .as_array()
+                    .is_some_and(|variants| {
+                variants.len() == 2
+                    && tool["outputSchema"]["$defs"]["McpNoteRevisionOutput"]
+                        ["additionalProperties"]
+                        == false
+                    && tool["outputSchema"]["$defs"]["ProblemResponse"]["additionalProperties"]
+                        == false
+                    })
+        } else {
+            tool["outputSchema"]["additionalProperties"] == false
+        }
+    }));
 
     let profile = mcp_app()
             .oneshot(
@@ -522,6 +537,78 @@ async fn mcp_rejects_invalid_json_rpc_envelopes_and_reports_tool_errors_as_resul
         serde_json::from_str(validation["result"]["content"][0]["text"].as_str().unwrap())
             .expect("serialized structured error");
     assert_eq!(text, validation["result"]["structuredContent"]);
+}
+
+#[tokio::test]
+async fn mcp_create_and_update_reject_warnings_with_typed_diagnostics() {
+    let source = "= Warning\n\nThis isxref:note:0197c9bc-0000-7000-8000-000000000002[related].";
+    let calls = [
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "create-warning",
+            "method": "tools/call",
+            "params": {
+                "name": "create_note",
+                "arguments": {"source": source}
+            }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "update-warning",
+            "method": "tools/call",
+            "params": {
+                "name": "update_note",
+                "arguments": {
+                    "note_id": "0197c9bc-0000-7000-8000-000000000002",
+                    "source": source,
+                    "expected_revision": 3
+                }
+            }
+        }),
+    ];
+
+    for call in calls {
+        let response = mcp_app()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("content-type", "application/json")
+                    .header(header::ACCEPT, "application/json, text/event-stream")
+                    .header(header::AUTHORIZATION, "Bearer write-token")
+                    .body(Body::from(call.to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("warning response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("warning response body");
+        let response: serde_json::Value =
+            serde_json::from_slice(&body).expect("warning response JSON");
+        assert_eq!(response["result"]["isError"], true);
+        let structured = response["result"]["structuredContent"].clone();
+        assert_eq!(structured["code"], "validation_failed");
+        assert_eq!(structured["diagnostics"][0]["severity"], "warning");
+        assert_eq!(
+            structured["diagnostics"][0]["span"]["unit"],
+            "utf8_byte"
+        );
+        assert_eq!(structured["diagnostics"][1]["severity"], "information");
+        assert!(structured["diagnostics"][1].get("span").is_none());
+        assert_eq!(structured["diagnostics"][2]["severity"], "hint");
+        assert!(matches!(
+            serde_json::from_value::<McpNoteMutationOutput>(structured.clone())
+                .expect("mutation output contract"),
+            McpNoteMutationOutput::Failure(_)
+        ));
+        let text: serde_json::Value = serde_json::from_str(
+            response["result"]["content"][0]["text"]
+                .as_str()
+                .expect("text result"),
+        )
+        .expect("serialized warning result");
+        assert_eq!(text, structured);
+    }
 }
 
 #[tokio::test]

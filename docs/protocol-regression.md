@@ -17,6 +17,8 @@ MCP Streamable HTTPの仕様を
 - 無効なtokenの`401`、scope不足の`403`、認証基盤障害の`503`
 - MCP initialize、protocol version交渉、initialized notification、tool call
 - JSON-RPC error object、batch拒否
+- `create_note`と`update_note`の警告拒否、診断の重大度・位置、`isError`、`text`と
+  `structuredContent`の一致
 
 NixOS VM試験`kanidm-discovery-vm`は実Kanidm 1.10、private CA、nginx TLS、`/marginalis`
 subpathを構築します。TLS越しのmetadata discoveryとlogin開始を検証し、サブパス復帰用Cookieと
@@ -39,7 +41,8 @@ nix develop --command cargo make protocol-regression-assets
 
 Auth0のDCR、認可画面、callback互換性は外部サービスとclientの組合せに依存します。ChatGPT、
 Claude Code、Codex CLIごとに実接続を確認し、client固有のrequest形状をMarginalisの一般仕様へ
-取り込みません。
+取り込みません。警告を含む変更toolの回帰試験は、三つのクライアントが共通して解釈できる
+標準MCP tool resultを固定し、client固有の表示文言には依存しません。
 
 ## テスト失敗時に保存する情報
 

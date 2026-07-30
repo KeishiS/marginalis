@@ -6,7 +6,7 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::{NoteAclChange, NoteRenderContext, NoteView};
+use marginalis_application::{NoteAclChange, NoteRenderContext, NoteView, NoteWritePolicy};
 use marginalis_contract::{
     NoteAccessValue, NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
     NoteListEntryResponse, NotePermissionValue, NotePreviewResponse, NoteResponse,
@@ -112,6 +112,7 @@ pub(super) async fn create_note(
                 title: String::new(),
                 tags: Vec::new(),
             },
+            NoteWritePolicy::AllowAdvisories,
         )
         .await
         .map_err(note_error)?;
@@ -168,6 +169,7 @@ pub(super) async fn update_note(
                 tags: Vec::new(),
             },
             expected_revision(&headers)?,
+            NoteWritePolicy::AllowAdvisories,
         )
         .await
         .map_err(note_error)?;

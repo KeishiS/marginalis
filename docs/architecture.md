@@ -164,6 +164,9 @@ Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセッ�
 取消、最後に成功したHTMLの保持、入力変更時の古い診断の破棄は`useEditorPreview.ts`へ分離し、
 編集画面は結果の状態と診断操作だけを表示します。保存を拒否する診断と保存を妨げない診断は
 application層でそれぞれ`NoteValidationDiagnostic`と`NoteAdvisoryDiagnostic`に分けます。
+変更操作は`NoteWritePolicy`を受け取り、同じ解析結果に含まれる警告を許容するか判定します。RESTは
+警告を許容し、MCPの`create_note`と`update_note`は警告を拒否します。MCPで拒否する場合も診断の
+重大度をerrorへ変えず、application層が永続化portを呼ぶ前に診断付きの失敗を返します。
 AsciiDoc文書の入力は`AsciiDocEditor.tsx`へ閉じ込めたCodeMirrorが担当し、Reactのフォーム状態には
 常に完全な文字列を渡します。CodeMirror側でAsciiDocを別の文書モデルへ変換しません。解析と
 HTML生成はサーバー側のAdocWeaveだけが担当します。サーバーはHTMLごとにCSP nonceを生成し、

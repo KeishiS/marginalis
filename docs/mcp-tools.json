@@ -336,7 +336,7 @@
   },
   {
     "name": "create_note",
-    "description": "Create a note",
+    "description": "Create a note; warnings reject the write and are returned as diagnostics",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -353,29 +353,251 @@
       "type": "object"
     },
     "outputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "note_id": {
+      "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
           "type": "string"
         },
-        "revision": {
-          "format": "int64",
-          "minimum": 1,
-          "type": "integer"
+        "McpNoteRevisionOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "note_id": {
+              "type": "string"
+            },
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "note_id",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/ValidationTargetResponse"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
+        },
+        "ValidationTargetResponse": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
         }
       },
-      "required": [
-        "note_id",
-        "revision"
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpNoteRevisionOutput"
+        },
+        {
+          "$ref": "#/$defs/ProblemResponse"
+        }
       ],
-      "title": "McpNoteRevisionOutput",
+      "title": "McpNoteMutationOutput",
       "type": "object"
     }
   },
   {
     "name": "update_note",
-    "description": "Update a note at the expected revision",
+    "description": "Update a note at the expected revision; warnings reject the write and are returned as diagnostics",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -403,23 +625,245 @@
       "type": "object"
     },
     "outputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "note_id": {
+      "$defs": {
+        "DiagnosticSeverityResponse": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
           "type": "string"
         },
-        "revision": {
-          "format": "int64",
-          "minimum": 1,
-          "type": "integer"
+        "McpNoteRevisionOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "note_id": {
+              "type": "string"
+            },
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "note_id",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "NoteDiagnosticResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverityResponse"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpanResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/ValidationTargetResponse"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "precondition_required",
+            "invalid_request",
+            "validation_failed",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "ProblemResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnosticResponse"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteSpanResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
+        },
+        "ValidationTargetResponse": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
         }
       },
-      "required": [
-        "note_id",
-        "revision"
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpNoteRevisionOutput"
+        },
+        {
+          "$ref": "#/$defs/ProblemResponse"
+        }
       ],
-      "title": "McpNoteRevisionOutput",
+      "title": "McpNoteMutationOutput",
       "type": "object"
     }
   },

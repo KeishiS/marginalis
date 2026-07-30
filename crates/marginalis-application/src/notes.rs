@@ -14,7 +14,8 @@ use marginalis_domain::{
 use crate::{
     Clock, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NotePresentation,
     NotePreview, NoteProfile, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
-    NoteValidationDiagnostic, NoteValidationTarget, Random, RelatedNotes, ValidatedNoteDraft,
+    NoteValidationDiagnostic, NoteValidationTarget, NoteWritePolicy, Random, RelatedNotes,
+    ValidatedNoteDraft,
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。
@@ -280,16 +281,22 @@ impl NoteQueries for NoteApplication {
 
 #[async_trait]
 impl NoteCommands for NoteApplication {
-    async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
+    async fn create_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+        policy: NoteWritePolicy,
+    ) -> Result<Note, NoteUseCaseError> {
         let validated = self
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
         let ValidatedNoteDraft {
             draft,
+            diagnostics,
             reference_queries,
-            ..
         } = validated;
+        reject_warnings(policy, diagnostics)?;
         let now = self.clock.now();
         let note = Note::create(
             NoteId::new(self.random.uuid_v7()),
@@ -311,6 +318,7 @@ impl NoteCommands for NoteApplication {
         note_id: NoteId,
         draft: NoteDraft,
         expected_revision: Revision,
+        policy: NoteWritePolicy,
     ) -> Result<Note, NoteUseCaseError> {
         let validated = self
             .content
@@ -318,9 +326,10 @@ impl NoteCommands for NoteApplication {
             .map_err(NoteUseCaseError::Validation)?;
         let ValidatedNoteDraft {
             draft,
+            diagnostics,
             reference_queries,
-            ..
         } = validated;
+        reject_warnings(policy, diagnostics)?;
         let reference_targets = reference_targets(&reference_queries);
         self.commands
             .update_visible_note(
@@ -358,6 +367,20 @@ impl NoteCommands for NoteApplication {
             .await
             .map_err(map_repository_error)
     }
+}
+
+fn reject_warnings(
+    policy: NoteWritePolicy,
+    diagnostics: Vec<crate::NoteAdvisoryDiagnostic>,
+) -> Result<(), NoteUseCaseError> {
+    if policy == NoteWritePolicy::RejectWarnings
+        && diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == crate::NoteAdvisorySeverity::Warning)
+    {
+        return Err(NoteUseCaseError::AdvisoriesRejected(diagnostics));
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -554,6 +577,7 @@ mod tests {
     #[derive(Default)]
     struct MemoryNotes {
         notes: Mutex<Vec<Note>>,
+        update_calls: AtomicUsize,
     }
 
     #[async_trait]
@@ -631,6 +655,7 @@ mod tests {
             _reference_targets: &[NoteId],
             _now: UnixMillis,
         ) -> Result<Note, NoteRepositoryError> {
+            self.update_calls.fetch_add(1, Ordering::Relaxed);
             Err(NoteRepositoryError::Unavailable)
         }
 
@@ -788,6 +813,7 @@ mod tests {
                     title: "Portで作成".into(),
                     tags: vec!["設計".into()],
                 },
+                NoteWritePolicy::AllowAdvisories,
             )
             .await
             .expect("create note");
@@ -844,9 +870,97 @@ mod tests {
         assert_eq!(content.reference_query_calls.load(Ordering::Relaxed), 0);
 
         application
-            .create_note(actor, draft)
+            .create_note(actor, draft, NoteWritePolicy::AllowAdvisories)
             .await
             .expect("warning does not reject save");
         assert_eq!(repository.notes.lock().expect("notes lock").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn strict_writes_reject_warnings_before_mutating_the_repository() {
+        let repository = Arc::new(MemoryNotes::default());
+        let application = NoteApplication::new(
+            repository.clone(),
+            repository.clone(),
+            repository.clone(),
+            Arc::new(AcceptContent::default()),
+            Arc::new(NoLinks),
+            Arc::new(FixedClock),
+            Arc::new(FixedRandom),
+        );
+        let actor =
+            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let draft = NoteDraft {
+            source: "= Warning\n\nbody".into(),
+            title: "Warning".into(),
+            tags: Vec::new(),
+        };
+
+        let create_error = application
+            .create_note(
+                actor.clone(),
+                draft.clone(),
+                NoteWritePolicy::RejectWarnings,
+            )
+            .await
+            .expect_err("warning must reject strict create");
+        let NoteUseCaseError::AdvisoriesRejected(diagnostics) = create_error else {
+            panic!("strict create returned a different error");
+        };
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity, NoteAdvisorySeverity::Warning);
+        assert!(repository.notes.lock().expect("notes lock").is_empty());
+
+        let existing = application
+            .create_note(
+                actor.clone(),
+                draft.clone(),
+                NoteWritePolicy::AllowAdvisories,
+            )
+            .await
+            .expect("REST-compatible write accepts warnings");
+        let update_error = application
+            .update_note(
+                actor.clone(),
+                existing.note_id(),
+                draft,
+                existing.revision(),
+                NoteWritePolicy::RejectWarnings,
+            )
+            .await
+            .expect_err("warning must reject strict update");
+        assert!(matches!(
+            update_error,
+            NoteUseCaseError::AdvisoriesRejected(_)
+        ));
+        assert_eq!(repository.update_calls.load(Ordering::Relaxed), 0);
+        let unchanged = application
+            .read_note(actor, existing.note_id())
+            .await
+            .expect("stored note remains readable");
+        assert_eq!(unchanged.source(), existing.source());
+        assert_eq!(unchanged.revision(), Revision::INITIAL);
+    }
+
+    #[test]
+    fn strict_write_policy_allows_information_and_hints_without_a_warning() {
+        let diagnostics = [
+            NoteAdvisorySeverity::Information,
+            NoteAdvisorySeverity::Hint,
+        ]
+        .into_iter()
+        .map(|severity| NoteAdvisoryDiagnostic {
+            code: "test-advisory".into(),
+            severity,
+            target: NoteValidationTarget::Source,
+            span: None,
+            message: "test advisory".into(),
+        })
+        .collect();
+
+        assert_eq!(
+            reject_warnings(NoteWritePolicy::RejectWarnings, diagnostics),
+            Ok(())
+        );
     }
 }
