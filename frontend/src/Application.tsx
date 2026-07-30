@@ -4,6 +4,7 @@ import { AccessControl } from "./AccessControl";
 import { EditorApplication } from "./EditorApplication";
 import {
   addBibliographyItem,
+  ApplicationConfig,
   BibliographyItem,
   deleteBibliographyItem,
   Note,
@@ -25,13 +26,8 @@ import {
 } from "./noteListState";
 import { externalPath } from "./paths";
 
-export interface ApplicationConfig {
-  apiBase: string;
-  basePath: string;
-  path: string;
-  search: string;
-  styleNonce: string;
-}
+// 起動設定の形は`marginalis-contract`が定めます。ここでは再定義せず再公開します。
+export type { ApplicationConfig };
 
 type Route =
   | { kind: "list" }

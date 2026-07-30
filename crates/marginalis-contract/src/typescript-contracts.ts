@@ -93,6 +93,32 @@ export class ApiError extends Error {
   }
 }
 
+/** サーバーが初期HTMLへ埋め込む起動設定。 */
+export interface ApplicationConfig {
+  apiBase: string;
+  basePath: string;
+  path: string;
+  search: string;
+  styleNonce: string;
+}
+
+/**
+ * 起動設定を検査して読み取る。
+ *
+ * REST応答と同じく、解釈できない値は例外として扱う。項目の欠落や型の誤りを
+ * 型アサーションで見逃さない。
+ */
+export function parseApplicationConfig(value: unknown): ApplicationConfig {
+  const object = record(value, "application config");
+  return {
+    apiBase: text(object.apiBase, "application config.apiBase"),
+    basePath: text(object.basePath, "application config.basePath"),
+    path: text(object.path, "application config.path"),
+    search: text(object.search, "application config.search"),
+    styleNonce: text(object.styleNonce, "application config.styleNonce"),
+  };
+}
+
 export function parseNote(value: unknown): Note {
   const object = record(value, "note");
   return {
