@@ -53,3 +53,9 @@ push前検証です。Nix開発環境の準備とPull Requestの手順は
 [GitHubを使う開発手順](docs/development.md)を参照してください。
 
 詳細は[文書案内](docs/README.md)を参照してください。
+
+## ライセンス
+
+Marginalisのソースコードは[MIT License](LICENSE-MIT)または
+[Apache License 2.0](LICENSE-APACHE)で利用できます。Web UIへ同梱するNoto字体には
+[SIL Open Font License 1.1](LICENSE-OFL-NOTO)が適用されます。

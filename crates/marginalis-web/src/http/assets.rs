@@ -10,6 +10,7 @@ const EDITOR_STYLESHEET: &[u8] = include_bytes!("../../../../frontend/dist/asset
 const MATHJAX_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/tex-svg.js");
 const PAGE_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/page.js");
 include!(concat!(env!("OUT_DIR"), "/mathjax_font_assets.rs"));
+include!(concat!(env!("OUT_DIR"), "/web_font_assets.rs"));
 
 pub(super) async fn editor_javascript() -> Response {
     asset("text/javascript; charset=utf-8", EDITOR_JAVASCRIPT)
@@ -26,17 +27,32 @@ pub(super) async fn mathjax_javascript() -> Response {
 pub(super) async fn mathjax_font_javascript(
     axum::extract::Path(file_name): axum::extract::Path<String>,
 ) -> Response {
-    match MATHJAX_FONT_FILES
-        .iter()
-        .find(|(candidate, _)| *candidate == file_name)
-    {
-        Some((_, body)) => asset("text/javascript; charset=utf-8", body),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
+    named_asset(
+        MATHJAX_FONT_FILES,
+        "text/javascript; charset=utf-8",
+        &file_name,
+    )
 }
 
 pub(super) async fn page_javascript() -> Response {
     asset("text/javascript; charset=utf-8", PAGE_JAVASCRIPT)
+}
+
+pub(super) async fn web_font(
+    axum::extract::Path(file_name): axum::extract::Path<String>,
+) -> Response {
+    named_asset(WEB_FONT_FILES, "font/woff2", &file_name)
+}
+
+fn named_asset(
+    files: &'static [(&'static str, &'static [u8])],
+    content_type: &'static str,
+    file_name: &str,
+) -> Response {
+    match files.iter().find(|(candidate, _)| *candidate == file_name) {
+        Some((_, body)) => asset(content_type, body),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 fn asset(content_type: &'static str, body: &'static [u8]) -> Response {

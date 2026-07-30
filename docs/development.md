@@ -65,7 +65,8 @@ Pull Requestからマージします。
      実行し、aarch64 Linux上で全Rust targetとfeatureをコンパイルします。x86_64上でも
      同じtaskを実行できますが、CPU固有の問題を再現するにはaarch64環境が必要です。
    - `browser-smoke`は`cargo make browser-smoke`を実行し、production用Web UIをChromiumで
-     開いて、起動、API応答の表示、主要なリンク、ブラウザー例外の不在を確認します。APIは
+     開いて、起動、API応答の表示、主要なリンク、ブラウザー例外の不在を確認します。
+     `cargo make browser-editor-firefox`はFirefoxで編集欄の書体と範囲選択を確認します。APIは
      試験内で模擬するため、Kanidm、TLS、Cookie、実データベースは検査しません。
 
    これらは包括的なNixOS VMと依存関係を持たせず並列実行します。そのため、正常時の完了時刻を
@@ -84,7 +85,7 @@ Pull Requestからマージします。
    | `verify` | 整形、静的解析、単体・結合試験、依存・ログ・公開契約・文書・Nix評価 | `cargo make ci-verify` | 失敗したtask名と標準出力 |
    | `coverage` | workspaceと統合経路のcoverage測定 | `cargo make ci-coverage` | `coverage-*` artifactの概要とJSON |
    | `native-aarch64` | aarch64 Linux上の全Rust target・featureのコンパイル | `cargo make native-check` | Cargoの診断 |
-   | `browser-smoke` | production用Web UIの起動、主要操作、固定画像、ブラウザー例外 | `cargo make browser-smoke` | 失敗時の`browser-smoke-failure-*` artifactにscreenshotとtrace |
+   | `browser-smoke` | production用Web UIの起動、主要操作、固定画像、ChromiumとFirefoxの編集欄互換性、ブラウザー例外 | `cargo make browser-smoke`と`cargo make browser-editor-firefox` | 失敗時の`browser-smoke-failure-*` artifactにscreenshotとtrace |
    | `nixos-e2e` | Nix package、module、TLS、Kanidm、Auth0 token、永続化、保守unit | `cargo make ci-nixos-e2e` | 試験実行失敗時の`nixos-e2e-failure-*` artifactに、秘密情報を除去したrunner出力 |
    | `release-gate` | 公開対象の版、受入結果、全検証、Nix packageを公開前に確認 | `MARGINALIS_RELEASE_TAG=vX.Y.Z cargo make release-gate` | 失敗したtask名と標準出力 |
 

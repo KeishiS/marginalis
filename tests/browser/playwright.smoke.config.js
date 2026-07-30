@@ -2,7 +2,10 @@ const { defineConfig } = require("@playwright/test");
 
 module.exports = defineConfig({
   testDir: ".",
-  testMatch: "webui-smoke.spec.js",
+  testMatch:
+    process.env.MARGINALIS_COMPAT_ONLY === "true"
+      ? "webui-editor-compat.spec.js"
+      : ["webui-smoke.spec.js", "webui-editor-compat.spec.js"],
   outputDir: "../../test-results/browser-smoke",
   timeout: 15_000,
   use: {

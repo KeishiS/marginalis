@@ -320,6 +320,30 @@ async fn frontend_assets_are_served_with_explicit_content_types() {
         stylesheet.headers().get(header::CONTENT_TYPE),
         Some(&"text/css; charset=utf-8".parse().expect("content type"))
     );
+
+    let web_font = app()
+        .oneshot(
+            Request::get("/assets/fonts/noto-sans-jp-latin-wght-normal.woff2")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("Web font response");
+    assert_eq!(web_font.status(), StatusCode::OK);
+    assert_eq!(
+        web_font.headers().get(header::CONTENT_TYPE),
+        Some(&"font/woff2".parse().expect("content type"))
+    );
+
+    let missing_web_font = app()
+        .oneshot(
+            Request::get("/assets/fonts/not-present.woff2")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("missing Web font response");
+    assert_eq!(missing_web_font.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

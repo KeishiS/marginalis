@@ -67,7 +67,7 @@
                 ;
               inherit pnpm;
               fetcherVersion = 4;
-              hash = "sha256-EFddCsYvqKTwcJwCnY2/EhOJn8vFLR0FPwxGJqqT6h0=";
+              hash = "sha256-J9vYJ37K96VBLcbN5tbc4tQhM/f8YQcMU/dRKQkzdH0=";
             };
             nativeBuildInputs = [
               pkgs.nodejs_22
@@ -595,7 +595,7 @@
             testScript = ''
               machine.wait_for_unit("marginalis.service")
               machine.succeed(
-                "test \"$(/run/current-system/sw/bin/marginalis --version)\" = 'marginalis 0.16.0'"
+                "test \"$(/run/current-system/sw/bin/marginalis --version)\" = 'marginalis 0.16.1'"
               )
               machine.wait_until_succeeds(
                   "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\" and .api_version == \"v3\"'"
