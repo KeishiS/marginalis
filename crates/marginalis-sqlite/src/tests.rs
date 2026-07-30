@@ -20,26 +20,10 @@ fn revision(value: i64) -> Revision {
     Revision::new(value).expect("positive test revision")
 }
 
-mod schema {
-    use super::*;
+mod schema;
 
-    include!("tests/schema.rs");
-}
+mod notes;
 
-mod notes {
-    use super::*;
+mod bibliography;
 
-    include!("tests/notes.rs");
-}
-
-mod bibliography {
-    use super::*;
-
-    include!("tests/bibliography.rs");
-}
-
-mod sessions {
-    use super::*;
-
-    include!("tests/sessions.rs");
-}
+mod sessions;

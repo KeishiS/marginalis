@@ -188,6 +188,11 @@ fi
 description = "Run every automated gate required before an RC or final release"
 dependencies = ["verify", "coverage", "release-metadata", "nix-release-check", "release-package"]
 
+[tasks.unused-dependencies]
+description = "Reject dependencies that are declared but never used"
+command = "cargo-machete"
+args = ["--with-metadata"]
+
 [tasks.dependency-boundaries]
 description = "Verify every workspace production dependency against the architecture boundary"
 script_runner = "@shell"
@@ -389,7 +394,7 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, unit and integration tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "observability-check", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check"]
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "unused-dependencies", "observability-check", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check"]
 
 [tasks.ci-verify]
 description = "Run the GitHub Actions verify suite"

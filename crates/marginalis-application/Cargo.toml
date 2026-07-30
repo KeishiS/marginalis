@@ -9,11 +9,8 @@ publish = false
 [dependencies]
 thiserror.workspace = true
 async-trait.workspace = true
-base64.workspace = true
 marginalis-domain = { path = "../marginalis-domain" }
 serde_json.workspace = true
-sha2.workspace = true
-url.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

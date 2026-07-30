@@ -1,3 +1,5 @@
+use super::*;
+
 #[tokio::test]
 async fn rest_validation_returns_the_shared_diagnostic_contract() {
     let response = authenticated_app()
@@ -71,9 +73,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
                     "marginalis_session=active-session; marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
-                .body(Body::from(
-                    r#"{"source":"= 題名\n:tags: 試験\n\n本文"}"#,
-                ))
+                .body(Body::from(r#"{"source":"= 題名\n:tags: 試験\n\n本文"}"#))
                 .expect("request"),
         )
         .await

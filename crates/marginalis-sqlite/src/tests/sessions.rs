@@ -1,3 +1,5 @@
+use super::*;
+
 #[tokio::test]
 async fn sessions_retain_the_validated_identity() {
     let database = SqliteDatabase::connect("sqlite::memory:")
@@ -125,11 +127,7 @@ async fn concurrent_session_lookups_extend_one_session_without_snapshot_failures
         lookups.push(tokio::spawn(async move {
             barrier.wait().await;
             database
-                .lookup_web_session(
-                    "shared-session-token",
-                    UnixMillis::new(200),
-                    1_000,
-                )
+                .lookup_web_session("shared-session-token", UnixMillis::new(200), 1_000)
                 .await
         }));
     }

@@ -9,8 +9,8 @@ use marginalis_application::{
     NoteAccessControl, NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
     NoteCommands, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
     NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
-    NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
-    OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
+    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
@@ -853,14 +853,87 @@ impl McpAccessTokenAuthenticator for UnavailableMcpAuthenticator {
     }
 }
 
+/// 試験用のrouterを組み立てる。既定から異なる部分だけを指定する。
+///
+/// 以前は6つのbuilderが`ApiState::new`の同じ組み立てをそれぞれ書いており、共通部分を変更するには
+/// すべてを直す必要があった。
+struct TestApp {
+    notes: Arc<dyn NoteUseCases>,
+    sessions: Arc<dyn WebSessionUseCases>,
+    cookie_path: String,
+    mcp: Option<(
+        &'static str,
+        Vec<String>,
+        Arc<dyn McpAccessTokenAuthenticator>,
+    )>,
+}
+
+impl Default for TestApp {
+    fn default() -> Self {
+        Self {
+            notes: Arc::new(Notes),
+            sessions: Arc::new(Sessions),
+            cookie_path: "/".into(),
+            mcp: None,
+        }
+    }
+}
+
+impl TestApp {
+    fn authenticated(mut self) -> Self {
+        self.sessions = Arc::new(ActiveSessions);
+        self
+    }
+
+    fn notes(mut self, notes: Arc<dyn NoteUseCases>) -> Self {
+        self.notes = notes;
+        self
+    }
+
+    fn cookie_path(mut self, cookie_path: &str) -> Self {
+        self.cookie_path = cookie_path.into();
+        self
+    }
+
+    fn mcp(
+        mut self,
+        base_url: &'static str,
+        allowed_origins: Vec<String>,
+        authenticator: Arc<dyn McpAccessTokenAuthenticator>,
+    ) -> Self {
+        self.mcp = Some((base_url, allowed_origins, authenticator));
+        self
+    }
+
+    fn router(self) -> Router {
+        let state = ApiState::new(
+            self.notes,
+            self.sessions,
+            Arc::new(Oidc),
+            self.cookie_path,
+            "https://example.test".into(),
+        );
+        let state = match self.mcp {
+            Some((base_url, allowed_origins, authenticator)) => {
+                let base_url = url::Url::parse(base_url).expect("base URL");
+                state.with_mcp(
+                    McpEndpoint::new(
+                        &base_url,
+                        allowed_origins,
+                        "https://issuer.example.test/".into(),
+                        authenticator,
+                    )
+                    .expect("MCP endpoint"),
+                )
+            }
+            None => state,
+        };
+        router(state)
+    }
+}
+
 fn app() -> Router {
-    router(ApiState::new(
-        Arc::new(Notes),
-        Arc::new(Sessions),
-        Arc::new(Oidc),
-        "/".into(),
-        "https://example.test".into(),
-    ))
+    TestApp::default().router()
 }
 
 fn mcp_app() -> Router {
@@ -868,35 +941,17 @@ fn mcp_app() -> Router {
 }
 
 fn mcp_app_with_authenticator(authenticator: Arc<dyn McpAccessTokenAuthenticator>) -> Router {
-    let base_url = url::Url::parse("https://example.test").expect("base URL");
-    router(
-        ApiState::new(
-            Arc::new(Notes),
-            Arc::new(Sessions),
-            Arc::new(Oidc),
-            "/".into(),
-            "https://example.test".into(),
+    TestApp::default()
+        .mcp(
+            "https://example.test",
+            vec!["https://chatgpt.com".into()],
+            authenticator,
         )
-        .with_mcp(
-            McpEndpoint::new(
-                &base_url,
-                vec!["https://chatgpt.com".into()],
-                "https://issuer.example.test/".into(),
-                authenticator,
-            )
-            .expect("MCP endpoint"),
-        ),
-    )
+        .router()
 }
 
 fn authenticated_app() -> Router {
-    router(ApiState::new(
-        Arc::new(Notes),
-        Arc::new(ActiveSessions),
-        Arc::new(Oidc),
-        "/".into(),
-        "https://example.test".into(),
-    ))
+    TestApp::default().authenticated().router()
 }
 
 fn ui_note(title: &str) -> Note {
@@ -938,16 +993,14 @@ fn mcp_note() -> Note {
 }
 
 fn ui_app(notes: Vec<Note>, render_fails: bool, cookie_path: &str) -> Router {
-    router(ApiState::new(
-        Arc::new(UiNotes {
+    TestApp::default()
+        .authenticated()
+        .notes(Arc::new(UiNotes {
             notes,
             render_fails,
-        }),
-        Arc::new(ActiveSessions),
-        Arc::new(Oidc),
-        cookie_path.into(),
-        "https://example.test".into(),
-    ))
+        }))
+        .cookie_path(cookie_path)
+        .router()
 }
 
 fn authenticated_request(uri: &str) -> Request<Body> {
@@ -958,41 +1011,18 @@ fn authenticated_request(uri: &str) -> Request<Body> {
 }
 
 fn subpath_mcp_app() -> Router {
-    let base_url = url::Url::parse("https://example.test/marginalis").expect("base URL");
-    router(
-        ApiState::new(
-            Arc::new(Notes),
-            Arc::new(Sessions),
-            Arc::new(Oidc),
-            "/marginalis".into(),
-            "https://example.test".into(),
+    TestApp::default()
+        .cookie_path("/marginalis")
+        .mcp(
+            "https://example.test/marginalis",
+            vec![],
+            Arc::new(TestMcpAuthenticator),
         )
-        .with_mcp(
-            McpEndpoint::new(
-                &base_url,
-                vec![],
-                "https://issuer.example.test/".into(),
-                Arc::new(TestMcpAuthenticator),
-            )
-            .expect("MCP endpoint"),
-        ),
-    )
+        .router()
 }
 
-mod ui_contracts {
-    use super::*;
+mod ui_contracts;
 
-    include!("tests/ui_contracts.rs");
-}
+mod mcp_transport;
 
-mod mcp_transport {
-    use super::*;
-
-    include!("tests/mcp_transport.rs");
-}
-
-mod rest_notes {
-    use super::*;
-
-    include!("tests/rest_notes.rs");
-}
+mod rest_notes;

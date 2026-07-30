@@ -1,3 +1,5 @@
+use super::*;
+
 #[test]
 fn external_paths_preserve_the_configured_subpath() {
     assert_eq!(external_path("/", "/notes/123"), "/notes/123");
@@ -10,10 +12,7 @@ fn external_paths_preserve_the_configured_subpath() {
         "/marginalis/notes/new?from=home",
         "/marginalis"
     ));
-    assert!(!valid_return_to(
-        "/notes/new?from=home",
-        "/marginalis"
-    ));
+    assert!(!valid_return_to("/notes/new?from=home", "/marginalis"));
     assert!(!valid_return_to("//notes.example.test/new", "/"));
     assert!(!valid_return_to(
         "/notes/new?from=home\r\nLocation:%20https://evil.test",
@@ -109,9 +108,9 @@ async fn authenticated_home_preserves_list_query_in_application_config() {
         .await
         .expect("response body");
     let body = String::from_utf8(body.to_vec()).expect("HTML");
-    assert!(body.contains(
-        "&quot;search&quot;:&quot;?tag=research&amp;updated_after=2026-07-01&quot;"
-    ));
+    assert!(
+        body.contains("&quot;search&quot;:&quot;?tag=research&amp;updated_after=2026-07-01&quot;")
+    );
 }
 
 #[tokio::test]
@@ -289,11 +288,9 @@ async fn frontend_assets_are_served_with_explicit_content_types() {
 
     let mathjax_font = app()
         .oneshot(
-            Request::get(
-                "/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/double-struck.js",
-            )
-            .body(Body::empty())
-            .expect("request"),
+            Request::get("/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/double-struck.js")
+                .body(Body::empty())
+                .expect("request"),
         )
         .await
         .expect("MathJax font response");
@@ -381,9 +378,7 @@ async fn editor_pages_embed_subpath_configuration_without_note_content() {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
     );
-    assert!(content_security_policy.contains(&format!(
-        "style-src-elem 'self' 'nonce-{nonce}'"
-    )));
+    assert!(content_security_policy.contains(&format!("style-src-elem 'self' 'nonce-{nonce}'")));
     assert!(content_security_policy.contains("style-src-attr 'unsafe-inline'"));
     assert!(content_security_policy.contains("font-src 'self' data:"));
     assert!(content_security_policy.contains("img-src 'self' data:"));

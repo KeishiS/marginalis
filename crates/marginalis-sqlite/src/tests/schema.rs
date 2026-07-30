@@ -1,3 +1,5 @@
+use super::*;
+
 #[tokio::test]
 async fn initialization_rejects_a_database_with_unknown_tables() {
     let pool = SqlitePoolOptions::new()
