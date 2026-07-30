@@ -2,8 +2,15 @@
 
 use core::{fmt, str::FromStr};
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
+
+/// 公開表現で受理するノートIDなど、永続的な識別子の文字列パターン。
+///
+/// REST・MCPのJSON Schemaはこの定数を参照し、実装が受理する規則と別に書かない。
+pub const ENTITY_ID_PATTERN: &str = "^[0-9a-fA-F-]{36}$";
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct UnixMillis(i64);
@@ -34,10 +41,13 @@ impl fmt::Display for InvalidRevision {
 impl std::error::Error for InvalidRevision {}
 
 impl Revision {
-    pub const INITIAL: Self = Self(1);
+    /// 公開表現で受理する最小値。JSON Schemaの下限もこの値を参照する。
+    pub const MINIMUM_VALUE: i64 = 1;
+
+    pub const INITIAL: Self = Self(Self::MINIMUM_VALUE);
 
     pub const fn new(value: i64) -> Result<Self, InvalidRevision> {
-        if value > 0 {
+        if value >= Self::MINIMUM_VALUE {
             Ok(Self(value))
         } else {
             Err(InvalidRevision)
@@ -384,7 +394,11 @@ pub struct NoteDraft {
     pub tags: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+/// ACLで共有先へ与える権限。REST、MCP、archiveで同じ表現を使用する。
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum NotePermission {
     Read,
     Edit,
@@ -413,8 +427,36 @@ impl NoteAclEntry {
     }
 }
 
+/// 入力上の問題が、ノート入力のどの部分にあるかを示す位置。
+///
+/// REST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は
+/// 対象の添字を伴う。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(tag = "field", rename_all = "snake_case", deny_unknown_fields)]
+pub enum NoteValidationTarget {
+    Source,
+    Title,
+    Body,
+    Tag { index: usize },
+    Tags,
+    AclEntry { index: usize },
+}
+
+/// 入力上の問題が置かれた、UTF-8で符号化した`source`上のバイト範囲。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Utf8ByteSpan {
+    pub start: u32,
+    pub end: u32,
+}
+
 /// ノートに対する実効アクセス水準。大きい水準は小さい水準の操作を含む。
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+///
+/// REST、MCP、Web UIで同じ表現を使用する。
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum NoteAccess {
     Read,
     Edit,

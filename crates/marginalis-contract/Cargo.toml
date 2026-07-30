@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+marginalis-domain = { path = "../marginalis-domain" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

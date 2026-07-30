@@ -5,6 +5,13 @@
 
 ## 未リリース
 
+### 変更
+
+- MCP toolのJSON Schemaで、入力上の問題の位置を表す定義名を`ValidationTargetResponse`から
+  `NoteValidationTarget`へ変更した。`{"field": "source"}`のような実際の値の形式は変わらないため、
+  `$ref`を解決して利用するクライアントへの影響はない。schemaから型を生成している場合は、
+  生成した型名が変わる。
+
 ## 0.18.0 — 2026-07-30
 
 ### 破壊的変更

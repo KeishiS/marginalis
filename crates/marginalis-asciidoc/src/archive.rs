@@ -76,7 +76,7 @@ pub struct ArchiveAclEntry {
     pub note_id: String,
     pub issuer: String,
     pub subject: String,
-    pub permission: ArchivePermission,
+    pub permission: NotePermission,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -90,13 +90,6 @@ pub struct ArchiveBibliographyItem {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub revision: i64,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ArchivePermission {
-    Read,
-    Edit,
 }
 
 pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
@@ -125,10 +118,7 @@ pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
                 note_id: entry.note_id().to_string(),
                 issuer: entry.identity().issuer().to_owned(),
                 subject: entry.identity().subject().to_owned(),
-                permission: match entry.permission() {
-                    NotePermission::Read => ArchivePermission::Read,
-                    NotePermission::Edit => ArchivePermission::Edit,
-                },
+                permission: entry.permission(),
             })
             .collect(),
         bibliography_items: snapshot
@@ -229,10 +219,7 @@ fn validate_archive_contents(archive: &Archive) -> Result<LogicalSnapshot, Archi
                 note_id,
                 Identity::new(entry.issuer.clone(), entry.subject.clone())
                     .map_err(|_| invalid_acl_entry())?,
-                match entry.permission {
-                    ArchivePermission::Read => NotePermission::Read,
-                    ArchivePermission::Edit => NotePermission::Edit,
-                },
+                entry.permission,
             ))
         })
         .collect::<Result<Vec<_>, ArchiveContentsError>>()?;
@@ -498,7 +485,7 @@ mod tests {
             note_id: previous.notes[0].note_id.clone(),
             issuer: previous.notes[0].creator_issuer.clone(),
             subject: previous.notes[0].creator_subject.clone(),
-            permission: ArchivePermission::Edit,
+            permission: NotePermission::Edit,
         });
         assert_eq!(
             migrate_previous_archive(&previous),
