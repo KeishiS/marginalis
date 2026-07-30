@@ -401,14 +401,21 @@ command = "cargo"
 args = ["check", "--workspace", "--all-targets", "--all-features", "--locked"]
 
 [tasks.browser-smoke]
-description = "Run the lightweight browser smoke test without Kanidm or a NixOS VM"
+description = "Run the lightweight Chromium browser tests without Kanidm or a NixOS VM"
 dependencies = ["frontend-build"]
 command = "playwright"
 args = ["test", "--config", "tests/browser/playwright.smoke.config.js"]
 
+[tasks.browser-editor-firefox]
+description = "Check editor selection and typography compatibility in Firefox"
+dependencies = ["frontend-build"]
+env = { "MARGINALIS_BROWSER" = "firefox", "MARGINALIS_COMPAT_ONLY" = "true" }
+command = "playwright"
+args = ["test", "--config", "tests/browser/playwright.smoke.config.js"]
+
 [tasks.ci-early]
-description = "Run architecture-native compilation and the lightweight browser smoke test"
-dependencies = ["native-check", "browser-smoke"]
+description = "Run architecture-native compilation and the Chromium and Firefox browser tests"
+dependencies = ["native-check", "browser-smoke", "browser-editor-firefox"]
 
 [tasks.ci-coverage]
 description = "Run the GitHub Actions coverage suite"
@@ -482,16 +489,23 @@ command = "pnpm"
 args = ["run", "build"]
 
 [tasks.frontend-bundle-size]
-description = "Keep the production Web UI JavaScript within its reviewed size budget"
+description = "Keep production Web UI code and self-hosted fonts within reviewed size budgets"
 dependencies = ["frontend-build"]
 script = '''
 editor_bytes="$(wc -c < frontend/dist/assets/editor.js)"
-maximum_bytes=600000
-if [ "$editor_bytes" -gt "$maximum_bytes" ]; then
-  echo "frontend/dist/assets/editor.js is ${editor_bytes} bytes; the limit is ${maximum_bytes} bytes." >&2
+maximum_editor_bytes=600000
+if [ "$editor_bytes" -gt "$maximum_editor_bytes" ]; then
+  echo "frontend/dist/assets/editor.js is ${editor_bytes} bytes; the limit is ${maximum_editor_bytes} bytes." >&2
   exit 1
 fi
-echo "frontend/dist/assets/editor.js: ${editor_bytes}/${maximum_bytes} bytes"
+font_bytes="$(find frontend/dist/assets -name '*.woff2' -type f -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')"
+maximum_font_bytes=13000000
+if [ "$font_bytes" -gt "$maximum_font_bytes" ]; then
+  echo "self-hosted Web fonts are ${font_bytes} bytes; the limit is ${maximum_font_bytes} bytes." >&2
+  exit 1
+fi
+echo "frontend/dist/assets/editor.js: ${editor_bytes}/${maximum_editor_bytes} bytes"
+echo "self-hosted Web fonts: ${font_bytes}/${maximum_font_bytes} bytes"
 '''
 
 [tasks.frontend-verify]

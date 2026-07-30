@@ -36,7 +36,7 @@ use tracing::Span;
 use self::{
     assets::{
         editor_javascript, editor_stylesheet, mathjax_font_javascript, mathjax_javascript,
-        page_javascript,
+        page_javascript, web_font,
     },
     auth::{begin_login, complete_login, logout},
     error::{HandlerResult, problem},
@@ -94,6 +94,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/notes/{note_id}", get(view_note))
         .route("/assets/editor.js", get(editor_javascript))
         .route("/assets/editor.css", get(editor_stylesheet))
+        .route("/assets/fonts/{file_name}", get(web_font))
         .route("/assets/tex-svg.js", get(mathjax_javascript))
         .route(
             "/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/{file_name}",

@@ -42,29 +42,6 @@ import { type NoteDiagnostic } from "./api";
 import { canSelectDiagnostic, diagnosticMessage } from "./editorPresentation";
 import { utf8ByteOffsetToTextOffset } from "./textPosition";
 
-const adaptiveTheme = EditorView.theme({
-  "&": {
-    backgroundColor: "light-dark(#ffffff, #111418)",
-    color: "light-dark(#20242a, #f2f4f7)",
-  },
-  ".cm-content": {
-    caretColor: "currentColor",
-  },
-  ".cm-cursor": {
-    borderLeftColor: "currentColor",
-  },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-    {
-      backgroundColor: "light-dark(#c9dcf8, #3b506d)",
-    },
-  ".cm-activeLine": {
-    backgroundColor: "light-dark(#edf4fd, #202832)",
-  },
-  ".cm-activeLineGutter": {
-    backgroundColor: "light-dark(#dce8f6, #2a3440)",
-  },
-});
-
 export interface AsciiDocEditorHandle {
   focus: () => void;
   selectRange: (anchor: number, head: number) => void;
@@ -138,7 +115,6 @@ export const AsciiDocEditor = forwardRef<
           crosshairCursor(),
           highlightActiveLine(),
           highlightSelectionMatches(),
-          adaptiveTheme,
           EditorView.cspNonce.of(initialStyleNonce.current),
           EditorView.lineWrapping,
           EditorState.tabSize.of(4),

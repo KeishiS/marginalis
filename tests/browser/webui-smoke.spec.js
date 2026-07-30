@@ -111,6 +111,13 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   await page.evaluate(() => document.fonts.ready);
   const documentSurface = page.locator(".document-surface");
   await expect(documentSurface).toBeVisible();
+  const typography = await page.evaluate(() => ({
+    reading: getComputedStyle(document.querySelector(".rendered-content"))
+      .fontFamily,
+    ui: getComputedStyle(document.body).fontFamily,
+  }));
+  expect(typography.ui).toContain("Noto Sans JP Variable");
+  expect(typography.reading).toContain("Noto Serif JP Variable");
   const documentPosition = await documentSurface.boundingBox();
   expect(documentPosition).not.toBeNull();
   expect(documentPosition.width).toBeGreaterThan(1000);

@@ -43,7 +43,10 @@ export default defineConfig({
       },
       output: {
         entryFileNames: "assets/[name].js",
-        assetFileNames: "assets/[name].[ext]",
+        assetFileNames: (asset) =>
+          asset.names.some((name) => name.endsWith(".woff2"))
+            ? "assets/fonts/[name].[ext]"
+            : "assets/[name].[ext]",
       },
     },
   },

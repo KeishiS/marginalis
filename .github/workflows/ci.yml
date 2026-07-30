@@ -110,6 +110,8 @@ jobs:
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Check the production Web UI in Chromium
         run: nix develop --command cargo make browser-smoke
+      - name: Check editor compatibility in Firefox
+        run: nix develop --command cargo make browser-editor-firefox
       - name: Upload browser failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -1,5 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import "@fontsource-variable/noto-sans-jp/wght.css";
+import "@fontsource-variable/noto-sans-mono/wght.css";
+import "@fontsource-variable/noto-serif-jp/wght.css";
 
 import { Application, ApplicationConfig } from "./Application";
 import "./styles.css";
