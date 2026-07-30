@@ -1,3 +1,5 @@
+use super::*;
+
 #[tokio::test]
 async fn protected_resource_metadata_names_the_external_authorization_server() {
     let response = mcp_app()
@@ -157,11 +159,16 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             .expect("typed profile output");
     assert_eq!(
         profile_output.authoring_guidance,
-        ["Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata."]
+        [
+            "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata."
+        ]
     );
-    let text: serde_json::Value =
-        serde_json::from_str(profile["result"]["content"][0]["text"].as_str().expect("text"))
-            .expect("serialized profile output");
+    let text: serde_json::Value = serde_json::from_str(
+        profile["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text"),
+    )
+    .expect("serialized profile output");
     assert_eq!(text, profile["result"]["structuredContent"]);
 
     let request = Request::post("/mcp")
@@ -193,9 +200,12 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             }],
         }
     );
-    let text: serde_json::Value =
-        serde_json::from_str(listed["result"]["content"][0]["text"].as_str().expect("text"))
-            .expect("serialized list output");
+    let text: serde_json::Value = serde_json::from_str(
+        listed["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text"),
+    )
+    .expect("serialized list output");
     assert_eq!(text, listed["result"]["structuredContent"]);
 
     let request = Request::post("/mcp")
@@ -218,9 +228,12 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert_eq!(fetched_output.updated_at_ms, 2_000);
     assert_eq!(fetched_output.tags, vec!["同期", "試験"]);
     assert_eq!(fetched_output.revision, 3);
-    let text: serde_json::Value =
-        serde_json::from_str(fetched["result"]["content"][0]["text"].as_str().expect("text"))
-            .expect("serialized get output");
+    let text: serde_json::Value = serde_json::from_str(
+        fetched["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text"),
+    )
+    .expect("serialized get output");
     assert_eq!(text, fetched["result"]["structuredContent"]);
 
     let request = Request::post("/mcp")
@@ -579,10 +592,7 @@ async fn mcp_create_and_update_reject_warnings_with_typed_diagnostics() {
         let structured = response["result"]["structuredContent"].clone();
         assert_eq!(structured["code"], "validation_failed");
         assert_eq!(structured["diagnostics"][0]["severity"], "warning");
-        assert_eq!(
-            structured["diagnostics"][0]["span"]["unit"],
-            "utf8_byte"
-        );
+        assert_eq!(structured["diagnostics"][0]["span"]["unit"], "utf8_byte");
         assert_eq!(structured["diagnostics"][1]["severity"], "information");
         assert!(structured["diagnostics"][1].get("span").is_none());
         assert_eq!(structured["diagnostics"][2]["severity"], "hint");
@@ -751,7 +761,10 @@ async fn mcp_2026_requests_are_stateless_self_describing_and_header_checked() {
         discover["result"]["supportedVersions"],
         serde_json::json!(["2026-07-28", "2025-11-25", "2025-03-26"])
     );
-    assert_eq!(discover["result"]["capabilities"], serde_json::json!({"tools": {}}));
+    assert_eq!(
+        discover["result"]["capabilities"],
+        serde_json::json!({"tools": {}})
+    );
     assert_eq!(discover["result"]["cacheScope"], "private");
     assert_eq!(
         discover["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
@@ -875,8 +888,7 @@ async fn mcp_2026_requests_are_stateless_self_describing_and_header_checked() {
     let body = to_bytes(unsupported.into_body(), usize::MAX)
         .await
         .expect("unsupported body");
-    let unsupported: serde_json::Value =
-        serde_json::from_slice(&body).expect("unsupported JSON");
+    let unsupported: serde_json::Value = serde_json::from_slice(&body).expect("unsupported JSON");
     assert_eq!(unsupported["error"]["code"], -32022);
     assert_eq!(unsupported["error"]["data"]["requested"], "2099-01-01");
 
@@ -960,10 +972,7 @@ async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
         )
         .body(Body::empty())
         .expect("request");
-    let rejected = mcp_app()
-        .oneshot(invalid_origin)
-        .await
-        .expect("response");
+    let rejected = mcp_app().oneshot(invalid_origin).await.expect("response");
     assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
 
     let native_get = Request::get("/mcp").body(Body::empty()).expect("request");

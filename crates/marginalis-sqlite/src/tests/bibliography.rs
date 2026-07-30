@@ -1,3 +1,5 @@
+use super::*;
+
 #[tokio::test]
 async fn bibliography_is_private_unique_and_revision_guarded() {
     let database = SqliteDatabase::connect("sqlite::memory:")

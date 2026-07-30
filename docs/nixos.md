@@ -72,7 +72,12 @@ claimと完全に一致させます。MCP URLは`baseUrl`から自動的に導�
 
 起動時にAuth0のAuthorization Server MetadataとJWKSを取得できない場合、serviceは起動しません。
 Web用Kanidm OIDC discoveryは従来どおり一時的な障害時にfail closedで起動します。二つの挙動を
-混同しないでください。
+混同しないでください。この違いを意図的に維持する理由は
+[認証基盤の停止時にWebとMCPで起動可否を分ける](adr/0005-認証基盤の停止時にwebとmcpで起動可否を分ける.md)に
+記録しています。
+
+Kanidmのdiscoveryに失敗した場合、serviceは動作したままログインだけができません。起動失敗より
+気付きにくいため、`oidc.discovery.failed`を監視対象へ含めてください。
 
 ## Kanidmから受け取るグループ情報
 

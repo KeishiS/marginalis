@@ -13,6 +13,14 @@ use crate::{
     config::ServerConfig,
     runtime::{SystemClock, SystemRandom},
 };
+
+/// 利用を許可するKanidmのグループ。WebとMCPで同じ値を使う。
+const REQUIRED_USER_GROUP: &str = "server-users";
+/// Webセッションを最終利用から失効させるまでの時間（`REQ-AUTH-007`）。
+const SESSION_IDLE_TIMEOUT_MS: i64 = 24 * 60 * 60 * 1_000;
+/// Webセッションをログインから失効させるまでの時間（`REQ-AUTH-007`）。
+const SESSION_ABSOLUTE_TIMEOUT_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+
 pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     verify_runtime_package_version()?;
     let (configuration, secrets) = ServerConfig::from_environment()?;
@@ -60,15 +68,15 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     );
     let oidc = std::sync::Arc::new(OidcAuthenticationApplication::new(
         std::sync::Arc::new(oidc_provider),
-        "server-users",
+        REQUIRED_USER_GROUP,
     ));
     let sessions = std::sync::Arc::new(WebSessionApplication::new(
         std::sync::Arc::new(database.clone()),
         std::sync::Arc::new(SystemClock),
         std::sync::Arc::new(SystemRandom),
         marginalis_application::SessionLifetime {
-            idle_timeout_ms: 24 * 60 * 60 * 1_000,
-            absolute_timeout_ms: 7 * 24 * 60 * 60 * 1_000,
+            idle_timeout_ms: SESSION_IDLE_TIMEOUT_MS,
+            absolute_timeout_ms: SESSION_ABSOLUTE_TIMEOUT_MS,
         },
     ));
     let notes = std::sync::Arc::new(NoteApplication::new(
@@ -105,7 +113,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 upstream_issuer_claim: authorization.upstream_issuer_claim,
                 upstream_subject_claim: authorization.upstream_subject_claim,
                 groups_claim: authorization.groups_claim,
-                required_user_group: "server-users".into(),
+                required_user_group: REQUIRED_USER_GROUP.into(),
             })
             .await
             {

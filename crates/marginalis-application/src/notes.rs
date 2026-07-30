@@ -486,14 +486,14 @@ impl NoteAccessControl for NoteApplication {
         for (index, entry) in entries.iter().enumerate() {
             let identity =
                 Identity::new(note.creator_issuer().to_owned(), entry.subject.clone())
-                    .map_err(|_| acl_validation(index, NoteValidationCode::InvalidAclSubject))?;
+                    .map_err(|_| acl_validation(index, AclValidationProblem::InvalidSubject))?;
             if entry.subject == note.creator_subject() {
-                return Err(acl_validation(index, NoteValidationCode::OwnerInAcl));
+                return Err(acl_validation(index, AclValidationProblem::OwnerIncluded));
             }
             if index > 0 && entries[index - 1].subject == entry.subject {
                 return Err(acl_validation(
                     index,
-                    NoteValidationCode::DuplicateAclSubject,
+                    AclValidationProblem::DuplicateSubject,
                 ));
             }
             grants.push(NoteAclEntry::new(identity, entry.permission));
@@ -520,18 +520,41 @@ fn map_repository_error(error: NoteRepositoryError) -> NoteUseCaseError {
     }
 }
 
-fn acl_validation(index: usize, code: NoteValidationCode) -> NoteUseCaseError {
-    let message = match code {
-        NoteValidationCode::InvalidAclSubject => "ACL subject is invalid",
-        NoteValidationCode::DuplicateAclSubject => "ACL subject is duplicated",
-        NoteValidationCode::OwnerInAcl => "note owner must not be included in ACL",
-        _ => unreachable!("ACL validation uses an ACL-specific code"),
-    };
+/// ACL入力だけで起こる問題。
+///
+/// 全体の`NoteValidationCode`を受け取ると、ACLでは起こらない値も型の上では渡せてしまう。
+/// 到達しないことをコメントで主張せず、渡せる値を型で限定する。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AclValidationProblem {
+    InvalidSubject,
+    DuplicateSubject,
+    OwnerIncluded,
+}
+
+impl AclValidationProblem {
+    const fn code(self) -> NoteValidationCode {
+        match self {
+            Self::InvalidSubject => NoteValidationCode::InvalidAclSubject,
+            Self::DuplicateSubject => NoteValidationCode::DuplicateAclSubject,
+            Self::OwnerIncluded => NoteValidationCode::OwnerInAcl,
+        }
+    }
+
+    const fn message(self) -> &'static str {
+        match self {
+            Self::InvalidSubject => "ACL subject is invalid",
+            Self::DuplicateSubject => "ACL subject is duplicated",
+            Self::OwnerIncluded => "note owner must not be included in ACL",
+        }
+    }
+}
+
+fn acl_validation(index: usize, problem: AclValidationProblem) -> NoteUseCaseError {
     NoteUseCaseError::Validation(vec![NoteValidationDiagnostic {
-        code: code.as_str().into(),
+        code: problem.code().as_str().into(),
         target: NoteValidationTarget::AclEntry { index },
         span: None,
-        message: message.into(),
+        message: problem.message().into(),
     }])
 }
 

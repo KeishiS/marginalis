@@ -1104,6 +1104,7 @@
               curl
               actionlint
               cargo-audit
+              cargo-machete
               cargo-llvm-cov
               dejavu_fonts
               fontconfig
