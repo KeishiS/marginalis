@@ -40,6 +40,9 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   context,
   browserDiagnostics,
 }) => {
+  // NixOS VM上ではログイン、数式描画、競合解決、診断表示を通した
+  // 一連の受入確認に30秒を超えることがあるため、試験全体の上限を明示する。
+  test.setTimeout(60_000);
   browserDiagnostics.allow((diagnostic) =>
     ["HTTP 404応答", "HTTP 409応答", "HTTP 422応答"].includes(
       diagnostic.summary,
