@@ -35,9 +35,9 @@ domainの変更が公開表現を変えていないことは、`marginalis-contr
 `marginalis-sqlite`は永続化port、`marginalis-asciidoc`は文書の検証・描画port、
 `marginalis-web`は外部URL生成portを実装します。これにより、ノート操作の単体試験ではSQLite、
 AsciiDoc engine、HTTP serverを起動する必要がありません。
-`marginalis-asciidoc`の内部では、文書の解析と検査、ACL判定済み参照を使うHTML描画、JSON
-archive変換を別々のmoduleへ分けます。crate外にはapplication portの実装と、保守コマンドに必要な
-archiveおよび参照抽出だけを公開します。
+`marginalis-asciidoc`の内部では、文書の解析と検査、ACL判定済み参照を使うHTML描画を別々のmoduleへ
+分けます。crate外にはapplication portの実装と、保守コマンドに必要な参照抽出だけを公開します。
+保存形式は`marginalis-archive`が扱います。
 
 ノート入力に適用する規則は`marginalis-domain`の`NOTE_POLICY`が唯一の正本です。上限値、許可する
 コード言語、数式言語、URLスキームをここで定義し、AdocWeaveへ渡す解析・描画設定、公開JSON Schema、
@@ -98,7 +98,8 @@ crates/
 ├── marginalis-domain          値と設計条件
 ├── marginalis-contract        REST・MCP・TypeScriptの公開契約
 ├── marginalis-application     use case実装と内向き・外向きport
-├── marginalis-asciidoc        AsciiDoc検証・描画・export
+├── marginalis-asciidoc        AsciiDoc検証・描画
+├── marginalis-archive         archive形式の型・検証・移行
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
 ├── marginalis-auth-oauth      Auth0 access token検証adapter
 ├── marginalis-sqlite          SQLite adapter
@@ -163,9 +164,16 @@ domainとapplicationの値を観測目的で公開し直さず、利用者identi
 閲覧画面に必要な正本、実効アクセス水準、参照先、関連概要は、一つのSQLite読み取りtransactionで
 取得します。描画はこのスナップショットだけを使うため、一画面の途中で別の更新結果が混ざりません。
 
-アーカイブのJSON項目を表す型は、形式を解釈する`marginalis-asciidoc`に置きます。JSONから復元した
-`Note`とACLは、`marginalis-application`の`LogicalSnapshot`でノートIDの重複、ACLの参照先、
-所有者と共有先の関係を一度だけ検証します。本文から再構築する参照索引も検証した
+アーカイブのJSON項目を表す型と、形式の版および移行できる旧契約は`marginalis-archive`に置きます。
+保存形式はAsciiDocの解析とは変更理由が異なるため、独立したcrateにします。
+
+`marginalis-archive`はノート本文の再検証を`marginalis-application`の`NoteContent` portへ委ね、
+具体的な解析器へ依存しません。どの解析器で再検証するかは`marginalis-service`が決めます。
+archiveへ記録するAdocWeave packageの版も、注入した`NoteContent`の profileから取得します。記録値と
+実際に検証した解析器が食い違わないためで、同じ版を二か所へ書きません。
+
+JSONから復元した`Note`とACLは、`marginalis-application`の`LogicalSnapshot`でノートIDの重複、
+ACLの参照先、所有者と共有先の関係を一度だけ検証します。本文から再構築する参照索引も検証した
 `RestorePlan`だけをSQLite adapterへ渡します。これにより、ドメイン型を外部形式へ直接公開せず、
 SQLite adapterはJSON形式やAsciiDocの解析方法に依存しません。
 
