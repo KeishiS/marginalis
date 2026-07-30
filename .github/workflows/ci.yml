@@ -143,7 +143,7 @@ jobs:
           set -e
           if [ "$status" -ne 0 ]; then
             bash .github/scripts/protocol-artifact.sh sanitize "$raw_log" nixos-e2e.log
-            bash .github/scripts/protocol-artifact.sh check nixos-e2e.log
+            nix develop --command bash .github/scripts/protocol-artifact.sh check nixos-e2e.log
           fi
           exit "$status"
       - name: Upload NixOS E2E failure log
