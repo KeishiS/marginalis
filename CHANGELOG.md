@@ -5,11 +5,23 @@
 
 ## 未リリース
 
+## 0.16.0 — 未公開
+
 ### 破壊的変更
 
 - AdocWeaveを0.19.0へ更新した。SQLite schema 11とnote profile版4は維持し、archiveを
   `marginalis-archive-9`へ更新した。v0.15.0のarchive 8とv0.10.0のarchive 7は、
   `migrate-archive`で全件再検証してarchive 9へ変換できる。
+
+### 追加
+
+- 閲覧画面で、note IDの隣にノートのタグを文書内の順序で表示するようにした。タグが長い場合や
+  画面が狭い場合も、操作欄からはみ出さずに折り返す。
+
+### 変更
+
+- MathJaxの遅延読み込み用字体をMarginalisから配信し、外部CDNへ接続せずに数式を組版するように
+  した。MathJaxが生成するstyle要素にもContent Security Policyのnonceを設定する。
 
 ## 0.15.0 — 2026-07-29
 
