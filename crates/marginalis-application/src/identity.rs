@@ -14,9 +14,11 @@ pub struct ExternalIdentity {
     pub groups: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum IdentityProviderError {
+    #[error("the identity provider rejected the login")]
     Rejected,
+    #[error("the identity provider is unavailable")]
     Unavailable,
 }
 

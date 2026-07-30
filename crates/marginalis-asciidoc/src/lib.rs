@@ -1,7 +1,5 @@
 //! SQLite正本のAsciiDoc検証、可搬化、安全なHTML描画を担うadapter。
 
-use core::fmt;
-
 use marginalis_application::{
     NoteContent, NoteContentError, NoteProfile, NoteReferenceQuery, NoteReferenceResolution,
     NoteValidationDiagnostic, ValidatedNoteDraft,
@@ -77,23 +75,12 @@ impl NoteContent for AsciiDocNoteContent {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("AdocWeave package version mismatch: expected {expected}, got {actual}")]
 pub struct PackageVersionMismatch {
     expected: &'static str,
     actual: &'static str,
 }
-
-impl fmt::Display for PackageVersionMismatch {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "AdocWeave package version mismatch: expected {}, got {}",
-            self.expected, self.actual
-        )
-    }
-}
-
-impl std::error::Error for PackageVersionMismatch {}
 
 pub fn verify_runtime_package_version() -> Result<(), PackageVersionMismatch> {
     let actual = adocweave::VERSION;
@@ -107,16 +94,9 @@ pub fn verify_runtime_package_version() -> Result<(), PackageVersionMismatch> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("canonical note cannot be rendered safely")]
 pub struct RenderError;
-
-impl fmt::Display for RenderError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("canonical note cannot be rendered safely")
-    }
-}
-
-impl std::error::Error for RenderError {}
 
 pub(crate) fn validate_note_draft(
     draft: NoteDraft,

@@ -29,16 +29,9 @@ impl UnixMillis {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Revision(i64);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("a revision must be a positive integer")]
 pub struct InvalidRevision;
-
-impl fmt::Display for InvalidRevision {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a revision must be a positive integer")
-    }
-}
-
-impl std::error::Error for InvalidRevision {}
 
 impl Revision {
     /// 公開表現で受理する最小値。JSON Schemaの下限もこの値を参照する。
@@ -62,16 +55,9 @@ impl Revision {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct EntityId(Uuid);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("an entity ID must be a UUIDv7")]
 pub struct InvalidEntityId;
-
-impl fmt::Display for InvalidEntityId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("an entity ID must be a UUIDv7")
-    }
-}
-
-impl std::error::Error for InvalidEntityId {}
 
 impl EntityId {
     pub fn try_from_uuid(value: Uuid) -> Result<Self, InvalidEntityId> {
@@ -152,16 +138,9 @@ pub struct BibliographyItem {
     revision: Revision,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("bibliography item metadata is inconsistent")]
 pub struct InvalidBibliographyItem;
-
-impl fmt::Display for InvalidBibliographyItem {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("bibliography item metadata is inconsistent")
-    }
-}
-
-impl std::error::Error for InvalidBibliographyItem {}
 
 impl BibliographyItem {
     pub fn create(
@@ -248,16 +227,9 @@ pub struct Note {
     deleted_at: Option<UnixMillis>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("note metadata is inconsistent")]
 pub struct InvalidNote;
-
-impl fmt::Display for InvalidNote {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("note metadata is inconsistent")
-    }
-}
-
-impl std::error::Error for InvalidNote {}
 
 impl Note {
     pub fn create(
@@ -473,16 +445,9 @@ pub const SOFT_DELETE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 pub const MAX_IDENTITY_ISSUER_BYTES: usize = 2_048;
 pub const MAX_IDENTITY_SUBJECT_BYTES: usize = 1_024;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("identity issuer or subject is invalid")]
 pub struct InvalidIdentity;
-
-impl fmt::Display for InvalidIdentity {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("identity issuer or subject is invalid")
-    }
-}
-
-impl std::error::Error for InvalidIdentity {}
 
 pub fn validate_identity(issuer: &str, subject: &str) -> Result<(), InvalidIdentity> {
     let issuer_url = Url::parse(issuer).map_err(|_| InvalidIdentity)?;

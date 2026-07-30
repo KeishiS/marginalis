@@ -1189,6 +1189,7 @@ dependencies = [
  "marginalis-domain",
  "serde_json",
  "sha2 0.10.9",
+ "thiserror 2.0.19",
  "tokio",
  "url",
 ]
@@ -1202,6 +1203,7 @@ dependencies = [
  "marginalis-domain",
  "serde",
  "serde_json",
+ "thiserror 2.0.19",
  "time",
  "unicode-normalization",
 ]
@@ -1220,6 +1222,7 @@ dependencies = [
  "rsa",
  "serde",
  "serde_json",
+ "thiserror 2.0.19",
  "tokio",
  "tracing",
  "url",
@@ -1236,6 +1239,7 @@ dependencies = [
  "openidconnect",
  "serde",
  "serde_json",
+ "thiserror 2.0.19",
  "tokio",
  "tracing",
  "url",
@@ -1257,6 +1261,7 @@ version = "0.18.0"
 dependencies = [
  "schemars 1.2.2",
  "serde",
+ "thiserror 2.0.19",
  "url",
  "uuid",
 ]
@@ -1279,6 +1284,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "thiserror 2.0.19",
  "time",
  "tokio",
  "tracing",
@@ -1298,6 +1304,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
+ "thiserror 2.0.19",
  "tokio",
 ]
 
@@ -1314,6 +1321,7 @@ dependencies = [
  "rand 0.8.7",
  "serde",
  "serde_json",
+ "thiserror 2.0.19",
  "time",
  "tokio",
  "tower",

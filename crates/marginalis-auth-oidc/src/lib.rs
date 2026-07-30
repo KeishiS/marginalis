@@ -1,6 +1,5 @@
 //! OIDC provider接続の設定境界。HTTP handlerやSQLiteへは依存しない。
 
-use core::fmt;
 use std::{collections::BTreeSet, sync::Arc};
 
 use async_trait::async_trait;
@@ -42,22 +41,13 @@ pub struct OidcConfiguration {
     cookie_path: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OidcConfigurationError {
+    #[error("OIDC issuer URL is invalid")]
     InvalidIssuerUrl,
+    #[error("Base URL must be an absolute HTTPS URL")]
     InvalidBaseUrl,
 }
-
-impl fmt::Display for OidcConfigurationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidIssuerUrl => formatter.write_str("OIDC issuer URL is invalid"),
-            Self::InvalidBaseUrl => formatter.write_str("Base URL must be an absolute HTTPS URL"),
-        }
-    }
-}
-
-impl std::error::Error for OidcConfigurationError {}
 
 impl OidcConfiguration {
     pub fn new(
@@ -143,22 +133,13 @@ pub struct OidcAuthentication {
     cookie_path: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OidcDiscoveryError {
+    #[error("OIDC HTTP client could not be initialized")]
     HttpClient,
+    #[error("OIDC Discovery failed")]
     Discovery,
 }
-
-impl fmt::Display for OidcDiscoveryError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::HttpClient => formatter.write_str("OIDC HTTP client could not be initialized"),
-            Self::Discovery => formatter.write_str("OIDC Discovery failed"),
-        }
-    }
-}
-
-impl std::error::Error for OidcDiscoveryError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OidcLoginStartError {

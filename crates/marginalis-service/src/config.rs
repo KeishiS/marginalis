@@ -1,6 +1,5 @@
 //! composition rootが環境変数から読み込む公開設定とsecret設定。
 
-use core::fmt;
 use std::{env, net::SocketAddr, path::PathBuf};
 
 use url::Url;
@@ -55,46 +54,25 @@ pub struct SecretConfig {
     pub oidc_client_secret: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ConfigurationError {
+    #[error("required environment variable {0} is not set")]
     MissingEnvironment(&'static str),
+    #[error("MARGINALIS_BASE_URL must be an absolute HTTPS URL without query or fragment")]
     InvalidBaseUrl,
+    #[error("OIDC_ISSUER_URL must be an absolute HTTPS URL")]
     InvalidIssuerUrl,
+    #[error("MARGINALIS_LISTEN_ADDR is invalid")]
     InvalidListenAddress,
+    #[error("OIDC_CLIENT_ID must not be empty")]
     EmptyClientId,
+    #[error("secret file for {0} could not be read")]
     UnreadableSecretFile(&'static str),
+    #[error("MARGINALIS_MCP_ENABLE must be `true` or `false`")]
     InvalidMcpEnable,
+    #[error("MARGINALIS_MCP_ALLOWED_ORIGINS must contain comma-separated HTTPS origins")]
     InvalidMcpAllowedOrigin,
 }
-
-impl fmt::Display for ConfigurationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingEnvironment(name) => {
-                write!(formatter, "required environment variable {name} is not set")
-            }
-            Self::InvalidBaseUrl => formatter.write_str(
-                "MARGINALIS_BASE_URL must be an absolute HTTPS URL without query or fragment",
-            ),
-            Self::InvalidIssuerUrl => {
-                formatter.write_str("OIDC_ISSUER_URL must be an absolute HTTPS URL")
-            }
-            Self::InvalidListenAddress => formatter.write_str("MARGINALIS_LISTEN_ADDR is invalid"),
-            Self::EmptyClientId => formatter.write_str("OIDC_CLIENT_ID must not be empty"),
-            Self::UnreadableSecretFile(name) => {
-                write!(formatter, "secret file for {name} could not be read")
-            }
-            Self::InvalidMcpEnable => {
-                formatter.write_str("MARGINALIS_MCP_ENABLE must be `true` or `false`")
-            }
-            Self::InvalidMcpAllowedOrigin => formatter.write_str(
-                "MARGINALIS_MCP_ALLOWED_ORIGINS must contain comma-separated HTTPS origins",
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ConfigurationError {}
 
 impl ServerConfig {
     pub fn from_environment() -> Result<(Self, SecretConfig), ConfigurationError> {

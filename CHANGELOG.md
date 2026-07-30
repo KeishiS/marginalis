@@ -17,6 +17,10 @@
 
 ### 変更
 
+- エラー型の表現を`thiserror`で宣言するようにした。`NoteRepositoryError`、
+  `AuthenticationUseCaseError`、`SessionRepositoryError`、`IdentityProviderError`など、
+  これまで表現を持たなかった型にも記録用の文言が付く。利用者向けの`code`と`message`は
+  従来どおりtransport側の写像が決めるため、公開応答は変わらない。
 - MCP toolのJSON Schemaで、入力上の問題の位置を表す定義名を`ValidationTargetResponse`から
   `NoteValidationTarget`へ変更した。`{"field": "source"}`のような実際の値の形式は変わらないため、
   `$ref`を解決して利用するクライアントへの影響はない。schemaから型を生成している場合は、
