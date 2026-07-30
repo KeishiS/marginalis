@@ -1210,8 +1210,6 @@ dependencies = [
  "adocweave",
  "marginalis-application",
  "marginalis-domain",
- "serde",
- "serde_json",
  "thiserror 2.0.19",
  "unicode-normalization",
 ]
