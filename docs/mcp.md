@@ -149,6 +149,7 @@ codex mcp list
 | `delete_note` | `notes:delete` | revisionを指定したソフトデリート |
 | `search_bibliography` | `notes:read` | 自分の書誌情報の検索 |
 | `add_bibliography_item` | `notes:write` | CSL-JSON形式の書誌情報の追加 |
+| `add_bibliography_items` | `notes:write` | CSL-JSON形式の書誌情報を最大100件追加 |
 | `delete_bibliography_item` | `notes:delete` | revisionを指定した書誌情報の削除 |
 
 scopeは操作の種類だけを制限し、操作できるノートの範囲を広げません。利用者は自身が作成したノートと、
@@ -203,6 +204,12 @@ Marginalisは題名、著者、発行年などを推測せず、受け取ったo
 `search_bibliography`は省略可能な`query`で自分の書誌情報を検索します。`delete_bibliography_item`には、
 検索または追加で得た`item_id`と最新の`revision`を指定します。書誌ライブラリーは利用者ごとに分離し、
 ほかの利用者の項目は検索結果やエラーから判別できません。
+
+`add_bibliography_items`は`csl_json_items`へ1件以上100件以下のCSL-JSON項目を指定します。返り値の
+`items`には登録に成功した項目、`errors`には登録できなかった入力の0から始まる`input_index`、
+取得できた場合の`citation_key`、`code`、`message`を返します。部分成功を許可するため、`errors`が
+空であることを確認してください。失敗した項目だけを修正して再送し、成功した項目を一括で再送しないで
+ください。
 
 Auth0でrefresh tokenやgrantを取り消しても、すでに発行された自己完結型JWT access tokenは有効期限まで
 受理される場合があります。運用上許容する最大遅延と測定方法は
