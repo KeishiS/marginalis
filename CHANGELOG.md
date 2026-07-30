@@ -5,6 +5,8 @@
 
 ## 未リリース
 
+## 0.17.0 — 2026-07-30
+
 ### 追加
 
 - MCP仕様`2026-07-28`の自己完結したrequest metadata、`server/discover`、標準HTTP header、
