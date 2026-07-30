@@ -122,6 +122,10 @@
 
 - **REQ-DEPLOY-001 — NixOSモジュール**: SQLite、OIDCクライアント、MCPのAuth0 issuerとclaim名、
   バックアップ先を設定でき、OIDCクライアントシークレットをsystemd credentialで渡すこと。
+- **REQ-DEPLOY-002 — 設定の単一宣言**: serviceが読み取る環境変数を`MARGINALIS_`接頭辞で統一し、
+  変数名、必須条件、未設定の判定を一つの宣言から導くこと。起動処理と`diagnose`が同じ宣言を使い、
+  同じ入力に対して異なる判断をしないこと。MCPの有効・無効は専用のフラグを設けず、Authorization
+  Server issuerの設定有無で決めること。
 
 ## 対応する保存形式
 

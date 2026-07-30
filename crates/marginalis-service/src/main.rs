@@ -2,6 +2,7 @@
 
 mod cli;
 mod config;
+mod environment;
 mod maintenance;
 mod runtime;
 mod serve;

@@ -46,6 +46,7 @@
 | REQ-ACL-005 | SQLiteスナップショット試験、REST契約試験 | 閲覧整合性 |
 | REQ-LIFE-001 | SQLite・保守CLI・NixOS VM | 削除・復元 |
 | REQ-DEPLOY-001 | NixOS module評価・VM | 本番設定確認 |
+| REQ-DEPLOY-002 | 環境変数宣言の単体試験、起動と診断の判断一致CLI試験、NixOS module評価 | 診断出力確認 |
 | REQ-FORMAT-001 | schema・archive拒否、archive 7・8・9・10から11への移行試験 | 更新前退避 |
 
 ## 実行単位

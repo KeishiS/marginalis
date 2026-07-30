@@ -5,12 +5,31 @@
 
 ## 未リリース
 
+### 破壊的変更
+
+- serviceが読み取る環境変数の接頭辞を`MARGINALIS_`へ統一した。`OIDC_ISSUER_URL`、
+  `OIDC_CLIENT_ID`、`OIDC_CLIENT_SECRET`、`OIDC_CLIENT_SECRET_FILE`、
+  `OIDC_CA_CERTIFICATE_FILE`は、それぞれ`MARGINALIS_`を付けた名前へ変更した。NixOSモジュールが
+  値を組み立てるため、`services.marginalis`のoptionを使う場合は設定の変更が不要である。
+  環境変数を直接指定している場合は名前を変更する。
+- `MARGINALIS_MCP_ENABLE`を廃止した。MCPの有効・無効は
+  `MARGINALIS_MCP_AUTHORIZATION_ISSUER`の設定有無で決まる。NixOSモジュールの
+  `services.marginalis.mcp.enable`は従来どおり使用できる。
+- `marginalis diagnose`が出力する`configuration`の形式を変更した。環境変数名を鍵とする
+  `variables`と、判断結果の`mcp_enabled`を出力する。各項目は`set`と`required`を持ち、
+  秘密でも保存先でもない変数にだけ`value`が付く。
+
 ### 変更
 
 - MCP toolのJSON Schemaで、入力上の問題の位置を表す定義名を`ValidationTargetResponse`から
   `NoteValidationTarget`へ変更した。`{"field": "source"}`のような実際の値の形式は変わらないため、
   `$ref`を解決して利用するクライアントへの影響はない。schemaから型を生成している場合は、
   生成した型名が変わる。
+
+### 修正
+
+- 空白だけを設定した環境変数について、`diagnose`は「未設定」、起動処理は「設定済み」と
+  判断が食い違っていた。どちらも未設定として扱うよう統一した。
 
 ## 0.18.0 — 2026-07-30
 

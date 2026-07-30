@@ -1,6 +1,10 @@
 //! SQLiteと公開設定の読み取り専用診断。
 
+use std::collections::BTreeMap;
+
 use marginalis_sqlite::SqliteDatabase;
+
+use crate::environment::{self, Exposure, Requirement};
 
 #[derive(serde::Serialize)]
 struct DiagnosticReport {
@@ -10,22 +14,29 @@ struct DiagnosticReport {
     configuration: PublicConfigurationReport,
 }
 
+/// 環境変数の宣言から導出する公開設定の報告。
+///
+/// 変数ごとの項目は[`environment::VARIABLES`]を走査して作るため、変数を追加しても報告漏れが
+/// 起きない。「未設定」の判定も起動処理と同じ関数を使う。
 #[derive(serde::Serialize)]
 struct PublicConfigurationReport {
-    database_configured: bool,
-    base_url: Option<String>,
-    listen_address: Option<String>,
-    oidc_issuer_url: Option<String>,
-    oidc_client_id_configured: bool,
-    oidc_ca_certificate_file: Option<String>,
-    mcp_enabled: Option<bool>,
-    mcp_allowed_origin_count: usize,
-    mcp_authorization_configured: bool,
+    mcp_enabled: bool,
+    variables: BTreeMap<&'static str, VariableReport>,
+}
+
+#[derive(serde::Serialize)]
+struct VariableReport {
+    set: bool,
+    required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    element_count: Option<usize>,
 }
 
 /// SQLiteと公開設定を変更せずに検査し、結果をJSONで出力する。
 pub(crate) async fn diagnose() -> Result<(), Box<dyn std::error::Error>> {
-    let database_url = nonempty_environment_variable("MARGINALIS_DATABASE_URL");
+    let database_url = environment::value(environment::DATABASE_URL);
     let database = match database_url.as_deref() {
         Some(database_url) => SqliteDatabase::diagnose(database_url).await,
         None => SqliteDatabase::diagnose("sqlite://configuration-is-missing?mode=ro").await,
@@ -47,35 +58,34 @@ pub(crate) async fn diagnose() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn public_configuration() -> PublicConfigurationReport {
-    let mcp_allowed_origin_count = std::env::var("MARGINALIS_MCP_ALLOWED_ORIGINS")
-        .ok()
-        .map(|value| {
-            value
-                .split(',')
-                .filter(|origin| !origin.trim().is_empty())
-                .count()
+    let mcp_enabled = environment::mcp_enabled();
+    let variables = environment::VARIABLES
+        .iter()
+        .map(|variable| {
+            let value = environment::value(variable.name);
+            let report = VariableReport {
+                set: value.is_some(),
+                required: match variable.requirement {
+                    Requirement::Always => true,
+                    Requirement::WhenMcpEnabled => mcp_enabled,
+                    Requirement::Optional | Requirement::EnablesMcp => false,
+                },
+                value: match variable.exposure {
+                    Exposure::Value => value,
+                    Exposure::Presence | Exposure::ElementCount => None,
+                },
+                element_count: match variable.exposure {
+                    Exposure::ElementCount => {
+                        Some(environment::comma_separated(variable.name).len())
+                    }
+                    Exposure::Value | Exposure::Presence => None,
+                },
+            };
+            (variable.name, report)
         })
-        .unwrap_or(0);
+        .collect();
     PublicConfigurationReport {
-        database_configured: nonempty_environment_variable("MARGINALIS_DATABASE_URL").is_some(),
-        base_url: nonempty_environment_variable("MARGINALIS_BASE_URL"),
-        listen_address: nonempty_environment_variable("MARGINALIS_LISTEN_ADDR"),
-        oidc_issuer_url: nonempty_environment_variable("OIDC_ISSUER_URL"),
-        oidc_client_id_configured: nonempty_environment_variable("OIDC_CLIENT_ID").is_some(),
-        oidc_ca_certificate_file: nonempty_environment_variable("OIDC_CA_CERTIFICATE_FILE"),
-        mcp_enabled: std::env::var("MARGINALIS_MCP_ENABLE")
-            .ok()
-            .and_then(|value| value.parse().ok()),
-        mcp_allowed_origin_count,
-        mcp_authorization_configured: nonempty_environment_variable(
-            "MARGINALIS_MCP_AUTHORIZATION_ISSUER",
-        )
-        .is_some(),
+        mcp_enabled,
+        variables,
     }
-}
-
-fn nonempty_environment_variable(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
 }
