@@ -1058,7 +1058,9 @@
                 + "(X'621388f1a111b5f664f87a25c012d3f1776eb8e53bd0bfe95b7524b536e27d64',X'c635ac885a14aa3b00a3d3fcfc7c158a0975139fdc42defcebb751da43c436a8','https://id.example.test:8443/oauth2/openid/marginalis','outsider-subject',1000000000000,1000000000000,4000000000000,4000000000000);\""
               )
               app.succeed(
-                "cp ${./tests/browser/kanidm-login.spec.js} /tmp/kanidm-login.spec.js; "
+                "mkdir -p /tmp/fixtures; "
+                + "cp ${./tests/browser/fixtures/browser-diagnostics.js} /tmp/fixtures/browser-diagnostics.js; "
+                + "cp ${./tests/browser/kanidm-login.spec.js} /tmp/kanidm-login.spec.js; "
                 + "cp ${./tests/browser/webui-editing.spec.js} /tmp/webui-editing.spec.js; "
                 + "cp ${./tests/browser/webui-acl.spec.js} /tmp/webui-acl.spec.js; "
                 + "cd /tmp; "

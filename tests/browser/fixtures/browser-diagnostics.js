@@ -1,12 +1,11 @@
 const { test: base, expect } = require("@playwright/test");
 const path = require("node:path");
 
-const ALLOWED_DIAGNOSTICS = [];
-
 const test = base.extend({
   browserDiagnostics: [
     async ({ context }, use) => {
       const diagnostics = [];
+      const allowedDiagnostics = [];
       const observedPages = new WeakSet();
       const observe = (page) => {
         if (observedPages.has(page)) return;
@@ -35,12 +34,16 @@ const test = base.extend({
 
       context.pages().forEach(observe);
       context.on("page", observe);
-      await use({ diagnostics, observe });
+      await use({
+        diagnostics,
+        observe,
+        allow: (predicate) => allowedDiagnostics.push(predicate),
+      });
       context.off("page", observe);
 
       const unexpected = diagnostics.filter(
         (diagnostic) =>
-          !ALLOWED_DIAGNOSTICS.some((allowed) => allowed(diagnostic)),
+          !allowedDiagnostics.some((allowed) => allowed(diagnostic)),
       );
       expect(
         unexpected,
@@ -61,12 +64,27 @@ function browserDiagnostic(kind, message, location) {
 
 function diagnosticSummary(kind, message) {
   const normalized = String(message).toLowerCase();
+  const httpStatus = normalized.match(
+    /(?:status(?: code)?(?: of)?|status_code)[^0-9]*(\d{3})/,
+  )?.[1];
+  if (normalized.includes("failed to load resource") && httpStatus) {
+    return `HTTP ${httpStatus}応答`;
+  }
   if (
     normalized.includes("content security policy") ||
     normalized.includes("violates the following directive") ||
     normalized.includes("refused to apply") ||
     normalized.includes("refused to load")
   ) {
+    if (normalized.includes("style-src-attr")) {
+      return "Content Security Policy違反（style-src-attr）";
+    }
+    if (normalized.includes("style-src-elem")) {
+      return "Content Security Policy違反（style-src-elem）";
+    }
+    if (normalized.includes("inline style")) {
+      return "Content Security Policy違反（inline style）";
+    }
     return "Content Security Policy違反";
   }
   if (

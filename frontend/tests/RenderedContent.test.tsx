@@ -123,7 +123,12 @@ test("非表示中に届いた数式を再表示時に組版する", async () =>
   };
   const html = String.raw`<p>数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code></p>`;
   const { rerender } = render(
-    <RenderedContent active={false} html={html} preview />,
+    <RenderedContent
+      active={false}
+      html={html}
+      preview
+      styleNonce="test-nonce"
+    />,
   );
 
   expect(typesetPromise).not.toHaveBeenCalled();
@@ -131,7 +136,9 @@ test("非表示中に届いた数式を再表示時に組版する", async () =>
     String.raw`\lambda`,
   );
 
-  rerender(<RenderedContent active html={html} preview />);
+  rerender(
+    <RenderedContent active html={html} preview styleNonce="test-nonce" />,
+  );
 
   await waitFor(() => expect(typesetPromise).toHaveBeenCalledOnce());
   expect(typesetClear).toHaveBeenCalledOnce();
@@ -151,13 +158,15 @@ test("組版済みの数式を表示方式の切り替え後も維持する", as
     typesetPromise,
   };
   const html = String.raw`<p>数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code></p>`;
-  const { rerender } = render(<RenderedContent active html={html} preview />);
+  const { rerender } = render(
+    <RenderedContent active html={html} preview styleNonce="test-nonce" />,
+  );
 
   await waitFor(() =>
     expect(document.querySelector("mjx-container")).toBeInTheDocument(),
   );
 
-  rerender(<RenderedContent active html={html} />);
+  rerender(<RenderedContent active html={html} styleNonce="test-nonce" />);
 
   expect(document.querySelector("mjx-container")).toBeInTheDocument();
   expect(document.querySelector(".math-latex")).not.toBeInTheDocument();
@@ -178,6 +187,7 @@ test("MathJaxの組版失敗を利用者へ通知する", async () => {
         '<code class="math-latex" data-math-language="latexmath" data-math-display="inline">x^2</code>'
       }
       preview
+      styleNonce="test-nonce"
     />,
   );
 

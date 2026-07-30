@@ -39,7 +39,7 @@ pub(super) async fn security_headers(
             },
             |nonce| {
                 HeaderValue::from_str(&format!(
-                    "default-src 'self'; style-src 'self' 'nonce-{}'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+                    "default-src 'self'; style-src-elem 'self' 'nonce-{}'; style-src-attr 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
                     nonce.as_str()
                 ))
                 .expect("generated CSP nonce is a valid header value")
