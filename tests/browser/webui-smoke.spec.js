@@ -33,13 +33,8 @@ test("production build starts and renders a note returned by the API", async ({
     page.getByRole("link", { name: "ブラウザー基本試験" }),
   ).toHaveAttribute("href", "/notes/0197c9bc-0000-7000-8000-000000000001");
   await expect(page.getByRole("status")).toContainText("1件のノート");
-  await expect(
-    page.getByRole("link", { name: "新規ノート" }),
-  ).toHaveCount(1);
-  await expect(page).toHaveScreenshot(
-    "note-list-wide.png",
-    SCREENSHOT_OPTIONS,
-  );
+  await expect(page.getByRole("link", { name: "新規ノート" })).toHaveCount(1);
+  await expect(page).toHaveScreenshot("note-list-wide.png", SCREENSHOT_OPTIONS);
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page).toHaveScreenshot(
     "note-list-wide-dark.png",
@@ -100,10 +95,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     noteId,
   );
-  await expect(page).toHaveScreenshot(
-    "note-view-wide.png",
-    SCREENSHOT_OPTIONS,
-  );
+  await expect(page).toHaveScreenshot("note-view-wide.png", SCREENSHOT_OPTIONS);
 
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page).toHaveScreenshot(
@@ -138,7 +130,9 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
   await expect(editor).toBeFocused();
   await editor.fill("= 編集画面\n\n1行目\n2行目");
   const firstLine = page.locator(".cm-line").first();
-  const firstLineNumber = page.locator(".cm-lineNumbers .cm-gutterElement").nth(1);
+  const firstLineNumber = page
+    .locator(".cm-lineNumbers .cm-gutterElement")
+    .nth(1);
   await expect(firstLineNumber).toHaveText("1");
   const linePosition = await firstLine.boundingBox();
   const lineNumberPosition = await firstLineNumber.boundingBox();
@@ -193,10 +187,16 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
 test("数式を組版したまま分割表示とプレビュー表示を切り替える", async ({
   page,
 }) => {
+  const fontRequests = [];
+  page.on("request", (request) => {
+    if (request.url().includes("mathjax-newcm-font")) {
+      fontRequests.push(request.url());
+    }
+  });
   await page.route("**/api/v3/notes/preview", async (route) => {
     const source = (await route.request().postDataJSON()).source;
     const html = source.includes(String.raw`stem:[\lambda]`)
-      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda</code>のチェックです。</p>` +
+      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda \in \mathbb{R}</code>のチェックです。</p>` +
         (source.includes("プレビューから分割への確認")
           ? "<p>プレビューから分割への確認</p>"
           : "")
@@ -208,20 +208,20 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   });
   await page.goto("/notes/new");
   await page.getByRole("button", { name: "執筆" }).click();
-  await page
-    .getByRole("textbox", { name: "AsciiDoc文書" })
-    .fill(
-      String.raw`= 新規ノート
+  await page.getByRole("textbox", { name: "AsciiDoc文書" }).fill(
+    String.raw`= 新規ノート
 :tags:
 :sectnums:
 
 == 見出し1
 
 インライン数式 stem:[\lambda]のチェックです。`,
-    );
+  );
 
   await expect(
-    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+    page.locator(
+      ".preview-content .math-latex:not([data-math-prepared='true'])",
+    ),
   ).toHaveCount(1);
   await page.getByRole("button", { name: "分割" }).click();
 
@@ -232,14 +232,14 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   await page.getByRole("button", { name: "プレビュー" }).click();
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(
-    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+    page.locator(
+      ".preview-content .math-latex:not([data-math-prepared='true'])",
+    ),
   ).toHaveCount(0);
 
   await page.getByRole("button", { name: "執筆" }).click();
-  await page
-    .getByRole("textbox", { name: "AsciiDoc文書" })
-    .fill(
-      String.raw`= 新規ノート
+  await page.getByRole("textbox", { name: "AsciiDoc文書" }).fill(
+    String.raw`= 新規ノート
 :tags:
 :sectnums:
 
@@ -248,17 +248,68 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
 インライン数式 stem:[\lambda]のチェックです。
 
 プレビューから分割への確認`,
-    );
+  );
   await expect(
-    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+    page.locator(
+      ".preview-content .math-latex:not([data-math-prepared='true'])",
+    ),
   ).toHaveCount(1);
   await page.getByRole("button", { name: "プレビュー" }).click();
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await page.getByRole("button", { name: "分割" }).click();
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(
-    page.locator(".preview-content .math-latex:not([data-math-prepared='true'])"),
+    page.locator(
+      ".preview-content .math-latex:not([data-math-prepared='true'])",
+    ),
   ).toHaveCount(0);
+  expect(fontRequests).toContain(
+    "http://127.0.0.1:42877/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/double-struck.js",
+  );
+  expect(
+    fontRequests.every(
+      (url) => new URL(url).origin === page.url().replace(/\/notes\/new$/, ""),
+    ),
+  ).toBe(true);
+});
+
+test("閲覧画面の遅延字体を同一オリジンから読み込む", async ({ page }) => {
+  const noteId = "0197c9bc-0000-7000-8000-000000000002";
+  const fontResponses = [];
+  page.on("response", (response) => {
+    if (response.url().includes("mathjax-newcm-font")) {
+      fontResponses.push({ url: response.url(), status: response.status() });
+    }
+  });
+  await page.route(`**/api/v3/notes/${noteId}/view`, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        note: {
+          note_id: noteId,
+          title: "数式の閲覧",
+          source: String.raw`= 数式の閲覧
+
+stem:[\mathbb{R}]`,
+          tags: [],
+          created_at_ms: 1,
+          updated_at_ms: 1,
+          revision: 1,
+        },
+        access: "manage",
+        html: String.raw`<p><code class="math-latex" data-math-language="latexmath" data-math-display="inline">\mathbb{R}</code></p>`,
+        related: { outgoing: [], incoming: [] },
+      }),
+    });
+  });
+
+  await page.goto(`/notes/${noteId}`);
+  await expect(page.locator(".rendered-content mjx-container")).toBeVisible();
+  expect(fontResponses).toContainEqual({
+    url: "http://127.0.0.1:42877/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/double-struck.js",
+    status: 200,
+  });
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
 test("5,000行の文書を編集して保存できる", async ({ page }) => {

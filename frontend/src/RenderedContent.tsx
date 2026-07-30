@@ -84,8 +84,11 @@ async function loadMathJax(): Promise<MathJaxRuntime> {
   if (mathJaxLoader) return mathJaxLoader;
 
   mathJaxLoader = new Promise<MathJaxRuntime>((resolve, reject) => {
+    const mathJaxScriptUrl = new URL(mathJaxUrl, document.baseURI);
+    const fontDirectory = new URL("mathjax-fonts", mathJaxScriptUrl).toString();
     window.MathJax = {
       startup: { typeset: false },
+      loader: { paths: { fonts: fontDirectory } },
       // enrichmentはexplorerを有効化し、読み上げ用領域のinline styleを挿入する。
       // Marginalisはstyle-srcを同一originに限定するため、任意の対話機能を無効にする。
       options: {
@@ -97,7 +100,7 @@ async function loadMathJax(): Promise<MathJaxRuntime> {
       svg: { fontCache: "local" },
     };
     const script = document.createElement("script");
-    script.src = mathJaxUrl;
+    script.src = mathJaxScriptUrl.toString();
     script.async = true;
     script.addEventListener("load", () => {
       if (!isMathJaxRuntime(window.MathJax)) {

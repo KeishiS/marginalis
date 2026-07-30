@@ -287,6 +287,26 @@ async fn frontend_assets_are_served_with_explicit_content_types() {
         )
     );
 
+    let mathjax_font = app()
+        .oneshot(
+            Request::get(
+                "/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/double-struck.js",
+            )
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("MathJax font response");
+    assert_eq!(mathjax_font.status(), StatusCode::OK);
+    assert_eq!(
+        mathjax_font.headers().get(header::CONTENT_TYPE),
+        Some(
+            &"text/javascript; charset=utf-8"
+                .parse()
+                .expect("content type")
+        )
+    );
+
     let stylesheet = app()
         .oneshot(
             Request::get("/assets/editor.css")
