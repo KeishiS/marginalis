@@ -38,10 +38,8 @@ pub(super) async fn security_headers(
                 )
             },
             |nonce| {
-                // MathJaxのSVG出力は数式ごとの配置値をstyle属性へ設定する。style要素はnonceと
-                // 同一originに限定したまま、属性だけを許可する。
                 HeaderValue::from_str(&format!(
-                    "default-src 'self'; style-src-elem 'self' 'nonce-{}'; style-src-attr 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+                    "default-src 'self'; style-src 'self' 'nonce-{}'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
                     nonce.as_str()
                 ))
                 .expect("generated CSP nonce is a valid header value")
