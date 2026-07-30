@@ -315,7 +315,7 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
         ),
         McpToolContract::new::<McpAddBibliographyItemInput, McpBibliographyItem>(
             McpToolName::AddBibliographyItem,
-            "Add one CSL-JSON item; id and type are required and values are never inferred",
+            "Add one bibliography item in CSL-JSON format; id and type are required and values are never inferred",
         ),
         McpToolContract::new::<McpDeleteBibliographyItemInput, McpEmptyInput>(
             McpToolName::DeleteBibliographyItem,
