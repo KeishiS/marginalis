@@ -1,5 +1,7 @@
 //! 認証済みReactアプリケーションのHTML枠。
 
+use marginalis_contract::ApplicationConfigResponse;
+
 use axum::{
     extract::State,
     http::{HeaderMap, Uri},
@@ -73,14 +75,17 @@ async fn application_shell(
         return Ok(response);
     }
     let style_nonce = ContentSecurityPolicyNonce::generate();
-    let config = serde_json::json!({
-        "apiBase": external_path(&state.cookie_path, "/api/v3"),
-        "basePath": state.cookie_path,
-        "path": internal_path,
-        "search": uri.query().map_or(String::new(), |query| format!("?{query}")),
-        "styleNonce": style_nonce.as_str(),
+    // 埋め込む設定も公開契約の型から組み立て、Web UI側の検査と同じ形を保つ。
+    let config = serde_json::to_string(&ApplicationConfigResponse {
+        api_base: external_path(&state.cookie_path, "/api/v3"),
+        base_path: state.cookie_path.clone(),
+        path: internal_path,
+        search: uri
+            .query()
+            .map_or(String::new(), |query| format!("?{query}")),
+        style_nonce: style_nonce.as_str().to_owned(),
     })
-    .to_string();
+    .expect("application configuration is serializable");
     let content = format!(
         "<div data-application-root data-application-config=\"{}\"><p>画面を読み込んでいます。</p></div><noscript>Marginalisの利用にはJavaScriptが必要です。</noscript>",
         escape_html(&config),

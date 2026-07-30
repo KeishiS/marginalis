@@ -221,6 +221,25 @@ pub struct SessionResponse {
     pub subject: String,
 }
 
+/// サーバーが初期HTMLへ埋め込み、Web UIが起動時に読む設定。
+///
+/// REST応答と同じく、サーバーとWeb UIの間の公開契約である。Web UI側は生成した
+/// parserで検査してから使用し、解釈できない値を利用者向けエラーとして扱う。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ApplicationConfigResponse {
+    /// REST APIの外部prefix。
+    pub api_base: String,
+    /// 画面URLの外部prefix。サブパス配置ではその値になる。
+    pub base_path: String,
+    /// prefixを除いた画面内のpath。
+    pub path: String,
+    /// `?`を含む問い合わせ文字列。無い場合は空文字。
+    pub search: String,
+    /// 実行時に生成するstyleへ付けるContent Security Policyのnonce。
+    pub style_nonce: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HealthResponse {

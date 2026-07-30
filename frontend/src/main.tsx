@@ -4,17 +4,25 @@ import "@fontsource-variable/noto-sans-jp/wght.css";
 import "@fontsource-variable/noto-sans-mono/wght.css";
 import "@fontsource-variable/noto-serif-jp/wght.css";
 
-import { Application, ApplicationConfig } from "./Application";
+import { parseApplicationConfig } from "./api";
+import { Application } from "./Application";
 import "./styles.css";
 
 const root = document.querySelector<HTMLElement>("[data-application-root]");
 if (root) {
-  const config = JSON.parse(
-    root.dataset.applicationConfig ?? "{}",
-  ) as ApplicationConfig;
-  createRoot(root).render(
-    <React.StrictMode>
-      <Application config={config} />
-    </React.StrictMode>,
-  );
+  // 起動設定もサーバーとの公開契約である。REST応答と同じく実行時に検査し、
+  // 解釈できない場合は画面を描画せず理由を表示する。
+  try {
+    const config = parseApplicationConfig(
+      JSON.parse(root.dataset.applicationConfig ?? "null"),
+    );
+    createRoot(root).render(
+      <React.StrictMode>
+        <Application config={config} />
+      </React.StrictMode>,
+    );
+  } catch {
+    root.textContent =
+      "画面の設定を読み取れませんでした。再読み込みしても解決しない場合は管理者へ連絡してください。";
+  }
 }

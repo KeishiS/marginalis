@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseApplicationConfig,
   parseNote,
   parseNotePreview,
   parseNoteView,
@@ -86,5 +87,33 @@ describe("生成済みREST応答検査", () => {
         ],
       }),
     ).toThrow();
+  });
+});
+
+describe("起動設定の検査", () => {
+  const config = {
+    apiBase: "/api/v3",
+    basePath: "/",
+    path: "/",
+    search: "",
+    styleNonce: "nonce-value",
+  };
+
+  it("サーバーが埋め込む設定を読み取る", () => {
+    expect(parseApplicationConfig(config)).toEqual(config);
+  });
+
+  it("項目が欠けた設定を拒否する", () => {
+    const incomplete: Record<string, unknown> = { ...config };
+    delete incomplete.styleNonce;
+    expect(() => parseApplicationConfig(incomplete)).toThrow();
+  });
+
+  it("型が異なる設定を拒否する", () => {
+    expect(() => parseApplicationConfig({ ...config, basePath: 1 })).toThrow();
+  });
+
+  it("設定そのものが無い場合を拒否する", () => {
+    expect(() => parseApplicationConfig(null)).toThrow();
   });
 });
