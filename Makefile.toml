@@ -349,9 +349,9 @@ description = "Verify the pinned AdocWeave package version and supply-chain iden
 script_runner = "@shell"
 script = '''
 set -eu
-expected_version="0.19.0"
-expected_revision="b4b01c4545c03deb0fbf97c3d6a7e12ada675995"
-expected_hash="sha256-DTJ0B6f5WHKt5bIvM8KghbIj5uNrf8HIL7iPoxILkrI="
+expected_version="0.20.0"
+expected_revision="35e4a0ebd87094710f09e64a85e5f09e2dd19a7c"
+expected_hash="sha256-6FQdN7yEUXV+DFD2WPzez5aQhnUf7PIUwDFulpG4LgI="
 
 cargo metadata --locked --format-version 1 | jq -e \
   --arg version "$expected_version" \

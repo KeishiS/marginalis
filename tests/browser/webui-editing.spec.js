@@ -111,7 +111,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   );
   await page.getByRole("button", { name: "分割" }).click();
   const documentSource =
-    "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*";
+    "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*\n\n* 最初の行 +\n続きの行\n* 次の項目";
   await source.fill(documentSource);
   await expect(page.getByText("未保存の変更があります。")).toBeVisible();
   await expect(page.locator(".preview-content")).toContainText(
@@ -120,6 +120,11 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(
     page.locator(".preview-content pre[data-language='rust']"),
   ).toContainText("fn main() {}");
+  const previewListItems = page.locator(".preview-content ul > li");
+  await expect(previewListItems).toHaveCount(2);
+  await expect(previewListItems.first()).toContainText("最初の行");
+  await expect(previewListItems.first().locator("br")).toHaveCount(1);
+  await expect(previewListItems.first()).toContainText("続きの行");
   const previewSource = page.locator(".preview-content figure.source-block");
   await expect(previewSource.locator("figcaption")).toHaveText("実行例");
   await expect(previewSource.locator(".source-line")).toHaveAttribute(
@@ -196,6 +201,9 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "1",
   );
   await expect(page.locator(".page-main mjx-container")).toBeVisible();
+  const renderedListItems = page.locator(".page-main .rendered-content ul > li");
+  await expect(renderedListItems).toHaveCount(2);
+  await expect(renderedListItems.first().locator("br")).toHaveCount(1);
   await page.getByRole("link", { name: "編集" }).click();
 
   await expect(page.locator(".preview-content")).toContainText(

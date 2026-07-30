@@ -121,9 +121,9 @@
 
 ## 対応する保存形式
 
-- **REQ-FORMAT-001 — 現行形式**: SQLiteスキーマ11と`marginalis-archive-9`だけを通常処理で
-  受理すること。`migrate-archive`だけはarchive 7または8を入力として受理し、AdocWeave
-  0.19.0で全件を再検証したarchive 9を別ファイルへ出力すること。その他の旧形式を自動移行
+- **REQ-FORMAT-001 — 現行形式**: SQLiteスキーマ11と`marginalis-archive-10`だけを通常処理で
+  受理すること。`migrate-archive`だけはarchive 7、8または9を入力として受理し、AdocWeave
+  0.20.0で全件を再検証したarchive 10を別ファイルへ出力すること。その他の旧形式を自動移行
   しないこと。
 
 一貫して満たすべき設計条件は[アーキテクチャ](architecture.md)を参照してください。v0.3.0時点の

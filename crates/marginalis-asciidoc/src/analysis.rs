@@ -315,6 +315,29 @@ mod tests {
     }
 
     #[test]
+    fn multiline_list_item_preserves_a_warning_range_on_its_continuation_line() {
+        let source = concat!(
+            "= 調査結果\n\n",
+            "* 最初の行\n",
+            "  本文xref:note:0197c9bc-0000-7000-8000-000000000002[先行調査]\n",
+        );
+        let validated = validate_draft(NoteDraft {
+            source: source.into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect("warning does not reject a multiline list item");
+        let warning = validated
+            .diagnostics
+            .iter()
+            .find(|item| item.code == "macro-boundary")
+            .expect("macro boundary warning");
+        let span = warning.span.expect("source range");
+
+        assert_eq!(&source[span.start as usize..span.end as usize], "xref");
+    }
+
+    #[test]
     fn forbidden_content_returns_a_stable_diagnostic() {
         let errors = validate_draft(NoteDraft {
             source: "= Test\n\ninclude::secret[]".into(),

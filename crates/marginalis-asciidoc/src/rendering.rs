@@ -104,6 +104,42 @@ mod tests {
     }
 
     #[test]
+    fn multiline_list_items_preserve_wrapping_hard_breaks_and_note_references() {
+        let target = "0197c9bc-0000-7000-8000-000000000002";
+        let html = render_note(
+            &note(&format!(
+                "* 最初の行 +\n続きの行\n* 参照\n  xref:note:{target}[]\n\n. 一つ目\n  折り返し\n. 二つ目"
+            )),
+            &[NoteReferenceResolution::Visible {
+                reference_index: 0,
+                href: format!("/notes/{target}"),
+                title: "参照先".into(),
+                missing_anchor: false,
+            }],
+        )
+        .expect("render multiline lists");
+
+        assert!(html.contains("<li>最初の行<br>\n続きの行</li>"));
+        assert!(html.contains("<li>参照   <a href=\""));
+        assert!(html.contains(">参照先</a></li>"));
+        assert!(html.contains("<li>一つ目   折り返し</li>"));
+        assert!(html.contains("<li>二つ目</li>"));
+    }
+
+    #[test]
+    fn published_multiline_list_example_is_accepted_and_rendered() {
+        let example = crate::policy::note_profile()
+            .examples
+            .into_iter()
+            .find(|example| example.kind == "multiline_list_item")
+            .expect("published multiline list example");
+        let html = render_note(&note(example.body), &[]).expect("render published example");
+
+        assert!(html.contains("<li>First line<br>\nContinued line</li>"));
+        assert!(html.contains("<li>Next item</li>"));
+    }
+
+    #[test]
     fn source_and_math_html_use_the_public_adocweave_contract() {
         let html = render_note(
             &note(
