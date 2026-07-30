@@ -846,6 +846,22 @@ select:hover {
   outline-offset: -0.125rem;
 }
 
+.ascii-doc-editor .cm-lintRange-warning {
+  text-decoration-color: var(--color-warning);
+}
+
+.ascii-doc-editor .cm-tooltip-lint {
+  background: var(--color-surface);
+  border: 0.0625rem solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text);
+}
+
+.ascii-doc-editor .cm-diagnosticText {
+  line-height: 1.5;
+}
+
 .preview-panel {
   min-width: 0;
 }

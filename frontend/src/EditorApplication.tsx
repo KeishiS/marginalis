@@ -342,6 +342,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
               <AsciiDocEditor
                 ref={sourceEditor}
                 value={form.source}
+                diagnostics={preview.diagnostics}
                 disabled={saving}
                 onChange={changeSource}
                 labelledBy="source-editor-label"
@@ -617,7 +618,7 @@ function ProblemMessage({
                 {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
               </span>
               {source ? diagnosticLocation(source, diagnostic) : ""}
-              {diagnosticMessage(diagnostic.code)}{" "}
+              {diagnosticMessage(diagnostic.code, diagnostic.message)}{" "}
               {canSelectDiagnostic(diagnostic) && onSelectDiagnostic && (
                 <button
                   type="button"
@@ -652,6 +653,9 @@ function PreviewPanel({
   problem: Problem | null;
   onSelectDiagnostic: (diagnostic: NoteDiagnostic) => void;
 }) {
+  const externalDiagnostics = diagnostics.filter(
+    (diagnostic) => !canSelectDiagnostic(diagnostic),
+  );
   return (
     <section className="preview-panel" aria-labelledby="preview-heading">
       <div className="preview-heading">
@@ -682,7 +686,7 @@ function PreviewPanel({
                     {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
                   </span>
                   {diagnosticLocation(body, diagnostic)}
-                  {diagnosticMessage(diagnostic.code)}{" "}
+                  {diagnosticMessage(diagnostic.code, diagnostic.message)}{" "}
                   {canSelectDiagnostic(diagnostic) && (
                     <button
                       type="button"
@@ -698,20 +702,20 @@ function PreviewPanel({
           )}
         </section>
       )}
-      {!problem && diagnostics.length > 0 && (
+      {!problem && externalDiagnostics.length > 0 && (
         <section
           className="warnings"
           aria-labelledby="preview-diagnostics-heading"
         >
           <h3 id="preview-diagnostics-heading">入力時の診断</h3>
           <ul>
-            {diagnostics.map((diagnostic, index) => (
+            {externalDiagnostics.map((diagnostic, index) => (
               <li key={`${diagnostic.code}-${index}`}>
                 <span className="diagnostic-severity">
                   {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
                 </span>
                 {diagnosticLocation(body, diagnostic)}
-                {diagnosticMessage(diagnostic.code)}{" "}
+                {diagnosticMessage(diagnostic.code, diagnostic.message)}{" "}
                 {canSelectDiagnostic(diagnostic) && (
                   <button
                     type="button"

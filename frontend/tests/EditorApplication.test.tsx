@@ -9,7 +9,7 @@ import {
 import { afterEach, expect, test, vi } from "vitest";
 
 import { EditorApplication, EditorConfig } from "../src/EditorApplication";
-import { Note } from "../src/api";
+import { Note, NoteDiagnostic } from "../src/api";
 
 vi.mock("../src/AsciiDocEditor", async () => {
   const React = await import("react");
@@ -17,6 +17,7 @@ vi.mock("../src/AsciiDocEditor", async () => {
     AsciiDocEditor: React.forwardRef(function MockAsciiDocEditor(
       {
         value,
+        diagnostics,
         disabled,
         labelledBy,
         onChange,
@@ -24,6 +25,7 @@ vi.mock("../src/AsciiDocEditor", async () => {
         onSave,
       }: {
         value: string;
+        diagnostics: NoteDiagnostic[];
         disabled: boolean;
         labelledBy: string;
         onChange: (value: string) => void;
@@ -55,6 +57,13 @@ vi.mock("../src/AsciiDocEditor", async () => {
         <textarea
           ref={input}
           aria-labelledby={labelledBy}
+          data-inline-diagnostics={
+            diagnostics.filter(
+              (diagnostic) =>
+                diagnostic.target.field === "source" &&
+                diagnostic.span?.unit === "utf8_byte",
+            ).length
+          }
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
@@ -273,7 +282,7 @@ test("診断からUTF-8位置に対応する入力範囲へ移動する", async 
   });
 });
 
-test("プレビュー警告を表示して修正後にすぐ取り除く", async () => {
+test("プレビュー警告を入力欄へ渡して修正後にすぐ取り除く", async () => {
   vi.useFakeTimers();
   const source =
     "= 調査結果\n\nこの結果はxref:note:0197c9bc-0000-7000-8000-000000000002[先行調査]";
@@ -308,18 +317,10 @@ test("プレビュー警告を表示して修正後にすぐ取り除く", async
     await vi.advanceTimersByTimeAsync(350);
   });
 
+  expect(editor).toHaveAttribute("data-inline-diagnostics", "1");
   expect(
-    screen.getByRole("heading", { name: "入力時の診断" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("heading", { name: "入力時の診断" }).parentElement,
-  ).toHaveTextContent(
-    "警告: 3行6列: インラインマクロの前に空白を入れてください。",
-  );
-  fireEvent.click(screen.getByRole("button", { name: "入力位置へ移動" }));
-  expect(editor.value.slice(editor.selectionStart, editor.selectionEnd)).toBe(
-    "xref",
-  );
+    screen.queryByRole("heading", { name: "入力時の診断" }),
+  ).not.toBeInTheDocument();
 
   fireEvent.change(editor, {
     target: { value: source.replace("はxref:", "は xref:") },
@@ -327,6 +328,7 @@ test("プレビュー警告を表示して修正後にすぐ取り除く", async
   expect(
     screen.queryByRole("heading", { name: "入力時の診断" }),
   ).not.toBeInTheDocument();
+  expect(editor).toHaveAttribute("data-inline-diagnostics", "0");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(350);
   });

@@ -11,6 +11,12 @@ import {
   indentLess,
   insertTab,
 } from "@codemirror/commands";
+import {
+  type Diagnostic,
+  lintGutter,
+  lintKeymap,
+  setDiagnostics,
+} from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import {
   crosshairCursor,
@@ -31,6 +37,10 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+
+import { type NoteDiagnostic } from "./api";
+import { canSelectDiagnostic, diagnosticMessage } from "./editorPresentation";
+import { utf8ByteOffsetToTextOffset } from "./textPosition";
 
 const adaptiveTheme = EditorView.theme({
   "&": {
@@ -63,6 +73,7 @@ export interface AsciiDocEditorHandle {
 
 interface AsciiDocEditorProps {
   value: string;
+  diagnostics: NoteDiagnostic[];
   disabled: boolean;
   labelledBy: string;
   onChange: (value: string) => void;
@@ -78,6 +89,7 @@ export const AsciiDocEditor = forwardRef<
 >(function AsciiDocEditor(
   {
     value,
+    diagnostics,
     disabled,
     labelledBy,
     onChange,
@@ -116,6 +128,7 @@ export const AsciiDocEditor = forwardRef<
         doc: initialValue.current,
         extensions: [
           lineNumbers(),
+          lintGutter(),
           highlightActiveLineGutter(),
           highlightSpecialChars(),
           history(),
@@ -146,6 +159,7 @@ export const AsciiDocEditor = forwardRef<
               },
             },
             { key: "Tab", run: insertTab, shift: indentLess },
+            ...lintKeymap,
             ...searchKeymap,
             ...historyKeymap,
             ...defaultKeymap,
@@ -193,6 +207,19 @@ export const AsciiDocEditor = forwardRef<
       annotations: Transaction.addToHistory.of(false),
     });
   }, [value]);
+
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor) return;
+    editor.dispatch(
+      setDiagnostics(
+        editor.state,
+        diagnostics.flatMap((diagnostic) =>
+          toCodeMirrorDiagnostic(value, diagnostic),
+        ),
+      ),
+    );
+  }, [diagnostics, value]);
 
   useEffect(() => {
     const editor = view.current;
@@ -245,4 +272,23 @@ function scrollRatio(element: HTMLElement): number {
 
 function clampRatio(value: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function toCodeMirrorDiagnostic(
+  source: string,
+  diagnostic: NoteDiagnostic,
+): Diagnostic[] {
+  if (!canSelectDiagnostic(diagnostic)) return [];
+  const start = utf8ByteOffsetToTextOffset(source, diagnostic.span?.start ?? 0);
+  const end = utf8ByteOffsetToTextOffset(source, diagnostic.span?.end ?? start);
+  return [
+    {
+      from: start,
+      to: Math.max(start, end),
+      severity:
+        diagnostic.severity === "information" ? "info" : diagnostic.severity,
+      source: `Marginalis (${diagnostic.code})`,
+      message: diagnosticMessage(diagnostic.code, diagnostic.message),
+    },
+  ];
 }

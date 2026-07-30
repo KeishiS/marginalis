@@ -65,7 +65,7 @@ export function editorStatus({
   return isDirty ? "未保存の変更があります。" : "変更は保存されています。";
 }
 
-export function diagnosticMessage(code: string): string {
+export function diagnosticMessage(code: string, sourceMessage = ""): string {
   switch (code) {
     case "invalid_title":
       return "題名を入力し、改行と上限を超える文字を取り除いてください。";
@@ -108,6 +108,14 @@ export function diagnosticMessage(code: string): string {
       return "AsciiDoc以外の参照先には通常のリンクを使用してください。";
     case "macro-boundary":
       return "インラインマクロの前に空白を入れてください。";
+    case "line-too-long": {
+      const length = sourceMessage.match(
+        /^line has (\d+) characters; maximum is (\d+)$/,
+      );
+      return length
+        ? `1行は最大${length[2]}文字です。この行は${length[1]}文字あります。内容の区切りで改行してください。`
+        : "1行の文字数が上限を超えています。内容の区切りで改行してください。";
+    }
     default:
       return "入力内容を確認してください。";
   }
