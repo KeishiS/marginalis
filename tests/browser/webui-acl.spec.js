@@ -1,11 +1,15 @@
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures/browser-diagnostics");
 
 const baseUrl = "https://marginalis.example.test/marginalis";
 
 async function loginOwner(page) {
   await page.goto(`${baseUrl}/auth/oidc/login?next=%2Fmarginalis%2F`);
-  await page.getByRole("textbox", { name: "Username", exact: true }).fill("idm_admin");
-  await page.getByRole("textbox", { name: "Username", exact: true }).press("Enter");
+  await page
+    .getByRole("textbox", { name: "Username", exact: true })
+    .fill("idm_admin");
+  await page
+    .getByRole("textbox", { name: "Username", exact: true })
+    .press("Enter");
   await page.getByLabel(/password/i).fill("test-idm-admin-password");
   await page.getByLabel(/password/i).press("Enter");
   const proceed = page.getByRole("button", { name: "Proceed", exact: true });
@@ -46,6 +50,7 @@ async function actorContext(browser, session, csrf) {
 test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を保つ", async ({
   page,
   browser,
+  browserDiagnostics,
 }) => {
   await loginOwner(page);
   await page.getByRole("link", { name: "新規ノート" }).click();
@@ -70,10 +75,15 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
 
   const reader = await actorContext(browser, "reader-session", "reader-csrf");
   const readerPage = await reader.newPage();
+  browserDiagnostics.observe(readerPage);
   await readerPage.goto(`${baseUrl}/notes/${noteId}`);
-  await expect(readerPage.getByRole("heading", { name: "ACL受入試験" })).toBeVisible();
+  await expect(
+    readerPage.getByRole("heading", { name: "ACL受入試験" }),
+  ).toBeVisible();
   await expect(readerPage.getByRole("link", { name: "編集" })).toHaveCount(0);
-  await expect(readerPage.getByRole("link", { name: "共有設定" })).toHaveCount(0);
+  await expect(readerPage.getByRole("link", { name: "共有設定" })).toHaveCount(
+    0,
+  );
   const readerUpdateStatus = await readerPage.evaluate(
     async ({ baseUrl, noteId }) => {
       const response = await fetch(`${baseUrl}/api/v3/notes/${noteId}`, {
@@ -95,9 +105,12 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
 
   const editor = await actorContext(browser, "editor-session", "editor-csrf");
   const editorPage = await editor.newPage();
+  browserDiagnostics.observe(editorPage);
   await editorPage.goto(`${baseUrl}/notes/${noteId}`);
   await expect(editorPage.getByRole("link", { name: "編集" })).toBeVisible();
-  await expect(editorPage.getByRole("link", { name: "共有設定" })).toHaveCount(0);
+  await expect(editorPage.getByRole("link", { name: "共有設定" })).toHaveCount(
+    0,
+  );
   await editorPage.getByRole("link", { name: "編集" }).click();
   await editorPage
     .getByRole("textbox", { name: "AsciiDoc文書" })
@@ -120,8 +133,13 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   );
   expect(editorDeleteStatus).toBe(404);
 
-  const outsider = await actorContext(browser, "outsider-session", "outsider-csrf");
+  const outsider = await actorContext(
+    browser,
+    "outsider-session",
+    "outsider-csrf",
+  );
   const outsiderPage = await outsider.newPage();
+  browserDiagnostics.observe(outsiderPage);
   const hidden = await outsiderPage.goto(`${baseUrl}/notes/${noteId}`);
   expect(hidden.status()).toBe(200);
   await expect(
@@ -132,7 +150,9 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   await expect(
     outsiderPage.getByRole("heading", { name: "編集者が更新した題名" }),
   ).toHaveCount(0);
-  const hiddenApi = await outsider.request.get(`${baseUrl}/api/v3/notes/${noteId}`);
+  const hiddenApi = await outsider.request.get(
+    `${baseUrl}/api/v3/notes/${noteId}`,
+  );
   expect(hiddenApi.status()).toBe(404);
   await outsiderPage.goto(`${baseUrl}/`);
   await expect(
@@ -142,7 +162,9 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   await expect(outsiderPage.getByText("編集者が更新した題名")).toHaveCount(0);
 
   await page.goto(`${baseUrl}/notes/${noteId}`);
-  await expect(page.getByRole("heading", { name: "編集者が更新した題名" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "編集者が更新した題名" }),
+  ).toBeVisible();
   await expect(page.getByRole("link", { name: "共有設定" })).toBeVisible();
 
   await Promise.all([reader.close(), editor.close(), outsider.close()]);
