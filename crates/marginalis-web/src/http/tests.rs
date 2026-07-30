@@ -9,13 +9,14 @@ use marginalis_application::{
     NoteAccessControl, NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
     NoteCommands, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
     NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
-    NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget, NoteView,
-    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
+    NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
+    OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, Note, NoteAccess, NoteDraft,
-    NoteId, NoteListEntry, NoteSummary, Revision, UnixMillis, WebSession,
+    NoteId, NoteListEntry, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
+    WebSession,
 };
 use std::{
     io,

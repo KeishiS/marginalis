@@ -19,6 +19,13 @@
   `variables`と、判断結果の`mcp_enabled`を出力する。各項目は`set`と`required`を持ち、
   秘密でも保存先でもない変数にだけ`value`が付く。
 
+### 変更
+
+- MCP toolのJSON Schemaで、入力上の問題の位置を表す定義名を`ValidationTargetResponse`から
+  `NoteValidationTarget`へ変更した。`{"field": "source"}`のような実際の値の形式は変わらないため、
+  `$ref`を解決して利用するクライアントへの影響はない。schemaから型を生成している場合は、
+  生成した型名が変わる。
+
 ### 修正
 
 - 空白だけを設定した環境変数について、`diagnose`は「未設定」、起動処理は「設定済み」と

@@ -9,8 +9,9 @@ use adocweave::text::TextRange;
 use marginalis_application::{
     NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile, NoteProfileExample,
     NoteProfileLimits, NoteProfileNormalization, NoteProfileRule, NoteProfileSyntax,
-    NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget, Utf8ByteSpan,
+    NoteValidationCode, NoteValidationDiagnostic,
 };
+use marginalis_domain::{NoteValidationTarget, Utf8ByteSpan};
 
 use crate::{
     AUTHORING_PROFILE_VERSION, DEFAULT_SOURCE_LANGUAGES, MAX_NOTE_SOURCE_BYTES, MAX_TAG_CHARACTERS,

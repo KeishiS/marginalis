@@ -7,8 +7,8 @@ use std::future::Future;
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, Note, NoteAccess, NoteAclEntry,
-    NoteDraft, NoteId, NoteListEntry, NotePermission, NoteSummary, Revision, UnixMillis,
-    WebSession,
+    NoteDraft, NoteId, NoteListEntry, NotePermission, NoteSummary, NoteValidationTarget, Revision,
+    UnixMillis, Utf8ByteSpan, WebSession,
 };
 
 mod bibliography;
@@ -131,16 +131,6 @@ impl NoteValidationCode {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum NoteValidationTarget {
-    Source,
-    Title,
-    Body,
-    Tag { index: usize },
-    Tags,
-    AclEntry { index: usize },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclChange {
     pub subject: String,
     pub permission: NotePermission,
@@ -150,12 +140,6 @@ pub struct NoteAclChange {
 pub struct NoteAclState {
     pub entries: Vec<NoteAclEntry>,
     pub revision: Revision,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Utf8ByteSpan {
-    pub start: u32,
-    pub end: u32,
 }
 
 /// 保存を拒否しない入力上の指摘の重大度。

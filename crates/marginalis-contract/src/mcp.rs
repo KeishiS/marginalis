@@ -1,12 +1,14 @@
 //! MCP toolの名前、入出力型、JSON Schema。
 
+use marginalis_domain::{ENTITY_ID_PATTERN, Revision};
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::ProblemResponse;
 
-const NOTE_ID_PATTERN: &str = "^[0-9a-fA-F-]{36}$";
+const NOTE_ID_PATTERN: &str = ENTITY_ID_PATTERN;
+const MINIMUM_REVISION: i64 = Revision::MINIMUM_VALUE;
 const MAX_SOURCE_BYTES: usize = 524_288;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
@@ -134,7 +136,7 @@ pub struct McpUpdateNoteInput {
     pub note_id: String,
     #[schemars(length(max = MAX_SOURCE_BYTES))]
     pub source: String,
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub expected_revision: i64,
 }
 
@@ -143,7 +145,7 @@ pub struct McpUpdateNoteInput {
 pub struct McpDeleteNoteInput {
     #[schemars(regex(pattern = NOTE_ID_PATTERN))]
     pub note_id: String,
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub expected_revision: i64,
 }
 
@@ -175,7 +177,7 @@ pub struct McpAddBibliographyItemsInput {
 pub struct McpDeleteBibliographyItemInput {
     #[schemars(regex(pattern = NOTE_ID_PATTERN))]
     pub item_id: String,
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub expected_revision: i64,
 }
 
@@ -186,7 +188,7 @@ pub struct McpBibliographyItem {
     pub citation_key: String,
     pub csl_json: Value,
     pub updated_at_ms: i64,
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
 }
 
@@ -219,7 +221,7 @@ pub struct McpNoteSummary {
     pub title: String,
     pub tags: Vec<String>,
     pub updated_at_ms: i64,
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
 }
 
@@ -237,7 +239,7 @@ pub struct McpGetNoteOutput {
     pub source: String,
     pub tags: Vec<String>,
     pub updated_at_ms: i64,
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
 }
 
@@ -245,7 +247,7 @@ pub struct McpGetNoteOutput {
 #[serde(deny_unknown_fields)]
 pub struct McpNoteRevisionOutput {
     pub note_id: String,
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
 }
 

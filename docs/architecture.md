@@ -23,6 +23,13 @@ SQLite canonical store ─ AsciiDoc ─ Kanidm OIDC ─ Auth0 token検証
 JSON Schemaの生成元です。公開形式を変える場合はこのcrateを変更し、生成物との差分検査を通します。
 MCPのtool一覧と実行時応答も同じ`McpToolName`と出力型を使用し、HTTP adapterが公開JSONを手で
 組み立てません。
+
+公開表現が業務モデルと意図して同一である値は、`marginalis-domain`で一度だけ定義します。権限
+`NotePermission`、実効アクセス水準`NoteAccess`、検証対象`NoteValidationTarget`、UTF-8バイト範囲
+`Utf8ByteSpan`、ノートIDの文字列パターン、`Revision`の最小値がこれにあたり、
+`marginalis-contract`はこれらを再定義せず参照します。要求と応答の構造そのもの（`*Input`、
+`*Response`）は`marginalis-contract`に置き、応答の構造を変えてもdomainへ波及させません。
+domainの変更が公開表現を変えていないことは、`marginalis-contract`のJSON表現固定試験で確認します。
 `marginalis-application`はノート操作の手順と業務上の失敗理由を定義します。
 ここでいうportは、applicationが外側の実装へ要求する小さなinterfaceです。
 `marginalis-sqlite`は永続化port、`marginalis-asciidoc`は文書の検証・描画port、
@@ -110,7 +117,9 @@ marginalis-web/src/http/mcp_transport/
 ```
 
 依存は概ね上から下ではなく、外側から`domain`と`application`へ向かう。
-`domain`は他のMarginalis crateへ依存せず、`application`は`domain`だけへ依存する。
+`domain`は他のMarginalis crateへ依存せず、`application`と`contract`は`domain`だけへ依存する。
+`contract`が`domain`を参照するのは公開表現の語彙を一度だけ定義するためであり、`application`や
+adapterへは依存しない。
 HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのportを実装する。
 `service`だけが具象的なadapterを選び、application serviceへ接続する。
 `cargo make dependency-boundaries`は、すべてのworkspace crateのproduction依存をこの対応へ固定し、

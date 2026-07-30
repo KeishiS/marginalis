@@ -3,38 +3,33 @@
 use axum::{Json, http::StatusCode};
 use marginalis_application::{
     AuthenticationUseCaseError, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteUseCaseError,
-    NoteValidationDiagnostic, NoteValidationTarget,
+    NoteValidationDiagnostic,
 };
 use marginalis_contract::{
     DiagnosticSeverityResponse, NoteDiagnosticResponse, ProblemCode, ProblemResponse,
-    Utf8ByteSpanResponse, Utf8ByteUnit, ValidationTargetResponse,
+    Utf8ByteSpanResponse, Utf8ByteUnit,
 };
+use marginalis_domain::Utf8ByteSpan;
 
-fn diagnostic_target(target: NoteValidationTarget) -> ValidationTargetResponse {
-    match target {
-        NoteValidationTarget::Source => ValidationTargetResponse::Source,
-        NoteValidationTarget::Title => ValidationTargetResponse::Title,
-        NoteValidationTarget::Body => ValidationTargetResponse::Body,
-        NoteValidationTarget::Tag { index } => ValidationTargetResponse::Tag { index },
-        NoteValidationTarget::Tags => ValidationTargetResponse::Tags,
-        NoteValidationTarget::AclEntry { index } => ValidationTargetResponse::AclEntry { index },
+fn span_response(span: Utf8ByteSpan) -> Utf8ByteSpanResponse {
+    Utf8ByteSpanResponse {
+        start: span.start,
+        end: span.end,
+        unit: Utf8ByteUnit::Utf8Byte,
     }
 }
 
 pub(super) fn advisory_response(diagnostic: NoteAdvisoryDiagnostic) -> NoteDiagnosticResponse {
     NoteDiagnosticResponse {
         code: diagnostic.code,
+        // 保存を拒否しない指摘は`error`になり得ないため、公開表現の一部だけを使用する。
         severity: match diagnostic.severity {
             NoteAdvisorySeverity::Warning => DiagnosticSeverityResponse::Warning,
             NoteAdvisorySeverity::Information => DiagnosticSeverityResponse::Information,
             NoteAdvisorySeverity::Hint => DiagnosticSeverityResponse::Hint,
         },
-        target: diagnostic_target(diagnostic.target),
-        span: diagnostic.span.map(|span| Utf8ByteSpanResponse {
-            start: span.start,
-            end: span.end,
-            unit: Utf8ByteUnit::Utf8Byte,
-        }),
+        target: diagnostic.target,
+        span: diagnostic.span.map(span_response),
         message: diagnostic.message,
     }
 }
@@ -43,12 +38,8 @@ fn validation_response(diagnostic: NoteValidationDiagnostic) -> NoteDiagnosticRe
     NoteDiagnosticResponse {
         code: diagnostic.code,
         severity: DiagnosticSeverityResponse::Error,
-        target: diagnostic_target(diagnostic.target),
-        span: diagnostic.span.map(|span| Utf8ByteSpanResponse {
-            start: span.start,
-            end: span.end,
-            unit: Utf8ByteUnit::Utf8Byte,
-        }),
+        target: diagnostic.target,
+        span: diagnostic.span.map(span_response),
         message: diagnostic.message,
     }
 }
