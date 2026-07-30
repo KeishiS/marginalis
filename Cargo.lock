@@ -1187,6 +1187,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "marginalis-domain",
+ "serde_json",
  "sha2 0.10.9",
  "tokio",
  "url",

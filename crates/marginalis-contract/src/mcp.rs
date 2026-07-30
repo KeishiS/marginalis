@@ -18,6 +18,9 @@ pub enum McpToolName {
     CreateNote,
     UpdateNote,
     DeleteNote,
+    SearchBibliography,
+    AddBibliographyItem,
+    DeleteBibliographyItem,
 }
 
 impl McpToolName {
@@ -29,15 +32,18 @@ impl McpToolName {
             Self::CreateNote => "create_note",
             Self::UpdateNote => "update_note",
             Self::DeleteNote => "delete_note",
+            Self::SearchBibliography => "search_bibliography",
+            Self::AddBibliographyItem => "add_bibliography_item",
+            Self::DeleteBibliographyItem => "delete_bibliography_item",
         }
     }
 
     pub const fn accepted_scopes(self) -> &'static [&'static str] {
         match self {
-            Self::ListNotes | Self::GetNote => &["notes:read"],
+            Self::ListNotes | Self::GetNote | Self::SearchBibliography => &["notes:read"],
             Self::GetNoteProfile => &["notes:read", "notes:write"],
-            Self::CreateNote | Self::UpdateNote => &["notes:write"],
-            Self::DeleteNote => &["notes:delete"],
+            Self::CreateNote | Self::UpdateNote | Self::AddBibliographyItem => &["notes:write"],
+            Self::DeleteNote | Self::DeleteBibliographyItem => &["notes:delete"],
         }
     }
 }
@@ -53,6 +59,9 @@ impl TryFrom<&str> for McpToolName {
             "create_note" => Ok(Self::CreateNote),
             "update_note" => Ok(Self::UpdateNote),
             "delete_note" => Ok(Self::DeleteNote),
+            "search_bibliography" => Ok(Self::SearchBibliography),
+            "add_bibliography_item" => Ok(Self::AddBibliographyItem),
+            "delete_bibliography_item" => Ok(Self::DeleteBibliographyItem),
             _ => Err(UnknownMcpTool),
         }
     }
@@ -130,6 +139,47 @@ pub struct McpDeleteNoteInput {
     pub note_id: String,
     #[schemars(range(min = 1))]
     pub expected_revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpSearchBibliographyInput {
+    #[schemars(length(max = 256))]
+    #[serde(default)]
+    pub query: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpAddBibliographyItemInput {
+    /// CSL-JSON item。`id`と`type`は必須。
+    pub csl_json: Value,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpDeleteBibliographyItemInput {
+    #[schemars(regex(pattern = NOTE_ID_PATTERN))]
+    pub item_id: String,
+    #[schemars(range(min = 1))]
+    pub expected_revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpBibliographyItem {
+    pub item_id: String,
+    pub citation_key: String,
+    pub csl_json: Value,
+    pub updated_at_ms: i64,
+    #[schemars(range(min = 1))]
+    pub revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpBibliographyListOutput {
+    pub items: Vec<McpBibliographyItem>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -259,6 +309,18 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
             McpToolName::DeleteNote,
             "Soft-delete a note at the expected revision",
         ),
+        McpToolContract::new::<McpSearchBibliographyInput, McpBibliographyListOutput>(
+            McpToolName::SearchBibliography,
+            "Search the current user's CSL-JSON bibliography library",
+        ),
+        McpToolContract::new::<McpAddBibliographyItemInput, McpBibliographyItem>(
+            McpToolName::AddBibliographyItem,
+            "Add one CSL-JSON item; id and type are required and values are never inferred",
+        ),
+        McpToolContract::new::<McpDeleteBibliographyItemInput, McpEmptyInput>(
+            McpToolName::DeleteBibliographyItem,
+            "Delete an owned bibliography item at the expected revision",
+        ),
     ]
 }
 
@@ -275,7 +337,7 @@ mod tests {
     #[test]
     fn tool_catalog_has_unique_typed_names_and_closed_input_objects() {
         let contracts = mcp_tool_contracts();
-        assert_eq!(contracts.len(), 6);
+        assert_eq!(contracts.len(), 9);
         assert_eq!(
             contracts
                 .iter()

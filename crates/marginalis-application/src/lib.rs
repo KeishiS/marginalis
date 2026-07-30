@@ -11,11 +11,16 @@ use marginalis_domain::{
     WebSession,
 };
 
+mod bibliography;
 mod identity;
 mod notes;
 mod session;
 mod snapshot;
 
+pub use bibliography::{
+    BibliographyApplication, BibliographyRepository, BibliographyRepositoryError,
+    BibliographyUseCaseError, BibliographyUseCases,
+};
 pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
 };

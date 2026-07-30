@@ -1,9 +1,13 @@
 use std::str::FromStr;
 
-use marginalis_application::{OidcLoginAttempt, OidcLoginAttemptStore, RestorePlan};
+use marginalis_application::{
+    BibliographyRepository, BibliographyRepositoryError, OidcLoginAttempt, OidcLoginAttemptStore,
+    RestorePlan,
+};
 use marginalis_domain::{
-    Actor, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NotePermission,
-    Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
+    Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteAccess,
+    NoteAclEntry, NoteDraft, NoteId, NotePermission, Revision, SOFT_DELETE_RETENTION_MS,
+    UnixMillis, WebSession,
 };
 
 use super::*;
@@ -26,6 +30,12 @@ mod notes {
     use super::*;
 
     include!("tests/notes.rs");
+}
+
+mod bibliography {
+    use super::*;
+
+    include!("tests/bibliography.rs");
 }
 
 mod sessions {

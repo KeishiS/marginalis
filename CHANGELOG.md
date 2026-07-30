@@ -5,6 +5,17 @@
 
 ## 未リリース
 
+### 破壊的変更
+
+- 利用者ごとのCSL-JSON書誌ライブラリーを追加し、SQLite schemaを12、archiveを
+  `marginalis-archive-11`へ更新した。旧データベースは自動移行せず、archive 10を
+  `migrate-archive`でarchive 11へ変換して空のデータベースへ取り込む。
+
+### 追加
+
+- Web UIとREST APIからCSL-JSON書誌情報を検索、登録、編集、削除できるようにした。MCPでは
+  検索、登録、削除を提供する。citation keyは利用者ごとに一意とし、登録値を推測または補完しない。
+
 ## 0.17.0 — 2026-07-30
 
 ### 追加

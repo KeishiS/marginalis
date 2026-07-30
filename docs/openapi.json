@@ -113,6 +113,53 @@
       }
     },
     "schemas": {
+      "BibliographyItem": {
+        "additionalProperties": false,
+        "properties": {
+          "citation_key": {
+            "type": "string"
+          },
+          "created_at_ms": {
+            "type": "integer"
+          },
+          "csl_json": {
+            "type": "object"
+          },
+          "item_id": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "updated_at_ms": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id",
+          "citation_key",
+          "csl_json",
+          "created_at_ms",
+          "updated_at_ms",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "BibliographyItemInput": {
+        "additionalProperties": false,
+        "properties": {
+          "csl_json": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "csl_json"
+        ],
+        "type": "object"
+      },
       "Health": {
         "additionalProperties": false,
         "properties": {
@@ -558,6 +605,169 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v3/bibliography": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BibliographyItem"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "bibliography items"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          }
+        },
+        "summary": "Search the current user's bibliography"
+      },
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BibliographyItemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BibliographyItem"
+                }
+              }
+            },
+            "description": "created bibliography item",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        },
+        "summary": "Add one CSL-JSON bibliography item"
+      }
+    },
+    "/api/v3/bibliography/{item_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "bibliography item deleted"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "428": {
+            "$ref": "#/components/responses/PreconditionRequired"
+          }
+        },
+        "summary": "Delete an owned bibliography item"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "item_id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BibliographyItemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BibliographyItem"
+                }
+              }
+            },
+            "description": "updated bibliography item",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "428": {
+            "$ref": "#/components/responses/PreconditionRequired"
+          }
+        },
+        "summary": "Update an owned CSL-JSON bibliography item"
+      }
+    },
     "/api/v3/health": {
       "get": {
         "responses": {

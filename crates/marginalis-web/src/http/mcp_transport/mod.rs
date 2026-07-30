@@ -270,7 +270,14 @@ pub(super) async fn mcp_post(
         (ProtocolEra::Modern, "tools/call") => {
             match decoded_tool_call.expect("tools/call was decoded") {
                 Ok(call) => {
-                    mcp_tool_call(state.notes.as_ref(), authenticated.actor, id, call).await
+                    mcp_tool_call(
+                        state.notes.as_ref(),
+                        state.bibliography.as_deref(),
+                        authenticated.actor,
+                        id,
+                        call,
+                    )
+                    .await
                 }
                 Err(()) => JsonRpcResponse::error(id, -32602, "Invalid params"),
             }
@@ -291,12 +298,21 @@ pub(super) async fn mcp_post(
             )
         }
         (ProtocolEra::Legacy, "tools/list") => JsonRpcResponse::error(id, -32602, "Invalid params"),
-        (ProtocolEra::Legacy, "tools/call") => match decoded_tool_call
-            .expect("tools/call was decoded")
-        {
-            Ok(call) => mcp_tool_call(state.notes.as_ref(), authenticated.actor, id, call).await,
-            Err(()) => JsonRpcResponse::error(id, -32602, "Invalid params"),
-        },
+        (ProtocolEra::Legacy, "tools/call") => {
+            match decoded_tool_call.expect("tools/call was decoded") {
+                Ok(call) => {
+                    mcp_tool_call(
+                        state.notes.as_ref(),
+                        state.bibliography.as_deref(),
+                        authenticated.actor,
+                        id,
+                        call,
+                    )
+                    .await
+                }
+                Err(()) => JsonRpcResponse::error(id, -32602, "Invalid params"),
+            }
+        }
         (ProtocolEra::Legacy, _) => JsonRpcResponse::error(id, -32601, "Method not found"),
     };
     if protocol_era == ProtocolEra::Modern {

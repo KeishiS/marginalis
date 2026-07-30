@@ -1,13 +1,18 @@
 //! MCP toolの入力検査、use case呼出し、契約型への変換。
 
-use marginalis_application::{NoteProfile, NoteUseCaseError, NoteUseCases, NoteWritePolicy};
-use marginalis_contract::{
-    McpCreateNoteInput, McpDeleteNoteInput, McpGetNoteInput, McpGetNoteOutput, McpListNotesOutput,
-    McpNoteProfileExample, McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput,
-    McpNoteProfileRule, McpNoteProfileSyntax, McpNoteRevisionOutput, McpNoteSummary, McpToolName,
-    McpUpdateNoteInput,
+use marginalis_application::{
+    BibliographyUseCaseError, BibliographyUseCases, NoteProfile, NoteUseCaseError, NoteUseCases,
+    NoteWritePolicy,
 };
-use marginalis_domain::{Actor, Note, NoteDraft, Revision};
+use marginalis_contract::{
+    McpAddBibliographyItemInput, McpBibliographyItem, McpBibliographyListOutput,
+    McpCreateNoteInput, McpDeleteBibliographyItemInput, McpDeleteNoteInput, McpEmptyInput,
+    McpGetNoteInput, McpGetNoteOutput, McpListNotesOutput, McpNoteProfileExample,
+    McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule,
+    McpNoteProfileSyntax, McpNoteRevisionOutput, McpNoteSummary, McpSearchBibliographyInput,
+    McpToolName, McpUpdateNoteInput,
+};
+use marginalis_domain::{Actor, BibliographyItemId, EntityId, Note, NoteDraft, Revision};
 use serde::{Deserialize, Serialize};
 
 use crate::mcp::JsonRpcResponse;
@@ -58,16 +63,20 @@ enum McpToolOutput {
     NoteProfile(Box<McpNoteProfileOutput>),
     Note(McpGetNoteOutput),
     Revision(McpNoteRevisionOutput),
+    BibliographyList(McpBibliographyListOutput),
+    BibliographyItem(McpBibliographyItem),
+    Empty(McpEmptyInput),
 }
 
 pub(super) async fn mcp_tool_call(
     notes: &dyn NoteUseCases,
+    bibliography: Option<&dyn BibliographyUseCases>,
     actor: Actor,
     id: serde_json::Value,
     call: McpToolCall,
 ) -> JsonRpcResponse {
     let tool = call.tool.map_or("unknown", McpToolName::as_str);
-    match execute_mcp_tool(notes, actor, call).await {
+    match execute_mcp_tool(notes, bibliography, actor, call).await {
         Ok(output) => {
             tracing::info!(
                 event = "mcp.tool.completed",
@@ -103,6 +112,7 @@ pub(super) async fn mcp_tool_call(
                 }
                 McpToolFailure::UnknownTool => JsonRpcResponse::error(id, -32602, "Unknown tool"),
                 McpToolFailure::UseCase(error) => mcp_tool_error(id, error),
+                McpToolFailure::Bibliography(error) => mcp_bibliography_error(id, error),
             }
         }
     }
@@ -112,12 +122,14 @@ enum McpToolFailure {
     InvalidArguments(&'static str),
     UnknownTool,
     UseCase(NoteUseCaseError),
+    Bibliography(BibliographyUseCaseError),
 }
 
 impl McpToolFailure {
     fn outcome(&self) -> &'static str {
         match self {
             Self::UseCase(NoteUseCaseError::Unavailable) => "failure",
+            Self::Bibliography(BibliographyUseCaseError::Unavailable) => "failure",
             Self::InvalidArguments(_)
             | Self::UnknownTool
             | Self::UseCase(
@@ -126,7 +138,8 @@ impl McpToolFailure {
                 | NoteUseCaseError::NotFound
                 | NoteUseCaseError::Conflict
                 | NoteUseCaseError::RenderFailed,
-            ) => "rejected",
+            )
+            | Self::Bibliography(_) => "rejected",
         }
     }
 
@@ -140,12 +153,17 @@ impl McpToolFailure {
             Self::UseCase(NoteUseCaseError::Conflict) => "conflict",
             Self::UseCase(NoteUseCaseError::RenderFailed) => "render-failed",
             Self::UseCase(NoteUseCaseError::Unavailable) => "unavailable",
+            Self::Bibliography(BibliographyUseCaseError::InvalidCslJson) => "invalid-csl-json",
+            Self::Bibliography(BibliographyUseCaseError::NotFound) => "not-found",
+            Self::Bibliography(BibliographyUseCaseError::Conflict) => "conflict",
+            Self::Bibliography(BibliographyUseCaseError::Unavailable) => "unavailable",
         }
     }
 }
 
 async fn execute_mcp_tool(
     notes: &dyn NoteUseCases,
+    bibliography: Option<&dyn BibliographyUseCases>,
     actor: Actor,
     call: McpToolCall,
 ) -> Result<McpToolOutput, McpToolFailure> {
@@ -274,9 +292,122 @@ async fn execute_mcp_tool(
                 .await
                 .map(note_revision_output)
         }
+        Some(McpToolName::SearchBibliography) => {
+            let Ok(input) = serde_json::from_value::<McpSearchBibliographyInput>(call.arguments)
+            else {
+                return Err(McpToolFailure::InvalidArguments(
+                    "bibliography search arguments are invalid",
+                ));
+            };
+            let Some(bibliography) = bibliography else {
+                return Err(McpToolFailure::Bibliography(
+                    BibliographyUseCaseError::Unavailable,
+                ));
+            };
+            return bibliography
+                .search_bibliography(actor, input.query)
+                .await
+                .map(|items| {
+                    McpToolOutput::BibliographyList(McpBibliographyListOutput {
+                        items: items.into_iter().map(bibliography_item_output).collect(),
+                    })
+                })
+                .map_err(McpToolFailure::Bibliography);
+        }
+        Some(McpToolName::AddBibliographyItem) => {
+            let Ok(input) = serde_json::from_value::<McpAddBibliographyItemInput>(call.arguments)
+            else {
+                return Err(McpToolFailure::InvalidArguments(
+                    "CSL-JSON bibliography arguments are invalid",
+                ));
+            };
+            let Some(bibliography) = bibliography else {
+                return Err(McpToolFailure::Bibliography(
+                    BibliographyUseCaseError::Unavailable,
+                ));
+            };
+            return bibliography
+                .add_bibliography_item(actor, input.csl_json)
+                .await
+                .map(|item| McpToolOutput::BibliographyItem(bibliography_item_output(item)))
+                .map_err(McpToolFailure::Bibliography);
+        }
+        Some(McpToolName::DeleteBibliographyItem) => {
+            let Ok(input) =
+                serde_json::from_value::<McpDeleteBibliographyItemInput>(call.arguments)
+            else {
+                return Err(McpToolFailure::InvalidArguments(
+                    "bibliography delete arguments are invalid",
+                ));
+            };
+            let Ok(entity_id) = input.item_id.parse::<EntityId>() else {
+                return Err(McpToolFailure::InvalidArguments("item_id is invalid"));
+            };
+            let Ok(expected_revision) = Revision::new(input.expected_revision) else {
+                return Err(McpToolFailure::InvalidArguments(
+                    "expected_revision is invalid",
+                ));
+            };
+            let Some(bibliography) = bibliography else {
+                return Err(McpToolFailure::Bibliography(
+                    BibliographyUseCaseError::Unavailable,
+                ));
+            };
+            return bibliography
+                .delete_bibliography_item(
+                    actor,
+                    BibliographyItemId::new(entity_id),
+                    expected_revision,
+                )
+                .await
+                .map(|()| McpToolOutput::Empty(McpEmptyInput {}))
+                .map_err(McpToolFailure::Bibliography);
+        }
         None => return Err(McpToolFailure::UnknownTool),
     };
     result.map_err(McpToolFailure::UseCase)
+}
+
+fn bibliography_item_output(item: marginalis_domain::BibliographyItem) -> McpBibliographyItem {
+    McpBibliographyItem {
+        item_id: item.item_id().to_string(),
+        citation_key: item.citation_key().to_owned(),
+        csl_json: serde_json::from_str(item.csl_json())
+            .expect("stored CSL-JSON was validated before persistence"),
+        updated_at_ms: item.updated_at().get(),
+        revision: item.revision().get(),
+    }
+}
+
+fn mcp_bibliography_error(
+    id: serde_json::Value,
+    error: BibliographyUseCaseError,
+) -> JsonRpcResponse {
+    let value = match error {
+        BibliographyUseCaseError::InvalidCslJson => serde_json::json!({
+            "code":"validation_failed",
+            "message":"CSL-JSON must be an object with valid id and type fields"
+        }),
+        BibliographyUseCaseError::NotFound => {
+            serde_json::json!({"code":"not_found","message":"bibliography item was not found"})
+        }
+        BibliographyUseCaseError::Conflict => serde_json::json!({
+            "code":"conflict",
+            "message":"citation key already exists or revision conflicts"
+        }),
+        BibliographyUseCaseError::Unavailable => serde_json::json!({
+            "code":"unavailable",
+            "message":"bibliography service is unavailable"
+        }),
+    };
+    JsonRpcResponse::success(
+        id,
+        serde_json::json!({
+            "content":[{"type":"text","text":value.to_string()}],
+            "structuredContent":value,
+            "isError":true
+        }),
+    )
 }
 
 fn mcp_tool_success(id: serde_json::Value, output: McpToolOutput) -> JsonRpcResponse {

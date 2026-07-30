@@ -1,7 +1,7 @@
 //! 全ノートの可搬archive import/export。
 
 use marginalis_application::{LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
-use marginalis_domain::{EntityId, Identity, Note, NoteId, NotePermission};
+use marginalis_domain::{BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission};
 use sqlx::Sqlite;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
@@ -58,8 +58,23 @@ impl SqliteDatabase {
                 ))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let rows = sqlx::query(
+            "SELECT item_id, owner_issuer, owner_subject, citation_key, csl_json,
+                    created_at_ms, updated_at_ms, revision
+             FROM bibliography_items ORDER BY item_id",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let bibliography_items = rows
+            .into_iter()
+            .map(crate::bibliography_repository::decode_item)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| SqliteStoreError::CorruptData)?;
         transaction.commit().await.map_err(database_error)?;
-        LogicalSnapshot::new(notes, note_acl).map_err(|_| SqliteStoreError::CorruptData)
+        LogicalSnapshot::new(notes, note_acl)
+            .and_then(|snapshot| snapshot.with_bibliography(bibliography_items))
+            .map_err(|_| SqliteStoreError::CorruptData)
     }
 
     /// 検証済みの復元計画を空databaseへ一つのtransactionで適用する。
@@ -70,6 +85,7 @@ impl SqliteDatabase {
         let target_has_data = sqlx::query_scalar::<_, bool>(
             "SELECT
                 EXISTS(SELECT 1 FROM notes)
+                OR EXISTS(SELECT 1 FROM bibliography_items)
                 OR EXISTS(SELECT 1 FROM web_sessions)
                 OR EXISTS(SELECT 1 FROM oidc_login_attempts)",
         )
@@ -81,6 +97,9 @@ impl SqliteDatabase {
         }
         for note in notes {
             insert_note_row(&mut transaction, note).await?;
+        }
+        for item in plan.snapshot().bibliography_items() {
+            insert_bibliography_item_row(&mut transaction, item).await?;
         }
         for (source, target) in plan.references() {
             sqlx::query(
@@ -109,6 +128,30 @@ impl SqliteDatabase {
         }
         transaction.commit().await.map_err(database_error)
     }
+}
+
+async fn insert_bibliography_item_row(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    item: &BibliographyItem,
+) -> Result<(), SqliteStoreError> {
+    sqlx::query(
+        "INSERT INTO bibliography_items (
+            item_id, owner_issuer, owner_subject, citation_key, csl_json,
+            created_at_ms, updated_at_ms, revision
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(item.item_id().to_string())
+    .bind(item.owner().issuer())
+    .bind(item.owner().subject())
+    .bind(item.citation_key())
+    .bind(item.csl_json())
+    .bind(item.created_at().get())
+    .bind(item.updated_at().get())
+    .bind(item.revision().get())
+    .execute(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    Ok(())
 }
 
 async fn insert_note_row(

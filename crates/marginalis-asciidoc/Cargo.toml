@@ -11,6 +11,7 @@ adocweave.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 serde.workspace = true
+serde_json.workspace = true
 unicode-normalization.workspace = true
 time.workspace = true
 

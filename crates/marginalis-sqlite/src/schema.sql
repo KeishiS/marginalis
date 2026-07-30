@@ -23,6 +23,20 @@ CREATE TABLE note_references (
 CREATE INDEX note_references_target_idx
 ON note_references (target_note_id, source_note_id);
 
+CREATE TABLE bibliography_items (
+    item_id TEXT PRIMARY KEY NOT NULL,
+    owner_issuer TEXT NOT NULL,
+    owner_subject TEXT NOT NULL,
+    citation_key TEXT NOT NULL,
+    csl_json TEXT NOT NULL CHECK (json_valid(csl_json)),
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    UNIQUE (owner_issuer, owner_subject, citation_key)
+) STRICT;
+CREATE INDEX bibliography_items_owner_listing_idx
+ON bibliography_items (owner_issuer, owner_subject, updated_at_ms DESC, item_id);
+
 CREATE TABLE note_acl (
     note_id TEXT NOT NULL,
     issuer TEXT NOT NULL,

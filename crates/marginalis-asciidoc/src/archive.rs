@@ -2,16 +2,20 @@ use core::fmt;
 
 use marginalis_application::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry};
 use marginalis_domain::{
-    EntityId, Identity, Note, NoteDraft, NoteId, NotePermission, Revision, UnixMillis,
+    BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteDraft, NoteId,
+    NotePermission, Revision, UnixMillis,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{ARCHIVE_NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION, validate_note_draft};
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-10";
-const PREVIOUS_ARCHIVE_FORMAT: &str = "marginalis-archive-9";
-const PREVIOUS_ADOCWEAVE_PACKAGE_VERSION: &str = "0.19.0";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-11";
+const PREVIOUS_ARCHIVE_FORMAT: &str = "marginalis-archive-10";
+const PREVIOUS_ADOCWEAVE_PACKAGE_VERSION: &str = "0.20.0";
 const PREVIOUS_NOTE_PROFILE_VERSION: u32 = 4;
+const INTERMEDIATE_ARCHIVE_FORMAT: &str = "marginalis-archive-9";
+const INTERMEDIATE_ADOCWEAVE_PACKAGE_VERSION: &str = "0.19.0";
+const INTERMEDIATE_NOTE_PROFILE_VERSION: u32 = 4;
 const LEGACY_ARCHIVE_FORMAT: &str = "marginalis-archive-8";
 const LEGACY_ADOCWEAVE_PACKAGE_VERSION: &str = "0.17.0";
 const LEGACY_NOTE_PROFILE_VERSION: u32 = 4;
@@ -23,6 +27,11 @@ const SUPPORTED_MIGRATION_CONTRACTS: &[(&str, &str, u32)] = &[
         PREVIOUS_ARCHIVE_FORMAT,
         PREVIOUS_ADOCWEAVE_PACKAGE_VERSION,
         PREVIOUS_NOTE_PROFILE_VERSION,
+    ),
+    (
+        INTERMEDIATE_ARCHIVE_FORMAT,
+        INTERMEDIATE_ADOCWEAVE_PACKAGE_VERSION,
+        INTERMEDIATE_NOTE_PROFILE_VERSION,
     ),
     (
         LEGACY_ARCHIVE_FORMAT,
@@ -44,6 +53,8 @@ pub struct Archive {
     pub note_profile_version: u32,
     pub notes: Vec<ArchiveNote>,
     pub note_acl: Vec<ArchiveAclEntry>,
+    #[serde(default)]
+    pub bibliography_items: Vec<ArchiveBibliographyItem>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -66,6 +77,19 @@ pub struct ArchiveAclEntry {
     pub issuer: String,
     pub subject: String,
     pub permission: ArchivePermission,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveBibliographyItem {
+    pub item_id: String,
+    pub owner_issuer: String,
+    pub owner_subject: String,
+    pub citation_key: String,
+    pub csl_json: serde_json::Value,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub revision: i64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -105,6 +129,21 @@ pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
                     NotePermission::Read => ArchivePermission::Read,
                     NotePermission::Edit => ArchivePermission::Edit,
                 },
+            })
+            .collect(),
+        bibliography_items: snapshot
+            .bibliography_items()
+            .iter()
+            .map(|item| ArchiveBibliographyItem {
+                item_id: item.item_id().to_string(),
+                owner_issuer: item.owner().issuer().to_owned(),
+                owner_subject: item.owner().subject().to_owned(),
+                citation_key: item.citation_key().to_owned(),
+                csl_json: serde_json::from_str(item.csl_json())
+                    .expect("snapshot CSL-JSON is valid"),
+                created_at_ms: item.created_at().get(),
+                updated_at_ms: item.updated_at().get(),
+                revision: item.revision().get(),
             })
             .collect(),
     }
@@ -197,19 +236,59 @@ fn validate_archive_contents(archive: &Archive) -> Result<LogicalSnapshot, Archi
             ))
         })
         .collect::<Result<Vec<_>, ArchiveContentsError>>()?;
-    LogicalSnapshot::new(notes, note_acl).map_err(|error| match error {
-        InvalidSnapshot::DuplicateNote { position } => ArchiveContentsError::Note { position },
-        InvalidSnapshot::InvalidAclEntry { position } => {
-            ArchiveContentsError::AclEntry { position }
-        }
-        InvalidSnapshot::InvalidReference { .. } => ArchiveContentsError::Relationships,
-    })
+    let bibliography_items = archive
+        .bibliography_items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let invalid = || ArchiveContentsError::BibliographyItem {
+                position: index + 1,
+            };
+            let object = item.csl_json.as_object().ok_or_else(invalid)?;
+            if object.get("id").and_then(serde_json::Value::as_str)
+                != Some(item.citation_key.as_str())
+                || object
+                    .get("type")
+                    .and_then(serde_json::Value::as_str)
+                    .is_none_or(str::is_empty)
+            {
+                return Err(invalid());
+            }
+            BibliographyItem::restore(
+                item.item_id
+                    .parse::<EntityId>()
+                    .map(BibliographyItemId::new)
+                    .map_err(|_| invalid())?,
+                Identity::new(item.owner_issuer.clone(), item.owner_subject.clone())
+                    .map_err(|_| invalid())?,
+                item.citation_key.clone(),
+                serde_json::to_string(&item.csl_json).map_err(|_| invalid())?,
+                UnixMillis::new(item.created_at_ms),
+                UnixMillis::new(item.updated_at_ms),
+                Revision::new(item.revision).map_err(|_| invalid())?,
+            )
+            .map_err(|_| invalid())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    LogicalSnapshot::new(notes, note_acl)
+        .and_then(|snapshot| snapshot.with_bibliography(bibliography_items))
+        .map_err(|error| match error {
+            InvalidSnapshot::DuplicateNote { position } => ArchiveContentsError::Note { position },
+            InvalidSnapshot::InvalidAclEntry { position } => {
+                ArchiveContentsError::AclEntry { position }
+            }
+            InvalidSnapshot::InvalidReference { .. } => ArchiveContentsError::Relationships,
+            InvalidSnapshot::InvalidBibliographyItem { position } => {
+                ArchiveContentsError::BibliographyItem { position }
+            }
+        })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ArchiveContentsError {
     Note { position: usize },
     AclEntry { position: usize },
+    BibliographyItem { position: usize },
     Relationships,
 }
 
@@ -218,6 +297,7 @@ pub enum ArchiveMigrationError {
     UnsupportedContract,
     InvalidNote { position: usize },
     InvalidAclEntry { position: usize },
+    InvalidBibliographyItem { position: usize },
     InvalidRelationships,
 }
 
@@ -226,6 +306,9 @@ impl From<ArchiveContentsError> for ArchiveMigrationError {
         match error {
             ArchiveContentsError::Note { position } => Self::InvalidNote { position },
             ArchiveContentsError::AclEntry { position } => Self::InvalidAclEntry { position },
+            ArchiveContentsError::BibliographyItem { position } => {
+                Self::InvalidBibliographyItem { position }
+            }
             ArchiveContentsError::Relationships => Self::InvalidRelationships,
         }
     }
@@ -244,6 +327,10 @@ impl fmt::Display for ArchiveMigrationError {
             Self::InvalidAclEntry { position } => write!(
                 formatter,
                 "archive ACL entry at position {position} is invalid"
+            ),
+            Self::InvalidBibliographyItem { position } => write!(
+                formatter,
+                "archive bibliography item at position {position} is invalid"
             ),
             Self::InvalidRelationships => {
                 formatter.write_str("archive note and ACL relationships are inconsistent")

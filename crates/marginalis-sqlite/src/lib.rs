@@ -1,6 +1,7 @@
 //! Marginalisの現行データモデルに限定したSQLite adapter。
 
 mod archive;
+mod bibliography_repository;
 mod cleanup;
 mod diagnostics;
 mod note_repository;

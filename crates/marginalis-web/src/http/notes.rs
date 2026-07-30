@@ -264,7 +264,7 @@ pub(super) async fn restore_note(
     Ok(note_json(StatusCode::OK, note))
 }
 
-fn expected_revision(headers: &HeaderMap) -> HandlerResult<Revision> {
+pub(super) fn expected_revision(headers: &HeaderMap) -> HandlerResult<Revision> {
     let value = headers.get(header::IF_MATCH).ok_or_else(|| {
         problem(
             StatusCode::PRECONDITION_REQUIRED,
@@ -289,7 +289,7 @@ fn expected_revision(headers: &HeaderMap) -> HandlerResult<Revision> {
         })
 }
 
-fn etag(revision: Revision) -> HeaderValue {
+pub(super) fn etag(revision: Revision) -> HeaderValue {
     HeaderValue::from_str(&format!("\"rev-{}\"", revision.get())).expect("valid ETag")
 }
 

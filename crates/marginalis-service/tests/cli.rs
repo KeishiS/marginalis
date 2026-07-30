@@ -78,7 +78,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-10");
+    assert_eq!(archive_json["format"], "marginalis-archive-11");
     assert_eq!(archive_json["adocweave_package_version"], "0.20.0");
     assert_eq!(archive_json["note_profile_version"], 4);
 
@@ -296,7 +296,7 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let migrated: serde_json::Value =
         serde_json::from_slice(&fs::read(&output).expect("read migration output"))
             .expect("migrated JSON");
-    assert_eq!(migrated["format"], "marginalis-archive-10");
+    assert_eq!(migrated["format"], "marginalis-archive-11");
     assert_eq!(migrated["adocweave_package_version"], "0.20.0");
     assert_eq!(migrated["note_profile_version"], 4);
 
@@ -507,7 +507,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 11);
+    assert_eq!(report["database"]["schema"]["actual"], 12);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
     assert!(!String::from_utf8_lossy(&healthy.stderr).contains("must-not-be-reported"));
 
