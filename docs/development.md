@@ -89,6 +89,14 @@ Pull Requestからマージします。
    | `nixos-e2e` | Nix package、module、TLS、Kanidm、Auth0 token、永続化、保守unit | `cargo make ci-nixos-e2e` | 試験実行失敗時の`nixos-e2e-failure-*` artifactに、秘密情報を除去したrunner出力 |
    | `release-gate` | 公開対象の版、受入結果、全検証、Nix packageを公開前に確認 | `MARGINALIS_RELEASE_TAG=vX.Y.Z cargo make release-gate` | 失敗したtask名と標準出力 |
 
+   `nixos-e2e`はCIのcritical pathであり、所要時間の大半をNixのビルドが占めます。このjobだけは
+   Nix storeをGitHub Actionsのcacheへ保存し、run間で再利用します。cacheへの書き込みは`main`への
+   push時だけに限り、Pull Requestは読み取りだけを行います。既定branchのcacheはすべてのbranchから
+   読めるため、Pull Requestもこれを利用できます。`flake.nix`、`flake.lock`、`Cargo.lock`のいずれかを
+   変更した場合はcacheに一致せず、従来と同じ時間がかかります。
+   このjobはdevShellを使用しないため、CIでは`nix develop`を経由せず`nix flake check -L`を直接
+   実行します。実行内容はローカルの`cargo make ci-nixos-e2e`と同じです。
+
    GitHub Actionsのartifactは試験環境のデータだけを含みます。実環境のログ、token、Cookie、
    ノート本文を追加しません。NixOS E2Eのrunner出力は、保存前に秘密情報を除去して検査します。
    coverageは14日、失敗時のブラウザーとVMの証拠は7日保持します。環境準備中の失敗などで
