@@ -19,7 +19,7 @@ pub use archive::{
     migrate_previous_archive, validate_archive,
 };
 
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "01a5b63032f71d0ecbd173638c7094d2ec05fb17";
+pub const ADOCWEAVE_SOURCE_REVISION: &str = "b4b01c4545c03deb0fbf97c3d6a7e12ada675995";
 pub(crate) const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
     "rust",
     "typescript",
@@ -31,7 +31,7 @@ pub(crate) const DEFAULT_SOURCE_LANGUAGES: &[&str] = &[
     "sql",
     "text",
 ];
-pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.17.0";
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.19.0";
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
 pub const AUTHORING_PROFILE_VERSION: u32 = 5;
 /// archive内のノートを受理できる入力規則の版。

@@ -566,7 +566,7 @@ impl Notes {
         const BIBLIOGRAPHY_EXAMPLE: &str = "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]";
         NoteProfile {
             profile_version: 5,
-            adocweave_package_version: "0.17.0",
+            adocweave_package_version: "0.19.0",
             limits: NoteProfileLimits {
                 max_title_characters: 200,
                 max_source_bytes: 524_288,

@@ -8,10 +8,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ARCHIVE_NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION, validate_note_draft};
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-8";
-const PREVIOUS_ARCHIVE_FORMAT: &str = "marginalis-archive-7";
-const PREVIOUS_ADOCWEAVE_PACKAGE_VERSION: &str = "0.11.0";
-const PREVIOUS_NOTE_PROFILE_VERSION: u32 = 3;
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-9";
+const PREVIOUS_ARCHIVE_FORMAT: &str = "marginalis-archive-8";
+const PREVIOUS_ADOCWEAVE_PACKAGE_VERSION: &str = "0.17.0";
+const PREVIOUS_NOTE_PROFILE_VERSION: u32 = 4;
+const LEGACY_ARCHIVE_FORMAT: &str = "marginalis-archive-7";
+const LEGACY_ADOCWEAVE_PACKAGE_VERSION: &str = "0.11.0";
+const LEGACY_NOTE_PROFILE_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -97,12 +100,15 @@ pub fn validate_archive(archive: &Archive) -> Result<LogicalSnapshot, ArchiveVal
     validate_archive_contents(archive).map_err(|_| ArchiveValidationError)
 }
 
-/// 直前のarchive契約を現行規則で全件再検証し、現行archiveへ変換する。
+/// 対応する旧archive契約を現行規則で全件再検証し、現行archiveへ変換する。
 pub fn migrate_previous_archive(archive: &Archive) -> Result<Archive, ArchiveMigrationError> {
-    if archive.format != PREVIOUS_ARCHIVE_FORMAT
-        || archive.adocweave_package_version != PREVIOUS_ADOCWEAVE_PACKAGE_VERSION
-        || archive.note_profile_version != PREVIOUS_NOTE_PROFILE_VERSION
-    {
+    let is_previous = archive.format == PREVIOUS_ARCHIVE_FORMAT
+        && archive.adocweave_package_version == PREVIOUS_ADOCWEAVE_PACKAGE_VERSION
+        && archive.note_profile_version == PREVIOUS_NOTE_PROFILE_VERSION;
+    let is_legacy = archive.format == LEGACY_ARCHIVE_FORMAT
+        && archive.adocweave_package_version == LEGACY_ADOCWEAVE_PACKAGE_VERSION
+        && archive.note_profile_version == LEGACY_NOTE_PROFILE_VERSION;
+    if !is_previous && !is_legacy {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
     let snapshot = validate_archive_contents(archive).map_err(ArchiveMigrationError::from)?;
@@ -208,7 +214,7 @@ impl fmt::Display for ArchiveMigrationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsupportedContract => {
-                formatter.write_str("archive is not the immediately preceding archive contract")
+                formatter.write_str("archive is not a supported migration source")
             }
             Self::InvalidNote { position } => write!(
                 formatter,
@@ -307,6 +313,19 @@ mod tests {
         let migrated = migrate_previous_archive(&previous).expect("migrated archive");
         let validated = validate_archive(&migrated).expect("current archive");
         assert_eq!(validated.notes()[0].tags(), ["rust"]);
+    }
+
+    #[test]
+    fn legacy_archive_is_revalidated_into_the_current_contract() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let current = create_archive(&snapshot);
+        let mut legacy = current.clone();
+        legacy.format = LEGACY_ARCHIVE_FORMAT.into();
+        legacy.adocweave_package_version = LEGACY_ADOCWEAVE_PACKAGE_VERSION.into();
+        legacy.note_profile_version = LEGACY_NOTE_PROFILE_VERSION;
+
+        assert_eq!(migrate_previous_archive(&legacy), Ok(current));
+        assert_eq!(validate_archive(&legacy), Err(ArchiveValidationError));
     }
 
     #[test]
