@@ -779,7 +779,7 @@
                     + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
                     + "'.database.schema.ok == false "
                     + "and .database.schema.actual == 5 "
-                    + "and .database.schema.expected == 11 "
+                    + "and .database.schema.expected == 12 "
                     + "and .database.integrity.ok "
                     + "and .database.integrity.actual == \"ok\" "
                     + "and .database.foreign_keys.ok "
