@@ -1,13 +1,19 @@
-use marginalis_application::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry};
+//! ノート、ACL、書誌情報を可搬なJSONへ書き出し、検証して読み戻す保存形式。
+//!
+//! 形式そのものの定義（版、移行できる旧契約）はこのcrateが持ちます。一方、ノート本文を現行規則で
+//! 再検証する処理は具体的な解析器に依存するため、[`NoteContent`] portとして受け取ります。
+//! どの解析器を使うかはcomposition rootが決めます。
+
+use marginalis_application::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry, NoteContent};
 use marginalis_domain::{
     BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteDraft, NoteId,
     NotePermission, Revision, UnixMillis,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{ARCHIVE_NOTE_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION, validate_note_draft};
-
 pub const ARCHIVE_FORMAT: &str = "marginalis-archive-11";
+/// archive内のノートを受理できる入力規則の版。
+pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 4;
 const PREVIOUS_ARCHIVE_FORMAT: &str = "marginalis-archive-10";
 const PREVIOUS_ADOCWEAVE_PACKAGE_VERSION: &str = "0.20.0";
 const PREVIOUS_NOTE_PROFILE_VERSION: u32 = 4;
@@ -90,10 +96,14 @@ pub struct ArchiveBibliographyItem {
     pub revision: i64,
 }
 
-pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
+/// 検証済みのsnapshotを現行のarchive形式へ書き出す。
+///
+/// 記録するAdocWeave packageの版は、実際に検証へ使う`content`から取得する。定数を二重に
+/// 持たないため、記録値と検証器が食い違わない。
+pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> Archive {
     Archive {
         format: ARCHIVE_FORMAT.into(),
-        adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION.into(),
+        adocweave_package_version: content.profile().adocweave_package_version.into(),
         note_profile_version: ARCHIVE_NOTE_PROFILE_VERSION,
         notes: snapshot
             .notes()
@@ -137,18 +147,24 @@ pub fn create_archive(snapshot: &LogicalSnapshot) -> Archive {
     }
 }
 
-pub fn validate_archive(archive: &Archive) -> Result<LogicalSnapshot, ArchiveValidationError> {
+pub fn validate_archive(
+    content: &dyn NoteContent,
+    archive: &Archive,
+) -> Result<LogicalSnapshot, ArchiveValidationError> {
     if archive.format != ARCHIVE_FORMAT
-        || archive.adocweave_package_version != PINNED_ADOCWEAVE_PACKAGE_VERSION
+        || archive.adocweave_package_version != content.profile().adocweave_package_version
         || archive.note_profile_version != ARCHIVE_NOTE_PROFILE_VERSION
     {
         return Err(ArchiveValidationError);
     }
-    validate_archive_contents(archive).map_err(|_| ArchiveValidationError)
+    validate_archive_contents(content, archive).map_err(|_| ArchiveValidationError)
 }
 
 /// 対応する旧archive契約を現行規則で全件再検証し、現行archiveへ変換する。
-pub fn migrate_previous_archive(archive: &Archive) -> Result<Archive, ArchiveMigrationError> {
+pub fn migrate_previous_archive(
+    content: &dyn NoteContent,
+    archive: &Archive,
+) -> Result<Archive, ArchiveMigrationError> {
     let is_supported = SUPPORTED_MIGRATION_CONTRACTS.iter().any(
         |&(format, adocweave_package_version, note_profile_version)| {
             archive.format == format
@@ -159,11 +175,15 @@ pub fn migrate_previous_archive(archive: &Archive) -> Result<Archive, ArchiveMig
     if !is_supported {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
-    let snapshot = validate_archive_contents(archive).map_err(ArchiveMigrationError::from)?;
-    Ok(create_archive(&snapshot))
+    let snapshot =
+        validate_archive_contents(content, archive).map_err(ArchiveMigrationError::from)?;
+    Ok(create_archive(content, &snapshot))
 }
 
-fn validate_archive_contents(archive: &Archive) -> Result<LogicalSnapshot, ArchiveContentsError> {
+fn validate_archive_contents(
+    content: &dyn NoteContent,
+    archive: &Archive,
+) -> Result<LogicalSnapshot, ArchiveContentsError> {
     let notes = archive
         .notes
         .iter()
@@ -172,12 +192,13 @@ fn validate_archive_contents(archive: &Archive) -> Result<LogicalSnapshot, Archi
             let invalid_note = || ArchiveContentsError::Note {
                 position: index + 1,
             };
-            let normalized = validate_note_draft(NoteDraft {
-                source: note.source.clone(),
-                title: String::new(),
-                tags: Vec::new(),
-            })
-            .map_err(|_| invalid_note())?;
+            let normalized = content
+                .validate_draft(NoteDraft {
+                    source: note.source.clone(),
+                    title: String::new(),
+                    tags: Vec::new(),
+                })
+                .map_err(|_| invalid_note())?;
             let note_id = note
                 .note_id
                 .parse::<EntityId>()
@@ -312,9 +333,15 @@ pub struct ArchiveValidationError;
 mod tests {
     use std::str::FromStr;
 
+    use marginalis_asciidoc::AsciiDocNoteContent;
     use marginalis_domain::{EntityId, Identity, NoteId};
 
     use super::*;
+
+    /// 試験では実際の解析器を注入する。本番の依存はportだけである。
+    fn content() -> AsciiDocNoteContent {
+        AsciiDocNoteContent
+    }
 
     fn note() -> Note {
         Note::create(
@@ -322,13 +349,14 @@ mod tests {
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
             &Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
-            validate_note_draft(NoteDraft {
-                source: "= A title\n:tags: Research\n\nsafe body".into(),
-                title: String::new(),
-                tags: Vec::new(),
-            })
-            .expect("draft")
-            .draft,
+            content()
+                .validate_draft(NoteDraft {
+                    source: "= A title\n:tags: Research\n\nsafe body".into(),
+                    title: String::new(),
+                    tags: Vec::new(),
+                })
+                .expect("draft")
+                .draft,
             UnixMillis::new(0),
         )
     }
@@ -346,75 +374,87 @@ mod tests {
             )],
         )
         .expect("snapshot");
-        let archive = create_archive(&snapshot);
+        let archive = create_archive(&content(), &snapshot);
         assert_eq!(archive.format, ARCHIVE_FORMAT);
         assert_eq!(archive.note_profile_version, ARCHIVE_NOTE_PROFILE_VERSION);
-        assert_eq!(validate_archive(&archive), Ok(snapshot));
+        assert_eq!(validate_archive(&content(), &archive), Ok(snapshot));
     }
 
     #[test]
     fn archive_requires_the_exact_contract_identity() {
         let snapshot = LogicalSnapshot::new(Vec::new(), Vec::new()).expect("snapshot");
-        let mut archive = create_archive(&snapshot);
+        let mut archive = create_archive(&content(), &snapshot);
         archive.note_profile_version += 1;
-        assert_eq!(validate_archive(&archive), Err(ArchiveValidationError));
+        assert_eq!(
+            validate_archive(&content(), &archive),
+            Err(ArchiveValidationError)
+        );
     }
 
     #[test]
     fn previous_archive_is_revalidated_into_the_current_contract() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
-        let current = create_archive(&snapshot);
+        let current = create_archive(&content(), &snapshot);
         let mut previous = current.clone();
         previous.format = PREVIOUS_ARCHIVE_FORMAT.into();
         previous.adocweave_package_version = PREVIOUS_ADOCWEAVE_PACKAGE_VERSION.into();
         previous.note_profile_version = PREVIOUS_NOTE_PROFILE_VERSION;
 
-        assert_eq!(migrate_previous_archive(&previous), Ok(current));
-        assert_eq!(validate_archive(&previous), Err(ArchiveValidationError));
+        assert_eq!(migrate_previous_archive(&content(), &previous), Ok(current));
+        assert_eq!(
+            validate_archive(&content(), &previous),
+            Err(ArchiveValidationError)
+        );
 
         previous.notes[0].source =
             "= A title\n:source-language: rust\n:tags: {source-language}\n\nbody".into();
-        let migrated = migrate_previous_archive(&previous).expect("migrated archive");
-        let validated = validate_archive(&migrated).expect("current archive");
+        let migrated = migrate_previous_archive(&content(), &previous).expect("migrated archive");
+        let validated = validate_archive(&content(), &migrated).expect("current archive");
         assert_eq!(validated.notes()[0].tags(), ["rust"]);
     }
 
     #[test]
     fn legacy_archive_is_revalidated_into_the_current_contract() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
-        let current = create_archive(&snapshot);
+        let current = create_archive(&content(), &snapshot);
         let mut legacy = current.clone();
         legacy.format = LEGACY_ARCHIVE_FORMAT.into();
         legacy.adocweave_package_version = LEGACY_ADOCWEAVE_PACKAGE_VERSION.into();
         legacy.note_profile_version = LEGACY_NOTE_PROFILE_VERSION;
 
-        assert_eq!(migrate_previous_archive(&legacy), Ok(current));
-        assert_eq!(validate_archive(&legacy), Err(ArchiveValidationError));
+        assert_eq!(migrate_previous_archive(&content(), &legacy), Ok(current));
+        assert_eq!(
+            validate_archive(&content(), &legacy),
+            Err(ArchiveValidationError)
+        );
     }
 
     #[test]
     fn oldest_archive_is_revalidated_into_the_current_contract() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
-        let current = create_archive(&snapshot);
+        let current = create_archive(&content(), &snapshot);
         let mut oldest = current.clone();
         oldest.format = OLDEST_ARCHIVE_FORMAT.into();
         oldest.adocweave_package_version = OLDEST_ADOCWEAVE_PACKAGE_VERSION.into();
         oldest.note_profile_version = OLDEST_NOTE_PROFILE_VERSION;
 
-        assert_eq!(migrate_previous_archive(&oldest), Ok(current));
-        assert_eq!(validate_archive(&oldest), Err(ArchiveValidationError));
+        assert_eq!(migrate_previous_archive(&content(), &oldest), Ok(current));
+        assert_eq!(
+            validate_archive(&content(), &oldest),
+            Err(ArchiveValidationError)
+        );
     }
 
     #[test]
     fn migration_rejects_a_mixed_historical_contract_identity() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
-        let mut mixed = create_archive(&snapshot);
+        let mut mixed = create_archive(&content(), &snapshot);
         mixed.format = PREVIOUS_ARCHIVE_FORMAT.into();
         mixed.adocweave_package_version = LEGACY_ADOCWEAVE_PACKAGE_VERSION.into();
         mixed.note_profile_version = PREVIOUS_NOTE_PROFILE_VERSION;
 
         assert_eq!(
-            migrate_previous_archive(&mixed),
+            migrate_previous_archive(&content(), &mixed),
             Err(ArchiveMigrationError::UnsupportedContract)
         );
     }
@@ -422,7 +462,7 @@ mod tests {
     #[test]
     fn migration_rejects_source_that_does_not_satisfy_the_current_profile() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
-        let mut previous = create_archive(&snapshot);
+        let mut previous = create_archive(&content(), &snapshot);
         previous.format = PREVIOUS_ARCHIVE_FORMAT.into();
         previous.adocweave_package_version = PREVIOUS_ADOCWEAVE_PACKAGE_VERSION.into();
         previous.note_profile_version = PREVIOUS_NOTE_PROFILE_VERSION;
@@ -430,7 +470,7 @@ mod tests {
             concat!("= A title\n:tags: research, + \\", "\n  rust\n\nbody").into();
 
         assert_eq!(
-            migrate_previous_archive(&previous),
+            migrate_previous_archive(&content(), &previous),
             Err(ArchiveMigrationError::InvalidNote { position: 1 })
         );
     }
@@ -438,14 +478,14 @@ mod tests {
     #[test]
     fn migration_reports_inconsistent_note_and_acl_positions_without_identifiers() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
-        let mut previous = create_archive(&snapshot);
+        let mut previous = create_archive(&content(), &snapshot);
         previous.format = PREVIOUS_ARCHIVE_FORMAT.into();
         previous.adocweave_package_version = PREVIOUS_ADOCWEAVE_PACKAGE_VERSION.into();
         previous.note_profile_version = PREVIOUS_NOTE_PROFILE_VERSION;
 
         previous.notes.push(previous.notes[0].clone());
         assert_eq!(
-            migrate_previous_archive(&previous),
+            migrate_previous_archive(&content(), &previous),
             Err(ArchiveMigrationError::InvalidNote { position: 2 })
         );
 
@@ -457,7 +497,7 @@ mod tests {
             permission: NotePermission::Edit,
         });
         assert_eq!(
-            migrate_previous_archive(&previous),
+            migrate_previous_archive(&content(), &previous),
             Err(ArchiveMigrationError::InvalidAclEntry { position: 1 })
         );
     }
@@ -465,8 +505,11 @@ mod tests {
     #[test]
     fn archive_rejects_invalid_authored_source() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
-        let mut archive = create_archive(&snapshot);
+        let mut archive = create_archive(&content(), &snapshot);
         archive.notes[0].source = "本文だけ".into();
-        assert_eq!(validate_archive(&archive), Err(ArchiveValidationError));
+        assert_eq!(
+            validate_archive(&content(), &archive),
+            Err(ArchiveValidationError)
+        );
     }
 }

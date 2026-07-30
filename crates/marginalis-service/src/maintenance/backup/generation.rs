@@ -33,7 +33,8 @@ async fn populate(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = StorageConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
     let snapshot = database.export_archive_snapshot().await?;
-    let archive = marginalis_asciidoc::create_archive(&snapshot);
+    let archive =
+        marginalis_archive::create_archive(&marginalis_asciidoc::AsciiDocNoteContent, &snapshot);
     let archive_path = output.join("marginalis-archive.json");
     let archive_file = OpenOptions::new()
         .write(true)
@@ -55,7 +56,7 @@ async fn populate(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     writeln!(
         &marker,
         "Marginalis backup {}",
-        marginalis_asciidoc::ARCHIVE_FORMAT
+        marginalis_archive::ARCHIVE_FORMAT
     )?;
     marker.sync_all()?;
     File::open(output)?.sync_all()?;

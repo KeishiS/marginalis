@@ -7,22 +7,14 @@ use marginalis_application::{
 use marginalis_domain::{Note, NoteDraft};
 
 mod analysis;
-mod archive;
 mod configuration;
 mod policy;
 mod rendering;
-
-pub use archive::{
-    ARCHIVE_FORMAT, Archive, ArchiveMigrationError, ArchiveValidationError, create_archive,
-    migrate_previous_archive, validate_archive,
-};
 
 pub const ADOCWEAVE_SOURCE_REVISION: &str = "35e4a0ebd87094710f09e64a85e5f09e2dd19a7c";
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.20.0";
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
 pub const AUTHORING_PROFILE_VERSION: u32 = 7;
-/// archive内のノートを受理できる入力規則の版。
-pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsciiDocNoteContent;
@@ -109,6 +101,5 @@ mod tests {
             AsciiDocNoteContent.profile().profile_version,
             AUTHORING_PROFILE_VERSION
         );
-        assert_ne!(AUTHORING_PROFILE_VERSION, ARCHIVE_NOTE_PROFILE_VERSION);
     }
 }

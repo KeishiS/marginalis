@@ -4,10 +4,11 @@ use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
 use crate::cli::{required_absolute_file_argument, required_archive_migration_arguments};
 use crate::config::StorageConfig;
 use marginalis_application::{LogicalSnapshot, RestorePlan};
-use marginalis_asciidoc::{
+use marginalis_archive::{
     Archive, create_archive, migrate_previous_archive,
     validate_archive as validate_archive_contract,
 };
+use marginalis_asciidoc::AsciiDocNoteContent;
 use marginalis_sqlite::SqliteDatabase;
 use std::{
     collections::HashSet,
@@ -29,7 +30,7 @@ pub(crate) async fn export_archive(
     let configuration = StorageConfig::from_environment()?;
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
     let snapshot = database.export_archive_snapshot().await?;
-    let archive = create_archive(&snapshot);
+    let archive = create_archive(&AsciiDocNoteContent, &snapshot);
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -55,8 +56,8 @@ pub(crate) async fn migrate_archive(
         .into());
     }
     let previous: Archive = serde_json::from_reader(File::open(&input)?)?;
-    let migrated = migrate_previous_archive(&previous)?;
-    let snapshot = validate_archive_contract(&migrated)?;
+    let migrated = migrate_previous_archive(&AsciiDocNoteContent, &previous)?;
+    let snapshot = validate_archive_contract(&AsciiDocNoteContent, &migrated)?;
     let validated = ValidatedArchive {
         archive: migrated,
         plan: restore_plan(snapshot)?,
@@ -143,7 +144,7 @@ pub(super) fn read_validated_archive(
 ) -> Result<ValidatedArchive, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let archive: Archive = serde_json::from_reader(file)?;
-    let snapshot = validate_archive_contract(&archive)?;
+    let snapshot = validate_archive_contract(&AsciiDocNoteContent, &archive)?;
     let plan = restore_plan(snapshot)?;
     Ok(ValidatedArchive { archive, plan })
 }
@@ -154,7 +155,7 @@ pub(super) async fn verify_archive_in_memory(
     let database = SqliteDatabase::connect("sqlite::memory:").await?;
     database.restore(&validated.plan).await?;
     let snapshot = database.export_archive_snapshot().await?;
-    if create_archive(&snapshot) != validated.archive {
+    if create_archive(&AsciiDocNoteContent, &snapshot) != validated.archive {
         return Err("archive logical round-trip validation failed".into());
     }
     Ok(())
@@ -169,7 +170,7 @@ pub(super) async fn verify_archive_in_isolated_database(
         let database = SqliteDatabase::connect(&database_url).await?;
         database.restore(&validated.plan).await?;
         let snapshot = database.export_archive_snapshot().await?;
-        let restored = create_archive(&snapshot);
+        let restored = create_archive(&AsciiDocNoteContent, &snapshot);
         if restored != validated.archive {
             return Err("restored archive does not match the source archive".into());
         }

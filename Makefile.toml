@@ -237,6 +237,7 @@ actual=$(
     sort -u
 )
 expected='marginalis-application
+marginalis-archive
 marginalis-asciidoc
 marginalis-auth-oauth
 marginalis-auth-oidc
