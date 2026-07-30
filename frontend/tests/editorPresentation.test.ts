@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   diagnosticLocation,
+  diagnosticMessage,
   editorStatus,
   problemMessage,
 } from "../src/editorPresentation";
@@ -41,4 +42,15 @@ test("公開経路と問題表示を一か所で正規化する", () => {
   expect(
     problemMessage({ code: "validation_failed", message: "internal detail" }),
   ).toBe("入力内容を確認してください。");
+});
+
+test("行の長さ超過は上限と対処を示す", () => {
+  expect(
+    diagnosticMessage(
+      "line-too-long",
+      "line has 128 characters; maximum is 100",
+    ),
+  ).toBe(
+    "1行は最大100文字です。この行は128文字あります。内容の区切りで改行してください。",
+  );
 });

@@ -271,11 +271,13 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await warningSource.fill(
     "= 警告を確認するノート\n\nこの結果はxref:note:0197c9bc-0000-7000-8000-000000000002[参照]に記載されています。",
   );
-  await expect(
-    page.getByRole("heading", { name: "入力時の診断" }),
-  ).toBeVisible();
-  await expect(page.getByText(/インラインマクロの前に空白/)).toBeVisible();
-  await page.getByRole("button", { name: "入力位置へ移動" }).click();
+  const warning = page.locator(".cm-lintRange-warning");
+  await expect(warning).toHaveText("xref");
+  await warning.hover();
+  await expect(page.locator(".cm-tooltip-lint")).toContainText(
+    "インラインマクロの前に空白を入れてください。",
+  );
+  await warningSource.press("F8");
   expect(
     await warningSource.evaluate(() => window.getSelection()?.toString()),
   ).toBe("xref");
@@ -284,7 +286,5 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await warningSource.fill(
     "= 警告を確認するノート\n\nこの結果は xref:note:0197c9bc-0000-7000-8000-000000000002[参照]に記載されています。",
   );
-  await expect(page.getByRole("heading", { name: "入力時の診断" })).toHaveCount(
-    0,
-  );
+  await expect(page.locator(".cm-lintRange-warning")).toHaveCount(0);
 });

@@ -67,7 +67,7 @@
                 ;
               inherit pnpm;
               fetcherVersion = 4;
-              hash = "sha256-/STThorgKRv/HCycnw8swG7r7J7hoirB4o3P+HQB+aA=";
+              hash = "sha256-EFddCsYvqKTwcJwCnY2/EhOJn8vFLR0FPwxGJqqT6h0=";
             };
             nativeBuildInputs = [
               pkgs.nodejs_22
