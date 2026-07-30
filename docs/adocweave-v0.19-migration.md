@@ -1,0 +1,51 @@
+# AdocWeave 0.19移行判断
+
+## 目的
+
+この文書は、AdocWeave 0.17.0から0.19.0への更新がMarginalisへ与える影響と、保存形式の
+扱いを記録します。現行の入力方法は[REST API](rest-api.md)、archiveの変換手順は
+[NixOSでの運用](nixos.md)を参照してください。
+
+## 固定する依存
+
+MarginalisはAdocWeave package版`0.19.0`を、release tagが指すcommit
+`b4b01c4545c03deb0fbf97c3d6a7e12ada675995`で使用します。Rust toolchainは`1.97.1`を維持します。
+CargoとNixの両方で、このcommitと取得内容のハッシュを固定します。
+
+## 公開API変更の影響
+
+0.18.0ではWASM応答のpackage版が所有文字列へ変わり、解析件数が`u32`になりました。
+`LintConfig::protected_attribute_severity`も削除されています。0.19.0ではWASM schema 7が導入され、
+WASMで受け渡す型、ファイルシステムの責務、属性展開上限、キャンセル処理が変更されました。
+
+MarginalisはWASM、AdocWeaveのworkspace、`ParseSummary`、削除されたlint設定を使用していません。
+利用しているのはRustの`Engine`による解析、HTML変換、include検出、診断、参照、属性環境です。
+このため、変更された公開APIに合わせるコード修正は不要でした。
+
+## 動作契約の確認
+
+既存の回帰試験へ同じ完全なAsciiDoc文書を渡し、次の契約が維持されることを確認しました。
+
+- 題名とタグの導出
+- include、passthrough、外部resourceの拒否
+- ノート参照とanchor
+- UTF-8 byte位置を持つ診断
+- コードブロックと数式の公開HTML
+- 参考文献を含む相互参照
+- HTML出力上限
+
+AdocWeaveの0.19.0 releaseでは、0.18.0からHTML契約とCLI引数に変更がないことも明記されています。
+Marginalisの試験でも0.17.0からの意味上の差は検出されなかったため、SQLite schema 11とnote
+profile版4は変更しません。
+
+## archive形式
+
+archiveは、内容を解析したAdocWeave package版を契約情報として記録します。同じ形式名に異なる
+package版を混在させないため、現行形式を`marginalis-archive-9`へ更新します。
+
+`migrate-archive`は、0.17.0を記録したarchive 8を0.19.0で全件再検証し、archive 9を別ファイルへ
+出力します。従来のv0.10.0からの更新経路を維持するため、0.11.0を記録したarchive 7も同じ方法で
+archive 9へ変換できます。入力は変更せず、既存の出力は上書きしません。
+
+SQLiteに保存する題名、タグ、参照索引の導出結果は変わらないため、稼働中のschema 11を作り直す
+必要はありません。ただし、更新前に作成したarchive 8を復元するときは、先にarchive 9へ変換します。

@@ -5,6 +5,12 @@
 
 ## 未リリース
 
+### 破壊的変更
+
+- AdocWeaveを0.19.0へ更新した。SQLite schema 11とnote profile版4は維持し、archiveを
+  `marginalis-archive-9`へ更新した。v0.15.0のarchive 8とv0.10.0のarchive 7は、
+  `migrate-archive`で全件再検証してarchive 9へ変換できる。
+
 ## 0.15.0 — 2026-07-29
 
 ### 追加

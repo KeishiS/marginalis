@@ -13,7 +13,7 @@ Pull Requestと公開前の`release-gate`で次を確認します。
 - OpenAPIとTypeScript生成物の差分、RESTルーター、MCPツール定義の契約
 - 所有者、閲覧者、編集者、対象外利用者の表示・操作・情報非漏洩
 - ノート、ACL、参照、削除状態、revisionのtransaction整合性
-- AdocWeaveの属性環境、コードブロック・数式HTML、archive 7から8への全件再検証
+- AdocWeaveの属性環境、コードブロック・数式HTML、archive 7・8から9への全件再検証
 - Kanidm、Auth0、TLS、サブパス、OIDC、MCP、バックアップ、削除、障害診断
 - NixOS配備、空のデータベースの初期化、旧schemaの拒否
 
