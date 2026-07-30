@@ -168,6 +168,24 @@ Pull Requestからマージします。
    `Allow auto-merge`設定を確認します。ブランチ保護の無効化、管理者権限による
    必須チェックの回避、force pushは行いません。
 
+   作業ブランチが`main`と衝突した場合は、force pushを避けるため`main`を作業ブランチへ
+   マージして解消します。
+
+   ```sh
+   git switch codex/<purpose>
+   git merge main
+   ```
+
+   マージコミットを含むブランチはrebase方式でマージできません。この場合はsquash方式で
+   `main`へ入れます。squashでも`main`の履歴は直線のまま保たれるため、rebase方式と同じ
+   結果になります。
+
+   ```sh
+   gh pr merge --squash --delete-branch
+   ```
+
+   衝突していないブランチでは、従来どおりrebase方式のauto-mergeを使用します。
+
 7. マージ後にローカル環境を整理します。
 
    ```sh
