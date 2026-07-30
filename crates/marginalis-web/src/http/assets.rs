@@ -9,6 +9,7 @@ const EDITOR_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/asset
 const EDITOR_STYLESHEET: &[u8] = include_bytes!("../../../../frontend/dist/assets/editor.css");
 const MATHJAX_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/tex-svg.js");
 const PAGE_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/page.js");
+include!(concat!(env!("OUT_DIR"), "/mathjax_font_assets.rs"));
 
 pub(super) async fn editor_javascript() -> Response {
     asset("text/javascript; charset=utf-8", EDITOR_JAVASCRIPT)
@@ -20,6 +21,18 @@ pub(super) async fn editor_stylesheet() -> Response {
 
 pub(super) async fn mathjax_javascript() -> Response {
     asset("text/javascript; charset=utf-8", MATHJAX_JAVASCRIPT)
+}
+
+pub(super) async fn mathjax_font_javascript(
+    axum::extract::Path(file_name): axum::extract::Path<String>,
+) -> Response {
+    match MATHJAX_FONT_FILES
+        .iter()
+        .find(|(candidate, _)| *candidate == file_name)
+    {
+        Some((_, body)) => asset("text/javascript; charset=utf-8", body),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 pub(super) async fn page_javascript() -> Response {
