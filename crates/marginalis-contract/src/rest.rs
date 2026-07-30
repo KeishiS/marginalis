@@ -1,5 +1,6 @@
 //! REST APIとTypeScriptクライアントで共有する公開契約。
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -199,7 +200,7 @@ pub struct HealthResponse {
     pub api_version: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProblemResponse {
     pub code: ProblemCode,
@@ -208,7 +209,7 @@ pub struct ProblemResponse {
     pub diagnostics: Vec<NoteDiagnosticResponse>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProblemCode {
     AuthenticationRequired,
@@ -268,7 +269,7 @@ impl ProblemCode {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NoteDiagnosticResponse {
     pub code: String,
@@ -279,7 +280,7 @@ pub struct NoteDiagnosticResponse {
     pub message: String,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiagnosticSeverityResponse {
     Error,
@@ -288,8 +289,8 @@ pub enum DiagnosticSeverityResponse {
     Hint,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "field", rename_all = "snake_case")]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(tag = "field", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ValidationTargetResponse {
     Source,
     Title,
@@ -299,7 +300,7 @@ pub enum ValidationTargetResponse {
     AclEntry { index: usize },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Utf8ByteSpanResponse {
     pub start: u32,
@@ -307,7 +308,7 @@ pub struct Utf8ByteSpanResponse {
     pub unit: Utf8ByteUnit,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Utf8ByteUnit {
     Utf8Byte,

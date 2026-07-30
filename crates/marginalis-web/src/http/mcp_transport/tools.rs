@@ -1,6 +1,6 @@
 //! MCP toolの入力検査、use case呼出し、契約型への変換。
 
-use marginalis_application::{NoteProfile, NoteUseCaseError, NoteUseCases};
+use marginalis_application::{NoteProfile, NoteUseCaseError, NoteUseCases, NoteWritePolicy};
 use marginalis_contract::{
     McpCreateNoteInput, McpDeleteNoteInput, McpGetNoteInput, McpGetNoteOutput, McpListNotesOutput,
     McpNoteProfileExample, McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput,
@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::mcp::JsonRpcResponse;
 
-use super::super::{auth::parse_note_id, error::validation_problem_json};
+use super::super::{
+    auth::parse_note_id,
+    error::{advisory_problem_json, validation_problem_json},
+};
 
 pub(super) struct McpToolCall {
     tool: Option<McpToolName>,
@@ -119,6 +122,7 @@ impl McpToolFailure {
             | Self::UnknownTool
             | Self::UseCase(
                 NoteUseCaseError::Validation(_)
+                | NoteUseCaseError::AdvisoriesRejected(_)
                 | NoteUseCaseError::NotFound
                 | NoteUseCaseError::Conflict
                 | NoteUseCaseError::RenderFailed,
@@ -131,6 +135,7 @@ impl McpToolFailure {
             Self::InvalidArguments(_) => "invalid-arguments",
             Self::UnknownTool => "unknown-tool",
             Self::UseCase(NoteUseCaseError::Validation(_)) => "validation",
+            Self::UseCase(NoteUseCaseError::AdvisoriesRejected(_)) => "warning",
             Self::UseCase(NoteUseCaseError::NotFound) => "not-found",
             Self::UseCase(NoteUseCaseError::Conflict) => "conflict",
             Self::UseCase(NoteUseCaseError::RenderFailed) => "render-failed",
@@ -216,6 +221,7 @@ async fn execute_mcp_tool(
                         title: String::new(),
                         tags: Vec::new(),
                     },
+                    NoteWritePolicy::RejectWarnings,
                 )
                 .await
                 .map(note_revision_output)
@@ -244,6 +250,7 @@ async fn execute_mcp_tool(
                         tags: Vec::new(),
                     },
                     expected_revision,
+                    NoteWritePolicy::RejectWarnings,
                 )
                 .await
                 .map(note_revision_output)
@@ -289,6 +296,7 @@ fn mcp_tool_success(id: serde_json::Value, output: McpToolOutput) -> JsonRpcResp
 fn mcp_tool_error(id: serde_json::Value, error: NoteUseCaseError) -> JsonRpcResponse {
     let value = match error {
         NoteUseCaseError::Validation(diagnostics) => validation_problem_json(diagnostics),
+        NoteUseCaseError::AdvisoriesRejected(diagnostics) => advisory_problem_json(diagnostics),
         NoteUseCaseError::NotFound => {
             serde_json::json!({"code":"not_found","message":"note was not found"})
         }

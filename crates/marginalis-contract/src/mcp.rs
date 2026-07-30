@@ -4,6 +4,8 @@ use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::ProblemResponse;
+
 const NOTE_ID_PATTERN: &str = "^[0-9a-fA-F-]{36}$";
 const MAX_SOURCE_BYTES: usize = 524_288;
 
@@ -79,6 +81,16 @@ impl McpToolContract {
             input_schema: schema::<Input>(),
             output_schema: schema::<Output>(),
         }
+    }
+
+    fn mutation<Input: JsonSchema>(name: McpToolName, description: &'static str) -> Self {
+        let mut contract = Self::new::<Input, McpNoteMutationOutput>(name, description);
+        contract
+            .output_schema
+            .as_object_mut()
+            .expect("generated MCP output schema is an object")
+            .insert("type".into(), Value::String("object".into()));
+        contract
     }
 }
 
@@ -158,6 +170,13 @@ pub struct McpNoteRevisionOutput {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum McpNoteMutationOutput {
+    Success(McpNoteRevisionOutput),
+    Failure(ProblemResponse),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpNoteProfileOutput {
     pub profile_version: u32,
@@ -228,13 +247,13 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
             McpToolName::GetNote,
             "Read one visible note",
         ),
-        McpToolContract::new::<McpCreateNoteInput, McpNoteRevisionOutput>(
+        McpToolContract::mutation::<McpCreateNoteInput>(
             McpToolName::CreateNote,
-            "Create a note",
+            "Create a note; warnings reject the write and are returned as diagnostics",
         ),
-        McpToolContract::new::<McpUpdateNoteInput, McpNoteRevisionOutput>(
+        McpToolContract::mutation::<McpUpdateNoteInput>(
             McpToolName::UpdateNote,
-            "Update a note at the expected revision",
+            "Update a note at the expected revision; warnings reject the write and are returned as diagnostics",
         ),
         McpToolContract::new::<McpDeleteNoteInput, McpNoteRevisionOutput>(
             McpToolName::DeleteNote,
@@ -267,7 +286,29 @@ mod tests {
         );
         for contract in contracts {
             assert_eq!(contract.input_schema["additionalProperties"], false);
-            assert_eq!(contract.output_schema["additionalProperties"], false);
+            if matches!(
+                contract.name,
+                McpToolName::CreateNote | McpToolName::UpdateNote
+            ) {
+                assert_eq!(contract.output_schema["type"], "object");
+                assert_eq!(
+                    contract.output_schema["anyOf"],
+                    serde_json::json!([
+                        {"$ref": "#/$defs/McpNoteRevisionOutput"},
+                        {"$ref": "#/$defs/ProblemResponse"}
+                    ])
+                );
+                assert_eq!(
+                    contract.output_schema["$defs"]["McpNoteRevisionOutput"]["additionalProperties"],
+                    false
+                );
+                assert_eq!(
+                    contract.output_schema["$defs"]["ProblemResponse"]["additionalProperties"],
+                    false
+                );
+            } else {
+                assert_eq!(contract.output_schema["additionalProperties"], false);
+            }
             assert_eq!(
                 McpToolName::try_from(contract.name.as_str()),
                 Ok(contract.name)

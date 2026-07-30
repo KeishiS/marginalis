@@ -74,6 +74,8 @@
   返し、`get_note`も同じ更新日時を返すこと。`get_note_profile`は、本文と参考文献を相互に移動できる
   完全なAsciiDoc文書例と、書誌情報を推測しない注意事項を返すこと。成功時の`text`は
   `structuredContent`と同じ契約型をJSON化した内容とし、不可視なノートの存在や属性を開示しないこと。
+  `create_note`と`update_note`は警告を含む入力を変更前に拒否し、重大度と位置を保った診断を
+  `isError: true`のtool結果として返すこと。
 - **REQ-UI-001 — React画面**: 一覧、閲覧、編集、共有設定を一つのReactアプリケーションから
   REST APIを利用して提供すること。
 - **REQ-UI-002 — 応答検査**: Web UIはREST応答を実行時に検査し、解釈できない応答を

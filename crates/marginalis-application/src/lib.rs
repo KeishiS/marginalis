@@ -161,6 +161,13 @@ pub enum NoteAdvisorySeverity {
     Hint,
 }
 
+/// ノートの変更時に、保存を妨げない診断をどこまで許容するか。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteWritePolicy {
+    AllowAdvisories,
+    RejectWarnings,
+}
+
 /// 入力を拒否する問題。公開時の重大度は常に`error`です。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteValidationDiagnostic {
@@ -251,6 +258,7 @@ pub enum NoteUseCaseError {
     NotFound,
     Conflict,
     Validation(Vec<NoteValidationDiagnostic>),
+    AdvisoriesRejected(Vec<NoteAdvisoryDiagnostic>),
     RenderFailed,
     Unavailable,
 }
@@ -261,6 +269,7 @@ impl std::fmt::Display for NoteUseCaseError {
             Self::NotFound => "note is not available",
             Self::Conflict => "note operation conflicts",
             Self::Validation(_) => "note is invalid",
+            Self::AdvisoriesRejected(_) => "note input contains warnings",
             Self::RenderFailed => "note cannot be rendered",
             Self::Unavailable => "note operation is unavailable",
         })
@@ -303,13 +312,19 @@ pub trait NoteQueries: Send + Sync {
 /// ノートの内容と削除状態を変更するcommand境界。
 #[async_trait]
 pub trait NoteCommands: Send + Sync {
-    async fn create_note(&self, actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError>;
+    async fn create_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+        policy: NoteWritePolicy,
+    ) -> Result<Note, NoteUseCaseError>;
     async fn update_note(
         &self,
         actor: Actor,
         note_id: NoteId,
         draft: NoteDraft,
         expected_revision: Revision,
+        policy: NoteWritePolicy,
     ) -> Result<Note, NoteUseCaseError>;
     async fn soft_delete_note(
         &self,

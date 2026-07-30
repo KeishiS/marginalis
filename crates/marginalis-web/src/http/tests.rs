@@ -10,8 +10,9 @@ use marginalis_application::{
     NoteCommands, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
     NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
     NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic, NoteValidationTarget, NoteView,
-    OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
+    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, Utf8ByteSpan, WebSessionUseCases,
 };
+use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
     Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, Note, NoteAccess, NoteDraft,
     NoteId, NoteListEntry, NoteSummary, Revision, UnixMillis, WebSession,
@@ -291,8 +292,9 @@ macro_rules! implement_note_boundaries {
                 &self,
                 actor: Actor,
                 draft: NoteDraft,
+                policy: NoteWritePolicy,
             ) -> Result<Note, NoteUseCaseError> {
-                <$type>::create_note(self, actor, draft).await
+                <$type>::create_note(self, actor, draft, policy).await
             }
 
             async fn update_note(
@@ -301,8 +303,9 @@ macro_rules! implement_note_boundaries {
                 note_id: NoteId,
                 draft: NoteDraft,
                 expected_revision: Revision,
+                policy: NoteWritePolicy,
             ) -> Result<Note, NoteUseCaseError> {
-                <$type>::update_note(self, actor, note_id, draft, expected_revision).await
+                <$type>::update_note(self, actor, note_id, draft, expected_revision, policy).await
             }
 
             async fn soft_delete_note(
@@ -380,6 +383,50 @@ use super::auth::{external_path, valid_return_to, validate_mutation_origin};
 
 struct Notes;
 
+fn test_advisories(source: &str) -> Vec<NoteAdvisoryDiagnostic> {
+    source.find("xref").map_or_else(Vec::new, |start| {
+        vec![
+            NoteAdvisoryDiagnostic {
+                code: "macro-boundary".into(),
+                severity: NoteAdvisorySeverity::Warning,
+                target: NoteValidationTarget::Source,
+                span: Some(Utf8ByteSpan {
+                    start: start as u32,
+                    end: start as u32 + 4,
+                }),
+                message: "a space is required before the inline macro".into(),
+            },
+            NoteAdvisoryDiagnostic {
+                code: "document-information".into(),
+                severity: NoteAdvisorySeverity::Information,
+                target: NoteValidationTarget::Source,
+                span: None,
+                message: "document information".into(),
+            },
+            NoteAdvisoryDiagnostic {
+                code: "document-hint".into(),
+                severity: NoteAdvisorySeverity::Hint,
+                target: NoteValidationTarget::Source,
+                span: None,
+                message: "document hint".into(),
+            },
+        ]
+    })
+}
+
+fn reject_test_warnings(source: &str, policy: NoteWritePolicy) -> Result<(), NoteUseCaseError> {
+    let diagnostics = test_advisories(source);
+    if policy == NoteWritePolicy::RejectWarnings
+        && diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == NoteAdvisorySeverity::Warning)
+    {
+        Err(NoteUseCaseError::AdvisoriesRejected(diagnostics))
+    } else {
+        Ok(())
+    }
+}
+
 impl Notes {
     async fn list_visible_notes(
         &self,
@@ -401,7 +448,12 @@ impl Notes {
         }
     }
 
-    async fn create_note(&self, _actor: Actor, draft: NoteDraft) -> Result<Note, NoteUseCaseError> {
+    async fn create_note(
+        &self,
+        _actor: Actor,
+        draft: NoteDraft,
+        policy: NoteWritePolicy,
+    ) -> Result<Note, NoteUseCaseError> {
         if !draft.source.starts_with("= ") {
             return Err(NoteUseCaseError::Validation(vec![
                 NoteValidationDiagnostic {
@@ -420,6 +472,7 @@ impl Notes {
                 },
             ]));
         }
+        reject_test_warnings(&draft.source, policy)?;
         Err(NoteUseCaseError::Unavailable)
     }
 
@@ -427,9 +480,11 @@ impl Notes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-        _draft: NoteDraft,
+        draft: NoteDraft,
         _expected_revision: Revision,
+        policy: NoteWritePolicy,
     ) -> Result<Note, NoteUseCaseError> {
+        reject_test_warnings(&draft.source, policy)?;
         Err(NoteUseCaseError::Unavailable)
     }
 
@@ -449,21 +504,7 @@ impl Notes {
                 },
             ]))
         } else {
-            let diagnostics = draft
-                .source
-                .find("xref")
-                .map(|start| NoteAdvisoryDiagnostic {
-                    code: "macro-boundary".into(),
-                    severity: NoteAdvisorySeverity::Warning,
-                    target: NoteValidationTarget::Source,
-                    span: Some(Utf8ByteSpan {
-                        start: start as u32,
-                        end: start as u32 + 4,
-                    }),
-                    message: "a space is required before the inline macro".into(),
-                })
-                .into_iter()
-                .collect();
+            let diagnostics = test_advisories(&draft.source);
             Ok(NotePreview {
                 html: "<article><p>プレビュー</p></article>".into(),
                 diagnostics,
@@ -588,6 +629,7 @@ impl UiNotes {
         &self,
         _actor: Actor,
         _draft: NoteDraft,
+        _policy: NoteWritePolicy,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
@@ -598,6 +640,7 @@ impl UiNotes {
         _note_id: NoteId,
         _draft: NoteDraft,
         _expected_revision: Revision,
+        _policy: NoteWritePolicy,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
     }
