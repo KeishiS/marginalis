@@ -5,7 +5,8 @@ use marginalis_application::{
     NoteWritePolicy,
 };
 use marginalis_contract::{
-    McpAddBibliographyItemInput, McpBibliographyItem, McpBibliographyListOutput,
+    McpAddBibliographyItemInput, McpAddBibliographyItemsInput, McpBibliographyImportError,
+    McpBibliographyImportOutput, McpBibliographyItem, McpBibliographyListOutput,
     McpCreateNoteInput, McpDeleteBibliographyItemInput, McpDeleteNoteInput, McpEmptyInput,
     McpGetNoteInput, McpGetNoteOutput, McpListNotesOutput, McpNoteProfileExample,
     McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule,
@@ -65,6 +66,7 @@ enum McpToolOutput {
     Revision(McpNoteRevisionOutput),
     BibliographyList(McpBibliographyListOutput),
     BibliographyItem(McpBibliographyItem),
+    BibliographyImport(McpBibliographyImportOutput),
     Empty(McpEmptyInput),
 }
 
@@ -332,6 +334,44 @@ async fn execute_mcp_tool(
                 .map(|item| McpToolOutput::BibliographyItem(bibliography_item_output(item)))
                 .map_err(McpToolFailure::Bibliography);
         }
+        Some(McpToolName::AddBibliographyItems) => {
+            let Ok(input) = serde_json::from_value::<McpAddBibliographyItemsInput>(call.arguments)
+            else {
+                return Err(McpToolFailure::InvalidArguments(
+                    "CSL-JSON bibliography batch arguments are invalid",
+                ));
+            };
+            if input.csl_json_items.is_empty() || input.csl_json_items.len() > 100 {
+                return Err(McpToolFailure::InvalidArguments(
+                    "csl_json_items must contain between 1 and 100 items",
+                ));
+            }
+            let Some(bibliography) = bibliography else {
+                return Err(McpToolFailure::Bibliography(
+                    BibliographyUseCaseError::Unavailable,
+                ));
+            };
+            let mut items = Vec::new();
+            let mut errors = Vec::new();
+            for (input_index, csl_json) in input.csl_json_items.into_iter().enumerate() {
+                let citation_key = csl_json
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+                match bibliography
+                    .add_bibliography_item(actor.clone(), csl_json)
+                    .await
+                {
+                    Ok(item) => items.push(bibliography_item_output(item)),
+                    Err(error) => {
+                        errors.push(bibliography_import_error(input_index, citation_key, error))
+                    }
+                }
+            }
+            return Ok(McpToolOutput::BibliographyImport(
+                McpBibliographyImportOutput { items, errors },
+            ));
+        }
         Some(McpToolName::DeleteBibliographyItem) => {
             let Ok(input) =
                 serde_json::from_value::<McpDeleteBibliographyItemInput>(call.arguments)
@@ -366,6 +406,33 @@ async fn execute_mcp_tool(
         None => return Err(McpToolFailure::UnknownTool),
     };
     result.map_err(McpToolFailure::UseCase)
+}
+
+fn bibliography_import_error(
+    input_index: usize,
+    citation_key: Option<String>,
+    error: BibliographyUseCaseError,
+) -> McpBibliographyImportError {
+    let (code, message) = match error {
+        BibliographyUseCaseError::InvalidCslJson => (
+            "validation_failed",
+            "CSL-JSON must be an object with valid id and type fields",
+        ),
+        BibliographyUseCaseError::NotFound => ("not_found", "bibliography item was not found"),
+        BibliographyUseCaseError::Conflict => (
+            "conflict",
+            "citation key already exists or revision conflicts",
+        ),
+        BibliographyUseCaseError::Unavailable => {
+            ("unavailable", "bibliography service is unavailable")
+        }
+    };
+    McpBibliographyImportError {
+        input_index,
+        citation_key,
+        code: code.into(),
+        message: message.into(),
+    }
 }
 
 fn bibliography_item_output(item: marginalis_domain::BibliographyItem) -> McpBibliographyItem {
