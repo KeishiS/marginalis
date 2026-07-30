@@ -979,7 +979,7 @@
   },
   {
     "name": "add_bibliography_item",
-    "description": "Add one CSL-JSON item; id and type are required and values are never inferred",
+    "description": "Add one bibliography item in CSL-JSON format; id and type are required and values are never inferred",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
