@@ -293,12 +293,11 @@ in
         MARGINALIS_BASE_URL = cfg.baseUrl;
         MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
         MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
-        OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
-        OIDC_CLIENT_ID = cfg.oidc.clientId;
-        OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
-        OIDC_CA_CERTIFICATE_FILE =
+        MARGINALIS_OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
+        MARGINALIS_OIDC_CLIENT_ID = cfg.oidc.clientId;
+        MARGINALIS_OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
+        MARGINALIS_OIDC_CA_CERTIFICATE_FILE =
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
-        MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
       }
       // authorizationEnvironment;
@@ -366,11 +365,10 @@ in
         MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
         MARGINALIS_BASE_URL = cfg.baseUrl;
         MARGINALIS_LISTEN_ADDR = cfg.listenAddress;
-        OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
-        OIDC_CLIENT_ID = cfg.oidc.clientId;
-        OIDC_CA_CERTIFICATE_FILE =
+        MARGINALIS_OIDC_ISSUER_URL = cfg.oidc.issuerUrl;
+        MARGINALIS_OIDC_CLIENT_ID = cfg.oidc.clientId;
+        MARGINALIS_OIDC_CA_CERTIFICATE_FILE =
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
-        MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
       }
       // authorizationEnvironment;

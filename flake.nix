@@ -522,7 +522,7 @@
                     test "$3" = "/var/lib/marginalis-backups/test"
                     exit 0
                   fi
-                  test -s "$OIDC_CLIENT_SECRET_FILE"
+                  test -s "$MARGINALIS_OIDC_CLIENT_SECRET_FILE"
                   touch "$PWD/service-started"
                   exec sleep infinity
                 '';

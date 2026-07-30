@@ -500,7 +500,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let healthy = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
         .arg("diagnose")
         .env("MARGINALIS_DATABASE_URL", &database_url)
-        .env("OIDC_CLIENT_SECRET", "must-not-be-reported")
+        .env("MARGINALIS_OIDC_CLIENT_SECRET", "must-not-be-reported")
         .output()
         .expect("diagnose database");
     assert!(healthy.status.success());
@@ -514,6 +514,109 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     fs::remove_dir_all(&directory).expect("remove test directory");
 }
 
+/// 空白だけの値を、診断と起動処理が同じように「未設定」と判断することを確認する。
+///
+/// 以前は診断が`trim`後の空判定、起動処理が`trim`なしの空判定を使っており、空白だけの値に対して
+/// 診断は「未設定」、起動処理は「設定済み」と報告が食い違っていた。
+#[test]
+fn blank_values_are_unset_for_both_diagnose_and_startup() {
+    let directory = test_directory("blank-configuration");
+    fs::create_dir(&directory).expect("test directory");
+    let database = directory.join("marginalis.sqlite3");
+    let database_url = format!("sqlite://{}?mode=rwc", database.display());
+    let archive = directory.join("archive.json");
+
+    let initialize = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["export-archive", "--output"])
+        .arg(&archive)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("initialize database");
+    assert!(initialize.status.success());
+
+    let diagnosed = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .arg("diagnose")
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .env("MARGINALIS_OIDC_CLIENT_ID", "   ")
+        .output()
+        .expect("diagnose database");
+    assert!(diagnosed.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&diagnosed.stdout).expect("diagnostic JSON");
+    assert_eq!(
+        report["configuration"]["variables"]["MARGINALIS_OIDC_CLIENT_ID"]["set"],
+        false
+    );
+
+    let started = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .env("MARGINALIS_BASE_URL", "https://notes.example.test")
+        .env("MARGINALIS_LISTEN_ADDR", "127.0.0.1:0")
+        .env("MARGINALIS_OIDC_ISSUER_URL", "https://id.example.test")
+        .env("MARGINALIS_OIDC_CLIENT_ID", "   ")
+        .env("MARGINALIS_OIDC_CLIENT_SECRET", "test-only-secret")
+        .output()
+        .expect("start service");
+    assert!(!started.status.success());
+    assert!(
+        String::from_utf8_lossy(&started.stderr).contains("MARGINALIS_OIDC_CLIENT_ID"),
+        "起動処理も未設定として拒否します: {}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
+/// MCPの有効・無効が、専用のフラグではなくissuerの設定有無で決まることを確認する。
+#[test]
+fn mcp_is_enabled_by_the_authorization_issuer_alone() {
+    let directory = test_directory("mcp-enablement");
+    fs::create_dir(&directory).expect("test directory");
+    let database = directory.join("marginalis.sqlite3");
+    let database_url = format!("sqlite://{}?mode=rwc", database.display());
+    let archive = directory.join("archive.json");
+
+    let initialize = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["export-archive", "--output"])
+        .arg(&archive)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("initialize database");
+    assert!(initialize.status.success());
+
+    let disabled = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .arg("diagnose")
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("diagnose without issuer");
+    let report: serde_json::Value =
+        serde_json::from_slice(&disabled.stdout).expect("diagnostic JSON");
+    assert_eq!(report["configuration"]["mcp_enabled"], false);
+    assert_eq!(
+        report["configuration"]["variables"]["MARGINALIS_MCP_GROUPS_CLAIM"]["required"],
+        false
+    );
+
+    let enabled = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .arg("diagnose")
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .env(
+            "MARGINALIS_MCP_AUTHORIZATION_ISSUER",
+            "https://auth.example.test/",
+        )
+        .output()
+        .expect("diagnose with issuer");
+    let report: serde_json::Value =
+        serde_json::from_slice(&enabled.stdout).expect("diagnostic JSON");
+    assert_eq!(report["configuration"]["mcp_enabled"], true);
+    assert_eq!(
+        report["configuration"]["variables"]["MARGINALIS_MCP_GROUPS_CLAIM"]["required"],
+        true
+    );
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
 #[test]
 fn diagnose_reports_an_unavailable_database_and_fails() {
     let directory = test_directory("unavailable-diagnostics");
@@ -522,7 +625,7 @@ fn diagnose_reports_an_unavailable_database_and_fails() {
     let output = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
         .arg("diagnose")
         .env("MARGINALIS_DATABASE_URL", database_url)
-        .env("OIDC_CLIENT_SECRET", "must-not-be-reported")
+        .env("MARGINALIS_OIDC_CLIENT_SECRET", "must-not-be-reported")
         .output()
         .expect("diagnose unavailable database");
 
