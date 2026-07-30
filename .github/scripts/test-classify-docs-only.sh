@@ -7,7 +7,9 @@ assert_classification() {
   expected="$1"
   shift
   if [ "$#" -eq 0 ]; then
-    actual="$(bash "$script")"
+    # 変更pathが無い場合を、呼び出し元の標準入力に依存せず再現する。
+    # 明示しないと、対話的な端末など標準入力がEOFにならない環境で待ち続ける。
+    actual="$(bash "$script" </dev/null)"
   else
     actual="$(printf '%s\0' "$@" | bash "$script")"
   fi
