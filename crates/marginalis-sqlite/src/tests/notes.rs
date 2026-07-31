@@ -1,3 +1,6 @@
+use marginalis_application::{BibliographyRepository, NoteGraphQuery, NoteLinks};
+use marginalis_domain::{BibliographyItem, BibliographyItemId};
+
 use super::*;
 
 async fn snapshot_access(
@@ -31,7 +34,10 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         None,
     )
     .expect("consistent note");
-    database.create_note(&note, &[]).await.expect("create note");
+    database
+        .create_note(&note, NoteLinks::default())
+        .await
+        .expect("create note");
     assert_eq!(database.note(note_id, false).await, Ok(Some(note.clone())));
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
@@ -98,7 +104,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
                     source: "= Denied\n\nmust not persist".into(),
                     tags: vec![],
                 },
-                &[],
+                NoteLinks::default(),
                 UnixMillis::new(150),
             )
             .await,
@@ -124,7 +130,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
                 source: "= Updated\n\nupdated body".into(),
                 tags: vec!["research".into(), "v3".into()],
             },
-            &[],
+            NoteLinks::default(),
             UnixMillis::new(200),
         )
         .await
@@ -175,8 +181,8 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .export_archive_snapshot()
         .await
         .expect("export snapshot");
-    let plan =
-        RestorePlan::new(snapshot.clone(), vec![(note_id, note_id)]).expect("valid restore plan");
+    let plan = RestorePlan::new(snapshot.clone(), vec![(note_id, note_id)], Vec::new())
+        .expect("valid restore plan");
     let imported_database = SqliteDatabase::connect("sqlite::memory:")
         .await
         .expect("empty import target");
@@ -276,7 +282,10 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
         None,
     )
     .expect("note");
-    database.create_note(&note, &[]).await.expect("create");
+    database
+        .create_note(&note, NoteLinks::default())
+        .await
+        .expect("create");
 
     let owner = Actor::new(owner_identity);
     let reader = actor("https://id.example.test", "reader");
@@ -320,7 +329,7 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
                     source: "= Denied\n".into(),
                     tags: Vec::new(),
                 },
-                &[],
+                NoteLinks::default(),
                 UnixMillis::new(120),
             )
             .await,
@@ -384,7 +393,7 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
                     source: "= Edited\n".into(),
                     tags: Vec::new(),
                 },
-                &[],
+                NoteLinks::default(),
                 UnixMillis::new(150),
             )
             .await
@@ -426,7 +435,10 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
         None,
     )
     .expect("note");
-    database.create_note(&note, &[]).await.expect("create");
+    database
+        .create_note(&note, NoteLinks::default())
+        .await
+        .expect("create");
     let owner = Actor::new(owner_identity);
     let first_draft = NoteDraft {
         title: "First".into(),
@@ -443,7 +455,7 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
         note_id,
         Revision::INITIAL,
         &first_draft,
-        &[],
+        NoteLinks::default(),
         UnixMillis::new(110),
     );
     let second = database.update_visible_note(
@@ -451,7 +463,7 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
         note_id,
         Revision::INITIAL,
         &second_draft,
-        &[],
+        NoteLinks::default(),
         UnixMillis::new(120),
     );
     let results = tokio::join!(first, second);
@@ -476,10 +488,121 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
             note_id,
             current.revision(),
             &second_draft,
-            &[],
+            NoteLinks::default(),
             UnixMillis::new(130),
         )
         .await
         .expect("retry after conflict");
     assert_eq!(retried.revision().get(), 3);
+}
+
+/// 図に出す点と線は、閲覧できるノートと、そこから引用された文献だけとする。
+#[tokio::test]
+async fn the_graph_hides_notes_and_edges_the_actor_cannot_see() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("schema initialization");
+    let alice = actor("https://id.example.test", "alice");
+    let bob = actor("https://id.example.test", "bob");
+
+    let shared = graph_note("0197c9bc-0000-7000-8000-000000000001", "共有するノート");
+    let private = graph_note("0197c9bc-0000-7000-8000-000000000002", "共有しないノート");
+    database
+        .create_note(
+            &shared,
+            NoteLinks {
+                reference_targets: &[private.note_id()],
+                cited_keys: &["smith2024".to_owned()],
+            },
+        )
+        .await
+        .expect("create shared note");
+    database
+        .create_note(
+            &private,
+            NoteLinks {
+                reference_targets: &[shared.note_id()],
+                cited_keys: &["tanaka2025".to_owned()],
+            },
+        )
+        .await
+        .expect("create private note");
+    database
+        .replace_note_acl(
+            &alice,
+            shared.note_id(),
+            &[NoteAclEntry::new(
+                Identity::new("https://id.example.test".into(), "bob".into()).expect("identity"),
+                NotePermission::Read,
+            )],
+            Revision::INITIAL,
+            UnixMillis::new(200),
+        )
+        .await
+        .expect("share the note with bob");
+    database
+        .create_owned_item(&BibliographyItem::create(
+            BibliographyItemId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-0000000000a1").expect("v7 item ID"),
+            ),
+            alice.identity(),
+            "smith2024".into(),
+            r#"{"id":"smith2024","type":"book","title":"An Example"}"#.into(),
+            UnixMillis::new(100),
+        ))
+        .await
+        .expect("register the cited work");
+
+    // 作成者は両方のノートと、その間の線を見る。
+    let owner_graph = database
+        .note_graph(&alice, &NoteGraphQuery::default())
+        .await
+        .expect("graph for the owner");
+    assert_eq!(owner_graph.notes.len(), 2);
+    assert_eq!(owner_graph.references.len(), 2);
+    assert_eq!(owner_graph.citations.len(), 2);
+
+    // 共有相手は共有されたノートだけを見る。共有していないノートも、そこへ向かう線も現れない。
+    let reader_graph = database
+        .note_graph(&bob, &NoteGraphQuery::default())
+        .await
+        .expect("graph for the reader");
+    assert_eq!(reader_graph.notes.len(), 1);
+    assert_eq!(reader_graph.notes[0].title, "共有するノート");
+    assert!(reader_graph.references.is_empty());
+    assert_eq!(reader_graph.citations.len(), 1);
+    // 引用された文献だけが出る。作成者のライブラリーで解決できた題名を添える。
+    assert_eq!(reader_graph.works.len(), 1);
+    assert_eq!(reader_graph.works[0].citation_key, "smith2024");
+    assert_eq!(reader_graph.works[0].title.as_deref(), Some("An Example"));
+
+    // 語で絞り込むと、その語を持つノートと、そこからの引用だけが残る。
+    let filtered = database
+        .note_graph(
+            &alice,
+            &NoteGraphQuery {
+                text: Some("共有する".into()),
+            },
+        )
+        .await
+        .expect("filtered graph");
+    assert_eq!(filtered.notes.len(), 1);
+    assert!(filtered.references.is_empty());
+    assert_eq!(filtered.citations.len(), 1);
+    assert_eq!(filtered.works.len(), 1);
+}
+
+fn graph_note(id: &str, title: &str) -> Note {
+    Note::restore(
+        NoteId::new(EntityId::from_str(id).expect("v7 note ID")),
+        Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+        title.into(),
+        format!("= {title}\n\n本文"),
+        Vec::new(),
+        UnixMillis::new(100),
+        UnixMillis::new(100),
+        Revision::INITIAL,
+        None,
+    )
+    .expect("consistent note")
 }

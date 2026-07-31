@@ -327,26 +327,26 @@
                   and (.note_acl | length) == 2
                 ' migrated-archive.json
 
-                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema12.sqlite"
+                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema13.sqlite"
                 ${self.packages.${system}.default}/bin/marginalis \
                   import-archive --input "$PWD/migrated-archive.json"
-                test "$(sqlite3 schema12.sqlite \
-                  'SELECT MAX(version) FROM schema_migrations')" = 12
-                sqlite3 -json schema12.sqlite \
+                test "$(sqlite3 schema13.sqlite \
+                  'SELECT MAX(version) FROM schema_migrations')" = 13
+                sqlite3 -json schema13.sqlite \
                   'SELECT note_id, creator_issuer, creator_subject, title, source,
                           tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-                   FROM notes ORDER BY note_id' > schema12-notes.json
-                sqlite3 -json schema12.sqlite \
+                   FROM notes ORDER BY note_id' > schema13-notes.json
+                sqlite3 -json schema13.sqlite \
                   'SELECT source_note_id, target_note_id
                    FROM note_references ORDER BY source_note_id, target_note_id' \
-                  > schema12-references.json
-                sqlite3 -json schema12.sqlite \
+                  > schema13-references.json
+                sqlite3 -json schema13.sqlite \
                   'SELECT note_id, issuer, subject, permission
-                   FROM note_acl ORDER BY note_id, issuer, subject' > schema12-acl.json
-                diff -u schema9-notes.json schema12-notes.json
-                cmp schema9-references.json schema12-references.json
-                cmp schema9-acl.json schema12-acl.json
-                test "$(sqlite3 schema12.sqlite \
+                   FROM note_acl ORDER BY note_id, issuer, subject' > schema13-acl.json
+                diff -u schema9-notes.json schema13-notes.json
+                cmp schema9-references.json schema13-references.json
+                cmp schema9-acl.json schema13-acl.json
+                test "$(sqlite3 schema13.sqlite \
                   "SELECT COUNT(*) FROM sqlite_schema
                    WHERE type = 'table' AND name IN
                      ('mcp_clients', 'mcp_authorization_codes',

@@ -131,33 +131,30 @@ impl LogicalSnapshot {
 pub struct RestorePlan {
     snapshot: LogicalSnapshot,
     references: Vec<(NoteId, NoteId)>,
+    citations: Vec<(NoteId, String)>,
 }
 
 impl RestorePlan {
     pub fn new(
         snapshot: LogicalSnapshot,
-        mut references: Vec<(NoteId, NoteId)>,
+        references: Vec<(NoteId, NoteId)>,
+        citations: Vec<(NoteId, String)>,
     ) -> Result<Self, InvalidSnapshot> {
         let note_ids = snapshot
             .notes
             .iter()
             .map(Note::note_id)
             .collect::<HashSet<_>>();
-        if let Some((index, _)) = references
-            .iter()
-            .enumerate()
-            .find(|(_, (source, _))| !note_ids.contains(source))
-        {
-            return Err(InvalidSnapshot::InvalidReference {
-                position: index + 1,
-            });
-        }
-        references
-            .sort_unstable_by_key(|(source, target)| (source.to_string(), target.to_string()));
-        references.dedup();
+        let references = sorted_links(references, &note_ids, |(source, target)| {
+            (source.to_string(), target.to_string())
+        })?;
+        let citations = sorted_links(citations, &note_ids, |(source, key)| {
+            (source.to_string(), key.clone())
+        })?;
         Ok(Self {
             snapshot,
             references,
+            citations,
         })
     }
 
@@ -169,9 +166,33 @@ impl RestorePlan {
         &self.references
     }
 
+    pub fn citations(&self) -> &[(NoteId, String)] {
+        &self.citations
+    }
+
     pub fn into_parts(self) -> (LogicalSnapshot, Vec<(NoteId, NoteId)>) {
         (self.snapshot, self.references)
     }
+}
+
+/// 引き元のノートが存在することを確かめ、決まった順序へ並べて重複を取り除く。
+fn sorted_links<T: Clone + Eq, K: Ord>(
+    mut links: Vec<(NoteId, T)>,
+    note_ids: &HashSet<NoteId>,
+    key: impl Fn(&(NoteId, T)) -> K,
+) -> Result<Vec<(NoteId, T)>, InvalidSnapshot> {
+    if let Some((index, _)) = links
+        .iter()
+        .enumerate()
+        .find(|(_, (source, _))| !note_ids.contains(source))
+    {
+        return Err(InvalidSnapshot::InvalidReference {
+            position: index + 1,
+        });
+    }
+    links.sort_unstable_by_key(&key);
+    links.dedup();
+    Ok(links)
 }
 
 #[cfg(test)]
@@ -234,14 +255,24 @@ mod tests {
             EntityId::from_str("0197c9bc-0000-7000-8000-000000000002").expect("UUIDv7"),
         );
         assert_eq!(
-            RestorePlan::new(snapshot.clone(), vec![(missing, note.note_id())]),
+            RestorePlan::new(
+                snapshot.clone(),
+                vec![(missing, note.note_id())],
+                Vec::new()
+            ),
             Err(InvalidSnapshot::InvalidReference { position: 1 })
         );
         let plan = RestorePlan::new(
             snapshot,
             vec![(note.note_id(), missing), (note.note_id(), missing)],
+            vec![
+                (note.note_id(), "smith2024".to_owned()),
+                (note.note_id(), "smith2024".to_owned()),
+            ],
         )
         .expect("restore plan");
         assert_eq!(plan.references().len(), 1);
+        // 引用も同じ規則で重複を取り除く。
+        assert_eq!(plan.citations().len(), 1);
     }
 }

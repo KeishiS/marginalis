@@ -89,6 +89,10 @@ pub fn note_reference_queries(source: &str) -> Result<Vec<NoteReferenceQuery>, R
     analysis::reference_queries(source)
 }
 
+pub fn note_citation_queries(source: &str) -> Result<Vec<NoteCitationQuery>, RenderError> {
+    analysis::citation_queries(source)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

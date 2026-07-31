@@ -8,7 +8,7 @@ use std::{
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, BibliographyItem, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId,
-    NoteListEntry, NoteSummary, NoteValidationTarget, Revision, Utf8ByteSpan,
+    NoteListEntry, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
 };
 
 use crate::{
@@ -53,6 +53,12 @@ pub trait NoteQueryRepository: Send + Sync {
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Option<NoteViewSnapshot>, NoteRepositoryError>;
+    /// 閲覧できるノートと、それらが引用する文献の関係を1回の読み取りで返す。
+    async fn note_graph(
+        &self,
+        actor: &Actor,
+        query: &NoteGraphQuery,
+    ) -> Result<NoteGraph, NoteRepositoryError>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -69,15 +75,16 @@ pub trait NoteCommandRepository: Send + Sync {
     async fn create_note(
         &self,
         note: &Note,
-        reference_targets: &[NoteId],
+        links: NoteLinks<'_>,
     ) -> Result<(), NoteRepositoryError>;
+    #[allow(clippy::too_many_arguments)]
     async fn update_visible_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
         expected_revision: Revision,
         draft: &NoteDraft,
-        reference_targets: &[NoteId],
+        links: NoteLinks<'_>,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, NoteRepositoryError>;
     async fn soft_delete_visible_note(
@@ -112,6 +119,66 @@ pub trait NoteAclRepository: Send + Sync {
         expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, NoteRepositoryError>;
+}
+
+/// 関係の図に出す点と線。
+///
+/// 点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけとする。線は始点と
+/// 終点の両方が点として出る場合だけ返す。閲覧できないノートの存在も件数も現れない。
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NoteGraph {
+    pub notes: Vec<NoteGraphNote>,
+    pub works: Vec<NoteGraphWork>,
+    pub references: Vec<NoteGraphReference>,
+    pub citations: Vec<NoteGraphCitation>,
+}
+
+/// 図に出すノート。本文は含めない。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteGraphNote {
+    pub note_id: NoteId,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub updated_at: UnixMillis,
+}
+
+/// 図に出す文献。書誌ライブラリーの内容ではなく、引用されたという事実だけを表す。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteGraphWork {
+    pub citation_key: String,
+    /// 引用元のノートを書いた利用者のライブラリーで解決できた場合の題名。
+    pub title: Option<String>,
+}
+
+/// ノートからノートへの参照。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteGraphReference {
+    pub source_note_id: NoteId,
+    pub target_note_id: NoteId,
+}
+
+/// ノートから文献への引用。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteGraphCitation {
+    pub source_note_id: NoteId,
+    pub citation_key: String,
+}
+
+/// 図に出す範囲の指定。
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NoteGraphQuery {
+    /// 題名、本文、タグのいずれかにこの語を含むノートだけへ絞る。
+    pub text: Option<String>,
+}
+
+/// 本文から導いた、ノートが指し示す先の一覧。
+///
+/// ノート参照と引用は、どちらも本文の解析から得て同じtransactionで置き換える。別々のport
+/// 引数にすると、片方だけ渡し忘れても型が通ってしまう。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NoteLinks<'a> {
+    pub reference_targets: &'a [NoteId],
+    pub cited_keys: &'a [String],
 }
 
 /// 文書内で見つかったノート参照。
@@ -496,8 +563,15 @@ impl NoteCommands for NoteApplication {
             now,
         );
         let reference_targets = reference_targets(&reference_queries);
+        let cited_keys = cited_keys(&citation_queries);
         self.commands
-            .create_note(&note, &reference_targets)
+            .create_note(
+                &note,
+                NoteLinks {
+                    reference_targets: &reference_targets,
+                    cited_keys: &cited_keys,
+                },
+            )
             .await
             .map_err(map_repository_error)?;
         Ok(note)
@@ -537,13 +611,17 @@ impl NoteCommands for NoteApplication {
         }
         reject_warnings(policy, diagnostics)?;
         let reference_targets = reference_targets(&reference_queries);
+        let cited_keys = cited_keys(&citation_queries);
         self.commands
             .update_visible_note(
                 &actor,
                 note_id,
                 expected_revision,
                 &draft,
-                &reference_targets,
+                NoteLinks {
+                    reference_targets: &reference_targets,
+                    cited_keys: &cited_keys,
+                },
                 self.clock.now(),
             )
             .await
@@ -647,6 +725,17 @@ impl NotePresentation for NoteApplication {
         self.content
             .export(note)
             .map_err(|_| NoteUseCaseError::Unavailable)
+    }
+
+    async fn read_note_graph(
+        &self,
+        actor: Actor,
+        query: NoteGraphQuery,
+    ) -> Result<NoteGraph, NoteUseCaseError> {
+        self.queries
+            .note_graph(&actor, &query)
+            .await
+            .map_err(map_repository_error)
     }
 
     fn note_profile(&self) -> NoteProfile {
@@ -798,6 +887,20 @@ fn acl_validation(index: usize, problem: AclValidationProblem) -> NoteUseCaseErr
     }])
 }
 
+/// 本文が名指したcitation keyを、重複なく並べる。
+///
+/// 書誌ライブラリーに実在するかどうかは問わない。ライブラリーは後から変わるため、保存する
+/// のは「本文が何を引用したか」であって「解決できたか」ではない。
+fn cited_keys(queries: &[NoteCitationQuery]) -> Vec<String> {
+    let mut keys = queries
+        .iter()
+        .flat_map(|query| query.keys.iter().cloned())
+        .collect::<Vec<_>>();
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
 fn reference_targets(queries: &[NoteReferenceQuery]) -> Vec<NoteId> {
     queries
         .iter()
@@ -891,6 +994,14 @@ mod tests {
         ) -> Result<Option<NoteViewSnapshot>, NoteRepositoryError> {
             Ok(None)
         }
+
+        async fn note_graph(
+            &self,
+            _actor: &Actor,
+            _query: &NoteGraphQuery,
+        ) -> Result<NoteGraph, NoteRepositoryError> {
+            Ok(NoteGraph::default())
+        }
     }
 
     #[async_trait]
@@ -898,7 +1009,7 @@ mod tests {
         async fn create_note(
             &self,
             note: &Note,
-            _reference_targets: &[NoteId],
+            _links: NoteLinks<'_>,
         ) -> Result<(), NoteRepositoryError> {
             self.notes.lock().expect("notes lock").push(note.clone());
             Ok(())
@@ -910,7 +1021,7 @@ mod tests {
             _note_id: NoteId,
             _expected_revision: Revision,
             _draft: &NoteDraft,
-            _reference_targets: &[NoteId],
+            _links: NoteLinks<'_>,
             _now: UnixMillis,
         ) -> Result<Note, NoteRepositoryError> {
             self.update_calls.fetch_add(1, Ordering::Relaxed);
