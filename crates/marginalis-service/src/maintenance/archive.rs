@@ -4,19 +4,23 @@ use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
 use crate::cli::{required_absolute_file_argument, required_archive_migration_arguments};
 use crate::config::StorageConfig;
 use crate::runtime::SystemClock;
+use liblzma::read::XzDecoder;
 use liblzma::write::XzEncoder;
 use marginalis_application::{Clock as _, NoteContent as _};
 use marginalis_application::{LogicalSnapshot, RestorePlan};
 use marginalis_archive::{
-    Archive, create_archive, documents::create_document_export, migrate_previous_archive,
-    validate_archive as validate_archive_contract,
+    Archive, create_archive,
+    documents::{
+        DocumentManifest, archive_from_documents, create_document_export, requires_revalidation,
+    },
+    migrate_previous_archive, validate_archive as validate_archive_contract,
 };
 use marginalis_asciidoc::AsciiDocNoteContent;
 use marginalis_sqlite::SqliteDatabase;
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fs::{DirBuilder, File, OpenOptions},
-    io::Write as _,
+    io::{Read as _, Write as _},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -367,4 +371,109 @@ fn append_parent_directories(
         builder.append_data(&mut header, format!("{directory}/"), std::io::empty())?;
     }
     Ok(())
+}
+
+/// 展開後の合計の上限。書庫が極端に大きく膨らむ入力を拒否する。
+const MAX_DOCUMENT_IMPORT_BYTES: u64 = 1024 * 1024 * 1024;
+/// 1項目あたりの上限。
+const MAX_DOCUMENT_ENTRY_BYTES: u64 = 64 * 1024 * 1024;
+
+/// 書き出した文書一式を現行規則で再検証し、空のSQLite databaseへ取り込む。
+pub(crate) async fn import_documents(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let input = required_absolute_file_argument(&mut arguments, "--input")?;
+    let files = read_document_archive(&input)?;
+    let manifest: DocumentManifest = serde_json::from_slice(
+        files
+            .get("manifest.json")
+            .ok_or("document archive has no manifest.json")?,
+    )?;
+    let package_version = AsciiDocNoteContent.profile().adocweave_package_version;
+    let revalidated = requires_revalidation(&manifest, package_version);
+
+    let archive = archive_from_documents(&manifest, &files, package_version)?;
+    let snapshot = validate_archive_contract(&AsciiDocNoteContent, &archive)?;
+    let validated = ValidatedArchive {
+        archive,
+        plan: restore_plan(snapshot)?,
+    };
+    verify_archive_in_memory(&validated).await?;
+
+    let configuration = StorageConfig::from_environment()?;
+    SqliteDatabase::connect(&configuration.database_url)
+        .await?
+        .restore(&validated.plan)
+        .await?;
+    tracing::info!(
+        event = "maintenance.document_import.completed",
+        input = %input.display(),
+        note_count = validated.archive.notes.len(),
+        revalidated,
+        "imported documents"
+    );
+    Ok(())
+}
+
+/// 書庫を展開し、path構成要素まで検査した内容だけを返す。
+///
+/// 展開先のファイルシステムへは書かない。`..`や絶対path、symlink、hard linkのように展開先の
+/// 外側を指しうる項目と、通常ファイル以外の項目を拒否する。大きさにも上限を設ける。
+fn read_document_archive(
+    input: &Path,
+) -> Result<BTreeMap<String, Vec<u8>>, Box<dyn std::error::Error>> {
+    let mut archive = tar::Archive::new(XzDecoder::new(File::open(input)?));
+    let mut files = BTreeMap::new();
+    let mut total = 0u64;
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let kind = entry.header().entry_type();
+        if kind.is_dir() {
+            continue;
+        }
+        if !kind.is_file() {
+            return Err("document archive contains an entry that is not a regular file".into());
+        }
+        let size = entry.header().size()?;
+        if size > MAX_DOCUMENT_ENTRY_BYTES {
+            return Err("document archive contains an entry that is too large".into());
+        }
+        total = total
+            .checked_add(size)
+            .ok_or("document archive size overflows")?;
+        if total > MAX_DOCUMENT_IMPORT_BYTES {
+            return Err("document archive expands beyond the supported size".into());
+        }
+        let path = entry.path()?.into_owned();
+        let path = safe_archive_path(&path)?;
+        let mut contents = Vec::with_capacity(usize::try_from(size)?);
+        entry.read_to_end(&mut contents)?;
+        if files.insert(path, contents).is_some() {
+            return Err("document archive contains a duplicated path".into());
+        }
+    }
+    Ok(files)
+}
+
+/// 書庫内のpathを、最上位ディレクトリーを外した相対pathへ直す。
+///
+/// 絶対pathと`..`、および現在のディレクトリーを指す要素を拒否する。manifestが記録するpathは
+/// 最上位ディレクトリーを含まないため、先頭の1要素を外して対応させる。
+fn safe_archive_path(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(value) => components.push(
+                value
+                    .to_str()
+                    .ok_or("document archive path is not valid UTF-8")?
+                    .to_owned(),
+            ),
+            _ => return Err("document archive path escapes the archive root".into()),
+        }
+    }
+    if components.len() < 2 {
+        return Err("document archive path has no root directory".into());
+    }
+    Ok(components[1..].join("/"))
 }
