@@ -48,10 +48,13 @@ use self::{
     mcp_transport::{mcp_post, mcp_resource_metadata, mcp_unsupported_method},
     notes::{
         create_note, delete_note, export_note, list_notes, preview_note, read_note, read_note_acl,
-        read_note_view, replace_note_acl, restore_note, session, update_note,
+        read_note_graph, read_note_view, replace_note_acl, restore_note, session, update_note,
     },
     security::security_headers,
-    ui::{access_note_page, bibliography_page, create_note_page, edit_note_page, home, view_note},
+    ui::{
+        access_note_page, bibliography_page, create_note_page, edit_note_page, graph_page, home,
+        view_note,
+    },
 };
 
 pub use marginalis_contract::API_VERSION;
@@ -94,6 +97,7 @@ pub fn router(state: ApiState) -> Router {
     let mut router = Router::new()
         .route("/", get(home))
         .route("/bibliography", get(bibliography_page))
+        .route("/graph", get(graph_page))
         .route("/notes/new", get(create_note_page))
         .route("/notes/{note_id}/edit", get(edit_note_page))
         .route("/notes/{note_id}/access", get(access_note_page))
@@ -140,7 +144,8 @@ pub fn router(state: ApiState) -> Router {
             "/api/v3/notes/{note_id}/acl",
             get(read_note_acl).put(replace_note_acl),
         )
-        .route("/api/v3/notes/{note_id}/source", get(export_note));
+        .route("/api/v3/notes/{note_id}/source", get(export_note))
+        .route("/api/v3/notes/graph", get(read_note_graph));
     if let Some(endpoint) = state.mcp.as_ref() {
         let resource_metadata_path = url::Url::parse(&endpoint.metadata_uri)
             .expect("validated MCP resource metadata URL")

@@ -2,17 +2,22 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::{NoteAclChange, NoteRenderContext, NoteView, NoteWritePolicy};
+use marginalis_application::{
+    NoteAclChange, NoteGraphQuery, NoteRenderContext, NoteView, NoteWritePolicy,
+};
 use marginalis_contract::{
     NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
-    NoteListEntryResponse, NotePreviewResponse, NoteResponse, NoteSummaryResponse,
-    NoteViewResponse, ProblemCode, RelatedNotesResponse, SessionResponse,
+    NoteGraphCitationResponse, NoteGraphNoteResponse, NoteGraphReferenceResponse,
+    NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse, NotePreviewResponse,
+    NoteResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode, RelatedNotesResponse,
+    SessionResponse,
 };
 use marginalis_domain::{Note, NoteDraft, NoteSummary, Revision};
+use serde::Deserialize;
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor, parse_note_id},
@@ -345,6 +350,70 @@ fn note_view_response(view: NoteView) -> NoteViewResponse {
                 .collect(),
         },
     }
+}
+
+#[derive(Default, Deserialize)]
+pub(super) struct NoteGraphParameters {
+    #[serde(default)]
+    query: String,
+}
+
+/// 閲覧できるノートと、それらが引用する文献の関係を返す。
+///
+/// 認可はSQLite問い合わせの中で適用済みであり、ここでは形を写すだけにする。ここで絞り込むと、
+/// 絞り込み漏れがそのまま情報の開示になる。
+pub(super) async fn read_note_graph(
+    State(state): State<ApiState>,
+    Query(parameters): Query<NoteGraphParameters>,
+    headers: HeaderMap,
+) -> HandlerResult<Json<NoteGraphResponse>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let graph = state
+        .notes
+        .read_note_graph(
+            actor,
+            NoteGraphQuery {
+                text: Some(parameters.query),
+            },
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(Json(NoteGraphResponse {
+        notes: graph
+            .notes
+            .into_iter()
+            .map(|note| NoteGraphNoteResponse {
+                note_id: note.note_id.to_string(),
+                title: note.title,
+                tags: note.tags,
+                updated_at_ms: note.updated_at.get(),
+            })
+            .collect(),
+        works: graph
+            .works
+            .into_iter()
+            .map(|work| NoteGraphWorkResponse {
+                citation_key: work.citation_key,
+                title: work.title,
+            })
+            .collect(),
+        references: graph
+            .references
+            .into_iter()
+            .map(|edge| NoteGraphReferenceResponse {
+                source_note_id: edge.source_note_id.to_string(),
+                target_note_id: edge.target_note_id.to_string(),
+            })
+            .collect(),
+        citations: graph
+            .citations
+            .into_iter()
+            .map(|edge| NoteGraphCitationResponse {
+                source_note_id: edge.source_note_id.to_string(),
+                citation_key: edge.citation_key,
+            })
+            .collect(),
+    }))
 }
 
 pub(super) async fn export_note(

@@ -460,3 +460,55 @@ async fn every_rest_contract_has_a_registered_router_method() {
         );
     }
 }
+
+/// 図の要求は、認可を通したうえで点と線をそのまま写す。
+#[tokio::test]
+async fn the_note_graph_endpoint_returns_visible_notes_and_filters_by_word() {
+    let app = ui_app(vec![ui_note("関係の図")], false, "/");
+    let response = app
+        .clone()
+        .oneshot(authenticated_request("/api/v3/notes/graph"))
+        .await
+        .expect("graph response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let graph: serde_json::Value = serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("graph body"),
+    )
+    .expect("graph JSON");
+    assert_eq!(graph["notes"].as_array().expect("notes").len(), 1);
+    assert!(graph["notes"][0]["title"].is_string());
+    // 本文は図へ渡さない。
+    assert!(graph["notes"][0].get("source").is_none());
+    assert!(graph["works"].as_array().expect("works").is_empty());
+
+    let filtered = ui_app(vec![ui_note("関係の図")], false, "/")
+        .oneshot(authenticated_request(
+            "/api/v3/notes/graph?query=%E4%B8%80%E8%87%B4%E3%81%97%E3%81%AA%E3%81%84",
+        ))
+        .await
+        .expect("filtered response");
+    assert_eq!(filtered.status(), StatusCode::OK);
+    let filtered: serde_json::Value = serde_json::from_slice(
+        &axum::body::to_bytes(filtered.into_body(), usize::MAX)
+            .await
+            .expect("filtered body"),
+    )
+    .expect("filtered JSON");
+    assert!(filtered["notes"].as_array().expect("notes").is_empty());
+}
+
+/// 認証していない要求は図を返さない。
+#[tokio::test]
+async fn the_note_graph_endpoint_requires_authentication() {
+    let response = ui_app(vec![ui_note("関係の図")], false, "/")
+        .oneshot(
+            Request::get("/api/v3/notes/graph")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}

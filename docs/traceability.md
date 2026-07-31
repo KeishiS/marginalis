@@ -19,6 +19,7 @@
 | REQ-DATA-004 | schema検査 | なし |
 | REQ-DATA-005 | SQLite認可・参照試験、ブラウザー試験 | 非開示確認 |
 | REQ-DATA-006 | application入力検査、SQLite所有者境界・競合・revision試験、REST・MCP公開契約試験 | Web UIでの検索、追加、編集、削除とMCPでの検索、追加、削除 |
+| REQ-DATA-008 | 図の認可境界・絞り込み・片端の欠けた線の試験、REST経路と認証の試験 | 関係の図の表示 |
 | REQ-DATA-007 | 引用解決の所有者境界と重複排除の試験、生成した参考文献の相互link試験、書誌情報を記法として解釈しない試験 | 共有したノートでの引用表示 |
 | REQ-AUTH-001 | OIDC単体・結合試験 | ログイン拒否 |
 | REQ-AUTH-002 | domain・archive・SQLite単体試験 | 所有者照合 |
@@ -34,7 +35,7 @@
 | REQ-API-005 | MCP scope結合試験 | MCP権限照合 |
 | REQ-API-006 | Authorization Server Metadata確認、認可取消APIの本番到達性検査 | client接続解除、grant取消、JWT失効時間 |
 | REQ-API-007 | MCP JSON Schema生成差分、MCP HTTP契約試験、AsciiDoc入力規則・HTML描画試験、警告拒否前の永続化防止試験 | client同期・参考文献作成・診断修正後の再実行確認 |
-| REQ-UI-001 | React単体試験、ブラウザー試験 | 主要画面 |
+| REQ-UI-001 | React単体試験、ブラウザー試験、配布物の大きさ検査 | 主要画面 |
 | REQ-UI-002 | TypeScript実行時検査試験 | 異常応答表示 |
 | REQ-UI-003 | React状態・画面単体試験、ブラウザー試験 | 一覧の復帰 |
 | REQ-UI-004 | AdocWeave診断、REST契約、TypeScript応答検査、React編集・UTF-8位置単体試験、ブラウザー試験 | 警告表示、診断からの修正 |
