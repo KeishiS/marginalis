@@ -20,6 +20,8 @@ marginalis-sqlite = { path = "../marginalis-sqlite" }
 marginalis-web = { path = "../marginalis-web" }
 serde.workspace = true
 serde_json.workspace = true
+tar.workspace = true
+liblzma.workspace = true
 reqwest.workspace = true
 rand.workspace = true
 tokio.workspace = true

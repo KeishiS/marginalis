@@ -50,6 +50,7 @@
 | REQ-DEPLOY-001 | NixOS module評価・VM | 本番設定確認 |
 | REQ-DEPLOY-002 | 環境変数宣言の単体試験、起動と診断の判断一致CLI試験、NixOS module評価 | 診断出力確認 |
 | REQ-FORMAT-001 | schema・archive拒否、archive 7・8・9・10・11・12から13への移行試験 | 更新前退避 |
+| REQ-FORMAT-002 | 文書書き出しの構成・ファイル名・削除済み除外・manifest版情報の試験、CLIの権限と上書き拒否の試験 | 取り出した内容の他ツールでの読み取り |
 
 ## 実行単位
 
