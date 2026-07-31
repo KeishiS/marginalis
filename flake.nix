@@ -730,11 +730,11 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 12'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 13'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 12; PRAGMA journal_mode=WAL'"
+                + "'UPDATE schema_migrations SET version = 13; PRAGMA journal_mode=WAL'"
               )
               machine.succeed("rm -f /var/lib/marginalis/marginalis.sqlite*")
               machine.succeed(
@@ -762,7 +762,7 @@
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "timeout 5s journalctl --no-pager -u marginalis.service -o cat | "
-                + "grep -F 'unsupported database schema version 5; expected 12'"
+                + "grep -F 'unsupported database schema version 5; expected 13'"
               )
               machine.succeed("systemctl stop marginalis.service")
               machine.succeed(
@@ -779,7 +779,7 @@
                     + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
                     + "'.database.schema.ok == false "
                     + "and .database.schema.actual == 5 "
-                    + "and .database.schema.expected == 12 "
+                    + "and .database.schema.expected == 13 "
                     + "and .database.integrity.ok "
                     + "and .database.integrity.actual == \"ok\" "
                     + "and .database.foreign_keys.ok "
