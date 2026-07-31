@@ -90,6 +90,7 @@ tool結果の`isError`はHTTP 200になる場合があるため、HTTPの`outcom
 | backup世代整理 | `maintenance.backup_prune.completed` | `maintenance.backup_prune.failed` |
 | archive書き出し | `maintenance.archive_export.completed` | `maintenance.archive_export.failed` |
 | 文書書き出し | `maintenance.document_export.completed` | `maintenance.document_export.failed` |
+| 文書取り込み | `maintenance.document_import.completed` | `maintenance.document_import.failed` |
 | archive移行 | `maintenance.archive_migration.completed` | `maintenance.archive_migration.failed` |
 | archive取り込み | `maintenance.archive_import.completed` | `maintenance.archive_import.failed` |
 | archive検証 | `maintenance.archive_validation.completed` | `maintenance.archive_validation.failed` |

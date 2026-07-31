@@ -229,8 +229,32 @@ note IDを付けるため衝突しません。削除済み（ソフトデリー�
 ディレクトリーは`700`、ファイルは`600`として記録します。展開する側の設定によらず、所有者だけが
 読める状態になります。
 
-**この出力は復元の入力ではありません。** 復元には次節の`export-archive`と`import-archive`を
-使用してください。archiveだけがWeb sessionを除く全状態を検証付きで往復できます。
+### 書き出した内容を取り込む
+
+書き出した書庫は`import-documents`で取り込めます。別の道具で`.adoc`ファイルを編集してから戻す
+場合と、別の環境へ移す場合に使います。
+
+```sh
+sudo -u marginalis env \
+  MARGINALIS_DATABASE_URL=sqlite:/srv/marginalis-restore/marginalis.sqlite \
+  marginalis import-documents --input /srv/marginalis-export/2026-07-31.tar.xz
+```
+
+本文の正は`.adoc`ファイル、識別子、所有者、日時、revision、ACLの正は`manifest.json`です。
+manifestが挙げるファイルが無い場合は失敗します。manifestに無いファイルは無視するため、
+ファイルを置くだけではノートを増やせません。
+
+manifestが記録するAdocWeave packageの版とノート受理規則の版が稼働中の値と違う場合は、全ノートを
+現行の規則で再検証してから取り込みます。一件でも現行規則を満たさない場合はdatabaseを変更せず、
+manifest内の位置で失敗を示します。診断へ本文や識別子は出力されません。
+
+取り込み先は空のdatabaseに限ります。既存のノートまたは認証状態があるdatabaseへの取り込みは
+失敗し、暗黙に上書きされません。書庫の展開では、`..`や絶対path、symlink、通常ファイルと
+ディレクトリー以外の項目を拒否し、展開後の大きさにも上限を設けています。
+
+**この出力はバックアップの代わりではありません。** 削除済みノートを含まないため、
+日次の退避と復元には次節の`export-archive`と`import-archive`を使用してください。archiveだけが
+Web sessionを除く全状態を検証付きで往復できます。
 
 ## 復元と切戻し
 

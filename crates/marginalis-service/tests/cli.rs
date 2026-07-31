@@ -828,3 +828,150 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
 
     fs::remove_dir_all(&directory).expect("remove test directory");
 }
+
+#[test]
+fn document_import_revalidates_and_restores_into_an_empty_database() {
+    let directory = test_directory("document-import");
+    fs::create_dir(&directory).expect("test directory");
+    let database = directory.join("marginalis.sqlite3");
+    let database_url = format!("sqlite://{}?mode=rwc", database.display());
+    let archive = directory.join("archive.json");
+    let source = serde_json::json!({
+        "format": "marginalis-archive-13",
+        "adocweave_package_version": "0.23.0",
+        "note_profile_version": 4,
+        "notes": [{
+            "note_id": "0197c9bc-0000-7000-8000-000000000001",
+            "creator_issuer": "https://id.example.test",
+            "creator_subject": "alice",
+            "source": "= 先行研究の整理\n:tags: 研究\n\n本文",
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "revision": 1,
+            "deleted_at_ms": null
+        }],
+        "note_acl": [{
+            "note_id": "0197c9bc-0000-7000-8000-000000000001",
+            "issuer": "https://id.example.test",
+            "subject": "bob",
+            "permission": "edit"
+        }],
+        "bibliography_items": [{
+            "item_id": "0197c9bc-0000-7000-8000-0000000000a1",
+            "owner_issuer": "https://id.example.test",
+            "owner_subject": "alice",
+            "citation_key": "smith2024",
+            "csl_json": { "id": "smith2024", "type": "book", "title": "Example" },
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "revision": 1
+        }]
+    });
+    let archive_bytes = serde_json::to_vec_pretty(&source).expect("archive JSON");
+    fs::write(&archive, &archive_bytes).expect("write archive");
+    run_marginalis(
+        &["import-archive", "--input"],
+        &archive,
+        &database_url,
+        "import archive",
+    );
+
+    let documents = directory.join("export.tar.xz");
+    run_marginalis(
+        &["export-documents", "--output"],
+        &documents,
+        &database_url,
+        "export documents",
+    );
+
+    // 別のdatabaseへ取り込み、archiveとして書き出した内容が一致することを確かめる。
+    let restored_database = directory.join("restored.sqlite3");
+    let restored_url = format!("sqlite://{}?mode=rwc", restored_database.display());
+    run_marginalis(
+        &["import-documents", "--input"],
+        &documents,
+        &restored_url,
+        "import documents",
+    );
+    let restored_archive = directory.join("restored.json");
+    run_marginalis(
+        &["export-archive", "--output"],
+        &restored_archive,
+        &restored_url,
+        "export restored archive",
+    );
+    let restored: serde_json::Value =
+        serde_json::from_slice(&fs::read(&restored_archive).expect("read restored archive"))
+            .expect("restored JSON");
+    let expected: serde_json::Value =
+        serde_json::from_slice(&archive_bytes).expect("source archive JSON");
+    assert_eq!(restored, expected);
+
+    // 既に内容があるdatabaseへは取り込まない。
+    let repeated = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["import-documents", "--input"])
+        .arg(&documents)
+        .env("MARGINALIS_DATABASE_URL", &restored_url)
+        .output()
+        .expect("repeat document import");
+    assert!(!repeated.status.success());
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
+#[test]
+fn document_import_rejects_archives_that_escape_their_root() {
+    let directory = test_directory("document-import-escape");
+    fs::create_dir(&directory).expect("test directory");
+    let payload = directory.join("payload");
+    fs::create_dir(&payload).expect("payload directory");
+    fs::write(payload.join("manifest.json"), b"{}").expect("write manifest");
+
+    let escaping = directory.join("escaping.tar.xz");
+    let created = Command::new("tar")
+        .args(["-cJf"])
+        .arg(&escaping)
+        .args(["-C"])
+        .arg(&payload)
+        .args([
+            "--transform",
+            "s|manifest.json|../manifest.json|",
+            "manifest.json",
+        ])
+        .output()
+        .expect("create escaping archive");
+    assert!(
+        created.status.success(),
+        "archive creation failed: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    let database_url = format!(
+        "sqlite://{}?mode=rwc",
+        directory.join("marginalis.sqlite3").display()
+    );
+    let rejected = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["import-documents", "--input"])
+        .arg(&escaping)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("reject escaping archive");
+    assert!(!rejected.status.success());
+    assert!(!directory.join("marginalis.sqlite3").exists());
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
+fn run_marginalis(command: &[&str], path: &std::path::Path, database_url: &str, purpose: &str) {
+    let output = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(command)
+        .arg(path)
+        .env("MARGINALIS_DATABASE_URL", database_url)
+        .output()
+        .unwrap_or_else(|error| panic!("{purpose}: {error}"));
+    assert!(
+        output.status.success(),
+        "{purpose} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

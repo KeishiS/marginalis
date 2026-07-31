@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::{Archive, ArchiveAclEntry, ArchiveBibliographyItem, ArchiveNote};
 use marginalis_application::LogicalSnapshot;
 use marginalis_domain::{Identity, Note, NotePermission, UnixMillis};
 use serde::{Deserialize, Serialize};
@@ -46,8 +47,8 @@ pub struct DocumentManifest {
     /// ノートを受理できる入力規則の版。archiveと同じ意味を持つ。
     pub note_profile_version: u32,
     pub exported_at_ms: i64,
-    /// この出力を取り込む経路がないことを、読み手へ明示する。
-    pub restore_source: &'static str,
+    /// 復元の入力がarchiveであることを、読み手へ明示する。
+    pub restore_source: String,
     pub owners: Vec<DocumentOwner>,
 }
 
@@ -140,7 +141,7 @@ pub fn create_document_export(
         adocweave_package_version: adocweave_package_version.into(),
         note_profile_version: crate::ARCHIVE_NOTE_PROFILE_VERSION,
         exported_at_ms: exported_at.get(),
-        restore_source: RESTORE_SOURCE,
+        restore_source: RESTORE_SOURCE.into(),
         owners,
     };
     DocumentExport { manifest, files }
@@ -322,6 +323,127 @@ fn safe_path_component(value: &str) -> String {
     collapsed.trim_matches(['-', '.']).to_owned()
 }
 
+/// 取り込みを止める理由。
+///
+/// 本文や識別子を含めない。位置はmanifest内の1から始まる番号で示す。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum DocumentImportError {
+    #[error("document export format is not supported")]
+    UnsupportedFormat,
+    #[error("note at position {position} has no file in the archive")]
+    MissingNoteFile { position: usize },
+    #[error("bibliography file for owner at position {position} is missing")]
+    MissingBibliographyFile { position: usize },
+    #[error("note file at position {position} is not valid UTF-8")]
+    InvalidNoteEncoding { position: usize },
+    #[error("bibliography file for owner at position {position} is not valid CSL-JSON")]
+    InvalidBibliography { position: usize },
+    #[error("manifest entry at position {position} is inconsistent")]
+    InvalidManifestEntry { position: usize },
+}
+
+/// 書き出した文書一式を、現行のarchiveへ組み立て直す。
+///
+/// 本文はファイル、識別子や日時はmanifestを正とする。別の道具で本文を編集してから戻せる。
+/// 組み立てたarchiveは現行の契約を名乗るため、呼び出し側が現行規則で全件検証する。manifestの
+/// 版が古い場合の再検証も、この検証で同時に済む。
+pub fn archive_from_documents(
+    manifest: &DocumentManifest,
+    files: &BTreeMap<String, Vec<u8>>,
+    adocweave_package_version: &str,
+) -> Result<Archive, DocumentImportError> {
+    if manifest.format != DOCUMENT_EXPORT_FORMAT {
+        return Err(DocumentImportError::UnsupportedFormat);
+    }
+    let mut notes = Vec::new();
+    let mut note_acl = Vec::new();
+    let mut bibliography_items = Vec::new();
+    let mut note_position = 0;
+
+    for (owner_index, owner) in manifest.owners.iter().enumerate() {
+        let owner_position = owner_index + 1;
+        for note in &owner.notes {
+            note_position += 1;
+            let contents = files
+                .get(&note.file)
+                .ok_or(DocumentImportError::MissingNoteFile {
+                    position: note_position,
+                })?;
+            let source = String::from_utf8(contents.clone()).map_err(|_| {
+                DocumentImportError::InvalidNoteEncoding {
+                    position: note_position,
+                }
+            })?;
+            notes.push(ArchiveNote {
+                note_id: note.note_id.clone(),
+                creator_issuer: owner.issuer.clone(),
+                creator_subject: owner.subject.clone(),
+                source,
+                created_at_ms: note.created_at_ms,
+                updated_at_ms: note.updated_at_ms,
+                revision: note.revision,
+                // 書き出しは削除済みノートを含まないため、取り込み後も削除済みは存在しない。
+                deleted_at_ms: None,
+            });
+            note_acl.extend(note.acl.iter().map(|entry| ArchiveAclEntry {
+                note_id: note.note_id.clone(),
+                issuer: entry.issuer.clone(),
+                subject: entry.subject.clone(),
+                permission: entry.permission,
+            }));
+        }
+
+        let contents = files.get(&owner.bibliography_file).ok_or(
+            DocumentImportError::MissingBibliographyFile {
+                position: owner_position,
+            },
+        )?;
+        let values: Vec<serde_json::Value> = serde_json::from_slice(contents).map_err(|_| {
+            DocumentImportError::InvalidBibliography {
+                position: owner_position,
+            }
+        })?;
+        for item in &owner.bibliography {
+            let csl_json = values
+                .iter()
+                .find(|value| {
+                    value.get("id").and_then(serde_json::Value::as_str)
+                        == Some(item.citation_key.as_str())
+                })
+                .ok_or(DocumentImportError::InvalidManifestEntry {
+                    position: owner_position,
+                })?;
+            bibliography_items.push(ArchiveBibliographyItem {
+                item_id: item.item_id.clone(),
+                owner_issuer: owner.issuer.clone(),
+                owner_subject: owner.subject.clone(),
+                citation_key: item.citation_key.clone(),
+                csl_json: csl_json.clone(),
+                created_at_ms: item.created_at_ms,
+                updated_at_ms: item.updated_at_ms,
+                revision: item.revision,
+            });
+        }
+    }
+
+    Ok(Archive {
+        format: crate::ARCHIVE_FORMAT.into(),
+        adocweave_package_version: adocweave_package_version.into(),
+        note_profile_version: crate::ARCHIVE_NOTE_PROFILE_VERSION,
+        notes,
+        note_acl,
+        bibliography_items,
+    })
+}
+
+/// manifestが記録する版が、稼働している版と違うかどうか。
+///
+/// 違う場合は、取り込み前に全ノートを現行規則で再検証したことを運用者へ伝える。
+pub fn requires_revalidation(manifest: &DocumentManifest, adocweave_package_version: &str) -> bool {
+    manifest.adocweave_package_version != adocweave_package_version
+        || manifest.note_profile_version != crate::ARCHIVE_NOTE_PROFILE_VERSION
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -464,6 +586,116 @@ mod tests {
         assert_eq!(values[0]["id"], "smith2024");
         // Marginalis固有の項目を足さない。
         assert_eq!(values[0].as_object().expect("object").len(), 3);
+    }
+
+    /// 書き出した内容を、そのまま取り込めるarchiveへ組み立て直せる。
+    #[test]
+    fn an_export_can_be_rebuilt_into_a_current_archive() {
+        let snapshot = LogicalSnapshot::new(
+            vec![note(
+                "0197c9bc-0000-7000-8000-000000000001",
+                "題名",
+                "alice",
+                false,
+            )],
+            Vec::new(),
+        )
+        .expect("snapshot")
+        .with_bibliography(vec![item("smith2024", "alice")])
+        .expect("snapshot with bibliography");
+        let export = export(&snapshot);
+        let files = export
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.contents.as_bytes().to_vec()))
+            .collect::<BTreeMap<_, _>>();
+
+        let archive = archive_from_documents(&export.manifest, &files, "0.23.0")
+            .expect("rebuild the archive");
+
+        assert_eq!(archive.format, crate::ARCHIVE_FORMAT);
+        assert_eq!(archive.adocweave_package_version, "0.23.0");
+        assert_eq!(archive.notes.len(), 1);
+        assert_eq!(archive.notes[0].source, "= 題名\n\n本文");
+        assert_eq!(archive.notes[0].creator_subject, "alice");
+        assert_eq!(archive.bibliography_items[0].citation_key, "smith2024");
+        assert_eq!(archive.bibliography_items[0].csl_json["title"], "Example");
+    }
+
+    /// 本文を別の道具で書き換えてから戻せる。manifestは識別子と日時の正であり続ける。
+    #[test]
+    fn an_edited_note_file_replaces_the_stored_source() {
+        let snapshot = LogicalSnapshot::new(
+            vec![note(
+                "0197c9bc-0000-7000-8000-000000000001",
+                "題名",
+                "alice",
+                false,
+            )],
+            Vec::new(),
+        )
+        .expect("snapshot");
+        let export = export(&snapshot);
+        let mut files = export
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.contents.as_bytes().to_vec()))
+            .collect::<BTreeMap<_, _>>();
+        let path = export.manifest.owners[0].notes[0].file.clone();
+        files.insert(path, "= 書き換えた題名\n\n別の本文".as_bytes().to_vec());
+
+        let archive = archive_from_documents(&export.manifest, &files, "0.23.0")
+            .expect("rebuild the archive");
+
+        assert_eq!(archive.notes[0].source, "= 書き換えた題名\n\n別の本文");
+        assert_eq!(
+            archive.notes[0].note_id,
+            "0197c9bc-0000-7000-8000-000000000001"
+        );
+        assert_eq!(archive.notes[0].created_at_ms, 1000);
+    }
+
+    #[test]
+    fn a_missing_file_or_an_unknown_format_stops_the_import() {
+        let snapshot = LogicalSnapshot::new(
+            vec![note(
+                "0197c9bc-0000-7000-8000-000000000001",
+                "題名",
+                "alice",
+                false,
+            )],
+            Vec::new(),
+        )
+        .expect("snapshot");
+        let export = export(&snapshot);
+        let files = export
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.contents.as_bytes().to_vec()))
+            .collect::<BTreeMap<_, _>>();
+
+        let mut without_note = files.clone();
+        without_note.remove(&export.manifest.owners[0].notes[0].file);
+        assert_eq!(
+            archive_from_documents(&export.manifest, &without_note, "0.23.0"),
+            Err(DocumentImportError::MissingNoteFile { position: 1 })
+        );
+
+        let mut unknown = export.manifest.clone();
+        unknown.format = "marginalis-documents-99".into();
+        assert_eq!(
+            archive_from_documents(&unknown, &files, "0.23.0"),
+            Err(DocumentImportError::UnsupportedFormat)
+        );
+    }
+
+    #[test]
+    fn a_different_recorded_version_asks_for_revalidation() {
+        let snapshot = LogicalSnapshot::new(Vec::new(), Vec::new()).expect("snapshot");
+        let manifest = export(&snapshot).manifest;
+
+        assert!(!requires_revalidation(&manifest, "0.23.0"));
+        assert!(requires_revalidation(&manifest, "0.24.0"));
     }
 
     #[test]

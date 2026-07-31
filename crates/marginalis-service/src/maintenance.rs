@@ -6,8 +6,8 @@ mod diagnostics;
 mod purge;
 
 pub(crate) use archive::{
-    export_archive, export_documents, import_archive, migrate_archive, validate_archive,
-    verify_restore,
+    export_archive, export_documents, import_archive, import_documents, migrate_archive,
+    validate_archive, verify_restore,
 };
 pub(crate) use backup::{backup, prune_backups, verify_latest_backup};
 pub(crate) use diagnostics::diagnose;
