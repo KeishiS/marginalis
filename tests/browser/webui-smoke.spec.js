@@ -138,6 +138,10 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
       .locator("li")
       .allTextContents(),
   ).toEqual(["設計", "Rust", "長いタグ名でも狭い画面からはみ出さない"]);
+  // 閲覧画面から、このノートを起点にした関係の図へ移れる。
+  expect(
+    await page.getByRole("link", { name: "周辺の関係" }).getAttribute("href"),
+  ).toBe(`/graph?origin=${noteId}&depth=2`);
   await expect(page).toHaveScreenshot("note-view-wide.png", SCREENSHOT_OPTIONS);
 
   await page.emulateMedia({ colorScheme: "dark" });
@@ -517,6 +521,14 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
   expect(await work.getAttribute("href")).toBe(
     "/bibliography?query=smith2024",
   );
+
+  // 起点を指定すると、その範囲だけを要求し、階層を選び直せる帯が出る。
+  await page.goto(`/graph?origin=${noteId}&depth=2`);
+  await page.waitForLoadState("networkidle");
+  await expect(page.locator(".graph-origin")).toContainText("先行研究の整理");
+  expect(await page.locator(".graph-origin select").inputValue()).toBe("2");
+  await page.getByRole("button", { name: "全体を見る" }).click();
+  await expect(page.locator(".graph-origin")).toHaveCount(0);
 
   // 図と同じ内容を一覧からも辿れる。
   await page.getByText("つながりの一覧").click();

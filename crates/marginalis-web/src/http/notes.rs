@@ -16,8 +16,11 @@ use marginalis_contract::{
     NoteResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode, RelatedNotesResponse,
     SessionResponse,
 };
-use marginalis_domain::{Note, NoteDraft, NoteSummary, Revision};
+use marginalis_domain::{
+    EntityId, MAX_GRAPH_DEPTH, Note, NoteDraft, NoteId, NoteSummary, Revision,
+};
 use serde::Deserialize;
+use std::str::FromStr;
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor, parse_note_id},
@@ -356,24 +359,49 @@ fn note_view_response(view: NoteView) -> NoteViewResponse {
 pub(super) struct NoteGraphParameters {
     #[serde(default)]
     query: String,
+    origin: Option<String>,
+    depth: Option<u32>,
 }
 
 /// 閲覧できるノートと、それらが引用する文献の関係を返す。
 ///
 /// 認可はSQLite問い合わせの中で適用済みであり、ここでは形を写すだけにする。ここで絞り込むと、
-/// 絞り込み漏れがそのまま情報の開示になる。
+/// 絞り込み漏れがそのまま情報の開示になる。起点と階層数は表示範囲の指定であり、認可とは別に
+/// use case側で適用する。
 pub(super) async fn read_note_graph(
     State(state): State<ApiState>,
     Query(parameters): Query<NoteGraphParameters>,
     headers: HeaderMap,
 ) -> HandlerResult<Json<NoteGraphResponse>> {
     let actor = authenticated_actor(&headers, &state).await?;
+    let origin = match parameters.origin.as_deref() {
+        Some(value) => Some(EntityId::from_str(value).map(NoteId::new).map_err(|_| {
+            problem(
+                StatusCode::BAD_REQUEST,
+                ProblemCode::InvalidRequest,
+                "origin must be a note ID",
+            )
+        })?),
+        None => None,
+    };
+    if let Some(depth) = parameters.depth
+        && (depth == 0 || depth > MAX_GRAPH_DEPTH)
+    {
+        // 上限の値は公開schemaに出ているため、ここでは範囲外である事実だけを伝える。
+        return Err(problem(
+            StatusCode::BAD_REQUEST,
+            ProblemCode::InvalidRequest,
+            "depth is out of the supported range",
+        ));
+    }
     let graph = state
         .notes
         .read_note_graph(
             actor,
             NoteGraphQuery {
                 text: Some(parameters.query),
+                origin,
+                depth: parameters.depth,
             },
         )
         .await

@@ -499,6 +499,22 @@ async fn the_note_graph_endpoint_returns_visible_notes_and_filters_by_word() {
     assert!(filtered["notes"].as_array().expect("notes").is_empty());
 }
 
+/// 範囲外の階層数と、note IDでない起点を受け付けない。
+#[tokio::test]
+async fn the_note_graph_endpoint_rejects_an_unusable_scope() {
+    for path in [
+        "/api/v3/notes/graph?origin=not-a-note-id",
+        "/api/v3/notes/graph?origin=0197c9bc-0000-7000-8000-000000000001&depth=0",
+        "/api/v3/notes/graph?origin=0197c9bc-0000-7000-8000-000000000001&depth=6",
+    ] {
+        let response = ui_app(vec![ui_note("関係の図")], false, "/")
+            .oneshot(authenticated_request(path))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+    }
+}
+
 /// 認証していない要求は図を返さない。
 #[tokio::test]
 async fn the_note_graph_endpoint_requires_authentication() {

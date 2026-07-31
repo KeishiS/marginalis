@@ -41,6 +41,24 @@ export function accessPath(context: PathContext, noteId: string): string {
   return withSearch(context, `/notes/${noteId}/access`);
 }
 
+/**
+ * 関係の図のURL。ノートを指定すると、そのノートを起点にした範囲を開く。
+ *
+ * 一覧の絞り込み条件は図には効かないため、ここでは引き継がない。
+ */
+export function graphPath(
+  context: PathContext,
+  origin?: { noteId: string; depth: number },
+): string {
+  const path = externalPath(context.basePath, "/graph");
+  if (origin === undefined) return path;
+  const parameters = new URLSearchParams({
+    origin: origin.noteId,
+    depth: String(origin.depth),
+  });
+  return `${path}?${parameters.toString()}`;
+}
+
 function withSearch(context: PathContext, path: string): string {
   return `${externalPath(context.basePath, path)}${canonicalSearch(context.search)}`;
 }

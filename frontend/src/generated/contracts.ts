@@ -531,12 +531,25 @@ export async function readNoteView(
   );
 }
 
+/** 図に出す範囲。`origin`を指定すると、そこから`depth`本以内の線で辿れる範囲だけになる。 */
+export interface NoteGraphScope {
+  query?: string;
+  origin?: string;
+  depth?: number;
+}
+
 export async function readNoteGraph(
   apiBase: string,
-  query = "",
+  scope: NoteGraphScope = {},
   signal?: AbortSignal,
 ): Promise<NoteGraph> {
-  const suffix = query ? `?query=${encodeURIComponent(query)}` : "";
+  const parameters = new URLSearchParams();
+  if (scope.query) parameters.set("query", scope.query);
+  if (scope.origin) {
+    parameters.set("origin", scope.origin);
+    parameters.set("depth", String(scope.depth ?? 1));
+  }
+  const suffix = parameters.size > 0 ? `?${parameters.toString()}` : "";
   return requestJson(
     `${apiBase}/notes/graph${suffix}`,
     { signal },

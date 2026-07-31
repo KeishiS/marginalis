@@ -4,4 +4,4 @@ mod model;
 mod policy;
 
 pub use model::*;
-pub use policy::{NOTE_POLICY, NotePolicy};
+pub use policy::{MAX_GRAPH_DEPTH, NOTE_POLICY, NotePolicy};

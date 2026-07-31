@@ -13,6 +13,31 @@
   font-size: var(--text-small);
 }
 
+/* 起点を指定しているときだけ出る帯。今どの範囲を見ているかを図の上で示す。 */
+.graph-origin {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.graph-origin p {
+  font-size: var(--text-small);
+  margin: 0;
+  margin-right: auto;
+}
+
+.graph-origin label {
+  align-items: center;
+  display: flex;
+  font-size: var(--text-small);
+  gap: var(--space-2);
+}
+
 .graph-canvas {
   background: var(--color-surface);
   border: var(--border-thin) solid var(--color-border);

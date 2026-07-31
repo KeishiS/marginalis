@@ -582,6 +582,7 @@ async fn the_graph_hides_notes_and_edges_the_actor_cannot_see() {
             &alice,
             &NoteGraphQuery {
                 text: Some("共有する".into()),
+                ..NoteGraphQuery::default()
             },
         )
         .await
@@ -668,6 +669,7 @@ async fn the_graph_answers_at_the_assumed_scale() {
             &alice,
             &NoteGraphQuery {
                 text: Some("調査".into()),
+                ..NoteGraphQuery::default()
             },
         )
         .await

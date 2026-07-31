@@ -4,7 +4,8 @@
 //! [`marginalis_domain`]の定義を参照する。要求と応答の構造だけをこのmoduleで定義する。
 
 use marginalis_domain::{
-    ENTITY_ID_PATTERN, NOTE_POLICY, NoteAccess, NotePermission, NoteValidationTarget, Revision,
+    ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY, NoteAccess, NotePermission,
+    NoteValidationTarget, Revision,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -468,6 +469,11 @@ pub fn openapi_document() -> Value {
                 "NoteId": {"name": "note_id", "in": "path", "required": true, "schema": note_id_schema()},
                 "GraphQuery": {"name": "query", "in": "query", "required": false, "schema": {"type": "string"},
                     "description": "題名、本文、タグのいずれかにこの語を含むノートだけへ絞る"},
+                "GraphOrigin": {"name": "origin", "in": "query", "required": false, "schema": note_id_schema(),
+                    "description": "起点のノート。指定するとそこからdepth階層以内だけを返す"},
+                "GraphDepth": {"name": "depth", "in": "query", "required": false,
+                    "schema": {"type": "integer", "minimum": 1, "maximum": MAX_GRAPH_DEPTH},
+                    "description": "起点から辿る線の本数。originを指定した場合だけ使う。既定は1"},
                 "CsrfToken": {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1}},
                 "IfMatch": {"name": "If-Match", "in": "header", "required": true, "schema": {"type": "string", "pattern": "^\\\"rev-[1-9][0-9]*\\\"$"}}
             },
@@ -694,9 +700,12 @@ fn rest_paths() -> Value {
         "/api/v3/notes/graph": {
             "get": operation(
                 "Read the graph of visible notes and the works they cite",
-                &["GraphQuery"],
+                &["GraphQuery", "GraphOrigin", "GraphDepth"],
                 None,
-                responses(&[("200", schema_response("note graph", "NoteGraph"))]),
+                responses(&[
+                    ("200", schema_response("note graph", "NoteGraph")),
+                    ("400", response_ref("BadRequest")),
+                ]),
             )
         },
         "/api/v3/notes/{note_id}/view": {

@@ -27,6 +27,12 @@ pub struct NotePolicy {
     pub allowed_url_schemes: &'static [&'static str],
 }
 
+/// 関係の図で、起点から辿れる線の本数の上限。
+///
+/// 上限がないと、階層数の指定が全体表示と変わらなくなり、範囲を絞ろうとした利用者の意図と
+/// 離れる。読み取りの入力規則であるため、ノート入力の規則とは別に置く。
+pub const MAX_GRAPH_DEPTH: u32 = 5;
+
 /// 現行のノート入力規則。
 pub const NOTE_POLICY: NotePolicy = NotePolicy {
     max_title_characters: 200,

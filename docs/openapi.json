@@ -10,6 +10,28 @@
           "type": "string"
         }
       },
+      "GraphDepth": {
+        "description": "起点から辿る線の本数。originを指定した場合だけ使う。既定は1",
+        "in": "query",
+        "name": "depth",
+        "required": false,
+        "schema": {
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "GraphOrigin": {
+        "description": "起点のノート。指定するとそこからdepth階層以内だけを返す",
+        "in": "query",
+        "name": "origin",
+        "required": false,
+        "schema": {
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "type": "string"
+        }
+      },
       "GraphQuery": {
         "description": "題名、本文、タグのいずれかにこの語を含むノートだけへ絞る",
         "in": "query",
@@ -991,6 +1013,12 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/GraphQuery"
+          },
+          {
+            "$ref": "#/components/parameters/GraphOrigin"
+          },
+          {
+            "$ref": "#/components/parameters/GraphDepth"
           }
         ],
         "responses": {
@@ -1003,6 +1031,9 @@
               }
             },
             "description": "note graph"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           }
         },
         "summary": "Read the graph of visible notes and the works they cite"
