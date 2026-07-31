@@ -28,10 +28,35 @@
 `aria-live`を使って読み上げます。本文領域はデスクトップ相当の画面で最大72remまで広げ、
 狭い画面では画面幅に合わせて縮めます。
 
-## 色と寸法
+## 目盛りとCSSの置き場所
 
-色、境界線、角丸、影、本文幅は`frontend/src/styles.css`先頭のCSS custom propertiesで
-定義します。個別の部品へ同じ色コードを繰り返しません。
+色、余白、文字の大きさ、角丸、影、本文幅は`frontend/src/styles/tokens.css`のCSS custom
+propertiesで定義します。個別の部品では、この目盛りの変数だけを使います。
+
+余白は`--space-1`から`--space-16`まで、0.25rem刻みの段で選びます。文字の大きさは
+`--text-caption`、`--text-small`、`--text-secondary`、`--text-body`、`--text-title`、
+`--text-heading`のように用途で選びます。値そのものではなく段を選ぶため、近い値が少しずつ
+増えることがありません。
+
+CSSは役割ごとに分けます。新しい規則は次の基準で置き場所を決めます。
+
+| ファイル | 置くもの |
+| --- | --- |
+| `tokens.css` | 目盛りの定義。ここだけは直値で書く |
+| `base.css` | 要素の既定、フォーカス表示、動きを減らす設定 |
+| `layout.css` | ヘッダー、`main`、画面全体の枠組みと余白 |
+| `components.css` | ボタン、入力欄、一覧、通知、診断など画面の部品 |
+| `content.css` | AdocWeaveが生成したHTMLの表示 |
+
+画面幅による並び替えは、対象の規則と同じファイルへ書きます。
+
+class名はkebab-caseとし、役割ごとの接頭辞（`page-`、`note-`、`editor-`、`bibliography-`、
+`access-`、`conflict-`、`toast-`など）を先頭に付けます。`citation`、`bibliography-anchor`、
+`source-block`、`math-latex`などはAdocWeaveが生成するHTMLのclassです。Marginalisが決める
+名前ではないため`content.css`へ集め、改名しません。
+
+目盛りから外れた値は`cargo make frontend-verify`のstylelintが拒否します。外部の部品へ合わせる
+ためにやむを得ず外す場合は、その行に理由を書きます。
 
 ライト表示とダーク表示は、OSとブラウザーの`prefers-color-scheme`設定に従います。どちらの
 表示でも、本文、補助情報、フォーカス、成功、警告、失敗を色だけに依存せず、文字または境界線でも

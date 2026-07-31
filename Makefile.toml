@@ -466,6 +466,13 @@ cwd = "frontend"
 command = "pnpm"
 args = ["run", "lint"]
 
+[tasks.frontend-lint-css]
+description = "Reject colours, spacing and font sizes written outside the design tokens"
+dependencies = ["frontend-install"]
+cwd = "frontend"
+command = "pnpm"
+args = ["run", "lint:css"]
+
 [tasks.frontend-typecheck]
 description = "Type-check frontend source and tests"
 dependencies = ["frontend-install"]
@@ -516,4 +523,4 @@ echo "self-hosted Web fonts: ${font_bytes}/${maximum_font_bytes} bytes"
 
 [tasks.frontend-verify]
 description = "Run frontend formatting, analysis, tests, audit, and build"
-dependencies = ["frontend-format-check", "frontend-lint", "frontend-typecheck", "frontend-test", "frontend-security-audit", "frontend-build", "frontend-bundle-size"]
+dependencies = ["frontend-format-check", "frontend-lint", "frontend-lint-css", "frontend-typecheck", "frontend-test", "frontend-security-audit", "frontend-build", "frontend-bundle-size"]

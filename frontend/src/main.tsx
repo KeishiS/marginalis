@@ -6,7 +6,11 @@ import "@fontsource-variable/noto-serif-jp/wght.css";
 
 import { parseApplicationConfig } from "./api";
 import { Application } from "./Application";
-import "./styles.css";
+import "./styles/tokens.css";
+import "./styles/base.css";
+import "./styles/layout.css";
+import "./styles/components.css";
+import "./styles/content.css";
 
 const root = document.querySelector<HTMLElement>("[data-application-root]");
 if (root) {

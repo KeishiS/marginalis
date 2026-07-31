@@ -1,0 +1,138 @@
+.page-header {
+  backdrop-filter: blur(1rem);
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  border-block-end: 0.0625rem solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.page-header-inner {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-inline: auto;
+  max-width: var(--content-width);
+  min-height: 4rem;
+  padding-inline: var(--space-5);
+}
+
+.brand {
+  align-items: center;
+  color: var(--color-text);
+  display: inline-flex;
+  font-size: var(--text-body);
+  font-weight: 750;
+  gap: var(--space-3);
+  letter-spacing: -0.015em;
+  text-decoration: none;
+}
+
+.brand:hover {
+  color: var(--color-text);
+}
+
+.brand-mark {
+  align-items: center;
+  background: var(--color-primary);
+  border-radius: var(--radius-sm);
+  color: var(--color-on-primary);
+  display: inline-flex;
+  font-size: var(--text-small);
+  height: 2rem;
+  justify-content: center;
+  width: 2rem;
+}
+
+.primary-navigation {
+  align-items: center;
+  display: flex;
+  gap: var(--space-1);
+}
+
+.primary-navigation > a:not(.button) {
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  padding: var(--space-2) var(--space-3);
+  text-decoration: none;
+}
+
+.primary-navigation > a:not(.button):hover {
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.page-main {
+  margin-inline: auto;
+  max-width: var(--content-width);
+  padding: var(--space-10) var(--space-5) var(--space-16);
+}
+
+.page-section {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.page-heading,
+.editor-heading,
+.editor-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.page-heading h1,
+.editor-heading h1 {
+  font-size: var(--text-note-title);
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.page-eyebrow {
+  color: var(--color-primary);
+  font-size: var(--text-caption);
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  margin: 0 0 var(--space-1);
+  text-transform: uppercase;
+}
+
+.page-description,
+.section-description {
+  color: var(--color-text-muted);
+  margin-block: var(--space-2) 0;
+  max-width: 42rem;
+}
+
+.surface {
+  background: var(--color-surface);
+  border: 0.0625rem solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-end: var(--space-5);
+}
+
+@media (width <= 60rem) {
+  .page-main {
+    padding: var(--space-6) var(--space-3) var(--space-12);
+  }
+
+  .page-header-inner {
+    padding-inline: var(--space-3);
+  }
+
+  .primary-navigation > a:not(.button) {
+    display: none;
+  }
+}
