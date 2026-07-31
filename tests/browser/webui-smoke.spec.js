@@ -222,12 +222,12 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(page).toHaveScreenshot(
     "editor-wide-split.png",
-    SCREENSHOT_OPTIONS,
+    editorScreenshotOptions(page),
   );
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page).toHaveScreenshot(
     "editor-wide-split-dark.png",
-    SCREENSHOT_OPTIONS,
+    editorScreenshotOptions(page),
   );
   await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 320, height: 720 });
@@ -238,7 +238,7 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
   await expect(page.getByRole("button", { name: "分割" })).toBeDisabled();
   await expect(page).toHaveScreenshot(
     "editor-narrow-write.png",
-    SCREENSHOT_OPTIONS,
+    editorScreenshotOptions(page),
   );
 });
 
@@ -464,3 +464,13 @@ const SCREENSHOT_OPTIONS = {
   // Linux環境ごとのフォント描画差を許容し、配置の大きな崩れは検出します。
   maxDiffPixelRatio: 0.03,
 };
+
+/**
+ * 編集欄の中身を隠して比較する。
+ *
+ * CodeMirrorが描く文字は環境ごとの差が大きく、実行環境を変えると配置が同じでも許容差を
+ * 超える。隠す対象は入力した文字だけで、行番号、枠、操作、分割の位置は比較に残る。
+ */
+function editorScreenshotOptions(page) {
+  return { ...SCREENSHOT_OPTIONS, mask: [page.locator(".cm-content")] };
+}
