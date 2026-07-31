@@ -304,7 +304,7 @@ function NoteList({ config }: { config: ApplicationConfig }) {
                   </div>
                 </dl>
                 {note.tags.length > 0 && (
-                  <ul className="tag-list" aria-label="タグ">
+                  <ul className="tag-list" aria-label="ノートのタグ">
                     {note.tags.map((tag) => (
                       <li key={tag}>{tag}</li>
                     ))}
