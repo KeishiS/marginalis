@@ -153,24 +153,26 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                     : "題名なし"}
                 </span>
               </div>
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => {
-                  setEditing(item);
-                  setInput(JSON.stringify(item.csl_json, null, 2));
-                  setMessage(`${item.citation_key}を編集中です。`);
-                }}
-              >
-                編集
-              </button>
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => void remove(item)}
-              >
-                削除
-              </button>
+              <div className="bibliography-item-actions">
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() => {
+                    setEditing(item);
+                    setInput(JSON.stringify(item.csl_json, null, 2));
+                    setMessage(`${item.citation_key}を編集中です。`);
+                  }}
+                >
+                  編集
+                </button>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() => void remove(item)}
+                >
+                  削除
+                </button>
+              </div>
             </li>
           ))}
         </ul>

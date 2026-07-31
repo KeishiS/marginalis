@@ -377,6 +377,13 @@ select:hover {
   min-width: 0;
 }
 
+/* 操作をひとまとまりにする。直接並べると`space-between`が編集と削除の間も広げてしまう。 */
+.bibliography-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .list-result-count {
   color: var(--color-text-muted);
   font-size: 0.9rem;
