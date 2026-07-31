@@ -94,3 +94,23 @@ test("カードを選ぶと編集中になり、別のカードへ確認なし�
   fireEvent.click(second);
   expect((input as HTMLTextAreaElement).value).toContain('"note":1');
 });
+
+test("主要な操作と取り消しにくい操作を色で区別する", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(libraryResponse()));
+
+  render(<BibliographyPage config={CONFIG} />);
+
+  await waitFor(() => screen.getByRole("button", { name: /smith2024/ }));
+
+  // 主要な操作はアクセント色、取り消しにくい操作は警告色を使う。
+  expect(screen.getByRole("button", { name: "登録" }).className).toContain(
+    "button-primary",
+  );
+  expect(
+    screen.getAllByRole("button", { name: "削除" })[0].className,
+  ).toContain("button-danger");
+  // 絞り込みは補助操作であり、アクセント色を重ねない。
+  expect(screen.getByRole("button", { name: "検索" }).className).not.toContain(
+    "button-primary",
+  );
+});
