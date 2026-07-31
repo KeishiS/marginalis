@@ -28,11 +28,22 @@ export default {
         "font-size",
         "border-radius",
         "box-shadow",
+        "border",
+        "border-block",
+        "border-block-end",
+        "border-block-start",
+        "border-inline",
+        "border-inline-end",
+        "border-inline-start",
       ],
       {
-        // 変数を参照する値は、clampやcolor-mixの中にあっても目盛りに従っている。
+        // 単独の変数だけを認める。混ぜた値を許すと目盛り外の値が紛れ込む。
+        // clampやcolor-mixを使う数か所は、その行に理由を書いて個別に外す。
         ignoreValues: [
-          "/var\\(/",
+          "/^var\\(--/",
+          // 境界線の「太さ 種類 色」のうち、種類は目盛りの対象ではない。
+          "solid",
+          "dashed",
           "auto",
           "inherit",
           "currentcolor",

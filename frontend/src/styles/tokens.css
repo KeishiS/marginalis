@@ -38,6 +38,8 @@
   --color-editor-active-gutter: #dce8f6;
   --shadow-sm: 0 1px 2px rgb(16 24 40 / 6%);
   --shadow-md: 0 10px 28px rgb(16 24 40 / 10%);
+  --border-thin: 0.0625rem;
+  --border-thick: 0.25rem;
   --radius-sm: 0.45rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
@@ -59,8 +61,7 @@
 
   /* 文字の大きさの目盛り。用途で選ぶ。 */
   --text-caption: 0.75rem;
-  --text-small: 0.85rem;
-  --text-secondary: 0.9rem;
+  --text-small: 0.875rem;
   --text-body: 1rem;
   --text-title: 1.2rem;
   --text-heading: 1.5rem;

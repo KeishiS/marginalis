@@ -27,7 +27,7 @@
 }
 
 .rendered-content h2 {
-  border-block-end: 0.0625rem solid var(--color-border);
+  border-block-end: var(--border-thin) solid var(--color-border);
   font-size: var(--text-heading);
   margin-block: var(--space-10) var(--space-4);
   padding-block-end: var(--space-2);
@@ -56,11 +56,11 @@
 
 .rendered-content pre {
   background: color-mix(in srgb, var(--color-canvas) 75%, var(--color-surface));
-  border: 0.0625rem solid var(--color-border);
+  border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-md);
   color: var(--color-text);
   font-family: var(--font-monospace);
-  font-size: var(--text-secondary);
+  font-size: var(--text-small);
   line-height: 1.55;
   max-width: 100%;
   overflow-x: auto;
@@ -104,7 +104,7 @@
 }
 
 .rendered-content code[data-line-numbers-enhanced="true"] .source-line::before {
-  border-inline-end: 0.0625rem solid var(--color-border);
+  border-inline-end: var(--border-thin) solid var(--color-border);
   color: var(--color-text-muted);
   content: attr(data-line-number);
   display: inline-block;
@@ -117,7 +117,7 @@
 
 .rendered-content blockquote {
   background: var(--color-surface-subtle);
-  border-inline-start: 0.25rem solid var(--color-primary);
+  border-inline-start: var(--border-thick) solid var(--color-primary);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   margin-inline: 0;
   padding: var(--space-3) var(--space-4);
@@ -133,7 +133,7 @@
 
 .rendered-content th,
 .rendered-content td {
-  border: 0.0625rem solid var(--color-border);
+  border: var(--border-thin) solid var(--color-border);
   padding: var(--space-2) var(--space-3);
   text-align: start;
 }
@@ -150,7 +150,7 @@
 .math-rendering-error,
 .problem-inline {
   background: var(--color-danger-soft);
-  border: 0.0625rem solid var(--color-danger);
+  border: var(--border-thin) solid var(--color-danger);
   border-radius: var(--radius-sm);
   color: var(--color-danger);
   padding: var(--space-3);

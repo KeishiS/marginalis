@@ -34,9 +34,12 @@
 propertiesで定義します。個別の部品では、この目盛りの変数だけを使います。
 
 余白は`--space-1`から`--space-16`まで、0.25rem刻みの段で選びます。文字の大きさは
-`--text-caption`、`--text-small`、`--text-secondary`、`--text-body`、`--text-title`、
-`--text-heading`のように用途で選びます。値そのものではなく段を選ぶため、近い値が少しずつ
-増えることがありません。
+`--text-caption`、`--text-small`、`--text-body`、`--text-title`、`--text-heading`のように
+用途で選びます。境界線の太さは`--border-thin`と`--border-thick`です。値そのものではなく段を
+選ぶため、近い値が少しずつ増えることがありません。
+
+段は、見て区別できる差だけを置きます。0.85remと0.9remのように1px未満しか違わない段は、
+選ぶ基準を説明できないため作りません。
 
 CSSは役割ごとに分けます。新しい規則は次の基準で置き場所を決めます。
 
