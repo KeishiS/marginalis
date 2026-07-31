@@ -9,21 +9,30 @@ import {
   updateBibliographyItem,
 } from "../api";
 
+/** 操作の結果。失敗は利用者の対応を促すため、成功の知らせと区別して伝える。 */
+interface Message {
+  text: string;
+  failed: boolean;
+}
+
+const notice = (text: string): Message => ({ text, failed: false });
+const failure = (text: string): Message => ({ text, failed: true });
+
 export function BibliographyPage({ config }: { config: ApplicationConfig }) {
   const [items, setItems] = useState<BibliographyItem[] | null>(null);
   const [query, setQuery] = useState("");
   const [input, setInput] = useState(
     '{\n  "id": "smith2024",\n  "type": "article-journal",\n  "title": "Example title"\n}',
   );
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<Message | null>(null);
   const [editing, setEditing] = useState<BibliographyItem | null>(null);
 
   async function load(search = query) {
     try {
       setItems(await searchBibliography(config.apiBase, search));
-      setMessage("");
+      setMessage(null);
     } catch {
-      setMessage("書誌ライブラリーを読み込めませんでした。");
+      setMessage(failure("書誌ライブラリーを読み込めませんでした。"));
     }
   }
   useEffect(() => {
@@ -31,7 +40,9 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
     searchBibliography(config.apiBase, "")
       .then((value) => current && setItems(value))
       .catch(
-        () => current && setMessage("書誌ライブラリーを読み込めませんでした。"),
+        () =>
+          current &&
+          setMessage(failure("書誌ライブラリーを読み込めませんでした。")),
       );
     return () => {
       current = false;
@@ -53,18 +64,20 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           editing.revision,
         );
         setEditing(null);
-        setMessage("書誌情報を更新しました。");
+        setMessage(notice("書誌情報を更新しました。"));
       } else {
         await addBibliographyItem(
           config.apiBase,
           value as Record<string, unknown>,
         );
-        setMessage("書誌情報を登録しました。");
+        setMessage(notice("書誌情報を登録しました。"));
       }
       await load();
     } catch {
       setMessage(
-        "登録できませんでした。CSL-JSONのid、type、JSON構文を確認してください。",
+        failure(
+          "登録できませんでした。CSL-JSONのid、type、JSON構文を確認してください。",
+        ),
       );
     }
   }
@@ -72,10 +85,10 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
   async function remove(item: BibliographyItem) {
     try {
       await deleteBibliographyItem(config.apiBase, item.item_id, item.revision);
-      setMessage("書誌情報を削除しました。");
+      setMessage(notice("書誌情報を削除しました。"));
       await load();
     } catch {
-      setMessage("書誌情報を削除できませんでした。");
+      setMessage(failure("書誌情報を削除できませんでした。"));
     }
   }
 
@@ -130,7 +143,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
               type="button"
               onClick={() => {
                 setEditing(null);
-                setMessage("編集を取り消しました。");
+                setMessage(notice("編集を取り消しました。"));
               }}
             >
               取消
@@ -138,11 +151,22 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           )}
         </div>
       </form>
-      {message && <p role="status">{message}</p>}
+      {message &&
+        (message.failed ? (
+          <p className="problem-inline" role="alert">
+            {message.text}
+          </p>
+        ) : (
+          <p className="state-message" role="status">
+            {message.text}
+          </p>
+        ))}
       {items === null ? (
-        <p>書誌情報を読み込んでいます。</p>
+        <p className="state-message" role="status">
+          書誌情報を読み込んでいます。
+        </p>
       ) : items.length === 0 ? (
-        <p>登録済みの書誌情報はありません。</p>
+        <p className="state-message">登録済みの書誌情報はありません。</p>
       ) : (
         <ul className="bibliography-list">
           {items.map((item) => (
@@ -158,7 +182,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                   }
                   setEditing(item);
                   setInput(JSON.stringify(item.csl_json, null, 2));
-                  setMessage(`${item.citation_key}を編集中です。`);
+                  setMessage(notice(`${item.citation_key}を編集中です。`));
                 }}
               >
                 <strong>{item.citation_key}</strong>

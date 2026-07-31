@@ -38,11 +38,15 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
       </div>
       <NoteListFilters config={config} query={query} />
       {failed ? (
-        <p role="alert">ノート一覧を読み込めませんでした。</p>
+        <p className="problem-inline" role="alert">
+          ノート一覧を読み込めませんでした。
+        </p>
       ) : notes === null ? (
-        <p role="status">ノート一覧を読み込んでいます。</p>
+        <p className="state-message" role="status">
+          ノート一覧を読み込んでいます。
+        </p>
       ) : page?.total === 0 ? (
-        <p>
+        <p className="state-message">
           {notes.length === 0
             ? "閲覧できるノートはありません。"
             : "条件に一致するノートはありません。"}

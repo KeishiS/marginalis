@@ -57,7 +57,11 @@ export function AccessControl({
   }, [apiBase, noteId]);
 
   if (entries === null) {
-    return error ? <p role="alert">{error}</p> : null;
+    return error ? (
+      <p className="problem-inline" role="alert">
+        {error}
+      </p>
+    ) : null;
   }
   const currentEntries = entries;
 
@@ -121,7 +125,7 @@ export function AccessControl({
         ))}
       </ul>
       {currentEntries.length === 0 && (
-        <p className="empty-state">追加の共有先はありません。</p>
+        <p className="state-message">追加の共有先はありません。</p>
       )}
       <form className="access-form" onSubmit={add}>
         <label>

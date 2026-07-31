@@ -114,3 +114,31 @@ test("主要な操作と取り消しにくい操作を色で区別する", async
     "button-primary",
   );
 });
+
+test("成功の知らせと失敗を、役割と見た目で区別する", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(libraryResponse())
+      .mockResolvedValueOnce(new Response("", { status: 503 })),
+  );
+
+  render(<BibliographyPage config={CONFIG} />);
+
+  const card = await waitFor(() =>
+    screen.getByRole("button", { name: /smith2024/ }),
+  );
+
+  // 成功の知らせは待つだけでよいため、控えめに伝える。
+  fireEvent.click(card);
+  const notice = screen.getByRole("status");
+  expect(notice.textContent).toContain("編集中です");
+  expect(notice.className).toBe("state-message");
+
+  // 失敗は利用者の対応が要るため、割り込んで伝える。
+  fireEvent.click(screen.getAllByRole("button", { name: "削除" })[0]);
+  const problem = await waitFor(() => screen.getByRole("alert"));
+  expect(problem.textContent).toContain("削除できませんでした");
+  expect(problem.className).toBe("problem-inline");
+});
