@@ -601,7 +601,7 @@
     "title": "Marginalis REST API",
     "version": "v3",
     "x-adocweave-package-version": "0.23.0",
-    "x-note-profile-version": 9
+    "x-note-profile-version": 10
   },
   "openapi": "3.1.0",
   "paths": {

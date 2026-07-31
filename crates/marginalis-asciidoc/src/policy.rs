@@ -261,7 +261,7 @@ pub fn note_profile() -> NoteProfile {
             NoteProfileExample {
                 kind: "bibliography",
                 description: "Complete document with a bibliography entry and an in-text reference",
-                body: "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]",
+                body: "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024.\n  https://doi.org/10.1234/replace-with-doi[DOI]",
             },
             NoteProfileExample {
                 kind: "citation",
@@ -411,6 +411,60 @@ mod tests {
     use marginalis_application::NoteValidationCode;
 
     use super::*;
+
+    /// 公開している文書例を、そのまま保存できる完全な文書へ組み立てる。
+    ///
+    /// 断片の例は文書headerを持たない。文書属性はheaderの中だけで有効なため、先頭の
+    /// 属性行を題名の直後へ移し、残りを本文として続ける。
+    fn example_document(body: &str) -> String {
+        if body.starts_with("= ") {
+            return body.to_owned();
+        }
+        let attributes = body
+            .lines()
+            .take_while(|line| line.starts_with(':'))
+            .collect::<Vec<_>>();
+        let rest = body
+            .lines()
+            .skip(attributes.len())
+            .skip_while(|line| line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("= 見出し\n{}\n\n{rest}", attributes.join("\n"))
+    }
+
+    /// 公開している文書例は、そのまま保存できる。
+    ///
+    /// MCPの書き込みは警告水準の診断があるとノートを変更しない。例を「この形なら受理される」
+    /// ものとして公開している以上、公開した経路で通らない例を載せない。
+    #[test]
+    fn published_examples_are_accepted_without_advisories() {
+        for example in note_profile().examples {
+            let source = example_document(example.body);
+            let validated = crate::analysis::validate_draft(marginalis_domain::NoteDraft {
+                source,
+                title: String::new(),
+                tags: Vec::new(),
+            })
+            .unwrap_or_else(|errors| {
+                panic!(
+                    "{}の例が拒否されました: {:?}",
+                    example.kind,
+                    errors.iter().map(|error| &error.code).collect::<Vec<_>>()
+                )
+            });
+            let advisories = validated
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code.as_str())
+                .collect::<Vec<_>>();
+            assert!(
+                advisories.is_empty(),
+                "{}の例に診断が付きます: {advisories:?}",
+                example.kind
+            );
+        }
+    }
 
     /// 固定入力を解析し、禁止規則の検出結果をcodeの一覧として返す。
     ///
