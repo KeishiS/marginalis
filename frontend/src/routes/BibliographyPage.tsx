@@ -145,26 +145,28 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         <ul className="bibliography-list">
           {items.map((item) => (
             <li key={item.item_id}>
-              <div>
+              <button
+                className="bibliography-item"
+                type="button"
+                aria-current={editing?.item_id === item.item_id}
+                onClick={() => {
+                  // 選び直しでは読み込み直さない。押し間違いで編集中の内容が消えるため。
+                  if (editing?.item_id === item.item_id) {
+                    return;
+                  }
+                  setEditing(item);
+                  setInput(JSON.stringify(item.csl_json, null, 2));
+                  setMessage(`${item.citation_key}を編集中です。`);
+                }}
+              >
                 <strong>{item.citation_key}</strong>
                 <span>
                   {typeof item.csl_json.title === "string"
                     ? item.csl_json.title
                     : "題名なし"}
                 </span>
-              </div>
+              </button>
               <div className="bibliography-item-actions">
-                <button
-                  className="button button-secondary"
-                  type="button"
-                  onClick={() => {
-                    setEditing(item);
-                    setInput(JSON.stringify(item.csl_json, null, 2));
-                    setMessage(`${item.citation_key}を編集中です。`);
-                  }}
-                >
-                  編集
-                </button>
                 <button
                   className="button button-secondary"
                   type="button"

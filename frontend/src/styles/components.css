@@ -148,10 +148,29 @@ select:hover {
   background: var(--color-surface);
 }
 
-.bibliography-list > li > div {
+/* カードの情報部分そのものを、編集を始める操作にする。 */
+.bibliography-item {
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  cursor: pointer;
   display: grid;
+  font: inherit;
   gap: var(--space-1);
   min-width: 0;
+  padding: var(--space-1);
+  text-align: start;
+}
+
+.bibliography-item:hover {
+  background: var(--color-surface-subtle);
+}
+
+/* 編集中のカードは、色だけでなく左端の帯でも示す。 */
+.bibliography-item[aria-current="true"] {
+  border-inline-start: var(--border-thick) solid var(--color-primary);
+  padding-inline-start: var(--space-3);
 }
 
 /* 操作をひとまとまりにする。直接並べると`space-between`が編集と削除の間も広げてしまう。 */
