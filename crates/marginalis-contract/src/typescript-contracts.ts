@@ -357,18 +357,22 @@ function parseUtf8ByteSpan(
   };
 }
 
-export async function listNotes(apiBase: string): Promise<NoteListEntry[]> {
-  return requestJson(`${apiBase}/notes`, undefined, parseNoteListEntries);
+export async function listNotes(
+  apiBase: string,
+  signal?: AbortSignal,
+): Promise<NoteListEntry[]> {
+  return requestJson(`${apiBase}/notes`, { signal }, parseNoteListEntries);
 }
 
 export async function searchBibliography(
   apiBase: string,
   query = "",
+  signal?: AbortSignal,
 ): Promise<BibliographyItem[]> {
   const suffix = query ? `?query=${encodeURIComponent(query)}` : "";
   return requestJson(
     `${apiBase}/bibliography${suffix}`,
-    undefined,
+    { signal },
     parseBibliographyItems,
   );
 }
@@ -483,10 +487,11 @@ export async function previewNote(
 export async function readNoteAcl(
   apiBase: string,
   noteId: string,
+  signal?: AbortSignal,
 ): Promise<{ entries: NoteAclGrant[]; revision: number }> {
   const response = await requestJsonResponse(
     `${apiBase}/notes/${encodeURIComponent(noteId)}/acl`,
-    undefined,
+    { signal },
     parseNoteAcl,
   );
   if (response.revision < 1) {

@@ -39,7 +39,7 @@ import {
   problemMessage,
   toProblem,
 } from "./editorPresentation";
-import { externalPath } from "./paths";
+import { editPath, listPath, notePath } from "./paths";
 
 export interface EditorConfig {
   mode: "create" | "edit";
@@ -217,11 +217,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       toastSequence.current += 1;
       setSaveToast(toastSequence.current);
       if (revision === null) {
-        window.history.replaceState(
-          null,
-          "",
-          `${externalPath(config.basePath, `/notes/${note.note_id}/edit`)}${config.search}`,
-        );
+        window.history.replaceState(null, "", editPath(config, note.note_id));
       }
     } catch (error: unknown) {
       const nextProblem = toProblem(error);
@@ -256,9 +252,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
             headingId="load-problem-heading"
           />
         )}
-        <a href={`${externalPath(config.basePath, "/")}${config.search}`}>
-          一覧へ戻る
-        </a>
+        <a href={listPath(config)}>一覧へ戻る</a>
       </section>
     );
   }
@@ -277,11 +271,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
         </div>
         <a
           className="button button-secondary"
-          href={
-            noteId
-              ? `${externalPath(config.basePath, `/notes/${noteId}`)}${config.search}`
-              : `${externalPath(config.basePath, "/")}${config.search}`
-          }
+          href={noteId ? notePath(config, noteId) : listPath(config)}
         >
           {noteId ? "閲覧画面へ戻る" : "一覧へ戻る"}
         </a>
