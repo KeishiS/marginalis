@@ -160,6 +160,16 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
     "note-view-narrow.png",
     SCREENSHOT_OPTIONS,
   );
+
+  // 幅の広い画面では、上限まで本文領域を広げる。ヘッダーと左右端がそろうことも確認する。
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await expect(documentSurface).toBeVisible();
+  const widePosition = await documentSurface.boundingBox();
+  expect(widePosition).not.toBeNull();
+  expect(widePosition.width).toBeGreaterThan(1400);
+  const brandPosition = await page.locator(".brand").boundingBox();
+  expect(brandPosition).not.toBeNull();
+  expect(Math.abs(brandPosition.x - widePosition.x)).toBeLessThanOrEqual(1);
 });
 
 test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", async ({ page }) => {

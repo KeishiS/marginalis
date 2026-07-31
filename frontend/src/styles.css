@@ -38,8 +38,8 @@
   --radius-sm: 0.45rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
-  --content-width: 80rem;
-  --reading-width: 72rem;
+  --content-width: 98.5rem;
+  --reading-width: 96rem;
 }
 
 @media (prefers-color-scheme: dark) {
