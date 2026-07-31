@@ -37,8 +37,18 @@ export function NoteViewPage({
       setCopyStatus("failure");
     }
   }
-  if (failed) return <p role="alert">ノートを読み込めませんでした。</p>;
-  if (view === null) return <p>ノートを読み込んでいます。</p>;
+  if (failed)
+    return (
+      <p className="problem-inline" role="alert">
+        ノートを読み込めませんでした。
+      </p>
+    );
+  if (view === null)
+    return (
+      <p className="state-message" role="status">
+        ノートを読み込んでいます。
+      </p>
+    );
   return (
     <section className="note-viewer" aria-label="ノートの閲覧">
       <div className="note-view-toolbar surface">
@@ -126,7 +136,7 @@ function RelatedNotes({
         <section key={label}>
           <h2>{label}</h2>
           {notes.length === 0 ? (
-            <p>ありません。</p>
+            <p className="state-message">{label}のノートはありません。</p>
           ) : (
             <ul>
               {notes.map((note) => (

@@ -576,7 +576,8 @@ select:hover {
   gap: var(--space-4);
 }
 
-.empty-state {
+/* 読み込み中と該当項目なしを同じ見た目で示す。待つのか操作するのかは文言で区別する。 */
+.state-message {
   background: var(--color-surface-subtle);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);

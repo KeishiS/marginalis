@@ -39,7 +39,11 @@ export function Application({ config }: { config: ApplicationConfig }) {
     case "bibliography":
       return <BibliographyPage config={config} />;
     case "not-found":
-      return <p role="alert">指定された画面はありません。</p>;
+      return (
+        <p className="problem-inline" role="alert">
+          指定された画面はありません。
+        </p>
+      );
   }
 }
 

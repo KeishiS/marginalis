@@ -27,8 +27,18 @@ export function AccessPage({
   } | null>(null);
   const revision =
     updated?.noteId === noteId ? updated.revision : (note?.revision ?? 0);
-  if (failed) return <p role="alert">共有設定を読み込めませんでした。</p>;
-  if (note === null) return <p>共有設定を読み込んでいます。</p>;
+  if (failed)
+    return (
+      <p className="problem-inline" role="alert">
+        共有設定を読み込めませんでした。
+      </p>
+    );
+  if (note === null)
+    return (
+      <p className="state-message" role="status">
+        共有設定を読み込んでいます。
+      </p>
+    );
   return (
     <section
       className="access-page page-section"
