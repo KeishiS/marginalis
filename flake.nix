@@ -105,7 +105,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.22.0" = "sha256-UcZAYFB4uQ8ZUeWDmafLzruFVfZUdUWbVqucVQewDNA=";
+                "adocweave-0.22.0" = "sha256-MqULDmV9YODNQI2JX3/ZU/TMaz47m6uDshMJLdiYbhM=";
               };
             };
             cargoBuildFlags = [

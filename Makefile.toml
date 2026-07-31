@@ -356,8 +356,8 @@ script_runner = "@shell"
 script = '''
 set -eu
 expected_version="0.22.0"
-expected_revision="b7b678062bad410235527f752b0f472fe3a5736d"
-expected_hash="sha256-UcZAYFB4uQ8ZUeWDmafLzruFVfZUdUWbVqucVQewDNA="
+expected_revision="927973c1003f989ac5c7484a88bc3a688d8f2a92"
+expected_hash="sha256-MqULDmV9YODNQI2JX3/ZU/TMaz47m6uDshMJLdiYbhM="
 
 cargo metadata --locked --format-version 1 | jq -e \
   --arg version "$expected_version" \
