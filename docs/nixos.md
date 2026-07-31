@@ -49,6 +49,12 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
 変更してください。現行のSQLite schema versionは13です。旧versionを起動時に自動移行しません。
+
+v0.21.0以前のschema 12から更新する場合は、更新前の実行環境で`export-archive`を実行し、
+新しい版で空の`dataDir`へ`import-archive`で取り込んでください。archiveの形式は変わらないため、
+`migrate-archive`は不要です。schema 13では、本文が`cite:`で名指したcitation keyを関係の図の
+ために索引として保存します。取り込みのときに本文から作り直します。
+
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
 現行の`migrate-archive`でarchive 13へ変換してから、空のschema 13へ取り込んでください。
 この経路では全ノートをAdocWeave 0.23.0の規則で再検証し、題名、タグ、参照索引を再構築します。
