@@ -12,6 +12,7 @@ use marginalis_domain::{
 };
 
 mod bibliography;
+mod citation;
 mod identity;
 mod notes;
 mod session;
@@ -21,13 +22,15 @@ pub use bibliography::{
     BibliographyApplication, BibliographyRepository, BibliographyRepositoryError,
     BibliographyUseCaseError, BibliographyUseCases,
 };
+pub use citation::CitationStyle;
 pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
 };
 pub use notes::{
-    NoteAclRepository, NoteApplication, NoteCommandRepository, NoteContent, NoteContentError,
-    NoteLinkResolver, NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution,
-    NoteRepositoryError, NoteViewSnapshot,
+    NoteAclRepository, NoteApplication, NoteBibliographyEntry, NoteCitationQuery,
+    NoteCitationResolution, NoteCitationSegment, NoteCommandRepository, NoteContent,
+    NoteContentError, NoteLinkResolver, NoteQueryRepository, NoteReferenceQuery,
+    NoteReferenceResolution, NoteRenderInputs, NoteRepositoryError, NoteViewSnapshot,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
@@ -101,7 +104,6 @@ pub enum NoteValidationCode {
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
     UnsupportedDocumentAttribute,
-    CitationDisabled,
     InvalidAclSubject,
     DuplicateAclSubject,
     OwnerInAcl,
@@ -126,7 +128,6 @@ impl NoteValidationCode {
             Self::UnsupportedMathLanguage => "unsupported_math_language",
             Self::UnsupportedSourceLanguage => "unsupported_source_language",
             Self::UnsupportedDocumentAttribute => "unsupported_document_attribute",
-            Self::CitationDisabled => "citation_disabled",
             Self::InvalidAclSubject => "invalid_acl_subject",
             Self::DuplicateAclSubject => "duplicate_acl_subject",
             Self::OwnerInAcl => "owner_in_acl",
@@ -186,6 +187,7 @@ pub struct ValidatedNoteDraft {
     pub draft: NoteDraft,
     pub diagnostics: Vec<NoteAdvisoryDiagnostic>,
     pub reference_queries: Vec<NoteReferenceQuery>,
+    pub citation_queries: Vec<NoteCitationQuery>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

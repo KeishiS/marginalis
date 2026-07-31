@@ -7,14 +7,15 @@ use std::{
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteSummary,
-    NoteValidationTarget, Revision,
+    Actor, BibliographyItem, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId,
+    NoteListEntry, NoteSummary, NoteValidationTarget, Revision, Utf8ByteSpan,
 };
 
 use crate::{
-    Clock, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands, NotePresentation,
-    NotePreview, NoteProfile, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode,
-    NoteValidationDiagnostic, NoteWritePolicy, Random, RelatedNotes, ValidatedNoteDraft,
+    BibliographyRepository, BibliographyRepositoryError, CitationStyle, Clock, NoteAccessControl,
+    NoteAclChange, NoteAclState, NoteCommands, NotePresentation, NotePreview, NoteProfile,
+    NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
+    NoteWritePolicy, Random, RelatedNotes, ValidatedNoteDraft,
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。
@@ -135,6 +136,52 @@ pub enum NoteReferenceResolution {
     },
 }
 
+/// 本文が書誌ライブラリーへ問い合わせる引用1件。
+///
+/// `cite:[a, b]`のように1つの引用が複数のcitation keyを名指すため、keyは並びで持つ。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteCitationQuery {
+    pub citation_index: usize,
+    pub keys: Vec<String>,
+    /// `locator="p. 12"`のように引用へ添えられた位置。
+    pub locator: Option<String>,
+    /// 本文中で引用が占める範囲。診断の位置に使う。
+    pub span: Utf8ByteSpan,
+}
+
+/// 書誌ライブラリーで解決を終えた引用の表示。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteCitationResolution {
+    pub citation_index: usize,
+    pub segments: Vec<NoteCitationSegment>,
+}
+
+/// 引用表示のうち、link先を共有する連続した一区切り。
+///
+/// `(Smith 2024; Tanaka 2025)`のように、括弧と区切りは素の文字列のまま、著者名だけを
+/// 参考文献項目へlinkさせるために分ける。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteCitationSegment {
+    pub text: String,
+    /// link先の参考文献項目のanchor。`None`は素の文字列として表示する。
+    pub anchor: Option<String>,
+}
+
+/// 本文の末尾へ生成する参考文献一覧の1項目。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteBibliographyEntry {
+    pub citation_key: String,
+    pub text: String,
+}
+
+/// 描画時に文書adapterへ渡す解決結果一式。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NoteRenderInputs<'a> {
+    pub references: &'a [NoteReferenceResolution],
+    pub citations: &'a [NoteCitationResolution],
+    pub bibliography: &'a [NoteBibliographyEntry],
+}
+
 /// 文書adapterが保存済みの内容を解析または変換できない場合の失敗。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("note content could not be processed")]
@@ -147,12 +194,10 @@ pub trait NoteContent: Send + Sync {
         draft: NoteDraft,
     ) -> Result<ValidatedNoteDraft, Vec<NoteValidationDiagnostic>>;
     fn reference_queries(&self, body: &str) -> Result<Vec<NoteReferenceQuery>, NoteContentError>;
+    fn citation_queries(&self, body: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError>;
     fn has_anchor(&self, body: &str, anchor: &str) -> Result<bool, NoteContentError>;
-    fn render(
-        &self,
-        note: &Note,
-        resolutions: &[NoteReferenceResolution],
-    ) -> Result<String, NoteContentError>;
+    fn render(&self, note: &Note, inputs: NoteRenderInputs<'_>)
+    -> Result<String, NoteContentError>;
     fn export(&self, note: &Note) -> Result<String, NoteContentError>;
     fn profile(&self) -> NoteProfile;
 }
@@ -173,17 +218,20 @@ pub struct NoteApplication {
     commands: Arc<dyn NoteCommandRepository>,
     access_control: Arc<dyn NoteAclRepository>,
     content: Arc<dyn NoteContent>,
+    bibliography: Arc<dyn BibliographyRepository>,
     links: Arc<dyn NoteLinkResolver>,
     clock: Arc<dyn Clock>,
     random: Arc<dyn Random>,
 }
 
 impl NoteApplication {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         queries: Arc<dyn NoteQueryRepository>,
         commands: Arc<dyn NoteCommandRepository>,
         access_control: Arc<dyn NoteAclRepository>,
         content: Arc<dyn NoteContent>,
+        bibliography: Arc<dyn BibliographyRepository>,
         links: Arc<dyn NoteLinkResolver>,
         clock: Arc<dyn Clock>,
         random: Arc<dyn Random>,
@@ -193,6 +241,7 @@ impl NoteApplication {
             commands,
             access_control,
             content,
+            bibliography,
             links,
             clock,
             random,
@@ -256,6 +305,145 @@ impl NoteApplication {
         }
         Ok(resolutions)
     }
+
+    /// 引用のcitation keyを、ノートを書いた利用者の書誌ライブラリーで解決する。
+    ///
+    /// 閲覧者ではなく作成者のライブラリーを使うため、同じノートは誰が見ても同じ表示になる。
+    /// 解決できたkeyだけが参考文献一覧へ並び、同じ文献を何度引用しても項目は1つになる。
+    async fn citation_resolutions(
+        &self,
+        owner: &Identity,
+        queries: &[NoteCitationQuery],
+    ) -> Result<ResolvedCitations, NoteUseCaseError> {
+        if queries.is_empty() {
+            return Ok(ResolvedCitations::default());
+        }
+        let mut cited_keys = Vec::new();
+        for key in queries.iter().flat_map(|query| query.keys.iter()) {
+            if !cited_keys.contains(key) {
+                cited_keys.push(key.clone());
+            }
+        }
+        let items = self
+            .bibliography
+            .items_by_citation_keys(owner, &cited_keys)
+            .await
+            .map_err(|error| match error {
+                BibliographyRepositoryError::CorruptData => NoteUseCaseError::CorruptData,
+                _ => NoteUseCaseError::Unavailable,
+            })?;
+        let items = items
+            .into_iter()
+            .map(|item| (item.citation_key().to_owned(), item))
+            .collect::<HashMap<_, _>>();
+
+        let style = CitationStyle::default();
+        let resolutions = queries
+            .iter()
+            .map(|query| NoteCitationResolution {
+                citation_index: query.citation_index,
+                segments: citation_segments(query, &items, style),
+            })
+            .collect();
+        let entries = cited_keys
+            .iter()
+            .filter_map(|key| {
+                let item = items.get(key)?;
+                Some(NoteBibliographyEntry {
+                    citation_key: key.clone(),
+                    text: style.entry_text(item),
+                })
+            })
+            .collect();
+        let unknown_keys = cited_keys
+            .iter()
+            .filter(|key| !items.contains_key(*key))
+            .cloned()
+            .collect::<Vec<_>>();
+        Ok(ResolvedCitations {
+            resolutions,
+            entries,
+            diagnostics: unknown_citation_diagnostics(queries, &unknown_keys),
+        })
+    }
+}
+
+/// 1つのノートについて解決した引用の表示、参考文献項目、保存を妨げない診断。
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ResolvedCitations {
+    resolutions: Vec<NoteCitationResolution>,
+    entries: Vec<NoteBibliographyEntry>,
+    diagnostics: Vec<crate::NoteAdvisoryDiagnostic>,
+}
+
+/// 引用1件の表示を、括弧と区切りを含む文字列の並びへ組み立てる。
+///
+/// 解決できたkeyは参考文献項目のanchorへlinkし、解決できなかったkeyはcitation keyを
+/// そのまま表示する。定義のない`<<key>>`と同じ見え方にそろえ、値を推測しない。
+fn citation_segments(
+    query: &NoteCitationQuery,
+    items: &HashMap<String, BibliographyItem>,
+    style: CitationStyle,
+) -> Vec<NoteCitationSegment> {
+    let mut segments = vec![NoteCitationSegment {
+        text: "(".into(),
+        anchor: None,
+    }];
+    for (position, key) in query.keys.iter().enumerate() {
+        if position > 0 {
+            segments.push(NoteCitationSegment {
+                text: "; ".into(),
+                anchor: None,
+            });
+        }
+        match items.get(key) {
+            Some(item) => segments.push(NoteCitationSegment {
+                text: style.inline_label(item),
+                anchor: Some(key.clone()),
+            }),
+            None => segments.push(NoteCitationSegment {
+                text: key.clone(),
+                anchor: None,
+            }),
+        }
+    }
+    let closing = match query.locator.as_deref() {
+        Some(locator) => format!(", {locator})"),
+        None => ")".into(),
+    };
+    segments.push(NoteCitationSegment {
+        text: closing,
+        anchor: None,
+    });
+    segments
+}
+
+/// 書誌ライブラリーに無いcitation keyを、保存を妨げない警告として報告する。
+fn unknown_citation_diagnostics(
+    queries: &[NoteCitationQuery],
+    unknown_keys: &[String],
+) -> Vec<crate::NoteAdvisoryDiagnostic> {
+    queries
+        .iter()
+        .filter_map(|query| {
+            let missing = query
+                .keys
+                .iter()
+                .filter(|key| unknown_keys.contains(key))
+                .cloned()
+                .collect::<Vec<_>>();
+            (!missing.is_empty()).then(|| crate::NoteAdvisoryDiagnostic {
+                code: "unknown_citation_key".into(),
+                severity: crate::NoteAdvisorySeverity::Warning,
+                target: NoteValidationTarget::Source,
+                span: Some(query.span),
+                message: format!(
+                    "the bibliography library has no item for {}",
+                    missing.join(", ")
+                ),
+            })
+        })
+        .collect()
 }
 
 #[async_trait]
@@ -289,9 +477,15 @@ impl NoteCommands for NoteApplication {
             .map_err(NoteUseCaseError::Validation)?;
         let ValidatedNoteDraft {
             draft,
-            diagnostics,
+            mut diagnostics,
             reference_queries,
+            citation_queries,
         } = validated;
+        diagnostics.extend(
+            self.citation_resolutions(actor.identity(), &citation_queries)
+                .await?
+                .diagnostics,
+        );
         reject_warnings(policy, diagnostics)?;
         let now = self.clock.now();
         let note = Note::create(
@@ -322,9 +516,15 @@ impl NoteCommands for NoteApplication {
             .map_err(NoteUseCaseError::Validation)?;
         let ValidatedNoteDraft {
             draft,
-            diagnostics,
+            mut diagnostics,
             reference_queries,
+            citation_queries,
         } = validated;
+        diagnostics.extend(
+            self.citation_resolutions(actor.identity(), &citation_queries)
+                .await?
+                .diagnostics,
+        );
         reject_warnings(policy, diagnostics)?;
         let reference_targets = reference_targets(&reference_queries);
         self.commands
@@ -393,8 +593,9 @@ impl NotePresentation for NoteApplication {
             .map_err(NoteUseCaseError::Validation)?;
         let ValidatedNoteDraft {
             draft,
-            diagnostics,
+            mut diagnostics,
             reference_queries,
+            citation_queries,
         } = validated;
         let now = self.clock.now();
         let note = Note::create(
@@ -410,10 +611,23 @@ impl NotePresentation for NoteApplication {
             .await
             .map_err(map_repository_error)?;
         let resolutions = self.reference_resolutions(&targets, &context, &reference_queries)?;
+        // 下書きはまだ保存されていないため、引用は操作している利用者のライブラリーで解決する。
+        // 保存後は作成者が同じ利用者になるため、表示は変わらない。
+        let citations = self
+            .citation_resolutions(actor.identity(), &citation_queries)
+            .await?;
         let html = self
             .content
-            .render(&note, &resolutions)
+            .render(
+                &note,
+                NoteRenderInputs {
+                    references: &resolutions,
+                    citations: &citations.resolutions,
+                    bibliography: &citations.entries,
+                },
+            )
             .map_err(|_| NoteUseCaseError::RenderFailed)?;
+        diagnostics.extend(citations.diagnostics);
         Ok(NotePreview { html, diagnostics })
     }
 
@@ -447,9 +661,23 @@ impl NotePresentation for NoteApplication {
             .map_err(|_| NoteUseCaseError::Unavailable)?;
         let resolutions =
             self.reference_resolutions(&snapshot.reference_targets, &context, &reference_queries)?;
+        let citation_queries = self
+            .content
+            .citation_queries(snapshot.note.source())
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let citations = self
+            .citation_resolutions(snapshot.note.owner(), &citation_queries)
+            .await?;
         let html = self
             .content
-            .render(&snapshot.note, &resolutions)
+            .render(
+                &snapshot.note,
+                NoteRenderInputs {
+                    references: &resolutions,
+                    citations: &citations.resolutions,
+                    bibliography: &citations.entries,
+                },
+            )
             .map_err(|_| NoteUseCaseError::RenderFailed)?;
         Ok(crate::NoteView {
             note: snapshot.note,
@@ -743,6 +971,7 @@ mod tests {
                     message: "test advisory".into(),
                 }],
                 reference_queries: Vec::new(),
+                citation_queries: Vec::new(),
             })
         }
 
@@ -754,6 +983,13 @@ mod tests {
             Ok(Vec::new())
         }
 
+        fn citation_queries(
+            &self,
+            _body: &str,
+        ) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
+            Ok(Vec::new())
+        }
+
         fn has_anchor(&self, _body: &str, _anchor: &str) -> Result<bool, NoteContentError> {
             Ok(false)
         }
@@ -761,7 +997,7 @@ mod tests {
         fn render(
             &self,
             _note: &Note,
-            _resolutions: &[NoteReferenceResolution],
+            _inputs: NoteRenderInputs<'_>,
         ) -> Result<String, NoteContentError> {
             Ok("<article><p>preview</p></article>".into())
         }
@@ -795,6 +1031,56 @@ mod tests {
         }
     }
 
+    /// 引用のないノートだけを扱う試験用の書誌ライブラリー。
+    struct EmptyLibrary;
+
+    #[async_trait]
+    impl BibliographyRepository for EmptyLibrary {
+        async fn search_owned_items(
+            &self,
+            _actor: &Actor,
+            _query: &str,
+        ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+            Ok(Vec::new())
+        }
+
+        async fn items_by_citation_keys(
+            &self,
+            _owner: &Identity,
+            _citation_keys: &[String],
+        ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+            Ok(Vec::new())
+        }
+
+        async fn create_owned_item(
+            &self,
+            _item: &BibliographyItem,
+        ) -> Result<(), BibliographyRepositoryError> {
+            unreachable!("this test does not write bibliography items")
+        }
+
+        async fn update_owned_item(
+            &self,
+            _actor: &Actor,
+            _item_id: marginalis_domain::BibliographyItemId,
+            _citation_key: &str,
+            _csl_json: &str,
+            _updated_at: UnixMillis,
+            _expected_revision: Revision,
+        ) -> Result<BibliographyItem, BibliographyRepositoryError> {
+            unreachable!("this test does not write bibliography items")
+        }
+
+        async fn delete_owned_item(
+            &self,
+            _actor: &Actor,
+            _item_id: marginalis_domain::BibliographyItemId,
+            _expected_revision: Revision,
+        ) -> Result<(), BibliographyRepositoryError> {
+            unreachable!("this test does not write bibliography items")
+        }
+    }
+
     struct NoLinks;
 
     impl NoteLinkResolver for NoLinks {
@@ -808,6 +1094,172 @@ mod tests {
         }
     }
 
+    /// 1件だけ登録された書誌ライブラリー。所有者が一致する問い合わせにだけ答える。
+    struct OneItemLibrary;
+
+    impl OneItemLibrary {
+        fn owner() -> Identity {
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("owner")
+        }
+
+        fn item() -> BibliographyItem {
+            BibliographyItem::create(
+                marginalis_domain::BibliographyItemId::new(
+                    EntityId::from_str("0197c9bc-0000-7000-8000-000000000021").expect("UUIDv7"),
+                ),
+                &Self::owner(),
+                "smith2024".into(),
+                serde_json::json!({
+                    "id": "smith2024",
+                    "type": "article-journal",
+                    "title": "An Example Article",
+                    "author": [{ "family": "Smith", "given": "Alex" }],
+                    "issued": { "date-parts": [[2024]] }
+                })
+                .to_string(),
+                UnixMillis::new(0),
+            )
+        }
+    }
+
+    #[async_trait]
+    impl BibliographyRepository for OneItemLibrary {
+        async fn search_owned_items(
+            &self,
+            _actor: &Actor,
+            _query: &str,
+        ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+            Ok(Vec::new())
+        }
+
+        async fn items_by_citation_keys(
+            &self,
+            owner: &Identity,
+            citation_keys: &[String],
+        ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+            if owner != &Self::owner() || !citation_keys.iter().any(|key| key == "smith2024") {
+                return Ok(Vec::new());
+            }
+            Ok(vec![Self::item()])
+        }
+
+        async fn create_owned_item(
+            &self,
+            _item: &BibliographyItem,
+        ) -> Result<(), BibliographyRepositoryError> {
+            unreachable!("this test does not write bibliography items")
+        }
+
+        async fn update_owned_item(
+            &self,
+            _actor: &Actor,
+            _item_id: marginalis_domain::BibliographyItemId,
+            _citation_key: &str,
+            _csl_json: &str,
+            _updated_at: UnixMillis,
+            _expected_revision: Revision,
+        ) -> Result<BibliographyItem, BibliographyRepositoryError> {
+            unreachable!("this test does not write bibliography items")
+        }
+
+        async fn delete_owned_item(
+            &self,
+            _actor: &Actor,
+            _item_id: marginalis_domain::BibliographyItemId,
+            _expected_revision: Revision,
+        ) -> Result<(), BibliographyRepositoryError> {
+            unreachable!("this test does not write bibliography items")
+        }
+    }
+
+    /// 引用は指定した所有者のライブラリーで解決し、未登録のkeyは警告として報告する。
+    #[tokio::test]
+    async fn citations_resolve_for_the_named_owner_and_report_unknown_keys() {
+        let repository = Arc::new(MemoryNotes::default());
+        let application = NoteApplication::new(
+            repository.clone(),
+            repository.clone(),
+            repository.clone(),
+            Arc::new(AcceptContent::default()),
+            Arc::new(OneItemLibrary),
+            Arc::new(NoLinks),
+            Arc::new(FixedClock),
+            Arc::new(FixedRandom),
+        );
+        let queries = vec![
+            NoteCitationQuery {
+                citation_index: 0,
+                keys: vec!["smith2024".into(), "missing2024".into()],
+                locator: Some("p. 12".into()),
+                span: Utf8ByteSpan { start: 10, end: 40 },
+            },
+            NoteCitationQuery {
+                citation_index: 1,
+                keys: vec!["smith2024".into()],
+                locator: None,
+                span: Utf8ByteSpan { start: 60, end: 80 },
+            },
+        ];
+
+        let resolved = application
+            .citation_resolutions(&OneItemLibrary::owner(), &queries)
+            .await
+            .expect("resolve citations");
+
+        assert_eq!(
+            resolved.resolutions[0].segments,
+            vec![
+                NoteCitationSegment {
+                    text: "(".into(),
+                    anchor: None,
+                },
+                NoteCitationSegment {
+                    text: "Smith 2024".into(),
+                    anchor: Some("smith2024".into()),
+                },
+                NoteCitationSegment {
+                    text: "; ".into(),
+                    anchor: None,
+                },
+                NoteCitationSegment {
+                    text: "missing2024".into(),
+                    anchor: None,
+                },
+                NoteCitationSegment {
+                    text: ", p. 12)".into(),
+                    anchor: None,
+                },
+            ]
+        );
+        // 同じ文献を2回引用しても、参考文献一覧の項目は1つになる。
+        assert_eq!(
+            resolved.entries,
+            vec![NoteBibliographyEntry {
+                citation_key: "smith2024".into(),
+                text: "Smith, A. (2024). An Example Article.".into(),
+            }]
+        );
+        assert_eq!(resolved.diagnostics.len(), 1);
+        assert_eq!(resolved.diagnostics[0].code, "unknown_citation_key");
+        assert_eq!(
+            resolved.diagnostics[0].severity,
+            NoteAdvisorySeverity::Warning
+        );
+        assert_eq!(
+            resolved.diagnostics[0].span,
+            Some(Utf8ByteSpan { start: 10, end: 40 })
+        );
+
+        // 別の利用者のライブラリーでは解決せず、生の識別子だけが並ぶ。
+        let other = Identity::new("https://id.example.test".into(), "bob".into()).expect("owner");
+        let resolved = application
+            .citation_resolutions(&other, &queries)
+            .await
+            .expect("resolve citations for another owner");
+        assert!(resolved.entries.is_empty());
+        assert_eq!(resolved.diagnostics.len(), 2);
+    }
+
     #[tokio::test]
     async fn creates_a_note_using_only_application_ports() {
         let repository = Arc::new(MemoryNotes::default());
@@ -816,6 +1268,7 @@ mod tests {
             repository.clone(),
             repository.clone(),
             Arc::new(AcceptContent::default()),
+            Arc::new(EmptyLibrary),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
@@ -857,6 +1310,7 @@ mod tests {
             repository.clone(),
             repository.clone(),
             content.clone(),
+            Arc::new(EmptyLibrary),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
@@ -902,6 +1356,7 @@ mod tests {
             repository.clone(),
             repository.clone(),
             Arc::new(AcceptContent::default()),
+            Arc::new(EmptyLibrary),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),

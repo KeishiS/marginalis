@@ -5,23 +5,29 @@
 
 ## 未リリース
 
+### 追加
+
+- 本文の`cite:[key]`を書誌ライブラリーで解決し、`(Smith 2024)`のような著者・年の表示にする
+  ようにした。引用した文献だけを重複なく並べた参考文献一覧を表示時に組み立て、本文の引用と
+  一覧の項目を相互に移動できる。一覧は保存する本文へ書き込まない。
+- 引用の解決にはノートを作成した利用者のライブラリーを使う。共有したノートは誰が見ても同じ
+  表示になる。判断は[ADR 0006](docs/adr/0006-引用はノート作成者の書誌ライブラリーで解決する.md)に
+  記録した。
+- ライブラリーに無いcitation keyを`unknown_citation_key`の警告として報告するようにした。
+  Web UIとREST APIでは保存でき、MCPでは警告を拒否する既定の方針どおり保存されない。
+
 ### 破壊的変更
 
 - AdocWeave package版を0.22.0へ更新した。`cite:[key]`が引用として解析されるようになったため、
-  archiveを`marginalis-archive-12`へ、MCPとOpenAPIが示すnote profileを8へ更新した。archive 7、
-  8、9、10、11は`migrate-archive`で全件再検証してarchive 12へ変換できる。
-- `cite:`を含むノートを`citation_disabled`として拒否するようにした。解決した書誌情報を描画へ
-  渡す経路がAdocWeaveにまだないため、未解決のcitation keyが表示される状態を保存させない。
-  文献を引用する場合は従来どおり標準のbibliography（`[[[key]]]`と`<<key>>`）を使用する。
-  判断の詳細は[0.22移行判断](docs/adocweave-v0.22-migration.md)に記録した。
+  archiveを`marginalis-archive-12`へ更新した。archive 7、8、9、10、11は`migrate-archive`で
+  全件再検証してarchive 12へ変換できる。
+- MCPとOpenAPIが示すnote profileを9へ更新した。`cite:`の受理と、引用を含む文書例および
+  執筆時の注意事項が加わる。
 - ノートの入力規則の正本を一か所へ集約した。受理する入力は変わらないが、`get_note_profile`が
   広告する内容の由来が変わるため、上記のnote profile版に含めて公開する。
 - ノートIDと書誌項目IDの公開JSON Schemaの`pattern`をUUID形式へ厳格化した。従来は36文字の
   16進数とハイフンの並びであれば通過したため、実装が受理する規則より緩かった。実際に受理する
   値は変わらない。
-
-### 破壊的変更
-
 - MCP toolが失敗したときの`structuredContent`を、REST APIと同じ失敗表現へそろえた。同じ失敗に
   対する`code`と`message`が接続方法によって変わらない。`get_note`が見つからない場合の`message`は
   `note was not found`から`note is not available`へ、書誌の`add_bibliography_items`で項目ごとに

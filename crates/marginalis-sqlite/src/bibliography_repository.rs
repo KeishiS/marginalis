@@ -40,6 +40,36 @@ impl BibliographyRepository for SqliteDatabase {
         rows.into_iter().map(decode_item).collect()
     }
 
+    async fn items_by_citation_keys(
+        &self,
+        owner: &Identity,
+        citation_keys: &[String],
+    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+        if citation_keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        // citation keyの数は本文の引用数で決まるため、値の数だけ`?`を並べる。
+        let placeholders = vec!["?"; citation_keys.len()].join(", ");
+        let statement = format!(
+            "SELECT item_id, owner_issuer, owner_subject, citation_key, csl_json,
+                    created_at_ms, updated_at_ms, revision
+             FROM bibliography_items
+             WHERE owner_issuer = ? AND owner_subject = ? AND citation_key IN ({placeholders})"
+        );
+        let mut query = sqlx::query(&statement)
+            .bind(owner.issuer().to_owned())
+            .bind(owner.subject().to_owned());
+        for citation_key in citation_keys {
+            query = query.bind(citation_key.clone());
+        }
+        let rows = query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|error| map_error(database_error(error)))?;
+
+        rows.into_iter().map(decode_item).collect()
+    }
+
     async fn create_owned_item(
         &self,
         item: &BibliographyItem,

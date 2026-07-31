@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use adocweave::output::diagnostics::Severity;
 use adocweave::resolution::ReferenceKey;
 use marginalis_application::{
-    NoteAdvisorySeverity, NoteReferenceQuery, NoteValidationCode, NoteValidationDiagnostic,
-    ValidatedNoteDraft,
+    NoteAdvisorySeverity, NoteCitationQuery, NoteReferenceQuery, NoteValidationCode,
+    NoteValidationDiagnostic, ValidatedNoteDraft,
 };
 use marginalis_domain::{
     EntityId, NOTE_POLICY, NoteDraft, NoteId, NoteValidationTarget, Utf8ByteSpan,
@@ -82,6 +82,34 @@ fn reference_queries_from_analysis(analysis: &adocweave::Analysis) -> ReferenceQ
     result
 }
 
+pub(crate) fn citation_queries(source: &str) -> Result<Vec<NoteCitationQuery>, RenderError> {
+    Ok(citation_queries_from_analysis(&analyze_valid_source(
+        source,
+    )?))
+}
+
+/// `cite:`が名指すcitation keyを、書誌ライブラリーへの問い合わせへ直す。
+///
+/// AdocWeaveは位置引数をcitation key、名前付き引数を引用の補足として返す。Marginalisは
+/// `locator`だけを引用へ添える値として扱い、他の名前付き引数は表示に使わない。
+fn citation_queries_from_analysis(analysis: &adocweave::Analysis) -> Vec<NoteCitationQuery> {
+    analysis
+        .citations()
+        .into_iter()
+        .enumerate()
+        .map(|(citation_index, citation)| NoteCitationQuery {
+            citation_index,
+            keys: citation.keys.into_iter().map(|key| key.value).collect(),
+            locator: citation
+                .attributes
+                .into_iter()
+                .find(|attribute| attribute.name.as_deref() == Some("locator"))
+                .map(|attribute| attribute.value),
+            span: span(citation.range),
+        })
+        .collect()
+}
+
 pub(crate) fn has_anchor(source: &str, anchor: &str) -> Result<bool, RenderError> {
     Ok(analyze_valid_source(source)?
         .reference_targets()
@@ -95,6 +123,7 @@ pub(crate) fn validate_draft(
     let mut errors = Vec::new();
     let mut advisories = Vec::new();
     let mut reference_queries = Vec::new();
+    let mut citation_queries = Vec::new();
     let mut title = String::new();
     let mut tags = BTreeMap::new();
     if draft.source.len() > NOTE_POLICY.max_source_bytes {
@@ -108,6 +137,7 @@ pub(crate) fn validate_draft(
             Ok(analysis) => {
                 let reference_analysis = reference_queries_from_analysis(&analysis);
                 reference_queries = reference_analysis.queries;
+                citation_queries = citation_queries_from_analysis(&analysis);
                 errors.extend(
                     reference_analysis
                         .invalid_spans
@@ -240,6 +270,7 @@ pub(crate) fn validate_draft(
             },
             diagnostics: advisories,
             reference_queries,
+            citation_queries,
         })
     } else {
         Err(errors)
