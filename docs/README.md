@@ -30,12 +30,13 @@
 - [要件定義](requirements.md)
 - [要件と検証の対応表](traceability.md)
 - [アーキテクチャ](architecture.md)
-- [AdocWeave 0.22移行判断](adocweave-v0.22-migration.md)
+- [AdocWeave 0.23移行判断](adocweave-v0.23-migration.md)
 - [Auth0をMCPのAuthorization Serverに採用](adr/0001-auth0をmcpのauthorization-serverに採用.md)
 - [SQLiteを正本として維持](adr/0002-sqliteを正本として維持する.md)
 - [CodeMirrorをAsciiDoc編集基盤に採用](adr/0003-codemirrorをasciidoc編集基盤に採用.md)
 - [書誌ライブラリーを利用者ごとに管理する](adr/0004-書誌ライブラリーを利用者ごとに管理する.md)
 - [認証基盤の停止時にWebとMCPで起動可否を分ける](adr/0005-認証基盤の停止時にwebとmcpで起動可否を分ける.md)
+- [引用はノート作成者の書誌ライブラリーで解決する](adr/0006-引用はノート作成者の書誌ライブラリーで解決する.md)
 - [ブラウザーとMCPプロトコルの回帰テスト](protocol-regression.md)
 
 ## 過去の記録と今後の計画
@@ -50,6 +51,7 @@
 - [AdocWeave 0.17移行判断](adocweave-v0.17-migration.md)
 - [AdocWeave 0.19移行判断](adocweave-v0.19-migration.md)
 - [AdocWeave 0.20移行判断](adocweave-v0.20-migration.md)
+- [AdocWeave 0.22移行判断](adocweave-v0.22-migration.md)
 - [v0.3.0再設計判断記録](v0.3.0-design.md)
 - [v0.3.0運用記録](v0.3.0-operations.md)
 - [連環（Renkan）— 個人研究の記憶を横断する探索基盤](research-search-vision.md)

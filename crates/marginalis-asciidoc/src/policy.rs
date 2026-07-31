@@ -34,7 +34,6 @@ enum ForbiddenRule {
     Resource,
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
-    Citation,
 }
 
 const FORBIDDEN_RULES: &[ForbiddenRule] = &[
@@ -47,7 +46,6 @@ const FORBIDDEN_RULES: &[ForbiddenRule] = &[
     ForbiddenRule::Resource,
     ForbiddenRule::UnsupportedMathLanguage,
     ForbiddenRule::UnsupportedSourceLanguage,
-    ForbiddenRule::Citation,
 ];
 
 impl ForbiddenRule {
@@ -62,7 +60,6 @@ impl ForbiddenRule {
             Self::Resource => NoteValidationCode::ResourceDisabled,
             Self::UnsupportedMathLanguage => NoteValidationCode::UnsupportedMathLanguage,
             Self::UnsupportedSourceLanguage => NoteValidationCode::UnsupportedSourceLanguage,
-            Self::Citation => NoteValidationCode::CitationDisabled,
         }
     }
 
@@ -77,9 +74,6 @@ impl ForbiddenRule {
             Self::Resource => "external media resources are not allowed",
             Self::UnsupportedMathLanguage => "only latexmath formulas are allowed",
             Self::UnsupportedSourceLanguage => "the source block language is not allowed",
-            Self::Citation => {
-                "citations are not available yet; use the standard bibliography instead"
-            }
         }
     }
 }
@@ -210,6 +204,7 @@ pub fn note_profile() -> NoteProfile {
                 "local_cross_reference",
                 "bibliography_anchor",
                 "bibliography_reference",
+                "citation",
                 "note_reference",
                 "safe_link",
                 "inline_math",
@@ -221,6 +216,8 @@ pub fn note_profile() -> NoteProfile {
         },
         authoring_guidance: vec![
             "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.",
+            "A cite: macro names citation keys held by the bibliography library of the user who wrote the note. Register the item before citing it; an unregistered key is reported as a warning and is shown as the bare key.",
+            "The reference list is built when the note is displayed, from the cited items only. Do not write a [bibliography] section for items that cite: already names.",
         ],
         allowed_source_languages: NOTE_POLICY.allowed_source_languages.to_vec(),
         forbidden_rules: FORBIDDEN_RULES
@@ -265,6 +262,11 @@ pub fn note_profile() -> NoteProfile {
                 kind: "bibliography",
                 description: "Complete document with a bibliography entry and an in-text reference",
                 body: "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]",
+            },
+            NoteProfileExample {
+                kind: "citation",
+                description: "Citation of an item registered in the bibliography library, resolved when the note is displayed",
+                body: "= 先行研究の整理\n:tags: 文献, 研究\n\nこの手法は有効だと報告されています cite:[smith2024]。\n\n引用箇所を示す場合は cite:[smith2024, locator=\"p. 12\"] のように書きます。",
             },
         ],
     }
@@ -326,14 +328,6 @@ fn validate_note_content_profile_with(
     errors.extend(analysis.resource_queries().into_iter().map(|query| {
         NoteContentError::forbidden(ForbiddenRule::Resource, query.reference.range())
     }));
-    // `cite:`はAdocWeave 0.22.0から引用として解析されるが、解決した書誌情報を描画へ渡す
-    // 経路がまだない。未解決のままcitation keyを表示する状態を作らないため拒否する。
-    errors.extend(
-        analysis
-            .citations()
-            .into_iter()
-            .map(|citation| NoteContentError::forbidden(ForbiddenRule::Citation, citation.range)),
-    );
     errors.extend(
         analysis
             .reference_queries()
@@ -517,35 +511,26 @@ mod tests {
         assert!(violations(&source).contains(&NoteValidationCode::DuplicateAnchor));
     }
 
-    /// `cite:`は解決した書誌情報を描画へ渡す経路ができるまで受理しない。
+    /// 書誌ライブラリーを参照する引用と、標準のbibliographyの両方を受理する。
     ///
-    /// AdocWeave 0.22.0から引用として解析されるが、未解決のままcitation keyが
-    /// 表示される状態を利用者へ見せないため拒否する。
+    /// citation keyの解決は保存時ではなく描画時に行うため、入力規則としては引用の
+    /// 書き方だけを見る。未登録のkeyは保存を妨げない警告として別に報告する。
     #[test]
-    fn rejects_citations_until_resolution_is_available() {
+    fn accepts_citations_and_the_standard_bibliography() {
         for source in [
             format!("{HEADER}本文 cite:[smith2024]。\n"),
             format!("{HEADER}本文 cite:[smith2024, tanaka2025]。\n"),
             format!("{HEADER}本文 cite:[smith2024, locator=\"p. 12\"]。\n"),
+            format!(
+                "{HEADER}本文<<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith. Example.\n"
+            ),
         ] {
             assert!(
-                violations(&source).contains(&NoteValidationCode::CitationDisabled),
-                "引用を拒否します: {source}"
+                violations(&source).is_empty(),
+                "引用を受理します: {source} {:?}",
+                violations(&source)
             );
         }
-    }
-
-    /// 標準のbibliographyは従来どおり受理する。
-    #[test]
-    fn keeps_accepting_the_standard_bibliography() {
-        let source = format!(
-            "{HEADER}本文<<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith. Example.\n"
-        );
-        assert!(
-            !violations(&source).contains(&NoteValidationCode::CitationDisabled),
-            "標準のbibliographyは拒否しません: {:?}",
-            violations(&source)
-        );
     }
 
     #[test]

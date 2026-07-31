@@ -19,6 +19,7 @@
 | REQ-DATA-004 | schema検査 | なし |
 | REQ-DATA-005 | SQLite認可・参照試験、ブラウザー試験 | 非開示確認 |
 | REQ-DATA-006 | application入力検査、SQLite所有者境界・競合・revision試験、REST・MCP公開契約試験 | Web UIでの検索、追加、編集、削除とMCPでの検索、追加、削除 |
+| REQ-DATA-007 | 引用解決の所有者境界と重複排除の試験、生成した参考文献の相互link試験、書誌情報を記法として解釈しない試験 | 共有したノートでの引用表示 |
 | REQ-AUTH-001 | OIDC単体・結合試験 | ログイン拒否 |
 | REQ-AUTH-002 | domain・archive・SQLite単体試験 | 所有者照合 |
 | REQ-AUTH-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
@@ -48,7 +49,7 @@
 | REQ-API-008 | REST・MCP失敗一致試験、MCP失敗出力schema生成差分 | 異常時のclient表示 |
 | REQ-DEPLOY-001 | NixOS module評価・VM | 本番設定確認 |
 | REQ-DEPLOY-002 | 環境変数宣言の単体試験、起動と診断の判断一致CLI試験、NixOS module評価 | 診断出力確認 |
-| REQ-FORMAT-001 | schema・archive拒否、archive 7・8・9・10・11から12への移行試験 | 更新前退避 |
+| REQ-FORMAT-001 | schema・archive拒否、archive 7・8・9・10・11・12から13への移行試験 | 更新前退避 |
 
 ## 実行単位
 

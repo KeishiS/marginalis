@@ -1,23 +1,32 @@
 use adocweave::output::diagnostics::Severity;
 use adocweave::output::html::render_with_inputs;
 use adocweave::resolution::{
-    RenderInputs, ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind, ResolvedReference,
-    ResolverFailure,
+    CitationSegment, RenderInputs, ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind,
+    ResolvedCitation, ResolvedReference, ResolverFailure,
 };
-use marginalis_application::NoteReferenceResolution;
+use marginalis_application::{
+    NoteBibliographyEntry, NoteCitationResolution, NoteReferenceResolution, NoteRenderInputs,
+};
 use marginalis_domain::Note;
 
 use crate::RenderError;
 use crate::analysis::analyze_valid_source;
 use crate::configuration::{html_is_within_output_limits, output_limits, render_policy};
 
+/// 生成した参考文献一覧の節の見出し。
+const GENERATED_BIBLIOGRAPHY_TITLE: &str = "参考文献";
+
 pub(crate) fn render_note(
     note: &Note,
-    resolutions: &[NoteReferenceResolution],
+    inputs: NoteRenderInputs<'_>,
 ) -> Result<String, RenderError> {
-    let analysis = analyze_valid_source(note.source())?;
+    // 参考文献一覧は保存する本文には含めず、描画のたびに引用済みの項目から組み立てる。
+    // 追加は末尾だけなので、保存済み本文の位置は解析し直しても変わらない。
+    let source = source_with_generated_bibliography(note.source(), inputs.bibliography)?;
+    let analysis = analyze_valid_source(&source)?;
     let queries = analysis.reference_queries();
-    let references = resolutions
+    let references = inputs
+        .references
         .iter()
         .map(|resolution| {
             let reference_index = match resolution {
@@ -53,8 +62,24 @@ pub(crate) fn render_note(
             })
         })
         .collect::<Result<Vec<_>, RenderError>>()?;
-    let inputs = RenderInputs::new(references, Vec::new());
-    let output = render_with_inputs(analysis.document(), &render_policy(), &inputs);
+    let citations = analysis.citations();
+    let resolved_citations = inputs
+        .citations
+        .iter()
+        .map(|resolution| {
+            let citation = citations
+                .get(resolution.citation_index)
+                .ok_or(RenderError)?;
+            Ok(ResolvedCitation::resolved(
+                citation.range,
+                citation_segments(resolution),
+            ))
+        })
+        .collect::<Result<Vec<_>, RenderError>>()?;
+    let render_inputs = RenderInputs::default()
+        .with_references(references)
+        .with_citations(resolved_citations);
+    let output = render_with_inputs(analysis.document(), &render_policy(), &render_inputs);
     if output
         .diagnostics
         .iter()
@@ -66,10 +91,136 @@ pub(crate) fn render_note(
     Ok(output.html)
 }
 
+fn citation_segments(resolution: &NoteCitationResolution) -> Vec<CitationSegment> {
+    resolution
+        .segments
+        .iter()
+        .map(|segment| match &segment.anchor {
+            Some(anchor) => CitationSegment::linked(&segment.text, anchor),
+            None => CitationSegment::text(&segment.text),
+        })
+        .collect()
+}
+
+/// 引用済みの書誌項目から参考文献一覧を組み立て、本文の末尾へ加える。
+///
+/// 本文が同じcitation keyの項目を既に定義している場合は、生成した項目を重ねない。
+/// 同じanchorが二つあると文書として成り立たず、著者が書いた記述を優先すべきためである。
+///
+/// 引用が無い、または解決できた項目が無い場合は本文をそのまま返す。
+fn source_with_generated_bibliography(
+    source: &str,
+    entries: &[NoteBibliographyEntry],
+) -> Result<String, RenderError> {
+    if entries.is_empty() {
+        return Ok(source.to_owned());
+    }
+    let analysis = analyze_valid_source(source)?;
+    let defined = analysis
+        .catalogs()
+        .bibliography()
+        .iter()
+        .map(|entry| entry.id.as_str())
+        .collect::<Vec<_>>();
+    let generated = entries
+        .iter()
+        .filter(|entry| !defined.contains(&entry.citation_key.as_str()))
+        .map(|entry| {
+            format!(
+                "* [[[{}]]] {}",
+                entry.citation_key,
+                as_plain_text(&entry.text)
+            )
+        })
+        .collect::<Vec<_>>();
+    if generated.is_empty() {
+        return Ok(source.to_owned());
+    }
+    Ok(format!(
+        "{}\n\n[bibliography]\n== {GENERATED_BIBLIOGRAPHY_TITLE}\n\n{}\n",
+        source.trim_end(),
+        generated.join("\n")
+    ))
+}
+
+/// 書誌情報の文字列を、AsciiDocの記法として解釈されない形へ直す。
+///
+/// 題名や著者名にはAsciiDocが意味を持つ記号が現れる。記法が始まる位置の直前に逆斜線を
+/// 置くと、そこは記法とみなされず、逆斜線も出力に残らない。記法が始まらない位置へ置くと
+/// 逆斜線がそのまま見えてしまうため、始まりうる位置だけを選ぶ。
+///
+/// 改行は項目を途中で終わらせるため、空白1つへ畳む。
+fn as_plain_text(text: &str) -> String {
+    let folded = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let characters = folded.chars().collect::<Vec<_>>();
+    let mut escaped = String::with_capacity(folded.len());
+    for (position, character) in characters.iter().copied().enumerate() {
+        if opens_markup(&characters, position) {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
+/// 記法がこの位置から始まるかどうかを判定する。
+///
+/// AdocWeaveの判定規則に合わせている。強調などの記号は、直前が英数字でなく直後が
+/// 空白でも同じ記号でもない場合に始まる。macroと自動linkは、行頭または区切り文字の
+/// 後にある`name:`の形から始まる。
+fn opens_markup(characters: &[char], position: usize) -> bool {
+    let character = characters[position];
+    let previous = position.checked_sub(1).map(|index| characters[index]);
+    let next = characters.get(position + 1).copied();
+    // 逆斜線自体は二つ重ねて1つとして表示する。
+    if character == '\\' {
+        return true;
+    }
+    // 属性参照は位置を問わず展開されるため、常に打ち消す。
+    if character == '{' {
+        return true;
+    }
+    // 相互参照とanchorは記号を2つ重ねた形で始まる。
+    if matches!(character, '<' | '[') && next == Some(character) {
+        return true;
+    }
+    if matches!(character, '*' | '_' | '`' | '#' | '^' | '~') {
+        let opens = next
+            .is_some_and(|following| !following.is_whitespace() && following != character)
+            && previous.is_none_or(|preceding| !preceding.is_alphanumeric());
+        if opens {
+            return true;
+        }
+    }
+    // 行末の`+`は改行として扱われる。畳んだ結果の末尾だけが該当する。
+    if character == '+' && next.is_none() && previous == Some(' ') {
+        return true;
+    }
+    starts_macro_name(characters, position, previous)
+}
+
+/// この位置から`name:`の形が始まるかどうかを判定する。
+///
+/// `image:x[]`のようなmacroと`https://example.test`のような自動linkは、どちらも
+/// 区切りの直後にある識別子と`:`から始まる。
+fn starts_macro_name(characters: &[char], position: usize, previous: Option<char>) -> bool {
+    let at_boundary = previous.is_none_or(|preceding| {
+        preceding.is_whitespace() || matches!(preceding, '(' | '[' | '{' | '<' | '"' | '\'')
+    });
+    if !at_boundary || !characters[position].is_ascii_alphabetic() {
+        return false;
+    }
+    characters[position..]
+        .iter()
+        .position(|character| !character.is_ascii_alphanumeric() && *character != '-')
+        .is_some_and(|offset| characters[position + offset] == ':')
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
+    use marginalis_application::NoteCitationSegment;
     use marginalis_domain::{EntityId, Identity, Note, NoteDraft, NoteId, Revision, UnixMillis};
 
     use super::*;
@@ -95,7 +246,7 @@ mod tests {
     fn supported_blocks_render_without_raw_markup() {
         let html = render_note(
             &note("[[local]]\nA *safe* paragraph. See <<local>>.\n\n[source,rust]\n----\nfn main() {}\n----"),
-            &[],
+            NoteRenderInputs::default(),
         )
         .expect("render");
         assert!(html.contains("<strong>safe</strong>"));
@@ -110,12 +261,15 @@ mod tests {
             &note(&format!(
                 "* 最初の行 +\n続きの行\n* 参照\n  xref:note:{target}[]\n\n. 一つ目\n  折り返し\n. 二つ目"
             )),
-            &[NoteReferenceResolution::Visible {
-                reference_index: 0,
-                href: format!("/notes/{target}"),
-                title: "参照先".into(),
-                missing_anchor: false,
-            }],
+            NoteRenderInputs {
+                references: &[NoteReferenceResolution::Visible {
+                    reference_index: 0,
+                    href: format!("/notes/{target}"),
+                    title: "参照先".into(),
+                    missing_anchor: false,
+                }],
+                ..Default::default()
+            },
         )
         .expect("render multiline lists");
 
@@ -133,7 +287,8 @@ mod tests {
             .into_iter()
             .find(|example| example.kind == "multiline_list_item")
             .expect("published multiline list example");
-        let html = render_note(&note(example.body), &[]).expect("render published example");
+        let html = render_note(&note(example.body), NoteRenderInputs::default())
+            .expect("render published example");
 
         assert!(html.contains("<li>First line<br>\nContinued line</li>"));
         assert!(html.contains("<li>Next item</li>"));
@@ -145,7 +300,7 @@ mod tests {
             &note(
                 ".Example <source>\n[source,rust,linenums,start=7]\n----\nfn main() {}\n----\n\nInline latexmath:[x < y].\n\n[latexmath]\n++++\nx^2 < y\n++++",
             ),
-            &[],
+            NoteRenderInputs::default(),
         )
         .expect("render");
 
@@ -218,7 +373,8 @@ mod tests {
             None,
         )
         .expect("validated note");
-        let html = render_note(&rendered_note, &[]).expect("render bibliography example");
+        let html = render_note(&rendered_note, NoteRenderInputs::default())
+            .expect("render bibliography example");
 
         assert!(html.contains("href=\"#smith2024\""));
         assert!(html.contains("id=\"smith2024\" class=\"bibliography-anchor\""));
@@ -233,23 +389,147 @@ mod tests {
         let source = note(&format!("xref:note:{target}[]"));
         let visible = render_note(
             &source,
-            &[NoteReferenceResolution::Visible {
-                reference_index: 0,
-                href: format!("/notes/{target}"),
-                title: "参照先".into(),
-                missing_anchor: false,
-            }],
+            NoteRenderInputs {
+                references: &[NoteReferenceResolution::Visible {
+                    reference_index: 0,
+                    href: format!("/notes/{target}"),
+                    title: "参照先".into(),
+                    missing_anchor: false,
+                }],
+                ..Default::default()
+            },
         )
         .expect("visible");
         assert!(visible.contains(">参照先</a>"));
 
         let hidden = render_note(
             &source,
-            &[NoteReferenceResolution::Hidden { reference_index: 0 }],
+            NoteRenderInputs {
+                references: &[NoteReferenceResolution::Hidden { reference_index: 0 }],
+                ..Default::default()
+            },
         )
         .expect("hidden");
         assert!(!hidden.contains("href="));
         assert!(!hidden.contains(target));
+    }
+
+    /// 解決した引用を、生成した参考文献項目と相互にlinkさせる。
+    #[test]
+    fn resolved_citations_link_to_the_generated_bibliography() {
+        let html = render_note(
+            &note("結果は cite:[smith2024] と、再度 cite:[smith2024] で報告されています。"),
+            NoteRenderInputs {
+                citations: &[
+                    resolution(0, "smith2024", "Smith 2024"),
+                    resolution(1, "smith2024", "Smith 2024"),
+                ],
+                bibliography: &[NoteBibliographyEntry {
+                    citation_key: "smith2024".into(),
+                    text: "Smith, A. (2024). An Example Article.".into(),
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("render resolved citations");
+
+        assert!(html.contains("参考文献"));
+        // 同じ文献を2回引用しても項目は1つで、本文からその項目へ移動できる。
+        assert_eq!(html.matches("An Example Article").count(), 1);
+        assert_eq!(html.matches("href=\"#smith2024\"").count(), 2);
+        assert!(html.contains(">(</span>") || html.contains("(<a"));
+        assert!(html.contains(">Smith 2024</a>"));
+        // 項目側からは、本文中のそれぞれの引用位置へ戻れる。
+        assert_eq!(html.matches("class=\"bibliography-backref\"").count(), 2);
+        assert!(!html.contains(">smith2024<"));
+    }
+
+    /// 本文が同じcitation keyを定義している場合は、生成した項目を重ねない。
+    #[test]
+    fn a_document_defined_entry_is_not_generated_twice() {
+        let html = render_note(
+            &note(
+                "結果は cite:[smith2024] です。\n\n[bibliography]\n== 出典\n\n* [[[smith2024]]] 著者が書いた記述",
+            ),
+            NoteRenderInputs {
+                citations: &[resolution(0, "smith2024", "Smith 2024")],
+                bibliography: &[NoteBibliographyEntry {
+                    citation_key: "smith2024".into(),
+                    text: "Smith, A. (2024). An Example Article.".into(),
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("render with a document-defined entry");
+
+        assert!(html.contains("著者が書いた記述"));
+        assert!(!html.contains("An Example Article"));
+        assert!(!html.contains(GENERATED_BIBLIOGRAPHY_TITLE));
+        assert!(html.contains("href=\"#smith2024\""));
+    }
+
+    /// 書誌情報の文字列は表示であり、AsciiDocの記法として解釈しない。
+    #[test]
+    fn bibliography_text_is_shown_as_written_and_never_as_markup() {
+        let html = render_note(
+            &note("結果は cite:[trick] です。"),
+            NoteRenderInputs {
+                citations: &[resolution(0, "trick", "Author 2024")],
+                bibliography: &[NoteBibliographyEntry {
+                    citation_key: "trick".into(),
+                    text: "*強調* image:secret[] <<other>> {attribute} の題名".into(),
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("render an entry that contains markup characters");
+
+        assert!(html.contains("*強調* image:secret[] &lt;&lt;other&gt;&gt; {attribute} の題名"));
+        assert!(!html.contains("<strong>"));
+        assert!(!html.contains("<img"));
+    }
+
+    /// DOIやURLは、linkではなく読める文字列として並べる。
+    ///
+    /// 書誌情報を記法として解釈しない方針の結果であり、逆斜線は表示に残らない。
+    #[test]
+    fn an_address_in_an_entry_stays_readable_without_becoming_a_link() {
+        let html = render_note(
+            &note("結果は cite:[doi2022] です。"),
+            NoteRenderInputs {
+                citations: &[resolution(0, "doi2022", "Smith 2022")],
+                bibliography: &[NoteBibliographyEntry {
+                    citation_key: "doi2022".into(),
+                    text: "Smith, A. (2022). Example. https://doi.org/10.1234/example.".into(),
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("render an entry that contains an address");
+
+        assert!(html.contains("https://doi.org/10.1234/example."));
+        assert!(!html.contains("\\"));
+        assert!(!html.contains("href=\"https://doi.org"));
+    }
+
+    fn resolution(citation_index: usize, anchor: &str, label: &str) -> NoteCitationResolution {
+        NoteCitationResolution {
+            citation_index,
+            segments: vec![
+                NoteCitationSegment {
+                    text: "(".into(),
+                    anchor: None,
+                },
+                NoteCitationSegment {
+                    text: label.into(),
+                    anchor: Some(anchor.into()),
+                },
+                NoteCitationSegment {
+                    text: ")".into(),
+                    anchor: None,
+                },
+            ],
+        }
     }
 
     #[test]
@@ -258,7 +538,11 @@ mod tests {
             "include::secret[]",
             "xref:note:not-a-note[invalid note reference]",
         ] {
-            assert_eq!(render_note(&note(body), &[]), Err(RenderError), "{body}");
+            assert_eq!(
+                render_note(&note(body), NoteRenderInputs::default()),
+                Err(RenderError),
+                "{body}"
+            );
         }
     }
 }

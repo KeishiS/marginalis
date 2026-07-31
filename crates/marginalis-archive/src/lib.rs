@@ -11,11 +11,12 @@ use marginalis_domain::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-12";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-13";
 /// archive内のノートを受理できる入力規則の版。
 pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 4;
 /// 移行元として受理する旧archive契約。形式、AdocWeave package版、note profile版の組。
 const SUPPORTED_MIGRATION_CONTRACTS: &[(&str, &str, u32)] = &[
+    ("marginalis-archive-12", "0.22.0", 4),
     ("marginalis-archive-11", "0.20.0", 4),
     ("marginalis-archive-10", "0.20.0", 4),
     ("marginalis-archive-9", "0.19.0", 4),

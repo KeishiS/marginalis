@@ -28,7 +28,7 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-      # AdocWeave v0.22.0 が要求する Rust 1.97.1 を確定的にピンする。
+      # AdocWeave v0.23.0 が要求する Rust 1.97.1 を確定的にピンする。
       rustToolchainFor =
         pkgs:
         pkgs.rust-bin.stable."1.97.1".default.override {
@@ -105,7 +105,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.22.0" = "sha256-UcZAYFB4uQ8ZUeWDmafLzruFVfZUdUWbVqucVQewDNA=";
+                "adocweave-0.23.0" = "sha256-KXZm2JPfbcuD42+SXyYo63D2VpEm20GB7fgrVkElr6A=";
               };
             };
             cargoBuildFlags = [
@@ -320,8 +320,8 @@
                   migrate-archive --input "$PWD/schema9.json" --output "$PWD/migrated-archive.json"
                 cmp schema9.json schema9-original.json
                 jq -e '
-                  .format == "marginalis-archive-12"
-                  and .adocweave_package_version == "0.22.0"
+                  .format == "marginalis-archive-13"
+                  and .adocweave_package_version == "0.23.0"
                   and .note_profile_version == 4
                   and (.notes | length) == 2
                   and (.note_acl | length) == 2
@@ -652,8 +652,8 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-12\" "
-                + "and .adocweave_package_version == \"0.22.0\" "
+                + "jq -e '.format == \"marginalis-archive-13\" "
+                + "and .adocweave_package_version == \"0.23.0\" "
                 + "and .note_profile_version == 4 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
                 + "test $(stat -c %a \"$backup\") = 700; "

@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use marginalis_domain::{Actor, BibliographyItem, BibliographyItemId, Revision, UnixMillis};
+use marginalis_domain::{
+    Actor, BibliographyItem, BibliographyItemId, Identity, Revision, UnixMillis,
+};
 use serde_json::Value;
 
 use crate::{Clock, Random};
@@ -49,6 +51,16 @@ pub trait BibliographyRepository: Send + Sync {
         &self,
         actor: &Actor,
         query: &str,
+    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError>;
+
+    /// 指定した所有者のライブラリーから、citation keyが一致する項目だけを読み取る。
+    ///
+    /// ノートの引用は作成者のライブラリーで解決するため、閲覧している利用者ではなく
+    /// 所有者のidentityを受け取る。呼び出し側は、閲覧できるノートの描画にだけ使う。
+    async fn items_by_citation_keys(
+        &self,
+        owner: &Identity,
+        citation_keys: &[String],
     ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError>;
 
     async fn create_owned_item(

@@ -1,8 +1,8 @@
 //! SQLite正本のAsciiDoc検証、可搬化、安全なHTML描画を担うadapter。
 
 use marginalis_application::{
-    NoteContent, NoteContentError, NoteProfile, NoteReferenceQuery, NoteReferenceResolution,
-    NoteValidationDiagnostic, ValidatedNoteDraft,
+    NoteCitationQuery, NoteContent, NoteContentError, NoteProfile, NoteReferenceQuery,
+    NoteRenderInputs, NoteValidationDiagnostic, ValidatedNoteDraft,
 };
 use marginalis_domain::{Note, NoteDraft};
 
@@ -11,10 +11,10 @@ mod configuration;
 mod policy;
 mod rendering;
 
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "b7b678062bad410235527f752b0f472fe3a5736d";
-pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.22.0";
+pub const ADOCWEAVE_SOURCE_REVISION: &str = "d92447fb29dbc5fa06ea210787606b503245d073";
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.23.0";
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
-pub const AUTHORING_PROFILE_VERSION: u32 = 8;
+pub const AUTHORING_PROFILE_VERSION: u32 = 9;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsciiDocNoteContent;
@@ -31,6 +31,10 @@ impl NoteContent for AsciiDocNoteContent {
         note_reference_queries(source).map_err(|_| NoteContentError)
     }
 
+    fn citation_queries(&self, source: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
+        analysis::citation_queries(source).map_err(|_| NoteContentError)
+    }
+
     fn has_anchor(&self, source: &str, anchor: &str) -> Result<bool, NoteContentError> {
         analysis::has_anchor(source, anchor).map_err(|_| NoteContentError)
     }
@@ -38,9 +42,9 @@ impl NoteContent for AsciiDocNoteContent {
     fn render(
         &self,
         note: &Note,
-        resolutions: &[NoteReferenceResolution],
+        inputs: NoteRenderInputs<'_>,
     ) -> Result<String, NoteContentError> {
-        rendering::render_note(note, resolutions).map_err(|_| NoteContentError)
+        rendering::render_note(note, inputs).map_err(|_| NoteContentError)
     }
 
     fn export(&self, note: &Note) -> Result<String, NoteContentError> {
