@@ -18,9 +18,10 @@
 
 ### 破壊的変更
 
-- AdocWeave package版を0.22.0へ更新した。`cite:[key]`が引用として解析されるようになったため、
-  archiveを`marginalis-archive-12`へ更新した。archive 7、8、9、10、11は`migrate-archive`で
-  全件再検証してarchive 12へ変換できる。
+- AdocWeave package版を0.23.0へ更新した。記録するAdocWeave版が変わるため、archiveを
+  `marginalis-archive-13`へ更新した。archive 7、8、9、10、11、12は`migrate-archive`で
+  全件再検証してarchive 13へ変換できる。判断は
+  [0.23移行判断](docs/adocweave-v0.23-migration.md)に記録した。
 - MCPとOpenAPIが示すnote profileを9へ更新した。`cite:`の受理と、引用を含む文書例および
   執筆時の注意事項が加わる。
 - ノートの入力規則の正本を一か所へ集約した。受理する入力は変わらないが、`get_note_profile`が

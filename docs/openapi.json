@@ -600,7 +600,7 @@
   "info": {
     "title": "Marginalis REST API",
     "version": "v3",
-    "x-adocweave-package-version": "0.22.0",
+    "x-adocweave-package-version": "0.23.0",
     "x-note-profile-version": 9
   },
   "openapi": "3.1.0",
