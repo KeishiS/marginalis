@@ -531,4 +531,14 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
     "graph-wide-dark.png",
     SCREENSHOT_OPTIONS,
   );
+
+  // 図はマウスがなくても使える。絞り込みの次にTabで届く点をEnterで開く。
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.getByRole("button", { name: "絞り込む" }).focus();
+  await page.keyboard.press("Tab");
+  expect(
+    await page.evaluate(() => document.activeElement?.getAttribute("href")),
+  ).toBe(`/notes/${noteId}`);
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/notes/${noteId}$`));
 });

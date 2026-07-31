@@ -66,6 +66,40 @@ test("題名の無い文献はcitation keyで示す", () => {
   ).toBe("smith2024");
 });
 
+test("想定規模のノート数でも、点と線を数え落とさない", () => {
+  const notes = 1000;
+  const works = 50;
+  const source: NoteGraph = {
+    notes: Array.from({ length: notes }, (_unused, index) => ({
+      note_id: `note-${index}`,
+      title: `規模の確認 ${index}`,
+      tags: [],
+      updated_at_ms: index,
+    })),
+    works: Array.from({ length: works }, (_unused, index) => ({
+      citation_key: `work${index}`,
+      title: null,
+    })),
+    // 鎖状の参照と、50件の文献への引用を張る。
+    references: Array.from({ length: notes - 1 }, (_unused, index) => ({
+      source_note_id: `note-${index}`,
+      target_note_id: `note-${index + 1}`,
+    })),
+    citations: Array.from({ length: notes }, (_unused, index) => ({
+      source_note_id: `note-${index}`,
+      citation_key: `work${index % works}`,
+    })),
+  };
+
+  const model = graphModel(source);
+
+  expect(model.vertices).toHaveLength(notes + works);
+  expect(model.edges).toHaveLength(notes * 2 - 1);
+  // 最もつながりが多いのは、20件のノートから引用された文献である。
+  expect(model.vertices[0].kind).toBe("work");
+  expect(model.vertices[0].degree).toBe(notes / works);
+});
+
 test("点の移動先は、ノートが閲覧画面、文献が書誌ライブラリーである", () => {
   const config = {
     apiBase: "/api/v3",

@@ -592,6 +592,91 @@ async fn the_graph_hides_notes_and_edges_the_actor_cannot_see() {
     assert_eq!(filtered.works.len(), 1);
 }
 
+/// 想定規模（REQ-OPS-003の約1,000ノート）で、図の問い合わせが一度で全体を返すことを確かめる。
+///
+/// 点と線の本数を数えるだけの試験である。所要時間は環境で変わるため上限を判定しない。
+#[tokio::test]
+async fn the_graph_answers_at_the_assumed_scale() {
+    const NOTES: usize = 1_000;
+    const WORKS: usize = 50;
+
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("schema initialization");
+    let alice = actor("https://id.example.test", "alice");
+    let identifiers: Vec<NoteId> = (0..NOTES)
+        .map(|index| {
+            NoteId::new(
+                EntityId::from_str(&format!("0197c9bc-0000-7000-8000-{index:012x}"))
+                    .expect("v7 note ID"),
+            )
+        })
+        .collect();
+
+    for (index, note_id) in identifiers.iter().enumerate() {
+        // 鎖状につなぎ、参照の線が確実に1本ずつ増えるようにする。
+        let targets = if index + 1 < NOTES {
+            vec![identifiers[index + 1]]
+        } else {
+            Vec::new()
+        };
+        let cited = vec![format!("work{:04}", index % WORKS)];
+        let note = Note::restore(
+            *note_id,
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+            format!("規模の確認 {index}"),
+            format!(
+                "= 規模の確認 {index}\n\n本文と cite:work{:04}[]",
+                index % WORKS
+            ),
+            // 半数へタグを付け、語での絞り込みがタグにも効くことを見る。
+            if index % 2 == 0 {
+                vec!["調査".to_owned()]
+            } else {
+                Vec::new()
+            },
+            UnixMillis::new(100),
+            UnixMillis::new(100),
+            Revision::INITIAL,
+            None,
+        )
+        .expect("consistent note");
+        database
+            .create_note(
+                &note,
+                NoteLinks {
+                    reference_targets: &targets,
+                    cited_keys: &cited,
+                },
+            )
+            .await
+            .expect("create note");
+    }
+
+    let whole = database
+        .note_graph(&alice, &NoteGraphQuery::default())
+        .await
+        .expect("graph at scale");
+    assert_eq!(whole.notes.len(), NOTES);
+    assert_eq!(whole.references.len(), NOTES - 1);
+    assert_eq!(whole.citations.len(), NOTES);
+    assert_eq!(whole.works.len(), WORKS);
+
+    // タグで絞ると半数になり、線は両端が残る組だけになる。鎖は1つ飛ばしで切れるため0本である。
+    let tagged = database
+        .note_graph(
+            &alice,
+            &NoteGraphQuery {
+                text: Some("調査".into()),
+            },
+        )
+        .await
+        .expect("filtered graph at scale");
+    assert_eq!(tagged.notes.len(), NOTES / 2);
+    assert!(tagged.references.is_empty());
+    assert_eq!(tagged.citations.len(), NOTES / 2);
+}
+
 fn graph_note(id: &str, title: &str) -> Note {
     Note::restore(
         NoteId::new(EntityId::from_str(id).expect("v7 note ID")),
