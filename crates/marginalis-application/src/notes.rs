@@ -481,6 +481,7 @@ impl NoteCommands for NoteApplication {
             reference_queries,
             citation_queries,
         } = validated;
+        // 新規作成では操作している利用者がそのまま作成者になるため、閲覧時の解決先と一致する。
         diagnostics.extend(
             self.citation_resolutions(actor.identity(), &citation_queries)
                 .await?
@@ -520,11 +521,20 @@ impl NoteCommands for NoteApplication {
             reference_queries,
             citation_queries,
         } = validated;
-        diagnostics.extend(
-            self.citation_resolutions(actor.identity(), &citation_queries)
+        if !citation_queries.is_empty() {
+            // 引用は閲覧時に作成者のライブラリーで解決する。共有されたノートを別の利用者が
+            // 更新する場合も同じ基準で判定しないと、保存できた引用が表示では解決されない。
+            let owner = self
+                .read_visible_note(&actor, note_id)
                 .await?
-                .diagnostics,
-        );
+                .owner()
+                .clone();
+            diagnostics.extend(
+                self.citation_resolutions(&owner, &citation_queries)
+                    .await?
+                    .diagnostics,
+            );
+        }
         reject_warnings(policy, diagnostics)?;
         let reference_targets = reference_targets(&reference_queries);
         self.commands
@@ -611,8 +621,10 @@ impl NotePresentation for NoteApplication {
             .await
             .map_err(map_repository_error)?;
         let resolutions = self.reference_resolutions(&targets, &context, &reference_queries)?;
-        // 下書きはまだ保存されていないため、引用は操作している利用者のライブラリーで解決する。
-        // 保存後は作成者が同じ利用者になるため、表示は変わらない。
+        // 下書きの要求はどのノートの下書きかを伝えないため、引用は操作している利用者の
+        // ライブラリーで解決する。新規作成では保存後の作成者が同じ利用者になり、表示は
+        // 変わらない。共有されたノートを別の利用者が編集している場合だけ、この表示と
+        // 保存後の表示が食い違う。
         let citations = self
             .citation_resolutions(actor.identity(), &citation_queries)
             .await?;
@@ -1170,6 +1182,132 @@ mod tests {
         ) -> Result<(), BibliographyRepositoryError> {
             unreachable!("this test does not write bibliography items")
         }
+    }
+
+    /// 引用だけを報告し、他の診断を出さない試験用の文書adapter。
+    struct CitingContent {
+        keys: Vec<String>,
+    }
+
+    impl NoteContent for CitingContent {
+        fn validate_draft(
+            &self,
+            draft: NoteDraft,
+        ) -> Result<ValidatedNoteDraft, Vec<NoteValidationDiagnostic>> {
+            Ok(ValidatedNoteDraft {
+                draft,
+                diagnostics: Vec::new(),
+                reference_queries: Vec::new(),
+                citation_queries: vec![NoteCitationQuery {
+                    citation_index: 0,
+                    keys: self.keys.clone(),
+                    locator: None,
+                    span: Utf8ByteSpan { start: 0, end: 1 },
+                }],
+            })
+        }
+
+        fn reference_queries(
+            &self,
+            _body: &str,
+        ) -> Result<Vec<NoteReferenceQuery>, NoteContentError> {
+            Ok(Vec::new())
+        }
+
+        fn citation_queries(
+            &self,
+            _body: &str,
+        ) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
+            Ok(Vec::new())
+        }
+
+        fn has_anchor(&self, _body: &str, _anchor: &str) -> Result<bool, NoteContentError> {
+            Ok(false)
+        }
+
+        fn render(
+            &self,
+            _note: &Note,
+            _inputs: NoteRenderInputs<'_>,
+        ) -> Result<String, NoteContentError> {
+            Ok(String::new())
+        }
+
+        fn export(&self, _note: &Note) -> Result<String, NoteContentError> {
+            Ok(String::new())
+        }
+
+        fn profile(&self) -> NoteProfile {
+            unreachable!("this test does not read the authoring profile")
+        }
+    }
+
+    /// 共有されたノートの更新でも、引用は作成者のライブラリーで判定する。
+    ///
+    /// 判定先が操作者のままだと、保存できた引用が閲覧時に解決されない状態を作ってしまう。
+    #[tokio::test]
+    async fn updating_a_shared_note_judges_citations_against_its_creator() {
+        let repository = Arc::new(MemoryNotes::default());
+        let note_id = NoteId::new(
+            EntityId::from_str("0197c9bc-0000-7000-8000-000000000031").expect("UUIDv7"),
+        );
+        repository.notes.lock().expect("notes lock").push(
+            Note::restore(
+                note_id,
+                OneItemLibrary::owner(),
+                "共有されたノート".into(),
+                "= 共有されたノート\n\n本文".into(),
+                Vec::new(),
+                UnixMillis::new(0),
+                UnixMillis::new(1),
+                Revision::INITIAL,
+                None,
+            )
+            .expect("stored note"),
+        );
+        let application = NoteApplication::new(
+            repository.clone(),
+            repository.clone(),
+            repository.clone(),
+            Arc::new(CitingContent {
+                keys: vec!["smith2024".into()],
+            }),
+            Arc::new(OneItemLibrary),
+            Arc::new(NoLinks),
+            Arc::new(FixedClock),
+            Arc::new(FixedRandom),
+        );
+        // 作成者ではない編集者。自分のライブラリーには`smith2024`がない。
+        let editor =
+            Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");
+        let draft = NoteDraft {
+            source: "= 共有されたノート\n\n本文 cite:[smith2024]".into(),
+            title: "共有されたノート".into(),
+            tags: Vec::new(),
+        };
+
+        // 作成者のライブラリーで解決できるため、警告を拒否する方針でも書き込みまで進む。
+        assert_eq!(
+            application
+                .update_note(
+                    editor.clone(),
+                    note_id,
+                    draft.clone(),
+                    Revision::INITIAL,
+                    NoteWritePolicy::RejectWarnings,
+                )
+                .await,
+            Err(NoteUseCaseError::Unavailable)
+        );
+
+        // 新規作成では操作者が作成者になるため、同じ引用は未登録として拒否される。
+        let created = application
+            .create_note(editor, draft, NoteWritePolicy::RejectWarnings)
+            .await;
+        let Err(NoteUseCaseError::AdvisoriesRejected(diagnostics)) = created else {
+            panic!("未登録のcitation keyは新規作成で拒否されます: {created:?}");
+        };
+        assert_eq!(diagnostics[0].code, "unknown_citation_key");
     }
 
     /// 引用は指定した所有者のライブラリーで解決し、未登録のkeyは警告として報告する。
