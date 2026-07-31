@@ -42,8 +42,8 @@
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --radius-pill: 999px;
-  --content-width: 80rem;
-  --reading-width: 72rem;
+  --content-width: 98.5rem;
+  --reading-width: 96rem;
 
   /* 余白の目盛り。0.25rem刻みで、値ではなく段で選ぶ。 */
   --space-1: 0.25rem;
