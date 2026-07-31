@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AccessControl } from "./AccessControl";
 import { EditorApplication } from "./EditorApplication";
@@ -7,7 +7,6 @@ import {
   ApplicationConfig,
   BibliographyItem,
   deleteBibliographyItem,
-  Note,
   NoteListEntry,
   NoteSummary,
   NoteView,
@@ -20,11 +19,18 @@ import {
 import { RenderedContent } from "./RenderedContent";
 import {
   NoteListQuery,
-  noteListSearch,
   parseNoteListQuery,
   selectNoteListPage,
 } from "./noteListState";
-import { externalPath } from "./paths";
+import {
+  accessPath,
+  canonicalSearch,
+  editPath,
+  externalPath,
+  listPath,
+  notePath,
+} from "./paths";
+import { useApiResource } from "./useApiResource";
 
 // 起動設定の形は`marginalis-contract`が定めます。ここでは再定義せず再公開します。
 export type { ApplicationConfig };
@@ -235,21 +241,17 @@ function BibliographyLibrary({ config }: { config: ApplicationConfig }) {
 }
 
 function NoteList({ config }: { config: ApplicationConfig }) {
-  const [notes, setNotes] = useState<NoteListEntry[] | null>(null);
-  const [failed, setFailed] = useState(false);
   const query = useMemo(
     () => parseNoteListQuery(config.search),
     [config.search],
   );
-  useEffect(() => {
-    let current = true;
-    listNotes(config.apiBase)
-      .then((value) => current && setNotes(value))
-      .catch(() => current && setFailed(true));
-    return () => {
-      current = false;
-    };
-  }, [config.apiBase]);
+  const load = useCallback(
+    (signal: AbortSignal) => listNotes(config.apiBase, signal),
+    [config.apiBase],
+  );
+  const resource = useApiResource(load);
+  const notes = resource.status === "ready" ? resource.value : null;
+  const failed = resource.status === "failed";
   const page = notes === null ? null : selectNoteListPage(notes, query);
   return (
     <section
@@ -284,11 +286,7 @@ function NoteList({ config }: { config: ApplicationConfig }) {
           <ul className="note-list">
             {page?.notes.map((note) => (
               <li key={note.note_id}>
-                <a
-                  href={`${externalPath(config.basePath, `/notes/${note.note_id}`)}${canonicalSearch(config.search)}`}
-                >
-                  {note.title}
-                </a>
+                <a href={notePath(config, note.note_id)}>{note.title}</a>
                 <dl>
                   <div>
                     <dt>更新</dt>
@@ -318,13 +316,13 @@ function NoteList({ config }: { config: ApplicationConfig }) {
           {page && page.pageCount > 1 && (
             <nav className="pagination" aria-label="ノート一覧のページ">
               {page.page > 1 && (
-                <a href={listPath(config, query, page.page - 1)}>前へ</a>
+                <a href={listPath(config, page.page - 1)}>前へ</a>
               )}
               <span>
                 {page.page} / {page.pageCount}
               </span>
               {page.page < page.pageCount && (
-                <a href={listPath(config, query, page.page + 1)}>次へ</a>
+                <a href={listPath(config, page.page + 1)}>次へ</a>
               )}
             </nav>
           )}
@@ -385,18 +383,16 @@ function NoteViewer({
   config: ApplicationConfig;
   noteId: string;
 }) {
-  const [view, setView] = useState<NoteView | null>(null);
-  const [failed, setFailed] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "failure">(
     "idle",
   );
-  useEffect(() => {
-    const controller = new AbortController();
-    readNoteView(config.apiBase, noteId, controller.signal)
-      .then(setView)
-      .catch(() => !controller.signal.aborted && setFailed(true));
-    return () => controller.abort();
-  }, [config.apiBase, noteId]);
+  const load = useCallback(
+    (signal: AbortSignal) => readNoteView(config.apiBase, noteId, signal),
+    [config.apiBase, noteId],
+  );
+  const resource = useApiResource(load);
+  const view = resource.status === "ready" ? resource.value : null;
+  const failed = resource.status === "failed";
   async function copyNoteId() {
     try {
       if (!navigator.clipboard?.writeText) throw new Error("unavailable");
@@ -455,7 +451,7 @@ function NoteViewer({
           {view.access !== "read" && (
             <a
               className="button button-primary"
-              href={`${externalPath(config.basePath, `/notes/${noteId}/edit`)}${canonicalSearch(config.search)}`}
+              href={editPath(config, noteId)}
             >
               編集
             </a>
@@ -463,7 +459,7 @@ function NoteViewer({
           {view.access === "manage" && (
             <a
               className="button button-secondary"
-              href={`${externalPath(config.basePath, `/notes/${noteId}/access`)}${canonicalSearch(config.search)}`}
+              href={accessPath(config, noteId)}
             >
               共有設定
             </a>
@@ -500,11 +496,7 @@ function RelatedNotes({
             <ul>
               {notes.map((note) => (
                 <li key={note.note_id}>
-                  <a
-                    href={`${externalPath(config.basePath, `/notes/${note.note_id}`)}${canonicalSearch(config.search)}`}
-                  >
-                    {note.title}
-                  </a>
+                  <a href={notePath(config, note.note_id)}>{note.title}</a>
                 </li>
               ))}
             </ul>
@@ -522,13 +514,21 @@ function AccessPage({
   config: ApplicationConfig;
   noteId: string;
 }) {
-  const [note, setNote] = useState<Note | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    readNote(config.apiBase, noteId)
-      .then(setNote)
-      .catch(() => setFailed(true));
-  }, [config.apiBase, noteId]);
+  const load = useCallback(
+    (signal: AbortSignal) => readNote(config.apiBase, noteId, signal),
+    [config.apiBase, noteId],
+  );
+  const resource = useApiResource(load);
+  const note = resource.status === "ready" ? resource.value : null;
+  const failed = resource.status === "failed";
+  // ACLを更新するとノートのrevisionが進む。読み込んだ値を書き換えず、
+  // どのノートに対する更新かを併せて保持する。
+  const [updated, setUpdated] = useState<{
+    noteId: string;
+    revision: number;
+  } | null>(null);
+  const revision =
+    updated?.noteId === noteId ? updated.revision : (note?.revision ?? 0);
   if (failed) return <p role="alert">共有設定を読み込めませんでした。</p>;
   if (note === null) return <p>共有設定を読み込んでいます。</p>;
   return (
@@ -546,18 +546,15 @@ function AccessPage({
         </div>
       </div>
       <nav className="page-actions" aria-label="ノート操作">
-        <a
-          className="button button-secondary"
-          href={`${externalPath(config.basePath, `/notes/${noteId}`)}${canonicalSearch(config.search)}`}
-        >
+        <a className="button button-secondary" href={notePath(config, noteId)}>
           閲覧画面へ戻る
         </a>
       </nav>
       <AccessControl
         apiBase={config.apiBase}
         noteId={noteId}
-        revision={note.revision}
-        onRevision={(revision) => setNote({ ...note, revision })}
+        revision={revision}
+        onRevision={(next) => setUpdated({ noteId, revision: next })}
       />
     </section>
   );
@@ -573,18 +570,6 @@ function parseRoute(pathname: string): Route {
   if (match[2] === "edit") return { kind: "edit", noteId };
   if (match[2] === "access") return { kind: "access", noteId };
   return { kind: "view", noteId };
-}
-
-function listPath(
-  config: ApplicationConfig,
-  query: NoteListQuery,
-  page: number,
-): string {
-  return externalPath(config.basePath, `/${noteListSearch(query, page)}`);
-}
-
-function canonicalSearch(search: string): string {
-  return noteListSearch(parseNoteListQuery(search));
 }
 
 function accessLabel(access: NoteListEntry["access"]): string {
