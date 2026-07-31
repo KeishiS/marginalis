@@ -7,8 +7,15 @@
 
 ### 破壊的変更
 
-- MCPとOpenAPIが示すnote profileを7へ更新した。ノートの入力規則そのものは変えていないが、
-  規則の正本を一か所へ集約したため版を上げる。
+- AdocWeave package版を0.22.0へ更新した。`cite:[key]`が引用として解析されるようになったため、
+  archiveを`marginalis-archive-12`へ、MCPとOpenAPIが示すnote profileを8へ更新した。archive 7、
+  8、9、10、11は`migrate-archive`で全件再検証してarchive 12へ変換できる。
+- `cite:`を含むノートを`citation_disabled`として拒否するようにした。解決した書誌情報を描画へ
+  渡す経路がAdocWeaveにまだないため、未解決のcitation keyが表示される状態を保存させない。
+  文献を引用する場合は従来どおり標準のbibliography（`[[[key]]]`と`<<key>>`）を使用する。
+  判断の詳細は[0.22移行判断](docs/adocweave-v0.22-migration.md)に記録した。
+- ノートの入力規則の正本を一か所へ集約した。受理する入力は変わらないが、`get_note_profile`が
+  広告する内容の由来が変わるため、上記のnote profile版に含めて公開する。
 - ノートIDと書誌項目IDの公開JSON Schemaの`pattern`をUUID形式へ厳格化した。従来は36文字の
   16進数とハイフンの並びであれば通過したため、実装が受理する規則より緩かった。実際に受理する
   値は変わらない。

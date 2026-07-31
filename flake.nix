@@ -28,7 +28,7 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-      # AdocWeave v0.20.0 が要求する Rust 1.97.1 を確定的にピンする。
+      # AdocWeave v0.22.0 が要求する Rust 1.97.1 を確定的にピンする。
       rustToolchainFor =
         pkgs:
         pkgs.rust-bin.stable."1.97.1".default.override {
@@ -105,7 +105,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.20.0" = "sha256-6FQdN7yEUXV+DFD2WPzez5aQhnUf7PIUwDFulpG4LgI=";
+                "adocweave-0.22.0" = "sha256-UcZAYFB4uQ8ZUeWDmafLzruFVfZUdUWbVqucVQewDNA=";
               };
             };
             cargoBuildFlags = [
@@ -317,19 +317,19 @@
                   import-archive --input "$PWD/schema9.json"
                 test ! -e rejected.sqlite
                 ${self.packages.${system}.default}/bin/marginalis \
-                  migrate-archive --input "$PWD/schema9.json" --output "$PWD/schema11.json"
+                  migrate-archive --input "$PWD/schema9.json" --output "$PWD/migrated-archive.json"
                 cmp schema9.json schema9-original.json
                 jq -e '
-                  .format == "marginalis-archive-11"
-                  and .adocweave_package_version == "0.20.0"
+                  .format == "marginalis-archive-12"
+                  and .adocweave_package_version == "0.22.0"
                   and .note_profile_version == 4
                   and (.notes | length) == 2
                   and (.note_acl | length) == 2
-                ' schema11.json
+                ' migrated-archive.json
 
                 export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema12.sqlite"
                 ${self.packages.${system}.default}/bin/marginalis \
-                  import-archive --input "$PWD/schema11.json"
+                  import-archive --input "$PWD/migrated-archive.json"
                 test "$(sqlite3 schema12.sqlite \
                   'SELECT MAX(version) FROM schema_migrations')" = 12
                 sqlite3 -json schema12.sqlite \
@@ -353,10 +353,10 @@
                       'mcp_access_tokens', 'mcp_refresh_tokens')")" = 0
 
                 ${self.packages.${system}.default}/bin/marginalis \
-                  export-archive --output "$PWD/schema11-roundtrip.json"
-                cmp schema11.json schema11-roundtrip.json
+                  export-archive --output "$PWD/roundtrip-archive.json"
+                cmp migrated-archive.json roundtrip-archive.json
                 ${self.packages.${system}.default}/bin/marginalis \
-                  verify-restore --input "$PWD/schema11-roundtrip.json"
+                  verify-restore --input "$PWD/roundtrip-archive.json"
                 touch $out
               '';
 
@@ -652,8 +652,8 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-11\" "
-                + "and .adocweave_package_version == \"0.20.0\" "
+                + "jq -e '.format == \"marginalis-archive-12\" "
+                + "and .adocweave_package_version == \"0.22.0\" "
                 + "and .note_profile_version == 4 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
                 + "test $(stat -c %a \"$backup\") = 700; "

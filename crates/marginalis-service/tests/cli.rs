@@ -78,8 +78,8 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-11");
-    assert_eq!(archive_json["adocweave_package_version"], "0.20.0");
+    assert_eq!(archive_json["format"], "marginalis-archive-12");
+    assert_eq!(archive_json["adocweave_package_version"], "0.22.0");
     assert_eq!(archive_json["note_profile_version"], 4);
 
     let backup = directory.join("backup");
@@ -296,8 +296,8 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let migrated: serde_json::Value =
         serde_json::from_slice(&fs::read(&output).expect("read migration output"))
             .expect("migrated JSON");
-    assert_eq!(migrated["format"], "marginalis-archive-11");
-    assert_eq!(migrated["adocweave_package_version"], "0.20.0");
+    assert_eq!(migrated["format"], "marginalis-archive-12");
+    assert_eq!(migrated["adocweave_package_version"], "0.22.0");
     assert_eq!(migrated["note_profile_version"], 4);
 
     let invalid_input = directory.join("invalid-archive-9.json");

@@ -34,6 +34,7 @@ enum ForbiddenRule {
     Resource,
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
+    Citation,
 }
 
 const FORBIDDEN_RULES: &[ForbiddenRule] = &[
@@ -46,6 +47,7 @@ const FORBIDDEN_RULES: &[ForbiddenRule] = &[
     ForbiddenRule::Resource,
     ForbiddenRule::UnsupportedMathLanguage,
     ForbiddenRule::UnsupportedSourceLanguage,
+    ForbiddenRule::Citation,
 ];
 
 impl ForbiddenRule {
@@ -60,6 +62,7 @@ impl ForbiddenRule {
             Self::Resource => NoteValidationCode::ResourceDisabled,
             Self::UnsupportedMathLanguage => NoteValidationCode::UnsupportedMathLanguage,
             Self::UnsupportedSourceLanguage => NoteValidationCode::UnsupportedSourceLanguage,
+            Self::Citation => NoteValidationCode::CitationDisabled,
         }
     }
 
@@ -74,6 +77,9 @@ impl ForbiddenRule {
             Self::Resource => "external media resources are not allowed",
             Self::UnsupportedMathLanguage => "only latexmath formulas are allowed",
             Self::UnsupportedSourceLanguage => "the source block language is not allowed",
+            Self::Citation => {
+                "citations are not available yet; use the standard bibliography instead"
+            }
         }
     }
 }
@@ -320,6 +326,14 @@ fn validate_note_content_profile_with(
     errors.extend(analysis.resource_queries().into_iter().map(|query| {
         NoteContentError::forbidden(ForbiddenRule::Resource, query.reference.range())
     }));
+    // `cite:`はAdocWeave 0.22.0から引用として解析されるが、解決した書誌情報を描画へ渡す
+    // 経路がまだない。未解決のままcitation keyを表示する状態を作らないため拒否する。
+    errors.extend(
+        analysis
+            .citations()
+            .into_iter()
+            .map(|citation| NoteContentError::forbidden(ForbiddenRule::Citation, citation.range)),
+    );
     errors.extend(
         analysis
             .reference_queries()
@@ -501,6 +515,37 @@ mod tests {
     fn rejects_duplicate_anchors() {
         let source = format!("{HEADER}[[same]]\n== 節A\n\n本文A\n\n[[same]]\n== 節B\n\n本文B\n");
         assert!(violations(&source).contains(&NoteValidationCode::DuplicateAnchor));
+    }
+
+    /// `cite:`は解決した書誌情報を描画へ渡す経路ができるまで受理しない。
+    ///
+    /// AdocWeave 0.22.0から引用として解析されるが、未解決のままcitation keyが
+    /// 表示される状態を利用者へ見せないため拒否する。
+    #[test]
+    fn rejects_citations_until_resolution_is_available() {
+        for source in [
+            format!("{HEADER}本文 cite:[smith2024]。\n"),
+            format!("{HEADER}本文 cite:[smith2024, tanaka2025]。\n"),
+            format!("{HEADER}本文 cite:[smith2024, locator=\"p. 12\"]。\n"),
+        ] {
+            assert!(
+                violations(&source).contains(&NoteValidationCode::CitationDisabled),
+                "引用を拒否します: {source}"
+            );
+        }
+    }
+
+    /// 標準のbibliographyは従来どおり受理する。
+    #[test]
+    fn keeps_accepting_the_standard_bibliography() {
+        let source = format!(
+            "{HEADER}本文<<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith. Example.\n"
+        );
+        assert!(
+            !violations(&source).contains(&NoteValidationCode::CitationDisabled),
+            "標準のbibliographyは拒否しません: {:?}",
+            violations(&source)
+        );
     }
 
     #[test]
