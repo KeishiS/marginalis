@@ -121,7 +121,9 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           />
         </label>
         <div className="bibliography-actions">
-          <button type="submit">{editing ? "更新" : "登録"}</button>
+          <button className="button button-primary" type="submit">
+            {editing ? "更新" : "登録"}
+          </button>
           {editing && (
             <button
               className="button button-secondary"
@@ -168,7 +170,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
               </button>
               <div className="bibliography-item-actions">
                 <button
-                  className="button button-secondary"
+                  className="button button-danger"
                   type="button"
                   onClick={() => void remove(item)}
                 >
