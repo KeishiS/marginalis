@@ -15,6 +15,7 @@ enum Command {
     Diagnose,
     PurgeExpired,
     ExportArchive,
+    ExportDocuments,
     MigrateArchive,
     ImportArchive,
     ValidateArchive,
@@ -32,6 +33,7 @@ impl Command {
             Some("diagnose") => Self::Diagnose,
             Some("purge-expired") => Self::PurgeExpired,
             Some("export-archive") => Self::ExportArchive,
+            Some("export-documents") => Self::ExportDocuments,
             Some("migrate-archive") => Self::MigrateArchive,
             Some("import-archive") => Self::ImportArchive,
             Some("validate-archive") => Self::ValidateArchive,
@@ -66,6 +68,12 @@ impl Command {
             Self::ExportArchive => tracing::error!(
                 event = "maintenance.archive_export.failed",
                 command = "export-archive",
+                error = %error,
+                "Marginalis command terminated"
+            ),
+            Self::ExportDocuments => tracing::error!(
+                event = "maintenance.document_export.failed",
+                command = "export-documents",
                 error = %error,
                 "Marginalis command terminated"
             ),
@@ -139,6 +147,7 @@ async fn main() {
         Command::Diagnose => Err(cli::USAGE.into()),
         Command::PurgeExpired => maintenance::purge_expired().await,
         Command::ExportArchive => maintenance::export_archive(arguments).await,
+        Command::ExportDocuments => maintenance::export_documents(arguments).await,
         Command::MigrateArchive => maintenance::migrate_archive(arguments).await,
         Command::ImportArchive => maintenance::import_archive(arguments).await,
         Command::ValidateArchive => maintenance::validate_archive(arguments).await,

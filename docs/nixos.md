@@ -190,6 +190,48 @@ CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行�
 旧archiveの直接取込拒否、schema 12でのノート、ACL、参照、削除状態、revisionの一致、archive 13の
 再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
 
+## 他の道具で読める形での取り出し
+
+保存しているノートと書誌情報を、Marginalis以外の道具で読める形へ一度に書き出せます。ノートは
+保存しているAsciiDocのまま`.adoc`ファイルへ、書誌情報はCSL-JSONの配列へ書き出します。CSL-JSONは
+pandocやZoteroなど多くの文献管理ツールが読み取る形式です。
+
+```sh
+sudo -u marginalis marginalis export-documents \
+  --output /srv/marginalis-export/2026-07-31.tar.xz
+```
+
+出力は`tar.xz`形式の書庫1つです。展開すると、出力ファイル名から作った最上位ディレクトリーの下に
+所有者ごとの内容が並びます。引用は作成者のライブラリーで解決するため、この分け方でノートと
+文献の対応が保たれます。
+
+```text
+2026-07-31/
+  id.example.test/alice/notes/先行研究の整理-019f0000-….adoc
+  id.example.test/alice/bibliography.json
+  manifest.json
+```
+
+```sh
+tar -xJf /srv/marginalis-export/2026-07-31.tar.xz
+```
+
+ファイル名は題名とnote IDを並べた形です。題名が重複しても、ファイル名に使えない文字を含んでも、
+note IDを付けるため衝突しません。削除済み（ソフトデリート）のノートは書き出しません。
+`cite:`は解決せず本文のまま書き出すため、受け取った側の道具が同じ出力のCSL-JSONで解決できます。
+
+`manifest.json`は、各ファイルとnote IDの対応、所有者、日時、revision、タグ、ACLに加えて、
+形式名`marginalis-documents-1`、Marginalisの版、解析に使ったAdocWeave packageの版、ノートの
+受理規則の版を持ちます。版の意味はarchiveと同じです。取り込む側は、稼働しているMarginalisの版と
+比べて再検証や移行が必要かどうかを判断できます。
+
+出力先のファイルが既に存在する場合は失敗します。書庫ファイルは`600`で作成し、書庫の中の
+ディレクトリーは`700`、ファイルは`600`として記録します。展開する側の設定によらず、所有者だけが
+読める状態になります。
+
+**この出力は復元の入力ではありません。** 復元には次節の`export-archive`と`import-archive`を
+使用してください。archiveだけがWeb sessionを除く全状態を検証付きで往復できます。
+
 ## 復元と切戻し
 
 本番databaseへ直接importしてはいけません。次の手順では、先に別の空databaseへ復元し、確認後に

@@ -3,9 +3,12 @@
 use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
 use crate::cli::{required_absolute_file_argument, required_archive_migration_arguments};
 use crate::config::StorageConfig;
+use crate::runtime::SystemClock;
+use liblzma::write::XzEncoder;
+use marginalis_application::{Clock as _, NoteContent as _};
 use marginalis_application::{LogicalSnapshot, RestorePlan};
 use marginalis_archive::{
-    Archive, create_archive, migrate_previous_archive,
+    Archive, create_archive, documents::create_document_export, migrate_previous_archive,
     validate_archive as validate_archive_contract,
 };
 use marginalis_asciidoc::AsciiDocNoteContent;
@@ -224,4 +227,144 @@ fn create_isolated_database_path() -> Result<(PathBuf, PathBuf), Box<dyn std::er
         }
     }
     Err("could not allocate an isolated restore directory".into())
+}
+
+/// SQLite正本を、他の道具で読めるAsciiDocとCSL-JSONのファイル群として出力する。
+///
+/// 復元の入力はarchiveであり、この出力ではない。取り込み側が移行の要否を判断できるよう、
+/// manifestへ形式名と版情報を記録する。
+pub(crate) async fn export_documents(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let output = required_absolute_file_argument(&mut arguments, "--output")?;
+    if output.exists() {
+        return Err(format!(
+            "document export output already exists: {}",
+            output.display()
+        )
+        .into());
+    }
+    let configuration = StorageConfig::from_environment()?;
+    let database = SqliteDatabase::connect(&configuration.database_url).await?;
+    let snapshot = database.export_archive_snapshot().await?;
+    let export = create_document_export(
+        &snapshot,
+        env!("CARGO_PKG_VERSION"),
+        AsciiDocNoteContent.profile().adocweave_package_version,
+        SystemClock.now(),
+    );
+
+    let manifest = serde_json::to_vec_pretty(&export.manifest)?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(PRIVATE_FILE_MODE)
+        .open(&output)?;
+    let mut builder = tar::Builder::new(XzEncoder::new(file, DOCUMENT_EXPORT_COMPRESSION_LEVEL));
+    let root = document_export_root(&output)?;
+    let modified = u64::try_from(export.manifest.exported_at_ms.max(0) / 1000)?;
+
+    let mut written_directories = HashSet::new();
+    for file in export
+        .files
+        .iter()
+        .map(|file| (file.path.as_str(), file.contents.as_bytes()))
+        .chain(std::iter::once(("manifest.json", manifest.as_slice())))
+    {
+        let (path, contents) = file;
+        let path = format!("{root}/{path}");
+        append_parent_directories(&mut builder, &path, modified, &mut written_directories)?;
+        append_private_entry(&mut builder, &path, contents, modified)?;
+    }
+
+    let file = builder.into_inner()?.finish()?;
+    file.sync_all()?;
+    sync_parent_directory(&output)?;
+
+    tracing::info!(
+        event = "maintenance.document_export.completed",
+        output = %output.display(),
+        note_count = export
+            .manifest
+            .owners
+            .iter()
+            .map(|owner| owner.notes.len())
+            .sum::<usize>(),
+        owner_count = export.manifest.owners.len(),
+        "exported documents"
+    );
+    Ok(())
+}
+
+/// 圧縮の強さ。既定の6は、取り出しの速さと大きさの釣り合いが取れた値である。
+const DOCUMENT_EXPORT_COMPRESSION_LEVEL: u32 = 6;
+
+/// 書庫を展開したときに作られる最上位ディレクトリー名。
+///
+/// 出力ファイル名から拡張子を除いた名前を使う。展開してもファイルが散らばらず、複数回の
+/// 書き出しを並べても混ざらない。
+fn document_export_root(output: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let name = output
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("document export output must have a file name")?;
+    let stem = name
+        .strip_suffix(".tar.xz")
+        .or_else(|| name.strip_suffix(".txz"))
+        .unwrap_or(name);
+    if stem.is_empty() {
+        return Err("document export output must have a file name".into());
+    }
+    Ok(stem.to_owned())
+}
+
+/// 書庫内のファイルを、所有者だけが読める権限で加える。
+fn append_private_entry(
+    builder: &mut tar::Builder<XzEncoder<File>>,
+    path: &str,
+    contents: &[u8],
+    modified: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut header = tar::Header::new_gnu();
+    header.set_size(contents.len() as u64);
+    header.set_mode(PRIVATE_FILE_MODE);
+    header.set_mtime(modified);
+    header.set_uid(0);
+    header.set_gid(0);
+    header.set_cksum();
+    builder.append_data(&mut header, path, contents)?;
+    Ok(())
+}
+
+/// 書庫内のディレクトリーを、上位から順に一度だけ加える。
+///
+/// tarはディレクトリーの項目がなくても展開できるが、その場合の権限は展開する側の設定に
+/// 委ねられる。所有者だけが読める状態で展開されるよう、明示的に加える。
+fn append_parent_directories(
+    builder: &mut tar::Builder<XzEncoder<File>>,
+    path: &str,
+    modified: u64,
+    written: &mut HashSet<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let components = path.split('/').collect::<Vec<_>>();
+    let mut directory = String::new();
+    for component in &components[..components.len() - 1] {
+        if !directory.is_empty() {
+            directory.push('/');
+        }
+        directory.push_str(component);
+        if !written.insert(directory.clone()) {
+            continue;
+        }
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Directory);
+        header.set_size(0);
+        header.set_mode(PRIVATE_DIRECTORY_MODE);
+        header.set_mtime(modified);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_cksum();
+        builder.append_data(&mut header, format!("{directory}/"), std::io::empty())?;
+    }
+    Ok(())
 }

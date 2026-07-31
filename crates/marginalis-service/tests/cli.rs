@@ -640,3 +640,191 @@ fn diagnose_reports_an_unavailable_database_and_fails() {
     assert!(!String::from_utf8_lossy(&output.stdout).contains("must-not-be-reported"));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("must-not-be-reported"));
 }
+
+#[test]
+fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
+    let directory = test_directory("document-export");
+    fs::create_dir(&directory).expect("test directory");
+    let database = directory.join("marginalis.sqlite3");
+    let database_url = format!("sqlite://{}?mode=rwc", database.display());
+    let archive = directory.join("archive.json");
+    let source = serde_json::json!({
+        "format": "marginalis-archive-13",
+        "adocweave_package_version": "0.23.0",
+        "note_profile_version": 4,
+        "notes": [
+            {
+                "note_id": "0197c9bc-0000-7000-8000-000000000001",
+                "creator_issuer": "https://id.example.test",
+                "creator_subject": "alice",
+                "source": "= 先行研究の整理\n:tags: 研究\n\n本文 cite:[smith2024]",
+                "created_at_ms": 1,
+                "updated_at_ms": 2,
+                "revision": 1,
+                "deleted_at_ms": null
+            },
+            {
+                "note_id": "0197c9bc-0000-7000-8000-000000000002",
+                "creator_issuer": "https://id.example.test",
+                "creator_subject": "alice",
+                "source": "= 削除済み\n\n本文",
+                "created_at_ms": 1,
+                "updated_at_ms": 2,
+                "revision": 1,
+                "deleted_at_ms": 2
+            }
+        ],
+        "note_acl": [{
+            "note_id": "0197c9bc-0000-7000-8000-000000000001",
+            "issuer": "https://id.example.test",
+            "subject": "bob",
+            "permission": "read"
+        }],
+        "bibliography_items": [{
+            "item_id": "0197c9bc-0000-7000-8000-0000000000a1",
+            "owner_issuer": "https://id.example.test",
+            "owner_subject": "alice",
+            "citation_key": "smith2024",
+            "csl_json": { "id": "smith2024", "type": "book", "title": "Example" },
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "revision": 1
+        }]
+    });
+    fs::write(
+        &archive,
+        serde_json::to_vec_pretty(&source).expect("archive JSON"),
+    )
+    .expect("write archive");
+    let imported = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["import-archive", "--input"])
+        .arg(&archive)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("import archive");
+    assert!(
+        imported.status.success(),
+        "import failed: {}",
+        String::from_utf8_lossy(&imported.stderr)
+    );
+
+    let output = directory.join("2026-07-31.tar.xz");
+    let exported = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["export-documents", "--output"])
+        .arg(&output)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("export documents");
+    assert!(
+        exported.status.success(),
+        "document export failed: {}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    assert!(exported.stdout.is_empty());
+    assert_eq!(
+        fs::metadata(&output)
+            .expect("archive metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+
+    // 展開して内容を確かめる。書庫の最上位は出力ファイル名から作る。
+    let extracted = directory.join("extracted");
+    fs::create_dir(&extracted).expect("extract directory");
+    let unpacked = Command::new("tar")
+        .args(["-xJf"])
+        .arg(&output)
+        .arg("-C")
+        .arg(&extracted)
+        .output()
+        .expect("extract document export");
+    assert!(
+        unpacked.status.success(),
+        "extract failed: {}",
+        String::from_utf8_lossy(&unpacked.stderr)
+    );
+
+    let root = extracted.join("2026-07-31");
+    let owner = root.join("id.example.test").join("alice");
+    let note = owner
+        .join("notes")
+        .join("先行研究の整理-0197c9bc-0000-7000-8000-000000000001.adoc");
+    assert_eq!(
+        fs::read_to_string(&note).expect("note file"),
+        "= 先行研究の整理\n:tags: 研究\n\n本文 cite:[smith2024]"
+    );
+    // 削除済みのノートは書き出さない。
+    assert_eq!(
+        fs::read_dir(owner.join("notes"))
+            .expect("notes directory")
+            .count(),
+        1
+    );
+
+    let bibliography: serde_json::Value = serde_json::from_slice(
+        &fs::read(owner.join("bibliography.json")).expect("bibliography file"),
+    )
+    .expect("CSL-JSON");
+    assert_eq!(bibliography[0]["id"], "smith2024");
+    assert_eq!(bibliography[0]["title"], "Example");
+
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("manifest.json")).expect("manifest"))
+            .expect("manifest JSON");
+    assert_eq!(manifest["format"], "marginalis-documents-1");
+    assert_eq!(manifest["marginalis_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(manifest["adocweave_package_version"], "0.23.0");
+    assert_eq!(manifest["note_profile_version"], 4);
+    assert_eq!(manifest["owners"][0]["subject"], "alice");
+    assert_eq!(
+        manifest["owners"][0]["notes"][0]["note_id"],
+        "0197c9bc-0000-7000-8000-000000000001"
+    );
+    assert_eq!(
+        manifest["owners"][0]["notes"][0]["acl"][0]["subject"],
+        "bob"
+    );
+    assert_eq!(
+        manifest["owners"][0]["bibliography"][0]["citation_key"],
+        "smith2024"
+    );
+
+    // 展開しても所有者だけが読める権限になる。
+    for path in [&root, &owner] {
+        assert_eq!(
+            fs::metadata(path)
+                .expect("directory metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+    }
+    for path in [
+        &note,
+        &owner.join("bibliography.json"),
+        &root.join("manifest.json"),
+    ] {
+        assert_eq!(
+            fs::metadata(path)
+                .expect("file metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+
+    // 既存の出力先は上書きしない。
+    let repeated = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["export-documents", "--output"])
+        .arg(&output)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("repeat document export");
+    assert!(!repeated.status.success());
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}

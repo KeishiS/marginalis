@@ -1,8 +1,11 @@
-//! ノート、ACL、書誌情報を可搬なJSONへ書き出し、検証して読み戻す保存形式。
+//! ノート、ACL、書誌情報を可搬な形へ書き出す出力形式。
 //!
+//! 復元へ使う保存形式（[`Archive`]）と、他の道具で読むための出力（[`documents`]）を持ちます。
 //! 形式そのものの定義（版、移行できる旧契約）はこのcrateが持ちます。一方、ノート本文を現行規則で
 //! 再検証する処理は具体的な解析器に依存するため、[`NoteContent`] portとして受け取ります。
 //! どの解析器を使うかはcomposition rootが決めます。
+
+pub mod documents;
 
 use marginalis_application::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry, NoteContent};
 use marginalis_domain::{
