@@ -87,6 +87,10 @@ export function GraphCanvas({
     return map;
   }, [placed]);
 
+  // 点の広がりに合わせて表示範囲を決める。固定の範囲にすると、点が少ないときに余白ばかりの
+  // 図になり、多いときは端が切れる。
+  const bounds = useMemo(() => fitBounds(placed), [placed]);
+
   if (placed === null) {
     return (
       <p className="state-message" role="status">
@@ -104,7 +108,7 @@ export function GraphCanvas({
     <figure className="graph-canvas">
       <svg
         ref={attachZoom}
-        viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
+        viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
         role="img"
         aria-label="ノートと文献のつながり"
       >
@@ -183,6 +187,45 @@ function GraphLine({
       y2={target.y ?? 0}
     />
   );
+}
+
+/**
+ * 点がすべて入る表示範囲を返す。
+ *
+ * 名前は点の下へ出るため、下側の余白を広く取る。点が1つだけの場合も潰れないよう、最小の
+ * 大きさを保つ。
+ */
+function fitBounds(placed: PlacedVertex[] | null): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  const points = placed ?? [];
+  if (points.length === 0) {
+    return { x: 0, y: 0, width: VIEW_WIDTH, height: VIEW_HEIGHT };
+  }
+  const xs = points.map((vertex) => vertex.x ?? 0);
+  const ys = points.map((vertex) => vertex.y ?? 0);
+  const margin = MAXIMUM_RADIUS + 32;
+  // 点が少ないときに拡大されすぎないよう、最小の範囲を保つ。点の中心から広げるため、
+  // 図は常に中央へ寄る。
+  const width = Math.max(
+    Math.max(...xs) - Math.min(...xs) + margin * 2,
+    VIEW_WIDTH / 2,
+  );
+  const height = Math.max(
+    Math.max(...ys) - Math.min(...ys) + margin * 2,
+    VIEW_HEIGHT / 2,
+  );
+  const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+  return {
+    x: centerX - width / 2,
+    y: centerY - height / 2,
+    width,
+    height,
+  };
 }
 
 function touches(edge: GraphEdge, id: string): boolean {

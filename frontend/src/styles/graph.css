@@ -23,9 +23,10 @@
   padding: var(--space-2);
 }
 
+/* 高さを固定し、点の数で図の大きさが変わらないようにする。 */
 .graph-canvas svg {
   display: block;
-  height: auto;
+  height: min(70vh, 34rem);
   width: 100%;
 }
 

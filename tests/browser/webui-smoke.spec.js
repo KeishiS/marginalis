@@ -474,3 +474,61 @@ const SCREENSHOT_OPTIONS = {
 function editorScreenshotOptions(page) {
   return { ...SCREENSHOT_OPTIONS, mask: [page.locator(".cm-content")] };
 }
+
+test("関係の図で点を選ぶと、その画面へ移動できる", async ({ page }) => {
+  const noteId = "0197c9bc-0000-7000-8000-000000000001";
+  const otherId = "0197c9bc-0000-7000-8000-000000000002";
+  await page.route("**/api/v3/notes/graph*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        notes: [
+          {
+            note_id: noteId,
+            title: "先行研究の整理",
+            tags: ["研究"],
+            updated_at_ms: 2,
+          },
+          { note_id: otherId, title: "検証メモ", tags: [], updated_at_ms: 1 },
+        ],
+        works: [{ citation_key: "smith2024", title: "An Example Article" }],
+        references: [{ source_note_id: noteId, target_note_id: otherId }],
+        citations: [{ source_note_id: noteId, citation_key: "smith2024" }],
+      }),
+    });
+  });
+
+  await page.goto("/graph");
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+
+  // 点はノートと文献の両方が出る。線は参照と引用で描き分ける。
+  const vertices = page.locator(".graph-vertex");
+  await expect(vertices).toHaveCount(3);
+  await expect(page.locator('.graph-edge[data-kind="reference"]')).toHaveCount(
+    1,
+  );
+  await expect(page.locator('.graph-edge[data-kind="citation"]')).toHaveCount(1);
+
+  // ノートの点は閲覧画面、文献の点は書誌ライブラリーを指す。
+  const note = page.locator('.graph-vertex[data-kind="note"]').first();
+  expect(await note.getAttribute("href")).toBe(`/notes/${noteId}`);
+  const work = page.locator('.graph-vertex[data-kind="work"]').first();
+  expect(await work.getAttribute("href")).toBe(
+    "/bibliography?query=smith2024",
+  );
+
+  // 図と同じ内容を一覧からも辿れる。
+  await page.getByText("つながりの一覧").click();
+  await expect(
+    page.locator(".graph-outline a", { hasText: "先行研究の整理" }),
+  ).toBeVisible();
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page).toHaveScreenshot("graph-wide.png", SCREENSHOT_OPTIONS);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page).toHaveScreenshot(
+    "graph-wide-dark.png",
+    SCREENSHOT_OPTIONS,
+  );
+});
