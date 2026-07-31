@@ -930,3 +930,12 @@ select:hover {
     width: 100%;
   }
 }
+
+/* 入力欄や一覧の中へ、その場の失敗として表示する。 */
+.problem-inline {
+  background: var(--color-danger-soft);
+  border: var(--border-thin) solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger);
+  padding: var(--space-3);
+}

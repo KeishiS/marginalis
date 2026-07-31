@@ -147,8 +147,8 @@
   overflow: auto hidden;
 }
 
-.math-rendering-error,
-.problem-inline {
+/* 数式を組版できなかった場所へ、本文の代わりに表示する。 */
+.math-rendering-error {
   background: var(--color-danger-soft);
   border: var(--border-thin) solid var(--color-danger);
   border-radius: var(--radius-sm);
