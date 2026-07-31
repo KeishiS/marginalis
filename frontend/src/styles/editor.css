@@ -1,0 +1,275 @@
+.editor-form {
+  --editor-height: clamp(30rem, calc(100dvh - 19rem), 68rem);
+
+  display: grid;
+  gap: var(--space-4);
+}
+
+.editor-controls {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.editor-view-toolbar,
+.editor-view-buttons,
+.editor-width-control,
+.scroll-sync-control {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.editor-view-buttons {
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+}
+
+.button-segment {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-muted);
+  min-height: 2.1rem;
+  padding: var(--space-1) var(--space-3);
+}
+
+.editor-view-buttons button[aria-pressed="true"] {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+}
+
+.editor-width-control input {
+  accent-color: var(--color-primary);
+  inline-size: clamp(7rem, 18vw, 14rem);
+}
+
+.editor-width-control output {
+  color: var(--color-text-muted);
+  min-inline-size: 3ch;
+}
+
+.editor-view-note {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+}
+
+.editor-workspace {
+  background: var(--color-surface);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--border-thin) minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editor-workspace[data-editor-width="30"] {
+  grid-template-columns: minmax(0, 30fr) 0.0625rem minmax(0, 70fr);
+}
+
+.editor-workspace[data-editor-width="35"] {
+  grid-template-columns: minmax(0, 35fr) 0.0625rem minmax(0, 65fr);
+}
+
+.editor-workspace[data-editor-width="40"] {
+  grid-template-columns: minmax(0, 40fr) 0.0625rem minmax(0, 60fr);
+}
+
+.editor-workspace[data-editor-width="45"] {
+  grid-template-columns: minmax(0, 45fr) 0.0625rem minmax(0, 55fr);
+}
+
+.editor-workspace[data-editor-width="55"] {
+  grid-template-columns: minmax(0, 55fr) 0.0625rem minmax(0, 45fr);
+}
+
+.editor-workspace[data-editor-width="60"] {
+  grid-template-columns: minmax(0, 60fr) 0.0625rem minmax(0, 40fr);
+}
+
+.editor-workspace[data-editor-width="65"] {
+  grid-template-columns: minmax(0, 65fr) 0.0625rem minmax(0, 35fr);
+}
+
+.editor-workspace[data-editor-width="70"] {
+  grid-template-columns: minmax(0, 70fr) 0.0625rem minmax(0, 30fr);
+}
+
+.editor-workspace[data-view-mode="write"],
+.editor-workspace[data-view-mode="preview"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.editor-workspace[data-view-mode="write"] .editor-divider,
+.editor-workspace[data-view-mode="write"] .preview-scroll,
+.editor-workspace[data-view-mode="preview"] .editor-source-pane,
+.editor-workspace[data-view-mode="preview"] .editor-divider {
+  display: none;
+}
+
+.editor-source-pane,
+.preview-scroll {
+  min-width: 0;
+}
+
+.editor-divider {
+  background: var(--color-border);
+}
+
+.preview-scroll {
+  height: var(--editor-height);
+  overflow: auto;
+  padding: 0 var(--space-5) var(--space-6);
+}
+
+.source-editor-field {
+  display: grid;
+  gap: 0;
+}
+
+.source-editor-field > span {
+  background: var(--color-surface-subtle);
+  border-block-end: var(--border-thin) solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  font-weight: 650;
+  padding: var(--space-2) var(--space-3);
+}
+
+.ascii-doc-editor {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ascii-doc-editor .cm-editor {
+  background: var(--color-surface);
+  color: var(--color-text);
+  height: calc(var(--editor-height) - 2.3rem);
+  min-height: 0;
+}
+
+.ascii-doc-editor .cm-scroller {
+  font-family: var(--font-monospace);
+  line-height: 1.65;
+  overflow: auto;
+}
+
+.ascii-doc-editor .cm-content {
+  caret-color: currentcolor;
+  min-height: 100%;
+}
+
+.ascii-doc-editor .cm-gutters {
+  background: var(--color-surface-subtle);
+  border-inline-end: var(--border-thin) solid var(--color-border);
+  color: var(--color-text-muted);
+  font-family: var(--font-monospace);
+}
+
+.ascii-doc-editor .cm-focused {
+  outline: 0.125rem solid var(--color-primary);
+  outline-offset: -0.125rem;
+}
+
+.ascii-doc-editor .cm-cursor {
+  border-inline-start-color: currentcolor;
+}
+
+.ascii-doc-editor .cm-activeLine {
+  background: var(--color-editor-active-line);
+}
+
+.ascii-doc-editor .cm-activeLineGutter {
+  background: var(--color-editor-active-gutter);
+}
+
+.ascii-doc-editor .cm-selectionBackground,
+.ascii-doc-editor .cm-editor.cm-focused .cm-selectionBackground {
+  background: var(--color-editor-selection) !important;
+}
+
+.ascii-doc-editor .cm-content ::selection {
+  background: var(--color-editor-selection);
+}
+
+.ascii-doc-editor .cm-lintRange-warning {
+  text-decoration-color: var(--color-warning);
+}
+
+.ascii-doc-editor .cm-tooltip-lint {
+  background: var(--color-surface);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text);
+}
+
+.ascii-doc-editor .cm-diagnosticText {
+  line-height: 1.5;
+}
+
+.preview-panel {
+  min-width: 0;
+}
+
+.preview-heading {
+  align-items: baseline;
+  border-block-end: var(--border-thin) solid var(--color-border);
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  margin-block-end: var(--space-4);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.preview-heading h2 {
+  font-size: var(--text-small);
+}
+
+.preview-heading span {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+}
+
+.editor-actions {
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+  bottom: 1rem;
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  position: sticky;
+  z-index: 10;
+}
+
+.editor-status,
+.metadata {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.metadata {
+  margin-block: var(--space-1) 0;
+}
+
+@media (width <= 60rem) {
+  .editor-form {
+    --editor-height: clamp(25rem, calc(100dvh - 17rem), 54rem);
+  }
+
+  .editor-workspace,
+  .editor-workspace[data-view-mode="write"],
+  .editor-workspace[data-view-mode="preview"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .preview-scroll {
+    padding-inline: var(--space-3);
+  }
+}
