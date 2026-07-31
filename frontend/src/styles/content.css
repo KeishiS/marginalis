@@ -34,7 +34,7 @@
 }
 
 .rendered-content h3 {
-  font-size: var(--text-title);
+  font-size: var(--text-subheading);
   margin-block-start: var(--space-8);
 }
 
