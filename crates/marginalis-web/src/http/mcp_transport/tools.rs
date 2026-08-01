@@ -161,6 +161,9 @@ impl McpToolFailure {
             Self::UseCase(NoteUseCaseError::Unavailable) => "unavailable",
             Self::UseCase(NoteUseCaseError::CorruptData) => "corrupt-data",
             Self::Bibliography(BibliographyUseCaseError::CorruptData) => "corrupt-data",
+            Self::Bibliography(BibliographyUseCaseError::InvalidSearchQuery) => {
+                "invalid-search-query"
+            }
             Self::Bibliography(BibliographyUseCaseError::InvalidCslJson) => "invalid-csl-json",
             Self::Bibliography(BibliographyUseCaseError::NotFound) => "not-found",
             Self::Bibliography(BibliographyUseCaseError::Conflict) => "conflict",

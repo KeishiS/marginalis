@@ -15,7 +15,25 @@ permissions:
   contents: read
 
 jobs:
+  release-package-aarch64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate release commit
+        run: |
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Build the aarch64 Linux release package
+        run: nix develop --command cargo make release-package-aarch64
+
   release-gate:
+    needs: release-package-aarch64
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -38,7 +56,5 @@ jobs:
           printf 'MARGINALIS_RELEASE_TAG=%s\n' "$RELEASE_TAG" >> "$GITHUB_ENV"
       - name: Install Nix
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
-      - name: Validate release metadata
-        run: nix develop --command cargo make release-metadata
       - name: Run automated release gate
         run: nix develop --command cargo make release-gate

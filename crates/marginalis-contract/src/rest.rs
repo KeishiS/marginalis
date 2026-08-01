@@ -68,6 +68,11 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         probe_path: "/api/v3/notes/preview",
     },
     RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/notes/{note_id}/preview",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/preview",
+    },
+    RestRouteContract {
         method: "GET",
         specification_path: "/api/v3/notes/{note_id}",
         probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001",
@@ -467,6 +472,9 @@ pub fn openapi_document() -> Value {
         "components": {
             "parameters": {
                 "NoteId": {"name": "note_id", "in": "path", "required": true, "schema": note_id_schema()},
+                "BibliographyQuery": {"name": "query", "in": "query", "required": false,
+                    "schema": {"type": "string", "maxLength": 256},
+                    "description": "citation key、題名、著者、DOIのいずれかにこの語を含む文献だけへ絞る"},
                 "GraphQuery": {"name": "query", "in": "query", "required": false, "schema": {"type": "string"},
                     "description": "題名、本文、タグのいずれかにこの語を含むノートだけへ絞る"},
                 "GraphOrigin": {"name": "origin", "in": "query", "required": false, "schema": note_id_schema(),
@@ -645,8 +653,9 @@ fn rest_paths() -> Value {
             ]))
         },
         "/api/v3/bibliography": {
-            "get": operation("Search the current user's bibliography", &[], None, responses(&[
+            "get": operation("Search the current user's bibliography", &["BibliographyQuery"], None, responses(&[
                 ("200", array_response("bibliography items", "BibliographyItem")),
+                ("400", response_ref("BadRequest")),
                 ("401", response_ref("AuthenticationRequired"))
             ])),
             "post": operation("Add one CSL-JSON bibliography item", &["CsrfToken"], Some("BibliographyItemInput"), responses(&[
@@ -677,10 +686,20 @@ fn rest_paths() -> Value {
             ]))
         },
         "/api/v3/notes/preview": {
-            "post": operation("Validate and render an unsaved note", &["CsrfToken"], Some("NoteDraft"), responses(&[
+            "post": operation("Validate and render a new unsaved note", &["CsrfToken"], Some("NoteDraft"), responses(&[
                 ("200", schema_response("safe HTML preview", "NotePreview")),
                 ("401", response_ref("AuthenticationRequired")),
                 ("403", response_ref("CsrfRejected")),
+                ("422", response_ref("UnprocessableNote"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/preview": {
+            "parameters": [parameter_ref("NoteId")],
+            "post": operation("Validate and render an unsaved update", &["CsrfToken"], Some("NoteDraft"), responses(&[
+                ("200", schema_response("safe HTML preview", "NotePreview")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
                 ("422", response_ref("UnprocessableNote"))
             ]))
         },
@@ -948,6 +967,15 @@ mod tests {
     fn generated_contracts_use_one_api_version_and_conditional_updates() {
         let document = openapi_document();
         assert_eq!(document["info"]["version"], API_VERSION);
+        assert_eq!(
+            document["components"]["parameters"]["BibliographyQuery"]["schema"]["maxLength"],
+            256
+        );
+        assert!(
+            document["paths"]["/api/v3/bibliography"]["get"]["responses"]
+                .get("400")
+                .is_some()
+        );
         assert!(
             document["paths"]["/api/v3/notes/{note_id}"]["put"]["parameters"]
                 .as_array()

@@ -5,8 +5,8 @@ use std::str::FromStr;
 use std::collections::{BTreeMap, HashSet};
 
 use marginalis_application::{
-    NoteAclState, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery, NoteGraphReference,
-    NoteGraphWork, NoteLinks, NoteViewSnapshot, RelatedNotes,
+    AccessibleNote, NoteAclState, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery,
+    NoteGraphReference, NoteGraphWork, NoteLinks, NoteViewSnapshot, RelatedNotes,
 };
 use marginalis_domain::{
     Actor, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
@@ -76,18 +76,19 @@ impl SqliteDatabase {
     }
 
     /// 所有者またはACLで共有された利用者だけに、削除済みでない正本を返す。
-    pub async fn visible_note(
+    pub async fn accessible_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Option<Note>, SqliteStoreError> {
+    ) -> Result<Option<AccessibleNote>, SqliteStoreError> {
         let row = sqlx::query(
-            "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
+            "SELECT notes.note_id, notes.creator_issuer, notes.creator_subject, notes.title,
+                    notes.source, notes.tags_json, notes.created_at_ms, notes.updated_at_ms,
+                    notes.revision, notes.deleted_at_ms, access.access_level
              FROM notes
-             WHERE note_id = ? AND deleted_at_ms IS NULL
-               AND EXISTS (SELECT 1 FROM note_access access
-                           WHERE access.note_id = notes.note_id
-                             AND access.issuer = ? AND access.subject = ?)",
+             JOIN note_access access ON access.note_id = notes.note_id
+             WHERE notes.note_id = ? AND notes.deleted_at_ms IS NULL
+               AND access.issuer = ? AND access.subject = ?",
         )
         .bind(note_id.to_string())
         .bind(actor.issuer())
@@ -95,7 +96,14 @@ impl SqliteDatabase {
         .fetch_optional(&self.pool)
         .await
         .map_err(database_error)?;
-        row.map(note_from_row).transpose()
+        row.map(|row| {
+            let access = access_from_level(row.try_get("access_level").map_err(database_error)?)?;
+            Ok(AccessibleNote {
+                note: note_from_row(row)?,
+                access,
+            })
+        })
+        .transpose()
     }
 
     /// 指定されたIDのうち、現在可視なノートを一括取得する。
@@ -175,7 +183,7 @@ impl SqliteDatabase {
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .map(|value| format!("%{}%", value.to_lowercase()));
+            .map(crate::like_contains_pattern);
 
         let notes = sqlx::query(
             "SELECT notes.note_id, notes.title, notes.tags_json, notes.updated_at_ms
@@ -184,9 +192,9 @@ impl SqliteDatabase {
              WHERE notes.deleted_at_ms IS NULL
                AND access.issuer = ? AND access.subject = ?
                AND (?3 IS NULL
-                    OR lower(notes.title) LIKE ?3
-                    OR lower(notes.source) LIKE ?3
-                    OR lower(notes.tags_json) LIKE ?3)
+                    OR lower(notes.title) LIKE ?3 ESCAPE '!'
+                    OR lower(notes.source) LIKE ?3 ESCAPE '!'
+                    OR lower(notes.tags_json) LIKE ?3 ESCAPE '!')
              ORDER BY notes.note_id ASC",
         )
         .bind(actor.issuer())

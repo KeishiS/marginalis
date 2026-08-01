@@ -112,3 +112,117 @@ test("revision競合時は再読み込みを案内する", async () => {
     "画面を再読み込み",
   );
 });
+
+test("保存中は同じ更新番号の要求を重ねて送らない", async () => {
+  let completeSave!: (response: Response) => void;
+  const saveResponse = new Promise<Response>((resolve) => {
+    completeSave = resolve;
+  });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { etag: '"rev-1"' },
+      }),
+    )
+    .mockReturnValueOnce(saveResponse);
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <AccessControl
+      apiBase="/api/v3"
+      noteId={NOTE_ID}
+      revision={1}
+      onRevision={vi.fn()}
+    />,
+  );
+
+  const save = await screen.findByRole("button", {
+    name: "共有設定を保存",
+  });
+  fireEvent.click(save);
+  expect(
+    await screen.findByRole("button", { name: "保存しています…" }),
+  ).toBeDisabled();
+  fireEvent.click(save);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+
+  completeSave(
+    new Response(
+      JSON.stringify({
+        note_id: NOTE_ID,
+        title: "共有",
+        source: "= 共有\n\n本文",
+        tags: [],
+        created_at_ms: 1,
+        updated_at_ms: 2,
+        revision: 2,
+      }),
+      { status: 200 },
+    ),
+  );
+  await screen.findByText("共有設定を保存しました。");
+});
+
+test("別のノートへ切り替えた後に古い保存結果を適用しない", async () => {
+  const nextNoteId = "0197c9bc-0000-7000-8000-000000000002";
+  let completeSave!: (response: Response) => void;
+  const saveResponse = new Promise<Response>((resolve) => {
+    completeSave = resolve;
+  });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { etag: '"rev-1"' },
+      }),
+    )
+    .mockReturnValueOnce(saveResponse)
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { etag: '"rev-7"' },
+      }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  const onRevision = vi.fn();
+  const { rerender } = render(
+    <AccessControl
+      apiBase="/api/v3"
+      noteId={NOTE_ID}
+      revision={1}
+      onRevision={onRevision}
+    />,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "共有設定を保存" }),
+  );
+  rerender(
+    <AccessControl
+      apiBase="/api/v3"
+      noteId={nextNoteId}
+      revision={7}
+      onRevision={onRevision}
+    />,
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+  completeSave(
+    new Response(
+      JSON.stringify({
+        note_id: NOTE_ID,
+        title: "以前のノート",
+        source: "= 以前のノート\n\n本文",
+        tags: [],
+        created_at_ms: 1,
+        updated_at_ms: 2,
+        revision: 2,
+      }),
+      { status: 200 },
+    ),
+  );
+  await Promise.resolve();
+  expect(onRevision).not.toHaveBeenCalled();
+  expect(screen.queryByText("共有設定を保存しました。")).toBeNull();
+});

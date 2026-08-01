@@ -18,13 +18,14 @@ impl BibliographyRepository for SqliteDatabase {
         actor: &Actor,
         query: &str,
     ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
-        let pattern = format!("%{}%", query.to_lowercase());
+        let pattern = crate::like_contains_pattern(query);
         let rows = sqlx::query(
             "SELECT item_id, owner_issuer, owner_subject, citation_key, csl_json,
                     created_at_ms, updated_at_ms, revision
              FROM bibliography_items
              WHERE owner_issuer = ? AND owner_subject = ?
-               AND (? = '' OR lower(citation_key) LIKE ? OR lower(csl_json) LIKE ?)
+               AND (? = '' OR lower(citation_key) LIKE ? ESCAPE '!'
+                            OR lower(csl_json) LIKE ? ESCAPE '!')
              ORDER BY updated_at_ms DESC, item_id
              LIMIT 200",
         )
@@ -210,20 +211,25 @@ impl BibliographyRepository for SqliteDatabase {
 pub(crate) fn decode_item(
     row: sqlx::sqlite::SqliteRow,
 ) -> Result<BibliographyItem, BibliographyRepositoryError> {
-    let item_id = EntityId::from_str(row.get::<String, _>("item_id").as_str())
+    let corrupt = |_| BibliographyRepositoryError::CorruptData;
+    let item_id_text: String = row.try_get("item_id").map_err(corrupt)?;
+    let item_id = EntityId::from_str(&item_id_text)
         .map(BibliographyItemId::new)
         .map_err(|_| BibliographyRepositoryError::CorruptData)?;
-    let owner = Identity::new(row.get("owner_issuer"), row.get("owner_subject"))
+    let owner = Identity::new(
+        row.try_get("owner_issuer").map_err(corrupt)?,
+        row.try_get("owner_subject").map_err(corrupt)?,
+    )
+    .map_err(|_| BibliographyRepositoryError::CorruptData)?;
+    let revision = Revision::new(row.try_get("revision").map_err(corrupt)?)
         .map_err(|_| BibliographyRepositoryError::CorruptData)?;
-    let revision =
-        Revision::new(row.get("revision")).map_err(|_| BibliographyRepositoryError::CorruptData)?;
     BibliographyItem::restore(
         item_id,
         owner,
-        row.get("citation_key"),
-        row.get("csl_json"),
-        UnixMillis::new(row.get("created_at_ms")),
-        UnixMillis::new(row.get("updated_at_ms")),
+        row.try_get("citation_key").map_err(corrupt)?,
+        row.try_get("csl_json").map_err(corrupt)?,
+        UnixMillis::new(row.try_get("created_at_ms").map_err(corrupt)?),
+        UnixMillis::new(row.try_get("updated_at_ms").map_err(corrupt)?),
         revision,
     )
     .map_err(|_| BibliographyRepositoryError::CorruptData)

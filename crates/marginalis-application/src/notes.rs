@@ -38,11 +38,11 @@ pub trait NoteQueryRepository: Send + Sync {
         &self,
         actor: &Actor,
     ) -> Result<Vec<NoteListEntry>, NoteRepositoryError>;
-    async fn visible_note(
+    async fn accessible_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Option<Note>, NoteRepositoryError>;
+    ) -> Result<Option<AccessibleNote>, NoteRepositoryError>;
     async fn visible_notes_by_id(
         &self,
         actor: &Actor,
@@ -59,6 +59,13 @@ pub trait NoteQueryRepository: Send + Sync {
         actor: &Actor,
         query: &NoteGraphQuery,
     ) -> Result<NoteGraph, NoteRepositoryError>;
+}
+
+/// 現在の利用者が閲覧できるノートと、その利用者に対する実効アクセス水準。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccessibleNote {
+    pub note: Note,
+    pub access: NoteAccess,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -413,10 +420,52 @@ impl NoteApplication {
         note_id: NoteId,
     ) -> Result<Note, NoteUseCaseError> {
         self.queries
-            .visible_note(actor, note_id)
+            .accessible_note(actor, note_id)
             .await
             .map_err(map_repository_error)?
+            .map(|accessible| accessible.note)
             .ok_or(NoteUseCaseError::NotFound)
+    }
+
+    async fn render_preview(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        owner: &Identity,
+        validated: ValidatedNoteDraft,
+        context: &NoteRenderContext,
+    ) -> Result<NotePreview, NoteUseCaseError> {
+        let ValidatedNoteDraft {
+            draft,
+            mut diagnostics,
+            reference_queries,
+            citation_queries,
+            citation_style,
+        } = validated;
+        let note = Note::create(note_id, owner, draft, self.clock.now());
+        let target_ids = reference_targets(&reference_queries);
+        let targets = self
+            .queries
+            .visible_notes_by_id(actor, &target_ids)
+            .await
+            .map_err(map_repository_error)?;
+        let resolutions = self.reference_resolutions(&targets, context, &reference_queries)?;
+        let citations = self
+            .citation_resolutions(owner, &citation_queries, citation_style)
+            .await?;
+        let html = self
+            .content
+            .render(
+                &note,
+                NoteRenderInputs {
+                    references: &resolutions,
+                    citations: &citations.resolutions,
+                    bibliography: &citations.entries,
+                },
+            )
+            .map_err(|_| NoteUseCaseError::RenderFailed)?;
+        diagnostics.extend(citations.diagnostics);
+        Ok(NotePreview { html, diagnostics })
     }
 
     fn reference_resolutions(
@@ -774,7 +823,7 @@ fn reject_warnings(
 
 #[async_trait]
 impl NotePresentation for NoteApplication {
-    async fn preview_note(
+    async fn preview_new_note(
         &self,
         actor: Actor,
         draft: NoteDraft,
@@ -784,47 +833,42 @@ impl NotePresentation for NoteApplication {
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
-        let ValidatedNoteDraft {
-            draft,
-            mut diagnostics,
-            reference_queries,
-            citation_queries,
-            citation_style,
-        } = validated;
-        let now = self.clock.now();
-        let note = Note::create(
+        self.render_preview(
+            &actor,
             NoteId::new(self.random.uuid_v7()),
             actor.identity(),
-            draft,
-            now,
-        );
-        let target_ids = reference_targets(&reference_queries);
-        let targets = self
+            validated,
+            &context,
+        )
+        .await
+    }
+
+    async fn preview_note_update(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        draft: NoteDraft,
+        context: NoteRenderContext,
+    ) -> Result<NotePreview, NoteUseCaseError> {
+        let accessible = self
             .queries
-            .visible_notes_by_id(&actor, &target_ids)
+            .accessible_note(&actor, note_id)
             .await
-            .map_err(map_repository_error)?;
-        let resolutions = self.reference_resolutions(&targets, &context, &reference_queries)?;
-        // 下書きの要求はどのノートの下書きかを伝えないため、引用は操作している利用者の
-        // ライブラリーで解決する。新規作成では保存後の作成者が同じ利用者になり、表示は
-        // 変わらない。共有されたノートを別の利用者が編集している場合だけ、この表示と
-        // 保存後の表示が食い違う。
-        let citations = self
-            .citation_resolutions(actor.identity(), &citation_queries, citation_style)
-            .await?;
-        let html = self
+            .map_err(map_repository_error)?
+            .filter(|accessible| accessible.access.allows(NoteAccess::Edit))
+            .ok_or(NoteUseCaseError::NotFound)?;
+        let validated = self
             .content
-            .render(
-                &note,
-                NoteRenderInputs {
-                    references: &resolutions,
-                    citations: &citations.resolutions,
-                    bibliography: &citations.entries,
-                },
-            )
-            .map_err(|_| NoteUseCaseError::RenderFailed)?;
-        diagnostics.extend(citations.diagnostics);
-        Ok(NotePreview { html, diagnostics })
+            .validate_draft(draft)
+            .map_err(NoteUseCaseError::Validation)?;
+        self.render_preview(
+            &actor,
+            accessible.note.note_id(),
+            accessible.note.owner(),
+            validated,
+            &context,
+        )
+        .await
     }
 
     fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
@@ -1052,10 +1096,20 @@ mod tests {
 
     use super::*;
 
-    #[derive(Default)]
     struct MemoryNotes {
         notes: Mutex<Vec<Note>>,
         update_calls: AtomicUsize,
+        accessible_as: Mutex<Option<NoteAccess>>,
+    }
+
+    impl Default for MemoryNotes {
+        fn default() -> Self {
+            Self {
+                notes: Mutex::new(Vec::new()),
+                update_calls: AtomicUsize::new(0),
+                accessible_as: Mutex::new(Some(NoteAccess::Manage)),
+            }
+        }
     }
 
     #[async_trait]
@@ -1076,18 +1130,21 @@ mod tests {
                 .collect())
         }
 
-        async fn visible_note(
+        async fn accessible_note(
             &self,
             _actor: &Actor,
             note_id: NoteId,
-        ) -> Result<Option<Note>, NoteRepositoryError> {
-            Ok(self
-                .notes
-                .lock()
-                .expect("notes lock")
-                .iter()
-                .find(|note| note.note_id() == note_id)
-                .cloned())
+        ) -> Result<Option<AccessibleNote>, NoteRepositoryError> {
+            let access = *self.accessible_as.lock().expect("access lock");
+            Ok(access.and_then(|access| {
+                self.notes
+                    .lock()
+                    .expect("notes lock")
+                    .iter()
+                    .find(|note| note.note_id() == note_id)
+                    .cloned()
+                    .map(|note| AccessibleNote { note, access })
+            }))
         }
 
         async fn visible_notes_by_id(
@@ -1097,8 +1154,8 @@ mod tests {
         ) -> Result<Vec<Note>, NoteRepositoryError> {
             let mut notes = Vec::new();
             for note_id in note_ids {
-                if let Some(note) = self.visible_note(actor, *note_id).await? {
-                    notes.push(note);
+                if let Some(accessible) = self.accessible_note(actor, *note_id).await? {
+                    notes.push(accessible.note);
                 }
             }
             Ok(notes)
@@ -1547,6 +1604,38 @@ mod tests {
             tags: Vec::new(),
         };
 
+        let preview = application
+            .preview_note_update(
+                editor.clone(),
+                note_id,
+                draft.clone(),
+                NoteRenderContext {
+                    note_path_prefix: "/notes".into(),
+                },
+            )
+            .await
+            .expect("shared note preview");
+        assert!(
+            preview.diagnostics.is_empty(),
+            "更新用プレビューも保存時と同じ所有者の書誌ライブラリーを使います"
+        );
+
+        *repository.accessible_as.lock().expect("access lock") = Some(NoteAccess::Read);
+        assert_eq!(
+            application
+                .preview_note_update(
+                    editor.clone(),
+                    note_id,
+                    draft.clone(),
+                    NoteRenderContext {
+                        note_path_prefix: "/notes".into(),
+                    },
+                )
+                .await,
+            Err(NoteUseCaseError::NotFound)
+        );
+        *repository.accessible_as.lock().expect("access lock") = Some(NoteAccess::Edit);
+
         // 作成者のライブラリーで解決できるため、警告を拒否する方針でも書き込みまで進む。
         assert_eq!(
             application
@@ -1842,7 +1931,7 @@ mod tests {
         };
 
         let preview = application
-            .preview_note(
+            .preview_new_note(
                 actor.clone(),
                 draft.clone(),
                 NoteRenderContext {

@@ -79,6 +79,20 @@ describe("accessControlReducer", () => {
       revision: 4,
     });
     expect(loaded.revision).toBe(4);
+    expect(loaded.status).toBe("ready");
+  });
+
+  it("保存中は明示的な状態として扱い、完了後に操作可能へ戻す", () => {
+    const loaded = accessControlReducer(initialAccessControlState(1), {
+      type: "loaded",
+      entries: [],
+      revision: 1,
+    });
+    const saving = accessControlReducer(loaded, { type: "save-started" });
+    expect(saving.status).toBe("saving");
+    expect(
+      accessControlReducer(saving, { type: "saved", revision: 2 }).status,
+    ).toBe("ready");
   });
 
   it("同じsubjectの権限を重複させず置換する", () => {

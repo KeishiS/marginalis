@@ -16,6 +16,7 @@ declare global {
 }
 
 let mathJaxLoader: Promise<MathJaxRuntime> | null = null;
+let mathJaxTypesetQueue: Promise<void> = Promise.resolve();
 
 export function RenderedContent({
   html,
@@ -48,11 +49,29 @@ export function RenderedContent({
     }
 
     let current = true;
+    // 組版中に表示対象が変わっても古い処理が現在のDOMを変更しないよう、複製上で処理する。
+    const staging = element.cloneNode(true) as HTMLElement;
     void loadMathJax(styleNonce)
-      .then(async (mathJax) => {
+      .then((mathJax) =>
+        enqueueMathJaxTypeset(async () => {
+          let cleared = false;
+          try {
+            await mathJax.typesetPromise([staging]);
+            const renderedNodes = Array.from(staging.childNodes);
+            mathJax.typesetClear?.([staging]);
+            cleared = true;
+            const rendered = document.createDocumentFragment();
+            rendered.append(...renderedNodes);
+            return rendered;
+          } finally {
+            if (!cleared) mathJax.typesetClear?.([staging]);
+          }
+        }),
+      )
+      .then((rendered) => {
         if (!current) return;
-        mathJax.typesetClear?.([element]);
-        await mathJax.typesetPromise([element]);
+        // 文字列へ戻すとMathJaxのstyle属性を再解釈し、CSP違反になるため、組み立てたnodeを移す。
+        element.replaceChildren(rendered);
       })
       .catch((error: unknown) => {
         if (current) {
@@ -79,6 +98,15 @@ export function RenderedContent({
       />
     </>
   );
+}
+
+function enqueueMathJaxTypeset<T>(task: () => Promise<T>): Promise<T> {
+  const result = mathJaxTypesetQueue.then(task);
+  mathJaxTypesetQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }
 
 async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {

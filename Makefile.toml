@@ -115,7 +115,7 @@ bash .github/scripts/check-traceability.sh
 description = "Check Cargo.lock against the current RustSec advisory database"
 dependencies = ["frontend-security-audit"]
 command = "cargo"
-args = ["audit", "--ignore", "RUSTSEC-2023-0071"]
+args = ["audit", "--deny", "warnings", "--ignore", "RUSTSEC-2023-0071"]
 
 [tasks.nix-release-check]
 description = "Build and run every Nix flake check, including all NixOS VM E2E tests"
@@ -126,6 +126,23 @@ args = ["--extra-experimental-features", "nix-command flakes", "flake", "check",
 description = "Build the Linux release package without creating a result symlink"
 command = "nix"
 args = ["--extra-experimental-features", "nix-command flakes", "build", ".#packages.x86_64-linux.default", "--no-link"]
+
+[tasks.release-package-aarch64]
+description = "Build the aarch64 Linux release package without creating a result symlink"
+command = "nix"
+args = ["--extra-experimental-features", "nix-command flakes", "build", ".#packages.aarch64-linux.default", "--no-link"]
+
+[tasks.native-release-package]
+description = "Build the release package when running natively on aarch64 Linux"
+script_runner = "@shell"
+script = '''
+set -eu
+if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = aarch64 ]; then
+  cargo make release-package-aarch64
+else
+  echo "aarch64 release package build is only run on native aarch64 Linux"
+fi
+'''
 
 [tasks.release-metadata]
 description = "Verify release version, tag, changelog, and declared dual-license files"
@@ -394,7 +411,7 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, unit and integration tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "unused-dependencies", "observability-check", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check"]
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "unused-dependencies", "observability-check", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check", "release-metadata"]
 
 [tasks.ci-verify]
 description = "Run the GitHub Actions verify suite"
@@ -420,8 +437,8 @@ command = "playwright"
 args = ["test", "--config", "tests/browser/playwright.smoke.config.js"]
 
 [tasks.ci-early]
-description = "Run architecture-native compilation and the Chromium and Firefox browser tests"
-dependencies = ["native-check", "browser-smoke", "browser-editor-firefox"]
+description = "Run architecture-native compilation, package build, and browser tests"
+dependencies = ["native-check", "native-release-package", "browser-smoke", "browser-editor-firefox"]
 
 [tasks.ci-coverage]
 description = "Run the GitHub Actions coverage suite"

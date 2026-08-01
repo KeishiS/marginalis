@@ -150,3 +150,44 @@ async fn citation_keys_are_read_only_from_the_named_owner() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn bibliography_search_treats_like_metacharacters_as_text() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("schema initialization");
+    let alice = actor("https://id.example.test", "alice");
+    for (id, key) in [
+        ("0197c9bc-0000-7000-8000-000000000096", "rate%_literal"),
+        ("0197c9bc-0000-7000-8000-000000000097", "ordinary"),
+    ] {
+        let item = BibliographyItem::create(
+            BibliographyItemId::new(EntityId::from_str(id).expect("v7 item ID")),
+            alice.identity(),
+            key.into(),
+            format!(r#"{{"id":"{key}","type":"book"}}"#),
+            UnixMillis::new(100),
+        );
+        database
+            .create_owned_item(&item)
+            .await
+            .expect("create bibliography item");
+    }
+
+    let percent = database
+        .search_owned_items(&alice, "%")
+        .await
+        .expect("literal percent search");
+    assert_eq!(
+        percent
+            .iter()
+            .map(BibliographyItem::citation_key)
+            .collect::<Vec<_>>(),
+        vec!["rate%_literal"]
+    );
+    let underscore = database
+        .search_owned_items(&alice, "_")
+        .await
+        .expect("literal underscore search");
+    assert_eq!(underscore.len(), 1);
+}

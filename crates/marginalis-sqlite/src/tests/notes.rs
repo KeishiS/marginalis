@@ -54,15 +54,15 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     let former_administrator = actor("https://id.example.test", "administrator");
     assert!(
         database
-            .visible_note(&alice, note_id)
+            .accessible_note(&alice, note_id)
             .await
             .expect("owner is visible")
             .is_some()
     );
-    assert_eq!(database.visible_note(&charlie, note_id).await, Ok(None));
+    assert_eq!(database.accessible_note(&charlie, note_id).await, Ok(None));
     assert_eq!(
         database
-            .visible_note(&same_subject_different_issuer, note_id)
+            .accessible_note(&same_subject_different_issuer, note_id)
             .await,
         Ok(None)
     );
@@ -354,10 +354,11 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
             .is_err()
     );
     let unchanged = database
-        .visible_note(&owner, note_id)
+        .accessible_note(&owner, note_id)
         .await
         .expect("read after rollback")
-        .expect("note");
+        .expect("note")
+        .note;
     assert_eq!(unchanged.revision(), changed.revision());
     assert_eq!(
         snapshot_access(&database, &reader, note_id).await,
@@ -478,10 +479,11 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
     assert_eq!((successes, conflicts), (1, 1));
 
     let current = database
-        .visible_note(&owner, note_id)
+        .accessible_note(&owner, note_id)
         .await
         .expect("read after conflict")
-        .expect("visible note");
+        .expect("visible note")
+        .note;
     let retried = database
         .update_visible_note(
             &owner,
@@ -677,6 +679,44 @@ async fn the_graph_answers_at_the_assumed_scale() {
     assert_eq!(tagged.notes.len(), NOTES / 2);
     assert!(tagged.references.is_empty());
     assert_eq!(tagged.citations.len(), NOTES / 2);
+}
+
+#[tokio::test]
+async fn graph_search_treats_like_metacharacters_as_text() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("schema initialization");
+    let alice = actor("https://id.example.test", "alice");
+    for note in [
+        graph_note("0197c9bc-0000-7000-8000-0000000000d1", "進捗 100%_確認"),
+        graph_note("0197c9bc-0000-7000-8000-0000000000d2", "通常の進捗"),
+    ] {
+        database
+            .create_note(
+                &note,
+                NoteLinks {
+                    reference_targets: &[],
+                    cited_keys: &[],
+                },
+            )
+            .await
+            .expect("create note");
+    }
+
+    for query in ["%", "_"] {
+        let graph = database
+            .note_graph(
+                &alice,
+                &NoteGraphQuery {
+                    text: Some(query.into()),
+                    ..NoteGraphQuery::default()
+                },
+            )
+            .await
+            .expect("literal metacharacter search");
+        assert_eq!(graph.notes.len(), 1);
+        assert_eq!(graph.notes[0].title, "進捗 100%_確認");
+    }
 }
 
 fn graph_note(id: &str, title: &str) -> Note {

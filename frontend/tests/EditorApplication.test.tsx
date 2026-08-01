@@ -199,6 +199,31 @@ test("既存文書を読み込み、更新番号を付けて保存する", async
   );
 });
 
+test("既存文書のプレビューを対象ノート付きの経路へ送る", async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse(NOTE))
+    .mockResolvedValueOnce(
+      jsonResponse({ html: "<p>既存の本文</p>", diagnostics: [] }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <EditorApplication
+      config={{ ...CONFIG, mode: "edit", noteId: NOTE.note_id }}
+    />,
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    `/marginalis/api/v3/notes/${NOTE.note_id}/preview`,
+    expect.objectContaining({ method: "POST" }),
+  );
+  expect(fetchMock).not.toHaveBeenCalledWith(
+    "/marginalis/api/v3/notes/preview",
+    expect.anything(),
+  );
+});
+
 test("競合時も編集中の完全な文書を維持する", async () => {
   const local = SOURCE.replace("既存の本文", "編集中");
   const current = {
