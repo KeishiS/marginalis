@@ -840,11 +840,31 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
         "format": "marginalis-archive-13",
         "adocweave_package_version": "0.23.0",
         "note_profile_version": 4,
+        // 所有者を2人にし、note IDが所有者をまたいで交互に並ぶようにする。書き出しは所有者ごとに
+        // ノートをまとめるため、この並びは取り込み側で読む順とsnapshotの順を食い違わせる。
         "notes": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",
             "creator_issuer": "https://id.example.test",
             "creator_subject": "alice",
             "source": "= 先行研究の整理\n:tags: 研究\n\n本文",
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "revision": 1,
+            "deleted_at_ms": null
+        }, {
+            "note_id": "0197c9bc-0000-7000-8000-000000000002",
+            "creator_issuer": "https://id.example.test",
+            "creator_subject": "bob",
+            "source": "= 検証メモ\n\n本文",
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "revision": 1,
+            "deleted_at_ms": null
+        }, {
+            "note_id": "0197c9bc-0000-7000-8000-000000000003",
+            "creator_issuer": "https://id.example.test",
+            "creator_subject": "alice",
+            "source": "= 追加の整理\n\n本文",
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1,
@@ -856,8 +876,18 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
             "subject": "bob",
             "permission": "edit"
         }],
+        // citation_keyの順とitem_idの順をわざと食い違わせる。書き出しはcitation_key順に並べる。
         "bibliography_items": [{
             "item_id": "0197c9bc-0000-7000-8000-0000000000a1",
+            "owner_issuer": "https://id.example.test",
+            "owner_subject": "alice",
+            "citation_key": "tanaka2025",
+            "csl_json": { "id": "tanaka2025", "type": "book", "title": "別の文献" },
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "revision": 1
+        }, {
+            "item_id": "0197c9bc-0000-7000-8000-0000000000a2",
             "owner_issuer": "https://id.example.test",
             "owner_subject": "alice",
             "citation_key": "smith2024",
