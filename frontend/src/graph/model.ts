@@ -9,6 +9,10 @@ export interface GraphVertex {
   tags: string[];
   /** つながっている線の数。大きさと並び順に使う。 */
   degree: number;
+  /** ノートの最終更新時刻。文献には無いため`null`とする。 */
+  updatedAtMs: number | null;
+  /** 文献のcitation key。ノートには無いため`null`とする。 */
+  citationKey: string | null;
 }
 
 /** 図に引く線。 */
@@ -44,6 +48,8 @@ export function graphModel(graph: NoteGraph): GraphModel {
       label: note.title,
       tags: note.tags,
       degree: 0,
+      updatedAtMs: note.updated_at_ms,
+      citationKey: null,
     });
   }
   for (const work of graph.works) {
@@ -54,6 +60,8 @@ export function graphModel(graph: NoteGraph): GraphModel {
       label: work.title ?? work.citation_key,
       tags: [],
       degree: 0,
+      updatedAtMs: null,
+      citationKey: work.citation_key,
     });
   }
 

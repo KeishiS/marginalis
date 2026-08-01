@@ -479,6 +479,16 @@ function editorScreenshotOptions(page) {
   return { ...SCREENSHOT_OPTIONS, mask: [page.locator(".cm-content")] };
 }
 
+/**
+ * 日時の表示を隠して比較する。
+ *
+ * 日時は実行環境の地域と時間帯で文字列が変わる。値そのものはDOMの`datetime`属性で確かめ、
+ * 画像では吹き出しの位置と大きさだけを比較する。
+ */
+function detailScreenshotOptions(page) {
+  return { ...SCREENSHOT_OPTIONS, mask: [page.locator(".graph-detail time")] };
+}
+
 test("関係の図で点を選ぶと、その画面へ移動できる", async ({ page }) => {
   const noteId = "0197c9bc-0000-7000-8000-000000000001";
   const otherId = "0197c9bc-0000-7000-8000-000000000002";
@@ -520,6 +530,25 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
   const work = page.locator('.graph-vertex[data-kind="work"]').first();
   expect(await work.getAttribute("href")).toBe(
     "/bibliography?query=smith2024",
+  );
+
+  // 点に触れると、更新日時とタグを吹き出しで示す。図の枠の内側へ収まる。
+  await note.hover();
+  const detail = page.locator(".graph-detail");
+  await expect(detail).toContainText("先行研究の整理");
+  await expect(detail).toContainText("研究");
+  expect(
+    await detail.locator("time").getAttribute("datetime"),
+  ).toBe(new Date(2).toISOString());
+  const detailBox = await detail.boundingBox();
+  const figureBox = await page.locator(".graph-canvas").boundingBox();
+  expect(detailBox.x).toBeGreaterThanOrEqual(figureBox.x - 1);
+  expect(detailBox.x + detailBox.width).toBeLessThanOrEqual(
+    figureBox.x + figureBox.width + 1,
+  );
+  await expect(page).toHaveScreenshot(
+    "graph-vertex-detail.png",
+    detailScreenshotOptions(page),
   );
 
   // 起点を指定すると、その範囲だけを要求し、階層を選び直せる帯が出る。

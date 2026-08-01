@@ -39,6 +39,7 @@
 }
 
 .graph-canvas {
+  position: relative;
   background: var(--color-surface);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -53,6 +54,51 @@
   display: block;
   height: min(70vh, 34rem);
   width: 100%;
+}
+
+/* 点に触れたときの吹き出し。点の右上へ出し、図の枠の内側へ収める。 */
+.graph-detail {
+  background: var(--color-surface);
+  border: var(--border-thin) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, -100%);
+  width: 15rem;
+  z-index: 1;
+}
+
+.graph-detail-label {
+  font-size: var(--text-small);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+.graph-detail dl {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.graph-detail dl div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.graph-detail dt {
+  color: var(--color-text-muted);
+  flex: none;
+  font-size: var(--text-caption);
+  width: 5.5rem;
+}
+
+.graph-detail dd {
+  font-size: var(--text-caption);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .graph-canvas figcaption {

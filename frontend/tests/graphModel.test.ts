@@ -54,6 +54,22 @@ test("片端の無い線は描かない", () => {
   expect(model.vertices).toHaveLength(3);
 });
 
+/// ホバー表示は点が持つ値だけで組み立てる。応答を再度読みに行かない。
+test("点は更新日時とタグ、文献はcitation keyを持つ", () => {
+  const model = graphModel(graph());
+  const note = model.vertices.find((vertex) => vertex.kind === "note");
+  const work = model.vertices.find((vertex) => vertex.kind === "work");
+
+  expect(note?.updatedAtMs).toBe(2);
+  expect(note?.tags).toEqual(["研究"]);
+  expect(note?.citationKey).toBeNull();
+
+  // 文献には更新日時もタグも無い。無い値をそれらしく作らない。
+  expect(work?.updatedAtMs).toBeNull();
+  expect(work?.tags).toEqual([]);
+  expect(work?.citationKey).toBe("smith2024");
+});
+
 test("題名の無い文献はcitation keyで示す", () => {
   const source = graph();
   source.works = [{ citation_key: "smith2024", title: null }];

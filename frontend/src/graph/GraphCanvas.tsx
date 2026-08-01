@@ -13,10 +13,25 @@ import {
 } from "d3-force";
 
 import { ApplicationConfig } from "../api";
+import { formatDateTime } from "../formatting";
 import { vertexHref } from "./navigation";
 import { GraphEdge, GraphModel, GraphVertex } from "./model";
 
 interface PlacedVertex extends SimulationNodeDatum, GraphVertex {}
+
+/** 選んでいる点と、その画面上の位置。説明の吹き出しをここへ出す。 */
+interface VertexDetail {
+  vertex: GraphVertex;
+  /** 図の左端からの、点の中心の位置。 */
+  x: number;
+  /** 図の上端からの、点の上端の位置。 */
+  y: number;
+  /** 図の幅。吹き出しが外へはみ出さないよう内側へ寄せるために使う。 */
+  width: number;
+}
+
+/** 吹き出しの想定幅。実際の幅は内容で決まるが、寄せ幅の計算にはこの値を使う。 */
+const DETAIL_WIDTH = 240;
 
 const VIEW_WIDTH = 1200;
 const VIEW_HEIGHT = 720;
@@ -38,9 +53,25 @@ export function GraphCanvas({
   model: GraphModel;
 }) {
   const [placed, setPlaced] = useState<PlacedVertex[] | null>(null);
-  const [focused, setFocused] = useState<string | null>(null);
+  const [detail, setDetail] = useState<VertexDetail | null>(null);
   const [view, setView] = useState<ZoomTransform>(zoomIdentity);
   const rendered = useRef<GraphModel | null>(null);
+  const figure = useRef<HTMLElement>(null);
+  const focused = detail?.vertex.id ?? null;
+
+  // 点の画面上の位置を、図の枠を基準にした座標へ直す。拡大や移動をしていても、実際に描かれた
+  // 位置から測るため計算がずれない。
+  const showDetail = useCallback((vertex: GraphVertex, element: Element) => {
+    const frame = figure.current?.getBoundingClientRect();
+    if (frame === undefined) return;
+    const point = element.getBoundingClientRect();
+    setDetail({
+      vertex,
+      x: point.left + point.width / 2 - frame.left,
+      y: point.top - frame.top,
+      width: frame.width,
+    });
+  }, []);
 
   // 1,000点を一画面へ収めると読めない。拡大と移動で見たい範囲へ寄れるようにする。
   const attachZoom = useCallback((element: SVGSVGElement | null) => {
@@ -105,7 +136,7 @@ export function GraphCanvas({
     model.edges.some((edge) => edge.source === id || edge.target === id);
 
   return (
-    <figure className="graph-canvas">
+    <figure className="graph-canvas" ref={figure}>
       <svg
         ref={attachZoom}
         viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
@@ -131,13 +162,13 @@ export function GraphCanvas({
                 href={vertexHref(config, vertex)}
                 data-kind={vertex.kind}
                 data-isolated={neighbours(vertex.id) ? undefined : "true"}
-                aria-label={`${vertex.label}（${
-                  vertex.kind === "note" ? "ノート" : "文献"
-                }、つながり${vertex.degree}件）`}
-                onMouseEnter={() => setFocused(vertex.id)}
-                onMouseLeave={() => setFocused(null)}
-                onFocus={() => setFocused(vertex.id)}
-                onBlur={() => setFocused(null)}
+                aria-label={vertexDescription(vertex)}
+                onMouseEnter={(event) =>
+                  showDetail(vertex, event.currentTarget)
+                }
+                onMouseLeave={() => setDetail(null)}
+                onFocus={(event) => showDetail(vertex, event.currentTarget)}
+                onBlur={() => setDetail(null)}
               >
                 <circle
                   cx={vertex.x ?? 0}
@@ -156,12 +187,88 @@ export function GraphCanvas({
           </g>
         </g>
       </svg>
+      {detail !== null && <VertexDetailPanel detail={detail} />}
       <figcaption>
-        点はノートと文献、線は参照と引用です。点を選ぶとその画面へ移動します。
-        図はドラッグで動かし、ホイールで拡大できます。同じ内容は下の一覧からも辿れます。
+        点はノートと文献、線は参照と引用です。点に触れると詳しい情報が出ます。
+        点を選ぶとその画面へ移動します。図はドラッグで動かし、ホイールで拡大できます。
+        同じ内容は下の一覧からも辿れます。
       </figcaption>
     </figure>
   );
+}
+
+/**
+ * 選んでいる点の詳しい情報を、その点の横へ出す。
+ *
+ * 図の枠からはみ出すと読めないため、左右は枠の内側へ寄せる。点より上に出すのは、点の下には
+ * 名前が描かれていて重なるためである。
+ */
+function VertexDetailPanel({ detail }: { detail: VertexDetail }) {
+  const { vertex } = detail;
+  const left = Math.min(
+    Math.max(detail.x + MAXIMUM_RADIUS, DETAIL_WIDTH / 2),
+    Math.max(detail.width - DETAIL_WIDTH / 2, DETAIL_WIDTH / 2),
+  );
+  return (
+    <div
+      className="graph-detail"
+      data-kind={vertex.kind}
+      style={{ left: `${left}px`, top: `${detail.y}px` }}
+      // 内容は点のaria-labelでも読み上げるため、支援技術へ二重に伝えない。
+      aria-hidden="true"
+    >
+      <p className="graph-detail-label">{vertex.label}</p>
+      <dl>
+        <div>
+          <dt>種類</dt>
+          <dd>{vertex.kind === "note" ? "ノート" : "文献"}</dd>
+        </div>
+        {vertex.updatedAtMs !== null && (
+          <div>
+            <dt>更新</dt>
+            <dd>
+              <time dateTime={new Date(vertex.updatedAtMs).toISOString()}>
+                {formatDateTime(vertex.updatedAtMs)}
+              </time>
+            </dd>
+          </div>
+        )}
+        {vertex.citationKey !== null && (
+          <div>
+            <dt>citation key</dt>
+            <dd>
+              <code>{vertex.citationKey}</code>
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt>タグ</dt>
+          <dd>{vertex.tags.length === 0 ? "なし" : vertex.tags.join(" / ")}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * 点の説明。支援技術へは吹き出しではなくこの文言で伝える。
+ *
+ * 吹き出しはマウスの位置に依存し、読み上げの順序にも乗らない。同じ内容を点自身の名前として
+ * 持たせ、キーボードだけでも同じことが分かるようにする。
+ */
+function vertexDescription(vertex: GraphVertex): string {
+  const parts = [vertex.label, vertex.kind === "note" ? "ノート" : "文献"];
+  if (vertex.updatedAtMs !== null) {
+    parts.push(`更新${formatDateTime(vertex.updatedAtMs)}`);
+  }
+  if (vertex.citationKey !== null) {
+    parts.push(`citation key ${vertex.citationKey}`);
+  }
+  parts.push(
+    vertex.tags.length === 0 ? "タグなし" : `タグ${vertex.tags.join("、")}`,
+  );
+  parts.push(`つながり${vertex.degree}件`);
+  return parts.join("、");
 }
 
 function GraphLine({
