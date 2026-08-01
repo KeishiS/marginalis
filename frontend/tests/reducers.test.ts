@@ -13,7 +13,7 @@ import { editorReducer, initialEditorState } from "../src/editorState";
 const note = {
   note_id: "0197c9bc-0000-7000-8000-000000000001",
   title: "保存済み",
-  source: "= 保存済み\n:tags: 設計\n\n本文",
+  source: "= 保存済み\n:marginalis-tags: 設計\n\n本文",
   tags: ["設計"],
   created_at_ms: 1,
   updated_at_ms: 2,

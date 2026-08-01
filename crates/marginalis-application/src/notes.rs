@@ -1618,7 +1618,7 @@ mod tests {
             .create_note(
                 actor.clone(),
                 NoteDraft {
-                    source: "= Portで作成\n:tags: 設計\n\n本文".into(),
+                    source: "= Portで作成\n:marginalis-tags: 設計\n\n本文".into(),
                     title: "Portで作成".into(),
                     tags: vec!["設計".into()],
                 },

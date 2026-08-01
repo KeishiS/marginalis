@@ -80,7 +80,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
     assert_eq!(archive_json["format"], "marginalis-archive-13");
     assert_eq!(archive_json["adocweave_package_version"], "0.23.0");
-    assert_eq!(archive_json["note_profile_version"], 4);
+    assert_eq!(archive_json["note_profile_version"], 5);
 
     let backup = directory.join("backup");
     let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
@@ -261,7 +261,7 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
             "note_id": "0197c9bc-0000-7000-8000-000000000001",
             "creator_issuer": "https://id.example.test",
             "creator_subject": "alice",
-            "source": "= Note\n:source-language: rust\n:tags: {source-language}\n\nbody",
+            "source": "= Note\n:source-language: rust\n:marginalis-tags: {source-language}\n\nbody",
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1,
@@ -298,13 +298,16 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
             .expect("migrated JSON");
     assert_eq!(migrated["format"], "marginalis-archive-13");
     assert_eq!(migrated["adocweave_package_version"], "0.23.0");
-    assert_eq!(migrated["note_profile_version"], 4);
+    assert_eq!(migrated["note_profile_version"], 5);
 
     let invalid_input = directory.join("invalid-archive-9.json");
     let invalid_output = directory.join("invalid-archive-10.json");
     let mut invalid = previous;
-    invalid["notes"][0]["source"] =
-        concat!("= Note\n:tags: research, + \\", "\n  rust\n\nbody").into();
+    invalid["notes"][0]["source"] = concat!(
+        "= Note\n:marginalis-tags: research, + \\",
+        "\n  rust\n\nbody"
+    )
+    .into();
     fs::write(
         &invalid_input,
         serde_json::to_vec_pretty(&invalid).expect("invalid previous archive"),
@@ -651,13 +654,13 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let source = serde_json::json!({
         "format": "marginalis-archive-13",
         "adocweave_package_version": "0.23.0",
-        "note_profile_version": 4,
+        "note_profile_version": 5,
         "notes": [
             {
                 "note_id": "0197c9bc-0000-7000-8000-000000000001",
                 "creator_issuer": "https://id.example.test",
                 "creator_subject": "alice",
-                "source": "= 先行研究の整理\n:tags: 研究\n\n本文 cite:[smith2024]",
+                "source": "= 先行研究の整理\n:marginalis-tags: 研究\n\n本文 cite:[smith2024]",
                 "created_at_ms": 1,
                 "updated_at_ms": 2,
                 "revision": 1,
@@ -753,7 +756,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
         .join("先行研究の整理-0197c9bc-0000-7000-8000-000000000001.adoc");
     assert_eq!(
         fs::read_to_string(&note).expect("note file"),
-        "= 先行研究の整理\n:tags: 研究\n\n本文 cite:[smith2024]"
+        "= 先行研究の整理\n:marginalis-tags: 研究\n\n本文 cite:[smith2024]"
     );
     // 削除済みのノートは書き出さない。
     assert_eq!(
@@ -776,7 +779,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     assert_eq!(manifest["format"], "marginalis-documents-1");
     assert_eq!(manifest["marginalis_version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(manifest["adocweave_package_version"], "0.23.0");
-    assert_eq!(manifest["note_profile_version"], 4);
+    assert_eq!(manifest["note_profile_version"], 5);
     assert_eq!(manifest["owners"][0]["subject"], "alice");
     assert_eq!(
         manifest["owners"][0]["notes"][0]["note_id"],
@@ -839,14 +842,14 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
     let source = serde_json::json!({
         "format": "marginalis-archive-13",
         "adocweave_package_version": "0.23.0",
-        "note_profile_version": 4,
+        "note_profile_version": 5,
         // 所有者を2人にし、note IDが所有者をまたいで交互に並ぶようにする。書き出しは所有者ごとに
         // ノートをまとめるため、この並びは取り込み側で読む順とsnapshotの順を食い違わせる。
         "notes": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",
             "creator_issuer": "https://id.example.test",
             "creator_subject": "alice",
-            "source": "= 先行研究の整理\n:tags: 研究\n\n本文",
+            "source": "= 先行研究の整理\n:marginalis-tags: 研究\n\n本文",
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1,

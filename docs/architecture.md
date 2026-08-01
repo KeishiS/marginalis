@@ -152,8 +152,9 @@ domainとapplicationの値を観測目的で公開し直さず、利用者identi
 ログへ渡しません。安定したeventとfieldの契約は[ログと障害診断](observability.md)を正とし、
 `cargo make observability-check`でproductionのログ呼出しを検査します。
 
-ノートの正本は、文書題名、`:tags:`などの文書属性、本文を含む完全なAsciiDoc文書です。題名と
-タグは保存時にAdocWeaveで解析し、一覧と検索に使う投影としてSQLiteへ同時に保存します。APIから
+ノートの正本は、文書題名、`:marginalis-tags:`などの文書属性、本文を含む完全なAsciiDoc文書
+です。題名とタグは保存時にAdocWeaveで解析し、一覧と検索に使う投影としてSQLiteへ同時に
+保存します。APIから
 題名やタグだけを独立して更新する経路は設けません。
 
 一覧のportはAsciiDoc文書を含まない`NoteSummary`と、現在の利用者の`NoteAccess`を組にした

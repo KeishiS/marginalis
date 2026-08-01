@@ -29,8 +29,21 @@ pub struct NotePolicy {
     ///
     /// 入力検査と`get_note_profile`の広告は、どちらもこの一覧から導きます。片方だけを直すと、
     /// 受理する入力と公開する制約が食い違います。
+    ///
+    /// Marginalisが独自に決めた属性は[`DOCUMENT_ATTRIBUTE_PREFIX`]で始めます。AsciiDocの
+    /// 組込み属性と名前で区別できるようにするためです。
     pub allowed_document_attributes: &'static [&'static str],
 }
+
+/// Marginalis独自の文書属性に付ける接頭辞。
+///
+/// AsciiDocの言語仕様は独自属性の命名規則を定めていないため、Marginalisが決めます。接頭辞が
+/// あると、その属性が他のAsciiDoc処理系では意味を持たないことが本文を読むだけで分かります。
+/// AsciiDocが後から同じ名前の組込み属性を定義しても、意味が衝突しません。
+pub const DOCUMENT_ATTRIBUTE_PREFIX: &str = "marginalis-";
+
+/// ノートのタグを並べる文書属性の名前。
+pub const TAGS_DOCUMENT_ATTRIBUTE: &str = "marginalis-tags";
 
 /// 関係の図で、起点から辿れる線の本数の上限。
 ///
@@ -59,7 +72,7 @@ pub const NOTE_POLICY: NotePolicy = NotePolicy {
     allowed_math_languages: &["latexmath"],
     allowed_url_schemes: &["http", "https"],
     allowed_document_attributes: &[
-        "tags",
+        TAGS_DOCUMENT_ATTRIBUTE,
         "sectnums",
         "toc",
         "toclevels",

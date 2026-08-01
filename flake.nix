@@ -322,9 +322,16 @@
                 jq -e '
                   .format == "marginalis-archive-13"
                   and .adocweave_package_version == "0.23.0"
-                  and .note_profile_version == 4
+                  and .note_profile_version == 5
                   and (.notes | length) == 2
                   and (.note_acl | length) == 2
+                ' migrated-archive.json
+                # 移行はタグの文書属性を接頭辞付きの名前へ書き換える。
+                jq -e '
+                  any(.notes[];
+                    .note_id == "019f0000-0000-7000-8000-000000000091"
+                    and (.source | contains(":marginalis-tags: 移行, 検証"))
+                    and (.source | contains(":tags:") | not))
                 ' migrated-archive.json
 
                 export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema13.sqlite"
@@ -343,7 +350,13 @@
                 sqlite3 -json schema13.sqlite \
                   'SELECT note_id, issuer, subject, permission
                    FROM note_acl ORDER BY note_id, issuer, subject' > schema13-acl.json
-                diff -u schema9-notes.json schema13-notes.json
+                # 本文はタグの属性名だけが変わる。題名、タグ、時刻、revision、削除状態は
+                # 移行前と一致しなければならない。書き出し方の違いを比較へ持ち込まないよう、
+                # 両方を同じ整形で並べ直してから照合する。
+                jq -S '[.[] | .source |= sub(":tags: "; ":marginalis-tags: ")]' \
+                  schema9-notes.json > schema9-notes-expected.json
+                jq -S '.' schema13-notes.json > schema13-notes-normalized.json
+                diff -u schema9-notes-expected.json schema13-notes-normalized.json
                 cmp schema9-references.json schema13-references.json
                 cmp schema9-acl.json schema13-acl.json
                 test "$(sqlite3 schema13.sqlite \

@@ -232,7 +232,7 @@ pub fn note_profile() -> NoteProfile {
             NoteProfileExample {
                 kind: "document_attributes",
                 description: "Header attributes that control the rendered display",
-                body: "= 調査の記録\n:tags: 研究\n:sectnums:\n:toc:\n:toclevels: 2\n\n== 背景\n\n本文。\n\n== 方法\n\n本文。",
+                body: "= 調査の記録\n:marginalis-tags: 研究\n:sectnums:\n:toc:\n:toclevels: 2\n\n== 背景\n\n本文。\n\n== 方法\n\n本文。",
             },
             NoteProfileExample {
                 kind: "local_reference",
@@ -267,12 +267,12 @@ pub fn note_profile() -> NoteProfile {
             NoteProfileExample {
                 kind: "bibliography",
                 description: "Complete document with a bibliography entry and an in-text reference",
-                body: "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024.\n  https://doi.org/10.1234/replace-with-doi[DOI]",
+                body: "= 先行研究の整理\n:marginalis-tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024.\n  https://doi.org/10.1234/replace-with-doi[DOI]",
             },
             NoteProfileExample {
                 kind: "citation",
                 description: "Citation of an item registered in the bibliography library, resolved when the note is displayed",
-                body: "= 先行研究の整理\n:tags: 文献, 研究\n\nこの手法は有効だと報告されています cite:[smith2024]。\n\n引用箇所を示す場合は cite:[smith2024, locator=\"p. 12\"] のように書きます。",
+                body: "= 先行研究の整理\n:marginalis-tags: 文献, 研究\n\nこの手法は有効だと報告されています cite:[smith2024]。\n\n引用箇所を示す場合は cite:[smith2024, locator=\"p. 12\"] のように書きます。",
             },
         ],
     }

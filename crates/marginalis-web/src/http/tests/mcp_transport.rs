@@ -146,7 +146,7 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert_eq!(bibliography["kind"], "bibliography");
     assert_eq!(
         bibliography["body"],
-        "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]"
+        "= 先行研究の整理\n:marginalis-tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]"
     );
     assert_eq!(
         profile["result"]["structuredContent"]["authoring_guidance"],

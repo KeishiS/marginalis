@@ -94,7 +94,7 @@ const CONFIG: EditorConfig = {
 };
 
 const SOURCE =
-  "= 既存の題名\n:tags: 研究, 試験\n:sectnums:\n\n== 見出し\n\n既存の本文";
+  "= 既存の題名\n:marginalis-tags: 研究, 試験\n:sectnums:\n\n== 見出し\n\n既存の本文";
 const NOTE: Note = {
   note_id: "0197c9bc-0000-7000-8000-000000000001",
   title: "既存の題名",

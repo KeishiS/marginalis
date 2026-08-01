@@ -25,7 +25,7 @@ export type EditorAction =
   | { type: "rebase"; note: Note };
 
 const EMPTY_FORM: EditorForm = {
-  source: "= 新規ノート\n:tags:\n:sectnums:\n\n== 見出し1\n\n",
+  source: "= 新規ノート\n:marginalis-tags:\n:sectnums:\n\n== 見出し1\n\n",
 };
 
 export function initialEditorState(noteId: string): EditorState {
