@@ -7,6 +7,10 @@
 
 ### 破壊的変更
 
+- AdocWeaveを0.26.0へ更新した。`get_note_profile`とarchiveが記録する
+  `adocweave_package_version`が`0.26.0`になる。ノートの受理範囲、描画したHTML、診断codeは
+  変わらない。`0.23.0`を記録した既存のarchiveは`migrate-archive`で変換する。判断の内容は
+  [AdocWeave 0.26移行判断](docs/adocweave-v0.26-migration.md)に記録した。
 - ノートのタグを並べる文書属性の名前を`:tags:`から`:marginalis-tags:`へ変更した。Marginalisが
   独自に決めた文書属性は`marginalis-`で始める規則にしたためである。以前の`:tags:`を書いた
   ノートは、対応していない文書属性として保存を拒否する。既存のarchiveは`migrate-archive`が

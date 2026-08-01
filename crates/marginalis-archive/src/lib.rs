@@ -26,6 +26,7 @@ pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 5;
 const UNPREFIXED_ATTRIBUTE_PROFILE_VERSION: u32 = 4;
 /// 移行元として受理する旧archive契約。形式、AdocWeave package版、note profile版の組。
 const SUPPORTED_MIGRATION_CONTRACTS: &[(&str, &str, u32)] = &[
+    ("marginalis-archive-13", "0.23.0", 5),
     ("marginalis-archive-13", "0.23.0", 4),
     ("marginalis-archive-12", "0.22.0", 4),
     ("marginalis-archive-11", "0.20.0", 4),
@@ -511,6 +512,16 @@ mod tests {
         );
     }
 
+    /// 独自の文書属性へ接頭辞を付ける前の契約。
+    ///
+    /// 属性名の書き換えを確かめる試験は、書き換えの対象になる版を名指す必要がある。移行元の
+    /// 一覧の先頭を使うと、新しい契約を加えたときに対象が変わってしまう。
+    const UNPREFIXED_CONTRACT: (&str, &str, u32) = (
+        "marginalis-archive-13",
+        "0.23.0",
+        UNPREFIXED_ATTRIBUTE_PROFILE_VERSION,
+    );
+
     /// archiveの契約identityを、指定した過去の組へ書き換える。
     fn stamp_contract(archive: &mut Archive, contract: (&str, &str, u32)) {
         let (format, package_version, note_profile_version) = contract;
@@ -549,7 +560,7 @@ mod tests {
     fn migration_renames_the_unprefixed_tags_attribute() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
-        stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        stamp_contract(&mut previous, UNPREFIXED_CONTRACT);
         previous.notes[0].source = "= A title\n:tags: Research\n\nsafe body".into();
 
         let migrated = migrate_previous_archive(&content(), &previous).expect("migrated");
@@ -567,7 +578,7 @@ mod tests {
     fn migration_leaves_the_same_text_in_the_body_untouched() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
-        stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        stamp_contract(&mut previous, UNPREFIXED_CONTRACT);
         previous.notes[0].source =
             "= A title\n:tags: Research\n\n以前は :tags: と書いていました。".into();
 
@@ -593,7 +604,7 @@ mod tests {
         ] {
             let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
             let mut previous = create_archive(&content(), &snapshot);
-            stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+            stamp_contract(&mut previous, UNPREFIXED_CONTRACT);
             previous.notes[0].source = previous_source.into();
 
             let migrated = migrate_previous_archive(&content(), &previous).expect("migrated");

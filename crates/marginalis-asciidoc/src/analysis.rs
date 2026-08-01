@@ -574,6 +574,41 @@ mod tests {
         );
     }
 
+    /// 条件分岐と取り込みのdirectiveは、どちらの属性記法でも受理しない。
+    ///
+    /// AdocWeave 0.25.0で、`include`と`ifeval`のdirectiveが`\{name}`をエスケープとして読む
+    /// ようになった。以前は属性として展開しており、同じ記法が本文と条件式で違う意味を
+    /// 持っていた。Marginalisはどちらのdirectiveも受理しないため、この変更でノートの
+    /// 受理範囲は変わらない。将来どちらかを受理するようになった場合は、その時点で条件式の
+    /// 属性展開をどう扱うかを決める必要がある。
+    #[test]
+    fn directives_that_changed_escape_handling_stay_rejected() {
+        for source in [
+            "= Note\n\ninclude::other.adoc[]",
+            "= Note\n:source-language: rust\n\nifeval::[\"{source-language}\" == \"rust\"]\n本文\nendif::[]",
+            "= Note\n:source-language: rust\n\nifeval::[\"\\{source-language}\" == \"rust\"]\n本文\nendif::[]",
+        ] {
+            assert!(
+                validate_draft(NoteDraft {
+                    source: source.into(),
+                    title: String::new(),
+                    tags: Vec::new(),
+                })
+                .is_err(),
+                "directiveを受理してしまいました: {source}"
+            );
+        }
+    }
+
+    /// 本文中の`\{name}`は属性の展開を打ち消した文字列として受理する。
+    ///
+    /// 0.25.0が変えたのはdirectiveの中の解釈だけで、本文の扱いは以前と同じである。
+    #[test]
+    fn an_escaped_attribute_reference_in_the_body_is_accepted() {
+        let draft = validated("= Note\n:source-language: rust\n\n本文 \\{source-language} です。");
+        assert_eq!(draft.title, "Note");
+    }
+
     fn validated(source: &str) -> NoteDraft {
         validate_draft(NoteDraft {
             source: source.into(),
