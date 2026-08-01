@@ -2,17 +2,25 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::{NoteAclChange, NoteRenderContext, NoteView, NoteWritePolicy};
+use marginalis_application::{
+    NoteAclChange, NoteGraphQuery, NoteRenderContext, NoteView, NoteWritePolicy,
+};
 use marginalis_contract::{
     NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
-    NoteListEntryResponse, NotePreviewResponse, NoteResponse, NoteSummaryResponse,
-    NoteViewResponse, ProblemCode, RelatedNotesResponse, SessionResponse,
+    NoteGraphCitationResponse, NoteGraphNoteResponse, NoteGraphReferenceResponse,
+    NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse, NotePreviewResponse,
+    NoteResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode, RelatedNotesResponse,
+    SessionResponse,
 };
-use marginalis_domain::{Note, NoteDraft, NoteSummary, Revision};
+use marginalis_domain::{
+    EntityId, MAX_GRAPH_DEPTH, Note, NoteDraft, NoteId, NoteSummary, Revision,
+};
+use serde::Deserialize;
+use std::str::FromStr;
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor, parse_note_id},
@@ -345,6 +353,95 @@ fn note_view_response(view: NoteView) -> NoteViewResponse {
                 .collect(),
         },
     }
+}
+
+#[derive(Default, Deserialize)]
+pub(super) struct NoteGraphParameters {
+    #[serde(default)]
+    query: String,
+    origin: Option<String>,
+    depth: Option<u32>,
+}
+
+/// 閲覧できるノートと、それらが引用する文献の関係を返す。
+///
+/// 認可はSQLite問い合わせの中で適用済みであり、ここでは形を写すだけにする。ここで絞り込むと、
+/// 絞り込み漏れがそのまま情報の開示になる。起点と階層数は表示範囲の指定であり、認可とは別に
+/// use case側で適用する。
+pub(super) async fn read_note_graph(
+    State(state): State<ApiState>,
+    Query(parameters): Query<NoteGraphParameters>,
+    headers: HeaderMap,
+) -> HandlerResult<Json<NoteGraphResponse>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let origin = match parameters.origin.as_deref() {
+        Some(value) => Some(EntityId::from_str(value).map(NoteId::new).map_err(|_| {
+            problem(
+                StatusCode::BAD_REQUEST,
+                ProblemCode::InvalidRequest,
+                "origin must be a note ID",
+            )
+        })?),
+        None => None,
+    };
+    if let Some(depth) = parameters.depth
+        && (depth == 0 || depth > MAX_GRAPH_DEPTH)
+    {
+        // 上限の値は公開schemaに出ているため、ここでは範囲外である事実だけを伝える。
+        return Err(problem(
+            StatusCode::BAD_REQUEST,
+            ProblemCode::InvalidRequest,
+            "depth is out of the supported range",
+        ));
+    }
+    let graph = state
+        .notes
+        .read_note_graph(
+            actor,
+            NoteGraphQuery {
+                text: Some(parameters.query),
+                origin,
+                depth: parameters.depth,
+            },
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(Json(NoteGraphResponse {
+        notes: graph
+            .notes
+            .into_iter()
+            .map(|note| NoteGraphNoteResponse {
+                note_id: note.note_id.to_string(),
+                title: note.title,
+                tags: note.tags,
+                updated_at_ms: note.updated_at.get(),
+            })
+            .collect(),
+        works: graph
+            .works
+            .into_iter()
+            .map(|work| NoteGraphWorkResponse {
+                citation_key: work.citation_key,
+                title: work.title,
+            })
+            .collect(),
+        references: graph
+            .references
+            .into_iter()
+            .map(|edge| NoteGraphReferenceResponse {
+                source_note_id: edge.source_note_id.to_string(),
+                target_note_id: edge.target_note_id.to_string(),
+            })
+            .collect(),
+        citations: graph
+            .citations
+            .into_iter()
+            .map(|edge| NoteGraphCitationResponse {
+                source_note_id: edge.source_note_id.to_string(),
+                citation_key: edge.citation_key,
+            })
+            .collect(),
+    }))
 }
 
 pub(super) async fn export_note(

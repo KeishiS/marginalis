@@ -7,10 +7,11 @@ use axum::{
 use marginalis_application::{
     AuthenticationUseCaseError, McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator,
     NoteAccessControl, NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
-    NoteCommands, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
-    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
-    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
-    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    NoteCommands, NoteGraph, NoteGraphNote, NoteGraphQuery, NotePresentation, NotePreview,
+    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
+    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteUseCases,
+    NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
+    OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
@@ -352,6 +353,14 @@ macro_rules! implement_note_boundaries {
                 <$type>::read_note_view(self, actor, note_id, context).await
             }
 
+            async fn read_note_graph(
+                &self,
+                actor: Actor,
+                query: NoteGraphQuery,
+            ) -> Result<NoteGraph, NoteUseCaseError> {
+                <$type>::read_note_graph(self, actor, query).await
+            }
+
             fn note_profile(&self) -> NoteProfile {
                 <$type>::note_profile(self)
             }
@@ -544,6 +553,14 @@ impl Notes {
         Err(NoteUseCaseError::NotFound)
     }
 
+    async fn read_note_graph(
+        &self,
+        _actor: Actor,
+        _query: NoteGraphQuery,
+    ) -> Result<NoteGraph, NoteUseCaseError> {
+        Err(NoteUseCaseError::Unavailable)
+    }
+
     async fn read_note_acl(
         &self,
         _actor: Actor,
@@ -721,6 +738,31 @@ impl UiNotes {
         _expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         Err(NoteUseCaseError::NotFound)
+    }
+
+    /// 画面試験のために、保持しているノートをそのまま点として返す。
+    ///
+    /// 実装が無いと、生成した`NotePresentation`が自分自身を呼び戻して止まらなくなる。
+    async fn read_note_graph(
+        &self,
+        _actor: Actor,
+        query: NoteGraphQuery,
+    ) -> Result<NoteGraph, NoteUseCaseError> {
+        let text = query.text.unwrap_or_default();
+        Ok(NoteGraph {
+            notes: self
+                .notes
+                .iter()
+                .filter(|note| text.is_empty() || note.title().contains(&text))
+                .map(|note| NoteGraphNote {
+                    note_id: note.note_id(),
+                    title: note.title().to_owned(),
+                    tags: note.tags().to_vec(),
+                    updated_at: note.updated_at(),
+                })
+                .collect(),
+            ..NoteGraph::default()
+        })
     }
 
     fn note_profile(&self) -> NoteProfile {

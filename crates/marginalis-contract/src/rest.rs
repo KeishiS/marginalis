@@ -4,7 +4,8 @@
 //! [`marginalis_domain`]の定義を参照する。要求と応答の構造だけをこのmoduleで定義する。
 
 use marginalis_domain::{
-    ENTITY_ID_PATTERN, NOTE_POLICY, NoteAccess, NotePermission, NoteValidationTarget, Revision,
+    ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY, NoteAccess, NotePermission,
+    NoteValidationTarget, Revision,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -80,6 +81,11 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         method: "DELETE",
         specification_path: "/api/v3/notes/{note_id}",
         probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/graph",
+        probe_path: "/api/v3/notes/graph",
     },
     RestRouteContract {
         method: "GET",
@@ -178,6 +184,54 @@ pub struct NoteViewResponse {
     pub access: NoteAccess,
     pub html: String,
     pub related: RelatedNotesResponse,
+}
+
+/// 関係の図に出す点と線。
+///
+/// 点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけを含む。線は始点と
+/// 終点の両方が点として含まれる場合だけ返す。閲覧できないノートの存在も件数も現れない。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoteGraphResponse {
+    pub notes: Vec<NoteGraphNoteResponse>,
+    pub works: Vec<NoteGraphWorkResponse>,
+    pub references: Vec<NoteGraphReferenceResponse>,
+    pub citations: Vec<NoteGraphCitationResponse>,
+}
+
+/// 図に出すノート。本文は含まない。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoteGraphNoteResponse {
+    pub note_id: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub updated_at_ms: i64,
+}
+
+/// 図に出す文献。書誌情報そのものではなく、引用されたという事実を表す。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoteGraphWorkResponse {
+    pub citation_key: String,
+    /// 引用元のノートを書いた利用者のライブラリーで解決できた場合の題名。
+    pub title: Option<String>,
+}
+
+/// ノートからノートへの参照。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoteGraphReferenceResponse {
+    pub source_note_id: String,
+    pub target_note_id: String,
+}
+
+/// ノートから文献への引用。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoteGraphCitationResponse {
+    pub source_note_id: String,
+    pub citation_key: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -413,6 +467,13 @@ pub fn openapi_document() -> Value {
         "components": {
             "parameters": {
                 "NoteId": {"name": "note_id", "in": "path", "required": true, "schema": note_id_schema()},
+                "GraphQuery": {"name": "query", "in": "query", "required": false, "schema": {"type": "string"},
+                    "description": "題名、本文、タグのいずれかにこの語を含むノートだけへ絞る"},
+                "GraphOrigin": {"name": "origin", "in": "query", "required": false, "schema": note_id_schema(),
+                    "description": "起点のノート。指定するとそこからdepth階層以内だけを返す"},
+                "GraphDepth": {"name": "depth", "in": "query", "required": false,
+                    "schema": {"type": "integer", "minimum": 1, "maximum": MAX_GRAPH_DEPTH},
+                    "description": "起点から辿る線の本数。originを指定した場合だけ使う。既定は1"},
                 "CsrfToken": {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1}},
                 "IfMatch": {"name": "If-Match", "in": "header", "required": true, "schema": {"type": "string", "pattern": "^\\\"rev-[1-9][0-9]*\\\"$"}}
             },
@@ -463,6 +524,50 @@ pub fn openapi_document() -> Value {
                                 "incoming": {"type": "array", "items": {"$ref": "#/components/schemas/NoteSummary"}}
                             }
                         }
+                    }
+                },
+                "NoteGraph": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["notes", "works", "references", "citations"],
+                    "properties": {
+                        "notes": {"type": "array", "items": {"$ref": "#/components/schemas/NoteGraphNote"}},
+                        "works": {"type": "array", "items": {"$ref": "#/components/schemas/NoteGraphWork"}},
+                        "references": {"type": "array", "items": {"$ref": "#/components/schemas/NoteGraphReference"}},
+                        "citations": {"type": "array", "items": {"$ref": "#/components/schemas/NoteGraphCitation"}}
+                    }
+                },
+                "NoteGraphNote": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["note_id", "title", "tags", "updated_at_ms"],
+                    "properties": {
+                        "note_id": note_id_schema(),
+                        "title": {"type": "string"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "updated_at_ms": {"type": "integer", "format": "int64"}
+                    }
+                },
+                "NoteGraphWork": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["citation_key", "title"],
+                    "properties": {
+                        "citation_key": {"type": "string"},
+                        "title": {"type": ["string", "null"]}
+                    }
+                },
+                "NoteGraphReference": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["source_note_id", "target_note_id"],
+                    "properties": {
+                        "source_note_id": note_id_schema(),
+                        "target_note_id": note_id_schema()
+                    }
+                },
+                "NoteGraphCitation": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["source_note_id", "citation_key"],
+                    "properties": {
+                        "source_note_id": note_id_schema(),
+                        "citation_key": {"type": "string"}
                     }
                 },
                 "NotePreview": {
@@ -591,6 +696,17 @@ fn rest_paths() -> Value {
         "/api/v3/notes/{note_id}/restore": {
             "parameters": [parameter_ref("NoteId")],
             "post": operation("Restore a note", &["CsrfToken", "IfMatch"], None, mutation_responses("restored note"))
+        },
+        "/api/v3/notes/graph": {
+            "get": operation(
+                "Read the graph of visible notes and the works they cite",
+                &["GraphQuery", "GraphOrigin", "GraphDepth"],
+                None,
+                responses(&[
+                    ("200", schema_response("note graph", "NoteGraph")),
+                    ("400", response_ref("BadRequest")),
+                ]),
+            )
         },
         "/api/v3/notes/{note_id}/view": {
             "parameters": [parameter_ref("NoteId")],

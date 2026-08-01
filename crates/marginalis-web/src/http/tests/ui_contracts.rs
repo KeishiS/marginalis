@@ -226,6 +226,59 @@ async fn rendered_note_view_api_maps_missing_and_render_failed_notes_to_stable_e
     assert_eq!(problem["code"], "render_failed");
 }
 
+/// Viteが出力した配布物のすべてに、配信経路があることを確かめる。
+///
+/// 以前は配信する名前を経路へ書き並べていた。分割読み込みでchunkが増えたとき、経路の追加を
+/// 忘れて404になり、moduleとして読み込めずに画面全体が空になった。名前を数えるのではなく、
+/// 実際の出力を1件ずつ引いて確かめる。
+#[tokio::test]
+async fn every_bundled_asset_has_a_route() {
+    let names = crate::http::assets::bundled_asset_names().collect::<Vec<_>>();
+    assert!(
+        names.contains(&"editor.js"),
+        "配布物の一覧が空か、想定と違います: {names:?}"
+    );
+    for name in names {
+        let response = app()
+            .oneshot(
+                Request::get(format!("/assets/{name}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("asset response");
+        assert_eq!(response.status(), StatusCode::OK, "{name}を配信できません");
+        // MIME typeが空だと、ブラウザーはmoduleとして読み込まない。
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        assert!(
+            !content_type.is_empty(),
+            "{name}のMIME typeが空です: {content_type:?}"
+        );
+        if name.ends_with(".js") {
+            assert_eq!(content_type, "text/javascript; charset=utf-8", "{name}");
+        }
+    }
+}
+
+/// 配布物にない名前は404にする。表に無いものを配信しない。
+#[tokio::test]
+async fn an_unknown_bundled_asset_is_not_found() {
+    let response = app()
+        .oneshot(
+            Request::get("/assets/not-present.js")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("asset response");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn frontend_assets_are_served_with_explicit_content_types() {
     let javascript = app()
@@ -459,4 +512,72 @@ async fn every_rest_contract_has_a_registered_router_method() {
             contract.probe_path
         );
     }
+}
+
+/// 図の要求は、認可を通したうえで点と線をそのまま写す。
+#[tokio::test]
+async fn the_note_graph_endpoint_returns_visible_notes_and_filters_by_word() {
+    let app = ui_app(vec![ui_note("関係の図")], false, "/");
+    let response = app
+        .clone()
+        .oneshot(authenticated_request("/api/v3/notes/graph"))
+        .await
+        .expect("graph response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let graph: serde_json::Value = serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("graph body"),
+    )
+    .expect("graph JSON");
+    assert_eq!(graph["notes"].as_array().expect("notes").len(), 1);
+    assert!(graph["notes"][0]["title"].is_string());
+    // 本文は図へ渡さない。
+    assert!(graph["notes"][0].get("source").is_none());
+    assert!(graph["works"].as_array().expect("works").is_empty());
+
+    let filtered = ui_app(vec![ui_note("関係の図")], false, "/")
+        .oneshot(authenticated_request(
+            "/api/v3/notes/graph?query=%E4%B8%80%E8%87%B4%E3%81%97%E3%81%AA%E3%81%84",
+        ))
+        .await
+        .expect("filtered response");
+    assert_eq!(filtered.status(), StatusCode::OK);
+    let filtered: serde_json::Value = serde_json::from_slice(
+        &axum::body::to_bytes(filtered.into_body(), usize::MAX)
+            .await
+            .expect("filtered body"),
+    )
+    .expect("filtered JSON");
+    assert!(filtered["notes"].as_array().expect("notes").is_empty());
+}
+
+/// 範囲外の階層数と、note IDでない起点を受け付けない。
+#[tokio::test]
+async fn the_note_graph_endpoint_rejects_an_unusable_scope() {
+    for path in [
+        "/api/v3/notes/graph?origin=not-a-note-id",
+        "/api/v3/notes/graph?origin=0197c9bc-0000-7000-8000-000000000001&depth=0",
+        "/api/v3/notes/graph?origin=0197c9bc-0000-7000-8000-000000000001&depth=6",
+    ] {
+        let response = ui_app(vec![ui_note("関係の図")], false, "/")
+            .oneshot(authenticated_request(path))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+    }
+}
+
+/// 認証していない要求は図を返さない。
+#[tokio::test]
+async fn the_note_graph_endpoint_requires_authentication() {
+    let response = ui_app(vec![ui_note("関係の図")], false, "/")
+        .oneshot(
+            Request::get("/api/v3/notes/graph")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

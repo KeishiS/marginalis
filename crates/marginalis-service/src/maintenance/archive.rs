@@ -208,16 +208,26 @@ pub(super) async fn verify_archive_in_isolated_database(
 
 fn restore_plan(snapshot: LogicalSnapshot) -> Result<RestorePlan, Box<dyn std::error::Error>> {
     let mut references = HashSet::new();
+    let mut citations = HashSet::new();
     for note in snapshot.notes() {
-        for query in marginalis_asciidoc::note_reference_queries(note.source())
-            .map_err(|_| "validated archive note could not be analyzed")?
+        let analyzed = "validated archive note could not be analyzed";
+        for query in
+            marginalis_asciidoc::note_reference_queries(note.source()).map_err(|_| analyzed)?
         {
             references.insert((note.note_id(), query.target_note_id));
+        }
+        for query in
+            marginalis_asciidoc::note_citation_queries(note.source()).map_err(|_| analyzed)?
+        {
+            for key in query.keys {
+                citations.insert((note.note_id(), key));
+            }
         }
     }
     Ok(RestorePlan::new(
         snapshot,
         references.into_iter().collect(),
+        citations.into_iter().collect(),
     )?)
 }
 

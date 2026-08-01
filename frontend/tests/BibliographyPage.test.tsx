@@ -142,3 +142,19 @@ test("成功の知らせと失敗を、役割と見た目で区別する", async
   expect(problem.textContent).toContain("削除できませんでした");
   expect(problem.className).toBe("problem-inline");
 });
+
+test("URLのqueryを初期の絞り込み条件として読む", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(libraryResponse());
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <BibliographyPage config={{ ...CONFIG, search: "?query=smith2024" }} />,
+  );
+
+  await waitFor(() => screen.getByRole("button", { name: /smith2024/ }));
+  // 関係の図から文献を選んだ場合に、その項目へ絞った状態で開く。
+  expect(String(fetchMock.mock.calls[0][0])).toContain("query=smith2024");
+  expect((screen.getByLabelText("文献を検索") as HTMLInputElement).value).toBe(
+    "smith2024",
+  );
+});

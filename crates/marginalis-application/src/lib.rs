@@ -29,8 +29,10 @@ pub use identity::{
 pub use notes::{
     NoteAclRepository, NoteApplication, NoteBibliographyEntry, NoteCitationQuery,
     NoteCitationResolution, NoteCitationSegment, NoteCommandRepository, NoteContent,
-    NoteContentError, NoteLinkResolver, NoteQueryRepository, NoteReferenceQuery,
-    NoteReferenceResolution, NoteRenderInputs, NoteRepositoryError, NoteViewSnapshot,
+    NoteContentError, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery,
+    NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks, NoteQueryRepository,
+    NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs, NoteRepositoryError,
+    NoteViewSnapshot,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
@@ -353,6 +355,12 @@ pub trait NotePresentation: Send + Sync {
         note_id: NoteId,
         context: NoteRenderContext,
     ) -> Result<NoteView, NoteUseCaseError>;
+    /// 閲覧できるノートと、それらが引用する文献の関係を返す。
+    async fn read_note_graph(
+        &self,
+        actor: Actor,
+        query: NoteGraphQuery,
+    ) -> Result<NoteGraph, NoteUseCaseError>;
     fn note_profile(&self) -> NoteProfile;
 }
 

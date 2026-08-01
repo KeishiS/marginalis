@@ -67,7 +67,7 @@
                 ;
               inherit pnpm;
               fetcherVersion = 4;
-              hash = "sha256-ToPq97ICO8DwyRerG/+gT43Mhcryz/ev5SSVcD9e4h8=";
+              hash = "sha256-44P63DteU8J9Sg6f2tPK4ACqyCdnDlHtp67Q2EKkoIg=";
             };
             nativeBuildInputs = [
               pkgs.nodejs_22
@@ -327,26 +327,26 @@
                   and (.note_acl | length) == 2
                 ' migrated-archive.json
 
-                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema12.sqlite"
+                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema13.sqlite"
                 ${self.packages.${system}.default}/bin/marginalis \
                   import-archive --input "$PWD/migrated-archive.json"
-                test "$(sqlite3 schema12.sqlite \
-                  'SELECT MAX(version) FROM schema_migrations')" = 12
-                sqlite3 -json schema12.sqlite \
+                test "$(sqlite3 schema13.sqlite \
+                  'SELECT MAX(version) FROM schema_migrations')" = 13
+                sqlite3 -json schema13.sqlite \
                   'SELECT note_id, creator_issuer, creator_subject, title, source,
                           tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-                   FROM notes ORDER BY note_id' > schema12-notes.json
-                sqlite3 -json schema12.sqlite \
+                   FROM notes ORDER BY note_id' > schema13-notes.json
+                sqlite3 -json schema13.sqlite \
                   'SELECT source_note_id, target_note_id
                    FROM note_references ORDER BY source_note_id, target_note_id' \
-                  > schema12-references.json
-                sqlite3 -json schema12.sqlite \
+                  > schema13-references.json
+                sqlite3 -json schema13.sqlite \
                   'SELECT note_id, issuer, subject, permission
-                   FROM note_acl ORDER BY note_id, issuer, subject' > schema12-acl.json
-                diff -u schema9-notes.json schema12-notes.json
-                cmp schema9-references.json schema12-references.json
-                cmp schema9-acl.json schema12-acl.json
-                test "$(sqlite3 schema12.sqlite \
+                   FROM note_acl ORDER BY note_id, issuer, subject' > schema13-acl.json
+                diff -u schema9-notes.json schema13-notes.json
+                cmp schema9-references.json schema13-references.json
+                cmp schema9-acl.json schema13-acl.json
+                test "$(sqlite3 schema13.sqlite \
                   "SELECT COUNT(*) FROM sqlite_schema
                    WHERE type = 'table' AND name IN
                      ('mcp_clients', 'mcp_authorization_codes',
@@ -730,11 +730,11 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 12'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 13'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-                + "'UPDATE schema_migrations SET version = 12; PRAGMA journal_mode=WAL'"
+                + "'UPDATE schema_migrations SET version = 13; PRAGMA journal_mode=WAL'"
               )
               machine.succeed("rm -f /var/lib/marginalis/marginalis.sqlite*")
               machine.succeed(
@@ -762,7 +762,7 @@
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "timeout 5s journalctl --no-pager -u marginalis.service -o cat | "
-                + "grep -F 'unsupported database schema version 5; expected 12'"
+                + "grep -F 'unsupported database schema version 5; expected 13'"
               )
               machine.succeed("systemctl stop marginalis.service")
               machine.succeed(
@@ -779,7 +779,7 @@
                     + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
                     + "'.database.schema.ok == false "
                     + "and .database.schema.actual == 5 "
-                    + "and .database.schema.expected == 12 "
+                    + "and .database.schema.expected == 13 "
                     + "and .database.integrity.ok "
                     + "and .database.integrity.actual == \"ok\" "
                     + "and .database.foreign_keys.ok "

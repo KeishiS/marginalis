@@ -1,0 +1,205 @@
+/* 関係の図。点はノートと文献、線は参照と引用を表す。 */
+
+.graph-search {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.graph-search label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+}
+
+/* 起点を指定しているときだけ出る帯。今どの範囲を見ているかを図の上で示す。 */
+.graph-origin {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.graph-origin p {
+  font-size: var(--text-small);
+  margin: 0;
+  margin-right: auto;
+}
+
+.graph-origin label {
+  align-items: center;
+  display: flex;
+  font-size: var(--text-small);
+  gap: var(--space-2);
+}
+
+.graph-canvas {
+  position: relative;
+  background: var(--color-surface);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin: 0;
+  overflow: hidden;
+  padding: var(--space-2);
+}
+
+/* 高さを固定し、点の数で図の大きさが変わらないようにする。 */
+.graph-canvas svg {
+  display: block;
+  height: min(70vh, 34rem);
+  width: 100%;
+}
+
+/* 点に触れたときの吹き出し。点の右上へ出し、図の枠の内側へ収める。 */
+.graph-detail {
+  background: var(--color-surface);
+  border: var(--border-thin) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, -100%);
+  width: 15rem;
+  z-index: 1;
+}
+
+.graph-detail-label {
+  font-size: var(--text-small);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+.graph-detail dl {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.graph-detail dl div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.graph-detail dt {
+  color: var(--color-text-muted);
+  flex: none;
+  font-size: var(--text-caption);
+  width: 5.5rem;
+}
+
+.graph-detail dd {
+  font-size: var(--text-caption);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.graph-canvas figcaption {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+
+.graph-edge {
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+  transition: opacity 140ms ease;
+}
+
+/* 引用は参照と区別できるよう破線にする。色だけに頼らない。 */
+.graph-edge[data-kind="citation"] {
+  stroke-dasharray: 4 4;
+}
+
+.graph-edge[data-dimmed="true"] {
+  opacity: 0.25;
+}
+
+.graph-vertex circle {
+  fill: var(--color-primary);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+  transition:
+    fill 140ms ease,
+    r 140ms ease;
+}
+
+/* 文献はノートと形と色で区別する。 */
+.graph-vertex[data-kind="work"] circle {
+  fill: var(--color-success);
+}
+
+/* どことも繋がっていない点は、輪郭だけにして探しやすくする。 */
+.graph-vertex[data-isolated="true"] circle {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+}
+
+.graph-vertex text {
+  fill: var(--color-text);
+  font-size: var(--text-caption);
+  paint-order: stroke;
+  stroke: var(--color-surface);
+  stroke-width: 3;
+}
+
+.graph-vertex:hover circle,
+.graph-vertex:focus-visible circle {
+  fill: var(--color-primary-hover);
+}
+
+.graph-vertex:focus-visible {
+  outline: none;
+}
+
+.graph-vertex:focus-visible circle {
+  stroke: var(--color-text);
+  stroke-width: 3;
+}
+
+.graph-outline {
+  background: var(--color-surface);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.graph-outline summary {
+  cursor: pointer;
+  font-size: var(--text-small);
+}
+
+.graph-outline ul {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.graph-outline li {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.graph-outline-kind,
+.graph-outline-degree {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-edge,
+  .graph-vertex circle {
+    transition: none;
+  }
+}

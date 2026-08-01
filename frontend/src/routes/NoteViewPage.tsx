@@ -7,6 +7,7 @@ import {
   canonicalSearch,
   editPath,
   externalPath,
+  graphPath,
   notePath,
 } from "../paths";
 import { useApiResource } from "../useApiResource";
@@ -109,6 +110,13 @@ export function NoteViewPage({
               共有設定
             </a>
           )}
+          {/* 2階層まで開くのは、参照先と参照元の一覧では見えない範囲から始めるためである。 */}
+          <a
+            className="button button-secondary"
+            href={graphPath(config, { noteId, depth: 2 })}
+          >
+            周辺の関係
+          </a>
         </nav>
       </div>
       <div className="document-surface">

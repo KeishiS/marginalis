@@ -11,6 +11,7 @@ import "./styles/base.css";
 import "./styles/layout.css";
 import "./styles/components.css";
 import "./styles/editor.css";
+import "./styles/graph.css";
 import "./styles/content.css";
 
 const root = document.querySelector<HTMLElement>("[data-application-root]");

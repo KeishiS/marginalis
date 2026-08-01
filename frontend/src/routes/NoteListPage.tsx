@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useMemo } from "react";
 
 import { ApplicationConfig, listNotes, NoteListEntry } from "../api";
+import { formatDateTime } from "../formatting";
 import {
   NoteListQuery,
   parseNoteListQuery,
@@ -158,11 +159,4 @@ function accessLabel(access: NoteListEntry["access"]): string {
     case "manage":
       return "所有";
   }
-}
-
-function formatDateTime(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(timestamp));
 }

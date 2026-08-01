@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | REQ-OPS-001 | `nix flake check`、NixOS VM | 配備 |
 | REQ-OPS-002 | `marginalis-sqlite`単体試験 | バックアップ・復元 |
-| REQ-OPS-003 | SQLite契約試験 | 実運用監視 |
+| REQ-OPS-003 | SQLite契約試験、約1,000ノートでの図の問い合わせと点の組み立ての試験 | 実運用監視 |
 | REQ-OPS-004 | OIDC結合試験、Kanidm VM | ログイン |
 | REQ-OPS-005 | 旧schema拒否、archive移行の入力不変・出力非上書き・安全な失敗位置試験 | 更新前退避 |
 | REQ-OPS-006 | SQLiteファイル診断・CLI秘密情報非記録試験、NixOS VM反復診断・ファイル不変性試験 | 障害診断 |
@@ -20,6 +20,7 @@
 | REQ-DATA-005 | SQLite認可・参照試験、ブラウザー試験 | 非開示確認 |
 | REQ-DATA-006 | application入力検査、SQLite所有者境界・競合・revision試験、REST・MCP公開契約試験 | Web UIでの検索、追加、編集、削除とMCPでの検索、追加、削除 |
 | REQ-DATA-007 | 引用解決の所有者境界と重複排除の試験、生成した参考文献の相互link試験、書誌情報を記法として解釈しない試験 | 共有したノートでの引用表示 |
+| REQ-DATA-008 | 図の認可境界・絞り込み・片端の欠けた線の試験、起点と階層数の試験、想定規模の試験、REST経路と認証と範囲外指定の試験、ブラウザー試験 | 関係の図の表示 |
 | REQ-AUTH-001 | OIDC単体・結合試験 | ログイン拒否 |
 | REQ-AUTH-002 | domain・archive・SQLite単体試験 | 所有者照合 |
 | REQ-AUTH-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
@@ -34,7 +35,7 @@
 | REQ-API-005 | MCP scope結合試験 | MCP権限照合 |
 | REQ-API-006 | Authorization Server Metadata確認、認可取消APIの本番到達性検査 | client接続解除、grant取消、JWT失効時間 |
 | REQ-API-007 | MCP JSON Schema生成差分、MCP HTTP契約試験、AsciiDoc入力規則・HTML描画試験、警告拒否前の永続化防止試験 | client同期・参考文献作成・診断修正後の再実行確認 |
-| REQ-UI-001 | React単体試験、ブラウザー試験 | 主要画面 |
+| REQ-UI-001 | React単体試験、ブラウザー試験、配布物の大きさ検査 | 主要画面 |
 | REQ-UI-002 | TypeScript実行時検査試験 | 異常応答表示 |
 | REQ-UI-003 | React状態・画面単体試験、ブラウザー試験 | 一覧の復帰 |
 | REQ-UI-004 | AdocWeave診断、REST契約、TypeScript応答検査、React編集・UTF-8位置単体試験、ブラウザー試験 | 警告表示、診断からの修正 |

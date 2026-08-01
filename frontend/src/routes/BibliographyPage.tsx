@@ -18,9 +18,14 @@ interface Message {
 const notice = (text: string): Message => ({ text, failed: false });
 const failure = (text: string): Message => ({ text, failed: true });
 
+/** URLの`query`を初期の絞り込み条件として読む。関係の図から文献を選んだ場合に使う。 */
+function initialQuery(search: string): string {
+  return new URLSearchParams(search).get("query") ?? "";
+}
+
 export function BibliographyPage({ config }: { config: ApplicationConfig }) {
   const [items, setItems] = useState<BibliographyItem[] | null>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => initialQuery(config.search));
   const [input, setInput] = useState(
     '{\n  "id": "smith2024",\n  "type": "article-journal",\n  "title": "Example title"\n}',
   );
@@ -35,9 +40,10 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
       setMessage(failure("書誌ライブラリーを読み込めませんでした。"));
     }
   }
+  const initial = initialQuery(config.search);
   useEffect(() => {
     let current = true;
-    searchBibliography(config.apiBase, "")
+    searchBibliography(config.apiBase, initial)
       .then((value) => current && setItems(value))
       .catch(
         () =>
@@ -47,7 +53,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
     return () => {
       current = false;
     };
-  }, [config.apiBase]);
+  }, [config.apiBase, initial]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

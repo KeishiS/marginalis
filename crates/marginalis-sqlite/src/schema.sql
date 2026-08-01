@@ -23,6 +23,16 @@ CREATE TABLE note_references (
 CREATE INDEX note_references_target_idx
 ON note_references (target_note_id, source_note_id);
 
+-- 本文が`cite:`で名指したcitation key。関係の図で、ノートと文献を結ぶ線に使う。
+-- 参照先の書誌項目が実在するかどうかは保存時に問わない。ライブラリーは後から変わるためである。
+CREATE TABLE note_citations (
+    source_note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+    citation_key TEXT NOT NULL,
+    PRIMARY KEY (source_note_id, citation_key)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX note_citations_key_idx
+ON note_citations (citation_key, source_note_id);
+
 CREATE TABLE bibliography_items (
     item_id TEXT PRIMARY KEY NOT NULL,
     owner_issuer TEXT NOT NULL,

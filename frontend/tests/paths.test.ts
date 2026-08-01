@@ -5,6 +5,7 @@ import {
   canonicalSearch,
   editPath,
   externalPath,
+  graphPath,
   listPath,
   notePath,
 } from "../src/paths";
@@ -39,5 +40,14 @@ describe("画面URLの組み立て", () => {
   it("一覧はページ位置を含められる", () => {
     expect(listPath(root)).toBe("/");
     expect(listPath(root, 2)).toContain("page=2");
+  });
+
+  /// 一覧の絞り込みはタグと更新日を対象とし、図の範囲とは別の条件である。
+  it("関係の図は起点と階層を持ち、一覧の条件を引き継がない", () => {
+    const messy = { basePath: "/marginalis", search: "?tag=research&page=3" };
+    expect(graphPath(messy)).toBe("/marginalis/graph");
+    expect(graphPath(messy, { noteId: "note-1", depth: 2 })).toBe(
+      "/marginalis/graph?origin=note-1&depth=2",
+    );
   });
 });

@@ -48,9 +48,15 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは12です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは13です。旧versionを起動時に自動移行しません。
+
+v0.21.0以前のschema 12から更新する場合は、更新前の実行環境で`export-archive`を実行し、
+新しい版で空の`dataDir`へ`import-archive`で取り込んでください。archiveの形式は変わらないため、
+`migrate-archive`は不要です。schema 13では、本文が`cite:`で名指したcitation keyを関係の図の
+ために索引として保存します。取り込みのときに本文から作り直します。
+
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
-現行の`migrate-archive`でarchive 13へ変換してから、空のschema 12へ取り込んでください。
+現行の`migrate-archive`でarchive 13へ変換してから、空のschema 13へ取り込んでください。
 この経路では全ノートをAdocWeave 0.23.0の規則で再検証し、題名、タグ、参照索引を再構築します。
 ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
@@ -144,9 +150,9 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 ## 以前のarchiveからの移行
 
 v0.18.0が作成したarchive 11、v0.16.1が作成したarchive 10、v0.16.0が作成したarchive 9、
-v0.15.0が作成したarchive 8は、復元前に現行のarchive 13へ変換します。SQLite schema 12には書誌ライブラリーを追加したため、
+v0.15.0が作成したarchive 8は、復元前に現行のarchive 13へ変換します。SQLite schema 13には引用の索引を追加したため、
 稼働中の旧databaseファイルはそのまま使用できません。archiveを書き出してから変換し、空の
-schema 12へ復元してください。
+schema 13へ復元してください。
 
 ```sh
 sudo -u marginalis marginalis migrate-archive \
@@ -184,10 +190,10 @@ AdocWeave 0.23.0でmetadataを再構築するため、databaseファイルを直
    v0.10.0で修正し、archive 7の書き出しからやり直します。エラーに示された`position`は、
    archiveの`notes`または`note_acl`配列内の1から始まる位置です。診断へ本文や識別子は
    出力されません。
-5. 成功したarchive 13を、次節の手順で空のschema 12へ取り込みます。
+5. 成功したarchive 13を、次節の手順で空のschema 13へ取り込みます。
 
 CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行操作を適用し、入力archiveの不変、
-旧archiveの直接取込拒否、schema 12でのノート、ACL、参照、削除状態、revisionの一致、archive 13の
+旧archiveの直接取込拒否、schema 13でのノート、ACL、参照、削除状態、revisionの一致、archive 13の
 再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
 
 ## 他の道具で読める形での取り出し

@@ -101,6 +101,16 @@ impl SqliteDatabase {
         for item in plan.snapshot().bibliography_items() {
             insert_bibliography_item_row(&mut transaction, item).await?;
         }
+        for (source, key) in plan.citations() {
+            sqlx::query(
+                "INSERT OR IGNORE INTO note_citations (source_note_id, citation_key) VALUES (?, ?)",
+            )
+            .bind(source.to_string())
+            .bind(key)
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        }
         for (source, target) in plan.references() {
             sqlx::query(
                 "INSERT OR IGNORE INTO note_references (source_note_id, target_note_id) VALUES (?, ?)",

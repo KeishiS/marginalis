@@ -29,6 +29,30 @@ export interface NoteView {
   html: string;
   related: RelatedNotes;
 }
+export interface NoteGraphNote {
+  note_id: string;
+  title: string;
+  tags: string[];
+  updated_at_ms: number;
+}
+export interface NoteGraphWork {
+  citation_key: string;
+  title: string | null;
+}
+export interface NoteGraphReference {
+  source_note_id: string;
+  target_note_id: string;
+}
+export interface NoteGraphCitation {
+  source_note_id: string;
+  citation_key: string;
+}
+export interface NoteGraph {
+  notes: NoteGraphNote[];
+  works: NoteGraphWork[];
+  references: NoteGraphReference[];
+  citations: NoteGraphCitation[];
+}
 export interface NoteDraft {
   source: string;
 }
@@ -195,6 +219,65 @@ export function parseNoteListEntry(value: unknown): NoteListEntry {
 export function parseNoteListEntries(value: unknown): NoteListEntry[] {
   if (!Array.isArray(value)) throw new Error("note list entries are invalid");
   return value.map(parseNoteListEntry);
+}
+
+export function parseNoteGraph(value: unknown): NoteGraph {
+  const object = record(value, "note graph");
+  return {
+    notes: array(object.notes, "note graph.notes").map((entry) => {
+      const note = record(entry, "note graph.notes[]");
+      return {
+        note_id: text(note.note_id, "note graph.notes[].note_id"),
+        title: text(note.title, "note graph.notes[].title"),
+        tags: textArray(note.tags, "note graph.notes[].tags"),
+        updated_at_ms: integer(
+          note.updated_at_ms,
+          "note graph.notes[].updated_at_ms",
+        ),
+      };
+    }),
+    works: array(object.works, "note graph.works").map((entry) => {
+      const work = record(entry, "note graph.works[]");
+      return {
+        citation_key: text(
+          work.citation_key,
+          "note graph.works[].citation_key",
+        ),
+        title:
+          work.title === null
+            ? null
+            : text(work.title, "note graph.works[].title"),
+      };
+    }),
+    references: array(object.references, "note graph.references").map(
+      (entry) => {
+        const edge = record(entry, "note graph.references[]");
+        return {
+          source_note_id: text(
+            edge.source_note_id,
+            "note graph.references[].source_note_id",
+          ),
+          target_note_id: text(
+            edge.target_note_id,
+            "note graph.references[].target_note_id",
+          ),
+        };
+      },
+    ),
+    citations: array(object.citations, "note graph.citations").map((entry) => {
+      const edge = record(entry, "note graph.citations[]");
+      return {
+        source_note_id: text(
+          edge.source_note_id,
+          "note graph.citations[].source_note_id",
+        ),
+        citation_key: text(
+          edge.citation_key,
+          "note graph.citations[].citation_key",
+        ),
+      };
+    }),
+  };
 }
 
 export function parseNoteView(value: unknown): NoteView {
@@ -448,6 +531,32 @@ export async function readNoteView(
   );
 }
 
+/** 図に出す範囲。`origin`を指定すると、そこから`depth`本以内の線で辿れる範囲だけになる。 */
+export interface NoteGraphScope {
+  query?: string;
+  origin?: string;
+  depth?: number;
+}
+
+export async function readNoteGraph(
+  apiBase: string,
+  scope: NoteGraphScope = {},
+  signal?: AbortSignal,
+): Promise<NoteGraph> {
+  const parameters = new URLSearchParams();
+  if (scope.query) parameters.set("query", scope.query);
+  if (scope.origin) {
+    parameters.set("origin", scope.origin);
+    parameters.set("depth", String(scope.depth ?? 1));
+  }
+  const suffix = parameters.size > 0 ? `?${parameters.toString()}` : "";
+  return requestJson(
+    `${apiBase}/notes/graph${suffix}`,
+    { signal },
+    parseNoteGraph,
+  );
+}
+
 export async function createNote(
   apiBase: string,
   draft: NoteDraft,
@@ -614,6 +723,10 @@ function nonNegativeInteger(value: unknown, name: string): number {
   const result = integer(value, name);
   if (result < 0) throw new Error(`${name} is invalid`);
   return result;
+}
+function array(value: unknown, name: string): unknown[] {
+  if (!Array.isArray(value)) throw new Error(`${name} is invalid`);
+  return value;
 }
 function textArray(value: unknown, name: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {

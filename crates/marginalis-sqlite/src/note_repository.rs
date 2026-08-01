@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use marginalis_application::{
-    NoteAclRepository, NoteAclState, NoteCommandRepository, NoteQueryRepository,
-    NoteRepositoryError, NoteViewSnapshot,
+    NoteAclRepository, NoteAclState, NoteCommandRepository, NoteGraph, NoteGraphQuery, NoteLinks,
+    NoteQueryRepository, NoteRepositoryError, NoteViewSnapshot,
 };
 use marginalis_domain::{
     Actor, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, Revision, UnixMillis,
@@ -51,6 +51,16 @@ impl NoteQueryRepository for SqliteDatabase {
             .await
             .map_err(map_error)
     }
+
+    async fn note_graph(
+        &self,
+        actor: &Actor,
+        query: &NoteGraphQuery,
+    ) -> Result<NoteGraph, NoteRepositoryError> {
+        SqliteDatabase::note_graph(self, actor, query)
+            .await
+            .map_err(map_error)
+    }
 }
 
 #[async_trait]
@@ -58,9 +68,9 @@ impl NoteCommandRepository for SqliteDatabase {
     async fn create_note(
         &self,
         note: &Note,
-        reference_targets: &[NoteId],
+        links: NoteLinks<'_>,
     ) -> Result<(), NoteRepositoryError> {
-        SqliteDatabase::create_note(self, note, reference_targets)
+        SqliteDatabase::create_note(self, note, links)
             .await
             .map_err(map_error)
     }
@@ -71,7 +81,7 @@ impl NoteCommandRepository for SqliteDatabase {
         note_id: NoteId,
         expected_revision: Revision,
         draft: &NoteDraft,
-        reference_targets: &[NoteId],
+        links: NoteLinks<'_>,
         now: UnixMillis,
     ) -> Result<Note, NoteRepositoryError> {
         SqliteDatabase::update_visible_note(
@@ -80,7 +90,7 @@ impl NoteCommandRepository for SqliteDatabase {
             note_id,
             expected_revision,
             draft,
-            reference_targets,
+            links,
             now,
         )
         .await

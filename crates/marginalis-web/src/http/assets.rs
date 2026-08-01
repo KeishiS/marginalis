@@ -5,23 +5,31 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-const EDITOR_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/editor.js");
-const EDITOR_STYLESHEET: &[u8] = include_bytes!("../../../../frontend/dist/assets/editor.css");
-const MATHJAX_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/tex-svg.js");
-const PAGE_JAVASCRIPT: &[u8] = include_bytes!("../../../../frontend/dist/assets/page.js");
 include!(concat!(env!("OUT_DIR"), "/mathjax_font_assets.rs"));
 include!(concat!(env!("OUT_DIR"), "/web_font_assets.rs"));
+include!(concat!(env!("OUT_DIR"), "/bundle_assets.rs"));
 
-pub(super) async fn editor_javascript() -> Response {
-    asset("text/javascript; charset=utf-8", EDITOR_JAVASCRIPT)
+/// `dist/assets`直下の配布物を名前で引いて返す。
+///
+/// 名前を経路へ書き並べません。分割読み込みで増えるchunkは名前へhashが付くため、書き並べる方式では
+/// 新しい出力が配信されないまま気付けません。実際に、関係の図のchunkが404になり、moduleとして
+/// 読み込めずに画面全体が空になりました。
+pub(super) async fn bundle_asset(
+    axum::extract::Path(file_name): axum::extract::Path<String>,
+) -> Response {
+    match BUNDLE_FILES
+        .iter()
+        .find(|(candidate, _, _)| *candidate == file_name)
+    {
+        Some((_, content_type, body)) => asset(content_type, body),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
-pub(super) async fn editor_stylesheet() -> Response {
-    asset("text/css; charset=utf-8", EDITOR_STYLESHEET)
-}
-
-pub(super) async fn mathjax_javascript() -> Response {
-    asset("text/javascript; charset=utf-8", MATHJAX_JAVASCRIPT)
+/// 配信している`dist/assets`直下のファイル名。配布物と経路の対応を試験で確かめるために公開します。
+#[cfg(test)]
+pub(crate) fn bundled_asset_names() -> impl Iterator<Item = &'static str> {
+    BUNDLE_FILES.iter().map(|(name, _, _)| *name)
 }
 
 pub(super) async fn mathjax_font_javascript(
@@ -32,10 +40,6 @@ pub(super) async fn mathjax_font_javascript(
         "text/javascript; charset=utf-8",
         &file_name,
     )
-}
-
-pub(super) async fn page_javascript() -> Response {
-    asset("text/javascript; charset=utf-8", PAGE_JAVASCRIPT)
 }
 
 pub(super) async fn web_font(
