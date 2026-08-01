@@ -130,6 +130,10 @@ fn diagnostic_message(code: NoteValidationCode) -> String {
         NoteValidationCode::UnsupportedDocumentAttribute => {
             "the document attribute is not allowed".to_owned()
         }
+        NoteValidationCode::PreprocessorDirectiveDisabled => {
+            "preprocessor directives such as include, ifdef, ifndef, and ifeval are not allowed"
+                .to_owned()
+        }
         NoteValidationCode::UnsupportedCitationStyle => {
             NOTE_POLICY.unsupported_citation_style_message()
         }

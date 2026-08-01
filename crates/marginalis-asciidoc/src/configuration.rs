@@ -1,6 +1,8 @@
 //! Marginalis note profileで使うAdocWeave設定の単一正本。
 
-use adocweave::output::diagnostics::{MACRO_BOUNDARY, RuleSettings, Severity};
+use adocweave::output::diagnostics::{
+    LintRuleId, MACRO_BOUNDARY, RuleSettings, Severity, lint_rule,
+};
 use adocweave::output::html::{
     MathLanguagePolicy, RenderPolicy, ResourceCapabilities, SourceLanguagePolicy,
     UnknownSourceLanguage, UnresolvedReferencePresentation,
@@ -50,6 +52,20 @@ pub(crate) fn authored_url_policy() -> AuthoredUrlPolicy {
     }
 }
 
+/// 前処理していないpreprocessor directiveを報告するlint規則の名前。
+///
+/// AdocWeaveはこの規則の識別子を定数として公開していないため、名前から引きます。
+/// 名前が変わった場合は[`unprocessed_directive_rule`]が`None`を返し、規則を有効にできません。
+pub(crate) const UNPROCESSED_DIRECTIVE_RULE: &str = "unprocessed-directive";
+
+/// `ifdef`、`ifndef`、`ifeval`、`include`を報告する規則を引く。
+///
+/// Marginalisは1件のノートを1つの文書として扱い、条件分岐と取り込みのどちらも受理しません。
+/// AdocWeaveの既定ではこの規則が無効なため、明示的に有効にします。
+pub(crate) fn unprocessed_directive_rule() -> Option<LintRuleId> {
+    lint_rule(UNPROCESSED_DIRECTIVE_RULE).map(|descriptor| descriptor.id)
+}
+
 pub(crate) fn analysis_options() -> AnalysisOptions {
     let mut diagnostics = DiagnosticProfile::default();
     diagnostics.lint.authored_url_policy = authored_url_policy();
@@ -60,6 +76,19 @@ pub(crate) fn analysis_options() -> AnalysisOptions {
             severity: Severity::Warning,
         },
     );
+    // 条件分岐と取り込みのdirectiveを、保存を拒む問題として報告させる。0.26.0までは
+    // `ifeval::`が名前付きマクロとして読まれ、許可しないURL schemeとして拒否されていた。
+    // 0.27.0で字句として認識されるようになり、既定では警告も出なくなったため、ここで
+    // 明示的に有効にしないと条件分岐を書いたノートを受理してしまう。
+    if let Some(rule) = unprocessed_directive_rule() {
+        diagnostics.lint.set_rule(
+            rule,
+            RuleSettings {
+                enabled: true,
+                severity: Severity::Error,
+            },
+        );
+    }
     AnalysisOptions {
         syntax: SyntaxOptions {
             syntax_mode: SyntaxMode::Strict,

@@ -1,0 +1,116 @@
+# AdocWeave 0.27移行判断
+
+## 目的
+
+この文書は、AdocWeave 0.23.0から0.27.0への更新がMarginalisへ与える影響を記録します。0.24.0から
+0.27.0までの4版分をまとめて取り込みます。現行の入力方法は[REST API](rest-api.md)、archiveの
+変換手順は[NixOSでの運用](nixos.md)を参照してください。
+
+前回の更新は[AdocWeave 0.23移行判断](adocweave-v0.23-migration.md)にあります。
+
+## 固定する依存
+
+MarginalisはAdocWeave package版`0.27.0`を、release tagが指すcommit
+`c12c63a22ff908bf3d7f9db0203806befc90cb62`で使用します。Rust toolchainは`1.97.1`を維持します。
+CargoとNixの両方で、このcommitと取得内容のハッシュを固定します。
+
+## 受理する入力が変わりかけた
+
+この更新で最も注意を要したのは、**Marginalisが何もしなければ条件分岐のdirectiveを受理する
+ようになっていた**という点です。
+
+0.26.0までは、`ifeval::["a" == "b"]`が名前付きマクロとして読まれ、先頭の`ifeval:`がURLの
+schemeに見えるため、許可しないURL schemeとして拒否されていました。Marginalisはこの偶然の
+経路で条件分岐を弾いていたことになります。
+
+0.27.0は条件分岐と`include`のdirectiveを字句として認識し、`unprocessed-directive`という
+専用の診断で報告します。この診断規則はAdocWeaveの既定では無効なため、更新するだけでは何も
+報告されず、条件分岐を書いたノートが保存できるようになります。
+
+Marginalisは1件のノートを1つの文書として扱い、条件分岐も取り込みも受理しません。そのため
+`crates/marginalis-asciidoc/src/configuration.rs`でこの規則を`Error`として明示的に有効にし、
+従来の受理範囲を保ちました。`preprocessor_directives_stay_rejected`が、この設定が外れた場合に
+受理範囲が広がることを検出します。
+
+診断codeは`asciidoc_parse_failed`ではなく`preprocessor_directive_disabled`へ写します。
+条件分岐は構文の誤りではないため、「AsciiDocとして読めない」という理由では書いた人が直し方を
+判断できないからです。
+
+なお、AdocWeaveはこの規則の識別子を定数として公開していません。ほかのlint規則はすべて公開
+されているため、公開漏れと考えられます。Marginalisは`lint_rule("unprocessed-directive")`で
+名前から引いています。規則名が変わると規則を有効にできなくなりますが、その場合は上記の試験が
+失敗します。
+
+## bibliography anchorの表示テキストへ対応した
+
+0.27.0は`[[[id,表示テキスト]]]`のカンマ以降を表示テキストとして読み、`BibliographyEntry`へ
+`label`として保持し、公開projectionへ出すようになりました。0.26.0までは中身全体をIDとして
+扱っていたため、仕様どおりに書いた文書は`<<id>>`が解決できませんでした。
+
+Marginalisは現在この記法を生成していません。番号で示す引用スタイルでは、番号を参考文献項目の
+表示文字列へ入れています。表示は同じですが、番号を`[[[id,1]]]`の形へ移せば、番号が文献の
+識別情報として扱われ、本文からの参照表示もAdocWeaveへ任せられます。この移行は別の作業として
+扱います。
+
+## Rust公開APIの破壊的変更
+
+次の3点が公開APIの破壊的変更ですが、いずれもMarginalisへ影響しません。
+
+- `BibliographyEntry`へ`label`が加わりました。Marginalisはこの型を読むだけで、自分では
+  構築しません。
+- `Unsupported`へ`kind`が加わり、`UnsupportedKind`が公開されました。Marginalisはこの型を
+  使いません。
+- `SyntaxIssueClass`へ`UnprocessedDirective`が加わりました。Marginalisはこの列挙を
+  網羅的に`match`していません。
+
+`AnalysisOptions`、`RenderPolicy`、`RenderInputs`、`Analysis`の使い方は変わらず、置き換えた
+呼び出しはありません。
+
+## そのほかの版の影響
+
+**0.24.0**
+
+- CLIとLanguage Serverの終了コードを理由ごとに分けました。MarginalisはAdocWeaveをRustの
+  ライブラリとして組み込むため、終了コードを読みません。
+- 設定fileの読み込みに1 MiBの上限が付きました。Marginalisは設定fileを読まず、
+  `configuration.rs`が`AnalysisOptions`と`RenderPolicy`を`NOTE_POLICY`から直接組み立てます。
+
+**0.25.0**
+
+- `javascript`と`vbscript`のURLを、許可schemeへ加えても出力しなくなりました。Marginalisが
+  許可するschemeは`http`と`https`だけのため、出力は変わりません。
+- `include`と`ifeval`のdirectiveが`\{name}`をエスケープとして読むようになりました。
+  Marginalisはどちらのdirectiveも受理しないため、受理範囲に影響しません。
+- `resources.max-files`の上限が全プラットフォームへ適用されます。Marginalisが対象とするのは
+  Linuxで、以前から同じ動作です。
+
+**0.26.0、0.26.1**
+
+- Language Serverの応答性の改善です。MarginalisはLanguage Serverを使いません。
+
+## 見送られた提案
+
+利用側アプリ用の文書属性の接頭辞を設定で予約する案は、AdocWeave側で実施しない判断となりました。
+Marginalisは`marginalis-`で始める規則を自前で持ち続けます。規則は
+[アーキテクチャ](architecture.md)に記載しており、`NOTE_POLICY.allowed_document_attributes`が
+正本です。AsciiDocが同名の組込み属性を定義する可能性は現実的にないため、実害はありません。
+
+## 公開契約への影響
+
+`get_note_profile`とOpenAPIが公開する`adocweave_package_version`が`0.23.0`から`0.27.0`へ
+変わります。受理する入力は従来と同じに保ったため、`profile_version`は上げません。
+
+archiveへ記録する`adocweave_package_version`も`0.27.0`になります。`0.23.0`を記録した既存の
+archiveは現行契約として受理されなくなるため、移行元の契約へ
+`("marginalis-archive-13", "0.23.0", 5)`を加えました。`migrate-archive`で変換できます。
+本文の書き換えは不要で、全ノートを現行の規則で再検証するだけです。
+
+## 引用の番号付けは利用側が決める
+
+0.24.0以降の「既知の制約」に、次の記述があります。
+
+> 引用の解決結果は文書全体の並べ替えを行いません。番号付きの引用styleで通し番号を振る場合は、
+> 利用側アプリが出現順を見て文字列を決めてください。出現順は公開projectionの`citations`から
+> 取得できます。
+
+Marginalisは`Analysis::citations()`から出現順を取得しており、追加の経路は要りません。

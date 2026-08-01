@@ -16,10 +16,17 @@
 
 ### 破壊的変更
 
+- AdocWeaveを0.27.0へ更新した。`get_note_profile`とarchiveが記録する
+  `adocweave_package_version`が`0.27.0`になる。ノートの受理範囲と描画したHTMLは変わらない。
+  `0.23.0`を記録した既存のarchiveは`migrate-archive`で変換する。判断の内容は
+  [AdocWeave 0.27移行判断](docs/adocweave-v0.27-migration.md)に記録した。
+- `include`、`ifdef`、`ifndef`、`ifeval`を書いたノートを拒否するときの診断codeを
+  `preprocessor_directive_disabled`へ変更した。条件分岐はこれまで、`ifeval:`がURLのschemeに
+  見えるという理由で`invalid_url_scheme`として拒否されていた。これらのdirectiveを受理しない
+  方針は変わらない。
 - `get_note_profile`が返すnote profile版を13へ更新した。`syntax`へ、引用スタイルとして選べる
   値を並べた`allowed_citation_styles`が加わる。文書headerへ書ける属性へ
   `marginalis-citation-style`が加わり、番号で引用を示す文書例も1件加わる。
-
 - ノートのタグを並べる文書属性の名前を`:tags:`から`:marginalis-tags:`へ変更した。Marginalisが
   独自に決めた文書属性は`marginalis-`で始める規則にしたためである。以前の`:tags:`を書いた
   ノートは、対応していない文書属性として保存を拒否する。既存のarchiveは`migrate-archive`が

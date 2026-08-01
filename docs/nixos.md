@@ -69,12 +69,27 @@ sudo -u marginalis marginalis migrate-archive \
 
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
 現行の`migrate-archive`でarchive 13へ変換してから、空のschema 13へ取り込んでください。
-この経路では全ノートをAdocWeave 0.23.0の規則で再検証し、題名、タグ、参照索引を再構築します。
+この経路では全ノートをAdocWeave 0.27.0の規則で再検証し、題名、タグ、参照索引を再構築します。
 ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
 切戻す場合はserviceを停止し、更新後に作成したdatabaseを保全してから、更新前に退避した`dataDir`と
 実行環境を組み合わせて戻します。異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
-archive 7、8、9、10、11以外の旧archiveには移行操作を提供しません。
+
+`migrate-archive`が受け取れるのは、archive 7から13までのうち、次の組み合わせで書き出された
+ものだけです。形式、AdocWeave package版、note profile版の3つがすべて一致する必要があります。
+
+| archive形式 | AdocWeave package版 | note profile版 |
+| --- | --- | --- |
+| `marginalis-archive-13` | 0.23.0 | 5 |
+| `marginalis-archive-13` | 0.23.0 | 4 |
+| `marginalis-archive-12` | 0.22.0 | 4 |
+| `marginalis-archive-11` | 0.20.0 | 4 |
+| `marginalis-archive-10` | 0.20.0 | 4 |
+| `marginalis-archive-9` | 0.19.0 | 4 |
+| `marginalis-archive-8` | 0.17.0 | 4 |
+| `marginalis-archive-7` | 0.11.0 | 3 |
+
+この一覧に無い旧archiveには移行操作を提供しません。
 
 reverse proxyは`/auth/`、`/api/`、`/mcp`、`/.well-known/`を同一オリジンへ転送します。
 サブパスでは通常endpointの外部prefixをupstreamへ渡す前に除去します。一方、RFC 8414/9728の
@@ -141,7 +156,7 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 ## バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは`marginalis-archive-13`で、AdocWeave package版`0.23.0`とnote profile版`4`を記録します。
+現行archiveは`marginalis-archive-13`で、AdocWeave package版`0.27.0`とnote profile版`5`を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 同じ段階で、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と重複も検証します。
 本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
@@ -174,14 +189,14 @@ sudo -u marginalis marginalis verify-restore \
   --input /srv/marginalis-migration/archive-13.json
 ```
 
-archive 8を入力にする場合も、出力はarchive 13です。変換では全ノートをAdocWeave 0.23.0で
+archive 8を入力にする場合も、出力はarchive 13です。変換では全ノートをAdocWeave 0.27.0で
 再検証します。入力archiveは変更されず、出力先が既に存在する場合は上書きしません。詳しい判断は
-[0.23移行判断](adocweave-v0.23-migration.md)を参照してください。
+[0.27移行判断](adocweave-v0.27-migration.md)を参照してください。
 
 ## v0.10.0からの移行
 
 v0.10.0のschema 10には、AdocWeave 0.11.0で導出した題名とタグが保存されています。現行版は
-AdocWeave 0.23.0でmetadataを再構築するため、databaseファイルを直接引き継ぎません。
+AdocWeave 0.27.0でmetadataを再構築するため、databaseファイルを直接引き継ぎません。
 
 1. v0.10.0のserviceとdatabaseを使ってarchive 7を書き出し、同じ実行環境の
    `validate-archive`と`verify-restore`を実行します。

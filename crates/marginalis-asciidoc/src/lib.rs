@@ -11,8 +11,8 @@ mod configuration;
 mod policy;
 mod rendering;
 
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "d92447fb29dbc5fa06ea210787606b503245d073";
-pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.23.0";
+pub const ADOCWEAVE_SOURCE_REVISION: &str = "c12c63a22ff908bf3d7f9db0203806befc90cb62";
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.27.0";
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
 pub const AUTHORING_PROFILE_VERSION: u32 = 13;
 
