@@ -162,10 +162,21 @@ pub(super) async fn verify_archive_in_memory(
     let database = SqliteDatabase::connect("sqlite::memory:").await?;
     database.restore(&validated.plan).await?;
     let snapshot = database.export_archive_snapshot().await?;
-    if create_archive(&AsciiDocNoteContent, &snapshot) != validated.archive {
+    if !matches_logically(
+        &create_archive(&AsciiDocNoteContent, &snapshot),
+        &validated.archive,
+    ) {
         return Err("archive logical round-trip validation failed".into());
     }
     Ok(())
+}
+
+/// 2つのarchiveが同じ内容かどうかを、要素の並びを問わずに判断する。
+///
+/// archiveの内容は集合であり、並びは組み立て方で変わる。並びの違いで取り込みを止めると、
+/// 壊れていない書き出しを拒むことになる。
+fn matches_logically(left: &Archive, right: &Archive) -> bool {
+    left.clone().canonical() == right.clone().canonical()
 }
 
 pub(super) async fn verify_archive_in_isolated_database(
@@ -178,7 +189,7 @@ pub(super) async fn verify_archive_in_isolated_database(
         database.restore(&validated.plan).await?;
         let snapshot = database.export_archive_snapshot().await?;
         let restored = create_archive(&AsciiDocNoteContent, &snapshot);
-        if restored != validated.archive {
+        if !matches_logically(&restored, &validated.archive) {
             return Err("restored archive does not match the source archive".into());
         }
         Ok::<_, Box<dyn std::error::Error>>(())

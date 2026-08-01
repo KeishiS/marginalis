@@ -74,6 +74,31 @@ pub struct ArchiveBibliographyItem {
     pub revision: i64,
 }
 
+impl Archive {
+    /// 要素を決まった順に並べ替えた同じ内容のarchiveを返す。
+    ///
+    /// archiveの内容はノート、ACL、書誌項目の集合であり、並びは内容の一部ではない。組み立て方に
+    /// よって並びは変わるため、2つのarchiveが同じ内容かどうかを判断する前にここで揃える。
+    /// 並べ替えの規則は、SQLiteから書き出すときの`ORDER BY`と同じにする。
+    #[must_use]
+    pub fn canonical(mut self) -> Self {
+        self.notes.sort_by(|left, right| {
+            // note_idは一意であるため、これだけで並びが定まる。
+            left.note_id.cmp(&right.note_id)
+        });
+        self.note_acl.sort_by(|left, right| {
+            (&left.note_id, &left.issuer, &left.subject).cmp(&(
+                &right.note_id,
+                &right.issuer,
+                &right.subject,
+            ))
+        });
+        self.bibliography_items
+            .sort_by(|left, right| left.item_id.cmp(&right.item_id));
+        self
+    }
+}
+
 /// 検証済みのsnapshotを現行のarchive形式へ書き出す。
 ///
 /// 記録するAdocWeave packageの版は、実際に検証へ使う`content`から取得する。定数を二重に
@@ -356,6 +381,64 @@ mod tests {
         assert_eq!(archive.format, ARCHIVE_FORMAT);
         assert_eq!(archive.note_profile_version, ARCHIVE_NOTE_PROFILE_VERSION);
         assert_eq!(validate_archive(&content(), &archive), Ok(snapshot));
+    }
+
+    /// 並びだけが違うarchiveを組み立てる。内容は同じで、要素の順序だけを逆にする。
+    fn reversed(mut archive: Archive) -> Archive {
+        archive.notes.reverse();
+        archive.note_acl.reverse();
+        archive.bibliography_items.reverse();
+        archive
+    }
+
+    #[test]
+    fn canonical_order_makes_archives_with_the_same_content_equal() {
+        let first = note();
+        let second = Note::create(
+            NoteId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-000000000002").expect("UUIDv7"),
+            ),
+            &Identity::new("https://id.example.test".into(), "bob".into()).expect("owner"),
+            content()
+                .validate_draft(NoteDraft {
+                    source: "= Another title\n\nsafe body".into(),
+                    title: String::new(),
+                    tags: Vec::new(),
+                })
+                .expect("draft")
+                .draft,
+            UnixMillis::new(0),
+        );
+        let reader = Identity::new(first.creator_issuer().into(), "reader".into()).expect("reader");
+        let snapshot = LogicalSnapshot::new(
+            vec![first.clone(), second.clone()],
+            vec![
+                NoteAclSnapshotEntry::new(first.note_id(), reader.clone(), NotePermission::Read),
+                NoteAclSnapshotEntry::new(second.note_id(), reader, NotePermission::Edit),
+            ],
+        )
+        .expect("snapshot");
+        let archive = create_archive(&content(), &snapshot);
+
+        // 並びを変えただけのarchiveは、そのままでは等しくない。
+        assert_ne!(reversed(archive.clone()), archive);
+        // 並びを揃えれば同じ内容だと分かる。
+        assert_eq!(
+            reversed(archive.clone()).canonical(),
+            archive.clone().canonical()
+        );
+        // すでに整った並びは変わらない。
+        assert_eq!(archive.clone().canonical(), archive);
+    }
+
+    #[test]
+    fn canonical_order_keeps_archives_with_different_content_apart() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let archive = create_archive(&content(), &snapshot);
+        let mut changed = archive.clone();
+        changed.notes[0].source.push_str("\n\n追記");
+
+        assert_ne!(changed.canonical(), archive.canonical());
     }
 
     #[test]
