@@ -130,6 +130,10 @@ fn diagnostic_message(code: NoteValidationCode) -> String {
         NoteValidationCode::UnsupportedDocumentAttribute => {
             "the document attribute is not allowed".to_owned()
         }
+        NoteValidationCode::PreprocessorDirectiveDisabled => {
+            "preprocessor directives such as include, ifdef, ifndef, and ifeval are not allowed"
+                .to_owned()
+        }
         forbidden => FORBIDDEN_RULES
             .iter()
             .find_map(|rule| (rule.code() == forbidden).then_some(rule.message()))

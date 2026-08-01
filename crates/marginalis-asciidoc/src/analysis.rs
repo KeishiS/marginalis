@@ -13,7 +13,7 @@ use marginalis_domain::{
 use unicode_normalization::UnicodeNormalization;
 
 use crate::RenderError;
-use crate::configuration::analysis_options;
+use crate::configuration::{UNPROCESSED_DIRECTIVE_RULE, analysis_options};
 use crate::policy::{
     advisory_diagnostic, diagnostic, diagnostic_sort_key, span, validate_note_content_profile,
 };
@@ -219,11 +219,14 @@ pub(crate) fn validate_draft(
                         .iter()
                         .filter(|diagnostic| diagnostic.severity == Severity::Error)
                         .map(|item| {
-                            diagnostic(
-                                NoteValidationCode::AsciiDocParseFailed,
-                                NoteValidationTarget::Source,
-                                Some(span(item.range)),
-                            )
+                            // 条件分岐と取り込みのdirectiveは構文の誤りではない。理由が
+                            // 「AsciiDocとして読めない」になると、書いた人は直し方が分からない。
+                            let code = if item.code.as_str() == UNPROCESSED_DIRECTIVE_RULE {
+                                NoteValidationCode::PreprocessorDirectiveDisabled
+                            } else {
+                                NoteValidationCode::AsciiDocParseFailed
+                            };
+                            diagnostic(code, NoteValidationTarget::Source, Some(span(item.range)))
                         }),
                 );
                 advisories.extend(analysis.diagnostics().iter().filter_map(|item| {
@@ -576,26 +579,36 @@ mod tests {
 
     /// 条件分岐と取り込みのdirectiveは、どちらの属性記法でも受理しない。
     ///
-    /// AdocWeave 0.25.0で、`include`と`ifeval`のdirectiveが`\{name}`をエスケープとして読む
-    /// ようになった。以前は属性として展開しており、同じ記法が本文と条件式で違う意味を
-    /// 持っていた。Marginalisはどちらのdirectiveも受理しないため、この変更でノートの
-    /// 受理範囲は変わらない。将来どちらかを受理するようになった場合は、その時点で条件式の
-    /// 属性展開をどう扱うかを決める必要がある。
+    /// Marginalisは1件のノートを1つの文書として扱うため、どちらも受理しない。AdocWeave
+    /// 0.26.0までは`ifeval::`が名前付きマクロとして読まれ、許可しないURL schemeとして
+    /// 拒否されていた。0.27.0で字句として認識されるようになり、既定では警告も出なくなった
+    /// ため、`unprocessed-directive`の規則を明示的に有効にしている。この試験は、その設定が
+    /// 外れたときに受理範囲が広がることを検出する。
     #[test]
-    fn directives_that_changed_escape_handling_stay_rejected() {
+    fn preprocessor_directives_stay_rejected() {
         for source in [
             "= Note\n\ninclude::other.adoc[]",
             "= Note\n:source-language: rust\n\nifeval::[\"{source-language}\" == \"rust\"]\n本文\nendif::[]",
             "= Note\n:source-language: rust\n\nifeval::[\"\\{source-language}\" == \"rust\"]\n本文\nendif::[]",
+            "= Note\n:source-language: rust\n\nifdef::source-language[]\n本文\nendif::[]",
+            "= Note\n\nifndef::missing[]\n本文\nendif::[]",
         ] {
+            let result = validate_draft(NoteDraft {
+                source: source.into(),
+                title: String::new(),
+                tags: Vec::new(),
+            });
+            let Err(errors) = result else {
+                panic!("directiveを受理してしまいました: {source}");
+            };
+            // 理由が「AsciiDocとして読めない」だと、書いた人は直し方が分からない。
             assert!(
-                validate_draft(NoteDraft {
-                    source: source.into(),
-                    title: String::new(),
-                    tags: Vec::new(),
-                })
-                .is_err(),
-                "directiveを受理してしまいました: {source}"
+                errors.iter().any(|error| {
+                    error.code == NoteValidationCode::PreprocessorDirectiveDisabled.as_str()
+                        || error.code == NoteValidationCode::IncludeDirectiveDisabled.as_str()
+                }),
+                "directiveであることが診断から分かりません: {source} → {:?}",
+                errors.iter().map(|error| &error.code).collect::<Vec<_>>()
             );
         }
     }
