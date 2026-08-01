@@ -80,15 +80,21 @@ impl CitationStyle {
         }
     }
 
-    /// 参考文献一覧の1項目に使う表示を作る。
+    /// 参考文献一覧の項目の見出しに使う表示テキストを作る。
     ///
-    /// 番号で示すスタイルでは先頭へ`[1]`を置きます。AsciiDocのbibliography anchorは表示
-    /// テキストを持たない要素として出力されるため、番号は項目の本文として書きます。
-    pub fn entry_text(self, item: &BibliographyItem, number: usize) -> String {
-        let numbered = |text: String| match self {
-            Self::Numeric => format!("[{number}] {text}"),
-            Self::AuthorYear => text,
-        };
+    /// 番号で示すスタイルでは初出順の番号を返します。AsciiDocはbibliography anchorの
+    /// カンマ以降を表示テキストとして読み、項目と本文からの参照を`[1]`の形にします。
+    /// 著者・年のスタイルでは見出しを付けず、citation keyのままにします。
+    #[must_use]
+    pub fn entry_label(self, number: usize) -> Option<String> {
+        match self {
+            Self::AuthorYear => None,
+            Self::Numeric => Some(number.to_string()),
+        }
+    }
+
+    /// 参考文献一覧の1項目に使う書誌情報の表示を作る。
+    pub fn entry_text(self, item: &BibliographyItem) -> String {
         let csl = parsed(item);
         let mut parts = Vec::new();
         let names = names(&csl);
@@ -112,13 +118,11 @@ impl CitationStyle {
             // 年しか読み取れない場合でも、どの項目かは分かるようにする。
             parts.insert(0, item.citation_key().to_owned());
         }
-        numbered(
-            parts
-                .iter()
-                .map(|part| ended_with_period(part))
-                .collect::<Vec<_>>()
-                .join(" "),
-        )
+        parts
+            .iter()
+            .map(|part| ended_with_period(part))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -307,7 +311,7 @@ mod tests {
             "Smith 2024"
         );
         assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&item, 1),
+            CitationStyle::AuthorYear.entry_text(&item),
             "Smith, A. (2024). An Example Article."
         );
     }
@@ -339,7 +343,7 @@ mod tests {
             "Smith et al. 2024"
         );
         assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&two, 1),
+            CitationStyle::AuthorYear.entry_text(&two),
             "Smith, & Tanaka. (2024)."
         );
     }
@@ -352,10 +356,7 @@ mod tests {
             CitationStyle::AuthorYear.inline_label(&bare, 1),
             "bare n.d."
         );
-        assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&bare, 1),
-            "bare. (n.d.)."
-        );
+        assert_eq!(CitationStyle::AuthorYear.entry_text(&bare), "bare. (n.d.).");
     }
 
     #[test]
@@ -373,7 +374,7 @@ mod tests {
             "Example Institute 2023"
         );
         assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&organisation, 1),
+            CitationStyle::AuthorYear.entry_text(&organisation),
             "Example Institute. (2023). Annual Report. https://example.test/report."
         );
     }
@@ -390,7 +391,7 @@ mod tests {
         }));
 
         assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&with_doi, 1),
+            CitationStyle::AuthorYear.entry_text(&with_doi),
             "Smith, A. M. (2022). Example. Example Journal. https://doi.org/10.1234/example."
         );
     }

@@ -126,11 +126,13 @@ fn source_with_generated_bibliography(
         .iter()
         .filter(|entry| !defined.contains(&entry.citation_key.as_str()))
         .map(|entry| {
-            format!(
-                "* [[[{}]]] {}",
-                entry.citation_key,
-                as_plain_text(&entry.text)
-            )
+            // 表示テキストはanchorのカンマ以降へ置く。番号を項目の本文へ書くと、番号が
+            // 文献の識別情報ではなく記述の一部になり、本文からの参照も番号にならない。
+            let anchor = match &entry.label {
+                Some(label) => format!("{},{}", entry.citation_key, as_plain_text(label)),
+                None => entry.citation_key.clone(),
+            };
+            format!("* [[[{anchor}]]] {}", as_plain_text(&entry.text))
         })
         .collect::<Vec<_>>();
     if generated.is_empty() {
@@ -427,6 +429,7 @@ mod tests {
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "smith2024".into(),
                     text: "Smith, A. (2024). An Example Article.".into(),
+                    label: None,
                 }],
                 ..Default::default()
             },
@@ -444,6 +447,38 @@ mod tests {
         assert!(!html.contains(">smith2024<"));
     }
 
+    /// 項目の見出しを持つ場合は、anchorの表示テキストとして渡す。
+    ///
+    /// 番号を項目の記述へ書くと、番号が文献の識別情報ではなく本文の一部になる。AsciiDocは
+    /// `[[[id,表示テキスト]]]`のカンマ以降を見出しとして読み、項目と本文からの参照を
+    /// `[1]`の形にする。IDはカンマの手前までなので、`cite:`との相互linkは保たれる。
+    #[test]
+    fn a_numbered_entry_puts_the_number_in_the_anchor_label() {
+        let html = render_note(
+            &note("結果は cite:[smith2024] で報告されています。"),
+            NoteRenderInputs {
+                citations: &[resolution(0, "smith2024", "1")],
+                bibliography: &[NoteBibliographyEntry {
+                    citation_key: "smith2024".into(),
+                    text: "Smith, A. (2024). An Example Article.".into(),
+                    label: Some("1".into()),
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("render numbered citation");
+
+        // 項目の見出しが番号になり、IDはcitation keyのままである。
+        assert!(html.contains("id=\"smith2024\""));
+        assert!(!html.contains("smith2024,1"));
+        assert_eq!(html.matches("href=\"#smith2024\"").count(), 1);
+        // 番号は書誌情報の記述には現れない。
+        assert!(html.contains("An Example Article"));
+        assert!(!html.contains("[1] Smith"));
+        // 項目側から本文の引用位置へ戻れる。
+        assert_eq!(html.matches("class=\"bibliography-backref\"").count(), 1);
+    }
+
     /// 本文が同じcitation keyを定義している場合は、生成した項目を重ねない。
     #[test]
     fn a_document_defined_entry_is_not_generated_twice() {
@@ -456,6 +491,7 @@ mod tests {
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "smith2024".into(),
                     text: "Smith, A. (2024). An Example Article.".into(),
+                    label: None,
                 }],
                 ..Default::default()
             },
@@ -478,6 +514,7 @@ mod tests {
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "trick".into(),
                     text: "*強調* image:secret[] <<other>> {attribute} の題名".into(),
+                    label: None,
                 }],
                 ..Default::default()
             },
@@ -501,6 +538,7 @@ mod tests {
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "doi2022".into(),
                     text: "Smith, A. (2022). Example. https://doi.org/10.1234/example.".into(),
+                    label: None,
                 }],
                 ..Default::default()
             },
