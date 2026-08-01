@@ -459,6 +459,13 @@
         "McpNoteProfileSyntax": {
           "additionalProperties": false,
           "properties": {
+            "allowed_citation_styles": {
+              "description": "`:marginalis-citation-style:`へ書ける値。先頭が、属性を書かない場合の既定。",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "allowed_document_attributes": {
               "description": "文書headerへ書ける文書属性の名前。ここに無い属性は保存が拒否される。",
               "items": {
@@ -506,6 +513,7 @@
             "source_language_optional",
             "allowed_math_languages",
             "allowed_document_attributes",
+            "allowed_citation_styles",
             "title_forbidden",
             "tag_forbidden"
           ],

@@ -5,7 +5,20 @@
 
 ## 未リリース
 
+### 追加
+
+- 引用の見せ方を、文書属性`:marginalis-citation-style:`でノートごとに選べるようにした。
+  `author-year`は本文へ`(Smith 2024)`、`numeric`は本文での初出順の番号で`[1]`と表示する。
+  属性を書かないノートは`author-year`になり、表示は今までと変わらない。`numeric`では参考
+  文献一覧の項目にも同じ番号が付き、本文の引用と一覧の項目は今までどおり相互に移動できる。
+  選べる値以外を書いた場合は`unsupported_citation_style`として保存を拒否する。任意のCSL
+  スタイル名は受け付けず、サーバー上でCSLを実行しない。
+
 ### 破壊的変更
+
+- `get_note_profile`が返すnote profile版を13へ更新した。`syntax`へ、引用スタイルとして選べる
+  値を並べた`allowed_citation_styles`が加わる。文書headerへ書ける属性へ
+  `marginalis-citation-style`が加わり、番号で引用を示す文書例も1件加わる。
 
 - ノートのタグを並べる文書属性の名前を`:tags:`から`:marginalis-tags:`へ変更した。Marginalisが
   独自に決めた文書属性は`marginalis-`で始める規則にしたためである。以前の`:tags:`を書いた

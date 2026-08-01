@@ -3,12 +3,12 @@ use std::collections::BTreeMap;
 use adocweave::output::diagnostics::Severity;
 use adocweave::resolution::ReferenceKey;
 use marginalis_application::{
-    NoteAdvisorySeverity, NoteCitationQuery, NoteReferenceQuery, NoteValidationCode,
+    CitationStyle, NoteAdvisorySeverity, NoteCitationQuery, NoteReferenceQuery, NoteValidationCode,
     NoteValidationDiagnostic, ValidatedNoteDraft,
 };
 use marginalis_domain::{
-    EntityId, NOTE_POLICY, NoteDraft, NoteId, NoteValidationTarget, TAGS_DOCUMENT_ATTRIBUTE,
-    Utf8ByteSpan,
+    CITATION_STYLE_DOCUMENT_ATTRIBUTE, EntityId, NOTE_POLICY, NoteDraft, NoteId,
+    NoteValidationTarget, TAGS_DOCUMENT_ATTRIBUTE, Utf8ByteSpan,
 };
 use unicode_normalization::UnicodeNormalization;
 
@@ -89,6 +89,23 @@ pub(crate) fn citation_queries(source: &str) -> Result<Vec<NoteCitationQuery>, R
     )?))
 }
 
+pub(crate) fn citation_style(source: &str) -> Result<CitationStyle, RenderError> {
+    Ok(citation_style_from_analysis(&analyze_valid_source(source)?))
+}
+
+/// 文書headerが選んだ引用の表示規則を読み取る。
+///
+/// 属性を書かないノートは既定の規則になる。許可しない値は入力検査が拒否するため、ここへ
+/// 到達する値は正本の一覧にあるものだけである。
+fn citation_style_from_analysis(analysis: &adocweave::Analysis) -> CitationStyle {
+    analysis
+        .attribute_environment()
+        .final_values()
+        .get(CITATION_STYLE_DOCUMENT_ATTRIBUTE)
+        .map(|value| CitationStyle::from_attribute(value.trim()))
+        .unwrap_or_default()
+}
+
 /// `cite:`が名指すcitation keyを、書誌ライブラリーへの問い合わせへ直す。
 ///
 /// AdocWeaveは位置引数をcitation key、名前付き引数を引用の補足として返す。Marginalisは
@@ -127,6 +144,7 @@ pub(crate) fn validate_draft(
     let mut citation_queries = Vec::new();
     let mut title = String::new();
     let mut tags = BTreeMap::new();
+    let mut citation_style = CitationStyle::default();
     if draft.source.len() > NOTE_POLICY.max_source_bytes {
         errors.push(diagnostic(
             NoteValidationCode::SourceTooLarge,
@@ -182,6 +200,27 @@ pub(crate) fn validate_draft(
                         ));
                     }
                 }
+                // 許可しない値の引用スタイルは、属性名と同じ位置で拒否する。任意のCSL
+                // スタイル名を受け取らないため、サーバー上でCSLを実行することがない。
+                if let Some(value) = analysis
+                    .attribute_environment()
+                    .final_values()
+                    .get(CITATION_STYLE_DOCUMENT_ATTRIBUTE)
+                    && !NOTE_POLICY.allowed_citation_styles.contains(&value.trim())
+                {
+                    let name_range = analysis
+                        .document_attribute_occurrences()
+                        .iter()
+                        .filter(|occurrence| occurrence.name == CITATION_STYLE_DOCUMENT_ATTRIBUTE)
+                        .map(|occurrence| span(occurrence.name_range))
+                        .next_back();
+                    errors.push(diagnostic(
+                        NoteValidationCode::UnsupportedCitationStyle,
+                        NoteValidationTarget::Source,
+                        name_range,
+                    ));
+                }
+                citation_style = citation_style_from_analysis(&analysis);
                 let raw_tags = analysis
                     .attribute_environment()
                     .final_values()
@@ -268,6 +307,7 @@ pub(crate) fn validate_draft(
             diagnostics: advisories,
             reference_queries,
             citation_queries,
+            citation_style,
         })
     } else {
         Err(errors)
@@ -512,6 +552,10 @@ mod tests {
                 TAGS_DOCUMENT_ATTRIBUTE => {
                     format!("= Note\n:{TAGS_DOCUMENT_ATTRIBUTE}: 研究\n\n本文")
                 }
+                CITATION_STYLE_DOCUMENT_ATTRIBUTE => format!(
+                    "= Note\n:{CITATION_STYLE_DOCUMENT_ATTRIBUTE}: {}\n\n本文",
+                    NOTE_POLICY.allowed_citation_styles[0]
+                ),
                 other => format!("= Note\n:{other}:\n\n== 見出し\n\n本文"),
             };
             assert!(
@@ -554,6 +598,71 @@ mod tests {
                 "独自属性と組込み属性の区別が接頭辞と合いません: {name}"
             );
         }
+    }
+
+    /// 引用スタイルの広告と入力検査が、同じ正本から導かれている。
+    ///
+    /// 正本から値を1つ外すと、広告と検査の両方が同時に変わる。片方だけを直すと、選べると
+    /// 広告した値が保存できない、あるいはその逆が起きる。
+    #[test]
+    fn the_advertised_citation_styles_are_exactly_the_accepted_ones() {
+        let advertised = crate::policy::note_profile().syntax.allowed_citation_styles;
+        assert_eq!(advertised, NOTE_POLICY.allowed_citation_styles.to_vec());
+
+        for style in &advertised {
+            let source = format!("= Note\n:{CITATION_STYLE_DOCUMENT_ATTRIBUTE}: {style}\n\n本文");
+            assert!(
+                validate_draft(NoteDraft {
+                    source,
+                    title: String::new(),
+                    tags: Vec::new(),
+                })
+                .is_ok(),
+                "広告したスタイルを受理できません: {style}"
+            );
+        }
+    }
+
+    /// 一覧に無い値は保存前に拒否し、属性名の位置を示す。
+    ///
+    /// 任意のCSLスタイル名を受け取らないため、サーバー上でCSLを実行することがない。
+    #[test]
+    fn a_citation_style_outside_the_list_is_rejected_with_its_position() {
+        assert!(!NOTE_POLICY.allowed_citation_styles.contains(&"apa"));
+        let errors = validate_draft(NoteDraft {
+            source: format!("= Note\n:{CITATION_STYLE_DOCUMENT_ATTRIBUTE}: apa\n\n本文"),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect_err("一覧に無いスタイル");
+        let rejected = errors
+            .iter()
+            .find(|error| error.code == NoteValidationCode::UnsupportedCitationStyle.as_str())
+            .expect("引用スタイルの診断");
+        // 属性名の位置を示す。`= Note\n:`までが8バイトで、そこから属性名が始まる。
+        assert_eq!(
+            rejected.span,
+            Some(Utf8ByteSpan {
+                start: 8,
+                end: 8 + CITATION_STYLE_DOCUMENT_ATTRIBUTE.len() as u32,
+            })
+        );
+    }
+
+    /// 属性を書かないノートは既定のスタイルになる。
+    #[test]
+    fn a_note_without_the_attribute_uses_the_default_style() {
+        assert_eq!(
+            citation_style("= Note\n\n本文 cite:[smith2024]").expect("style"),
+            CitationStyle::default()
+        );
+        assert_eq!(
+            citation_style(&format!(
+                "= Note\n:{CITATION_STYLE_DOCUMENT_ATTRIBUTE}: numeric\n\n本文"
+            ))
+            .expect("style"),
+            CitationStyle::Numeric
+        );
     }
 
     /// 接頭辞を付ける前の`tags`は、他の未対応属性と同じく拒否する。

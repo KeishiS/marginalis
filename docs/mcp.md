@@ -288,7 +288,13 @@ Resourceであり、client登録方式を決定しません。利用するclient
 形式はtoolが返すprofileを正とします。文書headerへ書ける属性の名前は
 `syntax.allowed_document_attributes`が返します。ここに無い属性は保存を拒否するため、推測して
 書かないでください。名前が`marginalis-`で始まる属性はMarginalisが独自に決めたもので、他の
-AsciiDoc処理系では意味を持ちません。接頭辞の無い属性はAsciiDocの組込み属性です。profileの`examples`
+AsciiDoc処理系では意味を持ちません。接頭辞の無い属性はAsciiDocの組込み属性です。
+
+引用の見せ方は`:marginalis-citation-style:`でノートごとに選べます。選べる値は
+`syntax.allowed_citation_styles`が返し、その先頭が、属性を書かない場合の既定です。
+`author-year`は本文へ`(Smith 2024)`、`numeric`は初出順の番号で`[1]`と表示します。ここに無い
+値は`unsupported_citation_style`として保存を拒否するため、CSLスタイル名を推測して書かないで
+ください。profileの`examples`
 には、文書属性で見出し番号と目次を出す例と、本文から参考文献を参照し、参考文献から参照箇所へ
 戻れる完全な文書例が含まれます。`authoring_guidance`に従い、著者名、題名、発行年、DOIなどは
 利用者または特定できる参照元から得た値だけを使用し、推測して補いません。
