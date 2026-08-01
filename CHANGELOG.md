@@ -7,9 +7,13 @@
 
 ### 破壊的変更
 
-- `get_note_profile`が返すnote profile版を11へ更新した。`syntax`へ、文書headerに書ける属性の
+- ノートのタグを並べる文書属性の名前を`:tags:`から`:marginalis-tags:`へ変更した。Marginalisが
+  独自に決めた文書属性は`marginalis-`で始める規則にしたためである。以前の`:tags:`を書いた
+  ノートは、対応していない文書属性として保存を拒否する。既存のarchiveは`migrate-archive`が
+  文書headerの属性名を書き換えるため、そのまま取り込める。archiveのnote profile版は5になる。
+- `get_note_profile`が返すnote profile版を12へ更新した。`syntax`へ、文書headerに書ける属性の
   名前を並べた`allowed_document_attributes`が加わる。文書属性で見出し番号と目次を出す文書例も
-  1件加わる。受理する入力は変わらない。
+  1件加わる。属性名の変更を除いて、受理する入力は変わらない。
 
 ### 修正
 

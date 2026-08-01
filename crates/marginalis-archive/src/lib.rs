@@ -16,9 +16,17 @@ use serde::{Deserialize, Serialize};
 
 pub const ARCHIVE_FORMAT: &str = "marginalis-archive-13";
 /// archive内のノートを受理できる入力規則の版。
-pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 4;
+///
+/// 受理する本文が変わったときに上げます。版4までのノートはタグを`:tags:`で並べていました。
+/// 版5では独自属性へ接頭辞を付け、`:marginalis-tags:`へ変わっています。
+pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 5;
+/// 独自の文書属性へ接頭辞を付ける前の入力規則の版。
+///
+/// これ以下の版で書き出したarchiveは、本文の属性名を現行の名前へ直してから再検証します。
+const UNPREFIXED_ATTRIBUTE_PROFILE_VERSION: u32 = 4;
 /// 移行元として受理する旧archive契約。形式、AdocWeave package版、note profile版の組。
 const SUPPORTED_MIGRATION_CONTRACTS: &[(&str, &str, u32)] = &[
+    ("marginalis-archive-13", "0.23.0", 4),
     ("marginalis-archive-12", "0.22.0", 4),
     ("marginalis-archive-11", "0.20.0", 4),
     ("marginalis-archive-10", "0.20.0", 4),
@@ -178,9 +186,60 @@ pub fn migrate_previous_archive(
     if !is_supported {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
+    let archive = rename_unprefixed_attributes(archive);
     let snapshot =
-        validate_archive_contents(content, archive).map_err(ArchiveMigrationError::from)?;
+        validate_archive_contents(content, &archive).map_err(ArchiveMigrationError::from)?;
     Ok(create_archive(content, &snapshot))
+}
+
+/// 接頭辞を付ける前の文書属性を、現行の名前へ直したarchiveを返す。
+///
+/// 現行の規則では`:tags:`が未対応の属性として拒否されるため、書き換えずに再検証すると、
+/// タグを持つ既存ノートがすべて移行できません。
+fn rename_unprefixed_attributes(archive: &Archive) -> Archive {
+    if archive.note_profile_version > UNPREFIXED_ATTRIBUTE_PROFILE_VERSION {
+        return archive.clone();
+    }
+    let mut renamed = archive.clone();
+    for note in &mut renamed.notes {
+        note.source = rename_tags_attribute(&note.source);
+    }
+    renamed
+}
+
+/// 文書headerに並ぶ`tags`属性の操作を、接頭辞付きの名前へ書き換える。
+///
+/// AsciiDocの文書headerは題名の行から最初の空行までで、属性の操作はその中に1行ずつ並びます。
+/// 同じ並びが本文に現れても属性ではないため、headerの外は書き換えません。値の指定
+/// （`:tags: 研究`）に加えて、解除の二つの記法（`:tags!:`と`:!tags:`）も対象にします。
+fn rename_tags_attribute(source: &str) -> String {
+    const RENAMES: [(&str, &str); 3] = [
+        (":tags:", ":marginalis-tags:"),
+        (":tags!:", ":marginalis-tags!:"),
+        (":!tags:", ":!marginalis-tags:"),
+    ];
+    let mut renamed = String::with_capacity(source.len());
+    let mut in_header = true;
+    for line in source.split_inclusive('\n') {
+        if line.trim().is_empty() {
+            in_header = false;
+        }
+        let rename = in_header
+            .then(|| {
+                RENAMES
+                    .iter()
+                    .find_map(|(old, new)| line.strip_prefix(old).map(|rest| (*new, rest)))
+            })
+            .flatten();
+        match rename {
+            Some((new, rest)) => {
+                renamed.push_str(new);
+                renamed.push_str(rest);
+            }
+            None => renamed.push_str(line),
+        }
+    }
+    renamed
 }
 
 fn validate_archive_contents(
@@ -354,7 +413,7 @@ mod tests {
             &Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
             content()
                 .validate_draft(NoteDraft {
-                    source: "= A title\n:tags: Research\n\nsafe body".into(),
+                    source: "= A title\n:marginalis-tags: Research\n\nsafe body".into(),
                     title: String::new(),
                     tags: Vec::new(),
                 })
@@ -482,13 +541,73 @@ mod tests {
         }
     }
 
+    /// 接頭辞を付ける前の`:tags:`を書いた既存archiveが、そのまま移行できる。
+    ///
+    /// 書き換えずに再検証すると、タグを持つノートがすべて未対応の属性として拒否され、
+    /// 既存の利用者が移行できなくなる。
+    #[test]
+    fn migration_renames_the_unprefixed_tags_attribute() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let mut previous = create_archive(&content(), &snapshot);
+        stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        previous.notes[0].source = "= A title\n:tags: Research\n\nsafe body".into();
+
+        let migrated = migrate_previous_archive(&content(), &previous).expect("migrated");
+        assert_eq!(
+            migrated.notes[0].source,
+            "= A title\n:marginalis-tags: Research\n\nsafe body"
+        );
+    }
+
+    /// 書き換えるのは文書headerの属性行だけで、本文に現れた同じ並びは変えない。
+    ///
+    /// 本文の`:tags:`は属性の操作ではなく、ただの文字列である。書き換えると利用者が書いた
+    /// 記述が変わってしまう。
+    #[test]
+    fn migration_leaves_the_same_text_in_the_body_untouched() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let mut previous = create_archive(&content(), &snapshot);
+        stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        previous.notes[0].source =
+            "= A title\n:tags: Research\n\n以前は :tags: と書いていました。".into();
+
+        let migrated = migrate_previous_archive(&content(), &previous).expect("migrated");
+        assert_eq!(
+            migrated.notes[0].source,
+            "= A title\n:marginalis-tags: Research\n\n以前は :tags: と書いていました。"
+        );
+    }
+
+    /// 解除の記法も書き換える。片方だけ直すと、解除が未対応の属性として拒否される。
+    #[test]
+    fn migration_renames_both_unset_forms_of_the_tags_attribute() {
+        for (previous_source, expected) in [
+            (
+                "= A title\n:tags: Research\n:tags!:\n\nbody",
+                "= A title\n:marginalis-tags: Research\n:marginalis-tags!:\n\nbody",
+            ),
+            (
+                "= A title\n:tags: Research\n:!tags:\n\nbody",
+                "= A title\n:marginalis-tags: Research\n:!marginalis-tags:\n\nbody",
+            ),
+        ] {
+            let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+            let mut previous = create_archive(&content(), &snapshot);
+            stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+            previous.notes[0].source = previous_source.into();
+
+            let migrated = migrate_previous_archive(&content(), &previous).expect("migrated");
+            assert_eq!(migrated.notes[0].source, expected);
+        }
+    }
+
     #[test]
     fn migration_revalidates_source_under_the_current_profile() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
         stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
         previous.notes[0].source =
-            "= A title\n:source-language: rust\n:tags: {source-language}\n\nbody".into();
+            "= A title\n:source-language: rust\n:marginalis-tags: {source-language}\n\nbody".into();
 
         let migrated = migrate_previous_archive(&content(), &previous).expect("migrated archive");
         let validated = validate_archive(&content(), &migrated).expect("current archive");
@@ -515,8 +634,11 @@ mod tests {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
         stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
-        previous.notes[0].source =
-            concat!("= A title\n:tags: research, + \\", "\n  rust\n\nbody").into();
+        previous.notes[0].source = concat!(
+            "= A title\n:marginalis-tags: research, + \\",
+            "\n  rust\n\nbody"
+        )
+        .into();
 
         assert_eq!(
             migrate_previous_archive(&content(), &previous),

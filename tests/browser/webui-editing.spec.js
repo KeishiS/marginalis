@@ -111,7 +111,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   );
   await page.getByRole("button", { name: "分割" }).click();
   const documentSource =
-    "= VMで作成したノート\n:tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*\n\n* 最初の行 +\n続きの行\n* 次の項目";
+    "= VMで作成したノート\n:marginalis-tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*\n\n* 最初の行 +\n続きの行\n* 次の項目";
   await source.fill(documentSource);
   await expect(page.getByText("未保存の変更があります。")).toBeVisible();
   await expect(page.locator(".preview-content")).toContainText(
@@ -296,7 +296,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
 
   await page.goto(`${baseUrl}/notes/${noteId}/edit`);
   await source.fill(
-    `= 競合後に保存する題名\n:tags: 受入試験, 日本語\n\nxref:note:${targetId}[参照先へ]`,
+    `= 競合後に保存する題名\n:marginalis-tags: 受入試験, 日本語\n\nxref:note:${targetId}[参照先へ]`,
   );
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();

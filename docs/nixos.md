@@ -55,6 +55,18 @@ v0.21.0以前のschema 12から更新する場合は、更新前の実行環境�
 `migrate-archive`は不要です。schema 13では、本文が`cite:`で名指したcitation keyを関係の図の
 ために索引として保存します。取り込みのときに本文から作り直します。
 
+v0.22.0以前が作成したarchiveから更新する場合は、`migrate-archive`が必要です。ノートのタグを
+並べる文書属性の名前が`:tags:`から`:marginalis-tags:`へ変わったため、以前の本文をそのまま
+取り込むと未対応の属性として拒否されます。`migrate-archive`は文書headerに並ぶ`:tags:`、
+`:tags!:`、`:!tags:`を新しい名前へ書き換えてから、全ノートを現行の規則で再検証します。本文に
+現れた同じ並びは属性の操作ではないため書き換えません。
+
+```bash
+sudo -u marginalis marginalis migrate-archive \
+  --input /var/lib/marginalis/archive-previous.json \
+  --output /var/lib/marginalis/archive-current.json
+```
+
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
 現行の`migrate-archive`でarchive 13へ変換してから、空のschema 13へ取り込んでください。
 この経路では全ノートをAdocWeave 0.23.0の規則で再検証し、題名、タグ、参照索引を再構築します。

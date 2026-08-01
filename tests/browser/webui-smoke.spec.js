@@ -272,7 +272,7 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   await page.getByRole("button", { name: "執筆" }).click();
   await page.getByRole("textbox", { name: "AsciiDoc文書" }).fill(
     String.raw`= 新規ノート
-:tags:
+:marginalis-tags:
 :sectnums:
 
 == 見出し1
@@ -302,7 +302,7 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   await page.getByRole("button", { name: "執筆" }).click();
   await page.getByRole("textbox", { name: "AsciiDoc文書" }).fill(
     String.raw`= 新規ノート
-:tags:
+:marginalis-tags:
 :sectnums:
 
 == 見出し1

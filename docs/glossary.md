@@ -63,7 +63,9 @@ CSL-JSON形式の書誌情報、citation key、更新番号を含みます。cit
 ## AsciiDoc
 
 見出し、箇条書き、表、リンク、ソースコード、数式などを文章中の記号で表現できる文書形式です。
-Marginalisでは文書題名、`:tags:`などの文書属性、本文を含む研究ノート全体の正本に使用します。
+Marginalisでは文書題名、`:marginalis-tags:`などの文書属性、本文を含む研究ノート全体の正本に
+使用します。Marginalisが独自に決めた文書属性の名前は`marginalis-`で始まり、AsciiDocの組込み
+属性と区別できます。
 
 ## base URL
 

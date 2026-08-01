@@ -7,7 +7,8 @@ use marginalis_application::{
     NoteValidationDiagnostic, ValidatedNoteDraft,
 };
 use marginalis_domain::{
-    EntityId, NOTE_POLICY, NoteDraft, NoteId, NoteValidationTarget, Utf8ByteSpan,
+    EntityId, NOTE_POLICY, NoteDraft, NoteId, NoteValidationTarget, TAGS_DOCUMENT_ATTRIBUTE,
+    Utf8ByteSpan,
 };
 use unicode_normalization::UnicodeNormalization;
 
@@ -184,7 +185,7 @@ pub(crate) fn validate_draft(
                 let raw_tags = analysis
                     .attribute_environment()
                     .final_values()
-                    .get("tags")
+                    .get(TAGS_DOCUMENT_ATTRIBUTE)
                     .map(String::as_str)
                     .unwrap_or_default();
                 let tag_values = raw_tags.split(',').collect::<Vec<_>>();
@@ -285,14 +286,16 @@ const fn public_advisory_severity(severity: Severity) -> Option<NoteAdvisorySeve
 #[cfg(test)]
 mod tests {
     use marginalis_application::{NoteAdvisorySeverity, NoteValidationCode};
-    use marginalis_domain::{NoteDraft, NoteValidationTarget, Utf8ByteSpan};
+    use marginalis_domain::{
+        DOCUMENT_ATTRIBUTE_PREFIX, NoteDraft, NoteValidationTarget, Utf8ByteSpan,
+    };
 
     use super::*;
 
     #[test]
     fn complete_document_derives_normalized_metadata() {
         let draft = validate_draft(NoteDraft {
-            source: "= 新規ノート\n:tags: Rust, rust\n:sectnums:\n\n== 見出し".into(),
+            source: "= 新規ノート\n:marginalis-tags: Rust, rust\n:sectnums:\n\n== 見出し".into(),
             title: String::new(),
             tags: Vec::new(),
         })
@@ -436,24 +439,33 @@ mod tests {
 
     #[test]
     fn tags_follow_the_final_source_ordered_attribute_environment() {
-        let redefine = validated("= Note\n:tags: research\n:tags: rust\n\nbody");
+        let redefine =
+            validated("= Note\n:marginalis-tags: research\n:marginalis-tags: rust\n\nbody");
         assert_eq!(redefine.tags, ["rust"]);
 
-        let unset = validated("= Note\n:tags: research\n:tags!:\n\nbody");
+        let unset = validated("= Note\n:marginalis-tags: research\n:marginalis-tags!:\n\nbody");
         assert!(unset.tags.is_empty());
 
-        let reference =
-            validated("= Note\n:source-language: rust\n:tags: {source-language}\n\nbody");
+        let reference = validated(
+            "= Note\n:source-language: rust\n:marginalis-tags: {source-language}\n\nbody",
+        );
         assert_eq!(reference.tags, ["rust"]);
     }
 
     #[test]
     fn multiline_tags_use_folded_values_and_reject_authored_line_breaks() {
-        let soft = validated(concat!("= Note\n:tags: research, \\", "\n  rust\n\nbody"));
+        let soft = validated(concat!(
+            "= Note\n:marginalis-tags: research, \\",
+            "\n  rust\n\nbody"
+        ));
         assert_eq!(soft.tags, ["research", "rust"]);
 
         let errors = validate_draft(NoteDraft {
-            source: concat!("= Note\n:tags: research, + \\", "\n  rust\n\nbody").into(),
+            source: concat!(
+                "= Note\n:marginalis-tags: research, + \\",
+                "\n  rust\n\nbody"
+            )
+            .into(),
             title: String::new(),
             tags: Vec::new(),
         })
@@ -465,7 +477,7 @@ mod tests {
     #[test]
     fn attribute_operations_after_the_header_are_rejected() {
         let errors = validate_draft(NoteDraft {
-            source: "= Note\n\n:tags: body\nbody".into(),
+            source: "= Note\n\n:marginalis-tags: body\nbody".into(),
             title: String::new(),
             tags: Vec::new(),
         })
@@ -497,7 +509,9 @@ mod tests {
                 "toclevels" => "= Note\n:toclevels: 2\n\n== 見出し\n\n本文".to_owned(),
                 "stem" => "= Note\n:stem: latexmath\n\n本文".to_owned(),
                 "source-language" => "= Note\n:source-language: rust\n\n本文".to_owned(),
-                "tags" => "= Note\n:tags: 研究\n\n本文".to_owned(),
+                TAGS_DOCUMENT_ATTRIBUTE => {
+                    format!("= Note\n:{TAGS_DOCUMENT_ATTRIBUTE}: 研究\n\n本文")
+                }
                 other => format!("= Note\n:{other}:\n\n== 見出し\n\n本文"),
             };
             assert!(
@@ -519,6 +533,40 @@ mod tests {
             tags: Vec::new(),
         })
         .expect_err("一覧に無い属性");
+        assert!(
+            errors.iter().any(
+                |error| error.code == NoteValidationCode::UnsupportedDocumentAttribute.as_str()
+            )
+        );
+    }
+
+    /// Marginalis独自の属性は接頭辞で始め、AsciiDocの組込み属性と名前で区別できるようにする。
+    ///
+    /// 接頭辞が無いと、本文を読んだだけでは他のAsciiDoc処理系で意味を持つ属性かどうかが
+    /// 分からない。組込み属性は仕様が定めた名前をそのまま使うため、接頭辞を付けない。
+    #[test]
+    fn marginalis_specific_attributes_carry_the_prefix() {
+        let builtin = ["sectnums", "toc", "toclevels", "stem", "source-language"];
+        for name in NOTE_POLICY.allowed_document_attributes {
+            assert_eq!(
+                name.starts_with(DOCUMENT_ATTRIBUTE_PREFIX),
+                !builtin.contains(name),
+                "独自属性と組込み属性の区別が接頭辞と合いません: {name}"
+            );
+        }
+    }
+
+    /// 接頭辞を付ける前の`tags`は、他の未対応属性と同じく拒否する。
+    ///
+    /// 受理し続けると同じ意味の属性が二つある状態になり、どちらを書くべきかが決まらない。
+    #[test]
+    fn the_unprefixed_tags_attribute_is_rejected() {
+        let errors = validate_draft(NoteDraft {
+            source: "= Note\n:tags: 研究\n\n本文".into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect_err("接頭辞の無いtags");
         assert!(
             errors.iter().any(
                 |error| error.code == NoteValidationCode::UnsupportedDocumentAttribute.as_str()

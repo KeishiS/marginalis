@@ -35,22 +35,25 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 ## ノートの入力と権限
 
 ノートの作成・更新では、JSON形式の`source`へ完全なAsciiDoc文書を入れて送信します。題名は
-文書題名、タグは文書ヘッダーの`:tags:`属性として記述します。`source`はUTF-8で512 KiB以下です。
-`:tags:`を複数回記述した場合は最後の値、`:tags!:`で解除した場合はタグなしになります。属性参照と
-`\`による複数行値は、その位置でAdocWeaveが評価した最終値からタグを導出します。改行を残す
+文書題名、タグは文書ヘッダーの`:marginalis-tags:`属性として記述します。`source`はUTF-8で
+512 KiB以下です。`:marginalis-tags:`を複数回記述した場合は最後の値、`:marginalis-tags!:`で
+解除した場合はタグなしになります。属性参照と`\`による複数行値は、その位置でAdocWeaveが
+評価した最終値からタグを導出します。改行を残す
 `+ \`は単一行というタグ規則に合わないため拒否します。詳しい移行判断は
 [AdocWeave 0.17移行判断](adocweave-v0.17-migration.md)を参照してください。
 
 ```json
 {
-  "source": "= 新規ノート\n:tags: new, research\n:sectnums:\n\n== 見出し1\n\nこれはテスト用の本文です。"
+  "source": "= 新規ノート\n:marginalis-tags: new, research\n:sectnums:\n\n== 見出し1\n\nこれはテスト用の本文です。"
 }
 ```
 
-文書headerには`:tags:`、`:sectnums:`、`:toc:`、`:toclevels:`、`:stem:`、`:source-language:`を
-書けます。この一覧は`get_note_profile`の`syntax.allowed_document_attributes`が返す値と同じで、
-どちらも入力検査と同じ正本から導きます。ここに無い属性と、文書headerより後ろに置いた属性操作は
-保存を拒否します。コードブロックには1から始まる行番号を表示します。
+文書headerには`:marginalis-tags:`、`:sectnums:`、`:toc:`、`:toclevels:`、`:stem:`、
+`:source-language:`を書けます。この一覧は`get_note_profile`の
+`syntax.allowed_document_attributes`が返す値と同じで、どちらも入力検査と同じ正本から導きます。
+`marginalis-`で始まる属性はMarginalisが独自に決めたもので、他のAsciiDoc処理系では意味を
+持ちません。接頭辞の無い属性はAsciiDocの組込み属性です。ここに無い属性と、文書headerより
+後ろに置いた属性操作は保存を拒否します。コードブロックには1から始まる行番号を表示します。
 `.題名`、`[source,言語名]`、`[source,言語名,linenums,start=開始行]`を指定すると、題名、言語名、
 指定した行番号の開始位置も表示します。長い行はコードブロック内で横にスクロールできます。
 `:stem: latexmath`を指定した`stem:[]`と`[latexmath]`の数式は、

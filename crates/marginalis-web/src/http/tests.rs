@@ -581,7 +581,7 @@ impl Notes {
 
     fn note_profile(&self) -> NoteProfile {
         const BIBLIOGRAPHY_GUIDANCE: &str = "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.";
-        const BIBLIOGRAPHY_EXAMPLE: &str = "= 先行研究の整理\n:tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]";
+        const BIBLIOGRAPHY_EXAMPLE: &str = "= 先行研究の整理\n:marginalis-tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]";
         NoteProfile {
             profile_version: 6,
             adocweave_package_version: "0.23.0",
@@ -600,7 +600,7 @@ impl Notes {
                 common_inlines: Vec::new(),
                 source_language_optional: true,
                 allowed_math_languages: vec!["latexmath"],
-                allowed_document_attributes: vec!["tags", "sectnums"],
+                allowed_document_attributes: vec!["marginalis-tags", "sectnums"],
                 title_forbidden: vec!["empty"],
                 tag_forbidden: vec!["empty"],
             },
@@ -1025,7 +1025,7 @@ fn mcp_note() -> Note {
         ),
         Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
         "同期ノート".into(),
-        "= 同期ノート\n:tags: 同期, 試験\n\n本文".into(),
+        "= 同期ノート\n:marginalis-tags: 同期, 試験\n\n本文".into(),
         vec!["同期".into(), "試験".into()],
         UnixMillis::new(1_000),
         UnixMillis::new(2_000),
