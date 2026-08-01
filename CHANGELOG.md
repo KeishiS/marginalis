@@ -3,7 +3,25 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
-## 未リリース
+## 0.23.0 — 2026-08-01
+
+### 破壊的変更
+
+- ノートのタグを並べる文書属性の名前を`:tags:`から`:marginalis-tags:`へ変更した。Marginalisが
+  独自に決めた文書属性は`marginalis-`で始める規則にしたためである。以前の`:tags:`を書いた
+  ノートは、対応していない文書属性として保存を拒否する。既存のarchiveは`migrate-archive`が
+  文書headerの属性名を書き換えるため、そのまま取り込める。archiveのnote profile版は5になる。
+- AdocWeaveを0.27.0へ更新した。`get_note_profile`とarchiveが記録する
+  `adocweave_package_version`が`0.27.0`になる。`0.23.0`を記録した既存のarchiveは
+  `migrate-archive`で変換する。ノートの受理範囲と描画したHTMLは変わらない。判断の内容は
+  [AdocWeave 0.27移行判断](docs/adocweave-v0.27-migration.md)に記録した。
+- `get_note_profile`が返すnote profile版を11から13へ更新した。`syntax`へ、文書headerに書ける
+  属性の名前を並べた`allowed_document_attributes`と、引用スタイルとして選べる値を並べた
+  `allowed_citation_styles`が加わる。文書例も2件加わる。
+- `include`、`ifdef`、`ifndef`、`ifeval`を書いたノートを拒否するときの診断codeを
+  `preprocessor_directive_disabled`へ変更した。条件分岐はこれまで、`ifeval:`がURLのschemeに
+  見えるという理由で`invalid_url_scheme`として拒否されていた。これらのdirectiveを受理しない
+  方針は変わらない。
 
 ### 追加
 
@@ -11,30 +29,9 @@
   `author-year`は本文へ`(Smith 2024)`、`numeric`は本文での初出順の番号で`[1]`と表示する。
   属性を書かないノートは`author-year`になり、表示は今までと変わらない。`numeric`では参考
   文献一覧の項目にも同じ番号が見出しとして付き、本文の引用と一覧の項目は今までどおり相互に
-  移動できる。番号は書誌情報の記述には混ざらない。
-  選べる値以外を書いた場合は`unsupported_citation_style`として保存を拒否する。任意のCSL
-  スタイル名は受け付けず、サーバー上でCSLを実行しない。
-
-### 破壊的変更
-
-- AdocWeaveを0.27.0へ更新した。`get_note_profile`とarchiveが記録する
-  `adocweave_package_version`が`0.27.0`になる。ノートの受理範囲と描画したHTMLは変わらない。
-  `0.23.0`を記録した既存のarchiveは`migrate-archive`で変換する。判断の内容は
-  [AdocWeave 0.27移行判断](docs/adocweave-v0.27-migration.md)に記録した。
-- `include`、`ifdef`、`ifndef`、`ifeval`を書いたノートを拒否するときの診断codeを
-  `preprocessor_directive_disabled`へ変更した。条件分岐はこれまで、`ifeval:`がURLのschemeに
-  見えるという理由で`invalid_url_scheme`として拒否されていた。これらのdirectiveを受理しない
-  方針は変わらない。
-- `get_note_profile`が返すnote profile版を13へ更新した。`syntax`へ、引用スタイルとして選べる
-  値を並べた`allowed_citation_styles`が加わる。文書headerへ書ける属性へ
-  `marginalis-citation-style`が加わり、番号で引用を示す文書例も1件加わる。
-- ノートのタグを並べる文書属性の名前を`:tags:`から`:marginalis-tags:`へ変更した。Marginalisが
-  独自に決めた文書属性は`marginalis-`で始める規則にしたためである。以前の`:tags:`を書いた
-  ノートは、対応していない文書属性として保存を拒否する。既存のarchiveは`migrate-archive`が
-  文書headerの属性名を書き換えるため、そのまま取り込める。archiveのnote profile版は5になる。
-- `get_note_profile`が返すnote profile版を12へ更新した。`syntax`へ、文書headerに書ける属性の
-  名前を並べた`allowed_document_attributes`が加わる。文書属性で見出し番号と目次を出す文書例も
-  1件加わる。属性名の変更を除いて、受理する入力は変わらない。
+  移動できる。番号は書誌情報の記述には混ざらない。選べる値以外を書いた場合は
+  `unsupported_citation_style`として保存を拒否する。任意のCSLスタイル名は受け付けず、
+  サーバー上でCSLを実行しない。
 
 ### 修正
 
