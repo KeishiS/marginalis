@@ -285,6 +285,8 @@ Resourceであり、client登録方式を決定しません。利用するclient
 
 `create_note`または`update_note`の前に`get_note_profile`を呼び出してください。入力は題名、
 `:tags:`などの文書属性、本文を含む完全なAsciiDoc文書です。詳しい入力制約と診断形式はtoolが返す
-profileを正とします。profileの`examples`には、本文から参考文献を参照し、参考文献から参照箇所へ
+profileを正とします。文書headerへ書ける属性の名前は`syntax.allowed_document_attributes`が
+返します。ここに無い属性は保存を拒否するため、推測して書かないでください。profileの`examples`
+には、文書属性で見出し番号と目次を出す例と、本文から参考文献を参照し、参考文献から参照箇所へ
 戻れる完全な文書例が含まれます。`authoring_guidance`に従い、著者名、題名、発行年、DOIなどは
 利用者または特定できる参照元から得た値だけを使用し、推測して補いません。

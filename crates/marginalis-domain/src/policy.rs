@@ -25,6 +25,11 @@ pub struct NotePolicy {
     pub allowed_math_languages: &'static [&'static str],
     /// 本文に記述できるリンクのURLスキーム。
     pub allowed_url_schemes: &'static [&'static str],
+    /// 文書headerへ書ける文書属性の名前。
+    ///
+    /// 入力検査と`get_note_profile`の広告は、どちらもこの一覧から導きます。片方だけを直すと、
+    /// 受理する入力と公開する制約が食い違います。
+    pub allowed_document_attributes: &'static [&'static str],
 }
 
 /// 関係の図で、起点から辿れる線の本数の上限。
@@ -53,6 +58,14 @@ pub const NOTE_POLICY: NotePolicy = NotePolicy {
     ],
     allowed_math_languages: &["latexmath"],
     allowed_url_schemes: &["http", "https"],
+    allowed_document_attributes: &[
+        "tags",
+        "sectnums",
+        "toc",
+        "toclevels",
+        "stem",
+        "source-language",
+    ],
 };
 
 impl NotePolicy {

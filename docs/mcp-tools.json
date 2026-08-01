@@ -459,6 +459,13 @@
         "McpNoteProfileSyntax": {
           "additionalProperties": false,
           "properties": {
+            "allowed_document_attributes": {
+              "description": "文書headerへ書ける文書属性の名前。ここに無い属性は保存が拒否される。",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "allowed_math_languages": {
               "items": {
                 "type": "string"
@@ -498,6 +505,7 @@
             "common_inlines",
             "source_language_optional",
             "allowed_math_languages",
+            "allowed_document_attributes",
             "title_forbidden",
             "tag_forbidden"
           ],
