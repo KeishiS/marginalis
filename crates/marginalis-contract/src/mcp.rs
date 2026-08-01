@@ -302,6 +302,8 @@ pub struct McpNoteProfileSyntax {
     pub allowed_math_languages: Vec<String>,
     /// 文書headerへ書ける文書属性の名前。ここに無い属性は保存が拒否される。
     pub allowed_document_attributes: Vec<String>,
+    /// `:marginalis-citation-style:`へ書ける値。先頭が、属性を書かない場合の既定。
+    pub allowed_citation_styles: Vec<String>,
     pub title_forbidden: Vec<String>,
     pub tag_forbidden: Vec<String>,
 }

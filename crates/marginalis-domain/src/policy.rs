@@ -33,6 +33,11 @@ pub struct NotePolicy {
     /// Marginalisが独自に決めた属性は[`DOCUMENT_ATTRIBUTE_PREFIX`]で始めます。AsciiDocの
     /// 組込み属性と名前で区別できるようにするためです。
     pub allowed_document_attributes: &'static [&'static str],
+    /// [`CITATION_STYLE_DOCUMENT_ATTRIBUTE`]へ書ける値。
+    ///
+    /// 先頭が、属性を書かないノートに使う既定のスタイルです。任意のCSLスタイル名は受け付けず、
+    /// 検証済みの組込みスタイルだけを選べるようにします。
+    pub allowed_citation_styles: &'static [&'static str],
 }
 
 /// Marginalis独自の文書属性に付ける接頭辞。
@@ -44,6 +49,9 @@ pub const DOCUMENT_ATTRIBUTE_PREFIX: &str = "marginalis-";
 
 /// ノートのタグを並べる文書属性の名前。
 pub const TAGS_DOCUMENT_ATTRIBUTE: &str = "marginalis-tags";
+
+/// 引用の表示スタイルを選ぶ文書属性の名前。
+pub const CITATION_STYLE_DOCUMENT_ATTRIBUTE: &str = "marginalis-citation-style";
 
 /// 関係の図で、起点から辿れる線の本数の上限。
 ///
@@ -73,12 +81,14 @@ pub const NOTE_POLICY: NotePolicy = NotePolicy {
     allowed_url_schemes: &["http", "https"],
     allowed_document_attributes: &[
         TAGS_DOCUMENT_ATTRIBUTE,
+        CITATION_STYLE_DOCUMENT_ATTRIBUTE,
         "sectnums",
         "toc",
         "toclevels",
         "stem",
         "source-language",
     ],
+    allowed_citation_styles: &["author-year", "numeric"],
 };
 
 impl NotePolicy {
@@ -101,6 +111,17 @@ impl NotePolicy {
     /// タグが多すぎる場合の説明。
     pub fn too_many_tags_message(&self) -> String {
         format!("a note may contain at most {} tags", self.max_tags)
+    }
+
+    /// 引用スタイルに選べない値を書いた場合の説明。
+    ///
+    /// 選べる値を並べて示します。任意のCSLスタイル名を受け付けないことが、拒否された利用者に
+    /// 分かるようにするためです。
+    pub fn unsupported_citation_style_message(&self) -> String {
+        format!(
+            "citation style must be one of: {}",
+            self.allowed_citation_styles.join(", ")
+        )
     }
 
     /// 文書が大きすぎる場合の説明。

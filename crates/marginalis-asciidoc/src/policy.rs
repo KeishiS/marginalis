@@ -134,6 +134,9 @@ fn diagnostic_message(code: NoteValidationCode) -> String {
             "preprocessor directives such as include, ifdef, ifndef, and ifeval are not allowed"
                 .to_owned()
         }
+        NoteValidationCode::UnsupportedCitationStyle => {
+            NOTE_POLICY.unsupported_citation_style_message()
+        }
         forbidden => FORBIDDEN_RULES
             .iter()
             .find_map(|rule| (rule.code() == forbidden).then_some(rule.message()))
@@ -216,6 +219,7 @@ pub fn note_profile() -> NoteProfile {
             source_language_optional: true,
             allowed_math_languages: NOTE_POLICY.allowed_math_languages.to_vec(),
             allowed_document_attributes: NOTE_POLICY.allowed_document_attributes.to_vec(),
+            allowed_citation_styles: NOTE_POLICY.allowed_citation_styles.to_vec(),
             title_forbidden: vec!["empty", "line_feed", "carriage_return"],
             tag_forbidden: vec!["empty", "comma", "line_feed", "carriage_return"],
         },
@@ -277,6 +281,11 @@ pub fn note_profile() -> NoteProfile {
                 kind: "citation",
                 description: "Citation of an item registered in the bibliography library, resolved when the note is displayed",
                 body: "= 先行研究の整理\n:marginalis-tags: 文献, 研究\n\nこの手法は有効だと報告されています cite:[smith2024]。\n\n引用箇所を示す場合は cite:[smith2024, locator=\"p. 12\"] のように書きます。",
+            },
+            NoteProfileExample {
+                kind: "citation-style",
+                description: "Citations numbered in order of first appearance instead of author and year",
+                body: "= 投稿原稿の下書き\n:marginalis-tags: 執筆\n:marginalis-citation-style: numeric\n\n結果は cite:[smith2024] で報告されています。\n\n追試も cite:[tanaka2025] で行われました。",
             },
         ],
     }

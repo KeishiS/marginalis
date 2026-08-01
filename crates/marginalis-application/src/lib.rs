@@ -107,6 +107,7 @@ pub enum NoteValidationCode {
     UnsupportedSourceLanguage,
     UnsupportedDocumentAttribute,
     PreprocessorDirectiveDisabled,
+    UnsupportedCitationStyle,
     InvalidAclSubject,
     DuplicateAclSubject,
     OwnerInAcl,
@@ -132,6 +133,7 @@ impl NoteValidationCode {
             Self::UnsupportedSourceLanguage => "unsupported_source_language",
             Self::UnsupportedDocumentAttribute => "unsupported_document_attribute",
             Self::PreprocessorDirectiveDisabled => "preprocessor_directive_disabled",
+            Self::UnsupportedCitationStyle => "unsupported_citation_style",
             Self::InvalidAclSubject => "invalid_acl_subject",
             Self::DuplicateAclSubject => "duplicate_acl_subject",
             Self::OwnerInAcl => "owner_in_acl",
@@ -192,6 +194,8 @@ pub struct ValidatedNoteDraft {
     pub diagnostics: Vec<NoteAdvisoryDiagnostic>,
     pub reference_queries: Vec<NoteReferenceQuery>,
     pub citation_queries: Vec<NoteCitationQuery>,
+    /// 本文のheaderが選んだ引用の表示規則。属性を書かないノートは既定になる。
+    pub citation_style: CitationStyle,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -231,6 +235,8 @@ pub struct NoteProfileSyntax {
     pub allowed_math_languages: Vec<&'static str>,
     /// 文書headerへ書ける文書属性の名前。入力検査と同じ一覧から導きます。
     pub allowed_document_attributes: Vec<&'static str>,
+    /// 引用の表示スタイルとして選べる値。先頭が既定です。
+    pub allowed_citation_styles: Vec<&'static str>,
     pub title_forbidden: Vec<&'static str>,
     pub tag_forbidden: Vec<&'static str>,
 }

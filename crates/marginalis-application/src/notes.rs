@@ -344,6 +344,10 @@ pub trait NoteContent: Send + Sync {
     ) -> Result<ValidatedNoteDraft, Vec<NoteValidationDiagnostic>>;
     fn reference_queries(&self, body: &str) -> Result<Vec<NoteReferenceQuery>, NoteContentError>;
     fn citation_queries(&self, body: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError>;
+    /// 本文のheaderが選んだ引用の表示規則を返す。
+    ///
+    /// 保存済みのノートを表示するときは下書きの検証結果が手元にないため、本文から読み直す。
+    fn citation_style(&self, body: &str) -> Result<CitationStyle, NoteContentError>;
     fn has_anchor(&self, body: &str, anchor: &str) -> Result<bool, NoteContentError>;
     fn render(&self, note: &Note, inputs: NoteRenderInputs<'_>)
     -> Result<String, NoteContentError>;
@@ -463,6 +467,7 @@ impl NoteApplication {
         &self,
         owner: &Identity,
         queries: &[NoteCitationQuery],
+        style: CitationStyle,
     ) -> Result<ResolvedCitations, NoteUseCaseError> {
         if queries.is_empty() {
             return Ok(ResolvedCitations::default());
@@ -486,12 +491,19 @@ impl NoteApplication {
             .map(|item| (item.citation_key().to_owned(), item))
             .collect::<HashMap<_, _>>();
 
-        let style = CitationStyle::default();
+        // 番号で示すスタイルは、本文での初出順に通し番号を振る。解決できたkeyだけが一覧へ
+        // 並ぶため、番号も解決できたkeyの中で数える。
+        let numbers = cited_keys
+            .iter()
+            .filter(|key| items.contains_key(*key))
+            .enumerate()
+            .map(|(position, key)| (key.clone(), position + 1))
+            .collect::<HashMap<_, _>>();
         let resolutions = queries
             .iter()
             .map(|query| NoteCitationResolution {
                 citation_index: query.citation_index,
-                segments: citation_segments(query, &items, style),
+                segments: citation_segments(query, &items, &numbers, style),
             })
             .collect();
         let entries = cited_keys
@@ -500,7 +512,7 @@ impl NoteApplication {
                 let item = items.get(key)?;
                 Some(NoteBibliographyEntry {
                     citation_key: key.clone(),
-                    text: style.entry_text(item),
+                    text: style.entry_text(item, numbers[key]),
                 })
             })
             .collect();
@@ -532,22 +544,24 @@ struct ResolvedCitations {
 fn citation_segments(
     query: &NoteCitationQuery,
     items: &HashMap<String, BibliographyItem>,
+    numbers: &HashMap<String, usize>,
     style: CitationStyle,
 ) -> Vec<NoteCitationSegment> {
+    let (opening, closing) = style.brackets();
     let mut segments = vec![NoteCitationSegment {
-        text: "(".into(),
+        text: opening.into(),
         anchor: None,
     }];
     for (position, key) in query.keys.iter().enumerate() {
         if position > 0 {
             segments.push(NoteCitationSegment {
-                text: "; ".into(),
+                text: style.key_separator().into(),
                 anchor: None,
             });
         }
         match items.get(key) {
             Some(item) => segments.push(NoteCitationSegment {
-                text: style.inline_label(item),
+                text: style.inline_label(item, numbers[key]),
                 anchor: Some(key.clone()),
             }),
             None => segments.push(NoteCitationSegment {
@@ -557,8 +571,8 @@ fn citation_segments(
         }
     }
     let closing = match query.locator.as_deref() {
-        Some(locator) => format!(", {locator})"),
-        None => ")".into(),
+        Some(locator) => format!(", {locator}{closing}"),
+        None => closing.into(),
     };
     segments.push(NoteCitationSegment {
         text: closing,
@@ -629,10 +643,11 @@ impl NoteCommands for NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            citation_style,
         } = validated;
         // 新規作成では操作している利用者がそのまま作成者になるため、閲覧時の解決先と一致する。
         diagnostics.extend(
-            self.citation_resolutions(actor.identity(), &citation_queries)
+            self.citation_resolutions(actor.identity(), &citation_queries, citation_style)
                 .await?
                 .diagnostics,
         );
@@ -676,6 +691,7 @@ impl NoteCommands for NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            citation_style,
         } = validated;
         if !citation_queries.is_empty() {
             // 引用は閲覧時に作成者のライブラリーで解決する。共有されたノートを別の利用者が
@@ -686,7 +702,7 @@ impl NoteCommands for NoteApplication {
                 .owner()
                 .clone();
             diagnostics.extend(
-                self.citation_resolutions(&owner, &citation_queries)
+                self.citation_resolutions(&owner, &citation_queries, citation_style)
                     .await?
                     .diagnostics,
             );
@@ -766,6 +782,7 @@ impl NotePresentation for NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            citation_style,
         } = validated;
         let now = self.clock.now();
         let note = Note::create(
@@ -786,7 +803,7 @@ impl NotePresentation for NoteApplication {
         // 変わらない。共有されたノートを別の利用者が編集している場合だけ、この表示と
         // 保存後の表示が食い違う。
         let citations = self
-            .citation_resolutions(actor.identity(), &citation_queries)
+            .citation_resolutions(actor.identity(), &citation_queries, citation_style)
             .await?;
         let html = self
             .content
@@ -855,8 +872,12 @@ impl NotePresentation for NoteApplication {
             .content
             .citation_queries(snapshot.note.source())
             .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let citation_style = self
+            .content
+            .citation_style(snapshot.note.source())
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
         let citations = self
-            .citation_resolutions(snapshot.note.owner(), &citation_queries)
+            .citation_resolutions(snapshot.note.owner(), &citation_queries, citation_style)
             .await?;
         let html = self
             .content
@@ -1184,6 +1205,7 @@ mod tests {
                 }],
                 reference_queries: Vec::new(),
                 citation_queries: Vec::new(),
+                citation_style: CitationStyle::default(),
             })
         }
 
@@ -1200,6 +1222,10 @@ mod tests {
             _body: &str,
         ) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
             Ok(Vec::new())
+        }
+
+        fn citation_style(&self, _body: &str) -> Result<CitationStyle, NoteContentError> {
+            Ok(CitationStyle::default())
         }
 
         fn has_anchor(&self, _body: &str, _anchor: &str) -> Result<bool, NoteContentError> {
@@ -1332,6 +1358,26 @@ mod tests {
                 UnixMillis::new(0),
             )
         }
+
+        /// 番号で示すスタイルの通し番号を確かめるための2件目。
+        fn second_item() -> BibliographyItem {
+            BibliographyItem::create(
+                marginalis_domain::BibliographyItemId::new(
+                    EntityId::from_str("0197c9bc-0000-7000-8000-000000000022").expect("UUIDv7"),
+                ),
+                &Self::owner(),
+                "tanaka2025".into(),
+                serde_json::json!({
+                    "id": "tanaka2025",
+                    "type": "article-journal",
+                    "title": "追試の報告",
+                    "author": [{ "family": "Tanaka", "given": "Bun" }],
+                    "issued": { "date-parts": [[2025]] }
+                })
+                .to_string(),
+                UnixMillis::new(0),
+            )
+        }
     }
 
     #[async_trait]
@@ -1349,10 +1395,13 @@ mod tests {
             owner: &Identity,
             citation_keys: &[String],
         ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
-            if owner != &Self::owner() || !citation_keys.iter().any(|key| key == "smith2024") {
+            if owner != &Self::owner() {
                 return Ok(Vec::new());
             }
-            Ok(vec![Self::item()])
+            Ok([Self::item(), Self::second_item()]
+                .into_iter()
+                .filter(|item| citation_keys.iter().any(|key| key == item.citation_key()))
+                .collect())
         }
 
         async fn create_owned_item(
@@ -1404,6 +1453,7 @@ mod tests {
                     locator: None,
                     span: Utf8ByteSpan { start: 0, end: 1 },
                 }],
+                citation_style: CitationStyle::default(),
             })
         }
 
@@ -1419,6 +1469,10 @@ mod tests {
             _body: &str,
         ) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
             Ok(Vec::new())
+        }
+
+        fn citation_style(&self, _body: &str) -> Result<CitationStyle, NoteContentError> {
+            Ok(CitationStyle::default())
         }
 
         fn has_anchor(&self, _body: &str, _anchor: &str) -> Result<bool, NoteContentError> {
@@ -1510,6 +1564,122 @@ mod tests {
         assert_eq!(diagnostics[0].code, "unknown_citation_key");
     }
 
+    /// 番号で示すスタイルは、本文での初出順に通し番号を振る。
+    ///
+    /// 同じ文献を何度引用しても番号は変わらず、参考文献一覧の項目も1つだけになる。番号は
+    /// 一覧の項目にも付くため、本文の`[1]`から一覧の`[1]`を探せる。
+    #[tokio::test]
+    async fn the_numeric_style_numbers_citations_by_first_appearance() {
+        let application = citation_application();
+        let queries = vec![
+            NoteCitationQuery {
+                citation_index: 0,
+                keys: vec!["smith2024".into()],
+                locator: None,
+                span: Utf8ByteSpan { start: 10, end: 30 },
+            },
+            NoteCitationQuery {
+                citation_index: 1,
+                keys: vec!["tanaka2025".into()],
+                locator: None,
+                span: Utf8ByteSpan { start: 40, end: 60 },
+            },
+            // 同じ文献をもう一度引用しても、番号は初出のものを使う。
+            NoteCitationQuery {
+                citation_index: 2,
+                keys: vec!["smith2024".into()],
+                locator: None,
+                span: Utf8ByteSpan { start: 70, end: 90 },
+            },
+        ];
+
+        let resolved = application
+            .citation_resolutions(&OneItemLibrary::owner(), &queries, CitationStyle::Numeric)
+            .await
+            .expect("resolve citations");
+
+        assert_eq!(inline_text(&resolved.resolutions[0]), "[1]");
+        assert_eq!(inline_text(&resolved.resolutions[1]), "[2]");
+        assert_eq!(inline_text(&resolved.resolutions[2]), "[1]");
+        assert_eq!(
+            resolved
+                .entries
+                .iter()
+                .map(|entry| entry.citation_key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["smith2024", "tanaka2025"]
+        );
+        assert!(resolved.entries[0].text.starts_with("[1] "));
+        assert!(resolved.entries[1].text.starts_with("[2] "));
+    }
+
+    /// 一つの引用が複数のkeyを名指す場合は、番号を読点で並べる。
+    #[tokio::test]
+    async fn the_numeric_style_joins_several_keys_in_one_citation() {
+        let application = citation_application();
+        let queries = vec![NoteCitationQuery {
+            citation_index: 0,
+            keys: vec!["smith2024".into(), "tanaka2025".into()],
+            locator: None,
+            span: Utf8ByteSpan { start: 10, end: 40 },
+        }];
+
+        let resolved = application
+            .citation_resolutions(&OneItemLibrary::owner(), &queries, CitationStyle::Numeric)
+            .await
+            .expect("resolve citations");
+
+        assert_eq!(inline_text(&resolved.resolutions[0]), "[1, 2]");
+    }
+
+    /// 番号で示すスタイルでも、解決できたkeyは一覧の項目へlinkする。
+    #[tokio::test]
+    async fn the_numeric_style_keeps_the_link_to_the_reference_list() {
+        let application = citation_application();
+        let queries = vec![NoteCitationQuery {
+            citation_index: 0,
+            keys: vec!["smith2024".into()],
+            locator: None,
+            span: Utf8ByteSpan { start: 10, end: 30 },
+        }];
+
+        let resolved = application
+            .citation_resolutions(&OneItemLibrary::owner(), &queries, CitationStyle::Numeric)
+            .await
+            .expect("resolve citations");
+
+        let linked = resolved.resolutions[0]
+            .segments
+            .iter()
+            .find(|segment| segment.anchor.is_some())
+            .expect("linkする断片");
+        assert_eq!(linked.text, "1");
+        assert_eq!(linked.anchor.as_deref(), Some("smith2024"));
+    }
+
+    /// 引用の表示を、断片をつないだ1つの文字列にする。
+    fn inline_text(resolution: &NoteCitationResolution) -> String {
+        resolution
+            .segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect()
+    }
+
+    fn citation_application() -> NoteApplication {
+        let repository = Arc::new(MemoryNotes::default());
+        NoteApplication::new(
+            repository.clone(),
+            repository.clone(),
+            repository.clone(),
+            Arc::new(AcceptContent::default()),
+            Arc::new(OneItemLibrary),
+            Arc::new(NoLinks),
+            Arc::new(FixedClock),
+            Arc::new(FixedRandom),
+        )
+    }
+
     /// 引用は指定した所有者のライブラリーで解決し、未登録のkeyは警告として報告する。
     #[tokio::test]
     async fn citations_resolve_for_the_named_owner_and_report_unknown_keys() {
@@ -1540,7 +1710,7 @@ mod tests {
         ];
 
         let resolved = application
-            .citation_resolutions(&OneItemLibrary::owner(), &queries)
+            .citation_resolutions(&OneItemLibrary::owner(), &queries, CitationStyle::default())
             .await
             .expect("resolve citations");
 
@@ -1591,7 +1761,7 @@ mod tests {
         // 別の利用者のライブラリーでは解決せず、生の識別子だけが並ぶ。
         let other = Identity::new("https://id.example.test".into(), "bob".into()).expect("owner");
         let resolved = application
-            .citation_resolutions(&other, &queries)
+            .citation_resolutions(&other, &queries, CitationStyle::default())
             .await
             .expect("resolve citations for another owner");
         assert!(resolved.entries.is_empty());

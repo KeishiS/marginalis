@@ -48,8 +48,8 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 }
 ```
 
-文書headerには`:marginalis-tags:`、`:sectnums:`、`:toc:`、`:toclevels:`、`:stem:`、
-`:source-language:`を書けます。この一覧は`get_note_profile`の
+文書headerには`:marginalis-tags:`、`:marginalis-citation-style:`、`:sectnums:`、`:toc:`、
+`:toclevels:`、`:stem:`、`:source-language:`を書けます。この一覧は`get_note_profile`の
 `syntax.allowed_document_attributes`が返す値と同じで、どちらも入力検査と同じ正本から導きます。
 `marginalis-`で始まる属性はMarginalisが独自に決めたもので、他のAsciiDoc処理系では意味を
 持ちません。接頭辞の無い属性はAsciiDocの組込み属性です。ここに無い属性と、文書headerより
@@ -62,6 +62,20 @@ Web UIの配布物へ固定したMathJaxで組版します。外部のCDNへは�
 読み込みまたは組版に失敗した場合は、画面上に失敗を表示します。
 サーバーが管理する識別子、所有者、時刻、revision、ACLはAsciiDoc文書へ記述せず、APIの別項目で
 扱います。
+
+本文の`cite:`が指す引用の見せ方は、`:marginalis-citation-style:`でノートごとに選べます。
+選べる値は`author-year`と`numeric`で、属性を書かないノートは`author-year`になります。
+一覧は`get_note_profile`の`syntax.allowed_citation_styles`が返し、入力検査と同じ正本から
+導きます。ここに無い値は`unsupported_citation_style`として保存を拒否します。任意のCSLスタイル名
+（`apa`など）は受け付けず、サーバー上でCSLを実行しません。
+
+| 値 | 本文中の引用 | 複数のkey | 参考文献一覧の項目 |
+| --- | --- | --- | --- |
+| `author-year` | `(Smith 2024)` | `(Smith 2024; Tanaka 2025)` | `Smith, A. (2024). ...` |
+| `numeric` | `[1]` | `[1, 2]` | `[1] Smith, A. (2024). ...` |
+
+`numeric`の番号は本文での初出順に振ります。同じ文献を何度引用しても番号は変わらず、参考文献
+一覧の項目も1つだけです。どちらのスタイルでも、本文の引用と一覧の項目は相互に移動できます。
 
 保存前プレビューにも同じ入力を送り、成功時は安全なHTMLと`diagnostics`を受け取ります。
 `warning`、`information`、`hint`の診断は保存を妨げません。たとえば、文章と`xref:`の間に

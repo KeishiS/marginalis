@@ -1,8 +1,8 @@
 //! SQLite正本のAsciiDoc検証、可搬化、安全なHTML描画を担うadapter。
 
 use marginalis_application::{
-    NoteCitationQuery, NoteContent, NoteContentError, NoteProfile, NoteReferenceQuery,
-    NoteRenderInputs, NoteValidationDiagnostic, ValidatedNoteDraft,
+    CitationStyle, NoteCitationQuery, NoteContent, NoteContentError, NoteProfile,
+    NoteReferenceQuery, NoteRenderInputs, NoteValidationDiagnostic, ValidatedNoteDraft,
 };
 use marginalis_domain::{Note, NoteDraft};
 
@@ -14,7 +14,7 @@ mod rendering;
 pub const ADOCWEAVE_SOURCE_REVISION: &str = "c12c63a22ff908bf3d7f9db0203806befc90cb62";
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.27.0";
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
-pub const AUTHORING_PROFILE_VERSION: u32 = 12;
+pub const AUTHORING_PROFILE_VERSION: u32 = 13;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsciiDocNoteContent;
@@ -33,6 +33,10 @@ impl NoteContent for AsciiDocNoteContent {
 
     fn citation_queries(&self, source: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
         analysis::citation_queries(source).map_err(|_| NoteContentError)
+    }
+
+    fn citation_style(&self, source: &str) -> Result<CitationStyle, NoteContentError> {
+        analysis::citation_style(source).map_err(|_| NoteContentError)
     }
 
     fn has_anchor(&self, source: &str, anchor: &str) -> Result<bool, NoteContentError> {
