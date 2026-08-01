@@ -211,6 +211,7 @@ pub fn note_profile() -> NoteProfile {
             ],
             source_language_optional: true,
             allowed_math_languages: NOTE_POLICY.allowed_math_languages.to_vec(),
+            allowed_document_attributes: NOTE_POLICY.allowed_document_attributes.to_vec(),
             title_forbidden: vec!["empty", "line_feed", "carriage_return"],
             tag_forbidden: vec!["empty", "comma", "line_feed", "carriage_return"],
         },
@@ -228,6 +229,11 @@ pub fn note_profile() -> NoteProfile {
             })
             .collect(),
         examples: vec![
+            NoteProfileExample {
+                kind: "document_attributes",
+                description: "Header attributes that control the rendered display",
+                body: "= 調査の記録\n:tags: 研究\n:sectnums:\n:toc:\n:toclevels: 2\n\n== 背景\n\n本文。\n\n== 方法\n\n本文。",
+            },
             NoteProfileExample {
                 kind: "local_reference",
                 description: "Section, local anchor, and local cross-reference",

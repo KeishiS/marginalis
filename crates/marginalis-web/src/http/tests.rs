@@ -600,6 +600,7 @@ impl Notes {
                 common_inlines: Vec::new(),
                 source_language_optional: true,
                 allowed_math_languages: vec!["latexmath"],
+                allowed_document_attributes: vec!["tags", "sectnums"],
                 title_forbidden: vec!["empty"],
                 tag_forbidden: vec!["empty"],
             },

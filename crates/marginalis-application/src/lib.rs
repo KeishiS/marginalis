@@ -227,6 +227,8 @@ pub struct NoteProfileSyntax {
     pub common_inlines: Vec<&'static str>,
     pub source_language_optional: bool,
     pub allowed_math_languages: Vec<&'static str>,
+    /// 文書headerへ書ける文書属性の名前。入力検査と同じ一覧から導きます。
+    pub allowed_document_attributes: Vec<&'static str>,
     pub title_forbidden: Vec<&'static str>,
     pub tag_forbidden: Vec<&'static str>,
 }

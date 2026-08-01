@@ -47,8 +47,10 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 }
 ```
 
-`:sectnums:`、`:toc:`、`:toclevels:`、`:stem:`は表示用の文書属性として使用できます。これらの
-属性操作は文書header内だけで使用できます。コードブロックには1から始まる行番号を表示します。
+文書headerには`:tags:`、`:sectnums:`、`:toc:`、`:toclevels:`、`:stem:`、`:source-language:`を
+書けます。この一覧は`get_note_profile`の`syntax.allowed_document_attributes`が返す値と同じで、
+どちらも入力検査と同じ正本から導きます。ここに無い属性と、文書headerより後ろに置いた属性操作は
+保存を拒否します。コードブロックには1から始まる行番号を表示します。
 `.題名`、`[source,言語名]`、`[source,言語名,linenums,start=開始行]`を指定すると、題名、言語名、
 指定した行番号の開始位置も表示します。長い行はコードブロック内で横にスクロールできます。
 `:stem: latexmath`を指定した`stem:[]`と`[latexmath]`の数式は、

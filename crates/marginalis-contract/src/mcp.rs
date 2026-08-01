@@ -300,6 +300,8 @@ pub struct McpNoteProfileSyntax {
     pub common_inlines: Vec<String>,
     pub source_language_optional: bool,
     pub allowed_math_languages: Vec<String>,
+    /// 文書headerへ書ける文書属性の名前。ここに無い属性は保存が拒否される。
+    pub allowed_document_attributes: Vec<String>,
     pub title_forbidden: Vec<String>,
     pub tag_forbidden: Vec<String>,
 }

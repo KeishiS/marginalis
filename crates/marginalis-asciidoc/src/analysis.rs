@@ -167,16 +167,12 @@ pub(crate) fn validate_draft(
                 }
                 let header_end = analysis.document().header().end;
                 for occurrence in analysis.document_attribute_occurrences() {
-                    const ALLOWED: &[&str] = &[
-                        "tags",
-                        "sectnums",
-                        "toc",
-                        "toclevels",
-                        "stem",
-                        "source-language",
-                    ];
+                    // 許可する名前の正本は`NOTE_POLICY`にある。`get_note_profile`が広告する
+                    // 一覧も同じ値から導くため、受理する入力と公開する制約が食い違わない。
                     if occurrence.range.end() > header_end
-                        || !ALLOWED.contains(&occurrence.name.as_str())
+                        || !NOTE_POLICY
+                            .allowed_document_attributes
+                            .contains(&occurrence.name.as_str())
                     {
                         errors.push(diagnostic(
                             NoteValidationCode::UnsupportedDocumentAttribute,
@@ -480,6 +476,54 @@ mod tests {
             NoteValidationCode::UnsupportedDocumentAttribute.as_str()
         );
         assert!(errors[0].span.is_some());
+    }
+
+    /// 入力検査と`get_note_profile`の広告が、同じ一覧から導かれることを確かめる。
+    ///
+    /// 以前は許可リストがこのmoduleの中の定数にあり、公開する側は何も知らなかった。MCP
+    /// クライアントは「対応していない属性は拒否される」とだけ知らされ、何が使えるかを
+    /// 知る手段がなかった。
+    #[test]
+    fn the_advertised_document_attributes_are_exactly_the_accepted_ones() {
+        let advertised = crate::policy::note_profile()
+            .syntax
+            .allowed_document_attributes;
+        assert_eq!(advertised, NOTE_POLICY.allowed_document_attributes.to_vec());
+
+        // 広告した属性はすべて受理する。
+        for name in &advertised {
+            let source = match *name {
+                // 値を要求する属性は、値を添えないと別の理由で落ちる。
+                "toclevels" => "= Note\n:toclevels: 2\n\n== 見出し\n\n本文".to_owned(),
+                "stem" => "= Note\n:stem: latexmath\n\n本文".to_owned(),
+                "source-language" => "= Note\n:source-language: rust\n\n本文".to_owned(),
+                "tags" => "= Note\n:tags: 研究\n\n本文".to_owned(),
+                other => format!("= Note\n:{other}:\n\n== 見出し\n\n本文"),
+            };
+            assert!(
+                validate_draft(NoteDraft {
+                    source,
+                    title: String::new(),
+                    tags: Vec::new(),
+                })
+                .is_ok(),
+                "広告した属性を受理できません: {name}"
+            );
+        }
+
+        // 一覧に無い属性は拒む。広告と検査が同じ一覧を見ている証拠になる。
+        assert!(!NOTE_POLICY.allowed_document_attributes.contains(&"author"));
+        let errors = validate_draft(NoteDraft {
+            source: "= Note\n:author: Someone\n\n本文".into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect_err("一覧に無い属性");
+        assert!(
+            errors.iter().any(
+                |error| error.code == NoteValidationCode::UnsupportedDocumentAttribute.as_str()
+            )
+        );
     }
 
     fn validated(source: &str) -> NoteDraft {
