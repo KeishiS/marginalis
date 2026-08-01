@@ -56,8 +56,7 @@ impl OidcConfiguration {
         client_secret: String,
         base_url: &str,
     ) -> Result<Self, OidcConfigurationError> {
-        let issuer_url =
-            IssuerUrl::new(issuer_url).map_err(|_| OidcConfigurationError::InvalidIssuerUrl)?;
+        let issuer_url = validate_issuer_url(issuer_url)?;
         let redirect_url = callback_url(base_url)?;
         let cookie_path = cookie_path(base_url)?;
         Ok(Self {
@@ -84,6 +83,20 @@ impl OidcConfiguration {
     pub fn cookie_path(&self) -> &str {
         &self.cookie_path
     }
+}
+
+fn validate_issuer_url(value: String) -> Result<IssuerUrl, OidcConfigurationError> {
+    let url = Url::parse(&value).map_err(|_| OidcConfigurationError::InvalidIssuerUrl)?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(OidcConfigurationError::InvalidIssuerUrl);
+    }
+    IssuerUrl::new(value).map_err(|_| OidcConfigurationError::InvalidIssuerUrl)
 }
 
 fn callback_url(base_url: &str) -> Result<RedirectUrl, OidcConfigurationError> {
@@ -483,6 +496,27 @@ mod tests {
             "https://example.test/app/auth/oidc/callback"
         );
         assert_eq!(config.cookie_path(), "/app");
+    }
+
+    #[test]
+    fn issuer_requires_an_absolute_https_url_without_ambiguous_components() {
+        for issuer in [
+            "http://id.example.test",
+            "https://user@id.example.test",
+            "https://id.example.test?tenant=one",
+            "https://id.example.test#configuration",
+            "/relative",
+        ] {
+            assert!(matches!(
+                OidcConfiguration::new(
+                    issuer.into(),
+                    "client".into(),
+                    "secret".into(),
+                    "https://example.test/",
+                ),
+                Err(OidcConfigurationError::InvalidIssuerUrl)
+            ));
+        }
     }
 
     #[test]

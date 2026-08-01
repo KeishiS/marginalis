@@ -158,3 +158,138 @@ test("URLのqueryを初期の絞り込み条件として読む", async () => {
     "smith2024",
   );
 });
+
+test("登録後の一覧再読込でも成功通知を保持する", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(libraryResponse())
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          item_id: "0197c9bc-0000-7000-8000-0000000000a3",
+          citation_key: "smith2024",
+          csl_json: { id: "smith2024", type: "article-journal" },
+          created_at_ms: 1,
+          updated_at_ms: 1,
+          revision: 1,
+        }),
+        { status: 201 },
+      ),
+    )
+    .mockResolvedValueOnce(libraryResponse());
+  vi.stubGlobal("fetch", fetchMock);
+  render(<BibliographyPage config={CONFIG} />);
+  await waitFor(() => screen.getByRole("button", { name: /smith2024/ }));
+
+  fireEvent.click(screen.getByRole("button", { name: "登録" }));
+
+  expect(await screen.findByText("書誌情報を登録しました。")).toHaveAttribute(
+    "role",
+    "status",
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  expect(screen.getByText("書誌情報を登録しました。")).toBeInTheDocument();
+});
+
+test("遅れて完了した古い検索結果を表示しない", async () => {
+  let resolveOld!: (response: Response) => void;
+  let resolveNew!: (response: Response) => void;
+  const oldResponse = new Promise<Response>((resolve) => {
+    resolveOld = resolve;
+  });
+  const newResponse = new Promise<Response>((resolve) => {
+    resolveNew = resolve;
+  });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(libraryResponse())
+    .mockReturnValueOnce(oldResponse)
+    .mockReturnValueOnce(newResponse);
+  vi.stubGlobal("fetch", fetchMock);
+  render(<BibliographyPage config={CONFIG} />);
+  await waitFor(() => screen.getByRole("button", { name: /smith2024/ }));
+
+  const input = screen.getByLabelText("文献を検索");
+  const form = input.closest("form");
+  fireEvent.change(input, { target: { value: "古い検索" } });
+  fireEvent.submit(form!);
+  fireEvent.change(input, { target: { value: "新しい検索" } });
+  fireEvent.submit(form!);
+
+  resolveNew(
+    new Response(
+      JSON.stringify([
+        {
+          item_id: "0197c9bc-0000-7000-8000-0000000000b1",
+          citation_key: "new-result",
+          csl_json: { id: "new-result", type: "book" },
+          created_at_ms: 1,
+          updated_at_ms: 1,
+          revision: 1,
+        },
+      ]),
+      { status: 200 },
+    ),
+  );
+  await screen.findByRole("button", { name: /new-result/ });
+  resolveOld(libraryResponse());
+  await Promise.resolve();
+  expect(
+    screen.getByRole("button", { name: /new-result/ }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /smith2024/ })).toBeNull();
+});
+
+test("書誌情報の変更中は検索条件を切り替えない", async () => {
+  let completeMutation!: (response: Response) => void;
+  const mutation = new Promise<Response>((resolve) => {
+    completeMutation = resolve;
+  });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(libraryResponse())
+    .mockReturnValueOnce(mutation)
+    .mockResolvedValueOnce(libraryResponse());
+  vi.stubGlobal("fetch", fetchMock);
+  render(<BibliographyPage config={CONFIG} />);
+  await screen.findByRole("button", { name: /smith2024/ });
+
+  fireEvent.click(screen.getByRole("button", { name: "登録" }));
+  expect(screen.getByLabelText("文献を検索")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "検索" })).toBeDisabled();
+
+  completeMutation(
+    new Response(
+      JSON.stringify({
+        item_id: "0197c9bc-0000-7000-8000-0000000000a3",
+        citation_key: "smith2024",
+        csl_json: { id: "smith2024", type: "article-journal" },
+        created_at_ms: 1,
+        updated_at_ms: 1,
+        revision: 1,
+      }),
+      { status: 201 },
+    ),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  await waitFor(() =>
+    expect(screen.getByLabelText("文献を検索")).toBeEnabled(),
+  );
+});
+
+test("画面を離れたときに進行中の検索を中止する", async () => {
+  const signals: AbortSignal[] = [];
+  const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+    signals.push(init?.signal as AbortSignal);
+    if (signals.length === 1) return Promise.resolve(libraryResponse());
+    return new Promise<Response>(() => undefined);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const { unmount } = render(<BibliographyPage config={CONFIG} />);
+  await screen.findByRole("button", { name: /smith2024/ });
+
+  fireEvent.submit(screen.getByLabelText("文献を検索").closest("form")!);
+  await waitFor(() => expect(signals).toHaveLength(2));
+  unmount();
+  expect(signals[1].aborted).toBe(true);
+});

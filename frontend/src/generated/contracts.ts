@@ -1,4 +1,5 @@
-// このファイルはmarginalis-contractが生成します。直接編集しないでください。
+// 正本はcrates/marginalis-contract/srcにあります。生成先では直接編集しないでください。
+// 公開契約を変える場合は、正本とRustの契約を同時に編集してください。
 export interface Note {
   note_id: string;
   title: string;
@@ -581,13 +582,26 @@ export async function updateNote(
   );
 }
 
-export async function previewNote(
+export async function previewNewNote(
   apiBase: string,
   draft: NoteDraft,
   signal?: AbortSignal,
 ): Promise<NotePreview> {
   return requestJson(
     `${apiBase}/notes/preview`,
+    { ...mutationRequest("POST", draft), signal },
+    parseNotePreview,
+  );
+}
+
+export async function previewNoteUpdate(
+  apiBase: string,
+  noteId: string,
+  draft: NoteDraft,
+  signal?: AbortSignal,
+): Promise<NotePreview> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/preview`,
     { ...mutationRequest("POST", draft), signal },
     parseNotePreview,
   );

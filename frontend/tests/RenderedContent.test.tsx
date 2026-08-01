@@ -212,3 +212,41 @@ test("MathJaxの組版失敗を利用者へ通知する", async () => {
     expect.any(Error),
   );
 });
+
+test("古い組版の完了結果を新しいHTMLへ混ぜない", async () => {
+  const completions: Array<() => void> = [];
+  const typesetClear = vi.fn();
+  const typesetPromise = vi.fn(async ([element]: HTMLElement[]) => {
+    const formula = element.querySelector(".math-inline");
+    const value = formula?.textContent ?? "";
+    await new Promise<void>((resolve) => completions.push(resolve));
+    const rendered = document.createElement("mjx-container");
+    rendered.textContent = value;
+    formula?.replaceWith(rendered);
+  });
+  window.MathJax = {
+    startup: { promise: Promise.resolve() },
+    typesetClear,
+    typesetPromise,
+  };
+  const first = String.raw`<code class="math-latex" data-math-language="latexmath" data-math-display="inline">alpha</code>`;
+  const second = String.raw`<code class="math-latex" data-math-language="latexmath" data-math-display="inline">beta</code>`;
+  const { rerender } = render(
+    <RenderedContent html={first} preview styleNonce="test-nonce" />,
+  );
+  await waitFor(() => expect(typesetPromise).toHaveBeenCalledTimes(1));
+
+  rerender(<RenderedContent html={second} preview styleNonce="test-nonce" />);
+  completions.shift()?.();
+  await waitFor(() => expect(typesetPromise).toHaveBeenCalledTimes(2));
+  completions.shift()?.();
+
+  await waitFor(() =>
+    expect(document.querySelector("mjx-container")).toHaveTextContent("beta"),
+  );
+  expect(document.body).not.toHaveTextContent("alpha");
+  expect(typesetClear).toHaveBeenCalledTimes(2);
+  expect(typesetClear.mock.calls[0][0][0]).not.toBe(
+    typesetClear.mock.calls[1][0][0],
+  );
+});

@@ -22,7 +22,8 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 | セッション確認 | `GET /api/v3/session` | Kanidmの利用者識別子 |
 | ノート一覧 | `GET /api/v3/notes` | 閲覧できるノートの概要と実効アクセス水準 |
 | ノート作成 | `POST /api/v3/notes` | CSRFトークンが必要 |
-| 保存前プレビュー | `POST /api/v3/notes/preview` | 保存と同じ検査・HTML変換 |
+| 新規ノートの保存前プレビュー | `POST /api/v3/notes/preview` | 作成者の書誌ライブラリーを使う検査・HTML変換 |
+| 既存ノートの保存前プレビュー | `POST /api/v3/notes/{note_id}/preview` | 編集権限を確認し、所有者の書誌ライブラリーを使う検査・HTML変換 |
 | ノート取得 | `GET /api/v3/notes/{note_id}` | 閲覧できるノートだけ |
 | 閲覧画面取得 | `GET /api/v3/notes/{note_id}/view` | 正本、権限、描画HTML、関連概要の一貫した組 |
 | ノート更新 | `PUT /api/v3/notes/{note_id}` | `If-Match`が必要 |
@@ -81,7 +82,9 @@ Web UIの配布物へ固定したMathJaxで組版します。外部のCDNへは�
 `numeric`の番号は本文での初出順に振ります。同じ文献を何度引用しても番号は変わらず、参考文献
 一覧の項目も1つだけです。どちらのスタイルでも、本文の引用と一覧の項目は相互に移動できます。
 
-保存前プレビューにも同じ入力を送り、成功時は安全なHTMLと`diagnostics`を受け取ります。
+保存前プレビューにも同じ入力を送ります。新規作成では`/notes/preview`、既存ノートの更新では
+`/notes/{note_id}/preview`を使用し、成功時は安全なHTMLと`diagnostics`を受け取ります。更新用
+プレビューは保存後の表示と同じく、ノート所有者の書誌ライブラリーで引用を解決します。
 `warning`、`information`、`hint`の診断は保存を妨げません。たとえば、文章と`xref:`の間に
 空白がない場合は、AdocWeaveの`macro-boundary`を`warning`として返します。プレビューは保存処理を
 行いませんが、ログイン中の利用者だけが同一オリジンとCSRFトークンを確認したうえで利用できます。

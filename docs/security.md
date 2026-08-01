@@ -4,8 +4,10 @@
 記録します。認証・認可の設計条件は[アーキテクチャ](architecture.md)、NixOSの秘密情報と
 systemdサービスの保護設定は[NixOSでの運用](nixos.md)を参照してください。
 
-`cargo make verify`は、RustSecの最新の脆弱性データベースを使って`Cargo.lock`を検査します。例外を
-設ける場合は、脆弱性情報のID、影響を受けない根拠、例外を解除する条件をこの文書へ記録します。
+`cargo make verify`は、RustSecの最新データベースを使って`Cargo.lock`を検査します。脆弱性に加え、
+soundness違反、保守終了、yankも失敗として扱います。ここでいうsoundness違反は、安全なRustコード
+から未定義動作へ到達できるライブラリー上の問題です。例外を設ける場合は、情報のID、影響を受けない
+根拠、例外を解除する条件をこの文書へ記録します。
 
 ## RUSTSEC-2023-0071
 

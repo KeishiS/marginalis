@@ -127,7 +127,7 @@ pub(super) async fn create_note(
     Ok(note_json(StatusCode::CREATED, note))
 }
 
-pub(super) async fn preview_note(
+pub(super) async fn preview_new_note(
     State(state): State<ApiState>,
     headers: HeaderMap,
     Json(input): Json<NoteInput>,
@@ -135,7 +135,7 @@ pub(super) async fn preview_note(
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let preview = state
         .notes
-        .preview_note(
+        .preview_new_note(
             actor,
             NoteDraft {
                 source: input.source,
@@ -148,15 +148,45 @@ pub(super) async fn preview_note(
         )
         .await
         .map_err(note_error)?;
+    Ok(preview_response(preview))
+}
+
+pub(super) async fn preview_note_update(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+    Json(input): Json<NoteInput>,
+) -> HandlerResult<Json<NotePreviewResponse>> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let preview = state
+        .notes
+        .preview_note_update(
+            actor,
+            parse_note_id(&note_id)?,
+            NoteDraft {
+                source: input.source,
+                title: String::new(),
+                tags: Vec::new(),
+            },
+            NoteRenderContext {
+                note_path_prefix: super::auth::external_path(&state.cookie_path, "/notes"),
+            },
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(preview_response(preview))
+}
+
+fn preview_response(preview: marginalis_application::NotePreview) -> Json<NotePreviewResponse> {
     tracing::Span::current().record("note_diagnostic_count", preview.diagnostics.len());
-    Ok(Json(NotePreviewResponse {
+    Json(NotePreviewResponse {
         html: preview.html,
         diagnostics: preview
             .diagnostics
             .into_iter()
             .map(super::error::advisory_response)
             .collect(),
-    }))
+    })
 }
 
 pub(super) async fn update_note(

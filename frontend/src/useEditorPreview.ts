@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 
-import { NoteDiagnostic, Problem, previewNote } from "./api";
+import {
+  NoteDiagnostic,
+  Problem,
+  previewNewNote,
+  previewNoteUpdate,
+} from "./api";
 
 export interface EditorPreview {
   html: string;
@@ -15,6 +20,7 @@ interface EditorPreviewState extends EditorPreview {
 
 export function useEditorPreview(
   apiBase: string,
+  noteId: string | null,
   source: string,
   enabled: boolean,
   toProblem: (error: unknown) => Problem,
@@ -39,7 +45,10 @@ export function useEditorPreview(
         problem: null,
         source,
       }));
-      previewNote(apiBase, { source }, controller.signal)
+      (noteId === null
+        ? previewNewNote(apiBase, { source }, controller.signal)
+        : previewNoteUpdate(apiBase, noteId, { source }, controller.signal)
+      )
         .then((result) => {
           if (current) {
             setPreview({
@@ -68,7 +77,7 @@ export function useEditorPreview(
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [apiBase, enabled, source, toProblem]);
+  }, [apiBase, enabled, noteId, source, toProblem]);
 
   const matchesCurrentSource = preview.source === source;
   return {

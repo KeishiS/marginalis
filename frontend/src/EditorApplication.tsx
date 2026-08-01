@@ -77,6 +77,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const draft = useMemo(() => ({ source: form.source }), [form.source]);
   const preview = useEditorPreview(
     config.apiBase,
+    revision === null ? null : noteId,
     form.source,
     !isComposing && !loading && (config.mode !== "edit" || revision !== null),
     toProblem,

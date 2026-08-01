@@ -331,13 +331,23 @@ macro_rules! implement_note_boundaries {
 
         #[async_trait]
         impl NotePresentation for $type {
-            async fn preview_note(
+            async fn preview_new_note(
                 &self,
                 actor: Actor,
                 draft: NoteDraft,
                 context: NoteRenderContext,
             ) -> Result<NotePreview, NoteUseCaseError> {
-                <$type>::preview_note(self, actor, draft, context).await
+                <$type>::preview_new_note(self, actor, draft, context).await
+            }
+
+            async fn preview_note_update(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                draft: NoteDraft,
+                context: NoteRenderContext,
+            ) -> Result<NotePreview, NoteUseCaseError> {
+                <$type>::preview_note_update(self, actor, note_id, draft, context).await
             }
 
             fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
@@ -498,7 +508,7 @@ impl Notes {
         Err(NoteUseCaseError::Unavailable)
     }
 
-    async fn preview_note(
+    async fn preview_new_note(
         &self,
         _actor: Actor,
         draft: NoteDraft,
@@ -520,6 +530,16 @@ impl Notes {
                 diagnostics,
             })
         }
+    }
+
+    async fn preview_note_update(
+        &self,
+        actor: Actor,
+        _note_id: NoteId,
+        draft: NoteDraft,
+        context: NoteRenderContext,
+    ) -> Result<NotePreview, NoteUseCaseError> {
+        self.preview_new_note(actor, draft, context).await
     }
 
     async fn soft_delete_note(
@@ -665,13 +685,23 @@ impl UiNotes {
         Err(NoteUseCaseError::Unavailable)
     }
 
-    async fn preview_note(
+    async fn preview_new_note(
         &self,
         _actor: Actor,
         _draft: NoteDraft,
         _context: NoteRenderContext,
     ) -> Result<NotePreview, NoteUseCaseError> {
         Err(NoteUseCaseError::Unavailable)
+    }
+
+    async fn preview_note_update(
+        &self,
+        actor: Actor,
+        _note_id: NoteId,
+        draft: NoteDraft,
+        context: NoteRenderContext,
+    ) -> Result<NotePreview, NoteUseCaseError> {
+        self.preview_new_note(actor, draft, context).await
     }
 
     async fn soft_delete_note(

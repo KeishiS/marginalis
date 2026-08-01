@@ -1,6 +1,6 @@
 //! Archive commandと復元検証。
 
-use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, sync_parent_directory};
+use super::{PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, PendingOutput};
 use crate::cli::{required_absolute_file_argument, required_archive_migration_arguments};
 use crate::config::StorageConfig;
 use crate::runtime::SystemClock;
@@ -19,9 +19,9 @@ use marginalis_asciidoc::AsciiDocNoteContent;
 use marginalis_sqlite::SqliteDatabase;
 use std::{
     collections::{BTreeMap, HashSet},
-    fs::{DirBuilder, File, OpenOptions},
+    fs::{DirBuilder, File},
     io::{Read as _, Write as _},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+    os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -38,14 +38,14 @@ pub(crate) async fn export_archive(
     let database = SqliteDatabase::connect(&configuration.database_url).await?;
     let snapshot = database.export_archive_snapshot().await?;
     let archive = create_archive(&AsciiDocNoteContent, &snapshot);
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(PRIVATE_FILE_MODE)
-        .open(&output)?;
+    let (pending, file) = PendingOutput::create(&output)?;
     serde_json::to_writer_pretty(&file, &archive)?;
     file.sync_all()?;
-    sync_parent_directory(&output)?;
+    let written = read_validated_archive(pending.path())?;
+    if written.archive != archive {
+        return Err("written archive does not match the database snapshot".into());
+    }
+    pending.commit()?;
     tracing::info!(event = "maintenance.archive_export.completed", output = %output.display(), note_count = archive.notes.len(), "exported archive");
     Ok(())
 }
@@ -72,18 +72,14 @@ pub(crate) async fn migrate_archive(
     verify_archive_in_memory(&validated).await?;
 
     let encoded = serde_json::to_vec_pretty(&validated.archive)?;
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(PRIVATE_FILE_MODE)
-        .open(&output)?;
+    let (pending, mut file) = PendingOutput::create(&output)?;
     file.write_all(&encoded)?;
     file.sync_all()?;
-    let written = read_validated_archive(&output)?;
+    let written = read_validated_archive(pending.path())?;
     if written.archive != validated.archive {
         return Err("written migrated archive does not match the validated result".into());
     }
-    sync_parent_directory(&output)?;
+    pending.commit()?;
     tracing::info!(
         event = "maintenance.archive_migration.completed",
         input = %input.display(),
@@ -280,11 +276,7 @@ pub(crate) async fn export_documents(
     );
 
     let manifest = serde_json::to_vec_pretty(&export.manifest)?;
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(PRIVATE_FILE_MODE)
-        .open(&output)?;
+    let (pending, file) = PendingOutput::create(&output)?;
     let mut builder = tar::Builder::new(XzEncoder::new(file, DOCUMENT_EXPORT_COMPRESSION_LEVEL));
     let root = document_export_root(&output)?;
     let modified = u64::try_from(export.manifest.exported_at_ms.max(0) / 1000)?;
@@ -304,7 +296,7 @@ pub(crate) async fn export_documents(
 
     let file = builder.into_inner()?.finish()?;
     file.sync_all()?;
-    sync_parent_directory(&output)?;
+    pending.commit()?;
 
     tracing::info!(
         event = "maintenance.document_export.completed",

@@ -1,6 +1,16 @@
 {
   "components": {
     "parameters": {
+      "BibliographyQuery": {
+        "description": "citation key、題名、著者、DOIのいずれかにこの語を含む文献だけへ絞る",
+        "in": "query",
+        "name": "query",
+        "required": false,
+        "schema": {
+          "maxLength": 256,
+          "type": "string"
+        }
+      },
       "CsrfToken": {
         "in": "header",
         "name": "X-CSRF-Token",
@@ -761,6 +771,11 @@
   "paths": {
     "/api/v3/bibliography": {
       "get": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BibliographyQuery"
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -774,6 +789,9 @@
               }
             },
             "description": "bibliography items"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/AuthenticationRequired"
@@ -1077,7 +1095,7 @@
             "$ref": "#/components/responses/UnprocessableNote"
           }
         },
-        "summary": "Validate and render an unsaved note"
+        "summary": "Validate and render a new unsaved note"
       }
     },
     "/api/v3/notes/{note_id}": {
@@ -1297,6 +1315,55 @@
           }
         },
         "summary": "Replace note ACL"
+      }
+    },
+    "/api/v3/notes/{note_id}/preview": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotePreview"
+                }
+              }
+            },
+            "description": "safe HTML preview"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableNote"
+          }
+        },
+        "summary": "Validate and render an unsaved update"
       }
     },
     "/api/v3/notes/{note_id}/restore": {

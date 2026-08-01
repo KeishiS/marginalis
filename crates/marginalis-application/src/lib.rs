@@ -27,7 +27,7 @@ pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
 };
 pub use notes::{
-    NoteAclRepository, NoteApplication, NoteBibliographyEntry, NoteCitationQuery,
+    AccessibleNote, NoteAclRepository, NoteApplication, NoteBibliographyEntry, NoteCitationQuery,
     NoteCitationResolution, NoteCitationSegment, NoteCommandRepository, NoteContent,
     NoteContentError, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery,
     NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks, NoteQueryRepository,
@@ -352,9 +352,16 @@ pub trait NoteCommands: Send + Sync {
 /// ノートの検証、描画、書き出しを扱う表示境界。
 #[async_trait]
 pub trait NotePresentation: Send + Sync {
-    async fn preview_note(
+    async fn preview_new_note(
         &self,
         actor: Actor,
+        draft: NoteDraft,
+        context: NoteRenderContext,
+    ) -> Result<NotePreview, NoteUseCaseError>;
+    async fn preview_note_update(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
         draft: NoteDraft,
         context: NoteRenderContext,
     ) -> Result<NotePreview, NoteUseCaseError>;

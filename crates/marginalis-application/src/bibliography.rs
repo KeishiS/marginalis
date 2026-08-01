@@ -31,6 +31,8 @@ pub enum BibliographyRepositoryError {
 /// transport側の写像が決める。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum BibliographyUseCaseError {
+    #[error("bibliography search query is invalid")]
+    InvalidSearchQuery,
     #[error("CSL-JSON input is invalid")]
     InvalidCslJson,
     #[error("bibliography item is not available")]
@@ -144,10 +146,7 @@ impl BibliographyUseCases for BibliographyApplication {
         actor: Actor,
         query: String,
     ) -> Result<Vec<BibliographyItem>, BibliographyUseCaseError> {
-        let query = query.trim();
-        if query.len() > 256 || query.chars().any(char::is_control) {
-            return Err(BibliographyUseCaseError::InvalidCslJson);
-        }
+        let query = validate_search_query(&query)?;
         self.repository
             .search_owned_items(&actor, query)
             .await
@@ -208,6 +207,14 @@ impl BibliographyUseCases for BibliographyApplication {
             .await
             .map_err(map_repository_error)
     }
+}
+
+fn validate_search_query(query: &str) -> Result<&str, BibliographyUseCaseError> {
+    let query = query.trim();
+    if query.chars().count() > 256 || query.chars().any(char::is_control) {
+        return Err(BibliographyUseCaseError::InvalidSearchQuery);
+    }
+    Ok(query)
 }
 
 fn validate_csl_json(value: &Value) -> Result<String, BibliographyUseCaseError> {
@@ -272,6 +279,24 @@ mod tests {
         assert_eq!(
             validate_csl_json(&serde_json::json!({"id": "smith2024"})),
             Err(BibliographyUseCaseError::InvalidCslJson)
+        );
+    }
+
+    #[test]
+    fn search_query_has_its_own_validation_error() {
+        assert_eq!(validate_search_query("  smith  "), Ok("smith"));
+        let maximum_japanese_query = "文".repeat(256);
+        assert_eq!(
+            validate_search_query(&maximum_japanese_query),
+            Ok(maximum_japanese_query.as_str())
+        );
+        assert_eq!(
+            validate_search_query(&"文".repeat(257)),
+            Err(BibliographyUseCaseError::InvalidSearchQuery)
+        );
+        assert_eq!(
+            validate_search_query("line\nbreak"),
+            Err(BibliographyUseCaseError::InvalidSearchQuery)
         );
     }
 }

@@ -28,4 +28,7 @@ assert_classification true \
 assert_classification false docs/architecture.md frontend/src/Application.tsx
 assert_classification false docs/openapi.json
 assert_classification false docs/mcp-tools.json
+assert_classification false CHANGELOG.md
+assert_classification false docs/acceptance.md
+assert_classification false docs/acceptance-results/v0.24.0.md
 assert_classification true $'docs/architecture.md\nfrontend/src/Application.tsx'

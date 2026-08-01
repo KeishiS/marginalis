@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   addBibliographyItem,
@@ -30,33 +30,69 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
     '{\n  "id": "smith2024",\n  "type": "article-journal",\n  "title": "Example title"\n}',
   );
   const [message, setMessage] = useState<Message | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [mutating, setMutating] = useState(false);
   const [editing, setEditing] = useState<BibliographyItem | null>(null);
+  const activeSearch = useRef<AbortController | null>(null);
 
-  async function load(search = query) {
-    try {
-      setItems(await searchBibliography(config.apiBase, search));
-      setMessage(null);
-    } catch {
-      setMessage(failure("書誌ライブラリーを読み込めませんでした。"));
-    }
-  }
+  const load = useCallback(
+    async (search: string) => {
+      activeSearch.current?.abort();
+      const controller = new AbortController();
+      activeSearch.current = controller;
+      setSearching(true);
+      try {
+        const loaded = await searchBibliography(
+          config.apiBase,
+          search,
+          controller.signal,
+        );
+        if (!controller.signal.aborted) {
+          setItems(loaded);
+          setLoadError("");
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setLoadError("書誌ライブラリーを読み込めませんでした。");
+        }
+      } finally {
+        if (!controller.signal.aborted && activeSearch.current === controller) {
+          setSearching(false);
+        }
+      }
+    },
+    [config.apiBase],
+  );
   const initial = initialQuery(config.search);
   useEffect(() => {
-    let current = true;
-    searchBibliography(config.apiBase, initial)
-      .then((value) => current && setItems(value))
-      .catch(
-        () =>
-          current &&
-          setMessage(failure("書誌ライブラリーを読み込めませんでした。")),
-      );
-    return () => {
-      current = false;
-    };
+    const controller = new AbortController();
+    activeSearch.current = controller;
+    searchBibliography(config.apiBase, initial, controller.signal)
+      .then((loaded) => {
+        if (!controller.signal.aborted) {
+          setItems(loaded);
+          setLoadError("");
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setLoadError("書誌ライブラリーを読み込めませんでした。");
+        }
+      });
+    return () => controller.abort();
   }, [config.apiBase, initial]);
+  useEffect(
+    () => () => {
+      activeSearch.current?.abort();
+    },
+    [],
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (mutating) return;
+    setMutating(true);
     try {
       const value: unknown = JSON.parse(input);
       if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -78,23 +114,29 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         );
         setMessage(notice("書誌情報を登録しました。"));
       }
-      await load();
+      await load(query);
     } catch {
       setMessage(
         failure(
           "登録できませんでした。CSL-JSONのid、type、JSON構文を確認してください。",
         ),
       );
+    } finally {
+      setMutating(false);
     }
   }
 
   async function remove(item: BibliographyItem) {
+    if (mutating) return;
+    setMutating(true);
     try {
       await deleteBibliographyItem(config.apiBase, item.item_id, item.revision);
       setMessage(notice("書誌情報を削除しました。"));
-      await load();
+      await load(query);
     } catch {
       setMessage(failure("書誌情報を削除できませんでした。"));
+    } finally {
+      setMutating(false);
     }
   }
 
@@ -113,18 +155,22 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         className="bibliography-search"
         onSubmit={(event) => {
           event.preventDefault();
-          void load();
+          if (mutating) return;
+          void load(query);
         }}
       >
         <label>
           文献を検索
           <input
+            disabled={mutating}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="citation key、題名、著者、DOI"
           />
         </label>
-        <button type="submit">検索</button>
+        <button type="submit" disabled={mutating}>
+          {searching ? "検索しています…" : "検索"}
+        </button>
       </form>
       <form
         className="bibliography-input"
@@ -137,16 +183,22 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             spellCheck={false}
+            disabled={mutating}
           />
         </label>
         <div className="bibliography-actions">
-          <button className="button button-primary" type="submit">
-            {editing ? "更新" : "登録"}
+          <button
+            className="button button-primary"
+            type="submit"
+            disabled={mutating}
+          >
+            {mutating ? "処理しています…" : editing ? "更新" : "登録"}
           </button>
           {editing && (
             <button
               className="button button-secondary"
               type="button"
+              disabled={mutating}
               onClick={() => {
                 setEditing(null);
                 setMessage(notice("編集を取り消しました。"));
@@ -167,6 +219,11 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
             {message.text}
           </p>
         ))}
+      {loadError && (
+        <p className="problem-inline" role="alert">
+          {loadError}
+        </p>
+      )}
       {items === null ? (
         <p className="state-message" role="status">
           書誌情報を読み込んでいます。
@@ -202,6 +259,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                 <button
                   className="button button-danger"
                   type="button"
+                  disabled={mutating}
                   onClick={() => void remove(item)}
                 >
                   削除

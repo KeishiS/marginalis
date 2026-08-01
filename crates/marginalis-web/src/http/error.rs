@@ -98,6 +98,10 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
 /// 書誌ライブラリー操作の失敗を公開エラー表現へ写像する唯一の関数。
 pub(super) fn bibliography_problem(error: BibliographyUseCaseError) -> ProblemResponse {
     match error {
+        BibliographyUseCaseError::InvalidSearchQuery => ProblemResponse::new(
+            ProblemCode::InvalidRequest,
+            "bibliography search query is invalid",
+        ),
         BibliographyUseCaseError::InvalidCslJson => ProblemResponse::new(
             ProblemCode::ValidationFailed,
             "CSL-JSON must contain valid id and type fields",

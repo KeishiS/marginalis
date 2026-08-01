@@ -100,5 +100,19 @@ pub(crate) fn database_error(error: sqlx::Error) -> SqliteStoreError {
     SqliteStoreError::Database(error.to_string())
 }
 
+/// SQLiteの`LIKE`で、入力をワイルドカードではなく文字列として含有検索するpattern。
+fn like_contains_pattern(value: &str) -> String {
+    let mut pattern = String::with_capacity(value.len() + 2);
+    pattern.push('%');
+    for character in value.to_lowercase().chars() {
+        if matches!(character, '!' | '%' | '_') {
+            pattern.push('!');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    pattern
+}
+
 #[cfg(test)]
 mod tests;

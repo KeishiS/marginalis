@@ -120,10 +120,6 @@ impl LogicalSnapshot {
     pub fn bibliography_items(&self) -> &[BibliographyItem] {
         &self.bibliography_items
     }
-
-    pub fn into_parts(self) -> (Vec<Note>, Vec<NoteAclSnapshotEntry>) {
-        (self.notes, self.note_acl)
-    }
 }
 
 /// 参照索引まで検証した、一transactionで適用できる復元入力。
@@ -168,10 +164,6 @@ impl RestorePlan {
 
     pub fn citations(&self) -> &[(NoteId, String)] {
         &self.citations
-    }
-
-    pub fn into_parts(self) -> (LogicalSnapshot, Vec<(NoteId, NoteId)>) {
-        (self.snapshot, self.references)
     }
 }
 

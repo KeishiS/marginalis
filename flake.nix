@@ -20,7 +20,13 @@
         "aarch64-linux"
         "x86_64-linux"
       ];
-      version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
+      packageSystems = [
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+      workspacePackage = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package;
+      version = workspacePackage.version;
+      rustVersion = workspacePackage.rust-version;
       forAllSystems = nixpkgs.lib.genAttrs systems;
       pkgsFor =
         system:
@@ -28,10 +34,10 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-      # AdocWeave v0.27.0 が要求する Rust 1.97.1 を確定的にピンする。
+      # Cargo manifestが宣言する最低Rust版を、開発環境と配布buildでも使用する。
       rustToolchainFor =
         pkgs:
-        pkgs.rust-bin.stable."1.97.1".default.override {
+        pkgs.rust-bin.stable.${rustVersion}.default.override {
           extensions = [
             "llvm-tools-preview"
             "rust-src"
@@ -49,7 +55,7 @@
         };
     in
     {
-      packages = forAllSystems (
+      packages = nixpkgs.lib.genAttrs packageSystems (
         system:
         let
           pkgs = pkgsFor system;
@@ -608,7 +614,7 @@
             testScript = ''
               machine.wait_for_unit("marginalis.service")
               machine.succeed(
-                "test \"$(/run/current-system/sw/bin/marginalis --version)\" = 'marginalis 0.23.0'"
+                "test \"$(/run/current-system/sw/bin/marginalis --version)\" = 'marginalis ${version}'"
               )
               machine.wait_until_succeeds(
                   "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\" and .api_version == \"v3\"'"

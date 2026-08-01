@@ -1,4 +1,10 @@
-import { FormEvent, useEffect, useReducer } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+} from "react";
 
 import { ApiError, readNoteAcl, replaceNoteAcl } from "./api";
 import {
@@ -24,7 +30,12 @@ export function AccessControl({
     revision,
     initialAccessControlState,
   );
+  const activeNoteId = useRef(noteId);
+  useLayoutEffect(() => {
+    activeNoteId.current = noteId;
+  }, [noteId]);
   const {
+    status,
     entries,
     subject,
     permission,
@@ -34,11 +45,14 @@ export function AccessControl({
   } = state;
 
   useEffect(() => {
-    readNoteAcl(apiBase, noteId)
+    const controller = new AbortController();
+    dispatch({ type: "loading" });
+    readNoteAcl(apiBase, noteId, controller.signal)
       .then(({ entries, revision }) =>
         dispatch({ type: "loaded", entries, revision }),
       )
       .catch((reason: unknown) => {
+        if (controller.signal.aborted) return;
         if (
           reason instanceof ApiError &&
           (reason.status === 403 || reason.status === 404)
@@ -54,6 +68,7 @@ export function AccessControl({
           message: "共有設定を読み込めませんでした。",
         });
       });
+    return () => controller.abort();
   }, [apiBase, noteId]);
 
   if (entries === null) {
@@ -71,6 +86,9 @@ export function AccessControl({
   }
 
   async function save() {
+    if (status !== "ready") return;
+    const savedNoteId = noteId;
+    dispatch({ type: "save-started" });
     try {
       const note = await replaceNoteAcl(
         apiBase,
@@ -81,9 +99,11 @@ export function AccessControl({
         })),
         currentRevision,
       );
+      if (activeNoteId.current !== savedNoteId) return;
       dispatch({ type: "saved", revision: note.revision });
       onRevision(note.revision);
     } catch (reason: unknown) {
+      if (activeNoteId.current !== savedNoteId) return;
       dispatch({
         type: "error",
         message:
@@ -115,6 +135,7 @@ export function AccessControl({
             <button
               type="button"
               className="button button-danger button-small"
+              disabled={status === "saving"}
               onClick={() =>
                 dispatch({ type: "remove", subject: entry.subject })
               }
@@ -131,6 +152,7 @@ export function AccessControl({
         <label>
           利用者subject
           <input
+            disabled={status === "saving"}
             value={subject}
             onChange={(event) =>
               dispatch({ type: "subject", value: event.target.value })
@@ -140,6 +162,7 @@ export function AccessControl({
         <label>
           権限
           <select
+            disabled={status === "saving"}
             value={permission}
             onChange={(event) =>
               dispatch({
@@ -152,13 +175,22 @@ export function AccessControl({
             <option value="edit">閲覧・編集</option>
           </select>
         </label>
-        <button className="button button-secondary" type="submit">
+        <button
+          className="button button-secondary"
+          type="submit"
+          disabled={status === "saving"}
+        >
           共有先を追加
         </button>
       </form>
       <div className="form-actions">
-        <button className="button button-primary" type="button" onClick={save}>
-          共有設定を保存
+        <button
+          className="button button-primary"
+          type="button"
+          onClick={save}
+          disabled={status === "saving"}
+        >
+          {status === "saving" ? "保存しています…" : "共有設定を保存"}
         </button>
         {notice && (
           <p className="notice-inline" role="status">

@@ -55,15 +55,18 @@ Pull Requestからマージします。
    `pre-push`はGitHub Actionsの`ci-verify`、`ci-early`、`ci-coverage`、
    `ci-nixos-e2e`をまとめて実行し、通常検証、現在のCPU上でのnativeコンパイル、
    軽量ブラウザー試験、カバレッジ測定、すべてのNixOS VM E2Eテストを確認します。
+   aarch64 Linux上では配布用Nix packageも構築します。別のCPUではこのnative構築を省略するため、
+   Pull Requestでは集約チェック`verify`が`native-aarch64`の成功を必須にします。
    `cargo make`をタスク名なしで実行した場合も同じ検証を行います。
    開発中に短い周期で確認する場合は`cargo make verify`を使用し、push前には
    `pre-push`を省略しないでください。
 
    CIでは、包括的なNixOS VMと並列に、早期検出用の二つの検査も実行します。
 
-   - `native-aarch64`はGitHubの`ubuntu-24.04-arm`標準runnerで`cargo make native-check`を
-     実行し、aarch64 Linux上で全Rust targetとfeatureをコンパイルします。x86_64上でも
-     同じtaskを実行できますが、CPU固有の問題を再現するにはaarch64環境が必要です。
+   - `native-aarch64`はGitHubの`ubuntu-24.04-arm`標準runnerで`cargo make native-check`と
+     `cargo make release-package-aarch64`を実行し、aarch64 Linux上で全Rust targetとfeatureを
+     コンパイルしたうえで、配布するNix packageを実際に構築します。`native-check`はx86_64上でも
+     実行できますが、aarch64 packageの構築とCPU固有の問題の再現にはaarch64環境が必要です。
    - `browser-smoke`は`cargo make browser-smoke`を実行し、production用Web UIをChromiumで
      開いて、起動、API応答の表示、主要なリンク、ブラウザー例外の不在を確認します。
      `cargo make browser-editor-firefox`はFirefoxで編集欄の書体と範囲選択を確認します。APIは
@@ -84,7 +87,7 @@ Pull Requestからマージします。
    | `changes` | 文書だけの変更かを一か所の規則で分類 | `bash .github/scripts/classify-ci-change.sh upstream/main HEAD` | path分類stepの標準出力 |
    | `verify` | 整形、静的解析、単体・結合試験、依存・ログ・公開契約・文書・Nix評価 | `cargo make ci-verify` | 失敗したtask名と標準出力 |
    | `coverage` | workspaceと統合経路のcoverage測定 | `cargo make ci-coverage` | `coverage-*` artifactの概要とJSON |
-   | `native-aarch64` | aarch64 Linux上の全Rust target・featureのコンパイル | `cargo make native-check` | Cargoの診断 |
+   | `native-aarch64` | aarch64 Linux上の全Rust target・featureとNix packageの構築 | aarch64 Linux上で`cargo make native-check`と`cargo make release-package-aarch64` | CargoとNixの診断 |
    | `browser-smoke` | production用Web UIの起動、主要操作、固定画像、ChromiumとFirefoxの編集欄互換性、ブラウザー例外 | `cargo make browser-smoke`と`cargo make browser-editor-firefox` | 失敗時の`browser-smoke-failure-*` artifactにscreenshotとtrace |
    | `nixos-e2e` | Nix package、module、TLS、Kanidm、Auth0 token、永続化、保守unit | `cargo make ci-nixos-e2e` | 試験実行失敗時の`nixos-e2e-failure-*` artifactに、秘密情報を除去したrunner出力 |
    | `release-gate` | 公開対象の版、受入結果、全検証、Nix packageを公開前に確認 | `MARGINALIS_RELEASE_TAG=vX.Y.Z cargo make release-gate` | 失敗したtask名と標準出力 |
@@ -162,11 +165,12 @@ Pull Requestからマージします。
    ```
 
 6. Pull Request作成後にrebase方式のauto-mergeを設定します。`main`のrulesetでは
-   GitHub Actionsの`verify`と`nixos-e2e`が必須であるため、このチェックと必要なレビューが完了するまで
+   GitHub Actionsの`verify`と`nixos-e2e`が必須です。`verify`は中核検査に加えて
+   `native-aarch64`の成功も集約するため、これらのチェックと必要なレビューが完了するまで
    実際のマージは行われません。文書だけの変更でもチェック名は維持し、`verify`は文書検査、
    `nixos-e2e`は明示的な省略成功として完了するため、必須チェックが待機状態に残りません。
-   `native-aarch64`と`browser-smoke`は、継続的に安定して完了することを確認してからrulesetの
-   必須チェックへ追加します。追加前も失敗を無視せず、原因を解消してからマージします。
+   `browser-smoke`は、継続的に安定して完了することを確認してからrulesetの必須チェックへ
+   追加します。追加前も失敗を無視せず、原因を解消してからマージします。
 
    ```sh
    gh pr merge --auto --rebase --delete-branch

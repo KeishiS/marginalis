@@ -41,7 +41,7 @@ jobs:
           docs_only="$(bash .github/scripts/classify-ci-change.sh "$base" "$GITHUB_SHA")"
           echo "docs-only=$docs_only" >>"$GITHUB_OUTPUT"
 
-  verify:
+  verify-core:
     needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -89,7 +89,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -97,6 +97,24 @@ jobs:
         uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Check all Rust targets natively
         run: nix develop --command cargo make native-check
+      - name: Build the aarch64 Linux release package
+        run: nix develop --command cargo make release-package-aarch64
+
+  verify:
+    needs: [changes, verify-core, native-aarch64]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the core and native checks
+        env:
+          CORE_RESULT: ${{ needs.verify-core.result }}
+          NATIVE_RESULT: ${{ needs.native-aarch64.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
+        run: |
+          test "$CORE_RESULT" = success
+          if [ "$DOCS_ONLY" != true ]; then
+            test "$NATIVE_RESULT" = success
+          fi
 
   browser-smoke:
     needs: changes
