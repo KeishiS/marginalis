@@ -11,12 +11,18 @@ use serde_json::Value;
 
 /// 引用と参考文献の表示規則。
 ///
-/// 現在は著者・年の1種類だけを提供します。利用者が選べるようにする作業は別に扱います。
+/// ノートのheaderへ`:marginalis-citation-style:`を書いて選びます。書かないノートは
+/// [`CitationStyle::default`]になります。値の正本は`NOTE_POLICY.allowed_citation_styles`に
+/// あり、入力検査と`get_note_profile`の広告はどちらもそこから導きます。
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CitationStyle {
     /// 本文は`(Smith 2024)`、一覧は`Smith, A. (2024). 題名.`の形。
     #[default]
     AuthorYear,
+    /// 本文は`[1]`、一覧は`[1] Smith, A. (2024). 題名.`の形。
+    ///
+    /// 番号は本文での初出順に振ります。同じ文献を何度引用しても同じ番号になります。
+    Numeric,
 }
 
 /// 発行年が読み取れない項目の表示。
@@ -26,8 +32,43 @@ const UNKNOWN_YEAR: &str = "n.d.";
 const ET_AL_THRESHOLD: usize = 3;
 
 impl CitationStyle {
+    /// 属性へ書かれた値から表示規則を選ぶ。
+    ///
+    /// 値の検査は入力検査が済ませているため、ここで知らない値を受け取った場合は既定へ
+    /// 落とします。表示を失敗させません。
+    #[must_use]
+    pub fn from_attribute(value: &str) -> Self {
+        match value {
+            "numeric" => Self::Numeric,
+            _ => Self::default(),
+        }
+    }
+
+    /// 引用全体を囲む記号。
+    #[must_use]
+    pub fn brackets(self) -> (&'static str, &'static str) {
+        match self {
+            Self::AuthorYear => ("(", ")"),
+            Self::Numeric => ("[", "]"),
+        }
+    }
+
+    /// 一つの引用が複数のcitation keyを名指すときの区切り。
+    #[must_use]
+    pub fn key_separator(self) -> &'static str {
+        match self {
+            Self::AuthorYear => "; ",
+            Self::Numeric => ", ",
+        }
+    }
+
     /// 本文中の引用に使う短い表示を作る。
-    pub fn inline_label(self, item: &BibliographyItem) -> String {
+    ///
+    /// `number`は本文での初出順に振った番号です。著者・年の表示では使いません。
+    pub fn inline_label(self, item: &BibliographyItem, number: usize) -> String {
+        if self == Self::Numeric {
+            return number.to_string();
+        }
         let csl = parsed(item);
         let year = year(&csl);
         match names(&csl) {
@@ -40,7 +81,14 @@ impl CitationStyle {
     }
 
     /// 参考文献一覧の1項目に使う表示を作る。
-    pub fn entry_text(self, item: &BibliographyItem) -> String {
+    ///
+    /// 番号で示すスタイルでは先頭へ`[1]`を置きます。AsciiDocのbibliography anchorは表示
+    /// テキストを持たない要素として出力されるため、番号は項目の本文として書きます。
+    pub fn entry_text(self, item: &BibliographyItem, number: usize) -> String {
+        let numbered = |text: String| match self {
+            Self::Numeric => format!("[{number}] {text}"),
+            Self::AuthorYear => text,
+        };
         let csl = parsed(item);
         let mut parts = Vec::new();
         let names = names(&csl);
@@ -64,11 +112,13 @@ impl CitationStyle {
             // 年しか読み取れない場合でも、どの項目かは分かるようにする。
             parts.insert(0, item.citation_key().to_owned());
         }
-        parts
-            .iter()
-            .map(|part| ended_with_period(part))
-            .collect::<Vec<_>>()
-            .join(" ")
+        numbered(
+            parts
+                .iter()
+                .map(|part| ended_with_period(part))
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
     }
 }
 
@@ -252,9 +302,12 @@ mod tests {
             "issued": { "date-parts": [[2024, 5, 1]] }
         }));
 
-        assert_eq!(CitationStyle::AuthorYear.inline_label(&item), "Smith 2024");
         assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&item),
+            CitationStyle::AuthorYear.inline_label(&item, 1),
+            "Smith 2024"
+        );
+        assert_eq!(
+            CitationStyle::AuthorYear.entry_text(&item, 1),
             "Smith, A. (2024). An Example Article."
         );
     }
@@ -278,15 +331,15 @@ mod tests {
         }));
 
         assert_eq!(
-            CitationStyle::AuthorYear.inline_label(&two),
+            CitationStyle::AuthorYear.inline_label(&two, 1),
             "Smith & Tanaka 2024"
         );
         assert_eq!(
-            CitationStyle::AuthorYear.inline_label(&many),
+            CitationStyle::AuthorYear.inline_label(&many, 1),
             "Smith et al. 2024"
         );
         assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&two),
+            CitationStyle::AuthorYear.entry_text(&two, 1),
             "Smith, & Tanaka. (2024)."
         );
     }
@@ -295,8 +348,14 @@ mod tests {
     fn missing_values_are_omitted_and_never_invented() {
         let bare = item(serde_json::json!({ "id": "bare", "type": "book" }));
 
-        assert_eq!(CitationStyle::AuthorYear.inline_label(&bare), "bare n.d.");
-        assert_eq!(CitationStyle::AuthorYear.entry_text(&bare), "bare. (n.d.).");
+        assert_eq!(
+            CitationStyle::AuthorYear.inline_label(&bare, 1),
+            "bare n.d."
+        );
+        assert_eq!(
+            CitationStyle::AuthorYear.entry_text(&bare, 1),
+            "bare. (n.d.)."
+        );
     }
 
     #[test]
@@ -310,11 +369,11 @@ mod tests {
         }));
 
         assert_eq!(
-            CitationStyle::AuthorYear.inline_label(&organisation),
+            CitationStyle::AuthorYear.inline_label(&organisation, 1),
             "Example Institute 2023"
         );
         assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&organisation),
+            CitationStyle::AuthorYear.entry_text(&organisation, 1),
             "Example Institute. (2023). Annual Report. https://example.test/report."
         );
     }
@@ -331,7 +390,7 @@ mod tests {
         }));
 
         assert_eq!(
-            CitationStyle::AuthorYear.entry_text(&with_doi),
+            CitationStyle::AuthorYear.entry_text(&with_doi, 1),
             "Smith, A. M. (2022). Example. Example Journal. https://doi.org/10.1234/example."
         );
     }
@@ -345,7 +404,7 @@ mod tests {
         }));
 
         assert_eq!(
-            CitationStyle::AuthorYear.inline_label(&anonymous),
+            CitationStyle::AuthorYear.inline_label(&anonymous, 1),
             "Untitled Work 2020"
         );
     }

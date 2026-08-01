@@ -601,6 +601,7 @@ impl Notes {
                 source_language_optional: true,
                 allowed_math_languages: vec!["latexmath"],
                 allowed_document_attributes: vec!["marginalis-tags", "sectnums"],
+                allowed_citation_styles: vec!["author-year"],
                 title_forbidden: vec!["empty"],
                 tag_forbidden: vec!["empty"],
             },

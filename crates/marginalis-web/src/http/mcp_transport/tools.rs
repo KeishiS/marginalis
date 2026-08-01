@@ -533,6 +533,12 @@ fn note_profile_output(profile: NoteProfile) -> McpNoteProfileOutput {
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),
+            allowed_citation_styles: profile
+                .syntax
+                .allowed_citation_styles
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
             title_forbidden: profile
                 .syntax
                 .title_forbidden
