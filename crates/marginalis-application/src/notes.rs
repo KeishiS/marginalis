@@ -321,6 +321,12 @@ pub struct NoteCitationSegment {
 pub struct NoteBibliographyEntry {
     pub citation_key: String,
     pub text: String,
+    /// 項目の見出しとして表示する短い文字列。
+    ///
+    /// 番号で示すスタイルでは初出順の番号が入ります。AsciiDocはbibliography anchorの
+    /// カンマ以降を表示テキストとして読み、項目と本文からの参照を`[表示テキスト]`の形に
+    /// します。`None`の場合はcitation keyがそのまま見出しになります。
+    pub label: Option<String>,
 }
 
 /// 描画時に文書adapterへ渡す解決結果一式。
@@ -512,7 +518,8 @@ impl NoteApplication {
                 let item = items.get(key)?;
                 Some(NoteBibliographyEntry {
                     citation_key: key.clone(),
-                    text: style.entry_text(item, numbers[key]),
+                    text: style.entry_text(item),
+                    label: style.entry_label(numbers[key]),
                 })
             })
             .collect();
@@ -1609,8 +1616,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["smith2024", "tanaka2025"]
         );
-        assert!(resolved.entries[0].text.starts_with("[1] "));
-        assert!(resolved.entries[1].text.starts_with("[2] "));
+        // 番号は項目の見出しとして持たせる。書誌情報の記述には混ぜない。
+        assert_eq!(resolved.entries[0].label.as_deref(), Some("1"));
+        assert_eq!(resolved.entries[1].label.as_deref(), Some("2"));
+        assert!(resolved.entries[0].text.starts_with("Smith"));
     }
 
     /// 一つの引用が複数のkeyを名指す場合は、番号を読点で並べる。
@@ -1745,6 +1754,7 @@ mod tests {
             vec![NoteBibliographyEntry {
                 citation_key: "smith2024".into(),
                 text: "Smith, A. (2024). An Example Article.".into(),
+                label: None,
             }]
         );
         assert_eq!(resolved.diagnostics.len(), 1);
