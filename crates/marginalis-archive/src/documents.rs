@@ -347,6 +347,9 @@ pub enum DocumentImportError {
 /// 本文はファイル、識別子や日時はmanifestを正とする。別の道具で本文を編集してから戻せる。
 /// 組み立てたarchiveは現行の契約を名乗るため、呼び出し側が現行規則で全件検証する。manifestの
 /// 版が古い場合の再検証も、この検証で同時に済む。
+///
+/// 返すarchiveは[`Archive::canonical`]の並びにする。manifestは所有者ごとにノートをまとめるため、
+/// 読んだ順のままでは`export-archive`が書き出す並びと違う。
 pub fn archive_from_documents(
     manifest: &DocumentManifest,
     files: &BTreeMap<String, Vec<u8>>,
@@ -433,7 +436,8 @@ pub fn archive_from_documents(
         notes,
         note_acl,
         bibliography_items,
-    })
+    }
+    .canonical())
 }
 
 /// manifestが記録する版が、稼働している版と違うかどうか。
@@ -488,6 +492,82 @@ mod tests {
 
     fn export(snapshot: &LogicalSnapshot) -> DocumentExport {
         create_document_export(snapshot, "0.19.0", "0.23.0", UnixMillis::new(4000))
+    }
+
+    fn identified_item(id: &str, citation_key: &str, owner: &str) -> BibliographyItem {
+        BibliographyItem::create(
+            BibliographyItemId::new(EntityId::from_str(id).expect("UUIDv7")),
+            &identity(owner),
+            citation_key.into(),
+            serde_json::json!({ "id": citation_key, "type": "book", "title": "Example" })
+                .to_string(),
+            UnixMillis::new(1000),
+        )
+    }
+
+    /// 書き出しをそのまま`archive_from_documents`へ渡せる形へ直す。
+    fn exported_files(export: &DocumentExport) -> BTreeMap<String, Vec<u8>> {
+        export
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.contents.clone().into_bytes()))
+            .collect()
+    }
+
+    /// 所有者が2人以上でも、組み立て直したarchiveがsnapshot由来のarchiveと一致する。
+    ///
+    /// manifestは所有者ごとにノートをまとめるため、note IDが所有者をまたいで交互に並ぶと
+    /// 読んだ順とsnapshotの順が食い違う。以前はこの違いだけで`import-documents`が中止した。
+    #[test]
+    fn rebuilding_matches_the_snapshot_archive_across_owners() {
+        let snapshot = LogicalSnapshot::new(
+            vec![
+                note("0197c9bc-0000-7000-8000-000000000001", "A", "alice", false),
+                note("0197c9bc-0000-7000-8000-000000000002", "B", "bob", false),
+                note("0197c9bc-0000-7000-8000-000000000003", "C", "alice", false),
+            ],
+            Vec::new(),
+        )
+        .expect("snapshot")
+        .with_bibliography(vec![
+            // citation_keyの順とitem_idの順をわざと食い違わせる。
+            identified_item(
+                "0197c9bc-0000-7000-8000-0000000000a1",
+                "tanaka2025",
+                "alice",
+            ),
+            identified_item("0197c9bc-0000-7000-8000-0000000000a2", "smith2024", "alice"),
+        ])
+        .expect("bibliography");
+        let exported = export(&snapshot);
+
+        let rebuilt =
+            archive_from_documents(&exported.manifest, &exported_files(&exported), "0.23.0")
+                .expect("rebuild");
+
+        assert_eq!(
+            rebuilt
+                .notes
+                .iter()
+                .map(|note| note.note_id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "0197c9bc-0000-7000-8000-000000000001",
+                "0197c9bc-0000-7000-8000-000000000002",
+                "0197c9bc-0000-7000-8000-000000000003",
+            ]
+        );
+        assert_eq!(
+            rebuilt
+                .bibliography_items
+                .iter()
+                .map(|item| item.item_id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "0197c9bc-0000-7000-8000-0000000000a1",
+                "0197c9bc-0000-7000-8000-0000000000a2",
+            ]
+        );
     }
 
     #[test]
