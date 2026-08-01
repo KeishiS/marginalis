@@ -226,6 +226,59 @@ async fn rendered_note_view_api_maps_missing_and_render_failed_notes_to_stable_e
     assert_eq!(problem["code"], "render_failed");
 }
 
+/// Viteが出力した配布物のすべてに、配信経路があることを確かめる。
+///
+/// 以前は配信する名前を経路へ書き並べていた。分割読み込みでchunkが増えたとき、経路の追加を
+/// 忘れて404になり、moduleとして読み込めずに画面全体が空になった。名前を数えるのではなく、
+/// 実際の出力を1件ずつ引いて確かめる。
+#[tokio::test]
+async fn every_bundled_asset_has_a_route() {
+    let names = crate::http::assets::bundled_asset_names().collect::<Vec<_>>();
+    assert!(
+        names.contains(&"editor.js"),
+        "配布物の一覧が空か、想定と違います: {names:?}"
+    );
+    for name in names {
+        let response = app()
+            .oneshot(
+                Request::get(format!("/assets/{name}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("asset response");
+        assert_eq!(response.status(), StatusCode::OK, "{name}を配信できません");
+        // MIME typeが空だと、ブラウザーはmoduleとして読み込まない。
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        assert!(
+            !content_type.is_empty(),
+            "{name}のMIME typeが空です: {content_type:?}"
+        );
+        if name.ends_with(".js") {
+            assert_eq!(content_type, "text/javascript; charset=utf-8", "{name}");
+        }
+    }
+}
+
+/// 配布物にない名前は404にする。表に無いものを配信しない。
+#[tokio::test]
+async fn an_unknown_bundled_asset_is_not_found() {
+    let response = app()
+        .oneshot(
+            Request::get("/assets/not-present.js")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("asset response");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn frontend_assets_are_served_with_explicit_content_types() {
     let javascript = app()

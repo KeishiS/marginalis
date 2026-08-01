@@ -250,7 +250,7 @@ marginalis-service/src/
 └── maintenance.rs   purge、archive、backup
 
 marginalis-web/src/http/
-├── assets.rs        埋め込み静的アセット
+├── assets.rs        埋め込み静的アセット（配布物の一覧はbuild.rsが生成）
 ├── auth.rs          browser session、Cookie、CSRF
 ├── html.rs          共通HTMLレイアウト
 ├── mcp_transport/  Protected Resource Metadata、Streamable HTTP、認証、tool実行

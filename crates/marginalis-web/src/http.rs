@@ -35,10 +35,7 @@ use tower_http::trace::TraceLayer;
 use tracing::Span;
 
 use self::{
-    assets::{
-        editor_javascript, editor_stylesheet, mathjax_font_javascript, mathjax_javascript,
-        page_javascript, web_font,
-    },
+    assets::{bundle_asset, mathjax_font_javascript, web_font},
     auth::{begin_login, complete_login, logout},
     bibliography::{
         add_bibliography_item, delete_bibliography_item, search_bibliography,
@@ -102,15 +99,14 @@ pub fn router(state: ApiState) -> Router {
         .route("/notes/{note_id}/edit", get(edit_note_page))
         .route("/notes/{note_id}/access", get(access_note_page))
         .route("/notes/{note_id}", get(view_note))
-        .route("/assets/editor.js", get(editor_javascript))
-        .route("/assets/editor.css", get(editor_stylesheet))
+        // 配布物の名前を書き並べず、ビルド時に作った表から引く。分割読み込みでchunkが増えても
+        // 経路の追加を忘れて配信されない、という失敗が起きない。
+        .route("/assets/{file_name}", get(bundle_asset))
         .route("/assets/fonts/{file_name}", get(web_font))
-        .route("/assets/tex-svg.js", get(mathjax_javascript))
         .route(
             "/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/{file_name}",
             get(mathjax_font_javascript),
         )
-        .route("/assets/page.js", get(page_javascript))
         .route("/api/v3/openapi.json", get(openapi))
         .route("/auth/oidc/login", get(begin_login))
         .route("/auth/oidc/callback", get(complete_login))
