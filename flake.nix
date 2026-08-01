@@ -667,7 +667,7 @@
                 + "test -f \"$backup/marginalis-archive.json\"; "
                 + "jq -e '.format == \"marginalis-archive-13\" "
                 + "and .adocweave_package_version == \"0.23.0\" "
-                + "and .note_profile_version == 4 and (.notes | length == 1)' "
+                + "and .note_profile_version == 5 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
                 + "test $(stat -c %a \"$backup\") = 700; "
                 + "test $(stat -c %a \"$backup/COMPLETE\") = 600; "

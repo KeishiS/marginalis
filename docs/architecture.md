@@ -154,8 +154,14 @@ domainとapplicationの値を観測目的で公開し直さず、利用者identi
 
 ノートの正本は、文書題名、`:marginalis-tags:`などの文書属性、本文を含む完全なAsciiDoc文書
 です。題名とタグは保存時にAdocWeaveで解析し、一覧と検索に使う投影としてSQLiteへ同時に
-保存します。APIから
-題名やタグだけを独立して更新する経路は設けません。
+保存します。APIから題名やタグだけを独立して更新する経路は設けません。
+
+文書headerへ書ける属性の名前は`NOTE_POLICY.allowed_document_attributes`が正本で、入力検査と
+`get_note_profile`の広告の両方をここから導きます。Marginalisが独自に決めた属性の名前は
+`marginalis-`で始めます。AsciiDocの言語仕様は独自属性の命名規則を定めていないため、
+Marginalisが決めた規則です。接頭辞があると、その属性が他のAsciiDoc処理系では意味を持たない
+ことが本文を読むだけで分かり、AsciiDocが後から同じ名前の組込み属性を定義しても意味が
+衝突しません。接頭辞の無い属性はAsciiDocの組込み属性です。
 
 一覧のportはAsciiDoc文書を含まない`NoteSummary`と、現在の利用者の`NoteAccess`を組にした
 `NoteListEntry`を返します。SQLiteでは概要と実効アクセス水準を一つの問い合わせで取得し、
