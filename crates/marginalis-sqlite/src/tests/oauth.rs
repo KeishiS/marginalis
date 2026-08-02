@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    Clock, McpAuthorizationRequest, McpClientMetadataResolver, McpOAuthApplication,
-    McpOAuthRepositoryError, Random,
+    Clock, McpAuthorizationRequest, McpClientMetadataResolver, McpClientRegistrationMethod,
+    McpOAuthApplication, McpOAuthRepositoryError, McpRegisteredOAuthClient, Random,
 };
 use marginalis_domain::EntityId as ApplicationEntityId;
 use sha2::{Digest, Sha256};
@@ -34,7 +37,10 @@ impl Random for SequentialRandom {
 }
 
 /// Client ID Metadata Documentの取得結果だけを差し替える。永続化はSQLiteの実装を使う。
-struct StaticMetadataResolver(McpOAuthClient);
+struct StaticMetadataResolver {
+    client: McpOAuthClient,
+    calls: AtomicUsize,
+}
 
 #[async_trait::async_trait]
 impl McpClientMetadataResolver for StaticMetadataResolver {
@@ -42,7 +48,18 @@ impl McpClientMetadataResolver for StaticMetadataResolver {
         &self,
         client_id: &str,
     ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
-        Ok((client_id == self.0.client_id).then(|| self.0.clone()))
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Ok((client_id == self.client.client_id).then(|| self.client.clone()))
+    }
+}
+
+fn registered_client(
+    client: &McpOAuthClient,
+    registration_method: McpClientRegistrationMethod,
+) -> McpRegisteredOAuthClient {
+    McpRegisteredOAuthClient {
+        client: client.clone(),
+        registration_method,
     }
 }
 
@@ -62,13 +79,17 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         redirect_uris: vec!["https://client.example.test/callback".into()],
     };
     let resource_uri = "https://notes.example.test/mcp".to_owned();
+    let resolver = Arc::new(StaticMetadataResolver {
+        client: client.clone(),
+        calls: AtomicUsize::new(0),
+    });
     let application = McpOAuthApplication::new(
         Arc::new(database.clone()),
         Arc::new(FixedClock(1_000)),
         Arc::new(SequentialRandom(std::sync::Mutex::new(0))),
         resource_uri.clone(),
     )
-    .with_client_metadata_resolver(Arc::new(StaticMetadataResolver(client.clone())));
+    .with_client_metadata_resolver(resolver.clone());
 
     let verifier = "a".repeat(43);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
@@ -83,6 +104,10 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         .await
         .expect("validated authorization request");
     assert_eq!(validated.client, client);
+    assert_eq!(
+        validated.registration_method,
+        McpClientRegistrationMethod::MetadataDocument
+    );
 
     let code = application
         .authorize(actor("https://id.example.test", "alice"), validated)
@@ -90,11 +115,30 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         .expect("authorization code");
     assert_eq!(
         database
-            .mcp_client(&client.client_id)
+            .registered_mcp_client(&client.client_id)
             .await
             .expect("lookup"),
-        Some(client.clone()),
+        Some(McpRegisteredOAuthClient {
+            client: client.clone(),
+            registration_method: McpClientRegistrationMethod::MetadataDocument,
+        }),
         "同意した時点でclientを登録する"
+    );
+
+    application
+        .validate_authorization_request(&McpAuthorizationRequest {
+            client_id: client.client_id.clone(),
+            redirect_uri: Some(client.redirect_uris[0].clone()),
+            resource_uri: resource_uri.clone(),
+            scopes: vec!["notes:read".into()],
+            code_challenge: URL_SAFE_NO_PAD.encode(Sha256::digest(b"b".repeat(43))),
+        })
+        .await
+        .expect("revalidated authorization request");
+    assert_eq!(
+        resolver.calls.load(Ordering::Relaxed),
+        2,
+        "永続化したmetadata document clientも取得し直す"
     );
 
     let pair = application
@@ -142,7 +186,7 @@ async fn rfc7009_revocation_revokes_the_whole_token_family() {
     database
         .issue_mcp_authorization_code(
             "code",
-            &client,
+            &registered_client(&client, McpClientRegistrationMethod::Dynamic),
             &grant,
             "challenge",
             UnixMillis::new(100),
@@ -233,7 +277,7 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
     database
         .issue_mcp_authorization_code(
             "code",
-            &client,
+            &registered_client(&client, McpClientRegistrationMethod::Dynamic),
             &grant,
             "challenge",
             UnixMillis::new(100),
@@ -494,6 +538,55 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
 }
 
 #[tokio::test]
+async fn metadata_document_clients_do_not_consume_the_dynamic_registration_bound() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let metadata_client = McpOAuthClient {
+        client_id: "https://client.example.test/metadata.json".into(),
+        display_name: "Metadata client".into(),
+        redirect_uris: vec!["https://client.example.test/callback".into()],
+    };
+    let grant = McpAuthorizationGrant {
+        actor: actor("https://id.example.test", "alice"),
+        client_id: metadata_client.client_id.clone(),
+        redirect_uri: metadata_client.redirect_uris[0].clone(),
+        resource_uri: "https://notes.example.test/mcp".into(),
+        scopes: vec!["notes:read".into()],
+    };
+    database
+        .issue_mcp_authorization_code(
+            "metadata-code",
+            &registered_client(
+                &metadata_client,
+                McpClientRegistrationMethod::MetadataDocument,
+            ),
+            &grant,
+            "challenge",
+            UnixMillis::new(1_000),
+            UnixMillis::new(0),
+        )
+        .await
+        .expect("metadata client");
+
+    assert!(
+        database
+            .register_mcp_client_bounded(
+                &McpOAuthClient {
+                    client_id: "dynamic-client".into(),
+                    display_name: "Dynamic client".into(),
+                    redirect_uris: vec!["https://dynamic.example.test/callback".into()],
+                },
+                UnixMillis::new(1),
+                1,
+            )
+            .await
+            .expect("dynamic registration"),
+        "metadata document clientはDCRの上限へ含めない"
+    );
+}
+
+#[tokio::test]
 async fn authorization_code_replay_revokes_the_issued_token_family() {
     let database = SqliteDatabase::connect("sqlite::memory:")
         .await
@@ -517,7 +610,7 @@ async fn authorization_code_replay_revokes_the_issued_token_family() {
     database
         .issue_mcp_authorization_code(
             "code",
-            &client,
+            &registered_client(&client, McpClientRegistrationMethod::Dynamic),
             &grant,
             "challenge",
             UnixMillis::new(100),
@@ -636,7 +729,7 @@ async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
         database
             .issue_mcp_authorization_code(
                 code,
-                &client,
+                &registered_client(&client, McpClientRegistrationMethod::Dynamic),
                 &grant,
                 "challenge",
                 UnixMillis::new(1_000),

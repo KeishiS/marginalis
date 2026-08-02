@@ -28,7 +28,9 @@
 ### 追加
 
 - MCPクライアントの登録方式としてClient ID Metadata Documentに対応した。HTTPSのURLを`client_id`と
-  して使い、そのURLでclient名と`redirect_uris`を公開する方式である。事前登録を必要としない。
+  して使い、そのURLでclient名と`redirect_uris`を公開する方式である。事前登録を必要とせず、DCRとは
+  登録上限を分けて管理する。有効な文書だけをHTTPのcache指示に従って保持し、失敗や不正な文書は
+  保持しない。同じclientの取得集約、全体の同時実行数と取得回数、DNSを含む処理時間を制限する。
 - `DELETE /api/v3/mcp-authorizations/{client_id}`を追加した。利用者本人のsessionとCSRFトークンで、
   MCPクライアント単位に認可を取り消す。対象のaccess tokenとrefresh tokenをtoken family単位で
   直ちに失効する。

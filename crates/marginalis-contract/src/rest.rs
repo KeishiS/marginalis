@@ -627,6 +627,7 @@ pub fn openapi_document() -> Value {
                 "BadRequest": problem_response("the request syntax or If-Match value is invalid"),
                 "AuthenticationRequired": problem_response("OIDC session is required"),
                 "CsrfRejected": problem_response("same-origin or CSRF validation failed"),
+                "Unavailable": problem_response("the service is temporarily unavailable"),
                 "ValidationFailed": problem_response("note input is invalid"),
                 "UnprocessableNote": problem_response("the note input is invalid or cannot be rendered safely")
             }
@@ -700,7 +701,7 @@ fn rest_paths() -> Value {
                 ("400", response_ref("BadRequest")),
                 ("401", response_ref("AuthenticationRequired")),
                 ("403", response_ref("CsrfRejected")),
-                ("404", response_ref("NotFound"))
+                ("503", response_ref("Unavailable"))
             ]))
         },
         "/api/v3/notes/preview": {

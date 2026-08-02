@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use marginalis_application::{
     McpAuthorizationCodeExchange, McpOAuthRepository, McpOAuthRepositoryError,
-    McpRefreshTokenRotation, McpRefreshTokenRotationOutcome,
+    McpRefreshTokenRotation, McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient,
 };
 use marginalis_domain::{McpAuthenticatedActor, McpAuthorizationGrant, McpOAuthClient, UnixMillis};
 
@@ -25,8 +25,8 @@ impl McpOAuthRepository for SqliteDatabase {
     async fn client(
         &self,
         client_id: &str,
-    ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
-        self.mcp_client(client_id)
+    ) -> Result<Option<McpRegisteredOAuthClient>, McpOAuthRepositoryError> {
+        self.registered_mcp_client(client_id)
             .await
             .map_err(|_| McpOAuthRepositoryError)
     }
@@ -34,7 +34,7 @@ impl McpOAuthRepository for SqliteDatabase {
     async fn issue_authorization_code(
         &self,
         code: &str,
-        client: &McpOAuthClient,
+        client: &McpRegisteredOAuthClient,
         grant: &McpAuthorizationGrant,
         code_challenge: &str,
         expires_at: UnixMillis,

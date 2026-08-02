@@ -240,6 +240,34 @@ async fn revoking_an_mcp_authorization_passes_the_client_id_through() {
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
+#[tokio::test]
+async fn revoking_an_mcp_authorization_accepts_an_encoded_metadata_document_client_id() {
+    let response = authenticated_mcp_app()
+        .oneshot(
+            revoke_authorization_request("https%3A%2F%2Fclient.example.test%2Fmetadata.json")
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn revoking_an_mcp_authorization_rejects_an_oversized_client_id() {
+    let response = authenticated_mcp_app()
+        .oneshot(
+            revoke_authorization_request(&"a".repeat(2_049))
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
 /// MCPが無効な構成でも公開RESTの形は変えず、利用できないことを伝える。
 #[tokio::test]
 async fn revoking_an_mcp_authorization_reports_that_mcp_is_unavailable() {

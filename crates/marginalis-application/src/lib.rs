@@ -321,10 +321,25 @@ pub struct McpAuthorizationClient {
     pub redirect_uri: String,
 }
 
+/// Authorization Serverがclient情報を得た方式。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum McpClientRegistrationMethod {
+    Dynamic,
+    MetadataDocument,
+}
+
+/// 永続化したclientと、その情報を更新する際に使う登録方式。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpRegisteredOAuthClient {
+    pub client: McpOAuthClient,
+    pub registration_method: McpClientRegistrationMethod,
+}
+
 /// client登録とredirect URIを照合し、既定scopeも解決した認可要求。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpValidatedAuthorizationRequest {
     pub client: McpOAuthClient,
+    pub registration_method: McpClientRegistrationMethod,
     pub redirect_uri: String,
     pub resource_uri: String,
     pub scopes: Vec<String>,
