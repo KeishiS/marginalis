@@ -65,7 +65,7 @@ sudo -u marginalis marginalis migrate-archive \
 ```
 
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
-現行の`migrate-archive`でarchive 13へ変換してから、空のschema 14へ取り込んでください。
+現行の`migrate-archive`でarchive 13へ変換してから、空のschema 15へ取り込んでください。
 この経路では全ノートをAdocWeave 0.27.0の規則で再検証し、題名、タグ、参照索引を再構築します。
 ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
@@ -167,9 +167,9 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 ## 以前のarchiveからの移行
 
 v0.18.0が作成したarchive 11、v0.16.1が作成したarchive 10、v0.16.0が作成したarchive 9、
-v0.15.0が作成したarchive 8は、復元前に現行のarchive 13へ変換します。SQLite schema 14には引用の索引とMCP OAuthの状態表があるため、
+v0.15.0が作成したarchive 8は、復元前に現行のarchive 13へ変換します。SQLite schema 15には引用の索引とMCP OAuthの状態表があるため、
 稼働中の旧databaseファイルはそのまま使用できません。archiveを書き出してから変換し、空の
-schema 14へ復元してください。
+schema 15へ復元してください。
 
 ```sh
 sudo -u marginalis marginalis migrate-archive \
@@ -207,10 +207,10 @@ AdocWeave 0.27.0でmetadataを再構築するため、databaseファイルを直
    v0.10.0で修正し、archive 7の書き出しからやり直します。エラーに示された`position`は、
    archiveの`notes`または`note_acl`配列内の1から始まる位置です。診断へ本文や識別子は
    出力されません。
-5. 成功したarchive 13を、次節の手順で空のschema 14へ取り込みます。
+5. 成功したarchive 13を、次節の手順で空のschema 15へ取り込みます。
 
 CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行操作を適用し、入力archiveの不変、
-旧archiveの直接取込拒否、schema 14でのノート、ACL、参照、削除状態、revisionの一致、archive 13の
+旧archiveの直接取込拒否、schema 15でのノート、ACL、参照、削除状態、revisionの一致、archive 13の
 再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
 
 ## 他の道具で読める形での取り出し

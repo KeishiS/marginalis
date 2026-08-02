@@ -539,11 +539,30 @@ pub struct AuthenticatedSession {
     pub absolute_expires_at: UnixMillis,
 }
 
+/// 登録情報との照合を終えたredirect URIと、認可要求での指定有無。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum McpResolvedRedirectUri {
+    Supplied(String),
+    Inferred(String),
+}
+
+impl McpResolvedRedirectUri {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Supplied(value) | Self::Inferred(value) => value,
+        }
+    }
+
+    pub fn was_supplied(&self) -> bool {
+        matches!(self, Self::Supplied(_))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthorizationGrant {
     pub actor: Actor,
     pub client_id: String,
-    pub redirect_uri: String,
+    pub redirect_uri: McpResolvedRedirectUri,
     pub resource_uri: String,
     pub scopes: Vec<String>,
 }

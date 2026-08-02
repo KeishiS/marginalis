@@ -10,7 +10,7 @@ use url::Url;
 use crate::{
     Clock, McpAuthorizationClient, McpAuthorizationCodeExchange, McpAuthorizationRequest,
     McpClientRegistrationMethod, McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation,
-    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient, McpTokenPair,
+    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient, McpResolvedRedirectUri, McpTokenPair,
     McpValidatedAuthorizationRequest, Random,
 };
 
@@ -178,7 +178,7 @@ impl McpOAuthApplication {
         request: &McpAuthorizationRequest,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthError> {
         let resolved = self
-            .resolve_authorization_client(&request.client_id, Some(&request.redirect_uri))
+            .resolve_authorization_client(&request.client_id, request.redirect_uri.as_deref())
             .await?;
         self.validate_resolved_authorization_request(request, resolved)
     }
@@ -192,12 +192,20 @@ impl McpOAuthApplication {
         if request.client_id != resolved.client.client_id {
             return Err(McpOAuthError::InvalidClient);
         }
-        if request.redirect_uri != resolved.redirect_uri {
+        if request
+            .redirect_uri
+            .as_ref()
+            .is_some_and(|redirect_uri| redirect_uri != &resolved.redirect_uri)
+        {
             return Err(McpOAuthError::InvalidRedirectUri);
         }
         let client = resolved.client;
         let registration_method = resolved.registration_method;
-        let redirect_uri = resolved.redirect_uri;
+        let redirect_uri = if request.redirect_uri.is_some() {
+            McpResolvedRedirectUri::Supplied(resolved.redirect_uri)
+        } else {
+            McpResolvedRedirectUri::Inferred(resolved.redirect_uri)
+        };
         if !resource_uri_matches(&self.resource_uri, &request.resource_uri) {
             return Err(McpOAuthError::InvalidTarget);
         }
@@ -292,9 +300,6 @@ impl McpOAuthApplication {
         if !resource_uri_matches(&self.resource_uri, &resource_uri) {
             return Err(McpOAuthError::InvalidTarget);
         }
-        if redirect_uri.is_none() {
-            return Err(McpOAuthError::InvalidGrant);
-        }
         if !valid_pkce_verifier(&verifier) {
             return Err(McpOAuthError::InvalidGrant);
         }
@@ -376,10 +381,7 @@ impl McpOAuthApplication {
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;
         let access_scopes = match outcome {
-            McpRefreshTokenRotationOutcome::Rotated {
-                grant: _,
-                access_scopes,
-            } => access_scopes,
+            McpRefreshTokenRotationOutcome::Rotated { access_scopes } => access_scopes,
             McpRefreshTokenRotationOutcome::InvalidToken => {
                 return Err(McpOAuthError::InvalidGrant);
             }

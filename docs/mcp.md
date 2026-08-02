@@ -31,6 +31,8 @@ Credentials Grant、client secretによる公開clientの認証には対応し�
 Authorization Serverは次を検査します。
 
 - 登録済みの`client_id`と`redirect_uri`の完全一致。loopback URIでは接続ごとのport変更だけを許可します。
+  redirect URIの登録が1件だけなら、認可要求では`redirect_uri`を省略できます。認可要求で指定した
+  場合は、token要求にも同じ値を指定する必要があります。
 - MCP endpointと一致する`resource`。
 - `notes:read`、`notes:write`、`notes:delete`のいずれかから成る`scope`。
 - 43文字のS256 challengeと、43文字以上128文字以下のPKCE verifier。

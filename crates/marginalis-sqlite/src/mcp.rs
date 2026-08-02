@@ -35,8 +35,8 @@ impl SqliteDatabase {
             now,
         )
         .await?;
-        sqlx::query("INSERT INTO mcp_authorization_codes (code_hash, client_id, redirect_uri, resource_uri, issuer, subject, scopes, code_challenge, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(code)).bind(&client.client_id).bind(&grant.redirect_uri).bind(&grant.resource_uri)
+        sqlx::query("INSERT INTO mcp_authorization_codes (code_hash, client_id, redirect_uri, redirect_uri_was_supplied, resource_uri, issuer, subject, scopes, code_challenge, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(hash_token(code)).bind(&client.client_id).bind(grant.redirect_uri.as_str()).bind(grant.redirect_uri.was_supplied()).bind(&grant.resource_uri)
             .bind(grant.actor.issuer()).bind(grant.actor.subject())
             .bind(grant.scopes.join(" ")).bind(code_challenge).bind(expires_at.get())
             .execute(&mut *transaction).await.map_err(database_error)?;
@@ -106,6 +106,9 @@ impl SqliteDatabase {
     }
 
     /// 認可codeを一度だけ消費してtoken pairを発行し、再利用時は発行済みfamilyを失効する。
+    ///
+    /// 認可要求でredirect URIが指定されていた場合は、token要求でも同じ値を必須とする。
+    /// 省略されていた場合は、token要求での省略または解決済みの同じ値を受け付ける。
     pub async fn exchange_mcp_authorization_code(
         &self,
         exchange: McpAuthorizationCodeExchange,
@@ -116,14 +119,17 @@ impl SqliteDatabase {
         let row = sqlx::query(
             "UPDATE mcp_authorization_codes SET consumed_at_ms = ?
              WHERE code_hash = ? AND client_id = ?
-               AND redirect_uri = ?
+               AND ((redirect_uri_was_supplied = 1 AND redirect_uri = ?)
+                    OR (redirect_uri_was_supplied = 0 AND (? IS NULL OR redirect_uri = ?)))
                AND resource_uri = ? AND code_challenge = ?
                AND consumed_at_ms IS NULL AND expires_at_ms > ?
-             RETURNING redirect_uri, issuer, subject, scopes",
+             RETURNING redirect_uri, redirect_uri_was_supplied, issuer, subject, scopes",
         )
         .bind(now.get())
         .bind(&code_hash)
         .bind(&exchange.client_id)
+        .bind(exchange.redirect_uri.as_deref())
+        .bind(exchange.redirect_uri.as_deref())
         .bind(exchange.redirect_uri.as_deref())
         .bind(&exchange.resource_uri)
         .bind(&exchange.code_challenge)
@@ -135,13 +141,16 @@ impl SqliteDatabase {
             let replayed_family = sqlx::query_scalar::<_, Vec<u8>>(
                 "SELECT token_family_id FROM mcp_authorization_codes
                  WHERE code_hash = ? AND client_id = ?
-                   AND redirect_uri = ?
+                   AND ((redirect_uri_was_supplied = 1 AND redirect_uri = ?)
+                        OR (redirect_uri_was_supplied = 0 AND (? IS NULL OR redirect_uri = ?)))
                    AND resource_uri = ? AND code_challenge = ?
                    AND consumed_at_ms IS NOT NULL
                    AND token_family_id IS NOT NULL",
             )
             .bind(&code_hash)
             .bind(&exchange.client_id)
+            .bind(exchange.redirect_uri.as_deref())
+            .bind(exchange.redirect_uri.as_deref())
             .bind(exchange.redirect_uri.as_deref())
             .bind(&exchange.resource_uri)
             .bind(&exchange.code_challenge)
@@ -165,10 +174,21 @@ impl SqliteDatabase {
             transaction.commit().await.map_err(database_error)?;
             return Ok(None);
         };
+        let redirect_uri = row
+            .try_get::<String, _>("redirect_uri")
+            .map_err(database_error)?;
+        let redirect_uri = if row
+            .try_get::<bool, _>("redirect_uri_was_supplied")
+            .map_err(database_error)?
+        {
+            marginalis_domain::McpResolvedRedirectUri::Supplied(redirect_uri)
+        } else {
+            marginalis_domain::McpResolvedRedirectUri::Inferred(redirect_uri)
+        };
         let grant = McpAuthorizationGrant {
             actor: actor_from_row(&row)?,
             client_id: exchange.client_id,
-            redirect_uri: row.try_get("redirect_uri").map_err(database_error)?,
+            redirect_uri,
             resource_uri: exchange.resource_uri,
             scopes: row
                 .try_get::<String, _>("scopes")
@@ -285,24 +305,18 @@ impl SqliteDatabase {
             transaction.rollback().await.map_err(database_error)?;
             return Ok(McpRefreshTokenRotationOutcome::InvalidScope);
         }
-        let grant = McpAuthorizationGrant {
-            actor: actor_from_row(&row)?,
-            client_id: rotation.client_id,
-            redirect_uri: String::new(),
-            resource_uri: rotation.resource_uri,
-            scopes: original_scopes,
-        };
+        let issuer = row.try_get::<String, _>("issuer").map_err(database_error)?;
+        let subject = row
+            .try_get::<String, _>("subject")
+            .map_err(database_error)?;
         let access_scope_value = access_scopes.join(" ");
-        let refresh_scope_value = grant.scopes.join(" ");
+        let refresh_scope_value = original_scopes.join(" ");
         sqlx::query("INSERT INTO mcp_access_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&rotation.new_access_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(grant.actor.issuer()).bind(grant.actor.subject()).bind(access_scope_value).bind(rotation.access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
+            .bind(hash_token(&rotation.new_access_token)).bind(&rotation.client_id).bind(&rotation.resource_uri).bind(&issuer).bind(&subject).bind(access_scope_value).bind(rotation.access_expires_at.get()).bind(&token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
         sqlx::query("INSERT INTO mcp_refresh_tokens (token_hash, client_id, resource_uri, issuer, subject, scopes, expires_at_ms, token_family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(&rotation.new_refresh_token)).bind(&grant.client_id).bind(&grant.resource_uri).bind(grant.actor.issuer()).bind(grant.actor.subject()).bind(refresh_scope_value).bind(rotation.refresh_expires_at.get()).bind(token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
+            .bind(hash_token(&rotation.new_refresh_token)).bind(&rotation.client_id).bind(&rotation.resource_uri).bind(issuer).bind(subject).bind(refresh_scope_value).bind(rotation.refresh_expires_at.get()).bind(token_family_id).execute(&mut *transaction).await.map_err(database_error)?;
         transaction.commit().await.map_err(database_error)?;
-        Ok(McpRefreshTokenRotationOutcome::Rotated {
-            grant,
-            access_scopes,
-        })
+        Ok(McpRefreshTokenRotationOutcome::Rotated { access_scopes })
     }
 
     pub async fn revoke_mcp_client_tokens(

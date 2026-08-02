@@ -19,7 +19,8 @@
   `services.marginalis.mcp.enable`を使う場合は設定の変更が不要である。
 - NixOSモジュールの`services.marginalis.mcp.authorization`を削除した。この設定を書いている場合は
   取り除く。issuerと各endpointは`baseUrl`から自動的に導く。
-- SQLiteスキーマを13から14へ更新した。MCPのclient、認可code、tokenを保存する表を追加したため、
+- SQLiteスキーマを13から15へ更新した。MCPのclient、認可code、tokenを保存する表と、認可要求で
+  `redirect_uri`が指定されたかを記録する項目を追加したため、
   稼働中の旧データベースファイルはそのまま使用できない。更新前に`export-archive`を実行し、
   新しい版で空の`dataDir`へ`import-archive`する。archiveの形式は13のまま変わらない。
 - MCPの起動条件を変更した。認可に外部サービスを使わなくなったため、起動可否はKanidmの

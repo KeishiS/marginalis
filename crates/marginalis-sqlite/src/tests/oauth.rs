@@ -96,7 +96,7 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
     let validated = application
         .validate_authorization_request(&McpAuthorizationRequest {
             client_id: client.client_id.clone(),
-            redirect_uri: client.redirect_uris[0].clone(),
+            redirect_uri: None,
             resource_uri: resource_uri.clone(),
             scopes: vec!["notes:read".into(), "notes:write".into()],
             code_challenge: challenge,
@@ -104,6 +104,7 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         .await
         .expect("validated authorization request");
     assert_eq!(validated.client, client);
+    assert!(!validated.redirect_uri.was_supplied());
     assert_eq!(
         validated.registration_method,
         McpClientRegistrationMethod::MetadataDocument
@@ -128,7 +129,7 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
     application
         .validate_authorization_request(&McpAuthorizationRequest {
             client_id: client.client_id.clone(),
-            redirect_uri: client.redirect_uris[0].clone(),
+            redirect_uri: Some(client.redirect_uris[0].clone()),
             resource_uri: resource_uri.clone(),
             scopes: vec!["notes:read".into()],
             code_challenge: URL_SAFE_NO_PAD.encode(Sha256::digest(b"b".repeat(43))),
@@ -145,7 +146,7 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         .exchange_authorization_code(
             code,
             client.client_id.clone(),
-            Some(client.redirect_uris[0].clone()),
+            None,
             resource_uri.clone(),
             verifier,
         )
@@ -179,7 +180,7 @@ async fn rfc7009_revocation_revokes_the_whole_token_family() {
     let grant = McpAuthorizationGrant {
         actor: actor("https://id.example", "alice"),
         client_id: client.client_id.clone(),
-        redirect_uri: client.redirect_uris[0].clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example/mcp".into(),
         scopes: vec!["notes:read".into()],
     };
@@ -199,7 +200,7 @@ async fn rfc7009_revocation_revokes_the_whole_token_family() {
             McpAuthorizationCodeExchange {
                 code: "code".into(),
                 client_id: client.client_id.clone(),
-                redirect_uri: Some(grant.redirect_uri.clone()),
+                redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
                 resource_uri: grant.resource_uri.clone(),
                 code_challenge: "challenge".into(),
                 access_token: "access".into(),
@@ -270,7 +271,7 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
     let grant = McpAuthorizationGrant {
         actor: actor("https://id.example.test", "alice"),
         client_id: client.client_id.clone(),
-        redirect_uri: client.redirect_uris[0].clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example.test/mcp".into(),
         scopes: vec!["notes:read".into(), "notes:write".into()],
     };
@@ -291,7 +292,7 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
                 McpAuthorizationCodeExchange {
                     code: "code".into(),
                     client_id: grant.client_id.clone(),
-                    redirect_uri: Some(grant.redirect_uri.clone()),
+                    redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
                     resource_uri: grant.resource_uri.clone(),
                     code_challenge: "wrong-challenge".into(),
                     access_token: "wrong-access".into(),
@@ -311,7 +312,27 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
                 McpAuthorizationCodeExchange {
                     code: "code".into(),
                     client_id: grant.client_id.clone(),
-                    redirect_uri: Some(grant.redirect_uri.clone()),
+                    redirect_uri: None,
+                    resource_uri: grant.resource_uri.clone(),
+                    code_challenge: "challenge".into(),
+                    access_token: "missing-redirect-access".into(),
+                    refresh_token: "missing-redirect-refresh".into(),
+                    access_expires_at: UnixMillis::new(100),
+                    refresh_expires_at: UnixMillis::new(1_000),
+                },
+                UnixMillis::new(1),
+            )
+            .await
+            .expect("missing redirect URI")
+            .is_none()
+    );
+    assert!(
+        database
+            .exchange_mcp_authorization_code(
+                McpAuthorizationCodeExchange {
+                    code: "code".into(),
+                    client_id: grant.client_id.clone(),
+                    redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
                     resource_uri: grant.resource_uri.clone(),
                     code_challenge: "challenge".into(),
                     access_token: "access".into(),
@@ -550,7 +571,7 @@ async fn metadata_document_clients_do_not_consume_the_dynamic_registration_bound
     let grant = McpAuthorizationGrant {
         actor: actor("https://id.example.test", "alice"),
         client_id: metadata_client.client_id.clone(),
-        redirect_uri: metadata_client.redirect_uris[0].clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(metadata_client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example.test/mcp".into(),
         scopes: vec!["notes:read".into()],
     };
@@ -603,7 +624,7 @@ async fn authorization_code_replay_revokes_the_issued_token_family() {
     let grant = McpAuthorizationGrant {
         actor: actor("https://id.example", "alice"),
         client_id: client.client_id.clone(),
-        redirect_uri: client.redirect_uris[0].clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example/mcp".into(),
         scopes: vec!["notes:read".into()],
     };
@@ -623,7 +644,7 @@ async fn authorization_code_replay_revokes_the_issued_token_family() {
             McpAuthorizationCodeExchange {
                 code: "code".into(),
                 client_id: grant.client_id.clone(),
-                redirect_uri: Some(grant.redirect_uri.clone()),
+                redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
                 resource_uri: grant.resource_uri.clone(),
                 code_challenge: "challenge".into(),
                 access_token: "access".into(),
@@ -663,7 +684,7 @@ async fn authorization_code_replay_revokes_the_issued_token_family() {
             McpAuthorizationCodeExchange {
                 code: "code".into(),
                 client_id: grant.client_id.clone(),
-                redirect_uri: Some(grant.redirect_uri.clone()),
+                redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
                 resource_uri: grant.resource_uri.clone(),
                 code_challenge: "challenge".into(),
                 access_token: "attacker-access".into(),
@@ -721,7 +742,7 @@ async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
     let grant = McpAuthorizationGrant {
         actor: actor("https://id.example", "alice"),
         client_id: client.client_id.clone(),
-        redirect_uri: client.redirect_uris[0].clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example/mcp".into(),
         scopes: vec!["notes:read".into()],
     };
@@ -743,7 +764,7 @@ async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
             McpAuthorizationCodeExchange {
                 code: "first-code".into(),
                 client_id: grant.client_id.clone(),
-                redirect_uri: Some(grant.redirect_uri.clone()),
+                redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
                 resource_uri: grant.resource_uri.clone(),
                 code_challenge: "challenge".into(),
                 access_token: "colliding-access".into(),
@@ -762,7 +783,7 @@ async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
             McpAuthorizationCodeExchange {
                 code: "retryable-code".into(),
                 client_id: grant.client_id.clone(),
-                redirect_uri: Some(grant.redirect_uri.clone()),
+                redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
                 resource_uri: grant.resource_uri.clone(),
                 code_challenge: "challenge".into(),
                 access_token: "colliding-access".into(),
@@ -780,7 +801,7 @@ async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
             McpAuthorizationCodeExchange {
                 code: "retryable-code".into(),
                 client_id: grant.client_id,
-                redirect_uri: Some(grant.redirect_uri.clone()),
+                redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
                 resource_uri: grant.resource_uri,
                 code_challenge: "challenge".into(),
                 access_token: "retry-access".into(),
