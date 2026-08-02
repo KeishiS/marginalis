@@ -281,10 +281,14 @@ then
   exit 1
 fi
 
+# 公開済みの記録は当時の名前のまま残す。CHANGELOG、ADR、評価記録は検査の対象外とする。
 if rg -n \
   'MARGINALIS_MCP_(AUTHORIZATION_ISSUER|UPSTREAM_ISSUER_CLAIM|UPSTREAM_SUBJECT_CLAIM|GROUPS_CLAIM|EXTERNAL_ISSUER)|externalAuthorization|marginalis-auth-oauth' \
   . \
   --glob '!docs/frozen/**' \
+  --glob '!docs/adr/**' \
+  --glob '!docs/mcp-authorization-server-evaluation.md' \
+  --glob '!CHANGELOG.md' \
   --glob '!Makefile.toml' \
   --glob '!target/**' \
   --glob '!test-results/**' \

@@ -3,6 +3,40 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
+## 0.25.0 — 未公開
+
+### 破壊的変更
+
+- MCPのAuthorization Serverを内蔵した。外部のAuthorization Serverは使用しない。判断の内容は
+  [MCPのAuthorization Serverを内蔵する](docs/adr/0007-mcpのauthorization-serverを内蔵する.md)に
+  記録した。利用者の認証は従来どおりKanidmが行い、MCPのclient登録、認可code、access token、
+  refresh tokenはMarginalisが管理する。更新前に発行したMCPのtokenとclient登録は移行しないため、
+  更新後にMCPクライアントの接続を作り直す。
+- MCPの有効・無効を`MARGINALIS_MCP_ENABLE`で指定するようにした。値は`true`または`false`とし、
+  それ以外は起動時に拒否する。外部Authorization Server用の`MARGINALIS_MCP_AUTHORIZATION_ISSUER`、
+  `MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM`、`MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM`、
+  `MARGINALIS_MCP_GROUPS_CLAIM`は廃止した。NixOSモジュールが値を組み立てるため、
+  `services.marginalis.mcp.enable`を使う場合は設定の変更が不要である。
+- NixOSモジュールの`services.marginalis.mcp.authorization`を削除した。この設定を書いている場合は
+  取り除く。issuerと各endpointは`baseUrl`から自動的に導く。
+- SQLiteスキーマを13から14へ更新した。MCPのclient、認可code、tokenを保存する表を追加したため、
+  稼働中の旧データベースファイルはそのまま使用できない。更新前に`export-archive`を実行し、
+  新しい版で空の`dataDir`へ`import-archive`する。archiveの形式は13のまま変わらない。
+- MCPの起動条件を変更した。認可に外部サービスを使わなくなったため、起動可否はKanidmの
+  discoveryだけで決まる。以前は外部Authorization Serverのdiscoveryに失敗すると起動しなかった。
+
+### 追加
+
+- MCPクライアントの登録方式としてClient ID Metadata Documentに対応した。HTTPSのURLを`client_id`と
+  して使い、そのURLでclient名と`redirect_uris`を公開する方式である。事前登録を必要としない。
+- `DELETE /api/v3/mcp-authorizations/{client_id}`を追加した。利用者本人のsessionとCSRFトークンで、
+  MCPクライアント単位に認可を取り消す。対象のaccess tokenとrefresh tokenをtoken family単位で
+  直ちに失効する。
+- Authorization Server Metadataを`/.well-known/oauth-authorization-server`で公開した。RFC 7009の
+  token失効endpointとDynamic Client Registration endpointも併せて公開する。
+- `marginalis purge-expired`が、期限切れのMCP認可code、token、参照されていない古いclientも
+  削除するようにした。削除件数は構造化ログに記録する。
+
 ## 0.24.0 — 2026-08-01
 
 ### 追加
@@ -185,8 +219,8 @@
   `OIDC_CA_CERTIFICATE_FILE`は、それぞれ`MARGINALIS_`を付けた名前へ変更した。NixOSモジュールが
   値を組み立てるため、`services.marginalis`のoptionを使う場合は設定の変更が不要である。
   環境変数を直接指定している場合は名前を変更する。
-- 当時のMCP有効化フラグを廃止した。MCPの有効・無効は、外部Authorization Serverの
-  issuer設定の有無で決まる。NixOSモジュールの
+- `MARGINALIS_MCP_ENABLE`を廃止した。MCPの有効・無効は
+  `MARGINALIS_MCP_AUTHORIZATION_ISSUER`の設定有無で決まる。NixOSモジュールの
   `services.marginalis.mcp.enable`は従来どおり使用できる。
 - `marginalis diagnose`が出力する`configuration`の形式を変更した。環境変数名を鍵とする
   `variables`と、判断結果の`mcp_enabled`を出力する。各項目は`set`と`required`を持ち、
