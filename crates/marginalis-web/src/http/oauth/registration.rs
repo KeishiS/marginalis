@@ -127,6 +127,11 @@ async fn mcp_register_client_inner(
                 "invalid_redirect_uri",
                 "redirect URI is invalid",
             ),
+            McpOAuthUseCaseError::Capacity => oauth_error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "temporarily_unavailable",
+                "dynamic client registration is at capacity",
+            ),
             McpOAuthUseCaseError::Unavailable => oauth_error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "temporarily_unavailable",

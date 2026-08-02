@@ -130,6 +130,155 @@ async fn mcp_registration_reports_invalid_redirect_uri() {
     assert_eq!(error["error"], "invalid_redirect_uri");
 }
 
+/// metadataの各endpointは、サブパスを含む公開base URLから同じ規則で導く。
+#[tokio::test]
+async fn authorization_server_metadata_derives_every_endpoint_from_the_base_url() {
+    let app = TestApp::default()
+        .mcp(
+            "https://example.test/marginalis",
+            Vec::new(),
+            Arc::new(TestMcpAuthenticator),
+        )
+        .router();
+    let response = app
+        .oneshot(
+            Request::get("/.well-known/oauth-authorization-server/marginalis")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let metadata: serde_json::Value = serde_json::from_slice(&body).expect("metadata");
+    assert_eq!(metadata["issuer"], "https://example.test/marginalis");
+    assert_eq!(
+        metadata["authorization_endpoint"],
+        "https://example.test/marginalis/oauth/authorize"
+    );
+    assert_eq!(
+        metadata["token_endpoint"],
+        "https://example.test/marginalis/oauth/token"
+    );
+    assert_eq!(
+        metadata["revocation_endpoint"],
+        "https://example.test/marginalis/oauth/revoke"
+    );
+    assert_eq!(
+        metadata["registration_endpoint"],
+        "https://example.test/marginalis/oauth/register"
+    );
+    assert_eq!(
+        metadata["protected_resources"][0],
+        "https://example.test/marginalis/mcp"
+    );
+}
+
+fn revoke_authorization_request(client_id: &str) -> axum::http::request::Builder {
+    Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v3/mcp-authorizations/{client_id}"))
+        .header(header::ORIGIN, "https://example.test")
+        .header("sec-fetch-site", "same-origin")
+        .header(
+            header::COOKIE,
+            "marginalis_session=active-session; marginalis_csrf=session-csrf",
+        )
+}
+
+/// Web UIから接続を取り消すRESTは、他の変更操作と同じ認証・CSRF検査を通す。
+#[tokio::test]
+async fn revoking_an_mcp_authorization_requires_an_authenticated_same_origin_request() {
+    let response = authenticated_mcp_app()
+        .oneshot(
+            revoke_authorization_request("mcp-0197c9bc-0000-7000-8000-000000000001")
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let response = authenticated_mcp_app()
+        .oneshot(
+            revoke_authorization_request("mcp-0197c9bc-0000-7000-8000-000000000001")
+                .header("x-csrf-token", "forged")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = mcp_app()
+        .oneshot(
+            revoke_authorization_request("mcp-0197c9bc-0000-7000-8000-000000000001")
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// 経路のclient IDがそのまま業務処理へ渡ることを、応答の違いで確認する。
+#[tokio::test]
+async fn revoking_an_mcp_authorization_passes_the_client_id_through() {
+    let response = authenticated_mcp_app()
+        .oneshot(
+            revoke_authorization_request("unavailable-client")
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+/// MCPが無効な構成でも公開RESTの形は変えず、利用できないことを伝える。
+#[tokio::test]
+async fn revoking_an_mcp_authorization_reports_that_mcp_is_unavailable() {
+    let response = TestApp::default()
+        .authenticated()
+        .router()
+        .oneshot(
+            revoke_authorization_request("mcp-0197c9bc-0000-7000-8000-000000000001")
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// 保存上限は要求の誤りではないため、client metadataの拒否と区別して伝える。
+#[tokio::test]
+async fn mcp_registration_reports_capacity_as_temporarily_unavailable() {
+    let response = mcp_app()
+            .oneshot(
+                Request::post("/oauth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"client_name":"At capacity","redirect_uris":["https://at-capacity.example/callback"]}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let error: serde_json::Value = serde_json::from_slice(&body).expect("OAuth error");
+    assert_eq!(error["error"], "temporarily_unavailable");
+}
+
 #[tokio::test]
 async fn mcp_token_response_is_not_cacheable() {
     let response = mcp_app()

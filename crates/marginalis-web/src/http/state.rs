@@ -75,6 +75,8 @@ pub struct McpEndpoint {
     pub(super) authorization_server_metadata_uri: String,
     pub(super) authorization_endpoint_uri: String,
     pub(super) token_endpoint_uri: String,
+    pub(super) revocation_endpoint_uri: String,
+    pub(super) registration_endpoint_uri: String,
 }
 
 impl McpEndpoint {
@@ -96,6 +98,8 @@ impl McpEndpoint {
             .to_string(),
             authorization_endpoint_uri: base_url_at(base_url, "oauth/authorize").to_string(),
             token_endpoint_uri: base_url_at(base_url, "oauth/token").to_string(),
+            revocation_endpoint_uri: base_url_at(base_url, "oauth/revoke").to_string(),
+            registration_endpoint_uri: base_url_at(base_url, "oauth/register").to_string(),
             resource_uri: resource_uri.to_string(),
         }
     }

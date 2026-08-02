@@ -300,6 +300,8 @@ pub enum McpOAuthUseCaseError {
     InvalidScope,
     InvalidTarget,
     InvalidGrant,
+    /// 動的なclient登録の保存上限に達しており、要求自体には誤りがない状態。
+    Capacity,
     Unavailable,
 }
 
@@ -562,22 +564,4 @@ pub trait McpOAuthUseCases: Send + Sync {
         token: String,
         client_id: String,
     ) -> Result<(), McpOAuthUseCaseError>;
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("MCP access token authentication failed")]
-pub enum McpAccessTokenAuthenticationError {
-    Configuration,
-    Discovery,
-    Rejected,
-    Unavailable,
-}
-
-#[async_trait]
-pub trait McpAccessTokenAuthenticator: Send + Sync {
-    async fn authenticate_access_token(
-        &self,
-        token: String,
-        resource_uri: String,
-    ) -> Result<Option<McpAuthenticatedActor>, McpAccessTokenAuthenticationError>;
 }

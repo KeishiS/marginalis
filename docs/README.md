@@ -31,13 +31,13 @@
 - [要件と検証の対応表](traceability.md)
 - [アーキテクチャ](architecture.md)
 - [AdocWeave 0.27移行判断](adocweave-v0.27-migration.md)
-- [Auth0をMCPのAuthorization Serverに採用](adr/0001-auth0をmcpのauthorization-serverに採用.md)
-- [MCPのAuthorization Serverを内蔵する](adr/0006-mcpのauthorization-serverを内蔵する.md)
+- [Auth0をMCPのAuthorization Serverに採用](adr/0001-auth0をmcpのauthorization-serverに採用.md)（廃止。ADR 0007で置き換え）
 - [SQLiteを正本として維持](adr/0002-sqliteを正本として維持する.md)
 - [CodeMirrorをAsciiDoc編集基盤に採用](adr/0003-codemirrorをasciidoc編集基盤に採用.md)
 - [書誌ライブラリーを利用者ごとに管理する](adr/0004-書誌ライブラリーを利用者ごとに管理する.md)
 - [認証基盤の停止時にWebとMCPで起動可否を分ける](adr/0005-認証基盤の停止時にwebとmcpで起動可否を分ける.md)
 - [引用はノート作成者の書誌ライブラリーで解決する](adr/0006-引用はノート作成者の書誌ライブラリーで解決する.md)
+- [MCPのAuthorization Serverを内蔵する](adr/0007-mcpのauthorization-serverを内蔵する.md)
 - [ブラウザーとMCPプロトコルの回帰テスト](protocol-regression.md)
 
 ## 過去の記録と今後の計画

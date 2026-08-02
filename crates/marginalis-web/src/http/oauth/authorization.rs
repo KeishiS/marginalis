@@ -57,14 +57,8 @@ pub(crate) async fn mcp_server_metadata(
         "issuer": endpoint.authorization_server_uri,
         "authorization_endpoint": endpoint.authorization_endpoint_uri,
         "token_endpoint": endpoint.token_endpoint_uri,
-        "revocation_endpoint": format!(
-            "{}/oauth/revoke",
-            endpoint.authorization_server_uri.trim_end_matches('/')
-        ),
-        "registration_endpoint": format!(
-            "{}/oauth/register",
-            endpoint.authorization_server_uri.trim_end_matches('/')
-        ),
+        "revocation_endpoint": endpoint.revocation_endpoint_uri,
+        "registration_endpoint": endpoint.registration_endpoint_uri,
         "protected_resources": [endpoint.resource_uri],
         "scopes_supported": ["notes:read", "notes:write", "notes:delete"],
         "response_types_supported": ["code"],

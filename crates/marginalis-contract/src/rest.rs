@@ -117,6 +117,11 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         specification_path: "/api/v3/notes/{note_id}/source",
         probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/source",
     },
+    RestRouteContract {
+        method: "DELETE",
+        specification_path: "/api/v3/mcp-authorizations/{client_id}",
+        probe_path: "/api/v3/mcp-authorizations/mcp-0197c9bc-0000-7000-8000-000000000001",
+    },
 ];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -683,6 +688,19 @@ fn rest_paths() -> Value {
                 ("404", response_ref("NotFound")),
                 ("409", response_ref("Conflict")),
                 ("428", response_ref("PreconditionRequired"))
+            ]))
+        },
+        "/api/v3/mcp-authorizations/{client_id}": {
+            "parameters": [{
+                "name": "client_id", "in": "path", "required": true,
+                "schema": {"type": "string", "minLength": 1, "maxLength": 2048}
+            }],
+            "delete": operation("Revoke every MCP token issued to one client", &["CsrfToken"], None, responses(&[
+                ("204", json!({"description": "MCP authorization revoked"})),
+                ("400", response_ref("BadRequest")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound"))
             ]))
         },
         "/api/v3/notes/preview": {

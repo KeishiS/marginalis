@@ -5,9 +5,8 @@ use axum::{
     http::{HeaderMap, HeaderValue, Request},
 };
 use marginalis_application::{
-    AuthenticationUseCaseError, McpAccessTokenAuthenticationError, McpAccessTokenAuthenticator,
-    McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair,
-    McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
+    AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
+    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
     NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands, NoteGraph, NoteGraphNote,
     NoteGraphQuery, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
     NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
@@ -886,15 +885,28 @@ impl OidcAuthenticationUseCases for Oidc {
     }
 }
 
-struct TestMcpAuthenticator;
-
+/// MCP access tokenの検証結果だけを差し替える試験用のport。
+///
+/// 実装は`McpOAuthUseCases::authenticate`と同じ形にし、transportの試験が認可全体の
+/// スタブを書き分けずに済むようにする。
 #[async_trait]
-impl McpAccessTokenAuthenticator for TestMcpAuthenticator {
+trait TestMcpAccessTokens: Send + Sync {
     async fn authenticate_access_token(
         &self,
         token: String,
         resource_uri: String,
-    ) -> Result<Option<McpAuthenticatedActor>, McpAccessTokenAuthenticationError> {
+    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError>;
+}
+
+struct TestMcpAuthenticator;
+
+#[async_trait]
+impl TestMcpAccessTokens for TestMcpAuthenticator {
+    async fn authenticate_access_token(
+        &self,
+        token: String,
+        resource_uri: String,
+    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
         Ok((matches!(
             token.as_str(),
             "external-token" | "valid-token" | "read-token" | "write-token"
@@ -918,18 +930,18 @@ impl McpAccessTokenAuthenticator for TestMcpAuthenticator {
 struct UnavailableMcpAuthenticator;
 
 #[async_trait]
-impl McpAccessTokenAuthenticator for UnavailableMcpAuthenticator {
+impl TestMcpAccessTokens for UnavailableMcpAuthenticator {
     async fn authenticate_access_token(
         &self,
         _token: String,
         _resource_uri: String,
-    ) -> Result<Option<McpAuthenticatedActor>, McpAccessTokenAuthenticationError> {
-        Err(McpAccessTokenAuthenticationError::Unavailable)
+    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
+        Err(McpOAuthUseCaseError::Unavailable)
     }
 }
 
 struct TestMcpOAuth {
-    authenticator: Arc<dyn McpAccessTokenAuthenticator>,
+    authenticator: Arc<dyn TestMcpAccessTokens>,
 }
 
 #[async_trait]
@@ -941,6 +953,12 @@ impl McpOAuthUseCases for TestMcpOAuth {
             .any(|uri| uri.starts_with("http://remote.example"))
         {
             Err(McpOAuthUseCaseError::InvalidRedirectUri)
+        } else if client
+            .redirect_uris
+            .iter()
+            .any(|uri| uri.starts_with("https://at-capacity.example"))
+        {
+            Err(McpOAuthUseCaseError::Capacity)
         } else {
             Ok(())
         }
@@ -1038,11 +1056,14 @@ impl McpOAuthUseCases for TestMcpOAuth {
         self.authenticator
             .authenticate_access_token(token, resource_uri)
             .await
-            .map_err(|_| McpOAuthUseCaseError::Unavailable)
     }
 
-    async fn revoke(&self, _actor: Actor, _client_id: String) -> Result<(), McpOAuthUseCaseError> {
-        Ok(())
+    async fn revoke(&self, _actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {
+        if client_id == "unavailable-client" {
+            Err(McpOAuthUseCaseError::Unavailable)
+        } else {
+            Ok(())
+        }
     }
 
     async fn revoke_token(
@@ -1062,11 +1083,7 @@ struct TestApp {
     notes: Arc<dyn NoteUseCases>,
     sessions: Arc<dyn WebSessionUseCases>,
     cookie_path: String,
-    mcp: Option<(
-        &'static str,
-        Vec<String>,
-        Arc<dyn McpAccessTokenAuthenticator>,
-    )>,
+    mcp: Option<(&'static str, Vec<String>, Arc<dyn TestMcpAccessTokens>)>,
 }
 
 impl Default for TestApp {
@@ -1100,7 +1117,7 @@ impl TestApp {
         mut self,
         base_url: &'static str,
         allowed_origins: Vec<String>,
-        authenticator: Arc<dyn McpAccessTokenAuthenticator>,
+        authenticator: Arc<dyn TestMcpAccessTokens>,
     ) -> Self {
         self.mcp = Some((base_url, allowed_origins, authenticator));
         self
@@ -1137,7 +1154,18 @@ fn mcp_app() -> Router {
     mcp_app_with_authenticator(Arc::new(TestMcpAuthenticator))
 }
 
-fn mcp_app_with_authenticator(authenticator: Arc<dyn McpAccessTokenAuthenticator>) -> Router {
+fn authenticated_mcp_app() -> Router {
+    TestApp::default()
+        .authenticated()
+        .mcp(
+            "https://example.test",
+            vec!["https://chatgpt.com".into()],
+            Arc::new(TestMcpAuthenticator),
+        )
+        .router()
+}
+
+fn mcp_app_with_authenticator(authenticator: Arc<dyn TestMcpAccessTokens>) -> Router {
     TestApp::default()
         .mcp(
             "https://example.test",

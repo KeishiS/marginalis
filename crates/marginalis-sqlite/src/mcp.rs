@@ -11,18 +11,28 @@ use sqlx::Row;
 use crate::{SqliteDatabase, SqliteStoreError, database_error, token::hash_token};
 
 impl SqliteDatabase {
+    /// 同意した認可codeを、その時点のclient登録と一緒に保存する。
+    ///
+    /// Client ID Metadata Documentで解決したclientは事前登録がなく、`mcp_clients`への外部key
+    /// を満たせない。clientの登録とcodeの保存を一つのtransactionで行い、間に定期削除が
+    /// 割り込んでもcodeが宙に浮かないようにする。
     pub async fn issue_mcp_authorization_code(
         &self,
         code: &str,
+        client: &McpOAuthClient,
         grant: &McpAuthorizationGrant,
         code_challenge: &str,
         expires_at: UnixMillis,
+        now: UnixMillis,
     ) -> Result<(), SqliteStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        upsert_client(&mut *transaction, client, now).await?;
         sqlx::query("INSERT INTO mcp_authorization_codes (code_hash, client_id, redirect_uri, resource_uri, issuer, subject, scopes, code_challenge, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(hash_token(code)).bind(&grant.client_id).bind(&grant.redirect_uri).bind(&grant.resource_uri)
+            .bind(hash_token(code)).bind(&client.client_id).bind(&grant.redirect_uri).bind(&grant.resource_uri)
             .bind(grant.actor.issuer()).bind(grant.actor.subject())
             .bind(grant.scopes.join(" ")).bind(code_challenge).bind(expires_at.get())
-            .execute(&self.pool).await.map_err(database_error)?;
+            .execute(&mut *transaction).await.map_err(database_error)?;
+        transaction.commit().await.map_err(database_error)?;
         Ok(())
     }
 
@@ -32,11 +42,7 @@ impl SqliteDatabase {
         client: &McpOAuthClient,
         registered_at: UnixMillis,
     ) -> Result<(), SqliteStoreError> {
-        let redirect_uris = serde_json::to_string(&client.redirect_uris)
-            .map_err(|_| SqliteStoreError::CorruptData)?;
-        sqlx::query("INSERT INTO mcp_clients (client_id, display_name, redirect_uris_json, registered_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET display_name = excluded.display_name, redirect_uris_json = excluded.redirect_uris_json")
-            .bind(&client.client_id).bind(&client.display_name).bind(redirect_uris).bind(registered_at.get()).execute(&self.pool).await.map_err(database_error)?;
-        Ok(())
+        upsert_client(&self.pool, client, registered_at).await
     }
 
     /// configured persistence boundに空きがある場合だけclientを原子的に登録する。
@@ -351,6 +357,31 @@ impl SqliteDatabase {
         }
         transaction.commit().await.map_err(database_error)
     }
+}
+
+/// clientを登録する。既存clientは表示名とredirect URIだけを更新する。
+///
+/// `registered_at_ms`は最初に登録した時刻のまま残す。認可のたびに更新すると、使われなくなった
+/// clientを定期削除が回収できなくなるためである。
+async fn upsert_client<'e, E>(
+    executor: E,
+    client: &McpOAuthClient,
+    registered_at: UnixMillis,
+) -> Result<(), SqliteStoreError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    let redirect_uris =
+        serde_json::to_string(&client.redirect_uris).map_err(|_| SqliteStoreError::CorruptData)?;
+    sqlx::query("INSERT INTO mcp_clients (client_id, display_name, redirect_uris_json, registered_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET display_name = excluded.display_name, redirect_uris_json = excluded.redirect_uris_json")
+        .bind(&client.client_id)
+        .bind(&client.display_name)
+        .bind(redirect_uris)
+        .bind(registered_at.get())
+        .execute(executor)
+        .await
+        .map_err(database_error)?;
+    Ok(())
 }
 
 fn actor_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Actor, SqliteStoreError> {

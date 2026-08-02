@@ -1,7 +1,7 @@
 //! Client ID Metadata Documentを安全な境界内で取得するadapter。
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     time::{Duration, Instant},
 };
@@ -12,10 +12,35 @@ use marginalis_domain::McpOAuthClient;
 use serde::Deserialize;
 
 const MAX_METADATA_BYTES: usize = 5 * 1024;
+/// 一定時間に実行してよい外部取得の回数。
+///
+/// `/oauth/authorize`はログイン前に到達できるため、未認証の第三者が任意の公開hostへ要求を
+/// 出させられる。取得そのものに上限を設け、cacheに載る正規のclientは上限を消費しない。
+const MAX_FETCHES_PER_WINDOW: usize = 60;
+const FETCH_WINDOW: Duration = Duration::from_secs(60);
+/// 取得できなかったclient IDを覚えておく時間。同じ値の繰り返しで取得が増えないようにする。
+const REJECTION_LIFETIME: Duration = Duration::from_secs(60);
+/// cacheの上限。攻撃者がclient IDを変えながら要求してもメモリーが増え続けないようにする。
+const MAX_CACHED_CLIENTS: usize = 1_024;
+const MAX_CACHED_REJECTIONS: usize = 1_024;
 
 pub(crate) struct HttpMcpClientMetadataResolver {
     timeout: Duration,
-    cache: tokio::sync::Mutex<HashMap<String, CachedClientMetadata>>,
+    state: tokio::sync::Mutex<ResolverState>,
+}
+
+#[derive(Default)]
+struct ResolverState {
+    resolved: HashMap<String, CachedClientMetadata>,
+    rejected: HashMap<String, Instant>,
+    fetches: VecDeque<Instant>,
+}
+
+/// cacheを引いた結果と、取得してよいかどうか。
+enum FetchPermit {
+    Resolved(McpOAuthClient),
+    Rejected,
+    Allowed,
 }
 
 struct CachedClientMetadata {
@@ -27,8 +52,68 @@ impl HttpMcpClientMetadataResolver {
     pub(crate) fn new(timeout: Duration) -> Self {
         Self {
             timeout,
-            cache: tokio::sync::Mutex::new(HashMap::new()),
+            state: tokio::sync::Mutex::new(ResolverState::default()),
         }
+    }
+
+    /// cacheを引き、取得が必要な場合は回数の枠を確保する。
+    ///
+    /// 枠を使い切っている場合はErrを返す。呼び出し元はこれを一時的な障害として扱い、
+    /// clientが不正であるかのようには伝えない。
+    async fn begin_fetch(&self, client_id: &str) -> Result<FetchPermit, McpOAuthRepositoryError> {
+        let now = Instant::now();
+        let mut state = self.state.lock().await;
+        state.resolved.retain(|_, entry| entry.expires_at > now);
+        state
+            .rejected
+            .retain(|_, rejected_at| now.duration_since(*rejected_at) < REJECTION_LIFETIME);
+        let cutoff = now.checked_sub(FETCH_WINDOW).unwrap_or(now);
+        while state.fetches.front().is_some_and(|at| *at <= cutoff) {
+            state.fetches.pop_front();
+        }
+        if let Some(entry) = state.resolved.get(client_id) {
+            return Ok(FetchPermit::Resolved(entry.client.clone()));
+        }
+        if state.rejected.contains_key(client_id) {
+            return Ok(FetchPermit::Rejected);
+        }
+        if state.fetches.len() >= MAX_FETCHES_PER_WINDOW {
+            tracing::warn!(
+                event = "mcp.oauth.client_metadata.throttled",
+                "MCP client metadata fetch was throttled"
+            );
+            return Err(McpOAuthRepositoryError);
+        }
+        state.fetches.push_back(now);
+        Ok(FetchPermit::Allowed)
+    }
+
+    async fn remember_resolved(
+        &self,
+        client_id: &str,
+        client: &McpOAuthClient,
+        lifetime: Duration,
+    ) {
+        let mut state = self.state.lock().await;
+        if state.resolved.len() >= MAX_CACHED_CLIENTS && !state.resolved.contains_key(client_id) {
+            return;
+        }
+        state.resolved.insert(
+            client_id.to_owned(),
+            CachedClientMetadata {
+                client: client.clone(),
+                expires_at: Instant::now() + lifetime,
+            },
+        );
+    }
+
+    async fn remember_rejected(&self, client_id: &str) {
+        let mut state = self.state.lock().await;
+        if state.rejected.len() >= MAX_CACHED_REJECTIONS && !state.rejected.contains_key(client_id)
+        {
+            return;
+        }
+        state.rejected.insert(client_id.to_owned(), Instant::now());
     }
 }
 
@@ -48,13 +133,29 @@ impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
         &self,
         client_id: &str,
     ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
-        {
-            let mut cache = self.cache.lock().await;
-            cache.retain(|_, entry| entry.expires_at > Instant::now());
-            if let Some(entry) = cache.get(client_id) {
-                return Ok(Some(entry.client.clone()));
-            }
+        match self.begin_fetch(client_id).await? {
+            FetchPermit::Resolved(client) => return Ok(Some(client)),
+            FetchPermit::Rejected => return Ok(None),
+            FetchPermit::Allowed => {}
         }
+        let Some((client, cache_lifetime)) = self.fetch(client_id).await? else {
+            self.remember_rejected(client_id).await;
+            return Ok(None);
+        };
+        if let Some(lifetime) = cache_lifetime {
+            self.remember_resolved(client_id, &client, lifetime).await;
+        }
+        Ok(Some(client))
+    }
+}
+
+impl HttpMcpClientMetadataResolver {
+    /// 文書を取得して検査する。取得先や内容が条件を満たさない場合は`None`を返す。
+    #[allow(clippy::type_complexity)]
+    async fn fetch(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<(McpOAuthClient, Option<Duration>)>, McpOAuthRepositoryError> {
         let url = url::Url::parse(client_id).map_err(|_| McpOAuthRepositoryError)?;
         let host = url.host_str().ok_or(McpOAuthRepositoryError)?;
         let port = url.port_or_known_default().ok_or(McpOAuthRepositoryError)?;
@@ -116,16 +217,7 @@ impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
         let Some(client) = parse_client_metadata(client_id, &body) else {
             return Ok(None);
         };
-        if let Some(lifetime) = cache_lifetime {
-            self.cache.lock().await.insert(
-                client_id.to_owned(),
-                CachedClientMetadata {
-                    client: client.clone(),
-                    expires_at: Instant::now() + lifetime,
-                },
-            );
-        }
-        Ok(Some(client))
+        Ok(Some((client, cache_lifetime)))
     }
 }
 
@@ -264,6 +356,78 @@ mod tests {
         assert!(public_ip(
             "2606:4700:4700::1111".parse().expect("public IPv6")
         ));
+    }
+
+    /// 未認証で到達できる経路のため、外部取得の回数そのものに上限を設ける。
+    #[tokio::test]
+    async fn metadata_fetches_are_bounded_per_window() {
+        let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
+        for index in 0..MAX_FETCHES_PER_WINDOW {
+            assert!(
+                matches!(
+                    resolver
+                        .begin_fetch(&format!("https://client{index}.example/metadata.json"))
+                        .await,
+                    Ok(FetchPermit::Allowed)
+                ),
+                "{index}回目までは取得を許す"
+            );
+        }
+        assert!(
+            resolver
+                .begin_fetch("https://overflow.example/metadata.json")
+                .await
+                .is_err(),
+            "上限を超えた取得は一時的な障害として扱う"
+        );
+    }
+
+    /// 同じclient IDの繰り返しで取得が増えないことを確認する。
+    #[tokio::test]
+    async fn rejected_client_ids_are_not_fetched_again() {
+        let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
+        let client_id = "https://client.example/metadata.json";
+        assert!(matches!(
+            resolver.begin_fetch(client_id).await,
+            Ok(FetchPermit::Allowed)
+        ));
+        resolver.remember_rejected(client_id).await;
+        for _ in 0..MAX_FETCHES_PER_WINDOW {
+            assert!(matches!(
+                resolver.begin_fetch(client_id).await,
+                Ok(FetchPermit::Rejected)
+            ));
+        }
+        assert!(
+            matches!(
+                resolver
+                    .begin_fetch("https://other.example/metadata.json")
+                    .await,
+                Ok(FetchPermit::Allowed)
+            ),
+            "拒否の記録は取得の枠を消費しない"
+        );
+    }
+
+    /// 取得できたclientはcacheから返し、取得の枠を消費しない。
+    #[tokio::test]
+    async fn cached_clients_do_not_consume_the_fetch_budget() {
+        let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
+        let client_id = "https://client.example/metadata.json";
+        let client = McpOAuthClient {
+            client_id: client_id.into(),
+            display_name: "Example client".into(),
+            redirect_uris: vec!["https://client.example/callback".into()],
+        };
+        resolver
+            .remember_resolved(client_id, &client, Duration::from_secs(600))
+            .await;
+        for _ in 0..MAX_FETCHES_PER_WINDOW + 1 {
+            assert!(matches!(
+                resolver.begin_fetch(client_id).await,
+                Ok(FetchPermit::Resolved(resolved)) if resolved == client
+            ));
+        }
     }
 
     #[test]
