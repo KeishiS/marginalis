@@ -1,7 +1,6 @@
 //! MarginalisのHTTP境界。
 //!
-//! 公開面は`/api/v3`、閲覧UI、OIDC、MCP Protected Resource Metadataおよび
-//! Streamable HTTPだけである。
+//! 公開面は`/api/v3`、閲覧UI、OIDC、MCP OAuthおよびStreamable HTTPだけである。
 
 pub mod http;
 mod mcp;

@@ -1,13 +1,14 @@
 use std::str::FromStr;
 
 use marginalis_application::{
-    BibliographyRepository, BibliographyRepositoryError, OidcLoginAttempt, OidcLoginAttemptStore,
-    RestorePlan,
+    BibliographyRepository, BibliographyRepositoryError, McpAuthorizationCodeExchange,
+    McpRefreshTokenRotation, McpRefreshTokenRotationOutcome, OidcLoginAttempt,
+    OidcLoginAttemptStore, RestorePlan,
 };
 use marginalis_domain::{
-    Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteAccess,
-    NoteAclEntry, NoteDraft, NoteId, NotePermission, Revision, SOFT_DELETE_RETENTION_MS,
-    UnixMillis, WebSession,
+    Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, McpAuthorizationGrant,
+    McpOAuthClient, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NotePermission, Revision,
+    SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
 };
 
 use super::*;
@@ -27,3 +28,5 @@ mod notes;
 mod bibliography;
 
 mod sessions;
+
+mod oauth;

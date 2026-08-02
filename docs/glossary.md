@@ -77,8 +77,14 @@ Marginalisを外部から利用するときの基準となるURLです。REST AP
 ## Dynamic Client Registration
 
 MCPクライアントが、OAuthで必要になるクライアント情報をAuthorization Serverへ登録する仕組みです。
-MarginalisのMCP接続ではAuth0が登録を受け付けます。資料で初めて使う箇所では
+MarginalisのMCP接続では内蔵Authorization Serverが登録を受け付けます。資料で初めて使う箇所では
 「動的クライアント登録」を併記します。
+
+## Client ID Metadata Document
+
+MCPクライアントがHTTPS URLを`client_id`として使い、そのURLでclient名や`redirect_uris`をJSON文書として
+公開する仕組みです。略称はCIMDです。Authorization Serverは文書を必要時に取得するため、事前登録で
+client情報を保存する必要がありません。
 
 ## CSRF
 
@@ -146,7 +152,7 @@ OAuthでMCPクライアントへ許可する操作の種類です。Marginalis�
 ## SQLite
 
 一つのファイルにデータを保存できるデータベースです。Marginalisでは、ノート、所有者、削除状態、
-Webセッション、OIDCログイン試行などを保存します。MCPのclientやtokenはAuth0が管理するため保存しません。
+Webセッション、OIDCログイン試行、MCP client、認可code、tokenのhashなどを保存します。
 
 ## 正本
 

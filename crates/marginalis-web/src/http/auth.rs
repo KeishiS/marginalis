@@ -305,6 +305,50 @@ pub(super) fn validate_mutation_origin(headers: &HeaderMap, state: &ApiState) ->
     Ok(())
 }
 
+/// OAuth consent may run in a client-controlled popup or sandbox whose `Origin` is absent or
+/// opaque. Such requests rely on the session-bound double-submit token. A concrete origin must
+/// still match Marginalis so that a foreign site cannot submit a copied form.
+pub(super) async fn authenticated_form_actor(
+    headers: &HeaderMap,
+    state: &ApiState,
+    csrf_token: &str,
+) -> HandlerResult<Actor> {
+    let actor = authenticated_actor(headers, state).await?;
+    if let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        && origin != "null"
+        && origin != state.browser_origin
+    {
+        tracing::warn!(
+            event = "http.request.rejected",
+            reason = "oauth-consent-origin-mismatch",
+            "rejected OAuth consent with a mismatched concrete origin"
+        );
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            ProblemCode::SameOriginRequired,
+            "same-origin request is required",
+        ));
+    }
+    let session_id =
+        cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
+    if cookie_value(headers, CSRF_COOKIE).as_deref() != Some(csrf_token)
+        || !state
+            .sessions
+            .verify_csrf(session_id, csrf_token.into())
+            .await
+            .map_err(authentication_error)?
+    {
+        return Err(problem(
+            StatusCode::FORBIDDEN,
+            ProblemCode::CsrfInvalid,
+            "CSRF token is invalid",
+        ));
+    }
+    Ok(actor)
+}
+
 pub(super) fn parse_note_id(value: &str) -> HandlerResult<NoteId> {
     EntityId::from_str(value).map(NoteId::new).map_err(|_| {
         problem(

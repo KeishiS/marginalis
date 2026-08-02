@@ -261,7 +261,6 @@ actual=$(
 expected='marginalis-application
 marginalis-archive
 marginalis-asciidoc
-marginalis-auth-oauth
 marginalis-auth-oidc
 marginalis-contract
 marginalis-domain
@@ -283,18 +282,7 @@ then
 fi
 
 if rg -n \
-  'McpOAuth|mcp_(clients|authorization_codes|access_tokens|refresh_tokens)|mcp-authorizations|/oauth/(authorize|register|token)' \
-  crates \
-  --glob '*.rs' \
-  --glob '!**/tests.rs' \
-  --glob '!**/tests/**'
-then
-  echo "retired built-in MCP Authorization Server symbol or route remains in production code" >&2
-  exit 1
-fi
-
-if rg -n \
-  'MARGINALIS_MCP_EXTERNAL_ISSUER|externalAuthorization' \
+  'MARGINALIS_MCP_(AUTHORIZATION_ISSUER|UPSTREAM_ISSUER_CLAIM|UPSTREAM_SUBJECT_CLAIM|GROUPS_CLAIM|EXTERNAL_ISSUER)|externalAuthorization|marginalis-auth-oauth' \
   . \
   --glob '!docs/frozen/**' \
   --glob '!Makefile.toml' \
@@ -302,7 +290,7 @@ if rg -n \
   --glob '!test-results/**' \
   --glob '!.git/**'
 then
-  echo "retired external Authorization Server configuration name remains" >&2
+  echo "retired external Authorization Server dependency or configuration remains" >&2
   exit 1
 fi
 '''

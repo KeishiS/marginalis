@@ -31,9 +31,9 @@
 | REQ-API-001 | REST・MCP結合試験 | transport間照合 |
 | REQ-API-002 | OpenAPI生成差分、router契約試験 | 接続確認 |
 | REQ-API-003 | REST単体・結合試験 | 競合操作 |
-| REQ-API-004 | Auth0 adapter単体試験、Protected Resource Metadata・MCP HTTP試験、NixOS module評価 | MCP接続 |
+| REQ-API-004 | OAuth application・SQLite単体試験、CIMD取得境界・`iss`・metadata・MCP HTTP試験、NixOS module評価 | MCP接続 |
 | REQ-API-005 | MCP scope結合試験 | MCP権限照合 |
-| REQ-API-006 | Authorization Server Metadata確認、認可取消APIの本番到達性検査 | client接続解除、grant取消、JWT失効時間 |
+| REQ-API-006 | RFC 7009・token family失効試験、認可取消APIの本番到達性検査 | client接続解除、即時失効 |
 | REQ-API-007 | MCP JSON Schema生成差分、MCP HTTP契約試験、AsciiDoc入力規則・HTML描画試験、警告拒否前の永続化防止試験 | client同期・参考文献作成・診断修正後の再実行確認 |
 | REQ-UI-001 | React単体試験、ブラウザー試験、配布物の大きさ検査 | 主要画面 |
 | REQ-UI-002 | TypeScript実行時検査試験 | 異常応答表示 |

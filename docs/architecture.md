@@ -13,7 +13,7 @@ Web UI / REST (/api/v3) / MCP Protected Resource
                     │
           application use cases
                     │
-SQLite canonical store ─ AsciiDoc ─ Kanidm OIDC ─ Auth0 token検証
+SQLite canonical store ─ AsciiDoc ─ Kanidm OIDC ─ MCP OAuth
                     │
           marginalis-service + NixOS module
 ```
@@ -50,9 +50,9 @@ AsciiDoc engine、HTTP serverを起動する必要がありません。
 `Cargo.lock`と`flake.nix`の固定値との一致を検査します。
 `marginalis-auth-oidc`は外部identity provider portを実装し、OIDC discovery・code exchange・
 ID token検証を担当します。利用を許可する`server-users`所属の判断はapplicationが担当します。
-`marginalis-auth-oauth`はAuth0のmetadataとJWKSを取得し、MCP access tokenからKanidm identity、
-group、scopeを検証するadapterです。クライアント登録、認可、token発行、refresh token、取消は
-Auth0の責務であり、MarginalisのapplicationとSQLiteへ状態を持ちません。
+MCP用OAuthの認可、token発行、refresh token rotation、失効は`marginalis-application`が手順を定義し、
+`marginalis-sqlite`がclient、認可code、token hashを保存します。利用者のログインはWeb UIと同じ
+Kanidm OIDCを使います。
 MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`marginalis-web::mcp`に置きます。
 Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条件の検査、tool実行は
 `marginalis-web::http::mcp_transport`内の別moduleに置きます。これにより、公開toolを変更するときに
@@ -75,18 +75,16 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
   削除日時の範囲を生成時と復元時に検査する。フィールドを直接変更する公開APIは設けない。
   SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
   検査しない。
-- `server-users`所属は、WebではKanidmの署名検証済みID token、MCPではAuth0の署名検証済みaccess
-  tokenに格納したKanidm由来claimから決める。どちらも同じ上流`(issuer, subject)`を所有者identityに
-  使用する。
+- `server-users`所属はKanidmの署名検証済みID tokenから決める。WebとMCPの同意画面は、同じ
+  `(issuer, subject)`を所有者identityに使用する。
 - Web session は24時間のsliding idle期限と7日の絶対期限を持つ。有効性の検証とidle期限の延長は、
   SQLiteの一つの条件付き更新で行う。読み取り後に同じ遅延transactionを更新へ切り替えず、
   同じsessionへの並行要求をSQLiteの書き込み待機で直列化する。未完了OIDC login attemptは10分で
   失効し、発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
 - OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う`ES256`だけを許可する。別の署名方式を
   追加する場合は[セキュリティ](security.md)の依存脆弱性判断を先に更新する。
-- MarginalisはMCPのauthorization code、access token、refresh token、client登録を保存しない。
-  Auth0 access tokenはrequestの検証中だけ扱い、ログや永続領域へ出力しない。MCP clientにKanidm
-  tokenを渡さない。
+- MarginalisはMCPのclient、認可code、access token、refresh tokenをSQLiteで管理する。tokenはhashだけを
+  保存し、秘密値をログやアーカイブへ出力しない。MCP clientにKanidm tokenを渡さない。
 - HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を複製しない。
 - 実効アクセス水準は`Read < Edit < Manage`の順序で表す。SQLiteの`note_access`投影が、
   所有者の`Manage`とACLの`Read`または`Edit`を同じ判断表へまとめる。
@@ -101,7 +99,6 @@ crates/
 ├── marginalis-asciidoc        AsciiDoc検証・描画
 ├── marginalis-archive         archive形式の型・検証・移行
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
-├── marginalis-auth-oauth      Auth0 access token検証adapter
 ├── marginalis-sqlite          SQLite adapter
 ├── marginalis-web             HTTP adapter
 └── marginalis-service         composition rootと実行バイナリ
@@ -275,7 +272,7 @@ marginalis-sqlite/src/
 
 公開routeは`marginalis-web/src/http.rs`、公開型は各crateの`lib.rs`から追跡します。小さな単体試験は
 対象moduleの末尾へ置きます。共有fixtureが大きいHTTP試験は`http/tests/`でUI・REST・MCP、
-SQLite試験は`marginalis-sqlite/src/tests/`でschema・ノート・sessionに分けます。OIDCとAuth0
+SQLite試験は`marginalis-sqlite/src/tests/`でschema・ノート・session・MCP OAuthに分けます。OIDC
 access token検証は各認証adapterでmetadata、署名、claimの境界を試験します。
 
 設計を確定した経緯は[再設計判断記録](v0.3.0-design.md)を参照してください。

@@ -540,9 +540,25 @@ pub struct AuthenticatedSession {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpAuthorizationGrant {
+    pub actor: Actor,
+    pub client_id: String,
+    pub redirect_uri: String,
+    pub resource_uri: String,
+    pub scopes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthenticatedActor {
     pub actor: Actor,
     pub scopes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpOAuthClient {
+    pub client_id: String,
+    pub display_name: String,
+    pub redirect_uris: Vec<String>,
 }
 
 #[cfg(test)]

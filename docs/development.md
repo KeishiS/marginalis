@@ -89,7 +89,7 @@ Pull Requestからマージします。
    | `coverage` | workspaceと統合経路のcoverage測定 | `cargo make ci-coverage` | `coverage-*` artifactの概要とJSON |
    | `native-aarch64` | aarch64 Linux上の全Rust target・featureとNix packageの構築 | aarch64 Linux上で`cargo make native-check`と`cargo make release-package-aarch64` | CargoとNixの診断 |
    | `browser-smoke` | production用Web UIの起動、主要操作、固定画像、ChromiumとFirefoxの編集欄互換性、ブラウザー例外 | `cargo make browser-smoke`と`cargo make browser-editor-firefox` | 失敗時の`browser-smoke-failure-*` artifactにscreenshotとtrace |
-   | `nixos-e2e` | Nix package、module、TLS、Kanidm、Auth0 token、永続化、保守unit | `cargo make ci-nixos-e2e` | 試験実行失敗時の`nixos-e2e-failure-*` artifactに、秘密情報を除去したrunner出力 |
+   | `nixos-e2e` | Nix package、module、TLS、Kanidm、内蔵OAuth、永続化、保守unit | `cargo make ci-nixos-e2e` | 試験実行失敗時の`nixos-e2e-failure-*` artifactに、秘密情報を除去したrunner出力 |
    | `release-gate` | 公開対象の版、受入結果、全検証、Nix packageを公開前に確認 | `MARGINALIS_RELEASE_TAG=vX.Y.Z cargo make release-gate` | 失敗したtask名と標準出力 |
 
    `nixos-e2e`はCIのcritical pathであり、所要時間の大半をNixのビルドが占めます。このjobだけは
@@ -125,7 +125,8 @@ Pull Requestからマージします。
    ```sh
    nix develop --command cargo test -p marginalis-web http::tests::rest_notes
    nix develop --command cargo test -p marginalis-sqlite tests::notes
-   nix develop --command cargo test -p marginalis-auth-oauth
+   nix develop --command cargo test -p marginalis-application mcp_oauth
+   nix develop --command cargo test -p marginalis-sqlite tests::oauth
    nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
    ```
 

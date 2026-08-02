@@ -4,7 +4,6 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::McpAccessTokenAuthenticationError;
 use marginalis_contract::ProblemCode;
 use marginalis_domain::McpAuthenticatedActor;
 
@@ -108,34 +107,15 @@ pub(super) async fn authenticate(
 ) -> HandlerResult<Result<McpAuthenticatedActor, Response>> {
     let challenged_scope = accepted_scopes.first().copied().unwrap_or("notes:read");
     let authenticated = match endpoint
-        .access_token_authenticator
-        .authenticate_access_token(token.into(), endpoint.resource_uri.clone())
+        .oauth
+        .authenticate(token.into(), endpoint.resource_uri.clone())
         .await
     {
         Ok(authenticated) => authenticated,
-        Err(McpAccessTokenAuthenticationError::Rejected(reason)) => {
-            tracing::warn!(
-                event = "mcp.authentication.failed",
-                reason = reason.log_reason(),
-                "MCP access token was rejected"
-            );
-            return Ok(Err(authentication_challenge(
-                endpoint,
-                StatusCode::UNAUTHORIZED,
-                Some("invalid_token"),
-                challenged_scope,
-            )));
-        }
-        Err(error) => {
-            let reason = match error {
-                McpAccessTokenAuthenticationError::Configuration => "configuration",
-                McpAccessTokenAuthenticationError::Discovery => "discovery",
-                McpAccessTokenAuthenticationError::Unavailable => "upstream-unavailable",
-                McpAccessTokenAuthenticationError::Rejected(_) => unreachable!(),
-            };
+        Err(_) => {
             tracing::error!(
                 event = "mcp.authentication.unavailable",
-                reason,
+                reason = "repository-unavailable",
                 "MCP access token authentication is unavailable"
             );
             return Err(problem(

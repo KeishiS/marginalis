@@ -1112,28 +1112,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jsonwebtoken"
-version = "11.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "881733cbc631fc9e472e24447ce32a64bedf2da498d6d8570b08edc87de71f65"
-dependencies = [
- "base64 0.22.1",
- "ed25519-dalek",
- "getrandom 0.2.17",
- "hmac",
- "js-sys",
- "p256",
- "p384",
- "rand 0.8.7",
- "rsa",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "signature",
- "zeroize",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1223,10 +1201,13 @@ name = "marginalis-application"
 version = "0.24.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "marginalis-domain",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.19",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1250,26 +1231,6 @@ dependencies = [
  "marginalis-domain",
  "thiserror 2.0.19",
  "unicode-normalization",
-]
-
-[[package]]
-name = "marginalis-auth-oauth"
-version = "0.24.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "jsonwebtoken",
- "marginalis-application",
- "marginalis-domain",
- "rand 0.8.7",
- "reqwest",
- "rsa",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -1314,13 +1275,13 @@ dependencies = [
 name = "marginalis-service"
 version = "0.24.0"
 dependencies = [
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "liblzma",
  "marginalis-application",
  "marginalis-archive",
  "marginalis-asciidoc",
- "marginalis-auth-oauth",
  "marginalis-auth-oidc",
  "marginalis-contract",
  "marginalis-domain",
@@ -1368,7 +1329,6 @@ dependencies = [
  "rand 0.8.7",
  "serde",
  "serde_json",
- "thiserror 2.0.19",
  "time",
  "tokio",
  "tower",
@@ -3209,20 +3169,6 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
-dependencies = [
- "zeroize_derive",
-]
-
-[[package]]
-name = "zeroize_derive"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "zerotrie"

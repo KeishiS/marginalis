@@ -1,16 +1,16 @@
 //! HTTP serviceのcomposition root。
 
 use marginalis_application::{
-    NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
+    McpOAuthApplication, NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
-use marginalis_auth_oauth::{McpAccessTokenAuthenticatorAdapter, McpAuthorizationConfiguration};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
 use marginalis_sqlite::SqliteDatabase;
 use std::path::Path;
 
 use crate::{
     config::ServerConfig,
+    mcp_client_metadata::HttpMcpClientMetadataResolver,
     runtime::{SystemClock, SystemRandom},
 };
 
@@ -102,56 +102,24 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         configuration.http.base_url.origin().ascii_serialization(),
     )
     .with_bibliography(bibliography);
-    let state = if let Some(mcp) = configuration.mcp {
+    let state = if configuration.mcp_enabled {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
-        let authorization = mcp.authorization;
-        let authenticator =
-            match McpAccessTokenAuthenticatorAdapter::discover(McpAuthorizationConfiguration {
-                issuer: authorization.issuer.clone(),
-                audience: resource_uri,
-                upstream_issuer: configuration.oidc.issuer_url.to_string(),
-                upstream_issuer_claim: authorization.upstream_issuer_claim,
-                upstream_subject_claim: authorization.upstream_subject_claim,
-                groups_claim: authorization.groups_claim,
-                required_user_group: REQUIRED_USER_GROUP.into(),
-            })
-            .await
-            {
-                Ok(authenticator) => std::sync::Arc::new(authenticator),
-                Err(error) => {
-                    let reason = match error {
-                    marginalis_application::McpAccessTokenAuthenticationError::Configuration => {
-                        "configuration"
-                    }
-                    marginalis_application::McpAccessTokenAuthenticationError::Discovery => {
-                        "discovery"
-                    }
-                    marginalis_application::McpAccessTokenAuthenticationError::Rejected(_) => {
-                        "rejected"
-                    }
-                    marginalis_application::McpAccessTokenAuthenticationError::Unavailable => {
-                        "upstream-unavailable"
-                    }
-                };
-                    tracing::error!(
-                        event = "mcp.authorization.discovery.failed",
-                        reason,
-                        "MCP Authorization Server discovery failed"
-                    );
-                    return Err(error.into());
-                }
-            };
-        tracing::info!(
-            event = "mcp.authorization.discovery.completed",
-            "MCP Authorization Server discovery succeeded"
-        );
         let endpoint = marginalis_web::http::McpEndpoint::new(
+            std::sync::Arc::new(
+                McpOAuthApplication::new(
+                    std::sync::Arc::new(database.clone()),
+                    std::sync::Arc::new(SystemClock),
+                    std::sync::Arc::new(SystemRandom),
+                    resource_uri,
+                )
+                .with_client_metadata_resolver(std::sync::Arc::new(
+                    HttpMcpClientMetadataResolver::new(std::time::Duration::from_secs(5)),
+                )),
+            ),
             &configuration.http.base_url,
-            mcp.allowed_origins,
-            authorization.issuer,
-            authenticator,
-        )?;
+            configuration.mcp_allowed_origins,
+        );
         state.with_mcp(endpoint)
     } else {
         state

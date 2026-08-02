@@ -76,16 +76,14 @@
 - **REQ-API-002 — REST版**: REST APIを`/api/v3`だけで提供すること。
 - **REQ-API-003 — 条件付き変更**: RESTの変更操作では取得時の`ETag`を`If-Match`へ指定し、
   同時更新による上書きを防ぐこと。
-- **REQ-API-004 — MCP認可**: Auth0をAuthorization ServerとしてOAuth 2.1 Authorization Codeと
-  PKCE S256を使用し、Auth0の動的なクライアント登録に対応すること。MarginalisはProtected Resource
-  Metadataを公開し、Auth0が発行したaccess tokenの署名、issuer、audience、scope、Kanidm由来の
-  identityとgroupを検証すること。
+- **REQ-API-004 — MCP認可**: Authorization Serverを内蔵し、OAuth 2.1 Authorization Codeと
+  PKCE S256を使用すること。Protected Resource MetadataとAuthorization Server Metadataを公開し、
+  Client ID Metadata Documentを優先すること。resource、scope、redirect URI、認可code、不透明access
+  tokenを検証し、認可応答にはAuthorization Serverを識別する`iss`を含めること。
 - **REQ-API-005 — MCP権限範囲**: MCPの`scope`は操作の種類だけを制限し、操作できる
   ノートの範囲を広げないこと。
-- **REQ-API-006 — MCP接続解除**: MCPクライアントは接続解除時にAuthorization Serverの
-  RFC 7009 endpointで最新refresh tokenとauthorization grantを取り消し、保存したcredentialを
-  削除すること。Marginalisは認可取消APIを公開せず、既発行JWT access tokenが拒否されるまでの
-  時間を運用受入で測定すること。
+- **REQ-API-006 — MCP接続解除**: RFC 7009 endpointとWeb UIから認可を取り消せること。対象の
+  access tokenとrefresh tokenを同じtoken family単位で直ちに失効すること。
 - **REQ-API-007 — MCP tool契約**: `list_notes`は可視ノートのID、題名、タグ、更新日時、revisionを
   返し、`get_note`も同じ更新日時を返すこと。`get_note_profile`は、本文と参考文献を相互に移動できる
   完全なAsciiDoc文書例と、書誌情報を推測しない注意事項を返すこと。成功時の`text`は
@@ -137,16 +135,15 @@
 
 ## NixOSでの配備
 
-- **REQ-DEPLOY-001 — NixOSモジュール**: SQLite、OIDCクライアント、MCPのAuth0 issuerとclaim名、
+- **REQ-DEPLOY-001 — NixOSモジュール**: SQLite、OIDCクライアント、MCPの有効化と許可するorigin、
   バックアップ先を設定でき、OIDCクライアントシークレットをsystemd credentialで渡すこと。
 - **REQ-DEPLOY-002 — 設定の単一宣言**: serviceが読み取る環境変数を`MARGINALIS_`接頭辞で統一し、
   変数名、必須条件、未設定の判定を一つの宣言から導くこと。起動処理と`diagnose`が同じ宣言を使い、
-  同じ入力に対して異なる判断をしないこと。MCPの有効・無効は専用のフラグを設けず、Authorization
-  Server issuerの設定有無で決めること。
+  同じ入力に対して異なる判断をしないこと。MCPの有効・無効は`MARGINALIS_MCP_ENABLE`で明示すること。
 
 ## 対応する保存形式
 
-- **REQ-FORMAT-001 — 現行形式**: SQLiteスキーマ13と`marginalis-archive-13`だけを通常処理で
+- **REQ-FORMAT-001 — 現行形式**: SQLiteスキーマ14と`marginalis-archive-13`だけを通常処理で
   受理すること。`migrate-archive`だけはarchive 7、8、9、10、11または12を入力として受理し、AdocWeave
   0.27.0で全件を再検証したarchive 13を別ファイルへ出力すること。その他の旧形式を自動移行
   しないこと。

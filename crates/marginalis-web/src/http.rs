@@ -10,6 +10,7 @@ mod error;
 mod html;
 mod mcp_transport;
 mod notes;
+mod oauth;
 mod security;
 mod state;
 mod ui;
@@ -42,11 +43,16 @@ use self::{
         update_bibliography_item,
     },
     error::{HandlerResult, problem},
-    mcp_transport::{mcp_post, mcp_resource_metadata, mcp_unsupported_method},
+    mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
         create_note, delete_note, export_note, list_notes, preview_new_note, preview_note_update,
         read_note, read_note_acl, read_note_graph, read_note_view, replace_note_acl, restore_note,
         session, update_note,
+    },
+    oauth::{
+        mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
+        mcp_resource_metadata, mcp_revoke_token, mcp_server_metadata, mcp_token,
+        revoke_mcp_authorization,
     },
     security::security_headers,
     ui::{
@@ -149,7 +155,34 @@ pub fn router(state: ApiState) -> Router {
             .expect("validated MCP resource metadata URL")
             .path()
             .to_owned();
-        router = router.route(&resource_metadata_path, get(mcp_resource_metadata));
+        let server_metadata_path = url::Url::parse(&endpoint.authorization_server_metadata_uri)
+            .expect("validated authorization server metadata URL")
+            .path()
+            .to_owned();
+        router = router
+            .route(&resource_metadata_path, get(mcp_resource_metadata))
+            .route(&server_metadata_path, get(mcp_server_metadata))
+            .route(
+                "/oauth/authorize",
+                get(mcp_authorize).post(mcp_authorize_post),
+            )
+            .route("/oauth/authorize/consent", post(mcp_authorize_consent))
+            .route(
+                "/oauth/register",
+                post(mcp_register_client).layer(DefaultBodyLimit::max(16 * 1024)),
+            )
+            .route(
+                "/oauth/token",
+                post(mcp_token).layer(DefaultBodyLimit::max(16 * 1024)),
+            )
+            .route(
+                "/oauth/revoke",
+                post(mcp_revoke_token).layer(DefaultBodyLimit::max(16 * 1024)),
+            )
+            .route(
+                "/api/v3/mcp-authorizations/{client_id}",
+                axum::routing::delete(revoke_mcp_authorization),
+            );
     }
     router
         .with_state(state)

@@ -25,19 +25,6 @@ use protocol::{
 };
 use tools::{decode_tool_call, mcp_tool_call};
 
-pub(super) async fn mcp_resource_metadata(
-    State(state): State<ApiState>,
-) -> HandlerResult<Json<serde_json::Value>> {
-    let endpoint = mcp_endpoint(&state)?;
-    Ok(Json(serde_json::json!({
-        "resource": endpoint.resource_uri,
-        "resource_name": "Marginalis MCP",
-        "authorization_servers": [endpoint.authorization_server_uri],
-        "bearer_methods_supported": ["header"],
-        "scopes_supported": ["notes:read", "notes:write", "notes:delete"]
-    })))
-}
-
 pub(super) async fn mcp_unsupported_method(
     State(state): State<ApiState>,
     headers: HeaderMap,
