@@ -218,14 +218,15 @@ async fn mcp_authorize_request(
         scopes: input.scopes(),
         code_challenge: input.code_challenge.clone().unwrap_or_default(),
     };
+    let error_redirect_uri = resolved.redirect_uri.clone();
     let validated = endpoint
         .oauth
-        .validate_authorization_request(request)
+        .validate_resolved_authorization_request(request, resolved)
         .await
         .map_err(|error| {
             safe_authorization_error(
                 &endpoint.authorization_server_uri,
-                &resolved.redirect_uri,
+                &error_redirect_uri,
                 input.state.as_deref(),
                 error,
             )

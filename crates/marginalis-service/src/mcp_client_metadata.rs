@@ -22,13 +22,16 @@ const FETCH_WINDOW: Duration = Duration::from_secs(60);
 const MAX_CONCURRENT_FETCHES: usize = 8;
 /// cacheの上限。攻撃者がclient IDを変えながら要求してもメモリーが増え続けないようにする。
 const MAX_CACHED_CLIENTS: usize = 1_024;
-const MAX_CLIENT_LOCKS: usize = 1_024;
+const MAX_CLIENT_FLIGHTS: usize = 1_024;
+
+type FetchResult = Result<Option<McpOAuthClient>, McpOAuthRepositoryError>;
+type ClientFlight = tokio::sync::OnceCell<FetchResult>;
 
 pub(crate) struct HttpMcpClientMetadataResolver {
     timeout: Duration,
     state: tokio::sync::Mutex<ResolverState>,
     fetch_slots: tokio::sync::Semaphore,
-    client_locks: tokio::sync::Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
+    client_flights: tokio::sync::Mutex<HashMap<String, Weak<ClientFlight>>>,
 }
 
 #[derive(Default)]
@@ -54,7 +57,7 @@ impl HttpMcpClientMetadataResolver {
             timeout,
             state: tokio::sync::Mutex::new(ResolverState::default()),
             fetch_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_FETCHES),
-            client_locks: tokio::sync::Mutex::new(HashMap::new()),
+            client_flights: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -84,22 +87,24 @@ impl HttpMcpClientMetadataResolver {
         Ok(FetchPermit::Allowed)
     }
 
-    /// 同じclient IDへの同時要求を一つずつ処理し、先行要求が保存したcacheを再利用できるようにする。
-    async fn client_lock(
+    /// 同じclient IDへの同時要求が一つの取得結果を共有するための状態を返す。
+    ///
+    /// mapは弱い参照だけを保持するため、同時要求がなくなれば成功・失敗のどちらも残らない。
+    async fn client_flight(
         &self,
         client_id: &str,
-    ) -> Result<Arc<tokio::sync::Mutex<()>>, McpOAuthRepositoryError> {
-        let mut locks = self.client_locks.lock().await;
-        locks.retain(|_, lock| lock.strong_count() > 0);
-        if let Some(lock) = locks.get(client_id).and_then(Weak::upgrade) {
-            return Ok(lock);
+    ) -> Result<Arc<ClientFlight>, McpOAuthRepositoryError> {
+        let mut flights = self.client_flights.lock().await;
+        flights.retain(|_, flight| flight.strong_count() > 0);
+        if let Some(flight) = flights.get(client_id).and_then(Weak::upgrade) {
+            return Ok(flight);
         }
-        if locks.len() >= MAX_CLIENT_LOCKS {
+        if flights.len() >= MAX_CLIENT_FLIGHTS {
             return Err(McpOAuthRepositoryError);
         }
-        let lock = Arc::new(tokio::sync::Mutex::new(()));
-        locks.insert(client_id.to_owned(), Arc::downgrade(&lock));
-        Ok(lock)
+        let flight = Arc::new(ClientFlight::new());
+        flights.insert(client_id.to_owned(), Arc::downgrade(&flight));
+        Ok(flight)
     }
 
     async fn remember_resolved(
@@ -120,26 +125,8 @@ impl HttpMcpClientMetadataResolver {
             },
         );
     }
-}
 
-#[derive(Deserialize)]
-struct ClientMetadataDocument {
-    client_id: String,
-    client_name: String,
-    redirect_uris: Vec<String>,
-    token_endpoint_auth_method: Option<String>,
-    grant_types: Option<Vec<String>>,
-    response_types: Option<Vec<String>>,
-}
-
-#[async_trait]
-impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
-    async fn resolve(
-        &self,
-        client_id: &str,
-    ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
-        let client_lock = self.client_lock(client_id).await?;
-        let _client_guard = client_lock.lock().await;
+    async fn fetch_once(&self, client_id: &str) -> FetchResult {
         match self.begin_fetch(client_id).await? {
             FetchPermit::Resolved(client) => return Ok(Some(client)),
             FetchPermit::Allowed => {}
@@ -159,6 +146,30 @@ impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
             self.remember_resolved(client_id, &client, lifetime).await;
         }
         Ok(Some(client))
+    }
+}
+
+#[derive(Deserialize)]
+struct ClientMetadataDocument {
+    client_id: String,
+    client_name: String,
+    redirect_uris: Vec<String>,
+    token_endpoint_auth_method: Option<String>,
+    grant_types: Option<Vec<String>>,
+    response_types: Option<Vec<String>>,
+}
+
+#[async_trait]
+impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
+    async fn resolve(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
+        let flight = self.client_flight(client_id).await?;
+        flight
+            .get_or_init(|| self.fetch_once(client_id))
+            .await
+            .clone()
     }
 }
 
@@ -395,14 +406,31 @@ mod tests {
         );
     }
 
-    /// 同じclient IDの同時要求は、同じlockで直列化する。
+    /// 同じclient IDの同時要求は、成功・失敗にかかわらず一つの取得結果を共有する。
     #[tokio::test]
-    async fn concurrent_client_requests_share_one_lock() {
+    async fn concurrent_client_requests_share_one_flight() {
         let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
         let client_id = "https://client.example/metadata.json";
-        let first = resolver.client_lock(client_id).await.expect("first lock");
-        let second = resolver.client_lock(client_id).await.expect("second lock");
+        let first = resolver
+            .client_flight(client_id)
+            .await
+            .expect("first flight");
+        let second = resolver
+            .client_flight(client_id)
+            .await
+            .expect("second flight");
         assert!(Arc::ptr_eq(&first, &second));
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let first_result = first.get_or_init(|| async {
+            calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(None)
+        });
+        let second_result = second.get_or_init(|| async {
+            calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(None)
+        });
+        let _ = tokio::join!(first_result, second_result);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
     }
 
     #[test]
