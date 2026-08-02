@@ -5,11 +5,11 @@
 use std::future::Future;
 
 use async_trait::async_trait;
+pub use marginalis_domain::McpResolvedRedirectUri;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpAuthorizationGrant,
-    McpOAuthClient, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
-    NotePermission, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
-    WebSession,
+    Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpOAuthClient, Note, NoteAccess,
+    NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NotePermission, NoteSummary,
+    NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan, WebSession,
 };
 
 mod bibliography;
@@ -305,11 +305,14 @@ pub enum McpOAuthUseCaseError {
     Unavailable,
 }
 
-/// OAuth Authorization Code Flowでtransportから渡す、clientとredirect URIを解決済みの候補。
+/// OAuth Authorization Code Flowでtransportから渡す、未検証の認可要求。
+///
+/// `redirect_uri`の`None`は、clientが認可要求で値を省略したことを表す。登録済みの値を
+/// 解決した後もこの違いを保持し、token交換時の照合条件へ引き継ぐ。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthorizationRequest {
     pub client_id: String,
-    pub redirect_uri: String,
+    pub redirect_uri: Option<String>,
     pub resource_uri: String,
     pub scopes: Vec<String>,
     pub code_challenge: String,
@@ -341,7 +344,7 @@ pub struct McpRegisteredOAuthClient {
 pub struct McpValidatedAuthorizationRequest {
     pub client: McpOAuthClient,
     pub registration_method: McpClientRegistrationMethod,
-    pub redirect_uri: String,
+    pub redirect_uri: McpResolvedRedirectUri,
     pub resource_uri: String,
     pub scopes: Vec<String>,
     pub code_challenge: String,
@@ -374,10 +377,7 @@ pub struct McpAuthorizationCodeExchange {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum McpRefreshTokenRotationOutcome {
-    Rotated {
-        grant: McpAuthorizationGrant,
-        access_scopes: Vec<String>,
-    },
+    Rotated { access_scopes: Vec<String> },
     InvalidToken,
     InvalidScope,
 }

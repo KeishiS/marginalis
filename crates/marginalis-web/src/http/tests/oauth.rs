@@ -132,9 +132,9 @@ async fn authorization_get_reuses_the_resolved_client() {
     );
 }
 
-/// HTTP入力でredirect URIを省略した場合も、client解決後は必須の値として扱う。
+/// ログインから認可要求へ戻る際も、clientがredirect URIを省略した事実を保持する。
 #[tokio::test]
-async fn authorization_get_normalizes_an_omitted_redirect_uri() {
+async fn authorization_get_preserves_an_omitted_redirect_uri_across_login() {
     let response = mcp_app()
         .oneshot(
             Request::get(
@@ -146,13 +146,38 @@ async fn authorization_get_normalizes_an_omitted_redirect_uri() {
         .await
         .expect("response");
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert!(
-        response
-            .headers()
-            .get(header::LOCATION)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.starts_with("/auth/oidc/login?"))
-    );
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("login redirect");
+    assert!(location.starts_with("/auth/oidc/login?"));
+    assert!(!location.contains("redirect_uri"));
+}
+
+#[tokio::test]
+async fn authorization_consent_preserves_an_omitted_redirect_uri() {
+    let response = authenticated_mcp_app()
+        .oneshot(
+            Request::get(
+                "/oauth/authorize?response_type=code&client_id=client&resource=https%3A%2F%2Fexample.test%2Fmcp&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256",
+            )
+            .header(
+                header::COOKIE,
+                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+            )
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("consent page");
+    let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
+    assert!(!html.contains("name=\"redirect_uri\""));
+    assert!(html.contains("Redirect host: client.example.test"));
 }
 
 #[tokio::test]
@@ -445,7 +470,7 @@ async fn rfc7009_revocation_is_exposed_for_public_clients() {
 }
 
 #[tokio::test]
-async fn mcp_token_requires_redirect_and_rejects_duplicate_parameters() {
+async fn mcp_token_accepts_an_omitted_redirect_and_rejects_duplicate_parameters() {
     let omitted_redirect = mcp_app()
             .oneshot(
                 Request::post("/oauth/token")
@@ -457,7 +482,7 @@ async fn mcp_token_requires_redirect_and_rejects_duplicate_parameters() {
             )
             .await
             .expect("response");
-    assert_eq!(omitted_redirect.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(omitted_redirect.status(), StatusCode::OK);
 
     let duplicate = mcp_app()
             .oneshot(

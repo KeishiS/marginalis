@@ -110,6 +110,7 @@ CREATE TABLE mcp_authorization_codes (
     code_hash BLOB PRIMARY KEY NOT NULL,
     client_id TEXT NOT NULL REFERENCES mcp_clients(client_id),
     redirect_uri TEXT NOT NULL,
+    redirect_uri_was_supplied INTEGER NOT NULL CHECK (redirect_uri_was_supplied IN (0, 1)),
     resource_uri TEXT NOT NULL,
     issuer TEXT NOT NULL,
     subject TEXT NOT NULL,

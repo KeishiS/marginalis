@@ -119,17 +119,10 @@ async fn mcp_token_inner(
                 .map_err(|_| missing_token_parameter())?;
             let verifier = required_token_parameter(&mut form, "code_verifier")
                 .map_err(|_| missing_token_parameter())?;
-            let redirect_uri = required_token_parameter(&mut form, "redirect_uri")
-                .map_err(|_| missing_token_parameter())?;
+            let redirect_uri = form.take("redirect_uri");
             endpoint
                 .oauth
-                .exchange_authorization_code(
-                    code,
-                    client_id,
-                    Some(redirect_uri),
-                    resource,
-                    verifier,
-                )
+                .exchange_authorization_code(code, client_id, redirect_uri, resource, verifier)
                 .await
                 .map_err(token_use_case_error)?
         }

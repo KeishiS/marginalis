@@ -991,10 +991,7 @@ impl McpOAuthUseCases for TestMcpOAuth {
             return Err(McpOAuthUseCaseError::Unavailable);
         }
         let resolved = self
-            .resolve_authorization_client(
-                request.client_id.clone(),
-                Some(request.redirect_uri.clone()),
-            )
+            .resolve_authorization_client(request.client_id.clone(), request.redirect_uri.clone())
             .await?;
         self.validate_resolved_authorization_request(request, resolved)
             .await
@@ -1011,7 +1008,11 @@ impl McpOAuthUseCases for TestMcpOAuth {
         Ok(McpValidatedAuthorizationRequest {
             client: resolved.client,
             registration_method: resolved.registration_method,
-            redirect_uri: resolved.redirect_uri,
+            redirect_uri: if request.redirect_uri.is_some() {
+                marginalis_application::McpResolvedRedirectUri::Supplied(resolved.redirect_uri)
+            } else {
+                marginalis_application::McpResolvedRedirectUri::Inferred(resolved.redirect_uri)
+            },
             resource_uri: request.resource_uri,
             scopes: request.scopes,
             code_challenge: request.code_challenge,

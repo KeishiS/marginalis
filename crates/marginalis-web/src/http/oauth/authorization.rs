@@ -110,7 +110,7 @@ impl McpAuthorizeInput {
 #[derive(Deserialize)]
 pub(crate) struct McpAuthorizeForm {
     client_id: String,
-    redirect_uri: String,
+    redirect_uri: Option<String>,
     resource: String,
     scope: String,
     code_challenge: String,
@@ -213,7 +213,7 @@ async fn mcp_authorize_request(
     }
     let request = McpAuthorizationRequest {
         client_id,
-        redirect_uri: resolved.redirect_uri.clone(),
+        redirect_uri: input.redirect_uri.clone(),
         resource_uri: input.resource.clone().unwrap_or_default(),
         scopes: input.scopes(),
         code_challenge: input.code_challenge.clone().unwrap_or_default(),
@@ -238,7 +238,7 @@ async fn mcp_authorize_request(
                 login_redirect(state, &input, &validated).unwrap_or_else(|| {
                     oauth_redirect_error(
                         &endpoint.authorization_server_uri,
-                        &validated.redirect_uri,
+                        validated.redirect_uri.as_str(),
                         input.state.as_deref(),
                         "invalid_request",
                     )
@@ -269,7 +269,9 @@ fn login_redirect(
         let mut pairs = request_uri.query_pairs_mut();
         pairs.append_pair("response_type", "code");
         pairs.append_pair("client_id", &request.client.client_id);
-        pairs.append_pair("redirect_uri", &request.redirect_uri);
+        if request.redirect_uri.was_supplied() {
+            pairs.append_pair("redirect_uri", request.redirect_uri.as_str());
+        }
         pairs.append_pair("resource", &request.resource_uri);
         pairs.append_pair("scope", &request.scopes.join(" "));
         pairs.append_pair("code_challenge", &request.code_challenge);
@@ -309,7 +311,15 @@ fn consent_page(
             escape_html(value)
         )
     });
-    let redirect_host = url::Url::parse(&request.redirect_uri)
+    let redirect_uri_field = if request.redirect_uri.was_supplied() {
+        format!(
+            "<input type=\"hidden\" name=\"redirect_uri\" value=\"{}\">",
+            escape_html(request.redirect_uri.as_str())
+        )
+    } else {
+        String::new()
+    };
+    let redirect_host = url::Url::parse(request.redirect_uri.as_str())
         .ok()
         .and_then(|url| url.host_str().map(str::to_owned))
         .unwrap_or_else(|| "unknown".into());
@@ -318,7 +328,7 @@ fn consent_page(
         .filter(|url| url.scheme() == "https")
         .and_then(|url| url.host_str().map(str::to_owned))
         .unwrap_or_else(|| request.client.client_id.clone());
-    let loopback_warning = url::Url::parse(&request.redirect_uri)
+    let loopback_warning = url::Url::parse(request.redirect_uri.as_str())
         .ok()
         .is_some_and(|url| url.scheme() == "http");
     let loopback_warning = if loopback_warning {
@@ -327,7 +337,7 @@ fn consent_page(
         ""
     };
     Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>Authorize {}</h1><p>Client identifier: {}</p><p>Requested scopes: {}</p><p>Redirect host: {}</p>{}<form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"client_id\" value=\"{}\"><input type=\"hidden\" name=\"redirect_uri\" value=\"{}\"><input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\">{}<input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
+        "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>Authorize {}</h1><p>Client identifier: {}</p><p>Requested scopes: {}</p><p>Redirect host: {}</p>{}<form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"client_id\" value=\"{}\">{}<input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\">{}<input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
         escape_html(&request.client.display_name),
         escape_html(&client_identifier),
         escape_html(&request.scopes.join(" ")),
@@ -335,7 +345,7 @@ fn consent_page(
         loopback_warning,
         escape_html(&consent_path),
         escape_html(&request.client.client_id),
-        escape_html(&request.redirect_uri),
+        redirect_uri_field,
         escape_html(&request.resource_uri),
         escape_html(&request.scopes.join(" ")),
         escape_html(&request.code_challenge),
@@ -385,12 +395,12 @@ async fn mcp_authorize_consent_inner(
     match form.decision.as_str() {
         "deny" => Ok(oauth_redirect_error(
             &endpoint.authorization_server_uri,
-            &validated.redirect_uri,
+            validated.redirect_uri.as_str(),
             state_value,
             "access_denied",
         )),
         "approve" => {
-            let redirect_uri = validated.redirect_uri.clone();
+            let redirect_uri = validated.redirect_uri.as_str().to_owned();
             let code = endpoint
                 .oauth
                 .authorize(actor, validated)

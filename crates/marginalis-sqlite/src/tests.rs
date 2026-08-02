@@ -7,8 +7,8 @@ use marginalis_application::{
 };
 use marginalis_domain::{
     Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, McpAuthorizationGrant,
-    McpOAuthClient, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NotePermission, Revision,
-    SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
+    McpOAuthClient, McpResolvedRedirectUri, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId,
+    NotePermission, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
 };
 
 use super::*;
