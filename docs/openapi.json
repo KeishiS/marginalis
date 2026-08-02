@@ -132,6 +132,16 @@
         },
         "description": "If-Match is required"
       },
+      "Unavailable": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "the service is temporarily unavailable"
+      },
       "UnprocessableNote": {
         "content": {
           "application/json": {
@@ -977,8 +987,8 @@
           "403": {
             "$ref": "#/components/responses/CsrfRejected"
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         },
         "summary": "Revoke every MCP token issued to one client"

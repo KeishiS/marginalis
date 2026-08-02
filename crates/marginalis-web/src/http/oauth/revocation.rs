@@ -114,7 +114,7 @@ async fn revoke_mcp_authorization_inner(
 ) -> HandlerResult<StatusCode> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let endpoint = mcp_endpoint(&state)?;
-    if client_id.trim().is_empty() {
+    if client_id.trim().is_empty() || client_id.chars().count() > 2_048 {
         return Err(problem(
             StatusCode::BAD_REQUEST,
             ProblemCode::InvalidRequest,

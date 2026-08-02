@@ -3,6 +3,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::{Arc, Weak},
     time::{Duration, Instant},
 };
 
@@ -18,28 +19,27 @@ const MAX_METADATA_BYTES: usize = 5 * 1024;
 /// 出させられる。取得そのものに上限を設け、cacheに載る正規のclientは上限を消費しない。
 const MAX_FETCHES_PER_WINDOW: usize = 60;
 const FETCH_WINDOW: Duration = Duration::from_secs(60);
-/// 取得できなかったclient IDを覚えておく時間。同じ値の繰り返しで取得が増えないようにする。
-const REJECTION_LIFETIME: Duration = Duration::from_secs(60);
+const MAX_CONCURRENT_FETCHES: usize = 8;
 /// cacheの上限。攻撃者がclient IDを変えながら要求してもメモリーが増え続けないようにする。
 const MAX_CACHED_CLIENTS: usize = 1_024;
-const MAX_CACHED_REJECTIONS: usize = 1_024;
+const MAX_CLIENT_LOCKS: usize = 1_024;
 
 pub(crate) struct HttpMcpClientMetadataResolver {
     timeout: Duration,
     state: tokio::sync::Mutex<ResolverState>,
+    fetch_slots: tokio::sync::Semaphore,
+    client_locks: tokio::sync::Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
 }
 
 #[derive(Default)]
 struct ResolverState {
     resolved: HashMap<String, CachedClientMetadata>,
-    rejected: HashMap<String, Instant>,
     fetches: VecDeque<Instant>,
 }
 
 /// cacheを引いた結果と、取得してよいかどうか。
 enum FetchPermit {
     Resolved(McpOAuthClient),
-    Rejected,
     Allowed,
 }
 
@@ -53,6 +53,8 @@ impl HttpMcpClientMetadataResolver {
         Self {
             timeout,
             state: tokio::sync::Mutex::new(ResolverState::default()),
+            fetch_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_FETCHES),
+            client_locks: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -64,18 +66,12 @@ impl HttpMcpClientMetadataResolver {
         let now = Instant::now();
         let mut state = self.state.lock().await;
         state.resolved.retain(|_, entry| entry.expires_at > now);
-        state
-            .rejected
-            .retain(|_, rejected_at| now.duration_since(*rejected_at) < REJECTION_LIFETIME);
         let cutoff = now.checked_sub(FETCH_WINDOW).unwrap_or(now);
         while state.fetches.front().is_some_and(|at| *at <= cutoff) {
             state.fetches.pop_front();
         }
         if let Some(entry) = state.resolved.get(client_id) {
             return Ok(FetchPermit::Resolved(entry.client.clone()));
-        }
-        if state.rejected.contains_key(client_id) {
-            return Ok(FetchPermit::Rejected);
         }
         if state.fetches.len() >= MAX_FETCHES_PER_WINDOW {
             tracing::warn!(
@@ -86,6 +82,24 @@ impl HttpMcpClientMetadataResolver {
         }
         state.fetches.push_back(now);
         Ok(FetchPermit::Allowed)
+    }
+
+    /// 同じclient IDへの同時要求を一つずつ処理し、先行要求が保存したcacheを再利用できるようにする。
+    async fn client_lock(
+        &self,
+        client_id: &str,
+    ) -> Result<Arc<tokio::sync::Mutex<()>>, McpOAuthRepositoryError> {
+        let mut locks = self.client_locks.lock().await;
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = locks.get(client_id).and_then(Weak::upgrade) {
+            return Ok(lock);
+        }
+        if locks.len() >= MAX_CLIENT_LOCKS {
+            return Err(McpOAuthRepositoryError);
+        }
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        locks.insert(client_id.to_owned(), Arc::downgrade(&lock));
+        Ok(lock)
     }
 
     async fn remember_resolved(
@@ -106,15 +120,6 @@ impl HttpMcpClientMetadataResolver {
             },
         );
     }
-
-    async fn remember_rejected(&self, client_id: &str) {
-        let mut state = self.state.lock().await;
-        if state.rejected.len() >= MAX_CACHED_REJECTIONS && !state.rejected.contains_key(client_id)
-        {
-            return;
-        }
-        state.rejected.insert(client_id.to_owned(), Instant::now());
-    }
 }
 
 #[derive(Deserialize)]
@@ -133,13 +138,21 @@ impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
         &self,
         client_id: &str,
     ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
+        let client_lock = self.client_lock(client_id).await?;
+        let _client_guard = client_lock.lock().await;
         match self.begin_fetch(client_id).await? {
             FetchPermit::Resolved(client) => return Ok(Some(client)),
-            FetchPermit::Rejected => return Ok(None),
             FetchPermit::Allowed => {}
         }
-        let Some((client, cache_lifetime)) = self.fetch(client_id).await? else {
-            self.remember_rejected(client_id).await;
+        let _fetch_slot = self
+            .fetch_slots
+            .acquire()
+            .await
+            .map_err(|_| McpOAuthRepositoryError)?;
+        let fetched = tokio::time::timeout(self.timeout, self.fetch(client_id))
+            .await
+            .map_err(|_| McpOAuthRepositoryError)??;
+        let Some((client, cache_lifetime)) = fetched else {
             return Ok(None);
         };
         if let Some(lifetime) = cache_lifetime {
@@ -382,31 +395,24 @@ mod tests {
         );
     }
 
-    /// 同じclient IDの繰り返しで取得が増えないことを確認する。
+    /// 同じclient IDの同時要求は、同じlockで直列化する。
     #[tokio::test]
-    async fn rejected_client_ids_are_not_fetched_again() {
+    async fn concurrent_client_requests_share_one_lock() {
         let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
         let client_id = "https://client.example/metadata.json";
-        assert!(matches!(
-            resolver.begin_fetch(client_id).await,
-            Ok(FetchPermit::Allowed)
-        ));
-        resolver.remember_rejected(client_id).await;
-        for _ in 0..MAX_FETCHES_PER_WINDOW {
-            assert!(matches!(
-                resolver.begin_fetch(client_id).await,
-                Ok(FetchPermit::Rejected)
-            ));
-        }
-        assert!(
-            matches!(
-                resolver
-                    .begin_fetch("https://other.example/metadata.json")
-                    .await,
-                Ok(FetchPermit::Allowed)
-            ),
-            "拒否の記録は取得の枠を消費しない"
-        );
+        let first = resolver.client_lock(client_id).await.expect("first lock");
+        let second = resolver.client_lock(client_id).await.expect("second lock");
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn metadata_fetch_concurrency_is_bounded() {
+        let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
+        let permits = (0..MAX_CONCURRENT_FETCHES)
+            .map(|_| resolver.fetch_slots.try_acquire().expect("fetch slot"))
+            .collect::<Vec<_>>();
+        assert!(resolver.fetch_slots.try_acquire().is_err());
+        drop(permits);
     }
 
     /// 取得できたclientはcacheから返し、取得の枠を消費しない。

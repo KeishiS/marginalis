@@ -9,8 +9,9 @@ use url::Url;
 
 use crate::{
     Clock, McpAuthorizationClient, McpAuthorizationCodeExchange, McpAuthorizationRequest,
-    McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation,
-    McpRefreshTokenRotationOutcome, McpTokenPair, McpValidatedAuthorizationRequest, Random,
+    McpClientRegistrationMethod, McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation,
+    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient, McpTokenPair,
+    McpValidatedAuthorizationRequest, Random,
 };
 
 type McpIssuedTokenPair = McpTokenPair;
@@ -31,7 +32,7 @@ pub trait McpOAuthRepository: Send + Sync {
     async fn client(
         &self,
         client_id: &str,
-    ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError>;
+    ) -> Result<Option<McpRegisteredOAuthClient>, McpOAuthRepositoryError>;
     /// 認可codeを保存する。`client`は同じtransactionで登録し、外部keyを満たす。
     ///
     /// Client ID Metadata Documentで解決したclientは事前登録がないため、利用者が同意した
@@ -39,7 +40,7 @@ pub trait McpOAuthRepository: Send + Sync {
     async fn issue_authorization_code(
         &self,
         code: &str,
-        client: &McpOAuthClient,
+        client: &McpRegisteredOAuthClient,
         grant: &marginalis_domain::McpAuthorizationGrant,
         code_challenge: &str,
         expires_at: UnixMillis,
@@ -146,10 +147,13 @@ impl McpOAuthApplication {
         request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthError> {
         let code = self.random.opaque_token();
-        let client = request.client;
+        let registered_client = McpRegisteredOAuthClient {
+            client: request.client,
+            registration_method: request.registration_method,
+        };
         let grant = marginalis_domain::McpAuthorizationGrant {
             actor,
-            client_id: client.client_id.clone(),
+            client_id: registered_client.client.client_id.clone(),
             redirect_uri: request.redirect_uri,
             resource_uri: request.resource_uri,
             scopes: request.scopes,
@@ -158,7 +162,7 @@ impl McpOAuthApplication {
         self.repository
             .issue_authorization_code(
                 &code,
-                &client,
+                &registered_client,
                 &grant,
                 &request.code_challenge,
                 UnixMillis::new(now.get() + Self::AUTHORIZATION_CODE_SECONDS * 1_000),
@@ -173,8 +177,8 @@ impl McpOAuthApplication {
         &self,
         request: &McpAuthorizationRequest,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthError> {
-        let resolved = self
-            .resolve_authorization_client(&request.client_id, request.redirect_uri.as_deref())
+        let (resolved, registration_method) = self
+            .resolve_client(&request.client_id, request.redirect_uri.as_deref())
             .await?;
         let client = resolved.client;
         let redirect_uri = resolved.redirect_uri;
@@ -193,6 +197,7 @@ impl McpOAuthApplication {
         }
         Ok(McpValidatedAuthorizationRequest {
             client,
+            registration_method,
             redirect_uri,
             resource_uri: self.resource_uri.clone(),
             scopes,
@@ -205,14 +210,31 @@ impl McpOAuthApplication {
         client_id: &str,
         redirect_uri: Option<&str>,
     ) -> Result<McpAuthorizationClient, McpOAuthError> {
+        self.resolve_client(client_id, redirect_uri)
+            .await
+            .map(|(client, _)| client)
+    }
+
+    async fn resolve_client(
+        &self,
+        client_id: &str,
+        redirect_uri: Option<&str>,
+    ) -> Result<(McpAuthorizationClient, McpClientRegistrationMethod), McpOAuthError> {
         let stored = self
             .repository
             .client(client_id)
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;
-        let client = match stored {
-            Some(client) => client,
-            None => {
+        let (client, registration_method) = match stored {
+            Some(McpRegisteredOAuthClient {
+                client,
+                registration_method: McpClientRegistrationMethod::Dynamic,
+            }) => (client, McpClientRegistrationMethod::Dynamic),
+            Some(McpRegisteredOAuthClient {
+                registration_method: McpClientRegistrationMethod::MetadataDocument,
+                ..
+            })
+            | None => {
                 if !valid_client_metadata_document_url(client_id) {
                     return Err(McpOAuthError::InvalidClient);
                 }
@@ -230,7 +252,7 @@ impl McpOAuthApplication {
                     return Err(McpOAuthError::InvalidClient);
                 }
                 validate_client_metadata(&client)?;
-                client
+                (client, McpClientRegistrationMethod::MetadataDocument)
             }
         };
         let redirect_uri = match redirect_uri {
@@ -246,10 +268,13 @@ impl McpOAuthApplication {
             None if client.redirect_uris.len() == 1 => client.redirect_uris[0].clone(),
             _ => return Err(McpOAuthError::InvalidRedirectUri),
         };
-        Ok(McpAuthorizationClient {
-            client,
-            redirect_uri,
-        })
+        Ok((
+            McpAuthorizationClient {
+                client,
+                redirect_uri,
+            },
+            registration_method,
+        ))
     }
 
     pub async fn exchange_authorization_code(

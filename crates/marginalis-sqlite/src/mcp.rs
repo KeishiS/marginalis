@@ -1,7 +1,8 @@
 //! MCP OAuth client、code、access/refresh tokenの永続化。
 
 use marginalis_application::{
-    McpAuthorizationCodeExchange, McpRefreshTokenRotation, McpRefreshTokenRotationOutcome,
+    McpAuthorizationCodeExchange, McpClientRegistrationMethod, McpRefreshTokenRotation,
+    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient,
 };
 use marginalis_domain::{
     Actor, McpAuthenticatedActor, McpAuthorizationGrant, McpOAuthClient, UnixMillis,
@@ -19,14 +20,21 @@ impl SqliteDatabase {
     pub async fn issue_mcp_authorization_code(
         &self,
         code: &str,
-        client: &McpOAuthClient,
+        registered_client: &McpRegisteredOAuthClient,
         grant: &McpAuthorizationGrant,
         code_challenge: &str,
         expires_at: UnixMillis,
         now: UnixMillis,
     ) -> Result<(), SqliteStoreError> {
+        let client = &registered_client.client;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        upsert_client(&mut *transaction, client, now).await?;
+        upsert_client(
+            &mut *transaction,
+            client,
+            registered_client.registration_method,
+            now,
+        )
+        .await?;
         sqlx::query("INSERT INTO mcp_authorization_codes (code_hash, client_id, redirect_uri, resource_uri, issuer, subject, scopes, code_challenge, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(hash_token(code)).bind(&client.client_id).bind(&grant.redirect_uri).bind(&grant.resource_uri)
             .bind(grant.actor.issuer()).bind(grant.actor.subject())
@@ -42,7 +50,13 @@ impl SqliteDatabase {
         client: &McpOAuthClient,
         registered_at: UnixMillis,
     ) -> Result<(), SqliteStoreError> {
-        upsert_client(&self.pool, client, registered_at).await
+        upsert_client(
+            &self.pool,
+            client,
+            McpClientRegistrationMethod::Dynamic,
+            registered_at,
+        )
+        .await
     }
 
     /// configured persistence boundに空きがある場合だけclientを原子的に登録する。
@@ -56,9 +70,9 @@ impl SqliteDatabase {
             .map_err(|_| SqliteStoreError::CorruptData)?;
         let result = sqlx::query(
             "INSERT INTO mcp_clients
-                 (client_id, display_name, redirect_uris_json, registered_at_ms)
-             SELECT ?, ?, ?, ?
-             WHERE (SELECT COUNT(*) FROM mcp_clients) < ?",
+                 (client_id, display_name, redirect_uris_json, registration_method, registered_at_ms)
+             SELECT ?, ?, ?, 'dynamic', ?
+             WHERE (SELECT COUNT(*) FROM mcp_clients WHERE registration_method = 'dynamic') < ?",
         )
         .bind(&client.client_id)
         .bind(&client.display_name)
@@ -75,20 +89,19 @@ impl SqliteDatabase {
         &self,
         client_id: &str,
     ) -> Result<Option<McpOAuthClient>, SqliteStoreError> {
-        let row = sqlx::query("SELECT client_id, display_name, redirect_uris_json FROM mcp_clients WHERE client_id = ?")
+        Ok(self
+            .registered_mcp_client(client_id)
+            .await?
+            .map(|registered| registered.client))
+    }
+
+    pub async fn registered_mcp_client(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<McpRegisteredOAuthClient>, SqliteStoreError> {
+        let row = sqlx::query("SELECT client_id, display_name, redirect_uris_json, registration_method FROM mcp_clients WHERE client_id = ?")
             .bind(client_id).fetch_optional(&self.pool).await.map_err(database_error)?;
-        row.map(|row| {
-            Ok(McpOAuthClient {
-                client_id: row.try_get("client_id").map_err(database_error)?,
-                display_name: row.try_get("display_name").map_err(database_error)?,
-                redirect_uris: serde_json::from_str(
-                    &row.try_get::<String, _>("redirect_uris_json")
-                        .map_err(database_error)?,
-                )
-                .map_err(|_| SqliteStoreError::CorruptData)?,
-            })
-        })
-        .transpose()
+        row.map(registered_client_from_row).transpose()
     }
 
     /// 認可codeを一度だけ消費してtoken pairを発行し、再利用時は発行済みfamilyを失効する。
@@ -366,6 +379,7 @@ impl SqliteDatabase {
 async fn upsert_client<'e, E>(
     executor: E,
     client: &McpOAuthClient,
+    registration_method: McpClientRegistrationMethod,
     registered_at: UnixMillis,
 ) -> Result<(), SqliteStoreError>
 where
@@ -373,15 +387,52 @@ where
 {
     let redirect_uris =
         serde_json::to_string(&client.redirect_uris).map_err(|_| SqliteStoreError::CorruptData)?;
-    sqlx::query("INSERT INTO mcp_clients (client_id, display_name, redirect_uris_json, registered_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET display_name = excluded.display_name, redirect_uris_json = excluded.redirect_uris_json")
+    let result = sqlx::query("INSERT INTO mcp_clients (client_id, display_name, redirect_uris_json, registration_method, registered_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET display_name = excluded.display_name, redirect_uris_json = excluded.redirect_uris_json WHERE mcp_clients.registration_method = excluded.registration_method")
         .bind(&client.client_id)
         .bind(&client.display_name)
         .bind(redirect_uris)
+        .bind(registration_method_value(registration_method))
         .bind(registered_at.get())
         .execute(executor)
         .await
         .map_err(database_error)?;
+    if result.rows_affected() != 1 {
+        return Err(SqliteStoreError::CorruptData);
+    }
     Ok(())
+}
+
+fn registered_client_from_row(
+    row: sqlx::sqlite::SqliteRow,
+) -> Result<McpRegisteredOAuthClient, SqliteStoreError> {
+    let registration_method = match row
+        .try_get::<String, _>("registration_method")
+        .map_err(database_error)?
+        .as_str()
+    {
+        "dynamic" => McpClientRegistrationMethod::Dynamic,
+        "metadata_document" => McpClientRegistrationMethod::MetadataDocument,
+        _ => return Err(SqliteStoreError::CorruptData),
+    };
+    Ok(McpRegisteredOAuthClient {
+        client: McpOAuthClient {
+            client_id: row.try_get("client_id").map_err(database_error)?,
+            display_name: row.try_get("display_name").map_err(database_error)?,
+            redirect_uris: serde_json::from_str(
+                &row.try_get::<String, _>("redirect_uris_json")
+                    .map_err(database_error)?,
+            )
+            .map_err(|_| SqliteStoreError::CorruptData)?,
+        },
+        registration_method,
+    })
+}
+
+const fn registration_method_value(method: McpClientRegistrationMethod) -> &'static str {
+    match method {
+        McpClientRegistrationMethod::Dynamic => "dynamic",
+        McpClientRegistrationMethod::MetadataDocument => "metadata_document",
+    }
 }
 
 fn actor_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Actor, SqliteStoreError> {

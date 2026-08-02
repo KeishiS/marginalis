@@ -5,13 +5,14 @@ use axum::{
     http::{HeaderMap, HeaderValue, Request},
 };
 use marginalis_application::{
-    AuthenticationUseCaseError, McpAuthorizationClient, McpOAuthUseCaseError, McpOAuthUseCases,
-    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
-    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands, NoteGraph, NoteGraphNote,
-    NoteGraphQuery, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
-    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
-    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
-    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    AuthenticationUseCaseError, McpAuthorizationClient, McpClientRegistrationMethod,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, McpValidatedAuthorizationRequest,
+    NoteAccessControl, NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
+    NoteCommands, NoteGraph, NoteGraphNote, NoteGraphQuery, NotePresentation, NotePreview,
+    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
+    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteUseCases,
+    NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
+    OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
@@ -997,6 +998,7 @@ impl McpOAuthUseCases for TestMcpOAuth {
                 display_name: "Test MCP client".into(),
                 redirect_uris: vec![redirect_uri.clone()],
             },
+            registration_method: McpClientRegistrationMethod::Dynamic,
             redirect_uri,
             resource_uri: request.resource_uri,
             scopes: request.scopes,
@@ -1059,7 +1061,10 @@ impl McpOAuthUseCases for TestMcpOAuth {
     }
 
     async fn revoke(&self, _actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {
-        if client_id == "unavailable-client" {
+        if matches!(
+            client_id.as_str(),
+            "unavailable-client" | "https://client.example.test/metadata.json"
+        ) {
             Err(McpOAuthUseCaseError::Unavailable)
         } else {
             Ok(())

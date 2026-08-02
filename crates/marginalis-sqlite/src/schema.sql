@@ -102,6 +102,7 @@ CREATE TABLE mcp_clients (
     client_id TEXT PRIMARY KEY NOT NULL,
     display_name TEXT NOT NULL,
     redirect_uris_json TEXT NOT NULL,
+    registration_method TEXT NOT NULL CHECK (registration_method IN ('dynamic', 'metadata_document')),
     registered_at_ms INTEGER NOT NULL
 ) STRICT;
 
