@@ -96,7 +96,7 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
     let validated = application
         .validate_authorization_request(&McpAuthorizationRequest {
             client_id: client.client_id.clone(),
-            redirect_uri: Some(client.redirect_uris[0].clone()),
+            redirect_uri: client.redirect_uris[0].clone(),
             resource_uri: resource_uri.clone(),
             scopes: vec!["notes:read".into(), "notes:write".into()],
             code_challenge: challenge,
@@ -128,7 +128,7 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
     application
         .validate_authorization_request(&McpAuthorizationRequest {
             client_id: client.client_id.clone(),
-            redirect_uri: Some(client.redirect_uris[0].clone()),
+            redirect_uri: client.redirect_uris[0].clone(),
             resource_uri: resource_uri.clone(),
             scopes: vec!["notes:read".into()],
             code_challenge: URL_SAFE_NO_PAD.encode(Sha256::digest(b"b".repeat(43))),

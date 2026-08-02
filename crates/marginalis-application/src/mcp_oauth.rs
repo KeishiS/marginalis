@@ -178,11 +178,12 @@ impl McpOAuthApplication {
         request: &McpAuthorizationRequest,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthError> {
         let resolved = self
-            .resolve_authorization_client(&request.client_id, request.redirect_uri.as_deref())
+            .resolve_authorization_client(&request.client_id, Some(&request.redirect_uri))
             .await?;
         self.validate_resolved_authorization_request(request, resolved)
     }
 
+    /// 同じ要求から解決した`resolved`を使い、clientを再取得せず残りの項目を検証する。
     pub fn validate_resolved_authorization_request(
         &self,
         request: &McpAuthorizationRequest,
@@ -191,7 +192,7 @@ impl McpOAuthApplication {
         if request.client_id != resolved.client.client_id {
             return Err(McpOAuthError::InvalidClient);
         }
-        if request.redirect_uri.as_deref() != Some(resolved.redirect_uri.as_str()) {
+        if request.redirect_uri != resolved.redirect_uri {
             return Err(McpOAuthError::InvalidRedirectUri);
         }
         let client = resolved.client;

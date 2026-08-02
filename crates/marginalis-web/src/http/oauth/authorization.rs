@@ -213,7 +213,7 @@ async fn mcp_authorize_request(
     }
     let request = McpAuthorizationRequest {
         client_id,
-        redirect_uri: Some(resolved.redirect_uri.clone()),
+        redirect_uri: resolved.redirect_uri.clone(),
         resource_uri: input.resource.clone().unwrap_or_default(),
         scopes: input.scopes(),
         code_challenge: input.code_challenge.clone().unwrap_or_default(),
@@ -368,7 +368,7 @@ async fn mcp_authorize_consent_inner(
     let state_value = form.state.as_deref().filter(|value| !value.is_empty());
     let request = McpAuthorizationRequest {
         client_id: form.client_id,
-        redirect_uri: Some(form.redirect_uri),
+        redirect_uri: form.redirect_uri,
         resource_uri: form.resource,
         scopes: form
             .scope

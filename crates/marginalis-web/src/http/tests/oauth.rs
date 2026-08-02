@@ -132,6 +132,29 @@ async fn authorization_get_reuses_the_resolved_client() {
     );
 }
 
+/// HTTP入力でredirect URIを省略した場合も、client解決後は必須の値として扱う。
+#[tokio::test]
+async fn authorization_get_normalizes_an_omitted_redirect_uri() {
+    let response = mcp_app()
+        .oneshot(
+            Request::get(
+                "/oauth/authorize?response_type=code&client_id=client&resource=https%3A%2F%2Fexample.test%2Fmcp&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256",
+            )
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(
+        response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("/auth/oidc/login?"))
+    );
+}
+
 #[tokio::test]
 async fn mcp_registration_reports_invalid_redirect_uri() {
     let response = mcp_app()
