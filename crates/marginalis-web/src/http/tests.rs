@@ -978,6 +978,7 @@ impl McpOAuthUseCases for TestMcpOAuth {
                 display_name: "Test MCP client".into(),
                 redirect_uris: vec![redirect_uri.clone()],
             },
+            registration_method: McpClientRegistrationMethod::Dynamic,
             redirect_uri,
         })
     }
@@ -986,20 +987,28 @@ impl McpOAuthUseCases for TestMcpOAuth {
         &self,
         request: marginalis_application::McpAuthorizationRequest,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
+        if request.client_id == "resolved-only-client" {
+            return Err(McpOAuthUseCaseError::Unavailable);
+        }
+        let resolved = self
+            .resolve_authorization_client(request.client_id.clone(), request.redirect_uri.clone())
+            .await?;
+        self.validate_resolved_authorization_request(request, resolved)
+            .await
+    }
+
+    async fn validate_resolved_authorization_request(
+        &self,
+        request: marginalis_application::McpAuthorizationRequest,
+        resolved: McpAuthorizationClient,
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
         if request.resource_uri != "https://example.test/mcp" {
             return Err(McpOAuthUseCaseError::InvalidTarget);
         }
-        let redirect_uri = request
-            .redirect_uri
-            .unwrap_or_else(|| "https://client.example.test/callback".into());
         Ok(McpValidatedAuthorizationRequest {
-            client: McpOAuthClient {
-                client_id: request.client_id,
-                display_name: "Test MCP client".into(),
-                redirect_uris: vec![redirect_uri.clone()],
-            },
-            registration_method: McpClientRegistrationMethod::Dynamic,
-            redirect_uri,
+            client: resolved.client,
+            registration_method: resolved.registration_method,
+            redirect_uri: resolved.redirect_uri,
             resource_uri: request.resource_uri,
             scopes: request.scopes,
             code_challenge: request.code_challenge,

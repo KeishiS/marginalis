@@ -701,6 +701,7 @@ fn rest_paths() -> Value {
                 ("400", response_ref("BadRequest")),
                 ("401", response_ref("AuthenticationRequired")),
                 ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
                 ("503", response_ref("Unavailable"))
             ]))
         },

@@ -85,7 +85,8 @@ impl SqliteDatabase {
         Ok(result.rows_affected() == 1)
     }
 
-    pub async fn mcp_client(
+    #[cfg(test)]
+    pub(crate) async fn mcp_client(
         &self,
         client_id: &str,
     ) -> Result<Option<McpOAuthClient>, SqliteStoreError> {

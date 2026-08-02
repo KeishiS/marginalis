@@ -318,6 +318,7 @@ pub struct McpAuthorizationRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthorizationClient {
     pub client: McpOAuthClient,
+    pub registration_method: McpClientRegistrationMethod,
     pub redirect_uri: String,
 }
 
@@ -547,6 +548,11 @@ pub trait McpOAuthUseCases: Send + Sync {
     async fn validate_authorization_request(
         &self,
         request: McpAuthorizationRequest,
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError>;
+    async fn validate_resolved_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+        resolved: McpAuthorizationClient,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError>;
     async fn authorize(
         &self,

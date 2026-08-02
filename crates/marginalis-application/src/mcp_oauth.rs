@@ -177,10 +177,25 @@ impl McpOAuthApplication {
         &self,
         request: &McpAuthorizationRequest,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthError> {
-        let (resolved, registration_method) = self
-            .resolve_client(&request.client_id, request.redirect_uri.as_deref())
+        let resolved = self
+            .resolve_authorization_client(&request.client_id, request.redirect_uri.as_deref())
             .await?;
+        self.validate_resolved_authorization_request(request, resolved)
+    }
+
+    pub fn validate_resolved_authorization_request(
+        &self,
+        request: &McpAuthorizationRequest,
+        resolved: McpAuthorizationClient,
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthError> {
+        if request.client_id != resolved.client.client_id {
+            return Err(McpOAuthError::InvalidClient);
+        }
+        if request.redirect_uri.as_deref() != Some(resolved.redirect_uri.as_str()) {
+            return Err(McpOAuthError::InvalidRedirectUri);
+        }
         let client = resolved.client;
+        let registration_method = resolved.registration_method;
         let redirect_uri = resolved.redirect_uri;
         if !resource_uri_matches(&self.resource_uri, &request.resource_uri) {
             return Err(McpOAuthError::InvalidTarget);
@@ -210,16 +225,6 @@ impl McpOAuthApplication {
         client_id: &str,
         redirect_uri: Option<&str>,
     ) -> Result<McpAuthorizationClient, McpOAuthError> {
-        self.resolve_client(client_id, redirect_uri)
-            .await
-            .map(|(client, _)| client)
-    }
-
-    async fn resolve_client(
-        &self,
-        client_id: &str,
-        redirect_uri: Option<&str>,
-    ) -> Result<(McpAuthorizationClient, McpClientRegistrationMethod), McpOAuthError> {
         let stored = self
             .repository
             .client(client_id)
@@ -268,13 +273,11 @@ impl McpOAuthApplication {
             None if client.redirect_uris.len() == 1 => client.redirect_uris[0].clone(),
             _ => return Err(McpOAuthError::InvalidRedirectUri),
         };
-        Ok((
-            McpAuthorizationClient {
-                client,
-                redirect_uri,
-            },
+        Ok(McpAuthorizationClient {
+            client,
             registration_method,
-        ))
+            redirect_uri,
+        })
     }
 
     pub async fn exchange_authorization_code(
@@ -449,6 +452,13 @@ impl McpOAuthUseCases for McpOAuthApplication {
         request: McpAuthorizationRequest,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
         McpOAuthApplication::validate_authorization_request(self, &request).await
+    }
+    async fn validate_resolved_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+        resolved: McpAuthorizationClient,
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
+        McpOAuthApplication::validate_resolved_authorization_request(self, &request, resolved)
     }
     async fn authorize(
         &self,
