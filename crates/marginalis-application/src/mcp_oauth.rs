@@ -32,12 +32,18 @@ pub trait McpOAuthRepository: Send + Sync {
         &self,
         client_id: &str,
     ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError>;
+    /// 認可codeを保存する。`client`は同じtransactionで登録し、外部keyを満たす。
+    ///
+    /// Client ID Metadata Documentで解決したclientは事前登録がないため、利用者が同意した
+    /// この時点で初めて保存する。未認証の要求では保存しない。
     async fn issue_authorization_code(
         &self,
         code: &str,
+        client: &McpOAuthClient,
         grant: &marginalis_domain::McpAuthorizationGrant,
         code_challenge: &str,
         expires_at: UnixMillis,
+        now: UnixMillis,
     ) -> Result<(), McpOAuthRepositoryError>;
     async fn exchange_authorization_code(
         &self,
@@ -91,6 +97,7 @@ pub struct McpOAuthApplication {
 impl McpOAuthApplication {
     pub const ACCESS_TOKEN_SECONDS: u64 = 60 * 60;
     pub const REFRESH_TOKEN_SECONDS: u64 = 30 * 24 * 60 * 60;
+    const AUTHORIZATION_CODE_SECONDS: i64 = 5 * 60;
     const MAX_DYNAMIC_CLIENTS: i64 = 1_000;
 
     pub fn new(
@@ -128,7 +135,7 @@ impl McpOAuthApplication {
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;
         if !registered {
-            return Err(McpOAuthError::InvalidRequest);
+            return Err(McpOAuthError::Capacity);
         }
         Ok(())
     }
@@ -139,19 +146,23 @@ impl McpOAuthApplication {
         request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthError> {
         let code = self.random.opaque_token();
+        let client = request.client;
         let grant = marginalis_domain::McpAuthorizationGrant {
             actor,
-            client_id: request.client.client_id,
+            client_id: client.client_id.clone(),
             redirect_uri: request.redirect_uri,
             resource_uri: request.resource_uri,
             scopes: request.scopes,
         };
+        let now = self.clock.now();
         self.repository
             .issue_authorization_code(
                 &code,
+                &client,
                 &grant,
                 &request.code_challenge,
-                UnixMillis::new(self.clock.now().get() + 5 * 60 * 1_000),
+                UnixMillis::new(now.get() + Self::AUTHORIZATION_CODE_SECONDS * 1_000),
+                now,
             )
             .await
             .map_err(|_| McpOAuthError::Unavailable)?;

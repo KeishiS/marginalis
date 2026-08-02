@@ -119,9 +119,9 @@ pub(crate) fn comma_separated(name: &str) -> Vec<String> {
 
 /// MCPを有効にするかどうか。
 ///
-/// 専用の有効化フラグを設けず、Authorization Server issuerの有無だけで決める。
-/// 「有効だがissuerが未設定」という状態を表現できなくするための規則で、起動処理と診断は
-/// どちらもこの関数を使う。
+/// Authorization Serverを内蔵したため、有効化に必要な外部設定がなくなった。判断材料は
+/// `MARGINALIS_MCP_ENABLE`だけとし、`true`と`false`以外は誤設定として起動を止める。
+/// 起動処理と診断はどちらもこの関数を使い、同じ入力に異なる判断をしない。
 pub(crate) fn mcp_enabled() -> Result<bool, crate::config::ConfigurationError> {
     match value(MCP_ENABLE).as_deref() {
         None | Some("false") => Ok(false),

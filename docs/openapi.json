@@ -957,6 +957,45 @@
         "summary": "Liveness check"
       }
     },
+    "/api/v3/mcp-authorizations/{client_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "MCP authorization revoked"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "summary": "Revoke every MCP token issued to one client"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "client_id",
+          "required": true,
+          "schema": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      ]
+    },
     "/api/v3/notes": {
       "get": {
         "responses": {

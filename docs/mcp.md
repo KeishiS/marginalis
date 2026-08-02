@@ -51,14 +51,22 @@ Client ID Metadata Document（CIMD）を優先方式として提供します。C
 使い、そのURLでclient名と`redirect_uris`を含むJSON文書を公開する方式です。Marginalisは文書内の
 `client_id`が取得元URLと完全に一致することと、認証方式が`none`であることを検査します。
 
-外部文書の取得では、HTTP redirect、特別用途IPアドレス、5 KiBを超える応答を拒否します。URLには
-HTTPS、path、userinfo・fragment・ドット区間を含まないことを要求します。queryを含むURLも、安全で
-単純な運用条件にするため受け付けません。有効な文書は`Cache-Control`と`Age`に従って最大1時間保持し、
-エラー応答や不正な文書は保持しません。
+`client_id`のURLは、HTTPSであることと、空でないpathを持つことを必要とします。userinfo、query、
+fragment、`.`や`..`のようなドット区間を含むURLは受け付けません。運用条件を単純に保つための制限です。
+
+外部文書の取得では、HTTP redirect、特別用途IPアドレス、5 KiBを超える応答を拒否します。有効な文書は
+`Cache-Control`と`Age`に従って最大1時間保持します。取得できなかった`client_id`は1分間記憶し、同じ値の
+繰り返しで取得が増えないようにします。認可画面はログイン前にも到達できるため、外部取得の回数自体にも
+1分あたりの上限を設けます。上限に達した場合は、clientが不正であるとは伝えず、一時的に利用できない
+ものとして扱います。
 
 Dynamic Client Registration（DCR）にも対応します。DCRはMCP仕様`2026-07-28`では非推奨ですが、
 既存クライアントとの互換経路として残します。登録数は1,000件に制限し、同じredirect originからの
-登録要求にも時間当たりの上限を設けます。期限切れの認証状態と参照されていない古いclientは、日次の
+登録要求にも時間当たりの上限を設けます。上限に達した場合は`503 temporarily_unavailable`を返します。
+client metadataの誤りではなく、サーバー側に空きがない状態だからです。
+
+CIMDのclientは事前登録しません。利用者が同意した時点で、そのときのclient名とredirect URIを認可code
+と一緒に保存します。期限切れの認証状態と、24時間以上参照されていない古いclientは、日次の
 `purge-expired`で削除します。
 
 ## 接続
@@ -72,9 +80,16 @@ Protected Resource Metadataから内蔵Authorization Serverを発見し、ブラ
 
 ## 認可の取消
 
-Web UIから接続単位で認可を取り消せます。また、OAuthクライアントはRFC 7009の`/oauth/revoke`へtokenと
-`client_id`を送信できます。どちらの操作でも対象のaccess tokenとrefresh tokenをtoken family単位で
-直ちに失効します。未知のtokenを指定した場合も、tokenの存在を開示しないため成功応答を返します。
+取消の経路は二つです。
+
+利用者本人は`DELETE /api/v3/mcp-authorizations/{client_id}`でclient単位に取り消します。Web UIと同じ
+session cookieとCSRF tokenが必要で、取り消せるのは自分に発行された認可だけです。現時点でこの操作を
+行う画面はないため、REST APIとして使います。
+
+OAuthクライアントはRFC 7009の`/oauth/revoke`へtokenと`client_id`を送信します。未知のtokenを指定した
+場合も、tokenの存在を開示しないため成功応答を返します。
+
+どちらの経路でも、対象のaccess tokenとrefresh tokenをtoken family単位で直ちに失効します。
 
 ## 失敗した場合の応答
 

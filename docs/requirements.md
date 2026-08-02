@@ -82,8 +82,9 @@
   tokenを検証し、認可応答にはAuthorization Serverを識別する`iss`を含めること。
 - **REQ-API-005 — MCP権限範囲**: MCPの`scope`は操作の種類だけを制限し、操作できる
   ノートの範囲を広げないこと。
-- **REQ-API-006 — MCP接続解除**: RFC 7009 endpointとWeb UIから認可を取り消せること。対象の
-  access tokenとrefresh tokenを同じtoken family単位で直ちに失効すること。
+- **REQ-API-006 — MCP接続解除**: RFC 7009 endpointと、利用者本人の認証を要するREST APIから
+  認可を取り消せること。対象のaccess tokenとrefresh tokenを同じtoken family単位で直ちに
+  失効すること。
 - **REQ-API-007 — MCP tool契約**: `list_notes`は可視ノートのID、題名、タグ、更新日時、revisionを
   返し、`get_note`も同じ更新日時を返すこと。`get_note_profile`は、本文と参考文献を相互に移動できる
   完全なAsciiDoc文書例と、書誌情報を推測しない注意事項を返すこと。成功時の`text`は

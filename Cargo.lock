@@ -1306,6 +1306,7 @@ name = "marginalis-sqlite"
 version = "0.24.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "marginalis-application",
  "marginalis-domain",
  "serde",

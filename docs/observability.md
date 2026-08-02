@@ -68,6 +68,7 @@ templateを`path`として記録します。未一致の経路は`<unmatched>`�
 | `oidc.discovery.completed`、`oidc.discovery.failed` | Kanidm discoveryの成功または到達不能 |
 | `mcp.oauth.operation.completed`、`mcp.oauth.operation.failed` | client登録、認可、token失効の結果 |
 | `mcp.oauth.token.completed`、`mcp.oauth.token.failed` | token発行またはrefreshの結果 |
+| `mcp.oauth.client_metadata.throttled` | Client ID Metadata Documentの取得が回数上限に達したこと |
 | `mcp.authentication.failed` | access tokenの拒否 |
 | `mcp.authentication.unavailable` | SQLiteによるtoken検証の障害 |
 | `mcp.authorization.failed` | 検証済みtokenのscope不足 |

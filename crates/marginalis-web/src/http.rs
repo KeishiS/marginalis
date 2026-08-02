@@ -149,7 +149,12 @@ pub fn router(state: ApiState) -> Router {
             get(read_note_acl).put(replace_note_acl),
         )
         .route("/api/v3/notes/{note_id}/source", get(export_note))
-        .route("/api/v3/notes/graph", get(read_note_graph));
+        .route("/api/v3/notes/graph", get(read_note_graph))
+        // 公開RESTの形をMCPの設定で変えない。MCPが無効な構成では、経路を隠さず利用不可を返す。
+        .route(
+            "/api/v3/mcp-authorizations/{client_id}",
+            axum::routing::delete(revoke_mcp_authorization),
+        );
     if let Some(endpoint) = state.mcp.as_ref() {
         let resource_metadata_path = url::Url::parse(&endpoint.metadata_uri)
             .expect("validated MCP resource metadata URL")
@@ -178,10 +183,6 @@ pub fn router(state: ApiState) -> Router {
             .route(
                 "/oauth/revoke",
                 post(mcp_revoke_token).layer(DefaultBodyLimit::max(16 * 1024)),
-            )
-            .route(
-                "/api/v3/mcp-authorizations/{client_id}",
-                axum::routing::delete(revoke_mcp_authorization),
             );
     }
     router

@@ -8,7 +8,11 @@ MCPのClient ID Metadata Documentは、利用者が指定した外部URLをサ�
 不正な要求を送る攻撃の対象になります。取得先はHTTPSに限定し、DNSで得たすべてのaddressがRFC 6890の
 特別用途IPアドレスではないことを接続前に検査します。接続先addressは検査結果へ固定し、自動redirectを
 無効にします。応答は5 KiBまで読み取り、有効なJSONだけを`Cache-Control`に従って最大1時間保持します。
-エラー応答と不正な文書は保持しません。
+
+認可画面`/oauth/authorize`はログイン前にも到達できるため、取得の回数そのものにも上限を設けます。
+取得できなかった`client_id`は1分間記憶して再取得を避け、加えて全体で1分あたり60回までしか外部へ
+接続しません。これにより、未認証の第三者がMarginalisを踏み台にして任意の公開hostへ要求を送り続ける
+ことを防ぎます。上限に達した場合は一時的な障害として扱い、clientが不正であるとは伝えません。
 
 `cargo make verify`は、RustSecの最新データベースを使って`Cargo.lock`を検査します。脆弱性に加え、
 soundness違反、保守終了、yankも失敗として扱います。ここでいうsoundness違反は、安全なRustコード

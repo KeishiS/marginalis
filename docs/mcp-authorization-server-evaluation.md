@@ -4,8 +4,10 @@
 
 この文書は、[Issue #24](https://github.com/KeishiS/marginalis/issues/24)で外部Authorization Serverへの
 移行可否を判断するために、候補ごとに同じ接続条件と認可条件を確認した手順と、再利用できる
-Auth0の設定上の注意点を記録します。最終判断は
-[ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)を正とします。
+Auth0の設定上の注意点を記録します。当時の判断は
+[ADR 0001](adr/0001-auth0をmcpのauthorization-serverに採用.md)に記録しましたが、その後
+[ADR 0007](adr/0007-mcpのauthorization-serverを内蔵する.md)で内蔵方式へ戻したため、現在の
+Marginalisは外部Authorization Serverを使いません。この文書は評価手順の記録として残します。
 
 対象はWorkOS AuthKit、Auth0、Keycloak、現在のMarginalis内蔵実装です。候補製品の一般的な機能比較や、
 Marginalis以外のシステムへの適性は扱いません。

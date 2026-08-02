@@ -32,6 +32,7 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 | ノート復元 | `POST /api/v3/notes/{note_id}/restore` | 削除後30日以内 |
 | ACL取得 | `GET /api/v3/notes/{note_id}/acl` | 所有者だけ |
 | ACL更新 | `PUT /api/v3/notes/{note_id}/acl` | CSRFトークンと`If-Match`が必要 |
+| MCP接続の取消 | `DELETE /api/v3/mcp-authorizations/{client_id}` | CSRFトークンが必要。自分に発行された認可だけを失効する |
 
 ## ノートの入力と権限
 

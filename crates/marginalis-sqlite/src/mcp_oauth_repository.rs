@@ -34,11 +34,13 @@ impl McpOAuthRepository for SqliteDatabase {
     async fn issue_authorization_code(
         &self,
         code: &str,
+        client: &McpOAuthClient,
         grant: &McpAuthorizationGrant,
         code_challenge: &str,
         expires_at: UnixMillis,
+        now: UnixMillis,
     ) -> Result<(), McpOAuthRepositoryError> {
-        self.issue_mcp_authorization_code(code, grant, code_challenge, expires_at)
+        self.issue_mcp_authorization_code(code, client, grant, code_challenge, expires_at, now)
             .await
             .map_err(|_| McpOAuthRepositoryError)
     }

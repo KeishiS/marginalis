@@ -1,6 +1,8 @@
 # 認証基盤の停止時にWebとMCPで起動可否を分ける
 
-> MCPに関する決定は[ADR 0006](0006-mcpのauthorization-serverを内蔵する.md)で置き換えました。
+> MCPに関する決定は[ADR 0007](0007-mcpのauthorization-serverを内蔵する.md)で置き換えました。
+> Authorization Serverを内蔵したため、MCPの起動可否を分ける対象がなくなりました。Web側の
+> 判断はこのADRのまま有効です。
 
 - 状態: 採用
 - 日付: 2026-07-30

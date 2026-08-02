@@ -1,4 +1,122 @@
+use std::sync::Arc;
+
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use marginalis_application::{
+    Clock, McpAuthorizationRequest, McpClientMetadataResolver, McpOAuthApplication,
+    McpOAuthRepositoryError, Random,
+};
+use marginalis_domain::EntityId as ApplicationEntityId;
+use sha2::{Digest, Sha256};
+
 use super::*;
+
+/// 決定的な時刻とtokenを供給する試験用の実装。
+struct FixedClock(i64);
+
+impl Clock for FixedClock {
+    fn now(&self) -> UnixMillis {
+        UnixMillis::new(self.0)
+    }
+}
+
+struct SequentialRandom(std::sync::Mutex<u32>);
+
+impl Random for SequentialRandom {
+    fn uuid_v7(&self) -> ApplicationEntityId {
+        EntityId::from_str("018f0000-0000-7000-8000-000000000000").expect("test entity ID")
+    }
+
+    fn opaque_token(&self) -> String {
+        let mut counter = self.0.lock().expect("test random counter");
+        *counter += 1;
+        format!("opaque-token-{counter}")
+    }
+}
+
+/// Client ID Metadata Documentの取得結果だけを差し替える。永続化はSQLiteの実装を使う。
+struct StaticMetadataResolver(McpOAuthClient);
+
+#[async_trait::async_trait]
+impl McpClientMetadataResolver for StaticMetadataResolver {
+    async fn resolve(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
+        Ok((client_id == self.0.client_id).then(|| self.0.clone()))
+    }
+}
+
+/// 事前登録のないClient ID Metadata Document clientでも、認可からMCP利用まで通ることを確認する。
+///
+/// `mcp_authorization_codes.client_id`は`mcp_clients`への外部keyを持つため、解決しただけで
+/// 登録していないclientでは認可code発行が失敗していた。applicationとSQLiteを実際に結線し、
+/// 取得だけを差し替えて経路全体を確認する。
+#[tokio::test]
+async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let client = McpOAuthClient {
+        client_id: "https://client.example.test/oauth/metadata.json".into(),
+        display_name: "Metadata document client".into(),
+        redirect_uris: vec!["https://client.example.test/callback".into()],
+    };
+    let resource_uri = "https://notes.example.test/mcp".to_owned();
+    let application = McpOAuthApplication::new(
+        Arc::new(database.clone()),
+        Arc::new(FixedClock(1_000)),
+        Arc::new(SequentialRandom(std::sync::Mutex::new(0))),
+        resource_uri.clone(),
+    )
+    .with_client_metadata_resolver(Arc::new(StaticMetadataResolver(client.clone())));
+
+    let verifier = "a".repeat(43);
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let validated = application
+        .validate_authorization_request(&McpAuthorizationRequest {
+            client_id: client.client_id.clone(),
+            redirect_uri: Some(client.redirect_uris[0].clone()),
+            resource_uri: resource_uri.clone(),
+            scopes: vec!["notes:read".into(), "notes:write".into()],
+            code_challenge: challenge,
+        })
+        .await
+        .expect("validated authorization request");
+    assert_eq!(validated.client, client);
+
+    let code = application
+        .authorize(actor("https://id.example.test", "alice"), validated)
+        .await
+        .expect("authorization code");
+    assert_eq!(
+        database
+            .mcp_client(&client.client_id)
+            .await
+            .expect("lookup"),
+        Some(client.clone()),
+        "同意した時点でclientを登録する"
+    );
+
+    let pair = application
+        .exchange_authorization_code(
+            code,
+            client.client_id.clone(),
+            Some(client.redirect_uris[0].clone()),
+            resource_uri.clone(),
+            verifier,
+        )
+        .await
+        .expect("token pair");
+    assert_eq!(pair.scope, "notes:read notes:write");
+
+    let authenticated = application
+        .authenticate(&pair.access_token, &resource_uri)
+        .await
+        .expect("authentication")
+        .expect("authenticated actor");
+    assert_eq!(authenticated.actor.subject(), "alice");
+    assert_eq!(authenticated.scopes, vec!["notes:read", "notes:write"]);
+}
 
 #[tokio::test]
 async fn rfc7009_revocation_revokes_the_whole_token_family() {
@@ -22,7 +140,14 @@ async fn rfc7009_revocation_revokes_the_whole_token_family() {
         scopes: vec!["notes:read".into()],
     };
     database
-        .issue_mcp_authorization_code("code", &grant, "challenge", UnixMillis::new(100))
+        .issue_mcp_authorization_code(
+            "code",
+            &client,
+            &grant,
+            "challenge",
+            UnixMillis::new(100),
+            UnixMillis::new(0),
+        )
         .await
         .expect("code");
     database
@@ -106,7 +231,14 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
         scopes: vec!["notes:read".into(), "notes:write".into()],
     };
     database
-        .issue_mcp_authorization_code("code", &grant, "challenge", UnixMillis::new(100))
+        .issue_mcp_authorization_code(
+            "code",
+            &client,
+            &grant,
+            "challenge",
+            UnixMillis::new(100),
+            UnixMillis::new(0),
+        )
         .await
         .expect("code");
     assert!(
@@ -324,8 +456,30 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
             .expect("register")
     );
     assert!(
+        !database
+            .register_mcp_client_bounded(
+                &McpOAuthClient {
+                    client_id: "overflow-client".into(),
+                    display_name: "Overflow client".into(),
+                    redirect_uris: vec!["https://client.example.test/callback".into()],
+                },
+                now,
+                1,
+            )
+            .await
+            .expect("register at the bound"),
+        "上限に達した場合は登録せずに知らせる"
+    );
+    assert!(
         database
             .mcp_client("stale-client")
+            .await
+            .expect("lookup")
+            .is_none()
+    );
+    assert!(
+        database
+            .mcp_client("overflow-client")
             .await
             .expect("lookup")
             .is_none()
@@ -361,7 +515,14 @@ async fn authorization_code_replay_revokes_the_issued_token_family() {
         scopes: vec!["notes:read".into()],
     };
     database
-        .issue_mcp_authorization_code("code", &grant, "challenge", UnixMillis::new(100))
+        .issue_mcp_authorization_code(
+            "code",
+            &client,
+            &grant,
+            "challenge",
+            UnixMillis::new(100),
+            UnixMillis::new(0),
+        )
         .await
         .expect("authorization code");
     let exchanged = database
@@ -473,7 +634,14 @@ async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
     };
     for code in ["first-code", "retryable-code"] {
         database
-            .issue_mcp_authorization_code(code, &grant, "challenge", UnixMillis::new(1_000))
+            .issue_mcp_authorization_code(
+                code,
+                &client,
+                &grant,
+                "challenge",
+                UnixMillis::new(1_000),
+                UnixMillis::new(0),
+            )
             .await
             .expect("authorization code");
     }
