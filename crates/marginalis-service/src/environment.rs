@@ -13,11 +13,8 @@ pub(crate) const OIDC_ISSUER_URL: &str = "MARGINALIS_OIDC_ISSUER_URL";
 pub(crate) const OIDC_CLIENT_ID: &str = "MARGINALIS_OIDC_CLIENT_ID";
 pub(crate) const OIDC_CLIENT_SECRET: &str = "MARGINALIS_OIDC_CLIENT_SECRET";
 pub(crate) const OIDC_CA_CERTIFICATE_FILE: &str = "MARGINALIS_OIDC_CA_CERTIFICATE_FILE";
+pub(crate) const MCP_ENABLE: &str = "MARGINALIS_MCP_ENABLE";
 pub(crate) const MCP_ALLOWED_ORIGINS: &str = "MARGINALIS_MCP_ALLOWED_ORIGINS";
-pub(crate) const MCP_AUTHORIZATION_ISSUER: &str = "MARGINALIS_MCP_AUTHORIZATION_ISSUER";
-pub(crate) const MCP_UPSTREAM_ISSUER_CLAIM: &str = "MARGINALIS_MCP_UPSTREAM_ISSUER_CLAIM";
-pub(crate) const MCP_UPSTREAM_SUBJECT_CLAIM: &str = "MARGINALIS_MCP_UPSTREAM_SUBJECT_CLAIM";
-pub(crate) const MCP_GROUPS_CLAIM: &str = "MARGINALIS_MCP_GROUPS_CLAIM";
 
 /// 変数を設定する必要がある条件。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -28,8 +25,6 @@ pub(crate) enum Requirement {
     Optional,
     /// 設定するとMCPが有効になる。
     EnablesMcp,
-    /// MCPを有効にした場合だけ必要。
-    WhenMcpEnabled,
 }
 
 /// 診断で値をどこまで出力するか。
@@ -87,7 +82,7 @@ pub(crate) const VARIABLES: &[Variable] = &[
         exposure: Exposure::Presence,
     },
     Variable {
-        name: MCP_AUTHORIZATION_ISSUER,
+        name: MCP_ENABLE,
         requirement: Requirement::EnablesMcp,
         exposure: Exposure::Value,
     },
@@ -95,21 +90,6 @@ pub(crate) const VARIABLES: &[Variable] = &[
         name: MCP_ALLOWED_ORIGINS,
         requirement: Requirement::Optional,
         exposure: Exposure::ElementCount,
-    },
-    Variable {
-        name: MCP_UPSTREAM_ISSUER_CLAIM,
-        requirement: Requirement::WhenMcpEnabled,
-        exposure: Exposure::Value,
-    },
-    Variable {
-        name: MCP_UPSTREAM_SUBJECT_CLAIM,
-        requirement: Requirement::WhenMcpEnabled,
-        exposure: Exposure::Value,
-    },
-    Variable {
-        name: MCP_GROUPS_CLAIM,
-        requirement: Requirement::WhenMcpEnabled,
-        exposure: Exposure::Value,
     },
 ];
 
@@ -142,8 +122,12 @@ pub(crate) fn comma_separated(name: &str) -> Vec<String> {
 /// 専用の有効化フラグを設けず、Authorization Server issuerの有無だけで決める。
 /// 「有効だがissuerが未設定」という状態を表現できなくするための規則で、起動処理と診断は
 /// どちらもこの関数を使う。
-pub(crate) fn mcp_enabled() -> bool {
-    value(MCP_AUTHORIZATION_ISSUER).is_some()
+pub(crate) fn mcp_enabled() -> Result<bool, crate::config::ConfigurationError> {
+    match value(MCP_ENABLE).as_deref() {
+        None | Some("false") => Ok(false),
+        Some("true") => Ok(true),
+        Some(_) => Err(crate::config::ConfigurationError::InvalidMcpEnable),
+    }
 }
 
 #[cfg(test)]

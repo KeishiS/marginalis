@@ -11,7 +11,8 @@ pub struct ServerConfig {
     pub http: HttpConfig,
     pub storage: StorageConfig,
     pub oidc: OidcConfig,
-    pub mcp: Option<McpConfig>,
+    pub mcp_enabled: bool,
+    pub mcp_allowed_origins: Vec<String>,
 }
 
 /// HTTP transportだけが必要とする公開設定。
@@ -37,20 +38,6 @@ pub struct OidcConfig {
     pub ca_certificate_file: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpAuthorizationConfig {
-    pub issuer: String,
-    pub upstream_issuer_claim: String,
-    pub upstream_subject_claim: String,
-    pub groups_claim: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpConfig {
-    pub allowed_origins: Vec<String>,
-    pub authorization: McpAuthorizationConfig,
-}
-
 /// secret値は公開設定から分離する。Debugを実装せずログ出力を防ぐ。
 pub struct SecretConfig {
     pub oidc_client_secret: String,
@@ -71,6 +58,8 @@ pub enum ConfigurationError {
         environment::MCP_ALLOWED_ORIGINS
     )]
     InvalidMcpAllowedOrigin,
+    #[error("{} must be `true` or `false`", environment::MCP_ENABLE)]
+    InvalidMcpEnable,
 }
 
 impl ServerConfig {
@@ -94,31 +83,16 @@ impl ServerConfig {
                 ca_certificate_file: environment::value(environment::OIDC_CA_CERTIFICATE_FILE)
                     .map(PathBuf::from),
             },
-            mcp: if environment::mcp_enabled() {
-                Some(McpConfig {
-                    allowed_origins: validate_mcp_allowed_origins(environment::comma_separated(
-                        environment::MCP_ALLOWED_ORIGINS,
-                    ))?,
-                    authorization: mcp_authorization()?,
-                })
-            } else {
-                None
-            },
+            mcp_enabled: environment::mcp_enabled()?,
+            mcp_allowed_origins: validate_mcp_allowed_origins(environment::comma_separated(
+                environment::MCP_ALLOWED_ORIGINS,
+            ))?,
         };
         let secrets = SecretConfig {
             oidc_client_secret: required_secret(environment::OIDC_CLIENT_SECRET)?,
         };
         Ok((configuration, secrets))
     }
-}
-
-fn mcp_authorization() -> Result<McpAuthorizationConfig, ConfigurationError> {
-    Ok(McpAuthorizationConfig {
-        issuer: required(environment::MCP_AUTHORIZATION_ISSUER)?,
-        upstream_issuer_claim: required(environment::MCP_UPSTREAM_ISSUER_CLAIM)?,
-        upstream_subject_claim: required(environment::MCP_UPSTREAM_SUBJECT_CLAIM)?,
-        groups_claim: required(environment::MCP_GROUPS_CLAIM)?,
-    })
 }
 
 impl StorageConfig {

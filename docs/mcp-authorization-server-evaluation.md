@@ -56,7 +56,7 @@ scopeを持っていても所有範囲は拡張しません。`user-a`による`
 ```sh
 nix develop --command cargo make protocol-regression-assets
 nix develop --command cargo make frontend-build
-nix develop --command cargo test -p marginalis-auth-oauth
+nix develop --command cargo test -p marginalis-web http::tests::oauth
 nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
 ```
 

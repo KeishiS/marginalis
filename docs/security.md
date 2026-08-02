@@ -4,6 +4,12 @@
 記録します。認証・認可の設計条件は[アーキテクチャ](architecture.md)、NixOSの秘密情報と
 systemdサービスの保護設定は[NixOSでの運用](nixos.md)を参照してください。
 
+MCPのClient ID Metadata Documentは、利用者が指定した外部URLをサーバーから取得するため、内部networkへ
+不正な要求を送る攻撃の対象になります。取得先はHTTPSに限定し、DNSで得たすべてのaddressがRFC 6890の
+特別用途IPアドレスではないことを接続前に検査します。接続先addressは検査結果へ固定し、自動redirectを
+無効にします。応答は5 KiBまで読み取り、有効なJSONだけを`Cache-Control`に従って最大1時間保持します。
+エラー応答と不正な文書は保持しません。
+
 `cargo make verify`は、RustSecの最新データベースを使って`Cargo.lock`を検査します。脆弱性に加え、
 soundness違反、保守終了、yankも失敗として扱います。ここでいうsoundness違反は、安全なRustコード
 から未定義動作へ到達できるライブラリー上の問題です。例外を設ける場合は、情報のID、影響を受けない
@@ -20,9 +26,9 @@ soundness違反、保守終了、yankも失敗として扱います。ここで�
 
 ### 影響の評価
 
-MarginalisはOIDC ProviderやAuth0の秘密鍵を保持せず、ID tokenとMCP access tokenの公開鍵による
-検証だけを行います。Web用Kanidm ID tokenは`ES256`、Auth0 access tokenは`RS256`に限定します。
-どちらもRSA秘密鍵の処理を実行しないため、報告された秘密鍵処理の影響を受けません。
+MarginalisはOIDC Providerの秘密鍵を保持せず、Kanidm ID tokenの公開鍵による検証だけを行います。
+署名方式は`ES256`に限定します。MCPには自己完結型の署名tokenを使わず、不透明tokenをhash化して
+SQLiteへ保存します。RSA秘密鍵の処理を実行しないため、報告された秘密鍵処理の影響を受けません。
 
 ### 現在の対応
 
@@ -35,4 +41,4 @@ MarginalisはOIDC ProviderやAuth0の秘密鍵を保持せず、ID tokenとMCP a
 - `openidconnect`から`rsa`への依存がなくなった場合
 - 修正版へ更新できるようになった場合
 - 脆弱性の影響範囲が変わった場合
-- KanidmまたはAuth0で許可する署名方式を変更する場合
+- Kanidmで許可する署名方式を変更する場合

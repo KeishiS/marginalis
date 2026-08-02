@@ -14,7 +14,7 @@ Pull Requestと公開前の`release-gate`で次を確認します。
 - 所有者、閲覧者、編集者、対象外利用者の表示・操作・情報非漏洩
 - ノート、ACL、参照、削除状態、revisionのtransaction整合性
 - AdocWeaveの属性環境、コードブロック・数式HTML、対応する旧archiveから現行archiveへの全件再検証
-- Kanidm、Auth0、TLS、サブパス、OIDC、MCP、バックアップ、削除、障害診断
+- Kanidm、内蔵OAuth、TLS、サブパス、OIDC、MCP、バックアップ、削除、障害診断
 - NixOS配備、空のデータベースの初期化、旧schemaの拒否
 
 ## 人手受入

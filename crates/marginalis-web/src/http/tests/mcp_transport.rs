@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn protected_resource_metadata_names_the_external_authorization_server() {
+async fn protected_resource_metadata_names_the_internal_authorization_server() {
     let response = mcp_app()
         .oneshot(
             Request::get("/.well-known/oauth-protected-resource/mcp")
@@ -18,7 +18,7 @@ async fn protected_resource_metadata_names_the_external_authorization_server() {
     assert_eq!(metadata["resource"], "https://example.test/mcp");
     assert_eq!(
         metadata["authorization_servers"],
-        serde_json::json!(["https://issuer.example.test/"])
+        serde_json::json!(["https://example.test/"])
     );
     assert_eq!(
         metadata["scopes_supported"],
@@ -27,19 +27,30 @@ async fn protected_resource_metadata_names_the_external_authorization_server() {
 }
 
 #[tokio::test]
-async fn marginalis_does_not_expose_authorization_server_endpoints() {
-    for path in [
-        "/.well-known/oauth-authorization-server",
-        "/oauth/authorize",
-        "/oauth/register",
-        "/oauth/token",
-    ] {
-        let response = mcp_app()
-            .oneshot(Request::get(path).body(Body::empty()).expect("request"))
-            .await
-            .expect("response");
-        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
-    }
+async fn marginalis_exposes_internal_authorization_server_metadata() {
+    let response = mcp_app()
+        .oneshot(
+            Request::get("/.well-known/oauth-authorization-server")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("metadata body");
+    let metadata: serde_json::Value = serde_json::from_slice(&body).expect("metadata");
+    assert_eq!(metadata["issuer"], "https://example.test/");
+    assert_eq!(
+        metadata["code_challenge_methods_supported"],
+        serde_json::json!(["S256"])
+    );
+    assert_eq!(
+        metadata["authorization_response_iss_parameter_supported"],
+        true
+    );
+    assert_eq!(metadata["client_id_metadata_document_supported"], true);
 }
 
 #[tokio::test]

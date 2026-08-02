@@ -185,8 +185,8 @@
   `OIDC_CA_CERTIFICATE_FILE`は、それぞれ`MARGINALIS_`を付けた名前へ変更した。NixOSモジュールが
   値を組み立てるため、`services.marginalis`のoptionを使う場合は設定の変更が不要である。
   環境変数を直接指定している場合は名前を変更する。
-- `MARGINALIS_MCP_ENABLE`を廃止した。MCPの有効・無効は
-  `MARGINALIS_MCP_AUTHORIZATION_ISSUER`の設定有無で決まる。NixOSモジュールの
+- 当時のMCP有効化フラグを廃止した。MCPの有効・無効は、外部Authorization Serverの
+  issuer設定の有無で決まる。NixOSモジュールの
   `services.marginalis.mcp.enable`は従来どおり使用できる。
 - `marginalis diagnose`が出力する`configuration`の形式を変更した。環境変数名を鍵とする
   `variables`と、判断結果の`mcp_enabled`を出力する。各項目は`set`と`required`を持ち、

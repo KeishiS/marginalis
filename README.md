@@ -11,16 +11,15 @@ Kanidmで利用者の認証とグループ管理を行い、Web UI、REST API、
 - Kanidmの`server-users`グループに属する利用者がアクセスできます。ノートは所有者と、
   所有者がACLで直接共有した利用者だけが閲覧できます。
 - `/api/v3`は公開REST APIです。仕様は[OpenAPI](docs/openapi.json)を参照してください。
-- MCPは、データを提供する保護対象サーバー（Protected Resource）としてStreamable HTTPで動作します。
-  クライアント登録、認可、token発行は
-  Auth0へ委ね、MarginalisはAuth0が発行したaccess tokenを検証します。接続方法は
-  [MCPとAuth0](docs/mcp.md)を参照してください。
+- MCPはStreamable HTTPで動作し、Authorization Serverを内蔵します。Web UIと同じKanidmで
+  ログインし、認可codeとtokenはMarginalisが管理します。接続方法は
+  [MCPへの接続と認可](docs/mcp.md)を参照してください。
 - 削除したノートは30日間保管し、日次のNixOSタイマーが期限を過ぎたデータを物理削除します。
 
 ## 利用と運用
 
 NixOSの設定、秘密情報、バックアップについては[NixOSでの運用](docs/nixos.md)、
-MCPへの接続方法については[MCPとAuth0](docs/mcp.md)を参照してください。
+MCPへの接続方法については[MCPへの接続と認可](docs/mcp.md)を参照してください。
 
 Marginalisを直接起動するには、少なくとも次の情報が必要です。
 

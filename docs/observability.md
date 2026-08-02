@@ -66,10 +66,10 @@ templateを`path`として記録します。未一致の経路は`<unmatched>`�
 | event | 結果・原因 |
 | --- | --- |
 | `oidc.discovery.completed`、`oidc.discovery.failed` | Kanidm discoveryの成功または到達不能 |
-| `mcp.authorization.discovery.completed`、`mcp.authorization.discovery.failed` | Auth0 metadataと初期JWKSの取得結果 |
-| `mcp.authorization.jwks_refresh.completed`、`mcp.authorization.jwks_refresh.failed` | 未知の`kid`を受けた後のJWKS更新結果 |
-| `mcp.authentication.failed` | access tokenの拒否。`reason`は安全な検証段階 |
-| `mcp.authentication.unavailable` | token検証基盤の障害 |
+| `mcp.oauth.operation.completed`、`mcp.oauth.operation.failed` | client登録、認可、token失効の結果 |
+| `mcp.oauth.token.completed`、`mcp.oauth.token.failed` | token発行またはrefreshの結果 |
+| `mcp.authentication.failed` | access tokenの拒否 |
+| `mcp.authentication.unavailable` | SQLiteによるtoken検証の障害 |
 | `mcp.authorization.failed` | 検証済みtokenのscope不足 |
 | `mcp.protocol.selected` | 固定した`protocol_era`、対応済み`protocol_version`、`method`によるmodern/legacy経路の選択 |
 | `mcp.request.completed` | 固定した`method`、`outcome`、任意の`reason`によるJSON-RPC requestの論理結果 |

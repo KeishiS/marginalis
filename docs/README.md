@@ -32,6 +32,7 @@
 - [アーキテクチャ](architecture.md)
 - [AdocWeave 0.27移行判断](adocweave-v0.27-migration.md)
 - [Auth0をMCPのAuthorization Serverに採用](adr/0001-auth0をmcpのauthorization-serverに採用.md)
+- [MCPのAuthorization Serverを内蔵する](adr/0006-mcpのauthorization-serverを内蔵する.md)
 - [SQLiteを正本として維持](adr/0002-sqliteを正本として維持する.md)
 - [CodeMirrorをAsciiDoc編集基盤に採用](adr/0003-codemirrorをasciidoc編集基盤に採用.md)
 - [書誌ライブラリーを利用者ごとに管理する](adr/0004-書誌ライブラリーを利用者ごとに管理する.md)

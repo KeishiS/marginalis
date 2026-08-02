@@ -2,19 +2,18 @@
 
 ## 目的
 
-この文書は、開発者に向けて、ブラウザーでのログイン、Auth0 access token検証、
-MCP Streamable HTTPの仕様を
-継続して確認する方法を説明します。外部サービスのUIは自動操作せず、実際のクライアントを使った
-確認結果はリリース受入へ記録します。
+この文書は、開発者に向けて、ブラウザーでのログイン、内蔵OAuth、MCP Streamable HTTPの仕様を
+継続して確認する方法を説明します。実際のクライアントを使った確認結果はリリース受入へ記録します。
 
 ## 自動テスト
 
 認証adapter、HTTP router、NixOS VMを責務ごとに分け、次を検証します。
 
 - OIDC Authorization Code + PKCE、nonce、group claim、Web session
-- Protected Resource MetadataとAuth0 issuer
-- Auth0 metadata、JWKS、`RS256`、issuer、audience、期限、上流identity、group、scope
-- 無効なtokenの`401`、scope不足の`403`、認証基盤障害の`503`
+- Protected Resource Metadataと内蔵Authorization Server Metadata
+- Authorization Code、PKCE S256、resource、scope、codeの一回限りの使用
+- 不透明tokenのhash保存、refresh token rotation、token family失効
+- 無効なtokenの`401`、scope不足の`403`、SQLite障害の`503`
 - MCP `2026-07-28`の`server/discover`、requestごとのmetadata、標準header照合、tool call
 - MCP `2025-11-25`と`2025-03-26`のinitialize、initialized notification、tool call
 - JSON-RPC error object、batch拒否
@@ -26,13 +25,13 @@ NixOS VM試験`kanidm-discovery-vm`は実Kanidm 1.10、private CA、nginx TLS、
 subpathを構築します。TLS越しのmetadata discoveryとlogin開始を検証し、サブパス復帰用Cookieと
 Kanidmへの遷移先を確認します。OIDC nonceとstateはCookieではなくサーバー側へ保持します。
 
-`mcp-authorization-vm`はTLS付きのfake Authorization Serverを構築し、metadataとJWKSの取得、
-署名tokenによるMCP呼び出し、認証基盤停止時の起動失敗を検証します。Auth0の外部UIとtenant設定は
-自動試験に含めず、この決定的な試験と人手受入を組み合わせます。
+`mcp-authorization-vm`はNixOS moduleで内蔵Authorization Serverを有効にし、metadata、認可endpoint、
+MCP endpointが同じbase URLで公開されることを検証します。
 
 ```sh
 nix develop --command cargo make frontend-build
-nix develop --command cargo test -p marginalis-auth-oauth
+nix develop --command cargo test -p marginalis-application mcp_oauth
+nix develop --command cargo test -p marginalis-sqlite tests::oauth
 nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
 nix build -L .#checks.x86_64-linux.mcp-authorization-vm
 nix build -L .#checks.x86_64-linux.kanidm-discovery-vm
@@ -41,8 +40,8 @@ nix develop --command cargo make protocol-regression-assets
 
 ## クライアントとの接続確認に使うテストデータ
 
-Auth0のDCR、認可画面、callback互換性は外部サービスとclientの組合せに依存します。ChatGPT、
-Claude Code、Codex CLIごとに実接続を確認し、使用されたprotocol版とmodern/legacyの別だけを
+内蔵Authorization ServerのDCR、認可画面、callback互換性をChatGPT、Claude Code、Codex CLIごとに
+実接続で確認し、使用されたprotocol版とmodern/legacyの別だけを
 記録します。header、token、client情報そのものは保存せず、client固有のrequest形状を
 Marginalisの一般仕様へ取り込みません。警告を含む変更toolの回帰試験は、三つのclientが共通して
 解釈できる標準MCP tool resultを固定し、client固有の表示文言には依存しません。

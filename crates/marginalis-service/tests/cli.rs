@@ -510,7 +510,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 13);
+    assert_eq!(report["database"]["schema"]["actual"], 14);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
     assert!(!String::from_utf8_lossy(&healthy.stderr).contains("must-not-be-reported"));
 
@@ -570,9 +570,9 @@ fn blank_values_are_unset_for_both_diagnose_and_startup() {
     fs::remove_dir_all(&directory).expect("remove test directory");
 }
 
-/// MCPの有効・無効が、専用のフラグではなくissuerの設定有無で決まることを確認する。
+/// MCPの有効・無効が、内蔵Authorization Server用の明示的なフラグで決まることを確認する。
 #[test]
-fn mcp_is_enabled_by_the_authorization_issuer_alone() {
+fn mcp_is_enabled_by_the_internal_authorization_server_flag() {
     let directory = test_directory("mcp-enablement");
     fs::create_dir(&directory).expect("test directory");
     let database = directory.join("marginalis.sqlite3");
@@ -596,24 +596,21 @@ fn mcp_is_enabled_by_the_authorization_issuer_alone() {
         serde_json::from_slice(&disabled.stdout).expect("diagnostic JSON");
     assert_eq!(report["configuration"]["mcp_enabled"], false);
     assert_eq!(
-        report["configuration"]["variables"]["MARGINALIS_MCP_GROUPS_CLAIM"]["required"],
+        report["configuration"]["variables"]["MARGINALIS_MCP_ENABLE"]["set"],
         false
     );
 
     let enabled = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
         .arg("diagnose")
         .env("MARGINALIS_DATABASE_URL", &database_url)
-        .env(
-            "MARGINALIS_MCP_AUTHORIZATION_ISSUER",
-            "https://auth.example.test/",
-        )
+        .env("MARGINALIS_MCP_ENABLE", "true")
         .output()
         .expect("diagnose with issuer");
     let report: serde_json::Value =
         serde_json::from_slice(&enabled.stdout).expect("diagnostic JSON");
     assert_eq!(report["configuration"]["mcp_enabled"], true);
     assert_eq!(
-        report["configuration"]["variables"]["MARGINALIS_MCP_GROUPS_CLAIM"]["required"],
+        report["configuration"]["variables"]["MARGINALIS_MCP_ENABLE"]["set"],
         true
     );
 

@@ -1,5 +1,7 @@
 # Auth0をMCPのAuthorization Serverに採用
 
+> この決定は[ADR 0006](0006-mcpのauthorization-serverを内蔵する.md)で置き換えました。
+
 - 状態: 採用
 - 日付: 2026-07-29
 

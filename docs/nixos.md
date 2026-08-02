@@ -23,12 +23,6 @@ services.marginalis = {
   mcp = {
     enable = true;
     allowedOrigins = [ "https://chatgpt.com" ];
-    authorization = {
-      issuer = "https://example.auth0.com/";
-      upstreamIssuerClaim = "https://notes.example.test/claims/upstream-issuer";
-      upstreamSubjectClaim = "https://notes.example.test/claims/upstream-subject";
-      groupsClaim = "https://notes.example.test/claims/groups";
-    };
   };
 };
 ```
@@ -48,7 +42,10 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは13です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは14です。旧versionを起動時に自動移行しません。
+
+schema 13から更新する場合は、更新前に`export-archive`を実行し、新しい版で空の`dataDir`へ
+`import-archive`してください。MCP clientとtokenはアーカイブへ含まれないため、更新後に接続し直します。
 
 v0.21.0以前のschema 12から更新する場合は、更新前の実行環境で`export-archive`を実行し、
 新しい版で空の`dataDir`へ`import-archive`で取り込んでください。archiveの形式は変わらないため、
@@ -68,7 +65,7 @@ sudo -u marginalis marginalis migrate-archive \
 ```
 
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
-現行の`migrate-archive`でarchive 13へ変換してから、空のschema 13へ取り込んでください。
+現行の`migrate-archive`でarchive 13へ変換してから、空のschema 14へ取り込んでください。
 この経路では全ノートをAdocWeave 0.27.0の規則で再検証し、題名、タグ、参照索引を再構築します。
 ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
@@ -98,16 +95,9 @@ reverse proxyは`/auth/`、`/api/`、`/mcp`、`/.well-known/`を同一オリジ�
 `mcp.allowedOrigins` は HTTPS origin の完全一致であり、path、query、userinfo を含む値や HTTP origin は
 起動時に拒否されます。
 
-MCPを有効にする場合は`mcp.authorization`の全項目が必須です。`issuer`にはAuth0 tenantのHTTPS issuerを
-末尾の`/`を含めて指定します。三つのclaim名はAuth0 Login Actionがaccess tokenへ格納する名前空間付き
-claimと完全に一致させます。MCP URLは`baseUrl`から自動的に導出され、Auth0 API identifierにも同じ値を
-設定します。
-
-起動時にAuth0のAuthorization Server MetadataとJWKSを取得できない場合、serviceは起動しません。
-Web用Kanidm OIDC discoveryは従来どおり一時的な障害時にfail closedで起動します。二つの挙動を
-混同しないでください。この違いを意図的に維持する理由は
-[認証基盤の停止時にWebとMCPで起動可否を分ける](adr/0005-認証基盤の停止時にwebとmcpで起動可否を分ける.md)に
-記録しています。
+MCPを有効にすると、内蔵Authorization Serverのissuerと各endpointを`baseUrl`から自動的に導出します。
+外部Authorization Serverのissuerやclaim名は設定しません。詳しい接続方法は
+[MCPへの接続と認可](mcp.md)を参照してください。
 
 Kanidmのdiscoveryに失敗した場合、serviceは動作したままログインだけができません。起動失敗より
 気付きにくいため、`oidc.discovery.failed`を監視対象へ含めてください。
@@ -138,7 +128,7 @@ service account、API token、custom ACP は不要である。
 ## 定期処理
 
 - `marginalis-purge-expired.timer` は毎日実行され、30 日を超えたソフトデリート済みノートと、
-  期限切れ・失効済みのWeb/OIDC認証状態を削除します。MCP tokenはAuth0が管理します。
+  期限切れ・失効済みのWeb/OIDC認証状態、MCPの認可codeとtoken、参照されない古いclientを削除します。
 - `backupDirectory`を設定すると`marginalis-backup.timer`が毎日実行されます。単一のSQLite read
   transactionからsnapshotを取得するため、HTTP serviceを停止しません。
 - 成功世代は`backup-<Unix時刻ミリ秒>`というディレクトリで、`marginalis-archive.json`と
@@ -177,9 +167,9 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 ## 以前のarchiveからの移行
 
 v0.18.0が作成したarchive 11、v0.16.1が作成したarchive 10、v0.16.0が作成したarchive 9、
-v0.15.0が作成したarchive 8は、復元前に現行のarchive 13へ変換します。SQLite schema 13には引用の索引を追加したため、
+v0.15.0が作成したarchive 8は、復元前に現行のarchive 13へ変換します。SQLite schema 14には引用の索引とMCP OAuthの状態表があるため、
 稼働中の旧databaseファイルはそのまま使用できません。archiveを書き出してから変換し、空の
-schema 13へ復元してください。
+schema 14へ復元してください。
 
 ```sh
 sudo -u marginalis marginalis migrate-archive \
@@ -217,10 +207,10 @@ AdocWeave 0.27.0でmetadataを再構築するため、databaseファイルを直
    v0.10.0で修正し、archive 7の書き出しからやり直します。エラーに示された`position`は、
    archiveの`notes`または`note_acl`配列内の1から始まる位置です。診断へ本文や識別子は
    出力されません。
-5. 成功したarchive 13を、次節の手順で空のschema 13へ取り込みます。
+5. 成功したarchive 13を、次節の手順で空のschema 14へ取り込みます。
 
 CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行操作を適用し、入力archiveの不変、
-旧archiveの直接取込拒否、schema 13でのノート、ACL、参照、削除状態、revisionの一致、archive 13の
+旧archiveの直接取込拒否、schema 14でのノート、ACL、参照、削除状態、revisionの一致、archive 13の
 再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
 
 ## 他の道具で読める形での取り出し
@@ -343,14 +333,14 @@ journalctl -u marginalis-diagnose.service -o cat -n 20
 ```
 
 `diagnose`はSQLiteの読み取り可否、schema version、`PRAGMA quick_check`、
-外部キー違反件数と、Auth0設定の有無を含む非秘密設定だけをJSONで出力します。全検査が正常な場合だけ
+外部キー違反件数と、MCPの有効化を含む非秘密設定だけをJSONで出力します。全検査が正常な場合だけ
 終了status 0です。
 databaseを作成・移行せず、OIDC client secret、Cookie、token、ノート本文は出力しません。
 
 設定の報告は`configuration.variables`に環境変数名を鍵として並びます。各項目の`set`は設定の有無、
 `required`は現在の構成で必須かどうかを示します。`value`は秘密でも保存先でもない変数にだけ付き、
 `element_count`はカンマ区切りの変数の要素数です。`configuration.mcp_enabled`はMCPを有効と判断した
-結果で、`MARGINALIS_MCP_AUTHORIZATION_ISSUER`が設定されているかどうかと一致します。
+結果で、`MARGINALIS_MCP_ENABLE`の値と一致します。
 serviceの起動処理と`diagnose`は同じ宣言から値を読むため、両者の判断が食い違いません。
 値の前後の空白は取り除いて扱い、空白だけの値は未設定とみなします。
 `status`が`failed`の場合は`database.error`と各検査の`actual`、`expected`を確認します。

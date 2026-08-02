@@ -58,7 +58,7 @@ pub(crate) async fn diagnose() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn public_configuration() -> PublicConfigurationReport {
-    let mcp_enabled = environment::mcp_enabled();
+    let mcp_enabled = environment::mcp_enabled().unwrap_or(false);
     let variables = environment::VARIABLES
         .iter()
         .map(|variable| {
@@ -67,7 +67,6 @@ fn public_configuration() -> PublicConfigurationReport {
                 set: value.is_some(),
                 required: match variable.requirement {
                     Requirement::Always => true,
-                    Requirement::WhenMcpEnabled => mcp_enabled,
                     Requirement::Optional | Requirement::EnablesMcp => false,
                 },
                 value: match variable.exposure {

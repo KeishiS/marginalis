@@ -6,14 +6,16 @@ use std::future::Future;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, Note, NoteAccess, NoteAclEntry,
-    NoteDraft, NoteId, NoteListEntry, NotePermission, NoteSummary, NoteValidationTarget, Revision,
-    UnixMillis, Utf8ByteSpan, WebSession,
+    Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpAuthorizationGrant,
+    McpOAuthClient, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
+    NotePermission, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
+    WebSession,
 };
 
 mod bibliography;
 mod citation;
 mod identity;
+mod mcp_oauth;
 mod notes;
 mod session;
 mod snapshot;
@@ -25,6 +27,9 @@ pub use bibliography::{
 pub use citation::CitationStyle;
 pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
+};
+pub use mcp_oauth::{
+    McpClientMetadataResolver, McpOAuthApplication, McpOAuthRepository, McpOAuthRepositoryError,
 };
 pub use notes::{
     AccessibleNote, NoteAclRepository, NoteApplication, NoteBibliographyEntry, NoteCitationQuery,
@@ -287,6 +292,77 @@ pub enum NoteUseCaseError {
     CorruptData,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum McpOAuthUseCaseError {
+    InvalidRequest,
+    InvalidClient,
+    InvalidRedirectUri,
+    InvalidScope,
+    InvalidTarget,
+    InvalidGrant,
+    Unavailable,
+}
+
+/// OAuth Authorization Code Flowでtransportから渡す検証済み候補。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpAuthorizationRequest {
+    pub client_id: String,
+    pub redirect_uri: Option<String>,
+    pub resource_uri: String,
+    pub scopes: Vec<String>,
+    pub code_challenge: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpAuthorizationClient {
+    pub client: McpOAuthClient,
+    pub redirect_uri: String,
+}
+
+/// client登録とredirect URIを照合し、既定scopeも解決した認可要求。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpValidatedAuthorizationRequest {
+    pub client: McpOAuthClient,
+    pub redirect_uri: String,
+    pub resource_uri: String,
+    pub scopes: Vec<String>,
+    pub code_challenge: String,
+}
+
+/// refresh token rotationでadapterへ渡す、生成済みの新旧tokenとbinding。
+pub struct McpRefreshTokenRotation {
+    pub refresh_token: String,
+    pub client_id: String,
+    pub resource_uri: String,
+    pub requested_scopes: Option<Vec<String>>,
+    pub new_access_token: String,
+    pub new_refresh_token: String,
+    pub access_expires_at: UnixMillis,
+    pub refresh_expires_at: UnixMillis,
+}
+
+/// 認可codeの一回消費とtoken pair発行を同じtransactionで行うための入力。
+pub struct McpAuthorizationCodeExchange {
+    pub code: String,
+    pub client_id: String,
+    pub redirect_uri: Option<String>,
+    pub resource_uri: String,
+    pub code_challenge: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub access_expires_at: UnixMillis,
+    pub refresh_expires_at: UnixMillis,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum McpRefreshTokenRotationOutcome {
+    Rotated {
+        grant: McpAuthorizationGrant,
+        access_scopes: Vec<String>,
+    },
+    InvalidToken,
+    InvalidScope,
+}
 /// HTML内のノート参照へ付与するtransport固有の公開パス。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteRenderContext {
@@ -435,25 +511,57 @@ pub trait OidcAuthenticationUseCases: Send + Sync {
     ) -> Result<Actor, AuthenticationUseCaseError>;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum McpAccessTokenRejection {
-    TokenFormat,
-    StandardClaims,
-    IdentityClaims,
-    GroupsClaim,
-    ScopeClaim,
+/// token endpointだけが短時間保持するtoken pair。秘密値のためDebugを実装しない。
+pub struct McpTokenPair {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub access_expires_in_seconds: u64,
+    pub scope: String,
 }
 
-impl McpAccessTokenRejection {
-    pub const fn log_reason(self) -> &'static str {
-        match self {
-            Self::TokenFormat => "token-format",
-            Self::StandardClaims => "standard-claims",
-            Self::IdentityClaims => "identity-claims",
-            Self::GroupsClaim => "groups-claim",
-            Self::ScopeClaim => "scope-claim",
-        }
-    }
+#[async_trait]
+pub trait McpOAuthUseCases: Send + Sync {
+    async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError>;
+    async fn resolve_authorization_client(
+        &self,
+        client_id: String,
+        redirect_uri: Option<String>,
+    ) -> Result<McpAuthorizationClient, McpOAuthUseCaseError>;
+    async fn validate_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError>;
+    async fn authorize(
+        &self,
+        actor: Actor,
+        request: McpValidatedAuthorizationRequest,
+    ) -> Result<String, McpOAuthUseCaseError>;
+    async fn exchange_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: Option<String>,
+        resource_uri: String,
+        verifier: String,
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
+    async fn refresh_access_token(
+        &self,
+        refresh_token: String,
+        client_id: String,
+        resource_uri: String,
+        scopes: Option<Vec<String>>,
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
+    async fn authenticate(
+        &self,
+        token: String,
+        resource_uri: String,
+    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError>;
+    async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError>;
+    async fn revoke_token(
+        &self,
+        token: String,
+        client_id: String,
+    ) -> Result<(), McpOAuthUseCaseError>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -461,7 +569,7 @@ impl McpAccessTokenRejection {
 pub enum McpAccessTokenAuthenticationError {
     Configuration,
     Discovery,
-    Rejected(McpAccessTokenRejection),
+    Rejected,
     Unavailable,
 }
 
