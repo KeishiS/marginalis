@@ -305,11 +305,11 @@ pub enum McpOAuthUseCaseError {
     Unavailable,
 }
 
-/// OAuth Authorization Code Flowでtransportから渡す検証済み候補。
+/// OAuth Authorization Code Flowでtransportから渡す、clientとredirect URIを解決済みの候補。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthorizationRequest {
     pub client_id: String,
-    pub redirect_uri: Option<String>,
+    pub redirect_uri: String,
     pub resource_uri: String,
     pub scopes: Vec<String>,
     pub code_challenge: String,
@@ -549,6 +549,7 @@ pub trait McpOAuthUseCases: Send + Sync {
         &self,
         request: McpAuthorizationRequest,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError>;
+    /// 同じ要求から解決した`resolved`を使い、clientを再取得せず残りの項目を検証する。
     async fn validate_resolved_authorization_request(
         &self,
         request: McpAuthorizationRequest,

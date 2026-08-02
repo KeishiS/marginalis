@@ -991,7 +991,10 @@ impl McpOAuthUseCases for TestMcpOAuth {
             return Err(McpOAuthUseCaseError::Unavailable);
         }
         let resolved = self
-            .resolve_authorization_client(request.client_id.clone(), request.redirect_uri.clone())
+            .resolve_authorization_client(
+                request.client_id.clone(),
+                Some(request.redirect_uri.clone()),
+            )
             .await?;
         self.validate_resolved_authorization_request(request, resolved)
             .await
