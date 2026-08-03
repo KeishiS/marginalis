@@ -113,6 +113,39 @@ test("対応するAsciiDoc表示要素を一つのfixtureで固定する", () =>
   expect(container.querySelector(".math-display")).toBeTruthy();
 });
 
+test("mathtools拡張を同一オリジンから読み込む", async () => {
+  render(
+    <RenderedContent
+      html={String.raw`<code class="math-latex" data-math-language="latexmath" data-math-display="inline">a \coloneqq b</code>`}
+      preview
+      styleNonce="test-nonce"
+    />,
+  );
+
+  await waitFor(() =>
+    expect(window.MathJax).toMatchObject({
+      loader: {
+        load: ["[tex]/mathtools"],
+        source: {
+          "[tex]/boldsymbol": expect.stringContaining("boldsymbol.js"),
+          "[tex]/mathtools": expect.stringContaining("mathtools.js"),
+        },
+      },
+      tex: { packages: { "[+]": ["mathtools"] } },
+    }),
+  );
+  const loader = window.MathJax as {
+    loader: { source: Record<string, string> };
+  };
+  expect(new URL(loader.loader.source["[tex]/boldsymbol"]).origin).toBe(
+    window.location.origin,
+  );
+  expect(new URL(loader.loader.source["[tex]/mathtools"]).origin).toBe(
+    window.location.origin,
+  );
+  document.querySelector("script[src$='/tex-svg.js']")?.remove();
+});
+
 test("非表示中に届いた数式を再表示時に組版する", async () => {
   const typesetClear = vi.fn();
   const typesetPromise = vi.fn().mockResolvedValue(undefined);

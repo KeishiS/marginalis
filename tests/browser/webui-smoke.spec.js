@@ -250,15 +250,27 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   page,
 }) => {
   const fontRequests = [];
+  const extensionResponses = [];
   page.on("request", (request) => {
     if (request.url().includes("mathjax-newcm-font")) {
       fontRequests.push(request.url());
     }
   });
+  page.on("response", (response) => {
+    if (
+      response.url().endsWith("/assets/boldsymbol.js") ||
+      response.url().endsWith("/assets/mathtools.js")
+    ) {
+      extensionResponses.push({
+        url: response.url(),
+        status: response.status(),
+      });
+    }
+  });
   await page.route("**/api/v3/notes/preview", async (route) => {
     const source = (await route.request().postDataJSON()).source;
     const html = source.includes(String.raw`stem:[\lambda]`)
-      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">\lambda \in \mathbb{R}</code>のチェックです。</p>` +
+      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">f(x) \coloneqq \lambda x \in \mathbb{R}</code>のチェックです。</p>` +
         (source.includes("プレビューから分割への確認")
           ? "<p>プレビューから分割への確認</p>"
           : "")
@@ -288,6 +300,7 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   await page.getByRole("button", { name: "分割" }).click();
 
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.locator(".preview-content [data-math-prepared='true']"),
   ).toHaveCount(1);
@@ -333,6 +346,18 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
       (url) => new URL(url).origin === page.url().replace(/\/notes\/new$/, ""),
     ),
   ).toBe(true);
+  expect(extensionResponses).toEqual(
+    expect.arrayContaining([
+      {
+        url: "http://127.0.0.1:42877/assets/boldsymbol.js",
+        status: 200,
+      },
+      {
+        url: "http://127.0.0.1:42877/assets/mathtools.js",
+        status: 200,
+      },
+    ]),
+  );
 });
 
 test("閲覧画面の遅延字体を同一オリジンから読み込む", async ({ page }) => {
