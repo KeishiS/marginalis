@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import boldsymbolUrl from "mathjax/input/tex/extensions/boldsymbol.js?url&no-inline";
+import mathtoolsUrl from "mathjax/input/tex/extensions/mathtools.js?url&no-inline";
 import mathJaxUrl from "mathjax/tex-svg.js?url";
 import { enhanceSourceBlocks, prepareMath } from "./renderedContentEnhancement";
 
@@ -115,13 +117,22 @@ async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {
 
   mathJaxLoader = new Promise<MathJaxRuntime>((resolve, reject) => {
     const mathJaxScriptUrl = new URL(mathJaxUrl, document.baseURI);
+    const boldsymbolScriptUrl = new URL(boldsymbolUrl, document.baseURI);
+    const mathtoolsScriptUrl = new URL(mathtoolsUrl, document.baseURI);
     const fontDirectory = new URL("mathjax-fonts", mathJaxScriptUrl).toString();
     window.MathJax = {
       startup: {
         typeset: false,
         ready: () => initializeMathJaxWithStyleNonce(styleNonce),
       },
-      loader: { paths: { fonts: fontDirectory } },
+      loader: {
+        load: ["[tex]/mathtools"],
+        paths: { fonts: fontDirectory },
+        source: {
+          "[tex]/boldsymbol": boldsymbolScriptUrl.toString(),
+          "[tex]/mathtools": mathtoolsScriptUrl.toString(),
+        },
+      },
       // enrichmentはexplorerを有効化し、読み上げ用領域のinline styleを挿入する。
       // Marginalisはstyle-srcを同一originに限定するため、任意の対話機能を無効にする。
       options: {
@@ -130,6 +141,7 @@ async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {
         enableMenu: false,
         menuOptions: { settings: { enrich: false } },
       },
+      tex: { packages: { "[+]": ["mathtools"] } },
       svg: { fontCache: "local" },
     };
     const script = document.createElement("script");

@@ -339,6 +339,26 @@ async fn frontend_assets_are_served_with_explicit_content_types() {
         )
     );
 
+    for extension in ["boldsymbol.js", "mathtools.js"] {
+        let mathjax_extension = app()
+            .oneshot(
+                Request::get(format!("/assets/{extension}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("MathJax extension response");
+        assert_eq!(mathjax_extension.status(), StatusCode::OK);
+        assert_eq!(
+            mathjax_extension.headers().get(header::CONTENT_TYPE),
+            Some(
+                &"text/javascript; charset=utf-8"
+                    .parse()
+                    .expect("content type")
+            )
+        );
+    }
+
     let mathjax_font = app()
         .oneshot(
             Request::get("/assets/mathjax-fonts/mathjax-newcm-font/svg/dynamic/double-struck.js")
