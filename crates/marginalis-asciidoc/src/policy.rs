@@ -518,6 +518,16 @@ mod tests {
     }
 
     #[test]
+    fn accepts_python_source_blocks() {
+        let source = format!("{HEADER}[source,python]\n----\nprint(\"hello\")\n----\n");
+        assert!(
+            violations(&source).is_empty(),
+            "Pythonのソースブロックを受理します: {:?}",
+            violations(&source)
+        );
+    }
+
+    #[test]
     fn rejects_source_languages_outside_the_policy() {
         let source = format!("{HEADER}[source,malbolge]\n----\nx\n----\n");
         assert!(

@@ -68,6 +68,7 @@ pub const NOTE_POLICY: NotePolicy = NotePolicy {
     max_output_bytes: 50 * 1024 * 1024,
     allowed_source_languages: &[
         "rust",
+        "python",
         "typescript",
         "javascript",
         "json",

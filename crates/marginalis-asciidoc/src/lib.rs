@@ -14,7 +14,7 @@ mod rendering;
 pub const ADOCWEAVE_SOURCE_REVISION: &str = "c12c63a22ff908bf3d7f9db0203806befc90cb62";
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.27.0";
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
-pub const AUTHORING_PROFILE_VERSION: u32 = 13;
+pub const AUTHORING_PROFILE_VERSION: u32 = 14;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsciiDocNoteContent;

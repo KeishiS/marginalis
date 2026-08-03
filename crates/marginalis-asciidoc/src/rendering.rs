@@ -247,12 +247,12 @@ mod tests {
     #[test]
     fn supported_blocks_render_without_raw_markup() {
         let html = render_note(
-            &note("[[local]]\nA *safe* paragraph. See <<local>>.\n\n[source,rust]\n----\nfn main() {}\n----"),
+            &note("[[local]]\nA *safe* paragraph. See <<local>>.\n\n[source,python]\n----\nprint(\"hello\")\n----"),
             NoteRenderInputs::default(),
         )
         .expect("render");
         assert!(html.contains("<strong>safe</strong>"));
-        assert!(html.contains("language-rust"));
+        assert!(html.contains("language-python"));
         assert!(html.contains("href=\"#local\""));
     }
 
