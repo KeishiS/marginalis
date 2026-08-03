@@ -41,6 +41,14 @@
 - `marginalis purge-expired`が、期限切れのMCP認可code、token、参照されていない古いclientも
   削除するようにした。削除件数は構造化ログに記録する。
 
+### 修正
+
+- Client ID Metadata Documentが`token_endpoint_auth_methods_supported`で複数のclient認証方式を
+  示す場合も、Marginalisが対応する`none`を選べるようにした。従来の単数形も引き続き受理するため、
+  ChatGPTと既存のMCPクライアントの両方を使用できる。
+- Client ID Metadata Documentの取得と検証に失敗した場合、取得先のhostと固定した理由を構造化ログへ
+  記録するようにした。client IDのpath、redirect URI、OAuthパラメーター、応答本文は記録しない。
+
 ## 0.24.0 — 2026-08-01
 
 ### 追加

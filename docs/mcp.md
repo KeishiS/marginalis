@@ -51,7 +51,10 @@ refresh tokenは利用するたびに交換し、使用済みtokenが再利用�
 
 Client ID Metadata Document（CIMD）を優先方式として提供します。CIMDは、HTTPS URLを`client_id`として
 使い、そのURLでclient名と`redirect_uris`を含むJSON文書を公開する方式です。Marginalisは文書内の
-`client_id`が取得元URLと完全に一致することと、認証方式が`none`であることを検査します。
+`client_id`が取得元URLと完全に一致することを検査します。client認証方式は、単一の方式を示す
+`token_endpoint_auth_method`と、利用できる方式の一覧を示す
+`token_endpoint_auth_methods_supported`の両方を解釈します。両方が矛盾せず、Marginalisが対応する
+`none`を選べる場合だけpublic clientとして受理します。`private_key_jwt`は使用しません。
 
 `client_id`のURLは、HTTPSであることと、空でないpathを持つことを必要とします。userinfo、query、
 fragment、`.`や`..`のようなドット区間を含むURLは受け付けません。運用条件を単純に保つための制限です。
@@ -103,4 +106,5 @@ OAuth endpointはOAuthの`error`を持つJSONを返します。tokenを含む応
 付けます。token、認可code、PKCE verifier、session cookieはログへ出力しません。
 
 運用時は`marginalis diagnose`でSQLite schemaとMCP有効化設定を確認してください。認証状態の削除件数は
-`marginalis purge-expired`の構造化ログで確認できます。
+`marginalis purge-expired`の構造化ログで確認できます。CIMDの取得と検証を調べる場合は、
+[ログと障害診断](observability.md)に記載した`mcp.oauth.client_metadata.*` eventを確認してください。
