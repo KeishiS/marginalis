@@ -42,7 +42,7 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは14です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは15です。旧versionを起動時に自動移行しません。
 
 schema 13から更新する場合は、更新前に`export-archive`を実行し、新しい版で空の`dataDir`へ
 `import-archive`してください。MCP clientとtokenはアーカイブへ含まれないため、更新後に接続し直します。

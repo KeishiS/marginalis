@@ -68,6 +68,8 @@ templateを`path`として記録します。未一致の経路は`<unmatched>`�
 | `oidc.discovery.completed`、`oidc.discovery.failed` | Kanidm discoveryの成功または到達不能 |
 | `mcp.oauth.operation.completed`、`mcp.oauth.operation.failed` | client登録、認可、token失効の結果 |
 | `mcp.oauth.token.completed`、`mcp.oauth.token.failed` | token発行またはrefreshの結果 |
+| `mcp.oauth.client_metadata.rejected` | Client ID Metadata Documentまたは取得先を安全上の条件やmetadataの不一致によって拒否 |
+| `mcp.oauth.client_metadata.unavailable` | DNS、外部HTTP通信、時間制限、内部の取得枠によって一時的に解決不能 |
 | `mcp.oauth.client_metadata.throttled` | Client ID Metadata Documentの取得が回数上限に達したこと |
 | `mcp.authentication.failed` | access tokenの拒否 |
 | `mcp.authentication.unavailable` | SQLiteによるtoken検証の障害 |
@@ -80,6 +82,17 @@ JSON-RPC ID、未知のmethod名、未知のtool名、tool引数と応答内容�
 tool結果の`isError`はHTTP 200になる場合があるため、HTTPの`outcome`ではなく
 `mcp.request.completed`と`mcp.tool.completed`で論理的な成功、拒否、障害を判断します。
 `mcp.protocol.selected`はclient名やheader値を記録せず、対応しているprotocol版だけを記録します。
+
+CIMDの各eventには、固定値の`reason`と取得先の`client_host`を記録します。HTTP応答を受け取って
+拒否または一時的な障害と判断した場合は、`http_status`も記録します。client IDのpath、redirect URI、
+取得した文書、OAuth要求の値は記録しません。主な`reason`は次のとおりです。
+
+| 分類 | reason |
+| --- | --- |
+| 取得先の拒否 | `non-public-address`、`http-status`、`content-type`、`response-too-large` |
+| 文書の拒否 | `document-format`、`client-id-mismatch`、`authentication-method-conflict`、`authentication-method-unsupported`、`grant-type`、`response-type` |
+| 一時的な障害 | `timeout`、`dns-lookup`、`http-client`、`http-request`、`response-body`、`single-flight-capacity`、`fetch-slot-closed` |
+| 回数制限 | `rate-limit` |
 
 ### 保守処理
 
@@ -128,6 +141,7 @@ journalctl -u marginalis.service --since today
 journalctl -u marginalis.service \
   _SYSTEMD_INVOCATION_ID="$(systemctl show marginalis.service -p InvocationID --value)"
 journalctl -u marginalis.service -g 'http.request.completed'
+journalctl -u marginalis.service -g 'mcp.oauth.client_metadata.'
 journalctl -u marginalis-backup.service -g 'maintenance.backup.'
 ```
 

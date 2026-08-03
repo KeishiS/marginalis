@@ -51,6 +51,89 @@ struct CachedClientMetadata {
     expires_at: Instant,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClientMetadataFailure {
+    RateLimit,
+    SingleFlightCapacity,
+    FetchSlotClosed,
+    Timeout,
+    ClientIdUrl,
+    DnsLookup,
+    NonPublicAddress,
+    HttpClient,
+    HttpRequest,
+    HttpStatus(u16),
+    ContentType,
+    ResponseTooLarge,
+    ResponseBody,
+    DocumentFormat,
+    ClientIdMismatch,
+    AuthenticationMethodConflict,
+    AuthenticationMethodUnsupported,
+    GrantType,
+    ResponseType,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClientMetadataFailureDisposition {
+    Rejected,
+    Unavailable,
+    Throttled,
+}
+
+impl ClientMetadataFailure {
+    fn disposition(self) -> ClientMetadataFailureDisposition {
+        match self {
+            Self::RateLimit => ClientMetadataFailureDisposition::Throttled,
+            Self::SingleFlightCapacity
+            | Self::FetchSlotClosed
+            | Self::Timeout
+            | Self::ClientIdUrl
+            | Self::DnsLookup
+            | Self::HttpClient
+            | Self::HttpRequest
+            | Self::ResponseBody => ClientMetadataFailureDisposition::Unavailable,
+            Self::HttpStatus(408 | 429 | 500..=599) => {
+                ClientMetadataFailureDisposition::Unavailable
+            }
+            Self::NonPublicAddress
+            | Self::HttpStatus(_)
+            | Self::ContentType
+            | Self::ResponseTooLarge
+            | Self::DocumentFormat
+            | Self::ClientIdMismatch
+            | Self::AuthenticationMethodConflict
+            | Self::AuthenticationMethodUnsupported
+            | Self::GrantType
+            | Self::ResponseType => ClientMetadataFailureDisposition::Rejected,
+        }
+    }
+
+    fn reason(self) -> &'static str {
+        match self {
+            Self::RateLimit => "rate-limit",
+            Self::SingleFlightCapacity => "single-flight-capacity",
+            Self::FetchSlotClosed => "fetch-slot-closed",
+            Self::Timeout => "timeout",
+            Self::ClientIdUrl => "client-id-url",
+            Self::DnsLookup => "dns-lookup",
+            Self::NonPublicAddress => "non-public-address",
+            Self::HttpClient => "http-client",
+            Self::HttpRequest => "http-request",
+            Self::HttpStatus(_) => "http-status",
+            Self::ContentType => "content-type",
+            Self::ResponseTooLarge => "response-too-large",
+            Self::ResponseBody => "response-body",
+            Self::DocumentFormat => "document-format",
+            Self::ClientIdMismatch => "client-id-mismatch",
+            Self::AuthenticationMethodConflict => "authentication-method-conflict",
+            Self::AuthenticationMethodUnsupported => "authentication-method-unsupported",
+            Self::GrantType => "grant-type",
+            Self::ResponseType => "response-type",
+        }
+    }
+}
+
 impl HttpMcpClientMetadataResolver {
     pub(crate) fn new(timeout: Duration) -> Self {
         Self {
@@ -65,7 +148,7 @@ impl HttpMcpClientMetadataResolver {
     ///
     /// 枠を使い切っている場合はErrを返す。呼び出し元はこれを一時的な障害として扱い、
     /// clientが不正であるかのようには伝えない。
-    async fn begin_fetch(&self, client_id: &str) -> Result<FetchPermit, McpOAuthRepositoryError> {
+    async fn begin_fetch(&self, client_id: &str) -> Result<FetchPermit, ClientMetadataFailure> {
         let now = Instant::now();
         let mut state = self.state.lock().await;
         state.resolved.retain(|_, entry| entry.expires_at > now);
@@ -77,11 +160,7 @@ impl HttpMcpClientMetadataResolver {
             return Ok(FetchPermit::Resolved(entry.client.clone()));
         }
         if state.fetches.len() >= MAX_FETCHES_PER_WINDOW {
-            tracing::warn!(
-                event = "mcp.oauth.client_metadata.throttled",
-                "MCP client metadata fetch was throttled"
-            );
-            return Err(McpOAuthRepositoryError);
+            return Err(ClientMetadataFailure::RateLimit);
         }
         state.fetches.push_back(now);
         Ok(FetchPermit::Allowed)
@@ -93,14 +172,14 @@ impl HttpMcpClientMetadataResolver {
     async fn client_flight(
         &self,
         client_id: &str,
-    ) -> Result<Arc<ClientFlight>, McpOAuthRepositoryError> {
+    ) -> Result<Arc<ClientFlight>, ClientMetadataFailure> {
         let mut flights = self.client_flights.lock().await;
         flights.retain(|_, flight| flight.strong_count() > 0);
         if let Some(flight) = flights.get(client_id).and_then(Weak::upgrade) {
             return Ok(flight);
         }
         if flights.len() >= MAX_CLIENT_FLIGHTS {
-            return Err(McpOAuthRepositoryError);
+            return Err(ClientMetadataFailure::SingleFlightCapacity);
         }
         let flight = Arc::new(ClientFlight::new());
         flights.insert(client_id.to_owned(), Arc::downgrade(&flight));
@@ -127,20 +206,24 @@ impl HttpMcpClientMetadataResolver {
     }
 
     async fn fetch_once(&self, client_id: &str) -> FetchResult {
-        match self.begin_fetch(client_id).await? {
-            FetchPermit::Resolved(client) => return Ok(Some(client)),
-            FetchPermit::Allowed => {}
+        match self.begin_fetch(client_id).await {
+            Err(failure) => return metadata_failure_result(client_id, failure),
+            Ok(FetchPermit::Resolved(client)) => return Ok(Some(client)),
+            Ok(FetchPermit::Allowed) => {}
         }
-        let _fetch_slot = self
-            .fetch_slots
-            .acquire()
-            .await
-            .map_err(|_| McpOAuthRepositoryError)?;
-        let fetched = tokio::time::timeout(self.timeout, self.fetch(client_id))
-            .await
-            .map_err(|_| McpOAuthRepositoryError)??;
-        let Some((client, cache_lifetime)) = fetched else {
-            return Ok(None);
+        let _fetch_slot = match self.fetch_slots.acquire().await {
+            Ok(slot) => slot,
+            Err(_) => {
+                return metadata_failure_result(client_id, ClientMetadataFailure::FetchSlotClosed);
+            }
+        };
+        let fetched = match tokio::time::timeout(self.timeout, self.fetch(client_id)).await {
+            Ok(result) => result,
+            Err(_) => Err(ClientMetadataFailure::Timeout),
+        };
+        let (client, cache_lifetime) = match fetched {
+            Ok(fetched) => fetched,
+            Err(failure) => return metadata_failure_result(client_id, failure),
         };
         if let Some(lifetime) = cache_lifetime {
             self.remember_resolved(client_id, &client, lifetime).await;
@@ -155,6 +238,7 @@ struct ClientMetadataDocument {
     client_name: String,
     redirect_uris: Vec<String>,
     token_endpoint_auth_method: Option<String>,
+    token_endpoint_auth_methods_supported: Option<Vec<String>>,
     grant_types: Option<Vec<String>>,
     response_types: Option<Vec<String>>,
 }
@@ -165,7 +249,10 @@ impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
         &self,
         client_id: &str,
     ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
-        let flight = self.client_flight(client_id).await?;
+        let flight = match self.client_flight(client_id).await {
+            Ok(flight) => flight,
+            Err(failure) => return metadata_failure_result(client_id, failure),
+        };
         flight
             .get_or_init(|| self.fetch_once(client_id))
             .await
@@ -174,21 +261,23 @@ impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
 }
 
 impl HttpMcpClientMetadataResolver {
-    /// 文書を取得して検査する。取得先や内容が条件を満たさない場合は`None`を返す。
+    /// 文書を取得して検査し、失敗箇所を呼び出し元で安全に分類できる形で返す。
     #[allow(clippy::type_complexity)]
     async fn fetch(
         &self,
         client_id: &str,
-    ) -> Result<Option<(McpOAuthClient, Option<Duration>)>, McpOAuthRepositoryError> {
-        let url = url::Url::parse(client_id).map_err(|_| McpOAuthRepositoryError)?;
-        let host = url.host_str().ok_or(McpOAuthRepositoryError)?;
-        let port = url.port_or_known_default().ok_or(McpOAuthRepositoryError)?;
+    ) -> Result<(McpOAuthClient, Option<Duration>), ClientMetadataFailure> {
+        let url = url::Url::parse(client_id).map_err(|_| ClientMetadataFailure::ClientIdUrl)?;
+        let host = url.host_str().ok_or(ClientMetadataFailure::ClientIdUrl)?;
+        let port = url
+            .port_or_known_default()
+            .ok_or(ClientMetadataFailure::ClientIdUrl)?;
         let addresses = tokio::net::lookup_host((host, port))
             .await
-            .map_err(|_| McpOAuthRepositoryError)?
+            .map_err(|_| ClientMetadataFailure::DnsLookup)?
             .collect::<Vec<_>>();
         if addresses.is_empty() || addresses.iter().any(|address| !public_ip(address.ip())) {
-            return Ok(None);
+            return Err(ClientMetadataFailure::NonPublicAddress);
         }
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -196,15 +285,17 @@ impl HttpMcpClientMetadataResolver {
             .no_proxy()
             .resolve_to_addrs(host, &addresses)
             .build()
-            .map_err(|_| McpOAuthRepositoryError)?;
+            .map_err(|_| ClientMetadataFailure::HttpClient)?;
         let mut response = client
             .get(url)
             .header(reqwest::header::ACCEPT, "application/json")
             .send()
             .await
-            .map_err(|_| McpOAuthRepositoryError)?;
+            .map_err(|_| ClientMetadataFailure::HttpRequest)?;
         if response.status() != reqwest::StatusCode::OK {
-            return Ok(None);
+            return Err(ClientMetadataFailure::HttpStatus(
+                response.status().as_u16(),
+            ));
         }
         let cache_lifetime = cache_lifetime(response.headers());
         if !response
@@ -219,52 +310,155 @@ impl HttpMcpClientMetadataResolver {
                         && value.to_ascii_lowercase().ends_with("+json"))
             })
         {
-            return Ok(None);
+            return Err(ClientMetadataFailure::ContentType);
         }
         if response
             .content_length()
             .is_some_and(|length| length > MAX_METADATA_BYTES as u64)
         {
-            return Ok(None);
+            return Err(ClientMetadataFailure::ResponseTooLarge);
         }
         let mut body = Vec::new();
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|_| McpOAuthRepositoryError)?
+            .map_err(|_| ClientMetadataFailure::ResponseBody)?
         {
             if body.len().saturating_add(chunk.len()) > MAX_METADATA_BYTES {
-                return Ok(None);
+                return Err(ClientMetadataFailure::ResponseTooLarge);
             }
             body.extend_from_slice(&chunk);
         }
-        let Some(client) = parse_client_metadata(client_id, &body) else {
-            return Ok(None);
-        };
-        Ok(Some((client, cache_lifetime)))
+        let client = parse_client_metadata(client_id, &body)?;
+        Ok((client, cache_lifetime))
     }
 }
 
-fn parse_client_metadata(client_id: &str, body: &[u8]) -> Option<McpOAuthClient> {
-    let document = serde_json::from_slice::<ClientMetadataDocument>(body).ok()?;
-    if document.client_id != client_id
-        || document.token_endpoint_auth_method.as_deref() != Some("none")
-        || document
-            .grant_types
-            .as_ref()
-            .is_some_and(|values| !values.iter().any(|value| value == "authorization_code"))
-        || document
-            .response_types
-            .as_ref()
-            .is_some_and(|values| !values.iter().any(|value| value == "code"))
-    {
-        return None;
+fn parse_client_metadata(
+    client_id: &str,
+    body: &[u8],
+) -> Result<McpOAuthClient, ClientMetadataFailure> {
+    let document = serde_json::from_slice::<ClientMetadataDocument>(body)
+        .map_err(|_| ClientMetadataFailure::DocumentFormat)?;
+    if document.client_id != client_id {
+        return Err(ClientMetadataFailure::ClientIdMismatch);
     }
-    Some(McpOAuthClient {
+    validate_public_client_authentication_methods(&document)?;
+    if document
+        .grant_types
+        .as_ref()
+        .is_some_and(|values| !values.iter().any(|value| value == "authorization_code"))
+    {
+        return Err(ClientMetadataFailure::GrantType);
+    }
+    if document
+        .response_types
+        .as_ref()
+        .is_some_and(|values| !values.iter().any(|value| value == "code"))
+    {
+        return Err(ClientMetadataFailure::ResponseType);
+    }
+    Ok(McpOAuthClient {
         client_id: document.client_id,
         display_name: document.client_name,
         redirect_uris: document.redirect_uris,
     })
+}
+
+fn validate_public_client_authentication_methods(
+    document: &ClientMetadataDocument,
+) -> Result<(), ClientMetadataFailure> {
+    if let (Some(selected), Some(supported)) = (
+        document.token_endpoint_auth_method.as_deref(),
+        document.token_endpoint_auth_methods_supported.as_ref(),
+    ) && !supported.iter().any(|method| method == selected)
+    {
+        return Err(ClientMetadataFailure::AuthenticationMethodConflict);
+    }
+    if document
+        .token_endpoint_auth_method
+        .as_deref()
+        .is_some_and(|method| {
+            matches!(
+                method,
+                "client_secret_post" | "client_secret_basic" | "client_secret_jwt"
+            )
+        })
+    {
+        return Err(ClientMetadataFailure::AuthenticationMethodUnsupported);
+    }
+    let supports_none = document.token_endpoint_auth_method.as_deref() == Some("none")
+        || document
+            .token_endpoint_auth_methods_supported
+            .as_ref()
+            .is_some_and(|methods| methods.iter().any(|method| method == "none"));
+    if !supports_none {
+        return Err(ClientMetadataFailure::AuthenticationMethodUnsupported);
+    }
+    Ok(())
+}
+
+fn metadata_failure_result(client_id: &str, failure: ClientMetadataFailure) -> FetchResult {
+    log_client_metadata_failure(client_id, failure);
+    match failure.disposition() {
+        ClientMetadataFailureDisposition::Rejected => Ok(None),
+        ClientMetadataFailureDisposition::Unavailable
+        | ClientMetadataFailureDisposition::Throttled => Err(McpOAuthRepositoryError),
+    }
+}
+
+fn log_client_metadata_failure(client_id: &str, failure: ClientMetadataFailure) {
+    let client_host = url::Url::parse(client_id)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "<invalid>".into());
+    match (failure.disposition(), failure) {
+        (ClientMetadataFailureDisposition::Rejected, ClientMetadataFailure::HttpStatus(status)) => {
+            tracing::warn!(
+                event = "mcp.oauth.client_metadata.rejected",
+                reason = failure.reason(),
+                client_host,
+                http_status = status,
+                "MCP client metadata was rejected"
+            );
+        }
+        (ClientMetadataFailureDisposition::Rejected, _) => {
+            tracing::warn!(
+                event = "mcp.oauth.client_metadata.rejected",
+                reason = failure.reason(),
+                client_host,
+                "MCP client metadata was rejected"
+            );
+        }
+        (
+            ClientMetadataFailureDisposition::Unavailable,
+            ClientMetadataFailure::HttpStatus(status),
+        ) => {
+            tracing::error!(
+                event = "mcp.oauth.client_metadata.unavailable",
+                reason = failure.reason(),
+                client_host,
+                http_status = status,
+                "MCP client metadata resolution is unavailable"
+            );
+        }
+        (ClientMetadataFailureDisposition::Unavailable, _) => {
+            tracing::error!(
+                event = "mcp.oauth.client_metadata.unavailable",
+                reason = failure.reason(),
+                client_host,
+                "MCP client metadata resolution is unavailable"
+            );
+        }
+        (ClientMetadataFailureDisposition::Throttled, _) => {
+            tracing::warn!(
+                event = "mcp.oauth.client_metadata.throttled",
+                reason = failure.reason(),
+                client_host,
+                "MCP client metadata fetch was throttled"
+            );
+        }
+    }
 }
 
 fn cache_lifetime(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
@@ -352,6 +546,39 @@ fn public_ipv6(address: Ipv6Addr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{io, sync::Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+    impl CapturedLogs {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().expect("captured logs").clone()).expect("UTF-8 logs")
+        }
+    }
+
+    impl io::Write for CapturedLogs {
+        fn write(&mut self, input: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .map_err(|_| io::Error::other("captured log lock was poisoned"))?
+                .extend_from_slice(input);
+            Ok(input.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'writer> MakeWriter<'writer> for CapturedLogs {
+        type Writer = Self;
+
+        fn make_writer(&'writer self) -> Self::Writer {
+            self.clone()
+        }
+    }
 
     #[test]
     fn metadata_fetch_rejects_non_public_destinations() {
@@ -482,9 +709,9 @@ mod tests {
     }
 
     #[test]
-    fn client_metadata_requires_an_exact_id_and_public_client_method() {
+    fn client_metadata_accepts_single_and_multiple_public_client_methods() {
         let client_id = "https://client.example/oauth/metadata.json";
-        let valid = br#"{
+        let single = br#"{
             "client_id":"https://client.example/oauth/metadata.json",
             "client_name":"Example client",
             "redirect_uris":["http://127.0.0.1/callback"],
@@ -492,8 +719,41 @@ mod tests {
             "response_types":["code"],
             "token_endpoint_auth_method":"none"
         }"#;
-        assert!(parse_client_metadata(client_id, valid).is_some());
-        assert!(parse_client_metadata("https://other.example/metadata.json", valid).is_none());
+        assert!(parse_client_metadata(client_id, single).is_ok());
+
+        let multiple = br#"{
+            "client_id":"https://client.example/oauth/metadata.json",
+            "client_name":"ChatGPT",
+            "redirect_uris":["https://chatgpt.com/connector/oauth/callback"],
+            "grant_types":["authorization_code","refresh_token"],
+            "response_types":["code"],
+            "token_endpoint_auth_methods_supported":["none","private_key_jwt"]
+        }"#;
+        assert!(parse_client_metadata(client_id, multiple).is_ok());
+
+        let preferred_private_key = br#"{
+            "client_id":"https://client.example/oauth/metadata.json",
+            "client_name":"Client with choices",
+            "redirect_uris":["https://client.example/callback"],
+            "token_endpoint_auth_method":"private_key_jwt",
+            "token_endpoint_auth_methods_supported":["none","private_key_jwt"]
+        }"#;
+        assert!(parse_client_metadata(client_id, preferred_private_key).is_ok());
+    }
+
+    #[test]
+    fn client_metadata_rejects_identity_and_authentication_method_errors() {
+        let client_id = "https://client.example/oauth/metadata.json";
+        let valid = br#"{
+            "client_id":"https://client.example/oauth/metadata.json",
+            "client_name":"Example client",
+            "redirect_uris":["http://127.0.0.1/callback"],
+            "token_endpoint_auth_method":"none"
+        }"#;
+        assert_eq!(
+            parse_client_metadata("https://other.example/metadata.json", valid),
+            Err(ClientMetadataFailure::ClientIdMismatch)
+        );
 
         let confidential = valid
             .windows(b"none".len())
@@ -507,6 +767,78 @@ mod tests {
                 value
             })
             .expect("authentication method");
-        assert!(parse_client_metadata(client_id, &confidential).is_none());
+        assert_eq!(
+            parse_client_metadata(client_id, &confidential),
+            Err(ClientMetadataFailure::AuthenticationMethodUnsupported)
+        );
+
+        let conflict = br#"{
+            "client_id":"https://client.example/oauth/metadata.json",
+            "client_name":"Conflicting client",
+            "redirect_uris":["https://client.example/callback"],
+            "token_endpoint_auth_method":"none",
+            "token_endpoint_auth_methods_supported":["private_key_jwt"]
+        }"#;
+        assert_eq!(
+            parse_client_metadata(client_id, conflict),
+            Err(ClientMetadataFailure::AuthenticationMethodConflict)
+        );
+
+        let no_common_method = br#"{
+            "client_id":"https://client.example/oauth/metadata.json",
+            "client_name":"Private client",
+            "redirect_uris":["https://client.example/callback"],
+            "token_endpoint_auth_methods_supported":["private_key_jwt"]
+        }"#;
+        assert_eq!(
+            parse_client_metadata(client_id, no_common_method),
+            Err(ClientMetadataFailure::AuthenticationMethodUnsupported)
+        );
+    }
+
+    #[test]
+    fn client_metadata_failure_log_omits_the_client_id_path() {
+        let logs = CapturedLogs::default();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .compact()
+            .with_writer(logs.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            log_client_metadata_failure(
+                "https://client.example/private/metadata.json",
+                ClientMetadataFailure::AuthenticationMethodUnsupported,
+            );
+            log_client_metadata_failure(
+                "https://client.example/private/metadata.json",
+                ClientMetadataFailure::HttpStatus(503),
+            );
+        });
+        let output = logs.text();
+        assert!(output.contains("mcp.oauth.client_metadata.rejected"));
+        assert!(output.contains("mcp.oauth.client_metadata.unavailable"));
+        assert!(output.contains("authentication-method-unsupported"));
+        assert!(output.contains("http_status=503"));
+        assert!(output.contains("client.example"));
+        assert!(!output.contains("/private/"));
+        assert!(!output.contains("metadata.json"));
+    }
+
+    #[test]
+    fn client_metadata_http_status_distinguishes_rejection_from_unavailability() {
+        assert_eq!(
+            ClientMetadataFailure::HttpStatus(404).disposition(),
+            ClientMetadataFailureDisposition::Rejected
+        );
+        assert_eq!(
+            ClientMetadataFailure::HttpStatus(429).disposition(),
+            ClientMetadataFailureDisposition::Unavailable
+        );
+        assert_eq!(
+            ClientMetadataFailure::HttpStatus(503).disposition(),
+            ClientMetadataFailureDisposition::Unavailable
+        );
     }
 }
