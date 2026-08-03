@@ -58,6 +58,8 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 後ろに置いた属性操作は保存を拒否します。コードブロックには1から始まる行番号を表示します。
 `.題名`、`[source,言語名]`、`[source,言語名,linenums,start=開始行]`を指定すると、題名、言語名、
 指定した行番号の開始位置も表示します。長い行はコードブロック内で横にスクロールできます。
+Pythonは`[source,python]`で指定できます。利用できる言語の一覧は、MCPの`get_note_profile`が返す
+`allowed_source_languages`で確認できます。
 `:stem: latexmath`を指定した`stem:[]`と`[latexmath]`の数式は、
 Web UIの配布物へ固定したMathJaxで組版します。外部のCDNへは接続しません。
 横幅を超える表とブロック数式も、それぞれの表示領域内で横にスクロールできます。MathJaxの

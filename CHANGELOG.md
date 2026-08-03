@@ -28,6 +28,8 @@
 
 ### 追加
 
+- コードブロックの言語として`python`を指定できるようにした。`get_note_profile`の
+  `allowed_source_languages`にも同じ値を追加し、執筆プロファイルの版を14へ上げた。
 - MCPクライアントの登録方式としてClient ID Metadata Documentに対応した。HTTPSのURLを`client_id`と
   して使い、そのURLでclient名と`redirect_uris`を公開する方式である。事前登録を必要とせず、DCRとは
   登録上限を分けて管理する。有効な文書だけをHTTPのcache指示に従って保持し、失敗や不正な文書は
