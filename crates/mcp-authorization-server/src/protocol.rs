@@ -200,6 +200,28 @@ pub struct TokenPair {
     pub scope: String,
 }
 
+/// OAuth token endpointが公開するBearer token応答。
+#[derive(Serialize)]
+pub struct TokenResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub token_type: &'static str,
+    pub expires_in: u64,
+    pub scope: String,
+}
+
+impl From<TokenPair> for TokenResponse {
+    fn from(pair: TokenPair) -> Self {
+        Self {
+            access_token: pair.access_token,
+            refresh_token: pair.refresh_token,
+            token_type: "Bearer",
+            expires_in: pair.access_expires_in_seconds,
+            scope: pair.scope,
+        }
+    }
+}
+
 /// refresh token rotationでrepositoryへ渡す、生成済みの新旧tokenとbinding。
 pub struct RefreshTokenRotation {
     pub refresh_token: String,
