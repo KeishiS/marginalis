@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use marginalis_application::McpOAuthUseCaseError;
-use serde::Serialize;
+use mcp_authorization_server::TokenResponse;
 
 use super::{
     super::{mcp_endpoint, state::ApiState},
@@ -23,15 +23,6 @@ const TOKEN_PARAMETERS: &[&str] = &[
     "refresh_token",
     "scope",
 ];
-
-#[derive(Serialize)]
-struct McpTokenResponse {
-    access_token: String,
-    refresh_token: String,
-    token_type: &'static str,
-    expires_in: u64,
-    scope: String,
-}
 
 pub(crate) async fn mcp_token(
     State(state): State<ApiState>,
@@ -151,13 +142,7 @@ async fn mcp_token_inner(
             (header::CACHE_CONTROL, "no-store"),
             (header::PRAGMA, "no-cache"),
         ],
-        Json(McpTokenResponse {
-            access_token: pair.access_token,
-            refresh_token: pair.refresh_token,
-            token_type: "Bearer",
-            expires_in: pair.access_expires_in_seconds,
-            scope: pair.scope,
-        }),
+        Json(TokenResponse::from(pair)),
     )
         .into_response())
 }

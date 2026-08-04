@@ -26,7 +26,7 @@ pub use protocol::{
     DynamicClientRegistrationError, DynamicClientRegistrationRequest,
     DynamicClientRegistrationResponse, Principal, RefreshTokenRotation,
     RefreshTokenRotationOutcome, RegisteredClient, ResolvedRedirectUri, Timestamp, TokenPair,
-    ValidatedAuthorizationRequest, ValidatedDynamicClientRegistration,
+    TokenResponse, ValidatedAuthorizationRequest, ValidatedDynamicClientRegistration,
 };
 
 #[cfg(test)]
