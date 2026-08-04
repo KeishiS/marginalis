@@ -351,9 +351,6 @@ fn consent_page(
 }
 
 fn is_loopback_redirect(url: &url::Url) -> bool {
-    if url.scheme() != "http" {
-        return false;
-    }
     match url.host() {
         Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
         Some(url::Host::Ipv4(address)) => address.is_loopback(),
