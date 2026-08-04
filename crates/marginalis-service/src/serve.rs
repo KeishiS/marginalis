@@ -125,6 +125,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             std::sync::Arc::new(
                 McpOAuthApplication::new(
                     std::sync::Arc::new(database.clone()),
+                    std::sync::Arc::new(database.clone()),
                     std::sync::Arc::new(SystemClock),
                     std::sync::Arc::new(SystemRandom),
                     resource_policy.clone(),

@@ -97,7 +97,8 @@ impl SqliteDatabase {
              WHERE registered_at_ms < ?
                AND NOT EXISTS (SELECT 1 FROM mcp_authorization_codes WHERE client_id = mcp_clients.client_id)
                AND NOT EXISTS (SELECT 1 FROM mcp_access_tokens WHERE client_id = mcp_clients.client_id)
-               AND NOT EXISTS (SELECT 1 FROM mcp_refresh_tokens WHERE client_id = mcp_clients.client_id)",
+               AND NOT EXISTS (SELECT 1 FROM mcp_refresh_tokens WHERE client_id = mcp_clients.client_id)
+               AND NOT EXISTS (SELECT 1 FROM mcp_client_scope_ceilings WHERE client_id = mcp_clients.client_id)",
         )
         .bind(unused_client_cutoff.get())
         .execute(&mut *transaction)

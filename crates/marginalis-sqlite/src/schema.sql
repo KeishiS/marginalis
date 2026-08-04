@@ -116,6 +116,26 @@ CREATE TABLE mcp_clients (
     registered_at_ms INTEGER NOT NULL
 ) STRICT;
 
+CREATE TABLE mcp_principal_scope_ceilings (
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    scopes TEXT NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (issuer, subject)
+) STRICT;
+
+CREATE TABLE mcp_client_scope_ceilings (
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    client_id TEXT NOT NULL REFERENCES mcp_clients(client_id),
+    scopes TEXT NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (issuer, subject, client_id)
+) STRICT;
+
+CREATE INDEX mcp_client_scope_ceilings_client_id_idx
+ON mcp_client_scope_ceilings (client_id);
+
 CREATE TABLE mcp_authorization_codes (
     code_hash BLOB PRIMARY KEY NOT NULL,
     client_id TEXT NOT NULL REFERENCES mcp_clients(client_id),

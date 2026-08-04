@@ -114,6 +114,8 @@ impl SqliteDatabase {
                 OR EXISTS(SELECT 1 FROM web_sessions)
                 OR EXISTS(SELECT 1 FROM oidc_login_attempts)
                 OR EXISTS(SELECT 1 FROM mcp_clients)
+                OR EXISTS(SELECT 1 FROM mcp_principal_scope_ceilings)
+                OR EXISTS(SELECT 1 FROM mcp_client_scope_ceilings)
                 OR EXISTS(SELECT 1 FROM mcp_authorization_codes)
                 OR EXISTS(SELECT 1 FROM mcp_access_tokens)
                 OR EXISTS(SELECT 1 FROM mcp_refresh_tokens)",

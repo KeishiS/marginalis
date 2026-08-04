@@ -12,7 +12,8 @@ use mcp_authorization_server::{
 use crate::{
     Clock, McpAuthenticatedActor, McpAuthorizationClient, McpAuthorizationRequest,
     McpClientMetadataResolver, McpOAuthClient, McpOAuthRepository, McpOAuthUseCaseError,
-    McpOAuthUseCases, McpResourcePolicy, McpTokenPair, McpValidatedAuthorizationRequest, Random,
+    McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingRepository, McpTokenPair,
+    McpValidatedAuthorizationRequest, Random,
 };
 
 /// MarginalisのMCP Authorization Server設定。
@@ -41,11 +42,13 @@ impl AuthorizationRandom for RandomAdapter {
 /// 製品非依存の状態遷移へMarginalisの認証済み主体を渡すapplication service。
 pub struct McpOAuthApplication {
     authorization_server: AuthorizationServer,
+    scope_ceiling_repository: Arc<dyn McpScopeCeilingRepository>,
 }
 
 impl McpOAuthApplication {
     pub fn new(
         repository: Arc<dyn McpOAuthRepository>,
+        scope_ceiling_repository: Arc<dyn McpScopeCeilingRepository>,
         clock: Arc<dyn Clock>,
         random: Arc<dyn Random>,
         resource_policy: McpResourcePolicy,
@@ -58,6 +61,7 @@ impl McpOAuthApplication {
                 resource_policy,
                 MCP_AUTHORIZATION_CONFIG,
             ),
+            scope_ceiling_repository,
         }
     }
 
@@ -111,10 +115,19 @@ impl McpOAuthApplication {
         actor: Actor,
         request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
-        // v0.28までの動作を保つ暫定値。#268で保存した利用者上限とclient上限へ置き換える。
+        let stored = self
+            .scope_ceiling_repository
+            .scope_ceilings(&actor, &request.client.client_id)
+            .await
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
+        let supported = self.authorization_server.supported_scopes();
         let ceilings = self
             .authorization_server
-            .scope_ceilings(request.scopes.clone(), request.scopes.clone())?;
+            .scope_ceilings(
+                stored.principal.unwrap_or_else(|| supported.to_vec()),
+                stored.client.unwrap_or_else(|| supported.to_vec()),
+            )
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
         self.authorization_server
             .authorize(principal(&actor), request, &ceilings)
             .await

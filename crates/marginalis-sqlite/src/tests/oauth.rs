@@ -86,6 +86,7 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
     });
     let application = McpOAuthApplication::new(
         Arc::new(database.clone()),
+        Arc::new(database.clone()),
         Arc::new(FixedClock(1_000)),
         Arc::new(SequentialRandom(std::sync::Mutex::new(0))),
         marginalis_application::McpResourcePolicy::new(
@@ -120,6 +121,18 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         validated.registration_method,
         McpClientRegistrationMethod::MetadataDocument
     );
+    sqlx::query(
+        "INSERT INTO mcp_principal_scope_ceilings
+             (issuer, subject, scopes, updated_at_ms)
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind("https://id.example.test")
+    .bind("alice")
+    .bind("notes:read")
+    .bind(1_000_i64)
+    .execute(&database.pool)
+    .await
+    .expect("principal scope ceiling");
 
     let code = application
         .authorize(actor("https://id.example.test", "alice"), validated)
@@ -163,7 +176,7 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         )
         .await
         .expect("token pair");
-    assert_eq!(pair.scope, "notes:read notes:write");
+    assert_eq!(pair.scope, "notes:read");
 
     let authenticated = application
         .authenticate(&pair.access_token, &resource_uri)
@@ -171,7 +184,75 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         .expect("authentication")
         .expect("authenticated actor");
     assert_eq!(authenticated.actor.subject(), "alice");
-    assert_eq!(authenticated.scopes, vec!["notes:read", "notes:write"]);
+    assert_eq!(authenticated.scopes, vec!["notes:read"]);
+}
+
+#[tokio::test]
+async fn scope_ceilings_are_bound_to_the_principal_and_client() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let client = McpOAuthClient {
+        client_id: "scope-limited-client".into(),
+        display_name: "Scope limited client".into(),
+        redirect_uris: vec!["https://client.example.test/callback".into()],
+    };
+    assert!(
+        database
+            .register_mcp_client_bounded(&client, UnixMillis::new(1), 10)
+            .await
+            .expect("client registration")
+    );
+    sqlx::query(
+        "INSERT INTO mcp_principal_scope_ceilings
+             (issuer, subject, scopes, updated_at_ms)
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind("https://id.example.test")
+    .bind("alice")
+    .bind("notes:write notes:read")
+    .bind(2_i64)
+    .execute(&database.pool)
+    .await
+    .expect("principal scope ceiling");
+    sqlx::query(
+        "INSERT INTO mcp_client_scope_ceilings
+             (issuer, subject, client_id, scopes, updated_at_ms)
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind("https://id.example.test")
+    .bind("alice")
+    .bind(&client.client_id)
+    .bind("notes:read")
+    .bind(3_i64)
+    .execute(&database.pool)
+    .await
+    .expect("client scope ceiling");
+
+    assert_eq!(
+        marginalis_application::McpScopeCeilingRepository::scope_ceilings(
+            &database,
+            &actor("https://id.example.test", "alice"),
+            &client.client_id,
+        )
+        .await
+        .expect("scope ceilings"),
+        marginalis_application::McpStoredScopeCeilings {
+            principal: Some(vec!["notes:write".into(), "notes:read".into()]),
+            client: Some(vec!["notes:read".into()]),
+        }
+    );
+    assert_eq!(
+        marginalis_application::McpScopeCeilingRepository::scope_ceilings(
+            &database,
+            &actor("https://id.example.test", "bob"),
+            &client.client_id,
+        )
+        .await
+        .expect("other principal scope ceilings"),
+        marginalis_application::McpStoredScopeCeilings::default(),
+        "別の利用者の設定は共有しない"
+    );
 }
 
 #[tokio::test]
@@ -249,6 +330,8 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
         .expect("database");
     for table in [
         "mcp_clients",
+        "mcp_principal_scope_ceilings",
+        "mcp_client_scope_ceilings",
         "mcp_authorization_codes",
         "mcp_access_tokens",
         "mcp_refresh_tokens",
@@ -511,6 +594,30 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
         )
         .await
         .expect("client");
+    database
+        .upsert_mcp_client(
+            &McpOAuthClient {
+                client_id: "configured-client".into(),
+                display_name: "Configured client".into(),
+                redirect_uris: vec!["https://configured.example.test/callback".into()],
+            },
+            UnixMillis::new(0),
+        )
+        .await
+        .expect("configured client");
+    sqlx::query(
+        "INSERT INTO mcp_client_scope_ceilings
+             (issuer, subject, client_id, scopes, updated_at_ms)
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind("https://id.example.test")
+    .bind("alice")
+    .bind("configured-client")
+    .bind("notes:read")
+    .bind(0_i64)
+    .execute(&database.pool)
+    .await
+    .expect("client scope ceiling");
     let now_millis = 2 * 24 * 60 * 60 * 1_000;
     let now = marginalis_domain::UnixMillis::new(now_millis);
     let mcp_now = UnixMillis::new(now_millis);
@@ -531,7 +638,7 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
                     redirect_uris: vec!["https://client.example.test/callback".into()],
                 },
                 mcp_now,
-                1,
+                2,
             )
             .await
             .expect("register")
@@ -545,7 +652,7 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
                     redirect_uris: vec!["https://client.example.test/callback".into()],
                 },
                 mcp_now,
-                1,
+                2,
             )
             .await
             .expect("register at the bound"),
@@ -571,6 +678,14 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
             .await
             .expect("lookup")
             .is_some()
+    );
+    assert!(
+        database
+            .mcp_client("configured-client")
+            .await
+            .expect("lookup")
+            .is_some(),
+        "scope上限があるclientは設定を保つため削除しない"
     );
 }
 

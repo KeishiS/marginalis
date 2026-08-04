@@ -225,6 +225,10 @@ impl AuthorizationServer {
             .map_err(|_| AuthorizationError::InvalidScope)
     }
 
+    pub fn supported_scopes(&self) -> &[String] {
+        self.resource_policy.supported_scopes()
+    }
+
     pub async fn validate_authorization_request(
         &self,
         request: &AuthorizationRequest,
