@@ -84,6 +84,21 @@ Protected Resource Metadataから内蔵Authorization Serverを発見し、ブラ
 更新前にAuth0で発行したaccess token、refresh token、client IDは内蔵Authorization Serverへ移行されません。
 更新後はクライアント側の既存接続を削除し、改めて接続してください。
 
+### 接続後の受入
+
+ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノートを使って次を確認します。
+
+1. 公開MCP URLだけを指定して接続し、metadataの発見、client登録、Kanidmへのログイン、同意を完了します。
+2. `tools/list`を取得し、ノートの一覧と本文を読み取ります。
+3. 試験用ノートを作成して更新し、別の試験利用者へ閲覧権限と編集権限を順に設定します。共有先では
+   付与された権限を超える操作が拒否されることも確認します。
+4. 試験用ノートを削除し、削除済みとして取得できることを確認します。
+5. 認可を取り消し、既存のaccess tokenとrefresh tokenが使えないことを確認します。
+6. 改めて認可し、同じクライアントから接続を回復できることを確認します。
+
+結果には確認日、クライアント名と確認できる範囲の版、CIMDまたはDCRの登録方式、redirect URIの種類を
+記録します。token、認可code、PKCE verifier、Cookie、実際のノート本文は記録しません。
+
 ## 認可の取消
 
 取消の経路は二つです。
