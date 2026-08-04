@@ -38,6 +38,8 @@
 - [認証基盤の停止時にWebとMCPで起動可否を分ける](adr/0005-認証基盤の停止時にwebとmcpで起動可否を分ける.md)
 - [引用はノート作成者の書誌ライブラリーで解決する](adr/0006-引用はノート作成者の書誌ライブラリーで解決する.md)
 - [MCPのAuthorization Serverを内蔵する](adr/0007-mcpのauthorization-serverを内蔵する.md)
+- [MCP Authorization Serverの中核を製品から分離する](adr/0008-mcp-authorization-serverの中核を製品から分離する.md)
+- [MCPのscope上限を利用者設定として管理する](adr/0009-mcpのscope上限を利用者設定として管理する.md)
 - [ブラウザーとMCPプロトコルの回帰テスト](protocol-regression.md)
 
 ## 過去の記録と今後の計画
