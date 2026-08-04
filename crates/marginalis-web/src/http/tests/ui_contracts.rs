@@ -14,6 +14,11 @@ fn external_paths_preserve_the_configured_subpath() {
     ));
     assert!(!valid_return_to("/notes/new?from=home", "/marginalis"));
     assert!(!valid_return_to("//notes.example.test/new", "/"));
+    assert!(!valid_return_to("/\\evil.example", "/"));
+    assert!(!valid_return_to("/\\\\evil.example", "/"));
+    assert!(!valid_return_to("/\t/evil.example", "/"));
+    assert!(!valid_return_to("/ /evil.example", "/"));
+    assert!(!valid_return_to("/marginalis/../notes/new", "/marginalis"));
     assert!(!valid_return_to(
         "/notes/new?from=home\r\nLocation:%20https://evil.test",
         "/"
