@@ -272,7 +272,7 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   await page.route("**/api/v3/notes/preview", async (route) => {
     const source = (await route.request().postDataJSON()).source;
     const html = source.includes(String.raw`stem:[\lambda]`)
-      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">f(x) \coloneqq \lambda x \in \mathbb{R}</code>のチェックです。</p>` +
+      ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">f(x) \coloneqq \argmax_{x \in S} f(x) + \bm{x},\quad x \in \mathbb{R}</code>のチェックです。</p>` +
         (source.includes("プレビューから分割への確認")
           ? "<p>プレビューから分割への確認</p>"
           : "")
@@ -317,6 +317,7 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   await page.getByRole("button", { name: "分割" }).click();
 
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(page.locator(".preview-content mjx-merror")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.locator(".preview-content [data-math-prepared='true']"),
