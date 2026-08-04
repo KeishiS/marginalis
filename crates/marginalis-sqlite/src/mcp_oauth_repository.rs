@@ -1,12 +1,15 @@
-//! applicationのMCP OAuth repository portに対するSQLite実装。
+//! 製品非依存のMCP OAuth repository portに対するSQLite実装。
 
 use async_trait::async_trait;
-use marginalis_application::{
-    McpAuthenticatedPrincipal, McpAuthorizationCodeExchange, McpAuthorizationGrant, McpOAuthClient,
-    McpOAuthRepository, McpOAuthRepositoryError, McpRefreshTokenRotation,
-    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient,
+use mcp_authorization_server::{
+    AuthenticatedPrincipal as McpAuthenticatedPrincipal,
+    AuthorizationCodeExchange as McpAuthorizationCodeExchange,
+    AuthorizationGrant as McpAuthorizationGrant, Client as McpOAuthClient,
+    RefreshTokenRotation as McpRefreshTokenRotation,
+    RefreshTokenRotationOutcome as McpRefreshTokenRotationOutcome,
+    RegisteredClient as McpRegisteredOAuthClient, Repository as McpOAuthRepository,
+    RepositoryError as McpOAuthRepositoryError, Timestamp as McpTimestamp,
 };
-use marginalis_domain::UnixMillis;
 
 use crate::SqliteDatabase;
 
@@ -15,7 +18,7 @@ impl McpOAuthRepository for SqliteDatabase {
     async fn register_client_bounded(
         &self,
         client: &McpOAuthClient,
-        now: UnixMillis,
+        now: McpTimestamp,
         maximum_clients: i64,
     ) -> Result<bool, McpOAuthRepositoryError> {
         self.register_mcp_client_bounded(client, now, maximum_clients)
@@ -38,8 +41,8 @@ impl McpOAuthRepository for SqliteDatabase {
         client: &McpRegisteredOAuthClient,
         grant: &McpAuthorizationGrant,
         code_challenge: &str,
-        expires_at: UnixMillis,
-        now: UnixMillis,
+        expires_at: McpTimestamp,
+        now: McpTimestamp,
     ) -> Result<(), McpOAuthRepositoryError> {
         self.issue_mcp_authorization_code(code, client, grant, code_challenge, expires_at, now)
             .await
@@ -49,7 +52,7 @@ impl McpOAuthRepository for SqliteDatabase {
     async fn exchange_authorization_code(
         &self,
         exchange: McpAuthorizationCodeExchange,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<Option<McpAuthorizationGrant>, McpOAuthRepositoryError> {
         self.exchange_mcp_authorization_code(exchange, now)
             .await
@@ -59,7 +62,7 @@ impl McpOAuthRepository for SqliteDatabase {
     async fn rotate_refresh_token(
         &self,
         rotation: McpRefreshTokenRotation,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<McpRefreshTokenRotationOutcome, McpOAuthRepositoryError> {
         self.rotate_mcp_refresh_token(rotation, now)
             .await
@@ -70,7 +73,7 @@ impl McpOAuthRepository for SqliteDatabase {
         &self,
         token: &str,
         resource_uri: &str,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<Option<McpAuthenticatedPrincipal>, McpOAuthRepositoryError> {
         self.authenticate_mcp_access_token(token, resource_uri, now)
             .await
@@ -82,7 +85,7 @@ impl McpOAuthRepository for SqliteDatabase {
         issuer: &str,
         subject: &str,
         client_id: &str,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<(), McpOAuthRepositoryError> {
         self.revoke_mcp_client_tokens(issuer, subject, client_id, now)
             .await
@@ -93,7 +96,7 @@ impl McpOAuthRepository for SqliteDatabase {
         &self,
         token: &str,
         client_id: &str,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<(), McpOAuthRepositoryError> {
         self.revoke_mcp_token(token, client_id, now)
             .await

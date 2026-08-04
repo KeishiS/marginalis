@@ -1,11 +1,16 @@
 //! MCP OAuth client、code、access/refresh tokenの永続化。
 
-use marginalis_application::{
-    McpAuthenticatedPrincipal, McpAuthorizationCodeExchange, McpAuthorizationGrant,
-    McpClientRegistrationMethod, McpOAuthClient, McpPrincipal, McpRefreshTokenRotation,
-    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient, McpResolvedRedirectUri,
+use marginalis_domain::Actor;
+use mcp_authorization_server::{
+    AuthenticatedPrincipal as McpAuthenticatedPrincipal,
+    AuthorizationCodeExchange as McpAuthorizationCodeExchange,
+    AuthorizationGrant as McpAuthorizationGrant, Client as McpOAuthClient,
+    ClientRegistrationMethod as McpClientRegistrationMethod, Principal as McpPrincipal,
+    RefreshTokenRotation as McpRefreshTokenRotation,
+    RefreshTokenRotationOutcome as McpRefreshTokenRotationOutcome,
+    RegisteredClient as McpRegisteredOAuthClient, ResolvedRedirectUri as McpResolvedRedirectUri,
+    Timestamp as McpTimestamp,
 };
-use marginalis_domain::{Actor, UnixMillis};
 use sqlx::Row;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, token::hash_token};
@@ -22,8 +27,8 @@ impl SqliteDatabase {
         registered_client: &McpRegisteredOAuthClient,
         grant: &McpAuthorizationGrant,
         code_challenge: &str,
-        expires_at: UnixMillis,
-        now: UnixMillis,
+        expires_at: McpTimestamp,
+        now: McpTimestamp,
     ) -> Result<(), SqliteStoreError> {
         let client = &registered_client.client;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
@@ -47,7 +52,7 @@ impl SqliteDatabase {
     pub(crate) async fn upsert_mcp_client(
         &self,
         client: &McpOAuthClient,
-        registered_at: UnixMillis,
+        registered_at: McpTimestamp,
     ) -> Result<(), SqliteStoreError> {
         upsert_client(
             &self.pool,
@@ -62,7 +67,7 @@ impl SqliteDatabase {
     pub async fn register_mcp_client_bounded(
         &self,
         client: &McpOAuthClient,
-        now: UnixMillis,
+        now: McpTimestamp,
         maximum_clients: i64,
     ) -> Result<bool, SqliteStoreError> {
         let redirect_uris = serde_json::to_string(&client.redirect_uris)
@@ -111,7 +116,7 @@ impl SqliteDatabase {
     pub async fn exchange_mcp_authorization_code(
         &self,
         exchange: McpAuthorizationCodeExchange,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<Option<McpAuthorizationGrant>, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let code_hash = hash_token(&exchange.code);
@@ -216,7 +221,7 @@ impl SqliteDatabase {
         &self,
         token: &str,
         resource_uri: &str,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<Option<McpAuthenticatedPrincipal>, SqliteStoreError> {
         let row = sqlx::query("SELECT issuer, subject, scopes FROM mcp_access_tokens WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ?")
             .bind(hash_token(token)).bind(resource_uri).bind(now.get()).fetch_optional(&self.pool).await.map_err(database_error)?;
@@ -238,7 +243,7 @@ impl SqliteDatabase {
     pub async fn rotate_mcp_refresh_token(
         &self,
         rotation: McpRefreshTokenRotation,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<McpRefreshTokenRotationOutcome, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let row = sqlx::query(
@@ -323,7 +328,7 @@ impl SqliteDatabase {
         issuer: &str,
         subject: &str,
         client_id: &str,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<(), SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         for table in ["mcp_access_tokens", "mcp_refresh_tokens"] {
@@ -349,7 +354,7 @@ impl SqliteDatabase {
         &self,
         token: &str,
         client_id: &str,
-        now: UnixMillis,
+        now: McpTimestamp,
     ) -> Result<(), SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let token_hash = hash_token(token);
@@ -394,7 +399,7 @@ async fn upsert_client<'e, E>(
     executor: E,
     client: &McpOAuthClient,
     registration_method: McpClientRegistrationMethod,
-    registered_at: UnixMillis,
+    registered_at: McpTimestamp,
 ) -> Result<(), SqliteStoreError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Sqlite>,

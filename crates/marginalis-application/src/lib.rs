@@ -12,12 +12,18 @@ use marginalis_domain::{
 };
 pub use mcp_authorization_server::{
     AuthenticatedPrincipal as McpAuthenticatedPrincipal,
-    AuthorizationClient as McpAuthorizationClient, AuthorizationError as McpOAuthUseCaseError,
-    AuthorizationGrant as McpAuthorizationGrant, AuthorizationRequest as McpAuthorizationRequest,
-    Client as McpOAuthClient, ClientRegistrationMethod as McpClientRegistrationMethod,
-    Principal as McpPrincipal, RegisteredClient as McpRegisteredOAuthClient,
-    ResolvedRedirectUri as McpResolvedRedirectUri, ResourcePolicy as McpResourcePolicy,
-    TokenPair as McpTokenPair, ValidatedAuthorizationRequest as McpValidatedAuthorizationRequest,
+    AuthorizationClient as McpAuthorizationClient,
+    AuthorizationCodeExchange as McpAuthorizationCodeExchange,
+    AuthorizationError as McpOAuthUseCaseError, AuthorizationGrant as McpAuthorizationGrant,
+    AuthorizationRequest as McpAuthorizationRequest, Client as McpOAuthClient,
+    ClientMetadataResolver as McpClientMetadataResolver,
+    ClientRegistrationMethod as McpClientRegistrationMethod, Principal as McpPrincipal,
+    RefreshTokenRotation as McpRefreshTokenRotation,
+    RefreshTokenRotationOutcome as McpRefreshTokenRotationOutcome,
+    RegisteredClient as McpRegisteredOAuthClient, Repository as McpOAuthRepository,
+    RepositoryError as McpOAuthRepositoryError, ResolvedRedirectUri as McpResolvedRedirectUri,
+    ResourcePolicy as McpResourcePolicy, Timestamp as McpTimestamp, TokenPair as McpTokenPair,
+    ValidatedAuthorizationRequest as McpValidatedAuthorizationRequest,
 };
 
 mod bibliography;
@@ -41,9 +47,7 @@ pub use math_macros::{
     MathMacro, MathMacroApplication, MathMacroRepository, MathMacroRepositoryError,
     MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases, validate_math_macros,
 };
-pub use mcp_oauth::{
-    McpClientMetadataResolver, McpOAuthApplication, McpOAuthRepository, McpOAuthRepositoryError,
-};
+pub use mcp_oauth::McpOAuthApplication;
 pub use notes::{
     AccessibleNote, NoteAclRepository, NoteApplication, NoteBibliographyEntry, NoteCitationQuery,
     NoteCitationResolution, NoteCitationSegment, NoteCommandRepository, NoteContent,
@@ -314,37 +318,6 @@ pub struct McpAuthenticatedActor {
     pub scopes: Vec<String>,
 }
 
-/// refresh token rotationでadapterへ渡す、生成済みの新旧tokenとbinding。
-pub struct McpRefreshTokenRotation {
-    pub refresh_token: String,
-    pub client_id: String,
-    pub resource_uri: String,
-    pub requested_scopes: Option<Vec<String>>,
-    pub new_access_token: String,
-    pub new_refresh_token: String,
-    pub access_expires_at: UnixMillis,
-    pub refresh_expires_at: UnixMillis,
-}
-
-/// 認可codeの一回消費とtoken pair発行を同じtransactionで行うための入力。
-pub struct McpAuthorizationCodeExchange {
-    pub code: String,
-    pub client_id: String,
-    pub redirect_uri: Option<String>,
-    pub resource_uri: String,
-    pub code_challenge: String,
-    pub access_token: String,
-    pub refresh_token: String,
-    pub access_expires_at: UnixMillis,
-    pub refresh_expires_at: UnixMillis,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum McpRefreshTokenRotationOutcome {
-    Rotated { access_scopes: Vec<String> },
-    InvalidToken,
-    InvalidScope,
-}
 /// HTML内のノート参照へ付与するtransport固有の公開パス。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteRenderContext {
