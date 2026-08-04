@@ -10,6 +10,7 @@ use marginalis_application::{
     BibliographyUseCases, MathMacroUseCases, McpOAuthUseCases, NoteUseCases,
     OidcAuthenticationUseCases, WebSessionUseCases,
 };
+use mcp_authorization_server::{AuthorizationServerEndpoints, ResourcePolicy};
 
 #[derive(Clone)]
 pub struct ApiState {
@@ -70,38 +71,40 @@ pub struct McpEndpoint {
     /// MCP requests that carry `Origin` are restricted to these exact values. Backend and native
     /// clients normally omit `Origin` and authenticate every request with a Bearer token.
     pub(super) allowed_origins: Vec<String>,
-    pub(super) resource_uri: String,
+    pub(super) resource_policy: ResourcePolicy,
     pub(super) metadata_uri: String,
     pub(super) authorization_server_uri: String,
     pub(super) authorization_server_metadata_uri: String,
-    pub(super) authorization_endpoint_uri: String,
-    pub(super) token_endpoint_uri: String,
-    pub(super) revocation_endpoint_uri: String,
-    pub(super) registration_endpoint_uri: String,
+    pub(super) authorization_server_endpoints: AuthorizationServerEndpoints,
 }
 
 impl McpEndpoint {
     pub fn new(
         oauth: Arc<dyn McpOAuthUseCases>,
+        resource_policy: ResourcePolicy,
         base_url: &url::Url,
         allowed_origins: Vec<String>,
     ) -> Self {
-        let resource_uri = base_url_at(base_url, "mcp");
+        let resource_uri = resource_policy.uri().clone();
+        let authorization_server_uri = base_url.to_string();
         Self {
             oauth,
             allowed_origins,
             metadata_uri: well_known_url(&resource_uri, "oauth-protected-resource").to_string(),
-            authorization_server_uri: base_url.to_string(),
+            authorization_server_uri: authorization_server_uri.clone(),
             authorization_server_metadata_uri: well_known_url(
                 base_url,
                 "oauth-authorization-server",
             )
             .to_string(),
-            authorization_endpoint_uri: base_url_at(base_url, "oauth/authorize").to_string(),
-            token_endpoint_uri: base_url_at(base_url, "oauth/token").to_string(),
-            revocation_endpoint_uri: base_url_at(base_url, "oauth/revoke").to_string(),
-            registration_endpoint_uri: base_url_at(base_url, "oauth/register").to_string(),
-            resource_uri: resource_uri.to_string(),
+            authorization_server_endpoints: AuthorizationServerEndpoints {
+                issuer: authorization_server_uri,
+                authorization_endpoint: base_url_at(base_url, "oauth/authorize").to_string(),
+                token_endpoint: base_url_at(base_url, "oauth/token").to_string(),
+                revocation_endpoint: base_url_at(base_url, "oauth/revoke").to_string(),
+                registration_endpoint: base_url_at(base_url, "oauth/register").to_string(),
+            },
+            resource_policy,
         }
     }
 

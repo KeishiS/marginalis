@@ -67,13 +67,19 @@ async fn mcp_dynamic_registration_creates_a_public_client() {
                 Request::post("/oauth/register")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"client_name":"Claude Code","redirect_uris":["http://localhost:48123/callback"]}"#,
+                        r#"{"client_name":"Claude Code","redirect_uris":["http://localhost:48123/callback"],"application_type":"native"}"#,
                     ))
                     .expect("request"),
             )
             .await
             .expect("response");
     assert_eq!(response.status(), StatusCode::CREATED);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let registered: serde_json::Value = serde_json::from_slice(&body).expect("registered client");
+    assert_eq!(registered["application_type"], "native");
+    assert_eq!(registered["token_endpoint_auth_method"], "none");
 }
 
 #[tokio::test]

@@ -108,7 +108,7 @@ pub(super) async fn authenticate(
     let challenged_scope = accepted_scopes.first().copied().unwrap_or("notes:read");
     let authenticated = match endpoint
         .oauth
-        .authenticate(token.into(), endpoint.resource_uri.clone())
+        .authenticate(token.into(), endpoint.resource_policy.uri().to_string())
         .await
     {
         Ok(authenticated) => authenticated,

@@ -2,7 +2,10 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use url::Url;
 
-use crate::Client;
+use crate::{
+    Client, DynamicClientRegistrationError, DynamicClientRegistrationRequest,
+    ValidatedDynamicClientRegistration,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResourcePolicyError {
@@ -154,6 +157,43 @@ pub fn validate_client_metadata(client: &Client) -> Result<(), AuthorizationClie
     Ok(())
 }
 
+pub fn validate_dynamic_client_registration(
+    request: DynamicClientRegistrationRequest,
+    client_id: String,
+    default_display_name: &str,
+) -> Result<ValidatedDynamicClientRegistration, DynamicClientRegistrationError> {
+    if request
+        .token_endpoint_auth_method
+        .as_deref()
+        .is_some_and(|method| method != "none")
+        || request.grant_types.as_ref().is_some_and(|values| {
+            values
+                .iter()
+                .any(|value| !matches!(value.as_str(), "authorization_code" | "refresh_token"))
+        })
+        || request
+            .response_types
+            .as_ref()
+            .is_some_and(|values| values.iter().any(|value| value != "code"))
+    {
+        return Err(DynamicClientRegistrationError::UnsupportedMetadata);
+    }
+    let redirect_uris = request
+        .redirect_uris
+        .ok_or(DynamicClientRegistrationError::MissingRedirectUris)?;
+    Ok(ValidatedDynamicClientRegistration {
+        client: Client {
+            client_id,
+            display_name: request
+                .client_name
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| default_display_name.to_owned()),
+            redirect_uris,
+        },
+        application_type: request.application_type,
+    })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthorizationClientError {
     InvalidMetadata,
@@ -290,6 +330,30 @@ mod tests {
                 vec!["notes:read".into()],
             ),
             Err(ResourcePolicyError::InvalidScopes)
+        );
+    }
+
+    #[test]
+    fn dynamic_registration_preserves_the_declared_application_type() {
+        let registration = validate_dynamic_client_registration(
+            DynamicClientRegistrationRequest {
+                client_name: Some("Catalog CLI".into()),
+                redirect_uris: Some(vec!["http://127.0.0.1/callback".into()]),
+                token_endpoint_auth_method: Some("none".into()),
+                grant_types: Some(vec!["authorization_code".into(), "refresh_token".into()]),
+                response_types: Some(vec!["code".into()]),
+                application_type: Some(crate::ApplicationType::Native),
+            },
+            "generated-client".into(),
+            "Default client",
+        )
+        .expect("dynamic registration");
+
+        assert_eq!(registration.client.client_id, "generated-client");
+        assert_eq!(registration.client.display_name, "Catalog CLI");
+        assert_eq!(
+            registration.application_type,
+            Some(crate::ApplicationType::Native)
         );
     }
 

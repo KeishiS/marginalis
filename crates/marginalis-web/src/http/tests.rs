@@ -1181,6 +1181,17 @@ impl TestApp {
                 let base_url = url::Url::parse(base_url).expect("base URL");
                 state.with_mcp(McpEndpoint::new(
                     Arc::new(TestMcpOAuth { authenticator }),
+                    marginalis_application::McpResourcePolicy::new(
+                        McpEndpoint::resource_uri_for(&base_url),
+                        "Marginalis MCP".into(),
+                        vec![
+                            "notes:read".into(),
+                            "notes:write".into(),
+                            "notes:delete".into(),
+                        ],
+                        vec!["notes:read".into()],
+                    )
+                    .expect("MCP resource policy"),
                     &base_url,
                     allowed_origins,
                 ))

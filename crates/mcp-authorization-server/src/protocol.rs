@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 /// Authorization Serverが認証済みとして受け取る主体。
 ///
 /// 本人確認と値の検査は利用側が行う。中核はissuerとsubjectをtokenへ結び付けるためだけに使う。
@@ -27,6 +29,63 @@ pub struct Client {
     pub client_id: String,
     pub display_name: String,
     pub redirect_uris: Vec<String>,
+}
+
+/// DCRでclientが申告するOpenID Connect application type。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApplicationType {
+    Native,
+    Web,
+}
+
+/// RFC 7591互換endpointで受け取る公開clientのmetadata。
+#[derive(Deserialize)]
+pub struct DynamicClientRegistrationRequest {
+    pub client_name: Option<String>,
+    pub redirect_uris: Option<Vec<String>>,
+    pub token_endpoint_auth_method: Option<String>,
+    pub grant_types: Option<Vec<String>>,
+    pub response_types: Option<Vec<String>>,
+    pub application_type: Option<ApplicationType>,
+}
+
+/// DCRで登録した公開clientのmetadata。
+#[derive(Serialize)]
+pub struct DynamicClientRegistrationResponse {
+    pub client_id: String,
+    pub client_name: String,
+    pub redirect_uris: Vec<String>,
+    pub token_endpoint_auth_method: &'static str,
+    pub grant_types: [&'static str; 2],
+    pub response_types: [&'static str; 1],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_type: Option<ApplicationType>,
+}
+
+impl DynamicClientRegistrationResponse {
+    pub fn new(client: Client, application_type: Option<ApplicationType>) -> Self {
+        Self {
+            client_id: client.client_id,
+            client_name: client.display_name,
+            redirect_uris: client.redirect_uris,
+            token_endpoint_auth_method: "none",
+            grant_types: ["authorization_code", "refresh_token"],
+            response_types: ["code"],
+            application_type,
+        }
+    }
+}
+
+pub struct ValidatedDynamicClientRegistration {
+    pub client: Client,
+    pub application_type: Option<ApplicationType>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DynamicClientRegistrationError {
+    MissingRedirectUris,
+    UnsupportedMetadata,
 }
 
 /// 登録情報との照合を終えたredirect URIと、認可要求での指定有無。
