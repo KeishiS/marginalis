@@ -4,7 +4,6 @@ mod cli;
 mod config;
 mod environment;
 mod maintenance;
-mod mcp_client_metadata;
 mod runtime;
 mod serve;
 

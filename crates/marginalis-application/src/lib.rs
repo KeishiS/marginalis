@@ -17,6 +17,7 @@ pub use mcp_authorization_server::{
     AuthorizationError as McpOAuthUseCaseError, AuthorizationGrant as McpAuthorizationGrant,
     AuthorizationRequest as McpAuthorizationRequest, Client as McpOAuthClient,
     ClientMetadataResolver as McpClientMetadataResolver,
+    ClientMetadataResolverError as McpClientMetadataResolverError,
     ClientRegistrationMethod as McpClientRegistrationMethod, Principal as McpPrincipal,
     RefreshTokenRotation as McpRefreshTokenRotation,
     RefreshTokenRotationOutcome as McpRefreshTokenRotationOutcome,

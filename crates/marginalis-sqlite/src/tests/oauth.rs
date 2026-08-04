@@ -5,8 +5,8 @@ use std::sync::{
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
-    Clock, McpAuthorizationRequest, McpClientMetadataResolver, McpClientRegistrationMethod,
-    McpOAuthApplication, McpOAuthRepositoryError, McpRegisteredOAuthClient,
+    Clock, McpAuthorizationRequest, McpClientMetadataResolver, McpClientMetadataResolverError,
+    McpClientRegistrationMethod, McpOAuthApplication, McpRegisteredOAuthClient,
     McpTimestamp as UnixMillis, Random,
 };
 use marginalis_domain::EntityId as ApplicationEntityId;
@@ -48,7 +48,7 @@ impl McpClientMetadataResolver for StaticMetadataResolver {
     async fn resolve(
         &self,
         client_id: &str,
-    ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
+    ) -> Result<Option<McpOAuthClient>, McpClientMetadataResolverError> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         Ok((client_id == self.client.client_id).then(|| self.client.clone()))
     }

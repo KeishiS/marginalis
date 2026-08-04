@@ -37,6 +37,9 @@ Marginalisの同一プロセスへ組み込みます。独立したdaemon、ネ�
 
 crateを分けなければ依存方向を守れない状態になった場合だけ、moduleを独立crateへ分けます。
 `mcp-authorization-server`はAxum、SQLx、Kanidm、`marginalis-*`、`renkan-*`へ依存しません。
+この原則に従い、CIMDの外部取得だけは`mcp-authorization-server-cimd`へ分けます。CIMDはHTTP client、
+非同期の同時実行制御、DNS名前解決を必要としますが、中核の状態遷移とmetadata検証は必要としません。
+別crateにすることで、中核へ`reqwest`と`tokio`を持ち込まず、別のHTTP adapterへの交換も可能にします。
 
 中核へ渡す主体は、検証済みのissuerとsubjectだけを持つ`Principal`とします。Kanidmとの通信、
 group検査、Web session、Cookie、CSRF、同意画面はMarginalisに残します。中核が認証基盤や利用者向け

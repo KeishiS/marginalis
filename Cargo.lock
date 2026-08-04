@@ -1273,7 +1273,6 @@ dependencies = [
 name = "marginalis-service"
 version = "0.26.1"
 dependencies = [
- "async-trait",
  "axum",
  "base64 0.22.1",
  "liblzma",
@@ -1285,6 +1284,7 @@ dependencies = [
  "marginalis-domain",
  "marginalis-sqlite",
  "marginalis-web",
+ "mcp-authorization-server-cimd",
  "rand 0.8.7",
  "reqwest",
  "serde",
@@ -1364,6 +1364,21 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "tokio",
+ "url",
+]
+
+[[package]]
+name = "mcp-authorization-server-cimd"
+version = "0.26.1"
+dependencies = [
+ "async-trait",
+ "mcp-authorization-server",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
