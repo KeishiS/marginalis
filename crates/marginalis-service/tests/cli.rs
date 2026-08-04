@@ -251,23 +251,50 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
 fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let directory = test_directory("archive-migration");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("archive-9.json");
-    let output = directory.join("archive-10.json");
+    let input = directory.join("v0.25.1-archive-13.json");
+    let output = directory.join("v0.26.1-archive-14.json");
     let previous = serde_json::json!({
-        "format": "marginalis-archive-9",
-        "adocweave_package_version": "0.19.0",
-        "note_profile_version": 4,
-        "notes": [{
+        "format": "marginalis-archive-13",
+        "adocweave_package_version": "0.27.0",
+        "note_profile_version": 5,
+        "notes": [
+            {
+                "note_id": "0197c9bc-0000-7000-8000-000000000001",
+                "creator_issuer": "https://id.example.test",
+                "creator_subject": "alice",
+                "source": "= Note\n:source-language: rust\n:marginalis-tags: {source-language}\n\nbody cite:[smith2024]",
+                "created_at_ms": 1,
+                "updated_at_ms": 2,
+                "revision": 2,
+                "deleted_at_ms": null
+            },
+            {
+                "note_id": "0197c9bc-0000-7000-8000-000000000002",
+                "creator_issuer": "https://id.example.test",
+                "creator_subject": "alice",
+                "source": "= Deleted note\n\nbody",
+                "created_at_ms": 1,
+                "updated_at_ms": 3,
+                "revision": 1,
+                "deleted_at_ms": 3
+            }
+        ],
+        "note_acl": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",
-            "creator_issuer": "https://id.example.test",
-            "creator_subject": "alice",
-            "source": "= Note\n:source-language: rust\n:marginalis-tags: {source-language}\n\nbody",
+            "issuer": "https://id.example.test",
+            "subject": "bob",
+            "permission": "read"
+        }],
+        "bibliography_items": [{
+            "item_id": "0197c9bc-0000-7000-8000-0000000000a1",
+            "owner_issuer": "https://id.example.test",
+            "owner_subject": "alice",
+            "citation_key": "smith2024",
+            "csl_json": { "id": "smith2024", "type": "book", "title": "Example" },
             "created_at_ms": 1,
             "updated_at_ms": 2,
-            "revision": 1,
-            "deleted_at_ms": null
-        }],
-        "note_acl": []
+            "revision": 1
+        }]
     });
     let input_bytes = serde_json::to_vec_pretty(&previous).expect("previous archive");
     fs::write(&input, &input_bytes).expect("write previous archive");
@@ -299,9 +326,24 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     assert_eq!(migrated["format"], "marginalis-archive-14");
     assert_eq!(migrated["adocweave_package_version"], "0.27.0");
     assert_eq!(migrated["note_profile_version"], 5);
+    assert_eq!(migrated["math_macro_settings"], serde_json::json!([]));
+    for field in ["notes", "note_acl", "bibliography_items"] {
+        assert_eq!(migrated[field], previous[field], "changed field: {field}");
+    }
 
-    let invalid_input = directory.join("invalid-archive-9.json");
-    let invalid_output = directory.join("invalid-archive-10.json");
+    let verified = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["verify-restore", "--input"])
+        .arg(&output)
+        .output()
+        .expect("verify migrated archive");
+    assert!(
+        verified.status.success(),
+        "restore verification failed: {}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
+
+    let invalid_input = directory.join("invalid-v0.25.1-archive-13.json");
+    let invalid_output = directory.join("invalid-v0.26.1-archive-14.json");
     let mut invalid = previous;
     invalid["notes"][0]["source"] = concat!(
         "= Note\n:marginalis-tags: research, + \\",
