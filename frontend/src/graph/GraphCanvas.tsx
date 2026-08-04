@@ -21,7 +21,6 @@ import { useVertexDetail } from "./useVertexDetail";
 
 interface PlacedVertex extends SimulationNodeDatum, GraphVertex {}
 
-/** 選んでいる点と、その画面上の位置。説明の吹き出しをここへ出す。 */
 const VIEW_WIDTH = 1200;
 const VIEW_HEIGHT = 720;
 /** 点の半径。つながりが多いほど大きくするが、上限を設けて図を埋めない。 */
