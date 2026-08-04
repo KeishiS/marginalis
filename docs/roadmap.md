@@ -6,14 +6,68 @@
 
 ## 現在地
 
-`v0.23.0`を2026-08-01に公開しました。公開済み機能と移行方法は
-[変更履歴](../CHANGELOG.md#0230--2026-08-01)、確認結果は
-[v0.23.0受入結果](acceptance-results/v0.23.0.md)を参照してください。この文書には公開履歴を
+`v0.26.1`を2026-08-04に公開しました。公開済み機能と移行方法は
+[変更履歴](../CHANGELOG.md#0261--2026-08-04)、確認結果は
+[v0.26.1受入結果](acceptance-results/v0.26.1.md)を参照してください。この文書には公開履歴を
 書き写さず、未完了の判断と作業だけを置きます。
 
-外部の文献管理ツールとの同期は
-[#225](https://github.com/KeishiS/marginalis/issues/225)で扱います。設計の判断から始めるため、
-同期の方向、接続の方法、入力の形式、取込元の記録、競合の解決をADRへ記録します。
+## 公開予定
+
+### v0.27.0: Authorization Serverの内部境界
+
+最初に、[#269](https://github.com/KeishiS/marginalis/issues/269)のうち、内蔵Authorization Serverの
+中核をMarginalis固有のドメインから分離します。この段階では独立したリポジトリやdaemonを作らず、
+Marginalisリポジトリ内の製品非依存crateとして同一プロセスへ組み込みます。
+
+既存のURL、scope、token寿命、SQLite schema、発行済みtokenとクライアント登録を意図せず変更しません。
+Marginalisを分離後のcrateへ切り替え、ChatGPT、Claude Code、Codex CLIによる接続と取消までの回帰試験が
+成功した時点で`v0.27.0`を公開します。構造変更を単独で公開することで、後続のscope変更と不具合の原因を
+分けて確認できるようにします。
+
+### v0.28.0: Web UIの基本操作
+
+OAuth同意画面を通常画面と統一する
+[#262](https://github.com/KeishiS/marginalis/issues/262)と、ノートの削除・復元をWeb UIから完結させる
+[#263](https://github.com/KeishiS/marginalis/issues/263)、
+[#267](https://github.com/KeishiS/marginalis/issues/267)をまとめます。削除だけを先に公開してWeb UIから
+復元できない期間を作らず、一連の操作と受入試験がそろった時点で`v0.28.0`を公開します。
+
+### v0.29.0: MCPアクセス制御
+
+利用者とクライアントのscope上限を定める
+[#268](https://github.com/KeishiS/marginalis/issues/268)を先に設計し、製品固有のscopeポリシーとして
+分離後のAuthorization Serverへ渡します。その上で、書誌情報のscope分離
+[#266](https://github.com/KeishiS/marginalis/issues/266)、同意時のscope選択
+[#261](https://github.com/KeishiS/marginalis/issues/261)、認可済みクライアントの管理
+[#264](https://github.com/KeishiS/marginalis/issues/264)、段階的な追加認可
+[#265](https://github.com/KeishiS/marginalis/issues/265)の順に実装します。
+
+既存クライアントの再認可を複数回求めないよう、これらは一つの`v0.29.0`として公開します。発行可能なscopeの
+計算は共有可能な中核へ置きますが、scopeの名称、MCP toolとの対応、同意画面、利用者向け設定は
+Marginalisに残します。
+
+### Authorization Serverの共有元
+
+`v0.27.0`ではcrateの公開境界を固定せず、`v0.29.0`までのscopeポリシー実装を通じて、製品非依存の
+境界が実用に耐えるか確認します。その後、#269のADRで独立リポジトリ、registry、固定したGit dependencyを
+比較します。独立リポジトリへの移動は、その判断とversion方針、脆弱性対応、両利用側のCIがそろってから
+行います。
+
+[連環（Renkan）](research-search-vision.md)はMarginalisとは別の探索サービスです。Renkanへの統合と
+PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。Marginalis側では
+別のresourceと保存先を使う試験実装により、分離した中核が製品固有の型へ依存しないことを確認します。
+
+### v0.30.0以降: 保存形式と外部連携
+
+ノートの作成経路と人手確認状態を扱う
+[#232](https://github.com/KeishiS/marginalis/issues/232)と、外部の文献管理ツールとの同期契約を扱う
+[#225](https://github.com/KeishiS/marginalis/issues/225)について、先に保存項目と公開契約を決めます。
+SQLite schemaを変更する実装は、[#105](https://github.com/KeishiS/marginalis/issues/105)の新しいschema系統と
+まとめて`v0.30.0`の候補とします。#225はADR確定後に実装Issueへ分割し、取込元や競合解決に必要な
+保存形式を`v0.30.0`へ含めるか、後続版へ分けるかを決定します。
+
+パッチ版は予定へ固定しません。各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
+なった場合だけ公開します。
 
 ## 本文からの検索
 
