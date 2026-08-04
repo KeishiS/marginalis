@@ -440,6 +440,42 @@ async fn replacing_scope_ceilings_is_revision_guarded_and_revokes_existing_grant
             .is_none(),
         "上限変更前の認可codeも失効する"
     );
+
+    let read_grant = McpAuthorizationGrant {
+        scopes: vec!["notes:read".into()],
+        ..grant.clone()
+    };
+    for code in ["preserved-token-code", "preserved-pending-code"] {
+        database
+            .issue_mcp_authorization_code(
+                code,
+                &registered_client(&client, McpClientRegistrationMethod::Dynamic),
+                &read_grant,
+                "challenge",
+                UnixMillis::new(100),
+                UnixMillis::new(3),
+            )
+            .await
+            .expect("read-only code");
+    }
+    database
+        .exchange_mcp_authorization_code(
+            McpAuthorizationCodeExchange {
+                code: "preserved-token-code".into(),
+                client_id: client.client_id.clone(),
+                redirect_uri: Some(read_grant.redirect_uri.as_str().to_owned()),
+                resource_uri: read_grant.resource_uri.clone(),
+                code_challenge: "challenge".into(),
+                access_token: "preserved-access".into(),
+                refresh_token: "preserved-refresh".into(),
+                access_expires_at: UnixMillis::new(500),
+                refresh_expires_at: UnixMillis::new(900),
+            },
+            UnixMillis::new(3),
+        )
+        .await
+        .expect("read-only token pair")
+        .expect("read-only grant");
     assert_eq!(
         marginalis_application::McpScopeCeilingRepository::replace_principal_scope_ceiling(
             &database,
@@ -452,6 +488,39 @@ async fn replacing_scope_ceilings_is_revision_guarded_and_revokes_existing_grant
         .expect("updated principal scope ceiling")
         .revision,
         2
+    );
+    assert!(
+        database
+            .authenticate_mcp_access_token(
+                "preserved-access",
+                &read_grant.resource_uri,
+                UnixMillis::new(5),
+            )
+            .await
+            .expect("authentication")
+            .is_some(),
+        "上限内のtokenは上限を広げても失効しない"
+    );
+    assert!(
+        database
+            .exchange_mcp_authorization_code(
+                McpAuthorizationCodeExchange {
+                    code: "preserved-pending-code".into(),
+                    client_id: client.client_id.clone(),
+                    redirect_uri: Some(read_grant.redirect_uri.as_str().to_owned()),
+                    resource_uri: read_grant.resource_uri.clone(),
+                    code_challenge: "challenge".into(),
+                    access_token: "preserved-late-access".into(),
+                    refresh_token: "preserved-late-refresh".into(),
+                    access_expires_at: UnixMillis::new(500),
+                    refresh_expires_at: UnixMillis::new(900),
+                },
+                UnixMillis::new(5),
+            )
+            .await
+            .expect("preserved exchange")
+            .is_some(),
+        "上限内の認可codeは上限を広げても失効しない"
     );
     assert!(matches!(
         marginalis_application::McpScopeCeilingRepository::replace_principal_scope_ceiling(

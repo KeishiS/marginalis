@@ -54,7 +54,7 @@ impl McpScopeCeilingRepository for SqliteDatabase {
         let revision =
             replace_principal_setting(&mut transaction, actor, scopes, expected_revision, now)
                 .await?;
-        invalidate_principal_grants(&mut transaction, actor, None, now).await?;
+        invalidate_excess_grants(&mut transaction, actor, None, scopes, now).await?;
         transaction.commit().await.map_err(map_database_error)?;
         Ok(McpScopeCeilingSetting {
             scopes: scopes.to_vec(),
@@ -90,7 +90,7 @@ impl McpScopeCeilingRepository for SqliteDatabase {
             now,
         )
         .await?;
-        invalidate_principal_grants(&mut transaction, actor, Some(client_id), now).await?;
+        invalidate_excess_grants(&mut transaction, actor, Some(client_id), scopes, now).await?;
         transaction.commit().await.map_err(map_database_error)?;
         Ok(McpScopeCeilingSetting {
             scopes: scopes.to_vec(),
@@ -190,56 +190,103 @@ async fn replace_client_setting(
     .ok_or(McpScopeCeilingRepositoryError::Conflict)
 }
 
-async fn invalidate_principal_grants(
+async fn invalidate_excess_grants(
     transaction: &mut Transaction<'_, Sqlite>,
     actor: &Actor,
     client_id: Option<&str>,
+    allowed_scopes: &[String],
     now: UnixMillis,
 ) -> Result<(), McpScopeCeilingRepositoryError> {
-    if let Some(client_id) = client_id {
-        sqlx::query(
-            "DELETE FROM mcp_authorization_codes
-             WHERE issuer = ? AND subject = ? AND client_id = ?",
-        )
+    let code_query = if client_id.is_some() {
+        "SELECT code_hash, scopes FROM mcp_authorization_codes
+         WHERE issuer = ? AND subject = ? AND client_id = ? AND consumed_at_ms IS NULL"
+    } else {
+        "SELECT code_hash, scopes FROM mcp_authorization_codes
+         WHERE issuer = ? AND subject = ? AND consumed_at_ms IS NULL"
+    };
+    let mut code_query = sqlx::query(code_query)
         .bind(actor.issuer())
-        .bind(actor.subject())
-        .bind(client_id)
-        .execute(&mut **transaction)
+        .bind(actor.subject());
+    if let Some(client_id) = client_id {
+        code_query = code_query.bind(client_id);
+    }
+    let codes = code_query
+        .fetch_all(&mut **transaction)
         .await
         .map_err(map_database_error)?;
-    } else {
-        sqlx::query("DELETE FROM mcp_authorization_codes WHERE issuer = ? AND subject = ?")
-            .bind(actor.issuer())
-            .bind(actor.subject())
+    for row in codes {
+        let scopes = row
+            .try_get::<String, _>("scopes")
+            .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?;
+        if scopes_fit(&scopes, allowed_scopes) {
+            continue;
+        }
+        let code_hash = row
+            .try_get::<Vec<u8>, _>("code_hash")
+            .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?;
+        sqlx::query("DELETE FROM mcp_authorization_codes WHERE code_hash = ?")
+            .bind(code_hash)
             .execute(&mut **transaction)
             .await
             .map_err(map_database_error)?;
     }
-    for table in ["mcp_access_tokens", "mcp_refresh_tokens"] {
-        let query = if client_id.is_some() {
-            format!(
-                "UPDATE {table} SET revoked_at_ms = ?
-                 WHERE issuer = ? AND subject = ? AND client_id = ? AND revoked_at_ms IS NULL"
-            )
-        } else {
-            format!(
-                "UPDATE {table} SET revoked_at_ms = ?
-                 WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL"
-            )
-        };
-        let mut query = sqlx::query(&query)
-            .bind(now.get())
-            .bind(actor.issuer())
-            .bind(actor.subject());
-        if let Some(client_id) = client_id {
-            query = query.bind(client_id);
+
+    let family_query = if client_id.is_some() {
+        "SELECT token_family_id, scopes FROM mcp_access_tokens
+         WHERE issuer = ? AND subject = ? AND client_id = ? AND revoked_at_ms IS NULL
+         UNION
+         SELECT token_family_id, scopes FROM mcp_refresh_tokens
+         WHERE issuer = ? AND subject = ? AND client_id = ? AND revoked_at_ms IS NULL"
+    } else {
+        "SELECT token_family_id, scopes FROM mcp_access_tokens
+         WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL
+         UNION
+         SELECT token_family_id, scopes FROM mcp_refresh_tokens
+         WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL"
+    };
+    let mut family_query = sqlx::query(family_query)
+        .bind(actor.issuer())
+        .bind(actor.subject());
+    if let Some(client_id) = client_id {
+        family_query = family_query.bind(client_id);
+    }
+    family_query = family_query.bind(actor.issuer()).bind(actor.subject());
+    if let Some(client_id) = client_id {
+        family_query = family_query.bind(client_id);
+    }
+    let families = family_query
+        .fetch_all(&mut **transaction)
+        .await
+        .map_err(map_database_error)?;
+    for row in families {
+        let scopes = row
+            .try_get::<String, _>("scopes")
+            .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?;
+        if scopes_fit(&scopes, allowed_scopes) {
+            continue;
         }
-        query
+        let family = row
+            .try_get::<Vec<u8>, _>("token_family_id")
+            .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?;
+        for table in ["mcp_access_tokens", "mcp_refresh_tokens"] {
+            sqlx::query(&format!(
+                "UPDATE {table} SET revoked_at_ms = ?
+                 WHERE token_family_id = ? AND revoked_at_ms IS NULL"
+            ))
+            .bind(now.get())
+            .bind(&family)
             .execute(&mut **transaction)
             .await
             .map_err(map_database_error)?;
+        }
     }
     Ok(())
+}
+
+fn scopes_fit(encoded: &str, allowed_scopes: &[String]) -> bool {
+    encoded
+        .split_ascii_whitespace()
+        .all(|scope| allowed_scopes.iter().any(|allowed| allowed == scope))
 }
 
 fn decode_setting(
