@@ -29,8 +29,12 @@ export function ConfirmationDialog({
   const cancelButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    cancelButton.current?.focus();
-  }, []);
+    if (busy) {
+      dialog.current?.focus();
+    } else {
+      cancelButton.current?.focus();
+    }
+  }, [busy]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape" && !busy) {
@@ -38,7 +42,12 @@ export function ConfirmationDialog({
       onCancel();
       return;
     }
-    if (event.key !== "Tab" || busy) return;
+    if (event.key !== "Tab") return;
+    if (busy) {
+      event.preventDefault();
+      dialog.current?.focus();
+      return;
+    }
     const buttons = Array.from(
       dialog.current?.querySelectorAll<HTMLButtonElement>(
         "button:not(:disabled)",
@@ -64,6 +73,7 @@ export function ConfirmationDialog({
         aria-modal="true"
         aria-labelledby={`${id}-heading`}
         aria-describedby={`${id}-description`}
+        tabIndex={-1}
         onKeyDown={handleKeyDown}
       >
         <p className="page-eyebrow">{eyebrow}</p>
