@@ -81,6 +81,7 @@ schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する
 
 | archive形式 | AdocWeave package版 | note profile版 |
 | --- | --- | --- |
+| `marginalis-archive-13` | 0.27.0 | 5 |
 | `marginalis-archive-13` | 0.23.0 | 5 |
 | `marginalis-archive-13` | 0.23.0 | 4 |
 | `marginalis-archive-12` | 0.22.0 | 4 |
