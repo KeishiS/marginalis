@@ -1,10 +1,14 @@
-//! applicationのMCP OAuth repository portに対するSQLite実装。
+//! 製品非依存のMCP OAuth repository portに対するSQLite実装。
 
 use async_trait::async_trait;
-use marginalis_application::{
-    McpAuthenticatedPrincipal, McpAuthorizationCodeExchange, McpAuthorizationGrant, McpOAuthClient,
-    McpOAuthRepository, McpOAuthRepositoryError, McpRefreshTokenRotation,
-    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient, McpTimestamp,
+use mcp_authorization_server::{
+    AuthenticatedPrincipal as McpAuthenticatedPrincipal,
+    AuthorizationCodeExchange as McpAuthorizationCodeExchange,
+    AuthorizationGrant as McpAuthorizationGrant, Client as McpOAuthClient,
+    RefreshTokenRotation as McpRefreshTokenRotation,
+    RefreshTokenRotationOutcome as McpRefreshTokenRotationOutcome,
+    RegisteredClient as McpRegisteredOAuthClient, Repository as McpOAuthRepository,
+    RepositoryError as McpOAuthRepositoryError, Timestamp as McpTimestamp,
 };
 
 use crate::SqliteDatabase;

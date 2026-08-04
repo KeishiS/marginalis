@@ -1,11 +1,16 @@
 //! MCP OAuth client、code、access/refresh tokenの永続化。
 
-use marginalis_application::{
-    McpAuthenticatedPrincipal, McpAuthorizationCodeExchange, McpAuthorizationGrant,
-    McpClientRegistrationMethod, McpOAuthClient, McpPrincipal, McpRefreshTokenRotation,
-    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient, McpResolvedRedirectUri, McpTimestamp,
-};
 use marginalis_domain::Actor;
+use mcp_authorization_server::{
+    AuthenticatedPrincipal as McpAuthenticatedPrincipal,
+    AuthorizationCodeExchange as McpAuthorizationCodeExchange,
+    AuthorizationGrant as McpAuthorizationGrant, Client as McpOAuthClient,
+    ClientRegistrationMethod as McpClientRegistrationMethod, Principal as McpPrincipal,
+    RefreshTokenRotation as McpRefreshTokenRotation,
+    RefreshTokenRotationOutcome as McpRefreshTokenRotationOutcome,
+    RegisteredClient as McpRegisteredOAuthClient, ResolvedRedirectUri as McpResolvedRedirectUri,
+    Timestamp as McpTimestamp,
+};
 use sqlx::Row;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, token::hash_token};
