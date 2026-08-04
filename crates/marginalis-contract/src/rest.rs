@@ -44,6 +44,16 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
     },
     RestRouteContract {
         method: "GET",
+        specification_path: "/api/v3/mcp-scope-ceilings",
+        probe_path: "/api/v3/mcp-scope-ceilings",
+    },
+    RestRouteContract {
+        method: "PUT",
+        specification_path: "/api/v3/mcp-scope-ceilings",
+        probe_path: "/api/v3/mcp-scope-ceilings",
+    },
+    RestRouteContract {
+        method: "GET",
         specification_path: "/api/v3/notes",
         probe_path: "/api/v3/notes",
     },
@@ -181,6 +191,21 @@ pub struct MathMacroSettingsInput {
 #[serde(deny_unknown_fields)]
 pub struct MathMacroSettingsResponse {
     pub macros: Vec<MathMacroResponse>,
+    pub revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpScopeCeilingInput {
+    pub scopes: Vec<String>,
+    pub revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpScopeCeilingResponse {
+    pub supported_scopes: Vec<String>,
+    pub scopes: Vec<String>,
     pub revision: i64,
 }
 
@@ -570,6 +595,23 @@ pub fn openapi_document() -> Value {
                         "revision": {"type": "integer", "minimum": 0}
                     }
                 },
+                "McpScopeCeilingInput": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["scopes", "revision"],
+                    "properties": {
+                        "scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+                        "revision": {"type": "integer", "minimum": 0}
+                    }
+                },
+                "McpScopeCeiling": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["supported_scopes", "scopes", "revision"],
+                    "properties": {
+                        "supported_scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+                        "scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+                        "revision": {"type": "integer", "minimum": 0}
+                    }
+                },
                 "NoteDraft": note_draft_schema(),
                 "BibliographyItemInput": {
                     "type": "object", "additionalProperties": false,
@@ -737,6 +779,21 @@ fn rest_paths() -> Value {
             ])),
             "put": operation("Replace the current user's MathJax macros", &["CsrfToken"], Some("MathMacroSettings"), responses(&[
                 ("200", schema_response("updated MathJax macro settings", "MathMacroSettings")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("409", response_ref("Conflict")),
+                ("422", response_ref("ValidationFailed")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/mcp-scope-ceilings": {
+            "get": operation("Read the current user's MCP scope ceiling", &[], None, responses(&[
+                ("200", schema_response("MCP scope ceiling", "McpScopeCeiling")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("503", response_ref("Unavailable"))
+            ])),
+            "put": operation("Replace the current user's MCP scope ceiling", &["CsrfToken"], Some("McpScopeCeilingInput"), responses(&[
+                ("200", schema_response("updated MCP scope ceiling", "McpScopeCeiling")),
                 ("401", response_ref("AuthenticationRequired")),
                 ("403", response_ref("CsrfRejected")),
                 ("409", response_ref("Conflict")),

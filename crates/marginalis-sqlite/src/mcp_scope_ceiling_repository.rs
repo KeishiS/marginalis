@@ -12,12 +12,11 @@ use crate::SqliteDatabase;
 
 #[async_trait]
 impl McpScopeCeilingRepository for SqliteDatabase {
-    async fn scope_ceilings(
+    async fn principal_scope_ceiling(
         &self,
         actor: &Actor,
-        client_id: &str,
-    ) -> Result<McpStoredScopeCeilings, McpScopeCeilingRepositoryError> {
-        let principal = sqlx::query(
+    ) -> Result<Option<McpScopeCeilingSetting>, McpScopeCeilingRepositoryError> {
+        sqlx::query(
             "SELECT scopes, revision FROM mcp_principal_scope_ceilings
              WHERE issuer = ? AND subject = ?",
         )
@@ -27,7 +26,15 @@ impl McpScopeCeilingRepository for SqliteDatabase {
         .await
         .map_err(map_database_error)?
         .map(decode_setting)
-        .transpose()?;
+        .transpose()
+    }
+
+    async fn scope_ceilings(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+    ) -> Result<McpStoredScopeCeilings, McpScopeCeilingRepositoryError> {
+        let principal = self.principal_scope_ceiling(actor).await?;
         let client = sqlx::query(
             "SELECT scopes, revision FROM mcp_client_scope_ceilings
              WHERE issuer = ? AND subject = ? AND client_id = ?",
