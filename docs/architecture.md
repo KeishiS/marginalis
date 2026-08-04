@@ -50,9 +50,11 @@ AsciiDoc engine、HTTP serverを起動する必要がありません。
 `Cargo.lock`と`flake.nix`の固定値との一致を検査します。
 `marginalis-auth-oidc`は外部identity provider portを実装し、OIDC discovery・code exchange・
 ID token検証を担当します。利用を許可する`server-users`所属の判断はapplicationが担当します。
-MCP用OAuthの認可、token発行、refresh token rotation、失効は`marginalis-application`が手順を定義し、
-`marginalis-sqlite`がclient、認可code、token hashを保存します。利用者のログインはWeb UIと同じ
-Kanidm OIDCを使います。
+MCP用OAuthの認可、token発行、refresh token rotation、失効は製品非依存の
+`mcp-authorization-server`が状態遷移と永続化portを定義し、`marginalis-sqlite`がclient、認可code、
+token hashを保存します。`marginalis-application`は検証済みの利用者identityを製品非依存の主体へ変換し、
+scopeとノート操作の対応を保ちます。利用者のログインはWeb UIと同じKanidm OIDCを使います。責務の境界と
+段階的な移行は[ADR 0008](adr/0008-mcp-authorization-serverの中核を製品から分離する.md)に従います。
 MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`marginalis-web::mcp`に置きます。
 Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条件の検査、tool実行は
 `marginalis-web::http::mcp_transport`内の別moduleに置きます。これにより、公開toolを変更するときに
