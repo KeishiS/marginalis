@@ -290,56 +290,27 @@ fn consent_page(
     csrf: &str,
 ) -> Response {
     let consent_path = external_path(&state.cookie_path, "/oauth/authorize/consent");
-    let state_field = input.state.as_deref().map_or_else(String::new, |value| {
-        format!(
-            "<input type=\"hidden\" name=\"state\" value=\"{}\">",
-            escape_html(value)
-        )
-    });
-    let redirect_uri_field = if request.redirect_uri.was_supplied() {
-        format!(
-            "<input type=\"hidden\" name=\"redirect_uri\" value=\"{}\">",
-            escape_html(request.redirect_uri.as_str())
-        )
-    } else {
-        String::new()
-    };
     let redirect = url::Url::parse(request.redirect_uri.as_str()).ok();
     let redirect_host = redirect
         .as_ref()
         .and_then(url::Url::host_str)
         .unwrap_or("確認できません");
-    let loopback_warning = redirect.as_ref().is_some_and(is_loopback_redirect);
-    let loopback_warning = if loopback_warning {
-        "<aside class=\"oauth-loopback-warning warnings\"><h2>この端末上のアプリへ戻ります</h2><p>許可すると、処理を続けるため、この端末で動作しているアプリへ移動します。</p></aside>"
-    } else {
-        ""
-    };
-    let scopes = if request.scopes.is_empty() {
-        "<p class=\"state-message\">要求された権限はありません。</p>".into()
-    } else {
-        let items = request
-            .scopes
-            .iter()
-            .map(|scope| format!("<li><code>{}</code></li>", escape_html(scope)))
-            .collect::<String>();
-        format!("<ul class=\"oauth-scope-list\">{items}</ul>")
-    };
     let content = format!(
-        "<section class=\"oauth-consent-page page-section\" aria-labelledby=\"oauth-consent-heading\"><div class=\"page-heading\"><div><p class=\"page-eyebrow\">MCP access</p><h1 id=\"oauth-consent-heading\">MCPクライアントを許可しますか？</h1><p class=\"page-description\">許可する前に、接続するクライアントと要求された権限を確認してください。</p></div></div><div class=\"oauth-consent surface\"><section class=\"oauth-client\" aria-labelledby=\"oauth-client-heading\"><p class=\"oauth-detail-label\">クライアント</p><h2 id=\"oauth-client-heading\">{}</h2><dl class=\"oauth-detail-list\"><div><dt>クライアント識別子</dt><dd><code>{}</code></dd></div><div><dt>移動先のホスト</dt><dd><code>{}</code></dd></div></dl></section><section class=\"oauth-scope-section\" aria-labelledby=\"oauth-scope-heading\"><h2 id=\"oauth-scope-heading\">要求された権限</h2>{}</section>{}<form class=\"oauth-consent-actions\" method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"client_id\" value=\"{}\">{}<input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\">{}<input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button class=\"button button-primary\" name=\"decision\" value=\"approve\">許可する</button><button class=\"button button-secondary\" name=\"decision\" value=\"deny\">拒否する</button></form></div></section>",
-        escape_html(&request.client.display_name),
-        escape_html(&request.client.client_id),
-        escape_html(redirect_host),
-        scopes,
-        loopback_warning,
-        escape_html(&consent_path),
-        escape_html(&request.client.client_id),
-        redirect_uri_field,
-        escape_html(&request.resource_uri),
-        escape_html(&request.scopes.join(" ")),
-        escape_html(&request.code_challenge),
-        state_field,
-        escape_html(csrf)
+        concat!(
+            "<section class=\"oauth-consent-page page-section\" aria-labelledby=\"oauth-consent-heading\">",
+            "<div class=\"page-heading\"><div>",
+            "<p class=\"page-eyebrow\">MCP access</p>",
+            "<h1 id=\"oauth-consent-heading\">MCPクライアントを許可しますか？</h1>",
+            "<p class=\"page-description\">許可する前に、接続するクライアントと要求された権限を確認してください。</p>",
+            "</div></div>",
+            "<div class=\"oauth-consent surface\">",
+            "{client_summary}{scope_section}{loopback_warning}{consent_form}",
+            "</div></section>",
+        ),
+        client_summary = consent_client_summary(request, redirect_host),
+        scope_section = consent_scope_section(&request.scopes),
+        loopback_warning = consent_loopback_warning(redirect.as_ref()),
+        consent_form = consent_form(&consent_path, input, request, csrf),
     );
     Html(page_document(
         "MCPクライアントの認可",
@@ -348,6 +319,97 @@ fn consent_page(
         &[],
     ))
     .into_response()
+}
+
+fn consent_client_summary(
+    request: &McpValidatedAuthorizationRequest,
+    redirect_host: &str,
+) -> String {
+    format!(
+        concat!(
+            "<section class=\"oauth-client\" aria-labelledby=\"oauth-client-heading\">",
+            "<p class=\"oauth-detail-label\">クライアント</p>",
+            "<h2 id=\"oauth-client-heading\">{display_name}</h2>",
+            "<dl class=\"oauth-detail-list\">",
+            "<div><dt>クライアント識別子</dt><dd><code>{client_id}</code></dd></div>",
+            "<div><dt>移動先のホスト</dt><dd><code>{redirect_host}</code></dd></div>",
+            "</dl></section>",
+        ),
+        display_name = escape_html(&request.client.display_name),
+        client_id = escape_html(&request.client.client_id),
+        redirect_host = escape_html(redirect_host),
+    )
+}
+
+fn consent_scope_section(scopes: &[String]) -> String {
+    let content = if scopes.is_empty() {
+        "<p class=\"state-message\">要求された権限はありません。</p>".into()
+    } else {
+        let items = scopes
+            .iter()
+            .map(|scope| format!("<li><code>{}</code></li>", escape_html(scope)))
+            .collect::<String>();
+        format!("<ul class=\"oauth-scope-list\">{items}</ul>")
+    };
+    format!(
+        concat!(
+            "<section class=\"oauth-scope-section\" aria-labelledby=\"oauth-scope-heading\">",
+            "<h2 id=\"oauth-scope-heading\">要求された権限</h2>",
+            "{content}</section>",
+        ),
+        content = content,
+    )
+}
+
+fn consent_loopback_warning(redirect: Option<&url::Url>) -> &'static str {
+    if redirect.is_some_and(is_loopback_redirect) {
+        concat!(
+            "<aside class=\"oauth-loopback-warning warnings\">",
+            "<h2>この端末上のアプリへ戻ります</h2>",
+            "<p>許可すると、処理を続けるため、この端末で動作しているアプリへ移動します。</p>",
+            "</aside>",
+        )
+    } else {
+        ""
+    }
+}
+
+fn consent_form(
+    consent_path: &str,
+    input: &McpAuthorizeInput,
+    request: &McpValidatedAuthorizationRequest,
+    csrf: &str,
+) -> String {
+    let mut fields = hidden_input("client_id", &request.client.client_id);
+    if request.redirect_uri.was_supplied() {
+        fields.push_str(&hidden_input("redirect_uri", request.redirect_uri.as_str()));
+    }
+    fields.push_str(&hidden_input("resource", &request.resource_uri));
+    fields.push_str(&hidden_input("scope", &request.scopes.join(" ")));
+    fields.push_str(&hidden_input("code_challenge", &request.code_challenge));
+    if let Some(state) = &input.state {
+        fields.push_str(&hidden_input("state", state));
+    }
+    fields.push_str(&hidden_input("csrf_token", csrf));
+    format!(
+        concat!(
+            "<form class=\"oauth-consent-actions\" method=\"post\" action=\"{action}\">",
+            "{fields}",
+            "<button class=\"button button-primary\" name=\"decision\" value=\"approve\">許可する</button>",
+            "<button class=\"button button-secondary\" name=\"decision\" value=\"deny\">拒否する</button>",
+            "</form>",
+        ),
+        action = escape_html(consent_path),
+        fields = fields,
+    )
+}
+
+fn hidden_input(name: &str, value: &str) -> String {
+    format!(
+        "<input type=\"hidden\" name=\"{}\" value=\"{}\">",
+        escape_html(name),
+        escape_html(value),
+    )
 }
 
 fn is_loopback_redirect(url: &url::Url) -> bool {
