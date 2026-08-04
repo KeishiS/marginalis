@@ -6,7 +6,8 @@ use std::sync::{
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     Clock, McpAuthorizationRequest, McpClientMetadataResolver, McpClientRegistrationMethod,
-    McpOAuthApplication, McpOAuthRepositoryError, McpRegisteredOAuthClient, Random,
+    McpOAuthApplication, McpOAuthRepositoryError, McpRegisteredOAuthClient,
+    McpTimestamp as UnixMillis, Random,
 };
 use marginalis_domain::EntityId as ApplicationEntityId;
 use sha2::{Digest, Sha256};
@@ -17,8 +18,8 @@ use super::*;
 struct FixedClock(i64);
 
 impl Clock for FixedClock {
-    fn now(&self) -> UnixMillis {
-        UnixMillis::new(self.0)
+    fn now(&self) -> marginalis_domain::UnixMillis {
+        marginalis_domain::UnixMillis::new(self.0)
     }
 }
 
@@ -510,9 +511,14 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
         )
         .await
         .expect("client");
-    let now = UnixMillis::new(2 * 24 * 60 * 60 * 1_000);
+    let now_millis = 2 * 24 * 60 * 60 * 1_000;
+    let now = marginalis_domain::UnixMillis::new(now_millis);
+    let mcp_now = UnixMillis::new(now_millis);
     let counts = database
-        .purge_expired_auth_state(now, UnixMillis::new(24 * 60 * 60 * 1_000))
+        .purge_expired_auth_state(
+            now,
+            marginalis_domain::UnixMillis::new(24 * 60 * 60 * 1_000),
+        )
         .await
         .expect("cleanup");
     assert_eq!(counts.mcp_clients, 1);
@@ -524,7 +530,7 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
                     display_name: "Fresh client".into(),
                     redirect_uris: vec!["https://client.example.test/callback".into()],
                 },
-                now,
+                mcp_now,
                 1,
             )
             .await
@@ -538,7 +544,7 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
                     display_name: "Overflow client".into(),
                     redirect_uris: vec!["https://client.example.test/callback".into()],
                 },
-                now,
+                mcp_now,
                 1,
             )
             .await

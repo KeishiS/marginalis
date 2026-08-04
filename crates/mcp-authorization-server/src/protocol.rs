@@ -65,6 +65,20 @@ pub struct AuthenticatedPrincipal {
     pub scopes: Vec<String>,
 }
 
+/// Unix epochからのミリ秒。保存adapterとの時刻の受け渡しに使う。
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Timestamp(i64);
+
+impl Timestamp {
+    pub const fn new(milliseconds: i64) -> Self {
+        Self(milliseconds)
+    }
+
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthorizationError {
     InvalidRequest,
@@ -125,4 +139,36 @@ pub struct TokenPair {
     pub refresh_token: String,
     pub access_expires_in_seconds: u64,
     pub scope: String,
+}
+
+/// refresh token rotationでrepositoryへ渡す、生成済みの新旧tokenとbinding。
+pub struct RefreshTokenRotation {
+    pub refresh_token: String,
+    pub client_id: String,
+    pub resource_uri: String,
+    pub requested_scopes: Option<Vec<String>>,
+    pub new_access_token: String,
+    pub new_refresh_token: String,
+    pub access_expires_at: Timestamp,
+    pub refresh_expires_at: Timestamp,
+}
+
+/// 認可codeの一回消費とtoken pair発行を同じtransactionで行うための入力。
+pub struct AuthorizationCodeExchange {
+    pub code: String,
+    pub client_id: String,
+    pub redirect_uri: Option<String>,
+    pub resource_uri: String,
+    pub code_challenge: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub access_expires_at: Timestamp,
+    pub refresh_expires_at: Timestamp,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RefreshTokenRotationOutcome {
+    Rotated { access_scopes: Vec<String> },
+    InvalidToken,
+    InvalidScope,
 }
