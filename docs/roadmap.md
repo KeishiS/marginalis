@@ -6,23 +6,12 @@
 
 ## 現在地
 
-`v0.26.1`を2026-08-04に公開しました。公開済み機能と移行方法は
-[変更履歴](../CHANGELOG.md#0261--2026-08-04)、確認結果は
-[v0.26.1受入結果](acceptance-results/v0.26.1.md)を参照してください。この文書には公開履歴を
+`v0.27.0`を2026-08-04に公開しました。公開済み機能と移行方法は
+[変更履歴](../CHANGELOG.md#0270--2026-08-04)、確認結果は
+[v0.27.0受入結果](acceptance-results/v0.27.0.md)を参照してください。この文書には公開履歴を
 書き写さず、未完了の判断と作業だけを置きます。
 
 ## 公開予定
-
-### v0.27.0: Authorization Serverの内部境界
-
-最初に、[#269](https://github.com/KeishiS/marginalis/issues/269)のうち、内蔵Authorization Serverの
-中核をMarginalis固有のドメインから分離します。この段階では独立したリポジトリやdaemonを作らず、
-Marginalisリポジトリ内の製品非依存crateとして同一プロセスへ組み込みます。
-
-既存のURL、scope、token寿命、SQLite schema、発行済みtokenとクライアント登録を意図せず変更しません。
-Marginalisを分離後のcrateへ切り替え、ChatGPT、Claude Code、Codex CLIによる接続と取消までの回帰試験が
-成功した時点で`v0.27.0`を公開します。構造変更を単独で公開することで、後続のscope変更と不具合の原因を
-分けて確認できるようにします。
 
 ### v0.28.0: Web UIの基本操作
 
@@ -48,10 +37,10 @@ Marginalisに残します。
 
 ### Authorization Serverの共有元
 
-`v0.27.0`ではcrateの公開境界を固定せず、`v0.29.0`までのscopeポリシー実装を通じて、製品非依存の
-境界が実用に耐えるか確認します。その後、#269のADRで独立リポジトリ、registry、固定したGit dependencyを
-比較します。独立リポジトリへの移動は、その判断とversion方針、脆弱性対応、両利用側のCIがそろってから
-行います。
+`v0.27.0`で分離したcrateは公開境界をまだ固定せず、`v0.29.0`までのscopeポリシー実装を通じて、
+製品非依存の境界が実用に耐えるか確認します。その後、#269のADRで独立リポジトリ、registry、固定した
+Git dependencyを比較します。独立リポジトリへの移動は、その判断とversion方針、脆弱性対応、両利用側の
+CIがそろってから行います。
 
 [連環（Renkan）](research-search-vision.md)はMarginalisとは別の探索サービスです。Renkanへの統合と
 PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。Marginalis側では
