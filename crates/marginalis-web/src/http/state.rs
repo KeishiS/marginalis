@@ -78,16 +78,30 @@ pub struct McpEndpoint {
     pub(super) authorization_server_endpoints: AuthorizationServerEndpoints,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidMcpEndpoint;
+
+impl std::fmt::Display for InvalidMcpEndpoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MCP resource policy does not match the public endpoint")
+    }
+}
+
+impl std::error::Error for InvalidMcpEndpoint {}
+
 impl McpEndpoint {
     pub fn new(
         oauth: Arc<dyn McpOAuthUseCases>,
         resource_policy: ResourcePolicy,
         base_url: &url::Url,
         allowed_origins: Vec<String>,
-    ) -> Self {
+    ) -> Result<Self, InvalidMcpEndpoint> {
+        if resource_policy.uri() != &base_url_at(base_url, "mcp") {
+            return Err(InvalidMcpEndpoint);
+        }
         let resource_uri = resource_policy.uri().clone();
         let authorization_server_uri = base_url.to_string();
-        Self {
+        Ok(Self {
             oauth,
             allowed_origins,
             metadata_uri: well_known_url(&resource_uri, "oauth-protected-resource").to_string(),
@@ -105,7 +119,7 @@ impl McpEndpoint {
                 registration_endpoint: base_url_at(base_url, "oauth/register").to_string(),
             },
             resource_policy,
-        }
+        })
     }
 
     pub fn resource_uri_for(base_url: &url::Url) -> String {

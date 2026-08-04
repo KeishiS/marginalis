@@ -136,7 +136,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             resource_policy,
             &configuration.http.base_url,
             configuration.mcp_allowed_origins,
-        );
+        )?;
         state.with_mcp(endpoint)
     } else {
         state
