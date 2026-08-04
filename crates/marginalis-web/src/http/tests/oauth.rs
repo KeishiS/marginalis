@@ -184,7 +184,147 @@ async fn authorization_consent_preserves_an_omitted_redirect_uri() {
         .expect("consent page");
     let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
     assert!(!html.contains("name=\"redirect_uri\""));
-    assert!(html.contains("Redirect host: client.example.test"));
+    assert!(html.contains("移動先のホスト</dt><dd><code>client.example.test</code>"));
+}
+
+#[tokio::test]
+async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
+    let app = TestApp::default()
+        .authenticated()
+        .cookie_path("/marginalis")
+        .mcp(
+            "https://example.test/marginalis",
+            vec![],
+            Arc::new(TestMcpAuthenticator),
+        )
+        .router();
+    let response = app
+        .oneshot(
+            Request::get(
+                "/oauth/authorize?response_type=code&client_id=long-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A48123%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmarginalis%2Fmcp&scope=notes%3Aread%20notes%3Awrite&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256",
+            )
+            .header(
+                header::COOKIE,
+                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+            )
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_SECURITY_POLICY),
+        Some(
+            &"default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+                .parse()
+                .expect("CSP")
+        )
+    );
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("consent page");
+    let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
+    assert!(html.contains("<html lang=\"ja\">"));
+    assert!(html.contains("<title>MCPクライアントの認可</title>"));
+    assert!(html.contains("href=\"/marginalis/assets/editor.css\""));
+    assert!(html.contains("action=\"/marginalis/oauth/authorize/consent\""));
+    assert!(html.contains("MCPクライアントを許可しますか？"));
+    assert!(html.contains("クライアント識別子"));
+    assert!(html.contains("long-client"));
+    assert!(html.contains("移動先のホスト</dt><dd><code>127.0.0.1</code>"));
+    assert!(html.contains("<code>notes:read</code>"));
+    assert!(html.contains("<code>notes:write</code>"));
+    assert!(html.contains("この端末上のアプリへ戻ります"));
+    assert!(
+        html.contains(
+            "class=\"button button-primary\" name=\"decision\" value=\"approve\">許可する"
+        )
+    );
+    assert!(
+        html.contains(
+            "class=\"button button-secondary\" name=\"decision\" value=\"deny\">拒否する"
+        )
+    );
+    assert!(html.contains(&"非常に長いクライアント名".repeat(24)));
+}
+
+#[tokio::test]
+async fn authorization_consent_escapes_every_client_supplied_value() {
+    let dangerous_client = "<script>alert('client')</script>";
+    let query = format!(
+        "/oauth/authorize?response_type=code&client_id={}&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope={}&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256&state={}",
+        url::form_urlencoded::byte_serialize(dangerous_client.as_bytes()).collect::<String>(),
+        url::form_urlencoded::byte_serialize(b"notes:read <scope>").collect::<String>(),
+        url::form_urlencoded::byte_serialize(b"<state>").collect::<String>(),
+    );
+    let response = authenticated_mcp_app()
+        .oneshot(
+            Request::get(query)
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("consent page");
+    let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
+    assert!(!html.contains("<script>alert"));
+    assert!(!html.contains("<scope>"));
+    assert!(!html.contains("value=\"<state>\""));
+    assert!(html.contains("&lt;script&gt;alert(&#39;client&#39;)&lt;/script&gt;"));
+    assert!(html.contains("&lt;scope&gt;"));
+    assert!(html.contains("value=\"&lt;state&gt;\""));
+}
+
+#[tokio::test]
+async fn authorization_consent_allows_or_denies_with_the_existing_secure_form() {
+    async fn submit(decision: &str) -> Response {
+        authenticated_mcp_app()
+            .oneshot(
+                Request::post("/oauth/authorize/consent")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::ORIGIN, "https://example.test")
+                    .header(
+                        header::COOKIE,
+                        "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    )
+                    .body(Body::from(format!(
+                        "client_id=consent-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&state=opaque-state&csrf_token=session-csrf&decision={decision}"
+                    )))
+                    .expect("request"),
+            )
+            .await
+            .expect("response")
+    }
+
+    let approved = submit("approve").await;
+    assert_eq!(approved.status(), StatusCode::SEE_OTHER);
+    let approved_location = approved
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("approved redirect");
+    assert!(approved_location.contains("code=test-authorization-code"));
+    assert!(approved_location.contains("state=opaque-state"));
+
+    let denied = submit("deny").await;
+    assert_eq!(denied.status(), StatusCode::SEE_OTHER);
+    let denied_location = denied
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("denied redirect");
+    assert!(denied_location.contains("error=access_denied"));
+    assert!(denied_location.contains("state=opaque-state"));
 }
 
 #[tokio::test]

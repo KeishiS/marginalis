@@ -998,10 +998,17 @@ impl McpOAuthUseCases for TestMcpOAuth {
     ) -> Result<McpAuthorizationClient, McpOAuthUseCaseError> {
         let redirect_uri =
             redirect_uri.unwrap_or_else(|| "https://client.example.test/callback".into());
+        let display_name = match client_id.as_str() {
+            "long-client" => "非常に長いクライアント名".repeat(24),
+            value if value.contains('<') => {
+                "危険 <script>alert('x')</script> & クライアント".into()
+            }
+            _ => "Test MCP client".into(),
+        };
         Ok(McpAuthorizationClient {
             client: McpOAuthClient {
                 client_id,
-                display_name: "Test MCP client".into(),
+                display_name,
                 redirect_uris: vec![redirect_uri.clone()],
             },
             registration_method: McpClientRegistrationMethod::Dynamic,
@@ -1028,7 +1035,10 @@ impl McpOAuthUseCases for TestMcpOAuth {
         request: marginalis_application::McpAuthorizationRequest,
         resolved: McpAuthorizationClient,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
-        if request.resource_uri != "https://example.test/mcp" {
+        if !matches!(
+            request.resource_uri.as_str(),
+            "https://example.test/mcp" | "https://example.test/marginalis/mcp"
+        ) {
             return Err(McpOAuthUseCaseError::InvalidTarget);
         }
         Ok(McpValidatedAuthorizationRequest {
@@ -1048,9 +1058,13 @@ impl McpOAuthUseCases for TestMcpOAuth {
     async fn authorize(
         &self,
         _actor: Actor,
-        _request: McpValidatedAuthorizationRequest,
+        request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
-        Err(McpOAuthUseCaseError::InvalidRequest)
+        if request.client.client_id == "consent-client" {
+            Ok("test-authorization-code".into())
+        } else {
+            Err(McpOAuthUseCaseError::InvalidRequest)
+        }
     }
 
     async fn exchange_authorization_code(

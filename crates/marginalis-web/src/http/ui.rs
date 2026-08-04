@@ -11,7 +11,7 @@ use axum::{
 use super::{
     auth::{authenticated_ui_actor, external_path},
     error::HandlerResult,
-    html::{escape_html, page_document_with_script},
+    html::{escape_html, page_document},
     security::ContentSecurityPolicyNonce,
     state::ApiState,
 };
@@ -106,11 +106,11 @@ async fn application_shell(
         "<div data-application-root data-application-config=\"{}\"><p>画面を読み込んでいます。</p></div><noscript>Marginalisの利用にはJavaScriptが必要です。</noscript>",
         escape_html(&config),
     );
-    let mut response = Html(page_document_with_script(
+    let mut response = Html(page_document(
         "Marginalis",
         &state.cookie_path,
         &content,
-        Some("/assets/editor.js"),
+        &["/assets/page.js", "/assets/editor.js"],
     ))
     .into_response();
     response.extensions_mut().insert(style_nonce);

@@ -576,6 +576,114 @@ select:hover {
   gap: var(--space-4);
 }
 
+.oauth-consent-page {
+  margin-inline: auto;
+  max-width: 48rem;
+}
+
+.oauth-consent {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+  padding: clamp(var(--space-5), 4vw, var(--space-8));
+}
+
+.oauth-client,
+.oauth-scope-section {
+  min-width: 0;
+}
+
+.oauth-client h2,
+.oauth-scope-section h2,
+.oauth-loopback-warning h2 {
+  font-size: var(--text-subheading);
+  margin-block: 0 var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.oauth-detail-label {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-1);
+}
+
+.oauth-detail-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.oauth-detail-list > div {
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.oauth-detail-list dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+  font-weight: 650;
+}
+
+.oauth-detail-list dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.oauth-detail-list code,
+.oauth-scope-list code {
+  font-family: var(--font-monospace);
+  overflow-wrap: anywhere;
+}
+
+.oauth-scope-list {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.oauth-scope-list li {
+  background: var(--color-primary-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.oauth-loopback-warning {
+  margin: 0;
+}
+
+.oauth-loopback-warning p {
+  margin-block-end: 0;
+}
+
+.oauth-consent-actions {
+  border-block-start: var(--border-thin) solid var(--color-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-block-start: var(--space-5);
+}
+
+@media (width <= 30rem) {
+  .oauth-consent-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .oauth-consent-actions .button {
+    width: 100%;
+  }
+}
+
 /* 読み込み中と該当項目なしを同じ見た目で示す。待つのか操作するのかは文言で区別する。 */
 .state-message {
   background: var(--color-surface-subtle);
