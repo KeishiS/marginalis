@@ -251,6 +251,48 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
 }
 
 #[tokio::test]
+async fn authorization_consent_warns_for_loopback_hosts_independently_of_scheme() {
+    async fn consent_html(redirect_uri: &str) -> String {
+        let redirect_uri =
+            url::form_urlencoded::byte_serialize(redirect_uri.as_bytes()).collect::<String>();
+        let response = authenticated_mcp_app()
+            .oneshot(
+                Request::get(format!(
+                    "/oauth/authorize?response_type=code&client_id=client&redirect_uri={redirect_uri}&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256"
+                ))
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("consent page");
+        String::from_utf8(body.to_vec()).expect("UTF-8 HTML")
+    }
+
+    for redirect_uri in [
+        "https://localhost/callback",
+        "https://127.0.0.1/callback",
+        "https://[::1]/callback",
+    ] {
+        let loopback = consent_html(redirect_uri).await;
+        assert!(
+            loopback.contains("この端末上のアプリへ戻ります"),
+            "{redirect_uri}"
+        );
+    }
+
+    let public_host = consent_html("https://client.example.test/callback").await;
+    assert!(!public_host.contains("この端末上のアプリへ戻ります"));
+}
+
+#[tokio::test]
 async fn authorization_consent_escapes_every_client_supplied_value() {
     let dangerous_client = "<script>alert('client')</script>";
     let query = format!(
