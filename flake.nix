@@ -303,37 +303,39 @@
                     and (.source | contains(":tags:") | not))
                 ' migrated-archive.json
 
-                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema16.sqlite"
+                export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema17.sqlite"
                 ${self.packages.${system}.default}/bin/marginalis \
                   import-archive --input "$PWD/migrated-archive.json"
-                test "$(sqlite3 schema16.sqlite \
-                  'SELECT MAX(version) FROM schema_migrations')" = 16
-                sqlite3 -json schema16.sqlite \
+                test "$(sqlite3 schema17.sqlite \
+                  'SELECT MAX(version) FROM schema_migrations')" = 17
+                sqlite3 -json schema17.sqlite \
                   'SELECT note_id, creator_issuer, creator_subject, title, source,
                           tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-                   FROM notes ORDER BY note_id' > schema16-notes.json
-                sqlite3 -json schema16.sqlite \
+                   FROM notes ORDER BY note_id' > schema17-notes.json
+                sqlite3 -json schema17.sqlite \
                   'SELECT source_note_id, target_note_id
                    FROM note_references ORDER BY source_note_id, target_note_id' \
-                  > schema16-references.json
-                sqlite3 -json schema16.sqlite \
+                  > schema17-references.json
+                sqlite3 -json schema17.sqlite \
                   'SELECT note_id, issuer, subject, permission
-                   FROM note_acl ORDER BY note_id, issuer, subject' > schema16-acl.json
+                   FROM note_acl ORDER BY note_id, issuer, subject' > schema17-acl.json
                 # 本文はタグの属性名だけが変わる。題名、タグ、時刻、revision、削除状態は
                 # 移行前と一致しなければならない。書き出し方の違いを比較へ持ち込まないよう、
                 # 両方を同じ整形で並べ直してから照合する。
                 jq -S '[.[] | .source |= sub(":tags: "; ":marginalis-tags: ")]' \
                   schema9-notes.json > schema9-notes-expected.json
-                jq -S '.' schema16-notes.json > schema16-notes-normalized.json
-                diff -u schema9-notes-expected.json schema16-notes-normalized.json
-                cmp schema9-references.json schema16-references.json
-                cmp schema9-acl.json schema16-acl.json
-                test "$(sqlite3 schema16.sqlite \
+                jq -S '.' schema17-notes.json > schema17-notes-normalized.json
+                diff -u schema9-notes-expected.json schema17-notes-normalized.json
+                cmp schema9-references.json schema17-references.json
+                cmp schema9-acl.json schema17-acl.json
+                test "$(sqlite3 schema17.sqlite \
                   "SELECT COUNT(*) FROM sqlite_schema
                    WHERE type = 'table' AND name IN
                      ('mcp_clients', 'mcp_authorization_codes',
                       'mcp_access_tokens', 'mcp_refresh_tokens',
-                      'math_macro_settings')")" = 5
+                      'mcp_principal_scope_ceilings',
+                      'mcp_client_scope_ceilings',
+                      'math_macro_settings')")" = 7
 
                 ${self.packages.${system}.default}/bin/marginalis \
                   export-archive --output "$PWD/roundtrip-archive.json"
@@ -624,7 +626,7 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 16'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 17'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
@@ -656,7 +658,7 @@
               machine.execute("systemctl start marginalis.service")
               machine.wait_until_succeeds(
                 "timeout 5s journalctl --no-pager -u marginalis.service -o cat | "
-                + "grep -F 'unsupported database schema version 5; expected 16'"
+                + "grep -F 'unsupported database schema version 5; expected 17'"
               )
               machine.succeed("systemctl stop marginalis.service")
               machine.succeed(
@@ -673,7 +675,7 @@
                     + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
                     + "'.database.schema.ok == false "
                     + "and .database.schema.actual == 5 "
-                    + "and .database.schema.expected == 16 "
+                    + "and .database.schema.expected == 17 "
                     + "and .database.integrity.ok "
                     + "and .database.integrity.actual == \"ok\" "
                     + "and .database.foreign_keys.ok "
