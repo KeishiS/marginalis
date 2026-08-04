@@ -379,6 +379,12 @@ async fn issue_tokens(server: &AuthorizationServer) -> (crate::TokenPair, String
         .authorize(
             Principal::new("https://issuer.example".to_owned(), "alice".to_owned()),
             validated,
+            &server
+                .scope_ceilings(
+                    vec!["items:read".to_owned(), "items:write".to_owned()],
+                    vec!["items:read".to_owned(), "items:write".to_owned()],
+                )
+                .expect("scope ceilings"),
         )
         .await
         .expect("authorization code");
@@ -393,6 +399,118 @@ async fn issue_tokens(server: &AuthorizationServer) -> (crate::TokenPair, String
         .await
         .expect("token pair");
     (tokens, code)
+}
+
+#[test]
+fn scope_ceilings_keep_principal_and_client_limits_separate() {
+    let policy = ResourcePolicy::new(
+        "https://resource.example/mcp".to_owned(),
+        "Test resource".to_owned(),
+        vec![
+            "items:read".to_owned(),
+            "items:write".to_owned(),
+            "items:delete".to_owned(),
+        ],
+        vec!["items:read".to_owned()],
+    )
+    .expect("resource policy");
+    let ceilings = policy
+        .scope_ceilings(
+            vec!["items:write".to_owned(), "items:read".to_owned()],
+            vec!["items:read".to_owned(), "items:delete".to_owned()],
+        )
+        .expect("scope ceilings");
+
+    assert_eq!(ceilings.principal(), ["items:read", "items:write"]);
+    assert_eq!(ceilings.client(), ["items:read", "items:delete"]);
+    assert_eq!(
+        policy.eligible_scopes(
+            &[
+                "items:delete".to_owned(),
+                "items:write".to_owned(),
+                "items:read".to_owned(),
+            ],
+            &ceilings,
+        ),
+        Some(vec!["items:read".to_owned()])
+    );
+}
+
+#[test]
+fn scope_ceilings_reject_unknown_values_and_never_add_a_default() {
+    let policy = ResourcePolicy::new(
+        "https://resource.example/mcp".to_owned(),
+        "Test resource".to_owned(),
+        vec!["items:read".to_owned(), "items:write".to_owned()],
+        vec!["items:read".to_owned()],
+    )
+    .expect("resource policy");
+
+    assert!(
+        policy
+            .scope_ceilings(
+                vec!["items:unknown".to_owned()],
+                vec!["items:read".to_owned()],
+            )
+            .is_err()
+    );
+    let ceilings = policy
+        .scope_ceilings(Vec::new(), vec!["items:read".to_owned()])
+        .expect("empty principal ceiling");
+    assert_eq!(policy.eligible_scopes(&[], &ceilings), None);
+}
+
+#[tokio::test]
+async fn authorization_code_records_only_scopes_below_both_ceilings() {
+    let repository = Arc::new(MemoryRepository::default());
+    let server = test_server(repository, "https://resource.example/mcp");
+    server.register_client(client()).await.expect("client");
+    let verifier = "a".repeat(43);
+    let validated = server
+        .validate_authorization_request(&AuthorizationRequest {
+            client_id: "test-client".to_owned(),
+            redirect_uri: Some("https://client.example/callback".to_owned()),
+            resource_uri: "https://resource.example/mcp".to_owned(),
+            scopes: vec!["items:read".to_owned(), "items:write".to_owned()],
+            code_challenge: pkce_s256(&verifier),
+        })
+        .await
+        .expect("validated request");
+    let ceilings = server
+        .scope_ceilings(
+            vec!["items:read".to_owned(), "items:write".to_owned()],
+            vec!["items:read".to_owned()],
+        )
+        .expect("scope ceilings");
+    let code = server
+        .authorize(
+            Principal::new("https://issuer.example".to_owned(), "alice".to_owned()),
+            validated,
+            &ceilings,
+        )
+        .await
+        .expect("authorization code");
+
+    let tokens = server
+        .exchange_authorization_code(
+            code,
+            "test-client".to_owned(),
+            Some("https://client.example/callback".to_owned()),
+            "https://resource.example/mcp".to_owned(),
+            verifier,
+        )
+        .await
+        .expect("token pair");
+    assert_eq!(tokens.scope, "items:read");
+    assert_eq!(
+        server
+            .authenticate(&tokens.access_token, "https://resource.example/mcp")
+            .await
+            .expect("authentication")
+            .expect("principal")
+            .scopes,
+        ["items:read"]
+    );
 }
 
 #[tokio::test]

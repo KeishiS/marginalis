@@ -6,7 +6,7 @@ use crate::{
     AuthenticatedPrincipal, AuthorizationClient, AuthorizationClientError,
     AuthorizationCodeExchange, AuthorizationError, AuthorizationGrant, AuthorizationRequest,
     Client, ClientRegistrationMethod, Principal, RefreshTokenRotation, RefreshTokenRotationOutcome,
-    RegisteredClient, ResolvedRedirectUri, ResourcePolicy, Timestamp, TokenPair,
+    RegisteredClient, ResolvedRedirectUri, ResourcePolicy, ScopeCeilings, Timestamp, TokenPair,
     ValidatedAuthorizationRequest, canonical_scopes, pkce_s256, redirect_uri_matches,
     valid_client_metadata_document_url, valid_pkce_challenge, valid_pkce_verifier,
     valid_redirect_uri, validate_client_metadata,
@@ -181,8 +181,13 @@ impl AuthorizationServer {
     pub async fn authorize(
         &self,
         principal: Principal,
-        request: ValidatedAuthorizationRequest,
+        mut request: ValidatedAuthorizationRequest,
+        ceilings: &ScopeCeilings,
     ) -> Result<String, AuthorizationError> {
+        request.scopes = self
+            .resource_policy
+            .eligible_scopes(&request.scopes, ceilings)
+            .ok_or(AuthorizationError::InvalidScope)?;
         let code = self.random.opaque_token();
         let registered_client = RegisteredClient {
             client: request.client,
@@ -208,6 +213,16 @@ impl AuthorizationServer {
             .await
             .map_err(|_| AuthorizationError::Unavailable)?;
         Ok(code)
+    }
+
+    pub fn scope_ceilings(
+        &self,
+        principal: Vec<String>,
+        client: Vec<String>,
+    ) -> Result<ScopeCeilings, AuthorizationError> {
+        self.resource_policy
+            .scope_ceilings(principal, client)
+            .map_err(|_| AuthorizationError::InvalidScope)
     }
 
     pub async fn validate_authorization_request(

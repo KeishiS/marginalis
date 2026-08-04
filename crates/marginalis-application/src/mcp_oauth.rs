@@ -111,8 +111,12 @@ impl McpOAuthApplication {
         actor: Actor,
         request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
+        // v0.28までの動作を保つ暫定値。#268で保存した利用者上限とclient上限へ置き換える。
+        let ceilings = self
+            .authorization_server
+            .scope_ceilings(request.scopes.clone(), request.scopes.clone())?;
         self.authorization_server
-            .authorize(principal(&actor), request)
+            .authorize(principal(&actor), request, &ceilings)
             .await
     }
 

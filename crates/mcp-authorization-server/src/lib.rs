@@ -15,10 +15,10 @@ pub use metadata::{
     AuthorizationServerEndpoints, AuthorizationServerMetadata, ProtectedResourceMetadata,
 };
 pub use policy::{
-    AuthorizationClientError, ResourcePolicy, ResourcePolicyError, canonical_scopes, pkce_s256,
-    redirect_uri_matches, valid_client_metadata_document_url, valid_pkce_challenge,
-    valid_pkce_verifier, valid_redirect_uri, validate_client_metadata,
-    validate_dynamic_client_registration,
+    AuthorizationClientError, ResourcePolicy, ResourcePolicyError, ScopeCeilings,
+    ScopeCeilingsError, canonical_scopes, pkce_s256, redirect_uri_matches,
+    valid_client_metadata_document_url, valid_pkce_challenge, valid_pkce_verifier,
+    valid_redirect_uri, validate_client_metadata, validate_dynamic_client_registration,
 };
 pub use protocol::{
     ApplicationType, AuthenticatedPrincipal, AuthorizationClient, AuthorizationCodeExchange,
