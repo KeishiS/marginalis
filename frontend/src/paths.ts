@@ -26,6 +26,14 @@ export function listPath(context: PathContext, page?: number): string {
   return externalPath(context.basePath, `/${noteListSearch(query, page)}`);
 }
 
+/** 一覧へ戻った後に一度表示する操作結果を含むURL。 */
+export function listNoticePath(context: PathContext, notice: string): string {
+  const query = parseNoteListQuery(context.search);
+  const parameters = new URLSearchParams(noteListSearch(query, 1));
+  parameters.set("notice", notice);
+  return externalPath(context.basePath, `/?${parameters.toString()}`);
+}
+
 /** ノートの閲覧画面のURL。 */
 export function notePath(context: PathContext, noteId: string): string {
   return withSearch(context, `/notes/${noteId}`);

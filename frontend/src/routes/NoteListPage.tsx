@@ -23,6 +23,7 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
   const notes = resource.status === "ready" ? resource.value : null;
   const failed = resource.status === "failed";
   const page = notes === null ? null : selectNoteListPage(notes, query);
+  const notice = new URLSearchParams(config.search).get("notice");
   return (
     <section
       className="note-index page-section"
@@ -37,6 +38,11 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
           </p>
         </div>
       </div>
+      {notice === "note-deleted" && (
+        <p className="notice" role="status">
+          ノートを削除しました。削除後30日以内であれば復元できます。
+        </p>
+      )}
       <NoteListFilters config={config} query={query} />
       {failed ? (
         <p className="problem-inline" role="alert">

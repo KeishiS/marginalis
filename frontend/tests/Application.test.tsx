@@ -20,6 +20,7 @@ const config = {
 
 afterEach(() => {
   cleanup();
+  document.cookie = "marginalis_csrf=; Max-Age=0; path=/";
   vi.unstubAllGlobals();
 });
 
@@ -171,6 +172,7 @@ describe("Application", () => {
       expect(screen.getByRole("link", { name: "編集" })).toBeInTheDocument(),
     );
     expect(screen.getByRole("link", { name: "共有設定" })).toBeInTheDocument();
+    const deleteButton = screen.getByRole("button", { name: "削除" });
     expect(
       screen.getByText("0197c9bc-0000-7000-8000-000000000001"),
     ).toBeInTheDocument();
@@ -198,6 +200,22 @@ describe("Application", () => {
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "note IDをコピーしました。",
     );
+
+    fireEvent.click(deleteButton);
+    const dialog = screen.getByRole("dialog", {
+      name: "このノートを削除しますか？",
+    });
+    expect(dialog).toHaveTextContent("設計メモ");
+    expect(dialog).toHaveTextContent("削除後30日以内");
+    const cancelButton = screen.getByRole("button", { name: "取り消す" });
+    expect(cancelButton).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "削除する" })).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(cancelButton).toHaveFocus();
+    fireEvent.click(cancelButton);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(deleteButton).toHaveFocus();
   });
 
   it("note IDをコピーできない場合に失敗を通知する", async () => {
@@ -245,9 +263,118 @@ describe("Application", () => {
     expect(
       screen.queryByRole("list", { name: "ノートのタグ" }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "削除" }),
+    ).not.toBeInTheDocument();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "note IDをコピーできませんでした。",
     );
+  });
+
+  it("共有された編集者には削除操作を表示しない", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            note: {
+              note_id: "0197c9bc-0000-7000-8000-000000000001",
+              title: "共有ノート",
+              source: "= 共有ノート\n",
+              tags: [],
+              created_at_ms: 1,
+              updated_at_ms: 1,
+              revision: 2,
+            },
+            access: "edit",
+            html: "<article></article>",
+            math_macros: [],
+            related: { outgoing: [], incoming: [] },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    render(
+      <Application
+        config={{
+          ...config,
+          path: "/notes/0197c9bc-0000-7000-8000-000000000001",
+        }}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "編集" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "削除" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("revision競合では内容を残して再読み込みを案内する", async () => {
+    document.cookie = "marginalis_csrf=test-csrf; path=/";
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            note: {
+              note_id: "0197c9bc-0000-7000-8000-000000000001",
+              title: "競合するノート",
+              source: "= 競合するノート\n",
+              tags: [],
+              created_at_ms: 1,
+              updated_at_ms: 1,
+              revision: 7,
+            },
+            access: "manage",
+            html: "<article><p>残す本文</p></article>",
+            math_macros: [],
+            related: { outgoing: [], incoming: [] },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: "conflict",
+            message: "note revision conflicts",
+          }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetch);
+
+    render(
+      <Application
+        config={{
+          ...config,
+          path: "/notes/0197c9bc-0000-7000-8000-000000000001",
+        }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "削除" }));
+    fireEvent.click(screen.getByRole("button", { name: "削除する" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "画面を再読み込みしてから",
+    );
+    expect(screen.getByText("残す本文")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(fetch).toHaveBeenLastCalledWith(
+      "/marginalis/api/v3/notes/0197c9bc-0000-7000-8000-000000000001",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({
+          "if-match": '"rev-7"',
+          "x-csrf-token": "test-csrf",
+        }),
+      }),
+    );
+    expect(screen.getByRole("button", { name: "削除する" })).toBeEnabled();
   });
 });

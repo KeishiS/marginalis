@@ -649,6 +649,18 @@ export async function updateNote(
   );
 }
 
+export async function deleteNote(
+  apiBase: string,
+  noteId: string,
+  expectedRevision: number,
+): Promise<Note> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}`,
+    mutationRequest("DELETE", undefined, expectedRevision),
+    parseNote,
+  );
+}
+
 export async function previewNewNote(
   apiBase: string,
   draft: NoteDraft,
