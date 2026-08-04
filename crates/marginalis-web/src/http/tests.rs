@@ -968,7 +968,11 @@ impl TestMcpAccessTokens for TestMcpAuthenticator {
     ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
         Ok((matches!(
             token.as_str(),
-            "external-token" | "valid-token" | "read-token" | "write-token"
+            "external-token"
+                | "valid-token"
+                | "read-token"
+                | "write-token"
+                | "bibliography-read-token"
         ) && resource_uri.ends_with("/mcp"))
         .then(|| McpAuthenticatedActor {
             actor: Actor::try_new("https://kanidm.example.test".into(), "alice".into())
@@ -976,10 +980,14 @@ impl TestMcpAccessTokens for TestMcpAuthenticator {
             scopes: match token.as_str() {
                 "read-token" | "external-token" => vec!["notes:read".into()],
                 "write-token" => vec!["notes:write".into()],
+                "bibliography-read-token" => vec!["bibliography:read".into()],
                 _ => vec![
                     "notes:read".into(),
                     "notes:write".into(),
                     "notes:delete".into(),
+                    "bibliography:read".into(),
+                    "bibliography:write".into(),
+                    "bibliography:delete".into(),
                 ],
             },
         }))
@@ -1235,6 +1243,9 @@ impl TestApp {
                                 "notes:read".into(),
                                 "notes:write".into(),
                                 "notes:delete".into(),
+                                "bibliography:read".into(),
+                                "bibliography:write".into(),
+                                "bibliography:delete".into(),
                             ],
                             vec!["notes:read".into()],
                         )

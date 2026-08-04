@@ -22,7 +22,14 @@ async fn protected_resource_metadata_names_the_internal_authorization_server() {
     );
     assert_eq!(
         metadata["scopes_supported"],
-        serde_json::json!(["notes:read", "notes:write", "notes:delete"])
+        serde_json::json!([
+            "notes:read",
+            "notes:write",
+            "notes:delete",
+            "bibliography:read",
+            "bibliography:write",
+            "bibliography:delete"
+        ])
     );
 }
 
@@ -373,6 +380,47 @@ async fn mcp_bearer_scheme_is_case_insensitive_and_scope_failures_are_forbidden(
             .expect("request");
     let allowed = mcp_app()
         .oneshot(write_only_profile)
+        .await
+        .expect("response");
+    assert_eq!(allowed.status(), StatusCode::OK);
+
+    let notes_scope_for_bibliography = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_bibliography","arguments":{"query":"graph"}}}"#,
+        ))
+        .expect("request");
+    let denied = mcp_app()
+        .oneshot(notes_scope_for_bibliography)
+        .await
+        .expect("response");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+    assert!(
+        denied
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                value.contains("error=\"insufficient_scope\"")
+                    && value.contains("scope=\"bibliography:read\"")
+            })
+    );
+
+    let bibliography_scope = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(
+            header::AUTHORIZATION,
+            "Bearer bibliography-read-token",
+        )
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_bibliography","arguments":{"query":"graph"}}}"#,
+        ))
+        .expect("request");
+    let allowed = mcp_app()
+        .oneshot(bibliography_scope)
         .await
         .expect("response");
     assert_eq!(allowed.status(), StatusCode::OK);
