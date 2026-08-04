@@ -38,37 +38,22 @@ const MAX_LOGIN_RESUME_PATH_BYTES: usize = 2_800;
 
 pub(crate) async fn mcp_resource_metadata(
     State(state): State<ApiState>,
-) -> HandlerResult<Json<serde_json::Value>> {
+) -> HandlerResult<Json<mcp_authorization_server::ProtectedResourceMetadata>> {
     let endpoint = mcp_endpoint(&state)?;
-    Ok(Json(serde_json::json!({
-        "resource": endpoint.resource_uri,
-        "resource_name": "Marginalis MCP",
-        "authorization_servers": [endpoint.authorization_server_uri],
-        "bearer_methods_supported": ["header"],
-        "scopes_supported": ["notes:read", "notes:write", "notes:delete"]
-    })))
+    Ok(Json(endpoint.resource_policy.protected_resource_metadata(
+        endpoint.authorization_server_uri.clone(),
+    )))
 }
 
 pub(crate) async fn mcp_server_metadata(
     State(state): State<ApiState>,
-) -> HandlerResult<Json<serde_json::Value>> {
+) -> HandlerResult<Json<mcp_authorization_server::AuthorizationServerMetadata>> {
     let endpoint = mcp_endpoint(&state)?;
-    Ok(Json(serde_json::json!({
-        "issuer": endpoint.authorization_server_uri,
-        "authorization_endpoint": endpoint.authorization_endpoint_uri,
-        "token_endpoint": endpoint.token_endpoint_uri,
-        "revocation_endpoint": endpoint.revocation_endpoint_uri,
-        "registration_endpoint": endpoint.registration_endpoint_uri,
-        "protected_resources": [endpoint.resource_uri],
-        "scopes_supported": ["notes:read", "notes:write", "notes:delete"],
-        "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
-        "code_challenge_methods_supported": ["S256"],
-        "token_endpoint_auth_methods_supported": ["none"],
-        "revocation_endpoint_auth_methods_supported": ["none"],
-        "authorization_response_iss_parameter_supported": true,
-        "client_id_metadata_document_supported": true
-    })))
+    Ok(Json(
+        endpoint
+            .resource_policy
+            .authorization_server_metadata(&endpoint.authorization_server_endpoints),
+    ))
 }
 
 #[derive(Clone)]
