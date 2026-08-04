@@ -14,6 +14,43 @@ pub enum ResourcePolicyError {
     InvalidScopes,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScopeCeilingsError {
+    InvalidPrincipalCeiling,
+    InvalidClientCeiling,
+}
+
+impl std::fmt::Display for ScopeCeilingsError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidPrincipalCeiling => "principal scope ceiling is invalid",
+            Self::InvalidClientCeiling => "client scope ceiling is invalid",
+        })
+    }
+}
+
+impl std::error::Error for ScopeCeilingsError {}
+
+/// 一つの主体とclientについて、発行できるscopeの上限。
+///
+/// 値の保存元と変更権限は利用製品が決める。中核は二つの上限を区別したまま、認可要求との
+/// 共通部分だけを計算する。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScopeCeilings {
+    principal: Vec<String>,
+    client: Vec<String>,
+}
+
+impl ScopeCeilings {
+    pub fn principal(&self) -> &[String] {
+        &self.principal
+    }
+
+    pub fn client(&self) -> &[String] {
+        &self.client
+    }
+}
+
 impl std::fmt::Display for ResourcePolicyError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
@@ -105,6 +142,54 @@ impl ResourcePolicy {
             .all(|scope| self.supported_scopes.contains(scope))
             .then(|| canonical_scopes(requested, &self.supported_scopes))
     }
+
+    pub fn scope_ceilings(
+        &self,
+        principal: Vec<String>,
+        client: Vec<String>,
+    ) -> Result<ScopeCeilings, ScopeCeilingsError> {
+        validate_scope_ceiling(&principal, &self.supported_scopes)
+            .map_err(|()| ScopeCeilingsError::InvalidPrincipalCeiling)?;
+        validate_scope_ceiling(&client, &self.supported_scopes)
+            .map_err(|()| ScopeCeilingsError::InvalidClientCeiling)?;
+        Ok(ScopeCeilings {
+            principal: canonical_scopes(&principal, &self.supported_scopes),
+            client: canonical_scopes(&client, &self.supported_scopes),
+        })
+    }
+
+    /// 対応scope、主体上限、client上限、今回の要求scopeの共通部分を返す。
+    ///
+    /// 上限が空の場合や共通部分がない場合は、権限を暗黙に追加せず`None`を返す。
+    pub fn eligible_scopes(
+        &self,
+        requested: &[String],
+        ceilings: &ScopeCeilings,
+    ) -> Option<Vec<String>> {
+        let requested = self.resolve_scopes(requested)?;
+        let eligible = self
+            .supported_scopes
+            .iter()
+            .filter(|scope| {
+                requested.contains(scope)
+                    && ceilings.principal.contains(scope)
+                    && ceilings.client.contains(scope)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        (!eligible.is_empty()).then_some(eligible)
+    }
+}
+
+fn validate_scope_ceiling(scopes: &[String], supported_scopes: &[String]) -> Result<(), ()> {
+    if has_duplicates(scopes)
+        || scopes
+            .iter()
+            .any(|scope| !valid_scope(scope) || !supported_scopes.contains(scope))
+    {
+        return Err(());
+    }
+    Ok(())
 }
 
 pub fn canonical_scopes(scopes: &[String], supported_scopes: &[String]) -> Vec<String> {
