@@ -19,7 +19,7 @@ mod ui;
 #[cfg(test)]
 mod tests;
 
-pub use state::{ApiState, McpEndpoint};
+pub use state::{ApiState, InvalidMcpEndpoint, McpEndpoint};
 
 use super::{RequestId, assign_request_id};
 use std::{sync::Arc, time::Duration};
