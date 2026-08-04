@@ -522,21 +522,30 @@ if [ "$entry_bytes" -gt "$maximum_entry_bytes" ]; then
   echo "the initial Web UI entry is ${entry_bytes} bytes; the limit is ${maximum_entry_bytes} bytes." >&2
   exit 1
 fi
-# CodeMirrorを含む編集画面は経路別に読み込む。初期entryから外すだけで肥大化を見逃さないよう、
-# 分割後の塊にも独立した上限を置く。
-editor_screen_bytes="$(find frontend/dist/assets -name 'EditorApplication-*.js' -type f -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')"
-maximum_editor_screen_bytes=450000
-if [ "$editor_screen_bytes" -eq 0 ] || [ "$editor_screen_bytes" -gt "$maximum_editor_screen_bytes" ]; then
-  echo "the editor screen is ${editor_screen_bytes} bytes; the limit is ${maximum_editor_screen_bytes} bytes." >&2
-  exit 1
-fi
-# 関係の図は経路に入ってはじめて取得する別の塊であり、他の画面の読み込み量を増やさない。
-graph_bytes="$(find frontend/dist/assets -name 'GraphPage-*.js' -type f -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')"
-maximum_graph_bytes=120000
-if [ "$graph_bytes" -gt "$maximum_graph_bytes" ]; then
-  echo "the graph screen is ${graph_bytes} bytes; the limit is ${maximum_graph_bytes} bytes." >&2
-  exit 1
-fi
+# 経路別に読み込む画面は、独立したchunkの存在と大きさを両方検査する。検索結果が0件のまま
+# 上限検査を通ると、初期entryへ誤って戻した変更を見逃すためである。
+check_screen_chunk() {
+  screen_label="$1"
+  chunk_pattern="$2"
+  maximum_screen_bytes="$3"
+  screen_bytes="$(find frontend/dist/assets -name "$chunk_pattern" -type f -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')"
+  if [ "$screen_bytes" -eq 0 ]; then
+    echo "the ${screen_label} chunk is missing." >&2
+    exit 1
+  fi
+  if [ "$screen_bytes" -gt "$maximum_screen_bytes" ]; then
+    echo "the ${screen_label} screen is ${screen_bytes} bytes; the limit is ${maximum_screen_bytes} bytes." >&2
+    exit 1
+  fi
+  echo "${screen_label} screen: ${screen_bytes}/${maximum_screen_bytes} bytes"
+}
+
+# CodeMirrorやD3などの大きな依存を持つ画面と、利用頻度が限られる設定・削除済み一覧を
+# 初期entryから分離した状態で保つ。
+check_screen_chunk "editor" 'EditorApplication-*.js' 450000
+check_screen_chunk "graph" 'GraphPage-*.js' 120000
+check_screen_chunk "deleted notes" 'DeletedNotesPage-*.js' 30000
+check_screen_chunk "math macro settings" 'MathMacroSettingsPage-*.js' 30000
 font_bytes="$(find frontend/dist/assets -name '*.woff2' -type f -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')"
 maximum_font_bytes=13000000
 if [ "$font_bytes" -gt "$maximum_font_bytes" ]; then
@@ -544,8 +553,6 @@ if [ "$font_bytes" -gt "$maximum_font_bytes" ]; then
   exit 1
 fi
 echo "initial Web UI entry: ${entry_bytes}/${maximum_entry_bytes} bytes"
-echo "editor screen: ${editor_screen_bytes}/${maximum_editor_screen_bytes} bytes"
-echo "graph screen: ${graph_bytes}/${maximum_graph_bytes} bytes"
 echo "self-hosted Web fonts: ${font_bytes}/${maximum_font_bytes} bytes"
 '''
 
