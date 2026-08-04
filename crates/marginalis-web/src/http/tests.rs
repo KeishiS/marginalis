@@ -5,14 +5,14 @@ use axum::{
     http::{HeaderMap, HeaderValue, Request},
 };
 use marginalis_application::{
-    AuthenticationUseCaseError, McpAuthorizationClient, McpClientRegistrationMethod,
-    McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, McpValidatedAuthorizationRequest,
-    NoteAccessControl, NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
-    NoteCommands, NoteGraph, NoteGraphNote, NoteGraphQuery, NotePresentation, NotePreview,
-    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
-    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteUseCases,
-    NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
-    OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    AuthenticationUseCaseError, MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases,
+    McpAuthorizationClient, McpClientRegistrationMethod, McpOAuthUseCaseError, McpOAuthUseCases,
+    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
+    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands, NoteGraph, NoteGraphNote,
+    NoteGraphQuery, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
+    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
+    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
+    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
@@ -528,6 +528,7 @@ impl Notes {
             let diagnostics = test_advisories(&draft.source);
             Ok(NotePreview {
                 html: "<article><p>プレビュー</p></article>".into(),
+                math_macros: Vec::new(),
                 diagnostics,
             })
         }
@@ -747,6 +748,7 @@ impl UiNotes {
                 note,
                 access: NoteAccess::Edit,
                 html: "<article><p>描画済み本文</p></article>".into(),
+                math_macros: Vec::new(),
                 related: RelatedNotes {
                     outgoing: related.clone(),
                     incoming: related,
@@ -807,6 +809,30 @@ implement_note_boundaries!(Notes);
 implement_note_boundaries!(UiNotes);
 
 struct Sessions;
+
+struct MathMacros;
+
+#[async_trait]
+impl MathMacroUseCases for MathMacros {
+    async fn read_math_macros(
+        &self,
+        _actor: Actor,
+    ) -> Result<MathMacroSettings, MathMacroUseCaseError> {
+        Ok(MathMacroSettings::default())
+    }
+
+    async fn replace_math_macros(
+        &self,
+        _actor: Actor,
+        macros: Vec<marginalis_application::MathMacro>,
+        expected_revision: i64,
+    ) -> Result<MathMacroSettings, MathMacroUseCaseError> {
+        Ok(MathMacroSettings {
+            macros,
+            revision: expected_revision + 1,
+        })
+    }
+}
 
 #[async_trait]
 impl WebSessionUseCases for Sessions {
@@ -1144,6 +1170,7 @@ impl TestApp {
     fn router(self) -> Router {
         let state = ApiState::new(
             self.notes,
+            Arc::new(MathMacros),
             self.sessions,
             Arc::new(Oidc),
             self.cookie_path,

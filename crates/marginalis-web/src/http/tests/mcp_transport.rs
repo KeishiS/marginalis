@@ -995,6 +995,7 @@ async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
 fn browser_mutations_require_the_application_origin() {
     let state = ApiState::new(
         Arc::new(Notes),
+        Arc::new(MathMacros),
         Arc::new(Sessions),
         Arc::new(Oidc),
         "/".into(),

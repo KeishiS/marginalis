@@ -227,6 +227,52 @@
         ],
         "type": "object"
       },
+      "MathMacro": {
+        "additionalProperties": false,
+        "properties": {
+          "argument_count": {
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "pattern": "^[A-Za-z]{1,32}$",
+            "type": "string"
+          },
+          "replacement": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "replacement",
+          "argument_count"
+        ],
+        "type": "object"
+      },
+      "MathMacroSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "macros": {
+            "items": {
+              "$ref": "#/components/schemas/MathMacro"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "macros",
+          "revision"
+        ],
+        "type": "object"
+      },
       "Note": {
         "additionalProperties": false,
         "properties": {
@@ -625,11 +671,18 @@
           },
           "html": {
             "type": "string"
+          },
+          "math_macros": {
+            "items": {
+              "$ref": "#/components/schemas/MathMacro"
+            },
+            "type": "array"
           }
         },
         "required": [
           "html",
-          "diagnostics"
+          "diagnostics",
+          "math_macros"
         ],
         "type": "object"
       },
@@ -680,6 +733,12 @@
           "html": {
             "type": "string"
           },
+          "math_macros": {
+            "items": {
+              "$ref": "#/components/schemas/MathMacro"
+            },
+            "type": "array"
+          },
           "note": {
             "$ref": "#/components/schemas/Note"
           },
@@ -710,7 +769,8 @@
           "note",
           "access",
           "html",
-          "related"
+          "related",
+          "math_macros"
         ],
         "type": "object"
       },
@@ -965,6 +1025,74 @@
           }
         },
         "summary": "Liveness check"
+      }
+    },
+    "/api/v3/math-macros": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MathMacroSettings"
+                }
+              }
+            },
+            "description": "MathJax macro settings"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Read the current user's MathJax macros"
+      },
+      "put": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MathMacroSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MathMacroSettings"
+                }
+              }
+            },
+            "description": "updated MathJax macro settings"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Replace the current user's MathJax macros"
       }
     },
     "/api/v3/mcp-authorizations/{client_id}": {

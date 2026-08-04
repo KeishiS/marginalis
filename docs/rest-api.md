@@ -32,6 +32,8 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 | ノート復元 | `POST /api/v3/notes/{note_id}/restore` | 削除後30日以内 |
 | ACL取得 | `GET /api/v3/notes/{note_id}/acl` | 所有者だけ |
 | ACL更新 | `PUT /api/v3/notes/{note_id}/acl` | CSRFトークンと`If-Match`が必要 |
+| 数式マクロ設定の取得 | `GET /api/v3/math-macros` | ログイン中の利用者本人の設定 |
+| 数式マクロ設定の置換 | `PUT /api/v3/math-macros` | CSRFトークンと現在の`revision`が必要 |
 | MCP接続の取消 | `DELETE /api/v3/mcp-authorizations/{client_id}` | CSRFトークンが必要。自分に発行された認可だけを失効する |
 
 ## ノートの入力と権限
@@ -63,6 +65,12 @@ Pythonは`[source,python]`で指定できます。利用できる言語の一覧
 `:stem: latexmath`を指定した`stem:[]`と`[latexmath]`の数式は、
 Web UIの配布物へ固定したMathJaxで組版します。外部のCDNへは接続しません。
 MathJaxの`mathtools`拡張を有効にしているため、`\coloneqq`などの数式コマンドも使用できます。
+数式マクロ設定では、コマンド名、置換内容、0から9までの引数の数を指定します。たとえば
+`argmax`を`\operatorname*{arg\,max}`へ、引数1個の`bm`を`\boldsymbol{#1}`へ置き換えるよう
+設定すると、`\argmax_{x \in S} f(x)`と`\bm{x}`を記述できます。既存ノートの閲覧と編集
+プレビューにはノート所有者の設定を使うため、共有先でも同じ数式を表示します。既存のMathJax
+コマンドと同じ名前を設定した場合は設定した定義を使います。展開回数は1回の数式につき1,000回を
+上限とし、誤った定義や再帰的な定義で組版に失敗した場合は画面に通知します。
 横幅を超える表とブロック数式も、それぞれの表示領域内で横にスクロールできます。MathJaxの
 読み込みまたは組版に失敗した場合は、画面上に失敗を表示します。
 サーバーが管理する識別子、所有者、時刻、revision、ACLはAsciiDoc文書へ記述せず、APIの別項目で

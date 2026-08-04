@@ -78,7 +78,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-13");
+    assert_eq!(archive_json["format"], "marginalis-archive-14");
     assert_eq!(archive_json["adocweave_package_version"], "0.27.0");
     assert_eq!(archive_json["note_profile_version"], 5);
 
@@ -296,7 +296,7 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let migrated: serde_json::Value =
         serde_json::from_slice(&fs::read(&output).expect("read migration output"))
             .expect("migrated JSON");
-    assert_eq!(migrated["format"], "marginalis-archive-13");
+    assert_eq!(migrated["format"], "marginalis-archive-14");
     assert_eq!(migrated["adocweave_package_version"], "0.27.0");
     assert_eq!(migrated["note_profile_version"], 5);
 
@@ -510,7 +510,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 15);
+    assert_eq!(report["database"]["schema"]["actual"], 16);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
     assert!(!String::from_utf8_lossy(&healthy.stderr).contains("must-not-be-reported"));
 
@@ -649,7 +649,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
     let source = serde_json::json!({
-        "format": "marginalis-archive-13",
+        "format": "marginalis-archive-14",
         "adocweave_package_version": "0.27.0",
         "note_profile_version": 5,
         "notes": [
@@ -689,7 +689,8 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1
-        }]
+        }],
+        "math_macro_settings": []
     });
     fs::write(
         &archive,
@@ -837,7 +838,7 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
     let source = serde_json::json!({
-        "format": "marginalis-archive-13",
+        "format": "marginalis-archive-14",
         "adocweave_package_version": "0.27.0",
         "note_profile_version": 5,
         // 所有者を2人にし、note IDが所有者をまたいで交互に並ぶようにする。書き出しは所有者ごとに
@@ -895,7 +896,8 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1
-        }]
+        }],
+        "math_macro_settings": []
     });
     let archive_bytes = serde_json::to_vec_pretty(&source).expect("archive JSON");
     fs::write(&archive, &archive_bytes).expect("write archive");

@@ -2,8 +2,8 @@
 
 use axum::{Json, http::StatusCode};
 use marginalis_application::{
-    AuthenticationUseCaseError, BibliographyUseCaseError, NoteAdvisoryDiagnostic,
-    NoteAdvisorySeverity, NoteUseCaseError, NoteValidationDiagnostic,
+    AuthenticationUseCaseError, BibliographyUseCaseError, MathMacroUseCaseError,
+    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteUseCaseError, NoteValidationDiagnostic,
 };
 use marginalis_contract::{
     DiagnosticSeverityResponse, NoteDiagnosticResponse, ProblemCode, ProblemResponse,
@@ -158,6 +158,27 @@ pub(super) fn bibliography_error(
     error: BibliographyUseCaseError,
 ) -> (StatusCode, Json<ProblemResponse>) {
     problem_response(bibliography_problem(error))
+}
+
+pub(super) fn math_macro_error(
+    error: MathMacroUseCaseError,
+) -> (StatusCode, Json<ProblemResponse>) {
+    problem_response(match error {
+        MathMacroUseCaseError::Invalid => ProblemResponse::new(
+            ProblemCode::ValidationFailed,
+            "MathJax macro settings are invalid",
+        ),
+        MathMacroUseCaseError::Conflict => ProblemResponse::new(
+            ProblemCode::Conflict,
+            "MathJax macro settings revision conflicts",
+        ),
+        MathMacroUseCaseError::Unavailable | MathMacroUseCaseError::CorruptData => {
+            ProblemResponse::new(
+                ProblemCode::Unavailable,
+                "MathJax macro settings are unavailable",
+            )
+        }
+    })
 }
 
 fn record_problem_code(code: ProblemCode) {

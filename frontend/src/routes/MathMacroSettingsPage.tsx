@@ -1,0 +1,215 @@
+import { FormEvent, useEffect, useState } from "react";
+
+import {
+  ApplicationConfig,
+  MathMacro,
+  readMathMacros,
+  replaceMathMacros,
+} from "../api";
+
+const EXAMPLES: MathMacro[] = [
+  {
+    name: "argmax",
+    replacement: "\\operatorname*{arg\\,max}",
+    argument_count: 0,
+  },
+  { name: "bm", replacement: "\\boldsymbol{#1}", argument_count: 1 },
+];
+
+export function MathMacroSettingsPage({
+  config,
+}: {
+  config: ApplicationConfig;
+}) {
+  const [macros, setMacros] = useState<MathMacro[] | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    readMathMacros(config.apiBase, controller.signal)
+      .then((settings) => {
+        if (!controller.signal.aborted) {
+          setMacros(settings.macros);
+          setRevision(settings.revision);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setFailed(true);
+          setMessage("数式マクロの設定を読み込めませんでした。");
+        }
+      });
+    return () => controller.abort();
+  }, [config.apiBase]);
+
+  function update(index: number, changes: Partial<MathMacro>) {
+    setMacros(
+      (current) =>
+        current?.map((macro, itemIndex) =>
+          itemIndex === index ? { ...macro, ...changes } : macro,
+        ) ?? null,
+    );
+    setMessage("");
+  }
+
+  function add(
+    macro: MathMacro = { name: "", replacement: "", argument_count: 0 },
+  ) {
+    setMacros((current) => [...(current ?? []), macro]);
+    setMessage("");
+  }
+
+  function addExample(example: MathMacro) {
+    setMacros((current) => {
+      const values = current ?? [];
+      return values.some((macro) => macro.name === example.name)
+        ? values
+        : [...values, example];
+    });
+    setMessage("");
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (macros === null || saving) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const saved = await replaceMathMacros(config.apiBase, {
+        macros,
+        revision,
+      });
+      setMacros(saved.macros);
+      setRevision(saved.revision);
+      setFailed(false);
+      setMessage("数式マクロを保存しました。");
+    } catch {
+      setFailed(true);
+      setMessage(
+        "数式マクロを保存できませんでした。入力内容を確認し、画面を再読み込みしてからお試しください。",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="page-section math-macro-settings">
+      <div className="page-heading">
+        <div>
+          <p className="page-eyebrow">Settings</p>
+          <h1>数式マクロ</h1>
+          <p className="page-description">
+            所有するノートで繰り返し使うMathJaxコマンドを定義します。共有されたノートにも、ノート所有者の設定が適用されます。
+          </p>
+        </div>
+      </div>
+      {macros === null && !message ? (
+        <p className="state-message" role="status">
+          数式マクロを読み込んでいます。
+        </p>
+      ) : macros === null ? (
+        <p className="problem-inline" role="alert">
+          {message}
+        </p>
+      ) : (
+        <form onSubmit={save}>
+          <div className="math-macro-examples" aria-label="定義例">
+            <span>定義例を追加</span>
+            {EXAMPLES.map((example) => (
+              <button
+                key={example.name}
+                type="button"
+                onClick={() => addExample(example)}
+              >
+                <code>\{example.name}</code>
+              </button>
+            ))}
+          </div>
+          <p className="field-help">
+            コマンド名には先頭の <code>\</code> を含めません。置換内容では引数を{" "}
+            <code>#1</code> から <code>#9</code> で参照できます。
+          </p>
+          <div className="math-macro-list">
+            {macros.map((macro, index) => (
+              <fieldset key={index} className="math-macro-row">
+                <legend>マクロ {index + 1}</legend>
+                <label>
+                  コマンド名
+                  <input
+                    required
+                    pattern="[A-Za-z]+"
+                    maxLength={32}
+                    value={macro.name}
+                    onChange={(event) =>
+                      update(index, { name: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  引数の数
+                  <input
+                    required
+                    type="number"
+                    min={0}
+                    max={9}
+                    value={macro.argument_count}
+                    onChange={(event) =>
+                      update(index, {
+                        argument_count: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label className="math-macro-replacement">
+                  置換内容
+                  <input
+                    required
+                    maxLength={512}
+                    value={macro.replacement}
+                    onChange={(event) =>
+                      update(index, { replacement: event.target.value })
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMacros(
+                      macros.filter((_, itemIndex) => itemIndex !== index),
+                    )
+                  }
+                >
+                  削除
+                </button>
+              </fieldset>
+            ))}
+          </div>
+          <div className="editor-actions">
+            <button type="button" onClick={() => add()}>
+              マクロを追加
+            </button>
+            <button
+              className="button button-primary"
+              type="submit"
+              disabled={saving}
+            >
+              {saving ? "保存しています…" : "保存"}
+            </button>
+          </div>
+          {message && (
+            <p
+              className={failed ? "problem-inline" : "state-message"}
+              role={failed ? "alert" : "status"}
+            >
+              {message}
+            </p>
+          )}
+        </form>
+      )}
+    </section>
+  );
+}

@@ -340,6 +340,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
               html={preview.html}
               diagnostics={preview.diagnostics}
               loading={preview.loading}
+              mathMacros={preview.mathMacros}
               problem={preview.problem}
               onSelectDiagnostic={selectDiagnostic}
               styleNonce={config.styleNonce}

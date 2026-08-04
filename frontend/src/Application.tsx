@@ -14,6 +14,11 @@ const GraphPage = lazy(() =>
     default: module.GraphPage,
   })),
 );
+const MathMacroSettingsPage = lazy(() =>
+  import("./routes/MathMacroSettingsPage").then((module) => ({
+    default: module.MathMacroSettingsPage,
+  })),
+);
 
 // 起動設定の形は`marginalis-contract`が定めます。ここでは再定義せず再公開します。
 export type { ApplicationConfig };
@@ -26,6 +31,7 @@ type Route =
   | { kind: "access"; noteId: string }
   | { kind: "bibliography" }
   | { kind: "graph" }
+  | { kind: "math-macros" }
   | { kind: "not-found" };
 
 export function Application({ config }: { config: ApplicationConfig }) {
@@ -61,6 +67,18 @@ export function Application({ config }: { config: ApplicationConfig }) {
           <GraphPage config={config} />
         </Suspense>
       );
+    case "math-macros":
+      return (
+        <Suspense
+          fallback={
+            <p className="state-message" role="status">
+              数式マクロ設定を読み込んでいます。
+            </p>
+          }
+        >
+          <MathMacroSettingsPage config={config} />
+        </Suspense>
+      );
     case "not-found":
       return (
         <p className="problem-inline" role="alert">
@@ -74,6 +92,7 @@ function parseRoute(pathname: string): Route {
   if (pathname === "/") return { kind: "list" };
   if (pathname === "/bibliography") return { kind: "bibliography" };
   if (pathname === "/graph") return { kind: "graph" };
+  if (pathname === "/settings/math-macros") return { kind: "math-macros" };
   if (pathname === "/notes/new") return { kind: "create" };
   const match = pathname.match(/^\/notes\/([^/]+)(?:\/(edit|access))?$/);
   if (!match) return { kind: "not-found" };

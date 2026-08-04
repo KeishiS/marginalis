@@ -34,6 +34,16 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
     },
     RestRouteContract {
         method: "GET",
+        specification_path: "/api/v3/math-macros",
+        probe_path: "/api/v3/math-macros",
+    },
+    RestRouteContract {
+        method: "PUT",
+        specification_path: "/api/v3/math-macros",
+        probe_path: "/api/v3/math-macros",
+    },
+    RestRouteContract {
+        method: "GET",
         specification_path: "/api/v3/notes",
         probe_path: "/api/v3/notes",
     },
@@ -149,6 +159,28 @@ pub struct BibliographyItemResponse {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct MathMacroResponse {
+    pub name: String,
+    pub replacement: String,
+    pub argument_count: u8,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MathMacroSettingsInput {
+    pub macros: Vec<MathMacroResponse>,
+    pub revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MathMacroSettingsResponse {
+    pub macros: Vec<MathMacroResponse>,
+    pub revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NoteResponse {
     pub note_id: String,
     pub title: String,
@@ -194,6 +226,7 @@ pub struct NoteViewResponse {
     pub access: NoteAccess,
     pub html: String,
     pub related: RelatedNotesResponse,
+    pub math_macros: Vec<MathMacroResponse>,
 }
 
 /// 関係の図に出す点と線。
@@ -276,6 +309,7 @@ pub struct NoteAclResponse {
 pub struct NotePreviewResponse {
     pub html: String,
     pub diagnostics: Vec<NoteDiagnosticResponse>,
+    pub math_macros: Vec<MathMacroResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -501,6 +535,23 @@ pub fn openapi_document() -> Value {
                     "required": ["issuer", "subject"],
                     "properties": {"issuer": {"type": "string", "format": "uri"}, "subject": {"type": "string"}}
                 },
+                "MathMacro": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["name", "replacement", "argument_count"],
+                    "properties": {
+                        "name": {"type": "string", "pattern": "^[A-Za-z]{1,32}$"},
+                        "replacement": {"type": "string", "minLength": 1, "maxLength": 512},
+                        "argument_count": {"type": "integer", "minimum": 0, "maximum": 9}
+                    }
+                },
+                "MathMacroSettings": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["macros", "revision"],
+                    "properties": {
+                        "macros": {"type": "array", "maxItems": 64, "items": {"$ref": "#/components/schemas/MathMacro"}},
+                        "revision": {"type": "integer", "minimum": 0}
+                    }
+                },
                 "NoteDraft": note_draft_schema(),
                 "BibliographyItemInput": {
                     "type": "object", "additionalProperties": false,
@@ -524,7 +575,7 @@ pub fn openapi_document() -> Value {
                 "NoteListEntry": note_list_entry,
                 "NoteView": {
                     "type": "object", "additionalProperties": false,
-                    "required": ["note", "access", "html", "related"],
+                    "required": ["note", "access", "html", "related", "math_macros"],
                     "properties": {
                         "note": {"$ref": "#/components/schemas/Note"},
                         "access": {"enum": ["read", "edit", "manage"]},
@@ -536,7 +587,8 @@ pub fn openapi_document() -> Value {
                                 "outgoing": {"type": "array", "items": {"$ref": "#/components/schemas/NoteSummary"}},
                                 "incoming": {"type": "array", "items": {"$ref": "#/components/schemas/NoteSummary"}}
                             }
-                        }
+                        },
+                        "math_macros": {"type": "array", "items": {"$ref": "#/components/schemas/MathMacro"}}
                     }
                 },
                 "NoteGraph": {
@@ -585,13 +637,14 @@ pub fn openapi_document() -> Value {
                 },
                 "NotePreview": {
                     "type": "object", "additionalProperties": false,
-                    "required": ["html", "diagnostics"],
+                    "required": ["html", "diagnostics", "math_macros"],
                     "properties": {
                         "html": {"type": "string"},
                         "diagnostics": {
                             "type": "array",
                             "items": {"$ref": "#/components/schemas/NoteDiagnostic"}
-                        }
+                        },
+                        "math_macros": {"type": "array", "items": {"$ref": "#/components/schemas/MathMacro"}}
                     }
                 },
                 "NoteDiagnostic": note_diagnostic_schema(),
@@ -644,6 +697,21 @@ fn rest_paths() -> Value {
             "get": operation("Read the current identity", &[], None, responses(&[
                 ("200", schema_response("authenticated session", "Session")),
                 ("401", response_ref("AuthenticationRequired"))
+            ]))
+        },
+        "/api/v3/math-macros": {
+            "get": operation("Read the current user's MathJax macros", &[], None, responses(&[
+                ("200", schema_response("MathJax macro settings", "MathMacroSettings")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("503", response_ref("Unavailable"))
+            ])),
+            "put": operation("Replace the current user's MathJax macros", &["CsrfToken"], Some("MathMacroSettings"), responses(&[
+                ("200", schema_response("updated MathJax macro settings", "MathMacroSettings")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("409", response_ref("Conflict")),
+                ("422", response_ref("ValidationFailed")),
+                ("503", response_ref("Unavailable"))
             ]))
         },
         "/api/v3/notes": {

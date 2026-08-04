@@ -97,6 +97,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
           revision: 1,
         },
         access: "manage",
+        math_macros: [],
         html:
           "<article><h1>広い閲覧画面</h1><p>長い文章と表、コード、数式を読みやすい幅で表示します。</p>" +
           "<table><tr><th>項目</th><th>説明</th><th>確認</th></tr><tr><td>本文幅</td><td>広い画面を活用します</td><td>成功</td></tr></table>" +
@@ -183,6 +184,7 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
       contentType: "application/json",
       body: JSON.stringify({
         html: `<div class="preview-content"><p>${escapeHtml(source)}</p></div>`,
+        math_macros: [],
         diagnostics: [],
       }),
     });
@@ -277,7 +279,22 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
       : "<p>プレビュー</p>";
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ html, diagnostics: [] }),
+      body: JSON.stringify({
+        html,
+        math_macros: [
+          {
+            name: "argmax",
+            replacement: String.raw`\operatorname*{arg\,max}`,
+            argument_count: 0,
+          },
+          {
+            name: "bm",
+            replacement: String.raw`\boldsymbol{#1}`,
+            argument_count: 1,
+          },
+        ],
+        diagnostics: [],
+      }),
     });
   });
   await page.goto("/notes/new");
@@ -384,6 +401,7 @@ stem:[\mathbb{R}]`,
           revision: 1,
         },
         access: "manage",
+        math_macros: [],
         html: String.raw`<p><code class="math-latex" data-math-language="latexmath" data-math-display="inline">\mathbb{R}</code></p>`,
         related: { outgoing: [], incoming: [] },
       }),
@@ -423,6 +441,7 @@ test("5,000行の文書を編集して保存できる", async ({ page }) => {
       contentType: "application/json",
       body: JSON.stringify({
         html: '<div class="preview-content"><p>長文プレビュー</p></div>',
+        math_macros: [],
         diagnostics: [],
       }),
     });

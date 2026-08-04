@@ -204,7 +204,11 @@ test("既存文書のプレビューを対象ノート付きの経路へ送る",
     .fn<typeof fetch>()
     .mockResolvedValueOnce(jsonResponse(NOTE))
     .mockResolvedValueOnce(
-      jsonResponse({ html: "<p>既存の本文</p>", diagnostics: [] }),
+      jsonResponse({
+        html: "<p>既存の本文</p>",
+        math_macros: [],
+        diagnostics: [],
+      }),
     );
   vi.stubGlobal("fetch", fetchMock);
   render(
@@ -317,6 +321,7 @@ test("プレビュー警告を入力欄へ渡して修正後にすぐ取り除�
     .mockResolvedValueOnce(
       jsonResponse({
         html: "<p>この結果はxref:...</p>",
+        math_macros: [],
         diagnostics: [
           {
             code: "macro-boundary",
@@ -329,7 +334,11 @@ test("プレビュー警告を入力欄へ渡して修正後にすぐ取り除�
       }),
     )
     .mockResolvedValueOnce(
-      jsonResponse({ html: "<p>この結果は xref:...</p>", diagnostics: [] }),
+      jsonResponse({
+        html: "<p>この結果は xref:...</p>",
+        math_macros: [],
+        diagnostics: [],
+      }),
     );
   vi.stubGlobal("fetch", fetchMock);
   render(<EditorApplication config={CONFIG} />);
@@ -367,7 +376,11 @@ test("プレビュー失敗時も最後に成功した表示を残す", async ()
   const fetchMock = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(
-      jsonResponse({ html: "<p>成功した表示</p>", diagnostics: [] }),
+      jsonResponse({
+        html: "<p>成功した表示</p>",
+        math_macros: [],
+        diagnostics: [],
+      }),
     )
     .mockResolvedValueOnce(
       jsonResponse(

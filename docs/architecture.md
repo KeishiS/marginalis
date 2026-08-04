@@ -227,7 +227,9 @@ CodeMirrorが実行時に作る基礎CSSだけを許可します。採用理由�
 表示します。この境界では、AdocWeaveが公開する`figure.source-block`と`data-*`属性からコードの
 範囲、言語、開始行、数式の言語と表示形式を受け取ります。コード本文はtextとして行へ分け、
 数式もtextとしてMathJaxへ渡します。表と長いコードのスクロール領域、MathJaxの組版失敗通知も
-同じ表示境界へ置きます。外部CDNや未検査のHTMLは追加しません。
+同じ表示境界へ置きます。数式マクロは利用者の識別子ごとにSQLiteへ保存し、サーバーがノート所有者を
+選んで閲覧・プレビュー応答へ含めます。`RenderedContent.tsx`はその応答をMathJaxの`tex.macros`へ
+渡します。外部CDNや未検査のHTMLは追加しません。
 Viteの成果物はGitで管理せず、開発時は`cargo make`、
 配布時はNixが`frontend/dist`を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
 外部URLはViteで固定せず、Rustの`external_path`でbase URLのサブパスを反映する。

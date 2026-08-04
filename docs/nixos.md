@@ -42,10 +42,14 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは15です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは16です。旧versionを起動時に自動移行しません。
 
-schema 13から更新する場合は、更新前に`export-archive`を実行し、新しい版で空の`dataDir`へ
-`import-archive`してください。MCP clientとtokenはアーカイブへ含まれないため、更新後に接続し直します。
+schema 15から更新する場合は、更新前に`export-archive`を実行し、出力したarchive 13を
+`migrate-archive`でarchive 14へ変換してから、新しい版の空の`dataDir`へ`import-archive`します。
+MCP clientとtokenはarchiveへ含まれないため、更新後に接続し直します。
+
+schema 13から更新する場合も、更新前に`export-archive`を実行し、新しい版で空の`dataDir`へ
+`import-archive`してください。
 
 v0.21.0以前のschema 12から更新する場合は、更新前の実行環境で`export-archive`を実行し、
 新しい版で空の`dataDir`へ`import-archive`で取り込んでください。archiveの形式は変わらないため、
@@ -65,7 +69,7 @@ sudo -u marginalis marginalis migrate-archive \
 ```
 
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
-現行の`migrate-archive`でarchive 13へ変換してから、空のschema 15へ取り込んでください。
+現行の`migrate-archive`でarchive 14へ変換してから、空のschema 16へ取り込んでください。
 この経路では全ノートをAdocWeave 0.27.0の規則で再検証し、題名、タグ、参照索引を再構築します。
 ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
@@ -146,7 +150,7 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 ## バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは`marginalis-archive-13`で、AdocWeave package版`0.27.0`とnote profile版`5`を記録します。
+現行archiveは`marginalis-archive-14`で、AdocWeave package版`0.27.0`とnote profile版`5`を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 同じ段階で、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と重複も検証します。
 本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
@@ -167,19 +171,19 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 ## 以前のarchiveからの移行
 
 v0.18.0が作成したarchive 11、v0.16.1が作成したarchive 10、v0.16.0が作成したarchive 9、
-v0.15.0が作成したarchive 8は、復元前に現行のarchive 13へ変換します。SQLite schema 15には引用の索引とMCP OAuthの状態表があるため、
+v0.15.0が作成したarchive 8は、復元前に現行のarchive 14へ変換します。SQLite schema 16には引用の索引、MCP OAuthの状態表、数式マクロ設定があるため、
 稼働中の旧databaseファイルはそのまま使用できません。archiveを書き出してから変換し、空の
-schema 15へ復元してください。
+schema 16へ復元してください。
 
 ```sh
 sudo -u marginalis marginalis migrate-archive \
   --input /srv/marginalis-migration/archive-9.json \
-  --output /srv/marginalis-migration/archive-13.json
+  --output /srv/marginalis-migration/archive-14.json
 sudo -u marginalis marginalis verify-restore \
-  --input /srv/marginalis-migration/archive-13.json
+  --input /srv/marginalis-migration/archive-14.json
 ```
 
-archive 8を入力にする場合も、出力はarchive 13です。変換では全ノートをAdocWeave 0.27.0で
+archive 8を入力にする場合も、出力はarchive 14です。変換では全ノートをAdocWeave 0.27.0で
 再検証します。入力archiveは変更されず、出力先が既に存在する場合は上書きしません。詳しい判断は
 [0.27移行判断](adocweave-v0.27-migration.md)を参照してください。
 
@@ -191,26 +195,26 @@ AdocWeave 0.27.0でmetadataを再構築するため、databaseファイルを直
 1. v0.10.0のserviceとdatabaseを使ってarchive 7を書き出し、同じ実行環境の
    `validate-archive`と`verify-restore`を実行します。
 2. v0.10.0のNixOS generation、`dataDir`、archive 7を削除せずに保全します。
-3. 現行版の実行ファイルでarchive 7をarchive 13へ変換します。入力と出力には異なる絶対pathを
+3. 現行版の実行ファイルでarchive 7をarchive 14へ変換します。入力と出力には異なる絶対pathを
    指定してください。入力は変更されず、既存の出力を上書きしません。
 
    ```sh
    sudo -u marginalis <現行版のmarginalis> migrate-archive \
      --input /srv/marginalis-migration/archive-7.json \
-     --output /srv/marginalis-migration/archive-13.json
+     --output /srv/marginalis-migration/archive-14.json
    sudo -u marginalis <現行版のmarginalis> verify-restore \
-     --input /srv/marginalis-migration/archive-13.json
+     --input /srv/marginalis-migration/archive-14.json
    ```
 
-4. 移行が失敗した場合はarchive 13を取り込まず、v0.10.0へ戻ります。改行を残す複数行タグや
+4. 移行が失敗した場合はarchive 14を取り込まず、v0.10.0へ戻ります。改行を残す複数行タグや
    header後の属性操作など、[0.17移行判断](adocweave-v0.17-migration.md)に記載した差を
    v0.10.0で修正し、archive 7の書き出しからやり直します。エラーに示された`position`は、
    archiveの`notes`または`note_acl`配列内の1から始まる位置です。診断へ本文や識別子は
    出力されません。
-5. 成功したarchive 13を、次節の手順で空のschema 15へ取り込みます。
+5. 成功したarchive 14を、次節の手順で空のschema 16へ取り込みます。
 
 CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行操作を適用し、入力archiveの不変、
-旧archiveの直接取込拒否、schema 15でのノート、ACL、参照、削除状態、revisionの一致、archive 13の
+旧archiveの直接取込拒否、schema 16でのノート、ACL、参照、削除状態、revision、数式マクロ設定の一致、archive 14の
 再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
 
 ## 他の道具で読める形での取り出し

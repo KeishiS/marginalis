@@ -21,6 +21,7 @@ pub(super) fn page_document_with_script(
     let new_note = external_path(cookie_path, "/notes/new");
     let bibliography = external_path(cookie_path, "/bibliography");
     let graph = external_path(cookie_path, "/graph");
+    let math_macros = external_path(cookie_path, "/settings/math-macros");
     let stylesheet = external_path(cookie_path, "/assets/editor.css");
     let page_script = external_path(cookie_path, "/assets/page.js");
     let script = script.map_or_else(String::new, |script| {
@@ -30,7 +31,7 @@ pub(super) fn page_document_with_script(
         )
     });
     format!(
-        "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\"><script src=\"{}\" type=\"module\"></script>{}</head><body><header class=\"page-header\"><div class=\"page-header-inner\"><a class=\"brand\" href=\"{}\"><span class=\"brand-mark\" aria-hidden=\"true\">M</span><span>Marginalis</span></a><nav class=\"primary-navigation\" aria-label=\"主要な画面\"><a href=\"{}\">ノート</a><a href=\"{}\">書誌</a><a href=\"{}\">関係の図</a><a class=\"button button-primary\" href=\"{}\">新規ノート</a></nav></div></header><main class=\"page-main\">{}</main></body></html>",
+        "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\"><script src=\"{}\" type=\"module\"></script>{}</head><body><header class=\"page-header\"><div class=\"page-header-inner\"><a class=\"brand\" href=\"{}\"><span class=\"brand-mark\" aria-hidden=\"true\">M</span><span>Marginalis</span></a><nav class=\"primary-navigation\" aria-label=\"主要な画面\"><a href=\"{}\">ノート</a><a href=\"{}\">書誌</a><a href=\"{}\">関係の図</a><a href=\"{}\">数式マクロ</a><a class=\"button button-primary\" href=\"{}\">新規ノート</a></nav></div></header><main class=\"page-main\">{}</main></body></html>",
         escape_html(title),
         escape_html(&stylesheet),
         escape_html(&page_script),
@@ -39,6 +40,7 @@ pub(super) fn page_document_with_script(
         escape_html(&home),
         escape_html(&bibliography),
         escape_html(&graph),
+        escape_html(&math_macros),
         escape_html(&new_note),
         content
     )

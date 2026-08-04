@@ -43,6 +43,7 @@ describe("生成済みREST応答検査", () => {
         },
         access: "read",
         html: "<article></article>",
+        math_macros: [],
         related: { outgoing: [{ title: "IDなし" }], incoming: [] },
       }),
     ).toThrow();
@@ -51,6 +52,7 @@ describe("生成済みREST応答検査", () => {
   it("成功したプレビューの診断形式を検査する", () => {
     const preview = {
       html: "<p>本文</p>",
+      math_macros: [],
       diagnostics: [
         {
           code: "macro-boundary",

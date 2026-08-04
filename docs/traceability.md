@@ -41,6 +41,7 @@
 | REQ-UI-004 | AdocWeave診断、REST契約、TypeScript応答検査、React編集・UTF-8位置単体試験、ブラウザー試験 | 警告表示、診断からの修正 |
 | REQ-UI-005 | AdocWeave公開HTML・React描画fixture・MathJax失敗試験、ブラウザー試験 | 閲覧・プレビュー |
 | REQ-UI-006 | CodeMirror操作・CSP nonce単体試験、5,000行・320px幅・本番CSP・固定画像ブラウザー試験、配布容量検査 | 長文入力、IME、表示切替、キーボード保存 |
+| REQ-UI-007 | application所有者選択試験、SQLite分離・revision試験、REST契約試験、React設定画面・MathJax設定試験 | `\argmax`・`\bm`の閲覧と共有表示 |
 | REQ-ACL-001 | application・SQLite・React試験 | 共有操作 |
 | REQ-ACL-002 | 公開契約検査 | なし |
 | REQ-ACL-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
@@ -50,7 +51,7 @@
 | REQ-API-008 | REST・MCP失敗一致試験、MCP失敗出力schema生成差分 | 異常時のclient表示 |
 | REQ-DEPLOY-001 | NixOS module評価・VM | 本番設定確認 |
 | REQ-DEPLOY-002 | 環境変数宣言の単体試験、起動と診断の判断一致CLI試験、NixOS module評価 | 診断出力確認 |
-| REQ-FORMAT-001 | schema・archive拒否、archive 7・8・9・10・11・12から13への移行試験 | 更新前退避 |
+| REQ-FORMAT-001 | schema・archive拒否、archive 7から13までの対応契約から14への移行試験 | 更新前退避 |
 | REQ-FORMAT-002 | 文書書き出しの構成・ファイル名・削除済み除外・manifest版情報の試験、CLIの権限と上書き拒否の試験 | 取り出した内容の他ツールでの読み取り |
 | REQ-FORMAT-003 | 文書の書き出しと取り込みの往復一致試験、版差での再検証試験、書庫外pathの拒否試験 | 別環境への移行 |
 

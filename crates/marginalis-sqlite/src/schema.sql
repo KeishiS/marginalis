@@ -47,6 +47,16 @@ CREATE TABLE bibliography_items (
 CREATE INDEX bibliography_items_owner_listing_idx
 ON bibliography_items (owner_issuer, owner_subject, updated_at_ms DESC, item_id);
 
+-- 数式マクロはノート所有者ごとにまとめて更新し、共有ノートの閲覧者によって表示が変わらない
+-- よう、描画時にはノート所有者の設定を読み取る。
+CREATE TABLE math_macro_settings (
+    owner_issuer TEXT NOT NULL,
+    owner_subject TEXT NOT NULL,
+    macros_json TEXT NOT NULL CHECK (json_valid(macros_json)),
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    PRIMARY KEY (owner_issuer, owner_subject)
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE note_acl (
     note_id TEXT NOT NULL,
     issuer TEXT NOT NULL,
