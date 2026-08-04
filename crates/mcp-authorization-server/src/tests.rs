@@ -399,6 +399,7 @@ async fn authorization_code_is_single_use_and_tokens_are_resource_bound() {
     server.register_client(client()).await.expect("client");
 
     let (tokens, code) = issue_tokens(&server).await;
+    assert_eq!(tokens.access_expires_in_seconds, 300);
     let authenticated = server
         .authenticate(&tokens.access_token, "https://resource.example/mcp")
         .await
