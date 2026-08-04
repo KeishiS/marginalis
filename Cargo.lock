@@ -1201,13 +1201,11 @@ name = "marginalis-application"
 version = "0.26.1"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
  "marginalis-domain",
+ "mcp-authorization-server",
  "serde_json",
- "sha2 0.10.9",
  "thiserror 2.0.19",
  "tokio",
- "url",
 ]
 
 [[package]]
@@ -1354,6 +1352,15 @@ name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
+name = "mcp-authorization-server"
+version = "0.26.1"
+dependencies = [
+ "base64 0.22.1",
+ "sha2 0.10.9",
+ "url",
+]
 
 [[package]]
 name = "memchr"

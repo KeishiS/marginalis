@@ -87,7 +87,17 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         Arc::new(database.clone()),
         Arc::new(FixedClock(1_000)),
         Arc::new(SequentialRandom(std::sync::Mutex::new(0))),
-        resource_uri.clone(),
+        marginalis_application::McpResourcePolicy::new(
+            resource_uri.clone(),
+            "Test resource".into(),
+            vec![
+                "notes:read".into(),
+                "notes:write".into(),
+                "notes:delete".into(),
+            ],
+            vec!["notes:read".into()],
+        )
+        .expect("valid test resource policy"),
     )
     .with_client_metadata_resolver(resolver.clone());
 
@@ -178,7 +188,7 @@ async fn rfc7009_revocation_revokes_the_whole_token_family() {
         .await
         .expect("client");
     let grant = McpAuthorizationGrant {
-        actor: actor("https://id.example", "alice"),
+        principal: principal("https://id.example", "alice"),
         client_id: client.client_id.clone(),
         redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example/mcp".into(),
@@ -269,7 +279,7 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
         Some(client.clone())
     );
     let grant = McpAuthorizationGrant {
-        actor: actor("https://id.example.test", "alice"),
+        principal: principal("https://id.example.test", "alice"),
         client_id: client.client_id.clone(),
         redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example.test/mcp".into(),
@@ -569,7 +579,7 @@ async fn metadata_document_clients_do_not_consume_the_dynamic_registration_bound
         redirect_uris: vec!["https://client.example.test/callback".into()],
     };
     let grant = McpAuthorizationGrant {
-        actor: actor("https://id.example.test", "alice"),
+        principal: principal("https://id.example.test", "alice"),
         client_id: metadata_client.client_id.clone(),
         redirect_uri: McpResolvedRedirectUri::Supplied(metadata_client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example.test/mcp".into(),
@@ -622,7 +632,7 @@ async fn authorization_code_replay_revokes_the_issued_token_family() {
         .await
         .expect("client");
     let grant = McpAuthorizationGrant {
-        actor: actor("https://id.example", "alice"),
+        principal: principal("https://id.example", "alice"),
         client_id: client.client_id.clone(),
         redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example/mcp".into(),
@@ -740,7 +750,7 @@ async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
         .await
         .expect("client");
     let grant = McpAuthorizationGrant {
-        actor: actor("https://id.example", "alice"),
+        principal: principal("https://id.example", "alice"),
         client_id: client.client_id.clone(),
         redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
         resource_uri: "https://notes.example/mcp".into(),

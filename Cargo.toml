@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/mcp-authorization-server",
     "crates/marginalis-asciidoc",
     "crates/marginalis-application",
     "crates/marginalis-archive",

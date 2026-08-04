@@ -266,7 +266,8 @@ marginalis-contract
 marginalis-domain
 marginalis-service
 marginalis-sqlite
-marginalis-web'
+marginalis-web
+mcp-authorization-server'
 test "$actual" = "$expected" || {
   echo "unexpected workspace crate in marginalis-service production dependencies" >&2
   diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true

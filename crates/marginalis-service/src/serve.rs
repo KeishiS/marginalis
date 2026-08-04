@@ -1,7 +1,8 @@
 //! HTTP serviceのcomposition root。
 
 use marginalis_application::{
-    McpOAuthApplication, NoteApplication, OidcAuthenticationApplication, WebSessionApplication,
+    McpOAuthApplication, McpResourcePolicy, NoteApplication, OidcAuthenticationApplication,
+    WebSessionApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
@@ -110,13 +111,23 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let state = if configuration.mcp_enabled {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
+        let resource_policy = McpResourcePolicy::new(
+            resource_uri,
+            "Marginalis MCP".into(),
+            vec![
+                "notes:read".into(),
+                "notes:write".into(),
+                "notes:delete".into(),
+            ],
+            vec!["notes:read".into()],
+        )?;
         let endpoint = marginalis_web::http::McpEndpoint::new(
             std::sync::Arc::new(
                 McpOAuthApplication::new(
                     std::sync::Arc::new(database.clone()),
                     std::sync::Arc::new(SystemClock),
                     std::sync::Arc::new(SystemRandom),
-                    resource_uri,
+                    resource_policy,
                 )
                 .with_client_metadata_resolver(std::sync::Arc::new(
                     HttpMcpClientMetadataResolver::new(std::time::Duration::from_secs(5)),

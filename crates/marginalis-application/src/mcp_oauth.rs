@@ -1,15 +1,18 @@
 //! MCP用OAuth Authorization Serverの業務処理と永続化port。
 
 use async_trait::async_trait;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use marginalis_domain::{Actor, McpAuthenticatedActor, McpOAuthClient, UnixMillis};
-use sha2::{Digest, Sha256};
+use marginalis_domain::{Actor, UnixMillis};
+use mcp_authorization_server::{
+    AuthenticatedPrincipal, AuthorizationClientError, Principal, ResourcePolicy, canonical_scopes,
+    pkce_s256, redirect_uri_matches, valid_client_metadata_document_url, valid_pkce_challenge,
+    valid_pkce_verifier, valid_redirect_uri, validate_client_metadata,
+};
 use std::sync::Arc;
-use url::Url;
 
 use crate::{
-    Clock, McpAuthorizationClient, McpAuthorizationCodeExchange, McpAuthorizationRequest,
-    McpClientRegistrationMethod, McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation,
+    Clock, McpAuthenticatedActor, McpAuthorizationClient, McpAuthorizationCodeExchange,
+    McpAuthorizationGrant, McpAuthorizationRequest, McpClientRegistrationMethod, McpOAuthClient,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpRefreshTokenRotation,
     McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient, McpResolvedRedirectUri, McpTokenPair,
     McpValidatedAuthorizationRequest, Random,
 };
@@ -41,7 +44,7 @@ pub trait McpOAuthRepository: Send + Sync {
         &self,
         code: &str,
         client: &McpRegisteredOAuthClient,
-        grant: &marginalis_domain::McpAuthorizationGrant,
+        grant: &McpAuthorizationGrant,
         code_challenge: &str,
         expires_at: UnixMillis,
         now: UnixMillis,
@@ -50,7 +53,7 @@ pub trait McpOAuthRepository: Send + Sync {
         &self,
         exchange: McpAuthorizationCodeExchange,
         now: UnixMillis,
-    ) -> Result<Option<marginalis_domain::McpAuthorizationGrant>, McpOAuthRepositoryError>;
+    ) -> Result<Option<McpAuthorizationGrant>, McpOAuthRepositoryError>;
     async fn rotate_refresh_token(
         &self,
         rotation: McpRefreshTokenRotation,
@@ -61,7 +64,7 @@ pub trait McpOAuthRepository: Send + Sync {
         token: &str,
         resource_uri: &str,
         now: UnixMillis,
-    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthRepositoryError>;
+    ) -> Result<Option<AuthenticatedPrincipal>, McpOAuthRepositoryError>;
     async fn revoke_client_tokens(
         &self,
         issuer: &str,
@@ -91,7 +94,7 @@ pub struct McpOAuthApplication {
     repository: Arc<dyn McpOAuthRepository>,
     clock: Arc<dyn Clock>,
     random: Arc<dyn Random>,
-    resource_uri: String,
+    resource_policy: ResourcePolicy,
     client_metadata_resolver: Option<Arc<dyn McpClientMetadataResolver>>,
 }
 
@@ -105,13 +108,13 @@ impl McpOAuthApplication {
         repository: Arc<dyn McpOAuthRepository>,
         clock: Arc<dyn Clock>,
         random: Arc<dyn Random>,
-        resource_uri: String,
+        resource_policy: ResourcePolicy,
     ) -> Self {
         Self {
             repository,
             clock,
             random,
-            resource_uri,
+            resource_policy,
             client_metadata_resolver: None,
         }
     }
@@ -124,11 +127,8 @@ impl McpOAuthApplication {
         self
     }
 
-    pub async fn register_client(
-        &self,
-        client: marginalis_domain::McpOAuthClient,
-    ) -> Result<(), McpOAuthError> {
-        validate_client_metadata(&client)?;
+    pub async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthError> {
+        map_client_metadata_error(validate_client_metadata(&client))?;
         let now = self.clock.now();
         let registered = self
             .repository
@@ -151,8 +151,8 @@ impl McpOAuthApplication {
             client: request.client,
             registration_method: request.registration_method,
         };
-        let grant = marginalis_domain::McpAuthorizationGrant {
-            actor,
+        let grant = McpAuthorizationGrant {
+            principal: Principal::new(actor.issuer().into(), actor.subject().into()),
             client_id: registered_client.client.client_id.clone(),
             redirect_uri: request.redirect_uri,
             resource_uri: request.resource_uri,
@@ -206,16 +206,16 @@ impl McpOAuthApplication {
         } else {
             McpResolvedRedirectUri::Inferred(resolved.redirect_uri)
         };
-        if !resource_uri_matches(&self.resource_uri, &request.resource_uri) {
+        if !self
+            .resource_policy
+            .resource_uri_matches(&request.resource_uri)
+        {
             return Err(McpOAuthError::InvalidTarget);
         }
-        let scopes = if request.scopes.is_empty() {
-            vec!["notes:read".into()]
-        } else if valid_mcp_scopes(&request.scopes) {
-            canonical_scopes(&request.scopes)
-        } else {
-            return Err(McpOAuthError::InvalidScope);
-        };
+        let scopes = self
+            .resource_policy
+            .resolve_scopes(&request.scopes)
+            .ok_or(McpOAuthError::InvalidScope)?;
         if !valid_pkce_challenge(&request.code_challenge) {
             return Err(McpOAuthError::InvalidRequest);
         }
@@ -223,7 +223,7 @@ impl McpOAuthApplication {
             client,
             registration_method,
             redirect_uri,
-            resource_uri: self.resource_uri.clone(),
+            resource_uri: self.resource_policy.uri().to_string(),
             scopes,
             code_challenge: request.code_challenge.clone(),
         })
@@ -265,7 +265,7 @@ impl McpOAuthApplication {
                 if client.client_id != client_id {
                     return Err(McpOAuthError::InvalidClient);
                 }
-                validate_client_metadata(&client)?;
+                map_client_metadata_error(validate_client_metadata(&client))?;
                 (client, McpClientRegistrationMethod::MetadataDocument)
             }
         };
@@ -297,7 +297,7 @@ impl McpOAuthApplication {
         resource_uri: String,
         verifier: String,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
-        if !resource_uri_matches(&self.resource_uri, &resource_uri) {
+        if !self.resource_policy.resource_uri_matches(&resource_uri) {
             return Err(McpOAuthError::InvalidTarget);
         }
         if !valid_pkce_verifier(&verifier) {
@@ -314,7 +314,7 @@ impl McpOAuthApplication {
                     code,
                     client_id,
                     redirect_uri,
-                    resource_uri: self.resource_uri.clone(),
+                    resource_uri: self.resource_policy.uri().to_string(),
                     code_challenge: expected_challenge,
                     access_token: access_token.clone(),
                     refresh_token: refresh_token.clone(),
@@ -347,12 +347,12 @@ impl McpOAuthApplication {
         resource_uri: String,
         scopes: Option<Vec<String>>,
     ) -> Result<McpIssuedTokenPair, McpOAuthError> {
-        if !resource_uri_matches(&self.resource_uri, &resource_uri) {
+        if !self.resource_policy.resource_uri_matches(&resource_uri) {
             return Err(McpOAuthError::InvalidTarget);
         }
         if scopes
             .as_ref()
-            .is_some_and(|requested| !valid_mcp_scopes(requested))
+            .is_some_and(|requested| self.resource_policy.resolve_scopes(requested).is_none())
         {
             return Err(McpOAuthError::InvalidScope);
         }
@@ -365,8 +365,10 @@ impl McpOAuthApplication {
                 McpRefreshTokenRotation {
                     refresh_token,
                     client_id,
-                    resource_uri: self.resource_uri.clone(),
-                    requested_scopes: scopes.map(|value| canonical_scopes(&value)),
+                    resource_uri: self.resource_policy.uri().to_string(),
+                    requested_scopes: scopes.map(|value| {
+                        canonical_scopes(&value, self.resource_policy.supported_scopes())
+                    }),
                     new_access_token: access_token.clone(),
                     new_refresh_token: next_refresh_token.clone(),
                     access_expires_at: UnixMillis::new(
@@ -401,19 +403,27 @@ impl McpOAuthApplication {
         &self,
         token: &str,
         resource_uri: &str,
-    ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthError> {
-        if !resource_uri_matches(&self.resource_uri, resource_uri) {
+    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthError> {
+        if !self.resource_policy.resource_uri_matches(resource_uri) {
             return Ok(None);
         }
         let Some(authenticated) = self
             .repository
-            .authenticate_access_token(token, &self.resource_uri, self.clock.now())
+            .authenticate_access_token(token, self.resource_policy.uri().as_str(), self.clock.now())
             .await
             .map_err(|_| McpOAuthError::Unavailable)?
         else {
             return Ok(None);
         };
-        Ok(Some(authenticated))
+        let actor = Actor::try_new(
+            authenticated.principal.issuer().into(),
+            authenticated.principal.subject().into(),
+        )
+        .map_err(|_| McpOAuthError::Unavailable)?;
+        Ok(Some(McpAuthenticatedActor {
+            actor,
+            scopes: authenticated.scopes,
+        }))
     }
 
     pub async fn revoke(&self, actor: &Actor, client_id: &str) -> Result<(), McpOAuthError> {
@@ -436,10 +446,7 @@ impl McpOAuthApplication {
 
 #[async_trait]
 impl McpOAuthUseCases for McpOAuthApplication {
-    async fn register_client(
-        &self,
-        client: marginalis_domain::McpOAuthClient,
-    ) -> Result<(), McpOAuthUseCaseError> {
+    async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError> {
         McpOAuthApplication::register_client(self, client).await
     }
     async fn resolve_authorization_client(
@@ -508,7 +515,7 @@ impl McpOAuthUseCases for McpOAuthApplication {
         &self,
         token: String,
         resource_uri: String,
-    ) -> Result<Option<marginalis_domain::McpAuthenticatedActor>, McpOAuthUseCaseError> {
+    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
         McpOAuthApplication::authenticate(self, &token, &resource_uri).await
     }
     async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {
@@ -523,212 +530,11 @@ impl McpOAuthUseCases for McpOAuthApplication {
     }
 }
 
-fn pkce_s256(verifier: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
-}
-
-fn valid_pkce_challenge(value: &str) -> bool {
-    value.len() == 43
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-}
-
-fn valid_pkce_verifier(value: &str) -> bool {
-    (43..=128).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~'))
-}
-
-fn valid_mcp_scopes(scopes: &[String]) -> bool {
-    !scopes.is_empty()
-        && scopes.iter().all(|scope| {
-            matches!(
-                scope.as_str(),
-                "notes:read" | "notes:write" | "notes:delete"
-            )
-        })
-}
-
-fn canonical_scopes(scopes: &[String]) -> Vec<String> {
-    ["notes:read", "notes:write", "notes:delete"]
-        .into_iter()
-        .filter(|candidate| scopes.iter().any(|scope| scope == candidate))
-        .map(str::to_owned)
-        .collect()
-}
-
-fn valid_redirect_uri(value: &str) -> bool {
-    let Ok(url) = Url::parse(value) else {
-        return false;
-    };
-    if url.host().is_none()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || !url.username().is_empty()
-        || url.password().is_some()
-    {
-        return false;
-    }
-    if url.scheme() == "https" {
-        return true;
-    }
-    if url.scheme() != "http" {
-        return false;
-    }
-    match url.host() {
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
-        Some(url::Host::Ipv6(address)) => address.is_loopback(),
-        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
-        None => false,
-    }
-}
-
-fn validate_client_metadata(client: &McpOAuthClient) -> Result<(), McpOAuthError> {
-    if client.client_id.is_empty()
-        || client.client_id.len() > 2_048
-        || client.display_name.trim().is_empty()
-        || client.redirect_uris.is_empty()
-        || client.display_name.len() > 128
-        || client.redirect_uris.len() > 8
-        || client.display_name.chars().any(|character| {
-            character.is_control()
-                || matches!(character, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-        })
-    {
-        return Err(McpOAuthError::InvalidRequest);
-    }
-    if !client
-        .redirect_uris
-        .iter()
-        .all(|uri| uri.len() <= 2_048 && valid_redirect_uri(uri))
-    {
-        return Err(McpOAuthError::InvalidRedirectUri);
-    }
-    Ok(())
-}
-
-fn valid_client_metadata_document_url(value: &str) -> bool {
-    let Ok(url) = Url::parse(value) else {
-        return false;
-    };
-    let Some(authority_end) = value
-        .strip_prefix("https://")
-        .and_then(|remainder| remainder.find('/').map(|index| index + "https://".len()))
-    else {
-        return false;
-    };
-    let raw_path = value[authority_end..]
-        .split(['?', '#'])
-        .next()
-        .unwrap_or_default();
-    let has_dot_segment = raw_path.split('/').any(|segment| {
-        matches!(
-            segment.to_ascii_lowercase().as_str(),
-            "." | ".." | "%2e" | ".%2e" | "%2e." | "%2e%2e"
-        )
-    });
-    value.len() <= 2_048
-        && url.scheme() == "https"
-        && url.host().is_some()
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.query().is_none()
-        && url.fragment().is_none()
-        && !raw_path.is_empty()
-        && !has_dot_segment
-}
-
-fn redirect_uri_matches(registered: &str, requested: &str) -> bool {
-    if registered == requested {
-        return true;
-    }
-    let (Ok(mut registered), Ok(mut requested)) = (Url::parse(registered), Url::parse(requested))
-    else {
-        return false;
-    };
-    if registered.scheme() != "http"
-        || requested.scheme() != "http"
-        || !is_loopback_host(&registered)
-        || !is_loopback_host(&requested)
-        || registered.host() != requested.host()
-    {
-        return false;
-    }
-    let _ = registered.set_port(None);
-    let _ = requested.set_port(None);
-    registered == requested
-}
-
-fn is_loopback_host(url: &Url) -> bool {
-    match url.host() {
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
-        Some(url::Host::Ipv6(address)) => address.is_loopback(),
-        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
-        None => false,
-    }
-}
-
-fn resource_uri_matches(expected: &str, received: &str) -> bool {
-    match (Url::parse(expected), Url::parse(received)) {
-        (Ok(expected), Ok(received)) => expected == received,
-        _ => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn oauth_redirects_require_https_or_a_loopback_host() {
-        for valid in [
-            "https://chatgpt.com/connector/oauth/callback",
-            "http://localhost/callback",
-            "http://localhost:48123/callback",
-            "http://127.0.0.1/callback",
-            "http://127.0.0.1:48123/callback",
-            "http://[::1]:48123/callback",
-        ] {
-            assert!(valid_redirect_uri(valid), "{valid}");
-        }
-        for invalid in [
-            "http://localhost.example:48123/callback",
-            "http://client.example.test/callback",
-            "https://client.example.test/callback?next=other",
-            "https://user@client.example.test/callback",
-        ] {
-            assert!(!valid_redirect_uri(invalid), "{invalid}");
-        }
-        assert!(redirect_uri_matches(
-            "http://127.0.0.1/callback",
-            "http://127.0.0.1:49152/callback"
-        ));
-        assert!(!redirect_uri_matches(
-            "http://127.0.0.1/callback",
-            "http://127.0.0.1:49152/other"
-        ));
-        assert!(resource_uri_matches(
-            "HTTPS://Notes.Example.Test/mcp",
-            "https://notes.example.test/mcp"
-        ));
-    }
-
-    #[test]
-    fn client_metadata_document_url_has_a_safe_https_path() {
-        assert!(valid_client_metadata_document_url(
-            "https://client.example/oauth/metadata.json"
-        ));
-        for invalid in [
-            "https://client.example",
-            "https://user@client.example/metadata.json",
-            "https://client.example/a/../metadata.json",
-            "https://client.example/a/%2e%2e/metadata.json",
-            "https://client.example/metadata.json?version=1",
-            "https://client.example/metadata.json#client",
-        ] {
-            assert!(!valid_client_metadata_document_url(invalid), "{invalid}");
-        }
-    }
+fn map_client_metadata_error(
+    result: Result<(), AuthorizationClientError>,
+) -> Result<(), McpOAuthError> {
+    result.map_err(|error| match error {
+        AuthorizationClientError::InvalidMetadata => McpOAuthError::InvalidRequest,
+        AuthorizationClientError::InvalidRedirectUri => McpOAuthError::InvalidRedirectUri,
+    })
 }

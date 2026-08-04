@@ -4,8 +4,8 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use marginalis_application::McpAuthenticatedActor;
 use marginalis_contract::ProblemCode;
-use marginalis_domain::McpAuthenticatedActor;
 
 use super::super::{
     error::{HandlerResult, problem},

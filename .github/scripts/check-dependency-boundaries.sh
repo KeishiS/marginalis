@@ -38,7 +38,7 @@ if [[ -n "$expected_input" ]]; then
 else
   expected="$temporary_directory/expected"
   cat >"$expected" <<'EOF'
-marginalis-application: marginalis-domain
+marginalis-application: marginalis-domain, mcp-authorization-server
 marginalis-archive: marginalis-application, marginalis-domain
 marginalis-asciidoc: marginalis-application, marginalis-domain
 marginalis-auth-oidc: marginalis-application, marginalis-domain
@@ -47,6 +47,7 @@ marginalis-domain:
 marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web
 marginalis-sqlite: marginalis-application, marginalis-domain
 marginalis-web: marginalis-application, marginalis-contract, marginalis-domain
+mcp-authorization-server:
 EOF
 fi
 
@@ -80,6 +81,10 @@ while IFS=$'\t' read -r package dependency; do
       marginalis-contract:axum | marginalis-contract:sqlx | marginalis-contract:reqwest | \
       marginalis-contract:adocweave | marginalis-contract:openidconnect | \
       marginalis-contract:oauth2 | marginalis-contract:tower | marginalis-contract:tower-http | \
+      mcp-authorization-server:axum | mcp-authorization-server:sqlx | \
+      mcp-authorization-server:reqwest | mcp-authorization-server:adocweave | \
+      mcp-authorization-server:openidconnect | mcp-authorization-server:oauth2 | \
+      mcp-authorization-server:tower | mcp-authorization-server:tower-http | \
       marginalis-web:sqlx | marginalis-web:adocweave | marginalis-web:openidconnect | \
       marginalis-web:oauth2 | marginalis-web:reqwest)
       echo "内側の層またはHTTP transportへ具象adapter依存が混入しています: $package -> $dependency" >&2
