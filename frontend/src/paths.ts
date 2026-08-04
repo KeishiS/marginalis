@@ -26,7 +26,7 @@ export function listPath(context: PathContext, page?: number): string {
   return externalPath(context.basePath, `/${noteListSearch(query, page)}`);
 }
 
-/** 一覧へ戻った後に一度表示する操作結果を含むURL。 */
+/** 一覧へ戻った後に操作結果を表示するURL。 */
 export type NoteListNotice = "note-deleted" | "note-restored";
 
 export function listNoticePath(
@@ -41,7 +41,7 @@ export function listNoticePath(
 
 /** 所有する削除済みノートの一覧URL。 */
 export function deletedNotesPath(context: PathContext): string {
-  return externalPath(context.basePath, "/notes/deleted");
+  return withSearch(context, "/notes/deleted");
 }
 
 /** ノートの閲覧画面のURL。 */
