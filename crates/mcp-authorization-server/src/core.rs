@@ -15,6 +15,9 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RepositoryError;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClientMetadataResolverError;
+
 /// client、code、token familyを原子的に保存する外向きport。
 #[async_trait]
 pub trait Repository: Send + Sync {
@@ -78,7 +81,8 @@ pub trait Repository: Send + Sync {
 /// HTTPSのClient ID Metadata Documentを取得する外向きport。
 #[async_trait]
 pub trait ClientMetadataResolver: Send + Sync {
-    async fn resolve(&self, client_id: &str) -> Result<Option<Client>, RepositoryError>;
+    async fn resolve(&self, client_id: &str)
+    -> Result<Option<Client>, ClientMetadataResolverError>;
 }
 
 pub trait Clock: Send + Sync {

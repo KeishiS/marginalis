@@ -8,7 +8,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use marginalis_application::{McpClientMetadataResolver, McpOAuthClient, McpOAuthRepositoryError};
+use mcp_authorization_server::{Client, ClientMetadataResolver, ClientMetadataResolverError};
 use serde::Deserialize;
 
 const MAX_METADATA_BYTES: usize = 5 * 1024;
@@ -23,10 +23,10 @@ const MAX_CONCURRENT_FETCHES: usize = 8;
 const MAX_CACHED_CLIENTS: usize = 1_024;
 const MAX_CLIENT_FLIGHTS: usize = 1_024;
 
-type FetchResult = Result<Option<McpOAuthClient>, McpOAuthRepositoryError>;
+type FetchResult = Result<Option<Client>, ClientMetadataResolverError>;
 type ClientFlight = tokio::sync::OnceCell<FetchResult>;
 
-pub(crate) struct HttpMcpClientMetadataResolver {
+pub struct HttpClientMetadataResolver {
     timeout: Duration,
     state: tokio::sync::Mutex<ResolverState>,
     fetch_slots: tokio::sync::Semaphore,
@@ -41,12 +41,12 @@ struct ResolverState {
 
 /// cacheを引いた結果と、取得してよいかどうか。
 enum FetchPermit {
-    Resolved(McpOAuthClient),
+    Resolved(Client),
     Allowed,
 }
 
 struct CachedClientMetadata {
-    client: McpOAuthClient,
+    client: Client,
     expires_at: Instant,
 }
 
@@ -133,8 +133,8 @@ impl ClientMetadataFailure {
     }
 }
 
-impl HttpMcpClientMetadataResolver {
-    pub(crate) fn new(timeout: Duration) -> Self {
+impl HttpClientMetadataResolver {
+    pub fn new(timeout: Duration) -> Self {
         Self {
             timeout,
             state: tokio::sync::Mutex::new(ResolverState::default()),
@@ -185,12 +185,7 @@ impl HttpMcpClientMetadataResolver {
         Ok(flight)
     }
 
-    async fn remember_resolved(
-        &self,
-        client_id: &str,
-        client: &McpOAuthClient,
-        lifetime: Duration,
-    ) {
+    async fn remember_resolved(&self, client_id: &str, client: &Client, lifetime: Duration) {
         let mut state = self.state.lock().await;
         if state.resolved.len() >= MAX_CACHED_CLIENTS && !state.resolved.contains_key(client_id) {
             return;
@@ -243,11 +238,11 @@ struct ClientMetadataDocument {
 }
 
 #[async_trait]
-impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
+impl ClientMetadataResolver for HttpClientMetadataResolver {
     async fn resolve(
         &self,
         client_id: &str,
-    ) -> Result<Option<McpOAuthClient>, McpOAuthRepositoryError> {
+    ) -> Result<Option<Client>, ClientMetadataResolverError> {
         let flight = match self.client_flight(client_id).await {
             Ok(flight) => flight,
             Err(failure) => return metadata_failure_result(client_id, failure),
@@ -259,13 +254,13 @@ impl McpClientMetadataResolver for HttpMcpClientMetadataResolver {
     }
 }
 
-impl HttpMcpClientMetadataResolver {
+impl HttpClientMetadataResolver {
     /// 文書を取得して検査し、失敗箇所を呼び出し元で安全に分類できる形で返す。
     #[allow(clippy::type_complexity)]
     async fn fetch(
         &self,
         client_id: &str,
-    ) -> Result<(McpOAuthClient, Option<Duration>), ClientMetadataFailure> {
+    ) -> Result<(Client, Option<Duration>), ClientMetadataFailure> {
         let url = url::Url::parse(client_id).map_err(|_| ClientMetadataFailure::ClientIdUrl)?;
         let host = url.host_str().ok_or(ClientMetadataFailure::ClientIdUrl)?;
         let port = url
@@ -333,10 +328,7 @@ impl HttpMcpClientMetadataResolver {
     }
 }
 
-fn parse_client_metadata(
-    client_id: &str,
-    body: &[u8],
-) -> Result<McpOAuthClient, ClientMetadataFailure> {
+fn parse_client_metadata(client_id: &str, body: &[u8]) -> Result<Client, ClientMetadataFailure> {
     let document = serde_json::from_slice::<ClientMetadataDocument>(body)
         .map_err(|_| ClientMetadataFailure::DocumentFormat)?;
     if document.client_id != client_id {
@@ -357,7 +349,7 @@ fn parse_client_metadata(
     {
         return Err(ClientMetadataFailure::ResponseType);
     }
-    Ok(McpOAuthClient {
+    Ok(Client {
         client_id: document.client_id,
         display_name: document.client_name,
         redirect_uris: document.redirect_uris,
@@ -402,7 +394,7 @@ fn metadata_failure_result(client_id: &str, failure: ClientMetadataFailure) -> F
     match failure.disposition() {
         ClientMetadataFailureDisposition::Rejected => Ok(None),
         ClientMetadataFailureDisposition::Unavailable
-        | ClientMetadataFailureDisposition::Throttled => Err(McpOAuthRepositoryError),
+        | ClientMetadataFailureDisposition::Throttled => Err(ClientMetadataResolverError),
     }
 }
 
@@ -611,7 +603,7 @@ mod tests {
     /// 未認証で到達できる経路のため、外部取得の回数そのものに上限を設ける。
     #[tokio::test]
     async fn metadata_fetches_are_bounded_per_window() {
-        let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
+        let resolver = HttpClientMetadataResolver::new(Duration::from_secs(1));
         for index in 0..MAX_FETCHES_PER_WINDOW {
             assert!(
                 matches!(
@@ -635,7 +627,7 @@ mod tests {
     /// 同じclient IDの同時要求は、成功・失敗にかかわらず一つの取得結果を共有する。
     #[tokio::test]
     async fn concurrent_client_requests_share_one_flight() {
-        let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
+        let resolver = HttpClientMetadataResolver::new(Duration::from_secs(1));
         let client_id = "https://client.example/metadata.json";
         let first = resolver
             .client_flight(client_id)
@@ -661,7 +653,7 @@ mod tests {
 
     #[test]
     fn metadata_fetch_concurrency_is_bounded() {
-        let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
+        let resolver = HttpClientMetadataResolver::new(Duration::from_secs(1));
         let permits = (0..MAX_CONCURRENT_FETCHES)
             .map(|_| resolver.fetch_slots.try_acquire().expect("fetch slot"))
             .collect::<Vec<_>>();
@@ -672,9 +664,9 @@ mod tests {
     /// 取得できたclientはcacheから返し、取得の枠を消費しない。
     #[tokio::test]
     async fn cached_clients_do_not_consume_the_fetch_budget() {
-        let resolver = HttpMcpClientMetadataResolver::new(Duration::from_secs(1));
+        let resolver = HttpClientMetadataResolver::new(Duration::from_secs(1));
         let client_id = "https://client.example/metadata.json";
-        let client = McpOAuthClient {
+        let client = Client {
             client_id: client_id.into(),
             display_name: "Example client".into(),
             redirect_uris: vec!["https://client.example/callback".into()],

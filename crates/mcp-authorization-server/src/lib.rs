@@ -8,8 +8,8 @@ mod policy;
 mod protocol;
 
 pub use core::{
-    AuthorizationServer, AuthorizationServerConfig, ClientMetadataResolver, Clock, Random,
-    Repository, RepositoryError,
+    AuthorizationServer, AuthorizationServerConfig, ClientMetadataResolver,
+    ClientMetadataResolverError, Clock, Random, Repository, RepositoryError,
 };
 pub use metadata::{
     AuthorizationServerEndpoints, AuthorizationServerMetadata, ProtectedResourceMetadata,

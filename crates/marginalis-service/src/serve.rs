@@ -7,11 +7,11 @@ use marginalis_application::{
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
 use marginalis_sqlite::SqliteDatabase;
+use mcp_authorization_server_cimd::HttpClientMetadataResolver;
 use std::path::Path;
 
 use crate::{
     config::ServerConfig,
-    mcp_client_metadata::HttpMcpClientMetadataResolver,
     runtime::{SystemClock, SystemRandom},
 };
 
@@ -130,7 +130,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     resource_policy.clone(),
                 )
                 .with_client_metadata_resolver(std::sync::Arc::new(
-                    HttpMcpClientMetadataResolver::new(std::time::Duration::from_secs(5)),
+                    HttpClientMetadataResolver::new(std::time::Duration::from_secs(5)),
                 )),
             ),
             resource_policy,

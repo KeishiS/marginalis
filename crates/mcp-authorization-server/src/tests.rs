@@ -8,9 +8,9 @@ use async_trait::async_trait;
 use crate::{
     AuthenticatedPrincipal, AuthorizationCodeExchange, AuthorizationError, AuthorizationGrant,
     AuthorizationRequest, AuthorizationServer, AuthorizationServerConfig, Client,
-    ClientMetadataResolver, ClientRegistrationMethod, Clock, Principal, Random,
-    RefreshTokenRotation, RefreshTokenRotationOutcome, RegisteredClient, Repository,
-    RepositoryError, ResourcePolicy, Timestamp, pkce_s256,
+    ClientMetadataResolver, ClientMetadataResolverError, ClientRegistrationMethod, Clock,
+    Principal, Random, RefreshTokenRotation, RefreshTokenRotationOutcome, RegisteredClient,
+    Repository, RepositoryError, ResourcePolicy, Timestamp, pkce_s256,
 };
 
 #[derive(Default)]
@@ -330,7 +330,10 @@ struct MissingMetadataResolver;
 
 #[async_trait]
 impl ClientMetadataResolver for MissingMetadataResolver {
-    async fn resolve(&self, _client_id: &str) -> Result<Option<Client>, RepositoryError> {
+    async fn resolve(
+        &self,
+        _client_id: &str,
+    ) -> Result<Option<Client>, ClientMetadataResolverError> {
         Ok(None)
     }
 }

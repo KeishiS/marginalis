@@ -56,7 +56,8 @@ MCP用OAuthの製品非依存の型、resourceとscopeのpolicy、PKCEとredirec
 token hashを既存schemaへ保存します。`marginalis-application`は検証済みの利用者identityを製品非依存の
 主体へ変換して、scopeとノート操作の対応を保ちます。詳しい境界は
 [ADR 0008](adr/0008-mcp-authorization-serverの中核を製品から分離する.md)に記録しています。利用者の
-ログインはWeb UIと同じKanidm OIDCを使います。
+ログインはWeb UIと同じKanidm OIDCを使います。CIMDの外部取得とcacheは、HTTP clientへ依存するadapter
+`mcp-authorization-server-cimd`へ分け、中核crateにnetwork依存を持ち込みません。
 MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`marginalis-web::mcp`に置きます。
 Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条件の検査、tool実行は
 `marginalis-web::http::mcp_transport`内の別moduleに置きます。これにより、公開toolを変更するときに
@@ -98,6 +99,7 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 ```text
 crates/
 ├── mcp-authorization-server   MCP OAuthの製品非依存の型・policy・状態遷移・永続化port
+├── mcp-authorization-server-cimd  CIMDの安全な外部取得・cache adapter
 ├── marginalis-domain          値と設計条件
 ├── marginalis-contract        REST・MCP・TypeScriptの公開契約
 ├── marginalis-application     use case実装と内向き・外向きport
