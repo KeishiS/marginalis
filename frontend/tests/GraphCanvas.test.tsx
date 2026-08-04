@@ -1,5 +1,11 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { GraphCanvas } from "../src/graph/GraphCanvas";
 import { graphModel } from "../src/graph/model";
@@ -18,7 +24,35 @@ const CONFIG = {
   styleNonce: "test-nonce",
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+function rectangle({
+  left,
+  top,
+  width,
+  height,
+}: {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}): DOMRect {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({}),
+  };
+}
 
 function graph(): NoteGraph {
   return {
@@ -41,6 +75,7 @@ function canvas() {
 }
 
 test("点に触れると、更新日時とタグを吹き出しで示す", () => {
+  vi.useFakeTimers();
   const { container } = canvas();
   const note = container.querySelector('.graph-vertex[data-kind="note"]');
 
@@ -56,6 +91,7 @@ test("点に触れると、更新日時とタグを吹き出しで示す", () =>
   );
 
   fireEvent.mouseLeave(note!);
+  act(() => vi.runAllTimers());
   expect(container.querySelector(".graph-detail")).toBeNull();
 });
 
@@ -98,6 +134,92 @@ test("キーボードのフォーカスでも同じ吹き出しが出る", () =>
   expect(container.querySelector(".graph-detail")?.textContent).toContain(
     WORK_TITLE,
   );
+});
+
+test("図の四隅にある点でも吹き出し全体を枠内へ寄せる", () => {
+  vi.useFakeTimers();
+  let point = rectangle({ left: 380, top: 55, width: 20, height: 20 });
+  let panelHeight = 100;
+  const measured = vi
+    .spyOn(Element.prototype, "getBoundingClientRect")
+    .mockImplementation(function (this: Element) {
+      if (this.classList.contains("graph-stage")) {
+        return rectangle({ left: 100, top: 50, width: 300, height: 200 });
+      }
+      if (this.classList.contains("graph-detail")) {
+        return rectangle({ left: 0, top: 0, width: 240, height: panelHeight });
+      }
+      if (this.classList.contains("graph-vertex")) return point;
+      return rectangle({ left: 0, top: 0, width: 0, height: 0 });
+    });
+  const { container } = canvas();
+  const note = container.querySelector('.graph-vertex[data-kind="note"]');
+
+  // 右上では点の下へ出し、右端へはみ出す分を左へ寄せる。
+  fireEvent.mouseEnter(note!);
+  expect(
+    container.querySelector<HTMLElement>(".graph-detail")?.style,
+  ).toMatchObject({ left: "52px", top: "33px" });
+
+  // 左下では点の上へ出し、左端へはみ出す分を右へ寄せる。
+  fireEvent.mouseLeave(note!);
+  act(() => vi.runAllTimers());
+  point = rectangle({ left: 100, top: 225, width: 20, height: 20 });
+  fireEvent.mouseEnter(note!);
+  expect(
+    container.querySelector<HTMLElement>(".graph-detail")?.style,
+  ).toMatchObject({ left: "8px", top: "67px" });
+
+  // 高さが図本体に近い場合も、上下の余白を残せる位置まで寄せる。
+  fireEvent.mouseLeave(note!);
+  act(() => vi.runAllTimers());
+  point = rectangle({ left: 240, top: 130, width: 20, height: 20 });
+  panelHeight = 184;
+  fireEvent.mouseEnter(note!);
+  expect(
+    container.querySelector<HTMLElement>(".graph-detail")?.style,
+  ).toMatchObject({ top: "8px" });
+  measured.mockRestore();
+});
+
+test("長い内容をスクロールするため点から吹き出しへマウスを移せる", () => {
+  vi.useFakeTimers();
+  const { container } = canvas();
+  const note = container.querySelector('.graph-vertex[data-kind="note"]');
+
+  fireEvent.mouseEnter(note!);
+  const detail = container.querySelector(".graph-detail");
+  fireEvent.mouseLeave(note!);
+  fireEvent.mouseEnter(detail!);
+  act(() => vi.runAllTimers());
+  expect(container.querySelector(".graph-detail")).not.toBeNull();
+
+  fireEvent.mouseLeave(detail!);
+  act(() => vi.runAllTimers());
+  expect(container.querySelector(".graph-detail")).toBeNull();
+});
+
+test("図の内容を更新したときは以前の点の吹き出しを残さない", () => {
+  const first = graphModel(graph());
+  const { container, rerender } = render(
+    <GraphCanvas config={CONFIG} model={first} />,
+  );
+  const note = container.querySelector('.graph-vertex[data-kind="note"]');
+  fireEvent.focus(note!);
+  expect(container.querySelector(".graph-detail")).not.toBeNull();
+
+  rerender(
+    <GraphCanvas
+      config={CONFIG}
+      model={graphModel({
+        notes: [],
+        works: [],
+        references: [],
+        citations: [],
+      })}
+    />,
+  );
+  expect(container.querySelector(".graph-detail")).toBeNull();
 });
 
 /// 吹き出しはマウスの位置に依存し、読み上げの順序にも乗らない。同じ内容を点の名前にも持たせる。

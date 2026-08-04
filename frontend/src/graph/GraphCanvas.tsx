@@ -16,23 +16,12 @@ import { ApplicationConfig } from "../api";
 import { formatDateTime } from "../formatting";
 import { vertexHref } from "./navigation";
 import { GraphEdge, GraphModel, GraphVertex } from "./model";
+import { VertexDetailPanel } from "./VertexDetail";
+import { useVertexDetail } from "./useVertexDetail";
 
 interface PlacedVertex extends SimulationNodeDatum, GraphVertex {}
 
 /** 選んでいる点と、その画面上の位置。説明の吹き出しをここへ出す。 */
-interface VertexDetail {
-  vertex: GraphVertex;
-  /** 図の左端からの、点の中心の位置。 */
-  x: number;
-  /** 図の上端からの、点の上端の位置。 */
-  y: number;
-  /** 図の幅。吹き出しが外へはみ出さないよう内側へ寄せるために使う。 */
-  width: number;
-}
-
-/** 吹き出しの想定幅。実際の幅は内容で決まるが、寄せ幅の計算にはこの値を使う。 */
-const DETAIL_WIDTH = 240;
-
 const VIEW_WIDTH = 1200;
 const VIEW_HEIGHT = 720;
 /** 点の半径。つながりが多いほど大きくするが、上限を設けて図を埋めない。 */
@@ -53,25 +42,14 @@ export function GraphCanvas({
   model: GraphModel;
 }) {
   const [placed, setPlaced] = useState<PlacedVertex[] | null>(null);
-  const [detail, setDetail] = useState<VertexDetail | null>(null);
   const [view, setView] = useState<ZoomTransform>(zoomIdentity);
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const rendered = useRef<GraphModel | null>(null);
-  const figure = useRef<HTMLElement>(null);
-  const focused = detail?.vertex.id ?? null;
-
-  // 点の画面上の位置を、図の枠を基準にした座標へ直す。拡大や移動をしていても、実際に描かれた
-  // 位置から測るため計算がずれない。
-  const showDetail = useCallback((vertex: GraphVertex, element: Element) => {
-    const frame = figure.current?.getBoundingClientRect();
-    if (frame === undefined) return;
-    const point = element.getBoundingClientRect();
-    setDetail({
-      vertex,
-      x: point.left + point.width / 2 - frame.left,
-      y: point.top - frame.top,
-      width: frame.width,
-    });
-  }, []);
+  const vertexDetail = useVertexDetail({
+    stage,
+    view,
+    model,
+  });
 
   // 1,000点を一画面へ収めると読めない。拡大と移動で見たい範囲へ寄れるようにする。
   const attachZoom = useCallback((element: SVGSVGElement | null) => {
@@ -136,119 +114,79 @@ export function GraphCanvas({
     model.edges.some((edge) => edge.source === id || edge.target === id);
 
   return (
-    <figure className="graph-canvas" ref={figure}>
-      <svg
-        ref={attachZoom}
-        viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
-        role="img"
-        aria-label="ノートと文献のつながり"
-      >
-        <g transform={view.toString()}>
-          <g className="graph-edges">
-            {model.edges.map((edge) => (
-              <GraphLine
-                key={edge.id}
-                edge={edge}
-                positions={positions}
-                dimmed={focused !== null && !touches(edge, focused)}
-              />
-            ))}
-          </g>
-          <g className="graph-vertices">
-            {placed.map((vertex) => (
-              <a
-                key={vertex.id}
-                className="graph-vertex"
-                href={vertexHref(config, vertex)}
-                data-kind={vertex.kind}
-                data-isolated={neighbours(vertex.id) ? undefined : "true"}
-                aria-label={vertexDescription(vertex)}
-                onMouseEnter={(event) =>
-                  showDetail(vertex, event.currentTarget)
-                }
-                onMouseLeave={() => setDetail(null)}
-                onFocus={(event) => showDetail(vertex, event.currentTarget)}
-                onBlur={() => setDetail(null)}
-              >
-                <circle
-                  cx={vertex.x ?? 0}
-                  cy={vertex.y ?? 0}
-                  r={radius(vertex)}
+    <figure className="graph-canvas">
+      <div className="graph-stage" ref={setStage}>
+        <svg
+          ref={attachZoom}
+          viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`}
+          role="img"
+          aria-label="ノートと文献のつながり"
+        >
+          <g transform={view.toString()}>
+            <g className="graph-edges">
+              {model.edges.map((edge) => (
+                <GraphLine
+                  key={edge.id}
+                  edge={edge}
+                  positions={positions}
+                  dimmed={
+                    vertexDetail.focusedVertexId !== null &&
+                    !touches(edge, vertexDetail.focusedVertexId)
+                  }
                 />
-                {vertex.kind === "note" && (
-                  <text
-                    x={vertex.x ?? 0}
-                    y={(vertex.y ?? 0) + radius(vertex) + 14}
-                    textAnchor="middle"
-                  >
-                    {vertex.label}
-                  </text>
-                )}
-              </a>
-            ))}
+              ))}
+            </g>
+            <g className="graph-vertices">
+              {placed.map((vertex) => (
+                <a
+                  key={vertex.id}
+                  className="graph-vertex"
+                  href={vertexHref(config, vertex)}
+                  data-kind={vertex.kind}
+                  data-isolated={neighbours(vertex.id) ? undefined : "true"}
+                  aria-label={vertexDescription(vertex)}
+                  onMouseEnter={(event) =>
+                    vertexDetail.showFromMouse(vertex, event.currentTarget)
+                  }
+                  onMouseLeave={vertexDetail.leaveVertex}
+                  onFocus={(event) =>
+                    vertexDetail.showFromFocus(vertex, event.currentTarget)
+                  }
+                  onBlur={vertexDetail.blurVertex}
+                >
+                  <circle
+                    cx={vertex.x ?? 0}
+                    cy={vertex.y ?? 0}
+                    r={radius(vertex)}
+                  />
+                  {vertex.kind === "note" && (
+                    <text
+                      x={vertex.x ?? 0}
+                      y={(vertex.y ?? 0) + radius(vertex) + 14}
+                      textAnchor="middle"
+                    >
+                      {vertex.label}
+                    </text>
+                  )}
+                </a>
+              ))}
+            </g>
           </g>
-        </g>
-      </svg>
-      {detail !== null && <VertexDetailPanel detail={detail} />}
+        </svg>
+        {vertexDetail.detail !== null && (
+          <VertexDetailPanel
+            detail={vertexDetail.detail}
+            onMouseEnter={vertexDetail.enterPanel}
+            onMouseLeave={vertexDetail.leavePanel}
+          />
+        )}
+      </div>
       <figcaption>
         点はノートと文献、線は参照と引用です。点に触れると詳しい情報が出ます。
         点を選ぶとその画面へ移動します。図はドラッグで動かし、ホイールで拡大できます。
         同じ内容は下の一覧からも辿れます。
       </figcaption>
     </figure>
-  );
-}
-
-/**
- * 選んでいる点の詳しい情報を、その点の横へ出す。
- *
- * 図の枠からはみ出すと読めないため、左右は枠の内側へ寄せる。点より上に出すのは、点の下には
- * 名前が描かれていて重なるためである。
- */
-function VertexDetailPanel({ detail }: { detail: VertexDetail }) {
-  const { vertex } = detail;
-  const left = Math.min(
-    Math.max(detail.x + MAXIMUM_RADIUS, DETAIL_WIDTH / 2),
-    Math.max(detail.width - DETAIL_WIDTH / 2, DETAIL_WIDTH / 2),
-  );
-  return (
-    <div
-      className="graph-detail"
-      data-kind={vertex.kind}
-      style={{ left: `${left}px`, top: `${detail.y}px` }}
-      // 内容は点のaria-labelでも読み上げるため、支援技術へ二重に伝えない。
-      aria-hidden="true"
-    >
-      <p className="graph-detail-label">{vertex.label}</p>
-      <dl>
-        <div>
-          <dt>種類</dt>
-          <dd>{vertex.kind === "note" ? "ノート" : "文献"}</dd>
-        </div>
-        {vertex.updatedAtMs !== null && (
-          <div>
-            <dt>更新</dt>
-            <dd>
-              <time dateTime={new Date(vertex.updatedAtMs).toISOString()}>
-                {formatDateTime(vertex.updatedAtMs)}
-              </time>
-            </dd>
-          </div>
-        )}
-        {vertex.citationKey !== null && (
-          <div>
-            <dt>citation key</dt>
-            <dd>
-              <code>{vertex.citationKey}</code>
-            </dd>
-          </div>
-        )}
-        <div>
-          <dt>タグ</dt>
-          <dd>{vertex.tags.length === 0 ? "なし" : vertex.tags.join(" / ")}</dd>
-        </div>
-      </dl>
-    </div>
   );
 }
 

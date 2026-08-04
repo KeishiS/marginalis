@@ -39,7 +39,6 @@
 }
 
 .graph-canvas {
-  position: relative;
   background: var(--color-surface);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -49,23 +48,32 @@
   padding: var(--space-2);
 }
 
+/* 吹き出しは説明文を除く図本体の内側へ収める。 */
+.graph-stage {
+  overflow: hidden;
+  position: relative;
+}
+
 /* 高さを固定し、点の数で図の大きさが変わらないようにする。 */
-.graph-canvas svg {
+.graph-stage svg {
   display: block;
   height: min(70vh, 34rem);
   width: 100%;
 }
 
-/* 点に触れたときの吹き出し。点の右上へ出し、図の枠の内側へ収める。 */
+/* 点に触れたときの吹き出し。実寸を測って上下左右を図の枠の内側へ収める。 */
 .graph-detail {
   background: var(--color-surface);
   border: var(--border-thin) solid var(--color-border-strong);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
+  box-sizing: border-box;
+  max-height: calc(100% - 2 * var(--space-2));
+  max-width: calc(100% - 2 * var(--space-2));
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: var(--space-3);
-  pointer-events: none;
   position: absolute;
-  transform: translate(-50%, -100%);
   width: 15rem;
   z-index: 1;
 }
