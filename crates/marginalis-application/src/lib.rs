@@ -5,11 +5,19 @@
 use std::future::Future;
 
 use async_trait::async_trait;
-pub use marginalis_domain::McpResolvedRedirectUri;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, EntityId, McpAuthenticatedActor, McpOAuthClient, Note, NoteAccess,
-    NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NotePermission, NoteSummary,
-    NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan, WebSession,
+    Actor, AuthenticatedSession, EntityId, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId,
+    NoteListEntry, NotePermission, NoteSummary, NoteValidationTarget, Revision, UnixMillis,
+    Utf8ByteSpan, WebSession,
+};
+pub use mcp_authorization_server::{
+    AuthenticatedPrincipal as McpAuthenticatedPrincipal,
+    AuthorizationClient as McpAuthorizationClient, AuthorizationError as McpOAuthUseCaseError,
+    AuthorizationGrant as McpAuthorizationGrant, AuthorizationRequest as McpAuthorizationRequest,
+    Client as McpOAuthClient, ClientRegistrationMethod as McpClientRegistrationMethod,
+    Principal as McpPrincipal, RegisteredClient as McpRegisteredOAuthClient,
+    ResolvedRedirectUri as McpResolvedRedirectUri, ResourcePolicy as McpResourcePolicy,
+    TokenPair as McpTokenPair, ValidatedAuthorizationRequest as McpValidatedAuthorizationRequest,
 };
 
 mod bibliography;
@@ -300,62 +308,10 @@ pub enum NoteUseCaseError {
     CorruptData,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum McpOAuthUseCaseError {
-    InvalidRequest,
-    InvalidClient,
-    InvalidRedirectUri,
-    InvalidScope,
-    InvalidTarget,
-    InvalidGrant,
-    /// 動的なclient登録の保存上限に達しており、要求自体には誤りがない状態。
-    Capacity,
-    Unavailable,
-}
-
-/// OAuth Authorization Code Flowでtransportから渡す、未検証の認可要求。
-///
-/// `redirect_uri`の`None`は、clientが認可要求で値を省略したことを表す。登録済みの値を
-/// 解決した後もこの違いを保持し、token交換時の照合条件へ引き継ぐ。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpAuthorizationRequest {
-    pub client_id: String,
-    pub redirect_uri: Option<String>,
-    pub resource_uri: String,
+pub struct McpAuthenticatedActor {
+    pub actor: Actor,
     pub scopes: Vec<String>,
-    pub code_challenge: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpAuthorizationClient {
-    pub client: McpOAuthClient,
-    pub registration_method: McpClientRegistrationMethod,
-    pub redirect_uri: String,
-}
-
-/// Authorization Serverがclient情報を得た方式。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum McpClientRegistrationMethod {
-    Dynamic,
-    MetadataDocument,
-}
-
-/// 永続化したclientと、その情報を更新する際に使う登録方式。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpRegisteredOAuthClient {
-    pub client: McpOAuthClient,
-    pub registration_method: McpClientRegistrationMethod,
-}
-
-/// client登録とredirect URIを照合し、既定scopeも解決した認可要求。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpValidatedAuthorizationRequest {
-    pub client: McpOAuthClient,
-    pub registration_method: McpClientRegistrationMethod,
-    pub redirect_uri: McpResolvedRedirectUri,
-    pub resource_uri: String,
-    pub scopes: Vec<String>,
-    pub code_challenge: String,
 }
 
 /// refresh token rotationでadapterへ渡す、生成済みの新旧tokenとbinding。
@@ -536,14 +492,6 @@ pub trait OidcAuthenticationUseCases: Send + Sync {
         code: String,
         state: String,
     ) -> Result<Actor, AuthenticationUseCaseError>;
-}
-
-/// token endpointだけが短時間保持するtoken pair。秘密値のためDebugを実装しない。
-pub struct McpTokenPair {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub access_expires_in_seconds: u64,
-    pub scope: String,
 }
 
 #[async_trait]

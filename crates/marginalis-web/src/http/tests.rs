@@ -6,19 +6,19 @@ use axum::{
 };
 use marginalis_application::{
     AuthenticationUseCaseError, MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases,
-    McpAuthorizationClient, McpClientRegistrationMethod, McpOAuthUseCaseError, McpOAuthUseCases,
-    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
-    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands, NoteGraph, NoteGraphNote,
-    NoteGraphQuery, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
-    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
-    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
-    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    McpAuthenticatedActor, McpAuthorizationClient, McpClientRegistrationMethod, McpOAuthClient,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, McpValidatedAuthorizationRequest,
+    NoteAccessControl, NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
+    NoteCommands, NoteGraph, NoteGraphNote, NoteGraphQuery, NotePresentation, NotePreview,
+    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
+    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteUseCases,
+    NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
+    OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, Identity, McpAuthenticatedActor, McpOAuthClient, Note, NoteAccess,
-    NoteDraft, NoteId, NoteListEntry, NoteSummary, NoteValidationTarget, Revision, UnixMillis,
-    Utf8ByteSpan, WebSession,
+    Actor, AuthenticatedSession, Identity, Note, NoteAccess, NoteDraft, NoteId, NoteListEntry,
+    NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan, WebSession,
 };
 use std::{
     io,

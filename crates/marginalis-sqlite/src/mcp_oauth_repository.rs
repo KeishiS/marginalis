@@ -2,10 +2,11 @@
 
 use async_trait::async_trait;
 use marginalis_application::{
-    McpAuthorizationCodeExchange, McpOAuthRepository, McpOAuthRepositoryError,
-    McpRefreshTokenRotation, McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient,
+    McpAuthenticatedPrincipal, McpAuthorizationCodeExchange, McpAuthorizationGrant, McpOAuthClient,
+    McpOAuthRepository, McpOAuthRepositoryError, McpRefreshTokenRotation,
+    McpRefreshTokenRotationOutcome, McpRegisteredOAuthClient,
 };
-use marginalis_domain::{McpAuthenticatedActor, McpAuthorizationGrant, McpOAuthClient, UnixMillis};
+use marginalis_domain::UnixMillis;
 
 use crate::SqliteDatabase;
 
@@ -70,7 +71,7 @@ impl McpOAuthRepository for SqliteDatabase {
         token: &str,
         resource_uri: &str,
         now: UnixMillis,
-    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthRepositoryError> {
+    ) -> Result<Option<McpAuthenticatedPrincipal>, McpOAuthRepositoryError> {
         self.authenticate_mcp_access_token(token, resource_uri, now)
             .await
             .map_err(|_| McpOAuthRepositoryError)

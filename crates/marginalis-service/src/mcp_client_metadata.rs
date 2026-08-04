@@ -8,8 +8,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use marginalis_application::{McpClientMetadataResolver, McpOAuthRepositoryError};
-use marginalis_domain::McpOAuthClient;
+use marginalis_application::{McpClientMetadataResolver, McpOAuthClient, McpOAuthRepositoryError};
 use serde::Deserialize;
 
 const MAX_METADATA_BYTES: usize = 5 * 1024;

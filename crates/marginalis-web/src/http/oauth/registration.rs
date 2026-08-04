@@ -91,7 +91,7 @@ async fn mcp_register_client_inner(
         )
     })?;
     let endpoint = mcp_endpoint(&state).map_err(|error| error.into_response())?;
-    let client = marginalis_domain::McpOAuthClient {
+    let client = marginalis_application::McpOAuthClient {
         client_id: format!("mcp-{}", uuid::Uuid::now_v7()),
         display_name: request
             .client_name
