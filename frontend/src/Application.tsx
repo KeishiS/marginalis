@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "react";
 
 import { ApplicationConfig } from "./api";
-import { EditorApplication } from "./EditorApplication";
 import { AccessPage } from "./routes/AccessPage";
 import { BibliographyPage } from "./routes/BibliographyPage";
 import { NoteListPage } from "./routes/NoteListPage";
@@ -14,9 +13,19 @@ const GraphPage = lazy(() =>
     default: module.GraphPage,
   })),
 );
+const EditorApplication = lazy(() =>
+  import("./EditorApplication").then((module) => ({
+    default: module.EditorApplication,
+  })),
+);
 const MathMacroSettingsPage = lazy(() =>
   import("./routes/MathMacroSettingsPage").then((module) => ({
     default: module.MathMacroSettingsPage,
+  })),
+);
+const DeletedNotesPage = lazy(() =>
+  import("./routes/DeletedNotesPage").then((module) => ({
+    default: module.DeletedNotesPage,
   })),
 );
 
@@ -32,6 +41,7 @@ type Route =
   | { kind: "bibliography" }
   | { kind: "graph" }
   | { kind: "math-macros" }
+  | { kind: "deleted-notes" }
   | { kind: "not-found" };
 
 export function Application({ config }: { config: ApplicationConfig }) {
@@ -40,17 +50,11 @@ export function Application({ config }: { config: ApplicationConfig }) {
     case "list":
       return <NoteListPage config={config} />;
     case "create":
-      return (
-        <EditorApplication config={{ ...config, mode: "create", noteId: "" }} />
-      );
+      return <EditorRoute config={config} mode="create" noteId="" />;
     case "view":
       return <NoteViewPage config={config} noteId={route.noteId} />;
     case "edit":
-      return (
-        <EditorApplication
-          config={{ ...config, mode: "edit", noteId: route.noteId }}
-        />
-      );
+      return <EditorRoute config={config} mode="edit" noteId={route.noteId} />;
     case "access":
       return <AccessPage config={config} noteId={route.noteId} />;
     case "bibliography":
@@ -79,6 +83,18 @@ export function Application({ config }: { config: ApplicationConfig }) {
           <MathMacroSettingsPage config={config} />
         </Suspense>
       );
+    case "deleted-notes":
+      return (
+        <Suspense
+          fallback={
+            <p className="state-message" role="status">
+              削除済みノートを読み込んでいます。
+            </p>
+          }
+        >
+          <DeletedNotesPage config={config} />
+        </Suspense>
+      );
     case "not-found":
       return (
         <p className="problem-inline" role="alert">
@@ -88,11 +104,34 @@ export function Application({ config }: { config: ApplicationConfig }) {
   }
 }
 
+function EditorRoute({
+  config,
+  mode,
+  noteId,
+}: {
+  config: ApplicationConfig;
+  mode: "create" | "edit";
+  noteId: string;
+}) {
+  return (
+    <Suspense
+      fallback={
+        <p className="state-message" role="status">
+          編集画面を読み込んでいます。
+        </p>
+      }
+    >
+      <EditorApplication config={{ ...config, mode, noteId }} />
+    </Suspense>
+  );
+}
+
 function parseRoute(pathname: string): Route {
   if (pathname === "/") return { kind: "list" };
   if (pathname === "/bibliography") return { kind: "bibliography" };
   if (pathname === "/graph") return { kind: "graph" };
   if (pathname === "/settings/math-macros") return { kind: "math-macros" };
+  if (pathname === "/notes/deleted") return { kind: "deleted-notes" };
   if (pathname === "/notes/new") return { kind: "create" };
   const match = pathname.match(/^\/notes\/([^/]+)(?:\/(edit|access))?$/);
   if (!match) return { kind: "not-found" };

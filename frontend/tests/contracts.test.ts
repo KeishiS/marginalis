@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   parseApplicationConfig,
+  parseDeletedNoteListEntries,
   parseNote,
   parseNotePreview,
   parseNoteView,
@@ -26,6 +27,20 @@ describe("生成済みREST応答検査", () => {
   it("未知のproblem codeを拒否する", () => {
     expect(() =>
       parseProblem({ code: "unexpected", message: "unexpected" }),
+    ).toThrow();
+  });
+
+  it("削除済み一覧の復元に必要な項目を検査する", () => {
+    const value = {
+      note_id: "0197c9bc-0000-7000-8000-000000000001",
+      title: "削除済み",
+      deleted_at_ms: 1,
+      purge_at_ms: 2,
+      revision: 3,
+    };
+    expect(parseDeletedNoteListEntries([value])).toEqual([value]);
+    expect(() =>
+      parseDeletedNoteListEntries([{ ...value, purge_at_ms: "tomorrow" }]),
     ).toThrow();
   });
 

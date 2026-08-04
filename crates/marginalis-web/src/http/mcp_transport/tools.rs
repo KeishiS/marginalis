@@ -143,6 +143,7 @@ impl McpToolFailure {
                 | NoteUseCaseError::AdvisoriesRejected(_)
                 | NoteUseCaseError::NotFound
                 | NoteUseCaseError::Conflict
+                | NoteUseCaseError::RetentionExpired
                 | NoteUseCaseError::RenderFailed,
             )
             | Self::Bibliography(_) => "rejected",
@@ -157,6 +158,7 @@ impl McpToolFailure {
             Self::UseCase(NoteUseCaseError::AdvisoriesRejected(_)) => "warning",
             Self::UseCase(NoteUseCaseError::NotFound) => "not-found",
             Self::UseCase(NoteUseCaseError::Conflict) => "conflict",
+            Self::UseCase(NoteUseCaseError::RetentionExpired) => "retention-expired",
             Self::UseCase(NoteUseCaseError::RenderFailed) => "render-failed",
             Self::UseCase(NoteUseCaseError::Unavailable) => "unavailable",
             Self::UseCase(NoteUseCaseError::CorruptData) => "corrupt-data",

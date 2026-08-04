@@ -516,10 +516,18 @@ args = ["run", "build"]
 description = "Keep production Web UI code and self-hosted fonts within reviewed size budgets"
 dependencies = ["frontend-build"]
 script = '''
-editor_bytes="$(wc -c < frontend/dist/assets/editor.js)"
-maximum_editor_bytes=600000
-if [ "$editor_bytes" -gt "$maximum_editor_bytes" ]; then
-  echo "frontend/dist/assets/editor.js is ${editor_bytes} bytes; the limit is ${maximum_editor_bytes} bytes." >&2
+entry_bytes="$(wc -c < frontend/dist/assets/editor.js)"
+maximum_entry_bytes=300000
+if [ "$entry_bytes" -gt "$maximum_entry_bytes" ]; then
+  echo "the initial Web UI entry is ${entry_bytes} bytes; the limit is ${maximum_entry_bytes} bytes." >&2
+  exit 1
+fi
+# CodeMirrorを含む編集画面は経路別に読み込む。初期entryから外すだけで肥大化を見逃さないよう、
+# 分割後の塊にも独立した上限を置く。
+editor_screen_bytes="$(find frontend/dist/assets -name 'EditorApplication-*.js' -type f -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')"
+maximum_editor_screen_bytes=450000
+if [ "$editor_screen_bytes" -eq 0 ] || [ "$editor_screen_bytes" -gt "$maximum_editor_screen_bytes" ]; then
+  echo "the editor screen is ${editor_screen_bytes} bytes; the limit is ${maximum_editor_screen_bytes} bytes." >&2
   exit 1
 fi
 # 関係の図は経路に入ってはじめて取得する別の塊であり、他の画面の読み込み量を増やさない。
@@ -535,7 +543,8 @@ if [ "$font_bytes" -gt "$maximum_font_bytes" ]; then
   echo "self-hosted Web fonts are ${font_bytes} bytes; the limit is ${maximum_font_bytes} bytes." >&2
   exit 1
 fi
-echo "frontend/dist/assets/editor.js: ${editor_bytes}/${maximum_editor_bytes} bytes"
+echo "initial Web UI entry: ${entry_bytes}/${maximum_entry_bytes} bytes"
+echo "editor screen: ${editor_screen_bytes}/${maximum_editor_screen_bytes} bytes"
 echo "graph screen: ${graph_bytes}/${maximum_graph_bytes} bytes"
 echo "self-hosted Web fonts: ${font_bytes}/${maximum_font_bytes} bytes"
 '''

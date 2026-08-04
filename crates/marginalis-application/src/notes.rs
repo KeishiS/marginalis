@@ -7,8 +7,9 @@ use std::{
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, BibliographyItem, Identity, MAX_GRAPH_DEPTH, Note, NoteAccess, NoteAclEntry, NoteDraft,
-    NoteId, NoteListEntry, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
+    Actor, BibliographyItem, DeletedNoteListEntry, Identity, MAX_GRAPH_DEPTH, Note, NoteAccess,
+    NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteSummary, NoteValidationTarget, Revision,
+    UnixMillis, Utf8ByteSpan,
 };
 
 use crate::{
@@ -26,6 +27,8 @@ pub enum NoteRepositoryError {
     NotFound,
     #[error("note revision conflicts")]
     Conflict,
+    #[error("note restoration period has expired")]
+    RetentionExpired,
     #[error("stored note data is invalid")]
     CorruptData,
     #[error("note storage is unavailable")]
@@ -39,6 +42,10 @@ pub trait NoteQueryRepository: Send + Sync {
         &self,
         actor: &Actor,
     ) -> Result<Vec<NoteListEntry>, NoteRepositoryError>;
+    async fn list_owned_deleted_notes(
+        &self,
+        actor: &Actor,
+    ) -> Result<Vec<DeletedNoteListEntry>, NoteRepositoryError>;
     async fn accessible_note(
         &self,
         actor: &Actor,
@@ -102,7 +109,7 @@ pub trait NoteCommandRepository: Send + Sync {
         expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, NoteRepositoryError>;
-    async fn restore_visible_note(
+    async fn restore_owned_deleted_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
@@ -691,6 +698,16 @@ impl NoteQueries for NoteApplication {
             .map_err(map_repository_error)
     }
 
+    async fn list_owned_deleted_notes(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError> {
+        self.queries
+            .list_owned_deleted_notes(&actor)
+            .await
+            .map_err(map_repository_error)
+    }
+
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
         self.read_visible_note(&actor, note_id).await
     }
@@ -815,7 +832,7 @@ impl NoteCommands for NoteApplication {
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         self.commands
-            .restore_visible_note(&actor, note_id, expected_revision, self.clock.now())
+            .restore_owned_deleted_note(&actor, note_id, expected_revision, self.clock.now())
             .await
             .map_err(map_repository_error)
     }
@@ -1035,6 +1052,7 @@ fn map_repository_error(error: NoteRepositoryError) -> NoteUseCaseError {
     match error {
         NoteRepositoryError::NotFound => NoteUseCaseError::NotFound,
         NoteRepositoryError::Conflict => NoteUseCaseError::Conflict,
+        NoteRepositoryError::RetentionExpired => NoteUseCaseError::RetentionExpired,
         NoteRepositoryError::CorruptData => NoteUseCaseError::CorruptData,
         NoteRepositoryError::Unavailable => NoteUseCaseError::Unavailable,
     }
@@ -1160,6 +1178,13 @@ mod tests {
                 .collect())
         }
 
+        async fn list_owned_deleted_notes(
+            &self,
+            _actor: &Actor,
+        ) -> Result<Vec<DeletedNoteListEntry>, NoteRepositoryError> {
+            Ok(Vec::new())
+        }
+
         async fn accessible_note(
             &self,
             _actor: &Actor,
@@ -1242,7 +1267,7 @@ mod tests {
             Err(NoteRepositoryError::Unavailable)
         }
 
-        async fn restore_visible_note(
+        async fn restore_owned_deleted_note(
             &self,
             _actor: &Actor,
             _note_id: NoteId,

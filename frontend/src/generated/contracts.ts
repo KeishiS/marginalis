@@ -20,6 +20,13 @@ export type NoteAccess = "read" | "edit" | "manage";
 export interface NoteListEntry extends NoteSummary {
   access: NoteAccess;
 }
+export interface DeletedNoteListEntry {
+  note_id: string;
+  title: string;
+  deleted_at_ms: number;
+  purge_at_ms: number;
+  revision: number;
+}
 export interface RelatedNotes {
   outgoing: NoteSummary[];
   incoming: NoteSummary[];
@@ -109,6 +116,7 @@ export type ProblemCode =
   | "not_found"
   | "forbidden"
   | "conflict"
+  | "retention_expired"
   | "precondition_required"
   | "invalid_request"
   | "validation_failed"
@@ -266,6 +274,36 @@ export function parseNoteListEntries(value: unknown): NoteListEntry[] {
   return value.map(parseNoteListEntry);
 }
 
+export function parseDeletedNoteListEntries(
+  value: unknown,
+): DeletedNoteListEntry[] {
+  if (!Array.isArray(value)) {
+    throw new Error("deleted note list entries are invalid");
+  }
+  return value.map((entry, index) => {
+    const object = record(entry, `deleted note list entries[${index}]`);
+    return {
+      note_id: text(
+        object.note_id,
+        `deleted note list entries[${index}].note_id`,
+      ),
+      title: text(object.title, `deleted note list entries[${index}].title`),
+      deleted_at_ms: integer(
+        object.deleted_at_ms,
+        `deleted note list entries[${index}].deleted_at_ms`,
+      ),
+      purge_at_ms: integer(
+        object.purge_at_ms,
+        `deleted note list entries[${index}].purge_at_ms`,
+      ),
+      revision: positiveInteger(
+        object.revision,
+        `deleted note list entries[${index}].revision`,
+      ),
+    };
+  });
+}
+
 export function parseNoteGraph(value: unknown): NoteGraph {
   const object = record(value, "note graph");
   return {
@@ -389,6 +427,7 @@ function problemCode(value: unknown): ProblemCode {
     value !== "not_found" &&
     value !== "forbidden" &&
     value !== "conflict" &&
+    value !== "retention_expired" &&
     value !== "precondition_required" &&
     value !== "invalid_request" &&
     value !== "validation_failed" &&
@@ -491,6 +530,17 @@ export async function listNotes(
   signal?: AbortSignal,
 ): Promise<NoteListEntry[]> {
   return requestJson(`${apiBase}/notes`, { signal }, parseNoteListEntries);
+}
+
+export async function listDeletedNotes(
+  apiBase: string,
+  signal?: AbortSignal,
+): Promise<DeletedNoteListEntry[]> {
+  return requestJson(
+    `${apiBase}/notes/deleted`,
+    { signal },
+    parseDeletedNoteListEntries,
+  );
 }
 
 export async function searchBibliography(
@@ -657,6 +707,18 @@ export async function deleteNote(
   return requestJson(
     `${apiBase}/notes/${encodeURIComponent(noteId)}`,
     mutationRequest("DELETE", undefined, expectedRevision),
+    parseNote,
+  );
+}
+
+export async function restoreNote(
+  apiBase: string,
+  noteId: string,
+  expectedRevision: number,
+): Promise<Note> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/restore`,
+    mutationRequest("POST", undefined, expectedRevision),
     parseNote,
   );
 }

@@ -48,6 +48,14 @@ pub(super) async fn math_macro_settings_page(
     application_shell(&state, &headers, &uri).await
 }
 
+pub(super) async fn deleted_notes_page(
+    State(state): State<ApiState>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    application_shell(&state, &headers, &uri).await
+}
+
 pub(super) async fn view_note(
     State(state): State<ApiState>,
     uri: Uri,

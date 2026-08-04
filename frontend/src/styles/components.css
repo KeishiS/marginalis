@@ -223,6 +223,18 @@ select:hover {
   color: var(--color-primary);
 }
 
+.deleted-note-list h2 {
+  font-size: var(--text-body);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.deleted-note-retention {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+  margin-block: 0 var(--space-3);
+}
+
 .note-list dl {
   display: flex;
   flex-wrap: wrap;

@@ -6,9 +6,9 @@ use std::future::Future;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, EntityId, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId,
-    NoteListEntry, NotePermission, NoteSummary, NoteValidationTarget, Revision, UnixMillis,
-    Utf8ByteSpan, WebSession,
+    Actor, AuthenticatedSession, DeletedNoteListEntry, EntityId, Note, NoteAccess, NoteAclEntry,
+    NoteDraft, NoteId, NoteListEntry, NotePermission, NoteSummary, NoteValidationTarget, Revision,
+    UnixMillis, Utf8ByteSpan, WebSession,
 };
 pub use mcp_authorization_server::{
     AuthenticatedPrincipal as McpAuthenticatedPrincipal,
@@ -296,6 +296,8 @@ pub enum NoteUseCaseError {
     NotFound,
     #[error("note operation conflicts")]
     Conflict,
+    #[error("note restoration period has expired")]
+    RetentionExpired,
     #[error("note is invalid")]
     Validation(Vec<NoteValidationDiagnostic>),
     #[error("note input contains warnings")]
@@ -348,6 +350,10 @@ pub trait NoteQueries: Send + Sync {
         &self,
         actor: Actor,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError>;
+    async fn list_owned_deleted_notes(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError>;
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
 }
 

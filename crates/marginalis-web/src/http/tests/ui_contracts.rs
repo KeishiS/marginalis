@@ -154,6 +154,22 @@ async fn note_view_serves_the_react_shell_with_subpath_configuration() {
 }
 
 #[tokio::test]
+async fn deleted_notes_page_has_a_distinct_react_route() {
+    let response = ui_app(Vec::new(), false, "/marginalis")
+        .oneshot(authenticated_request("/notes/deleted"))
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body = String::from_utf8(body.to_vec()).expect("HTML");
+    assert!(body.contains("&quot;path&quot;:&quot;/notes/deleted&quot;"));
+    assert!(!body.contains("削除済みノート"));
+}
+
+#[tokio::test]
 async fn rendered_note_view_api_returns_related_note_metadata() {
     let source = ui_note("閲覧中");
     let mut notes = vec![source.clone()];

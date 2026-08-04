@@ -49,6 +49,11 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
     },
     RestRouteContract {
         method: "GET",
+        specification_path: "/api/v3/notes/deleted",
+        probe_path: "/api/v3/notes/deleted",
+    },
+    RestRouteContract {
+        method: "GET",
         specification_path: "/api/v3/bibliography",
         probe_path: "/api/v3/bibliography",
     },
@@ -210,6 +215,16 @@ pub struct NoteListEntryResponse {
     pub updated_at_ms: i64,
     pub revision: i64,
     pub access: NoteAccess,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeletedNoteListEntryResponse {
+    pub note_id: String,
+    pub title: String,
+    pub deleted_at_ms: i64,
+    pub purge_at_ms: i64,
+    pub revision: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -378,6 +393,7 @@ pub enum ProblemCode {
     NotFound,
     Forbidden,
     Conflict,
+    RetentionExpired,
     PreconditionRequired,
     InvalidRequest,
     ValidationFailed,
@@ -386,7 +402,7 @@ pub enum ProblemCode {
 }
 
 impl ProblemCode {
-    const ALL: [Self; 15] = [
+    const ALL: [Self; 16] = [
         Self::AuthenticationRequired,
         Self::AuthenticationUnavailable,
         Self::CsrfRejected,
@@ -397,6 +413,7 @@ impl ProblemCode {
         Self::NotFound,
         Self::Forbidden,
         Self::Conflict,
+        Self::RetentionExpired,
         Self::PreconditionRequired,
         Self::InvalidRequest,
         Self::ValidationFailed,
@@ -416,6 +433,7 @@ impl ProblemCode {
             Self::NotFound => "not_found",
             Self::Forbidden => "forbidden",
             Self::Conflict => "conflict",
+            Self::RetentionExpired => "retention_expired",
             Self::PreconditionRequired => "precondition_required",
             Self::InvalidRequest => "invalid_request",
             Self::ValidationFailed => "validation_failed",
@@ -573,6 +591,17 @@ pub fn openapi_document() -> Value {
                 "Note": note,
                 "NoteSummary": note_summary,
                 "NoteListEntry": note_list_entry,
+                "DeletedNoteListEntry": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["note_id", "title", "deleted_at_ms", "purge_at_ms", "revision"],
+                    "properties": {
+                        "note_id": note_id_schema(),
+                        "title": {"type": "string"},
+                        "deleted_at_ms": {"type": "integer", "format": "int64"},
+                        "purge_at_ms": {"type": "integer", "format": "int64"},
+                        "revision": revision_schema()
+                    }
+                },
                 "NoteView": {
                     "type": "object", "additionalProperties": false,
                     "required": ["note", "access", "html", "related", "math_macros"],
@@ -676,6 +705,7 @@ pub fn openapi_document() -> Value {
             "responses": {
                 "NotFound": problem_response("note or authorization is not visible"),
                 "Conflict": problem_response("the If-Match revision is stale"),
+                "RetentionExpired": problem_response("the note restoration period has expired"),
                 "PreconditionRequired": problem_response("If-Match is required"),
                 "BadRequest": problem_response("the request syntax or If-Match value is invalid"),
                 "AuthenticationRequired": problem_response("OIDC session is required"),
@@ -724,6 +754,13 @@ fn rest_paths() -> Value {
                 ("401", response_ref("AuthenticationRequired")),
                 ("403", response_ref("CsrfRejected")),
                 ("422", response_ref("UnprocessableNote"))
+            ]))
+        },
+        "/api/v3/notes/deleted": {
+            "get": operation("List deleted notes owned by the current user", &[], None, responses(&[
+                ("200", array_response("owned deleted note summaries", "DeletedNoteListEntry")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("503", response_ref("Unavailable"))
             ]))
         },
         "/api/v3/bibliography": {
@@ -802,7 +839,15 @@ fn rest_paths() -> Value {
         },
         "/api/v3/notes/{note_id}/restore": {
             "parameters": [parameter_ref("NoteId")],
-            "post": operation("Restore a note", &["CsrfToken", "IfMatch"], None, mutation_responses("restored note"))
+            "post": operation("Restore a note", &["CsrfToken", "IfMatch"], None, responses(&[
+                ("200", schema_response_with_etag("restored note", "Note")),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
+                ("410", response_ref("RetentionExpired")),
+                ("428", response_ref("PreconditionRequired")),
+                ("400", response_ref("BadRequest")),
+                ("503", response_ref("Unavailable"))
+            ]))
         },
         "/api/v3/notes/graph": {
             "get": operation(

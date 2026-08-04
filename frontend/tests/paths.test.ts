@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   accessPath,
   canonicalSearch,
+  deletedNotesPath,
   editPath,
   externalPath,
   graphPath,
@@ -41,6 +42,10 @@ describe("画面URLの組み立て", () => {
   it("一覧はページ位置を含められる", () => {
     expect(listPath(root)).toBe("/");
     expect(listPath(root, 2)).toContain("page=2");
+  });
+
+  it("削除済み一覧でもサブパスを保つ", () => {
+    expect(deletedNotesPath(subpath)).toBe("/marginalis/notes/deleted");
   });
 
   it("操作結果を付ける一覧URLでは絞り込みを保ち、ページを先頭へ戻す", () => {

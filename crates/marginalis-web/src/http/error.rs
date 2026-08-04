@@ -74,6 +74,10 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
         NoteUseCaseError::Conflict => {
             ProblemResponse::new(ProblemCode::Conflict, "note revision conflicts")
         }
+        NoteUseCaseError::RetentionExpired => ProblemResponse::new(
+            ProblemCode::RetentionExpired,
+            "note restoration period has expired",
+        ),
         NoteUseCaseError::Validation(diagnostics) => ProblemResponse {
             code: ProblemCode::ValidationFailed,
             message: "note input is invalid".into(),
@@ -137,6 +141,7 @@ pub(super) const fn problem_status(code: ProblemCode) -> StatusCode {
         | ProblemCode::Forbidden => StatusCode::FORBIDDEN,
         ProblemCode::NotFound => StatusCode::NOT_FOUND,
         ProblemCode::Conflict => StatusCode::CONFLICT,
+        ProblemCode::RetentionExpired => StatusCode::GONE,
         ProblemCode::PreconditionRequired => StatusCode::PRECONDITION_REQUIRED,
         ProblemCode::InvalidRequest => StatusCode::BAD_REQUEST,
         ProblemCode::ValidationFailed | ProblemCode::RenderFailed => {

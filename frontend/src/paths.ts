@@ -27,11 +27,21 @@ export function listPath(context: PathContext, page?: number): string {
 }
 
 /** 一覧へ戻った後に一度表示する操作結果を含むURL。 */
-export function listNoticePath(context: PathContext, notice: string): string {
+export type NoteListNotice = "note-deleted" | "note-restored";
+
+export function listNoticePath(
+  context: PathContext,
+  notice: NoteListNotice,
+): string {
   const query = parseNoteListQuery(context.search);
   const parameters = new URLSearchParams(noteListSearch(query, 1));
   parameters.set("notice", notice);
   return externalPath(context.basePath, `/?${parameters.toString()}`);
+}
+
+/** 所有する削除済みノートの一覧URL。 */
+export function deletedNotesPath(context: PathContext): string {
+  return externalPath(context.basePath, "/notes/deleted");
 }
 
 /** ノートの閲覧画面のURL。 */

@@ -9,12 +9,26 @@ use marginalis_application::{
     NoteGraphReference, NoteGraphWork, NoteLinks, NoteViewSnapshot, RelatedNotes,
 };
 use marginalis_domain::{
-    Actor, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
-    NotePermission, NoteSummary, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis,
+    Actor, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft,
+    NoteId, NoteListEntry, NotePermission, NoteSummary, Revision, SOFT_DELETE_RETENTION_MS,
+    UnixMillis,
 };
 use sqlx::{QueryBuilder, Row, Sqlite};
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error};
+
+/// ノート復元だけが持つ結果を、SQLite全体の共通エラーから分離する。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RestoreNoteError {
+    Store(SqliteStoreError),
+    RetentionExpired,
+}
+
+impl From<SqliteStoreError> for RestoreNoteError {
+    fn from(error: SqliteStoreError) -> Self {
+        Self::Store(error)
+    }
+}
 
 impl SqliteDatabase {
     /// 作成主体を変更不能な所有者として正本へ記録する。
@@ -164,6 +178,26 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         rows.into_iter().map(note_list_entry_from_row).collect()
+    }
+
+    /// 現在の利用者が所有する削除済みノートだけを、本文と共有先を含めずに返す。
+    pub async fn list_owned_deleted_notes(
+        &self,
+        actor: &Actor,
+    ) -> Result<Vec<DeletedNoteListEntry>, SqliteStoreError> {
+        let rows = sqlx::query(
+            "SELECT note_id, title, deleted_at_ms, revision
+             FROM notes
+             WHERE deleted_at_ms IS NOT NULL
+               AND creator_issuer = ? AND creator_subject = ?
+             ORDER BY deleted_at_ms DESC, note_id ASC",
+        )
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(database_error)?;
+        rows.into_iter().map(deleted_note_entry_from_row).collect()
     }
 
     /// 閲覧できるノートと、それらが引用する文献の関係を1回の読み取りtransactionで返す。
@@ -346,14 +380,9 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         if result.rows_affected() != 1 {
-            let error = classify_failed_mutation(
-                &mut transaction,
-                actor,
-                note_id,
-                NoteDeletionState::Active,
-                NoteAccess::Edit,
-            )
-            .await?;
+            let error =
+                classify_failed_mutation(&mut transaction, actor, note_id, NoteAccess::Edit)
+                    .await?;
             transaction.rollback().await.map_err(database_error)?;
             return Err(error);
         }
@@ -398,14 +427,9 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         if result.rows_affected() != 1 {
-            let error = classify_failed_mutation(
-                &mut transaction,
-                actor,
-                note_id,
-                NoteDeletionState::Active,
-                NoteAccess::Manage,
-            )
-            .await?;
+            let error =
+                classify_failed_mutation(&mut transaction, actor, note_id, NoteAccess::Manage)
+                    .await?;
             transaction.rollback().await.map_err(database_error)?;
             return Err(error);
         }
@@ -416,23 +440,20 @@ impl SqliteDatabase {
     }
 
     /// 所有者の認可と復元を同一transactionで行う。
-    pub async fn restore_visible_note(
+    pub(crate) async fn restore_owned_deleted_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
         expected_revision: Revision,
         restored_at: UnixMillis,
-    ) -> Result<Note, SqliteStoreError> {
+    ) -> Result<Note, RestoreNoteError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let retention_cutoff = restored_at.get().saturating_sub(SOFT_DELETE_RETENTION_MS);
         let result = sqlx::query(
             "UPDATE notes SET deleted_at_ms = NULL, updated_at_ms = ?, revision = revision + 1
              WHERE note_id = ? AND revision = ?
                AND deleted_at_ms IS NOT NULL AND deleted_at_ms >= ?
-               AND EXISTS (SELECT 1 FROM note_access access
-                           WHERE access.note_id = notes.note_id
-                             AND access.issuer = ? AND access.subject = ?
-                             AND access.access_level >= 3)",
+               AND creator_issuer = ? AND creator_subject = ?",
         )
         .bind(restored_at.get())
         .bind(note_id.to_string())
@@ -444,12 +465,12 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         if result.rows_affected() != 1 {
-            let error = classify_failed_mutation(
+            let error = classify_failed_restore(
                 &mut transaction,
                 actor,
                 note_id,
-                NoteDeletionState::Deleted,
-                NoteAccess::Manage,
+                expected_revision,
+                retention_cutoff,
             )
             .await?;
             transaction.rollback().await.map_err(database_error)?;
@@ -562,14 +583,7 @@ impl SqliteDatabase {
         note_id: NoteId,
     ) -> Result<NoteAclState, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        require_note_access(
-            &mut transaction,
-            actor,
-            note_id,
-            NoteDeletionState::Active,
-            NoteAccess::Manage,
-        )
-        .await?;
+        require_active_note_access(&mut transaction, actor, note_id, NoteAccess::Manage).await?;
         let rows = sqlx::query(
             "SELECT issuer, subject, permission FROM note_acl
              WHERE note_id = ? ORDER BY issuer, subject",
@@ -636,14 +650,9 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         if result.rows_affected() != 1 {
-            let error = classify_failed_mutation(
-                &mut transaction,
-                actor,
-                note_id,
-                NoteDeletionState::Active,
-                NoteAccess::Manage,
-            )
-            .await?;
+            let error =
+                classify_failed_mutation(&mut transaction, actor, note_id, NoteAccess::Manage)
+                    .await?;
             transaction.rollback().await.map_err(database_error)?;
             return Err(error);
         }
@@ -750,32 +759,33 @@ fn note_list_entry_from_row(
     })
 }
 
-#[derive(Clone, Copy)]
-enum NoteDeletionState {
-    Active,
-    Deleted,
+fn deleted_note_entry_from_row(
+    row: sqlx::sqlite::SqliteRow,
+) -> Result<DeletedNoteListEntry, SqliteStoreError> {
+    let deleted_at = UnixMillis::new(row.try_get("deleted_at_ms").map_err(database_error)?);
+    Ok(DeletedNoteListEntry {
+        note_id: note_id_from_text(row.try_get("note_id").map_err(database_error)?)?,
+        title: row.try_get("title").map_err(database_error)?,
+        deleted_at,
+        purge_at: UnixMillis::new(deleted_at.get().saturating_add(SOFT_DELETE_RETENTION_MS)),
+        revision: Revision::new(row.try_get("revision").map_err(database_error)?)
+            .map_err(|_| SqliteStoreError::CorruptData)?,
+    })
 }
 
-async fn require_note_access(
+async fn require_active_note_access(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     actor: &Actor,
     note_id: NoteId,
-    deletion_state: NoteDeletionState,
     required: NoteAccess,
 ) -> Result<(), SqliteStoreError> {
-    let deletion_predicate = match deletion_state {
-        NoteDeletionState::Active => "deleted_at_ms IS NULL",
-        NoteDeletionState::Deleted => "deleted_at_ms IS NOT NULL",
-    };
-    let query = format!(
-        "SELECT 1 FROM notes
-         WHERE note_id = ? AND {deletion_predicate}
+    let query = "SELECT 1 FROM notes
+         WHERE note_id = ? AND deleted_at_ms IS NULL
            AND EXISTS (SELECT 1 FROM note_access access
                        WHERE access.note_id = notes.note_id
                          AND access.issuer = ? AND access.subject = ?
-                         AND access.access_level >= ?)"
-    );
-    let visible = sqlx::query_scalar::<_, i64>(&query)
+                         AND access.access_level >= ?)";
+    let visible = sqlx::query_scalar::<_, i64>(query)
         .bind(note_id.to_string())
         .bind(actor.issuer())
         .bind(actor.subject())
@@ -790,14 +800,47 @@ async fn classify_failed_mutation(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     actor: &Actor,
     note_id: NoteId,
-    deletion_state: NoteDeletionState,
     required: NoteAccess,
 ) -> Result<SqliteStoreError, SqliteStoreError> {
-    match require_note_access(transaction, actor, note_id, deletion_state, required).await {
+    match require_active_note_access(transaction, actor, note_id, required).await {
         Ok(()) => Ok(SqliteStoreError::Conflict),
         Err(SqliteStoreError::NotFound) => Ok(SqliteStoreError::NotFound),
         Err(error) => Err(error),
     }
+}
+
+async fn classify_failed_restore(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    actor: &Actor,
+    note_id: NoteId,
+    expected_revision: Revision,
+    retention_cutoff: i64,
+) -> Result<RestoreNoteError, SqliteStoreError> {
+    let row = sqlx::query(
+        "SELECT revision, deleted_at_ms
+         FROM notes
+         WHERE note_id = ? AND deleted_at_ms IS NOT NULL
+           AND creator_issuer = ? AND creator_subject = ?",
+    )
+    .bind(note_id.to_string())
+    .bind(actor.issuer())
+    .bind(actor.subject())
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    let Some(row) = row else {
+        return Ok(RestoreNoteError::Store(SqliteStoreError::NotFound));
+    };
+    let revision = Revision::new(row.try_get("revision").map_err(database_error)?)
+        .map_err(|_| SqliteStoreError::CorruptData)?;
+    if revision != expected_revision {
+        return Ok(RestoreNoteError::Store(SqliteStoreError::Conflict));
+    }
+    let deleted_at: i64 = row.try_get("deleted_at_ms").map_err(database_error)?;
+    if deleted_at < retention_cutoff {
+        return Ok(RestoreNoteError::RetentionExpired);
+    }
+    Ok(RestoreNoteError::Store(SqliteStoreError::Conflict))
 }
 
 const fn access_level(access: NoteAccess) -> i64 {
