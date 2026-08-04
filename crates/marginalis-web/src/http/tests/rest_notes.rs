@@ -1,6 +1,54 @@
 use super::*;
 
 #[tokio::test]
+async fn deleted_note_list_exposes_only_the_owner_projection() {
+    let response = authenticated_app()
+        .oneshot(authenticated_request("/api/v3/notes/deleted"))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).expect("JSON"),
+        serde_json::json!([{
+            "note_id": "0197c9bc-0000-7000-8000-000000000002",
+            "title": "削除済みノート",
+            "deleted_at_ms": 100,
+            "purge_at_ms": 200,
+            "revision": 2
+        }])
+    );
+}
+
+#[tokio::test]
+async fn expired_restoration_returns_gone_with_a_stable_problem_code() {
+    let response = authenticated_app()
+        .oneshot(
+            Request::post("/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/restore")
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .header(header::IF_MATCH, "\"rev-99\"")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::GONE);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let problem: serde_json::Value = serde_json::from_slice(&body).expect("problem JSON");
+    assert_eq!(problem["code"], "retention_expired");
+}
+
+#[tokio::test]
 async fn owner_can_read_and_replace_math_macros() {
     let app = TestApp::default().authenticated().router();
     let read = app

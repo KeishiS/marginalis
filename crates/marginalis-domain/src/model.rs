@@ -345,6 +345,16 @@ pub struct NoteListEntry {
     pub access: NoteAccess,
 }
 
+/// 所有者向けの削除済み一覧に必要な、本文と共有先を含まないノート概要。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeletedNoteListEntry {
+    pub note_id: NoteId,
+    pub title: String,
+    pub deleted_at: UnixMillis,
+    pub purge_at: UnixMillis,
+    pub revision: Revision,
+}
+
 impl From<&Note> for NoteSummary {
     fn from(note: &Note) -> Self {
         Self {

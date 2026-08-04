@@ -47,9 +47,9 @@ use self::{
     math_macros::{read_math_macros, replace_math_macros},
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
-        create_note, delete_note, export_note, list_notes, preview_new_note, preview_note_update,
-        read_note, read_note_acl, read_note_graph, read_note_view, replace_note_acl, restore_note,
-        session, update_note,
+        create_note, delete_note, export_note, list_deleted_notes, list_notes, preview_new_note,
+        preview_note_update, read_note, read_note_acl, read_note_graph, read_note_view,
+        replace_note_acl, restore_note, session, update_note,
     },
     oauth::{
         mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
@@ -58,8 +58,8 @@ use self::{
     },
     security::security_headers,
     ui::{
-        access_note_page, bibliography_page, create_note_page, edit_note_page, graph_page, home,
-        math_macro_settings_page, view_note,
+        access_note_page, bibliography_page, create_note_page, deleted_notes_page, edit_note_page,
+        graph_page, home, math_macro_settings_page, view_note,
     },
 };
 
@@ -105,6 +105,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/bibliography", get(bibliography_page))
         .route("/graph", get(graph_page))
         .route("/settings/math-macros", get(math_macro_settings_page))
+        .route("/notes/deleted", get(deleted_notes_page))
         .route("/notes/new", get(create_note_page))
         .route("/notes/{note_id}/edit", get(edit_note_page))
         .route("/notes/{note_id}/access", get(access_note_page))
@@ -143,6 +144,7 @@ pub fn router(state: ApiState) -> Router {
             axum::routing::put(update_bibliography_item).delete(delete_bibliography_item),
         )
         .route("/api/v3/notes", get(list_notes).post(create_note))
+        .route("/api/v3/notes/deleted", get(list_deleted_notes))
         .route("/api/v3/notes/preview", post(preview_new_note))
         .route("/api/v3/notes/{note_id}/preview", post(preview_note_update))
         .route(

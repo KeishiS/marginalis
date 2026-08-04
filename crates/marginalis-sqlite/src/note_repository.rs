@@ -6,9 +6,11 @@ use marginalis_application::{
     NoteGraphQuery, NoteLinks, NoteQueryRepository, NoteRepositoryError, NoteViewSnapshot,
 };
 use marginalis_domain::{
-    Actor, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, Revision, UnixMillis,
+    Actor, DeletedNoteListEntry, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, Revision,
+    UnixMillis,
 };
 
+use crate::notes::RestoreNoteError;
 use crate::{SqliteDatabase, SqliteStoreError};
 
 #[async_trait]
@@ -18,6 +20,15 @@ impl NoteQueryRepository for SqliteDatabase {
         actor: &Actor,
     ) -> Result<Vec<NoteListEntry>, NoteRepositoryError> {
         SqliteDatabase::list_visible_notes(self, actor)
+            .await
+            .map_err(map_error)
+    }
+
+    async fn list_owned_deleted_notes(
+        &self,
+        actor: &Actor,
+    ) -> Result<Vec<DeletedNoteListEntry>, NoteRepositoryError> {
+        SqliteDatabase::list_owned_deleted_notes(self, actor)
             .await
             .map_err(map_error)
     }
@@ -109,16 +120,16 @@ impl NoteCommandRepository for SqliteDatabase {
             .map_err(map_error)
     }
 
-    async fn restore_visible_note(
+    async fn restore_owned_deleted_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
         expected_revision: Revision,
         now: UnixMillis,
     ) -> Result<Note, NoteRepositoryError> {
-        SqliteDatabase::restore_visible_note(self, actor, note_id, expected_revision, now)
+        SqliteDatabase::restore_owned_deleted_note(self, actor, note_id, expected_revision, now)
             .await
-            .map_err(map_error)
+            .map_err(map_restore_error)
     }
 }
 
@@ -156,5 +167,12 @@ fn map_error(error: SqliteStoreError) -> NoteRepositoryError {
         SqliteStoreError::ArchiveTargetNotEmpty | SqliteStoreError::Database(_) => {
             NoteRepositoryError::Unavailable
         }
+    }
+}
+
+fn map_restore_error(error: RestoreNoteError) -> NoteRepositoryError {
+    match error {
+        RestoreNoteError::RetentionExpired => NoteRepositoryError::RetentionExpired,
+        RestoreNoteError::Store(error) => map_error(error),
     }
 }

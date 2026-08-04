@@ -50,6 +50,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     );
     let alice = actor("https://id.example.test", "alice");
     let charlie = actor("https://id.example.test", "charlie");
+    let bob = actor("https://id.example.test", "bob");
     let same_subject_different_issuer = actor("https://other-id.example.test", "alice");
     let former_administrator = actor("https://id.example.test", "administrator");
     assert!(
@@ -148,6 +149,33 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .await
         .expect("soft delete");
     assert_eq!(deleted.deleted_at(), Some(UnixMillis::new(300)));
+    let deleted_notes = database
+        .list_owned_deleted_notes(&alice)
+        .await
+        .expect("owner deleted list");
+    assert_eq!(deleted_notes.len(), 1);
+    assert_eq!(deleted_notes[0].note_id, note_id);
+    assert_eq!(deleted_notes[0].title, "Updated title");
+    assert_eq!(deleted_notes[0].deleted_at, UnixMillis::new(300));
+    assert_eq!(
+        deleted_notes[0].purge_at,
+        UnixMillis::new(300 + SOFT_DELETE_RETENTION_MS)
+    );
+    assert_eq!(deleted_notes[0].revision, revision(3));
+    assert!(
+        database
+            .list_owned_deleted_notes(&charlie)
+            .await
+            .expect("non-owner deleted list")
+            .is_empty()
+    );
+    assert!(
+        database
+            .list_owned_deleted_notes(&same_subject_different_issuer)
+            .await
+            .expect("different issuer deleted list")
+            .is_empty()
+    );
     assert_eq!(database.note(note_id, false).await, Ok(None));
     let deleted = database
         .note(note_id, true)
@@ -158,7 +186,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     assert_eq!(deleted.revision().get(), 3);
 
     let restored = database
-        .restore_visible_note(&alice, note_id, revision(3), UnixMillis::new(350))
+        .restore_owned_deleted_note(&alice, note_id, revision(3), UnixMillis::new(350))
         .await
         .expect("restore note");
     assert_eq!(restored.deleted_at(), None);
@@ -247,24 +275,129 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .expect("empty snapshot");
     assert!(empty_snapshot.notes().is_empty());
     assert!(empty_snapshot.note_acl().is_empty());
+    let bibliography_item = BibliographyItem::create(
+        BibliographyItemId::new(
+            EntityId::from_str("0197c9bc-0000-7000-8000-000000000099")
+                .expect("v7 bibliography item ID"),
+        ),
+        alice.identity(),
+        "smith2024".into(),
+        r#"{"id":"smith2024","type":"article-journal","title":"Preserved work"}"#.into(),
+        UnixMillis::new(390),
+    );
+    database
+        .create_owned_item(&bibliography_item)
+        .await
+        .expect("bibliography item");
+    sqlx::query("INSERT INTO note_references (source_note_id, target_note_id) VALUES (?, ?)")
+        .bind(note_id.to_string())
+        .bind(note_id.to_string())
+        .execute(&database.pool)
+        .await
+        .expect("reference index");
+    sqlx::query(
+        "INSERT INTO note_citations (source_note_id, citation_key) VALUES (?, 'smith2024')",
+    )
+    .bind(note_id.to_string())
+    .execute(&database.pool)
+    .await
+    .expect("citation index");
     database
         .soft_delete_visible_note(&alice, note_id, revision(5), UnixMillis::new(400))
         .await
         .expect("delete before purge");
-    assert_eq!(
+    assert!(
         database
-            .restore_visible_note(
-                &alice,
-                note_id,
-                revision(6),
-                UnixMillis::new(400 + SOFT_DELETE_RETENTION_MS + 1)
-            )
-            .await,
-        Err(SqliteStoreError::Conflict)
+            .note_graph(&alice, &NoteGraphQuery::default())
+            .await
+            .expect("deleted graph")
+            .notes
+            .is_empty(),
+        "削除中は索引を保持したまま通常の図から隠します"
+    );
+    assert!(
+        database
+            .list_owned_deleted_notes(&bob)
+            .await
+            .expect("shared reader deleted list")
+            .is_empty(),
+        "削除済みノートは共有先へ開示しません"
     );
     assert_eq!(
         database
-            .purge_deleted_before(UnixMillis::new(401))
+            .restore_owned_deleted_note(&bob, note_id, revision(6), UnixMillis::new(401))
+            .await,
+        Err(crate::notes::RestoreNoteError::Store(
+            SqliteStoreError::NotFound
+        )),
+        "共有先には削除済みノートの存在を開示しません"
+    );
+    assert_eq!(
+        database
+            .restore_owned_deleted_note(
+                &same_subject_different_issuer,
+                note_id,
+                revision(6),
+                UnixMillis::new(401),
+            )
+            .await,
+        Err(crate::notes::RestoreNoteError::Store(
+            SqliteStoreError::NotFound
+        ))
+    );
+    let restored = database
+        .restore_owned_deleted_note(&alice, note_id, revision(6), UnixMillis::new(401))
+        .await
+        .expect("restore with ACL");
+    assert_eq!(restored.revision(), revision(7));
+    assert_eq!(
+        snapshot_access(&database, &bob, note_id).await,
+        Ok(Some(NoteAccess::Read))
+    );
+    let graph = database
+        .note_graph(&alice, &NoteGraphQuery::default())
+        .await
+        .expect("restored graph");
+    assert_eq!(graph.references.len(), 1);
+    assert_eq!(graph.citations.len(), 1);
+    assert_eq!(graph.works[0].title.as_deref(), Some("Preserved work"));
+    let macros = database
+        .read_math_macros(alice.identity())
+        .await
+        .expect("restored owner macros");
+    assert_eq!(macros.macros[0].name, "bm");
+    database
+        .soft_delete_visible_note(&alice, note_id, revision(7), UnixMillis::new(500))
+        .await
+        .expect("delete before expired restoration");
+    assert_eq!(
+        database
+            .restore_owned_deleted_note(
+                &alice,
+                note_id,
+                revision(7),
+                UnixMillis::new(500 + SOFT_DELETE_RETENTION_MS + 1)
+            )
+            .await,
+        Err(crate::notes::RestoreNoteError::Store(
+            SqliteStoreError::Conflict
+        )),
+        "revision競合を期限切れより先に判定します"
+    );
+    assert_eq!(
+        database
+            .restore_owned_deleted_note(
+                &alice,
+                note_id,
+                revision(8),
+                UnixMillis::new(500 + SOFT_DELETE_RETENTION_MS + 1)
+            )
+            .await,
+        Err(crate::notes::RestoreNoteError::RetentionExpired)
+    );
+    assert_eq!(
+        database
+            .purge_deleted_before(UnixMillis::new(501))
             .await
             .expect("purge"),
         1

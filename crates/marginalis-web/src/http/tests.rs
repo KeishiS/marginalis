@@ -17,8 +17,9 @@ use marginalis_application::{
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, Identity, Note, NoteAccess, NoteDraft, NoteId, NoteListEntry,
-    NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan, WebSession,
+    Actor, AuthenticatedSession, DeletedNoteListEntry, Identity, Note, NoteAccess, NoteDraft,
+    NoteId, NoteListEntry, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
+    WebSession,
 };
 use std::{
     io,
@@ -280,6 +281,13 @@ macro_rules! implement_note_boundaries {
                 <$type>::list_visible_notes(self, actor).await
             }
 
+            async fn list_owned_deleted_notes(
+                &self,
+                actor: Actor,
+            ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError> {
+                <$type>::list_owned_deleted_notes(self, actor).await
+            }
+
             async fn read_note(
                 &self,
                 actor: Actor,
@@ -460,6 +468,19 @@ impl Notes {
         }])
     }
 
+    async fn list_owned_deleted_notes(
+        &self,
+        _actor: Actor,
+    ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError> {
+        Ok(vec![DeletedNoteListEntry {
+            note_id: mcp_note().note_id(),
+            title: "削除済みノート".into(),
+            deleted_at: UnixMillis::new(100),
+            purge_at: UnixMillis::new(200),
+            revision: Revision::new(2).expect("revision"),
+        }])
+    }
+
     async fn read_note(&self, _actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
         let note = mcp_note();
         if note.note_id() == note_id {
@@ -557,9 +578,13 @@ impl Notes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
-        _expected_revision: Revision,
+        expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
-        Err(NoteUseCaseError::Unavailable)
+        if expected_revision.get() == 99 {
+            Err(NoteUseCaseError::RetentionExpired)
+        } else {
+            Err(NoteUseCaseError::Unavailable)
+        }
     }
 
     fn export_note_source(&self, _note: &Note) -> Result<String, NoteUseCaseError> {
@@ -657,6 +682,13 @@ impl UiNotes {
                 access: NoteAccess::Edit,
             })
             .collect())
+    }
+
+    async fn list_owned_deleted_notes(
+        &self,
+        _actor: Actor,
+    ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError> {
+        Ok(Vec::new())
     }
 
     async fn read_note(&self, _actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {

@@ -132,6 +132,16 @@
         },
         "description": "If-Match is required"
       },
+      "RetentionExpired": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "the note restoration period has expired"
+      },
       "Unavailable": {
         "content": {
           "application/json": {
@@ -208,6 +218,39 @@
         },
         "required": [
           "csl_json"
+        ],
+        "type": "object"
+      },
+      "DeletedNoteListEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "note_id": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "purge_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note_id",
+          "title",
+          "deleted_at_ms",
+          "purge_at_ms",
+          "revision"
         ],
         "type": "object"
       },
@@ -789,6 +832,7 @@
               "not_found",
               "forbidden",
               "conflict",
+              "retention_expired",
               "precondition_required",
               "invalid_request",
               "validation_failed",
@@ -1206,6 +1250,32 @@
         "summary": "Create a note"
       }
     },
+    "/api/v3/notes/deleted": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedNoteListEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "owned deleted note summaries"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "List deleted notes owned by the current user"
+      }
+    },
     "/api/v3/notes/graph": {
       "get": {
         "parameters": [
@@ -1588,11 +1658,14 @@
           "409": {
             "$ref": "#/components/responses/Conflict"
           },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableNote"
+          "410": {
+            "$ref": "#/components/responses/RetentionExpired"
           },
           "428": {
             "$ref": "#/components/responses/PreconditionRequired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         },
         "summary": "Restore a note"

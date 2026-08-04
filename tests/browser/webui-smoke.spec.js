@@ -81,6 +81,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
 }) => {
   const noteId = "0197c9bc-0000-7000-8000-000000000001";
   let deleteRequest = null;
+  let restoreRequest = null;
   await context.grantPermissions(["clipboard-read", "clipboard-write"], {
     origin: "http://127.0.0.1:42877",
   });
@@ -127,6 +128,38 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   });
   await page.route("**/api/v3/notes", async (route) => {
     await route.fulfill({ contentType: "application/json", body: "[]" });
+  });
+  await page.route("**/api/v3/notes/deleted", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          note_id: noteId,
+          title: "広い閲覧画面",
+          deleted_at_ms: Date.now() - 1_000,
+          purge_at_ms: Date.now() + 30 * 24 * 60 * 60 * 1_000,
+          revision: 2,
+        },
+      ]),
+    });
+  });
+  await page.route(`**/api/v3/notes/${noteId}/restore`, async (route) => {
+    restoreRequest = {
+      method: route.request().method(),
+      headers: await route.request().allHeaders(),
+    };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        note_id: noteId,
+        title: "広い閲覧画面",
+        source: "= 広い閲覧画面\n\n本文",
+        tags: ["設計", "Rust"],
+        created_at_ms: 1,
+        updated_at_ms: 3,
+        revision: 3,
+      }),
+    });
   });
 
   await page.goto(`/notes/${noteId}`);
@@ -222,6 +255,23 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(deleteRequest.method).toBe("DELETE");
   expect(deleteRequest.headers["if-match"]).toBe('"rev-1"');
   expect(deleteRequest.headers["x-csrf-token"]).toBe("browser-csrf");
+
+  await page.getByRole("link", { name: "削除済みノート" }).click();
+  await expect(page.getByRole("heading", { name: "削除済みノート" })).toBeVisible();
+  await expect(page.getByText("広い閲覧画面")).toBeVisible();
+  await expect(page.getByText("rev-2")).toBeVisible();
+  await page.getByRole("button", { name: "復元", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "このノートを復元しますか？" }),
+  ).toContainText("広い閲覧画面");
+  await page.getByRole("button", { name: "復元する" }).click();
+  await expect(page).toHaveURL(/\/?notice=note-restored$/);
+  await expect(
+    page.getByRole("status").filter({ hasText: "ノートを復元しました" }),
+  ).toBeVisible();
+  expect(restoreRequest.method).toBe("POST");
+  expect(restoreRequest.headers["if-match"]).toBe('"rev-2"');
+  expect(restoreRequest.headers["x-csrf-token"]).toBe("browser-csrf");
 });
 
 test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", async ({ page }) => {

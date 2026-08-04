@@ -35,7 +35,7 @@
 | REQ-API-005 | MCP scope結合試験 | MCP権限照合 |
 | REQ-API-006 | RFC 7009・token family失効試験、認可取消APIのHTTP契約試験と本番到達性検査 | client接続解除、即時失効 |
 | REQ-API-007 | MCP JSON Schema生成差分、MCP HTTP契約試験、AsciiDoc入力規則・HTML描画試験、警告拒否前の永続化防止試験 | client同期・参考文献作成・診断修正後の再実行確認 |
-| REQ-UI-001 | React単体試験、ブラウザー試験、配布物の大きさ検査 | 主要画面 |
+| REQ-UI-001 | React単体試験、ブラウザー試験、経路別chunkと配布物の大きさ検査 | 主要画面 |
 | REQ-UI-002 | TypeScript実行時検査試験 | 異常応答表示 |
 | REQ-UI-003 | React状態・画面単体試験、ブラウザー試験 | 一覧の復帰 |
 | REQ-UI-004 | AdocWeave診断、REST契約、TypeScript応答検査、React編集・UTF-8位置単体試験、ブラウザー試験 | 警告表示、診断からの修正 |
@@ -47,7 +47,7 @@
 | REQ-ACL-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
 | REQ-ACL-004 | REST・SQLite契約試験 | 一覧非開示 |
 | REQ-ACL-005 | SQLiteスナップショット試験、REST契約試験 | 閲覧整合性 |
-| REQ-LIFE-001 | SQLite・保守CLI・NixOS VM | 削除・復元 |
+| REQ-LIFE-001 | SQLite所有者境界・保持期限・ACL維持試験、REST契約試験、React単体試験、ブラウザー試験、保守CLI・NixOS VM | 削除・復元 |
 | REQ-API-008 | REST・MCP失敗一致試験、MCP失敗出力schema生成差分 | 異常時のclient表示 |
 | REQ-DEPLOY-001 | NixOS module評価・VM | 本番設定確認 |
 | REQ-DEPLOY-002 | 環境変数宣言の単体試験、起動と診断の判断一致CLI試験、NixOS module評価 | 診断出力確認 |

@@ -7,7 +7,7 @@ import {
   parseNoteListQuery,
   selectNoteListPage,
 } from "../noteListState";
-import { externalPath, listPath, notePath } from "../paths";
+import { deletedNotesPath, externalPath, listPath, notePath } from "../paths";
 import { useApiResource } from "../useApiResource";
 
 export function NoteListPage({ config }: { config: ApplicationConfig }) {
@@ -37,10 +37,18 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
             記録した知識を、更新日やタグから見つけられます。
           </p>
         </div>
+        <a className="button button-secondary" href={deletedNotesPath(config)}>
+          削除済みノート
+        </a>
       </div>
       {notice === "note-deleted" && (
         <p className="notice" role="status">
           ノートを削除しました。削除後30日以内であれば復元できます。
+        </p>
+      )}
+      {notice === "note-restored" && (
+        <p className="notice" role="status">
+          ノートを復元しました。
         </p>
       )}
       <NoteListFilters config={config} query={query} />

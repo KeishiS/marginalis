@@ -10,11 +10,11 @@ use marginalis_application::{
     NoteAclChange, NoteGraphQuery, NoteRenderContext, NoteView, NoteWritePolicy,
 };
 use marginalis_contract::{
-    MathMacroResponse, NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
-    NoteGraphCitationResponse, NoteGraphNoteResponse, NoteGraphReferenceResponse,
-    NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse, NotePreviewResponse,
-    NoteResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode, RelatedNotesResponse,
-    SessionResponse,
+    DeletedNoteListEntryResponse, MathMacroResponse, NoteAclGrantResponse, NoteAclResponse,
+    NoteAclUpdateInput, NoteDraftInput, NoteGraphCitationResponse, NoteGraphNoteResponse,
+    NoteGraphReferenceResponse, NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse,
+    NotePreviewResponse, NoteResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode,
+    RelatedNotesResponse, SessionResponse,
 };
 use marginalis_domain::{
     EntityId, MAX_GRAPH_DEPTH, Note, NoteDraft, NoteId, NoteSummary, Revision,
@@ -61,6 +61,30 @@ pub(super) async fn list_notes(
                 updated_at_ms: entry.summary.updated_at.get(),
                 revision: entry.summary.revision.get(),
                 access: entry.access,
+            })
+            .collect(),
+    ))
+}
+
+pub(super) async fn list_deleted_notes(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> HandlerResult<Json<Vec<DeletedNoteListEntryResponse>>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let notes = state
+        .notes
+        .list_owned_deleted_notes(actor)
+        .await
+        .map_err(note_error)?;
+    Ok(Json(
+        notes
+            .into_iter()
+            .map(|entry| DeletedNoteListEntryResponse {
+                note_id: entry.note_id.to_string(),
+                title: entry.title,
+                deleted_at_ms: entry.deleted_at.get(),
+                purge_at_ms: entry.purge_at.get(),
+                revision: entry.revision.get(),
             })
             .collect(),
     ))
