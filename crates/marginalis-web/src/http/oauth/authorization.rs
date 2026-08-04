@@ -18,7 +18,7 @@ use super::super::{
         CSRF_COOKIE, authenticated_actor, authenticated_form_actor, cookie_value, external_path,
     },
     error::{HandlerResult, problem},
-    html::escape_html,
+    html::{escape_html, page_document},
     mcp_endpoint,
     state::ApiState,
 };
@@ -304,29 +304,33 @@ fn consent_page(
     } else {
         String::new()
     };
-    let redirect_host = url::Url::parse(request.redirect_uri.as_str())
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_owned))
-        .unwrap_or_else(|| "unknown".into());
-    let client_identifier = url::Url::parse(&request.client.client_id)
-        .ok()
-        .filter(|url| url.scheme() == "https")
-        .and_then(|url| url.host_str().map(str::to_owned))
-        .unwrap_or_else(|| request.client.client_id.clone());
-    let loopback_warning = url::Url::parse(request.redirect_uri.as_str())
-        .ok()
-        .is_some_and(|url| url.scheme() == "http");
+    let redirect = url::Url::parse(request.redirect_uri.as_str()).ok();
+    let redirect_host = redirect
+        .as_ref()
+        .and_then(url::Url::host_str)
+        .unwrap_or("確認できません");
+    let loopback_warning = redirect.as_ref().is_some_and(is_loopback_redirect);
     let loopback_warning = if loopback_warning {
-        "<p>This client redirects to a local application on this device.</p>"
+        "<aside class=\"oauth-loopback-warning warnings\"><h2>この端末上のアプリへ戻ります</h2><p>許可すると、処理を続けるため、この端末で動作しているアプリへ移動します。</p></aside>"
     } else {
         ""
     };
-    Html(format!(
-        "<!doctype html><meta charset=\"utf-8\"><title>MCP authorization</title><main><h1>Authorize {}</h1><p>Client identifier: {}</p><p>Requested scopes: {}</p><p>Redirect host: {}</p>{}<form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"client_id\" value=\"{}\">{}<input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\">{}<input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button name=\"decision\" value=\"approve\">Allow</button><button name=\"decision\" value=\"deny\">Deny</button></form></main>",
+    let scopes = if request.scopes.is_empty() {
+        "<p class=\"state-message\">要求された権限はありません。</p>".into()
+    } else {
+        let items = request
+            .scopes
+            .iter()
+            .map(|scope| format!("<li><code>{}</code></li>", escape_html(scope)))
+            .collect::<String>();
+        format!("<ul class=\"oauth-scope-list\">{items}</ul>")
+    };
+    let content = format!(
+        "<section class=\"oauth-consent-page page-section\" aria-labelledby=\"oauth-consent-heading\"><div class=\"page-heading\"><div><p class=\"page-eyebrow\">MCP access</p><h1 id=\"oauth-consent-heading\">MCPクライアントを許可しますか？</h1><p class=\"page-description\">許可する前に、接続するクライアントと要求された権限を確認してください。</p></div></div><div class=\"oauth-consent surface\"><section class=\"oauth-client\" aria-labelledby=\"oauth-client-heading\"><p class=\"oauth-detail-label\">クライアント</p><h2 id=\"oauth-client-heading\">{}</h2><dl class=\"oauth-detail-list\"><div><dt>クライアント識別子</dt><dd><code>{}</code></dd></div><div><dt>移動先のホスト</dt><dd><code>{}</code></dd></div></dl></section><section class=\"oauth-scope-section\" aria-labelledby=\"oauth-scope-heading\"><h2 id=\"oauth-scope-heading\">要求された権限</h2>{}</section>{}<form class=\"oauth-consent-actions\" method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"client_id\" value=\"{}\">{}<input type=\"hidden\" name=\"resource\" value=\"{}\"><input type=\"hidden\" name=\"scope\" value=\"{}\"><input type=\"hidden\" name=\"code_challenge\" value=\"{}\">{}<input type=\"hidden\" name=\"csrf_token\" value=\"{}\"><button class=\"button button-primary\" name=\"decision\" value=\"approve\">許可する</button><button class=\"button button-secondary\" name=\"decision\" value=\"deny\">拒否する</button></form></div></section>",
         escape_html(&request.client.display_name),
-        escape_html(&client_identifier),
-        escape_html(&request.scopes.join(" ")),
-        escape_html(&redirect_host),
+        escape_html(&request.client.client_id),
+        escape_html(redirect_host),
+        scopes,
         loopback_warning,
         escape_html(&consent_path),
         escape_html(&request.client.client_id),
@@ -336,8 +340,26 @@ fn consent_page(
         escape_html(&request.code_challenge),
         state_field,
         escape_html(csrf)
+    );
+    Html(page_document(
+        "MCPクライアントの認可",
+        &state.cookie_path,
+        &content,
+        &[],
     ))
     .into_response()
+}
+
+fn is_loopback_redirect(url: &url::Url) -> bool {
+    if url.scheme() != "http" {
+        return false;
+    }
+    match url.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback(),
+        None => false,
+    }
 }
 
 /// Marginalis自身が表示した承認form専用の状態変更endpoint。
