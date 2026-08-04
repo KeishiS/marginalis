@@ -105,7 +105,10 @@ pub(super) async fn authenticate(
     token: &str,
     accepted_scopes: &[&str],
 ) -> HandlerResult<Result<McpAuthenticatedActor, Response>> {
-    let challenged_scope = accepted_scopes.first().copied().unwrap_or("notes:read");
+    let challenged_scope = accepted_scopes.first().map_or_else(
+        || endpoint.resource_policy.default_scopes().join(" "),
+        |scope| (*scope).to_owned(),
+    );
     let authenticated = match endpoint
         .oauth
         .authenticate(token.into(), endpoint.resource_policy.uri().to_string())
@@ -135,7 +138,7 @@ pub(super) async fn authenticate(
             endpoint,
             StatusCode::UNAUTHORIZED,
             Some("invalid_token"),
-            challenged_scope,
+            &challenged_scope,
         )));
     };
     if !accepted_scopes.is_empty()
@@ -153,7 +156,7 @@ pub(super) async fn authenticate(
             endpoint,
             StatusCode::FORBIDDEN,
             Some("insufficient_scope"),
-            challenged_scope,
+            &challenged_scope,
         )));
     }
     Ok(Ok(authenticated))
