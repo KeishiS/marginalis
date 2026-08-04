@@ -521,17 +521,17 @@ fn public_ipv6(address: Ipv6Addr) -> bool {
         || address.is_multicast()
         || (segments[0] & 0xfe00) == 0xfc00
         || (segments[0] & 0xffc0) == 0xfe80
-        || special_prefix("::".parse().expect("constant IPv6"), 96)
-        || special_prefix("::ffff:0:0".parse().expect("constant IPv6"), 96)
-        || special_prefix("64:ff9b::".parse().expect("constant IPv6"), 96)
-        || special_prefix("64:ff9b:1::".parse().expect("constant IPv6"), 48)
-        || special_prefix("100::".parse().expect("constant IPv6"), 64)
-        || special_prefix("2001::".parse().expect("constant IPv6"), 23)
-        || special_prefix("2001:db8::".parse().expect("constant IPv6"), 32)
-        || special_prefix("2002::".parse().expect("constant IPv6"), 16)
-        || special_prefix("2620:4f:8000::".parse().expect("constant IPv6"), 48)
-        || special_prefix("3fff::".parse().expect("constant IPv6"), 20)
-        || special_prefix("5f00::".parse().expect("constant IPv6"), 16))
+        || special_prefix(Ipv6Addr::UNSPECIFIED, 96)
+        || special_prefix(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0), 96)
+        || special_prefix(Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96)
+        || special_prefix(Ipv6Addr::new(0x64, 0xff9b, 1, 0, 0, 0, 0, 0), 48)
+        || special_prefix(Ipv6Addr::new(0x100, 0, 0, 0, 0, 0, 0, 0), 64)
+        || special_prefix(Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23)
+        || special_prefix(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32)
+        || special_prefix(Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16)
+        || special_prefix(Ipv6Addr::new(0x2620, 0x4f, 0x8000, 0, 0, 0, 0, 0), 48)
+        || special_prefix(Ipv6Addr::new(0x3fff, 0, 0, 0, 0, 0, 0, 0), 20)
+        || special_prefix(Ipv6Addr::new(0x5f00, 0, 0, 0, 0, 0, 0, 0), 16))
 }
 
 #[cfg(test)]
