@@ -199,6 +199,29 @@ test("長い内容をスクロールするため点から吹き出しへマウ�
   expect(container.querySelector(".graph-detail")).toBeNull();
 });
 
+test("別の点のホバーを終えるとキーボードのフォーカス対象へ戻る", () => {
+  vi.useFakeTimers();
+  const { container } = canvas();
+  const note = container.querySelector('.graph-vertex[data-kind="note"]');
+  const work = container.querySelector('.graph-vertex[data-kind="work"]');
+
+  fireEvent.focus(note!);
+  expect(container.querySelector(".graph-detail")).toHaveTextContent(
+    "先行研究の整理",
+  );
+
+  fireEvent.mouseEnter(work!);
+  expect(container.querySelector(".graph-detail")).toHaveTextContent(
+    "smith2024",
+  );
+
+  fireEvent.mouseLeave(work!);
+  act(() => vi.runAllTimers());
+  expect(container.querySelector(".graph-detail")).toHaveTextContent(
+    "先行研究の整理",
+  );
+});
+
 test("図の内容を更新したときは以前の点の吹き出しを残さない", () => {
   const first = graphModel(graph());
   const { container, rerender } = render(
