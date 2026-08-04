@@ -7,6 +7,7 @@ mod diagnostics;
 mod math_macro_repository;
 mod mcp;
 mod mcp_oauth_repository;
+mod mcp_scope_ceiling_repository;
 mod note_repository;
 mod notes;
 mod schema;

@@ -321,6 +321,25 @@ pub struct McpAuthenticatedActor {
     pub scopes: Vec<String>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct McpStoredScopeCeilings {
+    pub principal: Option<Vec<String>>,
+    pub client: Option<Vec<String>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("MCP scope ceiling storage is unavailable")]
+pub struct McpScopeCeilingRepositoryError;
+
+#[async_trait]
+pub trait McpScopeCeilingRepository: Send + Sync {
+    async fn scope_ceilings(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+    ) -> Result<McpStoredScopeCeilings, McpScopeCeilingRepositoryError>;
+}
+
 /// HTML内のノート参照へ付与するtransport固有の公開パス。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteRenderContext {

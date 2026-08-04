@@ -552,7 +552,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 16);
+    assert_eq!(report["database"]["schema"]["actual"], 17);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
     assert!(!String::from_utf8_lossy(&healthy.stderr).contains("must-not-be-reported"));
 
