@@ -1,6 +1,14 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
-import { ApplicationConfig, NoteSummary, NoteView, readNoteView } from "../api";
+import {
+  ApplicationConfig,
+  deleteNote,
+  NoteSummary,
+  NoteView,
+  readNoteView,
+} from "../api";
+import { NoteDeletionDialog } from "../NoteDeletionDialog";
+import { noteDeletionProblem } from "../noteLifecyclePresentation";
 import { RenderedContent } from "../RenderedContent";
 import {
   accessPath,
@@ -8,6 +16,7 @@ import {
   editPath,
   externalPath,
   graphPath,
+  listNoticePath,
   notePath,
 } from "../paths";
 import { useApiResource } from "../useApiResource";
@@ -22,6 +31,10 @@ export function NoteViewPage({
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "failure">(
     "idle",
   );
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
+  const deleteButton = useRef<HTMLButtonElement>(null);
   const load = useCallback(
     (signal: AbortSignal) => readNoteView(config.apiBase, noteId, signal),
     [config.apiBase, noteId],
@@ -36,6 +49,27 @@ export function NoteViewPage({
       setCopyStatus("success");
     } catch {
       setCopyStatus("failure");
+    }
+  }
+  function openDeleteDialog() {
+    setDeleteProblem(null);
+    setDeleteOpen(true);
+  }
+  function closeDeleteDialog() {
+    setDeleteOpen(false);
+    setDeleteProblem(null);
+    deleteButton.current?.focus();
+  }
+  async function confirmDelete() {
+    if (view === null || deleting) return;
+    setDeleting(true);
+    setDeleteProblem(null);
+    try {
+      await deleteNote(config.apiBase, view.note.note_id, view.note.revision);
+      window.location.assign(listNoticePath(config, "note-deleted"));
+    } catch (error: unknown) {
+      setDeleteProblem(noteDeletionProblem(error));
+      setDeleting(false);
     }
   }
   if (failed)
@@ -103,12 +137,22 @@ export function NoteViewPage({
             </a>
           )}
           {view.access === "manage" && (
-            <a
-              className="button button-secondary"
-              href={accessPath(config, noteId)}
-            >
-              共有設定
-            </a>
+            <>
+              <a
+                className="button button-secondary"
+                href={accessPath(config, noteId)}
+              >
+                共有設定
+              </a>
+              <button
+                ref={deleteButton}
+                className="button button-danger"
+                type="button"
+                onClick={openDeleteDialog}
+              >
+                削除
+              </button>
+            </>
           )}
           {/* 2階層まで開くのは、参照先と参照元の一覧では見えない範囲から始めるためである。 */}
           <a
@@ -127,6 +171,15 @@ export function NoteViewPage({
         />
       </div>
       <RelatedNotes config={config} view={view} />
+      {deleteOpen && (
+        <NoteDeletionDialog
+          title={view.note.title}
+          deleting={deleting}
+          problem={deleteProblem}
+          onCancel={closeDeleteDialog}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
     </section>
   );
 }

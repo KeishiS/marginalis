@@ -80,6 +80,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   context,
 }) => {
   const noteId = "0197c9bc-0000-7000-8000-000000000001";
+  let deleteRequest = null;
   await context.grantPermissions(["clipboard-read", "clipboard-write"], {
     origin: "http://127.0.0.1:42877",
   });
@@ -105,6 +106,27 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
         related: { outgoing: [], incoming: [] },
       }),
     });
+  });
+  await page.route(`**/api/v3/notes/${noteId}`, async (route) => {
+    deleteRequest = {
+      method: route.request().method(),
+      headers: await route.request().allHeaders(),
+    };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        note_id: noteId,
+        title: "広い閲覧画面",
+        source: "= 広い閲覧画面\n\n本文",
+        tags: ["設計", "Rust"],
+        created_at_ms: 1,
+        updated_at_ms: 2,
+        revision: 2,
+      }),
+    });
+  });
+  await page.route("**/api/v3/notes", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: "[]" });
   });
 
   await page.goto(`/notes/${noteId}`);
@@ -175,6 +197,31 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   const brandPosition = await page.locator(".brand").boundingBox();
   expect(brandPosition).not.toBeNull();
   expect(Math.abs(brandPosition.x - widePosition.x)).toBeLessThanOrEqual(1);
+
+  await page.evaluate(() => {
+    document.cookie = "marginalis_csrf=browser-csrf; path=/";
+  });
+  const deleteButton = page.getByRole("button", { name: "削除", exact: true });
+  await deleteButton.click();
+  const dialog = page.getByRole("dialog", {
+    name: "このノートを削除しますか？",
+  });
+  await expect(dialog).toContainText("広い閲覧画面");
+  await expect(dialog).toContainText("削除後30日以内");
+  await expect(page.getByRole("button", { name: "取り消す" })).toBeFocused();
+  await page.getByRole("button", { name: "取り消す" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(deleteButton).toBeFocused();
+
+  await deleteButton.click();
+  await page.getByRole("button", { name: "削除する", exact: true }).click();
+  await expect(page).toHaveURL(/\/?notice=note-deleted$/);
+  await expect(
+    page.getByRole("status").filter({ hasText: "ノートを削除しました" }),
+  ).toBeVisible();
+  expect(deleteRequest.method).toBe("DELETE");
+  expect(deleteRequest.headers["if-match"]).toBe('"rev-1"');
+  expect(deleteRequest.headers["x-csrf-token"]).toBe("browser-csrf");
 });
 
 test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", async ({ page }) => {

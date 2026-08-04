@@ -7,6 +7,7 @@ import {
   externalPath,
   graphPath,
   listPath,
+  listNoticePath,
   notePath,
 } from "../src/paths";
 
@@ -40,6 +41,20 @@ describe("画面URLの組み立て", () => {
   it("一覧はページ位置を含められる", () => {
     expect(listPath(root)).toBe("/");
     expect(listPath(root, 2)).toContain("page=2");
+  });
+
+  it("操作結果を付ける一覧URLでは絞り込みを保ち、ページを先頭へ戻す", () => {
+    expect(
+      listNoticePath(
+        {
+          basePath: "/marginalis",
+          search: "?tag=research&updated_after=2026-07-01&page=3",
+        },
+        "note-deleted",
+      ),
+    ).toBe(
+      "/marginalis/?tag=research&updated_after=2026-07-01&notice=note-deleted",
+    );
   });
 
   /// 一覧の絞り込みはタグと更新日を対象とし、図の範囲とは別の条件である。
