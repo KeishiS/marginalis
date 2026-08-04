@@ -1,6 +1,73 @@
 use super::*;
 
 #[tokio::test]
+async fn owner_can_read_and_replace_math_macros() {
+    let app = TestApp::default().authenticated().router();
+    let read = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v3/math-macros")
+                .header(
+                    "cookie",
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(read.status(), StatusCode::OK);
+    let read_body = to_bytes(read.into_body(), usize::MAX).await.expect("body");
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&read_body).expect("JSON"),
+        serde_json::json!({ "macros": [], "revision": 0 })
+    );
+
+    let replace = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v3/math-macros")
+                .header("content-type", "application/json")
+                .header(
+                    "cookie",
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .header("origin", "https://example.test")
+                .body(Body::from(
+                    serde_json::json!({
+                        "macros": [
+                            {
+                                "name": "argmax",
+                                "replacement": "\\operatorname*{arg\\,max}",
+                                "argument_count": 0
+                            },
+                            {
+                                "name": "bm",
+                                "replacement": "\\boldsymbol{#1}",
+                                "argument_count": 1
+                            }
+                        ],
+                        "revision": 0
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(replace.status(), StatusCode::OK);
+    let replace_body = to_bytes(replace.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let body: serde_json::Value = serde_json::from_slice(&replace_body).expect("JSON");
+    assert_eq!(body["revision"], 1);
+    assert_eq!(body["macros"][1]["name"], "bm");
+}
+
+#[tokio::test]
 async fn rest_validation_returns_the_shared_diagnostic_contract() {
     let response = authenticated_app()
         .oneshot(

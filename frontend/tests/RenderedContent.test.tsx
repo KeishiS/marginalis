@@ -117,6 +117,18 @@ test("mathtools拡張を同一オリジンから読み込む", async () => {
   render(
     <RenderedContent
       html={String.raw`<code class="math-latex" data-math-language="latexmath" data-math-display="inline">a \coloneqq b</code>`}
+      mathMacros={[
+        {
+          name: "argmax",
+          replacement: String.raw`\operatorname*{arg\,max}`,
+          argument_count: 0,
+        },
+        {
+          name: "bm",
+          replacement: String.raw`\boldsymbol{#1}`,
+          argument_count: 1,
+        },
+      ]}
       preview
       styleNonce="test-nonce"
     />,
@@ -125,13 +137,20 @@ test("mathtools拡張を同一オリジンから読み込む", async () => {
   await waitFor(() =>
     expect(window.MathJax).toMatchObject({
       loader: {
-        load: ["[tex]/mathtools"],
+        load: ["[tex]/boldsymbol", "[tex]/mathtools"],
         source: {
           "[tex]/boldsymbol": expect.stringContaining("boldsymbol.js"),
           "[tex]/mathtools": expect.stringContaining("mathtools.js"),
         },
       },
-      tex: { packages: { "[+]": ["mathtools"] } },
+      tex: {
+        maxMacros: 1000,
+        packages: { "[+]": ["boldsymbol", "mathtools"] },
+        macros: {
+          argmax: String.raw`\operatorname*{arg\,max}`,
+          bm: [String.raw`\boldsymbol{#1}`, 1],
+        },
+      },
     }),
   );
   const loader = window.MathJax as {

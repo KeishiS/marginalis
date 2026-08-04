@@ -177,6 +177,18 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         )
         .await
         .expect("store ACL");
+    database
+        .replace_math_macros(
+            alice.identity(),
+            &[MathMacro {
+                name: "bm".into(),
+                replacement: r"\boldsymbol{#1}".into(),
+                argument_count: 1,
+            }],
+            0,
+        )
+        .await
+        .expect("store math macro settings");
     let snapshot = database
         .export_archive_snapshot()
         .await

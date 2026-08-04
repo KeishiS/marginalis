@@ -685,3 +685,45 @@ select:hover {
   color: var(--color-danger);
   padding: var(--space-3);
 }
+
+.math-macro-settings form,
+.math-macro-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.math-macro-examples,
+.math-macro-row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.math-macro-examples > span {
+  align-self: center;
+  font-weight: 700;
+}
+
+.math-macro-row {
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.math-macro-row label {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.math-macro-row input[type="number"] {
+  width: 6rem;
+}
+
+.math-macro-replacement {
+  flex: 1 1 20rem;
+}
+
+.math-macro-replacement input {
+  width: 100%;
+}

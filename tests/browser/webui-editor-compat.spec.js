@@ -4,7 +4,11 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/v3/notes/preview", async (route) => {
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ html: "<p>プレビュー</p>", diagnostics: [] }),
+      body: JSON.stringify({
+        html: "<p>プレビュー</p>",
+        math_macros: [],
+        diagnostics: [],
+      }),
     });
   });
   await page.goto("/notes/new");

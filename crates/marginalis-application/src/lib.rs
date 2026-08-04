@@ -15,6 +15,7 @@ use marginalis_domain::{
 mod bibliography;
 mod citation;
 mod identity;
+mod math_macros;
 mod mcp_oauth;
 mod notes;
 mod session;
@@ -28,6 +29,10 @@ pub use citation::CitationStyle;
 pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
 };
+pub use math_macros::{
+    MathMacro, MathMacroApplication, MathMacroRepository, MathMacroRepositoryError,
+    MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases, validate_math_macros,
+};
 pub use mcp_oauth::{
     McpClientMetadataResolver, McpOAuthApplication, McpOAuthRepository, McpOAuthRepositoryError,
 };
@@ -40,7 +45,9 @@ pub use notes::{
     NoteViewSnapshot,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
-pub use snapshot::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
+pub use snapshot::{
+    InvalidSnapshot, LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
+};
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> UnixMillis;
@@ -207,6 +214,7 @@ pub struct ValidatedNoteDraft {
 pub struct NotePreview {
     pub html: String,
     pub diagnostics: Vec<NoteAdvisoryDiagnostic>,
+    pub math_macros: Vec<MathMacro>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -400,6 +408,7 @@ pub struct NoteView {
     pub access: NoteAccess,
     pub html: String,
     pub related: RelatedNotes,
+    pub math_macros: Vec<MathMacro>,
 }
 
 /// 閲覧可能なノートを取得する問い合わせ境界。

@@ -12,10 +12,11 @@ use marginalis_domain::{
 };
 
 use crate::{
-    BibliographyRepository, BibliographyRepositoryError, CitationStyle, Clock, NoteAccessControl,
-    NoteAclChange, NoteAclState, NoteCommands, NotePresentation, NotePreview, NoteProfile,
-    NoteQueries, NoteRenderContext, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
-    NoteWritePolicy, Random, RelatedNotes, ValidatedNoteDraft,
+    BibliographyRepository, BibliographyRepositoryError, CitationStyle, Clock, MathMacroRepository,
+    MathMacroRepositoryError, NoteAccessControl, NoteAclChange, NoteAclState, NoteCommands,
+    NotePresentation, NotePreview, NoteProfile, NoteQueries, NoteRenderContext, NoteUseCaseError,
+    NoteValidationCode, NoteValidationDiagnostic, NoteWritePolicy, Random, RelatedNotes,
+    ValidatedNoteDraft,
 };
 
 /// 永続化方式に依存しないrepositoryの失敗理由。
@@ -385,6 +386,7 @@ pub struct NoteApplication {
     access_control: Arc<dyn NoteAclRepository>,
     content: Arc<dyn NoteContent>,
     bibliography: Arc<dyn BibliographyRepository>,
+    math_macros: Arc<dyn MathMacroRepository>,
     links: Arc<dyn NoteLinkResolver>,
     clock: Arc<dyn Clock>,
     random: Arc<dyn Random>,
@@ -398,6 +400,7 @@ impl NoteApplication {
         access_control: Arc<dyn NoteAclRepository>,
         content: Arc<dyn NoteContent>,
         bibliography: Arc<dyn BibliographyRepository>,
+        math_macros: Arc<dyn MathMacroRepository>,
         links: Arc<dyn NoteLinkResolver>,
         clock: Arc<dyn Clock>,
         random: Arc<dyn Random>,
@@ -408,6 +411,7 @@ impl NoteApplication {
             access_control,
             content,
             bibliography,
+            math_macros,
             links,
             clock,
             random,
@@ -465,7 +469,17 @@ impl NoteApplication {
             )
             .map_err(|_| NoteUseCaseError::RenderFailed)?;
         diagnostics.extend(citations.diagnostics);
-        Ok(NotePreview { html, diagnostics })
+        let math_macros = self
+            .math_macros
+            .read_math_macros(owner)
+            .await
+            .map_err(map_math_macro_repository_error)?
+            .macros;
+        Ok(NotePreview {
+            html,
+            diagnostics,
+            math_macros,
+        })
     }
 
     fn reference_resolutions(
@@ -941,12 +955,28 @@ impl NotePresentation for NoteApplication {
                 },
             )
             .map_err(|_| NoteUseCaseError::RenderFailed)?;
+        let math_macros = self
+            .math_macros
+            .read_math_macros(snapshot.note.owner())
+            .await
+            .map_err(map_math_macro_repository_error)?
+            .macros;
         Ok(crate::NoteView {
             note: snapshot.note,
             access: snapshot.access,
             html,
             related: snapshot.related,
+            math_macros,
         })
+    }
+}
+
+fn map_math_macro_repository_error(error: MathMacroRepositoryError) -> NoteUseCaseError {
+    match error {
+        MathMacroRepositoryError::CorruptData => NoteUseCaseError::CorruptData,
+        MathMacroRepositoryError::Conflict | MathMacroRepositoryError::Unavailable => {
+            NoteUseCaseError::Unavailable
+        }
     }
 }
 
@@ -1396,6 +1426,58 @@ mod tests {
         }
     }
 
+    struct NoMathMacros;
+
+    #[async_trait]
+    impl MathMacroRepository for NoMathMacros {
+        async fn read_math_macros(
+            &self,
+            _owner: &Identity,
+        ) -> Result<crate::MathMacroSettings, MathMacroRepositoryError> {
+            Ok(crate::MathMacroSettings::default())
+        }
+
+        async fn replace_math_macros(
+            &self,
+            _owner: &Identity,
+            _macros: &[crate::MathMacro],
+            _expected_revision: i64,
+        ) -> Result<crate::MathMacroSettings, MathMacroRepositoryError> {
+            unreachable!("note tests do not replace MathJax macros")
+        }
+    }
+
+    struct OwnerMathMacros;
+
+    #[async_trait]
+    impl MathMacroRepository for OwnerMathMacros {
+        async fn read_math_macros(
+            &self,
+            owner: &Identity,
+        ) -> Result<crate::MathMacroSettings, MathMacroRepositoryError> {
+            Ok(crate::MathMacroSettings {
+                macros: (owner == &OneItemLibrary::owner())
+                    .then(|| crate::MathMacro {
+                        name: "bm".into(),
+                        replacement: r"\boldsymbol{#1}".into(),
+                        argument_count: 1,
+                    })
+                    .into_iter()
+                    .collect(),
+                revision: 1,
+            })
+        }
+
+        async fn replace_math_macros(
+            &self,
+            _owner: &Identity,
+            _macros: &[crate::MathMacro],
+            _expected_revision: i64,
+        ) -> Result<crate::MathMacroSettings, MathMacroRepositoryError> {
+            unreachable!("note tests do not replace MathJax macros")
+        }
+    }
+
     /// 1件だけ登録された書誌ライブラリー。所有者が一致する問い合わせにだけ答える。
     struct OneItemLibrary;
 
@@ -1591,6 +1673,7 @@ mod tests {
                 keys: vec!["smith2024".into()],
             }),
             Arc::new(OneItemLibrary),
+            Arc::new(OwnerMathMacros),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
@@ -1619,6 +1702,7 @@ mod tests {
             preview.diagnostics.is_empty(),
             "更新用プレビューも保存時と同じ所有者の書誌ライブラリーを使います"
         );
+        assert_eq!(preview.math_macros[0].name, "bm");
 
         *repository.accessible_as.lock().expect("access lock") = Some(NoteAccess::Read);
         assert_eq!(
@@ -1772,6 +1856,7 @@ mod tests {
             repository.clone(),
             Arc::new(AcceptContent::default()),
             Arc::new(OneItemLibrary),
+            Arc::new(NoMathMacros),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
@@ -1788,6 +1873,7 @@ mod tests {
             repository.clone(),
             Arc::new(AcceptContent::default()),
             Arc::new(OneItemLibrary),
+            Arc::new(NoMathMacros),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
@@ -1876,6 +1962,7 @@ mod tests {
             repository.clone(),
             Arc::new(AcceptContent::default()),
             Arc::new(EmptyLibrary),
+            Arc::new(NoMathMacros),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
@@ -1918,6 +2005,7 @@ mod tests {
             repository.clone(),
             content.clone(),
             Arc::new(EmptyLibrary),
+            Arc::new(NoMathMacros),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),
@@ -1964,6 +2052,7 @@ mod tests {
             repository.clone(),
             Arc::new(AcceptContent::default()),
             Arc::new(EmptyLibrary),
+            Arc::new(NoMathMacros),
             Arc::new(NoLinks),
             Arc::new(FixedClock),
             Arc::new(FixedRandom),

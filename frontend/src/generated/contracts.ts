@@ -24,10 +24,20 @@ export interface RelatedNotes {
   outgoing: NoteSummary[];
   incoming: NoteSummary[];
 }
+export interface MathMacro {
+  name: string;
+  replacement: string;
+  argument_count: number;
+}
+export interface MathMacroSettings {
+  macros: MathMacro[];
+  revision: number;
+}
 export interface NoteView {
   note: Note;
   access: NoteAccess;
   html: string;
+  math_macros: MathMacro[];
   related: RelatedNotes;
 }
 export interface NoteGraphNote {
@@ -67,6 +77,7 @@ export interface BibliographyItem {
 }
 export interface NotePreview {
   html: string;
+  math_macros: MathMacro[];
   diagnostics: NoteDiagnostic[];
 }
 export type NotePermission = "read" | "edit";
@@ -184,10 +195,43 @@ export function parseNotePreview(value: unknown): NotePreview {
   const object = record(value, "preview");
   return {
     html: text(object.html, "preview.html"),
+    math_macros: parseMathMacros(object.math_macros, "preview.math_macros"),
     diagnostics: parseNoteDiagnostics(
       object.diagnostics,
       "preview.diagnostics",
     ),
+  };
+}
+
+function parseMathMacro(value: unknown, label: string): MathMacro {
+  const object = record(value, label);
+  const argumentCount = integer(
+    object.argument_count,
+    `${label}.argument_count`,
+  );
+  if (argumentCount < 0 || argumentCount > 9) {
+    throw new Error(`${label}.argument_count is invalid`);
+  }
+  return {
+    name: text(object.name, `${label}.name`),
+    replacement: text(object.replacement, `${label}.replacement`),
+    argument_count: argumentCount,
+  };
+}
+
+function parseMathMacros(value: unknown, label: string): MathMacro[] {
+  return array(value, label).map((entry, index) =>
+    parseMathMacro(entry, `${label}[${index}]`),
+  );
+}
+
+export function parseMathMacroSettings(value: unknown): MathMacroSettings {
+  const object = record(value, "math macro settings");
+  const revision = integer(object.revision, "math macro settings.revision");
+  if (revision < 0) throw new Error("math macro settings.revision is invalid");
+  return {
+    macros: parseMathMacros(object.macros, "math macro settings.macros"),
+    revision,
   };
 }
 
@@ -292,6 +336,7 @@ export function parseNoteView(value: unknown): NoteView {
     note: parseNote(object.note),
     access,
     html: text(object.html, "note view.html"),
+    math_macros: parseMathMacros(object.math_macros, "note view.math_macros"),
     related: {
       outgoing: parseNoteSummaries(related.outgoing),
       incoming: parseNoteSummaries(related.incoming),
@@ -529,6 +574,28 @@ export async function readNoteView(
     `${apiBase}/notes/${encodeURIComponent(noteId)}/view`,
     { signal },
     parseNoteView,
+  );
+}
+
+export async function readMathMacros(
+  apiBase: string,
+  signal?: AbortSignal,
+): Promise<MathMacroSettings> {
+  return requestJson(
+    `${apiBase}/math-macros`,
+    { signal },
+    parseMathMacroSettings,
+  );
+}
+
+export async function replaceMathMacros(
+  apiBase: string,
+  settings: MathMacroSettings,
+): Promise<MathMacroSettings> {
+  return requestJson(
+    `${apiBase}/math-macros`,
+    mutationRequest("PUT", settings),
+    parseMathMacroSettings,
   );
 }
 

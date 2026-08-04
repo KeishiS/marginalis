@@ -8,6 +8,7 @@ mod auth;
 mod bibliography;
 mod error;
 mod html;
+mod math_macros;
 mod mcp_transport;
 mod notes;
 mod oauth;
@@ -43,6 +44,7 @@ use self::{
         update_bibliography_item,
     },
     error::{HandlerResult, problem},
+    math_macros::{read_math_macros, replace_math_macros},
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
         create_note, delete_note, export_note, list_notes, preview_new_note, preview_note_update,
@@ -57,7 +59,7 @@ use self::{
     security::security_headers,
     ui::{
         access_note_page, bibliography_page, create_note_page, edit_note_page, graph_page, home,
-        view_note,
+        math_macro_settings_page, view_note,
     },
 };
 
@@ -102,6 +104,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/", get(home))
         .route("/bibliography", get(bibliography_page))
         .route("/graph", get(graph_page))
+        .route("/settings/math-macros", get(math_macro_settings_page))
         .route("/notes/new", get(create_note_page))
         .route("/notes/{note_id}/edit", get(edit_note_page))
         .route("/notes/{note_id}/access", get(access_note_page))
@@ -127,6 +130,10 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/api/v3/health", get(health))
         .route("/api/v3/session", get(session))
+        .route(
+            "/api/v3/math-macros",
+            get(read_math_macros).put(replace_math_macros),
+        )
         .route(
             "/api/v3/bibliography",
             get(search_bibliography).post(add_bibliography_item),

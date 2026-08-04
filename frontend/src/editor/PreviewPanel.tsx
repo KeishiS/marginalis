@@ -1,4 +1,4 @@
-import { NoteDiagnostic, Problem } from "../api";
+import { MathMacro, NoteDiagnostic, Problem } from "../api";
 import { RenderedContent } from "../RenderedContent";
 import {
   canSelectDiagnostic,
@@ -14,6 +14,7 @@ export function PreviewPanel({
   html,
   diagnostics,
   loading,
+  mathMacros,
   problem,
   onSelectDiagnostic,
   styleNonce,
@@ -23,6 +24,7 @@ export function PreviewPanel({
   html: string;
   diagnostics: NoteDiagnostic[];
   loading: boolean;
+  mathMacros: MathMacro[];
   problem: Problem | null;
   onSelectDiagnostic: (diagnostic: NoteDiagnostic) => void;
   styleNonce: string;
@@ -105,7 +107,12 @@ export function PreviewPanel({
         </section>
       )}
       {html && (
-        <SafePreview active={active} html={html} styleNonce={styleNonce} />
+        <SafePreview
+          active={active}
+          html={html}
+          mathMacros={mathMacros}
+          styleNonce={styleNonce}
+        />
       )}
       {!html && !loading && !problem && <p>プレビューはありません。</p>}
     </section>
@@ -115,10 +122,12 @@ export function PreviewPanel({
 function SafePreview({
   active,
   html,
+  mathMacros,
   styleNonce,
 }: {
   active: boolean;
   html: string;
+  mathMacros: MathMacro[];
   styleNonce: string;
 }) {
   // 同じ保存規則とRenderPolicyを通ったサーバー生成HTMLだけを受け取る。
@@ -126,6 +135,7 @@ function SafePreview({
     <RenderedContent
       active={active}
       html={html}
+      mathMacros={mathMacros}
       preview
       styleNonce={styleNonce}
     />

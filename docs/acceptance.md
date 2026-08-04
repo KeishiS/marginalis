@@ -35,14 +35,17 @@ Pull Requestと公開前の`release-gate`で次を確認します。
    登録していないcitation keyでは保存できるものの警告が表示されることも確認します。
 6. 所有者が閲覧者と編集者をACLへ追加し、それぞれの表示と操作範囲を確認します。共有相手の画面でも
    引用が作成者のライブラリーで解決した表示になることを確認します。
-7. 対象外利用者にノートと関連情報が表示されず、直接指定した操作も`404`になることを確認します。
-8. ChatGPT、Claude Code、Codex CLIからMCPへ接続し、RESTと同じ閲覧・更新結果になることを
+7. 数式マクロ設定へ`argmax`と`bm`の定義例を追加し、`\argmax_{x \in S} f(x)`と`\bm{x}`が
+   所有するノートの閲覧とプレビューで組版されることを確認します。共有相手の画面でも所有者の
+   定義が使われることを確認します。
+8. 対象外利用者にノートと関連情報が表示されず、直接指定した操作も`404`になることを確認します。
+9. ChatGPT、Claude Code、Codex CLIからMCPへ接続し、RESTと同じ閲覧・更新結果になることを
    確認します。登録、認証、作成、更新、ACL、削除の順序は
    [MCPクライアントの接続後受入](mcp.md#接続後の受入)に従います。
-9. MCPクライアントの接続解除でrefresh tokenとauthorization grantを取り消し、再認可なしでは
+10. MCPクライアントの接続解除でrefresh tokenとauthorization grantを取り消し、再認可なしでは
    refreshできないこと、既発行access tokenが拒否されるまでの時間を確認します。
-10. アーカイブを本番から隔離した空のデータベースへ復元し、ノート、ACL、参照、削除状態、
-    revisionが一致することを確認します。
+11. アーカイブを本番から隔離した空のデータベースへ復元し、ノート、ACL、参照、削除状態、
+    revision、数式マクロ設定が一致することを確認します。
 
 ## 版別結果の記録
 
@@ -58,6 +61,7 @@ Pull Requestと公開前の`release-gate`で次を確認します。
 
 ## 記録
 
+- [v0.26.0](acceptance-results/v0.26.0.md)
 - [v0.25.1](acceptance-results/v0.25.1.md)
 - [v0.25.0](acceptance-results/v0.25.0.md)
 - [v0.24.0](acceptance-results/v0.24.0.md)

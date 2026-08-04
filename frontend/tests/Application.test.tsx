@@ -24,6 +24,28 @@ afterEach(() => {
 });
 
 describe("Application", () => {
+  it("所有者の数式マクロ設定を読み込み、定義例を追加できる", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ macros: [], revision: 0 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    render(
+      <Application config={{ ...config, path: "/settings/math-macros" }} />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /argmax/ }));
+    expect(screen.getByLabelText("コマンド名")).toHaveValue("argmax");
+    expect(screen.getByLabelText("置換内容")).toHaveValue(
+      String.raw`\operatorname*{arg\,max}`,
+    );
+  });
+
   it("一覧を取得し、サブパスを保ったリンクを表示する", async () => {
     vi.stubGlobal(
       "fetch",
@@ -126,6 +148,7 @@ describe("Application", () => {
             },
             access: "manage",
             html: "<article><h1>設計メモ</h1></article>",
+            math_macros: [],
             related: { outgoing: [], incoming: [] },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -200,6 +223,7 @@ describe("Application", () => {
             },
             access: "read",
             html: "<article><h1>設計メモ</h1></article>",
+            math_macros: [],
             related: { outgoing: [], incoming: [] },
           }),
           { status: 200, headers: { "content-type": "application/json" } },

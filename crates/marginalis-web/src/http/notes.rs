@@ -10,7 +10,7 @@ use marginalis_application::{
     NoteAclChange, NoteGraphQuery, NoteRenderContext, NoteView, NoteWritePolicy,
 };
 use marginalis_contract::{
-    NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
+    MathMacroResponse, NoteAclGrantResponse, NoteAclResponse, NoteAclUpdateInput, NoteDraftInput,
     NoteGraphCitationResponse, NoteGraphNoteResponse, NoteGraphReferenceResponse,
     NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse, NotePreviewResponse,
     NoteResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode, RelatedNotesResponse,
@@ -181,6 +181,11 @@ fn preview_response(preview: marginalis_application::NotePreview) -> Json<NotePr
     tracing::Span::current().record("note_diagnostic_count", preview.diagnostics.len());
     Json(NotePreviewResponse {
         html: preview.html,
+        math_macros: preview
+            .math_macros
+            .into_iter()
+            .map(math_macro_response)
+            .collect(),
         diagnostics: preview
             .diagnostics
             .into_iter()
@@ -368,6 +373,11 @@ fn note_view_response(view: NoteView) -> NoteViewResponse {
         note: note_response(view.note),
         access: view.access,
         html: view.html,
+        math_macros: view
+            .math_macros
+            .into_iter()
+            .map(math_macro_response)
+            .collect(),
         related: RelatedNotesResponse {
             outgoing: view
                 .related
@@ -382,6 +392,14 @@ fn note_view_response(view: NoteView) -> NoteViewResponse {
                 .map(note_summary_response)
                 .collect(),
         },
+    }
+}
+
+fn math_macro_response(item: marginalis_application::MathMacro) -> MathMacroResponse {
+    MathMacroResponse {
+        name: item.name,
+        replacement: item.replacement,
+        argument_count: item.argument_count,
     }
 }
 

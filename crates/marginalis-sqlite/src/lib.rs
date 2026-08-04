@@ -4,6 +4,7 @@ mod archive;
 mod bibliography_repository;
 mod cleanup;
 mod diagnostics;
+mod math_macro_repository;
 mod mcp;
 mod mcp_oauth_repository;
 mod note_repository;

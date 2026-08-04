@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import {
+  MathMacro,
   NoteDiagnostic,
   Problem,
   previewNewNote,
@@ -9,6 +10,7 @@ import {
 
 export interface EditorPreview {
   html: string;
+  mathMacros: MathMacro[];
   diagnostics: NoteDiagnostic[];
   loading: boolean;
   problem: Problem | null;
@@ -27,6 +29,7 @@ export function useEditorPreview(
 ): EditorPreview {
   const [preview, setPreview] = useState<EditorPreviewState>({
     html: "",
+    mathMacros: [],
     diagnostics: [],
     loading: false,
     problem: null,
@@ -53,6 +56,7 @@ export function useEditorPreview(
           if (current) {
             setPreview({
               html: result.html,
+              mathMacros: result.math_macros,
               diagnostics: result.diagnostics,
               loading: false,
               problem: null,
@@ -82,6 +86,7 @@ export function useEditorPreview(
   const matchesCurrentSource = preview.source === source;
   return {
     html: preview.html,
+    mathMacros: preview.mathMacros,
     diagnostics: matchesCurrentSource ? preview.diagnostics : [],
     loading: matchesCurrentSource ? preview.loading : false,
     problem: matchesCurrentSource ? preview.problem : null,

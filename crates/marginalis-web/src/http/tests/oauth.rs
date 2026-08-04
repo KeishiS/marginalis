@@ -22,6 +22,7 @@ async fn oauth_endpoints_are_not_exposed_when_mcp_is_disabled() {
 async fn oauth_consent_uses_session_bound_csrf_when_client_context_has_an_opaque_origin() {
     let state = ApiState::new(
         Arc::new(Notes),
+        Arc::new(MathMacros),
         Arc::new(ActiveSessions),
         Arc::new(Oidc),
         "/".into(),

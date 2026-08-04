@@ -7,14 +7,17 @@
 
 pub mod documents;
 
-use marginalis_application::{InvalidSnapshot, LogicalSnapshot, NoteAclSnapshotEntry, NoteContent};
+use marginalis_application::{
+    InvalidSnapshot, LogicalSnapshot, MathMacro, MathMacroSettings, MathMacroSettingsSnapshot,
+    NoteAclSnapshotEntry, NoteContent,
+};
 use marginalis_domain::{
     BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteDraft, NoteId,
     NotePermission, Revision, UnixMillis,
 };
 use serde::{Deserialize, Serialize};
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-13";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-14";
 /// archive内のノートを受理できる入力規則の版。
 ///
 /// 受理する本文が変わったときに上げます。版4までのノートはタグを`:tags:`で並べていました。
@@ -46,6 +49,8 @@ pub struct Archive {
     pub note_acl: Vec<ArchiveAclEntry>,
     #[serde(default)]
     pub bibliography_items: Vec<ArchiveBibliographyItem>,
+    #[serde(default)]
+    pub math_macro_settings: Vec<ArchiveMathMacroSettings>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -83,6 +88,23 @@ pub struct ArchiveBibliographyItem {
     pub revision: i64,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveMathMacroSettings {
+    pub owner_issuer: String,
+    pub owner_subject: String,
+    pub macros: Vec<ArchiveMathMacro>,
+    pub revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveMathMacro {
+    pub name: String,
+    pub replacement: String,
+    pub argument_count: u8,
+}
+
 impl Archive {
     /// 要素を決まった順に並べ替えた同じ内容のarchiveを返す。
     ///
@@ -104,6 +126,10 @@ impl Archive {
         });
         self.bibliography_items
             .sort_by(|left, right| left.item_id.cmp(&right.item_id));
+        self.math_macro_settings.sort_by(|left, right| {
+            (&left.owner_issuer, &left.owner_subject)
+                .cmp(&(&right.owner_issuer, &right.owner_subject))
+        });
         self
     }
 }
@@ -154,6 +180,25 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
                 created_at_ms: item.created_at().get(),
                 updated_at_ms: item.updated_at().get(),
                 revision: item.revision().get(),
+            })
+            .collect(),
+        math_macro_settings: snapshot
+            .math_macro_settings()
+            .iter()
+            .map(|entry| ArchiveMathMacroSettings {
+                owner_issuer: entry.owner().issuer().to_owned(),
+                owner_subject: entry.owner().subject().to_owned(),
+                macros: entry
+                    .settings()
+                    .macros
+                    .iter()
+                    .map(|item| ArchiveMathMacro {
+                        name: item.name.clone(),
+                        replacement: item.replacement.clone(),
+                        argument_count: item.argument_count,
+                    })
+                    .collect(),
+                revision: entry.settings().revision,
             })
             .collect(),
     }
@@ -339,8 +384,35 @@ fn validate_archive_contents(
             .map_err(|_| invalid())
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let math_macro_settings = archive
+        .math_macro_settings
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let invalid = || ArchiveContentsError::MathMacroSettings {
+                position: index + 1,
+            };
+            Ok(MathMacroSettingsSnapshot::new(
+                Identity::new(entry.owner_issuer.clone(), entry.owner_subject.clone())
+                    .map_err(|_| invalid())?,
+                MathMacroSettings {
+                    macros: entry
+                        .macros
+                        .iter()
+                        .map(|item| MathMacro {
+                            name: item.name.clone(),
+                            replacement: item.replacement.clone(),
+                            argument_count: item.argument_count,
+                        })
+                        .collect(),
+                    revision: entry.revision,
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, ArchiveContentsError>>()?;
     LogicalSnapshot::new(notes, note_acl)
         .and_then(|snapshot| snapshot.with_bibliography(bibliography_items))
+        .and_then(|snapshot| snapshot.with_math_macro_settings(math_macro_settings))
         .map_err(|error| match error {
             InvalidSnapshot::DuplicateNote { position } => ArchiveContentsError::Note { position },
             InvalidSnapshot::InvalidAclEntry { position } => {
@@ -350,6 +422,9 @@ fn validate_archive_contents(
             InvalidSnapshot::InvalidBibliographyItem { position } => {
                 ArchiveContentsError::BibliographyItem { position }
             }
+            InvalidSnapshot::InvalidMathMacroSettings { position } => {
+                ArchiveContentsError::MathMacroSettings { position }
+            }
         })
 }
 
@@ -358,6 +433,7 @@ enum ArchiveContentsError {
     Note { position: usize },
     AclEntry { position: usize },
     BibliographyItem { position: usize },
+    MathMacroSettings { position: usize },
     Relationships,
 }
 
@@ -371,6 +447,8 @@ pub enum ArchiveMigrationError {
     InvalidAclEntry { position: usize },
     #[error("archive bibliography item at position {position} is invalid")]
     InvalidBibliographyItem { position: usize },
+    #[error("archive math macro settings at position {position} are invalid")]
+    InvalidMathMacroSettings { position: usize },
     #[error("archive note and ACL relationships are inconsistent")]
     InvalidRelationships,
 }
@@ -382,6 +460,9 @@ impl From<ArchiveContentsError> for ArchiveMigrationError {
             ArchiveContentsError::AclEntry { position } => Self::InvalidAclEntry { position },
             ArchiveContentsError::BibliographyItem { position } => {
                 Self::InvalidBibliographyItem { position }
+            }
+            ArchiveContentsError::MathMacroSettings { position } => {
+                Self::InvalidMathMacroSettings { position }
             }
             ArchiveContentsError::Relationships => Self::InvalidRelationships,
         }
@@ -425,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn archive_round_trip_preserves_notes_and_acl() {
+    fn archive_round_trip_preserves_notes_acl_and_math_macros() {
         let note = note();
         let reader = Identity::new(note.creator_issuer().into(), "reader".into()).expect("reader");
         let snapshot = LogicalSnapshot::new(
@@ -436,7 +517,19 @@ mod tests {
                 NotePermission::Read,
             )],
         )
-        .expect("snapshot");
+        .expect("snapshot")
+        .with_math_macro_settings(vec![MathMacroSettingsSnapshot::new(
+            note.owner().clone(),
+            MathMacroSettings {
+                macros: vec![MathMacro {
+                    name: "bm".into(),
+                    replacement: r"\boldsymbol{#1}".into(),
+                    argument_count: 1,
+                }],
+                revision: 2,
+            },
+        )])
+        .expect("math macro settings");
         let archive = create_archive(&content(), &snapshot);
         assert_eq!(archive.format, ARCHIVE_FORMAT);
         assert_eq!(archive.note_profile_version, ARCHIVE_NOTE_PROFILE_VERSION);

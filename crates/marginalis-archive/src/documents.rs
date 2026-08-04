@@ -436,6 +436,7 @@ pub fn archive_from_documents(
         notes,
         note_acl,
         bibliography_items,
+        math_macro_settings: Vec::new(),
     }
     .canonical())
 }

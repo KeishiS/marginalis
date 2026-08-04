@@ -85,6 +85,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::sync::Arc::new(database.clone()),
         std::sync::Arc::new(AsciiDocNoteContent),
         std::sync::Arc::new(database.clone()),
+        std::sync::Arc::new(database.clone()),
         std::sync::Arc::new(marginalis_web::http::HttpNoteLinkResolver),
         std::sync::Arc::new(SystemClock),
         std::sync::Arc::new(SystemRandom),
@@ -94,8 +95,12 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::sync::Arc::new(SystemClock),
         std::sync::Arc::new(SystemRandom),
     ));
+    let math_macros = std::sync::Arc::new(marginalis_application::MathMacroApplication::new(
+        std::sync::Arc::new(database.clone()),
+    ));
     let state = marginalis_web::http::ApiState::new(
         notes.clone(),
+        math_macros,
         sessions,
         oidc,
         cookie_path,

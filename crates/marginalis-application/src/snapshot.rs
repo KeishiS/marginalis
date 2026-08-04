@@ -4,6 +4,28 @@ use std::collections::HashSet;
 
 use marginalis_domain::{BibliographyItem, Identity, Note, NoteId, NotePermission};
 
+use crate::{MathMacroSettings, validate_math_macros};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MathMacroSettingsSnapshot {
+    owner: Identity,
+    settings: MathMacroSettings,
+}
+
+impl MathMacroSettingsSnapshot {
+    pub const fn new(owner: Identity, settings: MathMacroSettings) -> Self {
+        Self { owner, settings }
+    }
+
+    pub const fn owner(&self) -> &Identity {
+        &self.owner
+    }
+
+    pub const fn settings(&self) -> &MathMacroSettings {
+        &self.settings
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclSnapshotEntry {
     note_id: NoteId,
@@ -39,6 +61,7 @@ pub struct LogicalSnapshot {
     notes: Vec<Note>,
     note_acl: Vec<NoteAclSnapshotEntry>,
     bibliography_items: Vec<BibliographyItem>,
+    math_macro_settings: Vec<MathMacroSettingsSnapshot>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -51,6 +74,8 @@ pub enum InvalidSnapshot {
     InvalidReference { position: usize },
     #[error("bibliography item at position {position} is duplicated")]
     InvalidBibliographyItem { position: usize },
+    #[error("math macro settings at position {position} are invalid or duplicated")]
+    InvalidMathMacroSettings { position: usize },
 }
 
 impl LogicalSnapshot {
@@ -87,6 +112,7 @@ impl LogicalSnapshot {
             notes,
             note_acl,
             bibliography_items: Vec::new(),
+            math_macro_settings: Vec::new(),
         })
     }
 
@@ -119,6 +145,29 @@ impl LogicalSnapshot {
 
     pub fn bibliography_items(&self) -> &[BibliographyItem] {
         &self.bibliography_items
+    }
+
+    pub fn with_math_macro_settings(
+        mut self,
+        settings: Vec<MathMacroSettingsSnapshot>,
+    ) -> Result<Self, InvalidSnapshot> {
+        let mut owners = HashSet::new();
+        for (index, entry) in settings.iter().enumerate() {
+            if entry.settings.revision < 1
+                || !owners.insert(entry.owner.clone())
+                || validate_math_macros(&entry.settings.macros).is_err()
+            {
+                return Err(InvalidSnapshot::InvalidMathMacroSettings {
+                    position: index + 1,
+                });
+            }
+        }
+        self.math_macro_settings = settings;
+        Ok(self)
+    }
+
+    pub fn math_macro_settings(&self) -> &[MathMacroSettingsSnapshot] {
+        &self.math_macro_settings
     }
 }
 

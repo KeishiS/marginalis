@@ -1,6 +1,8 @@
 //! 全ノートの可搬archive import/export。
 
-use marginalis_application::{LogicalSnapshot, NoteAclSnapshotEntry, RestorePlan};
+use marginalis_application::{
+    LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
+};
 use marginalis_domain::{BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission};
 use sqlx::Sqlite;
 
@@ -71,9 +73,31 @@ impl SqliteDatabase {
             .map(crate::bibliography_repository::decode_item)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| SqliteStoreError::CorruptData)?;
+        let rows = sqlx::query(
+            "SELECT owner_issuer, owner_subject, macros_json, revision
+             FROM math_macro_settings ORDER BY owner_issuer, owner_subject",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let math_macro_settings = rows
+            .into_iter()
+            .map(|row| {
+                use sqlx::Row;
+                let owner = Identity::new(
+                    row.try_get("owner_issuer").map_err(database_error)?,
+                    row.try_get("owner_subject").map_err(database_error)?,
+                )
+                .map_err(|_| SqliteStoreError::CorruptData)?;
+                let settings = crate::math_macro_repository::decode_settings(row)
+                    .map_err(|_| SqliteStoreError::CorruptData)?;
+                Ok(MathMacroSettingsSnapshot::new(owner, settings))
+            })
+            .collect::<Result<Vec<_>, SqliteStoreError>>()?;
         transaction.commit().await.map_err(database_error)?;
         LogicalSnapshot::new(notes, note_acl)
             .and_then(|snapshot| snapshot.with_bibliography(bibliography_items))
+            .and_then(|snapshot| snapshot.with_math_macro_settings(math_macro_settings))
             .map_err(|_| SqliteStoreError::CorruptData)
     }
 
@@ -86,6 +110,7 @@ impl SqliteDatabase {
             "SELECT
                 EXISTS(SELECT 1 FROM notes)
                 OR EXISTS(SELECT 1 FROM bibliography_items)
+                OR EXISTS(SELECT 1 FROM math_macro_settings)
                 OR EXISTS(SELECT 1 FROM web_sessions)
                 OR EXISTS(SELECT 1 FROM oidc_login_attempts)
                 OR EXISTS(SELECT 1 FROM mcp_clients)
@@ -104,6 +129,33 @@ impl SqliteDatabase {
         }
         for item in plan.snapshot().bibliography_items() {
             insert_bibliography_item_row(&mut transaction, item).await?;
+        }
+        for entry in plan.snapshot().math_macro_settings() {
+            let encoded = serde_json::to_string(
+                &entry
+                    .settings()
+                    .macros
+                    .iter()
+                    .map(|item| crate::math_macro_repository::StoredMathMacro {
+                        name: item.name.clone(),
+                        replacement: item.replacement.clone(),
+                        argument_count: item.argument_count,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(|_| SqliteStoreError::CorruptData)?;
+            sqlx::query(
+                "INSERT INTO math_macro_settings (
+                    owner_issuer, owner_subject, macros_json, revision
+                 ) VALUES (?, ?, ?, ?)",
+            )
+            .bind(entry.owner().issuer())
+            .bind(entry.owner().subject())
+            .bind(encoded)
+            .bind(entry.settings().revision)
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
         }
         for (source, key) in plan.citations() {
             sqlx::query(

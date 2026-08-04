@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import boldsymbolUrl from "mathjax/input/tex/extensions/boldsymbol.js?url&no-inline";
 import mathtoolsUrl from "mathjax/input/tex/extensions/mathtools.js?url&no-inline";
 import mathJaxUrl from "mathjax/tex-svg.js?url";
+import { MathMacro } from "./api";
 import { enhanceSourceBlocks, prepareMath } from "./renderedContentEnhancement";
 
 interface MathJaxRuntime {
@@ -19,17 +20,20 @@ declare global {
 
 let mathJaxLoader: Promise<MathJaxRuntime> | null = null;
 let mathJaxTypesetQueue: Promise<void> = Promise.resolve();
+const NO_MATH_MACROS: MathMacro[] = [];
 
 export function RenderedContent({
   html,
   styleNonce,
   preview = false,
   active = true,
+  mathMacros = NO_MATH_MACROS,
 }: {
   html: string;
   styleNonce: string;
   preview?: boolean;
   active?: boolean;
+  mathMacros?: MathMacro[];
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [failedHtml, setFailedHtml] = useState<string | null>(null);
@@ -53,7 +57,7 @@ export function RenderedContent({
     let current = true;
     // 組版中に表示対象が変わっても古い処理が現在のDOMを変更しないよう、複製上で処理する。
     const staging = element.cloneNode(true) as HTMLElement;
-    void loadMathJax(styleNonce)
+    void loadMathJax(styleNonce, mathMacros)
       .then((mathJax) =>
         enqueueMathJaxTypeset(async () => {
           let cleared = false;
@@ -85,7 +89,7 @@ export function RenderedContent({
     return () => {
       current = false;
     };
-  }, [active, failedHtml, html, styleNonce]);
+  }, [active, failedHtml, html, mathMacros, styleNonce]);
 
   return (
     <>
@@ -111,7 +115,10 @@ function enqueueMathJaxTypeset<T>(task: () => Promise<T>): Promise<T> {
   return result;
 }
 
-async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {
+async function loadMathJax(
+  styleNonce: string,
+  mathMacros: MathMacro[],
+): Promise<MathJaxRuntime> {
   if (isMathJaxRuntime(window.MathJax)) return window.MathJax;
   if (mathJaxLoader) return mathJaxLoader;
 
@@ -126,7 +133,7 @@ async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {
         ready: () => initializeMathJaxWithStyleNonce(styleNonce),
       },
       loader: {
-        load: ["[tex]/mathtools"],
+        load: ["[tex]/boldsymbol", "[tex]/mathtools"],
         paths: { fonts: fontDirectory },
         source: {
           "[tex]/boldsymbol": boldsymbolScriptUrl.toString(),
@@ -141,7 +148,18 @@ async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {
         enableMenu: false,
         menuOptions: { settings: { enrich: false } },
       },
-      tex: { packages: { "[+]": ["mathtools"] } },
+      tex: {
+        maxMacros: 1000,
+        packages: { "[+]": ["boldsymbol", "mathtools"] },
+        macros: Object.fromEntries(
+          mathMacros.map((macro) => [
+            macro.name,
+            macro.argument_count === 0
+              ? macro.replacement
+              : [macro.replacement, macro.argument_count],
+          ]),
+        ),
+      },
       svg: { fontCache: "local" },
     };
     const script = document.createElement("script");

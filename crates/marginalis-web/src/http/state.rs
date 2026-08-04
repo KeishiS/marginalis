@@ -7,14 +7,15 @@ use std::{
 };
 
 use marginalis_application::{
-    BibliographyUseCases, McpOAuthUseCases, NoteUseCases, OidcAuthenticationUseCases,
-    WebSessionUseCases,
+    BibliographyUseCases, MathMacroUseCases, McpOAuthUseCases, NoteUseCases,
+    OidcAuthenticationUseCases, WebSessionUseCases,
 };
 
 #[derive(Clone)]
 pub struct ApiState {
     pub notes: Arc<dyn NoteUseCases>,
     pub bibliography: Option<Arc<dyn BibliographyUseCases>>,
+    pub math_macros: Arc<dyn MathMacroUseCases>,
     pub sessions: Arc<dyn WebSessionUseCases>,
     pub oidc: Arc<dyn OidcAuthenticationUseCases>,
     pub cookie_path: String,
@@ -112,6 +113,7 @@ impl McpEndpoint {
 impl ApiState {
     pub fn new(
         notes: Arc<dyn NoteUseCases>,
+        math_macros: Arc<dyn MathMacroUseCases>,
         sessions: Arc<dyn WebSessionUseCases>,
         oidc: Arc<dyn OidcAuthenticationUseCases>,
         cookie_path: String,
@@ -119,6 +121,7 @@ impl ApiState {
     ) -> Self {
         Self {
             notes,
+            math_macros,
             bibliography: None,
             sessions,
             oidc,

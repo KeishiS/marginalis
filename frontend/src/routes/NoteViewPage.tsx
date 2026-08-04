@@ -120,7 +120,11 @@ export function NoteViewPage({
         </nav>
       </div>
       <div className="document-surface">
-        <RenderedContent html={view.html} styleNonce={config.styleNonce} />
+        <RenderedContent
+          html={view.html}
+          mathMacros={view.math_macros}
+          styleNonce={config.styleNonce}
+        />
       </div>
       <RelatedNotes config={config} view={view} />
     </section>
