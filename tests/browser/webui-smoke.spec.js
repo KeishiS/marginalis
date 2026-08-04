@@ -576,6 +576,14 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
   expect(await work.getAttribute("href")).toBe(
     "/bibliography?query=smith2024",
   );
+  await expect(note.locator("text")).toContainText("先行研究の整理");
+  await expect(work.locator("text")).toHaveCount(0);
+
+  // 文献の題名は図へ常時表示せず、点に触れたときに全文を示す。
+  await work.hover();
+  await expect(page.locator(".graph-detail")).toContainText(
+    "An Example Article",
+  );
 
   // 点に触れると、更新日時とタグを吹き出しで示す。図の枠の内側へ収まる。
   await note.hover();

@@ -175,13 +175,15 @@ export function GraphCanvas({
                   cy={vertex.y ?? 0}
                   r={radius(vertex)}
                 />
-                <text
-                  x={vertex.x ?? 0}
-                  y={(vertex.y ?? 0) + radius(vertex) + 14}
-                  textAnchor="middle"
-                >
-                  {vertex.label}
-                </text>
+                {vertex.kind === "note" && (
+                  <text
+                    x={vertex.x ?? 0}
+                    y={(vertex.y ?? 0) + radius(vertex) + 14}
+                    textAnchor="middle"
+                  >
+                    {vertex.label}
+                  </text>
+                )}
               </a>
             ))}
           </g>

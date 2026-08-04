@@ -7,6 +7,8 @@ import { NoteGraph } from "../src/api";
 
 const NOTE = "0197c9bc-0000-7000-8000-000000000001";
 const UPDATED_AT = Date.UTC(2026, 7, 1, 3, 34);
+const WORK_TITLE =
+  "An Example Article with a Complete Title That Remains Available on Hover";
 
 const CONFIG = {
   apiBase: "/api/v3",
@@ -28,7 +30,7 @@ function graph(): NoteGraph {
         updated_at_ms: UPDATED_AT,
       },
     ],
-    works: [{ citation_key: "smith2024", title: "An Example Article" }],
+    works: [{ citation_key: "smith2024", title: WORK_TITLE }],
     references: [],
     citations: [{ source_note_id: NOTE, citation_key: "smith2024" }],
   };
@@ -64,22 +66,38 @@ test("文献の点はcitation keyと題名を示す", () => {
   fireEvent.mouseEnter(work!);
 
   const detail = container.querySelector(".graph-detail");
-  expect(detail?.textContent).toContain("An Example Article");
+  expect(detail?.textContent).toContain(WORK_TITLE);
   expect(detail?.textContent).toContain("smith2024");
   // 文献には更新日時が無いため、その行を出さない。
   expect(detail?.querySelector("time")).toBeNull();
   expect(detail?.textContent).toContain("なし");
 });
 
+test("図では文献の題名だけを常時表示しない", () => {
+  const { container } = canvas();
+  const note = container.querySelector('.graph-vertex[data-kind="note"]');
+  const work = container.querySelector('.graph-vertex[data-kind="work"]');
+
+  expect(note?.querySelector("text")?.textContent).toBe("先行研究の整理");
+  expect(work?.querySelector("text")).toBeNull();
+  expect(container.querySelector(".graph-detail")).toBeNull();
+});
+
 test("キーボードのフォーカスでも同じ吹き出しが出る", () => {
   const { container } = canvas();
   const note = container.querySelector('.graph-vertex[data-kind="note"]');
+  const work = container.querySelector('.graph-vertex[data-kind="work"]');
 
   fireEvent.focus(note!);
   expect(container.querySelector(".graph-detail")).not.toBeNull();
 
   fireEvent.blur(note!);
   expect(container.querySelector(".graph-detail")).toBeNull();
+
+  fireEvent.focus(work!);
+  expect(container.querySelector(".graph-detail")?.textContent).toContain(
+    WORK_TITLE,
+  );
 });
 
 /// 吹き出しはマウスの位置に依存し、読み上げの順序にも乗らない。同じ内容を点の名前にも持たせる。
@@ -92,6 +110,6 @@ test("支援技術へは点の名前として同じ内容を伝える", () => {
   expect(label).toContain("タグ研究、AsciiDoc");
   expect(label).toContain("つながり1件");
 
-  const work = screen.getByRole("link", { name: /An Example Article/ });
+  const work = screen.getByRole("link", { name: new RegExp(WORK_TITLE) });
   expect(work.getAttribute("aria-label")).toContain("citation key smith2024");
 });
