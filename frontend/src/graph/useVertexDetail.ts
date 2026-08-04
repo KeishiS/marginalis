@@ -13,6 +13,12 @@ import type { VertexDetail } from "./VertexDetail";
 /** 点から吹き出しへマウスを移す間、表示を保つ時間。 */
 const DETAIL_HIDE_DELAY_MS = 120;
 
+interface VertexTarget {
+  model: GraphModel;
+  vertex: GraphVertex;
+  element: Element;
+}
+
 /**
  * 点のホバーとフォーカスから吹き出しの表示状態を管理する。
  *
@@ -32,11 +38,8 @@ export function useVertexDetail({
     model: GraphModel;
     detail: VertexDetail;
   } | null>(null);
-  const active = useRef<{
-    model: GraphModel;
-    vertex: GraphVertex;
-    element: Element;
-  } | null>(null);
+  const active = useRef<VertexTarget | null>(null);
+  const focusedTarget = useRef<VertexTarget | null>(null);
   const vertexHovered = useRef(false);
   const vertexFocused = useRef(false);
   const detailHovered = useRef(false);
@@ -88,6 +91,16 @@ export function useVertexDetail({
     setStoredDetail(null);
   }, [cancelScheduledHide]);
 
+  const restoreFocusedOrHide = useCallback(() => {
+    const target = focusedTarget.current;
+    if (vertexFocused.current && target !== null && target.model === model) {
+      active.current = target;
+      update();
+      return;
+    }
+    hide();
+  }, [hide, model, update]);
+
   const hideIfInactive = useCallback(() => {
     if (
       !vertexHovered.current &&
@@ -95,8 +108,10 @@ export function useVertexDetail({
       !detailHovered.current
     ) {
       hide();
+    } else if (!vertexHovered.current && !detailHovered.current) {
+      restoreFocusedOrHide();
     }
-  }, [hide]);
+  }, [hide, restoreFocusedOrHide]);
 
   const scheduleHide = useCallback(() => {
     cancelScheduledHide();
@@ -109,6 +124,7 @@ export function useVertexDetail({
     // DOM要素と図全体への参照も、新しい図へ切り替わった時点で解放する。
     cancelScheduledHide();
     active.current = null;
+    focusedTarget.current = null;
     vertexHovered.current = false;
     vertexFocused.current = false;
     detailHovered.current = false;
@@ -141,11 +157,13 @@ export function useVertexDetail({
     },
     showFromFocus(vertex: GraphVertex, element: Element) {
       vertexFocused.current = true;
+      focusedTarget.current = { model, vertex, element };
       cancelScheduledHide();
       show(vertex, element);
     },
     blurVertex() {
       vertexFocused.current = false;
+      focusedTarget.current = null;
       hideIfInactive();
     },
     enterPanel() {

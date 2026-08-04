@@ -44,8 +44,16 @@ describe("画面URLの組み立て", () => {
     expect(listPath(root, 2)).toContain("page=2");
   });
 
-  it("削除済み一覧でもサブパスを保つ", () => {
+  it("削除済み一覧でもサブパスと正規化した一覧条件を保つ", () => {
     expect(deletedNotesPath(subpath)).toBe("/marginalis/notes/deleted");
+    expect(
+      deletedNotesPath({
+        basePath: "/marginalis",
+        search: "?tag=b&tag=b&tag=a&updated_after=2026-07-01&page=3&notice=old",
+      }),
+    ).toBe(
+      "/marginalis/notes/deleted?tag=b&tag=a&updated_after=2026-07-01&page=3",
+    );
   });
 
   it("操作結果を付ける一覧URLでは絞り込みを保ち、ページを先頭へ戻す", () => {
