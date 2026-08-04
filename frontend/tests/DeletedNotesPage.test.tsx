@@ -69,6 +69,9 @@ test("削除済みノートの保持情報を表示し、確認後に復元す�
   render(<DeletedNotesPage config={config} navigate={navigate} />);
 
   expect(await screen.findByText("復元するノート")).toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "ノート一覧へ戻る" }),
+  ).toHaveAttribute("href", "/marginalis/?tag=research&page=2");
   expect(screen.getByText("rev-4")).toBeInTheDocument();
   expect(screen.getByText("復元期限を過ぎています。")).toBeInTheDocument();
   const restoreButton = screen.getAllByRole("button", { name: /^復元$/ })[0];

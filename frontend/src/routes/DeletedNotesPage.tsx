@@ -10,7 +10,7 @@ import { ConfirmationDialog } from "../ConfirmationDialog";
 import { formatDateTime } from "../formatting";
 import { noteRestorationProblem } from "../noteLifecyclePresentation";
 import { noteRetentionStatus } from "../noteRetention";
-import { externalPath, listNoticePath } from "../paths";
+import { listNoticePath, listPath } from "../paths";
 import { useApiResource } from "../useApiResource";
 
 export function DeletedNotesPage({
@@ -73,10 +73,7 @@ export function DeletedNotesPage({
             所有するノートは、削除後30日以内であれば復元できます。
           </p>
         </div>
-        <a
-          className="button button-secondary"
-          href={externalPath(config.basePath, "/")}
-        >
+        <a className="button button-secondary" href={listPath(config)}>
           ノート一覧へ戻る
         </a>
       </div>
