@@ -43,12 +43,32 @@ pub(super) fn external_path(base_path: &str, path: &str) -> String {
 }
 
 pub(super) fn valid_return_to(value: &str, base_path: &str) -> bool {
+    if !value.starts_with('/')
+        || value.contains('\\')
+        || value
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return false;
+    }
+
+    let Ok(origin) = url::Url::parse("https://marginalis.invalid/") else {
+        return false;
+    };
+    let Ok(resolved) = origin.join(value) else {
+        return false;
+    };
+    if resolved.origin() != origin.origin() {
+        return false;
+    }
+
     let base_path = base_path.trim_end_matches('/');
-    (value == base_path || value.starts_with(&format!("{base_path}/")))
-        && value.starts_with('/')
-        && !value.starts_with("//")
-        && !value.contains('\r')
-        && !value.contains('\n')
+    base_path.is_empty()
+        || resolved.path() == base_path
+        || resolved
+            .path()
+            .strip_prefix(base_path)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 pub(super) async fn authenticated_ui_actor(

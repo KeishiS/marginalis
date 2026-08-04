@@ -215,3 +215,53 @@ async fn explicit_auth_cleanup_removes_expired_rows_without_new_issuance() {
         1
     );
 }
+
+#[tokio::test]
+async fn issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("schema initialization succeeds");
+    let mut transaction = database.pool.begin().await.expect("begin transaction");
+    for index in 0_i64..1_024 {
+        sqlx::query(
+            "INSERT INTO oidc_login_attempts
+             (state_hash, nonce, pkce_verifier, expires_at_ms)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(index.to_be_bytes().to_vec())
+        .bind(format!("nonce-{index}"))
+        .bind(format!("verifier-{index}"))
+        .bind(1_000_i64)
+        .execute(&mut *transaction)
+        .await
+        .expect("insert pending attempt");
+    }
+    transaction.commit().await.expect("commit attempts");
+
+    let attempts = database.oidc_login_attempt_store();
+    let fresh_attempt = OidcLoginAttempt {
+        state: "fresh-state".into(),
+        nonce: "fresh-nonce".into(),
+        pkce_verifier: "fresh-verifier".into(),
+        expires_at: UnixMillis::new(2_000),
+    };
+    assert!(
+        attempts
+            .issue(fresh_attempt.clone(), UnixMillis::new(999))
+            .await
+            .is_err(),
+        "有効なattemptが上限に達している間は発行を拒否します"
+    );
+    attempts
+        .issue(fresh_attempt, UnixMillis::new(1_000))
+        .await
+        .expect("期限切れattemptを削除して発行できる");
+
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM oidc_login_attempts")
+            .fetch_one(&database.pool)
+            .await
+            .expect("attempt count"),
+        1
+    );
+}

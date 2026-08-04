@@ -173,11 +173,15 @@ impl OidcLoginAttemptStore for SqliteOidcLoginAttemptStore {
     fn issue(
         &self,
         attempt: OidcLoginAttempt,
-        _now: UnixMillis,
+        now: UnixMillis,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         let pool = self.pool.clone();
         async move {
             let mut transaction = pool.begin().await?;
+            sqlx::query("DELETE FROM oidc_login_attempts WHERE expires_at_ms <= ?")
+                .bind(now.get())
+                .execute(&mut *transaction)
+                .await?;
             let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM oidc_login_attempts")
                 .fetch_one(&mut *transaction)
                 .await?;
