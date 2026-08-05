@@ -1100,7 +1100,9 @@ impl McpOAuthUseCases for TestMcpOAuth {
         _actor: Actor,
         request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
-        if request.client.client_id == "consent-client" {
+        if request.client.client_id == "consent-client"
+            && request.scopes == ["notes:read".to_owned()]
+        {
             Ok("test-authorization-code".into())
         } else {
             Err(McpOAuthUseCaseError::InvalidRequest)

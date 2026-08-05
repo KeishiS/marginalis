@@ -18,7 +18,7 @@ use super::{
     state::ApiState,
 };
 
-const SESSION_COOKIE: &str = "marginalis_session";
+pub(super) const SESSION_COOKIE: &str = "marginalis_session";
 pub(super) const CSRF_COOKIE: &str = "marginalis_csrf";
 pub(super) const RETURN_TO_COOKIE: &str = "marginalis_return_to";
 

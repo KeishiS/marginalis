@@ -51,6 +51,10 @@ Authorization Serverは次を検査します。
 `notes:read`だけを持つtokenで`search_bibliography`を呼び出すと、`bibliography:read`を示す
 `403 insufficient_scope`を返します。
 
+同意画面では、クライアントが要求したscopeのうち、許可するものだけを選択できます。選ばなかった
+scopeは認可code、access token、refresh tokenへ記録されません。要求にないscopeを同意画面から追加する
+こともできません。何も選ばずに許可しようとした場合は、scopeを暗黙に補わず、再選択を求めます。
+
 認可の成功応答と、検証済み`redirect_uri`へ返すエラー応答にはRFC 9207の`iss`を含めます。クライアントは
 Authorization Server Metadataの`issuer`と単純な文字列比較を行うことで、別のAuthorization Serverから
 応答を差し替える攻撃を検出できます。
@@ -106,7 +110,7 @@ CIMDのclientは事前登録しません。利用者が同意した時点で、�
 
 クライアントには公開MCP URLだけを設定します。例は`https://notes.example.test/mcp`です。クライアントは
 Protected Resource Metadataから内蔵Authorization Serverを発見し、ブラウザーでKanidmへログインした後、
-要求されたscopeへ同意します。
+要求されたscopeを確認し、必要な操作だけを選んで同意します。
 
 更新前にAuth0で発行したaccess token、refresh token、client IDは内蔵Authorization Serverへ移行されません。
 更新後はクライアント側の既存接続を削除し、改めて接続してください。

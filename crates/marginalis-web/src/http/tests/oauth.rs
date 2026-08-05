@@ -236,9 +236,12 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
     assert!(html.contains("移動先のホスト</dt><dd><code>127.0.0.1</code>"));
     assert!(html.contains("<code>notes:read</code>"));
     assert!(html.contains("<code>notes:write</code>"));
-    assert!(html.contains("ノートの一覧と本文を読み取ります。"));
+    assert!(html.contains("list_notes、get_note、get_note_profileでノートを読み取ります。"));
     assert!(html.contains("<code>bibliography:read</code>"));
     assert!(html.contains("書誌情報を検索します。"));
+    assert!(html.contains(
+        "type=\"checkbox\" name=\"selected_scope\" value=\"notes:read\" form=\"oauth-consent-form\" checked"
+    ));
     assert!(html.contains("この端末上のアプリへ戻ります"));
     assert!(
         html.contains(
@@ -331,9 +334,35 @@ async fn authorization_consent_escapes_every_client_supplied_value() {
 }
 
 #[tokio::test]
-async fn authorization_consent_allows_or_denies_with_the_existing_secure_form() {
+async fn authorization_consent_allows_a_requested_scope_subset_or_denies() {
     async fn submit(decision: &str) -> Response {
-        authenticated_mcp_app()
+        let app = authenticated_mcp_app();
+        let consent = app
+            .clone()
+            .oneshot(
+                Request::get(
+                    "/oauth/authorize?response_type=code&client_id=consent-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread%20notes%3Awrite&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256&state=opaque-state",
+                )
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        let body = axum::body::to_bytes(consent.into_body(), usize::MAX)
+            .await
+            .expect("consent page");
+        let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
+        let signature = hidden_value(html, "consent_signature");
+        let selected = if decision == "approve" {
+            "&selected_scope=notes%3Aread"
+        } else {
+            ""
+        };
+        app
             .oneshot(
                 Request::post("/oauth/authorize/consent")
                     .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -343,7 +372,7 @@ async fn authorization_consent_allows_or_denies_with_the_existing_secure_form() 
                         "marginalis_session=active-session; marginalis_csrf=session-csrf",
                     )
                     .body(Body::from(format!(
-                        "client_id=consent-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&state=opaque-state&csrf_token=session-csrf&decision={decision}"
+                        "client_id=consent-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread%20notes%3Awrite&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&state=opaque-state&csrf_token=session-csrf&consent_signature={signature}{selected}&decision={decision}"
                     )))
                     .expect("request"),
             )
@@ -370,6 +399,90 @@ async fn authorization_consent_allows_or_denies_with_the_existing_secure_form() 
         .expect("denied redirect");
     assert!(denied_location.contains("error=access_denied"));
     assert!(denied_location.contains("state=opaque-state"));
+}
+
+fn hidden_value<'a>(html: &'a str, name: &str) -> &'a str {
+    let marker = format!("name=\"{name}\" value=\"");
+    html.split_once(&marker)
+        .and_then(|(_, remainder)| remainder.split_once('"'))
+        .map(|(value, _)| value)
+        .expect("hidden input")
+}
+
+#[tokio::test]
+async fn authorization_consent_rejects_modified_or_excess_scopes_and_requires_a_selection() {
+    async fn signature_for(scope: &str) -> String {
+        let scope = url::form_urlencoded::byte_serialize(scope.as_bytes()).collect::<String>();
+        let response = authenticated_mcp_app()
+            .oneshot(
+                Request::get(format!(
+                    "/oauth/authorize?response_type=code&client_id=consent-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope={scope}&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256"
+                ))
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("consent page");
+        let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
+        hidden_value(html, "consent_signature").to_owned()
+    }
+
+    async fn submit(scope: &str, selected: Option<&str>, signature: &str) -> Response {
+        let scope = url::form_urlencoded::byte_serialize(scope.as_bytes()).collect::<String>();
+        let selected = selected
+            .map(|value| {
+                let value =
+                    url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>();
+                format!("&selected_scope={value}")
+            })
+            .unwrap_or_default();
+        authenticated_mcp_app()
+            .oneshot(
+                Request::post("/oauth/authorize/consent")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::ORIGIN, "https://example.test")
+                    .header(
+                        header::COOKIE,
+                        "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    )
+                    .body(Body::from(format!(
+                        "client_id=consent-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope={scope}&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&csrf_token=session-csrf&consent_signature={signature}{selected}&decision=approve"
+                    )))
+                    .expect("request"),
+            )
+            .await
+            .expect("response")
+    }
+
+    let read_signature = signature_for("notes:read").await;
+    let modified = submit(
+        "notes:read notes:write",
+        Some("notes:read"),
+        &read_signature,
+    )
+    .await;
+    assert_eq!(modified.status(), StatusCode::BAD_REQUEST);
+
+    let excess = submit("notes:read", Some("notes:write"), &read_signature).await;
+    assert_eq!(excess.status(), StatusCode::BAD_REQUEST);
+
+    let empty = submit("notes:read", None, &read_signature).await;
+    assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
+    let body = axum::body::to_bytes(empty.into_body(), usize::MAX)
+        .await
+        .expect("selection error");
+    assert!(
+        std::str::from_utf8(&body)
+            .expect("UTF-8 HTML")
+            .contains("少なくとも1つの権限を選択するか、拒否してください。")
+    );
 }
 
 #[tokio::test]

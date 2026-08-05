@@ -665,13 +665,29 @@ select:hover {
   background: var(--color-primary-soft);
   border-radius: var(--radius-sm);
   color: var(--color-primary);
-  display: grid;
-  gap: var(--space-1);
   min-width: 0;
   padding: var(--space-2) var(--space-3);
 }
 
-.oauth-scope-list li span {
+.oauth-scope-list label {
+  align-items: start;
+  cursor: pointer;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.oauth-scope-list input {
+  margin-block-start: 0.2rem;
+}
+
+.oauth-scope-list label > span {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.oauth-scope-list label > span > span {
   color: var(--color-text);
 }
 
