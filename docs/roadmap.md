@@ -6,29 +6,12 @@
 
 ## 現在地
 
-`v0.29.0`を2026-08-05に公開しました。公開済み機能と移行方法は
-[変更履歴](../CHANGELOG.md#0290--2026-08-05)、確認結果は
-[v0.29.0受入結果](acceptance-results/v0.29.0.md)を参照してください。この文書には公開履歴を
+`v0.30.0`を2026-08-05に公開しました。公開済み機能と移行方法は
+[変更履歴](../CHANGELOG.md#0300--2026-08-05)、確認結果は
+[v0.30.0受入結果](acceptance-results/v0.30.0.md)を参照してください。この文書には公開履歴を
 書き写さず、未完了の判断と作業だけを置きます。
 
 ## 公開予定
-
-### v0.30.0: Authorization Serverの共有境界
-
-大きなリファクタリングの前に、アーキテクチャの設計条件と回帰試験を項目単位で対応付ける
-[#304](https://github.com/KeishiS/marginalis/issues/304)を行います。2026年7月には、OIDC login attemptの
-発行時に必要な期限切れ行の削除がリファクタリングで失われ、文書だけが正しい状態になる回帰がありました。
-設計条件に安定した識別子を付け、検証先の記載漏れを機械的に拒否してから、中核の分離を進めます。
-
-その上で、[#269](https://github.com/KeishiS/marginalis/issues/269)によりOAuthの状態遷移、scope判定、
-metadata生成を製品非依存の共有crateへ集約します。Axum、SQLite、Marginalis固有のresourceとscopeは
-adapter側に残し、異なるresourceと保存先を持つ試験用consumerで境界を確認します。この版では独立した
-リポジトリへ移さず、既存のgrantとtokenを維持し、DB schemaとarchive形式を変更しないことを原則とします。
-
-同じ認可境界の改善として、同意画面で完全な`client_id`を主要な識別情報として示す
-[#306](https://github.com/KeishiS/marginalis/issues/306)も含めます。MathJaxは、CSPだけに依存せず不要な
-TeX packageの読込を入力段階で拒否する
-[#305](https://github.com/KeishiS/marginalis/issues/305)により、許可するpackageを明示的に固定します。
 
 ### v0.31.0: ノートの来歴と人手確認
 
