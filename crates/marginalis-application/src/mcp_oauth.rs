@@ -171,7 +171,6 @@ impl McpOAuthApplication {
             revision: 0,
         }))
     }
-
     pub async fn client_authorizations(
         &self,
         actor: Actor,
