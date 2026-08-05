@@ -7,13 +7,14 @@ use axum::{
 use marginalis_application::{
     AuthenticationUseCaseError, MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases,
     McpAuthenticatedActor, McpAuthorizationClient, McpClientRegistrationMethod, McpOAuthClient,
-    McpOAuthUseCaseError, McpOAuthUseCases, McpScopeCeilingSetting, McpScopeCeilingUseCaseError,
-    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
-    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands, NoteGraph, NoteGraphNote,
-    NoteGraphQuery, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
-    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
-    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
-    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingSetting,
+    McpScopeCeilingUseCaseError, McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl,
+    NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands,
+    NoteGraph, NoteGraphNote, NoteGraphQuery, NotePresentation, NotePreview, NoteProfile,
+    NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax,
+    NoteQueries, NoteRenderContext, NoteUseCaseError, NoteUseCases, NoteValidationCode,
+    NoteValidationDiagnostic, NoteView, NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes,
+    WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
@@ -1009,10 +1010,15 @@ impl TestMcpAccessTokens for UnavailableMcpAuthenticator {
 
 struct TestMcpOAuth {
     authenticator: Arc<dyn TestMcpAccessTokens>,
+    resource_policy: McpResourcePolicy,
 }
 
 #[async_trait]
 impl McpOAuthUseCases for TestMcpOAuth {
+    fn resource_policy(&self) -> McpResourcePolicy {
+        self.resource_policy.clone()
+    }
+
     async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError> {
         if client
             .redirect_uris
@@ -1293,23 +1299,26 @@ impl TestApp {
         let state = match self.mcp {
             Some((base_url, allowed_origins, authenticator)) => {
                 let base_url = url::Url::parse(base_url).expect("base URL");
+                let resource_policy = marginalis_application::McpResourcePolicy::new(
+                    McpEndpoint::resource_uri_for(&base_url),
+                    "Marginalis MCP".into(),
+                    vec![
+                        "notes:read".into(),
+                        "notes:write".into(),
+                        "notes:delete".into(),
+                        "bibliography:read".into(),
+                        "bibliography:write".into(),
+                        "bibliography:delete".into(),
+                    ],
+                    vec!["notes:read".into()],
+                )
+                .expect("MCP resource policy");
                 state.with_mcp(
                     McpEndpoint::new(
-                        Arc::new(TestMcpOAuth { authenticator }),
-                        marginalis_application::McpResourcePolicy::new(
-                            McpEndpoint::resource_uri_for(&base_url),
-                            "Marginalis MCP".into(),
-                            vec![
-                                "notes:read".into(),
-                                "notes:write".into(),
-                                "notes:delete".into(),
-                                "bibliography:read".into(),
-                                "bibliography:write".into(),
-                                "bibliography:delete".into(),
-                            ],
-                            vec!["notes:read".into()],
-                        )
-                        .expect("MCP resource policy"),
+                        Arc::new(TestMcpOAuth {
+                            authenticator,
+                            resource_policy,
+                        }),
                         &base_url,
                         allowed_origins,
                     )

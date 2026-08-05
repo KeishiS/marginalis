@@ -229,6 +229,11 @@ impl AuthorizationServer {
         self.resource_policy.supported_scopes()
     }
 
+    /// metadata、challenge、認可、token検証で共有するresource policyの正本。
+    pub const fn resource_policy(&self) -> &ResourcePolicy {
+        &self.resource_policy
+    }
+
     pub async fn validate_authorization_request(
         &self,
         request: &AuthorizationRequest,

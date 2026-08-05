@@ -92,10 +92,10 @@ impl std::error::Error for InvalidMcpEndpoint {}
 impl McpEndpoint {
     pub fn new(
         oauth: Arc<dyn McpOAuthUseCases>,
-        resource_policy: ResourcePolicy,
         base_url: &url::Url,
         allowed_origins: Vec<String>,
     ) -> Result<Self, InvalidMcpEndpoint> {
+        let resource_policy = oauth.resource_policy();
         if resource_policy.uri() != &base_url_at(base_url, "mcp") {
             return Err(InvalidMcpEndpoint);
         }
