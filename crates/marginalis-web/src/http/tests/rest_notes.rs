@@ -6,6 +6,7 @@ async fn rest_and_web_creation_routes_assign_their_server_side_sources() {
         notes: Vec::new(),
         render_fails: false,
         creation_sources: Mutex::new(Vec::new()),
+        list_queries: Mutex::new(Vec::new()),
     });
     let app = TestApp::default()
         .authenticated()
@@ -34,6 +35,33 @@ async fn rest_and_web_creation_routes_assign_their_server_side_sources() {
     assert_eq!(
         *notes.creation_sources.lock().expect("creation source lock"),
         [NoteCreationSource::Rest, NoteCreationSource::Web]
+    );
+}
+
+#[tokio::test]
+async fn rest_list_forwards_creation_source_and_review_status_filters() {
+    let notes = Arc::new(UiNotes {
+        notes: Vec::new(),
+        render_fails: false,
+        creation_sources: Mutex::new(Vec::new()),
+        list_queries: Mutex::new(Vec::new()),
+    });
+    let response = TestApp::default()
+        .authenticated()
+        .notes(notes.clone())
+        .router()
+        .oneshot(authenticated_request(
+            "/api/v3/notes?created_via=mcp&review_status=reviewed",
+        ))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        *notes.list_queries.lock().expect("list query lock"),
+        [NoteListQuery {
+            created_via: Some(NoteCreationSource::Mcp),
+            review_status: Some(marginalis_domain::NoteReviewStatus::Reviewed),
+        }]
     );
 }
 

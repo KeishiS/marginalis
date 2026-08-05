@@ -6,6 +6,7 @@ async fn mcp_creation_assigns_the_mcp_source() {
         notes: Vec::new(),
         render_fails: false,
         creation_sources: Mutex::new(Vec::new()),
+        list_queries: Mutex::new(Vec::new()),
     });
     let response = TestApp::default()
         .notes(notes.clone())
@@ -31,6 +32,44 @@ async fn mcp_creation_assigns_the_mcp_source() {
     assert_eq!(
         *notes.creation_sources.lock().expect("creation source lock"),
         [NoteCreationSource::Mcp]
+    );
+}
+
+#[tokio::test]
+async fn mcp_list_forwards_creation_source_and_review_status_filters() {
+    let notes = Arc::new(UiNotes {
+        notes: Vec::new(),
+        render_fails: false,
+        creation_sources: Mutex::new(Vec::new()),
+        list_queries: Mutex::new(Vec::new()),
+    });
+    let response = TestApp::default()
+        .notes(notes.clone())
+        .mcp(
+            "https://example.test",
+            vec!["https://chatgpt.com".into()],
+            Arc::new(TestMcpAuthenticator),
+        )
+        .router()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, "Bearer valid-token")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_notes","arguments":{"created_via":"rest","review_status":"pending"}}}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        *notes.list_queries.lock().expect("list query lock"),
+        [NoteListQuery {
+            created_via: Some(NoteCreationSource::Rest),
+            review_status: Some(marginalis_domain::NoteReviewStatus::Pending),
+        }]
     );
 }
 

@@ -278,9 +278,9 @@ macro_rules! implement_note_boundaries {
             async fn list_visible_notes(
                 &self,
                 actor: Actor,
-                _query: NoteListQuery,
+                query: NoteListQuery,
             ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
-                <$type>::list_visible_notes(self, actor).await
+                <$type>::list_visible_notes(self, actor, query).await
             }
 
             async fn list_owned_deleted_notes(
@@ -501,6 +501,7 @@ impl Notes {
     async fn list_visible_notes(
         &self,
         _actor: Actor,
+        _query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
         let note = mcp_note();
         Ok(vec![NoteListEntry {
@@ -710,13 +711,19 @@ struct UiNotes {
     notes: Vec<Note>,
     render_fails: bool,
     creation_sources: Mutex<Vec<NoteCreationSource>>,
+    list_queries: Mutex<Vec<NoteListQuery>>,
 }
 
 impl UiNotes {
     async fn list_visible_notes(
         &self,
         _actor: Actor,
+        query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+        self.list_queries
+            .lock()
+            .expect("list query lock")
+            .push(query);
         Ok(self
             .notes
             .iter()
@@ -1476,6 +1483,7 @@ fn ui_app(notes: Vec<Note>, render_fails: bool, cookie_path: &str) -> Router {
             notes,
             render_fails,
             creation_sources: Mutex::new(Vec::new()),
+            list_queries: Mutex::new(Vec::new()),
         }))
         .cookie_path(cookie_path)
         .router()
