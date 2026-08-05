@@ -51,9 +51,11 @@ citation keyの維持、競合の診断、入力から消えた文献を自動�
 
 ### Authorization Serverの独立配布
 
-`v0.30.0`で共有crateの境界と試験用consumerを確認した後、#269のADRで独立リポジトリ、registry、固定した
-Git dependencyを比較します。独立リポジトリへの移動は、その判断とversion方針、脆弱性対応、両利用側の
-CIがそろってから行います。
+`v0.30.0`で共有crateの境界とrepository契約試験を確認した後、
+[#314](https://github.com/KeishiS/marginalis/issues/314)で独立リポジトリ、registry、固定したGit dependencyを
+比較します。独立リポジトリへの移動は、その判断と版管理、脆弱性対応、両利用側のCIがそろってから
+行います。現在の責務と更新手順は
+[MCP Authorization Serverの保守](mcp-authorization-server-maintenance.md)を正本とします。
 
 [連環（Renkan）](research-search-vision.md)はMarginalisとは別の探索サービスです。Renkanへの統合と
 PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。Marginalis側では

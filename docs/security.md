@@ -4,6 +4,22 @@
 記録します。認証・認可の設計条件は[アーキテクチャ](architecture.md)、NixOSの秘密情報と
 systemdサービスの保護設定は[NixOSでの運用](nixos.md)を参照してください。
 
+## 問題の報告
+
+脆弱性、認証情報の漏えい、未公開データへのアクセスが疑われる場合は、公開Issueへ再現手順や
+秘密情報を書かず、`sando.keishi.sp@alumni.tsukuba.ac.jp`へ連絡してください。影響する版、観測した
+動作、必要最小限の再現条件を伝え、token、認可code、PKCE verifier、Cookie、client secret、実際の
+ノート本文は送らないでください。追加情報を安全に共有する経路は、最初の連絡後に決めます。
+
+一般に公開しても安全な防御の改善案や、秘密情報を含まない不具合は
+[GitHub Issues](https://github.com/KeishiS/marginalis/issues)で受け付けます。
+
+セキュリティー修正は、原則として最新の通常版を対象にパッチ版または次の通常版で提供します。過去の
+通常版を継続して保守する互換期間は設けません。更新時は[変更履歴](../CHANGELOG.md)と
+[リリース手順](release.md)で、対象版と必要な運用操作を確認してください。
+
+## 実装上の判断
+
 MCPのClient ID Metadata Documentは、利用者が指定した外部URLをサーバーから取得するため、内部networkへ
 不正な要求を送る攻撃の対象になります。取得先はHTTPSに限定し、DNSで得たすべてのaddressがRFC 6890の
 特別用途IPアドレスではないことを接続前に検査します。接続先addressは検査結果へ固定し、自動redirectを

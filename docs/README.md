@@ -39,6 +39,7 @@
 - [引用はノート作成者の書誌ライブラリーで解決する](adr/0006-引用はノート作成者の書誌ライブラリーで解決する.md)
 - [MCPのAuthorization Serverを内蔵する](adr/0007-mcpのauthorization-serverを内蔵する.md)
 - [MCP Authorization Serverの中核を製品から分離する](adr/0008-mcp-authorization-serverの中核を製品から分離する.md)
+- [MCP Authorization Serverの保守](mcp-authorization-server-maintenance.md)
 - [MCPのscope上限を利用者設定として管理する](adr/0009-mcpのscope上限を利用者設定として管理する.md)
 - [ブラウザーとMCPプロトコルの回帰テスト](protocol-regression.md)
 
