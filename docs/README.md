@@ -41,6 +41,7 @@
 - [MCP Authorization Serverの中核を製品から分離する](adr/0008-mcp-authorization-serverの中核を製品から分離する.md)
 - [MCP Authorization Serverの保守](mcp-authorization-server-maintenance.md)
 - [MCPのscope上限を利用者設定として管理する](adr/0009-mcpのscope上限を利用者設定として管理する.md)
+- [外部ツールの書誌情報はCSL-JSONから一方向に取り込む](adr/0010-外部書誌はcsl-jsonから一方向に取り込む.md)
 - [ブラウザーとMCPプロトコルの回帰テスト](protocol-regression.md)
 
 ## 過去の記録と今後の計画
