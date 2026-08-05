@@ -7,13 +7,15 @@
 
 use std::collections::BTreeMap;
 
-use crate::{Archive, ArchiveAclEntry, ArchiveBibliographyItem, ArchiveNote};
+use crate::{
+    Archive, ArchiveAclEntry, ArchiveBibliographyItem, ArchiveNote, ArchiveNoteProvenance,
+};
 use marginalis_application::LogicalSnapshot;
 use marginalis_domain::{Identity, Note, NotePermission, UnixMillis};
 use serde::{Deserialize, Serialize};
 
 /// この出力の形式名。archiveの版とは別に管理する。
-pub const DOCUMENT_EXPORT_FORMAT: &str = "marginalis-documents-1";
+pub const DOCUMENT_EXPORT_FORMAT: &str = "marginalis-documents-2";
 
 /// ファイル名へ残す題名の最大文字数。
 ///
@@ -79,6 +81,7 @@ pub struct DocumentNote {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub revision: i64,
+    pub provenance: ArchiveNoteProvenance,
     pub acl: Vec<DocumentAclEntry>,
 }
 
@@ -189,6 +192,18 @@ impl<'a> OwnerBuilder<'a> {
                     created_at_ms: note.created_at().get(),
                     updated_at_ms: note.updated_at().get(),
                     revision: note.revision().get(),
+                    provenance: ArchiveNoteProvenance {
+                        created_via: note.created_via(),
+                        review_tracking_known: note.review_tracking_known(),
+                        reviewed_revision: note.last_review().map(|review| review.revision().get()),
+                        reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
+                        reviewer_issuer: note
+                            .last_review()
+                            .map(|review| review.reviewer().issuer().to_owned()),
+                        reviewer_subject: note
+                            .last_review()
+                            .map(|review| review.reviewer().subject().to_owned()),
+                    },
                     acl: snapshot
                         .note_acl()
                         .iter()
@@ -387,6 +402,7 @@ pub fn archive_from_documents(
                 revision: note.revision,
                 // 書き出しは削除済みノートを含まないため、取り込み後も削除済みは存在しない。
                 deleted_at_ms: None,
+                provenance: Some(note.provenance.clone()),
             });
             note_acl.extend(note.acl.iter().map(|entry| ArchiveAclEntry {
                 note_id: note.note_id.clone(),
@@ -454,7 +470,8 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_domain::{
-        BibliographyItem, BibliographyItemId, EntityId, NoteId, Revision, UnixMillis,
+        BibliographyItem, BibliographyItemId, EntityId, NoteCreationSource, NoteId, NoteRestore,
+        NoteReviewTracking, Revision, UnixMillis,
     };
 
     use super::*;
@@ -464,17 +481,21 @@ mod tests {
     }
 
     fn note(id: &str, title: &str, owner: &str, deleted: bool) -> Note {
-        Note::restore(
-            NoteId::new(EntityId::from_str(id).expect("UUIDv7")),
-            identity(owner),
-            title.into(),
-            format!("= {title}\n\n本文"),
-            vec!["研究".into()],
-            UnixMillis::new(1000),
-            UnixMillis::new(2000),
-            Revision::INITIAL,
-            deleted.then(|| UnixMillis::new(2000)),
-        )
+        Note::restore(NoteRestore {
+            note_id: NoteId::new(EntityId::from_str(id).expect("UUIDv7")),
+            owner: identity(owner),
+            draft: marginalis_domain::NoteDraft {
+                title: title.into(),
+                source: format!("= {title}\n\n本文"),
+                tags: vec!["研究".into()],
+            },
+            created_at: UnixMillis::new(1000),
+            updated_at: UnixMillis::new(2000),
+            revision: Revision::INITIAL,
+            deleted_at: deleted.then(|| UnixMillis::new(2000)),
+            created_via: NoteCreationSource::Rest,
+            review: NoteReviewTracking::pending(),
+        })
         .expect("note")
     }
 

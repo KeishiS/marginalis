@@ -91,6 +91,10 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
   フィールドを直接変更する公開APIは設けない。
   SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
   検査しない。
+- **ARCH-PROVENANCE-001 — 来歴と確認のrevision境界**: 作成経路はtransportのサーバー側入口で
+  決め、入力本文やクライアント指定から受け取らない。確認操作は所有者、現在のrevision、削除状態を
+  SQLiteの一つの条件付き更新で検査し、確認操作自体を新しいrevisionとして記録する。その後は本文、
+  ACL、削除、復元のどの変更でもrevisionの不一致により確認待ちとし、最後の確認記録は保持する。
 - **ARCH-AUTHN-001 — OIDC主体の決定**: `server-users`所属はKanidmの署名検証済みID tokenから決める。
   WebとMCPの同意画面は、同じ`(issuer, subject)`を所有者identityに使用する。
 - **ARCH-SESSION-001 — sessionとlogin attemptの期限**: Web sessionは24時間のsliding idle期限と7日の

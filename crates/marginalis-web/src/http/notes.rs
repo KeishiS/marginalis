@@ -7,17 +7,19 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use marginalis_application::{
-    NoteAclChange, NoteGraphQuery, NoteRenderContext, NoteView, NoteWritePolicy,
+    NoteAclChange, NoteGraphQuery, NoteListQuery, NoteRenderContext, NoteReviewDetails, NoteView,
+    NoteWritePolicy,
 };
 use marginalis_contract::{
     DeletedNoteListEntryResponse, MathMacroResponse, NoteAclGrantResponse, NoteAclResponse,
     NoteAclUpdateInput, NoteDraftInput, NoteGraphCitationResponse, NoteGraphNoteResponse,
     NoteGraphReferenceResponse, NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse,
-    NotePreviewResponse, NoteResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode,
-    RelatedNotesResponse, SessionResponse,
+    NotePreviewResponse, NoteResponse, NoteReviewResponse, NoteSummaryResponse, NoteViewResponse,
+    ProblemCode, RelatedNotesResponse, SessionResponse,
 };
 use marginalis_domain::{
-    EntityId, MAX_GRAPH_DEPTH, Note, NoteDraft, NoteId, NoteSummary, Revision,
+    EntityId, MAX_GRAPH_DEPTH, Note, NoteCreationSource, NoteDraft, NoteId, NoteReviewStatus,
+    NoteSummary, Revision,
 };
 use serde::Deserialize;
 use std::str::FromStr;
@@ -29,6 +31,12 @@ use super::{
 };
 
 pub(super) type NoteInput = NoteDraftInput;
+
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+pub(super) struct NoteListInput {
+    created_via: Option<NoteCreationSource>,
+    review_status: Option<NoteReviewStatus>,
+}
 
 pub(super) async fn session(
     State(state): State<ApiState>,
@@ -43,12 +51,19 @@ pub(super) async fn session(
 
 pub(super) async fn list_notes(
     State(state): State<ApiState>,
+    Query(query): Query<NoteListInput>,
     headers: HeaderMap,
 ) -> HandlerResult<Json<Vec<NoteListEntryResponse>>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let notes = state
         .notes
-        .list_visible_notes(actor)
+        .list_visible_notes(
+            actor,
+            NoteListQuery {
+                created_via: query.created_via,
+                review_status: query.review_status,
+            },
+        )
         .await
         .map_err(note_error)?;
     Ok(Json(
@@ -60,6 +75,10 @@ pub(super) async fn list_notes(
                 tags: entry.summary.tags,
                 updated_at_ms: entry.summary.updated_at.get(),
                 revision: entry.summary.revision.get(),
+                created_via: entry.summary.created_via,
+                review_status: entry.summary.review_status,
+                reviewed_revision: entry.summary.reviewed_revision.map(Revision::get),
+                reviewed_at_ms: entry.summary.reviewed_at.map(|time| time.get()),
                 access: entry.access,
             })
             .collect(),
@@ -145,6 +164,30 @@ pub(super) async fn create_note(
                 tags: Vec::new(),
             },
             NoteWritePolicy::AllowAdvisories,
+            NoteCreationSource::Rest,
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(note_json(StatusCode::CREATED, note))
+}
+
+pub(super) async fn create_web_note(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(input): Json<NoteInput>,
+) -> HandlerResult<Response> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let note = state
+        .notes
+        .create_note(
+            actor,
+            NoteDraft {
+                source: input.source,
+                title: String::new(),
+                tags: Vec::new(),
+            },
+            NoteWritePolicy::AllowAdvisories,
+            NoteCreationSource::Web,
         )
         .await
         .map_err(note_error)?;
@@ -295,6 +338,57 @@ pub(super) async fn replace_note_acl(
     Ok(note_json(StatusCode::OK, note))
 }
 
+pub(super) async fn read_note_review(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let review = state
+        .notes
+        .read_note_review(actor, parse_note_id(&note_id)?)
+        .await
+        .map_err(note_error)?;
+    Ok(review_response(review))
+}
+
+pub(super) async fn mark_note_reviewed(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let review = state
+        .notes
+        .mark_note_reviewed(
+            actor,
+            parse_note_id(&note_id)?,
+            expected_revision(&headers)?,
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(review_response(review))
+}
+
+fn review_response(review: NoteReviewDetails) -> Response {
+    (
+        [(header::ETAG, etag(review.current_revision))],
+        Json(NoteReviewResponse {
+            note_id: review.note_id.to_string(),
+            current_revision: review.current_revision.get(),
+            status: review.status,
+            reviewed_revision: review.reviewed_revision.map(Revision::get),
+            reviewed_at_ms: review.reviewed_at.map(|time| time.get()),
+            reviewer_issuer: review
+                .reviewer
+                .as_ref()
+                .map(|value| value.issuer().to_owned()),
+            reviewer_subject: review.reviewer.map(|value| value.subject().to_owned()),
+        }),
+    )
+        .into_response()
+}
+
 pub(super) async fn delete_note(
     State(state): State<ApiState>,
     Path(note_id): Path<String>,
@@ -379,6 +473,10 @@ fn note_response(note: Note) -> NoteResponse {
         created_at_ms: note.created_at().get(),
         updated_at_ms: note.updated_at().get(),
         revision: note.revision().get(),
+        created_via: note.created_via(),
+        review_status: note.review_status(),
+        reviewed_revision: note.last_review().map(|review| review.revision().get()),
+        reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
     }
 }
 
@@ -389,6 +487,10 @@ fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
         tags: note.tags,
         updated_at_ms: note.updated_at.get(),
         revision: note.revision.get(),
+        created_via: note.created_via,
+        review_status: note.review_status,
+        reviewed_revision: note.reviewed_revision.map(Revision::get),
+        reviewed_at_ms: note.reviewed_at.map(|time| time.get()),
     }
 }
 

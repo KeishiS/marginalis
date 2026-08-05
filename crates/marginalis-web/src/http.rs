@@ -52,9 +52,10 @@ use self::{
     },
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
-        create_note, delete_note, export_note, list_deleted_notes, list_notes, preview_new_note,
-        preview_note_update, read_note, read_note_acl, read_note_graph, read_note_view,
-        replace_note_acl, restore_note, session, update_note,
+        create_note, create_web_note, delete_note, export_note, list_deleted_notes, list_notes,
+        mark_note_reviewed, preview_new_note, preview_note_update, read_note, read_note_acl,
+        read_note_graph, read_note_review, read_note_view, replace_note_acl, restore_note, session,
+        update_note,
     },
     oauth::{
         mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
@@ -161,6 +162,7 @@ pub fn router(state: ApiState) -> Router {
             axum::routing::put(update_bibliography_item).delete(delete_bibliography_item),
         )
         .route("/api/v3/notes", get(list_notes).post(create_note))
+        .route("/api/v3/web/notes", post(create_web_note))
         .route("/api/v3/notes/deleted", get(list_deleted_notes))
         .route("/api/v3/notes/preview", post(preview_new_note))
         .route("/api/v3/notes/{note_id}/preview", post(preview_note_update))
@@ -173,6 +175,10 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/api/v3/notes/{note_id}/acl",
             get(read_note_acl).put(replace_note_acl),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/review",
+            get(read_note_review).post(mark_note_reviewed),
         )
         .route("/api/v3/notes/{note_id}/source", get(export_note))
         .route("/api/v3/notes/graph", get(read_note_graph))

@@ -1,6 +1,8 @@
 //! MCP toolの名前、入出力型、JSON Schema。
 
-use marginalis_domain::{ENTITY_ID_PATTERN, NOTE_POLICY, Revision};
+use marginalis_domain::{
+    ENTITY_ID_PATTERN, NOTE_POLICY, NoteCreationSource, NoteReviewStatus, Revision,
+};
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -239,6 +241,19 @@ pub struct McpNoteSummary {
     pub updated_at_ms: i64,
     #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
+    pub created_via: NoteCreationSource,
+    pub review_status: NoteReviewStatus,
+    #[schemars(required)]
+    pub reviewed_revision: Option<i64>,
+    #[schemars(required)]
+    pub reviewed_at_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpListNotesInput {
+    pub created_via: Option<NoteCreationSource>,
+    pub review_status: Option<NoteReviewStatus>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -257,6 +272,12 @@ pub struct McpGetNoteOutput {
     pub updated_at_ms: i64,
     #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
+    pub created_via: NoteCreationSource,
+    pub review_status: NoteReviewStatus,
+    #[schemars(required)]
+    pub reviewed_revision: Option<i64>,
+    #[schemars(required)]
+    pub reviewed_at_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -341,9 +362,9 @@ pub struct McpNoteProfileExample {
 
 pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
     vec![
-        McpToolContract::new::<McpEmptyInput, McpListNotesOutput>(
+        McpToolContract::new::<McpListNotesInput, McpListNotesOutput>(
             McpToolName::ListNotes,
-            "List visible note summaries; requires notes:read",
+            "List visible note summaries, optionally filtered by creation source and review status; requires notes:read",
         ),
         McpToolContract::new::<McpEmptyInput, McpNoteProfileOutput>(
             McpToolName::GetNoteProfile,
@@ -492,7 +513,17 @@ mod tests {
         let summary = &list_schema["$defs"]["McpNoteSummary"];
         assert_eq!(
             summary["required"],
-            serde_json::json!(["note_id", "title", "tags", "updated_at_ms", "revision"])
+            serde_json::json!([
+                "note_id",
+                "title",
+                "tags",
+                "updated_at_ms",
+                "revision",
+                "created_via",
+                "review_status",
+                "reviewed_revision",
+                "reviewed_at_ms"
+            ])
         );
 
         let note_schema = schema::<McpGetNoteOutput>();
@@ -504,7 +535,11 @@ mod tests {
                 "source",
                 "tags",
                 "updated_at_ms",
-                "revision"
+                "revision",
+                "created_via",
+                "review_status",
+                "reviewed_revision",
+                "reviewed_at_ms"
             ])
         );
         assert!(

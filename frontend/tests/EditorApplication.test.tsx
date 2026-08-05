@@ -103,6 +103,10 @@ const NOTE: Note = {
   created_at_ms: 1,
   updated_at_ms: 2,
   revision: 3,
+  created_via: "web",
+  review_status: "pending",
+  reviewed_revision: null,
+  reviewed_at_ms: null,
 };
 
 afterEach(() => {
@@ -126,7 +130,7 @@ test("完全なAsciiDoc文書を一つの入力として作成する", async () 
 
   expect(await screen.findByText("保存しました。")).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith(
-    "/marginalis/api/v3/notes",
+    "/marginalis/api/v3/web/notes",
     expect.objectContaining({
       method: "POST",
       body: JSON.stringify({ source: SOURCE }),

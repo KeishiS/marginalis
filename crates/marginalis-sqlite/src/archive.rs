@@ -12,13 +12,10 @@ impl SqliteDatabase {
     /// SQLite正本のノートとACLを同じ読み取りtransactionから取り出す。
     pub async fn export_archive_snapshot(&self) -> Result<LogicalSnapshot, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        let rows = sqlx::query(
-            "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-             FROM notes ORDER BY note_id ASC",
-        )
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(database_error)?;
+        let rows = sqlx::query("SELECT * FROM notes ORDER BY note_id ASC")
+            .fetch_all(&mut *transaction)
+            .await
+            .map_err(database_error)?;
         let notes = rows
             .into_iter()
             .map(note_from_row)
@@ -230,8 +227,12 @@ async fn insert_note_row(
     let tags_json =
         serde_json::to_string(note.tags()).map_err(|_| SqliteStoreError::CorruptData)?;
     sqlx::query(
-        "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO notes (
+            note_id, creator_issuer, creator_subject, title, source, tags_json,
+            created_at_ms, updated_at_ms, revision, deleted_at_ms, created_via,
+            review_tracking_known, reviewed_revision, reviewed_at_ms,
+            reviewer_issuer, reviewer_subject
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(note.note_id().to_string())
     .bind(note.creator_issuer())
@@ -243,6 +244,12 @@ async fn insert_note_row(
     .bind(note.updated_at().get())
     .bind(note.revision().get())
     .bind(note.deleted_at().map(marginalis_domain::UnixMillis::get))
+    .bind(note.created_via().as_str())
+    .bind(i64::from(note.review_tracking_known()))
+    .bind(note.last_review().map(|review| review.revision().get()))
+    .bind(note.last_review().map(|review| review.reviewed_at().get()))
+    .bind(note.last_review().map(|review| review.reviewer().issuer()))
+    .bind(note.last_review().map(|review| review.reviewer().subject()))
     .execute(&mut **transaction)
     .await
     .map_err(database_error)?;

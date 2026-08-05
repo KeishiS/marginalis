@@ -3,6 +3,8 @@ import { useCallback, useRef, useState } from "react";
 import {
   ApplicationConfig,
   deleteNote,
+  markNoteReviewed,
+  NoteReview,
   NoteSummary,
   NoteView,
   readNoteView,
@@ -34,6 +36,9 @@ export function NoteViewPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
+  const [review, setReview] = useState<NoteReview | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewProblem, setReviewProblem] = useState<string | null>(null);
   const deleteButton = useRef<HTMLButtonElement>(null);
   const load = useCallback(
     (signal: AbortSignal) => readNoteView(config.apiBase, noteId, signal),
@@ -65,11 +70,35 @@ export function NoteViewPage({
     setDeleting(true);
     setDeleteProblem(null);
     try {
-      await deleteNote(config.apiBase, view.note.note_id, view.note.revision);
+      await deleteNote(
+        config.apiBase,
+        view.note.note_id,
+        review?.current_revision ?? view.note.revision,
+      );
       window.location.assign(listNoticePath(config, "note-deleted"));
     } catch (error: unknown) {
       setDeleteProblem(noteDeletionProblem(error));
       setDeleting(false);
+    }
+  }
+  async function confirmReview() {
+    if (view === null || reviewing) return;
+    setReviewing(true);
+    setReviewProblem(null);
+    try {
+      setReview(
+        await markNoteReviewed(
+          config.apiBase,
+          view.note.note_id,
+          review?.current_revision ?? view.note.revision,
+        ),
+      );
+    } catch {
+      setReviewProblem(
+        "確認済みにできませんでした。ノートを再読み込みしてからお試しください。",
+      );
+    } finally {
+      setReviewing(false);
     }
   }
   if (failed)
@@ -117,6 +146,23 @@ export function NoteViewPage({
                 : "note IDをコピーできませんでした。"}
             </p>
           )}
+          <dl className="note-provenance">
+            <div>
+              <dt>作成経路</dt>
+              <dd>{creationSourceLabel(view.note.created_via)}</dd>
+            </div>
+            <div>
+              <dt>人手確認</dt>
+              <dd>
+                {reviewStatusLabel(review?.status ?? view.note.review_status)}
+              </dd>
+            </div>
+          </dl>
+          {reviewProblem && (
+            <p className="problem-inline" role="alert">
+              {reviewProblem}
+            </p>
+          )}
         </div>
         <nav className="page-actions" aria-label="ノート操作">
           <a
@@ -138,6 +184,16 @@ export function NoteViewPage({
           )}
           {view.access === "manage" && (
             <>
+              {(review?.status ?? view.note.review_status) !== "reviewed" && (
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={reviewing}
+                  onClick={() => void confirmReview()}
+                >
+                  {reviewing ? "確認を記録しています" : "確認済みにする"}
+                </button>
+              )}
               <a
                 className="button button-secondary"
                 href={accessPath(config, noteId)}
@@ -182,6 +238,30 @@ export function NoteViewPage({
       )}
     </section>
   );
+}
+
+function creationSourceLabel(source: NoteView["note"]["created_via"]): string {
+  switch (source) {
+    case "web":
+      return "Web UI";
+    case "rest":
+      return "REST API";
+    case "mcp":
+      return "MCP";
+    case "unknown":
+      return "旧形式（不明）";
+  }
+}
+
+function reviewStatusLabel(status: NoteView["note"]["review_status"]): string {
+  switch (status) {
+    case "reviewed":
+      return "現在の版を確認済み";
+    case "pending":
+      return "確認待ち";
+    case "unknown":
+      return "旧形式（不明）";
+  }
 }
 
 function RelatedNotes({

@@ -1,7 +1,7 @@
 //! ノートの作成、更新、論理削除、復元。
 
 use async_trait::async_trait;
-use marginalis_domain::{Actor, Note, NoteDraft, NoteId, Revision};
+use marginalis_domain::{Actor, Note, NoteCreationSource, NoteDraft, NoteId, Revision};
 
 use crate::{NoteCommands, NoteUseCaseError, NoteWritePolicy, ValidatedNoteDraft};
 
@@ -14,6 +14,7 @@ impl NoteCommands for NoteApplication {
         actor: Actor,
         draft: NoteDraft,
         policy: NoteWritePolicy,
+        created_via: NoteCreationSource,
     ) -> Result<Note, NoteUseCaseError> {
         let validated = self
             .content
@@ -39,6 +40,7 @@ impl NoteCommands for NoteApplication {
             actor.identity(),
             draft,
             now,
+            created_via,
         );
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
@@ -150,7 +152,10 @@ pub(super) fn reject_warnings(
 mod tests {
     use std::sync::{Arc, atomic::Ordering};
 
-    use marginalis_domain::{Actor, EntityId, Note, NoteDraft, NoteId, Revision, UnixMillis};
+    use marginalis_domain::{
+        Actor, EntityId, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
+        NoteReviewTracking, Revision, UnixMillis,
+    };
 
     use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteQueries, NoteValidationTarget};
 
@@ -164,6 +169,7 @@ mod tests {
     async fn creates_a_note_using_only_application_ports() {
         let repository = Arc::new(MemoryNotes::default());
         let application = NoteApplication::new(
+            repository.clone(),
             repository.clone(),
             repository.clone(),
             repository.clone(),
@@ -186,12 +192,18 @@ mod tests {
                     tags: vec!["設計".into()],
                 },
                 NoteWritePolicy::AllowAdvisories,
+                NoteCreationSource::Rest,
             )
             .await
             .expect("create note");
 
         assert_eq!(created.creator_subject(), "alice");
         assert_eq!(created.revision().get(), 1);
+        assert_eq!(created.created_via(), NoteCreationSource::Rest);
+        assert_eq!(
+            created.review_status(),
+            marginalis_domain::NoteReviewStatus::Pending
+        );
         assert_eq!(
             application
                 .read_note(actor, created.note_id())
@@ -211,20 +223,25 @@ mod tests {
                 .expect("UUIDv7"),
         );
         repository.notes.lock().expect("notes lock").push(
-            Note::restore(
+            Note::restore(NoteRestore {
                 note_id,
-                OneItemLibrary::owner(),
-                "共有されたノート".into(),
-                "= 共有されたノート\n\n本文".into(),
-                Vec::new(),
-                UnixMillis::new(0),
-                UnixMillis::new(1),
-                Revision::INITIAL,
-                None,
-            )
+                owner: OneItemLibrary::owner(),
+                draft: NoteDraft {
+                    title: "共有されたノート".into(),
+                    source: "= 共有されたノート\n\n本文".into(),
+                    tags: Vec::new(),
+                },
+                created_at: UnixMillis::new(0),
+                updated_at: UnixMillis::new(1),
+                revision: Revision::INITIAL,
+                deleted_at: None,
+                created_via: NoteCreationSource::Mcp,
+                review: NoteReviewTracking::pending(),
+            })
             .expect("stored note"),
         );
         let application = NoteApplication::new(
+            repository.clone(),
             repository.clone(),
             repository.clone(),
             repository.clone(),
@@ -259,7 +276,12 @@ mod tests {
         );
 
         let created = application
-            .create_note(editor, draft, NoteWritePolicy::RejectWarnings)
+            .create_note(
+                editor,
+                draft,
+                NoteWritePolicy::RejectWarnings,
+                NoteCreationSource::Rest,
+            )
             .await;
         let Err(NoteUseCaseError::AdvisoriesRejected(diagnostics)) = created else {
             panic!("未登録のcitation keyは新規作成で拒否されます: {created:?}");
@@ -271,6 +293,7 @@ mod tests {
     async fn strict_writes_reject_warnings_before_mutation() {
         let repository = Arc::new(MemoryNotes::default());
         let application = NoteApplication::new(
+            repository.clone(),
             repository.clone(),
             repository.clone(),
             repository.clone(),
@@ -294,6 +317,7 @@ mod tests {
                 actor.clone(),
                 draft.clone(),
                 NoteWritePolicy::RejectWarnings,
+                NoteCreationSource::Rest,
             )
             .await
             .expect_err("warning must reject strict create");
@@ -308,6 +332,7 @@ mod tests {
                 actor.clone(),
                 draft.clone(),
                 NoteWritePolicy::AllowAdvisories,
+                NoteCreationSource::Rest,
             )
             .await
             .expect("advisory is accepted");

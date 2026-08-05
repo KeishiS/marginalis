@@ -240,24 +240,32 @@ fn sorted_links<T: Clone + Eq, K: Ord>(
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{EntityId, Identity, Revision, UnixMillis};
+    use marginalis_domain::{
+        EntityId, Identity, NoteCreationSource, NoteDraft, NoteRestore, NoteReviewTracking,
+        Revision, UnixMillis,
+    };
 
     use super::*;
 
     fn note() -> Note {
-        Note::restore(
-            NoteId::new(
+        Note::restore(NoteRestore {
+            note_id: NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
-            "Title".into(),
-            "Body".into(),
-            Vec::new(),
-            UnixMillis::new(1),
-            UnixMillis::new(1),
-            Revision::INITIAL,
-            None,
-        )
+            owner: Identity::new("https://id.example.test".into(), "alice".into())
+                .expect("valid owner"),
+            draft: NoteDraft {
+                title: "Title".into(),
+                source: "Body".into(),
+                tags: Vec::new(),
+            },
+            created_at: UnixMillis::new(1),
+            updated_at: UnixMillis::new(1),
+            revision: Revision::INITIAL,
+            deleted_at: None,
+            created_via: NoteCreationSource::Unknown,
+            review: NoteReviewTracking::Unknown,
+        })
         .expect("consistent note")
     }
 

@@ -1,19 +1,21 @@
 //! MCP toolの入力検査、use case呼出し、契約型への変換。
 
 use marginalis_application::{
-    BibliographyUseCaseError, BibliographyUseCases, NoteProfile, NoteUseCaseError, NoteUseCases,
-    NoteWritePolicy,
+    BibliographyUseCaseError, BibliographyUseCases, NoteListQuery, NoteProfile, NoteUseCaseError,
+    NoteUseCases, NoteWritePolicy,
 };
 use marginalis_contract::{
     McpAddBibliographyItemInput, McpAddBibliographyItemsInput, McpBibliographyImportError,
     McpBibliographyImportOutput, McpBibliographyItem, McpBibliographyListOutput,
     McpCreateNoteInput, McpDeleteBibliographyItemInput, McpDeleteNoteInput, McpEmptyInput,
-    McpGetNoteInput, McpGetNoteOutput, McpListNotesOutput, McpNoteProfileExample,
-    McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule,
-    McpNoteProfileSyntax, McpNoteRevisionOutput, McpNoteSummary, McpSearchBibliographyInput,
-    McpToolName, McpUpdateNoteInput, ProblemResponse,
+    McpGetNoteInput, McpGetNoteOutput, McpListNotesInput, McpListNotesOutput,
+    McpNoteProfileExample, McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput,
+    McpNoteProfileRule, McpNoteProfileSyntax, McpNoteRevisionOutput, McpNoteSummary,
+    McpSearchBibliographyInput, McpToolName, McpUpdateNoteInput, ProblemResponse,
 };
-use marginalis_domain::{Actor, BibliographyItemId, EntityId, Note, NoteDraft, Revision};
+use marginalis_domain::{
+    Actor, BibliographyItemId, EntityId, Note, NoteCreationSource, NoteDraft, Revision,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::mcp::JsonRpcResponse;
@@ -181,30 +183,43 @@ async fn execute_mcp_tool(
     call: McpToolCall,
 ) -> Result<McpToolOutput, McpToolFailure> {
     let result = match call.tool {
-        Some(McpToolName::ListNotes)
-            if call
-                .arguments
-                .as_object()
-                .is_none_or(|value| !value.is_empty()) =>
-        {
-            return Err(McpToolFailure::InvalidArguments(
-                "list arguments are invalid",
-            ));
-        }
-        Some(McpToolName::ListNotes) => notes.list_visible_notes(actor).await.map(|notes| {
-            McpToolOutput::NoteList(McpListNotesOutput {
-                notes: notes
-                    .into_iter()
-                    .map(|entry| McpNoteSummary {
-                        note_id: entry.summary.note_id.to_string(),
-                        title: entry.summary.title,
-                        tags: entry.summary.tags,
-                        updated_at_ms: entry.summary.updated_at.get(),
-                        revision: entry.summary.revision.get(),
+        Some(McpToolName::ListNotes) => {
+            let Ok(input) = serde_json::from_value::<McpListNotesInput>(call.arguments) else {
+                return Err(McpToolFailure::InvalidArguments(
+                    "list arguments are invalid",
+                ));
+            };
+            notes
+                .list_visible_notes(
+                    actor,
+                    NoteListQuery {
+                        created_via: input.created_via,
+                        review_status: input.review_status,
+                    },
+                )
+                .await
+                .map(|notes| {
+                    McpToolOutput::NoteList(McpListNotesOutput {
+                        notes: notes
+                            .into_iter()
+                            .map(|entry| McpNoteSummary {
+                                note_id: entry.summary.note_id.to_string(),
+                                title: entry.summary.title,
+                                tags: entry.summary.tags,
+                                updated_at_ms: entry.summary.updated_at.get(),
+                                revision: entry.summary.revision.get(),
+                                created_via: entry.summary.created_via,
+                                review_status: entry.summary.review_status,
+                                reviewed_revision: entry
+                                    .summary
+                                    .reviewed_revision
+                                    .map(Revision::get),
+                                reviewed_at_ms: entry.summary.reviewed_at.map(|time| time.get()),
+                            })
+                            .collect(),
                     })
-                    .collect(),
-            })
-        }),
+                })
+        }
         Some(McpToolName::GetNoteProfile)
             if call
                 .arguments
@@ -235,6 +250,10 @@ async fn execute_mcp_tool(
                     tags: note.tags().to_vec(),
                     updated_at_ms: note.updated_at().get(),
                     revision: note.revision().get(),
+                    created_via: note.created_via(),
+                    review_status: note.review_status(),
+                    reviewed_revision: note.last_review().map(|review| review.revision().get()),
+                    reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
                 })
             })
         }
@@ -253,6 +272,7 @@ async fn execute_mcp_tool(
                         tags: Vec::new(),
                     },
                     NoteWritePolicy::RejectWarnings,
+                    NoteCreationSource::Mcp,
                 )
                 .await
                 .map(note_revision_output)

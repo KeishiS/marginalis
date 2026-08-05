@@ -90,6 +90,14 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
                     <dt>アクセス</dt>
                     <dd>{accessLabel(note.access)}</dd>
                   </div>
+                  <div>
+                    <dt>作成経路</dt>
+                    <dd>{creationSourceLabel(note.created_via)}</dd>
+                  </div>
+                  <div>
+                    <dt>人手確認</dt>
+                    <dd>{reviewStatusLabel(note.review_status)}</dd>
+                  </div>
                 </dl>
                 {note.tags.length > 0 && (
                   <ul className="tag-list" aria-label="ノートのタグ">
@@ -118,6 +126,30 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
       )}
     </section>
   );
+}
+
+function creationSourceLabel(source: NoteListEntry["created_via"]): string {
+  switch (source) {
+    case "web":
+      return "Web UI";
+    case "rest":
+      return "REST API";
+    case "mcp":
+      return "MCP";
+    case "unknown":
+      return "不明";
+  }
+}
+
+function reviewStatusLabel(status: NoteListEntry["review_status"]): string {
+  switch (status) {
+    case "reviewed":
+      return "確認済み";
+    case "pending":
+      return "確認待ち";
+    case "unknown":
+      return "不明";
+  }
 }
 
 function NoteListFilters({

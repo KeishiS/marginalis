@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use marginalis_domain::{Actor, DeletedNoteListEntry, Note, NoteId, NoteListEntry};
 
-use crate::{NoteQueries, NoteUseCaseError};
+use crate::{NoteListQuery, NoteQueries, NoteUseCaseError};
 
 use super::{NoteApplication, map_repository_error};
 
@@ -12,9 +12,10 @@ impl NoteQueries for NoteApplication {
     async fn list_visible_notes(
         &self,
         actor: Actor,
+        query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
         self.queries
-            .list_visible_notes(&actor)
+            .list_visible_notes(&actor, &query)
             .await
             .map_err(map_repository_error)
     }

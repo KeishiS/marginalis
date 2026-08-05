@@ -362,6 +362,7 @@ mod tests {
         NoteApplication::new(
             repository.clone(),
             repository.clone(),
+            repository.clone(),
             repository,
             Arc::new(AcceptContent::default()),
             Arc::new(OneItemLibrary),

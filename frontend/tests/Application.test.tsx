@@ -18,6 +18,13 @@ const config = {
   styleNonce: "test-style-nonce",
 };
 
+const provenance = {
+  created_via: "web",
+  review_status: "pending",
+  reviewed_revision: null,
+  reviewed_at_ms: null,
+} as const;
+
 afterEach(() => {
   cleanup();
   document.cookie = "marginalis_csrf=; Max-Age=0; path=/";
@@ -120,6 +127,7 @@ describe("Application", () => {
               tags: [],
               updated_at_ms: 1,
               revision: 1,
+              ...provenance,
               access: "manage",
             },
           ]),
@@ -149,6 +157,7 @@ describe("Application", () => {
               tags: ["research", "rust"],
               updated_at_ms: Date.parse("2026-07-28T12:00:00Z"),
               revision: 1,
+              ...provenance,
               access: "edit",
             },
             {
@@ -157,6 +166,7 @@ describe("Application", () => {
               tags: ["other"],
               updated_at_ms: Date.parse("2026-07-28T12:00:00Z"),
               revision: 1,
+              ...provenance,
               access: "read",
             },
           ]),
@@ -206,6 +216,7 @@ describe("Application", () => {
               created_at_ms: 1,
               updated_at_ms: 1,
               revision: 1,
+              ...provenance,
             },
             access: "manage",
             html: "<article><h1>設計メモ</h1></article>",
@@ -298,6 +309,7 @@ describe("Application", () => {
               created_at_ms: 1,
               updated_at_ms: 1,
               revision: 1,
+              ...provenance,
             },
             access: "read",
             html: "<article><h1>設計メモ</h1></article>",
@@ -346,6 +358,7 @@ describe("Application", () => {
               created_at_ms: 1,
               updated_at_ms: 1,
               revision: 2,
+              ...provenance,
             },
             access: "edit",
             html: "<article></article>",
@@ -389,6 +402,7 @@ describe("Application", () => {
               created_at_ms: 1,
               updated_at_ms: 1,
               revision: 7,
+              ...provenance,
             },
             access: "manage",
             html: "<article><p>残す本文</p></article>",
@@ -436,5 +450,65 @@ describe("Application", () => {
       }),
     );
     expect(screen.getByRole("button", { name: "削除する" })).toBeEnabled();
+  });
+
+  it("所有者が現在の版を確認済みにする", async () => {
+    document.cookie = "marginalis_csrf=test-csrf; path=/";
+    const noteId = "0197c9bc-0000-7000-8000-000000000001";
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            note: {
+              note_id: noteId,
+              title: "確認対象",
+              source: "= 確認対象\n\n本文",
+              tags: [],
+              created_at_ms: 1,
+              updated_at_ms: 2,
+              revision: 3,
+              ...provenance,
+              created_via: "mcp",
+            },
+            access: "manage",
+            html: "<article><p>本文</p></article>",
+            math_macros: [],
+            related: { outgoing: [], incoming: [] },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            note_id: noteId,
+            current_revision: 4,
+            status: "reviewed",
+            reviewed_revision: 4,
+            reviewed_at_ms: 3,
+            reviewer_issuer: "https://id.example.test",
+            reviewer_subject: "alice",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetch);
+
+    render(<Application config={{ ...config, path: `/notes/${noteId}` }} />);
+    expect(await screen.findByText("MCP")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "確認済みにする" }));
+
+    expect(await screen.findByText("現在の版を確認済み")).toBeInTheDocument();
+    expect(fetch).toHaveBeenLastCalledWith(
+      `/marginalis/api/v3/notes/${noteId}/review`,
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "if-match": '"rev-3"',
+          "x-csrf-token": "test-csrf",
+        }),
+      }),
+    );
   });
 });

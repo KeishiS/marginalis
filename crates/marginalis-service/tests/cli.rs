@@ -78,7 +78,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-14");
+    assert_eq!(archive_json["format"], "marginalis-archive-15");
     assert_eq!(archive_json["adocweave_package_version"], "0.27.0");
     assert_eq!(archive_json["note_profile_version"], 5);
 
@@ -323,13 +323,22 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let migrated: serde_json::Value =
         serde_json::from_slice(&fs::read(&output).expect("read migration output"))
             .expect("migrated JSON");
-    assert_eq!(migrated["format"], "marginalis-archive-14");
+    assert_eq!(migrated["format"], "marginalis-archive-15");
     assert_eq!(migrated["adocweave_package_version"], "0.27.0");
     assert_eq!(migrated["note_profile_version"], 5);
     assert_eq!(migrated["math_macro_settings"], serde_json::json!([]));
-    for field in ["notes", "note_acl", "bibliography_items"] {
+    for field in ["note_acl", "bibliography_items"] {
         assert_eq!(migrated[field], previous[field], "changed field: {field}");
     }
+    assert_eq!(
+        migrated["notes"][0]["source"],
+        previous["notes"][0]["source"]
+    );
+    assert_eq!(migrated["notes"][0]["provenance"]["created_via"], "unknown");
+    assert_eq!(
+        migrated["notes"][0]["provenance"]["review_tracking_known"],
+        false
+    );
 
     let verified = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
         .args(["verify-restore", "--input"])
@@ -552,7 +561,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 18);
+    assert_eq!(report["database"]["schema"]["actual"], 19);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
     assert!(!String::from_utf8_lossy(&healthy.stderr).contains("must-not-be-reported"));
 
@@ -691,7 +700,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
     let source = serde_json::json!({
-        "format": "marginalis-archive-14",
+        "format": "marginalis-archive-15",
         "adocweave_package_version": "0.27.0",
         "note_profile_version": 5,
         "notes": [
@@ -703,7 +712,12 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
                 "created_at_ms": 1,
                 "updated_at_ms": 2,
                 "revision": 1,
-                "deleted_at_ms": null
+                "deleted_at_ms": null,
+                "provenance": {
+                    "created_via": "rest", "review_tracking_known": true,
+                    "reviewed_revision": null, "reviewed_at_ms": null,
+                    "reviewer_issuer": null, "reviewer_subject": null
+                }
             },
             {
                 "note_id": "0197c9bc-0000-7000-8000-000000000002",
@@ -713,7 +727,12 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
                 "created_at_ms": 1,
                 "updated_at_ms": 2,
                 "revision": 1,
-                "deleted_at_ms": 2
+                "deleted_at_ms": 2,
+                "provenance": {
+                    "created_via": "rest", "review_tracking_known": true,
+                    "reviewed_revision": null, "reviewed_at_ms": null,
+                    "reviewer_issuer": null, "reviewer_subject": null
+                }
             }
         ],
         "note_acl": [{
@@ -816,7 +835,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("manifest.json")).expect("manifest"))
             .expect("manifest JSON");
-    assert_eq!(manifest["format"], "marginalis-documents-1");
+    assert_eq!(manifest["format"], "marginalis-documents-2");
     assert_eq!(manifest["marginalis_version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(manifest["adocweave_package_version"], "0.27.0");
     assert_eq!(manifest["note_profile_version"], 5);
@@ -880,7 +899,7 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
     let source = serde_json::json!({
-        "format": "marginalis-archive-14",
+        "format": "marginalis-archive-15",
         "adocweave_package_version": "0.27.0",
         "note_profile_version": 5,
         // 所有者を2人にし、note IDが所有者をまたいで交互に並ぶようにする。書き出しは所有者ごとに
@@ -893,7 +912,12 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1,
-            "deleted_at_ms": null
+            "deleted_at_ms": null,
+            "provenance": {
+                "created_via": "rest", "review_tracking_known": true,
+                "reviewed_revision": null, "reviewed_at_ms": null,
+                "reviewer_issuer": null, "reviewer_subject": null
+            }
         }, {
             "note_id": "0197c9bc-0000-7000-8000-000000000002",
             "creator_issuer": "https://id.example.test",
@@ -902,7 +926,12 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1,
-            "deleted_at_ms": null
+            "deleted_at_ms": null,
+            "provenance": {
+                "created_via": "mcp", "review_tracking_known": true,
+                "reviewed_revision": null, "reviewed_at_ms": null,
+                "reviewer_issuer": null, "reviewer_subject": null
+            }
         }, {
             "note_id": "0197c9bc-0000-7000-8000-000000000003",
             "creator_issuer": "https://id.example.test",
@@ -911,7 +940,12 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1,
-            "deleted_at_ms": null
+            "deleted_at_ms": null,
+            "provenance": {
+                "created_via": "web", "review_tracking_known": true,
+                "reviewed_revision": null, "reviewed_at_ms": null,
+                "reviewer_issuer": null, "reviewer_subject": null
+            }
         }],
         "note_acl": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",

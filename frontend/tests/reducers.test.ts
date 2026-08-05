@@ -18,6 +18,10 @@ const note = {
   created_at_ms: 1,
   updated_at_ms: 2,
   revision: 2,
+  created_via: "web" as const,
+  review_status: "pending" as const,
+  reviewed_revision: null,
+  reviewed_at_ms: null,
 };
 
 describe("editorReducer", () => {

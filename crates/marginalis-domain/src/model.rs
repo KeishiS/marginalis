@@ -226,11 +226,172 @@ pub struct Note {
     updated_at: UnixMillis,
     revision: Revision,
     deleted_at: Option<UnixMillis>,
+    created_via: NoteCreationSource,
+    review: NoteReviewTracking,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("note metadata is inconsistent")]
 pub struct InvalidNote;
+
+/// ノートを最初に保存した、サーバー側で判定する接続経路。
+///
+/// 作成者の種類、AIの利用、内容の品質を証明する値ではない。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteCreationSource {
+    Web,
+    Rest,
+    Mcp,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("note creation source is invalid")]
+pub struct InvalidNoteCreationSource;
+
+impl NoteCreationSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::Rest => "rest",
+            Self::Mcp => "mcp",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl FromStr for NoteCreationSource {
+    type Err = InvalidNoteCreationSource;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "web" => Ok(Self::Web),
+            "rest" => Ok(Self::Rest),
+            "mcp" => Ok(Self::Mcp),
+            "unknown" => Ok(Self::Unknown),
+            _ => Err(InvalidNoteCreationSource),
+        }
+    }
+}
+
+/// 現在のrevisionに対する人手確認状態。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteReviewStatus {
+    Unknown,
+    Pending,
+    Reviewed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("note review status is invalid")]
+pub struct InvalidNoteReviewStatus;
+
+impl NoteReviewStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Pending => "pending",
+            Self::Reviewed => "reviewed",
+        }
+    }
+}
+
+impl FromStr for NoteReviewStatus {
+    type Err = InvalidNoteReviewStatus;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "unknown" => Ok(Self::Unknown),
+            "pending" => Ok(Self::Pending),
+            "reviewed" => Ok(Self::Reviewed),
+            _ => Err(InvalidNoteReviewStatus),
+        }
+    }
+}
+
+/// 所有者が明示的に確認したノートのrevisionと確認者。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteReviewRecord {
+    revision: Revision,
+    reviewed_at: UnixMillis,
+    reviewer: Identity,
+}
+
+impl NoteReviewRecord {
+    pub const fn new(revision: Revision, reviewed_at: UnixMillis, reviewer: Identity) -> Self {
+        Self {
+            revision,
+            reviewed_at,
+            reviewer,
+        }
+    }
+
+    pub const fn revision(&self) -> Revision {
+        self.revision
+    }
+
+    pub const fn reviewed_at(&self) -> UnixMillis {
+        self.reviewed_at
+    }
+
+    pub const fn reviewer(&self) -> &Identity {
+        &self.reviewer
+    }
+}
+
+/// 旧形式の情報不足と、確認の有無を追跡している状態を区別する保存値。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NoteReviewTracking {
+    Unknown,
+    Tracked {
+        last_review: Option<NoteReviewRecord>,
+    },
+}
+
+impl NoteReviewTracking {
+    pub const fn pending() -> Self {
+        Self::Tracked { last_review: None }
+    }
+
+    pub const fn tracked(last_review: Option<NoteReviewRecord>) -> Self {
+        Self::Tracked { last_review }
+    }
+
+    pub fn status(&self, current_revision: Revision) -> NoteReviewStatus {
+        match self {
+            Self::Unknown => NoteReviewStatus::Unknown,
+            Self::Tracked {
+                last_review: Some(review),
+            } if review.revision == current_revision => NoteReviewStatus::Reviewed,
+            Self::Tracked { .. } => NoteReviewStatus::Pending,
+        }
+    }
+
+    pub const fn last_review(&self) -> Option<&NoteReviewRecord> {
+        match self {
+            Self::Unknown | Self::Tracked { last_review: None } => None,
+            Self::Tracked {
+                last_review: Some(review),
+            } => Some(review),
+        }
+    }
+}
+
+/// 保存済みノートを復元するための、保存方式に依存しない値一式。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteRestore {
+    pub note_id: NoteId,
+    pub owner: Identity,
+    pub draft: NoteDraft,
+    pub created_at: UnixMillis,
+    pub updated_at: UnixMillis,
+    pub revision: Revision,
+    pub deleted_at: Option<UnixMillis>,
+    pub created_via: NoteCreationSource,
+    pub review: NoteReviewTracking,
+}
 
 impl Note {
     pub fn create(
@@ -238,6 +399,7 @@ impl Note {
         owner: &Identity,
         draft: NoteDraft,
         created_at: UnixMillis,
+        created_via: NoteCreationSource,
     ) -> Self {
         Self {
             note_id,
@@ -249,37 +411,47 @@ impl Note {
             updated_at: created_at,
             revision: Revision::INITIAL,
             deleted_at: None,
+            created_via,
+            review: NoteReviewTracking::pending(),
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        note_id: NoteId,
-        owner: Identity,
-        title: String,
-        source: String,
-        tags: Vec<String>,
-        created_at: UnixMillis,
-        updated_at: UnixMillis,
-        revision: Revision,
-        deleted_at: Option<UnixMillis>,
-    ) -> Result<Self, InvalidNote> {
+    pub fn restore(restored: NoteRestore) -> Result<Self, InvalidNote> {
+        let NoteRestore {
+            note_id,
+            owner,
+            draft,
+            created_at,
+            updated_at,
+            revision,
+            deleted_at,
+            created_via,
+            review,
+        } = restored;
         if created_at > updated_at
             || deleted_at
                 .is_some_and(|deleted_at| deleted_at < created_at || deleted_at > updated_at)
+            || review.last_review().is_some_and(|last_review| {
+                last_review.revision > revision
+                    || last_review.reviewed_at < created_at
+                    || last_review.reviewed_at > updated_at
+                    || last_review.reviewer != owner
+            })
         {
             return Err(InvalidNote);
         }
         Ok(Self {
             note_id,
             owner,
-            title,
-            source,
-            tags,
+            title: draft.title,
+            source: draft.source,
+            tags: draft.tags,
             created_at,
             updated_at,
             revision,
             deleted_at,
+            created_via,
+            review,
         })
     }
 
@@ -326,6 +498,22 @@ impl Note {
     pub const fn deleted_at(&self) -> Option<UnixMillis> {
         self.deleted_at
     }
+
+    pub const fn created_via(&self) -> NoteCreationSource {
+        self.created_via
+    }
+
+    pub fn review_status(&self) -> NoteReviewStatus {
+        self.review.status(self.revision)
+    }
+
+    pub const fn last_review(&self) -> Option<&NoteReviewRecord> {
+        self.review.last_review()
+    }
+
+    pub const fn review_tracking_known(&self) -> bool {
+        matches!(self.review, NoteReviewTracking::Tracked { .. })
+    }
 }
 
 /// 一覧表示に必要な、本文と所有者情報を含まないノート概要。
@@ -336,6 +524,10 @@ pub struct NoteSummary {
     pub tags: Vec<String>,
     pub updated_at: UnixMillis,
     pub revision: Revision,
+    pub created_via: NoteCreationSource,
+    pub review_status: NoteReviewStatus,
+    pub reviewed_revision: Option<Revision>,
+    pub reviewed_at: Option<UnixMillis>,
 }
 
 /// 一覧表示用の概要と、現在の利用者に対する実効アクセス水準。
@@ -363,6 +555,10 @@ impl From<&Note> for NoteSummary {
             tags: note.tags().to_vec(),
             updated_at: note.updated_at(),
             revision: note.revision(),
+            created_via: note.created_via(),
+            review_status: note.review_status(),
+            reviewed_revision: note.last_review().map(NoteReviewRecord::revision),
+            reviewed_at: note.last_review().map(NoteReviewRecord::reviewed_at),
         }
     }
 }
@@ -601,17 +797,21 @@ mod tests {
         let owner =
             Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner");
         let restore = |created_at, updated_at, revision, deleted_at: Option<i64>| {
-            Note::restore(
+            Note::restore(NoteRestore {
                 note_id,
-                owner.clone(),
-                "Title".into(),
-                "Body".into(),
-                Vec::new(),
-                UnixMillis::new(created_at),
-                UnixMillis::new(updated_at),
+                owner: owner.clone(),
+                draft: NoteDraft {
+                    title: "Title".into(),
+                    source: "Body".into(),
+                    tags: Vec::new(),
+                },
+                created_at: UnixMillis::new(created_at),
+                updated_at: UnixMillis::new(updated_at),
                 revision,
-                deleted_at.map(UnixMillis::new),
-            )
+                deleted_at: deleted_at.map(UnixMillis::new),
+                created_via: NoteCreationSource::Unknown,
+                review: NoteReviewTracking::Unknown,
+            })
         };
 
         assert_eq!(Revision::new(0), Err(InvalidRevision));
@@ -624,6 +824,40 @@ mod tests {
         assert_eq!(
             restore(100, 200, Revision::INITIAL, Some(201)),
             Err(InvalidNote)
+        );
+    }
+
+    #[test]
+    fn review_status_distinguishes_unknown_pending_current_and_stale() {
+        let owner =
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner");
+        let current = Revision::new(3).expect("revision");
+
+        assert_eq!(
+            NoteReviewTracking::Unknown.status(current),
+            NoteReviewStatus::Unknown
+        );
+        assert_eq!(
+            NoteReviewTracking::pending().status(current),
+            NoteReviewStatus::Pending
+        );
+        assert_eq!(
+            NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
+                current,
+                UnixMillis::new(200),
+                owner.clone(),
+            )))
+            .status(current),
+            NoteReviewStatus::Reviewed
+        );
+        assert_eq!(
+            NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
+                Revision::new(2).expect("revision"),
+                UnixMillis::new(150),
+                owner,
+            )))
+            .status(current),
+            NoteReviewStatus::Pending
         );
     }
 }

@@ -1,6 +1,87 @@
 use super::*;
 
 #[tokio::test]
+async fn rest_and_web_creation_routes_assign_their_server_side_sources() {
+    let notes = Arc::new(UiNotes {
+        notes: Vec::new(),
+        render_fails: false,
+        creation_sources: Mutex::new(Vec::new()),
+    });
+    let app = TestApp::default()
+        .authenticated()
+        .notes(notes.clone())
+        .router();
+    for path in ["/api/v3/notes", "/api/v3/web/notes"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(path)
+                    .header("content-type", "application/json")
+                    .header(header::ORIGIN, "https://example.test")
+                    .header("sec-fetch-site", "same-origin")
+                    .header(
+                        header::COOKIE,
+                        "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    )
+                    .header("x-csrf-token", "session-csrf")
+                    .body(Body::from(r#"{"source":"= 題名\n\n本文"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+    assert_eq!(
+        *notes.creation_sources.lock().expect("creation source lock"),
+        [NoteCreationSource::Rest, NoteCreationSource::Web]
+    );
+}
+
+#[tokio::test]
+async fn owner_reads_and_marks_the_current_note_revision_as_reviewed() {
+    let note_id = "0197c9bc-0000-7000-8000-000000000002";
+    let app = authenticated_app();
+    let read = app
+        .clone()
+        .oneshot(authenticated_request(&format!(
+            "/api/v3/notes/{note_id}/review"
+        )))
+        .await
+        .expect("read response");
+    assert_eq!(read.status(), StatusCode::OK);
+    let read_body = to_bytes(read.into_body(), usize::MAX).await.expect("body");
+    let read_json: serde_json::Value = serde_json::from_slice(&read_body).expect("JSON");
+    assert_eq!(read_json["status"], "pending");
+    assert_eq!(read_json["reviewer_subject"], serde_json::Value::Null);
+
+    let marked = app
+        .oneshot(
+            Request::post(format!("/api/v3/notes/{note_id}/review"))
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .header(header::IF_MATCH, "\"rev-3\"")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("mark response");
+    assert_eq!(marked.status(), StatusCode::OK);
+    assert_eq!(marked.headers()[header::ETAG], "\"rev-4\"");
+    let marked_body = to_bytes(marked.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let marked_json: serde_json::Value = serde_json::from_slice(&marked_body).expect("JSON");
+    assert_eq!(marked_json["status"], "reviewed");
+    assert_eq!(marked_json["reviewed_revision"], 4);
+    assert_eq!(marked_json["reviewer_subject"], "alice");
+}
+
+#[tokio::test]
 async fn deleted_note_list_exposes_only_the_owner_projection() {
     let response = authenticated_app()
         .oneshot(authenticated_request("/api/v3/notes/deleted"))

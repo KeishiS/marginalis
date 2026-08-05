@@ -23,7 +23,8 @@ use crate::{
 use super::{
     AccessibleNote, NoteAclRepository, NoteCitationQuery, NoteCommandRepository, NoteContent,
     NoteContentError, NoteGraph, NoteGraphQuery, NoteLinkResolver, NoteLinks, NoteQueryRepository,
-    NoteReferenceQuery, NoteRenderInputs, NoteRepositoryError, NoteViewSnapshot,
+    NoteReferenceQuery, NoteRenderInputs, NoteRepositoryError, NoteReviewRepository,
+    NoteViewSnapshot,
 };
 
 pub(super) struct MemoryNotes {
@@ -47,6 +48,7 @@ impl NoteQueryRepository for MemoryNotes {
     async fn list_visible_notes(
         &self,
         _actor: &Actor,
+        _query: &crate::NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteRepositoryError> {
         Ok(self
             .notes
@@ -180,6 +182,31 @@ impl NoteAclRepository for MemoryNotes {
         _entries: &[NoteAclEntry],
         _expected_revision: Revision,
         _now: UnixMillis,
+    ) -> Result<Note, NoteRepositoryError> {
+        Err(NoteRepositoryError::Unavailable)
+    }
+}
+
+#[async_trait]
+impl NoteReviewRepository for MemoryNotes {
+    async fn read_owned_note_review(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Note, NoteRepositoryError> {
+        self.accessible_note(actor, note_id)
+            .await?
+            .filter(|accessible| accessible.access == NoteAccess::Manage)
+            .map(|accessible| accessible.note)
+            .ok_or(NoteRepositoryError::NotFound)
+    }
+
+    async fn mark_owned_note_reviewed(
+        &self,
+        _actor: &Actor,
+        _note_id: NoteId,
+        _expected_revision: Revision,
+        _reviewed_at: UnixMillis,
     ) -> Result<Note, NoteRepositoryError> {
         Err(NoteRepositoryError::Unavailable)
     }
