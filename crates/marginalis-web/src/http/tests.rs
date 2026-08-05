@@ -7,13 +7,13 @@ use axum::{
 use marginalis_application::{
     AuthenticationUseCaseError, MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases,
     McpAuthenticatedActor, McpAuthorizationClient, McpClientRegistrationMethod, McpOAuthClient,
-    McpOAuthUseCaseError, McpOAuthUseCases, McpTokenPair, McpValidatedAuthorizationRequest,
-    NoteAccessControl, NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
-    NoteCommands, NoteGraph, NoteGraphNote, NoteGraphQuery, NotePresentation, NotePreview,
-    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
-    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteUseCaseError, NoteUseCases,
-    NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
-    OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpScopeCeilingSetting, McpScopeCeilingUseCaseError,
+    McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl, NoteAclChange, NoteAclState,
+    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands, NoteGraph, NoteGraphNote,
+    NoteGraphQuery, NotePresentation, NotePreview, NoteProfile, NoteProfileExample,
+    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteQueries, NoteRenderContext,
+    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
+    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
@@ -1151,6 +1151,44 @@ impl McpOAuthUseCases for TestMcpOAuth {
         self.authenticator
             .authenticate_access_token(token, resource_uri)
             .await
+    }
+
+    async fn principal_scope_ceiling(
+        &self,
+        _actor: Actor,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        Ok(McpScopeCeilingSetting {
+            scopes: vec!["notes:read".into(), "notes:write".into()],
+            revision: 2,
+        })
+    }
+
+    async fn replace_principal_scope_ceiling(
+        &self,
+        _actor: Actor,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        if expected_revision != 2 {
+            return Err(McpScopeCeilingUseCaseError::Conflict);
+        }
+        Ok(McpScopeCeilingSetting {
+            scopes,
+            revision: 3,
+        })
+    }
+
+    async fn replace_client_scope_ceiling(
+        &self,
+        _actor: Actor,
+        _client_id: String,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        Ok(McpScopeCeilingSetting {
+            scopes,
+            revision: expected_revision + 1,
+        })
     }
 
     async fn revoke(&self, _actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {

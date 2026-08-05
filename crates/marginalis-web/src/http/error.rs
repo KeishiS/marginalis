@@ -186,6 +186,32 @@ pub(super) fn math_macro_error(
     })
 }
 
+pub(super) fn mcp_scope_ceiling_error(
+    error: marginalis_application::McpScopeCeilingUseCaseError,
+) -> (StatusCode, Json<ProblemResponse>) {
+    use marginalis_application::McpScopeCeilingUseCaseError;
+
+    problem_response(match error {
+        McpScopeCeilingUseCaseError::Invalid => ProblemResponse::new(
+            ProblemCode::ValidationFailed,
+            "MCP scope ceiling settings are invalid",
+        ),
+        McpScopeCeilingUseCaseError::Conflict => ProblemResponse::new(
+            ProblemCode::Conflict,
+            "MCP scope ceiling settings revision conflicts",
+        ),
+        McpScopeCeilingUseCaseError::ClientNotFound => {
+            ProblemResponse::new(ProblemCode::NotFound, "MCP client was not found")
+        }
+        McpScopeCeilingUseCaseError::Unavailable | McpScopeCeilingUseCaseError::CorruptData => {
+            ProblemResponse::new(
+                ProblemCode::Unavailable,
+                "MCP scope ceiling settings are unavailable",
+            )
+        }
+    })
+}
+
 fn record_problem_code(code: ProblemCode) {
     tracing::Span::current().record("problem_code", code.as_str());
 }

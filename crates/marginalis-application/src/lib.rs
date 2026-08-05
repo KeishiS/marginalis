@@ -361,6 +361,11 @@ pub enum McpScopeCeilingUseCaseError {
 
 #[async_trait]
 pub trait McpScopeCeilingRepository: Send + Sync {
+    async fn principal_scope_ceiling(
+        &self,
+        actor: &Actor,
+    ) -> Result<Option<McpScopeCeilingSetting>, McpScopeCeilingRepositoryError>;
+
     async fn scope_ceilings(
         &self,
         actor: &Actor,
@@ -581,6 +586,23 @@ pub trait McpOAuthUseCases: Send + Sync {
         token: String,
         resource_uri: String,
     ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError>;
+    async fn principal_scope_ceiling(
+        &self,
+        actor: Actor,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError>;
+    async fn replace_principal_scope_ceiling(
+        &self,
+        actor: Actor,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError>;
+    async fn replace_client_scope_ceiling(
+        &self,
+        actor: Actor,
+        client_id: String,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError>;
     async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError>;
     async fn revoke_token(
         &self,

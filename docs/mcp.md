@@ -60,6 +60,20 @@ hashだけを保存します。access tokenの有効期間は1時間、refresh t
 refresh tokenは利用するたびに交換し、使用済みtokenが再利用された場合は同じtoken familyをすべて
 失効します。
 
+## scope上限
+
+認証済みの利用者は、`/settings`の「MCPのアクセス制御」から、すべてのMCPクライアントへ許可できる
+scopeの上限を設定できます。初期状態の上限はサーバーが対応する全scopeです。上限は操作の種類だけを
+狭め、ノートの所有者や共有設定によるアクセス範囲を広げません。
+
+上限を狭めると、新しい上限を超える未使用の認可codeとtoken familyだけを保存と同じtransactionで
+失効します。上限内の接続は維持します。上限を広げても既存tokenへscopeは追加されないため、追加した
+操作を使うクライアントは改めて認可してください。利用者全体の設定は
+`GET /api/v3/mcp-scope-ceilings`と`PUT /api/v3/mcp-scope-ceilings`からも読み書きできます。
+
+クライアント別の上限も利用者全体の上限とは別に保存します。クライアント別の確認・変更は、認可済み
+クライアントの管理画面とともに提供します。
+
 ## client登録
 
 Client ID Metadata Document（CIMD）を優先方式として提供します。CIMDは、HTTPS URLを`client_id`として

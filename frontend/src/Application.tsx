@@ -5,6 +5,7 @@ import { AccessPage } from "./routes/AccessPage";
 import { BibliographyPage } from "./routes/BibliographyPage";
 import { NoteListPage } from "./routes/NoteListPage";
 import { NoteViewPage } from "./routes/NoteViewPage";
+import { SettingsPage } from "./routes/SettingsPage";
 
 // 関係の図は描画に専用の計算を伴う。開かない利用者へ読み込ませないため、経路に入って
 // はじめて取得する。
@@ -21,6 +22,11 @@ const EditorApplication = lazy(() =>
 const MathMacroSettingsPage = lazy(() =>
   import("./routes/MathMacroSettingsPage").then((module) => ({
     default: module.MathMacroSettingsPage,
+  })),
+);
+const McpAccessSettingsPage = lazy(() =>
+  import("./routes/McpAccessSettingsPage").then((module) => ({
+    default: module.McpAccessSettingsPage,
   })),
 );
 const DeletedNotesPage = lazy(() =>
@@ -40,7 +46,9 @@ type Route =
   | { kind: "access"; noteId: string }
   | { kind: "bibliography" }
   | { kind: "graph" }
+  | { kind: "settings" }
   | { kind: "math-macros" }
+  | { kind: "mcp-access-settings" }
   | { kind: "deleted-notes" }
   | { kind: "not-found" };
 
@@ -71,6 +79,8 @@ export function Application({ config }: { config: ApplicationConfig }) {
           <GraphPage config={config} />
         </Suspense>
       );
+    case "settings":
+      return <SettingsPage config={config} />;
     case "math-macros":
       return (
         <Suspense
@@ -81,6 +91,18 @@ export function Application({ config }: { config: ApplicationConfig }) {
           }
         >
           <MathMacroSettingsPage config={config} />
+        </Suspense>
+      );
+    case "mcp-access-settings":
+      return (
+        <Suspense
+          fallback={
+            <p className="state-message" role="status">
+              MCPのアクセス設定を読み込んでいます。
+            </p>
+          }
+        >
+          <McpAccessSettingsPage config={config} />
         </Suspense>
       );
     case "deleted-notes":
@@ -130,7 +152,10 @@ function parseRoute(pathname: string): Route {
   if (pathname === "/") return { kind: "list" };
   if (pathname === "/bibliography") return { kind: "bibliography" };
   if (pathname === "/graph") return { kind: "graph" };
+  if (pathname === "/settings") return { kind: "settings" };
   if (pathname === "/settings/math-macros") return { kind: "math-macros" };
+  if (pathname === "/settings/mcp-access")
+    return { kind: "mcp-access-settings" };
   if (pathname === "/notes/deleted") return { kind: "deleted-notes" };
   if (pathname === "/notes/new") return { kind: "create" };
   const match = pathname.match(/^\/notes\/([^/]+)(?:\/(edit|access))?$/);

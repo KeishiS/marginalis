@@ -25,6 +25,18 @@ afterEach(() => {
 });
 
 describe("Application", () => {
+  it("設定画面から数式マクロとMCPのアクセス制御へ移動できる", () => {
+    render(<Application config={{ ...config, path: "/settings" }} />);
+
+    expect(screen.getByRole("link", { name: /数式マクロ/ })).toHaveAttribute(
+      "href",
+      "/marginalis/settings/math-macros",
+    );
+    expect(
+      screen.getByRole("link", { name: /MCPのアクセス制御/ }),
+    ).toHaveAttribute("href", "/marginalis/settings/mcp-access");
+  });
+
   it("所有者の数式マクロ設定を読み込み、定義例を追加できる", async () => {
     vi.stubGlobal(
       "fetch",
@@ -45,6 +57,48 @@ describe("Application", () => {
     expect(screen.getByLabelText("置換内容")).toHaveValue(
       String.raw`\operatorname*{arg\,max}`,
     );
+  });
+
+  it("利用者全体のMCP scope上限を保存できる", async () => {
+    document.cookie = "marginalis_csrf=test-csrf; path=/";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            supported_scopes: ["notes:read", "notes:write", "notes:delete"],
+            scopes: ["notes:read", "notes:write"],
+            revision: 2,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            supported_scopes: ["notes:read", "notes:write", "notes:delete"],
+            scopes: ["notes:read"],
+            revision: 3,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <Application config={{ ...config, path: "/settings/mcp-access" }} />,
+    );
+
+    fireEvent.click(await screen.findByLabelText(/notes:write/));
+    fireEvent.click(screen.getByRole("button", { name: "アクセス設定を保存" }));
+
+    await screen.findByText(/新しい上限を超える接続は再認可が必要です/);
+    const request = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(request.method).toBe("PUT");
+    expect(JSON.parse(String(request.body))).toEqual({
+      scopes: ["notes:read"],
+      revision: 2,
+    });
   });
 
   it("一覧を取得し、サブパスを保ったリンクを表示する", async () => {

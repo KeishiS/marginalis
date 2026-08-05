@@ -316,6 +316,56 @@
         ],
         "type": "object"
       },
+      "McpScopeCeiling": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "supported_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "supported_scopes",
+          "scopes",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "McpScopeCeilingInput": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "scopes",
+          "revision"
+        ],
+        "type": "object"
+      },
       "Note": {
         "additionalProperties": false,
         "properties": {
@@ -1180,6 +1230,74 @@
           }
         }
       ]
+    },
+    "/api/v3/mcp-scope-ceilings": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpScopeCeiling"
+                }
+              }
+            },
+            "description": "MCP scope ceiling"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Read the current user's MCP scope ceiling"
+      },
+      "put": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpScopeCeilingInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpScopeCeiling"
+                }
+              }
+            },
+            "description": "updated MCP scope ceiling"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Replace the current user's MCP scope ceiling"
+      }
     },
     "/api/v3/notes": {
       "get": {

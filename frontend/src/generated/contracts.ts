@@ -40,6 +40,13 @@ export interface MathMacroSettings {
   macros: MathMacro[];
   revision: number;
 }
+export interface McpScopeCeilingInput {
+  scopes: string[];
+  revision: number;
+}
+export interface McpScopeCeiling extends McpScopeCeilingInput {
+  supported_scopes: string[];
+}
 export interface NoteView {
   note: Note;
   access: NoteAccess;
@@ -239,6 +246,20 @@ export function parseMathMacroSettings(value: unknown): MathMacroSettings {
   if (revision < 0) throw new Error("math macro settings.revision is invalid");
   return {
     macros: parseMathMacros(object.macros, "math macro settings.macros"),
+    revision,
+  };
+}
+
+export function parseMcpScopeCeiling(value: unknown): McpScopeCeiling {
+  const object = record(value, "MCP scope ceiling");
+  const revision = integer(object.revision, "MCP scope ceiling.revision");
+  if (revision < 0) throw new Error("MCP scope ceiling.revision is invalid");
+  return {
+    supported_scopes: textArray(
+      object.supported_scopes,
+      "MCP scope ceiling.supported_scopes",
+    ),
+    scopes: textArray(object.scopes, "MCP scope ceiling.scopes"),
     revision,
   };
 }
@@ -646,6 +667,28 @@ export async function replaceMathMacros(
     `${apiBase}/math-macros`,
     mutationRequest("PUT", settings),
     parseMathMacroSettings,
+  );
+}
+
+export async function readMcpScopeCeiling(
+  apiBase: string,
+  signal?: AbortSignal,
+): Promise<McpScopeCeiling> {
+  return requestJson(
+    `${apiBase}/mcp-scope-ceilings`,
+    { signal },
+    parseMcpScopeCeiling,
+  );
+}
+
+export async function replaceMcpScopeCeiling(
+  apiBase: string,
+  settings: McpScopeCeilingInput,
+): Promise<McpScopeCeiling> {
+  return requestJson(
+    `${apiBase}/mcp-scope-ceilings`,
+    mutationRequest("PUT", settings),
+    parseMcpScopeCeiling,
   );
 }
 

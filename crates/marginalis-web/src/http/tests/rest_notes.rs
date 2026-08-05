@@ -116,6 +116,56 @@ async fn owner_can_read_and_replace_math_macros() {
 }
 
 #[tokio::test]
+async fn owner_can_read_and_replace_their_mcp_scope_ceiling() {
+    let app = authenticated_mcp_app();
+    let read = app
+        .clone()
+        .oneshot(authenticated_request("/api/v3/mcp-scope-ceilings"))
+        .await
+        .expect("response");
+    assert_eq!(read.status(), StatusCode::OK);
+    let read_body = to_bytes(read.into_body(), usize::MAX).await.expect("body");
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&read_body).expect("JSON"),
+        serde_json::json!({
+            "supported_scopes": ["notes:read", "notes:write", "notes:delete"],
+            "scopes": ["notes:read", "notes:write"],
+            "revision": 2
+        })
+    );
+
+    let replace = app
+        .oneshot(
+            Request::put("/api/v3/mcp-scope-ceilings")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::from(
+                    serde_json::json!({
+                        "scopes": ["notes:read"],
+                        "revision": 2
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(replace.status(), StatusCode::OK);
+    let replace_body = to_bytes(replace.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let body: serde_json::Value = serde_json::from_slice(&replace_body).expect("JSON");
+    assert_eq!(body["scopes"], serde_json::json!(["notes:read"]));
+    assert_eq!(body["revision"], 3);
+}
+
+#[tokio::test]
 async fn rest_validation_returns_the_shared_diagnostic_contract() {
     let response = authenticated_app()
         .oneshot(
