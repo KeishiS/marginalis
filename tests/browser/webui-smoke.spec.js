@@ -257,7 +257,9 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(deleteRequest.headers["x-csrf-token"]).toBe("browser-csrf");
 
   await page.getByRole("link", { name: "削除済みノート" }).click();
-  await expect(page.getByRole("heading", { name: "削除済みノート" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "削除済みノート" }),
+  ).toBeVisible();
   await expect(page.getByText("広い閲覧画面")).toBeVisible();
   await expect(page.getByText("rev-2")).toBeVisible();
   await page.getByRole("button", { name: "復元", exact: true }).click();
@@ -475,6 +477,48 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   );
 });
 
+test("許可していないTeX packageを数式から読み込まない", async ({ page }) => {
+  const unexpectedExtensionRequests = [];
+  page.on("request", (request) => {
+    if (/\/(?:autoload|require|html|color)\.js(?:\?|$)/.test(request.url())) {
+      unexpectedExtensionRequests.push(request.url());
+    }
+  });
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: String.raw`<p><code class="math-latex" data-math-language="latexmath" data-math-display="inline">x + \require{html}\href{https://example.test}{y} + \color{red}{z}</code></p>`,
+        math_macros: [],
+        diagnostics: [],
+      }),
+    });
+  });
+
+  await page.goto("/notes/new");
+  await page.getByRole("button", { name: "執筆" }).click();
+  await page
+    .getByRole("textbox", { name: "AsciiDoc文書" })
+    .fill("= TeX package制限\n\nstem:[x]");
+  await page.getByRole("button", { name: "分割" }).click();
+
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(await page.evaluate(() => window.MathJax.config.tex.packages)).toEqual(
+    [
+      "base",
+      "ams",
+      "newcommand",
+      "textmacros",
+      "noundefined",
+      "configmacros",
+      "boldsymbol",
+      "mathtools",
+    ],
+  );
+  expect(unexpectedExtensionRequests).toEqual([]);
+});
+
 test("閲覧画面の遅延字体を同一オリジンから読み込む", async ({ page }) => {
   const noteId = "0197c9bc-0000-7000-8000-000000000002";
   const fontResponses = [];
@@ -664,15 +708,15 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
   await expect(page.locator('.graph-edge[data-kind="reference"]')).toHaveCount(
     1,
   );
-  await expect(page.locator('.graph-edge[data-kind="citation"]')).toHaveCount(1);
+  await expect(page.locator('.graph-edge[data-kind="citation"]')).toHaveCount(
+    1,
+  );
 
   // ノートの点は閲覧画面、文献の点は書誌ライブラリーを指す。
   const note = page.locator('.graph-vertex[data-kind="note"]').first();
   expect(await note.getAttribute("href")).toBe(`/notes/${noteId}`);
   const work = page.locator('.graph-vertex[data-kind="work"]').first();
-  expect(await work.getAttribute("href")).toBe(
-    "/bibliography?query=smith2024",
-  );
+  expect(await work.getAttribute("href")).toBe("/bibliography?query=smith2024");
   await expect(note.locator("text")).toContainText("先行研究の整理");
   await expect(work.locator("text")).toHaveCount(0);
 
@@ -687,9 +731,9 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
   const detail = page.locator(".graph-detail");
   await expect(detail).toContainText("先行研究の整理");
   await expect(detail).toContainText("研究");
-  expect(
-    await detail.locator("time").getAttribute("datetime"),
-  ).toBe(new Date(2).toISOString());
+  expect(await detail.locator("time").getAttribute("datetime")).toBe(
+    new Date(2).toISOString(),
+  );
   const detailBox = await detail.boundingBox();
   const figureBox = await page.locator(".graph-canvas").boundingBox();
   expect(detailBox.x).toBeGreaterThanOrEqual(figureBox.x - 1);
