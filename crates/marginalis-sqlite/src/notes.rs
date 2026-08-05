@@ -377,7 +377,8 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let result = sqlx::query(
             "UPDATE notes
-             SET title = ?, source = ?, tags_json = ?, updated_at_ms = ?, revision = revision + 1
+             SET title = ?, source = ?, tags_json = ?, updated_at_ms = ?,
+                 review_tracking_known = 1, revision = revision + 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
@@ -423,7 +424,9 @@ impl SqliteDatabase {
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let result = sqlx::query(
-            "UPDATE notes SET deleted_at_ms = ?, updated_at_ms = ?, revision = revision + 1
+            "UPDATE notes
+             SET deleted_at_ms = ?, updated_at_ms = ?, review_tracking_known = 1,
+                 revision = revision + 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
@@ -463,7 +466,9 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let retention_cutoff = restored_at.get().saturating_sub(SOFT_DELETE_RETENTION_MS);
         let result = sqlx::query(
-            "UPDATE notes SET deleted_at_ms = NULL, updated_at_ms = ?, revision = revision + 1
+            "UPDATE notes
+             SET deleted_at_ms = NULL, updated_at_ms = ?, review_tracking_known = 1,
+                 revision = revision + 1
              WHERE note_id = ? AND revision = ?
                AND deleted_at_ms IS NOT NULL AND deleted_at_ms >= ?
                AND creator_issuer = ? AND creator_subject = ?",
@@ -644,7 +649,8 @@ impl SqliteDatabase {
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let result = sqlx::query(
-            "UPDATE notes SET revision = revision + 1, updated_at_ms = ?
+            "UPDATE notes
+             SET revision = revision + 1, updated_at_ms = ?, review_tracking_known = 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id

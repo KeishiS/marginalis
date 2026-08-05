@@ -466,6 +466,10 @@ pub fn archive_from_documents(
             } else {
                 (note.updated_at_ms, note.revision)
             };
+            let mut provenance = note.provenance.clone();
+            if state_changed {
+                provenance.review_tracking_known = true;
+            }
             notes.push(ArchiveNote {
                 note_id: note.note_id.clone(),
                 creator_issuer: owner.issuer.clone(),
@@ -476,7 +480,7 @@ pub fn archive_from_documents(
                 revision,
                 // 書き出しは削除済みノートを含まないため、取り込み後も削除済みは存在しない。
                 deleted_at_ms: None,
-                provenance: Some(note.provenance.clone()),
+                provenance: Some(provenance),
             });
             note_acl.extend(note.acl.iter().map(|entry| ArchiveAclEntry {
                 note_id: note.note_id.clone(),
@@ -863,6 +867,32 @@ mod tests {
         let provenance = archive.notes[0].provenance.as_ref().expect("provenance");
         assert!(provenance.review_tracking_known);
         assert_eq!(provenance.reviewed_revision, Some(1));
+    }
+
+    /// 旧形式から移した不明状態でも、書き出し後の変更は追跡できるため確認待ちへ移す。
+    #[test]
+    fn editing_an_unknown_note_starts_review_tracking() {
+        let snapshot = LogicalSnapshot::new(
+            vec![note(
+                "0197c9bc-0000-7000-8000-000000000001",
+                "旧形式",
+                "alice",
+                false,
+            )],
+            Vec::new(),
+        )
+        .expect("snapshot");
+        let export = export(&snapshot);
+        let mut files = exported_files(&export);
+        let path = export.manifest.owners[0].notes[0].file.clone();
+        files.insert(path, "= 外部編集後\n\n本文".as_bytes().to_vec());
+
+        let archive =
+            archive_from_documents(&export.manifest, &files, "0.23.0", UnixMillis::new(5000))
+                .expect("rebuild edited unknown note");
+        let provenance = archive.notes[0].provenance.as_ref().expect("provenance");
+        assert!(provenance.review_tracking_known);
+        assert_eq!(provenance.reviewed_revision, None);
     }
 
     #[test]

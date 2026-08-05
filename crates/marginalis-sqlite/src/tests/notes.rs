@@ -146,6 +146,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .expect("update note");
     assert_eq!(updated.revision().get(), 2);
     assert_eq!(updated.title(), "Updated title");
+    assert_eq!(updated.review_status(), NoteReviewStatus::Pending);
     assert_eq!(
         database
             .soft_delete_visible_note(&alice, note_id, revision(1), UnixMillis::new(300))
@@ -680,6 +681,45 @@ async fn provenance_filters_and_review_state_follow_the_current_revision() {
             .expect("reviewed filter")
             .is_empty()
     );
+
+    let reviewed = database
+        .mark_owned_note_reviewed(&owner, note_id, updated.revision(), UnixMillis::new(130))
+        .await
+        .expect("review updated note");
+    let acl_changed = database
+        .replace_note_acl(
+            &owner,
+            note_id,
+            &[NoteAclEntry::new(
+                Identity::new("https://id.example.test".into(), "reader".into()).expect("reader"),
+                NotePermission::Read,
+            )],
+            reviewed.revision(),
+            UnixMillis::new(140),
+        )
+        .await
+        .expect("change ACL after review");
+    assert_eq!(acl_changed.review_status(), NoteReviewStatus::Pending);
+
+    let reviewed = database
+        .mark_owned_note_reviewed(
+            &owner,
+            note_id,
+            acl_changed.revision(),
+            UnixMillis::new(150),
+        )
+        .await
+        .expect("review ACL change");
+    let deleted = database
+        .soft_delete_visible_note(&owner, note_id, reviewed.revision(), UnixMillis::new(160))
+        .await
+        .expect("delete reviewed note");
+    assert_eq!(deleted.review_status(), NoteReviewStatus::Pending);
+    let restored = database
+        .restore_owned_deleted_note(&owner, note_id, deleted.revision(), UnixMillis::new(170))
+        .await
+        .expect("restore reviewed note");
+    assert_eq!(restored.review_status(), NoteReviewStatus::Pending);
 }
 
 #[tokio::test]
