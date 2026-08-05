@@ -44,13 +44,13 @@ impl McpToolName {
 
     pub const fn accepted_scopes(self) -> &'static [&'static str] {
         match self {
-            Self::ListNotes | Self::GetNote | Self::SearchBibliography => &["notes:read"],
+            Self::ListNotes | Self::GetNote => &["notes:read"],
             Self::GetNoteProfile => &["notes:read", "notes:write"],
-            Self::CreateNote
-            | Self::UpdateNote
-            | Self::AddBibliographyItem
-            | Self::AddBibliographyItems => &["notes:write"],
-            Self::DeleteNote | Self::DeleteBibliographyItem => &["notes:delete"],
+            Self::CreateNote | Self::UpdateNote => &["notes:write"],
+            Self::DeleteNote => &["notes:delete"],
+            Self::SearchBibliography => &["bibliography:read"],
+            Self::AddBibliographyItem | Self::AddBibliographyItems => &["bibliography:write"],
+            Self::DeleteBibliographyItem => &["bibliography:delete"],
         }
     }
 }
@@ -327,43 +327,43 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
     vec![
         McpToolContract::new::<McpEmptyInput, McpListNotesOutput>(
             McpToolName::ListNotes,
-            "List visible note summaries",
+            "List visible note summaries; requires notes:read",
         ),
         McpToolContract::new::<McpEmptyInput, McpNoteProfileOutput>(
             McpToolName::GetNoteProfile,
-            "Read the current note profile",
+            "Read the current note profile; requires notes:read or notes:write",
         ),
         McpToolContract::new::<McpGetNoteInput, McpGetNoteOutput>(
             McpToolName::GetNote,
-            "Read one visible note",
+            "Read one visible note; requires notes:read",
         ),
         McpToolContract::new::<McpCreateNoteInput, McpNoteRevisionOutput>(
             McpToolName::CreateNote,
-            "Create a note; warnings reject the write and are returned as diagnostics",
+            "Create a note; requires notes:write; warnings reject the write and are returned as diagnostics",
         ),
         McpToolContract::new::<McpUpdateNoteInput, McpNoteRevisionOutput>(
             McpToolName::UpdateNote,
-            "Update a note at the expected revision; warnings reject the write and are returned as diagnostics",
+            "Update a note at the expected revision; requires notes:write; warnings reject the write and are returned as diagnostics",
         ),
         McpToolContract::new::<McpDeleteNoteInput, McpNoteRevisionOutput>(
             McpToolName::DeleteNote,
-            "Soft-delete a note at the expected revision",
+            "Soft-delete a note at the expected revision; requires notes:delete",
         ),
         McpToolContract::new::<McpSearchBibliographyInput, McpBibliographyListOutput>(
             McpToolName::SearchBibliography,
-            "Search the current user's CSL-JSON bibliography library",
+            "Search the current user's CSL-JSON bibliography library; requires bibliography:read",
         ),
         McpToolContract::new::<McpAddBibliographyItemInput, McpBibliographyItem>(
             McpToolName::AddBibliographyItem,
-            "Add one bibliography item in CSL-JSON format; id and type are required and values are never inferred",
+            "Add one bibliography item in CSL-JSON format; requires bibliography:write; id and type are required and values are never inferred",
         ),
         McpToolContract::new::<McpAddBibliographyItemsInput, McpBibliographyImportOutput>(
             McpToolName::AddBibliographyItems,
-            "Add multiple bibliography items in CSL-JSON format; successful items and per-input errors are returned",
+            "Add multiple bibliography items in CSL-JSON format; requires bibliography:write; successful items and per-input errors are returned",
         ),
         McpToolContract::new::<McpDeleteBibliographyItemInput, McpEmptyInput>(
             McpToolName::DeleteBibliographyItem,
-            "Delete an owned bibliography item at the expected revision",
+            "Delete an owned bibliography item at the expected revision; requires bibliography:delete",
         ),
     ]
 }
@@ -396,6 +396,38 @@ mod tests {
                 McpToolName::try_from(contract.name.as_str()),
                 Ok(contract.name)
             );
+        }
+    }
+
+    #[test]
+    fn tool_scopes_separate_notes_from_bibliography() {
+        let expected = [
+            (McpToolName::ListNotes, &["notes:read"][..]),
+            (
+                McpToolName::GetNoteProfile,
+                &["notes:read", "notes:write"][..],
+            ),
+            (McpToolName::GetNote, &["notes:read"][..]),
+            (McpToolName::CreateNote, &["notes:write"][..]),
+            (McpToolName::UpdateNote, &["notes:write"][..]),
+            (McpToolName::DeleteNote, &["notes:delete"][..]),
+            (McpToolName::SearchBibliography, &["bibliography:read"][..]),
+            (
+                McpToolName::AddBibliographyItem,
+                &["bibliography:write"][..],
+            ),
+            (
+                McpToolName::AddBibliographyItems,
+                &["bibliography:write"][..],
+            ),
+            (
+                McpToolName::DeleteBibliographyItem,
+                &["bibliography:delete"][..],
+            ),
+        ];
+
+        for (tool, scopes) in expected {
+            assert_eq!(tool.accepted_scopes(), scopes, "{}のscope", tool.as_str());
         }
     }
 

@@ -34,9 +34,22 @@ Authorization Serverは次を検査します。
   redirect URIの登録が1件だけなら、認可要求では`redirect_uri`を省略できます。認可要求で指定した
   場合は、token要求にも同じ値を指定する必要があります。
 - MCP endpointと一致する`resource`。
-- `notes:read`、`notes:write`、`notes:delete`のいずれかから成る`scope`。
+- 対応しているscopeだけから成る`scope`。操作との対応は次表のとおりです。
 - 43文字のS256 challengeと、43文字以上128文字以下のPKCE verifier。
 - 一度だけ使える認可codeとrefresh token。
+
+| scope | 許可する操作 |
+|---|---|
+| `notes:read` | ノートの一覧・本文の取得、ノート記述規則の取得 |
+| `notes:write` | ノートの作成・更新、ノート記述規則の取得 |
+| `notes:delete` | ノートの削除 |
+| `bibliography:read` | 書誌情報の検索 |
+| `bibliography:write` | 書誌情報の追加 |
+| `bibliography:delete` | 書誌情報の削除 |
+
+ノート用scopeは書誌情報の操作を許可せず、書誌用scopeもノートの操作を許可しません。たとえば、
+`notes:read`だけを持つtokenで`search_bibliography`を呼び出すと、`bibliography:read`を示す
+`403 insufficient_scope`を返します。
 
 認可の成功応答と、検証済み`redirect_uri`へ返すエラー応答にはRFC 9207の`iss`を含めます。クライアントは
 Authorization Server Metadataの`issuer`と単純な文字列比較を行うことで、別のAuthorization Serverから
@@ -97,6 +110,10 @@ Protected Resource Metadataから内蔵Authorization Serverを発見し、ブラ
 
 更新前にAuth0で発行したaccess token、refresh token、client IDは内蔵Authorization Serverへ移行されません。
 更新後はクライアント側の既存接続を削除し、改めて接続してください。
+
+v0.29.0より前に発行したtokenには書誌用scopeが含まれません。MCPから書誌情報を操作する場合は、
+クライアントを改めて認可し、必要な`bibliography:*` scopeへ同意してください。既存tokenへ新しいscopeが
+自動で追加されることはありません。
 
 ### 接続後の受入
 

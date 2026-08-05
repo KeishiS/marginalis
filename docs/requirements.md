@@ -80,8 +80,10 @@
   PKCE S256を使用すること。Protected Resource MetadataとAuthorization Server Metadataを公開し、
   Client ID Metadata Documentを優先すること。resource、scope、redirect URI、認可code、不透明access
   tokenを検証し、認可応答にはAuthorization Serverを識別する`iss`を含めること。
-- **REQ-API-005 — MCP権限範囲**: MCPの`scope`は操作の種類だけを制限し、操作できる
-  ノートの範囲を広げないこと。利用者全体とクライアント別のscope上限を区別し、対応scope、両方の上限、
+- **REQ-API-005 — MCP権限範囲**: MCPではノートと書誌情報にそれぞれ読み取り、書き込み、削除の
+  `scope`を定義し、対象と操作が一致するscopeだけで各toolを許可すること。`scope`は操作の種類だけを
+  制限し、操作できるノートや書誌情報の範囲を広げないこと。利用者全体とクライアント別のscope上限を
+  区別し、対応scope、両方の上限、
   クライアントの要求、利用者の同意の共通部分だけを発行すること。利用者は自分の上限だけを変更でき、
   上限を狭めた場合は新しい上限を超える認可codeとtoken familyを同じtransactionで失効すること。
 - **REQ-API-006 — MCP接続解除**: RFC 7009 endpointと、利用者本人の認証を要するREST APIから

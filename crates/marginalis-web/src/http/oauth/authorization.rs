@@ -347,7 +347,13 @@ fn consent_scope_section(scopes: &[String]) -> String {
     } else {
         let items = scopes
             .iter()
-            .map(|scope| format!("<li><code>{}</code></li>", escape_html(scope)))
+            .map(|scope| {
+                format!(
+                    "<li><code>{}</code><span>{}</span></li>",
+                    escape_html(scope),
+                    scope_description(scope)
+                )
+            })
             .collect::<String>();
         format!("<ul class=\"oauth-scope-list\">{items}</ul>")
     };
@@ -359,6 +365,18 @@ fn consent_scope_section(scopes: &[String]) -> String {
         ),
         content = content,
     )
+}
+
+fn scope_description(scope: &str) -> &'static str {
+    match scope {
+        "notes:read" => "ノートの一覧と本文を読み取ります。",
+        "notes:write" => "ノートを作成し、本文を更新します。",
+        "notes:delete" => "ノートを削除します。",
+        "bibliography:read" => "書誌情報を検索します。",
+        "bibliography:write" => "書誌情報を追加します。",
+        "bibliography:delete" => "書誌情報を削除します。",
+        _ => "このクライアントが要求した権限です。",
+    }
 }
 
 fn consent_loopback_warning(redirect: Option<&url::Url>) -> &'static str {

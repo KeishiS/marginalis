@@ -1,7 +1,7 @@
 [
   {
     "name": "list_notes",
-    "description": "List visible note summaries",
+    "description": "List visible note summaries; requires notes:read",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -287,7 +287,7 @@
   },
   {
     "name": "get_note_profile",
-    "description": "Read the current note profile",
+    "description": "Read the current note profile; requires notes:read or notes:write",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -739,7 +739,7 @@
   },
   {
     "name": "get_note",
-    "description": "Read one visible note",
+    "description": "Read one visible note; requires notes:read",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -1023,7 +1023,7 @@
   },
   {
     "name": "create_note",
-    "description": "Create a note; warnings reject the write and are returned as diagnostics",
+    "description": "Create a note; requires notes:write; warnings reject the write and are returned as diagnostics",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -1287,7 +1287,7 @@
   },
   {
     "name": "update_note",
-    "description": "Update a note at the expected revision; warnings reject the write and are returned as diagnostics",
+    "description": "Update a note at the expected revision; requires notes:write; warnings reject the write and are returned as diagnostics",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -1562,7 +1562,7 @@
   },
   {
     "name": "delete_note",
-    "description": "Soft-delete a note at the expected revision",
+    "description": "Soft-delete a note at the expected revision; requires notes:delete",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -1832,7 +1832,7 @@
   },
   {
     "name": "search_bibliography",
-    "description": "Search the current user's CSL-JSON bibliography library",
+    "description": "Search the current user's CSL-JSON bibliography library; requires bibliography:read",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -2120,7 +2120,7 @@
   },
   {
     "name": "add_bibliography_item",
-    "description": "Add one bibliography item in CSL-JSON format; id and type are required and values are never inferred",
+    "description": "Add one bibliography item in CSL-JSON format; requires bibliography:write; id and type are required and values are never inferred",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -2394,7 +2394,7 @@
   },
   {
     "name": "add_bibliography_items",
-    "description": "Add multiple bibliography items in CSL-JSON format; successful items and per-input errors are returned",
+    "description": "Add multiple bibliography items in CSL-JSON format; requires bibliography:write; successful items and per-input errors are returned",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -2722,7 +2722,7 @@
   },
   {
     "name": "delete_bibliography_item",
-    "description": "Delete an owned bibliography item at the expected revision",
+    "description": "Delete an owned bibliography item at the expected revision; requires bibliography:delete",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,

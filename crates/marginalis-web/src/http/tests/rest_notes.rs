@@ -128,7 +128,14 @@ async fn owner_can_read_and_replace_their_mcp_scope_ceiling() {
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&read_body).expect("JSON"),
         serde_json::json!({
-            "supported_scopes": ["notes:read", "notes:write", "notes:delete"],
+            "supported_scopes": [
+                "notes:read",
+                "notes:write",
+                "notes:delete",
+                "bibliography:read",
+                "bibliography:write",
+                "bibliography:delete"
+            ],
             "scopes": ["notes:read", "notes:write"],
             "revision": 2
         })
