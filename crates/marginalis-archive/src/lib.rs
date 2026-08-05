@@ -261,6 +261,18 @@ pub fn migrate_previous_archive(
     if !is_supported {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
+    if let Some((position, _)) = archive
+        .notes
+        .iter()
+        .enumerate()
+        .find(|(_, note)| note.provenance.is_some())
+    {
+        // 対応する旧契約には来歴項目が存在しない。新旧の項目を混在させた入力から、
+        // 根拠のない作成経路や人手確認を引き継がない。
+        return Err(ArchiveMigrationError::InvalidNote {
+            position: position + 1,
+        });
+    }
     let archive = rename_unprefixed_attributes(archive);
     let snapshot =
         validate_archive_contents(content, &archive).map_err(ArchiveMigrationError::from)?;
@@ -710,12 +722,26 @@ mod tests {
         archive.format = format.into();
         archive.adocweave_package_version = package_version.into();
         archive.note_profile_version = note_profile_version;
+        for note in &mut archive.notes {
+            note.provenance = None;
+        }
     }
 
     #[test]
     fn every_supported_contract_is_revalidated_into_the_current_one() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let current = create_archive(&content(), &snapshot);
+        let mut expected = current.clone();
+        for note in &mut expected.notes {
+            note.provenance = Some(ArchiveNoteProvenance {
+                created_via: NoteCreationSource::Unknown,
+                review_tracking_known: false,
+                reviewed_revision: None,
+                reviewed_at_ms: None,
+                reviewer_issuer: None,
+                reviewer_subject: None,
+            });
+        }
 
         for contract in SUPPORTED_MIGRATION_CONTRACTS {
             let mut historical = current.clone();
@@ -723,7 +749,7 @@ mod tests {
 
             assert_eq!(
                 migrate_previous_archive(&content(), &historical),
-                Ok(current.clone()),
+                Ok(expected.clone()),
                 "移行に失敗しました: {contract:?}"
             );
             assert_eq!(
@@ -732,6 +758,20 @@ mod tests {
                 "現行の契約として受理してしまいました: {contract:?}"
             );
         }
+    }
+
+    #[test]
+    fn migration_rejects_provenance_that_did_not_exist_in_the_old_contract() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let mut historical = create_archive(&content(), &snapshot);
+        let provenance = historical.notes[0].provenance.clone();
+        stamp_contract(&mut historical, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        historical.notes[0].provenance = provenance;
+
+        assert_eq!(
+            migrate_previous_archive(&content(), &historical),
+            Err(ArchiveMigrationError::InvalidNote { position: 1 })
+        );
     }
 
     /// 接頭辞を付ける前の`:tags:`を書いた既存archiveが、そのまま移行できる。
