@@ -160,7 +160,7 @@ Protected Resource Metadataから内蔵Authorization Serverを発見し、ブラ
 更新後はクライアント側の既存接続を削除し、改めて接続してください。
 
 v0.29.0より前に発行したtokenには書誌用scopeが含まれません。MCPから書誌情報を操作する場合は、
-クライアントを改めて認可し、必要な``bibliography:++*++`` scopeへ同意してください。既存tokenへ新しいscopeが
+クライアントを改めて認可し、必要な``bibliography:*`` scopeへ同意してください。既存tokenへ新しいscopeが
 自動で追加されることはありません。
 
 [#接続後の受入]
@@ -192,10 +192,10 @@ ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノー�
 取消の経路は二つです。
 
 利用者本人は「MCPのアクセス制御」画面または
-``DELETE /api/v3/mcp-authorizations/++{++client_id}``でclient単位に取り消します。Web UIと同じsession cookieと
+``DELETE /api/v3/mcp-authorizations/{client_id}``でclient単位に取り消します。Web UIと同じsession cookieと
 CSRF tokenが必要で、取り消せるのは自分に発行された認可だけです。認可一覧は
 ``GET /api/v3/mcp-authorizations``、クライアント別上限は
-``PUT /api/v3/mcp-authorizations/++{++client_id}/scope-ceiling``でも管理できます。
+``PUT /api/v3/mcp-authorizations/{client_id}/scope-ceiling``でも管理できます。
 
 OAuthクライアントはRFC 7009の``/oauth/revoke``へtokenと``client_id``を送信します。未知のtokenを指定した
 場合も、tokenの存在を開示しないため成功応答を返します。
@@ -213,4 +213,4 @@ OAuth endpointはOAuthの``error``を持つJSONを返します。tokenを含む�
 
 運用時は``marginalis diagnose``でSQLite schemaとMCP有効化設定を確認してください。認証状態の削除件数は
 ``marginalis purge-expired``の構造化ログで確認できます。CIMDの取得と検証を調べる場合は、
-xref:observability.adoc#top[ログと障害診断]に記載した``mcp.oauth.client_metadata.++*++`` eventを確認してください。
+xref:observability.adoc#top[ログと障害診断]に記載した``mcp.oauth.client_metadata.*`` eventを確認してください。

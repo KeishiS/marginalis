@@ -36,7 +36,7 @@
 |成功
 |2026-08-05
 |https://github.com/KeishiS/marginalis/pull/317[リリースPull Request \#317]に記録した利用者受入とフロントエンド試験で、
-閲覧画面と編集プレビューの``++\\++coloneqq``、所有者マクロの``++\\++argmax``と``++\\++bm``、追加packageを読み込まない安全な失敗を確認
+閲覧画面と編集プレビューの``\\coloneqq``、所有者マクロの``\\argmax``と``\\bm``、追加packageを読み込まない安全な失敗を確認
 |MCP接続
 |成功
 |2026-08-05
@@ -63,8 +63,8 @@ MathJaxの固定したpackage構成を確認し、既存のschema 18、archive 1
 OAuth同意画面では、完全な``client_id``を先に読み、クライアントが提供した表示名とredirect先を照合します。
 長いCIMD URLも途中で省略されず、画面幅の中で折り返されることを確認します。
 
-数式では、所有者マクロとして登録した``argmax``と``bm``、``mathtools``の``++\\++coloneqq``が、閲覧画面と
-編集プレビューで従来どおり組版されることを確認します。同時に、``++\\++require++{++html}``やautoload対象の
+数式では、所有者マクロとして登録した``argmax``と``bm``、``mathtools``の``\\coloneqq``が、閲覧画面と
+編集プレビューで従来どおり組版されることを確認します。同時に、``\\require{html}``やautoload対象の
 入力が追加JavaScriptを要求せず、安全な失敗表示になることを確認します。
 
 SQLite schemaとarchive形式はv0.29.0から変わりません。更新前の通常の退避を行ったうえで既存の

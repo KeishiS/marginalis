@@ -209,7 +209,7 @@ MCPクライアントの画面に一般的な接続失敗だけが表示され�
 |Tenant SettingsのAdvancedでDynamic Client Registrationを有効化
 |同意前にAPI accessを拒否
 |DCRで作成したthird-party applicationにclient grantがない
-|APIのDefault Permissions for Third Party AppsでUser-Delegated Accessと必要な``notes:++*++`` scopeだけを許可
+|APIのDefault Permissions for Third Party AppsでUser-Delegated Accessと必要な``notes:*`` scopeだけを許可
 |Enterprise Connectionを選択できない
 |third-party applicationから通常のconnectionを利用できない
 |対象のOIDC Enterprise Connectionをdomain-level connectionへ昇格
@@ -263,7 +263,7 @@ services.marginalis.mcp = {
 この設定を有効にすると、Protected Resource MetadataはAuth0をAuthorization Serverとして案内し、
 MCP endpointはAuth0が``RS256``で署名したaccess tokenだけを受理します。Marginalisは署名に加えて
 ``iss``、公開MCP URLと一致する``aud``、有効期限、上流のKanidm issuer、``server-users``、
-``notes:++*++`` scopeを検証します。Auth0上の``sub``は所有者IDに使用せず、上流issuer claimと
+``notes:*`` scopeを検証します。Auth0上の``sub``は所有者IDに使用せず、上流issuer claimと
 上流subject claimの組を既存の所有者IDとして使用します。
 refresh tokenの発行に必要な``offline_access``は検証後に受理しますが、ノート操作の権限には変換しません。
 それ以外の未知のscopeを含むaccess tokenは拒否します。

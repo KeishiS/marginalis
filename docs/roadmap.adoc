@@ -2,7 +2,7 @@
 
 [#top]
 この文書は、公開済み機能の履歴ではなく、現在の作業、次に必要な判断、保留中の候補を示します。
-公開済みの利用者影響はxref:../CHANGELOG.adoc#top[変更履歴]、個別の完了条件は
+公開済みの利用者影響は xref:../CHANGELOG.adoc#top[変更履歴]、個別の完了条件は
 https://github.com/KeishiS/marginalis/issues[GitHub Issues]を参照してください。
 
 == 現在地
@@ -29,7 +29,7 @@ PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの�
 === リポジトリ文書のAsciiDoc化
 
 https://github.com/KeishiS/marginalis/issues/334[Issue 334]で、``AGENTS.md``を除く人間向け文書をAsciiDocへ
-段階的に移行します。xref:repository-asciidoc-evaluation.adoc#top[再評価]で確認したとおり、AdocWeaveのstrict
+段階的に移行します。 xref:repository-asciidoc-evaluation.adoc#top[再評価]で確認したとおり、AdocWeaveのstrict
 解析、local target検査、textlint用構造を共通基盤とし、Marginalis固有の要件対応だけを専用検査へ残します。
 移行中もtraceability、release metadata、受入索引、観測event対応の保証を維持します。
 

@@ -193,7 +193,7 @@ service account、API token、custom ACP は不要です。
 期限切れ・失効済みのWeb/OIDC認証状態、MCPの認可codeとtoken、参照されない古いclientを削除します。
 * ``backupDirectory``を設定すると``marginalis-backup.timer``が毎日実行されます。単一のSQLite read
 transactionからsnapshotを取得するため、HTTP serviceを停止しません。
-* 成功世代は``backup-++<++Unix時刻ミリ秒++>++``というディレクトリで、``marginalis-archive.json``と
+* 成功世代は``backup-<Unix時刻ミリ秒>``というディレクトリで、``marginalis-archive.json``と
 ``COMPLETE``を含みます。archiveの検証が完了するまで``COMPLETE``は作成されません。
 * ``backupRetention``は検証済み成功世代の保持数で、既定値は30です。保持処理は
 ``backupDirectory``を正規化し、その直下にある既定名・marker・archiveをすべて検証できた世代だけを
@@ -270,7 +270,7 @@ sudo -u marginalis <現行版のmarginalis> verify-restore \
   --input /srv/marginalis-migration/archive-17.json
 ----
 . 移行が失敗した場合はarchive 17を取り込まず、v0.10.0へ戻ります。改行を残す複数行タグや
-header後の属性操作など、xref:adocweave-v0.17-migration.adoc#top[0.17移行判断]に記載した差を
+header後の属性操作など、 xref:adocweave-v0.17-migration.adoc#top[0.17移行判断]に記載した差を
 v0.10.0で修正し、archive 7の書き出しからやり直します。エラーに示された``position``は、
 archiveの``notes``または``note_acl``配列内の1から始まる位置です。診断へ本文や識別子は
 出力されません。

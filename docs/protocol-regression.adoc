@@ -68,5 +68,5 @@ artifactは公開CIへ無期限に保持せず、リリース調査に必要な�
 == 実際のクライアントを使う確認
 
 リリース前にChatGPT、Claude Code、Codex CLIでmetadata discovery、認可、refresh、tool call、
-認可取消を確認します。xref:acceptance.adoc#top[リリース受入]には必須項目の完了日と成否だけを記録し、
+認可取消を確認します。 xref:acceptance.adoc#top[リリース受入]には必須項目の完了日と成否だけを記録し、
 環境やclientの詳細、秘密情報、認可URL全体は記録しません。

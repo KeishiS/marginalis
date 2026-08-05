@@ -62,6 +62,6 @@ SQLite schemaは13のままで、``dataDir``の作り直しは不要です。arc
 archiveを``migrate-archive``で変換してから取り込みます。
 
 引用スタイルの選択を追加したため、``:marginalis-citation-style: numeric``を書いたノートで、本文の
-``++[++1++]++``と参考文献一覧の``++[++1++]++``が相互に移動できることをWeb UIで確認しました。
+``[1]``と参考文献一覧の``[1]``が相互に移動できることをWeb UIで確認しました。
 
 利用者、Cookie、token、認可code、client secret、実際のノート本文や書誌情報は記録しません。

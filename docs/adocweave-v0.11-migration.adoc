@@ -24,7 +24,7 @@
 |暗黙のheader
 |暗黙のheader
 |表規則の維持
-|``++[++%noheader++]++``の表
+|``[%noheader]``の表
 |headerなし
 |headerなし
 |表規則の維持

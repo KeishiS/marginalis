@@ -8,7 +8,7 @@ xref:../CHANGELOG.adoc#top[変更履歴]を確認してください。変更履�
 == 事前検証
 
 [arabic]
-. Cargo workspaceの版と変更履歴を更新し、xref:acceptance.adoc#top[受入基準]の版別結果を作成して索引へ
+. Cargo workspaceの版と変更履歴を更新し、 xref:acceptance.adoc#top[受入基準]の版別結果を作成して索引へ
 追加します。確認前の項目は``未実施``、``公開判定``は``未判定``とします。
 . 作業ブランチで``cargo make verify``を実行します。公開版、変更履歴、受入結果、Nix packageの
 版情報も``verify``内の``release-metadata``で検査します。

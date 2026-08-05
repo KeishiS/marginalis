@@ -2,7 +2,7 @@
 
 [#top]
 この文書は、REST APIを利用する人に向けて、認証、主な接続先、権限、入力エラーを説明します。
-正式な入出力はlink:openapi.json[OpenAPI 3.1]で定めています。
+正式な入出力は link:openapi.json[OpenAPI 3.1]で定めています。
 
 == 概要
 
@@ -41,31 +41,31 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |``POST /api/v3/notes/preview``
 |作成者の書誌ライブラリーを使う検査・HTML変換
 |既存ノートの保存前プレビュー
-|``POST /api/v3/notes/++{++note_id}/preview``
+|``POST /api/v3/notes/{note_id}/preview``
 |編集権限を確認し、所有者の書誌ライブラリーを使う検査・HTML変換
 |ノート取得
-|``GET /api/v3/notes/++{++note_id}``
+|``GET /api/v3/notes/{note_id}``
 |閲覧できるノートだけ
 |閲覧画面取得
-|``GET /api/v3/notes/++{++note_id}/view``
+|``GET /api/v3/notes/{note_id}/view``
 |正本、権限、描画HTML、関連概要の一貫した組
 |ノート更新
-|``PUT /api/v3/notes/++{++note_id}``
+|``PUT /api/v3/notes/{note_id}``
 |``If-Match``が必要
 |ノート削除
-|``DELETE /api/v3/notes/++{++note_id}``
+|``DELETE /api/v3/notes/{note_id}``
 |``If-Match``が必要
 |AsciiDoc書き出し
-|``GET /api/v3/notes/++{++note_id}/source``
+|``GET /api/v3/notes/{note_id}/source``
 |閲覧できるノートだけ
 |ノート復元
-|``POST /api/v3/notes/++{++note_id}/restore``
+|``POST /api/v3/notes/{note_id}/restore``
 |削除後30日以内
 |ACL取得
-|``GET /api/v3/notes/++{++note_id}/acl``
+|``GET /api/v3/notes/{note_id}/acl``
 |所有者だけ
 |ACL更新
-|``PUT /api/v3/notes/++{++note_id}/acl``
+|``PUT /api/v3/notes/{note_id}/acl``
 |CSRFトークンと``If-Match``が必要
 |数式マクロ設定の取得
 |``GET /api/v3/math-macros``
@@ -74,7 +74,7 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |``PUT /api/v3/math-macros``
 |CSRFトークンと現在の``revision``が必要
 |MCP接続の取消
-|``DELETE /api/v3/mcp-authorizations/++{++client_id}``
+|``DELETE /api/v3/mcp-authorizations/{client_id}``
 |CSRFトークンが必要。自分に発行された認可だけを失効する
 |===
 
@@ -83,9 +83,9 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 ノートの作成・更新では、JSON形式の``source``へ完全なAsciiDoc文書を入れて送信します。題名は
 文書題名、タグは文書ヘッダーの``:marginalis-tags:``属性として記述します。``source``はUTF-8で
 512 KiB以下です。``:marginalis-tags:``を複数回記述した場合は最後の値、``:marginalis-tags!:``で
-解除した場合はタグなしになります。属性参照と``++\++``による複数行値は、その位置でAdocWeaveが
+解除した場合はタグなしになります。属性参照と``\``による複数行値は、その位置でAdocWeaveが
 評価した最終値からタグを導出します。改行を残す
-``\+ ++\++``は単一行というタグ規則に合わないため拒否します。詳しい移行判断は
+``\+ \``は単一行というタグ規則に合わないため拒否します。詳しい移行判断は
 xref:adocweave-v0.17-migration.adoc#top[AdocWeave 0.17移行判断]を参照してください。
 
 [source,json]
@@ -101,19 +101,19 @@ xref:adocweave-v0.17-migration.adoc#top[AdocWeave 0.17移行判断]を参照し�
 ``marginalis-``で始まる属性はMarginalisが独自に決めたもので、他のAsciiDoc処理系では意味を
 持ちません。接頭辞の無い属性はAsciiDocの組込み属性です。ここに無い属性と、文書headerより
 後ろに置いた属性操作は保存を拒否します。コードブロックには1から始まる行番号を表示します。
-``.題名``、``++[++source,言語名++]++``、``++[++source,言語名,linenums,start=開始行++]++``を指定すると、題名、言語名、
+``.題名``、``[source,言語名]``、``[source,言語名,linenums,start=開始行]``を指定すると、題名、言語名、
 指定した行番号の開始位置も表示します。長い行はコードブロック内で横にスクロールできます。
-Pythonは``++[++source,python++]++``で指定できます。利用できる言語の一覧は、MCPの``get_note_profile``が返す
+Pythonは``[source,python]``で指定できます。利用できる言語の一覧は、MCPの``get_note_profile``が返す
 ``allowed_source_languages``で確認できます。
-``:stem: latexmath``を指定した``stem:++[]++``と``++[++latexmath++]++``の数式は、
+``:stem: latexmath``を指定した``stem:[]``と``[latexmath]``の数式は、
 Web UIの配布物へ固定したMathJaxで組版します。外部のCDNへは接続しません。
-MathJaxの``mathtools``拡張を有効にしているため、``++\++coloneqq``などの数式コマンドも使用できます。
+MathJaxの``mathtools``拡張を有効にしているため、``\coloneqq``などの数式コマンドも使用できます。
 TeX packageは``base``、``ams``、``newcommand``、``textmacros``、``noundefined``、``configmacros``、
 ``boldsymbol``、``mathtools``だけを有効にします。``autoload``と``require``は有効にしないため、数式から
 別のpackageを追加で読み込むことはできません。
 数式マクロ設定では、コマンド名、置換内容、0から9までの引数の数を指定します。たとえば
-``argmax``を``++\++operatorname++*{++arg++\++,max}``へ、引数1個の``bm``を``++\++boldsymbol++{++\#1}``へ置き換えるよう
-設定すると、``++\++argmax++_{++x ++\++in S} f(x)``と``++\++bm++{++x}``を記述できます。既存ノートの閲覧と編集
+``argmax``を``\operatorname*{arg\,max}``へ、引数1個の``bm``を``\boldsymbol{\#1}``へ置き換えるよう
+設定すると、``\argmax_{x \in S} f(x)``と``\bm{x}``を記述できます。既存ノートの閲覧と編集
 プレビューにはノート所有者の設定を使うため、共有先でも同じ数式を表示します。既存のMathJax
 コマンドと同じ名前を設定した場合は設定した定義を使います。展開回数は1回の数式につき1,000回を
 上限とし、誤った定義や再帰的な定義で組版に失敗した場合は画面に通知します。
@@ -139,20 +139,20 @@ TeX packageは``base``、``ams``、``newcommand``、``textmacros``、``noundefin
 |``(Smith 2024; Tanaka 2025)``
 |``Smith, A. (2024). ...``
 |``numeric``
-|``++[++1++]++``
-|``++[++1, 2++]++``
-|``++[++1++]++ Smith, A. (2024). ...``
+|``[1]``
+|``[1, 2]``
+|``[1] Smith, A. (2024). ...``
 |===
 
 番号は参考文献項目の見出しとして持たせ、書誌情報の記述には混ぜません。AsciiDocが
-``++[[[++citation key,番号++]]]++``のカンマ以降を見出しとして読むため、項目のIDはcitation keyのままで、
+``[[[citation key,番号]]]``のカンマ以降を見出しとして読むため、項目のIDはcitation keyのままで、
 本文の引用との相互リンクが保たれます。
 
 ``numeric``の番号は本文での初出順に振ります。同じ文献を何度引用しても番号は変わらず、参考文献
 一覧の項目も1つだけです。どちらのスタイルでも、本文の引用と一覧の項目は相互に移動できます。
 
 保存前プレビューにも同じ入力を送ります。新規作成では``/notes/preview``、既存ノートの更新では
-``/notes/++{++note_id}/preview``を使用し、成功時は安全なHTMLと``diagnostics``を受け取ります。更新用
+``/notes/{note_id}/preview``を使用し、成功時は安全なHTMLと``diagnostics``を受け取ります。更新用
 プレビューは保存後の表示と同じく、ノート所有者の書誌ライブラリーで引用を解決します。
 ``warning``、``information``、``hint``の診断は保存を妨げません。たとえば、文章と``xref:``の間に
 空白がない場合は、AdocWeaveの``macro-boundary``を``warning``として返します。プレビューは保存処理を
@@ -224,9 +224,9 @@ ACLの対象が不正、重複、または所有者自身である場合は、�
 
 == Web UIとの関係
 
-``/``はログイン後の一覧画面、``/notes/++{++note_id}``は個別のノートを表示する画面です。
-``/notes/new``でノートを作成し、``/notes/++{++note_id}/edit``で完全なAsciiDoc文書を一つの欄で編集します。
-所有者は``/notes/++{++note_id}/access``でACLを編集します。``/notes/deleted``では、所有する削除済みノートの
+``/``はログイン後の一覧画面、``/notes/{note_id}``は個別のノートを表示する画面です。
+``/notes/new``でノートを作成し、``/notes/{note_id}/edit``で完全なAsciiDoc文書を一つの欄で編集します。
+所有者は``/notes/{note_id}/access``でACLを編集します。``/notes/deleted``では、所有する削除済みノートの
 削除日時と完全削除予定を確認し、保持期間内のノートを復元できます。
 これらはすべて一つのReactアプリケーションを起点に描画します。Rustが返す初期HTMLにはノート本文を
 埋め込まず、生成済みTypeScriptクライアントがREST APIの応答を実行時に検査してから画面へ渡します。

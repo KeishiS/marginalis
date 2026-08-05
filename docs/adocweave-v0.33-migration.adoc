@@ -4,10 +4,10 @@
 
 [#top]
 この文書は、AdocWeave 0.27.0から0.33.0への更新がMarginalisへ与える影響を記録します。
-現行の入力方法はxref:rest-api.adoc#top[REST API]、archiveの変換手順は
+現行の入力方法は xref:rest-api.adoc#top[REST API]、archiveの変換手順は
 xref:nixos.adoc#top[NixOSでの運用]を参照してください。
 
-前回の更新はxref:adocweave-v0.27-migration.adoc#top[AdocWeave 0.27移行判断]にあります。
+前回の更新は xref:adocweave-v0.27-migration.adoc#top[AdocWeave 0.27移行判断]にあります。
 
 == 固定する依存
 
@@ -21,7 +21,7 @@ MarginalisはAdocWeave package版``0.33.0``を、release tagが指すcommitで�
 AdocWeaveは表示文字列をAsciiDocとして再解釈しません。
 
 Marginalisは、書誌ライブラリーから解決した参考文献をこのAPIで渡します。これにより、題名に
-``C\+\+``、``++*++``、``pass:++[++...++]++``、HTMLに見える文字列などが含まれても、記法ではなく通常の文字として
+``C\+\+``、``*``、``pass:[...]``、HTMLに見える文字列などが含まれても、記法ではなく通常の文字として
 表示できます。従来の実装にあった、AdocWeaveの記法開始条件をMarginalis側へ書き写す処理は
 削除しました。記法の判定規則と文字列の安全な出力をAdocWeaveへ集約しています。
 

@@ -2,7 +2,7 @@
 
 [#top]
 ____
-MCPに関する決定はxref:0007-mcpのauthorization-serverを内蔵する.adoc#top[ADR 0007]で置き換えました。
+MCPに関する決定は xref:0007-mcpのauthorization-serverを内蔵する.adoc#top[ADR 0007]で置き換えました。
 Authorization Serverを内蔵したため、MCPの起動可否を分ける対象がなくなりました。Web側の
 判断はこのADRのまま有効です。
 ____

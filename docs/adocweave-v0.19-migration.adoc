@@ -4,7 +4,7 @@
 
 [#top]
 この文書は、AdocWeave 0.17.0から0.19.0への更新がMarginalisへ与える影響と、保存形式の
-扱いを記録します。現行の入力方法はxref:rest-api.adoc#top[REST API]、archiveの変換手順は
+扱いを記録します。現行の入力方法は xref:rest-api.adoc#top[REST API]、archiveの変換手順は
 xref:nixos.adoc#top[NixOSでの運用]を参照してください。
 
 == 固定する依存

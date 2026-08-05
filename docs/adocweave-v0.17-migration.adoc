@@ -4,7 +4,7 @@
 
 [#top]
 この文書は、AdocWeave 0.11.0から0.17.0へ移行するときに確認した意味上の差と、Marginalisの
-保存形式を更新する判断を記録します。現行の入力方法はxref:rest-api.adoc#top[REST API]、データ移行の操作は
+保存形式を更新する判断を記録します。現行の入力方法は xref:rest-api.adoc#top[REST API]、データ移行の操作は
 xref:nixos.adoc#top[NixOSでの運用]を参照してください。
 
 == 固定する依存
@@ -34,16 +34,16 @@ repository直下にあったfixtureを従来のcommitとハッシュで補いま
 |タグなし
 |タグなし
 |解除を許可
-|``++\++``による複数行のタグ値
-|``research``と``++\++``
+|``\``による複数行のタグ値
+|``research``と``\``
 |``research``と``rust``
 |折り畳み後の値を採用
-|``\+ ++\++``による改行を含むタグ値
-|``research``と``\+ ++\++``
+|``\+ \``による改行を含むタグ値
+|``research``と``\+ \``
 |``invalid_tag``で拒否
 |単一行というタグ規則を適用
-|``:tags: ++{++source-language}``
-|文字列``++{++source-language}``
+|``:tags: {source-language}``
+|文字列``{source-language}``
 |参照先の``rust``
 |定義時点の属性値を採用
 |文書header後の``:tags:``
@@ -72,7 +72,7 @@ Web UIは``figure.source-block``内の``code``を処理し、``textContent``を�
 ブロックへ行番号を表示します。``data-line-start``がある場合はその値を開始行とし、ない場合は
 1から始めます。元の改行と本文を保ち、言語名や開始行をclassから推測しません。
 
-数式は``data-math-language="latexmath"``と``data-math-display="inline++|++block"``を選択条件とし、
+数式は``data-math-language="latexmath"``と``data-math-display="inline|block"``を選択条件とし、
 要素名、class、親子関係から表示形式を推測しません。MathJaxへ渡す内容は生成HTMLの
 ``textContent``から取得し、HTMLとして再解釈しません。
 

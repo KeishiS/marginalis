@@ -28,7 +28,7 @@ https://github.com/KeishiS/marginalis/issues/314[Issue 314]で決定します。
 |``mcp-authorization-server-cimd``
 |CIMDのHTTPS取得、DNS検査、接続先固定、redirect拒否、取得量・時間・並行数・頻度・cacheの制限
 |Marginalis application・web
-|Kanidmで確認した主体の受け渡し、Web session、Cookie、CSRF、同意画面、``notes:++*++``と``bibliography:++*++``の意味、HTTP
+|Kanidmで確認した主体の受け渡し、Web session、Cookie、CSRF、同意画面、``notes:*``と``bibliography:*``の意味、HTTP
 endpoint
 |Marginalis SQLite adapter
 |schema、transaction、token hash、grant・client・tokenの保存、保守処理
@@ -36,7 +36,7 @@ endpoint
 |scopeとtoolの対応、ノートと書誌情報の所有・共有範囲、Bearer tokenによる要求の認可
 |===
 
-中核crateはAxum、SQLx、Kanidm、``marginalis-++*++``、``renkan-++*++``へ依存しません。利用側が検証済みの
+中核crateはAxum、SQLx、Kanidm、``marginalis-*``、``renkan-*``へ依存しません。利用側が検証済みの
 ``Principal``、``ResourcePolicy``、寿命と登録上限を渡します。中核が利用者の本人確認や製品データの
 アクセス制御を行うことはありません。
 

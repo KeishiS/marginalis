@@ -7,7 +7,7 @@
 [#top]
 この文書は、https://github.com/KeishiS/marginalis/issues/21[Issue 21]で行った初回評価と、
 https://github.com/KeishiS/marginalis/issues/334[Issue 334]で採用を決めた再評価を記録します。
-ノート本文にAsciiDocを採用する理由はxref:requirements.adoc#top[要件定義]で扱うため、ここでは
+ノート本文にAsciiDocを採用する理由は xref:requirements.adoc#top[要件定義]で扱うため、ここでは
 リポジトリで保守する人間向け文書だけを対象にします。
 
 2026年7月28日の初回評価では、Markdownで必要な表現を満たしており、形式変更だけでは新しい保証を

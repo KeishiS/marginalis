@@ -5,7 +5,7 @@
 [#top]
 この文書は、Marginalisの文書について対象読者、役割、優先して参照する資料、更新契機を定めており、
 文書を作成・更新する際の基準として使用します。Marginalisの動作そのものは定義せず、
-個別の仕様はxref:README.adoc#top[資料案内]から参照します。
+個別の仕様は xref:README.adoc#top[資料案内]から参照します。
 
 == 配置と役割
 
@@ -162,7 +162,7 @@ ADRを追加する場合は``docs/adr/NNNN-短い名称.adoc``とし、状態、
 
 == AsciiDoc文書の規則
 
-``AGENTS.md``を除く人間向け文書は、xref:repository-asciidoc-evaluation.adoc#top[再評価]と
+``AGENTS.md``を除く人間向け文書は、 xref:repository-asciidoc-evaluation.adoc#top[再評価]と
 https://github.com/KeishiS/marginalis/issues/334[Issue \#334]に従ってAsciiDocで管理します。
 新しいMarkdown文書は追加しません。
 
@@ -171,6 +171,10 @@ AsciiDoc文書はAdocWeave v0.33.0のstrict profileで解析し、local target�
 ``marginalis-documentation`` crateで検査し、AsciiDocの構文規則を専用scriptへ書き写しません。自然文は
 同じ版のtextlint Processorに同梱されたWebAssemblyで解析し、source blockやinline codeを校正対象から
 除外します。
+
+``xref:``と``link:``は、前の文章との間に空白を置き、AdocWeaveが記法として認識できる境界へ配置します。
+通常の文章として残った記法らしい文字列は``marginalis-documentation``が拒否します。記法そのものを説明する
+場合はinline codeとして記述します。
 
 固定名が必要な``AGENTS.md``にはMarkdownのlink検査を適用します。traceability、release metadata、
 受入索引、観測event対応はAsciiDocの構造に合わせて検査し、文書形式の変更で検査範囲を狭めません。
@@ -184,7 +188,7 @@ AsciiDoc文書はAdocWeave v0.33.0のstrict profileで解析し、local target�
 == Issueと履歴
 
 作業項目はGitHub Issuesで管理します。リポジトリ内にIssueファイルを追加しません。v0.5.0までの
-ローカルIssueはxref:issue-migration.adoc#top[移行対応表]から、GitHub Issue、現行文書、または
+ローカルIssueは xref:issue-migration.adoc#top[移行対応表]から、GitHub Issue、現行文書、または
 ``v0.5.0``タグ上の原文へ辿れます。完了済みIssueは現行仕様の根拠にせず、設計判断の確認が必要な場合
 だけ参照します。
 

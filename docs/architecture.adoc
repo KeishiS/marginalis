@@ -2,7 +2,7 @@
 
 [#top]
 この文書は、開発者に向けて、コンポーネントの役割、依存関係、一貫して満たすべき設計条件を
-説明します。利用者向けの機能はxref:requirements.adoc#top[現行要件]、HTTPの入出力は
+説明します。利用者向けの機能は xref:requirements.adoc#top[現行要件]、HTTPの入出力は
 link:openapi.json[OpenAPI]を参照してください。
 
 == 構成
@@ -29,8 +29,8 @@ MCPのtool一覧と実行時応答も同じ``McpToolName``と出力型を使用�
 公開表現が業務モデルと意図して同一である値は、``marginalis-domain``で一度だけ定義します。権限
 ``NotePermission``、実効アクセス水準``NoteAccess``、検証対象``NoteValidationTarget``、UTF-8バイト範囲
 ``Utf8ByteSpan``、ノートIDの文字列パターン、``Revision``の最小値がこれにあたり、
-``marginalis-contract``はこれらを再定義せず参照します。要求と応答の構造そのもの（``++*++Input``、
-``++*++Response``）は``marginalis-contract``に置き、応答の構造を変えてもdomainへ波及させません。
+``marginalis-contract``はこれらを再定義せず参照します。要求と応答の構造そのもの（``*Input``、
+``*Response``）は``marginalis-contract``に置き、応答の構造を変えてもdomainへ波及させません。
 domainの変更が公開表現を変えていないことは、``marginalis-contract``のJSON表現固定試験で確認します。
 ``marginalis-application``はノート操作の手順と業務上の失敗理由を定義します。
 ここでいうportは、applicationが外側の実装へ要求する小さなinterfaceです。
@@ -117,20 +117,20 @@ SQLiteの一つの条件付き更新で行う。読み取り後に同じ遅延tr
 同じsessionへの並行要求をSQLiteの書き込み待機で直列化する。未完了OIDC login attemptは10分で
 失効し、発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
 * *ARCH-OIDC-001 — ID tokenの署名方式*: OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う
-``ES256``だけを許可する。別の署名方式を追加する場合はxref:security.adoc#top[セキュリティ]の依存脆弱性判断を
+``ES256``だけを許可する。別の署名方式を追加する場合は xref:security.adoc#top[セキュリティ]の依存脆弱性判断を
 先に更新する。
 * *ARCH-OAUTH-001 — OAuth秘密値の境界*: MarginalisはMCPのclient、認可code、access token、
 refresh tokenをSQLiteで管理する。tokenはhashだけを保存し、秘密値をログやアーカイブへ出力しない。
 MCP clientにKanidm tokenを渡さない。
 * *ARCH-OAUTH-002 — OAuth token familyの原子性と期限*: 認可codeの消費と最初のtoken pair発行、
 refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family失効、grant取消は、それぞれ
-一つのtransactionで完結する。認可codeとtokenは``expires_at ++<++= now``で無効とする。
+一つのtransactionで完結する。認可codeとtokenは``expires_at <= now``で無効とする。
 * *ARCH-OAUTH-003 — scope上限の未設定値*: 利用者全体またはクライアント別のscope上限が未設定の
 場合は、サーバーが対応する全scopeを実効上限とする。過去に同意したscopeは履歴として保持し、上限の
 代わりに使わない。保存層では未設定と明示的な空集合を区別し、設定画面には実際の適用状態を表示する。
 * *ARCH-BOUNDARY-001 — 業務規則の配置*: HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を
 複製しない。
-* *ARCH-AUTHZ-002 — 実効アクセス水準*: 実効アクセス水準は``Read ++<++ Edit ++<++ Manage``の順序で表す。
+* *ARCH-AUTHZ-002 — 実効アクセス水準*: 実効アクセス水準は``Read < Edit < Manage``の順序で表す。
 SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``または``Edit``を同じ判断表へまとめる。
 
 == ソース配置
@@ -196,7 +196,7 @@ SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出
 
 構造化ログはtransportやadapter内で、外部との通信結果と運用処理の結果だけを記録します。
 domainとapplicationの値を観測目的で公開し直さず、利用者identity、ノート識別子、ノート内容を
-ログへ渡しません。安定したeventとfieldの契約はxref:observability.adoc#top[ログと障害診断]を正とし、
+ログへ渡しません。安定したeventとfieldの契約は xref:observability.adoc#top[ログと障害診断]を正とし、
 ``cargo make observability-check``でproductionのログ呼出しを検査します。
 
 ノートの正本は、文書題名、``:marginalis-tags:``などの文書属性、本文を含む完全なAsciiDoc文書
@@ -230,7 +230,7 @@ CSL-JSONファイルの一括取込は、application層で入力検査、既存�
 Web UIとREST APIだけに公開し、MCPの書誌情報toolは従来の一項目単位の操作に限定します。
 
 引用の表示文字列と参考文献項目の文字列はapplication層が組み立て、``NoteContent`` portへ渡します。
-文書adapterは、参考文献一覧を``++[++bibliography++]++``ブロックとして本文の末尾へ加えてからAdocWeaveへ渡し、
+文書adapterは、参考文献一覧を``[bibliography]``ブロックとして本文の末尾へ加えてからAdocWeaveへ渡し、
 引用の表示はAdocWeaveの解決入力として渡します。anchor、本文から項目へのlink、項目から本文への
 戻りlinkはAdocWeaveが生成するため、MarginalisはHTMLを組み立てません。生成した一覧は保存する本文へ
 書き込みません。書誌情報の文字列は表示であって記法ではないため、文書adapterがAsciiDocの記法として
@@ -281,7 +281,7 @@ xref:web-ui-editor.adoc#top[AsciiDoc編集画面]を参照してください。
 境界条件を単体試験で確認します。base URLのサブパスを画面内URLへ反映する規則は``paths.ts``へ
 集約し、一覧と編集画面で同じ処理を使います。
 閲覧画面と編集プレビューは、サーバーが検査・生成したHTMLを``RenderedContent.tsx``だけから
-表示します。この境界では、AdocWeaveが公開する``figure.source-block``と``data-++*++``属性からコードの
+表示します。この境界では、AdocWeaveが公開する``figure.source-block``と``data-*``属性からコードの
 範囲、言語、開始行、数式の言語と表示形式を受け取ります。コード本文はtextとして行へ分け、
 数式もtextとしてMathJaxへ渡します。表と長いコードのスクロール領域、MathJaxの組版失敗通知も
 同じ表示境界へ置きます。数式マクロは利用者の識別子ごとにSQLiteへ保存し、サーバーがノート所有者を
@@ -335,4 +335,4 @@ marginalis-sqlite/src/
 SQLite試験は``marginalis-sqlite/src/tests/``でschema・ノート・session・MCP OAuthに分けます。OIDC
 access token検証は各認証adapterでmetadata、署名、claimの境界を試験します。
 
-設計を確定した経緯はxref:v0.3.0-design.adoc#top[再設計判断記録]を参照してください。
+設計を確定した経緯は xref:v0.3.0-design.adoc#top[再設計判断記録]を参照してください。

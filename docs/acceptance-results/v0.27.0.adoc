@@ -69,7 +69,7 @@ Protected Resource Metadata、Authorization Server Metadata、認可要求、tok
 challengeが同じresource policyから導出されることを確認します。DCRでは``application_type``を受理して
 登録応答へ反映し、CIMDでは従来と同じHTTPS、SSRF対策、cache、取得上限を維持することを確認します。
 
-公開MCP URL、``notes:++*++`` scope、token寿命、SQLite schema、archive形式は変更していません。既存のclient
+公開MCP URL、``notes:*`` scope、token寿命、SQLite schema、archive形式は変更していません。既存のclient
 登録と発行済みtokenを維持したまま更新できることをNixOS VMで確認し、ChatGPT、Claude Code、Codex CLIで
 metadataの発見、client登録、Kanidmへのログイン、同意、読み書き、取消、再認可を確認します。
 

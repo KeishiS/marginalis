@@ -26,7 +26,7 @@
 |成功
 |2026-08-03
 |https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]のChromium・Firefox試験で、
-``++\++coloneqq``の組版、拡張ファイルの同一オリジン配信、表示切替を確認
+``\coloneqq``の組版、拡張ファイルの同一オリジン配信、表示切替を確認
 |NixOS配備
 |成功
 |2026-08-03
@@ -41,12 +41,12 @@ targetとNix packageを構築
 |成功
 |2026-08-03
 |https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]
-の自動検証で旧archiveの移行と隔離した空のデータベースへの復元を確認。形式に変更がないため、xref:v0.25.0.adoc#top[v0.25.0受入結果]の同日確認も継承
+の自動検証で旧archiveの移行と隔離した空のデータベースへの復元を確認。形式に変更がないため、 xref:v0.25.0.adoc#top[v0.25.0受入結果]の同日確認も継承
 |MCP接続
 |成功
 |2026-08-03
 |https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]のNixOS VM E2Eで認可経路を確認。
-MCPに変更がないため、xref:v0.25.0.adoc#top[v0.25.0受入結果]の同日実接続確認も継承
+MCPに変更がないため、 xref:v0.25.0.adoc#top[v0.25.0受入結果]の同日実接続確認も継承
 |===
 
 自動検証と今回変更したWeb UIの受入が成功しました。REST API、MCP、データベース、archive、
@@ -57,7 +57,7 @@ NixOSモジュールには変更がなく、v0.25.0で同日に完了した受�
 
 ``mathtools``拡張と、その依存先である``boldsymbol``をMarginalisのWeb UI配布物へ含めます。
 Content Security Policyを維持した状態で両方の拡張ファイルを同一オリジンから読み込み、
-``++\++coloneqq``を含むインライン数式とブロック数式を組版できることを確認します。
+``\coloneqq``を含むインライン数式とブロック数式を組版できることを確認します。
 
 数式を含む表示を切り替えた場合も、組版済みの内容を維持し、以前の組版結果を現在の内容へ
 混ぜないことを確認します。MathJaxの字体を含め、外部CDNへ接続しないことも確認します。

@@ -19,12 +19,12 @@ nix develop --command cargo make coverage
 |===
 |ファイル
 |内容
-|``workspace.++{++json,summary.txt}``
+|``workspace.{json,summary.txt}``
 |ワークスペースの単体テストと結合テスト
 |===
 
 ``tests/``以下のテストコードは計測率の分母から除外します。
-一方、``#++[++cfg(test)++]++``を本番モジュールの末尾へ置いた単体テストは、同じソースファイルとしてLLVMに
+一方、``#[cfg(test)]``を本番モジュールの末尾へ置いた単体テストは、同じソースファイルとしてLLVMに
 計測されるため、ファイル全体の数値に含まれます。
 
 この数値を「未使用コード率」や厳密な「本番コードのカバレッジ」とは呼びません。未実行箇所は
@@ -46,7 +46,7 @@ nix develop --command cargo make production-reachability
 == CIでの扱い
 
 カバレッジは、通常の``verify``とは独立した``coverage``ジョブで実行します。導入時点では一律の
-合格率を設定しません。概要はCIログへ出力し、概要とLLVM JSONを``coverage-++*++`` artifactとして
+合格率を設定しません。概要はCIログへ出力し、概要とLLVM JSONを``coverage-*`` artifactとして
 14日間保存します。Pull Request間の単純な数値比較ではなく、変更した責務の未実行箇所を調べるために
 使用します。
 

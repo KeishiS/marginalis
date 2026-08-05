@@ -14,7 +14,7 @@ PKCE S256、resourceとscopeの検査、不透明token、refresh token rotation�
 委ねています。
 
 一方、プロトコルの型と状態遷移は``marginalis-domain``と``marginalis-application``に置かれており、
-ノートを扱うアプリケーションの型、固定した``notes:++*++`` scope、単一のresource、SQLite実装と結び付いて
+ノートを扱うアプリケーションの型、固定した``notes:*`` scope、単一のresource、SQLite実装と結び付いて
 います。別サービスで同じ安全性を満たすMCP認可が必要になった場合、この構造では処理を複製するか、
 Marginalisを別サービスの認可主体として扱うことになります。
 
@@ -37,7 +37,7 @@ Marginalisの同一プロセスへ組み込みます。独立したdaemon、ネ�
 * ``client_metadata``: CIMDによるclient解決を表すportと共通のmetadata検査
 
 crateを分けなければ依存方向を守れない状態になった場合だけ、moduleを独立crateへ分けます。
-``mcp-authorization-server``はAxum、SQLx、Kanidm、``marginalis-++*++``、``renkan-++*++``へ依存しません。
+``mcp-authorization-server``はAxum、SQLx、Kanidm、``marginalis-*``、``renkan-*``へ依存しません。
 この原則に従い、CIMDの外部取得だけは``mcp-authorization-server-cimd``へ分けます。CIMDはHTTP client、
 非同期の同時実行制御、DNS名前解決を必要としますが、中核の状態遷移とmetadata検証は必要としません。
 別crateにすることで、中核へ``reqwest``と``tokio``を持ち込まず、別のHTTP adapterへの交換も可能にします。
@@ -48,7 +48,7 @@ group検査、Web session、Cookie、CSRF、同意画面はMarginalisに残し�
 
 resource URI、表示名、対応scope、既定scope、token寿命、認可code寿命、client登録上限は
 ``ResourcePolicy``とAuthorization Serverの設定から与えます。metadata、認可要求、token更新、
-Bearer tokenのchallengeは同じpolicyから導出します。``notes:++*++``とMCP toolの対応、ノートの所有者・ACLは
+Bearer tokenのchallengeは同じpolicyから導出します。``notes:*``とMCP toolの対応、ノートの所有者・ACLは
 Marginalis側の責務です。
 
 repository portはテーブルごとのCRUDではなく、次の原子的な操作を表します。
@@ -84,7 +84,7 @@ Marginalisは引き続き内蔵Authorization Serverを配備するため、運�
 crateの外部公開APIと配布方法は、workspace内の境界とrepository契約試験を確認した後に
 https://github.com/KeishiS/marginalis/issues/314[Issue 314]で決定します。独立リポジトリ、registry、固定した
 Git dependencyを比較し、不安定な公開APIを複数の利用側で早期に固定することは避けます。現在の版管理と
-更新手順はxref:../mcp-authorization-server-maintenance.adoc#top[保守文書]に記載します。
+更新手順は xref:../mcp-authorization-server-maintenance.adoc#top[保守文書]に記載します。
 
 == 代替案
 
@@ -97,7 +97,7 @@ Git dependencyを比較し、不安定な公開APIを複数の利用側で早期
 認証と取消で要件を満たすため採用しません。
 
 *Marginalisのapplication層をそのまま共有する*: 移動量は少なくなりますが、ノートのdomain型、
-``notes:++*++``、SQLiteへの依存が残り、別サービスがMarginalisへ依存します。所有関係を改善できないため
+``notes:*``、SQLiteへの依存が残り、別サービスがMarginalisへ依存します。所有関係を改善できないため
 採用しません。
 
 *初めからprotocol、core、HTTP、databaseごとにcrateを分ける*: 境界は明示されますが、公開APIと

@@ -5,7 +5,7 @@
 [#top]
 この文書は、AdocWeave 0.22.0から0.23.0への更新がMarginalisへ与える影響と、引用（citation）の
 扱いを記録します。0.22.0で決めた「引用を当面拒否する」判断は、この更新で取り消します。
-現行の入力方法はxref:rest-api.adoc#top[REST API]、archiveの変換手順はxref:nixos.adoc#top[NixOSでの運用]を
+現行の入力方法は xref:rest-api.adoc#top[REST API]、archiveの変換手順は xref:nixos.adoc#top[NixOSでの運用]を
 参照してください。
 
 == 固定する依存
@@ -16,20 +16,20 @@ CargoとNixの両方で、このcommitと取得内容のハッシュを固定し
 
 == 引用の解決経路が開いた
 
-0.22.0では、``cite:++[++key++]++``を引用として解析できても、解決した書誌情報をHTMLへ渡す経路が
+0.22.0では、``cite:[key]``を引用として解析できても、解決した書誌情報をHTMLへ渡す経路が
 ありませんでした。0.23.0では次の二つが加わり、その経路が開きます。
 
 * 解決した引用の表示を``RenderInputs::with_citations``で渡せます。表示は文字列の断片の並びで、
 断片ごとに文書内のanchorを指定できます。``(Smith 2024; Tanaka 2025)``のように、括弧と区切りは
 素の文字列のまま、著者名の部分だけをlinkにできます。
-* ``cite:``のkeyが同じ文書の``++[++bibliography++]++``項目を指す場合は、解決を渡さなくてもその項目へ
+* ``cite:``のkeyが同じ文書の``[bibliography]``項目を指す場合は、解決を渡さなくてもその項目へ
 linkし、項目側の戻りlinkにも並びます。
 
 利用側が渡した断片は、AdocWeaveがプレーンテキストとして扱います。AsciiDoc、属性参照または
 HTMLとして再解析しません。anchorは出力の直前に検査し、その文書が定義している対象を指す場合
 だけlinkになります。定義のないanchorは診断code``unknown-citation-anchor``で報告されます。
 
-これにより、xref:adocweave-v0.22-migration.adoc#top[0.22移行判断]で拒否していた``cite:``を受理へ戻し、
+これにより、 xref:adocweave-v0.22-migration.adoc#top[0.22移行判断]で拒否していた``cite:``を受理へ戻し、
 診断code``citation_disabled``を廃止します。
 
 == Rust公開APIの破壊的変更

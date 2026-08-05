@@ -3,7 +3,7 @@
 [#top]
 この文書は運用者と開発者に向けて、Marginalisが出力する構造化ログの契約、秘密情報の境界、
 主要event、障害時の調べ方を定めます。systemd unitの操作は
-xref:nixos.adoc#top[NixOSでの運用]、CIの失敗はxref:development.adoc#top[GitHubを使う開発手順]を参照してください。
+xref:nixos.adoc#top[NixOSでの運用]、CIの失敗は xref:development.adoc#top[GitHubを使う開発手順]を参照してください。
 productionコードが出力するログの正本はこの文書です。試験用コード、依存ライブラリ、
 Webブラウザーのconsole、GitHub Actionsの標準出力は対象外です。
 
@@ -34,7 +34,7 @@ Marginalis自身が出力するすべてのproductionログは、次の規則に
 
 ログ本文は人が読む補足であり、監視契約ではありません。文言を使って分類せず、``event``と固定fieldを
 使用します。HTTP requestのspanには``request_id``、``method``、実際の識別子を含まないroute
-templateを``path``として記録します。未一致の経路は``++<++unmatched++>++``とし、queryや入力された経路を
+templateを``path``として記録します。未一致の経路は``<unmatched>``とし、queryや入力された経路を
 記録しません。handlerが応答statusを決定した時点の``http.request.completed``には、``outcome``、
 ``status``、``latency_ms``、該当する場合は固定値の``problem_code``を記録します。streaming responseでは
 本文の送信完了時刻ではありません。
@@ -219,7 +219,7 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |``http.request.completed``
 |``latency``を``latency_ms``へ変更し、``outcome``、``status``、任意の``problem_code``を追加
 |requestの実pathを含む``path``
-|route templateまたは``++<++unmatched++>++``を含む``path``
+|route templateまたは``<unmatched>``を含む``path``
 |ノートID、未知のpath、queryを監視条件から削除
 |``archive.export.completed``
 |``maintenance.archive_export.completed``
@@ -228,7 +228,7 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |``maintenance.archive_import.completed``
 |event名の置換
 |``command.failed``
-|commandごとの``maintenance.++*++.failed``または``service.failed``
+|commandごとの``maintenance.*.failed``または``service.failed``
 |``command.failed``は未知のcommandだけに限定
 |``error_kind``
 |``reason``

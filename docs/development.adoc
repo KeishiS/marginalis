@@ -2,7 +2,7 @@
 
 [#top]
 この文書は、AIエージェントを含む開発参加者に向けて、作業ブランチの作成からPull Requestの
-マージまでを説明します。リリースの詳しい操作はxref:release.adoc#top[リリース手順]を参照してください。
+マージまでを説明します。リリースの詳しい操作は xref:release.adoc#top[リリース手順]を参照してください。
 
 == 開発環境
 
@@ -80,7 +80,7 @@ CIでは、包括的なNixOS VMと並列に、早期検出用の二つの検査�
 遅らせず、CPU固有のコンパイル失敗や画面の基本回帰をVMの完了前に確認できます。
 認証、認可、サブパス、TLS、永続化を含む統合動作は、引き続き``cargo make ci-nixos-e2e``が検査します。
 +
-coverageの対象と解釈はxref:coverage.adoc#top[本番到達性とカバレッジ]を参照してください。
+coverageの対象と解釈は xref:coverage.adoc#top[本番到達性とカバレッジ]を参照してください。
 +
 CI jobの責務とローカルでの再実行方法は次のとおりです。jobを追加するときは、既存jobへ
 含められない独立した責務と、失敗時に残す証拠をこの表へ追加します。
@@ -102,7 +102,7 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |``coverage``
 |workspaceと統合経路のcoverage測定
 |``cargo make ci-coverage``
-|``coverage-++*++`` artifactの概要とJSON
+|``coverage-*`` artifactの概要とJSON
 |``native-aarch64``
 |aarch64 Linux上の全Rust target・featureとNix packageの構築
 |aarch64 Linux上で``cargo make native-check``と``cargo make release-package-aarch64``
@@ -110,11 +110,11 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |``browser-smoke``
 |production用Web UIの起動、主要操作、固定画像、ChromiumとFirefoxの編集欄互換性、ブラウザー例外
 |``cargo make browser-smoke``と``cargo make browser-editor-firefox``
-|失敗時の``browser-smoke-failure-++*++`` artifactにscreenshotとtrace
+|失敗時の``browser-smoke-failure-*`` artifactにscreenshotとtrace
 |``nixos-e2e``
 |Nix package、module、TLS、Kanidm、内蔵OAuth、永続化、保守unit
 |``cargo make ci-nixos-e2e``
-|試験実行失敗時の``nixos-e2e-failure-++*++`` artifactに、秘密情報を除去したrunner出力
+|試験実行失敗時の``nixos-e2e-failure-*`` artifactに、秘密情報を除去したrunner出力
 |``release-gate``
 |公開対象の版、受入結果、全検証、Nix packageを公開前に確認
 |``MARGINALIS_RELEASE_TAG=vX.Y.Z cargo make release-gate``
@@ -161,7 +161,7 @@ nix develop --command cargo test -p marginalis-sqlite tests::oauth
 nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
 ----
 +
-``docs/++**++``、ルートの案内文書、Issueテンプレートだけを変更する場合は、次の文書検査だけで
+``docs/**``、ルートの案内文書、Issueテンプレートだけを変更する場合は、次の文書検査だけで
 十分です。
 +
 [source,sh]
@@ -172,19 +172,19 @@ nix develop --command cargo make traceability-check
 +
 ``docs-check``は空白とローカルリンクを検査します。``traceability-check``は要件ID、設計条件ID、検証先の
 対応と版別受入証跡を検査します。アーキテクチャの「一貫して満たすべき設計条件」を変更する場合は、
-条件を直接確認する試験とxref:traceability.adoc#設計条件と検証の対応[要件と検証の対応表]も同じ変更で
+条件を直接確認する試験と xref:traceability.adoc#design-verification[要件と検証の対応表]も同じ変更で
 更新します。
 +
 CIは変更pathを判定し、文書だけのPull Requestでは``verify``を文書検査へ縮退し、
 ``coverage``とNixOS VMの実行を省略します。プログラムが参照する公開仕様
-``docs/openapi.json``と``docs/mcp-tools.json``は、この省略対象に含めません。``.github/++**++``、
+``docs/openapi.json``と``docs/mcp-tools.json``は、この省略対象に含めません。``.github/**``、
 ``Makefile.toml``、Nix、Rust、公開仕様その他のファイルを同時に変更した場合は、通常の検証を
 すべて実行します。この判定規則は
 ``.github/scripts/classify-ci-change.sh``と、その入力を判定する
 ``.github/scripts/classify-docs-only.sh``に集約し、``cargo make verify``から境界例を検査します。
 +
 新しい作業項目はGitHub Issuesへ作成します。リポジトリ内にIssueファイルを追加しません。
-v0.5.0以前のローカルIssueとの対応はxref:issue-migration.adoc#top[移行対応表]を参照してください。
+v0.5.0以前のローカルIssueとの対応は xref:issue-migration.adoc#top[移行対応表]を参照してください。
 . 作業ブランチをpushし、``gh``でPull Requestを作成します。
 +
 [source,sh]
@@ -247,7 +247,7 @@ git branch -d codex/<purpose>
 == リリース
 
 バージョン、変更履歴、リリース文書を変更する場合も、専用ブランチとPull Requestを使用します。
-Pull Requestの必須チェックとxref:release.adoc#top[リリース手順]の検証が成功した後に``main``へマージし、
+Pull Requestの必須チェックと xref:release.adoc#top[リリース手順]の検証が成功した後に``main``へマージし、
 ``main``の先端で``release-gate``を手動実行します。入力する``release_tag``には作成予定のタグを
 指定します。gateの成功後、検証した``main``のコミットへタグを付けます。タグのpushでも同じ
 gateが再実行されます。

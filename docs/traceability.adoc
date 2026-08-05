@@ -1,7 +1,7 @@
 = 要件と検証の対応表
 
 [#top]
-この文書は、xref:requirements.adoc#top[現行要件]をどの検証階層で確認するかを示します。ここでいう検証階層は、
+この文書は、 xref:requirements.adoc#top[現行要件]をどの検証階層で確認するかを示します。ここでいう検証階層は、
 単体試験、公開契約試験、複数コンポーネントを接続する結合試験、NixOS仮想マシン試験、運用時の
 人手受入です。個別の試験名は変更できるため、安定した要件IDと責務別の検証先を対応させます。
 
@@ -127,7 +127,7 @@ metadata契約試験
 |長文入力、IME、表示切替、キーボード保存
 |REQ-UI-007
 |application所有者選択試験、SQLite分離・revision試験、REST契約試験、React設定画面・MathJaxで許可するpackageの単体・ブラウザー試験
-|``++\++argmax``・``++\++bm``の閲覧と共有表示
+|``\argmax``・``\bm``の閲覧と共有表示
 |REQ-UI-008
 |外部側と現在値を含むREST応答検査、``BibliographyImportPanel.test.tsx``、ブラウザー試験
 |内容比較、キーボードによる事前確認、競合解決、適用
@@ -169,6 +169,7 @@ metadata契約試験
 |別環境への移行
 |===
 
+[#design-verification]
 == 設計条件と検証の対応
 
 xref:architecture.adoc#一貫して満たすべき設計条件[アーキテクチャ]に記載する設計条件は、実装方法に近い

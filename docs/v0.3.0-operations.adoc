@@ -2,8 +2,8 @@
 
 [#top]
 この文書は、v0.3.0の公開候補時点で使用した運用方法を記録したものです。現在の手順では
-ありません。現在のNixOS設定と日常運用はxref:nixos.adoc#top[NixOSでの運用]、MCPは
-xref:mcp.adoc#top[MCPとOAuth]、公開前の確認はxref:acceptance.adoc#top[受入確認]を参照してください。
+ありません。現在のNixOS設定と日常運用は xref:nixos.adoc#top[NixOSでの運用]、MCPは
+xref:mcp.adoc#top[MCPとOAuth]、公開前の確認は xref:acceptance.adoc#top[受入確認]を参照してください。
 本文にある``server-admins``の設定と全ノートへのアクセスは廃止済みです。
 
 v0.3.0 は新規の空 SQLite database を対象とする破壊的リリースです。v0.2 の
@@ -56,7 +56,7 @@ Web/OIDC/MCP認証状態を日次で物理削除する。
 * ``marginalis-backup.service`` は ``backupDirectory`` に時刻付きディレクトリを作り、
 ``marginalis-archive.json`` を保存する。単一のSQLite read transactionからsnapshotを取得するため、
 HTTP serviceを停止せずに実行できる。
-* archive は ``marginalis import-archive --input ++<++absolute-file++>++`` で空の SQLite database へ
+* archive は ``marginalis import-archive --input <absolute-file>`` で空の SQLite database へ
 取り込める。定期復元試験は v0.3.0 の release gate 外です。
 
 == MCP OAuth
@@ -71,7 +71,7 @@ MCP endpoint は ``POST B/mcp`` です。Protected Resource Metadata と Authori
 resource indicator は完全一致で検証する。
 
 アクセスには ``notes:read``、``notes:write``、``notes:delete`` の scope と、通常のノート ACL の両方が
-必要です。``DELETE /api/v2/mcp-authorizations/++{++client_id}`` は Cookie session、Origin、CSRF token を
+必要です。``DELETE /api/v2/mcp-authorizations/{client_id}`` は Cookie session、Origin、CSRF token を
 必要とし、その client の access token と refresh token を失効させる。
 
 [[v030のリリース検証]]

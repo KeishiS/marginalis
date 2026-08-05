@@ -96,7 +96,7 @@ RESTとMCPの一覧では完全一致で絞り込める。
 利用者は、認可先をクライアントが変更できる名前ではなく、実際の識別子を基準に判断できる。
 * MathJaxで使用できるTeX packageを、数式、所有者マクロ、``mathtools``、太字に必要なものへ固定した。
 ``autoload``と``require``による追加packageの読込は行わず、CSPに加えてTeX入力処理でも外部の拡張を
-読み込まない。既存の``++\++coloneqq``、``++\++operatorname++*++``、``++\++boldsymbol``と所有者マクロは引き続き使える。
+読み込まない。既存の``\coloneqq``、``\operatorname*``、``\boldsymbol``と所有者マクロは引き続き使える。
 
 *互換性*
 
@@ -129,7 +129,7 @@ scopeの追加、選択内容の改変、scopeを一つも選ばない許可は�
 * scope上限を狭めた場合は、新しい上限を超える未使用の認可codeとtoken familyを同じtransactionで
 直ちに失効する。上限を広げても既存tokenへ権限は追加せず、OAuth再認可を必要とする。
 * ``GET /api/v3/mcp-authorizations``と、クライアント別上限を変更する
-``PUT /api/v3/mcp-authorizations/++{++client_id}/scope-ceiling``を追加した。既存の接続取消APIと同様に、
+``PUT /api/v3/mcp-authorizations/{client_id}/scope-ceiling``を追加した。既存の接続取消APIと同様に、
 認証中の利用者本人に属する認可だけを対象とする。
 
 *互換性*
@@ -213,7 +213,7 @@ v0.25.1が記録するAdocWeave 0.27.0、note profile 5の組み合わせを受�
 
 * ノート所有者ごとにMathJaxマクロを定義する設定画面とREST APIを追加した。設定したマクロは、
 所有するノートの閲覧と編集プレビューへ適用され、共有先でも同じ表示になる。定義例から
-``++\++argmax``と、``++\++boldsymbol``を使う``++\++bm``を追加できる。
+``\argmax``と、``\boldsymbol``を使う``\bm``を追加できる。
 * 数式マクロ設定をarchiveの書き出しと復元に含めた。
 
 [[0251--2026-08-03]]
@@ -221,7 +221,7 @@ v0.25.1が記録するAdocWeave 0.27.0、note profile 5の組み合わせを受�
 
 *修正*
 
-* Web UIのMathJaxで``mathtools``拡張を有効にした。``++\++coloneqq``などの数式コマンドを使用できる。
+* Web UIのMathJaxで``mathtools``拡張を有効にした。``\coloneqq``などの数式コマンドを使用できる。
 拡張ファイルは他のMathJax資源と同様にMarginalisから配信し、外部CDNへ接続しない。
 
 [[0250--2026-08-03]]
@@ -257,7 +257,7 @@ discoveryだけで決まる。以前は外部Authorization Serverのdiscoveryに
 登録上限を分けて管理する。有効な文書だけをHTTPのcache指示に従って保持し、失敗や不正な文書は
 保持しない。同じclientへの同時要求は一つの取得結果を共有し、全体の同時実行数と取得回数、DNSを
 含む処理時間を制限する。認可GET内では解決結果を検証にも使い、不必要な再取得を行わない。
-* ``DELETE /api/v3/mcp-authorizations/++{++client_id}``を追加した。利用者本人のsessionとCSRFトークンで、
+* ``DELETE /api/v3/mcp-authorizations/{client_id}``を追加した。利用者本人のsessionとCSRFトークンで、
 MCPクライアント単位に認可を取り消す。対象のaccess tokenとrefresh tokenをtoken family単位で
 直ちに失効する。
 * Authorization Server Metadataを``/.well-known/oauth-authorization-server``で公開した。RFC 7009の
@@ -278,7 +278,7 @@ ChatGPTと既存のMCPクライアントの両方を使用できる。
 
 *追加*
 
-* 既存ノートの編集プレビュー用に``POST /api/v3/notes/++{++note_id}/preview``を追加した。新規作成用の
+* 既存ノートの編集プレビュー用に``POST /api/v3/notes/{note_id}/preview``を追加した。新規作成用の
 ``POST /api/v3/notes/preview``と分けることで、対象ノートの認可と所有者をサーバーで判断する。
 
 *修正*
@@ -320,7 +320,7 @@ xref:docs/adocweave-v0.27-migration.adoc#top[AdocWeave 0.27移行判断]に記�
 *追加*
 
 * 引用の見せ方を、文書属性``:marginalis-citation-style:``でノートごとに選べるようにした。
-``author-year``は本文へ``(Smith 2024)``、``numeric``は本文での初出順の番号で``++[++1++]++``と表示する。
+``author-year``は本文へ``(Smith 2024)``、``numeric``は本文での初出順の番号で``[1]``と表示する。
 属性を書かないノートは``author-year``になり、表示は今までと変わらない。``numeric``では参考
 文献一覧の項目にも同じ番号が見出しとして付き、本文の引用と一覧の項目は今までどおり相互に
 移動できる。番号は書誌情報の記述には混ざらない。選べる値以外を書いた場合は
@@ -427,11 +427,11 @@ chunkの名前には内容のhashが付くため、書き並べる方式では�
 
 *追加*
 
-* 本文の``cite:++[++key++]++``を書誌ライブラリーで解決し、``(Smith 2024)``のような著者・年の表示にする
+* 本文の``cite:[key]``を書誌ライブラリーで解決し、``(Smith 2024)``のような著者・年の表示にする
 ようにした。引用した文献だけを重複なく並べた参考文献一覧を表示時に組み立て、本文の引用と
 一覧の項目を相互に移動できる。一覧は保存する本文へ書き込まない。
 * 引用の解決にはノートを作成した利用者のライブラリーを使う。共有したノートは誰が見ても同じ
-表示になる。判断はxref:docs/adr/0006-引用はノート作成者の書誌ライブラリーで解決する.adoc#top[ADR 0006]に
+表示になる。判断は xref:docs/adr/0006-引用はノート作成者の書誌ライブラリーで解決する.adoc#top[ADR 0006]に
 記録した。
 * ライブラリーに無いcitation keyを``unknown_citation_key``の警告として報告するようにした。
 Web UIとREST APIでは保存でき、MCPでは警告を拒否する既定の方針どおり保存されない。
@@ -475,7 +475,7 @@ xref:docs/adocweave-v0.23-migration.adoc#top[0.23移行判断]に記録した。
 これまで表現を持たなかった型にも記録用の文言が付く。利用者向けの``code``と``message``は
 従来どおりtransport側の写像が決めるため、公開応答は変わらない。
 * MCP toolのJSON Schemaで、入力上の問題の位置を表す定義名を``ValidationTargetResponse``から
-``NoteValidationTarget``へ変更した。``++{++"field": "source"}``のような実際の値の形式は変わらないため、
+``NoteValidationTarget``へ変更した。``{"field": "source"}``のような実際の値の形式は変わらないため、
 ``$ref``を解決して利用するクライアントへの影響はない。schemaから型を生成している場合は、
 生成した型名が変わる。
 
@@ -658,8 +658,8 @@ SQLiteのsnapshot競合によって503にならないようにした。
 
 *破壊的変更*
 
-* MCPのAuthorization Serverを内蔵実装からAuth0へ変更した。``/oauth/++*++``と
-``DELETE /api/v3/mcp-authorizations/++{++client_id}``を削除し、MCPを有効にする場合はNixOSの
+* MCPのAuthorization Serverを内蔵実装からAuth0へ変更した。``/oauth/*``と
+``DELETE /api/v3/mcp-authorizations/{client_id}``を削除し、MCPを有効にする場合はNixOSの
 ``mcp.authorization``設定を必須とした。
 * SQLite schemaを10へ更新し、MCP client、認可code、access token、refresh tokenのテーブルを
 削除した。schema 9以前のdatabaseは自動移行せず、archiveを書き出して空の``dataDir``へ復元する。

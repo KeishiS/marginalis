@@ -2,7 +2,7 @@
 
 [#top]
 この文書は、AIエージェントを含む開発参加者向けの案内です。開発環境、検証、GitHubでの詳しい
-作業手順はxref:docs/development.adoc#top[GitHubを使う開発手順]、システムの仕様や運用手順は
+作業手順は xref:docs/development.adoc#top[GitHubを使う開発手順]、システムの仕様や運用手順は
 xref:docs/README.adoc#top[資料案内]を参照してください。
 
 == 作業の始め方
@@ -16,7 +16,7 @@ xref:docs/README.adoc#top[資料案内]を参照してください。
 
 新しい作業項目と完了条件はGitHub Issuesで管理します。機能の修正、改善、追加では、
 Issue Formに現在と理想の動作例を記載してください。設計判断を長期に参照する場合は、
-実装Issueとは別にxref:docs/documentation.adoc#top[文書管理方針]に従ってADRを追加します。
+実装Issueとは別に xref:docs/documentation.adoc#top[文書管理方針]に従ってADRを追加します。
 
 Pull Requestには、変更の目的、利用者や運用者が理解できる主な差分、実行した検証、互換性と
 移行への影響、セキュリティーと運用への影響、関連Issueを記載します。確認が不要な項目は、

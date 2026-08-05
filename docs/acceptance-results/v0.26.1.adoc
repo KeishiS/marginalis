@@ -46,7 +46,7 @@ targetとNix packageを構築
 |成功
 |2026-08-04
 |https://github.com/KeishiS/marginalis/pull/260[リリースPull Request \#260]のNixOS VM E2Eで認可経路を確認。
-MCP契約に変更がないため、xref:v0.26.0.adoc#top[v0.26.0受入結果]が継承する実接続確認も使用
+MCP契約に変更がないため、 xref:v0.26.0.adoc#top[v0.26.0受入結果]が継承する実接続確認も使用
 |===
 
 自動検証と今回変更したWeb UI、archive移行の受入が成功しました。REST API、MCP、SQLite schema、
