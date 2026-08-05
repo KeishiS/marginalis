@@ -65,7 +65,12 @@ pub(super) async fn list_mcp_authorizations(
     Ok(Json(
         authorizations
             .into_iter()
-            .map(client_authorization_response)
+            .map(|authorization| {
+                client_authorization_response(
+                    endpoint.resource_policy.supported_scopes(),
+                    authorization,
+                )
+            })
             .collect(),
     ))
 }
@@ -100,11 +105,15 @@ pub(super) async fn replace_client_mcp_scope_ceiling(
                 marginalis_application::McpScopeCeilingUseCaseError::ClientNotFound,
             )
         })?;
-    authorization.scope_ceiling = setting;
-    Ok(Json(client_authorization_response(authorization)))
+    authorization.scope_ceiling = Some(setting);
+    Ok(Json(client_authorization_response(
+        endpoint.resource_policy.supported_scopes(),
+        authorization,
+    )))
 }
 
 fn client_authorization_response(
+    supported_scopes: &[String],
     authorization: marginalis_application::McpClientAuthorization,
 ) -> McpClientAuthorizationResponse {
     let registration_method = match authorization.registration_method {
@@ -113,13 +122,21 @@ fn client_authorization_response(
             "metadata_document"
         }
     };
+    let scope_ceiling_configured = authorization.scope_ceiling.is_some();
+    let scope_ceiling = authorization.scope_ceiling.unwrap_or_else(|| {
+        marginalis_application::McpScopeCeilingSetting {
+            scopes: supported_scopes.to_vec(),
+            revision: 0,
+        }
+    });
     McpClientAuthorizationResponse {
         client_id: authorization.client_id,
         display_name: authorization.display_name,
         registration_method: registration_method.into(),
         granted_scopes: authorization.granted_scopes,
-        scope_ceiling: authorization.scope_ceiling.scopes,
-        scope_ceiling_revision: authorization.scope_ceiling.revision,
+        scope_ceiling_configured,
+        scope_ceiling: scope_ceiling.scopes,
+        scope_ceiling_revision: scope_ceiling.revision,
         authorized_at_ms: authorization.authorized_at.get(),
         last_used_at_ms: authorization.last_used_at.map(|timestamp| timestamp.get()),
         active: authorization.active,

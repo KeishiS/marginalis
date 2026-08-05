@@ -226,6 +226,7 @@ pub struct McpClientAuthorizationResponse {
     pub display_name: String,
     pub registration_method: String,
     pub granted_scopes: Vec<String>,
+    pub scope_ceiling_configured: bool,
     pub scope_ceiling: Vec<String>,
     pub scope_ceiling_revision: i64,
     pub authorized_at_ms: i64,
@@ -638,12 +639,13 @@ pub fn openapi_document() -> Value {
                 },
                 "McpClientAuthorization": {
                     "type": "object", "additionalProperties": false,
-                    "required": ["client_id", "display_name", "registration_method", "granted_scopes", "scope_ceiling", "scope_ceiling_revision", "authorized_at_ms", "last_used_at_ms", "active"],
+                    "required": ["client_id", "display_name", "registration_method", "granted_scopes", "scope_ceiling_configured", "scope_ceiling", "scope_ceiling_revision", "authorized_at_ms", "last_used_at_ms", "active"],
                     "properties": {
                         "client_id": {"type": "string", "minLength": 1, "maxLength": 2048},
                         "display_name": {"type": "string", "minLength": 1, "maxLength": 128},
                         "registration_method": {"type": "string", "enum": ["metadata_document", "dynamic"]},
                         "granted_scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+                        "scope_ceiling_configured": {"type": "boolean"},
                         "scope_ceiling": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
                         "scope_ceiling_revision": {"type": "integer", "minimum": 0},
                         "authorized_at_ms": {"type": "integer"},

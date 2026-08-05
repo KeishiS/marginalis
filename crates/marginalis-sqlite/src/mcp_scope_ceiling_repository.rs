@@ -21,8 +21,8 @@ impl McpScopeCeilingRepository for SqliteDatabase {
             "SELECT clients.client_id, clients.display_name, clients.registration_method,
                     authorizations.granted_scopes, authorizations.authorized_at_ms,
                     authorizations.last_used_at_ms,
-                    COALESCE(ceilings.scopes, authorizations.granted_scopes) AS ceiling_scopes,
-                    COALESCE(ceilings.revision, 0) AS ceiling_revision,
+                    ceilings.scopes AS ceiling_scopes,
+                    ceilings.revision AS ceiling_revision,
                     (authorizations.revoked_at_ms IS NULL AND (
                         EXISTS(SELECT 1 FROM mcp_authorization_codes AS codes
                                WHERE codes.issuer = authorizations.issuer
@@ -187,12 +187,20 @@ fn decode_authorization(
         "metadata_document" => McpClientRegistrationMethod::MetadataDocument,
         _ => return Err(McpScopeCeilingRepositoryError::CorruptData),
     };
-    let revision = row
-        .try_get::<i64, _>("ceiling_revision")
+    let ceiling_scopes = row
+        .try_get::<Option<String>, _>("ceiling_scopes")
         .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?;
-    if revision < 0 {
-        return Err(McpScopeCeilingRepositoryError::CorruptData);
-    }
+    let ceiling_revision = row
+        .try_get::<Option<i64>, _>("ceiling_revision")
+        .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?;
+    let scope_ceiling = match (ceiling_scopes, ceiling_revision) {
+        (None, None) => None,
+        (Some(scopes), Some(revision)) if revision >= 1 => Some(McpScopeCeilingSetting {
+            scopes: split_scope_value(&scopes),
+            revision,
+        }),
+        _ => return Err(McpScopeCeilingRepositoryError::CorruptData),
+    };
     Ok(McpClientAuthorization {
         client_id: row
             .try_get("client_id")
@@ -202,10 +210,7 @@ fn decode_authorization(
             .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?,
         registration_method,
         granted_scopes: split_scopes(&row, "granted_scopes")?,
-        scope_ceiling: McpScopeCeilingSetting {
-            scopes: split_scopes(&row, "ceiling_scopes")?,
-            revision,
-        },
+        scope_ceiling,
         authorized_at: UnixMillis::new(
             row.try_get("authorized_at_ms")
                 .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?,
@@ -230,6 +235,10 @@ fn split_scopes(
         .split_ascii_whitespace()
         .map(str::to_owned)
         .collect())
+}
+
+fn split_scope_value(scopes: &str) -> Vec<String> {
+    scopes.split_ascii_whitespace().map(str::to_owned).collect()
 }
 
 async fn replace_principal_setting(

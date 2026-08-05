@@ -107,6 +107,9 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 - **ARCH-OAUTH-002 — OAuth token familyの原子性と期限**: 認可codeの消費と最初のtoken pair発行、
   refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family失効、grant取消は、それぞれ
   一つのtransactionで完結する。認可codeとtokenは`expires_at <= now`で無効とする。
+- **ARCH-OAUTH-003 — scope上限の未設定値**: 利用者全体またはクライアント別のscope上限が未設定の
+  場合は、サーバーが対応する全scopeを実効上限とする。過去に同意したscopeは履歴として保持し、上限の
+  代わりに使わない。保存層では未設定と明示的な空集合を区別し、設定画面には実際の適用状態を表示する。
 - **ARCH-BOUNDARY-001 — 業務規則の配置**: HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を
   複製しない。
 - **ARCH-AUTHZ-002 — 実効アクセス水準**: 実効アクセス水準は`Read < Edit < Manage`の順序で表す。

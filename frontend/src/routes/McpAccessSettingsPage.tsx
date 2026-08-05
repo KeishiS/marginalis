@@ -315,7 +315,9 @@ export function McpAccessSettingsPage({
                     <fieldset disabled={busyClient === client.client_id}>
                       <legend>クライアント別の上限</legend>
                       <p className="field-help">
-                        これまで同意したscopeの範囲内で制限できます。範囲を広げても既存tokenへ権限は追加されません。
+                        {!client.scope_ceiling_configured
+                          ? "未設定です。現在はサーバーが対応する全scopeを許可できます。上限を設定すると、これまで同意したscopeの範囲内へ制限します。"
+                          : "これまで同意したscopeの範囲内で制限しています。範囲を広げても既存tokenへ権限は追加されません。"}
                       </p>
                       <div className="mcp-scope-options">
                         {client.granted_scopes.map((scope) => (
@@ -350,7 +352,9 @@ export function McpAccessSettingsPage({
                         disabled={busyClient !== null}
                         onClick={() => void saveClient(client)}
                       >
-                        上限を保存
+                        {!client.scope_ceiling_configured
+                          ? "上限を設定"
+                          : "上限を保存"}
                       </button>
                       <button
                         className="button button-danger"
