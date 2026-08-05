@@ -74,7 +74,11 @@ args = ["--extra-experimental-features", "nix-command flakes", "flake", "check",
 [tasks.actionlint]
 description = "Validate GitHub Actions workflow syntax"
 command = "actionlint"
-args = [".github/workflows/ci.yml", ".github/workflows/release-gate.yml"]
+args = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/release-gate.yml",
+  ".github/workflows/security-audit.yml",
+]
 
 [tasks.ci-path-classifier]
 description = "Validate the documentation-only CI path classification"
