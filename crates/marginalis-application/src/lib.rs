@@ -334,18 +334,28 @@ pub struct McpScopeCeilingSetting {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct McpClientAuthorization {
+pub struct McpClientAuthorizationRecord<ScopeCeiling> {
     pub client_id: String,
     pub display_name: String,
     pub registration_method: McpClientRegistrationMethod,
     /// この利用者が当該clientへ同意したことのあるscope。
     pub granted_scopes: Vec<String>,
-    /// 明示的に保存したクライアント別上限。未設定時の実効上限は対応scope全体。
-    pub scope_ceiling: Option<McpScopeCeilingSetting>,
+    pub scope_ceiling: ScopeCeiling,
     pub authorized_at: UnixMillis,
     pub last_used_at: Option<UnixMillis>,
     pub active: bool,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpEffectiveScopeCeiling {
+    pub configured: bool,
+    pub setting: McpScopeCeilingSetting,
+}
+
+pub type McpClientAuthorization = McpClientAuthorizationRecord<McpEffectiveScopeCeiling>;
+/// 保存層では、未設定と明示的な空集合を`Option`で区別する。
+pub type McpStoredClientAuthorization =
+    McpClientAuthorizationRecord<Option<McpScopeCeilingSetting>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum McpScopeCeilingRepositoryError {
@@ -381,7 +391,7 @@ pub trait McpScopeCeilingRepository: Send + Sync {
         &self,
         actor: &Actor,
         now: UnixMillis,
-    ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingRepositoryError>;
+    ) -> Result<Vec<McpStoredClientAuthorization>, McpScopeCeilingRepositoryError>;
 
     async fn principal_scope_ceiling(
         &self,
