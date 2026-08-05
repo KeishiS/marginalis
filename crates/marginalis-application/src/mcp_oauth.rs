@@ -129,15 +129,13 @@ impl McpOAuthApplication {
             .await
             .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
         let supported = self.authorization_server.supported_scopes();
+        let principal_ceiling = effective_scope_ceiling(supported, stored.principal);
+        let client_ceiling = effective_scope_ceiling(supported, stored.client);
         let ceilings = self
             .authorization_server
             .scope_ceilings(
-                stored
-                    .principal
-                    .map_or_else(|| supported.to_vec(), |setting| setting.scopes),
-                stored
-                    .client
-                    .map_or_else(|| supported.to_vec(), |setting| setting.scopes),
+                principal_ceiling.setting.scopes,
+                client_ceiling.setting.scopes,
             )
             .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
         self.authorization_server
@@ -170,11 +168,9 @@ impl McpOAuthApplication {
             .principal_scope_ceiling(&actor)
             .await
             .map_err(map_scope_ceiling_repository_error)?;
-        Ok(stored.unwrap_or_else(|| McpScopeCeilingSetting {
-            scopes: self.authorization_server.supported_scopes().to_vec(),
-            revision: 0,
-        }))
+        Ok(effective_scope_ceiling(self.authorization_server.supported_scopes(), stored).setting)
     }
+
     pub async fn client_authorizations(
         &self,
         actor: Actor,
@@ -187,28 +183,18 @@ impl McpOAuthApplication {
             .map(|authorizations| {
                 authorizations
                     .into_iter()
-                    .map(|authorization| {
-                        let scope_ceiling_configured = authorization.scope_ceiling.is_some();
-                        let scope_ceiling =
-                            authorization
-                                .scope_ceiling
-                                .unwrap_or_else(|| McpScopeCeilingSetting {
-                                    scopes: supported_scopes.to_vec(),
-                                    revision: 0,
-                                });
-                        McpClientAuthorization {
-                            client_id: authorization.client_id,
-                            display_name: authorization.display_name,
-                            registration_method: authorization.registration_method,
-                            granted_scopes: authorization.granted_scopes,
-                            scope_ceiling: McpEffectiveScopeCeiling {
-                                configured: scope_ceiling_configured,
-                                setting: scope_ceiling,
-                            },
-                            authorized_at: authorization.authorized_at,
-                            last_used_at: authorization.last_used_at,
-                            active: authorization.active,
-                        }
+                    .map(|authorization| McpClientAuthorization {
+                        client_id: authorization.client_id,
+                        display_name: authorization.display_name,
+                        registration_method: authorization.registration_method,
+                        granted_scopes: authorization.granted_scopes,
+                        scope_ceiling: effective_scope_ceiling(
+                            supported_scopes,
+                            authorization.scope_ceiling,
+                        ),
+                        authorized_at: authorization.authorized_at,
+                        last_used_at: authorization.last_used_at,
+                        active: authorization.active,
                     })
                     .collect()
             })
@@ -325,6 +311,29 @@ impl McpOAuthApplication {
         self.authorization_server
             .revoke_token(token, client_id)
             .await
+    }
+}
+
+/// 保存値から設定画面と認可処理が共有する実効scope上限を作る。
+///
+/// `None`だけをサーバー対応scope全体へ展開する。`Some(Vec::new())`は利用者が明示的に
+/// すべてを拒否した設定なので、未設定と同じ値にはしない。
+fn effective_scope_ceiling(
+    supported_scopes: &[String],
+    stored: Option<McpScopeCeilingSetting>,
+) -> McpEffectiveScopeCeiling {
+    match stored {
+        Some(setting) => McpEffectiveScopeCeiling {
+            configured: true,
+            setting,
+        },
+        None => McpEffectiveScopeCeiling {
+            configured: false,
+            setting: McpScopeCeilingSetting {
+                scopes: supported_scopes.to_vec(),
+                revision: 0,
+            },
+        },
     }
 }
 
@@ -483,5 +492,50 @@ impl McpOAuthUseCases for McpOAuthApplication {
         client_id: String,
     ) -> Result<(), McpOAuthUseCaseError> {
         McpOAuthApplication::revoke_token(self, &token, &client_id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn supported_scopes() -> Vec<String> {
+        vec!["notes:read".into(), "notes:write".into()]
+    }
+
+    #[test]
+    fn unset_scope_ceiling_uses_every_supported_scope_without_becoming_configured() {
+        assert_eq!(
+            effective_scope_ceiling(&supported_scopes(), None),
+            McpEffectiveScopeCeiling {
+                configured: false,
+                setting: McpScopeCeilingSetting {
+                    scopes: supported_scopes(),
+                    revision: 0,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn configured_scope_ceiling_preserves_an_empty_or_partial_setting() {
+        for setting in [
+            McpScopeCeilingSetting {
+                scopes: Vec::new(),
+                revision: 3,
+            },
+            McpScopeCeilingSetting {
+                scopes: vec!["notes:read".into()],
+                revision: 4,
+            },
+        ] {
+            assert_eq!(
+                effective_scope_ceiling(&supported_scopes(), Some(setting.clone())),
+                McpEffectiveScopeCeiling {
+                    configured: true,
+                    setting,
+                }
+            );
+        }
     }
 }
