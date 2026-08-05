@@ -665,6 +665,8 @@ select:hover {
   background: var(--color-primary-soft);
   border-radius: var(--radius-sm);
   color: var(--color-primary);
+  display: grid;
+  gap: var(--space-1);
   min-width: 0;
   padding: var(--space-2) var(--space-3);
 }
