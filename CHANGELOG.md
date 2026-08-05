@@ -3,6 +3,21 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
+## 0.30.1 — 2026-08-05
+
+### 修正
+
+- クライアント別scope上限が未設定の場合に、設定画面へ過去に同意したscopeを上限として表示せず、
+  「未設定」と実効上限であるサーバー対応scope全体を表示するようにした。利用者が「上限を設定」を
+  実行するまで、表示した内容から暗黙の上限を保存しない。
+- `GET /api/v3/mcp-authorizations`へ`scope_ceiling_configured`を追加した。未設定時の
+  `scope_ceiling`には、認可時と同じサーバー対応scope全体を返し、明示的な空集合と区別できる。
+
+### 互換性
+
+- SQLite schema 18、archive `marginalis-archive-14`、AdocWeave package版0.27.0、note profile版5を
+  維持する。v0.30.0からdatabase、archive、設定、MCP接続の移行は不要である。
+
 ## 0.30.0 — 2026-08-05
 
 ### 改善
