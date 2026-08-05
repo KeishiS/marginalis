@@ -515,9 +515,9 @@
               machine.succeed("sqlite3 /var/lib/marginalis/marginalis.sqlite 'SELECT 1 FROM notes'")
               machine.succeed(
                 "sqlite3 /var/lib/marginalis/marginalis.sqlite \"INSERT INTO notes "
-                + "(note_id,creator_issuer,creator_subject,title,source,tags_json,created_at_ms,updated_at_ms,revision,deleted_at_ms) VALUES "
-                + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale','stale','= stale','[]',0,0,1,0),"
-                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent','recent','= recent','[]',0,4102444800000,1,4102444800000);\""
+                + "(note_id,creator_issuer,creator_subject,title,source,tags_json,created_via,review_tracking_known,created_at_ms,updated_at_ms,revision,deleted_at_ms) VALUES "
+                + "('019f0000-0000-7000-8000-000000000001','https://id.example.test','stale','stale','= stale','[]','unknown',0,0,0,1,0),"
+                + "('019f0000-0000-7000-8000-000000000002','https://id.example.test','recent','recent','= recent','[]','unknown',0,0,4102444800000,1,4102444800000);\""
               )
               machine.succeed("systemctl start marginalis-purge-expired.service")
               machine.succeed(
@@ -627,7 +627,7 @@
               machine.succeed(
                 "journalctl -u marginalis-diagnose.service -o cat | "
                 + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 18'"
+                + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 19'"
               )
               machine.succeed(
                 "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
@@ -676,7 +676,7 @@
                     + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
                     + "'.database.schema.ok == false "
                     + "and .database.schema.actual == 5 "
-                    + "and .database.schema.expected == 18 "
+                    + "and .database.schema.expected == 19 "
                     + "and .database.integrity.ok "
                     + "and .database.integrity.actual == \"ok\" "
                     + "and .database.foreign_keys.ok "
