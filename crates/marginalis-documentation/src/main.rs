@@ -96,6 +96,19 @@ fn validate_cross_document_xrefs(
                 "{}: 人間向け文書ではpassthrough記法を使用できません",
                 relative.display()
             )),
+            SemanticNode::ElementAttribute(attribute)
+                if attribute.name.as_deref() == Some("cols")
+                    && attribute
+                        .value
+                        .trim_matches('"')
+                        .split(',')
+                        .any(|column| column.trim().is_empty()) =>
+            {
+                errors.push(format!(
+                    "{}: 表のcols属性では各列を明示してください",
+                    relative.display()
+                ));
+            }
             _ => {}
         });
         let mut explicit_ids = analysis
@@ -303,6 +316,19 @@ mod tests {
             validate_cross_document_xrefs(Path::new("."), &document)
                 .expect_err("passthrough must be rejected")
                 .contains("passthrough記法")
+        );
+    }
+
+    #[test]
+    fn repository_documents_require_explicit_table_columns() {
+        let document = [document(
+            "index.adoc",
+            "= 入口\n\n[cols=\",,\"]\n|===\n|一\n|二\n|三\n|===\n",
+        )];
+        assert!(
+            validate_cross_document_xrefs(Path::new("."), &document)
+                .expect_err("implicit empty table columns must be rejected")
+                .contains("各列を明示")
         );
     }
 }

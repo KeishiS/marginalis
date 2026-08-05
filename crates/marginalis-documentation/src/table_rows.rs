@@ -50,7 +50,7 @@ fn extract(source: &str, columns: usize) -> Result<Vec<Vec<String>>, String> {
         let SemanticNode::Table(table) = node else {
             return;
         };
-        if error.is_some() {
+        if error.is_some() || table.columns.len() != columns {
             return;
         }
         match extract_table(table, columns) {
@@ -63,26 +63,33 @@ fn extract(source: &str, columns: usize) -> Result<Vec<Vec<String>>, String> {
 }
 
 fn extract_table(table: &Table, columns: usize) -> Result<Vec<Vec<String>>, String> {
-    let mut cells = Vec::new();
-    for cell in table.rows.iter().flat_map(|row| &row.cells) {
-        if cell.row_span != 1 || cell.column_span != 1 {
-            return Err(
-                "対応検査に使用する表では、複数行または複数列にまたがるセルを使用できません。"
-                    .to_owned(),
-            );
-        }
-        cells.push(normalize_cell(&cell.raw));
-    }
-
-    // `cols=",,"`のように幅を省略した列指定は、semantic modelでは個々の
-    // セルとして保持される。呼び出し側が検査対象の列数を決め、表ごとに行を復元する。
-    if cells.len() % columns != 0 {
-        return Ok(Vec::new());
-    }
-    Ok(cells
-        .chunks_exact(columns)
-        .map(<[String]>::to_vec)
-        .collect())
+    table
+        .rows
+        .iter()
+        .map(|row| {
+            if row
+                .cells
+                .iter()
+                .any(|cell| cell.row_span != 1 || cell.column_span != 1)
+            {
+                return Err(
+                    "対応検査に使用する表では、複数行または複数列にまたがるセルを使用できません。"
+                        .to_owned(),
+                );
+            }
+            if row.cells.len() != columns {
+                return Err(format!(
+                    "表の列数が一致しません: 期待値={columns}, 実際={}",
+                    row.cells.len()
+                ));
+            }
+            Ok(row
+                .cells
+                .iter()
+                .map(|cell| normalize_cell(&cell.raw))
+                .collect())
+        })
+        .collect()
 }
 
 fn normalize_cell(value: &str) -> String {
@@ -96,8 +103,8 @@ mod tests {
     #[test]
     fn extracts_only_tables_with_the_requested_column_count() {
         let source = concat!(
-            "[cols=\",\"]\n|===\n|two\n|columns\n|===\n\n",
-            "[cols=\",,\"]\n|===\n|id\n|verification\n|acceptance\n",
+            "[cols=\"1,1\"]\n|===\n|two\n|columns\n|===\n\n",
+            "[cols=\"1,1,1\"]\n|===\n|id\n|verification\n|acceptance\n",
             "|REQ-TST-001\n|line one\nline two\n|https://example.invalid/evidence\n|===\n",
         );
 
@@ -116,7 +123,7 @@ mod tests {
 
     #[test]
     fn escaped_separator_does_not_create_an_extra_cell() {
-        let source = "[cols=\",\"]\n|===\n|C\\|C++\n|verification\n|===\n";
+        let source = "[cols=\"1,1\"]\n|===\n|C\\|C++\n|verification\n|===\n";
 
         assert_eq!(
             extract(source, 2).expect("escaped separator"),
@@ -126,7 +133,7 @@ mod tests {
 
     #[test]
     fn rejects_row_spans_that_cannot_be_represented_as_tsv() {
-        let source = "[cols=\",\"]\n|===\n.2+|id\n|first\n|second\n|===\n";
+        let source = "[cols=\"1,1\"]\n|===\n.2+|id\n|first\n|second\n|===\n";
 
         assert!(
             extract(source, 2)

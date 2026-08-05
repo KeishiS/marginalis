@@ -85,7 +85,7 @@ coverageの対象と解釈は xref:coverage.adoc#top[本番到達性とカバレ
 CI jobの責務とローカルでの再実行方法は次のとおりです。jobを追加するときは、既存jobへ
 含められない独立した責務と、失敗時に残す証拠をこの表へ追加します。
 +
-[cols=",,,",options="header",]
+[cols="1,1,1,1",options="header",]
 |===
 |job
 |責務

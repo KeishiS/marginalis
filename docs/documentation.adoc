@@ -9,7 +9,7 @@
 
 == 配置と役割
 
-[cols=",,,",options="header",]
+[cols="1,1,1,1",options="header",]
 |===
 |配置
 |対象読者
@@ -172,6 +172,9 @@ AsciiDoc文書はAdocWeave v0.33.0のstrict profileで解析し、local target�
 ``Table``、``TableRow``、``TableCell``から読み取ります。AsciiDocの構文規則は専用scriptへ書き写しません。自然文は
 同じ版のtextlint Processorに同梱されたWebAssemblyで解析し、source blockやinline codeを校正対象から
 除外します。
+
+表の``cols``属性は、``cols="1,1,1"``のように列数と既定幅を明示します。空の列指定へ列数の意味を
+持たせず、検査と描画がsemantic model上の同じ行と列を使用できる状態にします。
 
 ``xref:``と``link:``は、前の文章との間に空白を置き、AdocWeaveが記法として認識できる境界へ配置します。
 通常の文章として残った記法らしい文字列は``marginalis-documentation``が拒否します。記法そのものを説明する

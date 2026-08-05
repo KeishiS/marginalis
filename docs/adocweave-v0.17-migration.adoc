@@ -20,7 +20,7 @@ repository直下にあったfixtureを従来のcommitとハッシュで補いま
 0.11.0と0.17.0を別の作業コピーで実行し、同じ完全なAsciiDoc文書をMarginalisの保存規則へ
 渡しました。結果は次のとおりです。
 
-[cols=",,,",options="header",]
+[cols="1,1,1,1",options="header",]
 |===
 |固定入力
 |0.11.0

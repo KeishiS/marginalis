@@ -31,7 +31,7 @@ database から初期化する。
 
 SQLite は少なくとも次を保持する。
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |対象
 |内容
