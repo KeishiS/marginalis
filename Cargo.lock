@@ -1261,6 +1261,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "marginalis-documentation"
+version = "0.32.0"
+dependencies = [
+ "adocweave",
+]
+
+[[package]]
 name = "marginalis-domain"
 version = "0.33.0"
 dependencies = [

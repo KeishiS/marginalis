@@ -5,24 +5,20 @@ status=0
 temporary_directory=$(mktemp -d)
 trap 'rm -rf "$temporary_directory"' EXIT
 
-requirements="${1:-docs/requirements.md}"
-traceability="${2:-docs/traceability.md}"
+requirements="${1:-docs/requirements.adoc}"
+traceability="${2:-docs/traceability.adoc}"
 acceptance_directory="${3:-docs/acceptance-results}"
 requirement_ids="$temporary_directory/requirement-ids"
 traceability_rows="$temporary_directory/traceability-rows"
 traceability_ids="$temporary_directory/traceability-ids"
 
 grep -oE 'REQ-[A-Z]+-[0-9]{3}' "$requirements" | sort >"$requirement_ids"
-if ! awk -F '|' '
-  function trim(value) {
-    sub(/^[[:space:]]+/, "", value)
-    sub(/[[:space:]]+$/, "", value)
-    return value
-  }
-  /^\|[[:space:]]*REQ-[A-Z]+-[0-9]{3}[[:space:]]*\|/ {
-    id = trim($2)
-    verification = trim($3)
-    acceptance = trim($4)
+if ! awk -v columns=3 -f .github/scripts/extract-asciidoc-table.awk "$traceability" |
+  awk -F '\t' '
+  $1 ~ /^REQ-[A-Z]+-[0-9]{3}$/ {
+    id = $1
+    verification = $2
+    acceptance = $3
     if (verification == "") {
       print "要件と検証の対応表に検証方法がありません: " id > "/dev/stderr"
       invalid = 1
@@ -34,7 +30,7 @@ if ! awk -F '|' '
     print id "\t" verification "\t" acceptance
   }
   END { exit invalid }
-' "$traceability" >"$traceability_rows"; then
+' >"$traceability_rows"; then
   status=1
 fi
 cut -f1 "$traceability_rows" | sort >"$traceability_ids"
@@ -53,8 +49,8 @@ if ! diff -u "$requirement_ids" "$traceability_ids"; then
   echo "現行要件と要件・検証対応表のIDが一致しません。" >&2
   status=1
 fi
-if [[ "$requirements" == "docs/requirements.md" && "$traceability" == "docs/traceability.md" ]]; then
-  operations_row=$(grep -E '^\|[[:space:]]*REQ-OPS-007[[:space:]]*\|' "$traceability" || true)
+if [[ "$requirements" == "docs/requirements.adoc" && "$traceability" == "docs/traceability.adoc" ]]; then
+  operations_row=$(grep -E '^REQ-OPS-007[[:space:]]' "$traceability_rows" || true)
   for reference in \
     'observability-check' \
     'observability_logs_safe_http_and_mcp_results' \
@@ -72,17 +68,22 @@ fi
 
 if [[ -d "$acceptance_directory" ]]; then
   while IFS= read -r -d '' result; do
-    if ! grep -Fq '## 対象' "$result" || ! grep -Fq '## 結果' "$result"; then
+    if ! grep -Fq '== 対象' "$result" || ! grep -Fq '== 結果' "$result"; then
       echo "版別受入結果に対象または結果がありません: $result" >&2
       status=1
     fi
-    while IFS= read -r row; do
-      if [[ "$row" != *"]("* ]]; then
-        echo "成功した受入結果に証跡リンクがありません: $result: $row" >&2
-        status=1
-      fi
-    done < <(grep -E '^\|[^|]+\|[[:space:]]*成功[[:space:]]*\|' "$result" || true)
-  done < <(find "$acceptance_directory" -type f -name '*.md' -print0 | sort -z)
+    if ! awk -v columns=4 -f .github/scripts/extract-asciidoc-table.awk "$result" |
+      awk -F '\t' -v result="$result" '
+        $2 == "成功" && $4 !~ /https:\/\// {
+          print "成功した受入結果に証跡リンクがありません: " result ": " $1 > "/dev/stderr"
+          invalid = 1
+        }
+        END { exit invalid }
+      '
+    then
+      status=1
+    fi
+  done < <(find "$acceptance_directory" -type f -name '*.adoc' -print0 | sort -z)
 fi
 
 exit "$status"

@@ -1,5 +1,29 @@
 {
   "nodes": {
+    "adocweave": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "rust-overlay": [
+          "rust-overlay"
+        ]
+      },
+      "locked": {
+        "lastModified": 1785956812,
+        "narHash": "sha256-pK192ra6uJpYIlP+f2pNGafeVEzVhoxxioIUOQnglaQ=",
+        "owner": "KeishiS",
+        "repo": "adocweave",
+        "rev": "88c98d22f0e43b23348e5281d65d4d02f3bba97a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "KeishiS",
+        "repo": "adocweave",
+        "rev": "88c98d22f0e43b23348e5281d65d4d02f3bba97a",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1784796856,
@@ -18,6 +42,7 @@
     },
     "root": {
       "inputs": {
+        "adocweave": "adocweave",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       }

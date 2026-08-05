@@ -1,0 +1,216 @@
+= MCPへの接続と認可
+
+[#top]
+この文書は、MCPクライアントをMarginalisへ接続する人と運用者に向けて、内蔵Authorization
+Serverによる認可と失敗時の確認方法を説明します。
+
+== 構成
+
+MarginalisはMCPのProtected ResourceとAuthorization Serverを同じ公開base URLで提供します。
+利用者のログインにはWeb UIと同じKanidm OIDCを使い、``server-users``に所属する利用者だけが同意画面へ
+進めます。外部Authorization Serverは使用しません。
+
+MCPを有効にすると、主に次のendpointを公開します。
+
+[cols=",",options="header",]
+|===
+|用途
+|endpoint
+|Protected Resource Metadata
+|``/.well-known/oauth-protected-resource/mcp``
+|Authorization Server Metadata
+|``/.well-known/oauth-authorization-server``
+|認可
+|``/oauth/authorize``
+|token発行・更新
+|``/oauth/token``
+|token失効
+|``/oauth/revoke``
+|動的なclient登録
+|``/oauth/register``
+|MCP
+|``/mcp``
+|===
+
+``baseUrl``にサブパスがある場合、well-known URLはRFC 8414とRFC 9728に従ってサブパスを保持します。
+
+== 認可方式
+
+認可にはAuthorization CodeとPKCE S256を使います。Implicit Grant、Resource Owner Password
+Credentials Grant、client secretによる公開clientの認証には対応しません。
+
+Authorization Serverは次を検査します。
+
+* 登録済みの``client_id``と``redirect_uri``の完全一致。loopback URIでは接続ごとのport変更だけを許可します。
+redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を省略できます。認可要求で指定した
+場合は、token要求にも同じ値を指定する必要があります。
+* MCP endpointと一致する``resource``。
+* 対応しているscopeだけから成る``scope``。操作との対応は次表のとおりです。
+* 43文字のS256 challengeと、43文字以上128文字以下のPKCE verifier。
+* 一度だけ使える認可codeとrefresh token。
+
+[cols=",",options="header",]
+|===
+|scope
+|許可する操作
+|``notes:read``
+|ノートの一覧・本文の取得、ノート記述規則の取得
+|``notes:write``
+|ノートの作成・更新、ノート記述規則の取得
+|``notes:delete``
+|ノートの削除
+|``bibliography:read``
+|書誌情報の検索
+|``bibliography:write``
+|書誌情報の追加
+|``bibliography:delete``
+|書誌情報の削除
+|===
+
+ノート用scopeは書誌情報の操作を許可せず、書誌用scopeもノートの操作を許可しません。たとえば、
+``notes:read``だけを持つtokenで``search_bibliography``を呼び出すと、``bibliography:read``を示す
+``403 insufficient_scope``を返します。
+
+``list_notes``と``get_note``は、ノートを最初に保存した入口を表す``created_via``と、現在のrevisionに対する
+``review_status``を返します。``list_notes``では、これらの値による完全一致の絞り込みも指定できます。
+作成経路はAIの利用を証明する値ではなく、人手確認も内容の正確性を保証しません。MCPから人手確認を
+設定するtoolは提供せず、所有者がWeb UIで現在のrevisionを確認した場合だけ``reviewed``になります。
+全文検索、検索索引、順位付けはMarginalisのMCPへ追加せず、別サービスの
+xref:research-search-vision.adoc#top[連環（Renkan）]が担当します。
+
+CSL-JSONファイルの一括取込は、ファイル全体の事前確認と項目ごとの競合解決を利用者へ求めるため、
+Web UIとREST APIだけで提供します。MCPでは、``bibliography:write``による一項目ずつの追加を使用します。
+一括取込の事前確認tokenや取込元の対応情報をMCP toolの公開契約には含めません。
+
+同意画面では、クライアントが要求したscopeのうち、許可するものだけを選択できます。選ばなかった
+scopeは認可code、access token、refresh tokenへ記録されません。要求にないscopeを同意画面から追加する
+こともできません。何も選ばずに許可しようとした場合は、scopeを暗黙に補わず、再選択を求めます。
+
+初回の認証challengeは、基本的な閲覧に必要な``notes:read``だけを示します。接続後にtokenのscopeでは
+実行できないtoolを呼び出すと、MCP endpointは``403``と``WWW-Authenticate``の
+``error="insufficient_scope"``を返します。``scope``には現在のtokenが持つscopeと、今回の操作に不足する
+scopeをまとめて、サーバーの正規順序で示します。たとえば``notes:read``で接続した後に``update_note``を
+呼び出すと、``scope="notes:read notes:write"``を返します。クライアントはこの集合でOAuth認可をやり直し、
+利用者が同意したscopeだけを持つ新しいtokenで元の操作を再試行します。``notes:delete``は削除操作を
+要求するまで自動では追加されません。
+
+認可の成功応答と、検証済み``redirect_uri``へ返すエラー応答にはRFC 9207の``iss``を含めます。クライアントは
+Authorization Server Metadataの``issuer``と単純な文字列比較を行うことで、別のAuthorization Serverから
+応答を差し替える攻撃を検出できます。
+
+access tokenとrefresh tokenは推測困難な不透明tokenです。SQLiteにはtokenそのものではなくSHA-256
+hashだけを保存します。access tokenの有効期間は1時間、refresh tokenの有効期間は30日です。
+refresh tokenは利用するたびに交換し、使用済みtokenが再利用された場合は同じtoken familyをすべて
+失効します。
+
+== scope上限
+
+認証済みの利用者は、``/settings``の「MCPのアクセス制御」から、すべてのMCPクライアントへ許可できる
+scopeの上限を設定できます。初期状態の上限はサーバーが対応する全scopeです。上限は操作の種類だけを
+狭め、ノートの所有者や共有設定によるアクセス範囲を広げません。
+
+上限を狭めると、新しい上限を超える未使用の認可codeとtoken familyだけを保存と同じtransactionで
+失効します。上限内の接続は維持します。上限を広げても既存tokenへscopeは追加されないため、追加した
+操作を使うクライアントは改めて認可してください。利用者全体の設定は
+``GET /api/v3/mcp-scope-ceilings``と``PUT /api/v3/mcp-scope-ceilings``からも読み書きできます。
+
+同じ画面の「認可済みクライアント」では、クライアント名、``client_id``、登録方式、これまで同意した
+scope、認可日時、最終利用日時、有効状態を確認できます。クライアント別の上限は利用者全体の上限とは
+別に保存します。未設定時はサーバーが対応する全scopeが上限であり、過去に同意したscopeは上限として
+扱いません。明示的に設定する場合は、これまで同意したscopeの範囲内だけで変更できます。上限を狭めると
+範囲外のtoken familyを直ちに失効します。上限を広げてもtokenへscopeを追加しないため、追加した操作には
+OAuth再認可が必要です。REST APIでは未設定のクライアントに実効上限、revision ``0``、
+``scope_ceiling_configured: false``を返します。
+
+== client登録
+
+Client ID Metadata Document（CIMD）を優先方式として提供します。CIMDは、HTTPS URLを``client_id``として
+使い、そのURLでclient名と``redirect_uris``を含むJSON文書を公開する方式です。Marginalisは文書内の
+``client_id``が取得元URLと完全に一致することを検査します。client認証方式は、単一の方式を示す
+``token_endpoint_auth_method``と、利用できる方式の一覧を示す
+``token_endpoint_auth_methods_supported``の両方を解釈します。両方が矛盾せず、Marginalisが対応する
+``none``を選べる場合だけpublic clientとして受理します。``private_key_jwt``は使用しません。
+
+``client_id``のURLは、HTTPSであることと、空でないpathを持つことを必要とします。userinfo、query、
+fragment、``.``や``..``のようなドット区間を含むURLは受け付けません。運用条件を単純に保つための制限です。
+
+外部文書の取得では、HTTP redirect、特別用途IPアドレス、5 KiBを超える応答を拒否します。有効な文書は
+``Cache-Control``と``Age``に従って最大1時間保持します。取得の失敗や不正な文書はCIMDの仕様に従って保持
+しません。同じ``client_id``への同時取得は一つにまとめ、外部取得は全体で同時に8件、1分あたり60回までに
+制限します。DNSの名前解決を含む1回の取得は5秒で打ち切ります。上限に達した場合は、clientが不正である
+とは伝えず、一時的に利用できないものとして扱います。
+
+Dynamic Client Registration（DCR）にも対応します。DCRはMCP仕様``2026-07-28``では非推奨ですが、
+既存クライアントとの互換経路として残します。登録数は1,000件に制限し、同じredirect originからの
+登録要求にも時間当たりの上限を設けます。上限に達した場合は``503 temporarily_unavailable``を返します。
+client metadataの誤りではなく、サーバー側に空きがない状態だからです。CIMDで保存したclientはDCRの
+登録数へ含めません。
+
+CIMDのclientは事前登録しません。利用者が同意した時点で、そのときのclient名とredirect URIを認可code
+と一緒に保存します。期限切れの認証状態と、24時間以上参照されていない古いclientは、日次の
+``purge-expired``で削除します。
+
+== 接続
+
+クライアントには公開MCP URLだけを設定します。例は``https://notes.example.test/mcp``です。クライアントは
+Protected Resource Metadataから内蔵Authorization Serverを発見し、ブラウザーでKanidmへログインした後、
+要求されたscopeを確認し、必要な操作だけを選んで同意します。
+
+更新前にAuth0で発行したaccess token、refresh token、client IDは内蔵Authorization Serverへ移行されません。
+更新後はクライアント側の既存接続を削除し、改めて接続してください。
+
+v0.29.0より前に発行したtokenには書誌用scopeが含まれません。MCPから書誌情報を操作する場合は、
+クライアントを改めて認可し、必要な``bibliography:*`` scopeへ同意してください。既存tokenへ新しいscopeが
+自動で追加されることはありません。
+
+[#接続後の受入]
+=== 接続後の受入
+
+ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノートを使って次を確認します。
+
+[arabic]
+. 公開MCP URLだけを指定し、初回challengeが``notes:read``だけを示すことを確認して接続します。metadataの
+発見、client登録、Kanidmへのログインを経て、``notes:read``だけに同意します。
+. ``tools/list``を取得し、ノートの一覧と本文を読み取ります。作成経路と人手確認状態が表示され、
+``list_notes``で両方を絞り込めることも確認します。``update_note``を呼び出し、``notes:read notes:write``を
+示す追加認可が始まることを確認します。
+. 一度は追加認可を拒否し、更新できず、元のread tokenで閲覧を続けられることを確認します。再度実行して
+``notes:write``にも同意し、新しいtokenで更新できることを確認します。
+. 試験用ノートを作成して更新し、別の試験利用者へ閲覧権限と編集権限を順に設定します。共有先では
+付与された権限を超える操作が拒否されることも確認します。
+. 削除操作で``notes:delete``を含む追加認可が始まることを確認します。同意後に試験用ノートを削除し、
+削除済みとして取得できることを確認します。
+. refresh tokenの交換後に交換前のtokenを再利用できないことを確認します。
+. 認可を取り消し、既存のaccess tokenとrefresh tokenが使えないことを確認します。
+. 改めて認可し、同じクライアントから接続を回復できることを確認します。
+
+結果には確認日、クライアント名と確認できる範囲の版、CIMDまたはDCRの登録方式、redirect URIの種類を
+記録します。token、認可code、PKCE verifier、Cookie、実際のノート本文は記録しません。
+
+== 認可の取消
+
+取消の経路は二つです。
+
+利用者本人は「MCPのアクセス制御」画面または
+``DELETE /api/v3/mcp-authorizations/{client_id}``でclient単位に取り消します。Web UIと同じsession cookieと
+CSRF tokenが必要で、取り消せるのは自分に発行された認可だけです。認可一覧は
+``GET /api/v3/mcp-authorizations``、クライアント別上限は
+``PUT /api/v3/mcp-authorizations/{client_id}/scope-ceiling``でも管理できます。
+
+OAuthクライアントはRFC 7009の``/oauth/revoke``へtokenと``client_id``を送信します。未知のtokenを指定した
+場合も、tokenの存在を開示しないため成功応答を返します。
+
+どちらの経路でも、対象のaccess tokenとrefresh tokenをtoken family単位で直ちに失効します。
+
+[#失敗した場合の応答]
+== 失敗した場合の応答
+
+MCP endpointでは、tokenがない場合と不正な場合に``401``と``WWW-Authenticate``を返します。必要なscopeが
+ない場合は``403 insufficient_scope``です。SQLiteを利用できない場合は``503``として扱います。
+
+OAuth endpointはOAuthの``error``を持つJSONを返します。tokenを含む応答には``Cache-Control: no-store``を
+付けます。token、認可code、PKCE verifier、session cookieはログへ出力しません。
+
+運用時は``marginalis diagnose``でSQLite schemaとMCP有効化設定を確認してください。認証状態の削除件数は
+``marginalis purge-expired``の構造化ログで確認できます。CIMDの取得と検証を調べる場合は、
+xref:observability.adoc#top[ログと障害診断]に記載した``mcp.oauth.client_metadata.*`` eventを確認してください。

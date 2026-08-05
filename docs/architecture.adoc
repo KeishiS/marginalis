@@ -1,0 +1,338 @@
+= Marginalis アーキテクチャ
+
+[#top]
+この文書は、開発者に向けて、コンポーネントの役割、依存関係、一貫して満たすべき設計条件を
+説明します。利用者向けの機能は xref:requirements.adoc#top[現行要件]、HTTPの入出力は
+link:openapi.json[OpenAPI]を参照してください。
+
+== 構成
+
+[source,text]
+----
+Web UI / REST (/api/v3) / MCP Protected Resource
+                    │
+       marginalis-contract（公開契約）
+                    │
+          application use cases
+                    │
+SQLite canonical store ─ AsciiDoc ─ Kanidm OIDC ─ MCP OAuth
+                    │
+          marginalis-service + NixOS module
+----
+
+``marginalis-web``はHTTP、Cookie、CSRF、MCPのリクエストを受け付けます。
+``marginalis-contract``はRESTのデータ型とOpenAPI、TypeScriptクライアント、MCP toolの入出力型と
+JSON Schemaの生成元です。公開形式を変える場合はこのcrateを変更し、生成物との差分検査を通します。
+MCPのtool一覧と実行時応答も同じ``McpToolName``と出力型を使用し、HTTP adapterが公開JSONを手で
+組み立てません。
+
+公開表現が業務モデルと意図して同一である値は、``marginalis-domain``で一度だけ定義します。権限
+``NotePermission``、実効アクセス水準``NoteAccess``、検証対象``NoteValidationTarget``、UTF-8バイト範囲
+``Utf8ByteSpan``、ノートIDの文字列パターン、``Revision``の最小値がこれにあたり、
+``marginalis-contract``はこれらを再定義せず参照します。要求と応答の構造そのもの（``*Input``、
+``*Response``）は``marginalis-contract``に置き、応答の構造を変えてもdomainへ波及させません。
+domainの変更が公開表現を変えていないことは、``marginalis-contract``のJSON表現固定試験で確認します。
+``marginalis-application``はノート操作の手順と業務上の失敗理由を定義します。
+ここでいうportは、applicationが外側の実装へ要求する小さなinterfaceです。
+``marginalis-sqlite``は永続化port、``marginalis-asciidoc``は文書の検証・描画port、
+``marginalis-web``は外部URL生成portを実装します。これにより、ノート操作の単体試験ではSQLite、
+AsciiDoc engine、HTTP serverを起動する必要がありません。
+``marginalis-asciidoc``の内部では、文書の解析と検査、ACL判定済み参照を使うHTML描画を別々のmoduleへ
+分けます。crate外にはapplication portの実装と、保守コマンドに必要な参照抽出だけを公開します。
+保存形式は``marginalis-archive``が扱います。
+
+ノート入力に適用する規則は``marginalis-domain``の``NOTE_POLICY``が唯一の正本です。上限値、許可する
+コード言語、数式言語、URLスキームをここで定義し、AdocWeaveへ渡す解析・描画設定、公開JSON Schema、
+診断の説明文、MCPの``get_note_profile``が返す内容をすべてここから導出します。同じ規則を別の場所へ
+書き写しません。AdocWeaveのlintで表現できる規則は設定として渡し、表現できない規則だけを
+``marginalis-asciidoc``が自前で検査します。
+
+なお、AdocWeave packageの版とnote profileの版は入力規則ではなく依存と公開契約の同一性を表すため、
+``NOTE_POLICY``には含めず``marginalis-asciidoc``の定数に置きます。``cargo make adocweave-version-check``が
+``Cargo.lock``と``flake.nix``の固定値との一致を検査します。
+``marginalis-auth-oidc``は外部identity provider portを実装し、OIDC discovery・code exchange・
+ID token検証を担当します。利用を許可する``server-users``所属の判断はapplicationが担当します。
+MCP用OAuthの製品非依存の型、resourceとscopeのpolicy、PKCEとredirect URIの検査は
+``mcp-authorization-server``が定義します。認可、token発行、refresh token rotation、失効の状態遷移と
+原子的な永続化portも同じcrateが所有します。``marginalis-sqlite``はそのportを実装し、client、認可code、
+token hashを既存schemaへ保存します。``marginalis-application``は検証済みの利用者identityを製品非依存の
+主体へ変換して、scopeとノート操作の対応を保ちます。詳しい境界は
+xref:adr/0008-mcp-authorization-serverの中核を製品から分離する.adoc#top[ADR 0008]に記録しています。利用者の
+ログインはWeb UIと同じKanidm OIDCを使います。CIMDの外部取得とcacheは、HTTP clientへ依存するadapter
+``mcp-authorization-server-cimd``へ分け、中核crateにnetwork依存を持ち込みません。
+利用者とMCPクライアントのscope上限は別のSQLite行として保存し、認可codeの発行前に両方を適用します。
+利用者はWeb UIから自分の上限だけを変更できます。上限を狭める保存処理は、新しい上限を超える認可codeと
+token familyの失効まで同じtransactionで行います。設定主体と既定値は
+xref:adr/0009-mcpのscope上限を利用者設定として管理する.adoc#top[ADR 0009]に記録しています。
+認可済みクライアントの表示に必要な同意scope、認可日時、最終利用日時、取消状態は、利用者とclientの組を
+主keyとする行へ保存します。tokenや認可codeの不透明値はこの行へ保存せず、従来どおりhashだけを各状態表へ
+保存します。
+MCPのJSON-RPC wire型は、それを利用する唯一のtransportである``marginalis-web::mcp``に置きます。
+Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条件の検査、tool実行は
+``marginalis-web::http::mcp_transport``内の別moduleに置きます。これにより、公開toolを変更するときに
+認証処理を、認証方式を変更するときにノート出力変換を読み替える必要がありません。
+実行バイナリは``marginalis-service``です。
+
+[#一貫して満たすべき設計条件]
+== 一貫して満たすべき設計条件
+
+* *ARCH-DATA-001 — ノート更新の原子性*: ノートと削除状態の更新はSQLite transactionで完結する。
+* *ARCH-IMPORT-001 — 書誌情報の一括取込境界*: 事前確認tokenは、正規化した入力、
+取込元のrevision、外部項目との全対応情報、所有者の全書誌項目のIDとrevisionを結び付ける。
+適用時は同じ入力と保存状態からtokenを再計算し、さらにSQLiteの保存transaction内で事前確認時の
+取込元、対応情報、所有者の全書誌項目と現在値を照合する。一致しない場合は保存を始めず競合として
+拒否する。書誌項目、取込元、外部項目との対応情報は、そのtransactionでまとめて更新する。
+外部項目が入力から消えたことを削除の指示として扱わない。
+* *ARCH-AUTHZ-001 — ノートの所有権とACL*: 通常利用者は、作成者の``(issuer, subject)``が自身の
+identityと一致するノートを所有する。同じ``issuer``の個人subjectへ付与されたACLの``read``は閲覧、
+``edit``は閲覧と本文更新を許可する。
+所有者は変更不能であり、ACL変更と削除・復元は所有者だけに許可する。サーバー全体の管理者権限や、
+ACLを迂回して全ノートを閲覧する権限は設けない。
+* *ARCH-IDENTITY-001 — 利用者identity*: identityは``(issuer, subject)``で識別する。アプリケーションは
+ローカルpassword、root、登録ポリシーを持たない。``issuer``はuserinfo、query、fragment、制御文字を
+含まない絶対HTTP(S) URL、``subject``は空でなく制御文字を含まない値とし、長さ上限をdomainで
+一元検証する。
+* *ARCH-IDENTITY-002 — 永続的な識別子*: ノートなどの永続的な識別子にはUUIDv7だけを受理する。
+文字列、JSON、データベースからの復元を含むすべての入力経路で同じ検査を行い、検査を省略する
+公開constructorは設けない。
+* *ARCH-DOMAIN-001 — ノートの不変条件*: ``Note``は検証済みの所有者identityと正の値だけを表す
+``Revision``を保持し、作成日時から更新日時までの順序、削除日時の範囲を生成時と復元時に検査する。
+フィールドを直接変更する公開APIは設けない。
+SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
+検査しない。
+* *ARCH-PROVENANCE-001 — 来歴と確認のrevision境界*: 作成経路はtransportのサーバー側入口で
+決め、入力本文やクライアント指定から受け取らない。確認操作は所有者、現在のrevision、削除状態を
+SQLiteの一つの条件付き更新で検査し、確認操作自体を新しいrevisionとして記録する。その後は本文、
+ACL、削除、復元のどの変更でもrevisionの不一致により確認待ちとし、最後の確認記録は保持する。
+旧形式から不明として移したノートも、移行後にrevisionが変われば追跡済みの確認待ちとする。
+書誌ライブラリーと数式マクロ設定はノートとは別のrevisionを持つため、それらの変更はノートの確認状態を
+変えない。
+文書書庫からの取り込みでは、書き出し時の本文、所有者、ACLを結び付けたhashと入力を比較し、
+異なる場合に同じrevision更新規則を適用する。
+* *ARCH-AUTHN-001 — OIDC主体の決定*: ``server-users``所属はKanidmの署名検証済みID tokenから決める。
+WebとMCPの同意画面は、同じ``(issuer, subject)``を所有者identityに使用する。
+* *ARCH-SESSION-001 — sessionとlogin attemptの期限*: Web sessionは24時間のsliding idle期限と7日の
+絶対期限を持つ。有効性の検証とidle期限の延長は、
+SQLiteの一つの条件付き更新で行う。読み取り後に同じ遅延transactionを更新へ切り替えず、
+同じsessionへの並行要求をSQLiteの書き込み待機で直列化する。未完了OIDC login attemptは10分で
+失効し、発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
+* *ARCH-OIDC-001 — ID tokenの署名方式*: OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う
+``ES256``だけを許可する。別の署名方式を追加する場合は xref:security.adoc#top[セキュリティ]の依存脆弱性判断を
+先に更新する。
+* *ARCH-OAUTH-001 — OAuth秘密値の境界*: MarginalisはMCPのclient、認可code、access token、
+refresh tokenをSQLiteで管理する。tokenはhashだけを保存し、秘密値をログやアーカイブへ出力しない。
+MCP clientにKanidm tokenを渡さない。
+* *ARCH-OAUTH-002 — OAuth token familyの原子性と期限*: 認可codeの消費と最初のtoken pair発行、
+refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family失効、grant取消は、それぞれ
+一つのtransactionで完結する。認可codeとtokenは``expires_at <= now``で無効とする。
+* *ARCH-OAUTH-003 — scope上限の未設定値*: 利用者全体またはクライアント別のscope上限が未設定の
+場合は、サーバーが対応する全scopeを実効上限とする。過去に同意したscopeは履歴として保持し、上限の
+代わりに使わない。保存層では未設定と明示的な空集合を区別し、設定画面には実際の適用状態を表示する。
+* *ARCH-BOUNDARY-001 — 業務規則の配置*: HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を
+複製しない。
+* *ARCH-AUTHZ-002 — 実効アクセス水準*: 実効アクセス水準は``Read < Edit < Manage``の順序で表す。
+SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``または``Edit``を同じ判断表へまとめる。
+
+== ソース配置
+
+[source,text]
+----
+crates/
+├── mcp-authorization-server   MCP OAuthの製品非依存の型・policy・状態遷移・永続化port
+├── mcp-authorization-server-cimd  CIMDの安全な外部取得・cache adapter
+├── marginalis-domain          値と設計条件
+├── marginalis-contract        REST・MCP・TypeScriptの公開契約
+├── marginalis-application     use case実装と内向き・外向きport
+├── marginalis-asciidoc        AsciiDoc検証・描画
+├── marginalis-archive         archive形式の型・検証・移行
+├── marginalis-auth-oidc       Kanidm OIDC adapter
+├── marginalis-sqlite          SQLite adapter
+├── marginalis-web             HTTP adapter
+└── marginalis-service         composition rootと実行バイナリ
+
+frontend/
+├── src                        React・TypeScriptの実装
+└── tests                      ブラウザーに依存しないUI試験
+----
+
+公開契約とMCP通信のcrate内moduleは、次の責務に分けます。
+
+[source,text]
+----
+marginalis-contract/src/
+├── lib.rs          RESTとMCP契約の短い公開入口
+├── rest.rs         REST型、OpenAPI、TypeScript生成元
+└── mcp.rs          tool名、入出力型、JSON Schema
+
+marginalis-web/src/http/mcp_transport/
+├── mod.rs           Streamable HTTPとJSON-RPCの処理順序
+├── authorization.rs Bearer token、scope、browser origin
+├── protocol.rs      media type、初期化、protocol version
+└── tools.rs         入力検査、use case呼出し、契約型への変換
+----
+
+依存は概ね上から下ではなく、外側から``domain``と``application``へ向かう。
+``domain``は他のMarginalis crateへ依存せず、``application``と``contract``は``domain``だけへ依存する。
+``contract``が``domain``を参照するのは公開表現の語彙を一度だけ定義するためであり、``application``や
+adapterへは依存しない。
+HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのportを実装する。
+``service``だけが具象的なadapterを選び、application serviceへ接続する。
+``cargo make dependency-boundaries``は、すべてのworkspace crateのproduction依存をこの対応へ固定し、
+違反時に期待する依存と実際の依存の差を表示します。新しいcrateまたは依存方向が必要な場合は、
+検査だけを緩めず、この設計と依存表を同じ変更で更新します。
+
+ノート操作の内向きportは、問い合わせの``NoteQueries``、変更の``NoteCommands``、表示変換の
+``NotePresentation``、ACL管理の``NoteAccessControl``、所有者による確認の``NoteReviews``に分けます。
+複数のtransportへ同じ実装を渡す
+場合だけ、これらをまとめた``NoteUseCases``をfacadeとして使います。
+閲覧画面は``NotePresentation::read_note_view``だけを呼び出し、ノート、実効アクセス水準、描画HTML、
+関連概要を個別の問い合わせから組み立てません。試験用adapterもこの境界を直接実装し、実際には
+存在しない分割問い合わせを模倣しません。
+applicationから永続化へ要求する外向きportも、読み取りの``NoteQueryRepository``、原子的な変更の
+``NoteCommandRepository``、ACL操作の``NoteAclRepository``、所有者とrevisionを原子的に検査する
+``NoteReviewRepository``に分けます。具象的には同じSQLite adapterがこれらを実装しますが、application serviceは
+用途ごとに必要なportだけを受け取ります。
+SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出しません。
+
+構造化ログはtransportやadapter内で、外部との通信結果と運用処理の結果だけを記録します。
+domainとapplicationの値を観測目的で公開し直さず、利用者identity、ノート識別子、ノート内容を
+ログへ渡しません。安定したeventとfieldの契約は xref:observability.adoc#top[ログと障害診断]を正とし、
+``cargo make observability-check``でproductionのログ呼出しを検査します。
+
+ノートの正本は、文書題名、``:marginalis-tags:``などの文書属性、本文を含む完全なAsciiDoc文書
+です。題名とタグは保存時にAdocWeaveで解析し、一覧と検索に使う投影としてSQLiteへ同時に
+保存します。APIから題名やタグだけを独立して更新する経路は設けません。
+
+文書headerへ書ける属性の名前は``NOTE_POLICY.allowed_document_attributes``が正本で、入力検査と
+``get_note_profile``の広告の両方をここから導きます。Marginalisが独自に決めた属性の名前は
+``marginalis-``で始めます。AsciiDocの言語仕様は独自属性の命名規則を定めていないため、
+Marginalisが決めた規則です。接頭辞があると、その属性が他のAsciiDoc処理系では意味を持たない
+ことが本文を読むだけで分かり、AsciiDocが後から同じ名前の組込み属性を定義しても意味が
+衝突しません。接頭辞の無い属性はAsciiDocの組込み属性です。
+
+一覧のportはAsciiDoc文書を含まない``NoteSummary``と、現在の利用者の``NoteAccess``を組にした
+``NoteListEntry``を返します。SQLiteでは概要と実効アクセス水準を一つの問い合わせで取得し、
+ノート数に比例して問い合わせを繰り返しません。文書中の参照先もID集合を一度にrepositoryへ渡して
+取得します。変更操作は認可、削除状態、期待revisionを一つの条件付きSQLへ含めます。条件に
+一致しなかった場合だけ、同じtransaction内で不可視と競合を分類します。
+閲覧画面に必要な正本、実効アクセス水準、参照先、関連概要は、一つのSQLite読み取りtransactionで
+取得します。描画はこのスナップショットだけを使うため、一画面の途中で別の更新結果が混ざりません。
+
+本文の``cite:``が名指すcitation keyは、描画のたびに書誌ライブラリーで解決します。どのライブラリーを
+使うかはapplication層が決め、ノートを作成した利用者のものだけを引きます。判断の理由は
+xref:adr/0006-引用はノート作成者の書誌ライブラリーで解決する.adoc#top[引用はノート作成者の書誌ライブラリーで解決する]に
+記録しています。
+
+CSL-JSONファイルの一括取込は、application層で入力検査、既存項目との分類、事前確認token、保存計画を
+分けて組み立てます。HTTP adapterはファイル内容と利用者の選択を公開契約へ変換し、React画面は分類結果を
+表示しますが、競合やcitation keyの業務判断を複製しません。SQLite adapterは所有者の取込元、外部項目との
+対応、書誌項目を同じtransactionで更新します。対話的な事前確認を必要とするため、この一括取込経路は
+Web UIとREST APIだけに公開し、MCPの書誌情報toolは従来の一項目単位の操作に限定します。
+
+引用の表示文字列と参考文献項目の文字列はapplication層が組み立て、``NoteContent`` portへ渡します。
+文書adapterは、参考文献一覧を``[bibliography]``ブロックとして本文の末尾へ加えてからAdocWeaveへ渡し、
+引用の表示はAdocWeaveの解決入力として渡します。anchor、本文から項目へのlink、項目から本文への
+戻りlinkはAdocWeaveが生成するため、MarginalisはHTMLを組み立てません。生成した一覧は保存する本文へ
+書き込みません。書誌情報の文字列は表示であって記法ではないため、文書adapterがAsciiDocの記法として
+解釈されない形へ直します。
+
+アーカイブのJSON項目を表す型と、形式の版および移行できる旧契約は``marginalis-archive``に置きます。
+保存形式はAsciiDocの解析とは変更理由が異なるため、独立したcrateにします。
+
+``marginalis-archive``はノート本文の再検証を``marginalis-application``の``NoteContent`` portへ委ね、
+具体的な解析器へ依存しません。どの解析器で再検証するかは``marginalis-service``が決めます。
+archiveへ記録するAdocWeave packageの版も、注入した``NoteContent``の profileから取得します。記録値と
+実際に検証した解析器が食い違わないためで、同じ版を二か所へ書きません。
+
+JSONから復元したノート、ACL、書誌項目、取込元、外部項目との対応、数式マクロ設定は、
+``marginalis-application``の``LogicalSnapshot``で識別子の重複、参照先、所有者境界、取込時revisionを
+一度だけ検証します。本文から再構築する参照索引も検証した``RestorePlan``だけをSQLite adapterへ
+渡します。これにより、ドメイン型を外部形式へ直接公開せず、SQLite adapterはJSON形式やAsciiDocの
+解析方法に依存しません。
+
+crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
+crate内moduleを使う。各crateの``lib.rs``は公開facade、routerまたはcomposition rootとして、
+実行経路と公開型を短く一覧できる状態に保つ。
+
+Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセットの配信を担当し、Reactは
+画面遷移とブラウザー内状態を担当します。RESTのTypeScript型、実行時の応答検査、クライアント関数は
+``marginalis-contract/src/typescript-contracts.ts``を正本として
+``frontend/src/generated/contracts.ts``へ生成し、フロントエンド側では手書きで複製しません。
+編集内容、保存処理、共有設定の状態遷移は、それぞれ``editorState.ts``、``editorActivityState.ts``、
+``accessControlState.ts``の純粋なreducerへ置きます。Reactコンポーネントは入力、REST呼び出し、
+副作用の調整を担当し、状態遷移の規則をイベント処理へ分散させません。保存前プレビューの遅延、
+取消、最後に成功したHTMLの保持、入力変更時の古い診断の破棄は``useEditorPreview.ts``へ分離し、
+編集画面は結果の状態と診断操作だけを表示します。保存を拒否する診断と保存を妨げない診断は
+application層でそれぞれ``NoteValidationDiagnostic``と``NoteAdvisoryDiagnostic``に分けます。
+変更操作は``NoteWritePolicy``を受け取り、同じ解析結果に含まれる警告を許容するか判定します。RESTは
+警告を許容し、MCPの``create_note``と``update_note``は警告を拒否します。MCPで拒否する場合も診断の
+重大度をerrorへ変えず、application層が永続化portを呼ぶ前に診断付きの失敗を返します。
+AsciiDoc文書の入力は``AsciiDocEditor.tsx``へ閉じ込めたCodeMirrorが担当し、Reactのフォーム状態には
+常に完全な文字列を渡します。CodeMirror側でAsciiDocを別の文書モデルへ変換しません。解析と
+HTML生成はサーバー側のAdocWeaveだけが担当します。サーバーはHTMLごとにCSP nonceを生成し、
+CodeMirrorが実行時に作る基礎CSSだけを許可します。採用理由と操作上の制約は
+xref:adr/0003-codemirrorをasciidoc編集基盤に採用.adoc#top[CodeMirror採用判断]と
+xref:web-ui-editor.adoc#top[AsciiDoc編集画面]を参照してください。
+成功型は``error``を保持できず、失敗型はHTTP境界で常に``error``へ変換します。RESTでは位置と重大度を
+共通の``NoteDiagnostic``契約として返し、成功したプレビューも診断を失わず画面へ渡します。
+検証時に抽出したノート参照は作成、更新、プレビューで再利用し、同じ入力を参照抽出のためだけに
+再解析しません。競合する三つの文書の行対応は``editorConflict.ts``、問題と診断の表示規則は
+``editorPresentation.ts``へ置きます。これらはReactや通信に依存しないため、大きな文書を含む
+境界条件を単体試験で確認します。base URLのサブパスを画面内URLへ反映する規則は``paths.ts``へ
+集約し、一覧と編集画面で同じ処理を使います。
+閲覧画面と編集プレビューは、サーバーが検査・生成したHTMLを``RenderedContent.tsx``だけから
+表示します。この境界では、AdocWeaveが公開する``figure.source-block``と``data-*``属性からコードの
+範囲、言語、開始行、数式の言語と表示形式を受け取ります。コード本文はtextとして行へ分け、
+数式もtextとしてMathJaxへ渡します。表と長いコードのスクロール領域、MathJaxの組版失敗通知も
+同じ表示境界へ置きます。数式マクロは利用者の識別子ごとにSQLiteへ保存し、サーバーがノート所有者を
+選んで閲覧・プレビュー応答へ含めます。``RenderedContent.tsx``はその応答をMathJaxの``tex.macros``へ
+渡します。外部CDNや未検査のHTMLは追加しません。
+Viteの成果物はGitで管理せず、開発時は``cargo make``、
+配布時はNixが``frontend/dist``を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
+外部URLはViteで固定せず、Rustの``external_path``でbase URLのサブパスを反映する。
+
+``frontend/tests``は入力、プレビュー、保存、競合などの画面状態と組合せをブラウザーなしで高速に
+検証する。``tests/browser``は実Kanidm、TLS、サブパスを組み立てるNixOS VMで、ログインから主要な
+利用経路までの接続を検証する。細かな入力の組合せはNixOS VMへ重複させない。
+
+閲覧画面の直接参照一覧は、保存時にAsciiDoc文書と同じtransactionで置換した参照先IDだけを投影へ持つ。
+閲覧時は投影を現在の認可と削除状態に結合し、題名、タグ、更新日時だけを取得する。本文更新、
+ACL変更、ソフトデリート、復元、物理削除へ追従しながら、不可視なノートの存在や件数を漏らさず、
+閲覧ごとの全本文解析も行わない。archiveにはACLを含め、派生する参照投影は含めず、復元時に
+検証済みAsciiDoc文書から再構築する。復元処理は、ノート、ACL、参照索引を検証済みの復元計画として受け取り、
+空のdatabaseへ一つのtransactionで格納する。
+
+主要な外側のadapterは、変更理由に対応して次のmoduleへ分ける。
+
+[source,text]
+----
+marginalis-service/src/
+├── main.rs          process lifecycleとcommand選択
+├── cli.rs           引数仕様
+├── config.rs        環境変数とsecret fileの読込
+├── runtime.rs       production時刻・乱数adapter
+├── serve.rs         HTTP composition root
+└── maintenance.rs   purge、archive、backup
+
+marginalis-web/src/http/
+├── assets.rs        埋め込み静的アセット（配布物の一覧はbuild.rsが生成）
+├── auth.rs          browser session、Cookie、CSRF
+├── html.rs          共通HTMLレイアウト
+├── mcp_transport/  Protected Resource Metadata、Streamable HTTP、認証、tool実行
+├── notes.rs         REST note API
+├── ui.rs            閲覧UI
+└── security.rs      HTTP security policy
+
+marginalis-sqlite/src/
+├── schema.rs        schema検証
+├── session.rs       Web/OIDC session
+├── notes.rs         noteと所有者認可
+└── archive.rs       検証済みarchiveを一つのトランザクションで格納
+----
+
+公開routeは``marginalis-web/src/http.rs``、公開型は各crateの``lib.rs``から追跡します。小さな単体試験は
+対象moduleの末尾へ置きます。共有fixtureが大きいHTTP試験は``http/tests/``でUI・REST・MCP、
+SQLite試験は``marginalis-sqlite/src/tests/``でschema・ノート・session・MCP OAuthに分けます。OIDC
+access token検証は各認証adapterでmetadata、署名、claimの境界を試験します。
+
+設計を確定した経緯は xref:v0.3.0-design.adoc#top[再設計判断記録]を参照してください。

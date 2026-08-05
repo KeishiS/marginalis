@@ -1,0 +1,52 @@
+= AdocWeave 0.20移行判断
+
+== 目的
+
+[#top]
+この文書は、AdocWeave 0.19.0から0.20.0への更新がMarginalisへ与える影響と、保存形式の
+扱いを記録します。現行の入力方法は xref:rest-api.adoc#top[REST API]、archiveの変換手順は
+xref:nixos.adoc#top[NixOSでの運用]を参照してください。
+
+== 固定する依存
+
+MarginalisはAdocWeave package版``0.20.0``を、release tagが指すcommit
+``35e4a0ebd87094710f09e64a85e5f09e2dd19a7c``で使用します。Rust toolchainは``1.97.1``を維持します。
+CargoとNixの両方で、このcommitと取得内容のハッシュを固定します。
+
+== 解析結果の変更
+
+順序付き・順序なしリストでは、空行を挟まない後続行を同じ項目の本文として解析します。
+継続行のインデントは任意です。行末に``\+``を書いた場合は、同じ項目内の明示的な改行として
+HTMLへ出力します。
+
+次の入力は、二つの順序なしリスト項目として扱います。
+
+[source,asciidoc]
+----
+* 最初の行 +
+続きの行
+* 次の項目
+----
+
+空行は項目本文を終了します。リスト項目へ別のblockを付加する場合は、従来どおり単独行の``\+``を
+使用します。description listとcallout listの解析は変わりません。
+
+== 公開契約への影響
+
+AdocWeaveのRust公開API、WASM protocol、CLI引数、Language Server protocol、設定schemaに
+変更はありません。MarginalisのSQLite schema 11とnote profile版4も維持します。MCPとOpenAPIで
+解析規則の変更を識別できるよう、authoring profile版は6へ更新します。
+
+複数行の項目では、AST、HTML、xrefと診断のソース位置が変わります。Marginalisでは、順序付き・
+順序なしリスト、hard break、ノート参照、警告のUTF-8 byte位置を回帰試験で確認します。
+題名とタグは文書headerから導出し、ノート参照の保存形式は参照先だけを保持するため、SQLiteの
+保存項目は変わりません。
+
+== archive形式
+
+archiveは、内容を解析したAdocWeave package版を契約情報として記録します。同じ形式名に異なる
+package版を混在させないため、現行形式を``marginalis-archive-10``へ更新します。
+
+``migrate-archive``は、0.19.0を記録したarchive 9を0.20.0で全件再検証し、archive 10を別ファイルへ
+出力します。従来の復元経路を維持するため、0.17.0を記録したarchive 8と0.11.0を記録した
+archive 7も、同じ方法でarchive 10へ変換できます。入力は変更せず、既存の出力は上書きしません。
