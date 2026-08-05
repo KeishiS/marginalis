@@ -8,10 +8,7 @@ use marginalis_domain::{
 };
 use serde_json::Value;
 
-use crate::{Clock, Random};
-
-const MAX_CSL_JSON_BYTES: usize = 131_072;
-const MAX_CITATION_KEY_BYTES: usize = 128;
+use crate::{Clock, Random, csl_json::validate_and_encode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum BibliographyRepositoryError {
@@ -158,13 +155,13 @@ impl BibliographyUseCases for BibliographyApplication {
         actor: Actor,
         csl_json: Value,
     ) -> Result<BibliographyItem, BibliographyUseCaseError> {
-        let citation_key = validate_csl_json(&csl_json)?;
-        let encoded = encode_csl_json(&csl_json)?;
+        let validated =
+            validate_and_encode(&csl_json).map_err(|_| BibliographyUseCaseError::InvalidCslJson)?;
         let item = BibliographyItem::create(
             BibliographyItemId::new(self.random.uuid_v7()),
             actor.identity(),
-            citation_key,
-            encoded,
+            validated.citation_key,
+            validated.encoded,
             self.clock.now(),
         );
         self.repository
@@ -181,14 +178,14 @@ impl BibliographyUseCases for BibliographyApplication {
         expected_revision: Revision,
         csl_json: Value,
     ) -> Result<BibliographyItem, BibliographyUseCaseError> {
-        let citation_key = validate_csl_json(&csl_json)?;
-        let encoded = encode_csl_json(&csl_json)?;
+        let validated =
+            validate_and_encode(&csl_json).map_err(|_| BibliographyUseCaseError::InvalidCslJson)?;
         self.repository
             .update_owned_item(
                 &actor,
                 item_id,
-                &citation_key,
-                &encoded,
+                &validated.citation_key,
+                &validated.encoded,
                 self.clock.now(),
                 expected_revision,
             )
@@ -217,38 +214,6 @@ fn validate_search_query(query: &str) -> Result<&str, BibliographyUseCaseError> 
     Ok(query)
 }
 
-fn validate_csl_json(value: &Value) -> Result<String, BibliographyUseCaseError> {
-    let object = value
-        .as_object()
-        .ok_or(BibliographyUseCaseError::InvalidCslJson)?;
-    let citation_key = object
-        .get("id")
-        .and_then(Value::as_str)
-        .ok_or(BibliographyUseCaseError::InvalidCslJson)?;
-    let valid_key = !citation_key.is_empty()
-        && citation_key.len() <= MAX_CITATION_KEY_BYTES
-        && citation_key
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"_.:-".contains(&byte));
-    let valid_type = object
-        .get("type")
-        .and_then(Value::as_str)
-        .is_some_and(|value| !value.is_empty() && value.len() <= 64);
-    if !valid_key || !valid_type {
-        return Err(BibliographyUseCaseError::InvalidCslJson);
-    }
-    Ok(citation_key.to_owned())
-}
-
-fn encode_csl_json(value: &Value) -> Result<String, BibliographyUseCaseError> {
-    let encoded =
-        serde_json::to_string(value).map_err(|_| BibliographyUseCaseError::InvalidCslJson)?;
-    if encoded.len() > MAX_CSL_JSON_BYTES {
-        return Err(BibliographyUseCaseError::InvalidCslJson);
-    }
-    Ok(encoded)
-}
-
 fn map_repository_error(error: BibliographyRepositoryError) -> BibliographyUseCaseError {
     match error {
         BibliographyRepositoryError::NotFound => BibliographyUseCaseError::NotFound,
@@ -265,20 +230,21 @@ mod tests {
     #[test]
     fn csl_json_requires_an_id_and_type() {
         assert_eq!(
-            validate_csl_json(&serde_json::json!({
+            validate_and_encode(&serde_json::json!({
                 "id": "smith2024",
                 "type": "article-journal",
                 "title": "Example"
-            })),
+            }))
+            .map(|validated| validated.citation_key),
             Ok("smith2024".into())
         );
         assert_eq!(
-            validate_csl_json(&serde_json::json!({"id": "bad key", "type": "book"})),
-            Err(BibliographyUseCaseError::InvalidCslJson)
+            validate_and_encode(&serde_json::json!({"id": "bad key", "type": "book"})),
+            Err("invalid_id")
         );
         assert_eq!(
-            validate_csl_json(&serde_json::json!({"id": "smith2024"})),
-            Err(BibliographyUseCaseError::InvalidCslJson)
+            validate_and_encode(&serde_json::json!({"id": "smith2024"})),
+            Err("missing_type")
         );
     }
 

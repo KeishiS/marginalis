@@ -61,10 +61,47 @@ CREATE TABLE bibliography_items (
     created_at_ms INTEGER NOT NULL,
     updated_at_ms INTEGER NOT NULL,
     revision INTEGER NOT NULL CHECK (revision > 0),
-    UNIQUE (owner_issuer, owner_subject, citation_key)
+    UNIQUE (owner_issuer, owner_subject, citation_key),
+    UNIQUE (item_id, owner_issuer, owner_subject)
 ) STRICT;
 CREATE INDEX bibliography_items_owner_listing_idx
 ON bibliography_items (owner_issuer, owner_subject, updated_at_ms DESC, item_id);
+
+-- 外部サービスへ接続せず、利用者が選んだCSL-JSONファイルの取込元だけを記録する。
+CREATE TABLE bibliography_import_sources (
+    source_id TEXT PRIMARY KEY NOT NULL,
+    owner_issuer TEXT NOT NULL,
+    owner_subject TEXT NOT NULL,
+    method TEXT NOT NULL CHECK (method = 'csl_json_file'),
+    display_name TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    created_at_ms INTEGER NOT NULL,
+    last_imported_at_ms INTEGER NOT NULL CHECK (last_imported_at_ms >= created_at_ms),
+    UNIQUE (source_id, owner_issuer, owner_subject)
+) STRICT;
+CREATE INDEX bibliography_import_sources_owner_idx
+ON bibliography_import_sources (owner_issuer, owner_subject, last_imported_at_ms DESC, source_id);
+
+-- 取込元内の外部IDと書誌項目を対応させる。owner列を両方の外部キーに含め、異なる
+-- 利用者の取込元と書誌項目を結び付けられないようにする。
+CREATE TABLE bibliography_import_links (
+    source_id TEXT NOT NULL,
+    external_item_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    owner_issuer TEXT NOT NULL,
+    owner_subject TEXT NOT NULL,
+    imported_digest BLOB NOT NULL CHECK (length(imported_digest) = 32),
+    imported_item_revision INTEGER NOT NULL CHECK (imported_item_revision > 0),
+    PRIMARY KEY (source_id, external_item_id),
+    FOREIGN KEY (source_id, owner_issuer, owner_subject)
+        REFERENCES bibliography_import_sources(source_id, owner_issuer, owner_subject)
+        ON DELETE CASCADE,
+    FOREIGN KEY (item_id, owner_issuer, owner_subject)
+        REFERENCES bibliography_items(item_id, owner_issuer, owner_subject)
+        ON DELETE CASCADE
+) STRICT, WITHOUT ROWID;
+CREATE INDEX bibliography_import_links_item_idx
+ON bibliography_import_links (item_id, source_id, external_item_id);
 
 -- 数式マクロはノート所有者ごとにまとめて更新し、共有ノートの閲覧者によって表示が変わらない
 -- よう、描画時にはノート所有者の設定を読み取る。

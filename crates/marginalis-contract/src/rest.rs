@@ -93,6 +93,21 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         probe_path: "/api/v3/bibliography/0197c9bc-0000-7000-8000-000000000001",
     },
     RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/bibliography/import-sources",
+        probe_path: "/api/v3/bibliography/import-sources",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/bibliography/import-previews",
+        probe_path: "/api/v3/bibliography/import-previews",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/bibliography/imports",
+        probe_path: "/api/v3/bibliography/imports",
+    },
+    RestRouteContract {
         method: "POST",
         specification_path: "/api/v3/notes",
         probe_path: "/api/v3/notes",
@@ -195,6 +210,116 @@ pub struct BibliographyItemResponse {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BibliographyImportSourceInput {
+    New { display_name: String },
+    Existing { source_id: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyImportPreviewInput {
+    pub source: BibliographyImportSourceInput,
+    pub items: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BibliographyImportClassificationResponse {
+    Create,
+    UpdateFromExternal,
+    Unchanged,
+    KeepLocal,
+    Conflict,
+    DuplicateCandidate,
+    Rejected,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyImportSourceResponse {
+    pub source_id: String,
+    pub method: String,
+    pub display_name: String,
+    pub revision: i64,
+    pub created_at_ms: i64,
+    pub last_imported_at_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyImportCandidateResponse {
+    pub item_id: String,
+    pub citation_key: String,
+    pub title: Option<String>,
+    pub revision: i64,
+    pub matched_by: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyImportEntryResponse {
+    pub position: usize,
+    pub external_item_id: Option<String>,
+    pub citation_key: Option<String>,
+    pub classification: BibliographyImportClassificationResponse,
+    pub item_id: Option<String>,
+    pub item_revision: Option<i64>,
+    pub current_csl_json: Option<Value>,
+    pub candidates: Vec<BibliographyImportCandidateResponse>,
+    pub rejection_code: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyImportPreviewResponse {
+    pub source_id: Option<String>,
+    pub source_revision: Option<i64>,
+    pub preview_token: String,
+    pub entries: Vec<BibliographyImportEntryResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BibliographyImportDecisionKindInput {
+    ApplySuggested,
+    CreateSeparate,
+    KeepLocal,
+    UseExternal,
+    LinkExistingKeepLocal,
+    LinkExistingUseExternal,
+    Exclude,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyImportDecisionInput {
+    pub position: usize,
+    pub action: BibliographyImportDecisionKindInput,
+    pub candidate_item_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyImportApplyInput {
+    pub source: BibliographyImportSourceInput,
+    pub items: Vec<Value>,
+    pub preview_token: String,
+    pub decisions: Vec<BibliographyImportDecisionInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BibliographyImportResultResponse {
+    pub source_id: String,
+    pub source_revision: i64,
+    pub created: usize,
+    pub updated: usize,
+    pub kept: usize,
+    pub excluded: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -732,6 +857,113 @@ pub fn openapi_document() -> Value {
                         "revision": revision_schema()
                     }
                 },
+                "BibliographyImportSourceInput": {
+                    "oneOf": [
+                        {
+                            "type": "object", "additionalProperties": false,
+                            "required": ["kind", "display_name"],
+                            "properties": {
+                                "kind": {"const": "new"},
+                                "display_name": {"type": "string", "minLength": 1, "maxLength": 128}
+                            }
+                        },
+                        {
+                            "type": "object", "additionalProperties": false,
+                            "required": ["kind", "source_id"],
+                            "properties": {
+                                "kind": {"const": "existing"},
+                                "source_id": note_id_schema()
+                            }
+                        }
+                    ]
+                },
+                "BibliographyImportPreviewInput": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["source", "items"],
+                    "properties": {
+                        "source": {"$ref": "#/components/schemas/BibliographyImportSourceInput"},
+                        "items": {"type": "array", "minItems": 1, "maxItems": 1000, "items": {}}
+                    }
+                },
+                "BibliographyImportSource": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["source_id", "method", "display_name", "revision", "created_at_ms", "last_imported_at_ms"],
+                    "properties": {
+                        "source_id": note_id_schema(),
+                        "method": {"const": "csl_json_file"},
+                        "display_name": {"type": "string", "minLength": 1, "maxLength": 128},
+                        "revision": revision_schema(),
+                        "created_at_ms": {"type": "integer"},
+                        "last_imported_at_ms": {"type": "integer"}
+                    }
+                },
+                "BibliographyImportCandidate": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["item_id", "citation_key", "title", "revision", "matched_by"],
+                    "properties": {
+                        "item_id": note_id_schema(),
+                        "citation_key": {"type": "string"},
+                        "title": {"type": ["string", "null"]},
+                        "revision": revision_schema(),
+                        "matched_by": {"type": "array", "items": {"type": "string"}}
+                    }
+                },
+                "BibliographyImportEntry": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["position", "external_item_id", "citation_key", "classification", "item_id", "item_revision", "current_csl_json", "candidates", "rejection_code"],
+                    "properties": {
+                        "position": {"type": "integer", "minimum": 0},
+                        "external_item_id": {"type": ["string", "null"]},
+                        "citation_key": {"type": ["string", "null"]},
+                        "classification": {"enum": ["create", "update_from_external", "unchanged", "keep_local", "conflict", "duplicate_candidate", "rejected"]},
+                        "item_id": {"oneOf": [note_id_schema(), {"type": "null"}]},
+                        "item_revision": {"type": ["integer", "null"], "minimum": 1},
+                        "current_csl_json": {"type": ["object", "null"]},
+                        "candidates": {"type": "array", "items": {"$ref": "#/components/schemas/BibliographyImportCandidate"}},
+                        "rejection_code": {"type": ["string", "null"]}
+                    }
+                },
+                "BibliographyImportPreview": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["source_id", "source_revision", "preview_token", "entries"],
+                    "properties": {
+                        "source_id": {"oneOf": [note_id_schema(), {"type": "null"}]},
+                        "source_revision": {"type": ["integer", "null"], "minimum": 1},
+                        "preview_token": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "entries": {"type": "array", "items": {"$ref": "#/components/schemas/BibliographyImportEntry"}}
+                    }
+                },
+                "BibliographyImportDecision": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["position", "action", "candidate_item_id"],
+                    "properties": {
+                        "position": {"type": "integer", "minimum": 0},
+                        "action": {"enum": ["apply_suggested", "create_separate", "keep_local", "use_external", "link_existing_keep_local", "link_existing_use_external", "exclude"]},
+                        "candidate_item_id": {"oneOf": [note_id_schema(), {"type": "null"}]}
+                    }
+                },
+                "BibliographyImportApplyInput": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["source", "items", "preview_token", "decisions"],
+                    "properties": {
+                        "source": {"$ref": "#/components/schemas/BibliographyImportSourceInput"},
+                        "items": {"type": "array", "minItems": 1, "maxItems": 1000, "items": {}},
+                        "preview_token": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "decisions": {"type": "array", "minItems": 1, "maxItems": 1000, "items": {"$ref": "#/components/schemas/BibliographyImportDecision"}}
+                    }
+                },
+                "BibliographyImportResult": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["source_id", "source_revision", "created", "updated", "kept", "excluded"],
+                    "properties": {
+                        "source_id": note_id_schema(),
+                        "source_revision": revision_schema(),
+                        "created": {"type": "integer", "minimum": 0},
+                        "updated": {"type": "integer", "minimum": 0},
+                        "kept": {"type": "integer", "minimum": 0},
+                        "excluded": {"type": "integer", "minimum": 0}
+                    }
+                },
                 "Note": note,
                 "NoteSummary": note_summary,
                 "NoteListEntry": note_list_entry,
@@ -996,6 +1228,35 @@ fn rest_paths() -> Value {
                 ("404", response_ref("NotFound")),
                 ("409", response_ref("Conflict")),
                 ("428", response_ref("PreconditionRequired"))
+            ]))
+        },
+        "/api/v3/bibliography/import-sources": {
+            "get": operation("List bibliography import sources owned by the current user", &[], None, responses(&[
+                ("200", array_response("bibliography import sources", "BibliographyImportSource")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/bibliography/import-previews": {
+            "post": operation("Preview a CSL-JSON bibliography import without changing stored data", &[], Some("BibliographyImportPreviewInput"), responses(&[
+                ("200", schema_response("bibliography import preview", "BibliographyImportPreview")),
+                ("400", response_ref("BadRequest")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("404", response_ref("NotFound")),
+                ("422", response_ref("ValidationFailed")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/bibliography/imports": {
+            "post": operation("Apply a previewed CSL-JSON bibliography import atomically", &["CsrfToken"], Some("BibliographyImportApplyInput"), responses(&[
+                ("200", schema_response("bibliography import result", "BibliographyImportResult")),
+                ("400", response_ref("BadRequest")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
+                ("422", response_ref("ValidationFailed")),
+                ("503", response_ref("Unavailable"))
             ]))
         },
         "/api/v3/mcp-authorizations/{client_id}": {

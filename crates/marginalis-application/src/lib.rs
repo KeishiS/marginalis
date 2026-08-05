@@ -29,7 +29,9 @@ pub use mcp_authorization_server::{
 };
 
 mod bibliography;
+mod bibliography_import;
 mod citation;
+mod csl_json;
 mod identity;
 mod math_macros;
 mod mcp_oauth;
@@ -40,6 +42,14 @@ mod snapshot;
 pub use bibliography::{
     BibliographyApplication, BibliographyRepository, BibliographyRepositoryError,
     BibliographyUseCaseError, BibliographyUseCases,
+};
+pub use bibliography_import::{
+    BibliographyImportApplication, BibliographyImportCandidate, BibliographyImportClassification,
+    BibliographyImportCommit, BibliographyImportDecision, BibliographyImportDecisionKind,
+    BibliographyImportEntry, BibliographyImportInput, BibliographyImportItemMutation,
+    BibliographyImportPreview, BibliographyImportRepository, BibliographyImportRepositoryError,
+    BibliographyImportResult, BibliographyImportSourceSelection, BibliographyImportState,
+    BibliographyImportUseCaseError, BibliographyImportUseCases,
 };
 pub use citation::CitationStyle;
 pub use identity::{

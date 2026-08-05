@@ -74,6 +74,12 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 ## 一貫して満たすべき設計条件
 
 - **ARCH-DATA-001 — ノート更新の原子性**: ノートと削除状態の更新はSQLite transactionで完結する。
+- **ARCH-IMPORT-001 — 書誌情報の一括取込境界**: 事前確認tokenは、正規化した入力、
+  取込元のrevision、外部項目との全対応情報、所有者の全書誌項目のIDとrevisionを結び付ける。
+  適用時は同じ入力と保存状態からtokenを再計算し、さらにSQLiteの保存transaction内で事前確認時の
+  取込元、対応情報、所有者の全書誌項目と現在値を照合する。一致しない場合は保存を始めず競合として
+  拒否する。書誌項目、取込元、外部項目との対応情報は、そのtransactionでまとめて更新する。
+  外部項目が入力から消えたことを削除の指示として扱わない。
 - **ARCH-AUTHZ-001 — ノートの所有権とACL**: 通常利用者は、作成者の`(issuer, subject)`が自身の
   identityと一致するノートを所有する。同じ`issuer`の個人subjectへ付与されたACLの`read`は閲覧、
   `edit`は閲覧と本文更新を許可する。
@@ -212,6 +218,12 @@ Marginalisが決めた規則です。接頭辞があると、その属性が他�
 [引用はノート作成者の書誌ライブラリーで解決する](adr/0006-引用はノート作成者の書誌ライブラリーで解決する.md)に
 記録しています。
 
+CSL-JSONファイルの一括取込は、application層で入力検査、既存項目との分類、事前確認token、保存計画を
+分けて組み立てます。HTTP adapterはファイル内容と利用者の選択を公開契約へ変換し、React画面は分類結果を
+表示しますが、競合やcitation keyの業務判断を複製しません。SQLite adapterは所有者の取込元、外部項目との
+対応、書誌項目を同じtransactionで更新します。対話的な事前確認を必要とするため、この一括取込経路は
+Web UIとREST APIだけに公開し、MCPの書誌情報toolは従来の一項目単位の操作に限定します。
+
 引用の表示文字列と参考文献項目の文字列はapplication層が組み立て、`NoteContent` portへ渡します。
 文書adapterは、参考文献一覧を`[bibliography]`ブロックとして本文の末尾へ加えてからAdocWeaveへ渡し、
 引用の表示はAdocWeaveの解決入力として渡します。anchor、本文から項目へのlink、項目から本文への
@@ -227,10 +239,11 @@ Marginalisが決めた規則です。接頭辞があると、その属性が他�
 archiveへ記録するAdocWeave packageの版も、注入した`NoteContent`の profileから取得します。記録値と
 実際に検証した解析器が食い違わないためで、同じ版を二か所へ書きません。
 
-JSONから復元した`Note`とACLは、`marginalis-application`の`LogicalSnapshot`でノートIDの重複、
-ACLの参照先、所有者と共有先の関係を一度だけ検証します。本文から再構築する参照索引も検証した
-`RestorePlan`だけをSQLite adapterへ渡します。これにより、ドメイン型を外部形式へ直接公開せず、
-SQLite adapterはJSON形式やAsciiDocの解析方法に依存しません。
+JSONから復元したノート、ACL、書誌項目、取込元、外部項目との対応、数式マクロ設定は、
+`marginalis-application`の`LogicalSnapshot`で識別子の重複、参照先、所有者境界、取込時revisionを
+一度だけ検証します。本文から再構築する参照索引も検証した`RestorePlan`だけをSQLite adapterへ
+渡します。これにより、ドメイン型を外部形式へ直接公開せず、SQLite adapterはJSON形式やAsciiDocの
+解析方法に依存しません。
 
 crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
 crate内moduleを使う。各crateの`lib.rs`は公開facade、routerまたはcomposition rootとして、

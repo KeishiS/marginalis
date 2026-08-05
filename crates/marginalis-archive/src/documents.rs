@@ -530,6 +530,10 @@ pub fn archive_from_documents(
         notes,
         note_acl,
         bibliography_items,
+        // 文書書庫は復元用ではなく、外部編集した本文とCSL-JSONを読み戻す形式である。
+        // 元ファイルを持たない取込元との対応と基準値は引き継がない。
+        bibliography_import_sources: Vec::new(),
+        bibliography_import_links: Vec::new(),
         math_macro_settings: Vec::new(),
     }
     .canonical())
@@ -653,15 +657,19 @@ mod tests {
             Vec::new(),
         )
         .expect("snapshot")
-        .with_bibliography(vec![
-            // citation_keyの順とitem_idの順をわざと食い違わせる。
-            identified_item(
-                "0197c9bc-0000-7000-8000-0000000000a1",
-                "tanaka2025",
-                "alice",
-            ),
-            identified_item("0197c9bc-0000-7000-8000-0000000000a2", "smith2024", "alice"),
-        ])
+        .with_bibliography_data(
+            vec![
+                // citation_keyの順とitem_idの順をわざと食い違わせる。
+                identified_item(
+                    "0197c9bc-0000-7000-8000-0000000000a1",
+                    "tanaka2025",
+                    "alice",
+                ),
+                identified_item("0197c9bc-0000-7000-8000-0000000000a2", "smith2024", "alice"),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )
         .expect("bibliography");
         let exported = export(&snapshot);
 
@@ -718,7 +726,7 @@ mod tests {
             Vec::new(),
         )
         .expect("snapshot")
-        .with_bibliography(vec![item("smith2024", "alice")])
+        .with_bibliography_data(vec![item("smith2024", "alice")], Vec::new(), Vec::new())
         .expect("snapshot with bibliography");
 
         let export = export(&snapshot);
@@ -772,7 +780,7 @@ mod tests {
             Vec::new(),
         )
         .expect("snapshot")
-        .with_bibliography(vec![item("smith2024", "alice")])
+        .with_bibliography_data(vec![item("smith2024", "alice")], Vec::new(), Vec::new())
         .expect("snapshot with bibliography");
 
         let export = export(&snapshot);
@@ -809,7 +817,7 @@ mod tests {
             Vec::new(),
         )
         .expect("snapshot")
-        .with_bibliography(vec![item("smith2024", "alice")])
+        .with_bibliography_data(vec![item("smith2024", "alice")], Vec::new(), Vec::new())
         .expect("snapshot with bibliography");
         let export = export(&snapshot);
         let files = export

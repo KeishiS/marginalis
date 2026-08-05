@@ -42,32 +42,38 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは19です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは20です。旧versionを起動時に自動移行しません。
+
+schema 19から更新する場合は、v0.31.0の実行環境で`export-archive`を実行します。出力したarchive 15を
+現行の`migrate-archive`でarchive 16へ変換し、`verify-restore`で検証してから、新しい版の空の
+`dataDir`へ`import-archive`してください。MCPのclient登録とtokenはarchiveへ含まれないため、更新後に
+クライアントを接続し直します。v0.31.0には書誌情報の取込元と対応情報がないため、移行後に最初に
+CSL-JSONを取り込んだ時点から対応を記録します。
 
 schema 18から更新する場合は、v0.30.1の実行環境で`export-archive`を実行します。出力したarchive 14を
-v0.31.0の`migrate-archive`でarchive 15へ変換し、`verify-restore`で検証してから、新しい版の空の
-`dataDir`へ`import-archive`してください。MCPのclient登録とtokenはarchiveへ含まれないため、更新後に
-クライアントを接続し直します。旧ノートの作成経路と過去の人手確認状態は推測せず、不明として移行します。
+現行の`migrate-archive`でarchive 16へ変換し、`verify-restore`で検証してから、新しい版の空の
+`dataDir`へ`import-archive`してください。旧ノートの作成経路と過去の人手確認状態は推測せず、不明として
+移行します。
 
 schema 17から更新する場合は、更新前に`export-archive`を実行し、現行の`migrate-archive`で
-archive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。MCPの認可済み
+archive 16へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。MCPの認可済み
 クライアント、scope上限、tokenはarchiveへ含まれないため、更新後にクライアントを接続し直して
 設定してください。
 
 schema 16から更新する場合も、更新前に`export-archive`を実行し、現行の`migrate-archive`で
-archive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。MCP clientと
+archive 16へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。MCP clientと
 tokenはarchiveへ含まれないため、更新後に接続し直します。schema 17で追加したscope上限は既定値から
 始まり、更新後に利用者が設定します。
 
 schema 15から更新する場合は、更新前に`export-archive`を実行し、出力したarchive 13を
-`migrate-archive`でarchive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`します。
+`migrate-archive`でarchive 16へ変換してから、新しい版の空の`dataDir`へ`import-archive`します。
 MCP clientとtokenはarchiveへ含まれないため、更新後に接続し直します。
 
 schema 13から更新する場合も、更新前に`export-archive`を実行し、現行の`migrate-archive`で
-archive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。
+archive 16へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。
 
 v0.21.0以前のschema 12から更新する場合は、更新前の実行環境で`export-archive`を実行し、
-現行の`migrate-archive`でarchive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`で
+現行の`migrate-archive`でarchive 16へ変換してから、新しい版の空の`dataDir`へ`import-archive`で
 取り込んでください。本文が`cite:`で名指したcitation keyの索引は、取り込みのときに本文から
 作り直します。
 
@@ -84,18 +90,19 @@ sudo -u marginalis marginalis migrate-archive \
 ```
 
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
-現行の`migrate-archive`でarchive 15へ変換してから、空のschema 19へ取り込んでください。
+現行の`migrate-archive`でarchive 16へ変換してから、空のschema 20へ取り込んでください。
 この経路では全ノートをAdocWeave 0.27.0の規則で再検証し、題名、タグ、参照索引を再構築します。
 ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
 切戻す場合はserviceを停止し、更新後に作成したdatabaseを保全してから、更新前に退避した`dataDir`と
 実行環境を組み合わせて戻します。異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
 
-`migrate-archive`が受け取れるのは、archive 7から14までのうち、次の組み合わせで書き出された
+`migrate-archive`が受け取れるのは、archive 7から15までのうち、次の組み合わせで書き出された
 ものだけです。形式、AdocWeave package版、note profile版の3つがすべて一致する必要があります。
 
 | archive形式 | AdocWeave package版 | note profile版 |
 | --- | --- | --- |
+| `marginalis-archive-15` | 0.27.0 | 5 |
 | `marginalis-archive-14` | 0.27.0 | 5 |
 | `marginalis-archive-13` | 0.27.0 | 5 |
 | `marginalis-archive-13` | 0.23.0 | 5 |
@@ -167,7 +174,7 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 ## バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは`marginalis-archive-15`で、AdocWeave package版`0.27.0`とnote profile版`5`を記録します。
+現行archiveは`marginalis-archive-16`で、AdocWeave package版`0.27.0`とnote profile版`5`を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 同じ段階で、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と重複も検証します。
 本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
@@ -188,19 +195,19 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 ## 以前のarchiveからの移行
 
 v0.18.0が作成したarchive 11、v0.16.1が作成したarchive 10、v0.16.0が作成したarchive 9、
-v0.15.0が作成したarchive 8は、復元前に現行のarchive 15へ変換します。SQLite schema 19には引用の索引、MCP OAuthの状態表、scope上限、認可済みクライアントの管理情報、数式マクロ設定、ノートの作成経路と人手確認記録があるため、
+v0.15.0が作成したarchive 8は、復元前に現行のarchive 16へ変換します。SQLite schema 20には引用の索引、MCP OAuthの状態表、scope上限、認可済みクライアントの管理情報、数式マクロ設定、ノートの作成経路と人手確認記録、書誌情報の取込元と対応情報があるため、
 稼働中の旧databaseファイルはそのまま使用できません。archiveを書き出してから変換し、空の
-schema 19へ復元してください。
+schema 20へ復元してください。
 
 ```sh
 sudo -u marginalis marginalis migrate-archive \
   --input /srv/marginalis-migration/archive-9.json \
-  --output /srv/marginalis-migration/archive-15.json
+  --output /srv/marginalis-migration/archive-16.json
 sudo -u marginalis marginalis verify-restore \
-  --input /srv/marginalis-migration/archive-15.json
+  --input /srv/marginalis-migration/archive-16.json
 ```
 
-archive 8を入力にする場合も、出力はarchive 15です。変換では全ノートをAdocWeave 0.27.0で
+archive 8を入力にする場合も、出力はarchive 16です。変換では全ノートをAdocWeave 0.27.0で
 再検証します。入力archiveは変更されず、出力先が既に存在する場合は上書きしません。詳しい判断は
 [0.27移行判断](adocweave-v0.27-migration.md)を参照してください。
 
@@ -212,26 +219,26 @@ AdocWeave 0.27.0でmetadataを再構築するため、databaseファイルを直
 1. v0.10.0のserviceとdatabaseを使ってarchive 7を書き出し、同じ実行環境の
    `validate-archive`と`verify-restore`を実行します。
 2. v0.10.0のNixOS generation、`dataDir`、archive 7を削除せずに保全します。
-3. 現行版の実行ファイルでarchive 7をarchive 15へ変換します。入力と出力には異なる絶対pathを
+3. 現行版の実行ファイルでarchive 7をarchive 16へ変換します。入力と出力には異なる絶対pathを
    指定してください。入力は変更されず、既存の出力を上書きしません。
 
    ```sh
    sudo -u marginalis <現行版のmarginalis> migrate-archive \
      --input /srv/marginalis-migration/archive-7.json \
-     --output /srv/marginalis-migration/archive-15.json
+     --output /srv/marginalis-migration/archive-16.json
    sudo -u marginalis <現行版のmarginalis> verify-restore \
-     --input /srv/marginalis-migration/archive-15.json
+     --input /srv/marginalis-migration/archive-16.json
    ```
 
-4. 移行が失敗した場合はarchive 15を取り込まず、v0.10.0へ戻ります。改行を残す複数行タグや
+4. 移行が失敗した場合はarchive 16を取り込まず、v0.10.0へ戻ります。改行を残す複数行タグや
    header後の属性操作など、[0.17移行判断](adocweave-v0.17-migration.md)に記載した差を
    v0.10.0で修正し、archive 7の書き出しからやり直します。エラーに示された`position`は、
    archiveの`notes`または`note_acl`配列内の1から始まる位置です。診断へ本文や識別子は
    出力されません。
-5. 成功したarchive 15を、次節の手順で空のschema 19へ取り込みます。
+5. 成功したarchive 16を、次節の手順で空のschema 20へ取り込みます。
 
 CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行操作を適用し、入力archiveの不変、
-旧archiveの直接取込拒否、schema 19でのノート、ACL、参照、削除状態、revision、数式マクロ設定、来歴と人手確認の一致、archive 15の
+旧archiveの直接取込拒否、schema 20でのノート、ACL、参照、削除状態、revision、数式マクロ設定、来歴と人手確認の一致、archive 16の
 再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
 
 ## 他の道具で読める形での取り出し
@@ -263,6 +270,9 @@ tar -xJf /srv/marginalis-export/2026-07-31.tar.xz
 ファイル名は題名とnote IDを並べた形です。題名が重複しても、ファイル名に使えない文字を含んでも、
 note IDを付けるため衝突しません。削除済み（ソフトデリート）のノートは書き出しません。
 `cite:`は解決せず本文のまま書き出すため、受け取った側の道具が同じ出力のCSL-JSONで解決できます。
+この文書書庫は他の道具で読むための形式であり、CSL-JSONの取込元、外部項目との対応、前回取込時の
+hashは含みません。それらを含む復元用の退避には`export-archive`を使用してください。文書書庫を
+取り込んだ後に同じCSL-JSONを指定する場合は、新しい取込元として事前確認します。
 
 `manifest.json`は、各ファイルとnote IDの対応、所有者、日時、revision、タグ、ACLに加えて、
 形式名`marginalis-documents-2`、Marginalisの版、解析に使ったAdocWeave packageの版、ノートの
