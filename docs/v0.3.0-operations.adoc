@@ -1,0 +1,83 @@
+= v0.3.0の運用記録
+
+[#top]
+この文書は、v0.3.0の公開候補時点で使用した運用方法を記録したものです。現在の手順では
+ありません。現在のNixOS設定と日常運用はxref:nixos.adoc#top[NixOSでの運用]、MCPは
+xref:mcp.adoc#top[MCPとOAuth]、公開前の確認はxref:acceptance.adoc#top[受入確認]を参照してください。
+本文にある``server-admins``の設定と全ノートへのアクセスは廃止済みです。
+
+v0.3.0 は新規の空 SQLite database を対象とする破壊的リリースです。v0.2 の
+``dataDir``、root、登録ポリシー、``/api/v1``、ファイル正本を引き継がない。
+
+== NixOS 設定
+
+[source,nix]
+----
+services.marginalis = {
+  enable = true;
+  baseUrl = "https://notes.example.test/marginalis";
+  listenAddress = "127.0.0.1:3000";
+  backupDirectory = "/srv/marginalis-backups";
+  oidc = {
+    issuerUrl = "https://id.example.test/oauth2/openid/marginalis";
+    clientId = "marginalis";
+    clientSecretFile = "/run/secrets/marginalis-oidc-client-secret";
+    caCertificateFile = "/run/secrets/marginalis-kanidm-ca.pem";
+  };
+  mcp.enable = true;
+};
+----
+
+``clientSecretFile`` は systemd credential として渡される。値を Nix store、環境変数、ログへ書き出しては
+ならない。SQLite正本は``dataDir/marginalis.sqlite``に置く。別volumeを使う場合は``dataDir``を
+絶対pathで指定し、database URLだけを別指定する構成は提供しない。reverse proxy は ``/auth/``、``/api/``、
+``/mcp``、``/.well-known/``、``/oauth/`` を同一オリジンへ転送する。サブパスを使う場合、外部 URL の
+接頭辞を upstream へ渡す前に除去する。
+
+Kanidm 1.10 の OIDC client は ``groups_name`` scope を ``server-users`` へ許可し、``server-users`` と
+``server-admins`` を含む group claim を返すよう構成する。管理者も ``server-users`` の member にする。
+``server-users`` 非所属の主体はログインできず、``server-admins`` は全ノートを閲覧できる。
+claim は署名検証済み ID token からログイン時にだけ読み、既存 session と MCP token の権限は有効期限または
+認可取消まで固定する。
+``baseUrl`` にサブパスを含める場合、Web UI、OIDC login 復帰、MCP authorization の browser redirect は
+その接頭辞を含む。proxy は外部の接頭辞だけを除去し、アプリケーションへは内部 route を渡す。
+
+内部 CA で Kanidm を TLS 終端する場合は ``caCertificateFile`` に PEM trust anchor を指定する。この CA は
+OIDC Discovery と token exchange に適用される。公開 CA の場合は省略できる。
+
+[[v030当時の日常運用]]
+== v0.3.0当時の日常運用
+
+* ``GET /api/v2/health`` は公開 liveness endpoint です。
+* OIDC Discovery が一時的に失敗しても service は起動を維持する。この間はログインを開始できない。
+OIDC Discovery は各ログイン開始時に再試行するため、IdP の復旧後に service を再起動する必要はない。
+* ``marginalis-purge-expired.timer`` は、30 日を過ぎたソフトデリート済みノートと期限切れ・失効済みの
+Web/OIDC/MCP認証状態を日次で物理削除する。
+* ``marginalis-backup.service`` は ``backupDirectory`` に時刻付きディレクトリを作り、
+``marginalis-archive.json`` を保存する。単一のSQLite read transactionからsnapshotを取得するため、
+HTTP serviceを停止せずに実行できる。
+* archive は ``marginalis import-archive --input ++<++absolute-file++>++`` で空の SQLite database へ
+取り込める。定期復元試験は v0.3.0 の release gate 外です。
+
+== MCP OAuth
+
+MCP endpoint は ``POST B/mcp`` です。Protected Resource Metadata と Authorization Server Metadata は、
+それぞれ``B/mcp``と``B``からRFC 9728 / RFC 8414のhost・path挿入規則で導出したURLに置く。
+``B``がpathを持たなければ従来どおり``B/.well-known/oauth-protected-resource/mcp``と
+``B/.well-known/oauth-authorization-server``になる。MCP client は Dynamic Client Registration
+（``POST B/oauth/register``）でパブリック client を作成し、Authorization Code \+ PKCE S256 を使う。
+``/mcp`` の browser Origin は明示した HTTPS origin と ``B`` 自身だけを許可する。OAuth 承認 form は ``B`` と
+同一 Origin および session 結合済み CSRF token を必要とする。登録済み redirect URI と ``B/mcp`` の
+resource indicator は完全一致で検証する。
+
+アクセスには ``notes:read``、``notes:write``、``notes:delete`` の scope と、通常のノート ACL の両方が
+必要です。``DELETE /api/v2/mcp-authorizations/++{++client_id}`` は Cookie session、Origin、CSRF token を
+必要とし、その client の access token と refresh token を失効させる。
+
+[[v030のリリース検証]]
+== v0.3.0のリリース検証
+
+[arabic]
+. Kanidm 1.10、TLS、サブパスで ``server-users`` / ``server-admins`` の認可を確認する。
+. ChatGPT、Claude Code、Codex CLI で MCP OAuth login、read/write、認可取消を確認する。
+. NixOS module による空 database からの配備と backup destination を確認する。

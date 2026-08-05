@@ -1,0 +1,69 @@
+= v0.26.1受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.26.1``
+* 対象: ``codex/issue-258-release-v0.26.1``のリリース候補
+* 対象コミット: ``da66c3c661551fbbc510906f5e841721bfad03ad``
+* 判定日: 2026-08-04
+* 公開判定: 公開可
+
+== 結果
+
+[cols=",,,",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/260[リリースPull Request \#260]で、React・TypeScript、Rust、公開契約、
+カバレッジ、ブラウザー試験、NixOS VM E2Eを実行
+|Web UI
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/260[リリースPull Request \#260]の単体試験とChromium試験で、関係の図の文献表示、
+ホバーとキーボード操作、編集画面の回帰を確認。Firefoxでも編集画面の回帰試験に成功
+|NixOS配備
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/260[リリースPull Request \#260]のNixOS VM E2Eで、配備、起動、TLS、サブパス、
+backup、定期処理を確認
+|aarch64配布パッケージ
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/260[リリースPull Request \#260]で、native aarch64 Linux上の全Rust
+targetとNix packageを構築
+|archive復元
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/260[リリースPull Request \#260]の自動検証でv0.25.1のarchive
+13から14への移行と隔離復元を確認。利用者環境でも3件のノートを含むarchiveの検証、隔離復元、移行が完了
+|MCP接続
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/260[リリースPull Request \#260]のNixOS VM E2Eで認可経路を確認。
+MCP契約に変更がないため、xref:v0.26.0.adoc#top[v0.26.0受入結果]が継承する実接続確認も使用
+|===
+
+自動検証と今回変更したWeb UI、archive移行の受入が成功しました。REST API、MCP、SQLite schema、
+現行archive形式、NixOSモジュールに変更はなく、既存の認可経路にも回帰はありません。公開を止める
+問題は確認されなかったため、v0.26.1を公開できます。
+
+== 今回の確認で重点を置いた点
+
+関係の図では、文献の題名を点のそばへ常時表示せず、マウスのホバーとキーボードのフォーカスで
+全文を確認できることを確認します。ノートの題名、支援技術向けの名前、図と同じ内容を示す一覧が
+従来どおり使えることも確認します。
+
+v0.25.1が書き出すarchive 13を``migrate-archive``でarchive 14へ変換し、ノート、所有者、ACL、
+書誌情報、削除状態、revisionを保ったまま、空のschema 16へ復元できることを確認します。旧archiveに
+存在しない数式マクロ設定は空の状態で追加します。
+
+REST API、MCP、SQLite schema、現行archive形式、NixOSモジュールには変更がありません。これらの
+経路は自動検証で回帰がないことを確認し、v0.26.0の同日受入結果と併せて公開可否を判断します。
+
+利用者、Cookie、token、認可code、client secret、実際のノート本文や書誌情報は記録しません。

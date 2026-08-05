@@ -3,7 +3,7 @@ set -euo pipefail
 
 status=0
 source_root="${1:-crates}"
-event_catalog="${2:-docs/observability.md}"
+event_catalog="${2:-docs/observability.adoc}"
 production_globs=(
   --glob '*.rs'
   --glob '!**/tests.rs'
@@ -73,14 +73,14 @@ if [[ "$source_root" == "crates" ]]; then
   event_pattern='(?:http|mcp|oidc|service|maintenance|command)(?:\.[a-z][a-z0-9_]*)+'
   documented_event_pattern="\`($event_pattern)\`"
 
-  if [[ $(grep -c '<!-- observability-event-catalog:start -->' "$event_catalog") -ne 1 ||
-    $(grep -c '<!-- observability-event-catalog:end -->' "$event_catalog") -ne 1 ]]
+  if [[ $(grep -c '^// observability-event-catalog:start$' "$event_catalog") -ne 1 ||
+    $(grep -c '^// observability-event-catalog:end$' "$event_catalog") -ne 1 ]]
   then
     echo "ログevent一覧の開始・終了markerが一組ではありません。" >&2
     status=1
   fi
   sed -n \
-    '/<!-- observability-event-catalog:start -->/,/<!-- observability-event-catalog:end -->/p' \
+    '/^\/\/ observability-event-catalog:start$/,/^\/\/ observability-event-catalog:end$/p' \
     "$event_catalog" >"$documented_catalog"
 
   rg --no-filename -o \
@@ -97,7 +97,7 @@ if [[ "$source_root" == "crates" ]]; then
 
   if ! diff -u "$documented_events" "$implementation_events"; then
     echo "production実装とログevent一覧が一致しません。" >&2
-    echo "実装とdocs/observability.mdを同じ変更で更新してください。" >&2
+    echo "実装とdocs/observability.adocを同じ変更で更新してください。" >&2
     status=1
   fi
 fi

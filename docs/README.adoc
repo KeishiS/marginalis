@@ -1,0 +1,75 @@
+= 資料案内
+
+[#top]
+目的に合う資料を次の一覧から選んでください。
+
+== 利用者向け
+
+* xref:glossary.adoc#top[用語集]
+* link:openapi.json[OpenAPI 3.1]
+* xref:rest-api.adoc#top[REST API]
+* xref:web-ui-editor.adoc#top[AsciiDoc編集画面]
+* xref:web-ui-design.adoc#top[Web UIの画面設計]
+* xref:mcp.adoc#top[MCPとOAuth]
+* link:mcp-tools.json[MCP toolのJSON Schema]
+
+== 運用者向け
+
+* xref:nixos.adoc#top[NixOSでの運用]
+* xref:observability.adoc#top[ログと障害診断]
+* xref:release.adoc#top[リリース手順]
+* xref:acceptance.adoc#top[受入基準と版別結果]
+
+== 設計・開発向け
+
+* xref:development.adoc#top[GitHubを使う開発手順]
+* xref:documentation.adoc#top[文書管理方針]
+* xref:repository-asciidoc-evaluation.adoc#top[リポジトリ文書のAsciiDoc化評価]
+* xref:coverage.adoc#top[カバレッジ]
+* xref:observability.adoc#top[ログと障害診断]
+* xref:security.adoc#top[セキュリティ]
+* xref:requirements.adoc#top[要件定義]
+* xref:traceability.adoc#top[要件と検証の対応表]
+* xref:architecture.adoc#top[アーキテクチャ]
+* xref:adocweave-v0.33-migration.adoc#top[AdocWeave 0.33移行判断]
+* xref:adocweave-v0.27-migration.adoc#top[AdocWeave 0.27移行判断]
+* xref:adr/0001-auth0をmcpのauthorization-serverに採用.adoc#top[Auth0をMCPのAuthorization Serverに採用]（廃止。ADR
+0007で置き換え）
+* xref:adr/0002-sqliteを正本として維持する.adoc#top[SQLiteを正本として維持]
+* xref:adr/0003-codemirrorをasciidoc編集基盤に採用.adoc#top[CodeMirrorをAsciiDoc編集基盤に採用]
+* xref:adr/0004-書誌ライブラリーを利用者ごとに管理する.adoc#top[書誌ライブラリーを利用者ごとに管理する]
+* xref:adr/0005-認証基盤の停止時にwebとmcpで起動可否を分ける.adoc#top[認証基盤の停止時にWebとMCPで起動可否を分ける]
+* xref:adr/0006-引用はノート作成者の書誌ライブラリーで解決する.adoc#top[引用はノート作成者の書誌ライブラリーで解決する]
+* xref:adr/0007-mcpのauthorization-serverを内蔵する.adoc#top[MCPのAuthorization Serverを内蔵する]
+* xref:adr/0008-mcp-authorization-serverの中核を製品から分離する.adoc#top[MCP Authorization Serverの中核を製品から分離する]
+* xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]
+* xref:adr/0009-mcpのscope上限を利用者設定として管理する.adoc#top[MCPのscope上限を利用者設定として管理する]
+* xref:adr/0010-外部書誌はcsl-jsonから一方向に取り込む.adoc#top[外部ツールの書誌情報はCSL-JSONから一方向に取り込む]
+* xref:adr/0011-ノートの作成経路と人手確認を分けて記録する.adoc#top[ノートの作成経路と人手確認を分けて記録する]
+* xref:protocol-regression.adoc#top[ブラウザーとMCPプロトコルの回帰テスト]
+
+== 過去の記録と今後の計画
+
+* xref:../CHANGELOG.adoc#top[変更履歴]
+* xref:roadmap.adoc#top[ロードマップ]
+* xref:mcp-authorization-server-evaluation.adoc#top[MCP向けAuthorization Serverの評価手順]
+* https://github.com/KeishiS/marginalis/issues[GitHub Issues]
+* xref:issue-migration.adoc#top[旧ローカルIssue移行対応表]
+* xref:interviews.adoc#top[要件ヒアリング記録]
+* xref:adocweave-v0.11-migration.adoc#top[AdocWeave 0.11移行判断]
+* xref:adocweave-v0.17-migration.adoc#top[AdocWeave 0.17移行判断]
+* xref:adocweave-v0.19-migration.adoc#top[AdocWeave 0.19移行判断]
+* xref:adocweave-v0.20-migration.adoc#top[AdocWeave 0.20移行判断]
+* xref:adocweave-v0.22-migration.adoc#top[AdocWeave 0.22移行判断]
+* xref:adocweave-v0.23-migration.adoc#top[AdocWeave 0.23移行判断]
+* xref:v0.3.0-design.adoc#top[v0.3.0再設計判断記録]
+* xref:v0.3.0-operations.adoc#top[v0.3.0運用記録]
+* xref:research-search-vision.adoc#top[連環（Renkan）— 個人研究の記憶を横断する探索基盤]
+
+== 文書の読み分け
+
+現行の動作について資料間に差がある場合は、REST APIには``openapi.json``、システム要件には
+``requirements.adoc``、設計には``architecture.adoc``、NixOSでの運用には``nixos.adoc``を優先します。
+
+バージョン番号が付いた資料、ヒアリング記録、将来構想、完了済みIssueは、作成時点の記録です。
+現在の仕様を確認する目的では使用しません。

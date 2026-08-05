@@ -1,0 +1,45 @@
+= v0.14.0受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.14.0``
+* 対象: リリース情報を更新する前の``main``
+* 対象コミット: ``ee4e7f8930bbd5f2124934644c0440864f57261c``
+* 判定日: 2026-07-29
+* 公開判定: 公開可
+
+== 結果
+
+[cols=",,,",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-07-29
+|https://github.com/KeishiS/marginalis/actions/runs/30483885967[``main``のCI]でReact・TypeScript、Rust、
+公開契約、カバレッジ、aarch64上のコンパイル、Chromiumによるブラウザー基本動作、Nixパッケージ、NixOS VM E2Eが成功
+|CodeMirror編集画面
+|成功
+|2026-07-29
+|https://marginalis.sandi05.com/[公開環境]で行番号gutter、不要な入力補助の除去、コードブロックの行番号、
+5,000行の編集と保存についてhttps://github.com/KeishiS/marginalis/pull/113[Pull Request \#113の修正]を受入確認
+|数式の表示切り替え
+|成功
+|2026-07-29
+|https://marginalis.sandi05.com/[公開環境]のChromiumで、執筆、分割、プレビューを続けて切り替えてもインライン数式を組版した状態に保つことを受入確認
+|ログとCIの監視契約
+|成功
+|2026-07-29
+|https://github.com/KeishiS/marginalis/actions/runs/30483885967[``main``のCI]で固定した``event``、route
+template、機密情報を表すfield、未正規化URI、設計境界、文書リンク、CI経路、失敗時の証跡を検査
+|===
+
+v0.13.0のタグとGitHub Releaseは作成せず、同版の候補に含まれた編集画面と受入後の修正を
+v0.14.0へ引き継ぎます。構造化ログの監視契約は破壊的変更として変更履歴に記録しました。
+自動検証と人手受入が成功したため、v0.14.0を公開できます。
+
+利用者、Cookie、token、認可code、client secret、実際のノート本文は記録しません。
