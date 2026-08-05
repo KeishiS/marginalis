@@ -21,6 +21,16 @@ declare global {
 let mathJaxLoader: Promise<MathJaxRuntime> | null = null;
 let mathJaxTypesetQueue: Promise<void> = Promise.resolve();
 const NO_MATH_MACROS: MathMacro[] = [];
+const ENABLED_TEX_PACKAGES = [
+  "base",
+  "ams",
+  "newcommand",
+  "textmacros",
+  "noundefined",
+  "configmacros",
+  "boldsymbol",
+  "mathtools",
+] as const;
 
 export function RenderedContent({
   html,
@@ -150,7 +160,7 @@ async function loadMathJax(
       },
       tex: {
         maxMacros: 1000,
-        packages: { "[+]": ["boldsymbol", "mathtools"] },
+        packages: [...ENABLED_TEX_PACKAGES],
         macros: Object.fromEntries(
           mathMacros.map((macro) => [
             macro.name,
@@ -211,6 +221,7 @@ function initializeMathJaxWithStyleNonce(styleNonce: string) {
     return appendChild(child);
   }) as typeof document.head.appendChild;
   try {
+    restrictMathJaxTexPackages(window.MathJax);
     startup.defaultReady();
   } finally {
     document.head.appendChild = appendChild;
@@ -234,6 +245,23 @@ function initializeMathJaxWithStyleNonce(styleNonce: string) {
     if (child instanceof HTMLStyleElement) child.nonce = styleNonce;
     return appendNode(parent, child);
   };
+}
+
+function restrictMathJaxTexPackages(value: unknown) {
+  // MathJax 4は起動前のpackages配列を既定一覧への追加として解釈するため、
+  // TeX入力処理を構築する直前に、実際に使う一覧を許可した値だけへ置き換える。
+  if (typeof value !== "object" || value === null) {
+    throw new Error("MathJaxのTeX設定を初期化できませんでした。");
+  }
+  const config = (value as { config?: unknown }).config;
+  if (typeof config !== "object" || config === null) {
+    throw new Error("MathJaxのTeX設定を初期化できませんでした。");
+  }
+  const tex = (config as { tex?: unknown }).tex;
+  if (typeof tex !== "object" || tex === null) {
+    throw new Error("MathJaxのTeX設定を初期化できませんでした。");
+  }
+  (tex as { packages: string[] }).packages = [...ENABLED_TEX_PACKAGES];
 }
 
 function hasMathJaxDefaultReady(

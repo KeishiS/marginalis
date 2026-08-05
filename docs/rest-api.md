@@ -66,6 +66,9 @@ Pythonは`[source,python]`で指定できます。利用できる言語の一覧
 `:stem: latexmath`を指定した`stem:[]`と`[latexmath]`の数式は、
 Web UIの配布物へ固定したMathJaxで組版します。外部のCDNへは接続しません。
 MathJaxの`mathtools`拡張を有効にしているため、`\coloneqq`などの数式コマンドも使用できます。
+TeX packageは`base`、`ams`、`newcommand`、`textmacros`、`noundefined`、`configmacros`、
+`boldsymbol`、`mathtools`だけを有効にします。`autoload`と`require`は有効にしないため、数式から
+別のpackageを追加で読み込むことはできません。
 数式マクロ設定では、コマンド名、置換内容、0から9までの引数の数を指定します。たとえば
 `argmax`を`\operatorname*{arg\,max}`へ、引数1個の`bm`を`\boldsymbol{#1}`へ置き換えるよう
 設定すると、`\argmax_{x \in S} f(x)`と`\bm{x}`を記述できます。既存ノートの閲覧と編集

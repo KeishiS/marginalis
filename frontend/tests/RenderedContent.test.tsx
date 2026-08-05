@@ -113,7 +113,7 @@ test("対応するAsciiDoc表示要素を一つのfixtureで固定する", () =>
   expect(container.querySelector(".math-display")).toBeTruthy();
 });
 
-test("mathtools拡張を同一オリジンから読み込む", async () => {
+test("許可したTeX packageだけを同一オリジンから読み込む", async () => {
   render(
     <RenderedContent
       html={String.raw`<code class="math-latex" data-math-language="latexmath" data-math-display="inline">a \coloneqq b</code>`}
@@ -145,7 +145,16 @@ test("mathtools拡張を同一オリジンから読み込む", async () => {
       },
       tex: {
         maxMacros: 1000,
-        packages: { "[+]": ["boldsymbol", "mathtools"] },
+        packages: [
+          "base",
+          "ams",
+          "newcommand",
+          "textmacros",
+          "noundefined",
+          "configmacros",
+          "boldsymbol",
+          "mathtools",
+        ],
         macros: {
           argmax: String.raw`\operatorname*{arg\,max}`,
           bm: [String.raw`\boldsymbol{#1}`, 1],
@@ -162,6 +171,10 @@ test("mathtools拡張を同一オリジンから読み込む", async () => {
   expect(new URL(loader.loader.source["[tex]/mathtools"]).origin).toBe(
     window.location.origin,
   );
+  const configuredPackages = (window.MathJax as { tex: { packages: string[] } })
+    .tex.packages;
+  expect(configuredPackages).not.toContain("autoload");
+  expect(configuredPackages).not.toContain("require");
   document.querySelector("script[src$='/tex-svg.js']")?.remove();
 });
 
