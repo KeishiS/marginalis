@@ -566,6 +566,8 @@ pub trait OidcAuthenticationUseCases: Send + Sync {
 
 #[async_trait]
 pub trait McpOAuthUseCases: Send + Sync {
+    /// Protected Resource Metadata、challenge、認可、token検証で共有するpolicyを返す。
+    fn resource_policy(&self) -> McpResourcePolicy;
     async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError>;
     async fn resolve_authorization_client(
         &self,

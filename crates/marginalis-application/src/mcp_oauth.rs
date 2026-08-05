@@ -79,6 +79,10 @@ impl McpOAuthApplication {
         self
     }
 
+    pub fn resource_policy(&self) -> &McpResourcePolicy {
+        self.authorization_server.resource_policy()
+    }
+
     pub async fn register_client(
         &self,
         client: McpOAuthClient,
@@ -315,6 +319,10 @@ fn map_scope_ceiling_repository_error(
 
 #[async_trait]
 impl McpOAuthUseCases for McpOAuthApplication {
+    fn resource_policy(&self) -> McpResourcePolicy {
+        McpOAuthApplication::resource_policy(self).clone()
+    }
+
     async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError> {
         McpOAuthApplication::register_client(self, client).await
     }
