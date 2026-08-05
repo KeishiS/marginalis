@@ -59,16 +59,15 @@ pub struct NoteCitationSegment {
     pub anchor: Option<String>,
 }
 
-/// 本文の末尾へ生成する参考文献一覧の1項目。
+/// 描画時に生成する参考文献一覧の1項目。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteBibliographyEntry {
     pub citation_key: String,
     pub text: String,
     /// 項目の見出しとして表示する短い文字列。
     ///
-    /// 番号で示すスタイルでは初出順の番号が入ります。AsciiDocはbibliography anchorの
-    /// カンマ以降を表示テキストとして読み、項目と本文からの参照を`[表示テキスト]`の形に
-    /// します。`None`の場合はcitation keyがそのまま見出しになります。
+    /// 番号で示すスタイルでは初出順の番号が入ります。文書adapterはこの値を記法として
+    /// 解釈せず、参考文献項目の補助的な表示名として描画器へ渡します。
     pub label: Option<String>,
 }
 

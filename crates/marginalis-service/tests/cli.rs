@@ -78,8 +78,8 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-16");
-    assert_eq!(archive_json["adocweave_package_version"], "0.27.0");
+    assert_eq!(archive_json["format"], "marginalis-archive-17");
+    assert_eq!(archive_json["adocweave_package_version"], "0.33.0");
     assert_eq!(archive_json["note_profile_version"], 5);
 
     let backup = directory.join("backup");
@@ -252,7 +252,7 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let directory = test_directory("archive-migration");
     fs::create_dir(&directory).expect("test directory");
     let input = directory.join("v0.25.1-archive-13.json");
-    let output = directory.join("current-archive-16.json");
+    let output = directory.join("current-archive-17.json");
     let previous = serde_json::json!({
         "format": "marginalis-archive-13",
         "adocweave_package_version": "0.27.0",
@@ -323,8 +323,8 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let migrated: serde_json::Value =
         serde_json::from_slice(&fs::read(&output).expect("read migration output"))
             .expect("migrated JSON");
-    assert_eq!(migrated["format"], "marginalis-archive-16");
-    assert_eq!(migrated["adocweave_package_version"], "0.27.0");
+    assert_eq!(migrated["format"], "marginalis-archive-17");
+    assert_eq!(migrated["adocweave_package_version"], "0.33.0");
     assert_eq!(migrated["note_profile_version"], 5);
     assert_eq!(migrated["math_macro_settings"], serde_json::json!([]));
     assert_eq!(
@@ -705,8 +705,8 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
     let source = serde_json::json!({
-        "format": "marginalis-archive-16",
-        "adocweave_package_version": "0.27.0",
+        "format": "marginalis-archive-17",
+        "adocweave_package_version": "0.33.0",
         "note_profile_version": 5,
         "notes": [
             {
@@ -844,7 +844,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
             .expect("manifest JSON");
     assert_eq!(manifest["format"], "marginalis-documents-2");
     assert_eq!(manifest["marginalis_version"], env!("CARGO_PKG_VERSION"));
-    assert_eq!(manifest["adocweave_package_version"], "0.27.0");
+    assert_eq!(manifest["adocweave_package_version"], "0.33.0");
     assert_eq!(manifest["note_profile_version"], 5);
     assert_eq!(manifest["owners"][0]["subject"], "alice");
     assert_eq!(
@@ -912,8 +912,8 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
     let source = serde_json::json!({
-        "format": "marginalis-archive-16",
-        "adocweave_package_version": "0.27.0",
+        "format": "marginalis-archive-17",
+        "adocweave_package_version": "0.33.0",
         "note_profile_version": 5,
         // 所有者を2人にし、note IDが所有者をまたいで交互に並ぶようにする。書き出しは所有者ごとに
         // ノートをまとめるため、この並びは取り込み側で読む順とsnapshotの順を食い違わせる。

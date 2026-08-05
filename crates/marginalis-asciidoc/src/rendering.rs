@@ -1,8 +1,9 @@
 use adocweave::output::diagnostics::Severity;
 use adocweave::output::html::render_with_inputs;
 use adocweave::resolution::{
-    CitationSegment, RenderInputs, ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind,
-    ResolvedCitation, ResolvedReference, ResolverFailure,
+    CitationSegment, GeneratedBibliography, GeneratedBibliographyEntry, RenderInputs,
+    ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind, ResolvedCitation,
+    ResolvedReference, ResolverFailure,
 };
 use marginalis_application::{
     NoteBibliographyEntry, NoteCitationResolution, NoteReferenceResolution, NoteRenderInputs,
@@ -20,10 +21,7 @@ pub(crate) fn render_note(
     note: &Note,
     inputs: NoteRenderInputs<'_>,
 ) -> Result<String, RenderError> {
-    // 参考文献一覧は保存する本文には含めず、描画のたびに引用済みの項目から組み立てる。
-    // 追加は末尾だけなので、保存済み本文の位置は解析し直しても変わらない。
-    let source = source_with_generated_bibliography(note.source(), inputs.bibliography)?;
-    let analysis = analyze_valid_source(&source)?;
+    let analysis = analyze_valid_source(note.source())?;
     let queries = analysis.reference_queries();
     let references = inputs
         .references
@@ -76,9 +74,12 @@ pub(crate) fn render_note(
             ))
         })
         .collect::<Result<Vec<_>, RenderError>>()?;
-    let render_inputs = RenderInputs::default()
+    let mut render_inputs = RenderInputs::default()
         .with_references(references)
         .with_citations(resolved_citations);
+    if let Some(bibliography) = generated_bibliography(&analysis, inputs.bibliography) {
+        render_inputs = render_inputs.with_generated_bibliography(bibliography);
+    }
     let output = render_with_inputs(analysis.document(), &render_policy(), &render_inputs);
     if output
         .diagnostics
@@ -102,20 +103,14 @@ fn citation_segments(resolution: &NoteCitationResolution) -> Vec<CitationSegment
         .collect()
 }
 
-/// 引用済みの書誌項目から参考文献一覧を組み立て、本文の末尾へ加える。
+/// 引用済みの書誌項目から、AdocWeaveへ渡す構造化入力を組み立てる。
 ///
 /// 本文が同じcitation keyの項目を既に定義している場合は、生成した項目を重ねない。
 /// 同じanchorが二つあると文書として成り立たず、著者が書いた記述を優先すべきためである。
-///
-/// 引用が無い、または解決できた項目が無い場合は本文をそのまま返す。
-fn source_with_generated_bibliography(
-    source: &str,
+fn generated_bibliography(
+    analysis: &adocweave::Analysis,
     entries: &[NoteBibliographyEntry],
-) -> Result<String, RenderError> {
-    if entries.is_empty() {
-        return Ok(source.to_owned());
-    }
-    let analysis = analyze_valid_source(source)?;
+) -> Option<GeneratedBibliography> {
     let defined = analysis
         .catalogs()
         .bibliography()
@@ -126,96 +121,15 @@ fn source_with_generated_bibliography(
         .iter()
         .filter(|entry| !defined.contains(&entry.citation_key.as_str()))
         .map(|entry| {
-            // 表示テキストはanchorのカンマ以降へ置く。番号を項目の本文へ書くと、番号が
-            // 文献の識別情報ではなく記述の一部になり、本文からの参照も番号にならない。
-            let anchor = match &entry.label {
-                Some(label) => format!("{},{}", entry.citation_key, as_plain_text(label)),
-                None => entry.citation_key.clone(),
-            };
-            format!("* [[[{anchor}]]] {}", as_plain_text(&entry.text))
+            let generated = GeneratedBibliographyEntry::new(&entry.citation_key, &entry.text);
+            match &entry.label {
+                Some(label) => generated.with_label(label),
+                None => generated,
+            }
         })
         .collect::<Vec<_>>();
-    if generated.is_empty() {
-        return Ok(source.to_owned());
-    }
-    Ok(format!(
-        "{}\n\n[bibliography]\n== {GENERATED_BIBLIOGRAPHY_TITLE}\n\n{}\n",
-        source.trim_end(),
-        generated.join("\n")
-    ))
-}
-
-/// 書誌情報の文字列を、AsciiDocの記法として解釈されない形へ直す。
-///
-/// 題名や著者名にはAsciiDocが意味を持つ記号が現れる。記法が始まる位置の直前に逆斜線を
-/// 置くと、そこは記法とみなされず、逆斜線も出力に残らない。記法が始まらない位置へ置くと
-/// 逆斜線がそのまま見えてしまうため、始まりうる位置だけを選ぶ。
-///
-/// 改行は項目を途中で終わらせるため、空白1つへ畳む。
-fn as_plain_text(text: &str) -> String {
-    let folded = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let characters = folded.chars().collect::<Vec<_>>();
-    let mut escaped = String::with_capacity(folded.len());
-    for (position, character) in characters.iter().copied().enumerate() {
-        if opens_markup(&characters, position) {
-            escaped.push('\\');
-        }
-        escaped.push(character);
-    }
-    escaped
-}
-
-/// 記法がこの位置から始まるかどうかを判定する。
-///
-/// AdocWeaveの判定規則に合わせている。強調などの記号は、直前が英数字でなく直後が
-/// 空白でも同じ記号でもない場合に始まる。macroと自動linkは、行頭または区切り文字の
-/// 後にある`name:`の形から始まる。
-fn opens_markup(characters: &[char], position: usize) -> bool {
-    let character = characters[position];
-    let previous = position.checked_sub(1).map(|index| characters[index]);
-    let next = characters.get(position + 1).copied();
-    // 逆斜線自体は二つ重ねて1つとして表示する。
-    if character == '\\' {
-        return true;
-    }
-    // 属性参照は位置を問わず展開されるため、常に打ち消す。
-    if character == '{' {
-        return true;
-    }
-    // 相互参照とanchorは記号を2つ重ねた形で始まる。
-    if matches!(character, '<' | '[') && next == Some(character) {
-        return true;
-    }
-    if matches!(character, '*' | '_' | '`' | '#' | '^' | '~') {
-        let opens = next
-            .is_some_and(|following| !following.is_whitespace() && following != character)
-            && previous.is_none_or(|preceding| !preceding.is_alphanumeric());
-        if opens {
-            return true;
-        }
-    }
-    // 行末の`+`は改行として扱われる。畳んだ結果の末尾だけが該当する。
-    if character == '+' && next.is_none() && previous == Some(' ') {
-        return true;
-    }
-    starts_macro_name(characters, position, previous)
-}
-
-/// この位置から`name:`の形が始まるかどうかを判定する。
-///
-/// `image:x[]`のようなmacroと`https://example.test`のような自動linkは、どちらも
-/// 区切りの直後にある識別子と`:`から始まる。
-fn starts_macro_name(characters: &[char], position: usize, previous: Option<char>) -> bool {
-    let at_boundary = previous.is_none_or(|preceding| {
-        preceding.is_whitespace() || matches!(preceding, '(' | '[' | '{' | '<' | '"' | '\'')
-    });
-    if !at_boundary || !characters[position].is_ascii_alphabetic() {
-        return false;
-    }
-    characters[position..]
-        .iter()
-        .position(|character| !character.is_ascii_alphanumeric() && *character != '-')
-        .is_some_and(|offset| characters[position + offset] == ':')
+    (!generated.is_empty())
+        .then(|| GeneratedBibliography::new(GENERATED_BIBLIOGRAPHY_TITLE, generated))
 }
 
 #[cfg(test)]
@@ -454,11 +368,7 @@ mod tests {
         assert!(!html.contains(">smith2024<"));
     }
 
-    /// 項目の見出しを持つ場合は、anchorの表示テキストとして渡す。
-    ///
-    /// 番号を項目の記述へ書くと、番号が文献の識別情報ではなく本文の一部になる。AsciiDocは
-    /// `[[[id,表示テキスト]]]`のカンマ以降を見出しとして読み、項目と本文からの参照を
-    /// `[1]`の形にする。IDはカンマの手前までなので、`cite:`との相互linkは保たれる。
+    /// 項目の見出しを持つ場合も、citation keyをlink先のIDとして維持する。
     #[test]
     fn a_numbered_entry_puts_the_number_in_the_anchor_label() {
         let html = render_note(
@@ -520,7 +430,7 @@ mod tests {
                 citations: &[resolution(0, "trick", "Author 2024")],
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "trick".into(),
-                    text: "*強調* image:secret[] <<other>> {attribute} の題名".into(),
+                    text: "Effective C++ and More Effective C++; *強調* image:secret[] <<other>> {attribute} pass:[x] +x+ ++x++ +++x+++ <b>&".into(),
                     label: None,
                 }],
                 ..Default::default()
@@ -528,7 +438,7 @@ mod tests {
         )
         .expect("render an entry that contains markup characters");
 
-        assert!(html.contains("*強調* image:secret[] &lt;&lt;other&gt;&gt; {attribute} の題名"));
+        assert!(html.contains("Effective C++ and More Effective C++; *強調* image:secret[] &lt;&lt;other&gt;&gt; {attribute} pass:[x] +x+ ++x++ +++x+++ &lt;b&gt;&amp;"));
         assert!(!html.contains("<strong>"));
         assert!(!html.contains("<img"));
     }

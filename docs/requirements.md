@@ -176,9 +176,9 @@
 
 ## 対応する保存形式
 
-- **REQ-FORMAT-001 — 現行形式**: SQLiteスキーマ20と`marginalis-archive-16`だけを通常処理で
-  受理すること。`migrate-archive`だけはarchive 7から15までの対応契約を入力として受理し、AdocWeave
-  0.27.0で全件を再検証したarchive 16を別ファイルへ出力すること。その他の旧形式を自動移行
+- **REQ-FORMAT-001 — 現行形式**: SQLiteスキーマ20と`marginalis-archive-17`だけを通常処理で
+  受理すること。`migrate-archive`だけはarchive 7から16までの対応契約を入力として受理し、AdocWeave
+  0.33.0で全件を再検証したarchive 17を別ファイルへ出力すること。その他の旧形式を自動移行
   しないこと。
 - **REQ-FORMAT-002 — 文書としての取り出し**: ノートをAsciiDocファイル、書誌情報をCSL-JSONの配列
   として`tar.xz`形式の書庫1つへ書き出せること。書庫の中でも所有者だけが読める権限を記録し、
