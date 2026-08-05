@@ -171,7 +171,6 @@ impl McpOAuthApplication {
             revision: 0,
         }))
     }
-
     pub async fn replace_client_scope_ceiling(
         &self,
         actor: Actor,
