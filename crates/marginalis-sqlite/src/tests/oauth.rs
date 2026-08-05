@@ -7,7 +7,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     Clock, McpAuthorizationRequest, McpClientMetadataResolver, McpClientMetadataResolverError,
     McpClientRegistrationMethod, McpOAuthApplication, McpRegisteredOAuthClient,
-    McpTimestamp as UnixMillis, Random,
+    McpScopeCeilingSetting, McpScopeCeilingUseCaseError, McpTimestamp as UnixMillis, Random,
 };
 use marginalis_domain::EntityId as ApplicationEntityId;
 use sha2::{Digest, Sha256};
@@ -123,8 +123,8 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
     );
     sqlx::query(
         "INSERT INTO mcp_principal_scope_ceilings
-             (issuer, subject, scopes, updated_at_ms)
-         VALUES (?, ?, ?, ?)",
+             (issuer, subject, scopes, revision, updated_at_ms)
+         VALUES (?, ?, ?, 1, ?)",
     )
     .bind("https://id.example.test")
     .bind("alice")
@@ -185,6 +185,17 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         .expect("authenticated actor");
     assert_eq!(authenticated.actor.subject(), "alice");
     assert_eq!(authenticated.scopes, vec!["notes:read"]);
+    assert_eq!(
+        application
+            .replace_principal_scope_ceiling(
+                actor("https://id.example.test", "alice"),
+                vec!["unknown:scope".into()],
+                1,
+            )
+            .await,
+        Err(McpScopeCeilingUseCaseError::Invalid),
+        "未対応scopeを保存層へ渡さない"
+    );
 }
 
 #[tokio::test]
@@ -205,8 +216,8 @@ async fn scope_ceilings_are_bound_to_the_principal_and_client() {
     );
     sqlx::query(
         "INSERT INTO mcp_principal_scope_ceilings
-             (issuer, subject, scopes, updated_at_ms)
-         VALUES (?, ?, ?, ?)",
+             (issuer, subject, scopes, revision, updated_at_ms)
+         VALUES (?, ?, ?, 1, ?)",
     )
     .bind("https://id.example.test")
     .bind("alice")
@@ -217,8 +228,8 @@ async fn scope_ceilings_are_bound_to_the_principal_and_client() {
     .expect("principal scope ceiling");
     sqlx::query(
         "INSERT INTO mcp_client_scope_ceilings
-             (issuer, subject, client_id, scopes, updated_at_ms)
-         VALUES (?, ?, ?, ?, ?)",
+             (issuer, subject, client_id, scopes, revision, updated_at_ms)
+         VALUES (?, ?, ?, ?, 1, ?)",
     )
     .bind("https://id.example.test")
     .bind("alice")
@@ -238,8 +249,14 @@ async fn scope_ceilings_are_bound_to_the_principal_and_client() {
         .await
         .expect("scope ceilings"),
         marginalis_application::McpStoredScopeCeilings {
-            principal: Some(vec!["notes:write".into(), "notes:read".into()]),
-            client: Some(vec!["notes:read".into()]),
+            principal: Some(McpScopeCeilingSetting {
+                scopes: vec!["notes:write".into(), "notes:read".into()],
+                revision: 1,
+            }),
+            client: Some(McpScopeCeilingSetting {
+                scopes: vec!["notes:read".into()],
+                revision: 1,
+            }),
         }
     );
     assert_eq!(
@@ -321,6 +338,228 @@ async fn rfc7009_revocation_revokes_the_whole_token_family() {
         .revoke_mcp_token("unknown", &client.client_id, UnixMillis::new(4))
         .await
         .expect("unknown token is indistinguishable");
+}
+
+#[tokio::test]
+async fn replacing_scope_ceilings_is_revision_guarded_and_revokes_existing_grants() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let client = McpOAuthClient {
+        client_id: "scope-settings-client".into(),
+        display_name: "Scope settings client".into(),
+        redirect_uris: vec!["https://client.example/callback".into()],
+    };
+    database
+        .upsert_mcp_client(&client, UnixMillis::new(0))
+        .await
+        .expect("client");
+    let actor = actor("https://id.example", "alice");
+    let grant = McpAuthorizationGrant {
+        principal: principal(actor.issuer(), actor.subject()),
+        client_id: client.client_id.clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
+        resource_uri: "https://notes.example/mcp".into(),
+        scopes: vec!["notes:read".into(), "notes:write".into()],
+    };
+    for code in ["token-code", "pending-code"] {
+        database
+            .issue_mcp_authorization_code(
+                code,
+                &registered_client(&client, McpClientRegistrationMethod::Dynamic),
+                &grant,
+                "challenge",
+                UnixMillis::new(100),
+                UnixMillis::new(0),
+            )
+            .await
+            .expect("code");
+    }
+    database
+        .exchange_mcp_authorization_code(
+            McpAuthorizationCodeExchange {
+                code: "token-code".into(),
+                client_id: client.client_id.clone(),
+                redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
+                resource_uri: grant.resource_uri.clone(),
+                code_challenge: "challenge".into(),
+                access_token: "access".into(),
+                refresh_token: "refresh".into(),
+                access_expires_at: UnixMillis::new(500),
+                refresh_expires_at: UnixMillis::new(900),
+            },
+            UnixMillis::new(1),
+        )
+        .await
+        .expect("token pair")
+        .expect("grant");
+
+    let setting =
+        marginalis_application::McpScopeCeilingRepository::replace_principal_scope_ceiling(
+            &database,
+            &actor,
+            &["notes:read".into()],
+            0,
+            marginalis_domain::UnixMillis::new(2),
+        )
+        .await
+        .expect("principal scope ceiling");
+    assert_eq!(
+        setting,
+        McpScopeCeilingSetting {
+            scopes: vec!["notes:read".into()],
+            revision: 1,
+        }
+    );
+    assert!(
+        database
+            .authenticate_mcp_access_token("access", &grant.resource_uri, UnixMillis::new(3))
+            .await
+            .expect("authentication")
+            .is_none(),
+        "上限変更前のtokenを直ちに失効する"
+    );
+    assert!(
+        database
+            .exchange_mcp_authorization_code(
+                McpAuthorizationCodeExchange {
+                    code: "pending-code".into(),
+                    client_id: client.client_id.clone(),
+                    redirect_uri: Some(grant.redirect_uri.as_str().to_owned()),
+                    resource_uri: grant.resource_uri.clone(),
+                    code_challenge: "challenge".into(),
+                    access_token: "late-access".into(),
+                    refresh_token: "late-refresh".into(),
+                    access_expires_at: UnixMillis::new(500),
+                    refresh_expires_at: UnixMillis::new(900),
+                },
+                UnixMillis::new(3),
+            )
+            .await
+            .expect("late exchange")
+            .is_none(),
+        "上限変更前の認可codeも失効する"
+    );
+
+    let read_grant = McpAuthorizationGrant {
+        scopes: vec!["notes:read".into()],
+        ..grant.clone()
+    };
+    for code in ["preserved-token-code", "preserved-pending-code"] {
+        database
+            .issue_mcp_authorization_code(
+                code,
+                &registered_client(&client, McpClientRegistrationMethod::Dynamic),
+                &read_grant,
+                "challenge",
+                UnixMillis::new(100),
+                UnixMillis::new(3),
+            )
+            .await
+            .expect("read-only code");
+    }
+    database
+        .exchange_mcp_authorization_code(
+            McpAuthorizationCodeExchange {
+                code: "preserved-token-code".into(),
+                client_id: client.client_id.clone(),
+                redirect_uri: Some(read_grant.redirect_uri.as_str().to_owned()),
+                resource_uri: read_grant.resource_uri.clone(),
+                code_challenge: "challenge".into(),
+                access_token: "preserved-access".into(),
+                refresh_token: "preserved-refresh".into(),
+                access_expires_at: UnixMillis::new(500),
+                refresh_expires_at: UnixMillis::new(900),
+            },
+            UnixMillis::new(3),
+        )
+        .await
+        .expect("read-only token pair")
+        .expect("read-only grant");
+    assert_eq!(
+        marginalis_application::McpScopeCeilingRepository::replace_principal_scope_ceiling(
+            &database,
+            &actor,
+            &["notes:read".into(), "notes:write".into()],
+            1,
+            marginalis_domain::UnixMillis::new(4),
+        )
+        .await
+        .expect("updated principal scope ceiling")
+        .revision,
+        2
+    );
+    assert!(
+        database
+            .authenticate_mcp_access_token(
+                "preserved-access",
+                &read_grant.resource_uri,
+                UnixMillis::new(5),
+            )
+            .await
+            .expect("authentication")
+            .is_some(),
+        "上限内のtokenは上限を広げても失効しない"
+    );
+    assert!(
+        database
+            .exchange_mcp_authorization_code(
+                McpAuthorizationCodeExchange {
+                    code: "preserved-pending-code".into(),
+                    client_id: client.client_id.clone(),
+                    redirect_uri: Some(read_grant.redirect_uri.as_str().to_owned()),
+                    resource_uri: read_grant.resource_uri.clone(),
+                    code_challenge: "challenge".into(),
+                    access_token: "preserved-late-access".into(),
+                    refresh_token: "preserved-late-refresh".into(),
+                    access_expires_at: UnixMillis::new(500),
+                    refresh_expires_at: UnixMillis::new(900),
+                },
+                UnixMillis::new(5),
+            )
+            .await
+            .expect("preserved exchange")
+            .is_some(),
+        "上限内の認可codeは上限を広げても失効しない"
+    );
+    assert!(matches!(
+        marginalis_application::McpScopeCeilingRepository::replace_principal_scope_ceiling(
+            &database,
+            &actor,
+            &["notes:read".into()],
+            1,
+            marginalis_domain::UnixMillis::new(5),
+        )
+        .await,
+        Err(marginalis_application::McpScopeCeilingRepositoryError::Conflict)
+    ));
+
+    assert_eq!(
+        marginalis_application::McpScopeCeilingRepository::replace_client_scope_ceiling(
+            &database,
+            &actor,
+            &client.client_id,
+            &["notes:read".into()],
+            0,
+            marginalis_domain::UnixMillis::new(6),
+        )
+        .await
+        .expect("client scope ceiling")
+        .revision,
+        1
+    );
+    assert!(matches!(
+        marginalis_application::McpScopeCeilingRepository::replace_client_scope_ceiling(
+            &database,
+            &actor,
+            "unknown-client",
+            &["notes:read".into()],
+            0,
+            marginalis_domain::UnixMillis::new(7),
+        )
+        .await,
+        Err(marginalis_application::McpScopeCeilingRepositoryError::ClientNotFound)
+    ));
 }
 
 #[tokio::test]
@@ -607,8 +846,8 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
         .expect("configured client");
     sqlx::query(
         "INSERT INTO mcp_client_scope_ceilings
-             (issuer, subject, client_id, scopes, updated_at_ms)
-         VALUES (?, ?, ?, ?, ?)",
+             (issuer, subject, client_id, scopes, revision, updated_at_ms)
+         VALUES (?, ?, ?, ?, 1, ?)",
     )
     .bind("https://id.example.test")
     .bind("alice")

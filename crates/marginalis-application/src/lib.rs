@@ -323,13 +323,41 @@ pub struct McpAuthenticatedActor {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct McpStoredScopeCeilings {
-    pub principal: Option<Vec<String>>,
-    pub client: Option<Vec<String>>,
+    pub principal: Option<McpScopeCeilingSetting>,
+    pub client: Option<McpScopeCeilingSetting>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpScopeCeilingSetting {
+    pub scopes: Vec<String>,
+    pub revision: i64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("MCP scope ceiling storage is unavailable")]
-pub struct McpScopeCeilingRepositoryError;
+pub enum McpScopeCeilingRepositoryError {
+    #[error("MCP scope ceiling settings conflict")]
+    Conflict,
+    #[error("stored MCP scope ceiling settings are invalid")]
+    CorruptData,
+    #[error("MCP client was not found")]
+    ClientNotFound,
+    #[error("MCP scope ceiling storage is unavailable")]
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum McpScopeCeilingUseCaseError {
+    #[error("MCP scope ceiling settings are invalid")]
+    Invalid,
+    #[error("MCP scope ceiling settings conflict")]
+    Conflict,
+    #[error("MCP client was not found")]
+    ClientNotFound,
+    #[error("MCP scope ceiling settings are unavailable")]
+    Unavailable,
+    #[error("stored MCP scope ceiling settings are invalid")]
+    CorruptData,
+}
 
 #[async_trait]
 pub trait McpScopeCeilingRepository: Send + Sync {
@@ -338,6 +366,23 @@ pub trait McpScopeCeilingRepository: Send + Sync {
         actor: &Actor,
         client_id: &str,
     ) -> Result<McpStoredScopeCeilings, McpScopeCeilingRepositoryError>;
+
+    async fn replace_principal_scope_ceiling(
+        &self,
+        actor: &Actor,
+        scopes: &[String],
+        expected_revision: i64,
+        now: UnixMillis,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingRepositoryError>;
+
+    async fn replace_client_scope_ceiling(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+        scopes: &[String],
+        expected_revision: i64,
+        now: UnixMillis,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingRepositoryError>;
 }
 
 /// HTML内のノート参照へ付与するtransport固有の公開パス。

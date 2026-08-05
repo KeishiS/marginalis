@@ -120,6 +120,7 @@ CREATE TABLE mcp_principal_scope_ceilings (
     issuer TEXT NOT NULL,
     subject TEXT NOT NULL,
     scopes TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
     updated_at_ms INTEGER NOT NULL,
     PRIMARY KEY (issuer, subject)
 ) STRICT;
@@ -129,6 +130,7 @@ CREATE TABLE mcp_client_scope_ceilings (
     subject TEXT NOT NULL,
     client_id TEXT NOT NULL REFERENCES mcp_clients(client_id),
     scopes TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
     updated_at_ms INTEGER NOT NULL,
     PRIMARY KEY (issuer, subject, client_id)
 ) STRICT;

@@ -12,7 +12,8 @@ use mcp_authorization_server::{
 use crate::{
     Clock, McpAuthenticatedActor, McpAuthorizationClient, McpAuthorizationRequest,
     McpClientMetadataResolver, McpOAuthClient, McpOAuthRepository, McpOAuthUseCaseError,
-    McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingRepository, McpTokenPair,
+    McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingRepository, McpScopeCeilingRepositoryError,
+    McpScopeCeilingSetting, McpScopeCeilingUseCaseError, McpTokenPair,
     McpValidatedAuthorizationRequest, Random,
 };
 
@@ -43,6 +44,7 @@ impl AuthorizationRandom for RandomAdapter {
 pub struct McpOAuthApplication {
     authorization_server: AuthorizationServer,
     scope_ceiling_repository: Arc<dyn McpScopeCeilingRepository>,
+    clock: Arc<dyn Clock>,
 }
 
 impl McpOAuthApplication {
@@ -53,15 +55,17 @@ impl McpOAuthApplication {
         random: Arc<dyn Random>,
         resource_policy: McpResourcePolicy,
     ) -> Self {
+        let authorization_clock = clock.clone();
         Self {
             authorization_server: AuthorizationServer::new(
                 repository,
-                Arc::new(ClockAdapter(clock)),
+                Arc::new(ClockAdapter(authorization_clock)),
                 Arc::new(RandomAdapter(random)),
                 resource_policy,
                 MCP_AUTHORIZATION_CONFIG,
             ),
             scope_ceiling_repository,
+            clock,
         }
     }
 
@@ -124,13 +128,82 @@ impl McpOAuthApplication {
         let ceilings = self
             .authorization_server
             .scope_ceilings(
-                stored.principal.unwrap_or_else(|| supported.to_vec()),
-                stored.client.unwrap_or_else(|| supported.to_vec()),
+                stored
+                    .principal
+                    .map_or_else(|| supported.to_vec(), |setting| setting.scopes),
+                stored
+                    .client
+                    .map_or_else(|| supported.to_vec(), |setting| setting.scopes),
             )
             .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
         self.authorization_server
             .authorize(principal(&actor), request, &ceilings)
             .await
+    }
+
+    pub async fn replace_principal_scope_ceiling(
+        &self,
+        actor: Actor,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        if expected_revision < 0 {
+            return Err(McpScopeCeilingUseCaseError::Invalid);
+        }
+        self.validate_principal_scope_ceiling(&scopes)?;
+        self.scope_ceiling_repository
+            .replace_principal_scope_ceiling(&actor, &scopes, expected_revision, self.clock.now())
+            .await
+            .map_err(map_scope_ceiling_repository_error)
+    }
+
+    pub async fn replace_client_scope_ceiling(
+        &self,
+        actor: Actor,
+        client_id: String,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        if expected_revision < 0 {
+            return Err(McpScopeCeilingUseCaseError::Invalid);
+        }
+        self.validate_client_scope_ceiling(&scopes)?;
+        self.scope_ceiling_repository
+            .replace_client_scope_ceiling(
+                &actor,
+                &client_id,
+                &scopes,
+                expected_revision,
+                self.clock.now(),
+            )
+            .await
+            .map_err(map_scope_ceiling_repository_error)
+    }
+
+    fn validate_principal_scope_ceiling(
+        &self,
+        scopes: &[String],
+    ) -> Result<(), McpScopeCeilingUseCaseError> {
+        self.authorization_server
+            .scope_ceilings(
+                scopes.to_vec(),
+                self.authorization_server.supported_scopes().to_vec(),
+            )
+            .map(|_| ())
+            .map_err(|_| McpScopeCeilingUseCaseError::Invalid)
+    }
+
+    fn validate_client_scope_ceiling(
+        &self,
+        scopes: &[String],
+    ) -> Result<(), McpScopeCeilingUseCaseError> {
+        self.authorization_server
+            .scope_ceilings(
+                self.authorization_server.supported_scopes().to_vec(),
+                scopes.to_vec(),
+            )
+            .map(|_| ())
+            .map_err(|_| McpScopeCeilingUseCaseError::Invalid)
     }
 
     pub async fn exchange_authorization_code(
@@ -200,6 +273,19 @@ impl McpOAuthApplication {
 
 fn principal(actor: &Actor) -> Principal {
     Principal::new(actor.issuer().into(), actor.subject().into())
+}
+
+fn map_scope_ceiling_repository_error(
+    error: McpScopeCeilingRepositoryError,
+) -> McpScopeCeilingUseCaseError {
+    match error {
+        McpScopeCeilingRepositoryError::Conflict => McpScopeCeilingUseCaseError::Conflict,
+        McpScopeCeilingRepositoryError::CorruptData => McpScopeCeilingUseCaseError::CorruptData,
+        McpScopeCeilingRepositoryError::ClientNotFound => {
+            McpScopeCeilingUseCaseError::ClientNotFound
+        }
+        McpScopeCeilingRepositoryError::Unavailable => McpScopeCeilingUseCaseError::Unavailable,
+    }
 }
 
 #[async_trait]
