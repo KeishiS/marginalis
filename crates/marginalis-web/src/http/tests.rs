@@ -1181,7 +1181,20 @@ impl McpOAuthUseCases for TestMcpOAuth {
             display_name: "Consent client".into(),
             registration_method: McpClientRegistrationMethod::Dynamic,
             granted_scopes: vec!["notes:read".into(), "notes:write".into()],
-            scope_ceiling: None,
+            scope_ceiling: marginalis_application::McpEffectiveScopeCeiling {
+                configured: false,
+                setting: McpScopeCeilingSetting {
+                    scopes: vec![
+                        "notes:read".into(),
+                        "notes:write".into(),
+                        "notes:delete".into(),
+                        "bibliography:read".into(),
+                        "bibliography:write".into(),
+                        "bibliography:delete".into(),
+                    ],
+                    revision: 0,
+                },
+            },
             authorized_at: marginalis_domain::UnixMillis::new(1_000),
             last_used_at: Some(marginalis_domain::UnixMillis::new(2_000)),
             active: true,

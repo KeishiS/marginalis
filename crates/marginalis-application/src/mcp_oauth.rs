@@ -11,10 +11,10 @@ use mcp_authorization_server::{
 
 use crate::{
     Clock, McpAuthenticatedActor, McpAuthorizationClient, McpAuthorizationRequest,
-    McpClientAuthorization, McpClientMetadataResolver, McpOAuthClient, McpOAuthRepository,
-    McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingRepository,
-    McpScopeCeilingRepositoryError, McpScopeCeilingSetting, McpScopeCeilingUseCaseError,
-    McpTokenPair, McpValidatedAuthorizationRequest, Random,
+    McpClientAuthorization, McpClientMetadataResolver, McpEffectiveScopeCeiling, McpOAuthClient,
+    McpOAuthRepository, McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy,
+    McpScopeCeilingRepository, McpScopeCeilingRepositoryError, McpScopeCeilingSetting,
+    McpScopeCeilingUseCaseError, McpTokenPair, McpValidatedAuthorizationRequest, Random,
 };
 
 /// MarginalisのMCP Authorization Server設定。
@@ -179,10 +179,39 @@ impl McpOAuthApplication {
         &self,
         actor: Actor,
     ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingUseCaseError> {
+        let supported_scopes = self.authorization_server.supported_scopes();
         self.scope_ceiling_repository
             .client_authorizations(&actor, self.clock.now())
             .await
             .map_err(map_scope_ceiling_repository_error)
+            .map(|authorizations| {
+                authorizations
+                    .into_iter()
+                    .map(|authorization| {
+                        let scope_ceiling_configured = authorization.scope_ceiling.is_some();
+                        let scope_ceiling =
+                            authorization
+                                .scope_ceiling
+                                .unwrap_or_else(|| McpScopeCeilingSetting {
+                                    scopes: supported_scopes.to_vec(),
+                                    revision: 0,
+                                });
+                        McpClientAuthorization {
+                            client_id: authorization.client_id,
+                            display_name: authorization.display_name,
+                            registration_method: authorization.registration_method,
+                            granted_scopes: authorization.granted_scopes,
+                            scope_ceiling: McpEffectiveScopeCeiling {
+                                configured: scope_ceiling_configured,
+                                setting: scope_ceiling,
+                            },
+                            authorized_at: authorization.authorized_at,
+                            last_used_at: authorization.last_used_at,
+                            active: authorization.active,
+                        }
+                    })
+                    .collect()
+            })
     }
 
     pub async fn replace_client_scope_ceiling(

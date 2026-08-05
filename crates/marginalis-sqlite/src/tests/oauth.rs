@@ -138,6 +138,24 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         .authorize(actor("https://id.example.test", "alice"), validated)
         .await
         .expect("authorization code");
+    let authorizations = application
+        .client_authorizations(actor("https://id.example.test", "alice"))
+        .await
+        .expect("client authorizations");
+    assert_eq!(authorizations.len(), 1);
+    assert!(!authorizations[0].scope_ceiling.configured);
+    assert_eq!(
+        authorizations[0].scope_ceiling.setting,
+        McpScopeCeilingSetting {
+            scopes: vec![
+                "notes:read".into(),
+                "notes:write".into(),
+                "notes:delete".into(),
+            ],
+            revision: 0,
+        },
+        "applicationが未設定のクライアント上限を対応scope全体へ解決する"
+    );
     assert_eq!(
         database
             .registered_mcp_client(&client.client_id)

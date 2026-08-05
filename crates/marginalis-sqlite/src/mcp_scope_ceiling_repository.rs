@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use marginalis_application::{
-    McpClientAuthorization, McpClientRegistrationMethod, McpScopeCeilingRepository,
-    McpScopeCeilingRepositoryError, McpScopeCeilingSetting, McpStoredScopeCeilings,
+    McpClientRegistrationMethod, McpScopeCeilingRepository, McpScopeCeilingRepositoryError,
+    McpScopeCeilingSetting, McpStoredClientAuthorization, McpStoredScopeCeilings,
 };
 use marginalis_domain::{Actor, UnixMillis};
 use sqlx::{Row, Sqlite, Transaction};
@@ -16,7 +16,7 @@ impl McpScopeCeilingRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         now: UnixMillis,
-    ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingRepositoryError> {
+    ) -> Result<Vec<McpStoredClientAuthorization>, McpScopeCeilingRepositoryError> {
         let rows = sqlx::query(
             "SELECT clients.client_id, clients.display_name, clients.registration_method,
                     authorizations.granted_scopes, authorizations.authorized_at_ms,
@@ -177,7 +177,7 @@ impl McpScopeCeilingRepository for SqliteDatabase {
 
 fn decode_authorization(
     row: sqlx::sqlite::SqliteRow,
-) -> Result<McpClientAuthorization, McpScopeCeilingRepositoryError> {
+) -> Result<McpStoredClientAuthorization, McpScopeCeilingRepositoryError> {
     let registration_method = match row
         .try_get::<String, _>("registration_method")
         .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?
@@ -201,7 +201,7 @@ fn decode_authorization(
         }),
         _ => return Err(McpScopeCeilingRepositoryError::CorruptData),
     };
-    Ok(McpClientAuthorization {
+    Ok(McpStoredClientAuthorization {
         client_id: row
             .try_get("client_id")
             .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?,
