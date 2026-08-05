@@ -96,8 +96,9 @@
 - **REQ-API-006 — MCP接続解除**: RFC 7009 endpointと、利用者本人の認証を要するREST APIから
   認可を取り消せること。対象のaccess tokenとrefresh tokenを同じtoken family単位で直ちに
   失効すること。
-- **REQ-API-007 — MCP tool契約**: `list_notes`は可視ノートのID、題名、タグ、更新日時、revisionを
-  返し、`get_note`も同じ更新日時を返すこと。`get_note_profile`は、本文と参考文献を相互に移動できる
+- **REQ-API-007 — MCP tool契約**: `list_notes`は可視ノートのID、題名、タグ、更新日時、revision、
+  作成経路、人手確認状態を返し、作成経路と人手確認状態による完全一致の絞り込みを受け付けること。
+  `get_note`も同じ更新情報を返すこと。`get_note_profile`は、本文と参考文献を相互に移動できる
   完全なAsciiDoc文書例と、書誌情報を推測しない注意事項を返すこと。成功時の`text`は
   `structuredContent`と同じ契約型をJSON化した内容とし、不可視なノートの存在や属性を開示しないこと。
   `create_note`と`update_note`は警告を含む入力を変更前に拒否し、重大度と位置を保った診断を

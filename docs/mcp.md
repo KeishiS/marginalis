@@ -51,6 +51,13 @@ Authorization Serverは次を検査します。
 `notes:read`だけを持つtokenで`search_bibliography`を呼び出すと、`bibliography:read`を示す
 `403 insufficient_scope`を返します。
 
+`list_notes`と`get_note`は、ノートを最初に保存した入口を表す`created_via`と、現在のrevisionに対する
+`review_status`を返します。`list_notes`では、これらの値による完全一致の絞り込みも指定できます。
+作成経路はAIの利用を証明する値ではなく、人手確認も内容の正確性を保証しません。MCPから人手確認を
+設定するtoolは提供せず、所有者がWeb UIで現在のrevisionを確認した場合だけ`reviewed`になります。
+全文検索、検索索引、順位付けはMarginalisのMCPへ追加せず、別サービスの
+[連環（Renkan）](research-search-vision.md)が担当します。
+
 同意画面では、クライアントが要求したscopeのうち、許可するものだけを選択できます。選ばなかった
 scopeは認可code、access token、refresh tokenへ記録されません。要求にないscopeを同意画面から追加する
 こともできません。何も選ばずに許可しようとした場合は、scopeを暗黙に補わず、再選択を求めます。
@@ -138,8 +145,9 @@ ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノー�
 
 1. 公開MCP URLだけを指定し、初回challengeが`notes:read`だけを示すことを確認して接続します。metadataの
    発見、client登録、Kanidmへのログインを経て、`notes:read`だけに同意します。
-2. `tools/list`を取得し、ノートの一覧と本文を読み取ります。`update_note`を呼び出し、
-   `notes:read notes:write`を示す追加認可が始まることを確認します。
+2. `tools/list`を取得し、ノートの一覧と本文を読み取ります。作成経路と人手確認状態が表示され、
+   `list_notes`で両方を絞り込めることも確認します。`update_note`を呼び出し、`notes:read notes:write`を
+   示す追加認可が始まることを確認します。
 3. 一度は追加認可を拒否し、更新できず、元のread tokenで閲覧を続けられることを確認します。再度実行して
    `notes:write`にも同意し、新しいtokenで更新できることを確認します。
 4. 試験用ノートを作成して更新し、別の試験利用者へ閲覧権限と編集権限を順に設定します。共有先では
