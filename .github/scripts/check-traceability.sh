@@ -13,7 +13,8 @@ traceability_rows="$temporary_directory/traceability-rows"
 traceability_ids="$temporary_directory/traceability-ids"
 
 grep -oE 'REQ-[A-Z]+-[0-9]{3}' "$requirements" | sort >"$requirement_ids"
-if ! awk -v columns=3 -f .github/scripts/extract-asciidoc-table.awk "$traceability" |
+if ! cargo run --quiet --locked -p marginalis-documentation -- \
+  extract-table-rows --columns 3 --input "$traceability" |
   awk -F '\t' '
   $1 ~ /^REQ-[A-Z]+-[0-9]{3}$/ {
     id = $1
@@ -72,7 +73,8 @@ if [[ -d "$acceptance_directory" ]]; then
       echo "版別受入結果に対象または結果がありません: $result" >&2
       status=1
     fi
-    if ! awk -v columns=4 -f .github/scripts/extract-asciidoc-table.awk "$result" |
+    if ! cargo run --quiet --locked -p marginalis-documentation -- \
+      extract-table-rows --columns 4 --input "$result" |
       awk -F '\t' -v result="$result" '
         $2 == "成功" && $4 !~ /https:\/\// {
           print "成功した受入結果に証跡リンクがありません: " result ": " $1 > "/dev/stderr"

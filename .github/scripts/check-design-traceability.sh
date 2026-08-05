@@ -43,7 +43,8 @@ if ! awk '
 fi
 sort -o "$architecture_ids" "$architecture_ids"
 
-if ! awk -v columns=2 -f .github/scripts/extract-asciidoc-table.awk "$traceability" |
+if ! cargo run --quiet --locked -p marginalis-documentation -- \
+  extract-table-rows --columns 2 --input "$traceability" |
   awk -F '\t' '
   $1 ~ /^ARCH-[A-Z]+-[0-9]{3}$/ {
     identifier = $1
