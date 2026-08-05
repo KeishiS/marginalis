@@ -66,18 +66,23 @@ fn validate_cross_document_xrefs(
         let analysis = engine
             .analyze(source)
             .map_err(|error| format!("文書を解析できません: {}: {error}", path.display()))?;
-        walk(analysis.document(), |node| {
-            if let SemanticNode::Inline(Inline::Text(text)) = node {
+        walk(analysis.document(), |node| match node {
+            SemanticNode::Inline(Inline::Text(text)) => {
                 for macro_name in ["xref:", "link:"] {
                     if !text.value.contains(macro_name) {
                         continue;
                     }
                     errors.push(format!(
-                        "{}: {macro_name}記法が通常の文章として解釈されています。記法の前に空白を置いてください",
-                        relative.display()
-                    ));
+                            "{}: {macro_name}記法が通常の文章として解釈されています。記法の前に空白を置いてください",
+                            relative.display()
+                        ));
                 }
             }
+            SemanticNode::Inline(Inline::Passthrough { .. }) => errors.push(format!(
+                "{}: 人間向け文書ではpassthrough記法を使用できません",
+                relative.display()
+            )),
+            _ => {}
         });
         let mut explicit_ids = analysis
             .document()
@@ -275,5 +280,15 @@ mod tests {
             "= 入口\n\n``xref:guide.adoc#details[詳細]``という記法です。\n",
         )];
         assert!(validate_cross_document_xrefs(Path::new("."), &literal).is_ok());
+    }
+
+    #[test]
+    fn repository_documents_reject_passthrough_markup() {
+        let document = [document("index.adoc", "= 入口\n\n++**++強調++**++\n")];
+        assert!(
+            validate_cross_document_xrefs(Path::new("."), &document)
+                .expect_err("passthrough must be rejected")
+                .contains("passthrough記法")
+        );
     }
 }

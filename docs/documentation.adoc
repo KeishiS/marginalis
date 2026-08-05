@@ -174,7 +174,8 @@ AsciiDoc文書はAdocWeave v0.33.0のstrict profileで解析し、local target�
 
 ``xref:``と``link:``は、前の文章との間に空白を置き、AdocWeaveが記法として認識できる境界へ配置します。
 通常の文章として残った記法らしい文字列は``marginalis-documentation``が拒否します。記法そのものを説明する
-場合はinline codeとして記述します。
+場合はinline codeとして記述します。内容を通常の解析に通さないpassthrough記法は、人間向け文書では
+使用しません。
 
 固定名が必要な``AGENTS.md``にはMarkdownのlink検査を適用します。traceability、release metadata、
 受入索引、観測event対応はAsciiDocの構造に合わせて検査し、文書形式の変更で検査範囲を狭めません。
