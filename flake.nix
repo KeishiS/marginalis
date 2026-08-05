@@ -111,7 +111,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.27.0" = "sha256-oN+lUSri4HPG6Z1gs4hlq1RrduG4TyWBOeNB++llNag=";
+                "adocweave-0.33.0" = "sha256-pK192ra6uJpYIlP+f2pNGafeVEzVhoxxioIUOQnglaQ=";
               };
             };
             cargoBuildFlags = [
@@ -289,8 +289,8 @@
                   migrate-archive --input "$PWD/schema9.json" --output "$PWD/migrated-archive.json"
                 cmp schema9.json schema9-original.json
                 jq -e '
-                  .format == "marginalis-archive-16"
-                  and .adocweave_package_version == "0.27.0"
+                  .format == "marginalis-archive-17"
+                  and .adocweave_package_version == "0.33.0"
                   and .note_profile_version == 5
                   and (.notes | length) == 2
                   and (.note_acl | length) == 2
@@ -551,8 +551,8 @@
                 "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
-                + "jq -e '.format == \"marginalis-archive-16\" "
-                + "and .adocweave_package_version == \"0.27.0\" "
+                + "jq -e '.format == \"marginalis-archive-17\" "
+                + "and .adocweave_package_version == \"0.33.0\" "
                 + "and .note_profile_version == 5 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
                 + "test $(stat -c %a \"$backup\") = 700; "

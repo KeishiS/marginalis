@@ -1,7 +1,7 @@
 //! Marginalis note profileで使うAdocWeave設定の単一正本。
 
 use adocweave::output::diagnostics::{
-    LintRuleId, MACRO_BOUNDARY, RuleSettings, Severity, lint_rule,
+    LintRuleId, MACRO_BOUNDARY, MONOSPACE_BOUNDARY, RuleSettings, Severity, lint_rule,
 };
 use adocweave::output::html::{
     MathLanguagePolicy, RenderPolicy, ResourceCapabilities, SourceLanguagePolicy,
@@ -76,6 +76,13 @@ pub(crate) fn analysis_options() -> AnalysisOptions {
             severity: Severity::Warning,
         },
     );
+    diagnostics.lint.set_rule(
+        MONOSPACE_BOUNDARY,
+        RuleSettings {
+            enabled: true,
+            severity: Severity::Warning,
+        },
+    );
     // 条件分岐と取り込みのdirectiveを、保存を拒む問題として報告させる。0.26.0までは
     // `ifeval::`が名前付きマクロとして読まれ、許可しないURL schemeとして拒否されていた。
     // 0.27.0で字句として認識されるようになり、既定では警告も出なくなったため、ここで
@@ -145,7 +152,9 @@ pub(crate) fn html_is_within_output_limits(html: &str, limits: &OutputLimits) ->
 
 #[cfg(test)]
 mod tests {
-    use adocweave::output::diagnostics::{ASCIIDOC_FILE_LINK, MACRO_BOUNDARY, NON_ASCIIDOC_XREF};
+    use adocweave::output::diagnostics::{
+        ASCIIDOC_FILE_LINK, MACRO_BOUNDARY, MONOSPACE_BOUNDARY, NON_ASCIIDOC_XREF,
+    };
 
     use super::*;
 
@@ -158,6 +167,11 @@ mod tests {
         assert!(analysis.diagnostics.lint.rule(MACRO_BOUNDARY).enabled);
         assert_eq!(
             analysis.diagnostics.lint.rule(MACRO_BOUNDARY).severity,
+            Severity::Warning
+        );
+        assert!(analysis.diagnostics.lint.rule(MONOSPACE_BOUNDARY).enabled);
+        assert_eq!(
+            analysis.diagnostics.lint.rule(MONOSPACE_BOUNDARY).severity,
             Severity::Warning
         );
 

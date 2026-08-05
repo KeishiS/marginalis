@@ -386,6 +386,37 @@ mod tests {
     }
 
     #[test]
+    fn monospace_boundary_is_a_non_blocking_warning() {
+        let source = "= 調査結果\n\n本文は`code`です。";
+        let validated = validate_draft(NoteDraft {
+            source: source.into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect("warning does not reject a draft");
+        let warning = validated
+            .diagnostics
+            .iter()
+            .find(|item| item.code == "monospace-boundary")
+            .expect("monospace boundary warning");
+        assert_eq!(warning.severity, NoteAdvisorySeverity::Warning);
+
+        let corrected = source.replace("`code`", "``code``");
+        let validated = validate_draft(NoteDraft {
+            source: corrected,
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect("corrected draft");
+        assert!(
+            validated
+                .diagnostics
+                .iter()
+                .all(|item| item.code != "monospace-boundary")
+        );
+    }
+
+    #[test]
     fn multiline_list_item_preserves_a_warning_range_on_its_continuation_line() {
         let source = concat!(
             "= 調査結果\n\n",

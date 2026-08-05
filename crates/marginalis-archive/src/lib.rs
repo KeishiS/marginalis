@@ -19,7 +19,7 @@ use marginalis_domain::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-16";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-17";
 /// archive内のノートを受理できる入力規則の版。
 ///
 /// 受理する本文が変わったときに上げます。版4までのノートはタグを`:tags:`で並べていました。
@@ -29,19 +29,53 @@ pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 5;
 ///
 /// これ以下の版で書き出したarchiveは、本文の属性名を現行の名前へ直してから再検証します。
 const UNPREFIXED_ATTRIBUTE_PROFILE_VERSION: u32 = 4;
+#[derive(Clone, Copy, Debug)]
+struct MigrationContract {
+    format: &'static str,
+    adocweave_package_version: &'static str,
+    note_profile_version: u32,
+    has_provenance: bool,
+    has_bibliography_import_baseline: bool,
+}
+
+const fn migration_contract(
+    format: &'static str,
+    adocweave_package_version: &'static str,
+    note_profile_version: u32,
+    has_provenance: bool,
+    has_bibliography_import_baseline: bool,
+) -> MigrationContract {
+    MigrationContract {
+        format,
+        adocweave_package_version,
+        note_profile_version,
+        has_provenance,
+        has_bibliography_import_baseline,
+    }
+}
+
+/// ノートの作成経路と人手確認記録を持たない最後の形式。
+#[cfg(test)]
+const PRE_PROVENANCE_CONTRACT: MigrationContract =
+    migration_contract("marginalis-archive-14", "0.27.0", 5, false, false);
+/// 直前の現行形式。AdocWeave更新時の再検証を試験する。
+#[cfg(test)]
+const LATEST_MIGRATION_CONTRACT: MigrationContract =
+    migration_contract("marginalis-archive-16", "0.27.0", 5, true, true);
 /// 移行元として受理する旧archive契約。形式、AdocWeave package版、note profile版の組。
-const SUPPORTED_MIGRATION_CONTRACTS: &[(&str, &str, u32)] = &[
-    ("marginalis-archive-15", "0.27.0", 5),
-    ("marginalis-archive-14", "0.27.0", 5),
-    ("marginalis-archive-13", "0.27.0", 5),
-    ("marginalis-archive-13", "0.23.0", 5),
-    ("marginalis-archive-13", "0.23.0", 4),
-    ("marginalis-archive-12", "0.22.0", 4),
-    ("marginalis-archive-11", "0.20.0", 4),
-    ("marginalis-archive-10", "0.20.0", 4),
-    ("marginalis-archive-9", "0.19.0", 4),
-    ("marginalis-archive-8", "0.17.0", 4),
-    ("marginalis-archive-7", "0.11.0", 3),
+const SUPPORTED_MIGRATION_CONTRACTS: &[MigrationContract] = &[
+    migration_contract("marginalis-archive-16", "0.27.0", 5, true, true),
+    migration_contract("marginalis-archive-15", "0.27.0", 5, true, false),
+    migration_contract("marginalis-archive-14", "0.27.0", 5, false, false),
+    migration_contract("marginalis-archive-13", "0.27.0", 5, false, false),
+    migration_contract("marginalis-archive-13", "0.23.0", 5, false, false),
+    migration_contract("marginalis-archive-13", "0.23.0", 4, false, false),
+    migration_contract("marginalis-archive-12", "0.22.0", 4, false, false),
+    migration_contract("marginalis-archive-11", "0.20.0", 4, false, false),
+    migration_contract("marginalis-archive-10", "0.20.0", 4, false, false),
+    migration_contract("marginalis-archive-9", "0.19.0", 4, false, false),
+    migration_contract("marginalis-archive-8", "0.17.0", 4, false, false),
+    migration_contract("marginalis-archive-7", "0.11.0", 3, false, false),
 ];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -333,29 +367,27 @@ pub fn migrate_previous_archive(
     content: &dyn NoteContent,
     archive: &Archive,
 ) -> Result<Archive, ArchiveMigrationError> {
-    let is_supported = SUPPORTED_MIGRATION_CONTRACTS.iter().any(
-        |&(format, adocweave_package_version, note_profile_version)| {
-            archive.format == format
-                && archive.adocweave_package_version == adocweave_package_version
-                && archive.note_profile_version == note_profile_version
-        },
-    );
-    if !is_supported {
-        return Err(ArchiveMigrationError::UnsupportedContract);
-    }
-    if !archive.bibliography_import_sources.is_empty()
-        || !archive.bibliography_import_links.is_empty()
+    let contract = SUPPORTED_MIGRATION_CONTRACTS
+        .iter()
+        .find(|contract| {
+            archive.format == contract.format
+                && archive.adocweave_package_version == contract.adocweave_package_version
+                && archive.note_profile_version == contract.note_profile_version
+        })
+        .ok_or(ArchiveMigrationError::UnsupportedContract)?;
+    if !contract.has_bibliography_import_baseline
+        && (!archive.bibliography_import_sources.is_empty()
+            || !archive.bibliography_import_links.is_empty())
     {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
-    let provenance_expected = archive.format == "marginalis-archive-15";
     if let Some((position, _)) = archive
         .notes
         .iter()
         .enumerate()
-        .find(|(_, note)| note.provenance.is_some() != provenance_expected)
+        .find(|(_, note)| note.provenance.is_some() != contract.has_provenance)
     {
-        // archive 15より前の契約には来歴項目がなく、archive 15には必ず存在する。契約を
+        // archive 15より前の契約には来歴項目がなく、archive 15以降には必ず存在する。契約を
         // 混在させた入力から、根拠のない作成経路や人手確認を引き継がない。
         return Err(ArchiveMigrationError::InvalidNote {
             position: position + 1,
@@ -822,6 +854,13 @@ mod tests {
         );
         assert_eq!(validate_archive(&content(), &archive), Ok(snapshot));
 
+        let mut previous = archive.clone();
+        stamp_contract(&mut previous, LATEST_MIGRATION_CONTRACT);
+        assert_eq!(
+            migrate_previous_archive(&content(), &previous),
+            Ok(archive.clone())
+        );
+
         let mut noncanonical_digest = archive;
         noncanonical_digest.bibliography_import_links[0].imported_digest_sha256 = "AB".repeat(32);
         assert_eq!(
@@ -904,8 +943,7 @@ mod tests {
     fn archive_14_without_provenance_migrates_to_explicit_unknown_values() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
-        previous.format = "marginalis-archive-14".into();
-        previous.notes[0].provenance = None;
+        stamp_contract(&mut previous, PRE_PROVENANCE_CONTRACT);
 
         assert_eq!(
             validate_archive(&content(), &previous),
@@ -922,19 +960,20 @@ mod tests {
     ///
     /// 属性名の書き換えを確かめる試験は、書き換えの対象になる版を名指す必要がある。移行元の
     /// 一覧の先頭を使うと、新しい契約を加えたときに対象が変わってしまう。
-    const UNPREFIXED_CONTRACT: (&str, &str, u32) = (
+    const UNPREFIXED_CONTRACT: MigrationContract = migration_contract(
         "marginalis-archive-13",
         "0.23.0",
         UNPREFIXED_ATTRIBUTE_PROFILE_VERSION,
+        false,
+        false,
     );
 
     /// archiveの契約identityを、指定した過去の組へ書き換える。
-    fn stamp_contract(archive: &mut Archive, contract: (&str, &str, u32)) {
-        let (format, package_version, note_profile_version) = contract;
-        archive.format = format.into();
-        archive.adocweave_package_version = package_version.into();
-        archive.note_profile_version = note_profile_version;
-        if format != "marginalis-archive-15" {
+    fn stamp_contract(archive: &mut Archive, contract: MigrationContract) {
+        archive.format = contract.format.into();
+        archive.adocweave_package_version = contract.adocweave_package_version.into();
+        archive.note_profile_version = contract.note_profile_version;
+        if !contract.has_provenance {
             for note in &mut archive.notes {
                 note.provenance = None;
             }
@@ -961,7 +1000,7 @@ mod tests {
             let mut historical = current.clone();
             stamp_contract(&mut historical, *contract);
 
-            let expected = if contract.0 == "marginalis-archive-15" {
+            let expected = if contract.has_provenance {
                 current.clone()
             } else {
                 expected.clone()
@@ -984,7 +1023,7 @@ mod tests {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut historical = create_archive(&content(), &snapshot);
         let provenance = historical.notes[0].provenance.clone();
-        stamp_contract(&mut historical, SUPPORTED_MIGRATION_CONTRACTS[1]);
+        stamp_contract(&mut historical, PRE_PROVENANCE_CONTRACT);
         historical.notes[0].provenance = provenance;
 
         assert_eq!(
@@ -1057,7 +1096,7 @@ mod tests {
     fn migration_revalidates_source_under_the_current_profile() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
-        stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        stamp_contract(&mut previous, LATEST_MIGRATION_CONTRACT);
         previous.notes[0].source =
             "= A title\n:source-language: rust\n:marginalis-tags: {source-language}\n\nbody".into();
 
@@ -1070,10 +1109,10 @@ mod tests {
     fn migration_rejects_a_mixed_historical_contract_identity() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut mixed = create_archive(&content(), &snapshot);
-        stamp_contract(&mut mixed, SUPPORTED_MIGRATION_CONTRACTS[0]);
-        let (_, oldest_package_version, _) =
+        stamp_contract(&mut mixed, LATEST_MIGRATION_CONTRACT);
+        let oldest_contract =
             SUPPORTED_MIGRATION_CONTRACTS[SUPPORTED_MIGRATION_CONTRACTS.len() - 1];
-        mixed.adocweave_package_version = oldest_package_version.into();
+        mixed.adocweave_package_version = oldest_contract.adocweave_package_version.into();
 
         assert_eq!(
             migrate_previous_archive(&content(), &mixed),
@@ -1085,7 +1124,7 @@ mod tests {
     fn migration_rejects_source_that_does_not_satisfy_the_current_profile() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
-        stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        stamp_contract(&mut previous, LATEST_MIGRATION_CONTRACT);
         previous.notes[0].source = concat!(
             "= A title\n:marginalis-tags: research, + \\",
             "\n  rust\n\nbody"
@@ -1102,7 +1141,7 @@ mod tests {
     fn migration_reports_inconsistent_note_and_acl_positions_without_identifiers() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
-        stamp_contract(&mut previous, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        stamp_contract(&mut previous, LATEST_MIGRATION_CONTRACT);
 
         previous.notes.push(previous.notes[0].clone());
         assert_eq!(
