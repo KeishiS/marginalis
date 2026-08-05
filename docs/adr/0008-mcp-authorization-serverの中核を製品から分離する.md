@@ -24,7 +24,7 @@ grant、保存先は混在させません。
 ## 決定
 
 MCP Authorization Serverの中核を、製品非依存のworkspace crate
-`mcp-authorization-server`へ分離します。v0.27.0ではこのcrateをMarginalisリポジトリに置き、
+`mcp-authorization-server`へ分離します。独立配布を決定するまでは、このcrateをMarginalisリポジトリに置き、
 Marginalisの同一プロセスへ組み込みます。独立したdaemon、ネットワーク越しのtoken introspection、
 外部Authorization Serverとの切替は導入しません。
 
@@ -79,10 +79,10 @@ SQLite adapterはMarginalisに残し、既存schemaと保存値を維持しま�
 OAuthの安全性に関わる状態遷移を一か所で保守でき、Marginalis固有のノート操作を読み解かずに試験できます。
 Marginalisは引き続き内蔵Authorization Serverを配備するため、運用方法と即時取消の性質は変わりません。
 
-v0.27.0ではcrateの外部公開APIと配布方法を確定しません。後続のscope上限、書誌scope分離、部分同意、
-段階的認可を新しい境界で実装し、別の利用側でも過不足なく使えることを確認した後、独立リポジトリ、
-registry、固定したGit dependencyを比較します。独立リポジトリへ早期に移して、不安定な公開APIを
-複数の利用側で固定することは避けます。
+crateの外部公開APIと配布方法は、workspace内の境界とrepository契約試験を確認した後に
+[#314](https://github.com/KeishiS/marginalis/issues/314)で決定します。独立リポジトリ、registry、固定した
+Git dependencyを比較し、不安定な公開APIを複数の利用側で早期に固定することは避けます。現在の版管理と
+更新手順は[保守文書](../mcp-authorization-server-maintenance.md)に記載します。
 
 ## 代替案
 
