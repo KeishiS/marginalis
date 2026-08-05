@@ -42,27 +42,34 @@ Kanidm を使う場合は `caCertificateFile` に PEM trust anchor を指定し�
 に適用します。
 SQLiteデータベースは`dataDir`（既定値`/var/lib/marginalis`）直下の`marginalis.sqlite`に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、`dataDir`自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは18です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは19です。旧versionを起動時に自動移行しません。
 
-schema 17から更新する場合は、更新前に`export-archive`を実行し、新しい版の空の`dataDir`へ
-`import-archive`してください。MCPの認可済みクライアント、scope上限、tokenはarchiveへ含まれないため、
-更新後にクライアントを接続し直して設定してください。
+schema 18から更新する場合は、v0.30.1の実行環境で`export-archive`を実行します。出力したarchive 14を
+v0.31.0の`migrate-archive`でarchive 15へ変換し、`verify-restore`で検証してから、新しい版の空の
+`dataDir`へ`import-archive`してください。MCPのclient登録とtokenはarchiveへ含まれないため、更新後に
+クライアントを接続し直します。旧ノートの作成経路と過去の人手確認状態は推測せず、不明として移行します。
 
-schema 16から更新する場合は、更新前に`export-archive`を実行し、新しい版の空の`dataDir`へ
-`import-archive`してください。MCP clientとtokenはarchiveへ含まれないため、更新後に接続し直します。
-schema 17で追加したscope上限は既定値から始まり、更新後に利用者が設定します。
+schema 17から更新する場合は、更新前に`export-archive`を実行し、現行の`migrate-archive`で
+archive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。MCPの認可済み
+クライアント、scope上限、tokenはarchiveへ含まれないため、更新後にクライアントを接続し直して
+設定してください。
+
+schema 16から更新する場合も、更新前に`export-archive`を実行し、現行の`migrate-archive`で
+archive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。MCP clientと
+tokenはarchiveへ含まれないため、更新後に接続し直します。schema 17で追加したscope上限は既定値から
+始まり、更新後に利用者が設定します。
 
 schema 15から更新する場合は、更新前に`export-archive`を実行し、出力したarchive 13を
 `migrate-archive`でarchive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`します。
 MCP clientとtokenはarchiveへ含まれないため、更新後に接続し直します。
 
-schema 13から更新する場合も、更新前に`export-archive`を実行し、新しい版で空の`dataDir`へ
-`import-archive`してください。
+schema 13から更新する場合も、更新前に`export-archive`を実行し、現行の`migrate-archive`で
+archive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`してください。
 
 v0.21.0以前のschema 12から更新する場合は、更新前の実行環境で`export-archive`を実行し、
-新しい版で空の`dataDir`へ`import-archive`で取り込んでください。archiveの形式は変わらないため、
-`migrate-archive`は不要です。schema 13では、本文が`cite:`で名指したcitation keyを関係の図の
-ために索引として保存します。取り込みのときに本文から作り直します。
+現行の`migrate-archive`でarchive 15へ変換してから、新しい版の空の`dataDir`へ`import-archive`で
+取り込んでください。本文が`cite:`で名指したcitation keyの索引は、取り込みのときに本文から
+作り直します。
 
 v0.22.0以前が作成したarchiveから更新する場合は、`migrate-archive`が必要です。ノートのタグを
 並べる文書属性の名前が`:tags:`から`:marginalis-tags:`へ変わったため、以前の本文をそのまま
