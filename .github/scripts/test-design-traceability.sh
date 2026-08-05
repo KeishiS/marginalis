@@ -17,6 +17,7 @@ EOF
 
 write_valid_traceability() {
   cat >"$work_directory/traceability.adoc" <<'EOF'
+[cols="1,1"]
 |===
 |設計条件ID
 |主な自動検証
@@ -44,6 +45,7 @@ fi
 
 write_valid_architecture
 cat >"$work_directory/traceability.adoc" <<'EOF'
+[cols="1,1"]
 |===
 |設計条件ID
 |主な自動検証
@@ -72,6 +74,7 @@ fi
 
 write_valid_architecture
 cat >"$work_directory/traceability.adoc" <<'EOF'
+[cols="1,1"]
 |===
 |設計条件ID
 |主な自動検証
@@ -88,6 +91,7 @@ if bash "$script_directory/check-design-traceability.sh" \
 fi
 
 cat >"$work_directory/traceability.adoc" <<'EOF'
+[cols="1,1"]
 |===
 |設計条件ID
 |主な自動検証

@@ -19,7 +19,7 @@ https://github.com/KeishiS/marginalis/issues/314[Issue 314]で決定します。
 
 == 責務の境界
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |対象
 |責務

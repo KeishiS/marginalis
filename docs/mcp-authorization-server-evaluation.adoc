@@ -32,7 +32,7 @@ Marginalis以外のシステムへの適性は扱いません。
 評価環境に次の利用者を用意します。``subject``は候補ごとに異なっても構いませんが、同じ役割との対応を
 記録します。
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |利用者
 |group
@@ -58,7 +58,7 @@ Marginalis以外のシステムへの適性は扱いません。
 
 各クライアントについて、次の認可を別々に確認します。
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |認可
 |scope
@@ -147,7 +147,7 @@ Auth0側には、次の値を設定します。API identifierはMarginalisの公
 送る``resource``をAPI identifierと同じ対象へ結び付けます。Maximum Access Token Lifetimeは評価時に
 ``300``秒とし、Refresh Token RotationとAllow Offline Accessを有効にします。
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |設定
 |値
@@ -199,7 +199,7 @@ tenant名、client ID、秘密情報はリポジトリへ保存しません。
 Auth0の設定項目は、API、Enterprise Connection、tenant、Universal Loginに分かれています。
 MCPクライアントの画面に一般的な接続失敗だけが表示される場合は、次の順序で確認します。
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |症状
 |原因

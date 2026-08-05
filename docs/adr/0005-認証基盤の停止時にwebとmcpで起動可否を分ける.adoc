@@ -46,7 +46,7 @@ requestはすべて拒否されるため実害は出ませんが、認証基盤�
 
 == 代替案
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |選択肢
 |評価

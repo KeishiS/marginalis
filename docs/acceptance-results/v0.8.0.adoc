@@ -9,7 +9,7 @@
 
 == 結果
 
-[cols=",,,",options="header",]
+[cols="1,1,1,1",options="header",]
 |===
 |区分
 |結果

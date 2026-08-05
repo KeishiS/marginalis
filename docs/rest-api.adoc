@@ -17,7 +17,7 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 
 == 主な接続先
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |操作
 |接続先
@@ -128,7 +128,7 @@ TeX packageは``base``、``ams``、``newcommand``、``textmacros``、``noundefin
 導きます。ここに無い値は``unsupported_citation_style``として保存を拒否します。任意のCSLスタイル名
 （``apa``など）は受け付けず、サーバー上でCSLを実行しません。
 
-[cols=",,,",options="header",]
+[cols="1,1,1,1",options="header",]
 |===
 |値
 |本文中の引用

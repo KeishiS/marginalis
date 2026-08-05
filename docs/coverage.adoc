@@ -15,7 +15,7 @@ nix develop --command cargo make coverage
 
 ``target/coverage/``へ次のファイルを生成し、同じ概要を標準出力にも表示します。
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |ファイル
 |内容

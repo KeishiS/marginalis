@@ -9,6 +9,7 @@ cat >"$work_dir/requirements.adoc" <<'EOF'
 * *REQ-TST-001 — 試験要件*: 検証できること。
 EOF
 cat >"$work_dir/traceability.adoc" <<'EOF'
+[cols="1,1,1"]
 |===
 |要件
 |自動検証
@@ -22,6 +23,7 @@ bash "$script_dir/check-traceability.sh" \
   "$work_dir/requirements.adoc" "$work_dir/traceability.adoc" "$work_dir/no-acceptance"
 
 cat >"$work_dir/traceability.adoc" <<'EOF'
+[cols="1,1,1"]
 |===
 |要件
 |自動検証
@@ -39,6 +41,7 @@ if bash "$script_dir/check-traceability.sh" \
 fi
 
 cat >"$work_dir/traceability.adoc" <<'EOF'
+[cols="1,1,1"]
 |===
 |要件
 |自動検証

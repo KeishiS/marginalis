@@ -12,7 +12,7 @@ MarginalisはMCPのProtected ResourceとAuthorization Serverを同じ公開base 
 
 MCPを有効にすると、主に次のendpointを公開します。
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |用途
 |endpoint
@@ -49,7 +49,7 @@ redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を
 * 43文字のS256 challengeと、43文字以上128文字以下のPKCE verifier。
 * 一度だけ使える認可codeとrefresh token。
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |scope
 |許可する操作
