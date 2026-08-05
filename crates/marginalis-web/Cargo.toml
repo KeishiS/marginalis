@@ -10,6 +10,7 @@ build = "build.rs"
 [dependencies]
 axum = { workspace = true, features = ["form", "matched-path"] }
 base64.workspace = true
+hmac.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-contract = { path = "../marginalis-contract" }
 marginalis-domain = { path = "../marginalis-domain" }
@@ -17,6 +18,7 @@ mcp-authorization-server = { path = "../mcp-authorization-server" }
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 time.workspace = true

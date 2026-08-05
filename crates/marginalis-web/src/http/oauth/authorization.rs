@@ -1,21 +1,24 @@
 //! Marginalisが提供するMCP OAuth authorization server境界。
 
 use axum::{
-    Form, Json,
+    Json,
     body::Bytes,
     extract::{RawQuery, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use hmac::{Hmac, Mac};
 use marginalis_application::{
     McpAuthorizationRequest, McpOAuthUseCaseError, McpValidatedAuthorizationRequest,
 };
 use marginalis_contract::ProblemCode;
-use serde::Deserialize;
+use sha2::Sha256;
 
 use super::super::{
     auth::{
-        CSRF_COOKIE, authenticated_actor, authenticated_form_actor, cookie_value, external_path,
+        CSRF_COOKIE, SESSION_COOKIE, authenticated_actor, authenticated_form_actor, cookie_value,
+        external_path,
     },
     error::{HandlerResult, problem},
     html::{escape_html, page_document},
@@ -92,7 +95,6 @@ impl McpAuthorizeInput {
     }
 }
 
-#[derive(Deserialize)]
 pub(crate) struct McpAuthorizeForm {
     client_id: String,
     redirect_uri: Option<String>,
@@ -101,7 +103,54 @@ pub(crate) struct McpAuthorizeForm {
     code_challenge: String,
     state: Option<String>,
     csrf_token: String,
+    consent_signature: String,
+    selected_scopes: Vec<String>,
     decision: String,
+}
+
+impl McpAuthorizeForm {
+    fn parse(body: &[u8]) -> Option<Self> {
+        let mut values = std::collections::HashMap::new();
+        let mut selected_scopes = Vec::new();
+        for (name, value) in url::form_urlencoded::parse(body) {
+            if name == "selected_scope" {
+                if value.is_empty() {
+                    return None;
+                }
+                selected_scopes.push(value.into_owned());
+                continue;
+            }
+            if !matches!(
+                name.as_ref(),
+                "client_id"
+                    | "redirect_uri"
+                    | "resource"
+                    | "scope"
+                    | "code_challenge"
+                    | "state"
+                    | "csrf_token"
+                    | "consent_signature"
+                    | "decision"
+            ) || values
+                .insert(name.into_owned(), value.into_owned())
+                .is_some()
+            {
+                return None;
+            }
+        }
+        Some(Self {
+            client_id: values.remove("client_id")?,
+            redirect_uri: values.remove("redirect_uri"),
+            resource: values.remove("resource")?,
+            scope: values.remove("scope")?,
+            code_challenge: values.remove("code_challenge")?,
+            state: values.remove("state"),
+            csrf_token: values.remove("csrf_token")?,
+            consent_signature: values.remove("consent_signature")?,
+            selected_scopes,
+            decision: values.remove("decision")?,
+        })
+    }
 }
 
 pub(crate) async fn mcp_authorize(
@@ -240,7 +289,15 @@ async fn mcp_authorize_request(
         )
         .into_response()
     })?;
-    Ok(consent_page(state, &input, &validated, &csrf))
+    let session_id = cookie_value(headers, SESSION_COOKIE).expect("authenticated session exists");
+    Ok(consent_page(
+        state,
+        &input,
+        &validated,
+        &csrf,
+        &session_id,
+        None,
+    ))
 }
 
 fn login_redirect(
@@ -288,6 +345,8 @@ fn consent_page(
     input: &McpAuthorizeInput,
     request: &McpValidatedAuthorizationRequest,
     csrf: &str,
+    signature_key: &str,
+    selection_error: Option<&str>,
 ) -> Response {
     let consent_path = external_path(&state.cookie_path, "/oauth/authorize/consent");
     let redirect = url::Url::parse(request.redirect_uri.as_str()).ok();
@@ -308,9 +367,9 @@ fn consent_page(
             "</div></section>",
         ),
         client_summary = consent_client_summary(request, redirect_host),
-        scope_section = consent_scope_section(&request.scopes),
+        scope_section = consent_scope_section(&request.scopes, selection_error),
         loopback_warning = consent_loopback_warning(redirect.as_ref()),
-        consent_form = consent_form(&consent_path, input, request, csrf),
+        consent_form = consent_form(&consent_path, input, request, csrf, signature_key),
     );
     Html(page_document(
         "MCPクライアントの認可",
@@ -341,7 +400,15 @@ fn consent_client_summary(
     )
 }
 
-fn consent_scope_section(scopes: &[String]) -> String {
+fn consent_scope_section(scopes: &[String], selection_error: Option<&str>) -> String {
+    let error = selection_error
+        .map(|message| {
+            format!(
+                "<p class=\"problem-message\" role=\"alert\">{}</p>",
+                escape_html(message)
+            )
+        })
+        .unwrap_or_default();
     let content = if scopes.is_empty() {
         "<p class=\"state-message\">要求された権限はありません。</p>".into()
     } else {
@@ -349,9 +416,15 @@ fn consent_scope_section(scopes: &[String]) -> String {
             .iter()
             .map(|scope| {
                 format!(
-                    "<li><code>{}</code><span>{}</span></li>",
-                    escape_html(scope),
-                    scope_description(scope)
+                    concat!(
+                        "<li><label>",
+                        "<input type=\"checkbox\" name=\"selected_scope\" value=\"{scope}\" ",
+                        "form=\"oauth-consent-form\" checked>",
+                        "<span><code>{scope}</code><span>{description}</span></span>",
+                        "</label></li>",
+                    ),
+                    scope = escape_html(scope),
+                    description = scope_description(scope),
                 )
             })
             .collect::<String>();
@@ -360,21 +433,25 @@ fn consent_scope_section(scopes: &[String]) -> String {
     format!(
         concat!(
             "<section class=\"oauth-scope-section\" aria-labelledby=\"oauth-scope-heading\">",
-            "<h2 id=\"oauth-scope-heading\">要求された権限</h2>",
-            "{content}</section>",
+            "<h2 id=\"oauth-scope-heading\">許可する権限</h2>",
+            "<p>このクライアントに許可する操作を選択してください。</p>",
+            "{error}{content}</section>",
         ),
+        error = error,
         content = content,
     )
 }
 
 fn scope_description(scope: &str) -> &'static str {
     match scope {
-        "notes:read" => "ノートの一覧と本文を読み取ります。",
-        "notes:write" => "ノートを作成し、本文を更新します。",
-        "notes:delete" => "ノートを削除します。",
-        "bibliography:read" => "書誌情報を検索します。",
-        "bibliography:write" => "書誌情報を追加します。",
-        "bibliography:delete" => "書誌情報を削除します。",
+        "notes:read" => "list_notes、get_note、get_note_profileでノートを読み取ります。",
+        "notes:write" => "create_note、update_note、get_note_profileでノートを作成・更新します。",
+        "notes:delete" => "delete_noteでノートを削除します。",
+        "bibliography:read" => "search_bibliographyで書誌情報を検索します。",
+        "bibliography:write" => {
+            "add_bibliography_item、add_bibliography_itemsで書誌情報を追加します。"
+        }
+        "bibliography:delete" => "delete_bibliography_itemで書誌情報を削除します。",
         _ => "このクライアントが要求した権限です。",
     }
 }
@@ -397,6 +474,7 @@ fn consent_form(
     input: &McpAuthorizeInput,
     request: &McpValidatedAuthorizationRequest,
     csrf: &str,
+    signature_key: &str,
 ) -> String {
     let mut fields = hidden_input("client_id", &request.client.client_id);
     if request.redirect_uri.was_supplied() {
@@ -409,9 +487,13 @@ fn consent_form(
         fields.push_str(&hidden_input("state", state));
     }
     fields.push_str(&hidden_input("csrf_token", csrf));
+    fields.push_str(&hidden_input(
+        "consent_signature",
+        &consent_signature(signature_key, input, request),
+    ));
     format!(
         concat!(
-            "<form class=\"oauth-consent-actions\" method=\"post\" action=\"{action}\">",
+            "<form id=\"oauth-consent-form\" class=\"oauth-consent-actions\" method=\"post\" action=\"{action}\">",
             "{fields}",
             "<button class=\"button button-primary\" name=\"decision\" value=\"approve\">許可する</button>",
             "<button class=\"button button-secondary\" name=\"decision\" value=\"deny\">拒否する</button>",
@@ -420,6 +502,64 @@ fn consent_form(
         action = escape_html(consent_path),
         fields = fields,
     )
+}
+
+/// HttpOnlyのsession IDを鍵にして、同意画面へ表示した要求を同じsessionへ結び付ける。
+fn consent_signature(
+    signature_key: &str,
+    input: &McpAuthorizeInput,
+    request: &McpValidatedAuthorizationRequest,
+) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(signature_key.as_bytes())
+        .expect("HMAC accepts keys of every size");
+    update_signature(&mut mac, &request.client.client_id);
+    update_signature(
+        &mut mac,
+        if request.redirect_uri.was_supplied() {
+            "1"
+        } else {
+            "0"
+        },
+    );
+    update_signature(&mut mac, request.redirect_uri.as_str());
+    update_signature(&mut mac, &request.resource_uri);
+    update_signature(&mut mac, &request.scopes.join(" "));
+    update_signature(&mut mac, &request.code_challenge);
+    update_signature(&mut mac, input.state.as_deref().unwrap_or_default());
+    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+}
+
+fn verify_consent_signature(
+    signature_key: &str,
+    input: &McpAuthorizeInput,
+    request: &McpValidatedAuthorizationRequest,
+    signature: &str,
+) -> bool {
+    let Ok(signature) = URL_SAFE_NO_PAD.decode(signature) else {
+        return false;
+    };
+    let mut mac = Hmac::<Sha256>::new_from_slice(signature_key.as_bytes())
+        .expect("HMAC accepts keys of every size");
+    update_signature(&mut mac, &request.client.client_id);
+    update_signature(
+        &mut mac,
+        if request.redirect_uri.was_supplied() {
+            "1"
+        } else {
+            "0"
+        },
+    );
+    update_signature(&mut mac, request.redirect_uri.as_str());
+    update_signature(&mut mac, &request.resource_uri);
+    update_signature(&mut mac, &request.scopes.join(" "));
+    update_signature(&mut mac, &request.code_challenge);
+    update_signature(&mut mac, input.state.as_deref().unwrap_or_default());
+    mac.verify_slice(&signature).is_ok()
+}
+
+fn update_signature(mac: &mut Hmac<Sha256>, value: &str) {
+    mac.update(&value.len().to_be_bytes());
+    mac.update(value.as_bytes());
 }
 
 fn hidden_input(name: &str, value: &str) -> String {
@@ -443,8 +583,22 @@ fn is_loopback_redirect(url: &url::Url) -> bool {
 pub(crate) async fn mcp_authorize_consent(
     State(state): State<ApiState>,
     headers: HeaderMap,
-    Form(form): Form<McpAuthorizeForm>,
+    body: Bytes,
 ) -> Result<Response, Response> {
+    if !content_type_is(&headers, "application/x-www-form-urlencoded") {
+        return Err(oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization consent must be form encoded",
+        ));
+    }
+    let form = McpAuthorizeForm::parse(&body).ok_or_else(|| {
+        oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization consent form is invalid",
+        )
+    })?;
     let result = mcp_authorize_consent_inner(state, headers, form).await;
     log_mcp_oauth_result("consent", &result);
     result
@@ -459,7 +613,18 @@ async fn mcp_authorize_consent_inner(
     let actor = authenticated_form_actor(&headers, &state, &form.csrf_token)
         .await
         .map_err(|error| error.into_response())?;
+    let session_id = cookie_value(&headers, SESSION_COOKIE).expect("authenticated session exists");
     let state_value = form.state.as_deref().filter(|value| !value.is_empty());
+    let input = McpAuthorizeInput {
+        response_type: Some("code".into()),
+        client_id: Some(form.client_id.clone()),
+        redirect_uri: form.redirect_uri.clone(),
+        resource: Some(form.resource.clone()),
+        scope: Some(form.scope.clone()),
+        code_challenge: Some(form.code_challenge.clone()),
+        code_challenge_method: Some("S256".into()),
+        state: form.state.clone(),
+    };
     let request = McpAuthorizationRequest {
         client_id: form.client_id,
         redirect_uri: form.redirect_uri,
@@ -471,11 +636,18 @@ async fn mcp_authorize_consent_inner(
             .collect(),
         code_challenge: form.code_challenge,
     };
-    let validated = endpoint
+    let mut validated = endpoint
         .oauth
         .validate_authorization_request(request)
         .await
         .map_err(unsafe_authorization_error)?;
+    if !verify_consent_signature(&session_id, &input, &validated, &form.consent_signature) {
+        return Err(oauth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization consent form was modified",
+        ));
+    }
     match form.decision.as_str() {
         "deny" => Ok(oauth_redirect_error(
             &endpoint.authorization_server_uri,
@@ -484,6 +656,38 @@ async fn mcp_authorize_consent_inner(
             "access_denied",
         )),
         "approve" => {
+            if form.selected_scopes.is_empty() {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    consent_page(
+                        &state,
+                        &input,
+                        &validated,
+                        &form.csrf_token,
+                        &session_id,
+                        Some("少なくとも1つの権限を選択するか、拒否してください。"),
+                    ),
+                )
+                    .into_response());
+            }
+            if form.selected_scopes.iter().any(|scope| {
+                !validated.scopes.contains(scope)
+                    || form
+                        .selected_scopes
+                        .iter()
+                        .filter(|value| *value == scope)
+                        .count()
+                        != 1
+            }) {
+                return Err(oauth_error_response(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_scope",
+                    "selected scopes exceed the authorization request",
+                ));
+            }
+            validated
+                .scopes
+                .retain(|scope| form.selected_scopes.contains(scope));
             let redirect_uri = validated.redirect_uri.as_str().to_owned();
             let code = endpoint
                 .oauth
