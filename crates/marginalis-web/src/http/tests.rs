@@ -1165,6 +1165,26 @@ impl McpOAuthUseCases for TestMcpOAuth {
         })
     }
 
+    async fn client_authorizations(
+        &self,
+        _actor: Actor,
+    ) -> Result<Vec<marginalis_application::McpClientAuthorization>, McpScopeCeilingUseCaseError>
+    {
+        Ok(vec![marginalis_application::McpClientAuthorization {
+            client_id: "consent-client".into(),
+            display_name: "Consent client".into(),
+            registration_method: McpClientRegistrationMethod::Dynamic,
+            granted_scopes: vec!["notes:read".into(), "notes:write".into()],
+            scope_ceiling: McpScopeCeilingSetting {
+                scopes: vec!["notes:read".into(), "notes:write".into()],
+                revision: 0,
+            },
+            authorized_at: marginalis_domain::UnixMillis::new(1_000),
+            last_used_at: Some(marginalis_domain::UnixMillis::new(2_000)),
+            active: true,
+        }])
+    }
+
     async fn replace_principal_scope_ceiling(
         &self,
         _actor: Actor,

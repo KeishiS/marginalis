@@ -173,6 +173,55 @@ async fn owner_can_read_and_replace_their_mcp_scope_ceiling() {
 }
 
 #[tokio::test]
+async fn owner_can_list_and_restrict_their_mcp_client_authorizations() {
+    let app = authenticated_mcp_app();
+    let read = app
+        .clone()
+        .oneshot(authenticated_request("/api/v3/mcp-authorizations"))
+        .await
+        .expect("response");
+    assert_eq!(read.status(), StatusCode::OK);
+    let body = to_bytes(read.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(body[0]["client_id"], "consent-client");
+    assert_eq!(body[0]["registration_method"], "dynamic");
+    assert_eq!(
+        body[0]["granted_scopes"],
+        serde_json::json!(["notes:read", "notes:write"])
+    );
+    assert_eq!(body[0]["last_used_at_ms"], 2_000);
+    assert_eq!(body[0]["active"], true);
+
+    let replace = app
+        .oneshot(
+            Request::put("/api/v3/mcp-authorizations/consent-client/scope-ceiling")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::from(
+                    serde_json::json!({"scopes": ["notes:read"], "revision": 0}).to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(replace.status(), StatusCode::OK);
+    let body = to_bytes(replace.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(body["scope_ceiling"], serde_json::json!(["notes:read"]));
+    assert_eq!(body["scope_ceiling_revision"], 1);
+}
+
+#[tokio::test]
 async fn rest_validation_returns_the_shared_diagnostic_contract() {
     let response = authenticated_app()
         .oneshot(

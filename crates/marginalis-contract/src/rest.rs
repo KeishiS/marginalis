@@ -54,6 +54,16 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
     },
     RestRouteContract {
         method: "GET",
+        specification_path: "/api/v3/mcp-authorizations",
+        probe_path: "/api/v3/mcp-authorizations",
+    },
+    RestRouteContract {
+        method: "PUT",
+        specification_path: "/api/v3/mcp-authorizations/{client_id}/scope-ceiling",
+        probe_path: "/api/v3/mcp-authorizations/mcp-client/scope-ceiling",
+    },
+    RestRouteContract {
+        method: "GET",
         specification_path: "/api/v3/notes",
         probe_path: "/api/v3/notes",
     },
@@ -207,6 +217,20 @@ pub struct McpScopeCeilingResponse {
     pub supported_scopes: Vec<String>,
     pub scopes: Vec<String>,
     pub revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpClientAuthorizationResponse {
+    pub client_id: String,
+    pub display_name: String,
+    pub registration_method: String,
+    pub granted_scopes: Vec<String>,
+    pub scope_ceiling: Vec<String>,
+    pub scope_ceiling_revision: i64,
+    pub authorized_at_ms: i64,
+    pub last_used_at_ms: Option<i64>,
+    pub active: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -612,6 +636,21 @@ pub fn openapi_document() -> Value {
                         "revision": {"type": "integer", "minimum": 0}
                     }
                 },
+                "McpClientAuthorization": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["client_id", "display_name", "registration_method", "granted_scopes", "scope_ceiling", "scope_ceiling_revision", "authorized_at_ms", "last_used_at_ms", "active"],
+                    "properties": {
+                        "client_id": {"type": "string", "minLength": 1, "maxLength": 2048},
+                        "display_name": {"type": "string", "minLength": 1, "maxLength": 128},
+                        "registration_method": {"type": "string", "enum": ["metadata_document", "dynamic"]},
+                        "granted_scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+                        "scope_ceiling": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+                        "scope_ceiling_revision": {"type": "integer", "minimum": 0},
+                        "authorized_at_ms": {"type": "integer"},
+                        "last_used_at_ms": {"type": ["integer", "null"]},
+                        "active": {"type": "boolean"}
+                    }
+                },
                 "NoteDraft": note_draft_schema(),
                 "BibliographyItemInput": {
                     "type": "object", "additionalProperties": false,
@@ -798,6 +837,28 @@ fn rest_paths() -> Value {
                 ("403", response_ref("CsrfRejected")),
                 ("409", response_ref("Conflict")),
                 ("422", response_ref("ValidationFailed")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/mcp-authorizations": {
+            "get": operation("List the current user's MCP client authorizations", &[], None, responses(&[
+                ("200", array_response("MCP client authorizations", "McpClientAuthorization")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/mcp-authorizations/{client_id}/scope-ceiling": {
+            "parameters": [{
+                "name": "client_id", "in": "path", "required": true,
+                "schema": {"type": "string", "minLength": 1, "maxLength": 2048}
+            }],
+            "put": operation("Restrict one MCP client's scope ceiling", &["CsrfToken"], Some("McpScopeCeilingInput"), responses(&[
+                ("200", schema_response("updated MCP client authorization", "McpClientAuthorization")),
+                ("400", response_ref("BadRequest")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
                 ("503", response_ref("Unavailable"))
             ]))
         },

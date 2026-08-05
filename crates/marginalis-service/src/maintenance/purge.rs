@@ -35,6 +35,7 @@ async fn purge_expired_state() -> Result<(), Box<dyn std::error::Error>> {
         mcp_access_credentials = access_credentials,
         mcp_refresh_credentials = refresh_credentials,
         mcp_authorization_grants = authorization_grants,
+        mcp_client_authorizations = auth_counts.mcp_client_authorizations,
         mcp_clients = auth_counts.mcp_clients,
         note_cutoff_ms = note_cutoff.get(),
         "purged expired persisted state"

@@ -62,6 +62,9 @@ token hashを既存schemaへ保存します。`marginalis-application`は検証�
 利用者はWeb UIから自分の上限だけを変更できます。上限を狭める保存処理は、新しい上限を超える認可codeと
 token familyの失効まで同じtransactionで行います。設定主体と既定値は
 [ADR 0009](adr/0009-mcpのscope上限を利用者設定として管理する.md)に記録しています。
+認可済みクライアントの表示に必要な同意scope、認可日時、最終利用日時、取消状態は、利用者とclientの組を
+主keyとする行へ保存します。tokenや認可codeの不透明値はこの行へ保存せず、従来どおりhashだけを各状態表へ
+保存します。
 MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`marginalis-web::mcp`に置きます。
 Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条件の検査、tool実行は
 `marginalis-web::http::mcp_transport`内の別moduleに置きます。これにより、公開toolを変更するときに

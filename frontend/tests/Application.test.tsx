@@ -74,6 +74,12 @@ describe("Application", () => {
         ),
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             supported_scopes: ["notes:read", "notes:write", "notes:delete"],
@@ -93,7 +99,7 @@ describe("Application", () => {
     fireEvent.click(screen.getByRole("button", { name: "アクセス設定を保存" }));
 
     await screen.findByText(/新しい上限を超える接続は再認可が必要です/);
-    const request = fetchMock.mock.calls[1][1] as RequestInit;
+    const request = fetchMock.mock.calls[2][1] as RequestInit;
     expect(request.method).toBe("PUT");
     expect(JSON.parse(String(request.body))).toEqual({
       scopes: ["notes:read"],

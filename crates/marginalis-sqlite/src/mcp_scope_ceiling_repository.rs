@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use marginalis_application::{
-    McpScopeCeilingRepository, McpScopeCeilingRepositoryError, McpScopeCeilingSetting,
-    McpStoredScopeCeilings,
+    McpClientAuthorization, McpClientRegistrationMethod, McpScopeCeilingRepository,
+    McpScopeCeilingRepositoryError, McpScopeCeilingSetting, McpStoredScopeCeilings,
 };
 use marginalis_domain::{Actor, UnixMillis};
 use sqlx::{Row, Sqlite, Transaction};
@@ -12,6 +12,57 @@ use crate::SqliteDatabase;
 
 #[async_trait]
 impl McpScopeCeilingRepository for SqliteDatabase {
+    async fn client_authorizations(
+        &self,
+        actor: &Actor,
+        now: UnixMillis,
+    ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingRepositoryError> {
+        let rows = sqlx::query(
+            "SELECT clients.client_id, clients.display_name, clients.registration_method,
+                    authorizations.granted_scopes, authorizations.authorized_at_ms,
+                    authorizations.last_used_at_ms,
+                    COALESCE(ceilings.scopes, authorizations.granted_scopes) AS ceiling_scopes,
+                    COALESCE(ceilings.revision, 0) AS ceiling_revision,
+                    (authorizations.revoked_at_ms IS NULL AND (
+                        EXISTS(SELECT 1 FROM mcp_authorization_codes AS codes
+                               WHERE codes.issuer = authorizations.issuer
+                                 AND codes.subject = authorizations.subject
+                                 AND codes.client_id = authorizations.client_id
+                                 AND codes.consumed_at_ms IS NULL AND codes.expires_at_ms > ?)
+                        OR EXISTS(SELECT 1 FROM mcp_access_tokens AS access_tokens
+                                  WHERE access_tokens.issuer = authorizations.issuer
+                                    AND access_tokens.subject = authorizations.subject
+                                    AND access_tokens.client_id = authorizations.client_id
+                                    AND access_tokens.revoked_at_ms IS NULL
+                                    AND access_tokens.expires_at_ms > ?)
+                        OR EXISTS(SELECT 1 FROM mcp_refresh_tokens AS refresh_tokens
+                                  WHERE refresh_tokens.issuer = authorizations.issuer
+                                    AND refresh_tokens.subject = authorizations.subject
+                                    AND refresh_tokens.client_id = authorizations.client_id
+                                    AND refresh_tokens.rotated_at_ms IS NULL
+                                    AND refresh_tokens.revoked_at_ms IS NULL
+                                    AND refresh_tokens.expires_at_ms > ?)
+                    )) AS active
+             FROM mcp_client_authorizations AS authorizations
+             JOIN mcp_clients AS clients ON clients.client_id = authorizations.client_id
+             LEFT JOIN mcp_client_scope_ceilings AS ceilings
+                    ON ceilings.issuer = authorizations.issuer
+                   AND ceilings.subject = authorizations.subject
+                   AND ceilings.client_id = authorizations.client_id
+             WHERE authorizations.issuer = ? AND authorizations.subject = ?
+             ORDER BY authorizations.authorized_at_ms DESC, clients.client_id ASC",
+        )
+        .bind(now.get())
+        .bind(now.get())
+        .bind(now.get())
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_database_error)?;
+        rows.into_iter().map(decode_authorization).collect()
+    }
+
     async fn principal_scope_ceiling(
         &self,
         actor: &Actor,
@@ -88,6 +139,24 @@ impl McpScopeCeilingRepository for SqliteDatabase {
         if !client_exists {
             return Err(McpScopeCeilingRepositoryError::ClientNotFound);
         }
+        let granted_scopes = sqlx::query_scalar::<_, String>(
+            "SELECT granted_scopes FROM mcp_client_authorizations
+             WHERE issuer = ? AND subject = ? AND client_id = ?",
+        )
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .bind(client_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(map_database_error)?
+        .ok_or(McpScopeCeilingRepositoryError::ClientNotFound)?;
+        let granted_scopes = granted_scopes.split_ascii_whitespace().collect::<Vec<_>>();
+        if scopes
+            .iter()
+            .any(|scope| !granted_scopes.contains(&scope.as_str()))
+        {
+            return Err(McpScopeCeilingRepositoryError::Invalid);
+        }
         let revision = replace_client_setting(
             &mut transaction,
             actor,
@@ -104,6 +173,63 @@ impl McpScopeCeilingRepository for SqliteDatabase {
             revision,
         })
     }
+}
+
+fn decode_authorization(
+    row: sqlx::sqlite::SqliteRow,
+) -> Result<McpClientAuthorization, McpScopeCeilingRepositoryError> {
+    let registration_method = match row
+        .try_get::<String, _>("registration_method")
+        .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?
+        .as_str()
+    {
+        "dynamic" => McpClientRegistrationMethod::Dynamic,
+        "metadata_document" => McpClientRegistrationMethod::MetadataDocument,
+        _ => return Err(McpScopeCeilingRepositoryError::CorruptData),
+    };
+    let revision = row
+        .try_get::<i64, _>("ceiling_revision")
+        .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?;
+    if revision < 0 {
+        return Err(McpScopeCeilingRepositoryError::CorruptData);
+    }
+    Ok(McpClientAuthorization {
+        client_id: row
+            .try_get("client_id")
+            .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?,
+        display_name: row
+            .try_get("display_name")
+            .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?,
+        registration_method,
+        granted_scopes: split_scopes(&row, "granted_scopes")?,
+        scope_ceiling: McpScopeCeilingSetting {
+            scopes: split_scopes(&row, "ceiling_scopes")?,
+            revision,
+        },
+        authorized_at: UnixMillis::new(
+            row.try_get("authorized_at_ms")
+                .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?,
+        ),
+        last_used_at: row
+            .try_get::<Option<i64>, _>("last_used_at_ms")
+            .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?
+            .map(UnixMillis::new),
+        active: row
+            .try_get("active")
+            .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?,
+    })
+}
+
+fn split_scopes(
+    row: &sqlx::sqlite::SqliteRow,
+    column: &str,
+) -> Result<Vec<String>, McpScopeCeilingRepositoryError> {
+    Ok(row
+        .try_get::<String, _>(column)
+        .map_err(|_| McpScopeCeilingRepositoryError::CorruptData)?
+        .split_ascii_whitespace()
+        .map(str::to_owned)
+        .collect())
 }
 
 async fn replace_principal_setting(

@@ -11,10 +11,10 @@ use mcp_authorization_server::{
 
 use crate::{
     Clock, McpAuthenticatedActor, McpAuthorizationClient, McpAuthorizationRequest,
-    McpClientMetadataResolver, McpOAuthClient, McpOAuthRepository, McpOAuthUseCaseError,
-    McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingRepository, McpScopeCeilingRepositoryError,
-    McpScopeCeilingSetting, McpScopeCeilingUseCaseError, McpTokenPair,
-    McpValidatedAuthorizationRequest, Random,
+    McpClientAuthorization, McpClientMetadataResolver, McpOAuthClient, McpOAuthRepository,
+    McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingRepository,
+    McpScopeCeilingRepositoryError, McpScopeCeilingSetting, McpScopeCeilingUseCaseError,
+    McpTokenPair, McpValidatedAuthorizationRequest, Random,
 };
 
 /// MarginalisのMCP Authorization Server設定。
@@ -172,6 +172,16 @@ impl McpOAuthApplication {
         }))
     }
 
+    pub async fn client_authorizations(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingUseCaseError> {
+        self.scope_ceiling_repository
+            .client_authorizations(&actor, self.clock.now())
+            .await
+            .map_err(map_scope_ceiling_repository_error)
+    }
+
     pub async fn replace_client_scope_ceiling(
         &self,
         actor: Actor,
@@ -294,6 +304,7 @@ fn map_scope_ceiling_repository_error(
     error: McpScopeCeilingRepositoryError,
 ) -> McpScopeCeilingUseCaseError {
     match error {
+        McpScopeCeilingRepositoryError::Invalid => McpScopeCeilingUseCaseError::Invalid,
         McpScopeCeilingRepositoryError::Conflict => McpScopeCeilingUseCaseError::Conflict,
         McpScopeCeilingRepositoryError::CorruptData => McpScopeCeilingUseCaseError::CorruptData,
         McpScopeCeilingRepositoryError::ClientNotFound => {
@@ -390,6 +401,13 @@ impl McpOAuthUseCases for McpOAuthApplication {
         actor: Actor,
     ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
         McpOAuthApplication::principal_scope_ceiling(self, actor).await
+    }
+
+    async fn client_authorizations(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingUseCaseError> {
+        McpOAuthApplication::client_authorizations(self, actor).await
     }
 
     async fn replace_principal_scope_ceiling(

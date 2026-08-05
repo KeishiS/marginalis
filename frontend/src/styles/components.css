@@ -724,6 +724,59 @@ select:hover {
   padding: var(--space-5);
 }
 
+.mcp-access-settings-content,
+.mcp-client-list {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.mcp-client-card {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+}
+
+.mcp-client-heading {
+  align-items: start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.mcp-client-heading h3 {
+  margin: 0 0 var(--space-1);
+}
+
+.mcp-client-heading code {
+  overflow-wrap: anywhere;
+}
+
+.status-active,
+.status-inactive {
+  border-radius: var(--radius-pill);
+  flex: none;
+  font-size: var(--text-caption);
+  font-weight: 700;
+  padding: var(--space-1) var(--space-2);
+}
+
+.status-active {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.status-inactive {
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+}
+
+.mcp-client-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 .mcp-scope-options {
   display: grid;
   gap: var(--space-2);
