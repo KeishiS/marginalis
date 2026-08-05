@@ -73,33 +73,41 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 
 ## 一貫して満たすべき設計条件
 
-- ノートと削除状態の更新はSQLite transactionで完結する。
-- 通常利用者は、作成者の`(issuer, subject)`が自身のidentityと一致するノートを所有する。同じ
-  `issuer`の個人subjectへ付与されたACLの`read`は閲覧、`edit`は閲覧と本文更新を許可する。
+- **ARCH-DATA-001 — ノート更新の原子性**: ノートと削除状態の更新はSQLite transactionで完結する。
+- **ARCH-AUTHZ-001 — ノートの所有権とACL**: 通常利用者は、作成者の`(issuer, subject)`が自身の
+  identityと一致するノートを所有する。同じ`issuer`の個人subjectへ付与されたACLの`read`は閲覧、
+  `edit`は閲覧と本文更新を許可する。
   所有者は変更不能であり、ACL変更と削除・復元は所有者だけに許可する。サーバー全体の管理者権限や、
   ACLを迂回して全ノートを閲覧する権限は設けない。
-- identity は `(issuer, subject)` で識別する。アプリケーションはローカル password、root、登録ポリシーを
-  持たない。`issuer`はuserinfo、query、fragment、制御文字を含まない絶対HTTP(S) URL、
-  `subject`は空でなく制御文字を含まない値とし、長さ上限をdomainで一元検証する。
-- ノートなどの永続的な識別子にはUUIDv7だけを受理する。文字列、JSON、データベースからの復元を
-  含むすべての入力経路で同じ検査を行い、検査を省略する公開constructorは設けない。
-- `Note`は検証済みの所有者identityと正の値だけを表す`Revision`を保持し、作成日時から更新日時までの順序、
-  削除日時の範囲を生成時と復元時に検査する。フィールドを直接変更する公開APIは設けない。
+- **ARCH-IDENTITY-001 — 利用者identity**: identityは`(issuer, subject)`で識別する。アプリケーションは
+  ローカルpassword、root、登録ポリシーを持たない。`issuer`はuserinfo、query、fragment、制御文字を
+  含まない絶対HTTP(S) URL、`subject`は空でなく制御文字を含まない値とし、長さ上限をdomainで
+  一元検証する。
+- **ARCH-IDENTITY-002 — 永続的な識別子**: ノートなどの永続的な識別子にはUUIDv7だけを受理する。
+  文字列、JSON、データベースからの復元を含むすべての入力経路で同じ検査を行い、検査を省略する
+  公開constructorは設けない。
+- **ARCH-DOMAIN-001 — ノートの不変条件**: `Note`は検証済みの所有者identityと正の値だけを表す
+  `Revision`を保持し、作成日時から更新日時までの順序、削除日時の範囲を生成時と復元時に検査する。
+  フィールドを直接変更する公開APIは設けない。
   SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
   検査しない。
-- `server-users`所属はKanidmの署名検証済みID tokenから決める。WebとMCPの同意画面は、同じ
-  `(issuer, subject)`を所有者identityに使用する。
-- Web session は24時間のsliding idle期限と7日の絶対期限を持つ。有効性の検証とidle期限の延長は、
+- **ARCH-AUTHN-001 — OIDC主体の決定**: `server-users`所属はKanidmの署名検証済みID tokenから決める。
+  WebとMCPの同意画面は、同じ`(issuer, subject)`を所有者identityに使用する。
+- **ARCH-SESSION-001 — sessionとlogin attemptの期限**: Web sessionは24時間のsliding idle期限と7日の
+  絶対期限を持つ。有効性の検証とidle期限の延長は、
   SQLiteの一つの条件付き更新で行う。読み取り後に同じ遅延transactionを更新へ切り替えず、
   同じsessionへの並行要求をSQLiteの書き込み待機で直列化する。未完了OIDC login attemptは10分で
   失効し、発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
-- OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う`ES256`だけを許可する。別の署名方式を
-  追加する場合は[セキュリティ](security.md)の依存脆弱性判断を先に更新する。
-- MarginalisはMCPのclient、認可code、access token、refresh tokenをSQLiteで管理する。tokenはhashだけを
-  保存し、秘密値をログやアーカイブへ出力しない。MCP clientにKanidm tokenを渡さない。
-- HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を複製しない。
-- 実効アクセス水準は`Read < Edit < Manage`の順序で表す。SQLiteの`note_access`投影が、
-  所有者の`Manage`とACLの`Read`または`Edit`を同じ判断表へまとめる。
+- **ARCH-OIDC-001 — ID tokenの署名方式**: OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う
+  `ES256`だけを許可する。別の署名方式を追加する場合は[セキュリティ](security.md)の依存脆弱性判断を
+  先に更新する。
+- **ARCH-OAUTH-001 — OAuth秘密値の境界**: MarginalisはMCPのclient、認可code、access token、
+  refresh tokenをSQLiteで管理する。tokenはhashだけを保存し、秘密値をログやアーカイブへ出力しない。
+  MCP clientにKanidm tokenを渡さない。
+- **ARCH-BOUNDARY-001 — 業務規則の配置**: HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を
+  複製しない。
+- **ARCH-AUTHZ-002 — 実効アクセス水準**: 実効アクセス水準は`Read < Edit < Manage`の順序で表す。
+  SQLiteの`note_access`投影が、所有者の`Manage`とACLの`Read`または`Edit`を同じ判断表へまとめる。
 
 ## ソース配置
 
