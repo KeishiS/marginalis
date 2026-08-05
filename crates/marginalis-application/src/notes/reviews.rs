@@ -46,3 +46,76 @@ fn review_details(note: Note) -> NoteReviewDetails {
         reviewer: last_review.map(|review| review.reviewer().clone()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use marginalis_domain::{Actor, NoteCreationSource, NoteDraft, NoteReviewStatus, Revision};
+
+    use crate::{NoteCommands, NoteReviews, NoteWritePolicy};
+
+    use super::NoteApplication;
+    use crate::notes::test_support::{
+        AcceptContent, EmptyLibrary, FixedClock, FixedRandom, MemoryNotes, NoLinks, NoMathMacros,
+    };
+
+    #[tokio::test]
+    async fn owner_review_uses_the_application_clock_and_returns_the_public_projection() {
+        let repository = Arc::new(MemoryNotes::default());
+        let application = NoteApplication::new(
+            repository.clone(),
+            repository.clone(),
+            repository.clone(),
+            repository,
+            Arc::new(AcceptContent::default()),
+            Arc::new(EmptyLibrary),
+            Arc::new(NoMathMacros),
+            Arc::new(NoLinks),
+            Arc::new(FixedClock),
+            Arc::new(FixedRandom),
+        );
+        let actor =
+            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let note = application
+            .create_note(
+                actor.clone(),
+                NoteDraft {
+                    source: "= 確認対象\n\n本文".into(),
+                    title: "確認対象".into(),
+                    tags: Vec::new(),
+                },
+                NoteWritePolicy::AllowAdvisories,
+                NoteCreationSource::Web,
+            )
+            .await
+            .expect("create note");
+
+        let pending = application
+            .read_note_review(actor.clone(), note.note_id())
+            .await
+            .expect("read pending review");
+        assert_eq!(pending.status, NoteReviewStatus::Pending);
+        assert_eq!(pending.reviewer, None);
+
+        let reviewed = application
+            .mark_note_reviewed(actor.clone(), note.note_id(), Revision::INITIAL)
+            .await
+            .expect("mark reviewed");
+        assert_eq!(reviewed.current_revision.get(), 2);
+        assert_eq!(reviewed.reviewed_revision, Some(reviewed.current_revision));
+        assert_eq!(reviewed.status, NoteReviewStatus::Reviewed);
+        assert_eq!(
+            reviewed.reviewed_at.map(|time| time.get()),
+            Some(1_700_000_000_000)
+        );
+        assert_eq!(reviewed.reviewer.as_ref(), Some(actor.identity()));
+
+        assert_eq!(
+            application
+                .mark_note_reviewed(actor, note.note_id(), Revision::INITIAL)
+                .await,
+            Err(crate::NoteUseCaseError::Conflict)
+        );
+    }
+}

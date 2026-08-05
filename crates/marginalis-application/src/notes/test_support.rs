@@ -9,8 +9,8 @@ use std::{
 use async_trait::async_trait;
 use marginalis_domain::{
     Actor, BibliographyItem, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess,
-    NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteSummary, NoteValidationTarget, Revision,
-    UnixMillis, Utf8ByteSpan,
+    NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewRecord,
+    NoteReviewTracking, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
 };
 
 use crate::{
@@ -196,19 +196,55 @@ impl NoteReviewRepository for MemoryNotes {
     ) -> Result<Note, NoteRepositoryError> {
         self.accessible_note(actor, note_id)
             .await?
-            .filter(|accessible| accessible.access == NoteAccess::Manage)
+            .filter(|accessible| {
+                accessible.access == NoteAccess::Manage
+                    && accessible.note.owner() == actor.identity()
+                    && accessible.note.deleted_at().is_none()
+            })
             .map(|accessible| accessible.note)
             .ok_or(NoteRepositoryError::NotFound)
     }
 
     async fn mark_owned_note_reviewed(
         &self,
-        _actor: &Actor,
-        _note_id: NoteId,
-        _expected_revision: Revision,
-        _reviewed_at: UnixMillis,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        reviewed_at: UnixMillis,
     ) -> Result<Note, NoteRepositoryError> {
-        Err(NoteRepositoryError::Unavailable)
+        let current = self.read_owned_note_review(actor, note_id).await?;
+        if current.revision() != expected_revision {
+            return Err(NoteRepositoryError::Conflict);
+        }
+        let next_revision = Revision::new(current.revision().get() + 1)
+            .map_err(|_| NoteRepositoryError::CorruptData)?;
+        let reviewed = Note::restore(NoteRestore {
+            note_id,
+            owner: current.owner().clone(),
+            draft: NoteDraft {
+                source: current.source().to_owned(),
+                title: current.title().to_owned(),
+                tags: current.tags().to_vec(),
+            },
+            created_at: current.created_at(),
+            updated_at: reviewed_at,
+            revision: next_revision,
+            deleted_at: current.deleted_at(),
+            created_via: current.created_via(),
+            review: NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
+                next_revision,
+                reviewed_at,
+                actor.identity().clone(),
+            ))),
+        })
+        .map_err(|_| NoteRepositoryError::CorruptData)?;
+        let mut notes = self.notes.lock().expect("notes lock");
+        let stored = notes
+            .iter_mut()
+            .find(|note| note.note_id() == note_id)
+            .ok_or(NoteRepositoryError::NotFound)?;
+        *stored = reviewed.clone();
+        Ok(reviewed)
     }
 }
 
