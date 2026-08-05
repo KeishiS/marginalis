@@ -48,6 +48,22 @@ pub(super) async fn math_macro_settings_page(
     application_shell(&state, &headers, &uri).await
 }
 
+pub(super) async fn settings_page(
+    State(state): State<ApiState>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    application_shell(&state, &headers, &uri).await
+}
+
+pub(super) async fn mcp_access_settings_page(
+    State(state): State<ApiState>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    application_shell(&state, &headers, &uri).await
+}
+
 pub(super) async fn deleted_notes_page(
     State(state): State<ApiState>,
     uri: Uri,

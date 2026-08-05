@@ -157,6 +157,20 @@ impl McpOAuthApplication {
             .map_err(map_scope_ceiling_repository_error)
     }
 
+    pub async fn principal_scope_ceiling(
+        &self,
+        actor: Actor,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        let stored = self
+            .scope_ceiling_repository
+            .principal_scope_ceiling(&actor)
+            .await
+            .map_err(map_scope_ceiling_repository_error)?;
+        Ok(stored.unwrap_or_else(|| McpScopeCeilingSetting {
+            scopes: self.authorization_server.supported_scopes().to_vec(),
+            revision: 0,
+        }))
+    }
     pub async fn replace_client_scope_ceiling(
         &self,
         actor: Actor,
@@ -368,6 +382,40 @@ impl McpOAuthUseCases for McpOAuthApplication {
         resource_uri: String,
     ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError> {
         McpOAuthApplication::authenticate(self, &token, &resource_uri).await
+    }
+
+    async fn principal_scope_ceiling(
+        &self,
+        actor: Actor,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        McpOAuthApplication::principal_scope_ceiling(self, actor).await
+    }
+
+    async fn replace_principal_scope_ceiling(
+        &self,
+        actor: Actor,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        McpOAuthApplication::replace_principal_scope_ceiling(self, actor, scopes, expected_revision)
+            .await
+    }
+
+    async fn replace_client_scope_ceiling(
+        &self,
+        actor: Actor,
+        client_id: String,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError> {
+        McpOAuthApplication::replace_client_scope_ceiling(
+            self,
+            actor,
+            client_id,
+            scopes,
+            expected_revision,
+        )
+        .await
     }
 
     async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {

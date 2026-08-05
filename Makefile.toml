@@ -546,6 +546,7 @@ check_screen_chunk "editor" 'EditorApplication-*.js' 450000
 check_screen_chunk "graph" 'GraphPage-*.js' 120000
 check_screen_chunk "deleted notes" 'DeletedNotesPage-*.js' 30000
 check_screen_chunk "math macro settings" 'MathMacroSettingsPage-*.js' 30000
+check_screen_chunk "MCP access settings" 'McpAccessSettingsPage-*.js' 30000
 font_bytes="$(find frontend/dist/assets -name '*.woff2' -type f -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')"
 maximum_font_bytes=13000000
 if [ "$font_bytes" -gt "$maximum_font_bytes" ]; then
