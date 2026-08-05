@@ -3,6 +3,21 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
+## 0.30.0 — 2026-08-05
+
+### 改善
+
+- OAuth同意画面で、クライアントが提供した表示名より先に完全な`client_id`を表示するようにした。
+  利用者は、認可先をクライアントが変更できる名前ではなく、実際の識別子を基準に判断できる。
+- MathJaxで使用できるTeX packageを、数式、所有者マクロ、`mathtools`、太字に必要なものへ固定した。
+  `autoload`と`require`による追加packageの読込は行わず、CSPに加えてTeX入力処理でも外部の拡張を
+  読み込まない。既存の`\coloneqq`、`\operatorname*`、`\boldsymbol`と所有者マクロは引き続き使える。
+
+### 互換性
+
+- SQLite schema 18、archive `marginalis-archive-14`、AdocWeave package版0.27.0、note profile版5を
+  維持する。v0.29.0からdatabase、archive、設定、MCP接続の移行は不要である。
+
 ## 0.29.0 — 2026-08-05
 
 ### 破壊的変更
