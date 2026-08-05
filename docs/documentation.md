@@ -70,8 +70,24 @@ READMEなどの概要、ロードマップ、Issue、バージョン番号付き
 - **公開履歴**: CHANGELOGとGit tag上の文書
 - **現在の仕様として扱わない記録**: バージョン番号付きsnapshot、ヒアリング、研究上の考察
 
-ADRを追加する場合は`docs/adr/NNNN-短い名称.md`とし、状態、日付、背景、決定、結果、代替案、
+ADRを追加する場合は`docs/adr/NNNN-短い名称.adoc`とし、状態、日付、背景、決定、結果、代替案、
 再検討条件を記載します。作業状況や一時的な計画はADRへ記載しません。
+
+## AsciiDoc移行中の規則
+
+`AGENTS.md`を除く人間向け文書は、[再評価](repository-asciidoc-evaluation.adoc)と
+[Issue #334](https://github.com/KeishiS/marginalis/issues/334)に従ってAsciiDocへ段階的に移行します。
+新しいMarkdown文書は追加しません。移行前のMarkdownは
+`.github/documentation-markdown-migration.txt`へ一件ずつ記録し、改名した変更で一覧から除きます。
+
+AsciiDoc文書はAdocWeave v0.33.0のstrict profileで解析し、local targetを検査します。文書間の`xref`は
+参照先の`.adoc`と明示IDを指定します。明示IDの存在はAdocWeaveの構造化公開APIを使用する
+`marginalis-documentation` crateで検査し、AsciiDocの構文規則を専用scriptへ書き写しません。自然文は
+同じ版のtextlint Processorに同梱されたWebAssemblyで解析し、source blockやinline codeを校正対象から
+除外します。
+
+移行中も、Markdown文書には既存のlink検査を適用します。traceability、release metadata、受入索引、
+観測event対応は文書を改名する変更で同時に追従させ、検査範囲を狭めません。
 
 ## 状態と用語
 
@@ -92,6 +108,5 @@ ADRを追加する場合は`docs/adr/NNNN-短い名称.md`とし、状態、日�
 恒久手順の分離、ADR規則、ローカルIssue参照、文書検査範囲に不足がありました。本変更で
 文書マップ、`CONTRIBUTING.md`、Issue移行表、ロードマップ、リンク検査を整備しました。
 
-読者別サブディレクトリへの大規模移動やMarkdownからAsciiDocへの一括変換は行いません。今後は
-内容を変更する文書から冒頭要件と重複削減を適用し、必要性を確認できた移動だけを小さいPull Request
-として実施します。
+読者別サブディレクトリへの大規模移動は行いません。AsciiDoc化は内容の役割を変えず、小さいPull Requestへ
+分けて実施します。各段階で、冒頭要件、重複削減、文書間参照の明示IDを確認します。
