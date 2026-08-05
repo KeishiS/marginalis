@@ -42,6 +42,7 @@ pub trait Repository: Send + Sync {
     ) -> Result<(), RepositoryError>;
 
     /// 認可codeの一回消費とtoken pair発行を同じtransactionで行う。
+    /// `expires_at <= now`のcodeは無効として扱う。
     async fn exchange_authorization_code(
         &self,
         exchange: AuthorizationCodeExchange,
@@ -49,12 +50,14 @@ pub trait Repository: Send + Sync {
     ) -> Result<Option<AuthorizationGrant>, RepositoryError>;
 
     /// refresh tokenの一回消費、再利用検知、次のtoken pair発行を原子的に行う。
+    /// `expires_at <= now`のtokenは無効として扱う。
     async fn rotate_refresh_token(
         &self,
         rotation: RefreshTokenRotation,
         now: Timestamp,
     ) -> Result<RefreshTokenRotationOutcome, RepositoryError>;
 
+    /// resourceが一致し、`expires_at > now`であるaccess tokenだけを認証する。
     async fn authenticate_access_token(
         &self,
         token: &str,

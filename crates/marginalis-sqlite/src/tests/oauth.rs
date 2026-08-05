@@ -1244,6 +1244,15 @@ async fn authorization_code_replay_revokes_the_issued_token_family() {
 }
 
 #[tokio::test]
+async fn sqlite_repository_satisfies_the_shared_contract() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    mcp_authorization_server::testkit::assert_repository_contract(std::sync::Arc::new(database))
+        .await;
+}
+
+#[tokio::test]
 async fn token_issuance_failure_rolls_back_authorization_code_consumption() {
     let database = SqliteDatabase::connect("sqlite::memory:")
         .await

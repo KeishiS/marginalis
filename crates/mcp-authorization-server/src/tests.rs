@@ -137,7 +137,7 @@ impl Repository for MemoryRepository {
             .redirect_uri
             .as_deref()
             .is_none_or(|uri| uri == stored.grant.redirect_uri.as_str());
-        if stored.expires_at < now
+        if stored.expires_at <= now
             || stored.grant.client_id != exchange.client_id
             || stored.grant.resource_uri != exchange.resource_uri
             || stored.code_challenge != exchange.code_challenge
@@ -188,7 +188,7 @@ impl Repository for MemoryRepository {
             Self::revoke_family(&mut state, family);
             return Ok(RefreshTokenRotationOutcome::InvalidToken);
         }
-        if stored.expires_at < now
+        if stored.expires_at <= now
             || stored.grant.client_id != rotation.client_id
             || stored.grant.resource_uri != rotation.resource_uri
         {
@@ -248,7 +248,7 @@ impl Repository for MemoryRepository {
             .get(token)
             .filter(|stored| {
                 !stored.revoked
-                    && stored.expires_at >= now
+                    && stored.expires_at > now
                     && stored.grant.resource_uri == resource_uri
             })
             .map(|stored| AuthenticatedPrincipal {
@@ -265,6 +265,11 @@ impl Repository for MemoryRepository {
         _now: Timestamp,
     ) -> Result<(), RepositoryError> {
         let mut state = self.0.lock().expect("memory repository");
+        state.codes.retain(|_, stored| {
+            stored.grant.principal.issuer() != issuer
+                || stored.grant.principal.subject() != subject
+                || stored.grant.client_id != client_id
+        });
         let families = state
             .refresh_tokens
             .values()
@@ -636,4 +641,9 @@ fn server_configuration_rejects_unsafe_zero_values() {
     assert!(AuthorizationServerConfig::new(300, 0, 60, 10).is_none());
     assert!(AuthorizationServerConfig::new(300, 3_600, 0, 10).is_none());
     assert!(AuthorizationServerConfig::new(300, 3_600, 60, 0).is_none());
+}
+
+#[tokio::test]
+async fn memory_repository_satisfies_the_shared_contract() {
+    crate::testkit::assert_repository_contract(Arc::new(MemoryRepository::default())).await;
 }

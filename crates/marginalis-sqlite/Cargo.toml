@@ -20,3 +20,4 @@ sha2.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 base64.workspace = true
+mcp-authorization-server = { path = "../mcp-authorization-server", features = ["testkit"] }

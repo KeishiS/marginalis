@@ -60,9 +60,10 @@ repository portはテーブルごとのCRUDではなく、次の原子的な操�
 - token単位の取消
 - 上限を含むclient登録
 
-SQLite adapterはMarginalisに残し、既存schemaと保存値を維持します。中核の契約試験には、特定の
-databaseへ依存しない試験用repositoryを使います。これにより、別のresourceとscopeでも同じ状態遷移を
-検査します。PostgreSQL adapterとRenkanへの統合はRenkan側で管理します。
+SQLite adapterはMarginalisに残し、既存schemaと保存値を維持します。中核が提供する同じrepository
+契約試験を、特定のdatabaseへ依存しない試験用repositoryとSQLite adapterの両方へ適用します。
+これにより、期限の境界、codeとtokenの一回消費、token familyの失効、resource binding、取消が
+保存方法によって変わらないことを検査します。PostgreSQL adapterとRenkanへの統合はRenkan側で管理します。
 
 移行は次の順で行います。
 

@@ -104,6 +104,9 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 - **ARCH-OAUTH-001 — OAuth秘密値の境界**: MarginalisはMCPのclient、認可code、access token、
   refresh tokenをSQLiteで管理する。tokenはhashだけを保存し、秘密値をログやアーカイブへ出力しない。
   MCP clientにKanidm tokenを渡さない。
+- **ARCH-OAUTH-002 — OAuth token familyの原子性と期限**: 認可codeの消費と最初のtoken pair発行、
+  refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family失効、grant取消は、それぞれ
+  一つのtransactionで完結する。認可codeとtokenは`expires_at <= now`で無効とする。
 - **ARCH-BOUNDARY-001 — 業務規則の配置**: HTTP、MCP、Web UIは所有者・ACL認可とrevisionの業務規則を
   複製しない。
 - **ARCH-AUTHZ-002 — 実効アクセス水準**: 実効アクセス水準は`Read < Edit < Manage`の順序で表す。
