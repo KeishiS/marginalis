@@ -720,6 +720,43 @@ async fn provenance_filters_and_review_state_follow_the_current_revision() {
         .await
         .expect("restore reviewed note");
     assert_eq!(restored.review_status(), NoteReviewStatus::Pending);
+
+    let reviewed = database
+        .mark_owned_note_reviewed(&owner, note_id, restored.revision(), UnixMillis::new(180))
+        .await
+        .expect("review restored note");
+    let bibliography = BibliographyItem::create(
+        BibliographyItemId::new(
+            EntityId::from_str("0197c9bc-0000-7000-8000-0000000000a1")
+                .expect("v7 bibliography item ID"),
+        ),
+        owner.identity(),
+        "smith2024".into(),
+        r#"{"id":"smith2024","type":"book","title":"Example"}"#.into(),
+        UnixMillis::new(190),
+    );
+    database
+        .create_owned_item(&bibliography)
+        .await
+        .expect("change bibliography");
+    database
+        .replace_math_macros(
+            owner.identity(),
+            &[MathMacro {
+                name: "bm".into(),
+                replacement: r"\boldsymbol{#1}".into(),
+                argument_count: 1,
+            }],
+            0,
+        )
+        .await
+        .expect("change math macros");
+    let unchanged = database
+        .read_owned_note_review(&owner, note_id)
+        .await
+        .expect("read review after external resource changes");
+    assert_eq!(unchanged.revision(), reviewed.revision());
+    assert_eq!(unchanged.review_status(), NoteReviewStatus::Reviewed);
 }
 
 #[tokio::test]
