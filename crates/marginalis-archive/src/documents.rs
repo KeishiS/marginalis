@@ -1,9 +1,9 @@
-//! ノートと書誌情報を、他の道具でそのまま読める形へ書き出す一方向の出力。
+//! ノートと書誌情報を、他の道具でそのまま読める形へ書き出し、編集後に取り込む形式。
 //!
 //! ノートは保存しているAsciiDocのまま、書誌情報はCSL-JSONの配列として並べます。復元へ使う
-//! [`Archive`](crate::Archive)とは目的が異なり、この出力を取り込む経路は現在ありません。
-//! ただしmanifestは、archiveと同じ意味の版情報を持ちます。取り込み側は、稼働している
-//! serviceの版と比べて再検証や移行が必要かどうかを判断できます。
+//! [`Archive`](crate::Archive)とは目的が異なります。manifestはarchiveと同じ意味の版情報と、
+//! 外部編集を検出するための状態hashを持ちます。取り込み側は、稼働しているserviceの版と比べて
+//! 再検証や移行が必要かどうかを判断できます。
 
 use std::collections::BTreeMap;
 
@@ -13,6 +13,7 @@ use crate::{
 use marginalis_application::LogicalSnapshot;
 use marginalis_domain::{Identity, Note, NotePermission, UnixMillis};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// この出力の形式名。archiveの版とは別に管理する。
 pub const DOCUMENT_EXPORT_FORMAT: &str = "marginalis-documents-2";
@@ -81,6 +82,8 @@ pub struct DocumentNote {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub revision: i64,
+    /// 書き出し時の本文、所有者、ACLを結び付ける変更検出用hash。署名ではない。
+    pub state_sha256: String,
     pub provenance: ArchiveNoteProvenance,
     pub acl: Vec<DocumentAclEntry>,
 }
@@ -184,6 +187,16 @@ impl<'a> OwnerBuilder<'a> {
                     path: file.clone(),
                     contents: note.source().to_owned(),
                 });
+                let acl = snapshot
+                    .note_acl()
+                    .iter()
+                    .filter(|entry| entry.note_id() == note.note_id())
+                    .map(|entry| DocumentAclEntry {
+                        issuer: entry.identity().issuer().to_owned(),
+                        subject: entry.identity().subject().to_owned(),
+                        permission: entry.permission(),
+                    })
+                    .collect::<Vec<_>>();
                 DocumentNote {
                     file,
                     note_id: note.note_id().to_string(),
@@ -192,6 +205,12 @@ impl<'a> OwnerBuilder<'a> {
                     created_at_ms: note.created_at().get(),
                     updated_at_ms: note.updated_at().get(),
                     revision: note.revision().get(),
+                    state_sha256: note_state_sha256(
+                        self.identity.issuer(),
+                        self.identity.subject(),
+                        note.source().as_bytes(),
+                        &acl,
+                    ),
                     provenance: ArchiveNoteProvenance {
                         created_via: note.created_via(),
                         review_tracking_known: note.review_tracking_known(),
@@ -204,16 +223,7 @@ impl<'a> OwnerBuilder<'a> {
                             .last_review()
                             .map(|review| review.reviewer().subject().to_owned()),
                     },
-                    acl: snapshot
-                        .note_acl()
-                        .iter()
-                        .filter(|entry| entry.note_id() == note.note_id())
-                        .map(|entry| DocumentAclEntry {
-                            issuer: entry.identity().issuer().to_owned(),
-                            subject: entry.identity().subject().to_owned(),
-                            permission: entry.permission(),
-                        })
-                        .collect(),
+                    acl,
                 }
             })
             .collect();
@@ -243,6 +253,47 @@ impl<'a> OwnerBuilder<'a> {
                 .collect(),
         }
     }
+}
+
+fn note_state_sha256(
+    owner_issuer: &str,
+    owner_subject: &str,
+    source: &[u8],
+    acl: &[DocumentAclEntry],
+) -> String {
+    let mut hasher = Sha256::new();
+    update_hash_component(&mut hasher, owner_issuer.as_bytes());
+    update_hash_component(&mut hasher, owner_subject.as_bytes());
+    update_hash_component(&mut hasher, source);
+    let mut entries = acl.iter().collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        (&left.issuer, &left.subject, left.permission).cmp(&(
+            &right.issuer,
+            &right.subject,
+            right.permission,
+        ))
+    });
+    for entry in entries {
+        update_hash_component(&mut hasher, entry.issuer.as_bytes());
+        update_hash_component(&mut hasher, entry.subject.as_bytes());
+        hasher.update([match entry.permission {
+            NotePermission::Read => 1,
+            NotePermission::Edit => 2,
+        }]);
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+fn update_hash_component(hasher: &mut Sha256, value: &[u8]) {
+    hasher.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
+    hasher.update(value);
+}
+
+fn is_canonical_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// 登録したCSL-JSONを、そのまま配列として並べる。
@@ -369,6 +420,7 @@ pub fn archive_from_documents(
     manifest: &DocumentManifest,
     files: &BTreeMap<String, Vec<u8>>,
     adocweave_package_version: &str,
+    imported_at: UnixMillis,
 ) -> Result<Archive, DocumentImportError> {
     if manifest.format != DOCUMENT_EXPORT_FORMAT {
         return Err(DocumentImportError::UnsupportedFormat);
@@ -392,14 +444,36 @@ pub fn archive_from_documents(
                     position: note_position,
                 }
             })?;
+            if !is_canonical_sha256(&note.state_sha256) {
+                return Err(DocumentImportError::InvalidManifestEntry {
+                    position: note_position,
+                });
+            }
+            let state_changed = note.state_sha256
+                != note_state_sha256(&owner.issuer, &owner.subject, contents, &note.acl);
+            let (updated_at_ms, revision) = if state_changed {
+                let revision = note.revision.checked_add(1).ok_or(
+                    DocumentImportError::InvalidManifestEntry {
+                        position: note_position,
+                    },
+                )?;
+                let next_updated_at = note.updated_at_ms.checked_add(1).ok_or(
+                    DocumentImportError::InvalidManifestEntry {
+                        position: note_position,
+                    },
+                )?;
+                (imported_at.get().max(next_updated_at), revision)
+            } else {
+                (note.updated_at_ms, note.revision)
+            };
             notes.push(ArchiveNote {
                 note_id: note.note_id.clone(),
                 creator_issuer: owner.issuer.clone(),
                 creator_subject: owner.subject.clone(),
                 source,
                 created_at_ms: note.created_at_ms,
-                updated_at_ms: note.updated_at_ms,
-                revision: note.revision,
+                updated_at_ms,
+                revision,
                 // 書き出しは削除済みノートを含まないため、取り込み後も削除済みは存在しない。
                 deleted_at_ms: None,
                 provenance: Some(note.provenance.clone()),
@@ -471,7 +545,7 @@ mod tests {
 
     use marginalis_domain::{
         BibliographyItem, BibliographyItemId, EntityId, NoteCreationSource, NoteId, NoteRestore,
-        NoteReviewTracking, Revision, UnixMillis,
+        NoteReviewRecord, NoteReviewTracking, Revision, UnixMillis,
     };
 
     use super::*;
@@ -497,6 +571,30 @@ mod tests {
             review: NoteReviewTracking::pending(),
         })
         .expect("note")
+    }
+
+    fn reviewed_note(id: &str, title: &str, owner: &str) -> Note {
+        let owner = identity(owner);
+        Note::restore(NoteRestore {
+            note_id: NoteId::new(EntityId::from_str(id).expect("UUIDv7")),
+            owner: owner.clone(),
+            draft: marginalis_domain::NoteDraft {
+                title: title.into(),
+                source: format!("= {title}\n\n本文"),
+                tags: vec!["研究".into()],
+            },
+            created_at: UnixMillis::new(1000),
+            updated_at: UnixMillis::new(2000),
+            revision: Revision::INITIAL,
+            deleted_at: None,
+            created_via: NoteCreationSource::Rest,
+            review: NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
+                Revision::INITIAL,
+                UnixMillis::new(1500),
+                owner,
+            ))),
+        })
+        .expect("reviewed note")
     }
 
     fn item(citation_key: &str, owner: &str) -> BibliographyItem {
@@ -563,9 +661,13 @@ mod tests {
         .expect("bibliography");
         let exported = export(&snapshot);
 
-        let rebuilt =
-            archive_from_documents(&exported.manifest, &exported_files(&exported), "0.23.0")
-                .expect("rebuild");
+        let rebuilt = archive_from_documents(
+            &exported.manifest,
+            &exported_files(&exported),
+            "0.23.0",
+            UnixMillis::new(5000),
+        )
+        .expect("rebuild");
 
         assert_eq!(
             rebuilt
@@ -712,8 +814,9 @@ mod tests {
             .map(|file| (file.path.clone(), file.contents.as_bytes().to_vec()))
             .collect::<BTreeMap<_, _>>();
 
-        let archive = archive_from_documents(&export.manifest, &files, "0.23.0")
-            .expect("rebuild the archive");
+        let archive =
+            archive_from_documents(&export.manifest, &files, "0.23.0", UnixMillis::new(5000))
+                .expect("rebuild the archive");
 
         assert_eq!(archive.format, crate::ARCHIVE_FORMAT);
         assert_eq!(archive.adocweave_package_version, "0.23.0");
@@ -724,15 +827,14 @@ mod tests {
         assert_eq!(archive.bibliography_items[0].csl_json["title"], "Example");
     }
 
-    /// 本文を別の道具で書き換えてから戻せる。manifestは識別子と日時の正であり続ける。
+    /// 本文を書き換えた場合はrevisionを進め、以前の人手確認を現在の版へ引き継がない。
     #[test]
     fn an_edited_note_file_replaces_the_stored_source() {
         let snapshot = LogicalSnapshot::new(
-            vec![note(
+            vec![reviewed_note(
                 "0197c9bc-0000-7000-8000-000000000001",
                 "題名",
                 "alice",
-                false,
             )],
             Vec::new(),
         )
@@ -746,8 +848,9 @@ mod tests {
         let path = export.manifest.owners[0].notes[0].file.clone();
         files.insert(path, "= 書き換えた題名\n\n別の本文".as_bytes().to_vec());
 
-        let archive = archive_from_documents(&export.manifest, &files, "0.23.0")
-            .expect("rebuild the archive");
+        let archive =
+            archive_from_documents(&export.manifest, &files, "0.23.0", UnixMillis::new(5000))
+                .expect("rebuild the archive");
 
         assert_eq!(archive.notes[0].source, "= 書き換えた題名\n\n別の本文");
         assert_eq!(
@@ -755,6 +858,40 @@ mod tests {
             "0197c9bc-0000-7000-8000-000000000001"
         );
         assert_eq!(archive.notes[0].created_at_ms, 1000);
+        assert_eq!(archive.notes[0].updated_at_ms, 5000);
+        assert_eq!(archive.notes[0].revision, 2);
+        let provenance = archive.notes[0].provenance.as_ref().expect("provenance");
+        assert!(provenance.review_tracking_known);
+        assert_eq!(provenance.reviewed_revision, Some(1));
+    }
+
+    #[test]
+    fn an_edited_acl_advances_the_revision() {
+        let note = reviewed_note("0197c9bc-0000-7000-8000-000000000001", "題名", "alice");
+        let snapshot = LogicalSnapshot::new(
+            vec![note.clone()],
+            vec![marginalis_application::NoteAclSnapshotEntry::new(
+                note.note_id(),
+                identity("bob"),
+                NotePermission::Read,
+            )],
+        )
+        .expect("snapshot");
+        let export = export(&snapshot);
+        let files = exported_files(&export);
+        let mut changed = export.manifest.clone();
+        changed.owners[0].notes[0].acl[0].permission = NotePermission::Edit;
+
+        let archive = archive_from_documents(&changed, &files, "0.23.0", UnixMillis::new(5000))
+            .expect("rebuild changed ACL");
+        assert_eq!(archive.notes[0].revision, 2);
+        assert_eq!(
+            archive.notes[0]
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.reviewed_revision),
+            Some(1)
+        );
     }
 
     #[test]
@@ -779,15 +916,27 @@ mod tests {
         let mut without_note = files.clone();
         without_note.remove(&export.manifest.owners[0].notes[0].file);
         assert_eq!(
-            archive_from_documents(&export.manifest, &without_note, "0.23.0"),
+            archive_from_documents(
+                &export.manifest,
+                &without_note,
+                "0.23.0",
+                UnixMillis::new(5000),
+            ),
             Err(DocumentImportError::MissingNoteFile { position: 1 })
         );
 
         let mut unknown = export.manifest.clone();
         unknown.format = "marginalis-documents-99".into();
         assert_eq!(
-            archive_from_documents(&unknown, &files, "0.23.0"),
+            archive_from_documents(&unknown, &files, "0.23.0", UnixMillis::new(5000)),
             Err(DocumentImportError::UnsupportedFormat)
+        );
+
+        let mut invalid_hash = export.manifest.clone();
+        invalid_hash.owners[0].notes[0].state_sha256 = "not-a-sha256".into();
+        assert_eq!(
+            archive_from_documents(&invalid_hash, &files, "0.23.0", UnixMillis::new(5000),),
+            Err(DocumentImportError::InvalidManifestEntry { position: 1 })
         );
     }
 

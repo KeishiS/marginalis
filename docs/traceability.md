@@ -21,7 +21,7 @@
 | REQ-DATA-006 | application入力検査、SQLite所有者境界・競合・revision試験、REST・MCP公開契約試験 | Web UIでの検索、追加、編集、削除とMCPでの検索、追加、削除 |
 | REQ-DATA-007 | 引用解決の所有者境界と重複排除の試験、生成した参考文献の相互link試験、書誌情報を記法として解釈しない試験 | 共有したノートでの引用表示 |
 | REQ-DATA-008 | 図の認可境界・絞り込み・片端の欠けた線の試験、起点と階層数の試験、想定規模の試験、REST経路と認証と範囲外指定の試験、ブラウザー試験 | 関係の図の表示 |
-| REQ-DATA-009 | domain復元試験、SQLiteの作成経路・確認状態・所有者・競合・revision無効化試験、REST・MCP・OpenAPI契約試験、archive・文書書き出し往復試験、React表示・確認操作試験 | Web、REST、MCP作成時の経路表示と確認後の再編集 |
+| REQ-DATA-009 | domain復元試験、SQLiteの作成経路・確認状態・所有者・競合・revision無効化試験、REST・MCP・OpenAPI契約試験、archive往復・旧契約混在拒否・文書書庫の本文とACLの外部編集試験、React表示・確認操作試験 | Web、REST、MCP作成時の経路表示と確認後の再編集 |
 | REQ-AUTH-001 | OIDC単体・結合試験 | ログイン拒否 |
 | REQ-AUTH-002 | domain・archive・SQLite単体試験 | 所有者照合 |
 | REQ-AUTH-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
@@ -75,7 +75,7 @@
 | ARCH-OAUTH-002 | `mcp_authorization_server::testkit::assert_repository_contract`を試験用repositoryとSQLite adapterへ適用する試験、`token_issuance_failure_rolls_back_authorization_code_consumption` |
 | ARCH-OAUTH-003 | `marginalis-sqlite::tests::oauth::client_id_metadata_document_clients_complete_the_authorization_flow`、`client_authorizations_are_owner_scoped_and_record_use_and_revocation`、`marginalis-web::http::tests::rest_notes::owner_can_list_and_restrict_their_mcp_client_authorizations`、`McpAccessSettingsPage.test.tsx` |
 | ARCH-OIDC-001 | `marginalis-auth-oidc::tests::id_tokens_are_limited_to_es256`、Kanidm NixOS VM |
-| ARCH-PROVENANCE-001 | `marginalis-domain::model::tests::note_review_status_distinguishes_unknown_pending_reviewed_and_stale`、`marginalis-sqlite::tests::notes::provenance_filters_and_review_state_follow_the_current_revision`、REST・MCP・archive契約試験 |
+| ARCH-PROVENANCE-001 | `marginalis-domain::model::tests::review_status_distinguishes_unknown_pending_current_and_stale`、`marginalis-sqlite::tests::notes::provenance_filters_and_review_state_follow_the_current_revision`、`marginalis-archive::documents::tests::an_edited_note_file_replaces_the_stored_source`、`marginalis-archive::documents::tests::an_edited_acl_advances_the_revision`、REST・MCP・archive契約試験 |
 | ARCH-SESSION-001 | `marginalis-sqlite::tests::sessions`の期限・並行延長試験、`issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit` |
 
 ## 実行単位
