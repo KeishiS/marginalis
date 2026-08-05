@@ -15,6 +15,7 @@ mod content;
 mod graph;
 mod presentation;
 mod queries;
+mod reviews;
 
 pub use content::{
     NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
@@ -51,6 +52,7 @@ pub trait NoteQueryRepository: Send + Sync {
     async fn list_visible_notes(
         &self,
         actor: &Actor,
+        query: &crate::NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteRepositoryError>;
     async fn list_owned_deleted_notes(
         &self,
@@ -146,6 +148,23 @@ pub trait NoteAclRepository: Send + Sync {
     ) -> Result<Note, NoteRepositoryError>;
 }
 
+/// 所有者だけが利用できる人手確認操作port。
+#[async_trait]
+pub trait NoteReviewRepository: Send + Sync {
+    async fn read_owned_note_review(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Note, NoteRepositoryError>;
+    async fn mark_owned_note_reviewed(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        reviewed_at: marginalis_domain::UnixMillis,
+    ) -> Result<Note, NoteRepositoryError>;
+}
+
 /// 本文から導いた、ノートが指し示す先の一覧。
 ///
 /// ノート参照と引用は、どちらも本文の解析から得て同じtransactionで置き換える。別々のport
@@ -161,6 +180,7 @@ pub struct NoteApplication {
     queries: Arc<dyn NoteQueryRepository>,
     commands: Arc<dyn NoteCommandRepository>,
     access_control: Arc<dyn NoteAclRepository>,
+    reviews: Arc<dyn NoteReviewRepository>,
     content: Arc<dyn NoteContent>,
     bibliography: Arc<dyn BibliographyRepository>,
     math_macros: Arc<dyn MathMacroRepository>,
@@ -175,6 +195,7 @@ impl NoteApplication {
         queries: Arc<dyn NoteQueryRepository>,
         commands: Arc<dyn NoteCommandRepository>,
         access_control: Arc<dyn NoteAclRepository>,
+        reviews: Arc<dyn NoteReviewRepository>,
         content: Arc<dyn NoteContent>,
         bibliography: Arc<dyn BibliographyRepository>,
         math_macros: Arc<dyn MathMacroRepository>,
@@ -186,6 +207,7 @@ impl NoteApplication {
             queries,
             commands,
             access_control,
+            reviews,
             content,
             bibliography,
             math_macros,

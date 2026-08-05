@@ -9,10 +9,29 @@ CREATE TABLE notes (
     updated_at_ms INTEGER NOT NULL,
     revision INTEGER NOT NULL CHECK (revision > 0),
     deleted_at_ms INTEGER,
+    created_via TEXT NOT NULL CHECK (created_via IN ('web', 'rest', 'mcp', 'unknown')),
+    review_tracking_known INTEGER NOT NULL CHECK (review_tracking_known IN (0, 1)),
+    reviewed_revision INTEGER CHECK (reviewed_revision > 0),
+    reviewed_at_ms INTEGER,
+    reviewer_issuer TEXT,
+    reviewer_subject TEXT,
+    CHECK (
+        (reviewed_revision IS NULL AND reviewed_at_ms IS NULL
+            AND reviewer_issuer IS NULL AND reviewer_subject IS NULL)
+        OR
+        (review_tracking_known = 1 AND reviewed_revision IS NOT NULL
+            AND reviewed_revision <= revision
+            AND reviewed_at_ms BETWEEN created_at_ms AND updated_at_ms
+            AND reviewer_issuer = creator_issuer
+            AND reviewer_subject = creator_subject)
+    ),
     UNIQUE (note_id, creator_issuer)
 ) STRICT;
 CREATE INDEX notes_owner_listing_idx
 ON notes (creator_issuer, creator_subject, updated_at_ms DESC, note_id)
+WHERE deleted_at_ms IS NULL;
+CREATE INDEX notes_visible_provenance_idx
+ON notes (created_via, review_tracking_known, reviewed_revision, revision, updated_at_ms DESC, note_id)
 WHERE deleted_at_ms IS NULL;
 
 CREATE TABLE note_references (

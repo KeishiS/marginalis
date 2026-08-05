@@ -405,7 +405,7 @@ pub(crate) async fn import_documents(
     let package_version = AsciiDocNoteContent.profile().adocweave_package_version;
     let revalidated = requires_revalidation(&manifest, package_version);
 
-    let archive = archive_from_documents(&manifest, &files, package_version)?;
+    let archive = archive_from_documents(&manifest, &files, package_version, SystemClock.now())?;
     let snapshot = validate_archive_contract(&AsciiDocNoteContent, &archive)?;
     let validated = ValidatedArchive {
         archive,

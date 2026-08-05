@@ -91,6 +91,15 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
   フィールドを直接変更する公開APIは設けない。
   SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
   検査しない。
+- **ARCH-PROVENANCE-001 — 来歴と確認のrevision境界**: 作成経路はtransportのサーバー側入口で
+  決め、入力本文やクライアント指定から受け取らない。確認操作は所有者、現在のrevision、削除状態を
+  SQLiteの一つの条件付き更新で検査し、確認操作自体を新しいrevisionとして記録する。その後は本文、
+  ACL、削除、復元のどの変更でもrevisionの不一致により確認待ちとし、最後の確認記録は保持する。
+  旧形式から不明として移したノートも、移行後にrevisionが変われば追跡済みの確認待ちとする。
+  書誌ライブラリーと数式マクロ設定はノートとは別のrevisionを持つため、それらの変更はノートの確認状態を
+  変えない。
+  文書書庫からの取り込みでは、書き出し時の本文、所有者、ACLを結び付けたhashと入力を比較し、
+  異なる場合に同じrevision更新規則を適用する。
 - **ARCH-AUTHN-001 — OIDC主体の決定**: `server-users`所属はKanidmの署名検証済みID tokenから決める。
   WebとMCPの同意画面は、同じ`(issuer, subject)`を所有者identityに使用する。
 - **ARCH-SESSION-001 — sessionとlogin attemptの期限**: Web sessionは24時間のsliding idle期限と7日の
@@ -162,14 +171,16 @@ HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのpor
 検査だけを緩めず、この設計と依存表を同じ変更で更新します。
 
 ノート操作の内向きportは、問い合わせの`NoteQueries`、変更の`NoteCommands`、表示変換の
-`NotePresentation`、ACL管理の`NoteAccessControl`に分けます。複数のtransportへ同じ実装を渡す
+`NotePresentation`、ACL管理の`NoteAccessControl`、所有者による確認の`NoteReviews`に分けます。
+複数のtransportへ同じ実装を渡す
 場合だけ、これらをまとめた`NoteUseCases`をfacadeとして使います。
 閲覧画面は`NotePresentation::read_note_view`だけを呼び出し、ノート、実効アクセス水準、描画HTML、
 関連概要を個別の問い合わせから組み立てません。試験用adapterもこの境界を直接実装し、実際には
 存在しない分割問い合わせを模倣しません。
 applicationから永続化へ要求する外向きportも、読み取りの`NoteQueryRepository`、原子的な変更の
-`NoteCommandRepository`、ACL操作の`NoteAclRepository`に分けます。具象的には同じSQLite adapterが
-三つを実装しますが、application serviceは用途ごとに必要なportだけを受け取ります。
+`NoteCommandRepository`、ACL操作の`NoteAclRepository`、所有者とrevisionを原子的に検査する
+`NoteReviewRepository`に分けます。具象的には同じSQLite adapterがこれらを実装しますが、application serviceは
+用途ごとに必要なportだけを受け取ります。
 SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出しません。
 
 構造化ログはtransportやadapter内で、外部との通信結果と運用処理の結果だけを記録します。

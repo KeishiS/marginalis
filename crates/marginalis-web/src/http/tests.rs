@@ -10,17 +10,17 @@ use marginalis_application::{
     McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingSetting,
     McpScopeCeilingUseCaseError, McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl,
     NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands,
-    NoteGraph, NoteGraphNote, NoteGraphQuery, NotePresentation, NotePreview, NoteProfile,
-    NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax,
-    NoteQueries, NoteRenderContext, NoteUseCaseError, NoteUseCases, NoteValidationCode,
-    NoteValidationDiagnostic, NoteView, NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes,
-    WebSessionUseCases,
+    NoteGraph, NoteGraphNote, NoteGraphQuery, NoteListQuery, NotePresentation, NotePreview,
+    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
+    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteReviewDetails, NoteReviews,
+    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
+    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, DeletedNoteListEntry, Identity, Note, NoteAccess, NoteDraft,
-    NoteId, NoteListEntry, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
-    WebSession,
+    Actor, AuthenticatedSession, DeletedNoteListEntry, Identity, Note, NoteAccess,
+    NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewTracking,
+    NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan, WebSession,
 };
 use std::{
     io,
@@ -278,8 +278,9 @@ macro_rules! implement_note_boundaries {
             async fn list_visible_notes(
                 &self,
                 actor: Actor,
+                query: NoteListQuery,
             ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
-                <$type>::list_visible_notes(self, actor).await
+                <$type>::list_visible_notes(self, actor, query).await
             }
 
             async fn list_owned_deleted_notes(
@@ -305,8 +306,9 @@ macro_rules! implement_note_boundaries {
                 actor: Actor,
                 draft: NoteDraft,
                 policy: NoteWritePolicy,
+                created_via: NoteCreationSource,
             ) -> Result<Note, NoteUseCaseError> {
-                <$type>::create_note(self, actor, draft, policy).await
+                <$type>::create_note(self, actor, draft, policy, created_via).await
             }
 
             async fn update_note(
@@ -406,6 +408,44 @@ macro_rules! implement_note_boundaries {
                 <$type>::replace_note_acl(self, actor, note_id, entries, expected_revision).await
             }
         }
+
+        #[async_trait]
+        impl NoteReviews for $type {
+            async fn read_note_review(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+            ) -> Result<NoteReviewDetails, NoteUseCaseError> {
+                let note = <$type>::read_note(self, actor, note_id).await?;
+                let last_review = note.last_review();
+                Ok(NoteReviewDetails {
+                    note_id,
+                    current_revision: note.revision(),
+                    status: note.review_status(),
+                    reviewed_revision: last_review.map(|review| review.revision()),
+                    reviewed_at: last_review.map(|review| review.reviewed_at()),
+                    reviewer: last_review.map(|review| review.reviewer().clone()),
+                })
+            }
+
+            async fn mark_note_reviewed(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                expected_revision: Revision,
+            ) -> Result<NoteReviewDetails, NoteUseCaseError> {
+                let reviewed_revision = Revision::new(expected_revision.get() + 1)
+                    .map_err(|_| NoteUseCaseError::Unavailable)?;
+                Ok(NoteReviewDetails {
+                    note_id,
+                    current_revision: reviewed_revision,
+                    status: marginalis_domain::NoteReviewStatus::Reviewed,
+                    reviewed_revision: Some(reviewed_revision),
+                    reviewed_at: Some(UnixMillis::new(3)),
+                    reviewer: Some(actor.identity().clone()),
+                })
+            }
+        }
     };
 }
 
@@ -461,6 +501,7 @@ impl Notes {
     async fn list_visible_notes(
         &self,
         _actor: Actor,
+        _query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
         let note = mcp_note();
         Ok(vec![NoteListEntry {
@@ -496,6 +537,7 @@ impl Notes {
         _actor: Actor,
         draft: NoteDraft,
         policy: NoteWritePolicy,
+        _created_via: NoteCreationSource,
     ) -> Result<Note, NoteUseCaseError> {
         if !draft.source.starts_with("= ") {
             return Err(NoteUseCaseError::Validation(vec![
@@ -668,13 +710,20 @@ impl Notes {
 struct UiNotes {
     notes: Vec<Note>,
     render_fails: bool,
+    creation_sources: Mutex<Vec<NoteCreationSource>>,
+    list_queries: Mutex<Vec<NoteListQuery>>,
 }
 
 impl UiNotes {
     async fn list_visible_notes(
         &self,
         _actor: Actor,
+        query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+        self.list_queries
+            .lock()
+            .expect("list query lock")
+            .push(query);
         Ok(self
             .notes
             .iter()
@@ -705,7 +754,12 @@ impl UiNotes {
         _actor: Actor,
         _draft: NoteDraft,
         _policy: NoteWritePolicy,
+        created_via: NoteCreationSource,
     ) -> Result<Note, NoteUseCaseError> {
+        self.creation_sources
+            .lock()
+            .expect("creation source lock")
+            .push(created_via);
         Err(NoteUseCaseError::Unavailable)
     }
 
@@ -1375,40 +1429,50 @@ fn authenticated_app() -> Router {
 }
 
 fn ui_note(title: &str) -> Note {
-    Note::restore(
-        NoteId::new(
+    Note::restore(NoteRestore {
+        note_id: NoteId::new(
             "0197c9bc-0000-7000-8000-000000000001"
                 .parse()
                 .expect("note ID"),
         ),
-        Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
-        title.into(),
-        "本文".into(),
-        vec!["試験".into()],
-        UnixMillis::new(1),
-        UnixMillis::new(2),
-        Revision::INITIAL,
-        None,
-    )
+        owner: Identity::new("https://id.example.test".into(), "alice".into())
+            .expect("valid owner"),
+        draft: NoteDraft {
+            title: title.into(),
+            source: "本文".into(),
+            tags: vec!["試験".into()],
+        },
+        created_at: UnixMillis::new(1),
+        updated_at: UnixMillis::new(2),
+        revision: Revision::INITIAL,
+        deleted_at: None,
+        created_via: NoteCreationSource::Web,
+        review: NoteReviewTracking::pending(),
+    })
     .expect("consistent note")
 }
 
 fn mcp_note() -> Note {
-    Note::restore(
-        NoteId::new(
+    Note::restore(NoteRestore {
+        note_id: NoteId::new(
             "0197c9bc-0000-7000-8000-000000000002"
                 .parse()
                 .expect("note ID"),
         ),
-        Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
-        "同期ノート".into(),
-        "= 同期ノート\n:marginalis-tags: 同期, 試験\n\n本文".into(),
-        vec!["同期".into(), "試験".into()],
-        UnixMillis::new(1_000),
-        UnixMillis::new(2_000),
-        Revision::new(3).expect("revision"),
-        None,
-    )
+        owner: Identity::new("https://id.example.test".into(), "alice".into())
+            .expect("valid owner"),
+        draft: NoteDraft {
+            title: "同期ノート".into(),
+            source: "= 同期ノート\n:marginalis-tags: 同期, 試験\n\n本文".into(),
+            tags: vec!["同期".into(), "試験".into()],
+        },
+        created_at: UnixMillis::new(1_000),
+        updated_at: UnixMillis::new(2_000),
+        revision: Revision::new(3).expect("revision"),
+        deleted_at: None,
+        created_via: NoteCreationSource::Mcp,
+        review: NoteReviewTracking::pending(),
+    })
     .expect("consistent note")
 }
 
@@ -1418,6 +1482,8 @@ fn ui_app(notes: Vec<Note>, render_fails: bool, cookie_path: &str) -> Router {
         .notes(Arc::new(UiNotes {
             notes,
             render_fails,
+            creation_sources: Mutex::new(Vec::new()),
+            list_queries: Mutex::new(Vec::new()),
         }))
         .cookie_path(cookie_path)
         .router()

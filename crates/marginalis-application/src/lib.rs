@@ -6,9 +6,10 @@ use std::future::Future;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, DeletedNoteListEntry, EntityId, Note, NoteAccess, NoteAclEntry,
-    NoteDraft, NoteId, NoteListEntry, NotePermission, NoteSummary, NoteValidationTarget, Revision,
-    UnixMillis, Utf8ByteSpan, WebSession,
+    Actor, AuthenticatedSession, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess,
+    NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NotePermission,
+    NoteReviewStatus, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
+    WebSession,
 };
 pub use mcp_authorization_server::{
     AuthenticatedPrincipal as McpAuthenticatedPrincipal,
@@ -55,7 +56,7 @@ pub use notes::{
     NoteContentError, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery,
     NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks, NoteQueryRepository,
     NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs, NoteRepositoryError,
-    NoteViewSnapshot,
+    NoteReviewRepository, NoteViewSnapshot,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{
@@ -444,12 +445,29 @@ pub struct NoteView {
     pub math_macros: Vec<MathMacro>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NoteListQuery {
+    pub created_via: Option<NoteCreationSource>,
+    pub review_status: Option<NoteReviewStatus>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteReviewDetails {
+    pub note_id: NoteId,
+    pub current_revision: Revision,
+    pub status: NoteReviewStatus,
+    pub reviewed_revision: Option<Revision>,
+    pub reviewed_at: Option<UnixMillis>,
+    pub reviewer: Option<Identity>,
+}
+
 /// 閲覧可能なノートを取得する問い合わせ境界。
 #[async_trait]
 pub trait NoteQueries: Send + Sync {
     async fn list_visible_notes(
         &self,
         actor: Actor,
+        query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError>;
     async fn list_owned_deleted_notes(
         &self,
@@ -466,6 +484,7 @@ pub trait NoteCommands: Send + Sync {
         actor: Actor,
         draft: NoteDraft,
         policy: NoteWritePolicy,
+        created_via: NoteCreationSource,
     ) -> Result<Note, NoteUseCaseError>;
     async fn update_note(
         &self,
@@ -538,14 +557,36 @@ pub trait NoteAccessControl: Send + Sync {
     ) -> Result<Note, NoteUseCaseError>;
 }
 
+/// 所有者だけが利用できる、人手確認の問い合わせと更新境界。
+#[async_trait]
+pub trait NoteReviews: Send + Sync {
+    async fn read_note_review(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteReviewDetails, NoteUseCaseError>;
+    async fn mark_note_reviewed(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+    ) -> Result<NoteReviewDetails, NoteUseCaseError>;
+}
+
 /// 複数transportへまとめて渡す場合のfacade。
 pub trait NoteUseCases:
-    NoteQueries + NoteCommands + NotePresentation + NoteAccessControl + Send + Sync
+    NoteQueries + NoteCommands + NotePresentation + NoteAccessControl + NoteReviews + Send + Sync
 {
 }
 
 impl<T> NoteUseCases for T where
-    T: NoteQueries + NoteCommands + NotePresentation + NoteAccessControl + Send + Sync
+    T: NoteQueries
+        + NoteCommands
+        + NotePresentation
+        + NoteAccessControl
+        + NoteReviews
+        + Send
+        + Sync
 {
 }
 

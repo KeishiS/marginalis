@@ -11,6 +11,20 @@
           "type": "string"
         }
       },
+      "CreationSource": {
+        "in": "query",
+        "name": "created_via",
+        "required": false,
+        "schema": {
+          "enum": [
+            "web",
+            "rest",
+            "mcp",
+            "unknown"
+          ],
+          "type": "string"
+        }
+      },
       "CsrfToken": {
         "in": "header",
         "name": "X-CSRF-Token",
@@ -67,6 +81,19 @@
         "schema": {
           "format": "uuid",
           "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "type": "string"
+        }
+      },
+      "ReviewStatus": {
+        "in": "query",
+        "name": "review_status",
+        "required": false,
+        "schema": {
+          "enum": [
+            "unknown",
+            "pending",
+            "reviewed"
+          ],
           "type": "string"
         }
       }
@@ -440,10 +467,40 @@
           "created_at_ms": {
             "type": "integer"
           },
+          "created_via": {
+            "enum": [
+              "web",
+              "rest",
+              "mcp",
+              "unknown"
+            ],
+            "type": "string"
+          },
           "note_id": {
             "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "unknown",
+              "pending",
+              "reviewed"
+            ],
+            "type": "string"
+          },
+          "reviewed_at_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reviewed_revision": {
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "revision": {
             "minimum": 1,
@@ -472,7 +529,11 @@
           "tags",
           "created_at_ms",
           "updated_at_ms",
-          "revision"
+          "revision",
+          "created_via",
+          "review_status",
+          "reviewed_revision",
+          "reviewed_at_ms"
         ],
         "type": "object"
       },
@@ -789,10 +850,40 @@
               "manage"
             ]
           },
+          "created_via": {
+            "enum": [
+              "web",
+              "rest",
+              "mcp",
+              "unknown"
+            ],
+            "type": "string"
+          },
           "note_id": {
             "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "unknown",
+              "pending",
+              "reviewed"
+            ],
+            "type": "string"
+          },
+          "reviewed_at_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reviewed_revision": {
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "revision": {
             "minimum": 1,
@@ -817,6 +908,10 @@
           "tags",
           "updated_at_ms",
           "revision",
+          "created_via",
+          "review_status",
+          "reviewed_revision",
+          "reviewed_at_ms",
           "access"
         ],
         "type": "object"
@@ -847,13 +942,101 @@
         ],
         "type": "object"
       },
-      "NoteSummary": {
+      "NoteReview": {
         "additionalProperties": false,
         "properties": {
+          "current_revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
           "note_id": {
             "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
+          },
+          "reviewed_at_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reviewed_revision": {
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reviewer_issuer": {
+            "format": "uri",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewer_subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "pending",
+              "reviewed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "note_id",
+          "current_revision",
+          "status",
+          "reviewed_revision",
+          "reviewed_at_ms",
+          "reviewer_issuer",
+          "reviewer_subject"
+        ],
+        "type": "object"
+      },
+      "NoteSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "created_via": {
+            "enum": [
+              "web",
+              "rest",
+              "mcp",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "note_id": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "unknown",
+              "pending",
+              "reviewed"
+            ],
+            "type": "string"
+          },
+          "reviewed_at_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reviewed_revision": {
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "revision": {
             "minimum": 1,
@@ -877,7 +1060,11 @@
           "title",
           "tags",
           "updated_at_ms",
-          "revision"
+          "revision",
+          "created_via",
+          "review_status",
+          "reviewed_revision",
+          "reviewed_at_ms"
         ],
         "type": "object"
       },
@@ -1457,6 +1644,14 @@
     },
     "/api/v3/notes": {
       "get": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CreationSource"
+          },
+          {
+            "$ref": "#/components/parameters/ReviewStatus"
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1945,6 +2140,83 @@
         "summary": "Restore a note"
       }
     },
+    "/api/v3/notes/{note_id}/review": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteReview"
+                }
+              }
+            },
+            "description": "note review",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Read the owned note review record"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteReview"
+                }
+              }
+            },
+            "description": "updated note review",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "428": {
+            "$ref": "#/components/responses/PreconditionRequired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Mark the current note revision as reviewed"
+      }
+    },
     "/api/v3/notes/{note_id}/source": {
       "get": {
         "responses": {
@@ -2020,6 +2292,54 @@
           }
         },
         "summary": "Read the current identity"
+      }
+    },
+    "/api/v3/web/notes": {
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            },
+            "description": "created note",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableNote"
+          }
+        },
+        "summary": "Create a note from the Web UI"
       }
     }
   }

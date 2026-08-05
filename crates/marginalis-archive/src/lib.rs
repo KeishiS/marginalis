@@ -12,12 +12,13 @@ use marginalis_application::{
     NoteAclSnapshotEntry, NoteContent,
 };
 use marginalis_domain::{
-    BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteDraft, NoteId,
-    NotePermission, Revision, UnixMillis,
+    BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteCreationSource, NoteDraft,
+    NoteId, NotePermission, NoteRestore, NoteReviewRecord, NoteReviewTracking, Revision,
+    UnixMillis,
 };
 use serde::{Deserialize, Serialize};
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-14";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-15";
 /// archive内のノートを受理できる入力規則の版。
 ///
 /// 受理する本文が変わったときに上げます。版4までのノートはタグを`:tags:`で並べていました。
@@ -29,6 +30,7 @@ pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 5;
 const UNPREFIXED_ATTRIBUTE_PROFILE_VERSION: u32 = 4;
 /// 移行元として受理する旧archive契約。形式、AdocWeave package版、note profile版の組。
 const SUPPORTED_MIGRATION_CONTRACTS: &[(&str, &str, u32)] = &[
+    ("marginalis-archive-14", "0.27.0", 5),
     ("marginalis-archive-13", "0.27.0", 5),
     ("marginalis-archive-13", "0.23.0", 5),
     ("marginalis-archive-13", "0.23.0", 4),
@@ -65,6 +67,19 @@ pub struct ArchiveNote {
     pub updated_at_ms: i64,
     pub revision: i64,
     pub deleted_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ArchiveNoteProvenance>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveNoteProvenance {
+    pub created_via: NoteCreationSource,
+    pub review_tracking_known: bool,
+    pub reviewed_revision: Option<i64>,
+    pub reviewed_at_ms: Option<i64>,
+    pub reviewer_issuer: Option<String>,
+    pub reviewer_subject: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -156,6 +171,18 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
                 updated_at_ms: note.updated_at().get(),
                 revision: note.revision().get(),
                 deleted_at_ms: note.deleted_at().map(UnixMillis::get),
+                provenance: Some(ArchiveNoteProvenance {
+                    created_via: note.created_via(),
+                    review_tracking_known: note.review_tracking_known(),
+                    reviewed_revision: note.last_review().map(|review| review.revision().get()),
+                    reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
+                    reviewer_issuer: note
+                        .last_review()
+                        .map(|review| review.reviewer().issuer().to_owned()),
+                    reviewer_subject: note
+                        .last_review()
+                        .map(|review| review.reviewer().subject().to_owned()),
+                }),
             })
             .collect(),
         note_acl: snapshot
@@ -212,6 +239,7 @@ pub fn validate_archive(
     if archive.format != ARCHIVE_FORMAT
         || archive.adocweave_package_version != content.profile().adocweave_package_version
         || archive.note_profile_version != ARCHIVE_NOTE_PROFILE_VERSION
+        || archive.notes.iter().any(|note| note.provenance.is_none())
     {
         return Err(ArchiveValidationError);
     }
@@ -232,6 +260,18 @@ pub fn migrate_previous_archive(
     );
     if !is_supported {
         return Err(ArchiveMigrationError::UnsupportedContract);
+    }
+    if let Some((position, _)) = archive
+        .notes
+        .iter()
+        .enumerate()
+        .find(|(_, note)| note.provenance.is_some())
+    {
+        // 対応する旧契約には来歴項目が存在しない。新旧の項目を混在させた入力から、
+        // 根拠のない作成経路や人手確認を引き継がない。
+        return Err(ArchiveMigrationError::InvalidNote {
+            position: position + 1,
+        });
     }
     let archive = rename_unprefixed_attributes(archive);
     let snapshot =
@@ -316,17 +356,28 @@ fn validate_archive_contents(
             let creator = Identity::new(note.creator_issuer.clone(), note.creator_subject.clone())
                 .map_err(|_| invalid_note())?;
             let revision = Revision::new(note.revision).map_err(|_| invalid_note())?;
-            Note::restore(
+            let (created_via, review) = note
+                .provenance
+                .as_ref()
+                .map(|provenance| archive_review(provenance, &creator))
+                .transpose()
+                .map_err(|_| invalid_note())?
+                .unwrap_or((NoteCreationSource::Unknown, NoteReviewTracking::Unknown));
+            Note::restore(NoteRestore {
                 note_id,
-                creator,
-                normalized.draft.title,
-                note.source.clone(),
-                normalized.draft.tags,
-                UnixMillis::new(note.created_at_ms),
-                UnixMillis::new(note.updated_at_ms),
+                owner: creator,
+                draft: NoteDraft {
+                    title: normalized.draft.title,
+                    source: note.source.clone(),
+                    tags: normalized.draft.tags,
+                },
+                created_at: UnixMillis::new(note.created_at_ms),
+                updated_at: UnixMillis::new(note.updated_at_ms),
                 revision,
-                note.deleted_at_ms.map(UnixMillis::new),
-            )
+                deleted_at: note.deleted_at_ms.map(UnixMillis::new),
+                created_via,
+                review,
+            })
             .map_err(|_| invalid_note())
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -429,6 +480,35 @@ fn validate_archive_contents(
         })
 }
 
+fn archive_review(
+    provenance: &ArchiveNoteProvenance,
+    owner: &Identity,
+) -> Result<(NoteCreationSource, NoteReviewTracking), ()> {
+    let review = match (
+        provenance.review_tracking_known,
+        provenance.reviewed_revision,
+        provenance.reviewed_at_ms,
+        provenance.reviewer_issuer.as_deref(),
+        provenance.reviewer_subject.as_deref(),
+    ) {
+        (false, None, None, None, None) => NoteReviewTracking::Unknown,
+        (true, None, None, None, None) => NoteReviewTracking::pending(),
+        (true, Some(revision), Some(reviewed_at), Some(issuer), Some(subject)) => {
+            let reviewer = Identity::new(issuer.to_owned(), subject.to_owned()).map_err(|_| ())?;
+            if &reviewer != owner {
+                return Err(());
+            }
+            NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
+                Revision::new(revision).map_err(|_| ())?,
+                UnixMillis::new(reviewed_at),
+                reviewer,
+            )))
+        }
+        _ => return Err(()),
+    };
+    Ok((provenance.created_via, review))
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ArchiveContentsError {
     Note { position: usize },
@@ -503,6 +583,7 @@ mod tests {
                 .expect("draft")
                 .draft,
             UnixMillis::new(0),
+            NoteCreationSource::Web,
         )
     }
 
@@ -562,6 +643,7 @@ mod tests {
                 .expect("draft")
                 .draft,
             UnixMillis::new(0),
+            NoteCreationSource::Rest,
         );
         let reader = Identity::new(first.creator_issuer().into(), "reader".into()).expect("reader");
         let snapshot = LogicalSnapshot::new(
@@ -606,6 +688,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn archive_14_without_provenance_migrates_to_explicit_unknown_values() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let mut previous = create_archive(&content(), &snapshot);
+        previous.format = "marginalis-archive-14".into();
+        previous.notes[0].provenance = None;
+
+        assert_eq!(
+            validate_archive(&content(), &previous),
+            Err(ArchiveValidationError)
+        );
+        let migrated = migrate_previous_archive(&content(), &previous).expect("migration");
+        let provenance = migrated.notes[0].provenance.as_ref().expect("provenance");
+        assert_eq!(provenance.created_via, NoteCreationSource::Unknown);
+        assert!(!provenance.review_tracking_known);
+        assert_eq!(provenance.reviewed_revision, None);
+    }
+
     /// 独自の文書属性へ接頭辞を付ける前の契約。
     ///
     /// 属性名の書き換えを確かめる試験は、書き換えの対象になる版を名指す必要がある。移行元の
@@ -622,12 +722,26 @@ mod tests {
         archive.format = format.into();
         archive.adocweave_package_version = package_version.into();
         archive.note_profile_version = note_profile_version;
+        for note in &mut archive.notes {
+            note.provenance = None;
+        }
     }
 
     #[test]
     fn every_supported_contract_is_revalidated_into_the_current_one() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let current = create_archive(&content(), &snapshot);
+        let mut expected = current.clone();
+        for note in &mut expected.notes {
+            note.provenance = Some(ArchiveNoteProvenance {
+                created_via: NoteCreationSource::Unknown,
+                review_tracking_known: false,
+                reviewed_revision: None,
+                reviewed_at_ms: None,
+                reviewer_issuer: None,
+                reviewer_subject: None,
+            });
+        }
 
         for contract in SUPPORTED_MIGRATION_CONTRACTS {
             let mut historical = current.clone();
@@ -635,7 +749,7 @@ mod tests {
 
             assert_eq!(
                 migrate_previous_archive(&content(), &historical),
-                Ok(current.clone()),
+                Ok(expected.clone()),
                 "移行に失敗しました: {contract:?}"
             );
             assert_eq!(
@@ -644,6 +758,20 @@ mod tests {
                 "現行の契約として受理してしまいました: {contract:?}"
             );
         }
+    }
+
+    #[test]
+    fn migration_rejects_provenance_that_did_not_exist_in_the_old_contract() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let mut historical = create_archive(&content(), &snapshot);
+        let provenance = historical.notes[0].provenance.clone();
+        stamp_contract(&mut historical, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        historical.notes[0].provenance = provenance;
+
+        assert_eq!(
+            migrate_previous_archive(&content(), &historical),
+            Err(ArchiveMigrationError::InvalidNote { position: 1 })
+        );
     }
 
     /// 接頭辞を付ける前の`:tags:`を書いた既存archiveが、そのまま移行できる。

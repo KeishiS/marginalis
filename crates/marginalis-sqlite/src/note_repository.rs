@@ -3,7 +3,8 @@
 use async_trait::async_trait;
 use marginalis_application::{
     AccessibleNote, NoteAclRepository, NoteAclState, NoteCommandRepository, NoteGraph,
-    NoteGraphQuery, NoteLinks, NoteQueryRepository, NoteRepositoryError, NoteViewSnapshot,
+    NoteGraphQuery, NoteLinks, NoteListQuery, NoteQueryRepository, NoteRepositoryError,
+    NoteReviewRepository, NoteViewSnapshot,
 };
 use marginalis_domain::{
     Actor, DeletedNoteListEntry, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, Revision,
@@ -18,8 +19,9 @@ impl NoteQueryRepository for SqliteDatabase {
     async fn list_visible_notes(
         &self,
         actor: &Actor,
+        query: &NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteRepositoryError> {
-        SqliteDatabase::list_visible_notes(self, actor)
+        SqliteDatabase::list_visible_notes(self, actor, query)
             .await
             .map_err(map_error)
     }
@@ -156,6 +158,37 @@ impl NoteAclRepository for SqliteDatabase {
         SqliteDatabase::replace_note_acl(self, actor, note_id, entries, expected_revision, now)
             .await
             .map_err(map_error)
+    }
+}
+
+#[async_trait]
+impl NoteReviewRepository for SqliteDatabase {
+    async fn read_owned_note_review(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Note, NoteRepositoryError> {
+        SqliteDatabase::read_owned_note_review(self, actor, note_id)
+            .await
+            .map_err(map_error)
+    }
+
+    async fn mark_owned_note_reviewed(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        reviewed_at: UnixMillis,
+    ) -> Result<Note, NoteRepositoryError> {
+        SqliteDatabase::mark_owned_note_reviewed(
+            self,
+            actor,
+            note_id,
+            expected_revision,
+            reviewed_at,
+        )
+        .await
+        .map_err(map_error)
     }
 }
 

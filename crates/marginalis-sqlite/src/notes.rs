@@ -6,12 +6,13 @@ use std::collections::{BTreeMap, HashSet};
 
 use marginalis_application::{
     AccessibleNote, NoteAclState, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery,
-    NoteGraphReference, NoteGraphWork, NoteLinks, NoteViewSnapshot, RelatedNotes,
+    NoteGraphReference, NoteGraphWork, NoteLinks, NoteListQuery, NoteViewSnapshot, RelatedNotes,
 };
 use marginalis_domain::{
-    Actor, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft,
-    NoteId, NoteListEntry, NotePermission, NoteSummary, Revision, SOFT_DELETE_RETENTION_MS,
-    UnixMillis,
+    Actor, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteAclEntry,
+    NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NotePermission, NoteRestore,
+    NoteReviewRecord, NoteReviewStatus, NoteReviewTracking, NoteSummary, Revision,
+    SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
 use sqlx::{QueryBuilder, Row, Sqlite};
 
@@ -41,8 +42,12 @@ impl SqliteDatabase {
             serde_json::to_string(note.tags()).map_err(|_| SqliteStoreError::CorruptData)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         sqlx::query(
-            "INSERT INTO notes (note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO notes (
+                note_id, creator_issuer, creator_subject, title, source, tags_json,
+                created_at_ms, updated_at_ms, revision, deleted_at_ms, created_via,
+                review_tracking_known, reviewed_revision, reviewed_at_ms,
+                reviewer_issuer, reviewer_subject
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(note.note_id().to_string())
         .bind(note.creator_issuer())
@@ -54,6 +59,12 @@ impl SqliteDatabase {
         .bind(note.updated_at().get())
         .bind(note.revision().get())
         .bind(note.deleted_at().map(UnixMillis::get))
+        .bind(note.created_via().as_str())
+        .bind(i64::from(note.review_tracking_known()))
+        .bind(note.last_review().map(|review| review.revision().get()))
+        .bind(note.last_review().map(|review| review.reviewed_at().get()))
+        .bind(note.last_review().map(|review| review.reviewer().issuer()))
+        .bind(note.last_review().map(|review| review.reviewer().subject()))
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -69,21 +80,15 @@ impl SqliteDatabase {
         include_deleted: bool,
     ) -> Result<Option<Note>, SqliteStoreError> {
         let row = if include_deleted {
-            sqlx::query(
-                "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-                 FROM notes WHERE note_id = ?",
-            )
-            .bind(note_id.to_string())
-            .fetch_optional(&self.pool)
-            .await
+            sqlx::query("SELECT * FROM notes WHERE note_id = ?")
+                .bind(note_id.to_string())
+                .fetch_optional(&self.pool)
+                .await
         } else {
-            sqlx::query(
-                "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-                 FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL",
-            )
-            .bind(note_id.to_string())
-            .fetch_optional(&self.pool)
-            .await
+            sqlx::query("SELECT * FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL")
+                .bind(note_id.to_string())
+                .fetch_optional(&self.pool)
+                .await
         }
         .map_err(database_error)?;
         row.map(note_from_row).transpose()
@@ -96,9 +101,7 @@ impl SqliteDatabase {
         note_id: NoteId,
     ) -> Result<Option<AccessibleNote>, SqliteStoreError> {
         let row = sqlx::query(
-            "SELECT notes.note_id, notes.creator_issuer, notes.creator_subject, notes.title,
-                    notes.source, notes.tags_json, notes.created_at_ms, notes.updated_at_ms,
-                    notes.revision, notes.deleted_at_ms, access.access_level
+            "SELECT notes.*, access.access_level
              FROM notes
              JOIN note_access access ON access.note_id = notes.note_id
              WHERE notes.note_id = ? AND notes.deleted_at_ms IS NULL
@@ -130,8 +133,7 @@ impl SqliteDatabase {
             return Ok(Vec::new());
         }
         let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json,
-                    created_at_ms, updated_at_ms, revision, deleted_at_ms
+            "SELECT *
              FROM notes
              WHERE deleted_at_ms IS NULL AND note_id IN (",
         );
@@ -162,18 +164,32 @@ impl SqliteDatabase {
     pub async fn list_visible_notes(
         &self,
         actor: &Actor,
+        query: &NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, SqliteStoreError> {
         let rows = sqlx::query(
             "SELECT notes.note_id, notes.title, notes.tags_json, notes.updated_at_ms,
-                    notes.revision, access.access_level
+                    notes.revision, notes.created_via, notes.review_tracking_known,
+                    notes.reviewed_revision, notes.reviewed_at_ms, access.access_level
              FROM notes
              JOIN note_access access ON access.note_id = notes.note_id
              WHERE notes.deleted_at_ms IS NULL
                AND access.issuer = ? AND access.subject = ?
+               AND (?3 IS NULL OR notes.created_via = ?3)
+               AND (
+                    ?4 IS NULL
+                    OR (?4 = 'unknown' AND notes.review_tracking_known = 0)
+                    OR (?4 = 'pending' AND notes.review_tracking_known = 1
+                        AND (notes.reviewed_revision IS NULL
+                            OR notes.reviewed_revision != notes.revision))
+                    OR (?4 = 'reviewed' AND notes.review_tracking_known = 1
+                        AND notes.reviewed_revision = notes.revision)
+               )
              ORDER BY notes.updated_at_ms DESC, notes.note_id ASC",
         )
         .bind(actor.issuer())
         .bind(actor.subject())
+        .bind(query.created_via.map(NoteCreationSource::as_str))
+        .bind(query.review_status.map(NoteReviewStatus::as_str))
         .fetch_all(&self.pool)
         .await
         .map_err(database_error)?;
@@ -361,7 +377,8 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let result = sqlx::query(
             "UPDATE notes
-             SET title = ?, source = ?, tags_json = ?, updated_at_ms = ?, revision = revision + 1
+             SET title = ?, source = ?, tags_json = ?, updated_at_ms = ?,
+                 review_tracking_known = 1, revision = revision + 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
@@ -386,14 +403,11 @@ impl SqliteDatabase {
             transaction.rollback().await.map_err(database_error)?;
             return Err(error);
         }
-        let row = sqlx::query(
-            "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-             FROM notes WHERE note_id = ?",
-        )
-        .bind(note_id.to_string())
-        .fetch_one(&mut *transaction)
-        .await
-        .map_err(database_error)?;
+        let row = sqlx::query("SELECT * FROM notes WHERE note_id = ?")
+            .bind(note_id.to_string())
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(database_error)?;
         let note = note_from_row(row)?;
         replace_link_rows(&mut transaction, note_id, links).await?;
         transaction.commit().await.map_err(database_error)?;
@@ -410,7 +424,9 @@ impl SqliteDatabase {
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let result = sqlx::query(
-            "UPDATE notes SET deleted_at_ms = ?, updated_at_ms = ?, revision = revision + 1
+            "UPDATE notes
+             SET deleted_at_ms = ?, updated_at_ms = ?, review_tracking_known = 1,
+                 revision = revision + 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
@@ -450,7 +466,9 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let retention_cutoff = restored_at.get().saturating_sub(SOFT_DELETE_RETENTION_MS);
         let result = sqlx::query(
-            "UPDATE notes SET deleted_at_ms = NULL, updated_at_ms = ?, revision = revision + 1
+            "UPDATE notes
+             SET deleted_at_ms = NULL, updated_at_ms = ?, review_tracking_known = 1,
+                 revision = revision + 1
              WHERE note_id = ? AND revision = ?
                AND deleted_at_ms IS NOT NULL AND deleted_at_ms >= ?
                AND creator_issuer = ? AND creator_subject = ?",
@@ -503,9 +521,7 @@ impl SqliteDatabase {
     ) -> Result<Option<NoteViewSnapshot>, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let row = sqlx::query(
-            "SELECT notes.note_id, notes.creator_issuer, notes.creator_subject, notes.title,
-                    notes.source, notes.tags_json, notes.created_at_ms, notes.updated_at_ms,
-                    notes.revision, notes.deleted_at_ms, access.access_level
+            "SELECT notes.*, access.access_level
              FROM notes
              JOIN note_access access ON access.note_id = notes.note_id
              WHERE notes.note_id = ? AND notes.deleted_at_ms IS NULL
@@ -527,9 +543,7 @@ impl SqliteDatabase {
         )?;
         let note = note_from_row(row)?;
         let reference_targets = sqlx::query(
-            "SELECT target.note_id, target.creator_issuer, target.creator_subject, target.title,
-                    target.source, target.tags_json, target.created_at_ms, target.updated_at_ms,
-                    target.revision, target.deleted_at_ms
+            "SELECT target.*
              FROM note_references reference
              JOIN notes target ON target.note_id = reference.target_note_id
              WHERE reference.source_note_id = ? AND target.deleted_at_ms IS NULL
@@ -550,7 +564,8 @@ impl SqliteDatabase {
         let outgoing = reference_targets.iter().map(NoteSummary::from).collect();
         let incoming = sqlx::query(
             "SELECT source.note_id, source.title, source.tags_json, source.updated_at_ms,
-                    source.revision
+                    source.revision, source.created_via, source.review_tracking_known,
+                    source.reviewed_revision, source.reviewed_at_ms
              FROM note_references reference
              JOIN notes source ON source.note_id = reference.source_note_id
              WHERE reference.target_note_id = ? AND source.deleted_at_ms IS NULL
@@ -634,7 +649,8 @@ impl SqliteDatabase {
     ) -> Result<Note, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let result = sqlx::query(
-            "UPDATE notes SET revision = revision + 1, updated_at_ms = ?
+            "UPDATE notes
+             SET revision = revision + 1, updated_at_ms = ?, review_tracking_known = 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
@@ -736,13 +752,35 @@ fn note_summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<NoteSummary, Sq
             .map_err(|_| SqliteStoreError::CorruptData)?,
     );
     let tags_json: String = row.try_get("tags_json").map_err(database_error)?;
+    let revision = Revision::new(row.try_get("revision").map_err(database_error)?)
+        .map_err(|_| SqliteStoreError::CorruptData)?;
+    let review_tracking_known = row
+        .try_get::<i64, _>("review_tracking_known")
+        .map_err(database_error)?;
+    let reviewed_revision = row
+        .try_get::<Option<i64>, _>("reviewed_revision")
+        .map_err(database_error)?
+        .map(Revision::new)
+        .transpose()
+        .map_err(|_| SqliteStoreError::CorruptData)?;
+    let review_status = review_status(review_tracking_known, reviewed_revision, revision)?;
     Ok(NoteSummary {
         note_id,
         title: row.try_get("title").map_err(database_error)?,
         tags: serde_json::from_str(&tags_json).map_err(|_| SqliteStoreError::CorruptData)?,
         updated_at: UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
-        revision: Revision::new(row.try_get("revision").map_err(database_error)?)
+        revision,
+        created_via: row
+            .try_get::<String, _>("created_via")
+            .map_err(database_error)?
+            .parse()
             .map_err(|_| SqliteStoreError::CorruptData)?,
+        review_status,
+        reviewed_revision,
+        reviewed_at: row
+            .try_get::<Option<i64>, _>("reviewed_at_ms")
+            .map_err(database_error)?
+            .map(UnixMillis::new),
     })
 }
 
@@ -773,7 +811,7 @@ fn deleted_note_entry_from_row(
     })
 }
 
-async fn require_active_note_access(
+pub(crate) async fn require_active_note_access(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     actor: &Actor,
     note_id: NoteId,
@@ -796,7 +834,7 @@ async fn require_active_note_access(
     visible.map(|_| ()).ok_or(SqliteStoreError::NotFound)
 }
 
-async fn classify_failed_mutation(
+pub(crate) async fn classify_failed_mutation(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     actor: &Actor,
     note_id: NoteId,
@@ -860,18 +898,15 @@ fn access_from_level(level: i64) -> Result<NoteAccess, SqliteStoreError> {
     }
 }
 
-async fn note_row(
+pub(crate) async fn note_row(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     note_id: NoteId,
 ) -> Result<sqlx::sqlite::SqliteRow, SqliteStoreError> {
-    sqlx::query(
-        "SELECT note_id, creator_issuer, creator_subject, title, source, tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-         FROM notes WHERE note_id = ?",
-    )
-    .bind(note_id.to_string())
-    .fetch_one(&mut **transaction)
-    .await
-    .map_err(database_error)
+    sqlx::query("SELECT * FROM notes WHERE note_id = ?")
+        .bind(note_id.to_string())
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(database_error)
 }
 
 pub(crate) fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Note, SqliteStoreError> {
@@ -890,21 +925,83 @@ pub(crate) fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Note, Sqlite
         row.try_get("creator_subject").map_err(database_error)?,
     )
     .map_err(|_| SqliteStoreError::CorruptData)?;
-    Note::restore(
+    let review_tracking_known = row
+        .try_get::<i64, _>("review_tracking_known")
+        .map_err(database_error)?;
+    let reviewed_revision = row
+        .try_get::<Option<i64>, _>("reviewed_revision")
+        .map_err(database_error)?
+        .map(Revision::new)
+        .transpose()
+        .map_err(|_| SqliteStoreError::CorruptData)?;
+    let reviewed_at = row
+        .try_get::<Option<i64>, _>("reviewed_at_ms")
+        .map_err(database_error)?
+        .map(UnixMillis::new);
+    let reviewer_issuer = row
+        .try_get::<Option<String>, _>("reviewer_issuer")
+        .map_err(database_error)?;
+    let reviewer_subject = row
+        .try_get::<Option<String>, _>("reviewer_subject")
+        .map_err(database_error)?;
+    let review = match (
+        review_tracking_known,
+        reviewed_revision,
+        reviewed_at,
+        reviewer_issuer,
+        reviewer_subject,
+    ) {
+        (0, None, None, None, None) => NoteReviewTracking::Unknown,
+        (1, None, None, None, None) => NoteReviewTracking::pending(),
+        (1, Some(revision), Some(reviewed_at), Some(issuer), Some(subject)) => {
+            let reviewer =
+                Identity::new(issuer, subject).map_err(|_| SqliteStoreError::CorruptData)?;
+            NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
+                revision,
+                reviewed_at,
+                reviewer,
+            )))
+        }
+        _ => return Err(SqliteStoreError::CorruptData),
+    };
+    Note::restore(NoteRestore {
         note_id,
         owner,
-        row.try_get("title").map_err(database_error)?,
-        row.try_get("source").map_err(database_error)?,
-        tags,
-        UnixMillis::new(row.try_get("created_at_ms").map_err(database_error)?),
-        UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
-        Revision::new(row.try_get("revision").map_err(database_error)?)
+        draft: NoteDraft {
+            title: row.try_get("title").map_err(database_error)?,
+            source: row.try_get("source").map_err(database_error)?,
+            tags,
+        },
+        created_at: UnixMillis::new(row.try_get("created_at_ms").map_err(database_error)?),
+        updated_at: UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
+        revision: Revision::new(row.try_get("revision").map_err(database_error)?)
             .map_err(|_| SqliteStoreError::CorruptData)?,
-        row.try_get::<Option<i64>, _>("deleted_at_ms")
+        deleted_at: row
+            .try_get::<Option<i64>, _>("deleted_at_ms")
             .map_err(database_error)?
             .map(UnixMillis::new),
-    )
+        created_via: row
+            .try_get::<String, _>("created_via")
+            .map_err(database_error)?
+            .parse()
+            .map_err(|_| SqliteStoreError::CorruptData)?,
+        review,
+    })
     .map_err(|_| SqliteStoreError::CorruptData)
+}
+
+fn review_status(
+    tracking_known: i64,
+    reviewed_revision: Option<Revision>,
+    current_revision: Revision,
+) -> Result<NoteReviewStatus, SqliteStoreError> {
+    match (tracking_known, reviewed_revision) {
+        (0, None) => Ok(NoteReviewStatus::Unknown),
+        (1, None) => Ok(NoteReviewStatus::Pending),
+        (1, Some(reviewed)) if reviewed == current_revision => Ok(NoteReviewStatus::Reviewed),
+        (1, Some(reviewed)) if reviewed < current_revision => Ok(NoteReviewStatus::Pending),
+        _ => Err(SqliteStoreError::CorruptData),
+    }
 }
 
 fn graph_note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<NoteGraphNote, SqliteStoreError> {

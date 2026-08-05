@@ -8,17 +8,36 @@ export interface Note {
   created_at_ms: number;
   updated_at_ms: number;
   revision: number;
+  created_via: NoteCreationSource;
+  review_status: NoteReviewStatus;
+  reviewed_revision: number | null;
+  reviewed_at_ms: number | null;
 }
+export type NoteCreationSource = "web" | "rest" | "mcp" | "unknown";
+export type NoteReviewStatus = "unknown" | "pending" | "reviewed";
 export interface NoteSummary {
   note_id: string;
   title: string;
   tags: string[];
   updated_at_ms: number;
   revision: number;
+  created_via: NoteCreationSource;
+  review_status: NoteReviewStatus;
+  reviewed_revision: number | null;
+  reviewed_at_ms: number | null;
 }
 export type NoteAccess = "read" | "edit" | "manage";
 export interface NoteListEntry extends NoteSummary {
   access: NoteAccess;
+}
+export interface NoteReview {
+  note_id: string;
+  current_revision: number;
+  status: NoteReviewStatus;
+  reviewed_revision: number | null;
+  reviewed_at_ms: number | null;
+  reviewer_issuer: string | null;
+  reviewer_subject: string | null;
 }
 export interface DeletedNoteListEntry {
   note_id: string;
@@ -192,6 +211,7 @@ export function parseNote(value: unknown): Note {
     created_at_ms: integer(object.created_at_ms, "note.created_at_ms"),
     updated_at_ms: integer(object.updated_at_ms, "note.updated_at_ms"),
     revision: positiveInteger(object.revision, "note.revision"),
+    ...parseNoteProvenance(object, "note"),
   };
 }
 
@@ -355,6 +375,79 @@ export function parseNoteSummary(value: unknown): NoteSummary {
     tags: textArray(object.tags, "note summary.tags"),
     updated_at_ms: integer(object.updated_at_ms, "note summary.updated_at_ms"),
     revision: positiveInteger(object.revision, "note summary.revision"),
+    ...parseNoteProvenance(object, "note summary"),
+  };
+}
+
+function parseNoteProvenance(
+  object: Record<string, unknown>,
+  path: string,
+): Pick<
+  NoteSummary,
+  "created_via" | "review_status" | "reviewed_revision" | "reviewed_at_ms"
+> {
+  const createdVia = object.created_via;
+  if (
+    createdVia !== "web" &&
+    createdVia !== "rest" &&
+    createdVia !== "mcp" &&
+    createdVia !== "unknown"
+  ) {
+    throw new Error(`${path}.created_via is invalid`);
+  }
+  const reviewStatus = object.review_status;
+  if (
+    reviewStatus !== "unknown" &&
+    reviewStatus !== "pending" &&
+    reviewStatus !== "reviewed"
+  ) {
+    throw new Error(`${path}.review_status is invalid`);
+  }
+  return {
+    created_via: createdVia,
+    review_status: reviewStatus,
+    reviewed_revision:
+      object.reviewed_revision === null
+        ? null
+        : positiveInteger(
+            object.reviewed_revision,
+            `${path}.reviewed_revision`,
+          ),
+    reviewed_at_ms:
+      object.reviewed_at_ms === null
+        ? null
+        : integer(object.reviewed_at_ms, `${path}.reviewed_at_ms`),
+  };
+}
+
+export function parseNoteReview(value: unknown): NoteReview {
+  const object = record(value, "note review");
+  const provenance = parseNoteProvenance(
+    {
+      created_via: "unknown",
+      review_status: object.status,
+      reviewed_revision: object.reviewed_revision,
+      reviewed_at_ms: object.reviewed_at_ms,
+    },
+    "note review",
+  );
+  return {
+    note_id: text(object.note_id, "note review.note_id"),
+    current_revision: positiveInteger(
+      object.current_revision,
+      "note review.current_revision",
+    ),
+    status: provenance.review_status,
+    reviewed_revision: provenance.reviewed_revision,
+    reviewed_at_ms: provenance.reviewed_at_ms,
+    reviewer_issuer:
+      object.reviewer_issuer === null
+        ? null
+        : text(object.reviewer_issuer, "note review.reviewer_issuer"),
+    reviewer_subject:
+      object.reviewer_subject === null
+        ? null
+        : text(object.reviewer_subject, "note review.reviewer_subject"),
   };
 }
 
@@ -851,7 +944,7 @@ export async function createNote(
   draft: NoteDraft,
 ): Promise<Note> {
   return requestJson(
-    `${apiBase}/notes`,
+    `${apiBase}/web/notes`,
     mutationRequest("POST", draft),
     parseNote,
   );
@@ -948,6 +1041,18 @@ export async function replaceNoteAcl(
     `${apiBase}/notes/${encodeURIComponent(noteId)}/acl`,
     mutationRequest("PUT", { entries }, expectedRevision),
     parseNote,
+  );
+}
+
+export async function markNoteReviewed(
+  apiBase: string,
+  noteId: string,
+  expectedRevision: number,
+): Promise<NoteReview> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/review`,
+    mutationRequest("POST", undefined, expectedRevision),
+    parseNoteReview,
   );
 }
 

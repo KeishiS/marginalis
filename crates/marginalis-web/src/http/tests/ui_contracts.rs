@@ -179,21 +179,26 @@ async fn rendered_note_view_api_returns_related_note_metadata() {
     let source = ui_note("閲覧中");
     let mut notes = vec![source.clone()];
     for index in 2..=13 {
-        let note = Note::restore(
-            NoteId::new(
+        let note = Note::restore(NoteRestore {
+            note_id: NoteId::new(
                 format!("0197c9bc-0000-7000-8000-{index:012x}")
                     .parse()
                     .expect("note ID"),
             ),
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
-            format!("関連ノート{index}"),
-            "本文".into(),
-            vec!["z".into(), "a".into(), "m".into(), "<危険>".into()],
-            UnixMillis::new(1),
-            UnixMillis::new(index),
-            Revision::INITIAL,
-            None,
-        )
+            owner: Identity::new("https://id.example.test".into(), "alice".into())
+                .expect("valid owner"),
+            draft: NoteDraft {
+                title: format!("関連ノート{index}"),
+                source: "本文".into(),
+                tags: vec!["z".into(), "a".into(), "m".into(), "<危険>".into()],
+            },
+            created_at: UnixMillis::new(1),
+            updated_at: UnixMillis::new(index),
+            revision: Revision::INITIAL,
+            deleted_at: None,
+            created_via: NoteCreationSource::Web,
+            review: NoteReviewTracking::pending(),
+        })
         .expect("consistent note");
         notes.push(note);
     }

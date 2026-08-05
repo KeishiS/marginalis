@@ -9,6 +9,7 @@ mod mcp;
 mod mcp_oauth_repository;
 mod mcp_scope_ceiling_repository;
 mod note_repository;
+mod note_reviews;
 mod notes;
 mod schema;
 mod session;

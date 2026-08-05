@@ -5,6 +5,13 @@ const {
   test,
 } = require("./fixtures/browser-diagnostics");
 
+const pendingWebProvenance = {
+  created_via: "web",
+  review_status: "pending",
+  reviewed_revision: null,
+  reviewed_at_ms: null,
+};
+
 test("production build starts and renders a note returned by the API", async ({
   page,
 }) => {
@@ -18,6 +25,7 @@ test("production build starts and renders a note returned by the API", async ({
           tags: ["smoke"],
           updated_at_ms: Date.parse("2026-07-28T12:00:00Z"),
           revision: 1,
+          ...pendingWebProvenance,
           access: "manage",
         },
       ]),
@@ -97,6 +105,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
           created_at_ms: 1,
           updated_at_ms: 1,
           revision: 1,
+          ...pendingWebProvenance,
         },
         access: "manage",
         math_macros: [],
@@ -123,6 +132,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
         created_at_ms: 1,
         updated_at_ms: 2,
         revision: 2,
+        ...pendingWebProvenance,
       }),
     });
   });
@@ -158,6 +168,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
         created_at_ms: 1,
         updated_at_ms: 3,
         revision: 3,
+        ...pendingWebProvenance,
       }),
     });
   });
@@ -541,6 +552,7 @@ stem:[\mathbb{R}]`,
           created_at_ms: 1,
           updated_at_ms: 1,
           revision: 1,
+          ...pendingWebProvenance,
         },
         access: "manage",
         math_macros: [],
@@ -588,7 +600,7 @@ test("5,000行の文書を編集して保存できる", async ({ page }) => {
       }),
     });
   });
-  await page.route("**/api/v3/notes", async (route) => {
+  await page.route("**/api/v3/web/notes", async (route) => {
     if (route.request().method() !== "POST") {
       await route.fallback();
       return;
@@ -605,6 +617,7 @@ test("5,000行の文書を編集して保存できる", async ({ page }) => {
         created_at_ms: 1,
         updated_at_ms: 1,
         revision: 1,
+        ...pendingWebProvenance,
       }),
     });
   });

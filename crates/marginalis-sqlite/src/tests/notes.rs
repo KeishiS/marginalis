@@ -1,5 +1,8 @@
-use marginalis_application::{BibliographyRepository, NoteGraphQuery, NoteLinks};
-use marginalis_domain::{BibliographyItem, BibliographyItemId};
+use marginalis_application::{BibliographyRepository, NoteGraphQuery, NoteLinks, NoteListQuery};
+use marginalis_domain::{
+    BibliographyItem, BibliographyItemId, NoteCreationSource, NoteRestore, NoteReviewStatus,
+    NoteReviewTracking,
+};
 
 use super::*;
 
@@ -22,17 +25,22 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     let note_id = NoteId::new(
         EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("v7 note ID"),
     );
-    let note = Note::restore(
+    let note = Note::restore(NoteRestore {
         note_id,
-        Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
-        "First title".into(),
-        "first body".into(),
-        vec!["research".into()],
-        UnixMillis::new(100),
-        UnixMillis::new(100),
-        Revision::INITIAL,
-        None,
-    )
+        owner: Identity::new("https://id.example.test".into(), "alice".into())
+            .expect("valid owner"),
+        draft: NoteDraft {
+            title: "First title".into(),
+            source: "first body".into(),
+            tags: vec!["research".into()],
+        },
+        created_at: UnixMillis::new(100),
+        updated_at: UnixMillis::new(100),
+        revision: Revision::INITIAL,
+        deleted_at: None,
+        created_via: NoteCreationSource::Unknown,
+        review: NoteReviewTracking::Unknown,
+    })
     .expect("consistent note");
     database
         .create_note(&note, NoteLinks::default())
@@ -68,28 +76,28 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         Ok(None)
     );
     let owner_list = database
-        .list_visible_notes(&alice)
+        .list_visible_notes(&alice, &NoteListQuery::default())
         .await
         .expect("owner list");
     assert_eq!(owner_list.len(), 1);
     assert_eq!(owner_list[0].access, NoteAccess::Manage);
     assert!(
         database
-            .list_visible_notes(&charlie)
+            .list_visible_notes(&charlie, &NoteListQuery::default())
             .await
             .expect("non-owner list")
             .is_empty()
     );
     assert!(
         database
-            .list_visible_notes(&same_subject_different_issuer)
+            .list_visible_notes(&same_subject_different_issuer, &NoteListQuery::default())
             .await
             .expect("different issuer list")
             .is_empty()
     );
     assert!(
         database
-            .list_visible_notes(&former_administrator)
+            .list_visible_notes(&former_administrator, &NoteListQuery::default())
             .await
             .expect("unshared former administrator list")
             .is_empty()
@@ -138,6 +146,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .expect("update note");
     assert_eq!(updated.revision().get(), 2);
     assert_eq!(updated.title(), "Updated title");
+    assert_eq!(updated.review_status(), NoteReviewStatus::Pending);
     assert_eq!(
         database
             .soft_delete_visible_note(&alice, note_id, revision(1), UnixMillis::new(300))
@@ -415,17 +424,21 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
     );
     let owner_identity =
         Identity::new("https://id.example.test".into(), "owner".into()).expect("owner");
-    let note = Note::restore(
+    let note = Note::restore(NoteRestore {
         note_id,
-        owner_identity.clone(),
-        "Title".into(),
-        "Body".into(),
-        Vec::new(),
-        UnixMillis::new(100),
-        UnixMillis::new(100),
-        Revision::INITIAL,
-        None,
-    )
+        owner: owner_identity.clone(),
+        draft: NoteDraft {
+            title: "Title".into(),
+            source: "Body".into(),
+            tags: Vec::new(),
+        },
+        created_at: UnixMillis::new(100),
+        updated_at: UnixMillis::new(100),
+        revision: Revision::INITIAL,
+        deleted_at: None,
+        created_via: NoteCreationSource::Unknown,
+        review: NoteReviewTracking::Unknown,
+    })
     .expect("note");
     database
         .create_note(&note, NoteLinks::default())
@@ -560,6 +573,193 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
 }
 
 #[tokio::test]
+async fn provenance_filters_and_review_state_follow_the_current_revision() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let owner = actor("https://id.example.test", "owner");
+    let outsider = actor("https://id.example.test", "outsider");
+    let note_id = NoteId::new(
+        EntityId::from_str("0197c9bc-0000-7000-8000-000000000021").expect("v7 note ID"),
+    );
+    let note = Note::create(
+        note_id,
+        owner.identity(),
+        NoteDraft {
+            title: "確認対象".into(),
+            source: "= 確認対象\n\n本文".into(),
+            tags: vec!["調査".into()],
+        },
+        UnixMillis::new(100),
+        NoteCreationSource::Rest,
+    );
+    database
+        .create_note(&note, NoteLinks::default())
+        .await
+        .expect("create note");
+
+    let pending = database
+        .list_visible_notes(
+            &owner,
+            &NoteListQuery {
+                created_via: Some(NoteCreationSource::Rest),
+                review_status: Some(NoteReviewStatus::Pending),
+            },
+        )
+        .await
+        .expect("pending list");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].summary.created_via, NoteCreationSource::Rest);
+    assert_eq!(pending[0].summary.review_status, NoteReviewStatus::Pending);
+    assert!(
+        database
+            .list_visible_notes(
+                &owner,
+                &NoteListQuery {
+                    created_via: Some(NoteCreationSource::Web),
+                    review_status: None,
+                },
+            )
+            .await
+            .expect("source filter")
+            .is_empty()
+    );
+
+    assert_eq!(
+        database
+            .mark_owned_note_reviewed(&outsider, note_id, Revision::INITIAL, UnixMillis::new(110),)
+            .await,
+        Err(SqliteStoreError::NotFound)
+    );
+    let reviewed = database
+        .mark_owned_note_reviewed(&owner, note_id, Revision::INITIAL, UnixMillis::new(110))
+        .await
+        .expect("mark reviewed");
+    assert_eq!(reviewed.revision(), revision(2));
+    assert_eq!(reviewed.review_status(), NoteReviewStatus::Reviewed);
+    assert_eq!(
+        reviewed.last_review().expect("review").revision(),
+        revision(2)
+    );
+    assert_eq!(
+        database
+            .mark_owned_note_reviewed(&owner, note_id, Revision::INITIAL, UnixMillis::new(120),)
+            .await,
+        Err(SqliteStoreError::Conflict)
+    );
+
+    let updated = database
+        .update_visible_note(
+            &owner,
+            note_id,
+            reviewed.revision(),
+            &NoteDraft {
+                title: "更新後".into(),
+                source: "= 更新後\n\n本文".into(),
+                tags: Vec::new(),
+            },
+            NoteLinks::default(),
+            UnixMillis::new(120),
+        )
+        .await
+        .expect("update note");
+    assert_eq!(updated.review_status(), NoteReviewStatus::Pending);
+    assert_eq!(
+        updated.last_review().expect("retained review").revision(),
+        revision(2)
+    );
+    assert!(
+        database
+            .list_visible_notes(
+                &owner,
+                &NoteListQuery {
+                    created_via: None,
+                    review_status: Some(NoteReviewStatus::Reviewed),
+                },
+            )
+            .await
+            .expect("reviewed filter")
+            .is_empty()
+    );
+
+    let reviewed = database
+        .mark_owned_note_reviewed(&owner, note_id, updated.revision(), UnixMillis::new(130))
+        .await
+        .expect("review updated note");
+    let acl_changed = database
+        .replace_note_acl(
+            &owner,
+            note_id,
+            &[NoteAclEntry::new(
+                Identity::new("https://id.example.test".into(), "reader".into()).expect("reader"),
+                NotePermission::Read,
+            )],
+            reviewed.revision(),
+            UnixMillis::new(140),
+        )
+        .await
+        .expect("change ACL after review");
+    assert_eq!(acl_changed.review_status(), NoteReviewStatus::Pending);
+
+    let reviewed = database
+        .mark_owned_note_reviewed(
+            &owner,
+            note_id,
+            acl_changed.revision(),
+            UnixMillis::new(150),
+        )
+        .await
+        .expect("review ACL change");
+    let deleted = database
+        .soft_delete_visible_note(&owner, note_id, reviewed.revision(), UnixMillis::new(160))
+        .await
+        .expect("delete reviewed note");
+    assert_eq!(deleted.review_status(), NoteReviewStatus::Pending);
+    let restored = database
+        .restore_owned_deleted_note(&owner, note_id, deleted.revision(), UnixMillis::new(170))
+        .await
+        .expect("restore reviewed note");
+    assert_eq!(restored.review_status(), NoteReviewStatus::Pending);
+
+    let reviewed = database
+        .mark_owned_note_reviewed(&owner, note_id, restored.revision(), UnixMillis::new(180))
+        .await
+        .expect("review restored note");
+    let bibliography = BibliographyItem::create(
+        BibliographyItemId::new(
+            EntityId::from_str("0197c9bc-0000-7000-8000-0000000000a1")
+                .expect("v7 bibliography item ID"),
+        ),
+        owner.identity(),
+        "smith2024".into(),
+        r#"{"id":"smith2024","type":"book","title":"Example"}"#.into(),
+        UnixMillis::new(190),
+    );
+    database
+        .create_owned_item(&bibliography)
+        .await
+        .expect("change bibliography");
+    database
+        .replace_math_macros(
+            owner.identity(),
+            &[MathMacro {
+                name: "bm".into(),
+                replacement: r"\boldsymbol{#1}".into(),
+                argument_count: 1,
+            }],
+            0,
+        )
+        .await
+        .expect("change math macros");
+    let unchanged = database
+        .read_owned_note_review(&owner, note_id)
+        .await
+        .expect("read review after external resource changes");
+    assert_eq!(unchanged.revision(), reviewed.revision());
+    assert_eq!(unchanged.review_status(), NoteReviewStatus::Reviewed);
+}
+
+#[tokio::test]
 async fn concurrent_note_updates_accept_only_one_expected_revision() {
     let database = SqliteDatabase::connect("sqlite::memory:")
         .await
@@ -569,17 +769,21 @@ async fn concurrent_note_updates_accept_only_one_expected_revision() {
     );
     let owner_identity =
         Identity::new("https://id.example.test".into(), "owner".into()).expect("owner");
-    let note = Note::restore(
+    let note = Note::restore(NoteRestore {
         note_id,
-        owner_identity.clone(),
-        "Title".into(),
-        "Body".into(),
-        Vec::new(),
-        UnixMillis::new(100),
-        UnixMillis::new(100),
-        Revision::INITIAL,
-        None,
-    )
+        owner: owner_identity.clone(),
+        draft: NoteDraft {
+            title: "Title".into(),
+            source: "Body".into(),
+            tags: Vec::new(),
+        },
+        created_at: UnixMillis::new(100),
+        updated_at: UnixMillis::new(100),
+        revision: Revision::INITIAL,
+        deleted_at: None,
+        created_via: NoteCreationSource::Unknown,
+        review: NoteReviewTracking::Unknown,
+    })
     .expect("note");
     database
         .create_note(&note, NoteLinks::default())
@@ -769,25 +973,30 @@ async fn the_graph_answers_at_the_assumed_scale() {
             Vec::new()
         };
         let cited = vec![format!("work{:04}", index % WORKS)];
-        let note = Note::restore(
-            *note_id,
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
-            format!("規模の確認 {index}"),
-            format!(
-                "= 規模の確認 {index}\n\n本文と cite:work{:04}[]",
-                index % WORKS
-            ),
-            // 半数へタグを付け、語での絞り込みがタグにも効くことを見る。
-            if index % 2 == 0 {
-                vec!["調査".to_owned()]
-            } else {
-                Vec::new()
+        let note = Note::restore(NoteRestore {
+            note_id: *note_id,
+            owner: Identity::new("https://id.example.test".into(), "alice".into())
+                .expect("valid owner"),
+            draft: NoteDraft {
+                title: format!("規模の確認 {index}"),
+                source: format!(
+                    "= 規模の確認 {index}\n\n本文と cite:work{:04}[]",
+                    index % WORKS
+                ),
+                // 半数へタグを付け、語での絞り込みがタグにも効くことを見る。
+                tags: if index % 2 == 0 {
+                    vec!["調査".to_owned()]
+                } else {
+                    Vec::new()
+                },
             },
-            UnixMillis::new(100),
-            UnixMillis::new(100),
-            Revision::INITIAL,
-            None,
-        )
+            created_at: UnixMillis::new(100),
+            updated_at: UnixMillis::new(100),
+            revision: Revision::INITIAL,
+            deleted_at: None,
+            created_via: NoteCreationSource::Unknown,
+            review: NoteReviewTracking::Unknown,
+        })
         .expect("consistent note");
         database
             .create_note(
@@ -865,16 +1074,21 @@ async fn graph_search_treats_like_metacharacters_as_text() {
 }
 
 fn graph_note(id: &str, title: &str) -> Note {
-    Note::restore(
-        NoteId::new(EntityId::from_str(id).expect("v7 note ID")),
-        Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
-        title.into(),
-        format!("= {title}\n\n本文"),
-        Vec::new(),
-        UnixMillis::new(100),
-        UnixMillis::new(100),
-        Revision::INITIAL,
-        None,
-    )
+    Note::restore(NoteRestore {
+        note_id: NoteId::new(EntityId::from_str(id).expect("v7 note ID")),
+        owner: Identity::new("https://id.example.test".into(), "alice".into())
+            .expect("valid owner"),
+        draft: NoteDraft {
+            title: title.into(),
+            source: format!("= {title}\n\n本文"),
+            tags: Vec::new(),
+        },
+        created_at: UnixMillis::new(100),
+        updated_at: UnixMillis::new(100),
+        revision: Revision::INITIAL,
+        deleted_at: None,
+        created_via: NoteCreationSource::Unknown,
+        review: NoteReviewTracking::Unknown,
+    })
     .expect("consistent note")
 }

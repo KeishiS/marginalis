@@ -223,24 +223,31 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_application::NoteCitationSegment;
-    use marginalis_domain::{EntityId, Identity, Note, NoteDraft, NoteId, Revision, UnixMillis};
+    use marginalis_domain::{
+        EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
+        NoteReviewTracking, Revision, UnixMillis,
+    };
 
     use super::*;
 
     fn note(body: &str) -> Note {
-        Note::restore(
-            NoteId::new(
+        Note::restore(NoteRestore {
+            note_id: NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
-            "A title".into(),
-            format!("= A title\n\n{body}"),
-            Vec::new(),
-            UnixMillis::new(0),
-            UnixMillis::new(1),
-            Revision::INITIAL,
-            None,
-        )
+            owner: Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            draft: NoteDraft {
+                title: "A title".into(),
+                source: format!("= A title\n\n{body}"),
+                tags: Vec::new(),
+            },
+            created_at: UnixMillis::new(0),
+            updated_at: UnixMillis::new(1),
+            revision: Revision::INITIAL,
+            deleted_at: None,
+            created_via: NoteCreationSource::Unknown,
+            review: NoteReviewTracking::Unknown,
+        })
         .expect("note")
     }
 
@@ -361,19 +368,19 @@ mod tests {
         assert_eq!(draft.title, "先行研究の整理");
         assert_eq!(draft.tags, ["文献", "研究"]);
 
-        let rendered_note = Note::restore(
-            NoteId::new(
+        let rendered_note = Note::restore(NoteRestore {
+            note_id: NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000003").expect("UUIDv7"),
             ),
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
-            draft.title,
-            draft.source,
-            draft.tags,
-            UnixMillis::new(0),
-            UnixMillis::new(1),
-            Revision::INITIAL,
-            None,
-        )
+            owner: Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            draft,
+            created_at: UnixMillis::new(0),
+            updated_at: UnixMillis::new(1),
+            revision: Revision::INITIAL,
+            deleted_at: None,
+            created_via: NoteCreationSource::Unknown,
+            review: NoteReviewTracking::Unknown,
+        })
         .expect("validated note");
         let html = render_note(&rendered_note, NoteRenderInputs::default())
             .expect("render bibliography example");

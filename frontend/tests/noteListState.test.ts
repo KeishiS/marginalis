@@ -15,6 +15,10 @@ function note(index: number, tags: string[] = ["research"]): NoteListEntry {
     tags,
     updated_at_ms: Date.parse("2026-07-28T12:00:00Z") - index,
     revision: 1,
+    created_via: "web",
+    review_status: "pending",
+    reviewed_revision: null,
+    reviewed_at_ms: null,
     access: index % 2 === 0 ? "edit" : "manage",
   };
 }

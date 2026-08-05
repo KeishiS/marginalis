@@ -4,8 +4,8 @@
 //! [`marginalis_domain`]の定義を参照する。要求と応答の構造だけをこのmoduleで定義する。
 
 use marginalis_domain::{
-    ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY, NoteAccess, NotePermission,
-    NoteValidationTarget, Revision,
+    ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY, NoteAccess, NoteCreationSource,
+    NotePermission, NoteReviewStatus, NoteValidationTarget, Revision,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -99,6 +99,11 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
     },
     RestRouteContract {
         method: "POST",
+        specification_path: "/api/v3/web/notes",
+        probe_path: "/api/v3/web/notes",
+    },
+    RestRouteContract {
+        method: "POST",
         specification_path: "/api/v3/notes/preview",
         probe_path: "/api/v3/notes/preview",
     },
@@ -121,6 +126,16 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         method: "DELETE",
         specification_path: "/api/v3/notes/{note_id}",
         probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/review",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/review",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/notes/{note_id}/review",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/review",
     },
     RestRouteContract {
         method: "GET",
@@ -244,6 +259,10 @@ pub struct NoteResponse {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub revision: i64,
+    pub created_via: NoteCreationSource,
+    pub review_status: NoteReviewStatus,
+    pub reviewed_revision: Option<i64>,
+    pub reviewed_at_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -254,6 +273,10 @@ pub struct NoteSummaryResponse {
     pub tags: Vec<String>,
     pub updated_at_ms: i64,
     pub revision: i64,
+    pub created_via: NoteCreationSource,
+    pub review_status: NoteReviewStatus,
+    pub reviewed_revision: Option<i64>,
+    pub reviewed_at_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -264,7 +287,23 @@ pub struct NoteListEntryResponse {
     pub tags: Vec<String>,
     pub updated_at_ms: i64,
     pub revision: i64,
+    pub created_via: NoteCreationSource,
+    pub review_status: NoteReviewStatus,
+    pub reviewed_revision: Option<i64>,
+    pub reviewed_at_ms: Option<i64>,
     pub access: NoteAccess,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoteReviewResponse {
+    pub note_id: String,
+    pub current_revision: i64,
+    pub status: NoteReviewStatus,
+    pub reviewed_revision: Option<i64>,
+    pub reviewed_at_ms: Option<i64>,
+    pub reviewer_issuer: Option<String>,
+    pub reviewer_subject: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -528,10 +567,16 @@ pub enum Utf8ByteUnit {
 }
 
 pub fn openapi_document() -> Value {
+    let provenance_properties = json!({
+        "created_via": {"type": "string", "enum": ["web", "rest", "mcp", "unknown"]},
+        "review_status": {"type": "string", "enum": ["unknown", "pending", "reviewed"]},
+        "reviewed_revision": {"type": ["integer", "null"], "minimum": Revision::MINIMUM_VALUE},
+        "reviewed_at_ms": {"type": ["integer", "null"]}
+    });
     let note = json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["note_id", "title", "source", "tags", "created_at_ms", "updated_at_ms", "revision"],
+        "required": ["note_id", "title", "source", "tags", "created_at_ms", "updated_at_ms", "revision", "created_via", "review_status", "reviewed_revision", "reviewed_at_ms"],
         "properties": {
             "note_id": note_id_schema(),
             "title": {"type": "string"},
@@ -539,31 +584,43 @@ pub fn openapi_document() -> Value {
             "tags": {"type": "array", "items": {"type": "string"}},
             "created_at_ms": {"type": "integer"},
             "updated_at_ms": {"type": "integer"},
-            "revision": revision_schema()
+            "revision": revision_schema(),
+            "created_via": provenance_properties["created_via"].clone(),
+            "review_status": provenance_properties["review_status"].clone(),
+            "reviewed_revision": provenance_properties["reviewed_revision"].clone(),
+            "reviewed_at_ms": provenance_properties["reviewed_at_ms"].clone()
         }
     });
     let note_summary = json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["note_id", "title", "tags", "updated_at_ms", "revision"],
-        "properties": {
-            "note_id": note_id_schema(),
-            "title": {"type": "string"},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "updated_at_ms": {"type": "integer"},
-            "revision": revision_schema()
-        }
-    });
-    let note_list_entry = json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["note_id", "title", "tags", "updated_at_ms", "revision", "access"],
+        "required": ["note_id", "title", "tags", "updated_at_ms", "revision", "created_via", "review_status", "reviewed_revision", "reviewed_at_ms"],
         "properties": {
             "note_id": note_id_schema(),
             "title": {"type": "string"},
             "tags": {"type": "array", "items": {"type": "string"}},
             "updated_at_ms": {"type": "integer"},
             "revision": revision_schema(),
+            "created_via": provenance_properties["created_via"].clone(),
+            "review_status": provenance_properties["review_status"].clone(),
+            "reviewed_revision": provenance_properties["reviewed_revision"].clone(),
+            "reviewed_at_ms": provenance_properties["reviewed_at_ms"].clone()
+        }
+    });
+    let note_list_entry = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["note_id", "title", "tags", "updated_at_ms", "revision", "created_via", "review_status", "reviewed_revision", "reviewed_at_ms", "access"],
+        "properties": {
+            "note_id": note_id_schema(),
+            "title": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "updated_at_ms": {"type": "integer"},
+            "revision": revision_schema(),
+            "created_via": provenance_properties["created_via"].clone(),
+            "review_status": provenance_properties["review_status"].clone(),
+            "reviewed_revision": provenance_properties["reviewed_revision"].clone(),
+            "reviewed_at_ms": provenance_properties["reviewed_at_ms"].clone(),
             "access": {"enum": ["read", "edit", "manage"]}
         }
     });
@@ -589,6 +646,10 @@ pub fn openapi_document() -> Value {
                 "GraphDepth": {"name": "depth", "in": "query", "required": false,
                     "schema": {"type": "integer", "minimum": 1, "maximum": MAX_GRAPH_DEPTH},
                     "description": "起点から辿る線の本数。originを指定した場合だけ使う。既定は1"},
+                "CreationSource": {"name": "created_via", "in": "query", "required": false,
+                    "schema": provenance_properties["created_via"].clone()},
+                "ReviewStatus": {"name": "review_status", "in": "query", "required": false,
+                    "schema": provenance_properties["review_status"].clone()},
                 "CsrfToken": {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1}},
                 "IfMatch": {"name": "If-Match", "in": "header", "required": true, "schema": {"type": "string", "pattern": "^\\\"rev-[1-9][0-9]*\\\"$"}}
             },
@@ -674,6 +735,19 @@ pub fn openapi_document() -> Value {
                 "Note": note,
                 "NoteSummary": note_summary,
                 "NoteListEntry": note_list_entry,
+                "NoteReview": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["note_id", "current_revision", "status", "reviewed_revision", "reviewed_at_ms", "reviewer_issuer", "reviewer_subject"],
+                    "properties": {
+                        "note_id": note_id_schema(),
+                        "current_revision": revision_schema(),
+                        "status": provenance_properties["review_status"].clone(),
+                        "reviewed_revision": provenance_properties["reviewed_revision"].clone(),
+                        "reviewed_at_ms": provenance_properties["reviewed_at_ms"].clone(),
+                        "reviewer_issuer": {"type": ["string", "null"], "format": "uri"},
+                        "reviewer_subject": {"type": ["string", "null"]}
+                    }
+                },
                 "DeletedNoteListEntry": {
                     "type": "object", "additionalProperties": false,
                     "required": ["note_id", "title", "deleted_at_ms", "purge_at_ms", "revision"],
@@ -865,11 +939,19 @@ fn rest_paths() -> Value {
             ]))
         },
         "/api/v3/notes": {
-            "get": operation("List visible note summaries", &[], None, responses(&[
+            "get": operation("List visible note summaries", &["CreationSource", "ReviewStatus"], None, responses(&[
                 ("200", array_response("visible note summaries", "NoteListEntry")),
                 ("401", response_ref("AuthenticationRequired"))
             ])),
             "post": operation("Create a note", &["CsrfToken"], Some("NoteDraft"), responses(&[
+                ("201", schema_response_with_etag("created note", "Note")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("422", response_ref("UnprocessableNote"))
+            ]))
+        },
+        "/api/v3/web/notes": {
+            "post": operation("Create a note from the Web UI", &["CsrfToken"], Some("NoteDraft"), responses(&[
                 ("201", schema_response_with_etag("created note", "Note")),
                 ("401", response_ref("AuthenticationRequired")),
                 ("403", response_ref("CsrfRejected")),
@@ -995,6 +1077,21 @@ fn rest_paths() -> Value {
                 ("404", response_ref("NotFound"))
             ])),
             "put": operation("Replace note ACL", &["CsrfToken", "IfMatch"], Some("NoteAclUpdate"), mutation_responses("note with updated ACL"))
+        },
+        "/api/v3/notes/{note_id}/review": {
+            "parameters": [parameter_ref("NoteId")],
+            "get": operation("Read the owned note review record", &[], None, responses(&[
+                ("200", schema_response_with_etag("note review", "NoteReview")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ])),
+            "post": operation("Mark the current note revision as reviewed", &["CsrfToken", "IfMatch"], None, responses(&[
+                ("200", schema_response_with_etag("updated note review", "NoteReview")),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
+                ("428", response_ref("PreconditionRequired")),
+                ("503", response_ref("Unavailable"))
+            ]))
         },
         "/api/v3/notes/{note_id}/source": {
             "parameters": [parameter_ref("NoteId")],

@@ -1,11 +1,54 @@
 [
   {
     "name": "list_notes",
-    "description": "List visible note summaries; requires notes:read",
+    "description": "List visible note summaries, optionally filtered by creation source and review status; requires notes:read",
     "inputSchema": {
+      "$defs": {
+        "NoteCreationSource": {
+          "description": "ノートを最初に保存した、サーバー側で判定する接続経路。\n\n作成者の種類、AIの利用、内容の品質を証明する値ではない。",
+          "enum": [
+            "web",
+            "rest",
+            "mcp",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "NoteReviewStatus": {
+          "description": "現在のrevisionに対する人手確認状態。",
+          "enum": [
+            "unknown",
+            "pending",
+            "reviewed"
+          ],
+          "type": "string"
+        }
+      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
-      "title": "McpEmptyInput",
+      "properties": {
+        "created_via": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NoteCreationSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "review_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NoteReviewStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "title": "McpListNotesInput",
       "type": "object"
     },
     "outputSchema": {
@@ -37,8 +80,22 @@
         "McpNoteSummary": {
           "additionalProperties": false,
           "properties": {
+            "created_via": {
+              "$ref": "#/$defs/NoteCreationSource"
+            },
             "note_id": {
               "type": "string"
+            },
+            "review_status": {
+              "$ref": "#/$defs/NoteReviewStatus"
+            },
+            "reviewed_at_ms": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "reviewed_revision": {
+              "format": "int64",
+              "type": "integer"
             },
             "revision": {
               "format": "int64",
@@ -64,9 +121,23 @@
             "title",
             "tags",
             "updated_at_ms",
-            "revision"
+            "revision",
+            "created_via",
+            "review_status",
+            "reviewed_revision",
+            "reviewed_at_ms"
           ],
           "type": "object"
+        },
+        "NoteCreationSource": {
+          "description": "ノートを最初に保存した、サーバー側で判定する接続経路。\n\n作成者の種類、AIの利用、内容の品質を証明する値ではない。",
+          "enum": [
+            "web",
+            "rest",
+            "mcp",
+            "unknown"
+          ],
+          "type": "string"
         },
         "NoteDiagnosticResponse": {
           "additionalProperties": false,
@@ -101,6 +172,15 @@
             "message"
           ],
           "type": "object"
+        },
+        "NoteReviewStatus": {
+          "description": "現在のrevisionに対する人手確認状態。",
+          "enum": [
+            "unknown",
+            "pending",
+            "reviewed"
+          ],
+          "type": "string"
         },
         "NoteValidationTarget": {
           "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
@@ -769,8 +849,22 @@
         "McpGetNoteOutput": {
           "additionalProperties": false,
           "properties": {
+            "created_via": {
+              "$ref": "#/$defs/NoteCreationSource"
+            },
             "note_id": {
               "type": "string"
+            },
+            "review_status": {
+              "$ref": "#/$defs/NoteReviewStatus"
+            },
+            "reviewed_at_ms": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "reviewed_revision": {
+              "format": "int64",
+              "type": "integer"
             },
             "revision": {
               "format": "int64",
@@ -800,9 +894,23 @@
             "source",
             "tags",
             "updated_at_ms",
-            "revision"
+            "revision",
+            "created_via",
+            "review_status",
+            "reviewed_revision",
+            "reviewed_at_ms"
           ],
           "type": "object"
+        },
+        "NoteCreationSource": {
+          "description": "ノートを最初に保存した、サーバー側で判定する接続経路。\n\n作成者の種類、AIの利用、内容の品質を証明する値ではない。",
+          "enum": [
+            "web",
+            "rest",
+            "mcp",
+            "unknown"
+          ],
+          "type": "string"
         },
         "NoteDiagnosticResponse": {
           "additionalProperties": false,
@@ -837,6 +945,15 @@
             "message"
           ],
           "type": "object"
+        },
+        "NoteReviewStatus": {
+          "description": "現在のrevisionに対する人手確認状態。",
+          "enum": [
+            "unknown",
+            "pending",
+            "reviewed"
+          ],
+          "type": "string"
         },
         "NoteValidationTarget": {
           "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",

@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use marginalis_domain::{Actor, Identity, Note, NoteDraft, NoteId, NoteSummary};
+use marginalis_domain::{
+    Actor, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteSummary,
+};
 
 use crate::{
     MathMacroRepositoryError, NotePresentation, NotePreview, NoteProfile, NoteRenderContext,
@@ -31,7 +33,13 @@ impl NoteApplication {
             citation_queries,
             citation_style,
         } = validated;
-        let note = Note::create(note_id, owner, draft, self.clock.now());
+        let note = Note::create(
+            note_id,
+            owner,
+            draft,
+            self.clock.now(),
+            NoteCreationSource::Unknown,
+        );
         let target_ids = reference_targets(&reference_queries);
         let targets = self
             .queries
@@ -277,7 +285,8 @@ mod tests {
     use std::sync::{Arc, atomic::Ordering};
 
     use marginalis_domain::{
-        Actor, EntityId, Note, NoteAccess, NoteDraft, NoteId, Revision, UnixMillis,
+        Actor, EntityId, Note, NoteAccess, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
+        NoteReviewTracking, Revision, UnixMillis,
     };
 
     use crate::{NoteAdvisorySeverity, NoteCommands};
@@ -293,6 +302,7 @@ mod tests {
         let repository = Arc::new(MemoryNotes::default());
         let content = Arc::new(AcceptContent::default());
         let application = NoteApplication::new(
+            repository.clone(),
             repository.clone(),
             repository.clone(),
             repository.clone(),
@@ -330,7 +340,12 @@ mod tests {
         assert_eq!(content.reference_query_calls.load(Ordering::Relaxed), 0);
 
         application
-            .create_note(actor, draft, crate::NoteWritePolicy::AllowAdvisories)
+            .create_note(
+                actor,
+                draft,
+                crate::NoteWritePolicy::AllowAdvisories,
+                NoteCreationSource::Web,
+            )
             .await
             .expect("warning does not reject save");
         assert_eq!(repository.notes.lock().expect("notes lock").len(), 1);
@@ -345,20 +360,25 @@ mod tests {
                 .expect("UUIDv7"),
         );
         repository.notes.lock().expect("notes lock").push(
-            Note::restore(
+            Note::restore(NoteRestore {
                 note_id,
-                OneItemLibrary::owner(),
-                "共有されたノート".into(),
-                "= 共有されたノート\n\n本文".into(),
-                Vec::new(),
-                UnixMillis::new(0),
-                UnixMillis::new(1),
-                Revision::INITIAL,
-                None,
-            )
+                owner: OneItemLibrary::owner(),
+                draft: NoteDraft {
+                    title: "共有されたノート".into(),
+                    source: "= 共有されたノート\n\n本文".into(),
+                    tags: Vec::new(),
+                },
+                created_at: UnixMillis::new(0),
+                updated_at: UnixMillis::new(1),
+                revision: Revision::INITIAL,
+                deleted_at: None,
+                created_via: NoteCreationSource::Mcp,
+                review: NoteReviewTracking::pending(),
+            })
             .expect("stored note"),
         );
         let application = NoteApplication::new(
+            repository.clone(),
             repository.clone(),
             repository.clone(),
             repository.clone(),
