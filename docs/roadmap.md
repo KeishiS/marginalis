@@ -6,24 +6,36 @@
 
 ## 現在地
 
-`v0.32.0`を2026-08-05に公開しました。公開済み機能と移行方法は
-[変更履歴](../CHANGELOG.md#0320--2026-08-05)、確認結果は
-[v0.32.0受入結果](acceptance-results/v0.32.0.md)を参照してください。この文書には公開履歴を
-書き写さず、未完了の判断と作業だけを置きます。
+`v0.33.0`の受入確認を進めています。AdocWeave 0.33.0への更新と構造化した参考文献描画を含みます。
+確認項目は[v0.33.0受入結果](acceptance-results/v0.33.0.md)を参照してください。この文書には
+公開履歴を書き写さず、未完了の判断と作業だけを置きます。
 
 ## 公開予定
 
-### Authorization Serverの独立配布
+### v0.34.0 — Authorization Serverの独立配布
 
-`v0.30.0`で共有crateの境界とrepository契約試験を確認した後、
-[#314](https://github.com/KeishiS/marginalis/issues/314)で独立リポジトリ、registry、固定したGit dependencyを
-比較します。独立リポジトリへの移動は、その判断と版管理、脆弱性対応、両利用側のCIがそろってから
-行います。現在の責務と更新手順は
-[MCP Authorization Serverの保守](mcp-authorization-server-maintenance.md)を正本とします。
+まず[#336](https://github.com/KeishiS/marginalis/issues/336)でscope上限の既定値を一つの規則へ集約します。
+次に、`mcp-authorization-server`と`mcp-authorization-server-cimd`を
+[`KeishiS/mcp-authorization-server`](https://github.com/KeishiS/mcp-authorization-server)へ移し、同じ
+workspaceで管理します。新リポジトリでは契約試験、依存境界、脆弱性検査、固定した公開APIを整え、
+v0.1.0を公開します。
+
+Marginalisは公開済みv0.1.0のcommitをGit dependencyとして固定し、ローカルcrateを削除します。
+SQLite repository、HTTP endpoint、同意画面、利用者設定、MCP tool認可はMarginalisに残します。
+現在の責務と更新手順は[MCP Authorization Serverの保守](mcp-authorization-server-maintenance.md)を
+正本とします。
 
 [連環（Renkan）](research-search-vision.md)はMarginalisとは別の探索サービスです。Renkanへの統合と
 PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。Marginalis側では
 別のresourceと保存先を使う試験実装により、分離した中核が製品固有の型へ依存しないことを確認します。
+
+### v0.35.0 — リポジトリ文書のAsciiDoc化
+
+[#334](https://github.com/KeishiS/marginalis/issues/334)で、`AGENTS.md`を除く人間向けMarkdown文書を
+AsciiDocへ移行します。AdocWeaveリポジトリの構成を参考に、文書を構文解析し、文書間参照、見出しID、
+文章校正、追跡対象文書の分類をCIで検証します。GitHubが固定したMarkdown名を認識する機能に依存する
+導線は、リポジトリ設定や明示的なlinkへ移します。完了時には追跡対象の`*.md`が`AGENTS.md`だけである
+ことを検査します。
 
 パッチ版は予定へ固定しません。各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
 なった場合だけ公開します。
@@ -56,8 +68,6 @@ Marginalisのノート一覧にはタグと更新日による絞り込みを残�
   [再検討条件](adr/0002-sqliteを正本として維持する.md#再検討条件)が実測で成立した場合だけ再検討
 - **添付Resource**: 保存先、MIME type、容量、認可、バックアップを一つの公開契約として
   定義できる場合に再検討
-- **文書のAsciiDoc化**: [評価結果](repository-asciidoc-evaluation.md)に基づき、Markdownでは
-  解決できない具体例と、変換後に強化できる検査がそろった場合に再検討
 
 ## 継続監視
 
