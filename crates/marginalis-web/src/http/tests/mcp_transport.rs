@@ -84,7 +84,13 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         .expect("request");
     let denied = mcp_app().oneshot(request).await.expect("response");
     assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
-    assert!(denied.headers().contains_key(header::WWW_AUTHENTICATE));
+    assert!(
+        denied
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.contains("scope=\"notes:read\""))
+    );
 
     let denied_before_media_negotiation = mcp_app()
         .oneshot(
@@ -366,7 +372,7 @@ async fn mcp_bearer_scheme_is_case_insensitive_and_scope_failures_are_forbidden(
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| {
                 value.contains("error=\"insufficient_scope\"")
-                    && value.contains("scope=\"notes:write\"")
+                    && value.contains("scope=\"notes:read notes:write\"")
             })
     );
 
@@ -404,7 +410,7 @@ async fn mcp_bearer_scheme_is_case_insensitive_and_scope_failures_are_forbidden(
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| {
                 value.contains("error=\"insufficient_scope\"")
-                    && value.contains("scope=\"bibliography:read\"")
+                    && value.contains("scope=\"notes:read bibliography:read\"")
             })
     );
 
@@ -424,6 +430,69 @@ async fn mcp_bearer_scheme_is_case_insensitive_and_scope_failures_are_forbidden(
         .await
         .expect("response");
     assert_eq!(allowed.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn scope_challenges_accumulate_existing_and_required_scopes_for_every_protocol() {
+    for protocol_version in ["2025-03-26", "2025-11-25", "2026-07-28"] {
+        let modern = protocol_version == "2026-07-28";
+        let mut params = serde_json::json!({
+            "name": "delete_note",
+            "arguments": {"id": "0197c9bc-0000-7000-8000-000000000001", "revision": 1}
+        });
+        if modern {
+            params.as_object_mut().expect("params").insert(
+                "_meta".into(),
+                serde_json::json!({
+                    "io.modelcontextprotocol/protocolVersion": protocol_version,
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                    "io.modelcontextprotocol/clientInfo": {"name": "test", "version": "1"}
+                }),
+            );
+        }
+        let mut request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, "Bearer write-token")
+            .header("mcp-protocol-version", protocol_version);
+        if modern {
+            request = request
+                .header("mcp-method", "tools/call")
+                .header("mcp-name", "delete_note");
+        }
+        let response = mcp_app()
+            .oneshot(
+                request
+                    .body(Body::from(
+                        serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "tools/call",
+                            "params": params
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "{protocol_version}"
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::WWW_AUTHENTICATE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| {
+                    value.contains("error=\"insufficient_scope\"")
+                        && value.contains("scope=\"notes:write notes:delete\"")
+                }),
+            "{protocol_version}"
+        );
+    }
 }
 
 #[tokio::test]

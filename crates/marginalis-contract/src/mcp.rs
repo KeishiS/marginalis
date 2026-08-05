@@ -53,6 +53,22 @@ impl McpToolName {
             Self::DeleteBibliographyItem => &["bibliography:delete"],
         }
     }
+
+    /// toolを実行するために満たす必要があるscopeの組。
+    ///
+    /// 外側の各要素はすべて満たす必要があり、内側の要素はいずれか一つを持てばよい。
+    /// 現在は`get_note_profile`だけがreadまたはwriteのどちらでも利用できる。
+    pub const fn scope_requirements(self) -> &'static [&'static [&'static str]] {
+        match self {
+            Self::ListNotes | Self::GetNote => &[&["notes:read"]],
+            Self::GetNoteProfile => &[&["notes:read", "notes:write"]],
+            Self::CreateNote | Self::UpdateNote => &[&["notes:write"]],
+            Self::DeleteNote => &[&["notes:delete"]],
+            Self::SearchBibliography => &[&["bibliography:read"]],
+            Self::AddBibliographyItem | Self::AddBibliographyItems => &[&["bibliography:write"]],
+            Self::DeleteBibliographyItem => &[&["bibliography:delete"]],
+        }
+    }
 }
 
 impl TryFrom<&str> for McpToolName {
@@ -428,6 +444,15 @@ mod tests {
 
         for (tool, scopes) in expected {
             assert_eq!(tool.accepted_scopes(), scopes, "{}のscope", tool.as_str());
+            let requirements = tool.scope_requirements();
+            assert!(!requirements.is_empty(), "{}のscope要件", tool.as_str());
+            assert!(
+                requirements
+                    .iter()
+                    .all(|alternatives| !alternatives.is_empty()),
+                "{}のscope選択肢",
+                tool.as_str()
+            );
         }
     }
 

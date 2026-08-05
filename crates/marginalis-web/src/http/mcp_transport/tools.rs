@@ -29,8 +29,8 @@ pub(super) struct McpToolCall {
 }
 
 impl McpToolCall {
-    pub(super) fn accepted_scopes(&self) -> &'static [&'static str] {
-        self.tool.map_or(&[], McpToolName::accepted_scopes)
+    pub(super) fn scope_requirements(&self) -> &'static [&'static [&'static str]] {
+        self.tool.map_or(&[], McpToolName::scope_requirements)
     }
 }
 

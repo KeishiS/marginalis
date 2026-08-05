@@ -86,6 +86,8 @@
   区別し、対応scope、両方の上限、
   クライアントの要求、利用者の同意の共通部分だけを発行すること。利用者は自分の上限だけを変更でき、
   上限を狭めた場合は新しい上限を超える認可codeとtoken familyを同じtransactionで失効すること。
+  初回の認証challengeは`notes:read`だけを示し、実行時にscopeが不足した場合は、現在のtokenが持つscopeと
+  今回の操作に必要なscopeを一つの`WWW-Authenticate` challengeへまとめること。
 - **REQ-API-006 — MCP接続解除**: RFC 7009 endpointと、利用者本人の認証を要するREST APIから
   認可を取り消せること。対象のaccess tokenとrefresh tokenを同じtoken family単位で直ちに
   失効すること。

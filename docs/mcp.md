@@ -55,6 +55,14 @@ Authorization Serverは次を検査します。
 scopeは認可code、access token、refresh tokenへ記録されません。要求にないscopeを同意画面から追加する
 こともできません。何も選ばずに許可しようとした場合は、scopeを暗黙に補わず、再選択を求めます。
 
+初回の認証challengeは、基本的な閲覧に必要な`notes:read`だけを示します。接続後にtokenのscopeでは
+実行できないtoolを呼び出すと、MCP endpointは`403`と`WWW-Authenticate`の
+`error="insufficient_scope"`を返します。`scope`には現在のtokenが持つscopeと、今回の操作に不足する
+scopeをまとめて、サーバーの正規順序で示します。たとえば`notes:read`で接続した後に`update_note`を
+呼び出すと、`scope="notes:read notes:write"`を返します。クライアントはこの集合でOAuth認可をやり直し、
+利用者が同意したscopeだけを持つ新しいtokenで元の操作を再試行します。`notes:delete`は削除操作を
+要求するまで自動では追加されません。
+
 認可の成功応答と、検証済み`redirect_uri`へ返すエラー応答にはRFC 9207の`iss`を含めます。クライアントは
 Authorization Server Metadataの`issuer`と単純な文字列比較を行うことで、別のAuthorization Serverから
 応答を差し替える攻撃を検出できます。
@@ -125,13 +133,19 @@ v0.29.0より前に発行したtokenには書誌用scopeが含まれません。
 
 ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノートを使って次を確認します。
 
-1. 公開MCP URLだけを指定して接続し、metadataの発見、client登録、Kanidmへのログイン、同意を完了します。
-2. `tools/list`を取得し、ノートの一覧と本文を読み取ります。
-3. 試験用ノートを作成して更新し、別の試験利用者へ閲覧権限と編集権限を順に設定します。共有先では
+1. 公開MCP URLだけを指定し、初回challengeが`notes:read`だけを示すことを確認して接続します。metadataの
+   発見、client登録、Kanidmへのログインを経て、`notes:read`だけに同意します。
+2. `tools/list`を取得し、ノートの一覧と本文を読み取ります。`update_note`を呼び出し、
+   `notes:read notes:write`を示す追加認可が始まることを確認します。
+3. 一度は追加認可を拒否し、更新できず、元のread tokenで閲覧を続けられることを確認します。再度実行して
+   `notes:write`にも同意し、新しいtokenで更新できることを確認します。
+4. 試験用ノートを作成して更新し、別の試験利用者へ閲覧権限と編集権限を順に設定します。共有先では
    付与された権限を超える操作が拒否されることも確認します。
-4. 試験用ノートを削除し、削除済みとして取得できることを確認します。
-5. 認可を取り消し、既存のaccess tokenとrefresh tokenが使えないことを確認します。
-6. 改めて認可し、同じクライアントから接続を回復できることを確認します。
+5. 削除操作で`notes:delete`を含む追加認可が始まることを確認します。同意後に試験用ノートを削除し、
+   削除済みとして取得できることを確認します。
+6. refresh tokenの交換後に交換前のtokenを再利用できないことを確認します。
+7. 認可を取り消し、既存のaccess tokenとrefresh tokenが使えないことを確認します。
+8. 改めて認可し、同じクライアントから接続を回復できることを確認します。
 
 結果には確認日、クライアント名と確認できる範囲の版、CIMDまたはDCRの登録方式、redirect URIの種類を
 記録します。token、認可code、PKCE verifier、Cookie、実際のノート本文は記録しません。
