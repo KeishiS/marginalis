@@ -7,6 +7,9 @@ mod metadata;
 mod policy;
 mod protocol;
 
+#[cfg(any(test, feature = "testkit"))]
+pub mod testkit;
+
 pub use core::{
     AuthorizationServer, AuthorizationServerConfig, ClientMetadataResolver,
     ClientMetadataResolverError, Clock, Random, Repository, RepositoryError,

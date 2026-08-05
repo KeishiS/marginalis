@@ -71,6 +71,7 @@
 | ARCH-IDENTITY-001 | `marginalis-domain::model::tests::identity_rejects_active_content_and_unbounded_values`、OIDC issuer検査 |
 | ARCH-IDENTITY-002 | `marginalis-domain::model::tests::entity_id_rejects_non_v7_uuid`、REST・archive・SQLite復元試験 |
 | ARCH-OAUTH-001 | `marginalis-sqlite::tests::oauth`のtoken family・取消・再利用試験、`observability-check`、archive契約試験 |
+| ARCH-OAUTH-002 | `mcp_authorization_server::testkit::assert_repository_contract`を試験用repositoryとSQLite adapterへ適用する試験、`token_issuance_failure_rolls_back_authorization_code_consumption` |
 | ARCH-OIDC-001 | `marginalis-auth-oidc::tests::id_tokens_are_limited_to_es256`、Kanidm NixOS VM |
 | ARCH-SESSION-001 | `marginalis-sqlite::tests::sessions`の期限・並行延長試験、`issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit` |
 
