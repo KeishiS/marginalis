@@ -173,11 +173,11 @@ pub(super) async fn mcp_post(
 
     let decoded_tool_call =
         (request.method == "tools/call").then(|| decode_tool_call(request.params.clone()));
-    let accepted_scopes = decoded_tool_call
+    let scope_requirements = decoded_tool_call
         .as_ref()
         .and_then(|call| call.as_ref().ok())
-        .map_or(&[][..], |call| call.accepted_scopes());
-    let authenticated = match authenticate(endpoint, token, accepted_scopes).await? {
+        .map_or(&[][..], |call| call.scope_requirements());
+    let authenticated = match authenticate(endpoint, token, scope_requirements).await? {
         Ok(authenticated) => authenticated,
         Err(response) => return Ok(response),
     };

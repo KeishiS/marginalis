@@ -103,12 +103,14 @@ pub(super) fn validate_mcp_origin(
 pub(super) async fn authenticate(
     endpoint: &McpEndpoint,
     token: &str,
-    accepted_scopes: &[&str],
+    scope_requirements: &[&[&str]],
 ) -> HandlerResult<Result<McpAuthenticatedActor, Response>> {
-    let challenged_scope = accepted_scopes.first().map_or_else(
-        || endpoint.resource_policy.default_scopes().join(" "),
-        |scope| (*scope).to_owned(),
-    );
+    let required_scopes = minimum_required_scopes(scope_requirements);
+    let challenged_scope = if required_scopes.is_empty() {
+        endpoint.resource_policy.default_scopes().join(" ")
+    } else {
+        required_scopes.join(" ")
+    };
     let authenticated = match endpoint
         .oauth
         .authenticate(token.into(), endpoint.resource_policy.uri().to_string())
@@ -141,11 +143,11 @@ pub(super) async fn authenticate(
             &challenged_scope,
         )));
     };
-    if !accepted_scopes.is_empty()
-        && !accepted_scopes
-            .iter()
-            .any(|required| authenticated.scopes.iter().any(|scope| scope == required))
-    {
+    if let Some(challenged_scope) = incremental_scope_challenge(
+        endpoint.resource_policy.supported_scopes(),
+        &authenticated.scopes,
+        scope_requirements,
+    ) {
         tracing::warn!(
             event = "mcp.authorization.failed",
             reason = "insufficient-scope",
@@ -160,4 +162,64 @@ pub(super) async fn authenticate(
         )));
     }
     Ok(Ok(authenticated))
+}
+
+fn minimum_required_scopes<'a>(scope_requirements: &'a [&'a [&'a str]]) -> Vec<&'a str> {
+    scope_requirements
+        .iter()
+        .filter_map(|alternatives| alternatives.first().copied())
+        .collect()
+}
+
+fn incremental_scope_challenge(
+    supported_scopes: &[String],
+    granted_scopes: &[String],
+    scope_requirements: &[&[&str]],
+) -> Option<String> {
+    let missing_scopes = scope_requirements
+        .iter()
+        .filter(|alternatives| {
+            !alternatives
+                .iter()
+                .any(|required| granted_scopes.iter().any(|scope| scope == required))
+        })
+        .filter_map(|alternatives| alternatives.first().copied())
+        .collect::<Vec<_>>();
+    (!missing_scopes.is_empty()).then(|| {
+        supported_scopes
+            .iter()
+            .filter(|scope| {
+                granted_scopes.contains(scope)
+                    || missing_scopes.iter().any(|missing| scope == missing)
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ")
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_challenge_contains_every_missing_requirement_and_existing_scope() {
+        let supported = ["notes:read", "notes:write", "notes:delete"]
+            .map(str::to_owned)
+            .to_vec();
+        let granted = vec!["notes:read".to_owned()];
+
+        assert_eq!(
+            incremental_scope_challenge(
+                &supported,
+                &granted,
+                &[&["notes:write"], &["notes:delete"]],
+            ),
+            Some("notes:read notes:write notes:delete".into())
+        );
+        assert_eq!(
+            incremental_scope_challenge(&supported, &granted, &[&["notes:read", "notes:write"]],),
+            None
+        );
+    }
 }
