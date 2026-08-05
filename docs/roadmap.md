@@ -22,9 +22,9 @@
 [#264](https://github.com/KeishiS/marginalis/issues/264)、段階的な追加認可
 [#265](https://github.com/KeishiS/marginalis/issues/265)の実装と自動試験を完了しました。
 
-次はリリース候補で、schema 18へのarchive移行、MCPクライアント3種の初回接続、scopeの追加認可、
-クライアント別制限、接続取消を人手確認します。既存クライアントの再認可を複数回求めないよう、これらは
-一つの`v0.29.0`として公開します。
+リリース候補で、schema 18へのarchive移行、MCPクライアント3種の初回接続、scopeの追加認可、
+クライアント別制限、接続取消の人手確認を完了しました。リリースPull Requestを統合してrelease gateを
+通過した後、一つの`v0.29.0`として公開します。
 
 ### Authorization Serverの共有元
 
