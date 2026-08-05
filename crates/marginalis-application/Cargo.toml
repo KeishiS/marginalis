@@ -12,6 +12,7 @@ async-trait.workspace = true
 mcp-authorization-server = { path = "../mcp-authorization-server" }
 marginalis-domain = { path = "../marginalis-domain" }
 serde_json.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

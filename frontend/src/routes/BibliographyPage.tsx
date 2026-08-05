@@ -8,6 +8,7 @@ import {
   searchBibliography,
   updateBibliographyItem,
 } from "../api";
+import { BibliographyImportPanel } from "./BibliographyImportPanel";
 
 /** 操作の結果。失敗は利用者の対応を促すため、成功の知らせと区別して伝える。 */
 interface Message {
@@ -172,6 +173,10 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           {searching ? "検索しています…" : "検索"}
         </button>
       </form>
+      <BibliographyImportPanel
+        apiBase={config.apiBase}
+        onApplied={() => load(query)}
+      />
       <form
         className="bibliography-input"
         onSubmit={(event) => void submit(event)}

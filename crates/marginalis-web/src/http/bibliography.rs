@@ -90,7 +90,7 @@ pub(super) async fn update_bibliography_item(
         .into_response())
 }
 
-fn parse_item_id(item_id: String) -> HandlerResult<BibliographyItemId> {
+pub(super) fn parse_item_id(item_id: String) -> HandlerResult<BibliographyItemId> {
     item_id
         .parse::<EntityId>()
         .map(BibliographyItemId::new)

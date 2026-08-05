@@ -12,13 +12,14 @@ use marginalis_application::{
     NoteAclSnapshotEntry, NoteContent,
 };
 use marginalis_domain::{
-    BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteCreationSource, NoteDraft,
-    NoteId, NotePermission, NoteRestore, NoteReviewRecord, NoteReviewTracking, Revision,
-    UnixMillis,
+    BibliographyContentDigest, BibliographyImportLink, BibliographyImportMethod,
+    BibliographyImportSource, BibliographyImportSourceId, BibliographyItem, BibliographyItemId,
+    EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
+    NoteReviewRecord, NoteReviewTracking, Revision, UnixMillis,
 };
 use serde::{Deserialize, Serialize};
 
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-15";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-16";
 /// archive内のノートを受理できる入力規則の版。
 ///
 /// 受理する本文が変わったときに上げます。版4までのノートはタグを`:tags:`で並べていました。
@@ -30,6 +31,7 @@ pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 5;
 const UNPREFIXED_ATTRIBUTE_PROFILE_VERSION: u32 = 4;
 /// 移行元として受理する旧archive契約。形式、AdocWeave package版、note profile版の組。
 const SUPPORTED_MIGRATION_CONTRACTS: &[(&str, &str, u32)] = &[
+    ("marginalis-archive-15", "0.27.0", 5),
     ("marginalis-archive-14", "0.27.0", 5),
     ("marginalis-archive-13", "0.27.0", 5),
     ("marginalis-archive-13", "0.23.0", 5),
@@ -52,6 +54,10 @@ pub struct Archive {
     pub note_acl: Vec<ArchiveAclEntry>,
     #[serde(default)]
     pub bibliography_items: Vec<ArchiveBibliographyItem>,
+    #[serde(default)]
+    pub bibliography_import_sources: Vec<ArchiveBibliographyImportSource>,
+    #[serde(default)]
+    pub bibliography_import_links: Vec<ArchiveBibliographyImportLink>,
     #[serde(default)]
     pub math_macro_settings: Vec<ArchiveMathMacroSettings>,
 }
@@ -106,6 +112,29 @@ pub struct ArchiveBibliographyItem {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct ArchiveBibliographyImportSource {
+    pub source_id: String,
+    pub owner_issuer: String,
+    pub owner_subject: String,
+    pub method: BibliographyImportMethod,
+    pub display_name: String,
+    pub revision: i64,
+    pub created_at_ms: i64,
+    pub last_imported_at_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveBibliographyImportLink {
+    pub source_id: String,
+    pub external_item_id: String,
+    pub item_id: String,
+    pub imported_digest_sha256: String,
+    pub imported_item_revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArchiveMathMacroSettings {
     pub owner_issuer: String,
     pub owner_subject: String,
@@ -142,6 +171,12 @@ impl Archive {
         });
         self.bibliography_items
             .sort_by(|left, right| left.item_id.cmp(&right.item_id));
+        self.bibliography_import_sources
+            .sort_by(|left, right| left.source_id.cmp(&right.source_id));
+        self.bibliography_import_links.sort_by(|left, right| {
+            (&left.source_id, &left.external_item_id)
+                .cmp(&(&right.source_id, &right.external_item_id))
+        });
         self.math_macro_settings.sort_by(|left, right| {
             (&left.owner_issuer, &left.owner_subject)
                 .cmp(&(&right.owner_issuer, &right.owner_subject))
@@ -210,6 +245,31 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
                 revision: item.revision().get(),
             })
             .collect(),
+        bibliography_import_sources: snapshot
+            .bibliography_import_sources()
+            .iter()
+            .map(|source| ArchiveBibliographyImportSource {
+                source_id: source.source_id().to_string(),
+                owner_issuer: source.owner().issuer().to_owned(),
+                owner_subject: source.owner().subject().to_owned(),
+                method: source.method(),
+                display_name: source.display_name().to_owned(),
+                revision: source.revision().get(),
+                created_at_ms: source.created_at().get(),
+                last_imported_at_ms: source.last_imported_at().get(),
+            })
+            .collect(),
+        bibliography_import_links: snapshot
+            .bibliography_import_links()
+            .iter()
+            .map(|link| ArchiveBibliographyImportLink {
+                source_id: link.source_id().to_string(),
+                external_item_id: link.external_item_id().to_owned(),
+                item_id: link.item_id().to_string(),
+                imported_digest_sha256: encode_digest(link.imported_digest()),
+                imported_item_revision: link.imported_item_revision().get(),
+            })
+            .collect(),
         math_macro_settings: snapshot
             .math_macro_settings()
             .iter()
@@ -230,6 +290,28 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
             })
             .collect(),
     }
+}
+
+fn encode_digest(digest: BibliographyContentDigest) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(64);
+    for byte in digest.as_bytes() {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+fn decode_digest(encoded: &str) -> Option<BibliographyContentDigest> {
+    if encoded.len() != 64 || !encoded.is_ascii() {
+        return None;
+    }
+    let mut digest = [0_u8; 32];
+    for (index, byte) in digest.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&encoded[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    let digest = BibliographyContentDigest::new(digest);
+    (encode_digest(digest) == encoded).then_some(digest)
 }
 
 pub fn validate_archive(
@@ -261,14 +343,20 @@ pub fn migrate_previous_archive(
     if !is_supported {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
+    if !archive.bibliography_import_sources.is_empty()
+        || !archive.bibliography_import_links.is_empty()
+    {
+        return Err(ArchiveMigrationError::UnsupportedContract);
+    }
+    let provenance_expected = archive.format == "marginalis-archive-15";
     if let Some((position, _)) = archive
         .notes
         .iter()
         .enumerate()
-        .find(|(_, note)| note.provenance.is_some())
+        .find(|(_, note)| note.provenance.is_some() != provenance_expected)
     {
-        // 対応する旧契約には来歴項目が存在しない。新旧の項目を混在させた入力から、
-        // 根拠のない作成経路や人手確認を引き継がない。
+        // archive 15より前の契約には来歴項目がなく、archive 15には必ず存在する。契約を
+        // 混在させた入力から、根拠のない作成経路や人手確認を引き継がない。
         return Err(ArchiveMigrationError::InvalidNote {
             position: position + 1,
         });
@@ -436,6 +524,55 @@ fn validate_archive_contents(
             .map_err(|_| invalid())
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let bibliography_import_sources = archive
+        .bibliography_import_sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| {
+            let invalid = || ArchiveContentsError::BibliographyImportSource {
+                position: index + 1,
+            };
+            BibliographyImportSource::restore(
+                source
+                    .source_id
+                    .parse::<EntityId>()
+                    .map(BibliographyImportSourceId::new)
+                    .map_err(|_| invalid())?,
+                Identity::new(source.owner_issuer.clone(), source.owner_subject.clone())
+                    .map_err(|_| invalid())?,
+                source.method,
+                source.display_name.clone(),
+                Revision::new(source.revision).map_err(|_| invalid())?,
+                UnixMillis::new(source.created_at_ms),
+                UnixMillis::new(source.last_imported_at_ms),
+            )
+            .map_err(|_| invalid())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let bibliography_import_links = archive
+        .bibliography_import_links
+        .iter()
+        .enumerate()
+        .map(|(index, link)| {
+            let invalid = || ArchiveContentsError::BibliographyImportLink {
+                position: index + 1,
+            };
+            BibliographyImportLink::new(
+                link.source_id
+                    .parse::<EntityId>()
+                    .map(BibliographyImportSourceId::new)
+                    .map_err(|_| invalid())?,
+                link.external_item_id.clone(),
+                link.item_id
+                    .parse::<EntityId>()
+                    .map(BibliographyItemId::new)
+                    .map_err(|_| invalid())?,
+                decode_digest(&link.imported_digest_sha256).ok_or_else(invalid)?,
+                Revision::new(link.imported_item_revision).map_err(|_| invalid())?,
+            )
+            .map_err(|_| invalid())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let math_macro_settings = archive
         .math_macro_settings
         .iter()
@@ -463,7 +600,13 @@ fn validate_archive_contents(
         })
         .collect::<Result<Vec<_>, ArchiveContentsError>>()?;
     LogicalSnapshot::new(notes, note_acl)
-        .and_then(|snapshot| snapshot.with_bibliography(bibliography_items))
+        .and_then(|snapshot| {
+            snapshot.with_bibliography_data(
+                bibliography_items,
+                bibliography_import_sources,
+                bibliography_import_links,
+            )
+        })
         .and_then(|snapshot| snapshot.with_math_macro_settings(math_macro_settings))
         .map_err(|error| match error {
             InvalidSnapshot::DuplicateNote { position } => ArchiveContentsError::Note { position },
@@ -473,6 +616,12 @@ fn validate_archive_contents(
             InvalidSnapshot::InvalidReference { .. } => ArchiveContentsError::Relationships,
             InvalidSnapshot::InvalidBibliographyItem { position } => {
                 ArchiveContentsError::BibliographyItem { position }
+            }
+            InvalidSnapshot::InvalidBibliographyImportSource { position } => {
+                ArchiveContentsError::BibliographyImportSource { position }
+            }
+            InvalidSnapshot::InvalidBibliographyImportLink { position } => {
+                ArchiveContentsError::BibliographyImportLink { position }
             }
             InvalidSnapshot::InvalidMathMacroSettings { position } => {
                 ArchiveContentsError::MathMacroSettings { position }
@@ -514,6 +663,8 @@ enum ArchiveContentsError {
     Note { position: usize },
     AclEntry { position: usize },
     BibliographyItem { position: usize },
+    BibliographyImportSource { position: usize },
+    BibliographyImportLink { position: usize },
     MathMacroSettings { position: usize },
     Relationships,
 }
@@ -528,6 +679,10 @@ pub enum ArchiveMigrationError {
     InvalidAclEntry { position: usize },
     #[error("archive bibliography item at position {position} is invalid")]
     InvalidBibliographyItem { position: usize },
+    #[error("archive bibliography import source at position {position} is invalid")]
+    InvalidBibliographyImportSource { position: usize },
+    #[error("archive bibliography import link at position {position} is invalid")]
+    InvalidBibliographyImportLink { position: usize },
     #[error("archive math macro settings at position {position} are invalid")]
     InvalidMathMacroSettings { position: usize },
     #[error("archive note and ACL relationships are inconsistent")]
@@ -541,6 +696,12 @@ impl From<ArchiveContentsError> for ArchiveMigrationError {
             ArchiveContentsError::AclEntry { position } => Self::InvalidAclEntry { position },
             ArchiveContentsError::BibliographyItem { position } => {
                 Self::InvalidBibliographyItem { position }
+            }
+            ArchiveContentsError::BibliographyImportSource { position } => {
+                Self::InvalidBibliographyImportSource { position }
+            }
+            ArchiveContentsError::BibliographyImportLink { position } => {
+                Self::InvalidBibliographyImportLink { position }
             }
             ArchiveContentsError::MathMacroSettings { position } => {
                 Self::InvalidMathMacroSettings { position }
@@ -616,6 +777,57 @@ mod tests {
         assert_eq!(archive.format, ARCHIVE_FORMAT);
         assert_eq!(archive.note_profile_version, ARCHIVE_NOTE_PROFILE_VERSION);
         assert_eq!(validate_archive(&content(), &archive), Ok(snapshot));
+    }
+
+    #[test]
+    fn archive_round_trip_preserves_bibliography_import_baselines() {
+        let owner = Identity::new("https://id.example.test".into(), "alice".into()).expect("owner");
+        let item = BibliographyItem::create(
+            BibliographyItemId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-0000000000b1").expect("UUIDv7"),
+            ),
+            &owner,
+            "smith2026".into(),
+            r#"{"id":"smith2026","title":"Example","type":"article-journal"}"#.into(),
+            UnixMillis::new(10),
+        );
+        let source_id = BibliographyImportSourceId::new(
+            EntityId::from_str("0197c9bc-0000-7000-8000-0000000000b2").expect("UUIDv7"),
+        );
+        let source = BibliographyImportSource::create(
+            source_id,
+            &owner,
+            "Zotero".into(),
+            UnixMillis::new(10),
+        )
+        .expect("source");
+        let link = BibliographyImportLink::new(
+            source_id,
+            "external-smith".into(),
+            item.item_id(),
+            BibliographyContentDigest::new([0xab; 32]),
+            item.revision(),
+        )
+        .expect("link");
+        let snapshot = LogicalSnapshot::new(Vec::new(), Vec::new())
+            .expect("snapshot")
+            .with_bibliography_data(vec![item], vec![source], vec![link])
+            .expect("bibliography import data");
+
+        let archive = create_archive(&content(), &snapshot);
+        assert_eq!(archive.bibliography_import_sources.len(), 1);
+        assert_eq!(
+            archive.bibliography_import_links[0].imported_digest_sha256,
+            "ab".repeat(32)
+        );
+        assert_eq!(validate_archive(&content(), &archive), Ok(snapshot));
+
+        let mut noncanonical_digest = archive;
+        noncanonical_digest.bibliography_import_links[0].imported_digest_sha256 = "AB".repeat(32);
+        assert_eq!(
+            validate_archive(&content(), &noncanonical_digest),
+            Err(ArchiveValidationError)
+        );
     }
 
     /// 並びだけが違うarchiveを組み立てる。内容は同じで、要素の順序だけを逆にする。
@@ -722,8 +934,10 @@ mod tests {
         archive.format = format.into();
         archive.adocweave_package_version = package_version.into();
         archive.note_profile_version = note_profile_version;
-        for note in &mut archive.notes {
-            note.provenance = None;
+        if format != "marginalis-archive-15" {
+            for note in &mut archive.notes {
+                note.provenance = None;
+            }
         }
     }
 
@@ -747,9 +961,14 @@ mod tests {
             let mut historical = current.clone();
             stamp_contract(&mut historical, *contract);
 
+            let expected = if contract.0 == "marginalis-archive-15" {
+                current.clone()
+            } else {
+                expected.clone()
+            };
             assert_eq!(
                 migrate_previous_archive(&content(), &historical),
-                Ok(expected.clone()),
+                Ok(expected),
                 "移行に失敗しました: {contract:?}"
             );
             assert_eq!(
@@ -765,7 +984,7 @@ mod tests {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut historical = create_archive(&content(), &snapshot);
         let provenance = historical.notes[0].provenance.clone();
-        stamp_contract(&mut historical, SUPPORTED_MIGRATION_CONTRACTS[0]);
+        stamp_contract(&mut historical, SUPPORTED_MIGRATION_CONTRACTS[1]);
         historical.notes[0].provenance = provenance;
 
         assert_eq!(

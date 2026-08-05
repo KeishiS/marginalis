@@ -71,6 +71,32 @@ impl SqliteDatabase {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| SqliteStoreError::CorruptData)?;
         let rows = sqlx::query(
+            "SELECT source_id, owner_issuer, owner_subject, method, display_name, revision,
+                    created_at_ms, last_imported_at_ms
+             FROM bibliography_import_sources ORDER BY source_id",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let bibliography_import_sources = rows
+            .into_iter()
+            .map(crate::bibliography_import_repository::decode_source)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| SqliteStoreError::CorruptData)?;
+        let rows = sqlx::query(
+            "SELECT source_id, external_item_id, item_id, imported_digest,
+                    imported_item_revision
+             FROM bibliography_import_links ORDER BY source_id, external_item_id",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let bibliography_import_links = rows
+            .into_iter()
+            .map(crate::bibliography_import_repository::decode_link)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| SqliteStoreError::CorruptData)?;
+        let rows = sqlx::query(
             "SELECT owner_issuer, owner_subject, macros_json, revision
              FROM math_macro_settings ORDER BY owner_issuer, owner_subject",
         )
@@ -93,7 +119,13 @@ impl SqliteDatabase {
             .collect::<Result<Vec<_>, SqliteStoreError>>()?;
         transaction.commit().await.map_err(database_error)?;
         LogicalSnapshot::new(notes, note_acl)
-            .and_then(|snapshot| snapshot.with_bibliography(bibliography_items))
+            .and_then(|snapshot| {
+                snapshot.with_bibliography_data(
+                    bibliography_items,
+                    bibliography_import_sources,
+                    bibliography_import_links,
+                )
+            })
             .and_then(|snapshot| snapshot.with_math_macro_settings(math_macro_settings))
             .map_err(|_| SqliteStoreError::CorruptData)
     }
@@ -107,6 +139,8 @@ impl SqliteDatabase {
             "SELECT
                 EXISTS(SELECT 1 FROM notes)
                 OR EXISTS(SELECT 1 FROM bibliography_items)
+                OR EXISTS(SELECT 1 FROM bibliography_import_sources)
+                OR EXISTS(SELECT 1 FROM bibliography_import_links)
                 OR EXISTS(SELECT 1 FROM math_macro_settings)
                 OR EXISTS(SELECT 1 FROM web_sessions)
                 OR EXISTS(SELECT 1 FROM oidc_login_attempts)
@@ -129,6 +163,12 @@ impl SqliteDatabase {
         }
         for item in plan.snapshot().bibliography_items() {
             insert_bibliography_item_row(&mut transaction, item).await?;
+        }
+        for source in plan.snapshot().bibliography_import_sources() {
+            insert_bibliography_import_source_row(&mut transaction, source).await?;
+        }
+        for link in plan.snapshot().bibliography_import_links() {
+            insert_bibliography_import_link_row(&mut transaction, link).await?;
         }
         for entry in plan.snapshot().math_macro_settings() {
             let encoded = serde_json::to_string(
@@ -194,6 +234,54 @@ impl SqliteDatabase {
         }
         transaction.commit().await.map_err(database_error)
     }
+}
+
+async fn insert_bibliography_import_source_row(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    source: &marginalis_domain::BibliographyImportSource,
+) -> Result<(), SqliteStoreError> {
+    sqlx::query(
+        "INSERT INTO bibliography_import_sources (
+            source_id, owner_issuer, owner_subject, method, display_name, revision,
+            created_at_ms, last_imported_at_ms
+         ) VALUES (?, ?, ?, 'csl_json_file', ?, ?, ?, ?)",
+    )
+    .bind(source.source_id().to_string())
+    .bind(source.owner().issuer())
+    .bind(source.owner().subject())
+    .bind(source.display_name())
+    .bind(source.revision().get())
+    .bind(source.created_at().get())
+    .bind(source.last_imported_at().get())
+    .execute(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    Ok(())
+}
+
+async fn insert_bibliography_import_link_row(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    link: &marginalis_domain::BibliographyImportLink,
+) -> Result<(), SqliteStoreError> {
+    sqlx::query(
+        "INSERT INTO bibliography_import_links (
+            source_id, external_item_id, item_id, owner_issuer, owner_subject,
+            imported_digest, imported_item_revision
+         )
+         SELECT ?, ?, ?, source.owner_issuer, source.owner_subject, ?, ?
+         FROM bibliography_import_sources source
+         WHERE source.source_id = ?",
+    )
+    .bind(link.source_id().to_string())
+    .bind(link.external_item_id())
+    .bind(link.item_id().to_string())
+    .bind(link.imported_digest().as_bytes().as_slice())
+    .bind(link.imported_item_revision().get())
+    .bind(link.source_id().to_string())
+    .execute(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    Ok(())
 }
 
 async fn insert_bibliography_item_row(

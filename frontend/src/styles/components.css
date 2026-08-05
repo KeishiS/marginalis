@@ -124,6 +124,118 @@ select:hover {
   width: 100%;
 }
 
+.bibliography-import-launcher {
+  margin-block: var(--space-4) var(--space-6);
+}
+
+.bibliography-import {
+  display: grid;
+  gap: var(--space-4);
+  margin-block: var(--space-6);
+  padding: var(--space-5);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+}
+
+.bibliography-import h2,
+.bibliography-import p {
+  margin-block: 0;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.bibliography-import-controls {
+  display: grid;
+  align-items: end;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.bibliography-import-controls label,
+.bibliography-import-results label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  font-weight: 650;
+}
+
+.bibliography-import-controls input,
+.bibliography-import-controls select,
+.bibliography-import-results select {
+  width: 100%;
+}
+
+.field-help {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.bibliography-import-results {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding-inline-start: var(--space-6);
+}
+
+.bibliography-import-results > li {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.bibliography-import-results > li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.bibliography-import-results > li > div > span {
+  color: var(--color-text-muted);
+}
+
+.bibliography-import-results > li > .bibliography-import-comparison {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+}
+
+.bibliography-import-comparison details {
+  min-width: 0;
+  padding: var(--space-2);
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-subtle);
+}
+
+.bibliography-import-comparison summary {
+  cursor: pointer;
+  font-size: var(--text-small);
+  font-weight: 650;
+}
+
+.bibliography-import-comparison pre {
+  max-height: 20rem;
+  margin-block: var(--space-2) 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bibliography-import-candidates {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
 .bibliography-input textarea {
   font-family: var(--font-monospace);
   resize: vertical;

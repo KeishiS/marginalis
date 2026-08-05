@@ -58,6 +58,10 @@ Authorization Serverは次を検査します。
 全文検索、検索索引、順位付けはMarginalisのMCPへ追加せず、別サービスの
 [連環（Renkan）](research-search-vision.md)が担当します。
 
+CSL-JSONファイルの一括取込は、ファイル全体の事前確認と項目ごとの競合解決を利用者へ求めるため、
+Web UIとREST APIだけで提供します。MCPでは、`bibliography:write`による一項目ずつの追加を使用します。
+一括取込の事前確認tokenや取込元の対応情報をMCP toolの公開契約には含めません。
+
 同意画面では、クライアントが要求したscopeのうち、許可するものだけを選択できます。選ばなかった
 scopeは認可code、access token、refresh tokenへ記録されません。要求にないscopeを同意画面から追加する
 こともできません。何も選ばずに許可しようとした場合は、scopeを暗黙に補わず、再選択を求めます。

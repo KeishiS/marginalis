@@ -2,8 +2,9 @@
 
 use axum::{Json, http::StatusCode};
 use marginalis_application::{
-    AuthenticationUseCaseError, BibliographyUseCaseError, MathMacroUseCaseError,
-    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteUseCaseError, NoteValidationDiagnostic,
+    AuthenticationUseCaseError, BibliographyImportUseCaseError, BibliographyUseCaseError,
+    MathMacroUseCaseError, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteUseCaseError,
+    NoteValidationDiagnostic,
 };
 use marginalis_contract::{
     DiagnosticSeverityResponse, NoteDiagnosticResponse, ProblemCode, ProblemResponse,
@@ -163,6 +164,31 @@ pub(super) fn bibliography_error(
     error: BibliographyUseCaseError,
 ) -> (StatusCode, Json<ProblemResponse>) {
     problem_response(bibliography_problem(error))
+}
+
+pub(super) fn bibliography_import_error(
+    error: BibliographyImportUseCaseError,
+) -> (StatusCode, Json<ProblemResponse>) {
+    problem_response(match error {
+        BibliographyImportUseCaseError::InvalidInput(_)
+        | BibliographyImportUseCaseError::InvalidDecision => ProblemResponse::new(
+            ProblemCode::ValidationFailed,
+            "bibliography import input or decisions are invalid",
+        ),
+        BibliographyImportUseCaseError::NotFound => ProblemResponse::new(
+            ProblemCode::NotFound,
+            "bibliography import source was not found",
+        ),
+        BibliographyImportUseCaseError::Conflict => ProblemResponse::new(
+            ProblemCode::Conflict,
+            "bibliography import state changed; preview the file again",
+        ),
+        BibliographyImportUseCaseError::Unavailable
+        | BibliographyImportUseCaseError::CorruptData => ProblemResponse::new(
+            ProblemCode::Unavailable,
+            "bibliography import is unavailable",
+        ),
+    })
 }
 
 pub(super) fn math_macro_error(

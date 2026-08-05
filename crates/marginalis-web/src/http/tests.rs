@@ -1309,6 +1309,7 @@ impl McpOAuthUseCases for TestMcpOAuth {
 /// すべてを直す必要があった。
 struct TestApp {
     notes: Arc<dyn NoteUseCases>,
+    bibliography_import: Option<Arc<dyn marginalis_application::BibliographyImportUseCases>>,
     sessions: Arc<dyn WebSessionUseCases>,
     cookie_path: String,
     mcp: Option<(&'static str, Vec<String>, Arc<dyn TestMcpAccessTokens>)>,
@@ -1318,6 +1319,7 @@ impl Default for TestApp {
     fn default() -> Self {
         Self {
             notes: Arc::new(Notes),
+            bibliography_import: None,
             sessions: Arc::new(Sessions),
             cookie_path: "/".into(),
             mcp: None,
@@ -1333,6 +1335,14 @@ impl TestApp {
 
     fn notes(mut self, notes: Arc<dyn NoteUseCases>) -> Self {
         self.notes = notes;
+        self
+    }
+
+    fn bibliography_import(
+        mut self,
+        bibliography_import: Arc<dyn marginalis_application::BibliographyImportUseCases>,
+    ) -> Self {
+        self.bibliography_import = Some(bibliography_import);
         self
     }
 
@@ -1360,6 +1370,10 @@ impl TestApp {
             self.cookie_path,
             "https://example.test".into(),
         );
+        let state = match self.bibliography_import {
+            Some(bibliography_import) => state.with_bibliography_import(bibliography_import),
+            None => state,
+        };
         let state = match self.mcp {
             Some((base_url, allowed_origins, authenticator)) => {
                 let base_url = url::Url::parse(base_url).expect("base URL");
@@ -1514,3 +1528,5 @@ mod mcp_transport;
 mod oauth;
 
 mod rest_notes;
+
+mod bibliography_import;

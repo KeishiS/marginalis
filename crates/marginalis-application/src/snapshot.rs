@@ -1,8 +1,11 @@
 //! 論理スナップショットと復元計画の整合性。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use marginalis_domain::{BibliographyItem, Identity, Note, NoteId, NotePermission};
+use marginalis_domain::{
+    BibliographyImportLink, BibliographyImportSource, BibliographyItem, Identity, Note, NoteId,
+    NotePermission,
+};
 
 use crate::{MathMacroSettings, validate_math_macros};
 
@@ -61,6 +64,8 @@ pub struct LogicalSnapshot {
     notes: Vec<Note>,
     note_acl: Vec<NoteAclSnapshotEntry>,
     bibliography_items: Vec<BibliographyItem>,
+    bibliography_import_sources: Vec<BibliographyImportSource>,
+    bibliography_import_links: Vec<BibliographyImportLink>,
     math_macro_settings: Vec<MathMacroSettingsSnapshot>,
 }
 
@@ -74,6 +79,10 @@ pub enum InvalidSnapshot {
     InvalidReference { position: usize },
     #[error("bibliography item at position {position} is duplicated")]
     InvalidBibliographyItem { position: usize },
+    #[error("bibliography import source at position {position} is duplicated")]
+    InvalidBibliographyImportSource { position: usize },
+    #[error("bibliography import link at position {position} is inconsistent")]
+    InvalidBibliographyImportLink { position: usize },
     #[error("math macro settings at position {position} are invalid or duplicated")]
     InvalidMathMacroSettings { position: usize },
 }
@@ -112,13 +121,18 @@ impl LogicalSnapshot {
             notes,
             note_acl,
             bibliography_items: Vec::new(),
+            bibliography_import_sources: Vec::new(),
+            bibliography_import_links: Vec::new(),
             math_macro_settings: Vec::new(),
         })
     }
 
-    pub fn with_bibliography(
+    /// 書誌項目と取込元との対応を、一つの整合性境界として追加する。
+    pub fn with_bibliography_data(
         mut self,
         bibliography_items: Vec<BibliographyItem>,
+        bibliography_import_sources: Vec<BibliographyImportSource>,
+        bibliography_import_links: Vec<BibliographyImportLink>,
     ) -> Result<Self, InvalidSnapshot> {
         let mut ids = HashSet::new();
         let mut owner_keys = HashSet::new();
@@ -131,7 +145,43 @@ impl LogicalSnapshot {
                 });
             }
         }
+        let items_by_id = bibliography_items
+            .iter()
+            .map(|item| (item.item_id(), item))
+            .collect::<HashMap<_, _>>();
+        let mut source_ids = HashSet::new();
+        for (index, source) in bibliography_import_sources.iter().enumerate() {
+            if !source_ids.insert(source.source_id()) {
+                return Err(InvalidSnapshot::InvalidBibliographyImportSource {
+                    position: index + 1,
+                });
+            }
+        }
+        let sources_by_id = bibliography_import_sources
+            .iter()
+            .map(|source| (source.source_id(), source))
+            .collect::<HashMap<_, _>>();
+        let mut link_keys = HashSet::new();
+        for (index, link) in bibliography_import_links.iter().enumerate() {
+            let invalid = InvalidSnapshot::InvalidBibliographyImportLink {
+                position: index + 1,
+            };
+            let Some(source) = sources_by_id.get(&link.source_id()) else {
+                return Err(invalid);
+            };
+            let Some(item) = items_by_id.get(&link.item_id()) else {
+                return Err(invalid);
+            };
+            if source.owner() != item.owner()
+                || link.imported_item_revision() > item.revision()
+                || !link_keys.insert((link.source_id(), link.external_item_id().to_owned()))
+            {
+                return Err(invalid);
+            }
+        }
         self.bibliography_items = bibliography_items;
+        self.bibliography_import_sources = bibliography_import_sources;
+        self.bibliography_import_links = bibliography_import_links;
         Ok(self)
     }
 
@@ -145,6 +195,14 @@ impl LogicalSnapshot {
 
     pub fn bibliography_items(&self) -> &[BibliographyItem] {
         &self.bibliography_items
+    }
+
+    pub fn bibliography_import_sources(&self) -> &[BibliographyImportSource] {
+        &self.bibliography_import_sources
+    }
+
+    pub fn bibliography_import_links(&self) -> &[BibliographyImportLink] {
+        &self.bibliography_import_links
     }
 
     pub fn with_math_macro_settings(
@@ -241,8 +299,9 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_domain::{
-        EntityId, Identity, NoteCreationSource, NoteDraft, NoteRestore, NoteReviewTracking,
-        Revision, UnixMillis,
+        BibliographyContentDigest, BibliographyImportLink, BibliographyImportSource,
+        BibliographyImportSourceId, BibliographyItem, BibliographyItemId, EntityId, Identity,
+        NoteCreationSource, NoteDraft, NoteRestore, NoteReviewTracking, Revision, UnixMillis,
     };
 
     use super::*;
@@ -323,5 +382,49 @@ mod tests {
         assert_eq!(plan.references().len(), 1);
         // 引用も同じ規則で重複を取り除く。
         assert_eq!(plan.citations().len(), 1);
+    }
+
+    #[test]
+    fn snapshot_rejects_dangling_and_cross_owner_bibliography_import_links() {
+        let alice = Identity::new("https://id.example.test".into(), "alice".into())
+            .expect("alice identity");
+        let bob =
+            Identity::new("https://id.example.test".into(), "bob".into()).expect("bob identity");
+        let item_id = BibliographyItemId::new(
+            EntityId::from_str("0197c9bc-0000-7000-8000-0000000000b1").expect("UUIDv7"),
+        );
+        let item = BibliographyItem::create(
+            item_id,
+            &alice,
+            "smith2026".into(),
+            r#"{"id":"smith2026","type":"book"}"#.into(),
+            UnixMillis::new(10),
+        );
+        let source_id = BibliographyImportSourceId::new(
+            EntityId::from_str("0197c9bc-0000-7000-8000-0000000000b2").expect("UUIDv7"),
+        );
+        let link = BibliographyImportLink::new(
+            source_id,
+            "external-smith".into(),
+            item_id,
+            BibliographyContentDigest::new([1; 32]),
+            Revision::INITIAL,
+        )
+        .expect("link");
+        let base = LogicalSnapshot::new(Vec::new(), Vec::new()).expect("snapshot");
+
+        assert_eq!(
+            base.clone()
+                .with_bibliography_data(vec![item.clone()], Vec::new(), vec![link.clone()]),
+            Err(InvalidSnapshot::InvalidBibliographyImportLink { position: 1 })
+        );
+
+        let wrong_owner_source =
+            BibliographyImportSource::create(source_id, &bob, "Zotero".into(), UnixMillis::new(10))
+                .expect("source");
+        assert_eq!(
+            base.with_bibliography_data(vec![item], vec![wrong_owner_source], vec![link],),
+            Err(InvalidSnapshot::InvalidBibliographyImportLink { position: 1 })
+        );
     }
 }

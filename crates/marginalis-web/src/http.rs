@@ -6,6 +6,7 @@
 mod assets;
 mod auth;
 mod bibliography;
+mod bibliography_import;
 mod error;
 mod html;
 mod math_macros;
@@ -44,6 +45,9 @@ use self::{
         add_bibliography_item, delete_bibliography_item, search_bibliography,
         update_bibliography_item,
     },
+    bibliography_import::{
+        apply_bibliography_import, list_bibliography_import_sources, preview_bibliography_import,
+    },
     error::{HandlerResult, problem},
     math_macros::{read_math_macros, replace_math_macros},
     mcp_scope_ceilings::{
@@ -72,6 +76,8 @@ use self::{
 
 pub use marginalis_contract::API_VERSION;
 pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
+// 8 MiBのCSL-JSON配列に、取込元と最大1,000件分の選択を加えたJSON envelopeを受け取る。
+const BIBLIOGRAPHY_IMPORT_REQUEST_BYTES: usize = 9 * 1024 * 1024;
 
 /// 配備先のサブパスを保ったノートURLを生成するHTTP adapter。
 #[derive(Clone, Copy, Debug, Default)]
@@ -160,6 +166,20 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/api/v3/bibliography/{item_id}",
             axum::routing::put(update_bibliography_item).delete(delete_bibliography_item),
+        )
+        .route(
+            "/api/v3/bibliography/import-sources",
+            get(list_bibliography_import_sources),
+        )
+        .route(
+            "/api/v3/bibliography/import-previews",
+            post(preview_bibliography_import)
+                .layer(DefaultBodyLimit::max(BIBLIOGRAPHY_IMPORT_REQUEST_BYTES)),
+        )
+        .route(
+            "/api/v3/bibliography/imports",
+            post(apply_bibliography_import)
+                .layer(DefaultBodyLimit::max(BIBLIOGRAPHY_IMPORT_REQUEST_BYTES)),
         )
         .route("/api/v3/notes", get(list_notes).post(create_note))
         .route("/api/v3/web/notes", post(create_web_note))

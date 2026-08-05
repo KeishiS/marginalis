@@ -22,6 +22,7 @@
 | REQ-DATA-007 | 引用解決の所有者境界と重複排除の試験、生成した参考文献の相互link試験、書誌情報を記法として解釈しない試験 | 共有したノートでの引用表示 |
 | REQ-DATA-008 | 図の認可境界・絞り込み・片端の欠けた線の試験、起点と階層数の試験、想定規模の試験、REST経路と認証と範囲外指定の試験、ブラウザー試験 | 関係の図の表示 |
 | REQ-DATA-009 | domain復元試験、SQLiteの作成経路・確認状態・所有者・競合・revision無効化試験、REST・MCP・OpenAPI契約試験、archive往復・旧契約混在拒否・文書書庫の本文とACLの外部編集試験、React表示・確認操作試験 | Web、REST、MCP作成時の経路表示と確認後の再編集 |
+| REQ-DATA-010 | applicationの入力上限・分類・事前確認token・保存計画試験、SQLiteの所有者境界・原子的適用・競合試験、REST事前確認・CSRF・適用試験、archive往復試験 | CSL-JSONの初回取込、再取込、双方変更、重複、入力から消えた項目の確認 |
 | REQ-AUTH-001 | OIDC単体・結合試験 | ログイン拒否 |
 | REQ-AUTH-002 | domain・archive・SQLite単体試験 | 所有者照合 |
 | REQ-AUTH-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
@@ -43,6 +44,7 @@
 | REQ-UI-005 | AdocWeave公開HTML・React描画fixture・MathJax失敗試験、ブラウザー試験 | 閲覧・プレビュー |
 | REQ-UI-006 | CodeMirror操作・CSP nonce単体試験、5,000行・320px幅・本番CSP・固定画像ブラウザー試験、配布容量検査 | 長文入力、IME、表示切替、キーボード保存 |
 | REQ-UI-007 | application所有者選択試験、SQLite分離・revision試験、REST契約試験、React設定画面・MathJaxで許可するpackageの単体・ブラウザー試験 | `\argmax`・`\bm`の閲覧と共有表示 |
+| REQ-UI-008 | 外部側と現在値を含むREST応答検査、`BibliographyImportPanel.test.tsx`、ブラウザー試験 | 内容比較、キーボードによる事前確認、競合解決、適用 |
 | REQ-ACL-001 | application・SQLite・React試験 | 共有操作 |
 | REQ-ACL-002 | 公開契約検査 | なし |
 | REQ-ACL-003 | SQLite認可試験、ブラウザー試験 | 利用者別操作 |
@@ -52,7 +54,7 @@
 | REQ-API-008 | REST・MCP失敗一致試験、MCP失敗出力schema生成差分 | 異常時のclient表示 |
 | REQ-DEPLOY-001 | NixOS module評価・VM | 本番設定確認 |
 | REQ-DEPLOY-002 | 環境変数宣言の単体試験、起動と診断の判断一致CLI試験、NixOS module評価 | 診断出力確認 |
-| REQ-FORMAT-001 | schema・archive拒否、archive 7から14までの対応契約から15への移行試験 | 更新前退避 |
+| REQ-FORMAT-001 | schema・archive拒否、archive 7から15までの対応契約から16への移行試験 | 更新前退避 |
 | REQ-FORMAT-002 | 文書書き出しの構成・ファイル名・削除済み除外・manifest版情報の試験、CLIの権限と上書き拒否の試験 | 取り出した内容の他ツールでの読み取り |
 | REQ-FORMAT-003 | 文書の書き出しと取り込みの往復一致試験、版差での再検証試験、書庫外pathの拒否試験 | 別環境への移行 |
 
@@ -63,6 +65,7 @@
 
 | 設計条件ID | 主な自動検証 |
 | --- | --- |
+| ARCH-IMPORT-001 | `marginalis-application::bibliography_import`のtoken・分類・保存計画試験、`marginalis-sqlite::tests::bibliography_import`の全書誌状態の再照合・原子的適用・競合試験、`marginalis-web::http::tests::bibliography_import`、archive往復試験 |
 | ARCH-AUTHN-001 | `marginalis-auth-oidc`のgroup claim試験、`marginalis-sqlite::tests::sessions::sessions_retain_the_validated_identity`、OAuth HTTP結合試験 |
 | ARCH-AUTHZ-001 | `marginalis-sqlite::tests::notes`の所有者・ACL・削除・復元試験、REST・MCP・ブラウザーACL試験 |
 | ARCH-AUTHZ-002 | `marginalis-sqlite::tests::notes::note_access_levels_follow_one_decision_table_and_acl_failures_roll_back` |

@@ -97,6 +97,12 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::sync::Arc::new(SystemClock),
         std::sync::Arc::new(SystemRandom),
     ));
+    let bibliography_import =
+        std::sync::Arc::new(marginalis_application::BibliographyImportApplication::new(
+            std::sync::Arc::new(database.clone()),
+            std::sync::Arc::new(SystemClock),
+            std::sync::Arc::new(SystemRandom),
+        ));
     let math_macros = std::sync::Arc::new(marginalis_application::MathMacroApplication::new(
         std::sync::Arc::new(database.clone()),
     ));
@@ -108,7 +114,8 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         cookie_path,
         configuration.http.base_url.origin().ascii_serialization(),
     )
-    .with_bibliography(bibliography);
+    .with_bibliography(bibliography)
+    .with_bibliography_import(bibliography_import);
     let state = if configuration.mcp_enabled {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);

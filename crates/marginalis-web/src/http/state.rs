@@ -7,8 +7,8 @@ use std::{
 };
 
 use marginalis_application::{
-    BibliographyUseCases, MathMacroUseCases, McpOAuthUseCases, NoteUseCases,
-    OidcAuthenticationUseCases, WebSessionUseCases,
+    BibliographyImportUseCases, BibliographyUseCases, MathMacroUseCases, McpOAuthUseCases,
+    NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
 };
 use mcp_authorization_server::{AuthorizationServerEndpoints, ResourcePolicy};
 
@@ -16,6 +16,7 @@ use mcp_authorization_server::{AuthorizationServerEndpoints, ResourcePolicy};
 pub struct ApiState {
     pub notes: Arc<dyn NoteUseCases>,
     pub bibliography: Option<Arc<dyn BibliographyUseCases>>,
+    pub bibliography_import: Option<Arc<dyn BibliographyImportUseCases>>,
     pub math_macros: Arc<dyn MathMacroUseCases>,
     pub sessions: Arc<dyn WebSessionUseCases>,
     pub oidc: Arc<dyn OidcAuthenticationUseCases>,
@@ -140,6 +141,7 @@ impl ApiState {
             notes,
             math_macros,
             bibliography: None,
+            bibliography_import: None,
             sessions,
             oidc,
             cookie_path,
@@ -159,6 +161,14 @@ impl ApiState {
 
     pub fn with_bibliography(mut self, bibliography: Arc<dyn BibliographyUseCases>) -> Self {
         self.bibliography = Some(bibliography);
+        self
+    }
+
+    pub fn with_bibliography_import(
+        mut self,
+        bibliography_import: Arc<dyn BibliographyImportUseCases>,
+    ) -> Self {
+        self.bibliography_import = Some(bibliography_import);
         self
     }
 }

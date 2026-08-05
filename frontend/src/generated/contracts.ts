@@ -120,6 +120,70 @@ export interface BibliographyItem {
   updated_at_ms: number;
   revision: number;
 }
+export type BibliographyImportSourceInput =
+  | { kind: "new"; display_name: string }
+  | { kind: "existing"; source_id: string };
+export interface BibliographyImportSource {
+  source_id: string;
+  method: "csl_json_file";
+  display_name: string;
+  revision: number;
+  created_at_ms: number;
+  last_imported_at_ms: number;
+}
+export type BibliographyImportClassification =
+  | "create"
+  | "update_from_external"
+  | "unchanged"
+  | "keep_local"
+  | "conflict"
+  | "duplicate_candidate"
+  | "rejected";
+export interface BibliographyImportCandidate {
+  item_id: string;
+  citation_key: string;
+  title: string | null;
+  revision: number;
+  matched_by: string[];
+}
+export interface BibliographyImportEntry {
+  position: number;
+  external_item_id: string | null;
+  citation_key: string | null;
+  classification: BibliographyImportClassification;
+  item_id: string | null;
+  item_revision: number | null;
+  current_csl_json: Record<string, unknown> | null;
+  candidates: BibliographyImportCandidate[];
+  rejection_code: string | null;
+}
+export interface BibliographyImportPreview {
+  source_id: string | null;
+  source_revision: number | null;
+  preview_token: string;
+  entries: BibliographyImportEntry[];
+}
+export type BibliographyImportDecisionAction =
+  | "apply_suggested"
+  | "create_separate"
+  | "keep_local"
+  | "use_external"
+  | "link_existing_keep_local"
+  | "link_existing_use_external"
+  | "exclude";
+export interface BibliographyImportDecision {
+  position: number;
+  action: BibliographyImportDecisionAction;
+  candidate_item_id: string | null;
+}
+export interface BibliographyImportResult {
+  source_id: string;
+  source_revision: number;
+  created: number;
+  updated: number;
+  kept: number;
+  excluded: number;
+}
 export interface NotePreview {
   html: string;
   math_macros: MathMacro[];
@@ -236,6 +300,195 @@ export function parseBibliographyItem(value: unknown): BibliographyItem {
 export function parseBibliographyItems(value: unknown): BibliographyItem[] {
   if (!Array.isArray(value)) throw new Error("bibliography items are invalid");
   return value.map(parseBibliographyItem);
+}
+
+function parseBibliographyImportSource(
+  value: unknown,
+): BibliographyImportSource {
+  const object = record(value, "bibliography import source");
+  if (object.method !== "csl_json_file") {
+    throw new Error("bibliography import source.method is invalid");
+  }
+  return {
+    source_id: text(object.source_id, "bibliography import source.source_id"),
+    method: object.method,
+    display_name: text(
+      object.display_name,
+      "bibliography import source.display_name",
+    ),
+    revision: positiveInteger(
+      object.revision,
+      "bibliography import source.revision",
+    ),
+    created_at_ms: integer(
+      object.created_at_ms,
+      "bibliography import source.created_at_ms",
+    ),
+    last_imported_at_ms: integer(
+      object.last_imported_at_ms,
+      "bibliography import source.last_imported_at_ms",
+    ),
+  };
+}
+
+function parseBibliographyImportSources(
+  value: unknown,
+): BibliographyImportSource[] {
+  if (!Array.isArray(value)) {
+    throw new Error("bibliography import sources are invalid");
+  }
+  return value.map(parseBibliographyImportSource);
+}
+
+const IMPORT_CLASSIFICATIONS: BibliographyImportClassification[] = [
+  "create",
+  "update_from_external",
+  "unchanged",
+  "keep_local",
+  "conflict",
+  "duplicate_candidate",
+  "rejected",
+];
+
+function parseBibliographyImportCandidate(
+  value: unknown,
+): BibliographyImportCandidate {
+  const object = record(value, "bibliography import candidate");
+  return {
+    item_id: text(object.item_id, "bibliography import candidate.item_id"),
+    citation_key: text(
+      object.citation_key,
+      "bibliography import candidate.citation_key",
+    ),
+    title:
+      object.title === null
+        ? null
+        : text(object.title, "bibliography import candidate.title"),
+    revision: positiveInteger(
+      object.revision,
+      "bibliography import candidate.revision",
+    ),
+    matched_by: textArray(
+      object.matched_by,
+      "bibliography import candidate.matched_by",
+    ),
+  };
+}
+
+function parseBibliographyImportEntry(value: unknown): BibliographyImportEntry {
+  const object = record(value, "bibliography import entry");
+  if (
+    typeof object.classification !== "string" ||
+    !IMPORT_CLASSIFICATIONS.includes(
+      object.classification as BibliographyImportClassification,
+    )
+  ) {
+    throw new Error("bibliography import entry.classification is invalid");
+  }
+  if (!Array.isArray(object.candidates)) {
+    throw new Error("bibliography import entry.candidates is invalid");
+  }
+  return {
+    position: nonNegativeInteger(
+      object.position,
+      "bibliography import entry.position",
+    ),
+    external_item_id:
+      object.external_item_id === null
+        ? null
+        : text(
+            object.external_item_id,
+            "bibliography import entry.external_item_id",
+          ),
+    citation_key:
+      object.citation_key === null
+        ? null
+        : text(object.citation_key, "bibliography import entry.citation_key"),
+    classification: object.classification as BibliographyImportClassification,
+    item_id:
+      object.item_id === null
+        ? null
+        : text(object.item_id, "bibliography import entry.item_id"),
+    item_revision:
+      object.item_revision === null
+        ? null
+        : positiveInteger(
+            object.item_revision,
+            "bibliography import entry.item_revision",
+          ),
+    current_csl_json:
+      object.current_csl_json === null
+        ? null
+        : record(
+            object.current_csl_json,
+            "bibliography import entry.current_csl_json",
+          ),
+    candidates: object.candidates.map(parseBibliographyImportCandidate),
+    rejection_code:
+      object.rejection_code === null
+        ? null
+        : text(
+            object.rejection_code,
+            "bibliography import entry.rejection_code",
+          ),
+  };
+}
+
+function parseBibliographyImportPreview(
+  value: unknown,
+): BibliographyImportPreview {
+  const object = record(value, "bibliography import preview");
+  if (!Array.isArray(object.entries)) {
+    throw new Error("bibliography import preview.entries is invalid");
+  }
+  const previewToken = text(
+    object.preview_token,
+    "bibliography import preview.preview_token",
+  );
+  if (!/^[0-9a-f]{64}$/.test(previewToken)) {
+    throw new Error("bibliography import preview.preview_token is invalid");
+  }
+  return {
+    source_id:
+      object.source_id === null
+        ? null
+        : text(object.source_id, "bibliography import preview.source_id"),
+    source_revision:
+      object.source_revision === null
+        ? null
+        : positiveInteger(
+            object.source_revision,
+            "bibliography import preview.source_revision",
+          ),
+    preview_token: previewToken,
+    entries: object.entries.map(parseBibliographyImportEntry),
+  };
+}
+
+function parseBibliographyImportResult(
+  value: unknown,
+): BibliographyImportResult {
+  const object = record(value, "bibliography import result");
+  return {
+    source_id: text(object.source_id, "bibliography import result.source_id"),
+    source_revision: positiveInteger(
+      object.source_revision,
+      "bibliography import result.source_revision",
+    ),
+    created: nonNegativeInteger(
+      object.created,
+      "bibliography import result.created",
+    ),
+    updated: nonNegativeInteger(
+      object.updated,
+      "bibliography import result.updated",
+    ),
+    kept: nonNegativeInteger(object.kept, "bibliography import result.kept"),
+    excluded: nonNegativeInteger(
+      object.excluded,
+      "bibliography import result.excluded",
+    ),
+  };
 }
 
 export function parseNotePreview(value: unknown): NotePreview {
@@ -800,6 +1053,48 @@ export async function deleteBibliographyItem(
   }
 }
 
+export async function listBibliographyImportSources(
+  apiBase: string,
+  signal?: AbortSignal,
+): Promise<BibliographyImportSource[]> {
+  return requestJson(
+    `${apiBase}/bibliography/import-sources`,
+    { signal },
+    parseBibliographyImportSources,
+  );
+}
+
+export async function previewBibliographyImport(
+  apiBase: string,
+  source: BibliographyImportSourceInput,
+  items: unknown[],
+): Promise<BibliographyImportPreview> {
+  return requestJson(
+    `${apiBase}/bibliography/import-previews`,
+    jsonPostRequest({ source, items }),
+    parseBibliographyImportPreview,
+  );
+}
+
+export async function applyBibliographyImport(
+  apiBase: string,
+  source: BibliographyImportSourceInput,
+  items: unknown[],
+  previewToken: string,
+  decisions: BibliographyImportDecision[],
+): Promise<BibliographyImportResult> {
+  return requestJson(
+    `${apiBase}/bibliography/imports`,
+    mutationRequest("POST", {
+      source,
+      items,
+      preview_token: previewToken,
+      decisions,
+    }),
+    parseBibliographyImportResult,
+  );
+}
+
 export async function readNote(
   apiBase: string,
   noteId: string,
@@ -1073,6 +1368,15 @@ function mutationRequest(
         : { "if-match": `"rev-${expectedRevision}"` }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  };
+}
+
+function jsonPostRequest(body: unknown): RequestInit {
+  return {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
   };
 }
 
