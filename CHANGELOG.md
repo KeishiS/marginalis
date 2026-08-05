@@ -3,6 +3,39 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
+## 0.29.0 — 未公開
+
+### 破壊的変更
+
+- MCPクライアントごとの認可履歴、scope上限、最終利用日時を保存するため、SQLiteスキーマを18へ
+  更新した。更新前に`export-archive`を実行し、v0.29.0の空の`dataDir`へ`import-archive`する。
+  archiveにはMCPのclient登録とtokenを含めないため、更新後はMCPクライアントを改めて接続する。
+- MCPのscopeをノートと書誌情報について読み取り、書き込み、削除へ分けた。v0.29.0より前のtokenは
+  書誌用scopeを持たないため、MCPから書誌情報を操作する場合は改めて認可する。
+
+### 追加
+
+- 設定画面へ「MCPのアクセス制御」を追加した。利用者は、すべてのクライアントに対するscope上限と、
+  認可済みクライアントごとの上限を設定できる。クライアント名、識別子、登録方式、同意済みscope、
+  認可日時、最終利用日時、有効状態を確認し、接続を取り消すこともできる。
+- OAuth同意画面で、クライアントが要求したscopeから許可するものだけを選べるようにした。要求にない
+  scopeの追加、選択内容の改変、scopeを一つも選ばない許可は拒否する。
+- MCPの初回認証challengeを`notes:read`に限定した。接続後にscopeが不足した場合は、現在のtokenが
+  持つscopeと今回の操作に必要なscopeを一つの`WWW-Authenticate` challengeで示し、追加認可できる。
+
+### 改善
+
+- scope上限を狭めた場合は、新しい上限を超える未使用の認可codeとtoken familyを同じtransactionで
+  直ちに失効する。上限を広げても既存tokenへ権限は追加せず、OAuth再認可を必要とする。
+- `GET /api/v3/mcp-authorizations`と、クライアント別上限を変更する
+  `PUT /api/v3/mcp-authorizations/{client_id}/scope-ceiling`を追加した。既存の接続取消APIと同様に、
+  認証中の利用者本人に属する認可だけを対象とする。
+
+### 互換性
+
+- archive `marginalis-archive-14`、AdocWeave package版0.27.0、note profile版5を維持する。
+  v0.28.1で書き出したarchiveは変換せずに検証・復元できる。
+
 ## 0.28.1 — 2026-08-04
 
 ### 修正

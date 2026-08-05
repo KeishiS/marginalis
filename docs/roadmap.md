@@ -6,34 +6,25 @@
 
 ## 現在地
 
-`v0.27.0`を2026-08-04に公開しました。公開済み機能と移行方法は
-[変更履歴](../CHANGELOG.md#0270--2026-08-04)、確認結果は
-[v0.27.0受入結果](acceptance-results/v0.27.0.md)を参照してください。この文書には公開履歴を
+`v0.28.1`を2026-08-04に公開しました。公開済み機能と移行方法は
+[変更履歴](../CHANGELOG.md#0281--2026-08-04)、確認結果は
+[v0.28.1受入結果](acceptance-results/v0.28.1.md)を参照してください。この文書には公開履歴を
 書き写さず、未完了の判断と作業だけを置きます。
 
 ## 公開予定
 
-### v0.28.0: Web UIの基本操作
-
-OAuth同意画面を通常画面と統一する
-[#262](https://github.com/KeishiS/marginalis/issues/262)と、ノートの削除・復元をWeb UIから完結させる
-[#263](https://github.com/KeishiS/marginalis/issues/263)、
-[#267](https://github.com/KeishiS/marginalis/issues/267)をまとめます。削除だけを先に公開してWeb UIから
-復元できない期間を作らず、一連の操作と受入試験がそろった時点で`v0.28.0`を公開します。
-
 ### v0.29.0: MCPアクセス制御
 
-利用者とクライアントのscope上限を定める
-[#268](https://github.com/KeishiS/marginalis/issues/268)を先に設計し、製品固有のscopeポリシーとして
-分離後のAuthorization Serverへ渡します。その上で、書誌情報のscope分離
+利用者とクライアントのscope上限
+[#268](https://github.com/KeishiS/marginalis/issues/268)、書誌情報のscope分離
 [#266](https://github.com/KeishiS/marginalis/issues/266)、同意時のscope選択
 [#261](https://github.com/KeishiS/marginalis/issues/261)、認可済みクライアントの管理
 [#264](https://github.com/KeishiS/marginalis/issues/264)、段階的な追加認可
-[#265](https://github.com/KeishiS/marginalis/issues/265)の順に実装します。
+[#265](https://github.com/KeishiS/marginalis/issues/265)の実装と自動試験を完了しました。
 
-既存クライアントの再認可を複数回求めないよう、これらは一つの`v0.29.0`として公開します。発行可能なscopeの
-計算は共有可能な中核へ置きますが、scopeの名称、MCP toolとの対応、同意画面、利用者向け設定は
-Marginalisに残します。
+次はリリース候補で、schema 18へのarchive移行、MCPクライアント3種の初回接続、scopeの追加認可、
+クライアント別制限、接続取消を人手確認します。既存クライアントの再認可を複数回求めないよう、これらは
+一つの`v0.29.0`として公開します。
 
 ### Authorization Serverの共有元
 
