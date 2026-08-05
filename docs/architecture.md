@@ -171,14 +171,16 @@ HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのpor
 検査だけを緩めず、この設計と依存表を同じ変更で更新します。
 
 ノート操作の内向きportは、問い合わせの`NoteQueries`、変更の`NoteCommands`、表示変換の
-`NotePresentation`、ACL管理の`NoteAccessControl`に分けます。複数のtransportへ同じ実装を渡す
+`NotePresentation`、ACL管理の`NoteAccessControl`、所有者による確認の`NoteReviews`に分けます。
+複数のtransportへ同じ実装を渡す
 場合だけ、これらをまとめた`NoteUseCases`をfacadeとして使います。
 閲覧画面は`NotePresentation::read_note_view`だけを呼び出し、ノート、実効アクセス水準、描画HTML、
 関連概要を個別の問い合わせから組み立てません。試験用adapterもこの境界を直接実装し、実際には
 存在しない分割問い合わせを模倣しません。
 applicationから永続化へ要求する外向きportも、読み取りの`NoteQueryRepository`、原子的な変更の
-`NoteCommandRepository`、ACL操作の`NoteAclRepository`に分けます。具象的には同じSQLite adapterが
-三つを実装しますが、application serviceは用途ごとに必要なportだけを受け取ります。
+`NoteCommandRepository`、ACL操作の`NoteAclRepository`、所有者とrevisionを原子的に検査する
+`NoteReviewRepository`に分けます。具象的には同じSQLite adapterがこれらを実装しますが、application serviceは
+用途ごとに必要なportだけを受け取ります。
 SQLiteのエラー型やAsciiDoc engineの型はapplicationの公開境界へ出しません。
 
 構造化ログはtransportやadapter内で、外部との通信結果と運用処理の結果だけを記録します。
