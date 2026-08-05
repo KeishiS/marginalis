@@ -6,45 +6,58 @@
 
 ## 現在地
 
-`v0.28.1`を2026-08-04に公開しました。公開済み機能と移行方法は
-[変更履歴](../CHANGELOG.md#0281--2026-08-04)、確認結果は
-[v0.28.1受入結果](acceptance-results/v0.28.1.md)を参照してください。この文書には公開履歴を
+`v0.29.0`を2026-08-05に公開しました。公開済み機能と移行方法は
+[変更履歴](../CHANGELOG.md#0290--2026-08-05)、確認結果は
+[v0.29.0受入結果](acceptance-results/v0.29.0.md)を参照してください。この文書には公開履歴を
 書き写さず、未完了の判断と作業だけを置きます。
 
 ## 公開予定
 
-### v0.29.0: MCPアクセス制御
+### v0.30.0: Authorization Serverの共有境界
 
-利用者とクライアントのscope上限
-[#268](https://github.com/KeishiS/marginalis/issues/268)、書誌情報のscope分離
-[#266](https://github.com/KeishiS/marginalis/issues/266)、同意時のscope選択
-[#261](https://github.com/KeishiS/marginalis/issues/261)、認可済みクライアントの管理
-[#264](https://github.com/KeishiS/marginalis/issues/264)、段階的な追加認可
-[#265](https://github.com/KeishiS/marginalis/issues/265)の実装と自動試験を完了しました。
+大きなリファクタリングの前に、アーキテクチャの設計条件と回帰試験を項目単位で対応付ける
+[#304](https://github.com/KeishiS/marginalis/issues/304)を行います。2026年7月には、OIDC login attemptの
+発行時に必要な期限切れ行の削除がリファクタリングで失われ、文書だけが正しい状態になる回帰がありました。
+設計条件に安定した識別子を付け、検証先の記載漏れを機械的に拒否してから、中核の分離を進めます。
 
-リリース候補で、schema 18へのarchive移行、MCPクライアント3種の初回接続、scopeの追加認可、
-クライアント別制限、接続取消の人手確認を完了しました。リリースPull Requestを統合してrelease gateを
-通過した後、一つの`v0.29.0`として公開します。
+その上で、[#269](https://github.com/KeishiS/marginalis/issues/269)によりOAuthの状態遷移、scope判定、
+metadata生成を製品非依存の共有crateへ集約します。Axum、SQLite、Marginalis固有のresourceとscopeは
+adapter側に残し、異なるresourceと保存先を持つ試験用consumerで境界を確認します。この版では独立した
+リポジトリへ移さず、既存のgrantとtokenを維持し、DB schemaとarchive形式を変更しないことを原則とします。
 
-### Authorization Serverの共有元
+同じ認可境界の改善として、同意画面で完全な`client_id`を主要な識別情報として示す
+[#306](https://github.com/KeishiS/marginalis/issues/306)も含めます。MathJaxは、CSPだけに依存せず不要な
+TeX packageの読込を入力段階で拒否する
+[#305](https://github.com/KeishiS/marginalis/issues/305)により、許可するpackageを明示的に固定します。
 
-`v0.27.0`で分離したcrateは公開境界をまだ固定せず、`v0.29.0`までのscopeポリシー実装を通じて、
-製品非依存の境界が実用に耐えるか確認します。その後、#269のADRで独立リポジトリ、registry、固定した
+### v0.31.0: ノートの来歴と人手確認
+
+先に、外部文献管理ツールとの同期契約を扱う
+[#225](https://github.com/KeishiS/marginalis/issues/225)のADRで、文献の取得元を保存する必要があるか決めます。
+続いて、ノートの問い合わせ、更新、描画・引用解決、関係の図、ACLが同居するapplication moduleを
+[#307](https://github.com/KeishiS/marginalis/issues/307)で分割します。公開動作を変えないこの整理を終えてから、
+ノートの作成経路と人手確認状態を扱う
+[#232](https://github.com/KeishiS/marginalis/issues/232)を実装します。
+
+保存項目、REST、MCP、archiveの契約が変わるため、実装後は通常版の前に受入用の候補コミットを固定し、
+export、archive移行、隔離復元、importを確認します。`v0.31.0`として公開するのは、既存データを維持する
+移行経路と人手確認状態の更新規則がそろった後です。
+
+### v0.32.0: 外部文献管理ツールとの連携
+
+#225のADRから実装Issueを分け、最初はCSL-JSONによる一方向の取り込みを候補とします。変更前の事前確認、
+citation keyの維持、競合の診断、入力から消えた文献を自動削除しない動作を先にそろえます。外部APIの
+認証情報を保持する接続や双方向同期は、この契約を実運用で確認してから後続版で判断します。
+
+### Authorization Serverの独立配布
+
+`v0.30.0`で共有crateの境界と試験用consumerを確認した後、#269のADRで独立リポジトリ、registry、固定した
 Git dependencyを比較します。独立リポジトリへの移動は、その判断とversion方針、脆弱性対応、両利用側の
 CIがそろってから行います。
 
 [連環（Renkan）](research-search-vision.md)はMarginalisとは別の探索サービスです。Renkanへの統合と
 PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。Marginalis側では
 別のresourceと保存先を使う試験実装により、分離した中核が製品固有の型へ依存しないことを確認します。
-
-### v0.30.0以降: 保存形式と外部連携
-
-ノートの作成経路と人手確認状態を扱う
-[#232](https://github.com/KeishiS/marginalis/issues/232)と、外部の文献管理ツールとの同期契約を扱う
-[#225](https://github.com/KeishiS/marginalis/issues/225)について、先に保存項目と公開契約を決めます。
-SQLite schemaを変更する実装は、[#105](https://github.com/KeishiS/marginalis/issues/105)の新しいschema系統と
-まとめて`v0.30.0`の候補とします。#225はADR確定後に実装Issueへ分割し、取込元や競合解決に必要な
-保存形式を`v0.30.0`へ含めるか、後続版へ分けるかを決定します。
 
 パッチ版は予定へ固定しません。各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
 なった場合だけ公開します。
@@ -64,14 +77,13 @@ SQLite schemaを変更する実装は、[#105](https://github.com/KeishiS/margin
 
 ## 次の破壊的更新
 
-[#105](https://github.com/KeishiS/marginalis/issues/105)のSQLite schema番号体系の再開始は、
-採用する機能の保存形式を決めた後に実施します。新しい番号体系を導入した直後に別の保存形式を
-追加する事態を避けるためです。関係の図はノート間の参照を`note_references`からそのまま読みますが、
-引用の線のために`note_citations`表を追加し、v0.22.0でschemaを13へ更新しました。archiveの形式は
-変えていないため、`export-archive`と`import-archive`で移れます。
+[#105](https://github.com/KeishiS/marginalis/issues/105)のSQLite schema番号体系の再開始は、公開版をまだ
+割り当てません。現在の案は旧DBとarchiveを移行せず、空の`dataDir`から始めるため、内部的な番号整理に
+対して運用負担が大きいためです。
 
-この更新では旧データを移行せず、空の`dataDir`から新しいデータベースを作成します。旧`dataDir`は
-自動削除せず、旧実行環境での確認と復旧に使用できるよう別に保管します。
+通常のschema更新を続けるか、archive経由の移行を可能にして新しい番号体系へ移るか、既存データとの
+互換性を切る破壊的更新にするかを、#225と#232の保存形式が確定した後に判断します。実施する場合も、
+旧`dataDir`を自動削除せず、旧実行環境での確認と復旧に使える状態を維持します。
 
 ## 保留条件
 
