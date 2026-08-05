@@ -60,6 +60,7 @@ export function McpAccessSettingsPage({
     if (settings === null || saving) return;
     setSaving(true);
     setMessage("");
+    const narrows = settings.scopes.some((scope) => !selected.includes(scope));
     try {
       const ordered = settings.supported_scopes.filter((scope) =>
         selected.includes(scope),
@@ -72,7 +73,9 @@ export function McpAccessSettingsPage({
       setSelected(saved.scopes);
       setFailed(false);
       setMessage(
-        "MCPのアクセス設定を保存しました。既存の接続は再認可が必要です。",
+        narrows
+          ? "MCPのアクセス設定を保存しました。新しい上限を超える接続は再認可が必要です。"
+          : "MCPのアクセス設定を保存しました。追加した権限を使うには再認可が必要です。",
       );
     } catch {
       setFailed(true);
@@ -133,7 +136,7 @@ export function McpAccessSettingsPage({
             </div>
           </fieldset>
           <p className="field-help">
-            保存すると、権限の変更を直ちに反映するため、現在のMCP接続は失効します。必要なクライアントを改めて認可してください。
+            上限を狭めると、新しい上限を超えるMCP接続だけが直ちに失効します。上限を広げても既存の接続へ権限は追加されません。
           </p>
           {message ? (
             <p

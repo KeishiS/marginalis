@@ -58,6 +58,10 @@ token hashを既存schemaへ保存します。`marginalis-application`は検証�
 [ADR 0008](adr/0008-mcp-authorization-serverの中核を製品から分離する.md)に記録しています。利用者の
 ログインはWeb UIと同じKanidm OIDCを使います。CIMDの外部取得とcacheは、HTTP clientへ依存するadapter
 `mcp-authorization-server-cimd`へ分け、中核crateにnetwork依存を持ち込みません。
+利用者とMCPクライアントのscope上限は別のSQLite行として保存し、認可codeの発行前に両方を適用します。
+利用者はWeb UIから自分の上限だけを変更できます。上限を狭める保存処理は、新しい上限を超える認可codeと
+token familyの失効まで同じtransactionで行います。設定主体と既定値は
+[ADR 0009](adr/0009-mcpのscope上限を利用者設定として管理する.md)に記録しています。
 MCPのJSON-RPC wire型は、それを利用する唯一のtransportである`marginalis-web::mcp`に置きます。
 Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条件の検査、tool実行は
 `marginalis-web::http::mcp_transport`内の別moduleに置きます。これにより、公開toolを変更するときに

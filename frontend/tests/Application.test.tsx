@@ -92,7 +92,7 @@ describe("Application", () => {
     fireEvent.click(await screen.findByLabelText(/notes:write/));
     fireEvent.click(screen.getByRole("button", { name: "アクセス設定を保存" }));
 
-    await screen.findByText(/既存の接続は再認可が必要です/);
+    await screen.findByText(/新しい上限を超える接続は再認可が必要です/);
     const request = fetchMock.mock.calls[1][1] as RequestInit;
     expect(request.method).toBe("PUT");
     expect(JSON.parse(String(request.body))).toEqual({
