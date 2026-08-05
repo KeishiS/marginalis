@@ -9,12 +9,12 @@ trap 'rm -rf "$temporary_directory"' EXIT
 git -C "$temporary_directory" init --quiet
 git -C "$temporary_directory" config user.name "Marginalis CI"
 git -C "$temporary_directory" config user.email "ci@example.invalid"
-printf '%s\n' '# 試験' >"$temporary_directory/README.md"
-git -C "$temporary_directory" add README.md
+printf '%s\n' '= 試験' >"$temporary_directory/README.adoc"
+git -C "$temporary_directory" add README.adoc
 git -C "$temporary_directory" commit --quiet -m base
 base=$(git -C "$temporary_directory" rev-parse HEAD)
 
-printf '%s\n' '# 文書の変更' >"$temporary_directory/README.md"
+printf '%s\n' '= 文書の変更' >"$temporary_directory/README.adoc"
 git -C "$temporary_directory" commit --quiet -am docs
 docs_head=$(git -C "$temporary_directory" rev-parse HEAD)
 actual=$(cd "$temporary_directory" && bash "$script" "$base" "$docs_head")

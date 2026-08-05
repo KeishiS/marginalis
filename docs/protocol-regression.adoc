@@ -1,0 +1,72 @@
+= ブラウザーとMCPプロトコルの回帰テスト
+
+== 目的
+
+[#top]
+この文書は、開発者に向けて、ブラウザーでのログイン、内蔵OAuth、MCP Streamable HTTPの仕様を
+継続して確認する方法を説明します。実際のクライアントを使った確認結果はリリース受入へ記録します。
+
+== 自動テスト
+
+認証adapter、HTTP router、NixOS VMを責務ごとに分け、次を検証します。
+
+* OIDC Authorization Code \+ PKCE、nonce、group claim、Web session
+* Protected Resource Metadataと内蔵Authorization Server Metadata
+* Authorization Code、PKCE S256、resource、scope、codeの一回限りの使用
+* 不透明tokenのhash保存、refresh token rotation、token family失効
+* 無効なtokenの``401``、scope不足の``403``、SQLite障害の``503``
+* MCP ``2026-07-28``の``server/discover``、requestごとのmetadata、標準header照合、tool call
+* MCP ``2025-11-25``と``2025-03-26``のinitialize、initialized notification、tool call
+* JSON-RPC error object、batch拒否
+* ``resultType``、server情報、``ttlMs``、``cacheScope``、``-32020``、``-32022``
+* ``create_note``と``update_note``の警告拒否、診断の重大度・位置、``isError``、``text``と
+``structuredContent``の一致
+
+NixOS VM試験``kanidm-discovery-vm``は実Kanidm 1.10、private CA、nginx TLS、``/marginalis``
+subpathを構築します。TLS越しのmetadata discoveryとlogin開始を検証し、サブパス復帰用Cookieと
+Kanidmへの遷移先を確認します。OIDC nonceとstateはCookieではなくサーバー側へ保持します。
+
+``mcp-authorization-vm``はNixOS moduleで内蔵Authorization Serverを有効にし、metadata、認可endpoint、
+MCP endpointが同じbase URLで公開されることを検証します。
+
+[source,sh]
+----
+nix develop --command cargo make frontend-build
+nix develop --command cargo test -p marginalis-application mcp_oauth
+nix develop --command cargo test -p marginalis-sqlite tests::oauth
+nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
+nix build -L .#checks.x86_64-linux.mcp-authorization-vm
+nix build -L .#checks.x86_64-linux.kanidm-discovery-vm
+nix develop --command cargo make protocol-regression-assets
+----
+
+== クライアントとの接続確認に使うテストデータ
+
+内蔵Authorization ServerのDCR、認可画面、callback互換性をChatGPT、Claude Code、Codex CLIごとに
+実接続で確認し、使用されたprotocol版とmodern/legacyの別だけを
+記録します。header、token、client情報そのものは保存せず、client固有のrequest形状を
+Marginalisの一般仕様へ取り込みません。警告を含む変更toolの回帰試験は、三つのclientが共通して
+解釈できる標準MCP tool resultを固定し、client固有の表示文言には依存しません。
+
+== テスト失敗時に保存する情報
+
+失敗証跡にはrequest ID、HTTP status、遷移先のscheme・host・path、秘密情報を除いたserver log、
+必要な場合の画面だけを保存します。Cookie、access token、refresh token、ID token、authorization
+code、client secret、state、nonce、PKCEの値は保存しません。
+
+生ログを保存する前に、次のようにsanitizeと漏洩検査を実行します。
+
+[source,sh]
+----
+bash .github/scripts/protocol-artifact.sh sanitize raw.log artifact.log
+bash .github/scripts/protocol-artifact.sh check artifact.log
+----
+
+URLのqueryは原則として保存しません。調査に必要な場合も、``code``などをsanitizeした後に保存します。
+artifactは公開CIへ無期限に保持せず、リリース調査に必要な期間だけアクセス制限付きで保持します。
+
+== 実際のクライアントを使う確認
+
+リリース前にChatGPT、Claude Code、Codex CLIでmetadata discovery、認可、refresh、tool call、
+認可取消を確認します。 xref:acceptance.adoc#top[リリース受入]には必須項目の完了日と成否だけを記録し、
+環境やclientの詳細、秘密情報、認可URL全体は記録しません。

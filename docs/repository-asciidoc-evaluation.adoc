@@ -4,9 +4,10 @@
 [#purpose]
 == 目的と現在の結論
 
+[#top]
 この文書は、https://github.com/KeishiS/marginalis/issues/21[Issue 21]で行った初回評価と、
 https://github.com/KeishiS/marginalis/issues/334[Issue 334]で採用を決めた再評価を記録します。
-ノート本文にAsciiDocを採用する理由はxref:requirements.md[要件定義]で扱うため、ここでは
+ノート本文にAsciiDocを採用する理由は xref:requirements.adoc#top[要件定義]で扱うため、ここでは
 リポジトリで保守する人間向け文書だけを対象にします。
 
 2026年7月28日の初回評価では、Markdownで必要な表現を満たしており、形式変更だけでは新しい保証を
@@ -32,7 +33,9 @@ textlint入力を公開APIとして提供するようになりました。この
 
 [cols="2,3,3",options="header"]
 |===
-|対象 |初回評価時の状態 |初回評価
+|対象
+|初回評価時の状態
+|初回評価
 
 |要件との対応表
 |Markdown表と専用scriptで要件IDを検査

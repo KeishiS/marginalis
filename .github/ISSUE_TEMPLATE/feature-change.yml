@@ -1,0 +1,50 @@
+name: 機能の修正・改善・追加
+description: 機能の動作を修正、改善、または追加するIssue
+title: ""
+labels: []
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 目的
+      description: 解決したい課題と、この変更が必要な理由を記載してください。
+    validations:
+      required: true
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: 現在の動作例
+      description: 現在の入力、操作、出力を、再現できる具体例として記載してください。動作が存在しない場合は「該当なし」と記載してください。
+      placeholder: |
+        入力または操作:
+
+        現在の出力または結果:
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: 理想の動作例
+      description: 同じ入力や操作に対して、変更後に期待する出力または結果を記載してください。新機能の場合も代表的な利用例を記載してください。
+      placeholder: |
+        入力または操作:
+
+        期待する出力または結果:
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: completion-criteria
+    attributes:
+      label: 完了条件
+      description: 動作例から検証できる条件を箇条書きで記載してください。
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 補足
+      description: 関連Issue、制約、検討済みの代替案などがあれば記載してください。
+    validations:
+      required: false

@@ -8,7 +8,7 @@ use std::env;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use adocweave::semantic::{ReferenceDestination, ReferenceTargetKind};
+use adocweave::semantic::{Inline, ReferenceDestination, ReferenceTargetKind, SemanticNode, walk};
 use adocweave::{AnalysisOptions, Engine};
 
 fn main() {
@@ -59,12 +59,31 @@ fn validate_cross_document_xrefs(
 ) -> Result<(), String> {
     let engine = Engine::new(AnalysisOptions::default());
     let mut corpus = BTreeMap::new();
+    let mut errors = Vec::new();
 
     for (path, source) in documents {
         let relative = project_relative_path(project_root, path)?;
         let analysis = engine
             .analyze(source)
             .map_err(|error| format!("文書を解析できません: {}: {error}", path.display()))?;
+        walk(analysis.document(), |node| match node {
+            SemanticNode::Inline(Inline::Text(text)) => {
+                for macro_name in ["xref:", "link:"] {
+                    if !text.value.contains(macro_name) {
+                        continue;
+                    }
+                    errors.push(format!(
+                            "{}: {macro_name}記法が通常の文章として解釈されています。記法の前に空白を置いてください",
+                            relative.display()
+                        ));
+                }
+            }
+            SemanticNode::Inline(Inline::Passthrough { .. }) => errors.push(format!(
+                "{}: 人間向け文書ではpassthrough記法を使用できません",
+                relative.display()
+            )),
+            _ => {}
+        });
         let mut explicit_ids = analysis
             .document()
             .anchors()
@@ -111,7 +130,6 @@ fn validate_cross_document_xrefs(
         }
     }
 
-    let mut errors = Vec::new();
     for (source_path, facts) in &corpus {
         for (document, anchor) in &facts.references {
             let joined = source_path
@@ -242,6 +260,35 @@ mod tests {
             validate_cross_document_xrefs(Path::new("."), &absent)
                 .expect_err("missing corpus document")
                 .contains("検査対象にありません")
+        );
+    }
+
+    #[test]
+    fn link_macros_must_not_remain_unrecognized_in_prose() {
+        let invalid = [document(
+            "index.adoc",
+            "= 入口\n\n詳しくはxref:guide.adoc#details[詳細]を参照します。\n",
+        )];
+        assert!(
+            validate_cross_document_xrefs(Path::new("."), &invalid)
+                .expect_err("unrecognized xref must be rejected")
+                .contains("通常の文章として解釈")
+        );
+
+        let literal = [document(
+            "index.adoc",
+            "= 入口\n\n``xref:guide.adoc#details[詳細]``という記法です。\n",
+        )];
+        assert!(validate_cross_document_xrefs(Path::new("."), &literal).is_ok());
+    }
+
+    #[test]
+    fn repository_documents_reject_passthrough_markup() {
+        let document = [document("index.adoc", "= 入口\n\n++**++強調++**++\n")];
+        assert!(
+            validate_cross_document_xrefs(Path::new("."), &document)
+                .expect_err("passthrough must be rejected")
+                .contains("passthrough記法")
         );
     }
 }

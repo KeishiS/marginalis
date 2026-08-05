@@ -1,0 +1,51 @@
+= v0.20.0受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.20.0``
+* 対象: リリース情報を更新する前の``main``
+* 対象コミット: ``709f12804d664baf2a6bd476fdfc2a6971d38913``
+* 判定日: 2026-07-31
+* 公開判定: 公開可
+
+== 結果
+
+[cols=",,,",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-07-31
+|https://github.com/KeishiS/marginalis/pull/190[機能追加Pull Request \#190]、
+https://github.com/KeishiS/marginalis/pull/192[Issue 192]
+とhttps://github.com/KeishiS/marginalis/pull/193[リリースPull Request \#193]で、React・TypeScript、Rust、公開契約、
+カバレッジ、aarch64上のコンパイル、ブラウザー試験、NixOS VM E2Eが成功
+|Web UI
+|成功
+|2026-07-31
+|https://github.com/KeishiS/marginalis/pull/193[リリースPull Request \#193]で、引用表示と参考文献一覧を含む人手受入を実施し、
+利用者がリリース候補を受け入れた
+|NixOS配備
+|成功
+|2026-07-31
+|https://github.com/KeishiS/marginalis/pull/193[リリースPull Request \#193]の人手受入で、
+空の``dataDir``を使うNixOSへの配備と起動を確認し、利用者がリリース候補を受け入れた
+|archive復元
+|成功
+|2026-07-31
+|https://github.com/KeishiS/marginalis/pull/193[リリースPull Request \#193]の人手受入で、archiveの隔離復元と、
+``export-documents``から隔離した空のdatabaseへの``import-documents``を確認し、利用者がリリース候補を受け入れた
+|MCP接続
+|成功
+|2026-07-31
+|https://github.com/KeishiS/marginalis/pull/193[リリースPull Request \#193]の人手受入で、MCPクライアントからの閲覧、更新、
+接続解除による取消を確認し、利用者がリリース候補を受け入れた
+|===
+
+自動検証と利用者の受入が成功し、公開を止める問題は確認されなかったため、v0.20.0を公開できます。
+
+利用者、Cookie、token、認可code、client secret、実際のノート本文や書誌情報は記録しません。

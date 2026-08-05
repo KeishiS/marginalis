@@ -1,0 +1,75 @@
+= v0.29.0受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.29.0``
+* 対象: ``codex/v0.29.0-release``のリリース候補
+* 対象コミット: ``71ff4b5f79cf6e7611d800d51d00a0e508b3a4b2``
+* 判定日: 2026-08-05
+* 公開判定: 公開可
+
+== 結果
+
+[cols=",,,",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/303[リリースPull Request \#303]で、React・TypeScript、Rust、公開契約、
+依存境界、カバレッジ、ブラウザー試験、AArch64、NixOS VM E2Eを実行
+|scopeの選択
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/303[リリースPull Request \#303]に記録した利用者受入とHTTP試験で、
+要求scopeの部分選択、拒否、選択なし、フォーム改変の拒否を確認
+|クライアント別管理
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/303[リリースPull Request \#303]に記録した利用者受入で、認可済みクライアントの表示、
+scope上限の変更、範囲外tokenの即時失効、接続取消を確認
+|段階的な追加認可
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/303[リリースPull Request \#303]に記録した利用者受入とprotocol版別結合試験で、
+``notes:read``から開始し、更新と削除で不足scopeを追加認可できることを確認
+|MCP接続
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/303[リリースPull Request \#303]に記録した利用者受入で、ChatGPT、Claude
+Code、Codex CLIの初回接続、読み取り、更新、削除、再認可、取消を確認
+|NixOS配備
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/303[リリースPull Request \#303]のNixOS VM E2Eで空のschema 18、TLS、
+サブパス、Kanidm、バックアップ、定期処理を確認し、利用者環境でもschema 18への移行後の起動と設定画面を確認
+|archive復元
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/303[リリースPull Request \#303]に記録した利用者受入で、archive 14を検証し、
+空のschema 18へ取り込んで内容と再書き出しを確認
+|===
+
+自動検証と利用者によるリリース候補の受入が成功しました。scopeを操作ごとに追加認可でき、利用者全体と
+クライアント別の上限を狭めた場合は範囲外のtokenが直ちに失効します。archive 14から空のschema 18への
+復元後もノートと設定を利用でき、公開を止める問題は確認されなかったため、v0.29.0を公開できます。
+
+== 今回の確認で重点を置く点
+
+初回接続では``notes:read``だけが提示され、更新時には既存の``notes:read``と不足する``notes:write``が一つの
+challengeに含まれることを確認します。追加認可を拒否しても元の閲覧権限が維持され、同意した場合だけ
+新しいtokenで更新できること、削除scopeが削除操作まで自動で追加されないことも確認します。
+
+設定画面では、認証中の利用者が自分で認可したクライアントだけを確認できることを確認します。scope上限を
+狭めた場合は範囲外の接続が直ちに失効し、広げただけでは既存tokenへ権限が追加されないこと、クライアントが
+要求したことのないscopeを設定できないことを確認します。
+
+SQLite schema 18へは旧databaseを直接引き継がず、v0.28.1で書き出したarchive 14を空の``dataDir``へ
+取り込みます。ノート、ACL、参照、削除状態、revision、数式マクロ設定、書誌情報が一致し、MCP clientと
+tokenは移行されないことを確認します。
+
+利用者、Cookie、token、認可code、PKCE verifier、実際のノート本文や書誌情報は記録しません。
