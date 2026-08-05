@@ -18,7 +18,7 @@ xref:README.adoc#top[資料案内]から確認してください。
 https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/README.md[v0.5.0時点のIssue一覧]に
 保存しています。
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |旧番号
 |分類
@@ -175,7 +175,7 @@ https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/README.md[v0.5.0時点�
 {legacy-upstream}/README.md[v0.5.0時点の上流提案一覧]に
 保存しています。
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |旧番号
 |採用結果

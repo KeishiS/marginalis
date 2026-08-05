@@ -11,6 +11,8 @@ use std::path::{Component, Path, PathBuf};
 use adocweave::semantic::{Inline, ReferenceDestination, ReferenceTargetKind, SemanticNode, walk};
 use adocweave::{AnalysisOptions, Engine};
 
+mod table_rows;
+
 fn main() {
     if let Err(error) = run(env::args().skip(1)) {
         eprintln!("{error}");
@@ -20,13 +22,25 @@ fn main() {
 
 fn run(arguments: impl Iterator<Item = String>) -> Result<(), String> {
     let mut arguments = arguments;
-    if arguments.next().as_deref() != Some("check-xrefs")
-        || arguments.next().as_deref() != Some("--project-root")
-    {
-        return Err(
-            "使用方法: marginalis-documentation check-xrefs --project-root ROOT DOCUMENT..."
-                .to_owned(),
-        );
+    match arguments.next().as_deref() {
+        Some("check-xrefs") => check_xrefs(arguments),
+        Some("extract-table-rows") => table_rows::run(arguments),
+        _ => Err(usage()),
+    }
+}
+
+fn usage() -> String {
+    concat!(
+        "使用方法:\n",
+        "  marginalis-documentation check-xrefs --project-root ROOT DOCUMENT...\n",
+        "  marginalis-documentation extract-table-rows --columns COUNT --input DOCUMENT",
+    )
+    .to_owned()
+}
+
+fn check_xrefs(mut arguments: impl Iterator<Item = String>) -> Result<(), String> {
+    if arguments.next().as_deref() != Some("--project-root") {
+        return Err(usage());
     }
     let project_root = arguments
         .next()
@@ -82,6 +96,19 @@ fn validate_cross_document_xrefs(
                 "{}: 人間向け文書ではpassthrough記法を使用できません",
                 relative.display()
             )),
+            SemanticNode::ElementAttribute(attribute)
+                if attribute.name.as_deref() == Some("cols")
+                    && attribute
+                        .value
+                        .trim_matches('"')
+                        .split(',')
+                        .any(|column| column.trim().is_empty()) =>
+            {
+                errors.push(format!(
+                    "{}: 表のcols属性では各列を明示してください",
+                    relative.display()
+                ));
+            }
             _ => {}
         });
         let mut explicit_ids = analysis
@@ -289,6 +316,19 @@ mod tests {
             validate_cross_document_xrefs(Path::new("."), &document)
                 .expect_err("passthrough must be rejected")
                 .contains("passthrough記法")
+        );
+    }
+
+    #[test]
+    fn repository_documents_require_explicit_table_columns() {
+        let document = [document(
+            "index.adoc",
+            "= 入口\n\n[cols=\",,\"]\n|===\n|一\n|二\n|三\n|===\n",
+        )];
+        assert!(
+            validate_cross_document_xrefs(Path::new("."), &document)
+                .expect_err("implicit empty table columns must be rejected")
+                .contains("各列を明示")
         );
     }
 }

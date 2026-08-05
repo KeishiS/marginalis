@@ -16,7 +16,7 @@ filterであり、fieldや秘密情報の出力を有効にする設定ではあ
 Marginalis自身が出力するすべてのproductionログは、次の規則に従います。依存ライブラリのログを
 ``RUST_LOG``で明示的に有効化した場合、そのライブラリ固有のfieldはこの契約の対象外です。
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |項目
 |規則
@@ -57,7 +57,7 @@ templateを``path``として記録します。未一致の経路は``<unmatched>
 // observability-event-catalog:start
 === HTTPとservice
 
-[cols=",,,",options="header",]
+[cols="1,1,1,1",options="header",]
 |===
 |event
 |level
@@ -103,7 +103,7 @@ templateを``path``として記録します。未一致の経路は``<unmatched>
 
 === OIDCとMCP
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |event
 |結果・原因
@@ -142,7 +142,7 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 拒否または一時的な障害と判断した場合は、``http_status``も記録します。client IDのpath、redirect URI、
 取得した文書、OAuth要求の値は記録しません。主な``reason``は次のとおりです。
 
-[cols=",",options="header",]
+[cols="1,1",options="header",]
 |===
 |分類
 |reason
@@ -160,7 +160,7 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 
 === 保守処理
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |処理
 |成功event
@@ -210,7 +210,7 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 この変更はログの監視契約を破壊的に更新します。旧eventや旧fieldは併記しません。保存済みの
 検索条件、通知規則、dashboardは次の対応で更新します。
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |以前の出力
 |現在の出力

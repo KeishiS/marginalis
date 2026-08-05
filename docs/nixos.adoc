@@ -104,7 +104,7 @@ schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する
 ``migrate-archive``が受け取れるのは、archive 7から16までのうち、次の組み合わせで書き出された
 ものだけです。形式、AdocWeave package版、note profile版の3つがすべて一致する必要があります。
 
-[cols=",,",options="header",]
+[cols="1,1,1",options="header",]
 |===
 |archive形式
 |AdocWeave package版
