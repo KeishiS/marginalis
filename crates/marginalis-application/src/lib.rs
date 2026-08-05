@@ -333,8 +333,23 @@ pub struct McpScopeCeilingSetting {
     pub revision: i64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpClientAuthorization {
+    pub client_id: String,
+    pub display_name: String,
+    pub registration_method: McpClientRegistrationMethod,
+    /// この利用者が当該clientへ同意したことのあるscope。
+    pub granted_scopes: Vec<String>,
+    pub scope_ceiling: McpScopeCeilingSetting,
+    pub authorized_at: UnixMillis,
+    pub last_used_at: Option<UnixMillis>,
+    pub active: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum McpScopeCeilingRepositoryError {
+    #[error("MCP scope ceiling settings are invalid")]
+    Invalid,
     #[error("MCP scope ceiling settings conflict")]
     Conflict,
     #[error("stored MCP scope ceiling settings are invalid")]
@@ -361,6 +376,12 @@ pub enum McpScopeCeilingUseCaseError {
 
 #[async_trait]
 pub trait McpScopeCeilingRepository: Send + Sync {
+    async fn client_authorizations(
+        &self,
+        actor: &Actor,
+        now: UnixMillis,
+    ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingRepositoryError>;
+
     async fn principal_scope_ceiling(
         &self,
         actor: &Actor,
@@ -590,6 +611,10 @@ pub trait McpOAuthUseCases: Send + Sync {
         &self,
         actor: Actor,
     ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError>;
+    async fn client_authorizations(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingUseCaseError>;
     async fn replace_principal_scope_ceiling(
         &self,
         actor: Actor,

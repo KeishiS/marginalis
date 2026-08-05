@@ -39,6 +39,44 @@ impl SqliteDatabase {
             now,
         )
         .await?;
+        let previous_scopes = sqlx::query_scalar::<_, String>(
+            "SELECT granted_scopes FROM mcp_client_authorizations
+             WHERE issuer = ? AND subject = ? AND client_id = ?",
+        )
+        .bind(grant.principal.issuer())
+        .bind(grant.principal.subject())
+        .bind(&client.client_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let mut granted_scopes = previous_scopes
+            .as_deref()
+            .unwrap_or_default()
+            .split_ascii_whitespace()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for scope in &grant.scopes {
+            if !granted_scopes.contains(scope) {
+                granted_scopes.push(scope.clone());
+            }
+        }
+        sqlx::query(
+            "INSERT INTO mcp_client_authorizations
+                 (issuer, subject, client_id, granted_scopes, authorized_at_ms)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (issuer, subject, client_id) DO UPDATE SET
+                 granted_scopes = excluded.granted_scopes,
+                 authorized_at_ms = excluded.authorized_at_ms,
+                 revoked_at_ms = NULL",
+        )
+        .bind(grant.principal.issuer())
+        .bind(grant.principal.subject())
+        .bind(&client.client_id)
+        .bind(granted_scopes.join(" "))
+        .bind(now.get())
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?;
         sqlx::query("INSERT INTO mcp_authorization_codes (code_hash, client_id, redirect_uri, redirect_uri_was_supplied, resource_uri, issuer, subject, scopes, code_challenge, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(hash_token(code)).bind(&client.client_id).bind(grant.redirect_uri.as_str()).bind(grant.redirect_uri.was_supplied()).bind(&grant.resource_uri)
             .bind(grant.principal.issuer()).bind(grant.principal.subject())
@@ -223,8 +261,31 @@ impl SqliteDatabase {
         resource_uri: &str,
         now: McpTimestamp,
     ) -> Result<Option<McpAuthenticatedPrincipal>, SqliteStoreError> {
-        let row = sqlx::query("SELECT issuer, subject, scopes FROM mcp_access_tokens WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ?")
-            .bind(hash_token(token)).bind(resource_uri).bind(now.get()).fetch_optional(&self.pool).await.map_err(database_error)?;
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        let row = sqlx::query("UPDATE mcp_access_tokens SET last_used_at_ms = ? WHERE token_hash = ? AND resource_uri = ? AND revoked_at_ms IS NULL AND expires_at_ms > ? RETURNING issuer, subject, client_id, scopes")
+            .bind(now.get()).bind(hash_token(token)).bind(resource_uri).bind(now.get()).fetch_optional(&mut *transaction).await.map_err(database_error)?;
+        if let Some(row) = &row {
+            sqlx::query(
+                "UPDATE mcp_client_authorizations
+                 SET last_used_at_ms = MAX(COALESCE(last_used_at_ms, ?), ?)
+                 WHERE issuer = ? AND subject = ? AND client_id = ?",
+            )
+            .bind(now.get())
+            .bind(now.get())
+            .bind(row.try_get::<String, _>("issuer").map_err(database_error)?)
+            .bind(
+                row.try_get::<String, _>("subject")
+                    .map_err(database_error)?,
+            )
+            .bind(
+                row.try_get::<String, _>("client_id")
+                    .map_err(database_error)?,
+            )
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        }
+        transaction.commit().await.map_err(database_error)?;
         row.map(|r| {
             Ok(McpAuthenticatedPrincipal {
                 principal: principal_from_row(&r)?,
@@ -344,6 +405,27 @@ impl SqliteDatabase {
                 .await
                 .map_err(database_error)?;
         }
+        sqlx::query(
+            "DELETE FROM mcp_authorization_codes
+             WHERE issuer = ? AND subject = ? AND client_id = ? AND consumed_at_ms IS NULL",
+        )
+        .bind(issuer)
+        .bind(subject)
+        .bind(client_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        sqlx::query(
+            "UPDATE mcp_client_authorizations SET revoked_at_ms = ?
+             WHERE issuer = ? AND subject = ? AND client_id = ?",
+        )
+        .bind(now.get())
+        .bind(issuer)
+        .bind(subject)
+        .bind(client_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?;
         transaction.commit().await.map_err(database_error)
     }
 

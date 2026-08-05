@@ -316,6 +316,70 @@
         ],
         "type": "object"
       },
+      "McpClientAuthorization": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "authorized_at_ms": {
+            "type": "integer"
+          },
+          "client_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "granted_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "last_used_at_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "registration_method": {
+            "enum": [
+              "metadata_document",
+              "dynamic"
+            ],
+            "type": "string"
+          },
+          "scope_ceiling": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "scope_ceiling_revision": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "display_name",
+          "registration_method",
+          "granted_scopes",
+          "scope_ceiling",
+          "scope_ceiling_revision",
+          "authorized_at_ms",
+          "last_used_at_ms",
+          "active"
+        ],
+        "type": "object"
+      },
       "McpScopeCeiling": {
         "additionalProperties": false,
         "properties": {
@@ -1189,6 +1253,32 @@
         "summary": "Replace the current user's MathJax macros"
       }
     },
+    "/api/v3/mcp-authorizations": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/McpClientAuthorization"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "MCP client authorizations"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "List the current user's MCP client authorizations"
+      }
+    },
     "/api/v3/mcp-authorizations/{client_id}": {
       "delete": {
         "parameters": [
@@ -1230,6 +1320,68 @@
           }
         }
       ]
+    },
+    "/api/v3/mcp-authorizations/{client_id}/scope-ceiling": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "client_id",
+          "required": true,
+          "schema": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpScopeCeilingInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpClientAuthorization"
+                }
+              }
+            },
+            "description": "updated MCP client authorization"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Restrict one MCP client's scope ceiling"
+      }
     },
     "/api/v3/mcp-scope-ceilings": {
       "get": {

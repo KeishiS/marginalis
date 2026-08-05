@@ -11,6 +11,7 @@ pub struct AuthStatePurgeCounts {
     pub mcp_access_tokens: u64,
     pub mcp_refresh_tokens: u64,
     pub mcp_authorization_codes: u64,
+    pub mcp_client_authorizations: u64,
     pub mcp_clients: u64,
 }
 
@@ -92,13 +93,41 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?
         .rows_affected();
+        let mcp_client_authorizations = sqlx::query(
+            "DELETE FROM mcp_client_authorizations AS authorizations
+             WHERE COALESCE(authorizations.last_used_at_ms, authorizations.authorized_at_ms) < ?
+               AND NOT EXISTS (
+                   SELECT 1 FROM mcp_authorization_codes
+                   WHERE issuer = authorizations.issuer
+                     AND subject = authorizations.subject
+                     AND client_id = authorizations.client_id
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM mcp_access_tokens
+                   WHERE issuer = authorizations.issuer
+                     AND subject = authorizations.subject
+                     AND client_id = authorizations.client_id
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM mcp_refresh_tokens
+                   WHERE issuer = authorizations.issuer
+                     AND subject = authorizations.subject
+                     AND client_id = authorizations.client_id
+               )",
+        )
+        .bind(unused_client_cutoff.get())
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?
+        .rows_affected();
         let mcp_clients = sqlx::query(
             "DELETE FROM mcp_clients
              WHERE registered_at_ms < ?
                AND NOT EXISTS (SELECT 1 FROM mcp_authorization_codes WHERE client_id = mcp_clients.client_id)
                AND NOT EXISTS (SELECT 1 FROM mcp_access_tokens WHERE client_id = mcp_clients.client_id)
                AND NOT EXISTS (SELECT 1 FROM mcp_refresh_tokens WHERE client_id = mcp_clients.client_id)
-               AND NOT EXISTS (SELECT 1 FROM mcp_client_scope_ceilings WHERE client_id = mcp_clients.client_id)",
+               AND NOT EXISTS (SELECT 1 FROM mcp_client_scope_ceilings WHERE client_id = mcp_clients.client_id)
+               AND NOT EXISTS (SELECT 1 FROM mcp_client_authorizations WHERE client_id = mcp_clients.client_id)",
         )
         .bind(unused_client_cutoff.get())
         .execute(&mut *transaction)
@@ -112,6 +141,7 @@ impl SqliteDatabase {
             mcp_access_tokens,
             mcp_refresh_tokens,
             mcp_authorization_codes,
+            mcp_client_authorizations,
             mcp_clients,
         })
     }

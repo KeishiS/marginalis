@@ -75,8 +75,10 @@ scopeの上限を設定できます。初期状態の上限はサーバーが対
 操作を使うクライアントは改めて認可してください。利用者全体の設定は
 `GET /api/v3/mcp-scope-ceilings`と`PUT /api/v3/mcp-scope-ceilings`からも読み書きできます。
 
-クライアント別の上限も利用者全体の上限とは別に保存します。クライアント別の確認・変更は、認可済み
-クライアントの管理画面とともに提供します。
+同じ画面の「認可済みクライアント」では、クライアント名、`client_id`、登録方式、これまで同意した
+scope、認可日時、最終利用日時、有効状態を確認できます。クライアント別の上限は利用者全体の上限とは
+別に保存し、これまで同意したscopeの範囲内だけで変更できます。上限を狭めると範囲外のtoken familyを
+直ちに失効します。上限を広げてもtokenへscopeを追加しないため、追加した操作にはOAuth再認可が必要です。
 
 ## client登録
 
@@ -138,9 +140,11 @@ ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノー�
 
 取消の経路は二つです。
 
-利用者本人は`DELETE /api/v3/mcp-authorizations/{client_id}`でclient単位に取り消します。Web UIと同じ
-session cookieとCSRF tokenが必要で、取り消せるのは自分に発行された認可だけです。現時点でこの操作を
-行う画面はないため、REST APIとして使います。
+利用者本人は「MCPのアクセス制御」画面または
+`DELETE /api/v3/mcp-authorizations/{client_id}`でclient単位に取り消します。Web UIと同じsession cookieと
+CSRF tokenが必要で、取り消せるのは自分に発行された認可だけです。認可一覧は
+`GET /api/v3/mcp-authorizations`、クライアント別上限は
+`PUT /api/v3/mcp-authorizations/{client_id}/scope-ceiling`でも管理できます。
 
 OAuthクライアントはRFC 7009の`/oauth/revoke`へtokenと`client_id`を送信します。未知のtokenを指定した
 場合も、tokenの存在を開示しないため成功応答を返します。

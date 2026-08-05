@@ -273,6 +273,153 @@ async fn scope_ceilings_are_bound_to_the_principal_and_client() {
 }
 
 #[tokio::test]
+async fn client_authorizations_are_owner_scoped_and_record_use_and_revocation() {
+    let database = SqliteDatabase::connect("sqlite::memory:")
+        .await
+        .expect("database");
+    let client = McpOAuthClient {
+        client_id: "managed-client".into(),
+        display_name: "Managed client".into(),
+        redirect_uris: vec!["https://client.example.test/callback".into()],
+    };
+    let alice = actor("https://id.example.test", "alice");
+    let grant = McpAuthorizationGrant {
+        principal: principal("https://id.example.test", "alice"),
+        client_id: client.client_id.clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(
+            "https://client.example.test/callback".into(),
+        ),
+        resource_uri: "https://notes.example.test/mcp".into(),
+        scopes: vec!["notes:read".into(), "notes:write".into()],
+    };
+    database
+        .issue_mcp_authorization_code(
+            "managed-code",
+            &registered_client(&client, McpClientRegistrationMethod::MetadataDocument),
+            &grant,
+            "challenge",
+            UnixMillis::new(100),
+            UnixMillis::new(10),
+        )
+        .await
+        .expect("authorization code");
+
+    assert!(
+        marginalis_application::McpScopeCeilingRepository::client_authorizations(
+            &database,
+            &actor("https://id.example.test", "bob"),
+            marginalis_domain::UnixMillis::new(11),
+        )
+        .await
+        .expect("other owner's authorizations")
+        .is_empty()
+    );
+    let authorizations = marginalis_application::McpScopeCeilingRepository::client_authorizations(
+        &database,
+        &alice,
+        marginalis_domain::UnixMillis::new(11),
+    )
+    .await
+    .expect("authorizations");
+    assert_eq!(authorizations.len(), 1);
+    assert_eq!(authorizations[0].client_id, client.client_id);
+    assert_eq!(authorizations[0].authorized_at.get(), 10);
+    assert_eq!(authorizations[0].last_used_at, None);
+    assert!(authorizations[0].active);
+
+    database
+        .exchange_mcp_authorization_code(
+            McpAuthorizationCodeExchange {
+                code: "managed-code".into(),
+                client_id: client.client_id.clone(),
+                redirect_uri: Some(grant.redirect_uri.as_str().into()),
+                resource_uri: grant.resource_uri.clone(),
+                code_challenge: "challenge".into(),
+                access_token: "managed-access".into(),
+                refresh_token: "managed-refresh".into(),
+                access_expires_at: UnixMillis::new(500),
+                refresh_expires_at: UnixMillis::new(900),
+            },
+            UnixMillis::new(12),
+        )
+        .await
+        .expect("exchange")
+        .expect("grant");
+    database
+        .authenticate_mcp_access_token("managed-access", &grant.resource_uri, UnixMillis::new(13))
+        .await
+        .expect("authentication")
+        .expect("principal");
+    let used = marginalis_application::McpScopeCeilingRepository::client_authorizations(
+        &database,
+        &alice,
+        marginalis_domain::UnixMillis::new(14),
+    )
+    .await
+    .expect("used authorization");
+    assert_eq!(used[0].last_used_at.map(|value| value.get()), Some(13));
+
+    assert!(matches!(
+        marginalis_application::McpScopeCeilingRepository::replace_client_scope_ceiling(
+            &database,
+            &alice,
+            &client.client_id,
+            &["notes:delete".into()],
+            0,
+            marginalis_domain::UnixMillis::new(15),
+        )
+        .await,
+        Err(marginalis_application::McpScopeCeilingRepositoryError::Invalid)
+    ));
+    marginalis_application::McpScopeCeilingRepository::replace_client_scope_ceiling(
+        &database,
+        &alice,
+        &client.client_id,
+        &["notes:read".into()],
+        0,
+        marginalis_domain::UnixMillis::new(16),
+    )
+    .await
+    .expect("restricted client ceiling");
+    let restricted = marginalis_application::McpScopeCeilingRepository::client_authorizations(
+        &database,
+        &alice,
+        marginalis_domain::UnixMillis::new(17),
+    )
+    .await
+    .expect("restricted authorization");
+    assert!(!restricted[0].active, "上限外のtoken familyは失効する");
+    database
+        .revoke_mcp_client_tokens(
+            alice.issuer(),
+            alice.subject(),
+            &client.client_id,
+            UnixMillis::new(18),
+        )
+        .await
+        .expect("revocation");
+    let revoked = marginalis_application::McpScopeCeilingRepository::client_authorizations(
+        &database,
+        &alice,
+        marginalis_domain::UnixMillis::new(19),
+    )
+    .await
+    .expect("revoked authorization");
+    assert!(!revoked[0].active);
+    assert!(
+        database
+            .authenticate_mcp_access_token(
+                "managed-access",
+                &grant.resource_uri,
+                UnixMillis::new(19),
+            )
+            .await
+            .expect("revoked token")
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn rfc7009_revocation_revokes_the_whole_token_family() {
     let database = SqliteDatabase::connect("sqlite::memory:")
         .await
@@ -571,6 +718,7 @@ async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
         "mcp_clients",
         "mcp_principal_scope_ceilings",
         "mcp_client_scope_ceilings",
+        "mcp_client_authorizations",
         "mcp_authorization_codes",
         "mcp_access_tokens",
         "mcp_refresh_tokens",

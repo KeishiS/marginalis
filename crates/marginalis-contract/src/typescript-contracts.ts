@@ -47,6 +47,17 @@ export interface McpScopeCeilingInput {
 export interface McpScopeCeiling extends McpScopeCeilingInput {
   supported_scopes: string[];
 }
+export interface McpClientAuthorization {
+  client_id: string;
+  display_name: string;
+  registration_method: "metadata_document" | "dynamic";
+  granted_scopes: string[];
+  scope_ceiling: string[];
+  scope_ceiling_revision: number;
+  authorized_at_ms: number;
+  last_used_at_ms: number | null;
+  active: boolean;
+}
 export interface NoteView {
   note: Note;
   access: NoteAccess;
@@ -262,6 +273,71 @@ export function parseMcpScopeCeiling(value: unknown): McpScopeCeiling {
     scopes: textArray(object.scopes, "MCP scope ceiling.scopes"),
     revision,
   };
+}
+
+export function parseMcpClientAuthorization(
+  value: unknown,
+): McpClientAuthorization {
+  const object = record(value, "MCP client authorization");
+  const registrationMethod = text(
+    object.registration_method,
+    "MCP client authorization.registration_method",
+  );
+  if (
+    registrationMethod !== "metadata_document" &&
+    registrationMethod !== "dynamic"
+  ) {
+    throw new Error("MCP client authorization.registration_method is invalid");
+  }
+  const revision = integer(
+    object.scope_ceiling_revision,
+    "MCP client authorization.scope_ceiling_revision",
+  );
+  if (revision < 0) {
+    throw new Error(
+      "MCP client authorization.scope_ceiling_revision is invalid",
+    );
+  }
+  if (typeof object.active !== "boolean") {
+    throw new Error("MCP client authorization.active is invalid");
+  }
+  return {
+    client_id: text(object.client_id, "MCP client authorization.client_id"),
+    display_name: text(
+      object.display_name,
+      "MCP client authorization.display_name",
+    ),
+    registration_method: registrationMethod,
+    granted_scopes: textArray(
+      object.granted_scopes,
+      "MCP client authorization.granted_scopes",
+    ),
+    scope_ceiling: textArray(
+      object.scope_ceiling,
+      "MCP client authorization.scope_ceiling",
+    ),
+    scope_ceiling_revision: revision,
+    authorized_at_ms: integer(
+      object.authorized_at_ms,
+      "MCP client authorization.authorized_at_ms",
+    ),
+    last_used_at_ms:
+      object.last_used_at_ms === null
+        ? null
+        : integer(
+            object.last_used_at_ms,
+            "MCP client authorization.last_used_at_ms",
+          ),
+    active: object.active,
+  };
+}
+
+export function parseMcpClientAuthorizations(
+  value: unknown,
+): McpClientAuthorization[] {
+  return array(value, "MCP client authorizations").map(
+    parseMcpClientAuthorization,
+  );
 }
 
 export function parseNoteSummary(value: unknown): NoteSummary {
@@ -690,6 +766,51 @@ export async function replaceMcpScopeCeiling(
     mutationRequest("PUT", settings),
     parseMcpScopeCeiling,
   );
+}
+
+export async function listMcpAuthorizations(
+  apiBase: string,
+  signal?: AbortSignal,
+): Promise<McpClientAuthorization[]> {
+  return requestJson(
+    `${apiBase}/mcp-authorizations`,
+    { signal },
+    parseMcpClientAuthorizations,
+  );
+}
+
+export async function replaceMcpClientScopeCeiling(
+  apiBase: string,
+  clientId: string,
+  settings: McpScopeCeilingInput,
+): Promise<McpClientAuthorization> {
+  return requestJson(
+    `${apiBase}/mcp-authorizations/${encodeURIComponent(clientId)}/scope-ceiling`,
+    mutationRequest("PUT", settings),
+    parseMcpClientAuthorization,
+  );
+}
+
+export async function revokeMcpAuthorization(
+  apiBase: string,
+  clientId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${apiBase}/mcp-authorizations/${encodeURIComponent(clientId)}`,
+    mutationRequest("DELETE"),
+  );
+  if (!response.ok) {
+    let problem: Problem;
+    try {
+      problem = parseProblem(await response.json());
+    } catch {
+      problem = {
+        code: "invalid_response",
+        message: "サーバーから解釈できない応答を受け取りました。",
+      };
+    }
+    throw new ApiError(response.status, problem);
+  }
 }
 
 /** 図に出す範囲。`origin`を指定すると、そこから`depth`本以内の線で辿れる範囲だけになる。 */
