@@ -387,10 +387,10 @@ fn consent_client_summary(
     format!(
         concat!(
             "<section class=\"oauth-client\" aria-labelledby=\"oauth-client-heading\">",
-            "<p class=\"oauth-detail-label\">クライアント</p>",
-            "<h2 id=\"oauth-client-heading\">{display_name}</h2>",
+            "<p class=\"oauth-detail-label\">クライアント識別子</p>",
+            "<h2 id=\"oauth-client-heading\" class=\"oauth-client-id\"><code>{client_id}</code></h2>",
             "<dl class=\"oauth-detail-list\">",
-            "<div><dt>クライアント識別子</dt><dd><code>{client_id}</code></dd></div>",
+            "<div><dt>クライアントが提供した表示名</dt><dd>{display_name}</dd></div>",
             "<div><dt>移動先のホスト</dt><dd><code>{redirect_host}</code></dd></div>",
             "</dl></section>",
         ),
