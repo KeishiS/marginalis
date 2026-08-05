@@ -325,6 +325,10 @@ async fn client_authorizations_are_owner_scoped_and_record_use_and_revocation() 
     assert_eq!(authorizations[0].client_id, client.client_id);
     assert_eq!(authorizations[0].authorized_at.get(), 10);
     assert_eq!(authorizations[0].last_used_at, None);
+    assert_eq!(
+        authorizations[0].scope_ceiling, None,
+        "同意履歴を未設定の上限として扱わない"
+    );
     assert!(authorizations[0].active);
 
     database
@@ -388,6 +392,13 @@ async fn client_authorizations_are_owner_scoped_and_record_use_and_revocation() 
     )
     .await
     .expect("restricted authorization");
+    assert_eq!(
+        restricted[0].scope_ceiling,
+        Some(McpScopeCeilingSetting {
+            scopes: vec!["notes:read".into()],
+            revision: 1,
+        })
+    );
     assert!(!restricted[0].active, "上限外のtoken familyは失効する");
     database
         .revoke_mcp_client_tokens(

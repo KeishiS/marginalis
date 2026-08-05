@@ -52,6 +52,7 @@ export interface McpClientAuthorization {
   display_name: string;
   registration_method: "metadata_document" | "dynamic";
   granted_scopes: string[];
+  scope_ceiling_configured: boolean;
   scope_ceiling: string[];
   scope_ceiling_revision: number;
   authorized_at_ms: number;
@@ -298,6 +299,11 @@ export function parseMcpClientAuthorization(
       "MCP client authorization.scope_ceiling_revision is invalid",
     );
   }
+  if (typeof object.scope_ceiling_configured !== "boolean") {
+    throw new Error(
+      "MCP client authorization.scope_ceiling_configured is invalid",
+    );
+  }
   if (typeof object.active !== "boolean") {
     throw new Error("MCP client authorization.active is invalid");
   }
@@ -312,6 +318,7 @@ export function parseMcpClientAuthorization(
       object.granted_scopes,
       "MCP client authorization.granted_scopes",
     ),
+    scope_ceiling_configured: object.scope_ceiling_configured,
     scope_ceiling: textArray(
       object.scope_ceiling,
       "MCP client authorization.scope_ceiling",

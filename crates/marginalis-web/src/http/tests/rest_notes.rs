@@ -191,6 +191,20 @@ async fn owner_can_list_and_restrict_their_mcp_client_authorizations() {
         body[0]["granted_scopes"],
         serde_json::json!(["notes:read", "notes:write"])
     );
+    assert_eq!(
+        body[0]["scope_ceiling"],
+        serde_json::json!([
+            "notes:read",
+            "notes:write",
+            "notes:delete",
+            "bibliography:read",
+            "bibliography:write",
+            "bibliography:delete"
+        ]),
+        "未設定時は同意履歴ではなく実効上限を返す"
+    );
+    assert_eq!(body[0]["scope_ceiling_revision"], 0);
+    assert_eq!(body[0]["scope_ceiling_configured"], false);
     assert_eq!(body[0]["last_used_at_ms"], 2_000);
     assert_eq!(body[0]["active"], true);
 
@@ -219,6 +233,7 @@ async fn owner_can_list_and_restrict_their_mcp_client_authorizations() {
     let body: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
     assert_eq!(body["scope_ceiling"], serde_json::json!(["notes:read"]));
     assert_eq!(body["scope_ceiling_revision"], 1);
+    assert_eq!(body["scope_ceiling_configured"], true);
 }
 
 #[tokio::test]

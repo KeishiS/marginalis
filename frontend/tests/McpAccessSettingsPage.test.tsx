@@ -23,6 +23,7 @@ const authorization = {
   display_name: "Research client",
   registration_method: "metadata_document",
   granted_scopes: ["notes:read", "notes:write"],
+  scope_ceiling_configured: false,
   scope_ceiling: ["notes:read", "notes:write"],
   scope_ceiling_revision: 0,
   authorized_at_ms: 1_800_000_000_000,
@@ -51,6 +52,7 @@ test("認可済みクライアントのscopeを制限し、確認後に接続を
     .mockResolvedValueOnce(
       Response.json({
         ...authorization,
+        scope_ceiling_configured: true,
         scope_ceiling: ["notes:read"],
         scope_ceiling_revision: 1,
       }),
@@ -68,8 +70,11 @@ test("認可済みクライアントのscopeを制限し、確認後に接続を
   const client = within(card!);
   expect(client.getByText("Client ID Metadata Document")).toBeInTheDocument();
   expect(client.getByText("有効")).toBeInTheDocument();
+  expect(client.getByText(/未設定です/)).toHaveTextContent(
+    "サーバーが対応する全scope",
+  );
   fireEvent.click(client.getByLabelText(/notes:write/));
-  fireEvent.click(client.getByRole("button", { name: "上限を保存" }));
+  fireEvent.click(client.getByRole("button", { name: "上限を設定" }));
 
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
   expect(fetch).toHaveBeenNthCalledWith(

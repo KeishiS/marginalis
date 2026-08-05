@@ -362,6 +362,9 @@
             "type": "array",
             "uniqueItems": true
           },
+          "scope_ceiling_configured": {
+            "type": "boolean"
+          },
           "scope_ceiling_revision": {
             "minimum": 0,
             "type": "integer"
@@ -372,6 +375,7 @@
           "display_name",
           "registration_method",
           "granted_scopes",
+          "scope_ceiling_configured",
           "scope_ceiling",
           "scope_ceiling_revision",
           "authorized_at_ms",

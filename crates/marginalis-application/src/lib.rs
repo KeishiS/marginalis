@@ -340,7 +340,8 @@ pub struct McpClientAuthorization {
     pub registration_method: McpClientRegistrationMethod,
     /// この利用者が当該clientへ同意したことのあるscope。
     pub granted_scopes: Vec<String>,
-    pub scope_ceiling: McpScopeCeilingSetting,
+    /// 明示的に保存したクライアント別上限。未設定時の実効上限は対応scope全体。
+    pub scope_ceiling: Option<McpScopeCeilingSetting>,
     pub authorized_at: UnixMillis,
     pub last_used_at: Option<UnixMillis>,
     pub active: bool,
