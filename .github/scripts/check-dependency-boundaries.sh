@@ -43,6 +43,7 @@ marginalis-archive: marginalis-application, marginalis-domain
 marginalis-asciidoc: marginalis-application, marginalis-domain
 marginalis-auth-oidc: marginalis-application, marginalis-domain
 marginalis-contract: marginalis-domain
+marginalis-documentation:
 marginalis-domain:
 marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web, mcp-authorization-server-cimd
 marginalis-sqlite: marginalis-application, marginalis-domain, mcp-authorization-server
@@ -94,8 +95,9 @@ while IFS=$'\t' read -r package dependency; do
   esac
 done <"$external_dependencies"
 
-if [[ -z "$metadata_input" ]] && cargo tree -p marginalis-web -e normal |
-  grep -E 'marginalis-(sqlite|asciidoc|auth-oidc)|(^| )sqlx |(^| )adocweave |(^| )openidconnect |(^| )reqwest ' >/dev/null; then
+if [[ -z "$metadata_input" ]] && cargo tree -p marginalis-web -e normal --prefix none --format '{p}' |
+  awk '{ print $1 }' |
+  grep -E '^(marginalis-(sqlite|asciidoc|auth-oidc)|sqlx|adocweave|openidconnect|reqwest)$' >/dev/null; then
   echo "HTTP transportのproduction依存へ具象adapterが混入しています。" >&2
   exit 1
 fi

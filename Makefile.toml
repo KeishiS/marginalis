@@ -103,6 +103,8 @@ script_runner = "@shell"
 script = '''
 set -eu
 bash .github/scripts/test-markdown-links.sh
+bash .github/scripts/test-asciidoc.sh
+bash .github/scripts/test-documentation-corpus.sh
 bash .github/scripts/check-docs.sh
 '''
 

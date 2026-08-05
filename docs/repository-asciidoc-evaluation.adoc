@@ -1,0 +1,108 @@
+= リポジトリ文書のAsciiDoc化評価
+:toc:
+
+[#purpose]
+== 目的と現在の結論
+
+この文書は、https://github.com/KeishiS/marginalis/issues/21[Issue 21]で行った初回評価と、
+https://github.com/KeishiS/marginalis/issues/334[Issue 334]で採用を決めた再評価を記録します。
+ノート本文にAsciiDocを採用する理由はxref:requirements.md[要件定義]で扱うため、ここでは
+リポジトリで保守する人間向け文書だけを対象にします。
+
+2026年7月28日の初回評価では、Markdownで必要な表現を満たしており、形式変更だけでは新しい保証を
+得られないため、移行しないと判断しました。その時点の対象は30文書、3,280行、文書間link 171件でした。
+
+2026年8月5日の再評価では、対象が80文書を超え、要件、設計条件、受入記録、運用手順を個別のscriptで
+検査する構成になっていました。また、AdocWeaveがstrict構文解析、local target検査、構造化した
+textlint入力を公開APIとして提供するようになりました。このため、文書形式を統一し、構文と参照を同じ
+解析器で検証する便益が移行費用を上回ると判断し、AsciiDocへの段階的な移行を採用しました。
+
+[#initial-evaluation]
+== 初回評価
+
+=== 前提
+
+初回評価の対象は、Gitが追跡するルートと``docs/``のMarkdown文書でした。GitHub Issue、OpenAPI、
+プログラム、設定、ノートの``.adoc``ファイルは含めませんでした。
+
+当時の文書には表の行が194行、source blockの開始・終了行が50行ありました。AsciiDocの``include``や
+文書間``xref``を使うリポジトリ文書はなく、Markdownで表現できない現行要件も確認できませんでした。
+
+=== 比較結果
+
+[cols="2,3,3",options="header"]
+|===
+|対象 |初回評価時の状態 |初回評価
+
+|要件との対応表
+|Markdown表と専用scriptで要件IDを検査
+|再利用先がなく、形式変更の便益なし
+
+|開発手順のコマンド例
+|言語を指定したコードblockとして表示
+|必要な表示をMarkdownで充足
+
+|文書間link
+|相対pathを専用scriptで検査
+|AsciiDocへ変えるだけではIDまで検査できないため便益なし
+
+|図
+|使用実績なし
+|将来の抽象的な可能性だけでは移行理由にならない
+|===
+
+=== 初回の決定
+
+形式を変えるだけで検証範囲が増えない一方、文書名とlinkを同時に変更する必要がありました。そのため、
+リポジトリ文書をMarkdownのまま保ち、次の条件を具体例とともに満たした場合だけ再評価すると決めました。
+
+* 同じ節や表を複数の公開文書へ安全に埋め込み、重複を除く必要性
+* Markdownでは表現できず、GitHubとローカル生成物の両方で必要な文書機能
+* AsciiDocの構造によって、既存scriptでは確認できない要件を検証できること
+* 文書、link、外部参照を保った移行手順と、Markdown以上の機械検査
+
+[#reevaluation]
+== 再評価
+
+=== 変化した前提
+
+AdocWeave v0.33.0では、CLIとRust APIから次の検査を利用できます。
+
+* strict profileによる未対応構文の拒否
+* 文書内の明示IDと``xref``の構造化
+* project rootを基準にしたlocal targetの存在確認
+* 診断位置のUTF-8 byte range検証
+* source blockやinline codeを区別したtextlint用入力
+
+Marginalis側でも、要件、設計条件、受入記録、event catalog、release metadataの対応を継続して検査する必要が
+あります。構文解析をAdocWeaveへ集約し、Marginalis固有の関係だけをgovernance検査に残すことで、同じ
+構文規則を複数のshell scriptへ書き写さずに済みます。
+
+=== 採用する移行方法
+
+. 追跡文書の分類とAsciiDoc検証基盤を先に追加します。
+. 入口文書、現行仕様、運用文書、設計判断、過去の受入記録の順に小さく移行します。
+. 各段階で旧Markdown pathを参照するcode、test、CI、release toolingを更新します。
+. 最後にMarkdown専用検査と移行中の許可一覧を削除します。
+. ``git ls-files "*.md"``の結果を``AGENTS.md``だけに固定します。
+
+移行中も、既存のtraceability、release metadata、受入索引、event対応の検査を弱めません。変換後の文書は
+AdocWeaveでstrict解析し、local targetのfileと明示IDまで検査します。
+
+[#github-rendering]
+== GitHub上の表示
+
+GitHubはAsciiDocを文章として表示し、変更差分にも整形後の表示を提供します。根拠は
+https://docs.github.com/en/repositories/working-with-files/using-files/working-with-non-code-files[文章ファイルの表示方法]
+です。
+
+READMEなどGitHubが特定のMarkdown名を優先する入口は、AsciiDoc版をリポジトリの入口として認識できるかを
+受入確認します。IssueとPull Requestは固定Markdown templateを残さず、Issue Formや設定からAsciiDocの
+案内文書へ到達できる構成にします。
+
+[#decision]
+== 決定
+
+``AGENTS.md``を除く人間向け文書をAsciiDocへ移行します。``AGENTS.md``は外部toolが固定名を要求するため
+例外とします。移行の完了条件と作業単位はIssue 334を正本とし、この文書では採用理由と過去の判断を
+維持します。

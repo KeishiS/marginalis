@@ -25,6 +25,13 @@
 PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。Marginalis側では
 別のresourceと保存先を使う試験実装により、分離した中核が製品固有の型へ依存しないことを確認します。
 
+### リポジトリ文書のAsciiDoc化
+
+[#334](https://github.com/KeishiS/marginalis/issues/334)で、`AGENTS.md`を除く人間向け文書をAsciiDocへ
+段階的に移行します。[再評価](repository-asciidoc-evaluation.adoc)で確認したとおり、AdocWeaveのstrict
+解析、local target検査、textlint用構造を共通基盤とし、Marginalis固有の要件対応だけを専用検査へ残します。
+移行中もtraceability、release metadata、受入索引、観測event対応の保証を維持します。
+
 パッチ版は予定へ固定しません。各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
 なった場合だけ公開します。
 
@@ -56,8 +63,6 @@ Marginalisのノート一覧にはタグと更新日による絞り込みを残�
   [再検討条件](adr/0002-sqliteを正本として維持する.md#再検討条件)が実測で成立した場合だけ再検討
 - **添付Resource**: 保存先、MIME type、容量、認可、バックアップを一つの公開契約として
   定義できる場合に再検討
-- **文書のAsciiDoc化**: [評価結果](repository-asciidoc-evaluation.md)に基づき、Markdownでは
-  解決できない具体例と、変換後に強化できる検査がそろった場合に再検討
 
 ## 継続監視
 
