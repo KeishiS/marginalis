@@ -231,8 +231,10 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
     assert!(html.contains("href=\"/marginalis/assets/editor.css\""));
     assert!(html.contains("action=\"/marginalis/oauth/authorize/consent\""));
     assert!(html.contains("MCPクライアントを許可しますか？"));
-    assert!(html.contains("クライアント識別子"));
-    assert!(html.contains("long-client"));
+    assert!(html.contains(
+        "<p class=\"oauth-detail-label\">クライアント識別子</p><h2 id=\"oauth-client-heading\" class=\"oauth-client-id\"><code>long-client</code></h2>"
+    ));
+    assert!(html.contains("<dt>クライアントが提供した表示名</dt>"));
     assert!(html.contains("移動先のホスト</dt><dd><code>127.0.0.1</code>"));
     assert!(html.contains("<code>notes:read</code>"));
     assert!(html.contains("<code>notes:write</code>"));
@@ -254,6 +256,50 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
         )
     );
     assert!(html.contains(&"非常に長いクライアント名".repeat(24)));
+
+    let client_id_position = html.find("<code>long-client</code>").expect("client ID");
+    let display_name_position = html
+        .find("非常に長いクライアント名")
+        .expect("client-provided display name");
+    assert!(client_id_position < display_name_position);
+}
+
+#[tokio::test]
+async fn authorization_consent_shows_the_complete_long_client_id_before_the_display_name() {
+    let client_id = format!(
+        "https://client.example.test/oauth/metadata/{}",
+        "long-segment-".repeat(20)
+    );
+    let encoded_client_id =
+        url::form_urlencoded::byte_serialize(client_id.as_bytes()).collect::<String>();
+    let response = authenticated_mcp_app()
+        .oneshot(
+            Request::get(format!(
+                "/oauth/authorize?response_type=code&client_id={encoded_client_id}&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256"
+            ))
+            .header(
+                header::COOKIE,
+                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+            )
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("consent page");
+    let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
+    let primary_client_id = format!(
+        "<h2 id=\"oauth-client-heading\" class=\"oauth-client-id\"><code>{client_id}</code></h2>"
+    );
+    let client_id_position = html.find(&primary_client_id).expect("complete client ID");
+    let display_name_position = html
+        .find("<dt>クライアントが提供した表示名</dt>")
+        .expect("client-provided display name");
+    assert!(client_id_position < display_name_position);
 }
 
 #[tokio::test]
