@@ -848,6 +848,12 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
         manifest["owners"][0]["notes"][0]["acl"][0]["subject"],
         "bob"
     );
+    let state_sha256 = manifest["owners"][0]["notes"][0]["state_sha256"]
+        .as_str()
+        .expect("note state SHA-256");
+    assert_eq!(state_sha256.len(), 64);
+    assert!(state_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert_eq!(state_sha256, state_sha256.to_ascii_lowercase());
     assert_eq!(
         manifest["owners"][0]["bibliography"][0]["citation_key"],
         "smith2024"
