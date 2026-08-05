@@ -20,11 +20,10 @@
 入力から消えた文献を自動削除しない動作をそろえます。外部APIの認証情報を保持する接続や双方向同期は、
 この契約を実運用で確認してから後続版で判断します。
 
-現在は[#327](https://github.com/KeishiS/marginalis/issues/327)で、domainとapplicationの分類・保存計画、
-SQLite schema 20、REST契約、Web UI、archive 16と、要件・設計条件に対応する境界試験を実装しています。
-リポジトリ全体とNixOS移行の検証後にPull Requestで統合します。候補コミットでは
-archive 15から16への変換、空のschema 20への隔離復元、初回取込と再取込の競合解決を受け入れた後、
-`v0.32.0`として公開します。
+[#327](https://github.com/KeishiS/marginalis/issues/327)で、domainとapplicationの分類・保存計画、
+SQLite schema 20、REST契約、Web UI、archive 16と、要件・設計条件に対応する境界試験を実装しました。
+残る作業は、候補コミットでarchive 15から16への変換、空のschema 20への隔離復元、初回取込と再取込の
+競合解決を受け入れ、結果を記録して公開前の検証を行うことです。
 
 ### Authorization Serverの独立配布
 
