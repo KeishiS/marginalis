@@ -55,6 +55,25 @@
 | REQ-FORMAT-002 | 文書書き出しの構成・ファイル名・削除済み除外・manifest版情報の試験、CLIの権限と上書き拒否の試験 | 取り出した内容の他ツールでの読み取り |
 | REQ-FORMAT-003 | 文書の書き出しと取り込みの往復一致試験、版差での再検証試験、書庫外pathの拒否試験 | 別環境への移行 |
 
+## 設計条件と検証の対応
+
+[アーキテクチャ](architecture.md#一貫して満たすべき設計条件)に記載する設計条件は、実装方法に近い
+不変条件です。要件より細かな単位で、条件から外れる変更を直接検出する主な検証先を示します。
+
+| 設計条件ID | 主な自動検証 |
+| --- | --- |
+| ARCH-AUTHN-001 | `marginalis-auth-oidc`のgroup claim試験、`marginalis-sqlite::tests::sessions::sessions_retain_the_validated_identity`、OAuth HTTP結合試験 |
+| ARCH-AUTHZ-001 | `marginalis-sqlite::tests::notes`の所有者・ACL・削除・復元試験、REST・MCP・ブラウザーACL試験 |
+| ARCH-AUTHZ-002 | `marginalis-sqlite::tests::notes::note_access_levels_follow_one_decision_table_and_acl_failures_roll_back` |
+| ARCH-BOUNDARY-001 | `dependency-boundaries`、`marginalis-application`のport単体試験、REST・MCP失敗一致試験 |
+| ARCH-DATA-001 | `marginalis-sqlite::tests::notes::single_source_updates_and_purges_notes_transactionally`、ACL失敗時のrollback試験 |
+| ARCH-DOMAIN-001 | `marginalis-domain::model::tests::note_restoration_enforces_revision_and_time_ordering`、SQLite・archiveの復元試験 |
+| ARCH-IDENTITY-001 | `marginalis-domain::model::tests::identity_rejects_active_content_and_unbounded_values`、OIDC issuer検査 |
+| ARCH-IDENTITY-002 | `marginalis-domain::model::tests::entity_id_rejects_non_v7_uuid`、REST・archive・SQLite復元試験 |
+| ARCH-OAUTH-001 | `marginalis-sqlite::tests::oauth`のtoken family・取消・再利用試験、`observability-check`、archive契約試験 |
+| ARCH-OIDC-001 | `marginalis-auth-oidc::tests::id_tokens_are_limited_to_es256`、Kanidm NixOS VM |
+| ARCH-SESSION-001 | `marginalis-sqlite::tests::sessions`の期限・並行延長試験、`issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit` |
+
 ## 実行単位
 
 - **高速検証**: `nix develop --command cargo make verify`
@@ -63,5 +82,5 @@
 - **NixOS受入**: `nix build .#checks.x86_64-linux.nixos-module-vm`および関連VM
 - **版別の人手受入**: [受入基準](acceptance.md)からリンクする版別結果
 
-要件を追加、削除、改名する場合は、この表を同じ変更で更新します。文書検査は、要件IDの重複、
-対応表への記載漏れ、対応表だけに残ったIDを拒否します。
+要件または設計条件を追加、削除、改名する場合は、対応する試験とこの表を同じ変更で更新します。
+文書検査は、要件IDと設計条件IDについて、重複、対応表への記載漏れ、対応表だけに残ったIDを拒否します。

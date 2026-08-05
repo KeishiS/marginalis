@@ -138,8 +138,10 @@ Pull Requestからマージします。
    nix develop --command cargo make traceability-check
    ```
 
-   `docs-check`は空白とローカルリンク、`traceability-check`は要件IDの対応と版別受入証跡を
-   独立して検査します。
+   `docs-check`は空白とローカルリンクを検査します。`traceability-check`は要件ID、設計条件ID、検証先の
+   対応と版別受入証跡を検査します。アーキテクチャの「一貫して満たすべき設計条件」を変更する場合は、
+   条件を直接確認する試験と[要件と検証の対応表](traceability.md#設計条件と検証の対応)も同じ変更で
+   更新します。
 
    CIは変更pathを判定し、文書だけのPull Requestでは`verify`を文書検査へ縮退し、
    `coverage`とNixOS VMの実行を省略します。プログラムが参照する公開仕様
