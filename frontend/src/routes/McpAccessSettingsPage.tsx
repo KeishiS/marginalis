@@ -4,6 +4,7 @@ import {
   ApplicationConfig,
   McpClientAuthorization,
   McpScopeCeiling,
+  deleteMcpClientScopeCeiling,
   listMcpAuthorizations,
   readMcpScopeCeiling,
   replaceMcpClientScopeCeiling,
@@ -102,7 +103,9 @@ export function McpAccessSettingsPage({
     setMessage("");
     try {
       const selectedScopes = clientSelections[client.client_id] ?? [];
-      const ordered = client.granted_scopes.filter((scope) =>
+      // 上限は将来の認可を制限する設定なので、これまで同意した範囲ではなく
+      // サーバーが対応する全scopeから選ぶ。
+      const ordered = (settings?.supported_scopes ?? []).filter((scope) =>
         selectedScopes.includes(scope),
       );
       const saved = await replaceMcpClientScopeCeiling(
@@ -128,6 +131,41 @@ export function McpAccessSettingsPage({
       setFailed(true);
       setMessage(
         "クライアント別の上限を保存できませんでした。画面を再読み込みしてからお試しください。",
+      );
+    } finally {
+      setBusyClient(null);
+    }
+  }
+
+  /// 上限設定を取り除き、未設定へ戻す。既存の接続とtokenはそのまま残る。
+  async function clearClientCeiling(client: McpClientAuthorization) {
+    if (busyClient !== null) return;
+    setBusyClient(client.client_id);
+    setMessage("");
+    try {
+      const saved = await deleteMcpClientScopeCeiling(
+        config.apiBase,
+        client.client_id,
+        client.scope_ceiling_revision,
+      );
+      setAuthorizations(
+        (current) =>
+          current?.map((value) =>
+            value.client_id === saved.client_id ? saved : value,
+          ) ?? null,
+      );
+      setClientSelections((current) => ({
+        ...current,
+        [saved.client_id]: saved.scope_ceiling,
+      }));
+      setFailed(false);
+      setMessage(
+        "クライアント別の上限を解除しました。現在はサーバーが対応する全scopeを許可できます。追加した操作を使うには再認可が必要です。",
+      );
+    } catch {
+      setFailed(true);
+      setMessage(
+        "クライアント別の上限を解除できませんでした。画面を再読み込みしてからお試しください。",
       );
     } finally {
       setBusyClient(null);
@@ -316,11 +354,11 @@ export function McpAccessSettingsPage({
                       <legend>クライアント別の上限</legend>
                       <p className="field-help">
                         {!client.scope_ceiling_configured
-                          ? "未設定です。現在はサーバーが対応する全scopeを許可できます。上限を設定すると、これまで同意したscopeの範囲内へ制限します。"
-                          : "これまで同意したscopeの範囲内で制限しています。範囲を広げても既存tokenへ権限は追加されません。"}
+                          ? "未設定です。現在はサーバーが対応する全scopeを許可できます。上限を設定すると、選んだscopeだけを許可します。"
+                          : "選んだscopeだけを許可しています。上限は今後の認可を制限する設定であり、それ自体が権限を与えることはありません。範囲を広げても既存tokenへ権限は追加されないため、追加した操作にはOAuth再認可が必要です。"}
                       </p>
                       <div className="mcp-scope-options">
-                        {client.granted_scopes.map((scope) => (
+                        {(settings?.supported_scopes ?? []).map((scope) => (
                           <label key={scope}>
                             <input
                               type="checkbox"
@@ -356,6 +394,16 @@ export function McpAccessSettingsPage({
                           ? "上限を設定"
                           : "上限を保存"}
                       </button>
+                      {client.scope_ceiling_configured ? (
+                        <button
+                          className="button button-secondary"
+                          type="button"
+                          disabled={busyClient !== null}
+                          onClick={() => void clearClientCeiling(client)}
+                        >
+                          上限を解除
+                        </button>
+                      ) : null}
                       <button
                         className="button button-danger"
                         type="button"

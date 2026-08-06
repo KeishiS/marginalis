@@ -74,6 +74,16 @@
           "type": "string"
         }
       },
+      "McpScopeCeilingRevision": {
+        "description": "解除する上限のrevision。現在の値と一致しない場合は409を返す",
+        "in": "query",
+        "name": "revision",
+        "required": true,
+        "schema": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
       "NoteId": {
         "in": "path",
         "name": "note_id",
@@ -1999,6 +2009,50 @@
       ]
     },
     "/api/v3/mcp-authorizations/{client_id}/scope-ceiling": {
+      "delete": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/McpScopeCeilingRevision"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpClientAuthorization"
+                }
+              }
+            },
+            "description": "MCP client authorization without a configured ceiling"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Remove one MCP client's scope ceiling"
+      },
       "parameters": [
         {
           "in": "path",

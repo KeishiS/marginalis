@@ -263,6 +263,21 @@ impl McpOAuthApplication {
             .map_err(|_| McpScopeCeilingUseCaseError::Invalid)
     }
 
+    pub async fn delete_client_scope_ceiling(
+        &self,
+        actor: Actor,
+        client_id: String,
+        expected_revision: i64,
+    ) -> Result<(), McpScopeCeilingUseCaseError> {
+        if expected_revision <= 0 {
+            return Err(McpScopeCeilingUseCaseError::Invalid);
+        }
+        self.scope_ceiling_repository
+            .delete_client_scope_ceiling(&actor, &client_id, expected_revision, self.clock.now())
+            .await
+            .map_err(map_scope_ceiling_repository_error)
+    }
+
     fn validate_client_scope_ceiling(
         &self,
         scopes: &[String],
@@ -516,6 +531,16 @@ impl McpOAuthUseCases for McpOAuthApplication {
             expected_revision,
         )
         .await
+    }
+
+    async fn delete_client_scope_ceiling(
+        &self,
+        actor: Actor,
+        client_id: String,
+        expected_revision: i64,
+    ) -> Result<(), McpScopeCeilingUseCaseError> {
+        McpOAuthApplication::delete_client_scope_ceiling(self, actor, client_id, expected_revision)
+            .await
     }
 
     async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {

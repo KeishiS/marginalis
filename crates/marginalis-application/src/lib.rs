@@ -423,6 +423,17 @@ pub trait McpScopeCeilingRepository: Send + Sync {
         now: UnixMillis,
     ) -> Result<McpScopeCeilingSetting, McpScopeCeilingRepositoryError>;
 
+    /// clientの上限設定を取り除き、未設定へ戻す。
+    ///
+    /// 上限は将来の認可を制限する設定であり、狭めた後に解除できないと復旧できなくなる。
+    async fn delete_client_scope_ceiling(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+        expected_revision: i64,
+        now: UnixMillis,
+    ) -> Result<(), McpScopeCeilingRepositoryError>;
+
     async fn replace_client_scope_ceiling(
         &self,
         actor: &Actor,
@@ -701,6 +712,13 @@ pub trait McpOAuthUseCases: Send + Sync {
         scopes: Vec<String>,
         expected_revision: i64,
     ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError>;
+    /// clientの上限設定を取り除き、未設定へ戻す。
+    async fn delete_client_scope_ceiling(
+        &self,
+        actor: Actor,
+        client_id: String,
+        expected_revision: i64,
+    ) -> Result<(), McpScopeCeilingUseCaseError>;
     async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError>;
     async fn revoke_token(
         &self,

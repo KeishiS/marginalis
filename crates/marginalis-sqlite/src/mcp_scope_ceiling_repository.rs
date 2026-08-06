@@ -120,6 +120,34 @@ impl McpScopeCeilingRepository for SqliteDatabase {
         })
     }
 
+    async fn delete_client_scope_ceiling(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+        expected_revision: i64,
+        _now: UnixMillis,
+    ) -> Result<(), McpScopeCeilingRepositoryError> {
+        let mut transaction = self.pool.begin().await.map_err(map_database_error)?;
+        authorized_client(&mut transaction, actor, client_id).await?;
+        // 解除は上限を広げる操作なので、既存の認可やtokenは失効させない。
+        let deleted = sqlx::query(
+            "DELETE FROM mcp_client_scope_ceilings
+             WHERE issuer = ? AND subject = ? AND client_id = ? AND revision = ?",
+        )
+        .bind(actor.issuer())
+        .bind(actor.subject())
+        .bind(client_id)
+        .bind(expected_revision)
+        .execute(&mut *transaction)
+        .await
+        .map_err(map_database_error)?;
+        if deleted.rows_affected() != 1 {
+            return Err(McpScopeCeilingRepositoryError::Conflict);
+        }
+        transaction.commit().await.map_err(map_database_error)?;
+        Ok(())
+    }
+
     async fn replace_client_scope_ceiling(
         &self,
         actor: &Actor,
@@ -139,24 +167,9 @@ impl McpScopeCeilingRepository for SqliteDatabase {
         if !client_exists {
             return Err(McpScopeCeilingRepositoryError::ClientNotFound);
         }
-        let granted_scopes = sqlx::query_scalar::<_, String>(
-            "SELECT granted_scopes FROM mcp_client_authorizations
-             WHERE issuer = ? AND subject = ? AND client_id = ?",
-        )
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .bind(client_id)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(map_database_error)?
-        .ok_or(McpScopeCeilingRepositoryError::ClientNotFound)?;
-        let granted_scopes = granted_scopes.split_ascii_whitespace().collect::<Vec<_>>();
-        if scopes
-            .iter()
-            .any(|scope| !granted_scopes.contains(&scope.as_str()))
-        {
-            return Err(McpScopeCeilingRepositoryError::Invalid);
-        }
+        // 上限は将来の認可を制限する設定であり、それ自体は権限を付与しない。過去に同意した範囲へ
+        // 縛ると、狭めた上限を広げられなくなり、同意画面からも復旧できなくなる。
+        authorized_client(&mut transaction, actor, client_id).await?;
         let revision = replace_client_setting(
             &mut transaction,
             actor,
@@ -283,6 +296,28 @@ async fn replace_principal_setting(
     .await
     .map_err(map_database_error)?
     .ok_or(McpScopeCeilingRepositoryError::Conflict)
+}
+
+/// 利用者がそのclientを認可済みであることを確かめる。
+///
+/// 上限は認可済みclientに対してだけ設定でき、解除できる。
+async fn authorized_client(
+    transaction: &mut Transaction<'_, Sqlite>,
+    actor: &Actor,
+    client_id: &str,
+) -> Result<(), McpScopeCeilingRepositoryError> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT granted_scopes FROM mcp_client_authorizations
+         WHERE issuer = ? AND subject = ? AND client_id = ?",
+    )
+    .bind(actor.issuer())
+    .bind(actor.subject())
+    .bind(client_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(map_database_error)?
+    .ok_or(McpScopeCeilingRepositoryError::ClientNotFound)?;
+    Ok(())
 }
 
 async fn replace_client_setting(

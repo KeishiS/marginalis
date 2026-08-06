@@ -51,8 +51,8 @@ use self::{
     error::{HandlerResult, problem},
     math_macros::{read_math_macros, replace_math_macros},
     mcp_scope_ceilings::{
-        list_mcp_authorizations, read_mcp_scope_ceiling, replace_client_mcp_scope_ceiling,
-        replace_mcp_scope_ceiling,
+        delete_client_mcp_scope_ceiling, list_mcp_authorizations, read_mcp_scope_ceiling,
+        replace_client_mcp_scope_ceiling, replace_mcp_scope_ceiling,
     },
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
@@ -157,7 +157,8 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v3/mcp-authorizations", get(list_mcp_authorizations))
         .route(
             "/api/v3/mcp-authorizations/{client_id}/scope-ceiling",
-            axum::routing::put(replace_client_mcp_scope_ceiling),
+            axum::routing::put(replace_client_mcp_scope_ceiling)
+                .delete(delete_client_mcp_scope_ceiling),
         )
         .route(
             "/api/v3/bibliography",

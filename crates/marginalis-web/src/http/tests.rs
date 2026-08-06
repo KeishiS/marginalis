@@ -1302,6 +1302,24 @@ impl McpOAuthUseCases for TestMcpOAuth {
         })
     }
 
+    async fn delete_client_scope_ceiling(
+        &self,
+        _actor: Actor,
+        client_id: String,
+        expected_revision: i64,
+    ) -> Result<(), McpScopeCeilingUseCaseError> {
+        if client_id == "unknown-client" {
+            return Err(McpScopeCeilingUseCaseError::ClientNotFound);
+        }
+        if expected_revision <= 0 {
+            return Err(McpScopeCeilingUseCaseError::Invalid);
+        }
+        if expected_revision != 1 {
+            return Err(McpScopeCeilingUseCaseError::Conflict);
+        }
+        Ok(())
+    }
+
     async fn revoke(&self, _actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError> {
         if matches!(
             client_id.as_str(),

@@ -2,12 +2,19 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
 };
 use marginalis_contract::{
     McpClientAuthorizationResponse, McpScopeCeilingInput, McpScopeCeilingResponse,
 };
+use serde::Deserialize;
+
+/// 解除する上限のrevisionをquery parameterで受け取る。
+#[derive(Deserialize)]
+pub(super) struct McpScopeCeilingRevisionQuery {
+    revision: i64,
+}
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor},
@@ -102,6 +109,37 @@ pub(super) async fn replace_client_mcp_scope_ceiling(
         })?;
     authorization.scope_ceiling.configured = true;
     authorization.scope_ceiling.setting = setting;
+    Ok(Json(client_authorization_response(authorization)))
+}
+
+/// clientの上限設定を取り除き、未設定の状態を返す。
+///
+/// 上限は将来の認可だけを制限するため、解除しても既存のtokenへ権限は増えない。
+pub(super) async fn delete_client_mcp_scope_ceiling(
+    State(state): State<ApiState>,
+    Path(client_id): Path<String>,
+    headers: HeaderMap,
+    Query(query): Query<McpScopeCeilingRevisionQuery>,
+) -> HandlerResult<Json<McpClientAuthorizationResponse>> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let endpoint = mcp_endpoint(&state)?;
+    endpoint
+        .oauth
+        .delete_client_scope_ceiling(actor.clone(), client_id.clone(), query.revision)
+        .await
+        .map_err(mcp_scope_ceiling_error)?;
+    let authorization = endpoint
+        .oauth
+        .client_authorizations(actor)
+        .await
+        .map_err(mcp_scope_ceiling_error)?
+        .into_iter()
+        .find(|authorization| authorization.client_id == client_id)
+        .ok_or_else(|| {
+            mcp_scope_ceiling_error(
+                marginalis_application::McpScopeCeilingUseCaseError::ClientNotFound,
+            )
+        })?;
     Ok(Json(client_authorization_response(authorization)))
 }
 
