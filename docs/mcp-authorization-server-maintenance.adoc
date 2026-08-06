@@ -1,0 +1,107 @@
+= MCP Authorization Serverの保守
+
+[#top]
+この文書は、製品非依存の``mcp-authorization-server``と
+``mcp-authorization-server-cimd``を変更する開発者に向けて、責務、対応仕様、版管理、更新手順を
+説明します。Marginalisへの接続方法と利用者が確認できる動作は
+xref:mcp.adoc#top[MCPへの接続と認可]、分離した理由は
+xref:adr/0008-mcp-authorization-serverの中核を製品から分離する.adoc#top[ADR 0008]を参照してください。
+
+== 現在の配布と版管理
+
+二つのcrateはMarginalisのworkspace内だけで配布し、``publish = false``とします。版はMarginalisと
+同じworkspace versionを使います。このため、現時点ではcrate単独の互換性や保守期間を約束せず、
+変更はMarginalisの通常版またはパッチ版として公開します。
+
+独立リポジトリ、crate registry、固定したGit dependencyのいずれを採用するかは
+https://github.com/KeishiS/marginalis/issues/314[Issue 314]で決定します。独立配布へ移るまでは、外部の
+利用側がGitの内部pathや未公開のRust APIへ直接依存することを想定しません。
+
+== 責務の境界
+
+[cols="1,1",options="header",]
+|===
+|対象
+|責務
+|``mcp-authorization-server``
+|OAuthの型と入力検査、resourceとscopeのpolicy、metadata生成、認可codeとtokenの状態遷移、永続化の原子的な契約
+|``mcp-authorization-server-cimd``
+|CIMDのHTTPS取得、DNS検査、接続先固定、redirect拒否、取得量・時間・並行数・頻度・cacheの制限
+|Marginalis application・web
+|Kanidmで確認した主体の受け渡し、Web session、Cookie、CSRF、同意画面、``notes:*``と``bibliography:*``の意味、HTTP
+endpoint
+|Marginalis SQLite adapter
+|schema、transaction、token hash、grant・client・tokenの保存、保守処理
+|Marginalis MCP endpoint
+|scopeとtoolの対応、ノートと書誌情報の所有・共有範囲、Bearer tokenによる要求の認可
+|===
+
+中核crateはAxum、SQLx、Kanidm、``marginalis-*``、``renkan-*``へ依存しません。利用側が検証済みの
+``Principal``、``ResourcePolicy``、寿命と登録上限を渡します。中核が利用者の本人確認や製品データの
+アクセス制御を行うことはありません。
+
+== 対応する仕様と制限
+
+現在の実装が対象にする範囲は次のとおりです。
+
+* Authorization CodeとPKCE S256
+* RFC 8414のAuthorization Server Metadata
+* RFC 9728のProtected Resource Metadata
+* RFC 8707のResource Indicators
+* RFC 9207の認可応答に含める``iss``
+* RFC 7009のtoken取消
+* Client ID Metadata Document（CIMD）
+* 既存クライアント向けのRFC 7591互換DCR
+* Bearer tokenをAuthorization headerで受け取るMCP Protected Resource
+
+MCP仕様``2026-07-28``に合わせ、DCRの``application_type``をmetadataの検査、保存、応答へ反映します。
+DCRは互換経路であり、新しいclientにはCIMDを優先します。
+
+このcrateは一般用途のAuthorization Serverではありません。一つのresource、公開client、不透明token、
+限定したscopeを安全に扱うための中核です。Implicit Grant、Resource Owner Password Credentials Grant、
+Client Credentials Grant、client secretを使うconfidential client、token introspectionには対応しません。
+
+== 正本と検証
+
+resource URI、表示名、対応scope、既定scopeの正本は``ResourcePolicy``です。Protected Resource Metadata、
+Authorization Server Metadata、認可要求、token更新、``WWW-Authenticate``で別の値を定義しません。
+token寿命、認可code寿命、client登録上限は``AuthorizationServerConfig``から取得します。
+
+``Repository``はテーブル単位のCRUDではなく、認可codeの一回消費、refresh token rotation、再利用時の
+token family失効、取消などを一つの原子的な操作として定義します。``testkit``のrepository契約試験は、
+試験用repositoryとSQLite adapterの両方へ適用します。境界の意図は次の検証で維持します。
+
+* ``cargo make dependency-boundaries``: 禁止した製品・HTTP・database依存の検出
+* ``cargo make traceability-check``: 設計条件と回帰試験の対応漏れの検出
+* ``cargo make verify``: 中核、adapter、HTTP、フロントエンド、依存ライブラリの通常検証
+* ``cargo make pre-push``: カバレッジとNixOS VM E2Eを含む公開前検証
+* xref:protocol-regression.adoc#top[MCPプロトコル回帰試験]: metadata、認可、token、取消、MCP要求の境界検証
+* xref:mcp.adoc#接続後の受入[MCPへの接続と認可]: ChatGPT、Claude Code、Codex CLIによる実接続確認
+
+== 変更の扱い
+
+workspace内だけで利用している間も、次の変更は将来の利用側を壊す変更として明示的に扱います。
+
+* 公開型、trait method、error分類、既定値、metadataまたは応答項目の変更
+* ``Repository``が要求するtransaction、期限境界、一回消費、失効範囲の変更
+* 対応する仕様、grant、client種別、redirect URI policyの変更
+* token、grant、clientの保存意味や移行条件の変更
+
+Marginalis固有のSQLite schemaとarchive形式はadapter側の契約です。中核crateの整理だけを理由に変更せず、
+変更が必要な場合は通常のdatabase・archive移行手順を別に設計します。
+
+== 更新手順
+
+[arabic]
+. 現在と理想の動作、影響する仕様、攻撃者が制御できる入力をGitHub Issueへ記載します。
+. ``ResourcePolicy``、状態遷移、repository契約、利用側adapterのどこを変更するか決めます。
+. 設計条件が変わる場合は、アーキテクチャと要件・検証対応表を先に更新します。
+. 中核の単体試験とrepository契約試験を追加し、試験用repositoryとSQLite adapterの両方へ適用します。
+. HTTPとMCPの外部動作が変わる場合は、プロトコル回帰試験と公開文書を更新します。
+. ``cargo make verify``と``cargo make pre-push``を実行します。
+. client互換性へ影響する場合は、ChatGPT、Claude Code、Codex CLIで接続から取消・再認可まで確認します。
+. 利用者や運用者へ影響する変更だけを``CHANGELOG.adoc``へ記載します。
+
+脆弱性の修正では、token、認可code、PKCE verifier、Cookie、client secret、実際のノート本文をIssue、
+Pull Request、ログ、試験成果物へ記録しません。報告と修正の公開時期は
+xref:security.adoc#問題の報告[セキュリティー方針]に従います。

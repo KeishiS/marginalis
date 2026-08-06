@@ -50,14 +50,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Check documentation
         if: needs.changes.outputs.docs-only == 'true'
         run: |
-          bash .github/scripts/check-docs.sh
-          bash .github/scripts/check-traceability.sh
-      - name: Install Nix
-        if: needs.changes.outputs.docs-only != 'true'
-        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+          nix develop --command cargo make docs-check
+          nix develop --command cargo make traceability-check
       - name: Verify
         if: needs.changes.outputs.docs-only != 'true'
         run: nix develop --command cargo make ci-verify

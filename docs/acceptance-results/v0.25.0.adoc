@@ -1,0 +1,73 @@
+= v0.25.0受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.25.0``
+* 対象: ``codex/issue-249-release-v0.25.0``のリリース候補
+* 対象コミット: ``7396b8deaae090b6f377e2183b6a4e94b934922a``
+* 判定日: 2026-08-03
+* 公開判定: 公開可
+
+== 結果
+
+[cols="1,1,1,1",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/250[リリースPull Request \#250]で、React・TypeScript、Rust、公開契約、
+カバレッジ、ブラウザー試験、NixOS VM E2Eを実行
+|Web UI
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/250[リリースPull Request \#250]のChromium・Firefox試験と人手受入で、
+主要な表示と操作を確認
+|NixOS配備
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/250[リリースPull Request \#250]のNixOS VM E2Eと人手受入で、配備、起動、
+backup、定期処理を確認
+|aarch64配布パッケージ
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/250[リリースPull Request \#250]で、native aarch64 Linux上のNix
+package構築を実行
+|archive復元
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/250[リリースPull Request \#250]の自動検証と人手受入で、
+実環境からのarchive書き出しと、空のschema 15への復元経路を確認
+|MCP接続
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/250[リリースPull Request \#250]の人手受入で、
+ChatGPTから内蔵Authorization Serverを使う接続を確認。Claude CodeとCodex CLIは未実施だが、Client ID Metadata
+Documentを使う実接続と自動検証で公開に必要な経路を確認したと判断
+|===
+
+自動検証と利用者の受入が成功し、公開を止める問題は確認されなかったため、
+v0.25.0を公開できます。
+
+== 今回の確認で重点を置いた点
+
+MCPのAuthorization Serverを内蔵したため、認可の経路全体を実際のクライアントで確認します。
+ChatGPT、Claude Code、Codex CLIのそれぞれで、接続の作成、同意画面での許可、ノートの閲覧と更新、
+接続の取消までを通します。Client ID Metadata Documentを使うクライアントとDynamic Client
+Registrationを使うクライアントの両方を含めます。
+
+認可の取消では、取り消した直後に既存のaccess tokenとrefresh tokenがどちらも拒否されることを
+確認します。外部サービスに依存しないため、取消から失効までの待ち時間は生じない想定です。
+
+配備では、``services.marginalis.mcp.authorization``を書かない設定で起動できること、
+``MARGINALIS_MCP_ENABLE``に``true``と``false``以外を与えると起動が止まることを確認します。
+
+更新経路では、schema 13のデータベースから``export-archive``で書き出したarchive 13を、空の
+schema 15へ``import-archive``で取り込み、ノート、所有者、ACL、参照、削除状態、revisionが一致する
+ことを確認します。MCPのclientとtokenはarchiveへ含まれないため、更新後に接続を作り直します。
+
+利用者、Cookie、token、認可code、client secret、実際のノート本文や書誌情報は記録しません。

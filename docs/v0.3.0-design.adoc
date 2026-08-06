@@ -1,0 +1,120 @@
+= v0.3.0 再設計判断記録
+
+== この文書の位置付け
+
+[#top]
+この文書は、v0.3.0の設計を確定した時点の判断を記録したものです。本文の現在形は、当時決定した
+内容を示します。現在のシステム要件は xref:requirements.adoc#top[要件定義]、設計は
+xref:architecture.adoc#top[アーキテクチャ]、運用は xref:nixos.adoc#top[NixOSでの運用]を参照してください。
+特に、``server-admins``による全ノートへのアクセスは廃止済みであり、現行仕様には適用しません。
+
+== 仮定
+
+* 一つの NixOS ホスト上で SQLite を使う単一インスタンスとして運用する。
+* 想定規模は同時利用者 10 名、利用者一人当たり 100 ノートです。
+* Kanidm 1.10 が OIDC provider と利用者・グループ管理を担う。
+* ``v0.2.x`` の API、データベース、``dataDir``、トークンは互換対象ではない。v0.3.0 は空の
+database から初期化する。
+
+== 定義
+
+* *正式な保存先*: SQLite内のノート本文、メタデータ、ACL、削除状態。一つのトランザクションで
+更新する。
+* *AsciiDoc bundle*: ノート単位の ``.adoc``、または全ノートと ACL を含む archive の可搬形式です。
+稼働中の保存先ではない。
+* *利用者*: Kanidm の ``server-users`` に属する OIDC subject です。
+* *管理者*: ``server-admins`` に属する利用者です。全ノートを閲覧・管理できる。
+* *削除済みノート*: ``deleted_at`` が設定されたノートです。通常の経路には存在しないものとして
+扱うが、30 日間は復元できる。
+
+== データモデル
+
+SQLite は少なくとも次を保持する。
+
+[cols="1,1",options="header",]
+|===
+|対象
+|内容
+|``notes``
+|UUIDv7、title、body、正規化済み tags、creator subject、作成・更新時刻、revision、``deleted_at``
+|``note_acl``
+|note と Kanidm subject の直接権限（Read / Write / Admin）
+|``web_sessions``
+|OIDC subject、ログイン時の管理者属性、CSRF 値、有効期限
+|MCP OAuth tables
+|client、authorization、access token、refresh token、認可取消状態
+|===
+
+``title``、``tags``、サーバー管理の ID と時刻は、API の構造化入力を正本として保存する。export 時には
+これらから AsciiDoc header を生成する。import は header と本文を検証してから、サーバー管理属性を
+再生成する。``revision`` は SQLite の正本から生成し、更新・削除・復元には完全一致を要求する。
+
+ノートの作成、更新、ACL 更新、削除、復元、期限切れ purge は、``notes`` と ACL を一つの
+transaction で更新する。ファイル操作ジャーナル、起動時のファイル復旧、外部ファイル変更の取込みは
+提供しない。
+
+== AsciiDoc import/export
+
+* ``export note`` は一ノートを UTF-8 ``.adoc`` として出力する。
+* ``export archive`` は format marker、ノート、ACL、削除状態を含む JSON archive を作る。
+* ``import archive`` は format marker、ノートプロファイル、ACL、ID の一貫性をすべて検証してから
+空の database へ取り込む。検証失敗時には database を変更しない。
+* archive import と復元の定期受入は、v0.3.0 の公開条件には含めない。
+
+== 認証と認可
+
+OIDC の同一性は ``(issuer, subject)`` で判定する。Marginalis はパスワード、利用者状態、招待、
+登録ポリシーを保持しない。
+
+[arabic]
+. OIDC login 時に ``server-users`` 所属を確認し、所属する利用者にだけ Web session を発行する。
+. ``server-admins`` 所属は session と MCP authorization に反映する。
+. 検証済み ID token の ``groups`` claim を session と MCP authorization の権限スナップショットとする。
+group 変更は次回 OIDC login から反映する。既存の Web session と MCP token は有効期限または明示的な
+認可取消まで、発行時の権限を保持する。
+
+ノート ACL は直接付与を維持する。管理者は ACL を迂回して全ノートに Admin 相当でアクセスできる。
+通常利用者は ACL により Read、Write、Admin の包含関係を得る。各非削除ノートには少なくとも
+一人の直接 Admin を残す。
+
+== MCP OAuth
+
+Marginalis は MCP の OAuth Authorization Server と Protected Resource を兼ねる。Kanidm token を
+MCP client へ渡さない。
+
+* Authorization Code \+ PKCE S256、refresh token rotation、認可取消を提供する。
+* OAuth Authorization Server Metadata、Protected Resource Metadata、Dynamic Client Registration を
+提供する。
+* ChatGPT、Claude Code、Codex CLI を remote Streamable HTTP client として受入対象にする。
+* access token と refresh token はハッシュだけを SQLite に保存する。発行元の Web session で確定した
+権限スナップショットを維持する。
+
+== HTTP と Web UI
+
+新しい HTTP API は ``/api/v2`` に置く。``/api/v1`` は同一バイナリで提供しない。OpenAPI 3.1 は
+実装から生成または同じ仕様定義から出力し、実行中の ``/api/v2/openapi.json`` と配布物を一致させる。
+
+閲覧用 Web UI は同一オリジンで REST と同じ session・ACL を利用する。ノート一覧と HTML 表示には
+閲覧可能なノートだけを出力する。HTML は AsciiDoc の固定 RenderPolicy を通し、
+外部ファイル、危険な URL scheme、未検証 HTML を許可しない。
+
+== 削除
+
+削除は ``deleted_at`` を設定するソフトデリートです。削除済みノートは REST、MCP、Web UI から
+即時に除外する。元のノート管理者と管理者は 30 日間復元できる。NixOS の日次
+systemd timer が期限切れノート、ACL、投影を物理削除する。本文履歴は保存しない。
+
+== 運用と受入
+
+NixOS module は SQLite database の場所、Kanidm issuer・client、MCP、archive 保存先、日次 purge を
+設定する。秘密情報は systemd credential を使い、Nix store と journal へ書き出さない。
+
+v0.3.0 の必須受入は次です。
+
+[arabic]
+. Kanidm 1.10、TLS、subpath を使う NixOS VM E2E。
+. ``server-users`` / ``server-admins`` を含む OIDC ``groups`` claim による認可。
+. ChatGPT、Claude Code、Codex CLI の MCP OAuth、read/write、認可取消。
+. NixOS module による空 database からの配備。
+
+archive import と復元の定期受入は公開後に追加する。

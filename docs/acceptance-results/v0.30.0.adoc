@@ -1,0 +1,74 @@
+= v0.30.0受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.30.0``
+* 対象: ``codex/v0.30.0-release``のリリース候補
+* 対象コミット: ``610df5945118563d91abbcb59fa62336ece55b84``
+* 判定日: 2026-08-05
+* 公開判定: 公開可
+
+== 結果
+
+[cols="1,1,1,1",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/317[リリースPull Request \#317]で、React・TypeScript、Rust、公開契約、
+依存境界、設計条件との対応、カバレッジ、ブラウザー試験、AArch64、NixOS VM E2Eを実行
+|Authorization Server境界
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/317[リリースPull Request \#317]の自動試験で、異なるresourceとscopeを使う中核、
+試験用repository、SQLite adapterが同じrepository契約を満たすことを確認
+|OAuth同意画面
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/317[リリースPull Request \#317]に記録した利用者受入とブラウザー試験で、
+完全な``client_id``の優先表示、長い識別子の折り返し、表示名、要求scope、redirect先、許可と拒否を確認
+|MathJax
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/317[リリースPull Request \#317]に記録した利用者受入とフロントエンド試験で、
+閲覧画面と編集プレビューの``\\coloneqq``、所有者マクロの``\\argmax``と``\\bm``、追加packageを読み込まない安全な失敗を確認
+|MCP接続
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/317[リリースPull Request \#317]に記録した利用者受入で、ChatGPT、Claude
+Code、Codex CLIの認可、読み取り、更新、取消、取消後の拒否、再認可を確認
+|NixOS配備
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/317[リリースPull Request \#317]のNixOS VM E2Eと利用者受入で、
+既存のschema 18を維持した配備、起動、OIDCログイン、Web UI、MCP接続を確認
+|archive復元
+|成功
+|2026-08-05
+|https://github.com/KeishiS/marginalis/pull/317[リリースPull Request \#317]に記録した利用者受入で、archive 14の検証、
+隔離した空のschema 18への復元、内容、再書き出しを確認
+|===
+
+自動検証と利用者によるリリース候補の受入が成功しました。Authorization Serverの共有境界、OAuth同意画面、
+MathJaxの固定したpackage構成を確認し、既存のschema 18、archive 14、設定、MCP接続を変更せず利用できました。
+公開を止める問題は確認されなかったため、v0.30.0を公開できます。
+
+== 今回の確認で重点を置く点
+
+OAuth同意画面では、完全な``client_id``を先に読み、クライアントが提供した表示名とredirect先を照合します。
+長いCIMD URLも途中で省略されず、画面幅の中で折り返されることを確認します。
+
+数式では、所有者マクロとして登録した``argmax``と``bm``、``mathtools``の``\\coloneqq``が、閲覧画面と
+編集プレビューで従来どおり組版されることを確認します。同時に、``\\require{html}``やautoload対象の
+入力が追加JavaScriptを要求せず、安全な失敗表示になることを確認します。
+
+SQLite schemaとarchive形式はv0.29.0から変わりません。更新前の通常の退避を行ったうえで既存の
+schema 18へ配備し、databaseの作り直し、archive変換、MCPクライアントの再接続が不要であることを
+確認します。
+
+利用者、Cookie、token、認可code、PKCE verifier、実際のノート本文や書誌情報は記録しません。

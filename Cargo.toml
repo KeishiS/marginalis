@@ -8,6 +8,7 @@ members = [
     "crates/marginalis-auth-oidc",
     "crates/marginalis-contract",
     "crates/marginalis-domain",
+    "crates/marginalis-documentation",
     "crates/marginalis-service",
     "crates/marginalis-sqlite",
     "crates/marginalis-web",

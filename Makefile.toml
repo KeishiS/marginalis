@@ -98,11 +98,13 @@ bash .github/scripts/test-protocol-artifact.sh
 '''
 
 [tasks.docs-check]
-description = "Validate local links and whitespace in Markdown documentation"
+description = "Validate the repository documentation corpus and its references"
 script_runner = "@shell"
 script = '''
 set -eu
 bash .github/scripts/test-markdown-links.sh
+bash .github/scripts/test-asciidoc.sh
+bash .github/scripts/test-documentation-corpus.sh
 bash .github/scripts/check-docs.sh
 '''
 
@@ -175,15 +177,15 @@ test "$(
 test "$(
   nix eval --raw .#packages.x86_64-linux.frontend.version
 )" = "$expected_version"
-acceptance_file="docs/acceptance-results/v$expected_version.md"
+acceptance_file="docs/acceptance-results/v$expected_version.adoc"
 test -s "$acceptance_file"
-grep -Fq "(acceptance-results/v$expected_version.md)" docs/acceptance.md
-grep -Fq -- "- タグ: \`v$expected_version\`" "$acceptance_file"
+grep -Fq "xref:acceptance-results/v$expected_version.adoc#top" docs/acceptance.adoc
+grep -Fq -- "* タグ: \`\`v$expected_version\`\`" "$acceptance_file"
 awk '
-  /^- 公開判定: (未判定|公開停止|公開可)$/ { matches++ }
+  /^\* 公開判定: (未判定|公開停止|公開可)$/ { matches++ }
   END { exit matches != 1 }
 ' "$acceptance_file"
-awk -v heading="## $expected_version — " '
+awk -v heading="== $expected_version — " '
   index($0, heading) == 1 {
     status = substr($0, length(heading) + 1)
     if (status == "未公開" || status ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
@@ -191,11 +193,11 @@ awk -v heading="## $expected_version — " '
     }
   }
   END { exit matches != 1 }
-' CHANGELOG.md
+' CHANGELOG.adoc
 if [ -n "$release_tag" ]; then
   test "$release_tag" = "v$expected_version"
-  grep -Fxq -- "- 公開判定: 公開可" "$acceptance_file"
-  awk -v heading="## $expected_version — " '
+  grep -Fxq -- "* 公開判定: 公開可" "$acceptance_file"
+  awk -v heading="== $expected_version — " '
     index($0, heading) == 1 {
       status = substr($0, length(heading) + 1)
       if (status ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
@@ -203,7 +205,7 @@ if [ -n "$release_tag" ]; then
       }
     }
     END { exit matches != 1 }
-  ' CHANGELOG.md
+  ' CHANGELOG.adoc
 fi
 '''
 
@@ -295,8 +297,8 @@ if rg -n \
   . \
   --glob '!docs/frozen/**' \
   --glob '!docs/adr/**' \
-  --glob '!docs/mcp-authorization-server-evaluation.md' \
-  --glob '!CHANGELOG.md' \
+  --glob '!docs/mcp-authorization-server-evaluation.adoc' \
+  --glob '!CHANGELOG.adoc' \
   --glob '!Makefile.toml' \
   --glob '!target/**' \
   --glob '!test-results/**' \

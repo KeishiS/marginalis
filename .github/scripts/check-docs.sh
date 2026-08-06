@@ -3,23 +3,39 @@ set -euo pipefail
 
 status=0
 
+if ! bash .github/scripts/check-documentation-corpus.sh; then
+  status=1
+fi
+if ! bash .github/scripts/check-asciidoc.sh; then
+  status=1
+fi
+
 if [[ -d issues ]]; then
   echo "issues/は廃止されています。新しい作業項目はGitHub Issuesへ作成してください。" >&2
   status=1
 fi
 
 legacy_manifest=.github/legacy-issues-v0.5.0.txt
-migration_map=docs/issue-migration.md
+migration_map=docs/issue-migration.adoc
 if [[ ! -f "$legacy_manifest" || ! -f "$migration_map" ]]; then
   echo "旧Issueの移行manifestまたは対応表がありません。" >&2
   status=1
 else
+  legacy_upstream_url='https://github.com/KeishiS/marginalis/blob/v0.5.0/issues/upstream'
+  if ! grep -Fxq ":legacy-upstream: $legacy_upstream_url" "$migration_map"; then
+    echo "旧上流提案のURL属性が正しくありません。" >&2
+    status=1
+  fi
   legacy_count=0
   while IFS= read -r legacy_path; do
     [[ -n "$legacy_path" ]] || continue
     legacy_count=$((legacy_count + 1))
-    source_url="https://github.com/KeishiS/marginalis/blob/v0.5.0/$legacy_path"
-    occurrences=$(grep -Foc "$source_url" "$migration_map" || true)
+    if [[ "$legacy_path" == issues/upstream/* ]]; then
+      source_reference="{legacy-upstream}/${legacy_path#issues/upstream/}"
+    else
+      source_reference="https://github.com/KeishiS/marginalis/blob/v0.5.0/$legacy_path"
+    fi
+    occurrences=$(grep -Foc "$source_reference" "$migration_map" || true)
     if [[ "$occurrences" -ne 1 ]]; then
       echo "旧Issueの移行先が一意ではありません: $legacy_path ($occurrences)" >&2
       status=1

@@ -1,0 +1,68 @@
+= v0.25.1受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.25.1``
+* 対象: ``codex/issue-251-release-v0.25.1``のリリース候補
+* 対象コミット: ``964cccf94573bf071b7ccce964c3073140ed57fd``
+* 判定日: 2026-08-03
+* 公開判定: 公開可
+
+== 結果
+
+[cols="1,1,1,1",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]で、React・TypeScript、Rust、公開契約、
+カバレッジ、ブラウザー試験、NixOS VM E2Eを実行
+|Web UI
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]のChromium・Firefox試験で、
+``\coloneqq``の組版、拡張ファイルの同一オリジン配信、表示切替を確認
+|NixOS配備
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]のNixOS VM E2Eで、配備、起動、TLS、サブパス、
+backup、定期処理を確認
+|aarch64配布パッケージ
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]で、native aarch64 Linux上の全Rust
+targetとNix packageを構築
+|archive復元
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]
+の自動検証で旧archiveの移行と隔離した空のデータベースへの復元を確認。形式に変更がないため、 xref:v0.25.0.adoc#top[v0.25.0受入結果]の同日確認も継承
+|MCP接続
+|成功
+|2026-08-03
+|https://github.com/KeishiS/marginalis/pull/252[リリースPull Request \#252]のNixOS VM E2Eで認可経路を確認。
+MCPに変更がないため、 xref:v0.25.0.adoc#top[v0.25.0受入結果]の同日実接続確認も継承
+|===
+
+自動検証と今回変更したWeb UIの受入が成功しました。REST API、MCP、データベース、archive、
+NixOSモジュールには変更がなく、v0.25.0で同日に完了した受入結果も有効です。公開を止める問題は
+確認されなかったため、v0.25.1を公開できます。
+
+== 今回の確認で重点を置いた点
+
+``mathtools``拡張と、その依存先である``boldsymbol``をMarginalisのWeb UI配布物へ含めます。
+Content Security Policyを維持した状態で両方の拡張ファイルを同一オリジンから読み込み、
+``\coloneqq``を含むインライン数式とブロック数式を組版できることを確認します。
+
+数式を含む表示を切り替えた場合も、組版済みの内容を維持し、以前の組版結果を現在の内容へ
+混ぜないことを確認します。MathJaxの字体を含め、外部CDNへ接続しないことも確認します。
+
+REST API、MCP、データベース、archive、NixOSモジュールには変更がありません。これらの経路は
+自動検証で回帰がないことを確認し、v0.25.0の同日受入結果と併せて公開可否を判断します。
+
+利用者、Cookie、token、認可code、client secret、実際のノート本文や書誌情報は記録しません。

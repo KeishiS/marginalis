@@ -1,0 +1,50 @@
+= v0.11.0受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.11.0``
+* 対象: リリース用Pull Requestをマージした``main``の先端
+* 判定日: 2026-07-29
+
+== 結果
+
+[cols="1,1,1,1",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-07-29
+|https://github.com/KeishiS/marginalis/actions/runs/30437603835[Pull Request \#100のCI]
+でReact・TypeScript、Rust、公開契約、カバレッジ、aarch64上のコンパイル、ブラウザー基本動作、Nixパッケージ、NixOS VM E2E、schema
+9から11へのアーカイブ移行が成功
+|Web UI主要画面
+|成功
+|2026-07-29
+|https://github.com/KeishiS/marginalis/pull/100#issuecomment-5115572646[Pull Request \#100の人手受入結果]で、
+題名・言語・開始行付きコード、インライン数式、ブロック数式の表示を確認
+|利用者別ACL
+|成功
+|2026-07-29
+|https://github.com/KeishiS/marginalis/pull/100#issuecomment-5115572646[Pull Request \#100の人手受入結果]で、
+所有者、閲覧者、編集者、対象外利用者の許可範囲を確認
+|MCP対象クライアント
+|成功
+|2026-07-29
+|https://github.com/KeishiS/marginalis/pull/100#issuecomment-5115572646[Pull Request \#100の人手受入結果]で、
+ChatGPT Web UI、Claude Code、Codex CLIによる同期用メタデータの取得と、ノートの作成、更新、削除を確認
+|archive 7変換・隔離復元
+|成功
+|2026-07-29
+|https://github.com/KeishiS/marginalis/pull/100#issuecomment-5115572646[Pull Request \#100の人手受入結果]で、
+v0.10.0のarchive 7からarchive 8への変換と、本番から隔離した空のschema 11への復元を確認
+|===
+
+自動検証と人手受入がすべて成功したため、v0.11.0を公開できます。リリース用Pull Requestを
+マージした後、同じ``main``のコミットでリリースゲートを実行します。
+
+tenant、connection、client ID、利用者、token、Cookie、認可code、client secret、実際のノート本文は
+記録していません。

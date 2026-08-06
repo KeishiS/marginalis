@@ -1,0 +1,86 @@
+= v0.28.0受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.28.0``
+* 対象: ``codex/release-v0.28.0``のリリース候補
+* 対象コミット: ``25544ee29b46bc5b1209ef2bd93ef9fa90d30fa2``
+* 判定日: 2026-08-04
+* 公開判定: 公開可
+
+== 結果
+
+[cols="1,1,1,1",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/293[リリースPull Request \#293]で、React・TypeScript、Rust、公開契約、
+依存境界、カバレッジ、ブラウザー試験、NixOS VM E2Eを実行
+|OAuth同意画面
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/293[リリースPull Request \#293]に記録した利用者受入で、通常画面と統一した表示、
+要求scopeと移動先の確認、loopback redirect URIの注意を確認
+|ノートの削除・復元
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/293[リリースPull Request \#293]に記録した利用者受入で、所有者による削除、削除済み一覧、
+復元、共有先への非開示、確認画面のフォーカスを確認
+|関係の図
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/293[リリースPull Request \#293]に記録した利用者受入で、書誌の題名を常時表示しないこと、
+ホバーとフォーカス、吹き出しの表示範囲を確認
+|NixOS配備
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/293[リリースPull Request \#293]のNixOS VM E2Eで空のdatabaseからの配備、
+TLS、サブパス、Kanidm、backup、定期処理を確認。利用者環境でもv0.27.0のdatabaseを維持した配備を確認
+|aarch64配布パッケージ
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/293[リリースPull Request \#293]で、native aarch64 Linux上の全Rust
+targetとNix packageを構築
+|archive復元
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/293[リリースPull Request \#293]に記録した利用者受入で、
+最新archiveを``validate-archive``で検証し、``verify-restore``で隔離した空のdatabaseへの復元を確認
+|MCP接続
+|成功
+|2026-08-04
+|https://github.com/KeishiS/marginalis/pull/293[リリースPull Request \#293]に記録した利用者受入で、ChatGPT、Claude
+Code、Codex CLIの接続、読み書き、認可取消を確認
+|===
+
+自動検証と利用者によるリリース候補の受入が成功しました。Web UIでノートの削除と復元を完結でき、
+OAuth同意画面と関係の図の操作性も意図した状態になっています。SQLite schema、archive形式、
+AdocWeave package版、note profile版を変更せず、v0.27.0のdatabaseとarchiveを利用できました。
+公開を止める問題は確認されなかったため、v0.28.0を公開できます。
+
+== 今回の確認で重点を置いた点
+
+OAuth同意画面が通常のWeb UIと同じ枠、文字、ボタンを使い、クライアント名、識別子、移動先のホスト、
+要求されたscopeを確認できることを確認します。HTTPとHTTPSのどちらでも、``localhost``、IPv4、IPv6の
+loopback redirect URIに、この端末上のアプリへ戻るという注意が表示されることも確認します。
+
+所有者が閲覧画面からノートを削除し、削除済みノートの画面で題名、削除日時、完全削除予定、revisionを
+確認して復元できることを確認します。共有先には削除操作と削除済みノートの情報が表示されず、復元後も
+本文、タグ、ACL、参照、引用索引、数式マクロの適用が保たれることを確認します。削除・復元の送信中は
+確認画面内にフォーカスが保たれ、失敗後に再操作できることも確認します。
+
+関係の図では、点の吹き出しが図の枠からはみ出さず、マウスのホバーが終わった後にキーボードで
+フォーカスしていた点の吹き出しへ戻ることを確認します。書誌の点は題名を常時表示せず、ホバーまたは
+フォーカスした場合と、図と同じ内容を示す一覧で確認できることを維持します。
+
+SQLite schema 16、archive ``marginalis-archive-14``、AdocWeave package版0.27.0、note profile版5は
+変更しません。v0.27.0のデータベースをそのまま起動でき、最新archiveを隔離した空のデータベースへ
+復元できることを確認します。
+
+利用者、Cookie、token、認可code、PKCE verifier、実際のノート本文や書誌情報は記録しません。

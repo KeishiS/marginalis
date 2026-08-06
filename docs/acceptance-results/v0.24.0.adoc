@@ -1,0 +1,68 @@
+= v0.24.0受入結果
+
+== 対象
+
+[#top]
+* タグ: ``v0.24.0``
+* 対象: ``codex/maintainability-redesign``のリリース候補
+* 対象コミット: ``07494fbd9406d07c58cfe5a8778d215fad9d283a``
+* 判定日: 2026-08-01
+* 公開判定: 公開可
+
+== 結果
+
+[cols="1,1,1,1",options="header",]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+|自動検証
+|成功
+|2026-08-01
+|https://github.com/KeishiS/marginalis/pull/231[リリースPull Request \#231]で、React・TypeScript、Rust、公開契約、
+カバレッジ、ブラウザー試験、NixOS VM E2Eが成功
+|Web UI
+|成功
+|2026-08-01
+|https://github.com/KeishiS/marginalis/pull/231[リリースPull Request \#231]の人手受入で、編集プレビュー、書誌検索、共有設定、
+数式表示を確認し、利用者がリリース候補を受け入れた
+|NixOS配備
+|成功
+|2026-08-01
+|https://github.com/KeishiS/marginalis/pull/231[リリースPull Request \#231]の人手受入で、
+空の``dataDir``を使うNixOSへの配備と起動を確認し、利用者がリリース候補を受け入れた
+|aarch64配布パッケージ
+|成功
+|2026-08-01
+|https://github.com/KeishiS/marginalis/pull/231[リリースPull Request \#231]で、native aarch64 Linux上のNix
+package構築が成功
+|archive復元
+|成功
+|2026-08-01
+|https://github.com/KeishiS/marginalis/pull/231[リリースPull Request \#231]の人手受入で、
+書き出しと隔離した空のデータベースへの復元を確認し、利用者がリリース候補を受け入れた
+|MCP接続
+|成功
+|2026-08-01
+|https://github.com/KeishiS/marginalis/pull/231[リリースPull Request \#231]の人手受入で、MCPクライアントからの閲覧、更新、
+接続解除による取消を確認し、利用者がリリース候補を受け入れた
+|===
+
+自動検証と利用者の受入が成功し、公開を止める問題は確認されなかったため、v0.24.0を公開できます。
+
+== 今回の確認で重点を置いた点
+
+既存ノートの更新プレビューは、編集権限を確認したうえで、保存後の表示と同じくノート所有者の
+書誌ライブラリーを使って引用を解決します。閲覧権限だけを持つ利用者と対象外利用者には、ノートの
+存在を開示しない応答を返すことを確認します。
+
+archiveと文書の書き出しでは、途中まで書いたファイルが最終パスへ現れず、完了した内容だけを
+確定します。既存ファイルを上書きしないこと、失敗後も再実行できること、隔離したデータベースへ
+復元した論理内容が一致することを確認します。
+
+書誌検索、共有設定、数式組版では、要求の完了順が入れ替わっても古い結果が新しい状態を上書き
+しないことを確認します。MathJaxが生成した表示はContent Security Policyに違反せず、更新後に
+不要な組版情報を保持しないことも確認します。
+
+利用者、Cookie、token、認可code、client secret、実際のノート本文や書誌情報は記録しません。

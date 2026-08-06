@@ -6,12 +6,18 @@
     url = "github:oxalica/rust-overlay";
     inputs.nixpkgs.follows = "nixpkgs";
   };
+  inputs.adocweave = {
+    url = "github:KeishiS/adocweave/88c98d22f0e43b23348e5281d65d4d02f3bba97a";
+    inputs.nixpkgs.follows = "nixpkgs";
+    inputs.rust-overlay.follows = "rust-overlay";
+  };
 
   outputs =
     {
       self,
       nixpkgs,
       rust-overlay,
+      adocweave,
       ...
     }:
     let
@@ -907,15 +913,24 @@
       devShells = forAllSystems (
         system:
         let
-          pkgs = pkgsFor system;
+          pkgs = (pkgsFor system).extend adocweave.overlays.default;
           pnpm = pkgs.pnpm_11.override { nodejs-slim = pkgs.nodejs-slim_22; };
           rustToolchain = rustToolchainFor pkgs;
+          # AdocWeaveはmacOS向けCLIも配布しているが、Nix packageの公開先は
+          # Linuxに限定されている。移行期間中の文書検査を全開発環境で同じに
+          # するため、同じderivationを対応済みのUnix環境でも評価する。
+          adocweavePackage = pkgs.adocweave.overrideAttrs (previous: {
+            meta = previous.meta // {
+              platforms = pkgs.lib.platforms.unix;
+            };
+          });
         in
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
               curl
               actionlint
+              adocweavePackage
               cargo-audit
               cargo-machete
               cargo-llvm-cov

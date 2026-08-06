@@ -1,0 +1,66 @@
+= AdocWeave 0.23移行判断
+
+== 目的
+
+[#top]
+この文書は、AdocWeave 0.22.0から0.23.0への更新がMarginalisへ与える影響と、引用（citation）の
+扱いを記録します。0.22.0で決めた「引用を当面拒否する」判断は、この更新で取り消します。
+現行の入力方法は xref:rest-api.adoc#top[REST API]、archiveの変換手順は xref:nixos.adoc#top[NixOSでの運用]を
+参照してください。
+
+== 固定する依存
+
+MarginalisはAdocWeave package版``0.23.0``を、release tagが指すcommit
+``d92447fb29dbc5fa06ea210787606b503245d073``で使用します。Rust toolchainは``1.97.1``を維持します。
+CargoとNixの両方で、このcommitと取得内容のハッシュを固定します。
+
+== 引用の解決経路が開いた
+
+0.22.0では、``cite:[key]``を引用として解析できても、解決した書誌情報をHTMLへ渡す経路が
+ありませんでした。0.23.0では次の二つが加わり、その経路が開きます。
+
+* 解決した引用の表示を``RenderInputs::with_citations``で渡せます。表示は文字列の断片の並びで、
+断片ごとに文書内のanchorを指定できます。``(Smith 2024; Tanaka 2025)``のように、括弧と区切りは
+素の文字列のまま、著者名の部分だけをlinkにできます。
+* ``cite:``のkeyが同じ文書の``[bibliography]``項目を指す場合は、解決を渡さなくてもその項目へ
+linkし、項目側の戻りlinkにも並びます。
+
+利用側が渡した断片は、AdocWeaveがプレーンテキストとして扱います。AsciiDoc、属性参照または
+HTMLとして再解析しません。anchorは出力の直前に検査し、その文書が定義している対象を指す場合
+だけlinkになります。定義のないanchorは診断code``unknown-citation-anchor``で報告されます。
+
+これにより、 xref:adocweave-v0.22-migration.adoc#top[0.22移行判断]で拒否していた``cite:``を受理へ戻し、
+診断code``citation_disabled``を廃止します。
+
+== Rust公開APIの破壊的変更
+
+Marginalisが使用していた次の呼び出しを置き換えました。
+
+* ``RenderInputs::new(references, resources)``を削除。``RenderInputs::default()``から
+``with_references``と``with_citations``で必要な種類だけを渡します。
+
+前処理の入口（``preprocess_cancellable``など）も整理されましたが、Marginalisは``discover_includes``
+だけを使うため影響を受けません。CLI引数、Language Server protocolおよび設定schemaに変更は
+ありません。
+
+== 公開契約への影響
+
+``cite:``を受理し、引用と参考文献一覧の表示を加えるため、authoring profile版を9へ更新します。
+``get_note_profile``が示す入力規則、文書例、執筆時の注意事項が変わります。SQLite schema 12と
+archiveのnote profile版4は維持します。
+
+引用の解決方法と参考文献一覧の作り方は、
+xref:adr/0006-引用はノート作成者の書誌ライブラリーで解決する.adoc#top[引用はノート作成者の書誌ライブラリーで解決する]に
+記録しています。
+
+== archive形式
+
+archiveは、内容を解析したAdocWeave package版を契約情報として記録します。同じ形式名に異なる
+package版を混在させないため、現行形式を``marginalis-archive-13``へ更新します。
+
+``migrate-archive``は、0.22.0を記録したarchive 12、0.20.0を記録したarchive 11とarchive 10、
+0.19.0を記録したarchive 9、0.17.0を記録したarchive 8、0.11.0を記録したarchive 7を0.23.0で
+全件再検証し、archive 13を別ファイルへ出力します。入力は変更せず、既存の出力は上書きしません。
+
+0.22.0で``cite:``を拒否していたため、archive 12以前に``cite:``を含むノートは入っていません。
+変換で新たに失敗する入力はありません。
