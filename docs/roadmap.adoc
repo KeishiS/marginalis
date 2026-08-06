@@ -7,31 +7,28 @@ https://github.com/KeishiS/marginalis/issues[GitHub Issues]を参照してくだ
 
 == 現在地
 
-``v0.32.0``を2026-08-05に公開しました。公開済み機能と移行方法は
-xref:../CHANGELOG.adoc#0320--2026-08-05[変更履歴]、確認結果は
-xref:acceptance-results/v0.32.0.adoc#top[v0.32.0受入結果]を参照してください。この文書には公開履歴を
-書き写さず、未完了の判断と作業だけを置きます。
+``v0.33.0``の受入確認を進めています。AdocWeave 0.33.0への更新と構造化した参考文献描画を含みます。
+確認項目は xref:acceptance-results/v0.33.0.adoc#top[v0.33.0受入結果]を参照してください。この文書には
+公開履歴を書き写さず、未完了の判断と作業だけを置きます。
 
 == 公開予定
 
-=== Authorization Serverの独立配布
+=== v0.34.0 — Authorization Serverの独立配布
 
-``v0.30.0``で共有crateの境界とrepository契約試験を確認した後、
-https://github.com/KeishiS/marginalis/issues/314[Issue 314]で独立リポジトリ、registry、固定したGit dependencyを
-比較します。独立リポジトリへの移動は、その判断と版管理、脆弱性対応、両利用側のCIがそろってから
-行います。現在の責務と更新手順は
+まず https://github.com/KeishiS/marginalis/issues/336[Issue 336]でscope上限の既定値を一つの規則へ集約します。
+次に、``mcp-authorization-server``と``mcp-authorization-server-cimd``を
+https://github.com/KeishiS/mcp-authorization-server[KeishiS/mcp-authorization-server]へ移し、同じworkspaceで
+管理します。新リポジトリでは契約試験、依存境界、脆弱性検査、固定した公開APIを整え、v0.1.0を
+公開します。
+
+Marginalisは公開済みv0.1.0のcommitをGit dependencyとして固定し、ローカルcrateを削除します。
+SQLite repository、HTTP endpoint、同意画面、利用者設定、MCP tool認可はMarginalisに残します。
+現在の責務と更新手順は
 xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]を正本とします。
 
 xref:research-search-vision.adoc#top[連環（Renkan）]はMarginalisとは別の探索サービスです。Renkanへの統合と
 PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。Marginalis側では
 別のresourceと保存先を使う試験実装により、分離した中核が製品固有の型へ依存しないことを確認します。
-
-=== リポジトリ文書のAsciiDoc化
-
-https://github.com/KeishiS/marginalis/issues/334[Issue 334]で、``AGENTS.md``を除く人間向け文書をAsciiDocへ
-段階的に移行します。 xref:repository-asciidoc-evaluation.adoc#top[再評価]で確認したとおり、AdocWeaveのstrict
-解析、local target検査、textlint用構造を共通基盤とし、Marginalis固有の要件対応だけを専用検査へ残します。
-移行中もtraceability、release metadata、受入索引、観測event対応の保証を維持します。
 
 パッチ版は予定へ固定しません。各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
 なった場合だけ公開します。
