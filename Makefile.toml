@@ -78,6 +78,7 @@ args = [
   ".github/workflows/ci.yml",
   ".github/workflows/release-gate.yml",
   ".github/workflows/security-audit.yml",
+  ".github/workflows/shared-authorization-server-release.yml",
 ]
 
 [tasks.ci-path-classifier]
@@ -209,6 +210,7 @@ script_runner = "@shell"
 script = '''
 set -eu
 bash .github/scripts/test-shared-authorization-server.sh
+bash .github/scripts/test-shared-authorization-server-release.sh
 bash .github/scripts/check-shared-authorization-server.sh
 '''
 

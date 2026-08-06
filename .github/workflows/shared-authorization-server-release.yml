@@ -1,0 +1,85 @@
+name: Shared Authorization Server release check
+
+on:
+  schedule:
+    - cron: "43 3 * * 2"
+  workflow_dispatch:
+
+concurrency:
+  group: shared-authorization-server-release-check
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Compare the pinned and latest regular releases
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          nix develop --command bash .github/scripts/check-shared-authorization-server-release.sh
+          status=$?
+          set -e
+          case "$status" in
+            0)
+              echo "result=current" >>"$GITHUB_OUTPUT"
+              ;;
+            10)
+              echo "result=update" >>"$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "上流Releaseの取得または検査に失敗しました。更新ありとは扱いません。" >&2
+              exit "$status"
+              ;;
+          esac
+      - name: Open an update issue once
+        if: steps.release.outputs.result == 'update'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED_VERSION: ${{ steps.release.outputs.pinned_version }}
+          PINNED_REVISION: ${{ steps.release.outputs.pinned_revision }}
+          LATEST_VERSION: ${{ steps.release.outputs.latest_version }}
+          LATEST_REVISION: ${{ steps.release.outputs.latest_revision }}
+          LATEST_TAG: ${{ steps.release.outputs.latest_tag }}
+          RELEASE_URL: ${{ steps.release.outputs.release_url }}
+        run: |
+          set -euo pipefail
+          title="build: mcp-authorization-server ${LATEST_TAG}への更新を確認する"
+          issues="$(gh issue list --state open --limit 1000 --json number,title)"
+          # shellcheck disable=SC2016
+          existing="$(jq -r --arg title "$title" '[.[] | select(.title == $title)][0].number // empty' <<<"$issues")"
+          if [[ -n "$existing" ]]; then
+            echo "既存のIssue #$existingで更新判断を追跡しています。"
+            exit 0
+          fi
+          body_file="$(mktemp)"
+          trap 'rm -f "$body_file"' EXIT
+          # shellcheck disable=SC2016
+          printf '%s\n' \
+            '## 検出内容' \
+            '' \
+            "共有Authorization Serverの最新の通常Releaseと、Marginalisが固定する内容に差異があります。" \
+            '' \
+            "- 固定中の版: \`v${PINNED_VERSION}\`" \
+            "- 固定中のcommit: \`${PINNED_REVISION}\`" \
+            "- 上流の通常Release: [\`${LATEST_TAG}\`](${RELEASE_URL})" \
+            "- 上流タグのcommit: \`${LATEST_REVISION}\`" \
+            '' \
+            '## 対応' \
+            '' \
+            '更新する場合は、`docs/mcp-authorization-server-maintenance.adoc`の手順に従います。' \
+            '更新を保留する場合は、理由と再確認時期をこのIssueへ記録し、openのまま維持します。' \
+            '同じReleaseについて定期実行がIssueを重複作成することはありません。' \
+            >"$body_file"
+          gh issue create --title "$title" --body-file "$body_file"

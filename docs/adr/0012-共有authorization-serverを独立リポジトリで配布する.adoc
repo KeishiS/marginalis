@@ -90,8 +90,10 @@ flake inputは追加しません。CargoとNixで同じrevisionを二重に管�
 なるためです。
 
 上流に安全性の問題が見つかった場合は、上流で修正版を公開してからMarginalisのrevisionを更新します。
-利用側が増えるほど更新の遅れが生じるため、固定revisionの更新漏れは``cargo make verify``で検出できる
-形にしています。
+``cargo make verify``は、Marginalis内で宣言した版、URL、完全SHAと解決結果の内部整合性を検査します。
+上流の新しい通常Releaseは、週次の``Shared Authorization Server release check``がGitHub APIから独立して
+確認します。これにより、外部通信に依存する検査をPull Requestの必須検証へ混ぜず、更新判断の漏れを
+Issueとして追跡します。
 
 == 代替案
 
