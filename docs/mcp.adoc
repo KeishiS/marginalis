@@ -86,6 +86,12 @@ Web UIとREST APIだけで提供します。MCPでは、``bibliography:write``�
 scopeは認可code、access token、refresh tokenへ記録されません。要求にないscopeを同意画面から追加する
 こともできません。何も選ばずに許可しようとした場合は、scopeを暗黙に補わず、再選択を求めます。
 
+要求されたscopeがscope上限を超える場合、その分は選択できる権限として表示しません。かわりに
+「許可できない権限があります」として理由とともに示します。許可した権限が後から黙って減ることは
+ないため、同意画面で選んだ権限はそのままtokenへ記録されます。要求されたscopeがすべて上限を超える
+場合は、同意画面を出さずにクライアントへ``invalid_scope``を返します。この状態を解消するには、
+先にMCPアクセス設定で上限を広げてから、クライアント側でもう一度認可します。
+
 初回の認証challengeは、基本的な閲覧に必要な``notes:read``だけを示します。接続後にtokenのscopeでは
 実行できないtoolを呼び出すと、MCP endpointは``403``と``WWW-Authenticate``の
 ``error="insufficient_scope"``を返します。``scope``には現在のtokenが持つscopeと、今回の操作に不足する

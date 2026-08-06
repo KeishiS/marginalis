@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use marginalis_domain::Actor;
 use mcp_authorization_server::{
     AuthorizationServer, AuthorizationServerConfig, Clock as AuthorizationClock, Principal,
-    Random as AuthorizationRandom, Timestamp,
+    Random as AuthorizationRandom, ScopeCeilings, Timestamp,
 };
 
 use crate::{
@@ -123,24 +123,51 @@ impl McpOAuthApplication {
         actor: Actor,
         request: McpValidatedAuthorizationRequest,
     ) -> Result<String, McpOAuthUseCaseError> {
+        let ceilings = self
+            .resolved_scope_ceilings(&actor, &request.client.client_id)
+            .await?;
+        self.authorization_server
+            .authorize(principal(&actor), request, &ceilings)
+            .await
+    }
+
+    /// 同意画面へ表示してよいscopeを、認可時と同じ上限から求める。
+    ///
+    /// 同意画面と認可で別々に上限を解釈すると、表示した権限が黙って削られる。判断はこの一か所に
+    /// 置き、`authorize`と同じ`ScopeCeilings`を使う。
+    pub async fn grantable_scopes(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+        requested: &[String],
+    ) -> Result<Vec<String>, McpOAuthUseCaseError> {
+        let ceilings = self.resolved_scope_ceilings(actor, client_id).await?;
+        Ok(self
+            .authorization_server
+            .resource_policy()
+            .eligible_scopes(requested, &ceilings)
+            .unwrap_or_default())
+    }
+
+    async fn resolved_scope_ceilings(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+    ) -> Result<ScopeCeilings, McpOAuthUseCaseError> {
         let stored = self
             .scope_ceiling_repository
-            .scope_ceilings(&actor, &request.client.client_id)
+            .scope_ceilings(actor, client_id)
             .await
             .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
         let supported = self.authorization_server.supported_scopes();
         let principal_ceiling = effective_scope_ceiling(supported, stored.principal);
         let client_ceiling = effective_scope_ceiling(supported, stored.client);
-        let ceilings = self
-            .authorization_server
+        self.authorization_server
             .scope_ceilings(
                 principal_ceiling.setting.scopes,
                 client_ceiling.setting.scopes,
             )
-            .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
-        self.authorization_server
-            .authorize(principal(&actor), request, &ceilings)
-            .await
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)
     }
 
     pub async fn replace_principal_scope_ceiling(
@@ -387,6 +414,15 @@ impl McpOAuthUseCases for McpOAuthApplication {
         resolved: McpAuthorizationClient,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError> {
         McpOAuthApplication::validate_resolved_authorization_request(self, &request, resolved)
+    }
+
+    async fn grantable_scopes(
+        &self,
+        actor: Actor,
+        client_id: String,
+        requested: Vec<String>,
+    ) -> Result<Vec<String>, McpOAuthUseCaseError> {
+        McpOAuthApplication::grantable_scopes(self, &actor, &client_id, &requested).await
     }
 
     async fn authorize(

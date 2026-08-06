@@ -118,6 +118,8 @@ templateを``path``として記録します。未一致の経路は``<unmatched>
 |client登録、認可、token失効の結果
 |``mcp.oauth.token.completed``、``mcp.oauth.token.failed``
 |token発行またはrefreshの結果
+|``mcp.oauth.scope.withheld``
+|要求scopeの一部をscope上限で許可しなかったこと。同意画面には許可できない権限として表示する
 |``mcp.oauth.client_metadata.rejected``
 |Client ID Metadata Documentまたは取得先を安全上の条件やmetadataの不一致によって拒否
 |``mcp.oauth.client_metadata.unavailable``
