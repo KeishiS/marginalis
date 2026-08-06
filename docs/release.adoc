@@ -12,6 +12,20 @@ xref:../CHANGELOG.adoc#top[変更履歴]を確認してください。変更履�
 追加します。確認前の項目は``未実施``、``公開判定``は``未判定``とします。
 . 作業ブランチで``cargo make verify``を実行します。公開版、変更履歴、受入結果、Nix packageの
 版情報も``verify``内の``release-metadata``で検査します。
+. 外部のGit依存が意図した公開版を指していることを確認します。``cargo make shared-authorization-server``が、
+共有Authorization Serverの2 crateについて、版が同じであること、同じリポジトリの40桁の完全SHAから取得して
+いること、``Cargo.lock``の取得元が宣言と一致すること、``flake.nix``に取得ハッシュがあることを検査します。
+指しているSHAが上流の公開済みタグに対応することは、次のように確認します。
++
+[source,sh]
+----
+gh api repos/KeishiS/mcp-authorization-server/git/ref/tags/<tag> --jq '.object.sha' |
+  xargs -I{} gh api repos/KeishiS/mcp-authorization-server/git/tags/{} --jq '.object.sha'
+grep -n 'rev =' Cargo.toml
+grep -n 'mcp-authorization-server' Cargo.lock flake.nix
+----
++
+上流の未公開コミットや、タグが付いていないコミットを指したまま公開しません。
 . Kanidm 1.10、TLS、サブパスを使うNixOSのE2Eテストを実行します。
 . ChatGPT、Claude Code、Codex CLIからMCPへ接続し、読み取り、書き込み、認可取消を確認します。
 . 空のデータベースからNixOSへ配備できること、バックアップ先、削除用タイマーを確認します。

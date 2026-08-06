@@ -103,6 +103,11 @@ templateを``path``として記録します。未一致の経路は``<unmatched>
 
 === OIDCとMCP
 
+``mcp.oauth.client_metadata.``で始まるeventは、Marginalisが組み込む外部crate
+``mcp-authorization-server-cimd``が出力します。実装は別リポジトリにありますが、同じプロセスで動くため
+出力先のjournalも書式もほかのeventと同じです。``cargo make observability-check``は、この外部crateの
+ソースも含めて一覧との一致を検査します。
+
 [cols="1,1",options="header",]
 |===
 |event

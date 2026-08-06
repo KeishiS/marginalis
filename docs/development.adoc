@@ -244,6 +244,41 @@ git pull --ff-only upstream main
 git branch -d codex/<purpose>
 ----
 
+== 共有Authorization Server crateの更新
+
+``mcp-authorization-server``と``mcp-authorization-server-cimd``は、専用リポジトリ
+https://github.com/KeishiS/mcp-authorization-server[KeishiS/mcp-authorization-server]で保守します。
+Marginalisのworkspaceには含まれないため、これらを変更するときは上流リポジトリへPull Requestを出し、
+上流で版を公開してからMarginalis側の固定revisionを更新します。
+
+依存指定には、branch名、tag名、ローカルpathのいずれも使いません。branchは追従してしまい、tagは
+付け替えられるため、同じ指定が別の内容を指す可能性があります。ローカルpathは他の利用側から参照
+できません。かわりに40桁の完全なcommit SHAを使います。
+
+上流の公開済みタグから対象のSHAを求めるには、次のコマンドを使用します。
+
+[source,sh]
+----
+gh api repos/KeishiS/mcp-authorization-server/git/ref/tags/<tag> --jq '.object.sha' |
+  xargs -I{} gh api repos/KeishiS/mcp-authorization-server/git/tags/{} --jq '.object.sha'
+----
+
+注釈付きタグでは、``refs/tags/<tag>``が指すのはタグobjectであり、commitではありません。上の2段階で
+タグobjectを解決し、最終的なcommitのSHAを取得します。
+
+版とrevisionはルート``Cargo.toml``の``[workspace.dependencies]``で一度だけ宣言し、2 crateへ同じ値を
+与えます。更新後は次を実行します。
+
+[source,sh]
+----
+cargo check --workspace
+nix build .#default
+cargo make shared-authorization-server
+----
+
+具体的な更新手順と検証範囲は
+xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]を参照してください。
+
 == リリース
 
 バージョン、変更履歴、リリース文書を変更する場合も、専用ブランチとPull Requestを使用します。

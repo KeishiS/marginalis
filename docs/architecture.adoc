@@ -60,6 +60,15 @@ token hashを既存schemaへ保存します。``marginalis-application``は検�
 xref:adr/0008-mcp-authorization-serverの中核を製品から分離する.adoc#top[ADR 0008]に記録しています。利用者の
 ログインはWeb UIと同じKanidm OIDCを使います。CIMDの外部取得とcacheは、HTTP clientへ依存するadapter
 ``mcp-authorization-server-cimd``へ分け、中核crateにnetwork依存を持ち込みません。
+
+この2つのcrateはMarginalisのworkspaceには含まれません。専用リポジトリ
+https://github.com/KeishiS/mcp-authorization-server[KeishiS/mcp-authorization-server]で保守し、Marginalisは
+40桁の完全なcommit SHAを固定した外部のGit依存として取り込みます。配布単位は分かれていますが、実行時は
+従来どおりMarginalisの同じプロセスへlibraryとして組み込みます。別のserviceやportは増えません。
+SQLite adapter、HTTP endpoint、同意画面、利用者とclient別のscope上限、MCP toolとscopeの対応は
+Marginalisに残ります。版とrevisionの固定、Nixの取得ハッシュ、依存方向は
+``cargo make shared-authorization-server``が確認します。採用理由と責務の分担は
+xref:adr/0012-共有authorization-serverを独立リポジトリで配布する.adoc#top[ADR 0012]に記録しています。
 利用者とMCPクライアントのscope上限は別のSQLite行として保存し、認可codeの発行前に両方を適用します。
 利用者はWeb UIから自分の上限だけを変更できます。上限を狭める保存処理は、新しい上限を超える認可codeと
 token familyの失効まで同じtransactionで行います。設定主体と既定値は
@@ -138,8 +147,6 @@ SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``ま�
 [source,text]
 ----
 crates/
-├── mcp-authorization-server   MCP OAuthの製品非依存の型・policy・状態遷移・永続化port
-├── mcp-authorization-server-cimd  CIMDの安全な外部取得・cache adapter
 ├── marginalis-domain          値と設計条件
 ├── marginalis-contract        REST・MCP・TypeScriptの公開契約
 ├── marginalis-application     use case実装と内向き・外向きport
@@ -153,6 +160,14 @@ crates/
 frontend/
 ├── src                        React・TypeScriptの実装
 └── tests                      ブラウザーに依存しないUI試験
+----
+
+次の2つのcrateは``crates/``にはなく、完全なcommit SHAで固定した外部依存として取り込みます。
+
+[source,text]
+----
+mcp-authorization-server        MCP OAuthの製品非依存の型・policy・状態遷移・永続化port
+mcp-authorization-server-cimd   CIMDの安全な外部取得・cache adapter
 ----
 
 公開契約とMCP通信のcrate内moduleは、次の責務に分けます。

@@ -231,10 +231,51 @@ a|
 ``issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit``
 |===
 
+== 上流crateとの検証の分担
+
+OAuth Authorization Serverの中核とCIMD adapterは、専用リポジトリ
+https://github.com/KeishiS/mcp-authorization-server[KeishiS/mcp-authorization-server]で保守します。この表が
+対象にするのは、Marginalisが取り込んだ結果として満たすべき要件と設計条件です。上流crateの内部だけで
+完結する検証は、上流リポジトリのCIが担当し、この表には載せません。
+
+[cols="1,1",options="header"]
+|===
+|検証対象
+|検証するリポジトリ
+
+|中核へのHTTP・database・製品依存の混入
+|``mcp-authorization-server``
+
+|CIMDから中核への依存方向、SSRF対策、資源制限
+|``mcp-authorization-server``
+
+|repository契約試験そのものの定義
+|``mcp-authorization-server``
+
+|SQLite adapterが契約試験を満たすこと
+|Marginalis
+
+|固定した版・URL・完全SHA・Nixのハッシュ
+|Marginalis
+
+|OAuthのHTTP endpoint、同意画面、MCP統合
+|Marginalis
+|===
+
+ARCH-OAUTH-002の共有契約試験は、上流の``testkit`` featureが提供する同じ関数を、上流の試験用repositoryと
+MarginalisのSQLite adapterへ適用します。同じ関数を両方へ適用することで、保存方法が変わっても認可codeの
+一回消費、refresh tokenの回転、再利用時のtoken family失効、期限の境界が変わらないことを確認します。
+
+固定revisionの一致は``cargo make shared-authorization-server``が確認します。この検査は、2 crateの版が
+同じであること、同じリポジトリの同じ完全SHAから取得していること、ローカルpath版が残っていないこと、
+``marginalis-service``の本番依存から両方へ到達できること、``testkit``が本番バイナリーへ混入していないこと、
+``flake.nix``に取得ハッシュがあることを対象にします。
+
 == 実行単位
 
 * *高速検証*: ``nix develop --command cargo make verify``
 * *本番到達性*: ``nix develop --command cargo make production-reachability``
+* *共有Authorization Serverの固定*: ``nix develop --command cargo make shared-authorization-server``
 * *カバレッジ*: ``nix develop --command cargo make coverage``
 * *NixOS受入*: ``nix build .#checks.x86_64-linux.nixos-module-vm``および関連VM
 * *版別の人手受入*: xref:acceptance.adoc#top[受入基準]からリンクする版別結果
