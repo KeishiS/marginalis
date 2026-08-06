@@ -11,6 +11,8 @@ sha_b='2222222222222222222222222222222222222222'
 sha_c='3333333333333333333333333333333333333333'
 sha_d='4444444444444444444444444444444444444444'
 
+decision='公開可'
+
 write_fixture() {
   local target="${1:-}"
   local human_commit="${2:-$sha_a}"
@@ -30,6 +32,7 @@ write_fixture() {
     if [[ -n "$release_tree" ]]; then
       printf '* 最終リリースtree: ``%s``\n' "$release_tree"
     fi
+    printf '* 公開判定: %s\n' "$decision"
   } >"$acceptance_file"
 }
 
@@ -69,5 +72,29 @@ expect_failure '最終リリースtreeの欠落'
 write_fixture
 printf '* 人手受入対象コミット: ``%s``\n' "$sha_a" >>"$acceptance_file"
 expect_failure '重複した人手受入commit'
+
+# 人手受入の対象コミットは配備後にしか決まらないため、準備段階では未確定を許す。
+decision='未判定'
+write_fixture 'refs/tags/v1.2.3^{commit}' 未確定 未確定
+expect_success '受入前の未確定な対象'
+
+write_fixture 'refs/tags/v1.2.3^{commit}' 未確定 "$sha_b"
+expect_success '受入前に片方だけ確定した対象'
+
+write_fixture 'refs/tags/v1.2.3^{commit}' short "$sha_b"
+expect_failure '受入前でも短いcommit'
+
+decision='公開可'
+write_fixture 'refs/tags/v1.2.3^{commit}' 未確定 未確定
+expect_failure '公開可なのに未確定な対象'
+
+decision='公開停止'
+write_fixture 'refs/tags/v1.2.3^{commit}' 未確定 未確定
+expect_success '公開停止で未確定な対象'
+
+decision='公開可'
+write_fixture
+sed -i '/^\* 公開判定: /d' "$acceptance_file"
+expect_failure '公開判定の欠落'
 
 echo "受入証跡の回帰試験に成功しました。"
