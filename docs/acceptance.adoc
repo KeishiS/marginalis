@@ -11,6 +11,8 @@ Pull Requestと公開前の``release-gate``で次を確認します。
 
 * React・TypeScriptの整形、静的解析、型検査、単体試験、依存監査、配布ビルド
 * Rustの整形、静的解析、単体・結合試験、依存監査
+* 共有Authorization Server crateの固定版、取得元、完全SHA、Nixの取得ハッシュの一致と、
+本番バイナリーへの``testkit``非混入
 * OpenAPIとTypeScript生成物の差分、RESTルーター、MCPツール定義の契約
 * 所有者、閲覧者、編集者、対象外利用者の表示・操作・情報非漏洩
 * ノート、ACL、参照、削除状態、revisionのtransaction整合性

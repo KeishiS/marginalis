@@ -46,6 +46,7 @@
 * xref:adr/0009-mcpのscope上限を利用者設定として管理する.adoc#top[MCPのscope上限を利用者設定として管理する]
 * xref:adr/0010-外部書誌はcsl-jsonから一方向に取り込む.adoc#top[外部ツールの書誌情報はCSL-JSONから一方向に取り込む]
 * xref:adr/0011-ノートの作成経路と人手確認を分けて記録する.adoc#top[ノートの作成経路と人手確認を分けて記録する]
+* xref:adr/0012-共有authorization-serverを独立リポジトリで配布する.adoc#top[共有Authorization Serverを独立リポジトリで配布する]
 * xref:protocol-regression.adoc#top[ブラウザーとMCPプロトコルの回帰テスト]
 
 == 過去の記録と今後の計画

@@ -1,0 +1,120 @@
+= 共有Authorization Serverを独立リポジトリで配布する
+
+[#top]
+* 状態: 採用
+* 日付: 2026-08-06
+* 関連Issue: \#341、\#314
+* 補足対象: xref:0008-mcp-authorization-serverの中核を製品から分離する.adoc#top[ADR 0008]
+
+== 背景
+
+ADR 0008に基づき、OAuth Authorization Serverの中核とClient ID Metadata Document（CIMD、clientが自分の
+情報をHTTPSで公開し、Authorization Serverがそれを取得して登録済みclientとして扱う仕組み）の取得処理を、
+製品に依存しない2つのcrateへ分けました。この2つはMarginalisリポジトリのworkspace内に置き、
+``publish = false``のままMarginalisと同じ版番号で配布していました。
+
+この配置では、次の三点が確認できませんでした。
+
+* Marginalis以外の利用側が、Marginalisの内部pathを参照せずに同じ実装を取得できること
+* 中核crateがノート機能の型やSQLiteへ依存していないことを、Marginalisのビルドとは別に検証できること
+* 安全性修正を、Marginalisの公開周期とは独立した周期で公開できること
+
+Issue 314では、独立リポジトリ、crate registry、固定したGit dependencyを比較しました。第2の利用側として
+想定している xref:../research-search-vision.adoc#top[連環（Renkan）] はまだ実装が始まっておらず、公開APIは
+今後も変わります。一方で、境界の検証と脆弱性対応の分離は先に必要です。
+
+== 決定
+
+2つのcrateを``KeishiS/mcp-authorization-server``リポジトリへ移し、Marginalisは外部依存として取り込みます。
+決定の内容は次の五点です。
+
+*専用リポジトリで保守する*: ``mcp-authorization-server``と``mcp-authorization-server-cimd``は、
+専用リポジトリの一つのworkspaceに置きます。中核へHTTP client、database、製品固有の型が混入していないことは、
+上流リポジトリ自身のCIが検査します。Marginalisはその規則を書き写しません。
+
+*実行時は同一プロセスへ組み込む*: 配布単位を分けても、Marginalisは従来どおり中核をlibraryとして自プロセスへ
+組み込みます。独立したdaemon、ネットワーク越しのtoken introspection、外部Authorization Serverへの切替は
+導入しません。運用者から見た構成、service名、port、endpointは変わりません。
+
+*Git完全SHAで固定する*: 依存指定にはタグやブランチではなく、40桁の完全なcommit SHAを使います。タグは
+移動でき、ブランチは追従してしまうため、再現可能なビルドの根拠にしません。
+
+*2つのcrateは同じ版と同じcommitで取り込む*: 中核とCIMD adapterは同じworkspaceで開発し、常に同じ版番号を
+持ちます。Marginalisのルート``Cargo.toml``で版とrevisionを一度だけ宣言し、各crateはworkspace依存として
+参照します。この一致は``cargo make shared-authorization-server``が機械的に確認します。
+
+*crates.ioへは公開しない*: 公開APIが安定するまでは``publish = false``を維持します。registryへ出すと、
+互換性と保守期間の約束が公開APIの安定より先に生じます。公開の可否は、第2の利用側が実際に動いてから
+判断します。
+
+保存adapter、同意画面、利用者とclient別のscope上限、MCP toolとscopeの対応はMarginalisに残します。
+MarginalisとRenkanは、利用者の認証基盤を共有しても、database、token、grant、clientは共有しません。
+一方のtokenで他方のresourceを操作できる状態は作りません。
+
+== 結果
+
+中核の変更は上流リポジトリのCIで検証し、Marginalisは固定revisionの更新と統合検証だけを行います。責務は
+次のように分かれます。
+
+[cols="1,1",options="header"]
+|===
+|検証対象
+|検証するリポジトリ
+
+|中核へのHTTP・database・製品依存の混入
+|``mcp-authorization-server``
+
+|CIMDから中核への依存方向
+|``mcp-authorization-server``
+
+|Marginalis内部の層と依存方向
+|Marginalis
+
+|SQLite adapterのrepository契約
+|Marginalis
+
+|固定した版・URL・SHA・Nixのハッシュ
+|Marginalis
+
+|OAuthのHTTP endpointとMCP統合
+|Marginalis
+|===
+
+repository契約試験は上流の``testkit`` featureが提供し、上流の試験用repositoryとMarginalisのSQLite adapterの
+両方へ同じ関数を適用します。これにより、保存方法が変わっても認可codeの一回消費、refresh tokenの回転、
+再利用時のtoken family失効、期限の境界が同じであることを直接確認できます。``testkit``はdev-dependencyだけで
+有効にし、製品バイナリーへ混入しないことを検査します。
+
+NixでもrevisionをCargo.lockから読み取り、``flake.nix``にはcargoの取得ハッシュだけを追加します。
+flake inputは追加しません。CargoとNixで同じrevisionを二重に管理すると、片方だけが古いまま気付けなく
+なるためです。
+
+上流に安全性の問題が見つかった場合は、上流で修正版を公開してからMarginalisのrevisionを更新します。
+利用側が増えるほど更新の遅れが生じるため、固定revisionの更新漏れは``cargo make verify``で検出できる
+形にしています。
+
+== 代替案
+
+*workspace内に置いたままにする*: 変更は一つのPull Requestで完結しますが、Marginalis以外の利用側が
+参照できず、中核の独立性もMarginalisのビルドの中でしか確認できません。Issue 341の目的を満たさないため
+採用しません。
+
+*crates.ioへ公開する*: 取得方法は最も単純になりますが、公開APIが安定する前にversionの互換性を約束する
+ことになります。名前も先に確保されます。第2の利用側が動くまでは採用しません。
+
+*タグで依存を固定する*: 記述は読みやすくなりますが、タグは付け替えられるため、同じ指定が別の内容を
+指す可能性が残ります。再現性を優先して採用しません。
+
+*flake inputとしても取り込む*: Nix側だけで完結した更新ができますが、Cargo.lockとflake.lockに同じ
+revisionが二重に現れます。片方の更新漏れを検出する仕組みが追加で必要になるため採用しません。
+
+*独立したAuthorization Server daemonにする*: 複数サービスから一つの配備を利用できますが、tokenを
+共有しない要件に対して運用、鍵、可用性、introspection通信を追加します。ADR 0008と同じ理由で採用しません。
+
+== 再検討条件
+
+* 第2の利用側が実際に動き、公開APIが複数の利用側で安定したことを確認できた場合
+* 固定revisionの更新が滞り、安全性修正の反映が実際に遅れた場合
+* 上流の版を複数同時に維持する必要が生じ、単一のrevision固定では足りなくなった場合
+* MarginalisとRenkanでtokenやdatabaseを共有する運用要件が生じた場合
+* NixのビルドがCargo.lock以外のrevision情報を必要とするようになった場合
