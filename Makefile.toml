@@ -157,11 +157,11 @@ description = "Verify release version, tag, changelog, and declared dual-license
 script_runner = "@shell"
 script = '''
 set -eu
+bash .github/scripts/test-release-document-state.sh
 expected_version="$(
   cargo metadata --locked --no-deps --format-version 1 |
     jq -er '[.packages[].version] | unique | if length == 1 then .[0] else error("workspace package versions differ") end'
 )"
-release_tag="${MARGINALIS_RELEASE_TAG:-}"
 test -s LICENSE-MIT
 test -s LICENSE-APACHE
 cargo metadata --locked --no-deps --format-version 1 | jq -e \
@@ -181,32 +181,8 @@ acceptance_file="docs/acceptance-results/v$expected_version.adoc"
 test -s "$acceptance_file"
 grep -Fq "xref:acceptance-results/v$expected_version.adoc#top" docs/acceptance.adoc
 grep -Fq -- "* タグ: \`\`v$expected_version\`\`" "$acceptance_file"
-awk '
-  /^\* 公開判定: (未判定|公開停止|公開可)$/ { matches++ }
-  END { exit matches != 1 }
-' "$acceptance_file"
-awk -v heading="== $expected_version — " '
-  index($0, heading) == 1 {
-    status = substr($0, length(heading) + 1)
-    if (status == "未公開" || status ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
-      matches++
-    }
-  }
-  END { exit matches != 1 }
-' CHANGELOG.adoc
-if [ -n "$release_tag" ]; then
-  test "$release_tag" = "v$expected_version"
-  grep -Fxq -- "* 公開判定: 公開可" "$acceptance_file"
-  awk -v heading="== $expected_version — " '
-    index($0, heading) == 1 {
-      status = substr($0, length(heading) + 1)
-      if (status ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
-        matches++
-      }
-    }
-    END { exit matches != 1 }
-  ' CHANGELOG.adoc
-fi
+bash .github/scripts/check-release-document-state.sh \
+  "$expected_version" "$acceptance_file" CHANGELOG.adoc
 '''
 
 [tasks.release-gate]
