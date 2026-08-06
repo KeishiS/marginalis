@@ -5,9 +5,9 @@
 
 * タグ: ``v0.34.0``
 * 対象: ``codex/v0.34.0-release``のリリース候補
-* 対象コミット: 未確定
-* 判定日: 未確定
-* 公開判定: 未判定
+* 対象コミット: ``25be701a6639b0a3f0593d9ed65060d99ce2dc66``
+* 判定日: 2026-08-06
+* 公開判定: 公開可
 
 == 結果
 
@@ -19,83 +19,100 @@
 |証跡・判断
 
 |自動検証
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/349[機能Pull Request \#349]と
+https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]で、React・TypeScript、Rust、
+公開契約、依存境界、共有Authorization Serverの固定、設計条件との対応、カバレッジ、ブラウザー試験、
+AArch64、archive移行、NixOS VM E2Eが成功した
 
 |既存databaseからの更新
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応して実施した利用者受入で、
+v0.33.0のschema 20を残したままv0.34.0を配備し、起動、OIDCログイン、Web UIを確認した
 
 |既存MCP tokenの継続利用
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応した利用者受入で、
+v0.33.0で発行済みのaccess tokenを再接続なしでそのまま利用できることを確認した
 
 |refresh tokenの交換と再利用検知
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応した利用者受入で、
+既存のrefresh tokenを交換できること、交換前のrefresh tokenを再利用したときにtoken family全体が
+失効することを確認した
 
 |client単位の取消と再認可
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応した利用者受入で、
+client単位で認可を取り消した後、再認可により利用を再開できることを確認した
 
 |scope上限の維持
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応した利用者受入で、
+利用者全体の上限とclient別の上限が従来どおり適用されることを確認した
 
 |実クライアントからの新規接続
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応した利用者受入で、
+ChatGPT、Claude Code、Codex CLIから新規に接続し、RESTと同じ閲覧・更新結果になることを確認した
 
 |段階的認可と拒否時の権限維持
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応した利用者受入で、
+読み取り、書き込み、削除の順に不足scopeが段階的に提示されること、追加認可を拒否しても
+既存の読み取り権限が維持されることを確認した
 
 |archiveの検証と復元
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応した利用者受入で、
+v0.33.0のarchive 17を変換せずに``validate-archive``と``verify-restore``へ通し、隔離した空のschema 20へ
+取り込んだ。再度書き出したarchiveもarchive 17であることを確認した
 
 |NixOS構成の不変性
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]に対応した利用者受入で、
+追加のserviceやportが生じていないことを確認した
 
 |公開契約の差分確認
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/350[リリースPull Request \#350]で、v0.33.0タグと比較して
+OpenAPI、MCP tool schema、NixOS moduleのoption、SQLite schema、archive形式、OAuth metadataとscopeに
+差分がないことを確認した
 |===
 
-すべての確認が終わるまで公開判定は``未判定``のままにします。
+自動検証と実環境での確認がすべて成功したため、v0.34.0を公開できます。
 
-== 今回の確認で重点を置く点
+== 今回の確認で重点を置いた点
 
 この版では、内蔵Authorization Serverのソースを専用リポジトリへ移し、Marginalisは公開済みv0.1.0の
 完全なcommit SHAを固定したGit依存として取り込みます。目的は配布と保守の責務を分けることであり、
-実行時の構成は変えません。したがって確認の中心は、新しい機能ではなく「変わっていないこと」です。
+実行時の構成は変えません。したがって確認の中心は、新しい機能ではなく「変わっていないこと」でした。
 
 *既存の状態をそのまま引き継げること*: v0.33.0のschema 20を残したままv0.34.0を配備し、起動、
-OIDCログイン、Web UIを確認します。既存のMCP access tokenがそのまま使えること、既存のrefresh tokenを
-交換できること、交換前のrefresh tokenを再利用したときにtoken family全体が失効することを確認します。
-client単位の取消と再認可、利用者全体とclient別のscope上限も従来どおりであることを確認します。
+OIDCログイン、Web UIを確認しました。既存のMCP access tokenがそのまま使えること、既存のrefresh tokenを
+交換できること、交換前のrefresh tokenを再利用したときにtoken family全体が失効することを確認しました。
+client単位の取消と再認可、利用者全体とclient別のscope上限も従来どおりです。
 
 *実クライアントからの接続*: ChatGPT、Claude Code、Codex CLIから新規に接続し、``notes:read``、
-``notes:write``、削除の順に段階的な認可が提示されることを確認します。追加の認可を拒否しても、
-すでに得ている読み取り権限が維持されることも確認します。
+``notes:write``、削除の順に段階的な認可が提示されることを確認しました。追加の認可を拒否しても、
+すでに得ている読み取り権限が維持されます。
 
 *archiveとNixOS*: v0.33.0のarchive 17を変換せずに``validate-archive``と``verify-restore``へ通し、
-空のschema 20へ取り込みます。再度書き出したarchiveがarchive 17であることも確認します。NixOSでは、
-追加のserviceやportが生じていないことを確認します。
+空のschema 20へ取り込みました。再度書き出したarchiveもarchive 17です。NixOSでは、追加のserviceや
+portが生じていないことを確認しました。
 
 *公開契約の差分*: OpenAPI、MCP tool schema、NixOS moduleのoption、SQLite schema、archive形式、
-OAuth metadataとscopeについて、v0.33.0タグと比べて意図しない差分がないことを機械的に確認します。
+OAuth metadataとscopeについて、v0.33.0タグと比べて意図しない差分がないことを機械的に確認しました。
 
-利用者、Cookie、token、認可code、PKCE verifier、実際のノート本文や書誌情報は記録しません。
+利用者、Cookie、token、認可code、PKCE verifier、実際のノート本文や書誌情報は記録していません。
