@@ -41,7 +41,7 @@ pub(super) fn page_document(
     scripts: &[&str],
 ) -> String {
     let current = current_navigation(current_path);
-    let navigation = NAVIGATION
+    let destinations = NAVIGATION
         .iter()
         .map(|(href, _, label)| {
             let marker = if current == Some(*href) {
@@ -50,11 +50,16 @@ pub(super) fn page_document(
                 ""
             };
             format!(
-                "<a href=\"{}\"{marker}>{label}</a>",
+                "<li><a href=\"{}\"{marker}>{label}</a></li>",
                 escape_html(&external_path(cookie_path, href)),
             )
         })
         .collect::<String>();
+    // 狭い画面では開閉するメニュー、広い画面では横に並べた移動先として表示する。
+    // detailsとsummaryを使い、開閉にJavaScriptを必要としない。
+    let navigation = format!(
+        "<details class=\"navigation-menu\"><summary class=\"navigation-menu-button\">メニュー</summary><ul class=\"navigation-list\">{destinations}</ul></details>",
+    );
     let new_note = external_path(cookie_path, "/notes/new");
     let home = external_path(cookie_path, "/");
     let stylesheet = external_path(cookie_path, "/assets/editor.css");

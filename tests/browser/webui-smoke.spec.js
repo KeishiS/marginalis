@@ -57,14 +57,24 @@ test("production build starts and renders a note returned by the API", async ({
     SCREENSHOT_OPTIONS,
   );
 
-  // 狭い画面でも主要な移動先を隠さない。押せる大きさと現在位置も保つ。
+  // 狭い画面では移動先をメニューへまとめる。開くまでは畳んでおく。
   const navigation = page.getByRole("navigation", { name: "主要な画面" });
+  const menu = navigation.getByRole("group");
+  const menuButton = navigation.getByText("メニュー", { exact: true });
+  await expect(menuButton).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "設定" })).toBeHidden();
+  // 新規ノートはメニューへ入れず、常に押せるようにする。
+  await expect(
+    navigation.getByRole("link", { name: "新規ノート" }),
+  ).toBeVisible();
+
+  await menuButton.click();
+  await expect(menu).toHaveAttribute("open", "");
   for (const [label, href] of [
     ["ノート", "/"],
     ["書誌", "/bibliography"],
     ["関係の図", "/graph"],
     ["設定", "/settings"],
-    ["新規ノート", "/notes/new"],
   ]) {
     const destination = navigation.getByRole("link", {
       name: label,
@@ -80,10 +90,15 @@ test("production build starts and renders a note returned by the API", async ({
     await navigation.locator("[aria-current='page']").getAttribute("href"),
   ).toBe("/");
 
-  // 画面全体が横へはみ出さない。
+  // メニューを開いても画面全体が横へはみ出さない。
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(360);
+
+  // 広い画面ではメニューボタンを出さず、移動先を横に並べる。
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(menuButton).toBeHidden();
+  await expect(navigation.getByRole("link", { name: "設定" })).toBeVisible();
 });
 
 test("ブラウザー診断を本文やtokenを含まない分類へ変換する", () => {

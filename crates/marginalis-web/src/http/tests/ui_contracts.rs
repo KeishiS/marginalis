@@ -130,8 +130,14 @@ async fn authenticated_home_defers_the_empty_state_to_react() {
         .await
         .expect("response body");
     let body = String::from_utf8(body.to_vec()).expect("HTML");
-    assert!(body.contains("画面を読み込んでいます。"));
-    assert!(!body.contains("<li>"));
+    // ヘッダーの移動先は一覧要素で並べるため、本文だけを対象にする。
+    let main = body
+        .split_once("<main class=\"page-main\">")
+        .and_then(|(_, rest)| rest.split_once("</main>"))
+        .map(|(content, _)| content)
+        .expect("main content");
+    assert!(main.contains("画面を読み込んでいます。"));
+    assert!(!main.contains("<li>"));
 }
 
 #[tokio::test]
