@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 共有Authorization Serverの2 crateは、独立リポジトリから固定revisionで取得する外部依存です。
+# workspace内のcrateではありませんが、設計上の層に属するため依存表へ含めて検査します。
+shared_crates='["mcp-authorization-server","mcp-authorization-server-cimd"]'
+
 temporary_directory=$(mktemp -d)
 trap 'rm -rf "$temporary_directory"' EXIT
 
@@ -16,13 +20,14 @@ else
   cargo metadata --locked --format-version 1 >"$metadata"
 fi
 
-jq -r '
+jq -r --argjson shared "$shared_crates" '
   . as $metadata
   | $metadata.packages[]
   | select(.id as $id | $metadata.workspace_members | index($id))
   | .name as $package
   | [.dependencies[]
-      | select(.kind == null and .path != null)
+      | select(.kind == null)
+      | select(.path != null or (.name as $name | $shared | index($name)))
       | .name]
   | sort
   | if length == 0 then
@@ -48,8 +53,6 @@ marginalis-domain:
 marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web, mcp-authorization-server-cimd
 marginalis-sqlite: marginalis-application, marginalis-domain, mcp-authorization-server
 marginalis-web: marginalis-application, marginalis-contract, marginalis-domain, mcp-authorization-server
-mcp-authorization-server-cimd: mcp-authorization-server
-mcp-authorization-server:
 EOF
 fi
 
@@ -60,17 +63,20 @@ if ! diff -u "$expected" "$actual"; then
   exit 1
 fi
 
-jq -r '
+jq -r --argjson shared "$shared_crates" '
   . as $metadata
   | $metadata.packages[]
   | select(.id as $id | $metadata.workspace_members | index($id))
   | .name as $package
   | .dependencies[]
   | select(.kind == null and .path == null)
+  | select(.name as $name | $shared | index($name) | not)
   | [$package, .name]
   | @tsv
 ' "$metadata" >"$external_dependencies"
 
+# AS中核へのHTTP・database・製品依存の混入は、上流リポジトリのCIが検査します。
+# ここではMarginalis自身の層だけを対象にします。
 while IFS=$'\t' read -r package dependency; do
   case "$package:$dependency" in
     marginalis-domain:axum | marginalis-domain:sqlx | marginalis-domain:reqwest | \
@@ -83,10 +89,6 @@ while IFS=$'\t' read -r package dependency; do
       marginalis-contract:axum | marginalis-contract:sqlx | marginalis-contract:reqwest | \
       marginalis-contract:adocweave | marginalis-contract:openidconnect | \
       marginalis-contract:oauth2 | marginalis-contract:tower | marginalis-contract:tower-http | \
-      mcp-authorization-server:axum | mcp-authorization-server:sqlx | \
-      mcp-authorization-server:reqwest | mcp-authorization-server:adocweave | \
-      mcp-authorization-server:openidconnect | mcp-authorization-server:oauth2 | \
-      mcp-authorization-server:tower | mcp-authorization-server:tower-http | \
       marginalis-web:sqlx | marginalis-web:adocweave | marginalis-web:openidconnect | \
       marginalis-web:oauth2 | marginalis-web:reqwest)
       echo "内側の層またはHTTP transportへ具象adapter依存が混入しています: $package -> $dependency" >&2

@@ -1368,19 +1368,20 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "mcp-authorization-server"
-version = "0.33.0"
+version = "0.1.0"
+source = "git+https://github.com/KeishiS/mcp-authorization-server.git?rev=555224bd869576249ee36d082960858ea8d0618b#555224bd869576249ee36d082960858ea8d0618b"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
  "serde",
  "sha2 0.10.9",
- "tokio",
  "url",
 ]
 
 [[package]]
 name = "mcp-authorization-server-cimd"
-version = "0.33.0"
+version = "0.1.0"
+source = "git+https://github.com/KeishiS/mcp-authorization-server.git?rev=555224bd869576249ee36d082960858ea8d0618b#555224bd869576249ee36d082960858ea8d0618b"
 dependencies = [
  "async-trait",
  "mcp-authorization-server",
@@ -1389,7 +1390,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "url",
 ]
 

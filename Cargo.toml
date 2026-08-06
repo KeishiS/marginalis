@@ -1,7 +1,5 @@
 [workspace]
 members = [
-    "crates/mcp-authorization-server",
-    "crates/mcp-authorization-server-cimd",
     "crates/marginalis-asciidoc",
     "crates/marginalis-application",
     "crates/marginalis-archive",
@@ -23,6 +21,10 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 adocweave = { git = "https://github.com/KeishiS/adocweave.git", rev = "88c98d22f0e43b23348e5281d65d4d02f3bba97a", package = "adocweave" }
+# 共有Authorization Serverの2 crateは同じリポジトリの同じcommitから取得します。
+# 版とrevisionはここだけで決め、各crateはworkspace依存として参照します。
+mcp-authorization-server = { version = "=0.1.0", git = "https://github.com/KeishiS/mcp-authorization-server.git", rev = "555224bd869576249ee36d082960858ea8d0618b" }
+mcp-authorization-server-cimd = { version = "=0.1.0", git = "https://github.com/KeishiS/mcp-authorization-server.git", rev = "555224bd869576249ee36d082960858ea8d0618b" }
 unicode-normalization = "0.1.25"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
 tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }

@@ -118,6 +118,8 @@
               lockFile = ./Cargo.lock;
               outputHashes = {
                 "adocweave-0.33.0" = "sha256-pK192ra6uJpYIlP+f2pNGafeVEzVhoxxioIUOQnglaQ=";
+                "mcp-authorization-server-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
+                "mcp-authorization-server-cimd-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
               };
             };
             cargoBuildFlags = [

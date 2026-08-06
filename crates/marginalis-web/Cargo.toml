@@ -14,7 +14,7 @@ hmac.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-contract = { path = "../marginalis-contract" }
 marginalis-domain = { path = "../marginalis-domain" }
-mcp-authorization-server = { path = "../mcp-authorization-server" }
+mcp-authorization-server.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
