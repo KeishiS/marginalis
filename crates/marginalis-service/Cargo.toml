@@ -17,7 +17,7 @@ marginalis-auth-oidc = { path = "../marginalis-auth-oidc" }
 marginalis-domain = { path = "../marginalis-domain" }
 marginalis-sqlite = { path = "../marginalis-sqlite" }
 marginalis-web = { path = "../marginalis-web" }
-mcp-authorization-server-cimd = { path = "../mcp-authorization-server-cimd" }
+mcp-authorization-server-cimd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tar.workspace = true

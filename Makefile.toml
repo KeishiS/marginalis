@@ -203,6 +203,15 @@ bash .github/scripts/test-dependency-boundaries.sh
 bash .github/scripts/check-dependency-boundaries.sh
 '''
 
+[tasks.shared-authorization-server]
+description = "Verify the pinned revision, version, and reachability of the shared Authorization Server crates"
+script_runner = "@shell"
+script = '''
+set -eu
+bash .github/scripts/test-shared-authorization-server.sh
+bash .github/scripts/check-shared-authorization-server.sh
+'''
+
 [tasks.observability-check]
 description = "Require stable event fields and reject sensitive fields in production logs"
 script_runner = "@shell"
@@ -250,9 +259,7 @@ marginalis-contract
 marginalis-domain
 marginalis-service
 marginalis-sqlite
-marginalis-web
-mcp-authorization-server
-mcp-authorization-server-cimd'
+marginalis-web'
 test "$actual" = "$expected" || {
   echo "unexpected workspace crate in marginalis-service production dependencies" >&2
   diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
@@ -389,7 +396,7 @@ fi
 
 [tasks.verify]
 description = "Run formatting, static analysis, unit and integration tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "unused-dependencies", "observability-check", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check", "release-metadata"]
+dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "shared-authorization-server", "unused-dependencies", "observability-check", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check", "release-metadata"]
 
 [tasks.ci-verify]
 description = "Run the GitHub Actions verify suite"

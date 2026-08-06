@@ -11,7 +11,7 @@ thiserror.workspace = true
 async-trait.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
-mcp-authorization-server = { path = "../mcp-authorization-server" }
+mcp-authorization-server.workspace = true
 sqlx.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -20,4 +20,4 @@ sha2.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 base64.workspace = true
-mcp-authorization-server = { path = "../mcp-authorization-server", features = ["testkit"] }
+mcp-authorization-server = { workspace = true, features = ["testkit"] }

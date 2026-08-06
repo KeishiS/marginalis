@@ -83,10 +83,35 @@ if [[ "$source_root" == "crates" ]]; then
     '/^\/\/ observability-event-catalog:start$/,/^\/\/ observability-event-catalog:end$/p' \
     "$event_catalog" >"$documented_catalog"
 
+  # 共有Authorization Serverは外部crateだが、同じプロセスへ組み込むため運用者は同じjournalで
+  # そのeventを見る。実装がMarginalisの外にあってもevent一覧との一致を確認する。
+  embedded_sources=()
+  while IFS= read -r manifest; do
+    [[ -n "$manifest" ]] || continue
+    embedded_source="$(dirname "$manifest")/src"
+    if [[ ! -d "$embedded_source" ]]; then
+      echo "組み込むcrateのソースが見つかりません: $embedded_source" >&2
+      status=1
+      continue
+    fi
+    embedded_sources+=("$embedded_source")
+  done < <(
+    cargo metadata --locked --format-version 1 |
+      jq -r '.packages[]
+        | select(.name == "mcp-authorization-server"
+          or .name == "mcp-authorization-server-cimd")
+        | .manifest_path'
+  )
+  if [[ "${#embedded_sources[@]}" -ne 2 ]]; then
+    echo "組み込む共有Authorization Server crateが2件見つかりません。" >&2
+    status=1
+  fi
+
   rg --no-filename -o \
     "event[[:space:]]*=[[:space:]]*\"($event_pattern)\"" \
     -r '$1' \
     "$source_root" \
+    ${embedded_sources[@]+"${embedded_sources[@]}"} \
     "${production_globs[@]}" |
     sort -u >"$implementation_events"
   rg --no-filename -o \
