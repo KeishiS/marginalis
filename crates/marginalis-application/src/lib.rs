@@ -646,6 +646,15 @@ pub trait McpOAuthUseCases: Send + Sync {
         request: McpAuthorizationRequest,
         resolved: McpAuthorizationClient,
     ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError>;
+    /// 同意画面へ表示してよいscopeを、`authorize`と同じscope上限から求める。
+    ///
+    /// 表示だけ上限を無視すると、利用者が許可した権限が黙って削られる。
+    async fn grantable_scopes(
+        &self,
+        actor: Actor,
+        client_id: String,
+        requested: Vec<String>,
+    ) -> Result<Vec<String>, McpOAuthUseCaseError>;
     async fn authorize(
         &self,
         actor: Actor,

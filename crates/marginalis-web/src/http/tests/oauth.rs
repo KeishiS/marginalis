@@ -447,6 +447,67 @@ async fn authorization_consent_allows_a_requested_scope_subset_or_denies() {
     assert!(denied_location.contains("state=opaque-state"));
 }
 
+/// scope上限を超える要求は、同意画面で選べないことと理由を示す。
+///
+/// 表示した権限が承認後に黙って削られると、利用者にもクライアントにも原因が分からない。
+#[tokio::test]
+async fn authorization_consent_withholds_scopes_beyond_the_ceiling() {
+    let app = authenticated_mcp_app();
+    let consent = app
+        .clone()
+        .oneshot(
+            Request::get(
+                "/oauth/authorize?response_type=code&client_id=ceiling-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread%20notes%3Awrite&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256&state=opaque-state",
+            )
+            .header(
+                header::COOKIE,
+                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+            )
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(consent.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(consent.into_body(), usize::MAX)
+        .await
+        .expect("consent page");
+    let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
+
+    assert!(html.contains("許可できない権限があります"));
+    assert!(!html.contains("name=\"selected_scope\" value=\"notes:write\""));
+    assert!(html.contains("name=\"selected_scope\" value=\"notes:read\""));
+    // 承認formが運ぶscopeも上限適用後に揃え、承認後に削られないようにする。
+    assert_eq!(hidden_value(html, "scope"), "notes:read");
+}
+
+/// 上限が要求scopeをすべて除く場合は、同意画面を出さずにclientへ`invalid_scope`を返す。
+#[tokio::test]
+async fn authorization_rejects_a_request_entirely_beyond_the_ceiling() {
+    let response = authenticated_mcp_app()
+        .oneshot(
+            Request::get(
+                "/oauth/authorize?response_type=code&client_id=ceiling-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Awrite&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256&state=opaque-state",
+            )
+            .header(
+                header::COOKIE,
+                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+            )
+            .body(Body::empty())
+            .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("redirect");
+    assert!(location.contains("error=invalid_scope"));
+    assert!(location.contains("state=opaque-state"));
+}
+
 fn hidden_value<'a>(html: &'a str, name: &str) -> &'a str {
     let marker = format!("name=\"{name}\" value=\"");
     html.split_once(&marker)

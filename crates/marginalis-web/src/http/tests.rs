@@ -1155,6 +1155,25 @@ impl McpOAuthUseCases for TestMcpOAuth {
         })
     }
 
+    /// `ceiling-client`はclient別上限で``notes:read``だけを許可する構成を表す。
+    async fn grantable_scopes(
+        &self,
+        _actor: Actor,
+        client_id: String,
+        requested: Vec<String>,
+    ) -> Result<Vec<String>, McpOAuthUseCaseError> {
+        if client_id == "unavailable-ceiling-client" {
+            return Err(McpOAuthUseCaseError::Unavailable);
+        }
+        if client_id == "ceiling-client" {
+            return Ok(requested
+                .into_iter()
+                .filter(|scope| scope == "notes:read")
+                .collect());
+        }
+        Ok(requested)
+    }
+
     async fn authorize(
         &self,
         _actor: Actor,

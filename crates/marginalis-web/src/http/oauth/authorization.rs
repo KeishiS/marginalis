@@ -13,6 +13,7 @@ use marginalis_application::{
     McpAuthorizationRequest, McpOAuthUseCaseError, McpValidatedAuthorizationRequest,
 };
 use marginalis_contract::ProblemCode;
+use marginalis_domain::Actor;
 use sha2::Sha256;
 
 use super::super::{
@@ -23,7 +24,7 @@ use super::super::{
     error::{HandlerResult, problem},
     html::{escape_html, page_document},
     mcp_endpoint,
-    state::ApiState,
+    state::{ApiState, McpEndpoint},
 };
 use super::common::{OAuthParameters, content_type_is, log_mcp_oauth_result, oauth_error_response};
 
@@ -253,7 +254,7 @@ async fn mcp_authorize_request(
         code_challenge: input.code_challenge.clone().unwrap_or_default(),
     };
     let error_redirect_uri = resolved.redirect_uri.clone();
-    let validated = endpoint
+    let mut validated = endpoint
         .oauth
         .validate_resolved_authorization_request(request, resolved)
         .await
@@ -265,8 +266,8 @@ async fn mcp_authorize_request(
                 error,
             )
         })?;
-    match authenticated_actor(headers, state).await {
-        Ok(_) => {}
+    let actor = match authenticated_actor(headers, state).await {
+        Ok(actor) => actor,
         Err((StatusCode::UNAUTHORIZED, _)) => {
             return Ok(
                 login_redirect(state, &input, &validated).unwrap_or_else(|| {
@@ -280,6 +281,16 @@ async fn mcp_authorize_request(
             );
         }
         Err(error) => return Err(error.into_response()),
+    };
+    let withheld = apply_scope_ceilings(endpoint, actor, &mut validated).await?;
+    // 上限が要求scopeをすべて除いた場合は、選べる権限がない同意画面を出さずclientへ返す。
+    if validated.scopes.is_empty() && !withheld.is_empty() {
+        return Ok(oauth_redirect_error(
+            &endpoint.authorization_server_uri,
+            validated.redirect_uri.as_str(),
+            input.state.as_deref(),
+            "invalid_scope",
+        ));
     }
     let csrf = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
         problem(
@@ -294,10 +305,46 @@ async fn mcp_authorize_request(
         state,
         &input,
         &validated,
+        &withheld,
         &csrf,
         &session_id,
         None,
     ))
+}
+
+/// 要求scopeからscope上限で許可できないものを取り除き、取り除いた分を返す。
+///
+/// 同意画面と認可で同じ上限を使い、表示した権限だけが付与されるようにする。
+async fn apply_scope_ceilings(
+    endpoint: &McpEndpoint,
+    actor: Actor,
+    validated: &mut McpValidatedAuthorizationRequest,
+) -> Result<Vec<String>, Response> {
+    let grantable = endpoint
+        .oauth
+        .grantable_scopes(
+            actor,
+            validated.client.client_id.clone(),
+            validated.scopes.clone(),
+        )
+        .await
+        .map_err(unsafe_authorization_error)?;
+    let withheld = validated
+        .scopes
+        .iter()
+        .filter(|scope| !grantable.contains(scope))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !withheld.is_empty() {
+        tracing::info!(
+            event = "mcp.oauth.scope.withheld",
+            operation = "authorization",
+            withheld_scopes = withheld.join(" "),
+            "requested MCP scopes exceed the configured ceiling"
+        );
+    }
+    validated.scopes = grantable;
+    Ok(withheld)
 }
 
 fn login_redirect(
@@ -344,6 +391,7 @@ fn consent_page(
     state: &ApiState,
     input: &McpAuthorizeInput,
     request: &McpValidatedAuthorizationRequest,
+    withheld_scopes: &[String],
     csrf: &str,
     signature_key: &str,
     selection_error: Option<&str>,
@@ -363,11 +411,12 @@ fn consent_page(
             "<p class=\"page-description\">許可する前に、接続するクライアントと要求された権限を確認してください。</p>",
             "</div></div>",
             "<div class=\"oauth-consent surface\">",
-            "{client_summary}{scope_section}{loopback_warning}{consent_form}",
+            "{client_summary}{scope_section}{withheld_section}{loopback_warning}{consent_form}",
             "</div></section>",
         ),
         client_summary = consent_client_summary(request, redirect_host),
         scope_section = consent_scope_section(&request.scopes, selection_error),
+        withheld_section = consent_withheld_section(withheld_scopes),
         loopback_warning = consent_loopback_warning(redirect.as_ref()),
         consent_form = consent_form(&consent_path, input, request, csrf, signature_key),
     );
@@ -439,6 +488,36 @@ fn consent_scope_section(scopes: &[String], selection_error: Option<&str>) -> St
         ),
         error = error,
         content = content,
+    )
+}
+
+/// 上限で許可できない要求scopeを、許可できる権限と区別して知らせる。
+///
+/// 表示しないだけでは、クライアントが要求した権限がなぜ有効にならないのか分からない。
+fn consent_withheld_section(scopes: &[String]) -> String {
+    if scopes.is_empty() {
+        return String::new();
+    }
+    let items = scopes
+        .iter()
+        .map(|scope| {
+            format!(
+                "<li><code>{scope}</code><span>{description}</span></li>",
+                scope = escape_html(scope),
+                description = scope_description(scope),
+            )
+        })
+        .collect::<String>();
+    format!(
+        concat!(
+            "<aside class=\"oauth-withheld-scopes warnings\" aria-labelledby=\"oauth-withheld-heading\">",
+            "<h2 id=\"oauth-withheld-heading\">許可できない権限があります</h2>",
+            "<p>このクライアントは次の権限も要求しましたが、あなたが設定したscope上限を超えるため、",
+            "ここでは許可できません。必要な場合は、MCPアクセス設定で上限を広げてから、",
+            "クライアント側でもう一度認可してください。</p>",
+            "<ul class=\"oauth-scope-list\">{items}</ul></aside>",
+        ),
+        items = items,
     )
 }
 
@@ -656,6 +735,23 @@ async fn mcp_authorize_consent_inner(
             "access_denied",
         )),
         "approve" => {
+            // 同意画面を表示してから上限が狭まった場合に、選んだ権限を黙って削らない。
+            let withheld = apply_scope_ceilings(endpoint, actor.clone(), &mut validated).await?;
+            if !withheld.is_empty() {
+                return Ok((
+                    StatusCode::CONFLICT,
+                    consent_page(
+                        &state,
+                        &input,
+                        &validated,
+                        &withheld,
+                        &form.csrf_token,
+                        &session_id,
+                        Some("scope上限が変更されたため、選択できる権限が変わりました。内容を確認してもう一度選択してください。"),
+                    ),
+                )
+                    .into_response());
+            }
             if form.selected_scopes.is_empty() {
                 return Ok((
                     StatusCode::BAD_REQUEST,
@@ -663,6 +759,7 @@ async fn mcp_authorize_consent_inner(
                         &state,
                         &input,
                         &validated,
+                        &withheld,
                         &form.csrf_token,
                         &session_id,
                         Some("少なくとも1つの権限を選択するか、拒否してください。"),
