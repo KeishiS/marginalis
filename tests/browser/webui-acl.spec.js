@@ -52,6 +52,8 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   browser,
   browserDiagnostics,
 }) => {
+  // NixOS VM内で複数のsessionと画面遷移を順に確認するため、通常の試験より時間がかかります。
+  test.slow();
   browserDiagnostics.allow(
     (diagnostic) => diagnostic.summary === "HTTP 404応答",
   );
