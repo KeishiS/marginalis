@@ -4,6 +4,22 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
+[[0340--未公開]]
+== 0.34.0 — 未公開
+
+*互換性*
+
+* 内蔵Authorization Serverの実装を専用リポジトリ
+https://github.com/KeishiS/mcp-authorization-server[KeishiS/mcp-authorization-server]へ移した。
+ソースの管理場所が分かれただけで、実行時は従来どおりMarginalisと同じプロセスへ組み込む。
+追加のサービス、port、設定項目はない。
+* SQLite schema 20、archive形式``marginalis-archive-17``、AdocWeave 0.33.0、authoring profile 15、
+note profile 5、OpenAPI、MCP tool schema、OAuth scope、OAuth metadataとendpoint、NixOSのoptionと
+環境変数を維持する。既存のclient、authorization grant、access token、refresh tokenもそのまま
+使えるため、v0.33.0からの更新でMCPクライアントを接続し直す必要はない。
+* archiveには従来どおりMCPのclient登録とtokenを含めない。別のdatabaseへarchiveを復元した場合だけ、
+MCPクライアントの再接続が必要になる。
+
 [[0330--2026-08-06]]
 == 0.33.0 — 2026-08-06
 

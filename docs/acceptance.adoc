@@ -83,6 +83,7 @@ refreshできないこと、既発行access tokenが拒否されるまでの時�
 
 == 記録
 
+* xref:acceptance-results/v0.34.0.adoc#top[v0.34.0]
 * xref:acceptance-results/v0.33.0.adoc#top[v0.33.0]
 * xref:acceptance-results/v0.32.0.adoc#top[v0.32.0]
 * xref:acceptance-results/v0.31.0.adoc#top[v0.31.0]
