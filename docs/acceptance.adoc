@@ -86,9 +86,13 @@ commitは履歴上の一点、treeはその時点にあるファイル一式を�
 タグをcommitへ解決するGitの表記で記録します。公開後に最終commitとtreeを補足する場合は、タグを
 解決した値を記録します。
 
+人手受入の対象commitは、受入のために配備した後でなければ決まりません。版別結果を作る時点では
+``未確定``と記録し、``公開判定``を``公開可``へ変えるときに実際のSHAへ置き換えます。
+
 人手受入後に変更できるのは``CHANGELOG.adoc``と、その版の受入結果だけです。ほかのファイルを変更した
 場合は、そのcommitを配備して人手受入をやり直します。``acceptance-provenance``検査は、項目の有無、
-SHAの形式、版とタグ参照の対応を確認します。squash方式では人手受入対象のcommitが``main``から到達できない
+SHAの形式、版とタグ参照の対応を確認します。``公開判定``が``公開可``の場合は、人手受入対象のcommitと
+treeが``未確定``のままであることを拒否します。squash方式では人手受入対象のcommitが``main``から到達できない
 ため、commitとtreeの実在性および差分は、Pull Requestの``refs/pull/<番号>/head``を取得したうえで、
 人手受入とタグ作成の手順内で確認します。
 
@@ -97,6 +101,7 @@ SHAの形式、版とタグ参照の対応を確認します。squash方式で�
 
 == 記録
 
+* xref:acceptance-results/v0.34.1.adoc#top[v0.34.1]
 * xref:acceptance-results/v0.34.0.adoc#top[v0.34.0]
 * xref:acceptance-results/v0.33.0.adoc#top[v0.33.0]
 * xref:acceptance-results/v0.32.0.adoc#top[v0.32.0]

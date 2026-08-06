@@ -45,16 +45,35 @@ optional_field() {
 }
 
 sha_pattern='^[0-9a-f]{40}$'
+undetermined='未確定'
 human_commit="$(required_field '人手受入対象コミット')"
 human_tree="$(required_field '人手受入対象tree')"
 release_target="$(required_field '最終リリース対象')"
 recorded_release_commit="$(optional_field '最終リリースコミット')"
 recorded_release_tree="$(optional_field '最終リリースtree')"
 
-[[ "$human_commit" =~ $sha_pattern ]] ||
-  fail "人手受入対象コミットは40桁の完全なSHAでなければなりません: $acceptance_file"
-[[ "$human_tree" =~ $sha_pattern ]] ||
-  fail "人手受入対象treeは40桁の完全なSHAでなければなりません: $acceptance_file"
+# 人手受入の対象コミットは、受入のために配備した後でなければ決まらない。準備段階では未確定を許し、
+# 公開判定を公開可へ変えるときに実際のSHAを求める。
+if ! decision="$(
+  awk '
+    /^\* 公開判定: / { matches++; decision = substr($0, length("* 公開判定: ") + 1) }
+    END { if (matches != 1) { exit 1 } print decision }
+  ' "$acceptance_file"
+)"; then
+  fail "受入結果の公開判定が一意ではありません: $acceptance_file"
+fi
+
+if [[ "$decision" == "公開可" ]]; then
+  [[ "$human_commit" =~ $sha_pattern ]] ||
+    fail "公開可の受入結果では、人手受入対象コミットを40桁の完全なSHAで記録してください: $acceptance_file"
+  [[ "$human_tree" =~ $sha_pattern ]] ||
+    fail "公開可の受入結果では、人手受入対象treeを40桁の完全なSHAで記録してください: $acceptance_file"
+else
+  [[ "$human_commit" =~ $sha_pattern || "$human_commit" == "$undetermined" ]] ||
+    fail "人手受入対象コミットは40桁の完全なSHAか${undetermined}でなければなりません: $acceptance_file"
+  [[ "$human_tree" =~ $sha_pattern || "$human_tree" == "$undetermined" ]] ||
+    fail "人手受入対象treeは40桁の完全なSHAか${undetermined}でなければなりません: $acceptance_file"
+fi
 
 expected_target="refs/tags/v${expected_version}^{commit}"
 if [[ "$release_target" != "$expected_target" ]]; then
