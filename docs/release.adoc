@@ -35,6 +35,21 @@ grep -n 'mcp-authorization-server' Cargo.lock flake.nix
 ``未実施``または``失敗``がある場合は、公開を止めるか、公開できる理由と残る影響を同じ結果へ
 記録します。版別結果の``公開判定``は、確認中は``未判定``、公開しない場合は``公開停止``、
 公開できる場合だけ``公開可``とします。
+. 人手受入で配備したcommitとtree、および最終リリースのタグ参照を版別結果へ記録します。
+人手受入後に``CHANGELOG.adoc``と版別結果以外を変更した場合は、新しいcommitを配備して人手受入を
+やり直します。記録する値と変更範囲は次のコマンドで確認します。rebase方式でマージした場合は、
+人手受入対象のcommitがPull Requestの履歴から取得できる間に確認します。
++
+[source,sh]
+----
+git show -s --format='%H %T' <人手受入対象commit>
+git diff --name-only <人手受入対象commit> HEAD -- . \
+  ':(exclude)CHANGELOG.adoc' \
+  ':(exclude)docs/acceptance-results/v<版>.adoc'
+----
++
+2つ目のコマンドが何も出力しないことを確認します。記録形式は
+xref:acceptance.adoc#top[受入基準]に従います。
 . ``公開判定``を``公開可``へ変えるときは、同じ変更で``CHANGELOG.adoc``の対象版に判定日を
 ``YYYY-MM-DD``形式で記録します。``公開可``と``未公開``が併存する場合は、通常の``verify``も失敗します。
 . 受入結果は、個々の確認が終わるたびにリリース用Pull Requestへ追記せず、人手確認をすべて
@@ -59,6 +74,17 @@ grep -n 'mcp-authorization-server' Cargo.lock flake.nix
 . ``release_tag``には作成予定のタグを入力し、検証の成功を確認します。
 . 検証した``main``の先端へリリースタグを作成してプッシュします。
 . タグのプッシュによって再実行される``release-gate``も成功することを確認します。
+. 公開後に最終リリースのcommitとtreeを版別結果へ補足する場合は、次のコマンドでタグから値を取得します。
++
+[source,sh]
+----
+git rev-parse 'refs/tags/v<版>^{commit}'
+git show -s --format=%T 'refs/tags/v<版>^{commit}'
+----
+
+Pull Request本文は作業中の状態を伝える記録であり、公開判断の正本ではありません。検証状態が
+``実行中``のまま残っていても、版別受入結果、タグが指すcommit、GitHub Actionsの最終結果を公開判断の
+正本とします。公開後に版別結果へ最終commitとtreeを補足する場合は、タグを解決した値を記録します。
 
 日次バックアップ、30世代の保持、四半期の復元確認については
 xref:nixos.adoc#top[NixOSでの運用]を参照してください。

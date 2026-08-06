@@ -158,6 +158,7 @@ script_runner = "@shell"
 script = '''
 set -eu
 bash .github/scripts/test-release-document-state.sh
+bash .github/scripts/test-acceptance-provenance.sh
 expected_version="$(
   cargo metadata --locked --no-deps --format-version 1 |
     jq -er '[.packages[].version] | unique | if length == 1 then .[0] else error("workspace package versions differ") end'
@@ -181,6 +182,8 @@ acceptance_file="docs/acceptance-results/v$expected_version.adoc"
 test -s "$acceptance_file"
 grep -Fq "xref:acceptance-results/v$expected_version.adoc#top" docs/acceptance.adoc
 grep -Fq -- "* タグ: \`\`v$expected_version\`\`" "$acceptance_file"
+bash .github/scripts/check-acceptance-provenance.sh \
+  "$expected_version" "$acceptance_file"
 bash .github/scripts/check-release-document-state.sh \
   "$expected_version" "$acceptance_file" CHANGELOG.adoc
 '''
