@@ -345,6 +345,56 @@ async fn owner_can_list_and_restrict_their_mcp_client_authorizations() {
     assert_eq!(body["scope_ceiling_configured"], true);
 }
 
+/// clientの上限を解除して未設定へ戻せる。
+///
+/// 解除できないと、狭めた上限を広げられず同意画面からも復旧できなくなる。
+#[tokio::test]
+async fn owner_can_clear_one_mcp_client_scope_ceiling() {
+    async fn delete(revision: &str) -> Response {
+        authenticated_mcp_app()
+            .oneshot(
+                Request::delete(format!(
+                    "/api/v3/mcp-authorizations/consent-client/scope-ceiling?revision={revision}"
+                ))
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .body(Body::empty())
+                .expect("request"),
+            )
+            .await
+            .expect("response")
+    }
+
+    let cleared = delete("1").await;
+    assert_eq!(cleared.status(), StatusCode::OK);
+    let body = to_bytes(cleared.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let body: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(body["scope_ceiling_configured"], false);
+    assert_eq!(body["scope_ceiling_revision"], 0);
+    assert_eq!(
+        body["scope_ceiling"],
+        serde_json::json!([
+            "notes:read",
+            "notes:write",
+            "notes:delete",
+            "bibliography:read",
+            "bibliography:write",
+            "bibliography:delete"
+        ]),
+        "解除後は実効上限として対応する全scopeを返す"
+    );
+
+    assert_eq!(delete("2").await.status(), StatusCode::CONFLICT);
+    assert_eq!(delete("0").await.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
 #[tokio::test]
 async fn rest_validation_returns_the_shared_diagnostic_contract() {
     let response = authenticated_app()

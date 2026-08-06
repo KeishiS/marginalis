@@ -104,3 +104,49 @@ test("認可済みクライアントのscopeを制限し、確認後に接続を
   );
   expect(await screen.findByText("無効")).toBeInTheDocument();
 });
+
+test("同意していないscopeも上限へ選べ、設定した上限を解除できる", async () => {
+  document.cookie = "marginalis_csrf=test-csrf; path=/";
+  const configured = {
+    ...authorization,
+    scope_ceiling_configured: true,
+    scope_ceiling: ["notes:read"],
+    scope_ceiling_revision: 1,
+  };
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        supported_scopes: ["notes:read", "notes:write", "notes:delete"],
+        scopes: ["notes:read", "notes:write", "notes:delete"],
+        revision: 2,
+      }),
+    )
+    .mockResolvedValueOnce(Response.json([configured]))
+    .mockResolvedValueOnce(Response.json(authorization));
+  vi.stubGlobal("fetch", fetch);
+
+  render(<McpAccessSettingsPage config={config} />);
+
+  const heading = await screen.findByRole("heading", {
+    name: "Research client",
+  });
+  const client = within(heading.closest("article")!);
+
+  // 上限は今後の認可を制限する設定であり、同意履歴では選択肢を狭めない。
+  expect(client.getByLabelText(/notes:delete/)).toBeInTheDocument();
+
+  fireEvent.click(client.getByRole("button", { name: "上限を解除" }));
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  expect(fetch).toHaveBeenLastCalledWith(
+    "/marginalis/api/v3/mcp-authorizations/https%3A%2F%2Fclient.example.test%2Foauth%2Fmetadata.json/scope-ceiling?revision=1",
+    expect.objectContaining({
+      method: "DELETE",
+      headers: expect.objectContaining({ "x-csrf-token": "test-csrf" }),
+    }),
+  );
+  expect(await client.findByText(/未設定です/)).toHaveTextContent(
+    "サーバーが対応する全scope",
+  );
+});

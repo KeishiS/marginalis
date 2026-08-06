@@ -123,10 +123,18 @@ scopeの上限を設定できます。初期状態の上限はサーバーが対
 同じ画面の「認可済みクライアント」では、クライアント名、``client_id``、登録方式、これまで同意した
 scope、認可日時、最終利用日時、有効状態を確認できます。クライアント別の上限は利用者全体の上限とは
 別に保存します。未設定時はサーバーが対応する全scopeが上限であり、過去に同意したscopeは上限として
-扱いません。明示的に設定する場合は、これまで同意したscopeの範囲内だけで変更できます。上限を狭めると
-範囲外のtoken familyを直ちに失効します。上限を広げてもtokenへscopeを追加しないため、追加した操作には
-OAuth再認可が必要です。REST APIでは未設定のクライアントに実効上限、revision ``0``、
-``scope_ceiling_configured: false``を返します。
+扱いません。明示的に設定する場合は、サーバーが対応する全scopeから選べます。上限は今後の認可を
+制限する設定であり、それ自体がクライアントへ権限を与えることはないため、まだ同意していないscopeも
+含められます。上限を狭めると範囲外のtoken familyを直ちに失効します。上限を広げてもtokenへscopeを
+追加しないため、追加した操作にはOAuth再認可が必要です。
+
+設定した上限は「上限を解除」で取り除き、未設定へ戻せます。解除は上限を広げる操作なので、既存の接続と
+tokenはそのまま残ります。解除できないと、狭めた上限を広げられず、同意画面からも復旧できなくなります。
+
+REST APIでは未設定のクライアントに実効上限、revision ``0``、``scope_ceiling_configured: false``を
+返します。クライアント別の上限は``PUT /api/v3/mcp-authorizations/{client_id}/scope-ceiling``で設定し、
+``DELETE /api/v3/mcp-authorizations/{client_id}/scope-ceiling?revision=<現在のrevision>``で解除します。
+revisionが現在の値と一致しない場合は``409``を返します。
 
 == client登録
 

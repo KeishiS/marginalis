@@ -381,24 +381,40 @@ async fn client_authorizations_are_owner_scoped_and_record_use_and_revocation() 
     .expect("used authorization");
     assert_eq!(used[0].last_used_at.map(|value| value.get()), Some(13));
 
-    assert!(matches!(
-        marginalis_application::McpScopeCeilingRepository::replace_client_scope_ceiling(
-            &database,
-            &alice,
-            &client.client_id,
-            &["notes:delete".into()],
-            0,
-            marginalis_domain::UnixMillis::new(15),
-        )
-        .await,
-        Err(marginalis_application::McpScopeCeilingRepositoryError::Invalid)
-    ));
+    // 上限は今後の認可を制限する設定であり、それ自体は権限を付与しない。まだ同意していないscopeも
+    // 上限へ含められる。ここで制限できないと、狭めた上限を広げられず復旧できなくなる。
+    marginalis_application::McpScopeCeilingRepository::replace_client_scope_ceiling(
+        &database,
+        &alice,
+        &client.client_id,
+        &[
+            "notes:read".into(),
+            "notes:write".into(),
+            "notes:delete".into(),
+        ],
+        0,
+        marginalis_domain::UnixMillis::new(15),
+    )
+    .await
+    .expect("client ceiling beyond the granted scopes");
+    let widened = marginalis_application::McpScopeCeilingRepository::client_authorizations(
+        &database,
+        &alice,
+        marginalis_domain::UnixMillis::new(15),
+    )
+    .await
+    .expect("widened authorization");
+    assert!(
+        widened[0].active,
+        "同意済みscopeを含む上限は既存tokenを失効させない"
+    );
+
     marginalis_application::McpScopeCeilingRepository::replace_client_scope_ceiling(
         &database,
         &alice,
         &client.client_id,
         &["notes:read".into()],
-        0,
+        1,
         marginalis_domain::UnixMillis::new(16),
     )
     .await
@@ -414,10 +430,46 @@ async fn client_authorizations_are_owner_scoped_and_record_use_and_revocation() 
         restricted[0].scope_ceiling,
         Some(McpScopeCeilingSetting {
             scopes: vec!["notes:read".into()],
-            revision: 1,
+            revision: 2,
         })
     );
     assert!(!restricted[0].active, "上限外のtoken familyは失効する");
+
+    // 解除にはrevisionの一致を求め、解除後は未設定へ戻す。
+    assert!(matches!(
+        marginalis_application::McpScopeCeilingRepository::delete_client_scope_ceiling(
+            &database,
+            &alice,
+            &client.client_id,
+            1,
+            marginalis_domain::UnixMillis::new(17),
+        )
+        .await,
+        Err(marginalis_application::McpScopeCeilingRepositoryError::Conflict)
+    ));
+    marginalis_application::McpScopeCeilingRepository::delete_client_scope_ceiling(
+        &database,
+        &alice,
+        &client.client_id,
+        2,
+        marginalis_domain::UnixMillis::new(17),
+    )
+    .await
+    .expect("cleared client ceiling");
+    let cleared = marginalis_application::McpScopeCeilingRepository::client_authorizations(
+        &database,
+        &alice,
+        marginalis_domain::UnixMillis::new(17),
+    )
+    .await
+    .expect("cleared authorization");
+    assert_eq!(
+        cleared[0].scope_ceiling, None,
+        "解除した上限は未設定として扱う"
+    );
+    // 解除は上限を広げる操作なので、失効済みのtoken familyを復活させない。
+    assert!(!cleared[0].active);
+
     database
         .revoke_mcp_client_tokens(
             alice.issuer(),

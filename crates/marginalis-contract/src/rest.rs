@@ -775,6 +775,9 @@ pub fn openapi_document() -> Value {
                     "schema": provenance_properties["created_via"].clone()},
                 "ReviewStatus": {"name": "review_status", "in": "query", "required": false,
                     "schema": provenance_properties["review_status"].clone()},
+                "McpScopeCeilingRevision": {"name": "revision", "in": "query", "required": true,
+                    "schema": {"type": "integer", "minimum": 1},
+                    "description": "解除する上限のrevision。現在の値と一致しない場合は409を返す"},
                 "CsrfToken": {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1}},
                 "IfMatch": {"name": "If-Match", "in": "header", "required": true, "schema": {"type": "string", "pattern": "^\\\"rev-[1-9][0-9]*\\\"$"}}
             },
@@ -1167,6 +1170,16 @@ fn rest_paths() -> Value {
                 ("403", response_ref("CsrfRejected")),
                 ("404", response_ref("NotFound")),
                 ("409", response_ref("Conflict")),
+                ("503", response_ref("Unavailable"))
+            ])),
+            "delete": operation("Remove one MCP client's scope ceiling", &["McpScopeCeilingRevision", "CsrfToken"], None, responses(&[
+                ("200", schema_response("MCP client authorization without a configured ceiling", "McpClientAuthorization")),
+                ("400", response_ref("BadRequest")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
+                ("422", response_ref("ValidationFailed")),
                 ("503", response_ref("Unavailable"))
             ]))
         },

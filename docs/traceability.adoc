@@ -218,6 +218,7 @@ a|
 * ``marginalis-web::http::tests::rest_notes::owner_can_list_and_restrict_their_mcp_client_authorizations``
 * ``marginalis-web::http::tests::oauth::authorization_consent_withholds_scopes_beyond_the_ceiling``
 * ``marginalis-web::http::tests::oauth::authorization_rejects_a_request_entirely_beyond_the_ceiling``
+* ``marginalis-web::http::tests::rest_notes::owner_can_clear_one_mcp_client_scope_ceiling``
 * ``McpAccessSettingsPage.test.tsx``
 |ARCH-OIDC-001
 |``marginalis-auth-oidc::tests::id_tokens_are_limited_to_es256``、Kanidm NixOS VM

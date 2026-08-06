@@ -76,6 +76,12 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |MCP接続の取消
 |``DELETE /api/v3/mcp-authorizations/{client_id}``
 |CSRFトークンが必要。自分に発行された認可だけを失効する
+|クライアント別scope上限の置換
+|``PUT /api/v3/mcp-authorizations/{client_id}/scope-ceiling``
+|CSRFトークンと現在の``revision``が必要
+|クライアント別scope上限の解除
+|``DELETE /api/v3/mcp-authorizations/{client_id}/scope-ceiling?revision=<現在のrevision>``
+|CSRFトークンが必要。未設定へ戻し、既存の接続は維持する
 |===
 
 == ノートの入力と権限

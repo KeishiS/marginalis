@@ -1186,6 +1186,18 @@ export async function replaceMcpClientScopeCeiling(
   );
 }
 
+export async function deleteMcpClientScopeCeiling(
+  apiBase: string,
+  clientId: string,
+  revision: number,
+): Promise<McpClientAuthorization> {
+  return requestJson(
+    `${apiBase}/mcp-authorizations/${encodeURIComponent(clientId)}/scope-ceiling?revision=${encodeURIComponent(String(revision))}`,
+    mutationRequest("DELETE"),
+    parseMcpClientAuthorization,
+  );
+}
+
 export async function revokeMcpAuthorization(
   apiBase: string,
   clientId: string,
