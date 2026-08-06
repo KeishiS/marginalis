@@ -35,7 +35,8 @@ v0.32.0のschema 20を残したままv0.33.0を配備し、起動、OIDCログ�
 |archive移行・復元
 |成功
 |2026-08-06
-|利用者受入で、v0.32.0から書き出したarchive 16をarchive 17へ変換して検証した後、隔離した空の
+|https://github.com/KeishiS/marginalis/pull/339[リリースPull Request \#339]に対応した利用者受入で、
+v0.32.0から書き出したarchive 16をarchive 17へ変換して検証した後、隔離した空の
 schema 20へ取り込んだ。
 本文、ACL、日時、revision、書誌情報、数式マクロ、作成経路、人手確認、書誌取込の対応情報が
 一致することを確認した
@@ -43,25 +44,29 @@ schema 20へ取り込んだ。
 |参考文献の通常文字表示
 |成功
 |2026-08-06
-|利用者受入で、``Effective C++ and More Effective C++``を含む書誌情報の題名がそのまま表示され、
+|https://github.com/KeishiS/marginalis/pull/339[リリースPull Request \#339]に対応した利用者受入で、
+``Effective C++ and More Effective C++``を含む書誌情報の題名がそのまま表示され、
 本文と参考文献の相互linkを利用できることを確認した
 
 |記法に見える書誌情報
 |成功
 |2026-08-06
-|利用者受入で、macro、属性参照、passthrough、HTMLに見える文字列を含む書誌情報が記法として働かず、
+|https://github.com/KeishiS/marginalis/pull/339[リリースPull Request \#339]に対応した利用者受入で、macro、
+属性参照、passthrough、HTMLに見える文字列を含む書誌情報が記法として働かず、
 通常の文字として表示されることを確認した
 
 |等幅記法の案内
 |成功
 |2026-08-06
-|利用者受入で、単一backtickの等幅記法に警告が表示されて保存でき、二つのbacktickへ直すと警告が
+|https://github.com/KeishiS/marginalis/pull/339[リリースPull Request \#339]に対応した利用者受入で、
+単一backtickの等幅記法に警告が表示されて保存でき、二つのbacktickへ直すと警告が
 消えることを確認した
 
 |既存の参考文献
 |成功
 |2026-08-06
-|利用者受入で、ノート本文で定義した参考文献を従来どおり表示でき、書誌ライブラリーに同じ
+|https://github.com/KeishiS/marginalis/pull/339[リリースPull Request \#339]に対応した利用者受入で、
+ノート本文で定義した参考文献を従来どおり表示でき、書誌ライブラリーに同じ
 citation keyがある場合も本文側が優先されることを確認した
 |===
 
