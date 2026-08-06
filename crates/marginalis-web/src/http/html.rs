@@ -11,17 +11,52 @@ pub(super) fn escape_html(value: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// 主要な移動先。`current_path`と照合して、いま開いている画面を示す。
+const NAVIGATION: &[(&str, &str, &str)] = &[
+    ("/", "/notes", "ノート"),
+    ("/bibliography", "/bibliography", "書誌"),
+    ("/graph", "/graph", "関係の図"),
+    ("/settings", "/settings", "設定"),
+];
+
+/// 主要な移動先のうち、`current_path`が属するものを返す。
+///
+/// ノート一覧は``/``だが、個別のノートは``/notes/...``にある。どちらもノートの画面として扱う。
+fn current_navigation(current_path: &str) -> Option<&'static str> {
+    NAVIGATION
+        .iter()
+        .find(|(href, section, _)| {
+            current_path == *href
+                || current_path == *section
+                || current_path.starts_with(&format!("{section}/"))
+        })
+        .map(|(href, _, _)| *href)
+}
+
 pub(super) fn page_document(
     title: &str,
     cookie_path: &str,
+    current_path: &str,
     content: &str,
     scripts: &[&str],
 ) -> String {
-    let home = external_path(cookie_path, "/");
+    let current = current_navigation(current_path);
+    let navigation = NAVIGATION
+        .iter()
+        .map(|(href, _, label)| {
+            let marker = if current == Some(*href) {
+                " aria-current=\"page\""
+            } else {
+                ""
+            };
+            format!(
+                "<a href=\"{}\"{marker}>{label}</a>",
+                escape_html(&external_path(cookie_path, href)),
+            )
+        })
+        .collect::<String>();
     let new_note = external_path(cookie_path, "/notes/new");
-    let bibliography = external_path(cookie_path, "/bibliography");
-    let graph = external_path(cookie_path, "/graph");
-    let settings = external_path(cookie_path, "/settings");
+    let home = external_path(cookie_path, "/");
     let stylesheet = external_path(cookie_path, "/assets/editor.css");
     let scripts = scripts
         .iter()
@@ -33,15 +68,12 @@ pub(super) fn page_document(
         })
         .collect::<String>();
     format!(
-        "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\">{}</head><body><header class=\"page-header\"><div class=\"page-header-inner\"><a class=\"brand\" href=\"{}\"><span class=\"brand-mark\" aria-hidden=\"true\">M</span><span>Marginalis</span></a><nav class=\"primary-navigation\" aria-label=\"主要な画面\"><a href=\"{}\">ノート</a><a href=\"{}\">書誌</a><a href=\"{}\">関係の図</a><a href=\"{}\">設定</a><a class=\"button button-primary\" href=\"{}\">新規ノート</a></nav></div></header><main class=\"page-main\">{}</main></body></html>",
+        "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\">{}</head><body><header class=\"page-header\"><div class=\"page-header-inner\"><a class=\"brand\" href=\"{}\"><span class=\"brand-mark\" aria-hidden=\"true\">M</span><span>Marginalis</span></a><nav class=\"primary-navigation\" aria-label=\"主要な画面\">{}<a class=\"button button-primary\" href=\"{}\">新規ノート</a></nav></div></header><main class=\"page-main\">{}</main></body></html>",
         escape_html(title),
         escape_html(&stylesheet),
         scripts,
         escape_html(&home),
-        escape_html(&home),
-        escape_html(&bibliography),
-        escape_html(&graph),
-        escape_html(&settings),
+        navigation,
         escape_html(&new_note),
         content,
     )
@@ -61,7 +93,7 @@ mod tests {
 
     #[test]
     fn page_document_uses_japanese_language_and_subpath_assets() {
-        let document = page_document("<題名>", "/marginalis", "<h1>本文</h1>", &[]);
+        let document = page_document("<題名>", "/marginalis", "/", "<h1>本文</h1>", &[]);
 
         assert!(document.contains("<html lang=\"ja\">"));
         assert!(document.contains("<title>&lt;題名&gt;</title>"));
@@ -74,11 +106,32 @@ mod tests {
         assert!(!document.contains("src=\"/marginalis/assets/editor.js\""));
     }
 
+    /// 狭い画面でも移動先を隠さないため、主要な移動先は常にすべて出力する。
+    #[test]
+    fn page_document_lists_every_destination_and_marks_the_current_screen() {
+        let document = page_document("Marginalis", "/", "/bibliography", "<div></div>", &[]);
+
+        for label in ["ノート", "書誌", "関係の図", "設定", "新規ノート"] {
+            assert!(document.contains(label), "{label}への移動手段が必要です");
+        }
+        assert!(document.contains("<a href=\"/bibliography\" aria-current=\"page\">書誌</a>"));
+        assert_eq!(document.matches("aria-current=\"page\"").count(), 1);
+
+        // 個別のノートもノートの画面として示す。
+        let note = page_document("Marginalis", "/", "/notes/abc", "<div></div>", &[]);
+        assert!(note.contains("<a href=\"/\" aria-current=\"page\">ノート</a>"));
+
+        // 主要な移動先でない画面は、どれも現在位置として示さない。
+        let consent = page_document("認可", "/", "/oauth/authorize", "<div></div>", &[]);
+        assert!(!consent.contains("aria-current"));
+    }
+
     #[test]
     fn page_document_can_load_a_subpath_module() {
         let document = page_document(
             "編集",
             "/marginalis",
+            "/notes/new",
             "<div></div>",
             &["/assets/page.js", "/assets/editor.js"],
         );

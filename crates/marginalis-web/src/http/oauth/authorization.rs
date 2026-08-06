@@ -420,9 +420,11 @@ fn consent_page(
         loopback_warning = consent_loopback_warning(redirect.as_ref()),
         consent_form = consent_form(&consent_path, input, request, csrf, signature_key),
     );
+    // 同意画面は主要な移動先のどれでもないため、現在位置を示さない。
     Html(page_document(
         "MCPクライアントの認可",
         &state.cookie_path,
+        "/oauth/authorize",
         &content,
         &[],
     ))

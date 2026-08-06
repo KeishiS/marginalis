@@ -56,6 +56,34 @@ test("production build starts and renders a note returned by the API", async ({
     "note-list-narrow.png",
     SCREENSHOT_OPTIONS,
   );
+
+  // 狭い画面でも主要な移動先を隠さない。押せる大きさと現在位置も保つ。
+  const navigation = page.getByRole("navigation", { name: "主要な画面" });
+  for (const [label, href] of [
+    ["ノート", "/"],
+    ["書誌", "/bibliography"],
+    ["関係の図", "/graph"],
+    ["設定", "/settings"],
+    ["新規ノート", "/notes/new"],
+  ]) {
+    const destination = navigation.getByRole("link", {
+      name: label,
+      exact: true,
+    });
+    await expect(destination).toBeVisible();
+    expect(await destination.getAttribute("href")).toBe(href);
+    const box = await destination.boundingBox();
+    expect(box.height).toBeGreaterThanOrEqual(40);
+    expect(box.x + box.width).toBeLessThanOrEqual(360);
+  }
+  expect(
+    await navigation.locator("[aria-current='page']").getAttribute("href"),
+  ).toBe("/");
+
+  // 画面全体が横へはみ出さない。
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(360);
 });
 
 test("ブラウザー診断を本文やtokenを含まない分類へ変換する", () => {
