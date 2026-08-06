@@ -199,7 +199,7 @@ gh pr create --base main --head codex/<purpose>
 gh pr diff
 gh pr checks --watch
 ----
-. Pull Request作成後にrebase方式のauto-mergeを設定します。``main``のrulesetでは
+. Pull Request作成後にsquash方式のauto-mergeを設定します。``main``のrulesetでは
 GitHub Actionsの``verify``と``nixos-e2e``が必須です。``verify``は中核検査に加えて
 ``native-aarch64``の成功も集約するため、これらのチェックと必要なレビューが完了するまで
 実際のマージは行われません。文書だけの変更でもチェック名は維持し、``verify``は文書検査、
@@ -209,39 +209,36 @@ GitHub Actionsの``verify``と``nixos-e2e``が必須です。``verify``は中核
 +
 [source,sh]
 ----
-gh pr merge --auto --rebase --delete-branch
+gh pr merge --auto --squash --delete-branch
 ----
++
+squash方式では、作業ブランチのcommitをまとめた1個のcommitが``main``へ入ります。1つのPull Requestが
+``main``の1 commitに対応するため、``main``の履歴を一列で読めます。かわりに、作業ブランチで分けた
+個々のcommitは``main``へ残りません。残す必要がある変更は、Pull Requestを分けます。
++
+rulesetはsquash方式とmerge方式を許可しますが、上の理由からsquash方式を使用します。
+merge方式を選ぶと``main``に分岐が生じ、以降の履歴を一列で読めなくなります。
 +
 auto-mergeを設定できない場合は、rulesetの必須チェックとリポジトリの
 ``Allow auto-merge``設定を確認します。ブランチ保護の無効化、管理者権限による
 必須チェックの回避、force pushは行いません。
 +
 作業ブランチが``main``と衝突した場合は、force pushを避けるため``main``を作業ブランチへ
-マージして解消します。
+マージして解消します。squash方式では、この解消用のマージcommitも``main``へは残りません。
 +
 [source,sh]
 ----
 git switch codex/<purpose>
 git merge main
 ----
-+
-マージコミットを含むブランチはrebase方式でマージできません。この場合はsquash方式で
-``main``へ入れます。squashでも``main``の履歴は直線のまま保たれるため、rebase方式と同じ
-結果になります。
-+
-[source,sh]
-----
-gh pr merge --squash --delete-branch
-----
-+
-衝突していないブランチでは、従来どおりrebase方式のauto-mergeを使用します。
-. マージ後にローカル環境を整理します。
+. マージ後にローカル環境を整理します。squash方式では作業ブランチのcommitが``main``に含まれないため、
+``git branch -d``は未マージとして拒否します。Pull Requestのマージを確認したうえで``-D``で削除します。
 +
 [source,sh]
 ----
 git switch main
 git pull --ff-only upstream main
-git branch -d codex/<purpose>
+git branch -D codex/<purpose>
 ----
 
 == 共有Authorization Server crateの更新

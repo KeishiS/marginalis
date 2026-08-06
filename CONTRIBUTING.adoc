@@ -12,7 +12,9 @@ xref:docs/README.adoc#top[資料案内]を参照してください。
 . 最新の``main``から目的が分かる作業ブランチを作成します。
 . 既存の形式とコンポーネントの役割分担に従い、変更に対応する文書とテストも更新します。
 . 関連する検証を実行し、目的、主な差分、検証結果をPull Requestへ記載します。
-. Pull Requestから``main``へマージします。``main``へ直接pushしません。
+. Pull Requestからsquash方式で``main``へマージします。``main``へ直接pushしません。
+1つのPull Requestが``main``の1 commitに対応するため、``main``の履歴を一列で読めます。
+手順は xref:docs/development.adoc#top[GitHubを使う開発手順]を参照してください。
 
 新しい作業項目と完了条件はGitHub Issuesで管理します。機能の修正、改善、追加では、
 Issue Formに現在と理想の動作例を記載してください。設計判断を長期に参照する場合は、

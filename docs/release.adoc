@@ -37,18 +37,23 @@ grep -n 'mcp-authorization-server' Cargo.lock flake.nix
 公開できる場合だけ``公開可``とします。
 . 人手受入で配備したcommitとtree、および最終リリースのタグ参照を版別結果へ記録します。
 人手受入後に``CHANGELOG.adoc``と版別結果以外を変更した場合は、新しいcommitを配備して人手受入を
-やり直します。記録する値と変更範囲は次のコマンドで確認します。rebase方式でマージした場合は、
-人手受入対象のcommitがPull Requestの履歴から取得できる間に確認します。
+やり直します。
++
+``main``へはsquash方式でマージするため、人手受入対象のcommitは``main``の履歴に残りません。
+版別結果へは、そのcommitのSHAとtreeに加えて、取得元となるPull Request番号も記録します。
+GitHubはマージ後も``refs/pull/<番号>/head``でPull Requestの先端を保持するため、``main``に
+残っていないcommitはここから取得します。
 +
 [source,sh]
 ----
+git fetch upstream 'refs/pull/<Pull Request番号>/head:refs/remotes/pr/<番号>'
 git show -s --format='%H %T' <人手受入対象commit>
 git diff --name-only <人手受入対象commit> HEAD -- . \
   ':(exclude)CHANGELOG.adoc' \
   ':(exclude)docs/acceptance-results/v<版>.adoc'
 ----
 +
-2つ目のコマンドが何も出力しないことを確認します。記録形式は
+3つ目のコマンドが何も出力しないことを確認します。記録形式は
 xref:acceptance.adoc#top[受入基準]に従います。
 . ``公開判定``を``公開可``へ変えるときは、同じ変更で``CHANGELOG.adoc``の対象版に判定日を
 ``YYYY-MM-DD``形式で記録します。``公開可``と``未公開``が併存する場合は、通常の``verify``も失敗します。
@@ -63,7 +68,7 @@ xref:acceptance.adoc#top[受入基準]に従います。
 . 受入結果を確定した最後のコミットに対して、必須チェックが成功したことをPull Request上で
 確認します。成功したCIの情報を同じブランチへ書き戻しません。書き戻すと先端コミットが変わり、
 同じ検査を再実行する必要が生じます。
-. 必須チェックとレビューの完了後にrebase方式で自動マージされるよう設定します。
+. 必須チェックとレビューの完了後にsquash方式で自動マージされるよう設定します。
 
 == リリース検証とタグ
 
