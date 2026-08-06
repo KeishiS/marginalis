@@ -1,5 +1,6 @@
 .rendered-content {
   font-family: var(--font-reading);
+  font-size: var(--text-reading-body);
   overflow-wrap: anywhere;
 }
 
@@ -9,6 +10,22 @@
 
 .rendered-content > :last-child {
   margin-block-end: 0;
+}
+
+/*
+ * 文章は1行が長くなりすぎると折り返し位置を追いにくい。段落、リスト、見出しは行の長さを
+ * 制限し、表、コード、数式は器の幅まで使えるようにする。
+ */
+.rendered-content > h1,
+.rendered-content > h2,
+.rendered-content > h3,
+.rendered-content > h4,
+.rendered-content > p,
+.rendered-content > ul,
+.rendered-content > ol,
+.rendered-content > dl,
+.rendered-content > blockquote {
+  max-width: var(--reading-measure);
 }
 
 .rendered-content h1,
@@ -21,26 +38,66 @@
   scroll-margin-top: 5.5rem;
 }
 
-.rendered-content h1 {
-  font-size: var(--text-page-title);
-  margin-block-end: var(--space-6);
+/*
+ * AdocWeaveは文書題名を`h1.document-title`、`==`の章見出しを`h1`として描画する。
+ * 題名と章見出しを同じ大きさにすると、本文が相対的に小さく見える。
+ */
+.rendered-content h1.document-title {
+  font-size: var(--text-reading-title);
+  margin-block: 0 var(--space-6);
 }
 
-.rendered-content h2 {
+.rendered-content h1:not(.document-title) {
   border-block-end: var(--border-thin) solid var(--color-border);
-  font-size: var(--text-heading);
+  font-size: var(--text-reading-h1);
   margin-block: var(--space-10) var(--space-4);
   padding-block-end: var(--space-2);
 }
 
-.rendered-content h3 {
-  font-size: var(--text-subheading);
+.rendered-content h2 {
+  font-size: var(--text-reading-h2);
   margin-block-start: var(--space-8);
+}
+
+.rendered-content h3,
+.rendered-content h4 {
+  font-size: var(--text-reading-h3);
+  margin-block-start: var(--space-6);
 }
 
 .rendered-content p,
 .rendered-content li {
   line-height: 1.85;
+}
+
+/*
+ * 定義リストは、用語と説明が同じ見た目だと切れ目が分からない。用語を目立たせ、説明の
+ * 開始位置を用語からずらし、組と組の間隔で区切りを示す。
+ */
+.rendered-content dl {
+  margin-block: var(--space-5);
+}
+
+/* 用語は見出しではない。見出しの階層と競合しないよう、本文と同じ大きさのまま字面で示す。 */
+.rendered-content dt {
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-reading-body);
+  font-weight: 700;
+  line-height: 1.5;
+  margin-block-start: var(--space-5);
+}
+
+.rendered-content dt:first-child {
+  margin-block-start: 0;
+}
+
+.rendered-content dd {
+  border-inline-start: var(--border-thin) solid var(--color-border);
+  line-height: 1.85;
+  margin-block-start: var(--space-2);
+  margin-inline-start: var(--space-3);
+  padding-inline-start: var(--space-4);
 }
 
 .rendered-content figure.source-block {
