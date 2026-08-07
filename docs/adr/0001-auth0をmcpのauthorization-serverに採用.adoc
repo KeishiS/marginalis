@@ -20,7 +20,8 @@ KanidmはWeb UIの利用者認証と利用可否を決める正本です。MCP�
 
 Issue \#24では、内蔵実装、Auth0、Keycloak、WorkOS AuthKitを比較しました。Auth0とKanidmを接続した
 実環境で、ChatGPT Web UIのDCR、ログイン、scope同意、ノートの作成・更新・削除、所有者とACLの一貫性を
-確認しました。
+確認しました。評価の手順と記録は``v0.36.0``タグ上の``docs/mcp-authorization-server-evaluation.adoc``に
+保存しています。
 
 == 決定
 

@@ -355,4 +355,4 @@ marginalis-sqlite/src/
 SQLite試験は``marginalis-sqlite/src/tests/``でschema・ノート・session・MCP OAuthに分けます。OIDC
 access token検証は各認証adapterでmetadata、署名、claimの境界を試験します。
 
-設計を確定した経緯は xref:v0.3.0-design.adoc#top[再設計判断記録]を参照してください。
+設計を確定した経緯は``v0.36.0``タグ上の``docs/v0.3.0-design.adoc``を参照してください。

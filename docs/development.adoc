@@ -184,7 +184,7 @@ CIは変更pathを判定し、文書だけのPull Requestでは``verify``を文�
 ``.github/scripts/classify-docs-only.sh``に集約し、``cargo make verify``から境界例を検査します。
 +
 新しい作業項目はGitHub Issuesへ作成します。リポジトリ内にIssueファイルを追加しません。
-v0.5.0以前のローカルIssueとの対応は xref:issue-migration.adoc#top[移行対応表]を参照してください。
+v0.5.0以前のローカルIssueとの対応は``v0.36.0``タグ上の``docs/issue-migration.adoc``を参照してください。
 . 作業ブランチをpushし、``gh``でPull Requestを作成します。
 +
 [source,sh]

@@ -285,7 +285,6 @@ if rg -n \
   . \
   --glob '!docs/frozen/**' \
   --glob '!docs/adr/**' \
-  --glob '!docs/mcp-authorization-server-evaluation.adoc' \
   --glob '!CHANGELOG.adoc' \
   --glob '!Makefile.toml' \
   --glob '!target/**' \
