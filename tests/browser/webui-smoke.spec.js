@@ -109,10 +109,16 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
         },
         access: "manage",
         math_macros: [],
+        // AdocWeaveは見出しも段落も包み要素なしで並べる。実際の描画と同じ構造にする。
         html:
-          "<article><h1>広い閲覧画面</h1><p>長い文章と表、コード、数式を読みやすい幅で表示します。</p>" +
+          '<h1 class="document-title">広い閲覧画面</h1>' +
+          "<p>長い文章と表、コード、数式を読みやすい幅で表示します。段落は行の長さを制限し、" +
+          "表とコードは器の幅まで使います。</p>" +
+          "<h1>章の見出し</h1><h2>節の見出し</h2>" +
+          "<dl><dt>用語</dt><dd>用語の説明です。用語と説明を見分けられるようにします。</dd>" +
+          "<dt>次の用語</dt><dd>次の説明です。</dd></dl>" +
           "<table><tr><th>項目</th><th>説明</th><th>確認</th></tr><tr><td>本文幅</td><td>広い画面を活用します</td><td>成功</td></tr></table>" +
-          '<pre data-language="rust"><code>fn main() { println!("wide"); }</code></pre></article>',
+          '<pre data-language="rust"><code>fn main() { println!("wide"); }</code></pre>',
         related: { outgoing: [], incoming: [] },
       }),
     });
@@ -188,6 +194,53 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   const documentPosition = await documentSurface.boundingBox();
   expect(documentPosition).not.toBeNull();
   expect(documentPosition.width).toBeGreaterThan(1000);
+
+  // 文章は行の長さを制限し、表とコードは器の幅まで使う。
+  const paragraphPosition = await page
+    .locator(".rendered-content > p")
+    .first()
+    .boundingBox();
+  const tablePosition = await page
+    .locator(".rendered-content table")
+    .first()
+    .boundingBox();
+  expect(paragraphPosition.width).toBeLessThanOrEqual(46 * 16);
+  expect(tablePosition.width).toBeGreaterThan(paragraphPosition.width);
+
+  // 見出しは題名から本文へ段階的に小さくなる。同じ大きさの段が並ばない。
+  const scale = await page.evaluate(() => {
+    const size = (selector) =>
+      Number.parseFloat(
+        getComputedStyle(document.querySelector(selector)).fontSize,
+      );
+    return {
+      title: size(".rendered-content h1.document-title"),
+      chapter: size(".rendered-content h1:not(.document-title)"),
+      section: size(".rendered-content h2"),
+      body: size(".rendered-content > p"),
+    };
+  });
+  expect(scale.title).toBeGreaterThan(scale.chapter);
+  expect(scale.chapter).toBeGreaterThan(scale.section);
+  expect(scale.section).toBeGreaterThan(scale.body);
+  expect(scale.title / scale.body).toBeLessThan(2.2);
+
+  // 定義リストは、説明の開始位置を用語からずらして関係を示す。
+  const termPosition = await page
+    .locator(".rendered-content dt")
+    .first()
+    .boundingBox();
+  const descriptionPosition = await page
+    .locator(".rendered-content dd")
+    .first()
+    .boundingBox();
+  expect(descriptionPosition.x).toBeGreaterThan(termPosition.x);
+  const termWeight = await page.evaluate(
+    () =>
+      getComputedStyle(document.querySelector(".rendered-content dt"))
+        .fontWeight,
+  );
+  expect(Number.parseInt(termWeight, 10)).toBeGreaterThanOrEqual(700);
 
   await page.getByRole("button", { name: "note IDをコピー" }).click();
   await expect(page.getByRole("status")).toHaveText(
