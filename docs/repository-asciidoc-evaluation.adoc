@@ -69,7 +69,7 @@ textlint入力を公開APIとして提供するようになりました。この
 
 === 変化した前提
 
-AdocWeave v0.33.0では、CLIとRust APIから次の検査を利用できます。
+AdocWeave v0.36.0では、CLIとRust APIから次の検査を利用できます。
 
 * strict profileによる未対応構文の拒否
 * 文書内の明示IDと``xref``の構造化
