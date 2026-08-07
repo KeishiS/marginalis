@@ -76,9 +76,6 @@
   --text-reading-h2: 1.375rem;
   --text-reading-h1: 1.625rem;
   --text-reading-title: clamp(1.9rem, 1.4rem + 2vw, 2.125rem);
-
-  /* 本文の1行の長さ。表、コード、数式はこの制限を受けず器の幅まで使う。 */
-  --reading-measure: 46rem;
 }
 
 @media (prefers-color-scheme: dark) {
