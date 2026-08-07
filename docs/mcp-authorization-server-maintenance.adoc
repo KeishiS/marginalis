@@ -99,7 +99,7 @@ bash .github/scripts/check-shared-authorization-server-release.sh
 . 外部から見える動作が変わる場合は xref:protocol-regression.adoc#top[MCPプロトコル回帰試験] と公開文書を
 更新します。
 . ChatGPT、Claude Code、Codex CLIで接続から取消・再認可までを確認します。
-. 利用者や運用者へ影響する変更だけを xref:../CHANGELOG.adoc#top[変更履歴]へ記載します。
+. 利用者や運用者へ影響する変更だけを、公開する版のGitHub Release Notesへ記載します。
 
 == セキュリティー修正の反映
 

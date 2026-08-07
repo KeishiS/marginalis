@@ -30,7 +30,5 @@ assert_classification true \
 assert_classification false docs/architecture.adoc frontend/src/Application.tsx
 assert_classification false docs/openapi.json
 assert_classification false docs/mcp-tools.json
-assert_classification false CHANGELOG.adoc
-assert_classification false docs/acceptance.adoc
-assert_classification false docs/acceptance-results/v0.24.0.adoc
+assert_classification true docs/acceptance.adoc
 assert_classification true $'docs/architecture.adoc\nfrontend/src/Application.tsx'

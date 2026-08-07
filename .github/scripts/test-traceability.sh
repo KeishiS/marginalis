@@ -20,7 +20,7 @@ cat >"$work_dir/traceability.adoc" <<'EOF'
 |===
 EOF
 bash "$script_dir/check-traceability.sh" \
-  "$work_dir/requirements.adoc" "$work_dir/traceability.adoc" "$work_dir/no-acceptance"
+  "$work_dir/requirements.adoc" "$work_dir/traceability.adoc"
 
 cat >"$work_dir/traceability.adoc" <<'EOF'
 [cols="1,1,1"]
@@ -34,7 +34,7 @@ cat >"$work_dir/traceability.adoc" <<'EOF'
 |===
 EOF
 if bash "$script_dir/check-traceability.sh" \
-  "$work_dir/requirements.adoc" "$work_dir/traceability.adoc" "$work_dir/no-acceptance" \
+  "$work_dir/requirements.adoc" "$work_dir/traceability.adoc" \
   >/dev/null 2>&1; then
   echo "検証方法が空の対応表を受理しました。" >&2
   exit 1
@@ -55,7 +55,7 @@ cat >"$work_dir/traceability.adoc" <<'EOF'
 |===
 EOF
 if bash "$script_dir/check-traceability.sh" \
-  "$work_dir/requirements.adoc" "$work_dir/traceability.adoc" "$work_dir/no-acceptance" \
+  "$work_dir/requirements.adoc" "$work_dir/traceability.adoc" \
   >/dev/null 2>&1; then
   echo "要件IDが重複する対応表を受理しました。" >&2
   exit 1

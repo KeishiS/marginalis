@@ -110,7 +110,7 @@ bash .github/scripts/check-docs.sh
 '''
 
 [tasks.traceability-check]
-description = "Validate requirement coverage and versioned acceptance evidence"
+description = "Validate requirement coverage against the traceability table"
 script_runner = "@shell"
 script = '''
 set -eu
@@ -154,12 +154,10 @@ fi
 '''
 
 [tasks.release-metadata]
-description = "Verify release version, tag, changelog, and declared dual-license files"
+description = "Verify release version consistency and declared dual-license files"
 script_runner = "@shell"
 script = '''
 set -eu
-bash .github/scripts/test-release-document-state.sh
-bash .github/scripts/test-acceptance-provenance.sh
 expected_version="$(
   cargo metadata --locked --no-deps --format-version 1 |
     jq -er '[.packages[].version] | unique | if length == 1 then .[0] else error("workspace package versions differ") end'
@@ -179,14 +177,6 @@ test "$(
 test "$(
   nix eval --raw .#packages.x86_64-linux.frontend.version
 )" = "$expected_version"
-acceptance_file="docs/acceptance-results/v$expected_version.adoc"
-test -s "$acceptance_file"
-grep -Fq "xref:acceptance-results/v$expected_version.adoc#top" docs/acceptance.adoc
-grep -Fq -- "* タグ: \`\`v$expected_version\`\`" "$acceptance_file"
-bash .github/scripts/check-acceptance-provenance.sh \
-  "$expected_version" "$acceptance_file"
-bash .github/scripts/check-release-document-state.sh \
-  "$expected_version" "$acceptance_file" CHANGELOG.adoc
 '''
 
 [tasks.release-gate]
@@ -279,13 +269,12 @@ then
   exit 1
 fi
 
-# 公開済みの記録は当時の名前のまま残す。CHANGELOG、ADR、評価記録は検査の対象外とする。
+# 公開済みの記録は当時の名前のまま残す。ADRは検査の対象外とする。
 if rg -n \
   'MARGINALIS_MCP_(AUTHORIZATION_ISSUER|UPSTREAM_ISSUER_CLAIM|UPSTREAM_SUBJECT_CLAIM|GROUPS_CLAIM|EXTERNAL_ISSUER)|externalAuthorization|marginalis-auth-oauth' \
   . \
   --glob '!docs/frozen/**' \
   --glob '!docs/adr/**' \
-  --glob '!CHANGELOG.adoc' \
   --glob '!Makefile.toml' \
   --glob '!target/**' \
   --glob '!test-results/**' \

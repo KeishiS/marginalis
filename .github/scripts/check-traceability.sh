@@ -7,7 +7,6 @@ trap 'rm -rf "$temporary_directory"' EXIT
 
 requirements="${1:-docs/requirements.adoc}"
 traceability="${2:-docs/traceability.adoc}"
-acceptance_directory="${3:-docs/acceptance-results}"
 requirement_ids="$temporary_directory/requirement-ids"
 traceability_rows="$temporary_directory/traceability-rows"
 traceability_ids="$temporary_directory/traceability-ids"
@@ -65,27 +64,6 @@ if [[ "$requirements" == "docs/requirements.adoc" && "$traceability" == "docs/tr
   grep -Fq 'fn observability_logs_safe_http_and_mcp_results' crates/marginalis-web/src/http/tests.rs ||
     status=1
   grep -Fq 'kanidm-discovery-vm' flake.nix || status=1
-fi
-
-if [[ -d "$acceptance_directory" ]]; then
-  while IFS= read -r -d '' result; do
-    if ! grep -Fq '== 対象' "$result" || ! grep -Fq '== 結果' "$result"; then
-      echo "版別受入結果に対象または結果がありません: $result" >&2
-      status=1
-    fi
-    if ! cargo run --quiet --locked -p marginalis-documentation -- \
-      extract-table-rows --columns 4 --input "$result" |
-      awk -F '\t' -v result="$result" '
-        $2 == "成功" && $4 !~ /https:\/\// {
-          print "成功した受入結果に証跡リンクがありません: " result ": " $1 > "/dev/stderr"
-          invalid = 1
-        }
-        END { exit invalid }
-      '
-    then
-      status=1
-    fi
-  done < <(find "$acceptance_directory" -type f -name '*.adoc' -print0 | sort -z)
 fi
 
 exit "$status"
