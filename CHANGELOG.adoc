@@ -4,6 +4,32 @@
 この文書には利用者に影響する変更だけを記録する。
 公開 API、データフォーマット、NixOSモジュールの動作を変えない内部的な再構成は記載しない。
 
+[[0360--未公開]]
+== 0.36.0 — 未公開
+
+*改善*
+
+* ``:marginalis-citation-style: numeric``を指定したノートで、本文の引用は``[1]``、``[2]``と表示される
+のに、参考文献一覧が番号なしの箇条書きになっていた。一覧のどの項目を指すのかを順序から推測する
+しかなかったため、一覧を番号付きにし、本文の``[1]``と一覧の1番目を対応させる。``author-year``の
+一覧は従来どおり番号なしの箇条書きのままとする。
+* 日本語の本文で、原文を折り返した位置と``cite:``などのmacroの直前に余分な空白が入っていた。
+語間に空白を置かない文字の直後では空白を出力しないようにする。保存する本文は変わらないため、
+ノートを書き直す必要はない。
+
+*互換性*
+
+* AdocWeaveを0.36.0へ更新した。archive形式は``marginalis-archive-17``のままだが、archiveへ記録する
+AdocWeave package版が``0.36.0``へ変わる。v0.33.0からv0.35.1が書き出したarchive 17は、
+``migrate-archive``で変換してから取り込む。変換では全ノートを0.36.0の規則で再検証する。
+* SQLite schemaは20のままなので、v0.35.1のdatabaseは変換せず、そのまま起動できる。
+* 本文が``[bibliography]``ブロックで同じcitation keyを定義している場合は、著者が書いた記述を優先する
+従来の動作を維持する。この除外によって番号が飛ぶノートでは、番号のない箇条書きとして表示する。
+* REST APIの版``v3``、MCP tool schema、OAuth scope、OAuth metadataとendpoint、NixOSのoptionと
+環境変数、authoring profile 15、note profile 5は変わらない。既存のclient、authorization grant、
+access token、refresh tokenもそのまま使えるため、MCPクライアントを接続し直す必要はない。
+* OpenAPIとMCPが広告するAdocWeave package版が``0.36.0``へ変わる。
+
 [[0351--2026-08-07]]
 == 0.35.1 — 2026-08-07
 

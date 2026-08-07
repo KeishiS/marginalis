@@ -101,6 +101,7 @@ treeが``未確定``のままであることを拒否します。squash方式で
 
 == 記録
 
+* xref:acceptance-results/v0.36.0.adoc#top[v0.36.0]
 * xref:acceptance-results/v0.35.1.adoc#top[v0.35.1]
 * xref:acceptance-results/v0.35.0.adoc#top[v0.35.0]
 * xref:acceptance-results/v0.34.0.adoc#top[v0.34.0]
