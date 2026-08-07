@@ -5,15 +5,19 @@
 
 * タグ: ``v0.34.1``
 * 対象: ``codex/v0.34.1-release``のリリース候補
-* 人手受入対象Pull Request: ``未確定``
-* 人手受入対象コミット: ``未確定``
-* 人手受入対象tree: ``未確定``
+* 人手受入対象Pull Request: ``#365``
+* 人手受入対象コミット: ``7aa7dfdcf8318a44828770a48e5f50ab7c000dc1``
+* 人手受入対象tree: ``03fc20d13949bcc8f9e40b17d31924d1f90d3a9f``
 * 最終リリース対象: ``refs/tags/v0.34.1^{commit}``
-* 判定日: 未確定
-* 公開判定: 未判定
+* 判定日: 2026-08-06
+* 公開判定: 公開可
 
 ``main``へはsquash方式でマージするため、人手受入対象のコミットは``main``の履歴に残りません。
 確認に必要な場合は、記録したPull Request番号から``refs/pull/<番号>/head``を取得します。
+
+人手受入後に変更したファイルは``CHANGELOG.adoc``とこの受入結果だけです。人手受入対象のtreeは、
+Pull Request \#365をmergeした``main``のtreeと一致します。したがって、人手受入したプログラムと
+最終リリースのプログラムは同じです。
 
 == 結果
 
@@ -25,77 +29,94 @@
 |証跡・判断
 
 |自動検証
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/360[機能Pull Request \#360]、
+https://github.com/KeishiS/marginalis/pull/362[機能Pull Request \#362]、
+https://github.com/KeishiS/marginalis/pull/365[リリースPull Request \#365]で、React・TypeScript、Rust、
+公開契約、依存境界、共有Authorization Serverの固定、設計条件との対応、カバレッジ、ブラウザー試験、
+AArch64、archive移行、NixOS VM E2Eが成功した
 
 |上限を超える権限の表示
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/365[リリースPull Request \#365]に対応して実施した利用者受入で、
+client別上限を超える権限が同意画面で選択できず、許可できない権限として理由とともに示されることを
+確認した
 
 |上限内の権限の付与
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/365[リリースPull Request \#365]に対応した利用者受入で、
+同意画面で選んだ権限がそのままtokenへ記録され、MCPアクセス設定の付与済みscopeへ反映されることを
+確認した
 
 |クライアント別上限の解除
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/365[リリースPull Request \#365]に対応した利用者受入で、
+「上限を解除」により未設定へ戻り、既存の接続とtokenが維持されることを確認した
 
 |同意していない権限を含む上限の設定
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/365[リリースPull Request \#365]に対応した利用者受入で、
+まだ同意していない権限を上限へ追加でき、追加した操作の利用にはクライアント側の再認可が必要である
+ことを確認した
 
 |上限を狭めたときの失効
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/365[リリースPull Request \#365]に対応した利用者受入で、
+上限を狭めると範囲外のtoken familyだけが失効し、上限内の接続が維持されることを確認した
 
 |既存接続の維持
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/365[リリースPull Request \#365]に対応した利用者受入で、
+v0.34.0のdatabaseをそのまま引き継いで配備し、既存のMCP access tokenとrefresh tokenが再接続なしで
+利用できることを確認した
 
 |公開契約の差分確認
-|未実施
-|未実施
-|未実施
+|成功
+|2026-08-06
+|https://github.com/KeishiS/marginalis/pull/365[リリースPull Request \#365]で、v0.34.0タグと比較して
+MCP tool schema、NixOS moduleのoption、SQLite schema、archive形式、OAuth metadataとscopeに差分がなく、
+OpenAPIの差分が``DELETE /api/v3/mcp-authorizations/{client_id}/scope-ceiling``の追加だけであることを
+確認した
 |===
 
-すべての確認が終わるまで公開判定は``未判定``のままにします。
+自動検証と実環境での確認がすべて成功したため、v0.34.1を公開できます。
 
-== 今回の確認で重点を置く点
+== 今回の確認で重点を置いた点
 
 この版は、MCPクライアントへ許可するscopeの上限に関する2つの不具合を直します。新しい機能を加える
-ものではないため、確認の中心は「上限の扱いが利用者から見て一貫していること」です。
+ものではないため、確認の中心は「上限の扱いが利用者から見て一貫していること」でした。
 
 *上限を超える権限の表示*: クライアント別の上限を``notes:read``だけに設定した状態で、``notes:write``も
-要求するクライアントから認可します。同意画面で``notes:write``を選べないこと、要求されたが許可できない
-権限として理由が示されることを確認します。要求された権限がすべて上限を超える場合は、同意画面が出ずに
-クライアントへ``invalid_scope``が返ることも確認します。
+要求するクライアントから認可しました。同意画面で``notes:write``を選べないこと、要求されたが許可できない
+権限として理由が示されることを確認しました。要求された権限がすべて上限を超える場合は、同意画面が出ずに
+クライアントへ``invalid_scope``が返ることも確認しました。
 
 *上限内の権限の付与*: 同意画面で選んだ権限がそのままtokenへ記録され、MCPアクセス設定の付与済みscopeにも
-反映されることを確認します。承認した権限が黙って減らないことが要点です。
+反映されることを確認しました。承認した権限が黙って減らないことが要点です。
 
-*クライアント別上限の解除*: MCPアクセス設定で「上限を解除」を選び、未設定へ戻ることを確認します。解除
+*クライアント別上限の解除*: MCPアクセス設定で「上限を解除」を選び、未設定へ戻ることを確認しました。解除
 しても既存の接続とtokenが残ること、その後の再認可でサーバーが対応する全scopeを許可できることを確認
-します。
+しました。
 
 *同意していない権限を含む上限の設定*: 解除せずに、まだ同意していない権限を上限へ追加できることを確認
-します。上限を広げただけでは既存tokenへ権限が増えないこと、追加した操作にはクライアント側の再認可が
-必要であることも確認します。
+しました。上限を広げただけでは既存tokenへ権限が増えないこと、追加した操作にはクライアント側の再認可が
+必要であることも確認しました。
 
 *上限を狭めたときの失効*: 上限を狭めると、新しい上限を超えるtoken familyだけが直ちに失効し、上限内の
-接続は維持されることを確認します。
+接続は維持されることを確認しました。
 
 *既存接続の維持*: v0.34.0のdatabaseをそのまま引き継いで配備し、既存のMCP access tokenとrefresh tokenが
-そのまま使えることを確認します。この版ではMCPクライアントの再接続を不要とします。
+そのまま使えることを確認しました。この版ではMCPクライアントの再接続を不要とします。
 
 *公開契約の差分*: MCP tool schema、NixOS moduleのoption、SQLite schema、archive形式、OAuth metadataと
-scopeについて、v0.34.0タグと比べて意図しない差分がないことを機械的に確認します。OpenAPIには
-``DELETE /api/v3/mcp-authorizations/{client_id}/scope-ceiling``の追加だけがあることを確認します。
+scopeについて、v0.34.0タグと比べて意図しない差分がないことを機械的に確認しました。OpenAPIには
+``DELETE /api/v3/mcp-authorizations/{client_id}/scope-ceiling``の追加だけがあることを確認しました。
 
-利用者、Cookie、token、認可code、PKCE verifier、実際のノート本文や書誌情報は記録しません。
+利用者、Cookie、token、認可code、PKCE verifier、実際のノート本文や書誌情報は記録していません。
