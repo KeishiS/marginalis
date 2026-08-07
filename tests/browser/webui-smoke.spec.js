@@ -238,8 +238,8 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(documentPosition).not.toBeNull();
   expect(documentPosition.width).toBeGreaterThan(1000);
 
-  // 文章は行の長さを制限し、表とコードは器の幅まで使う。表は横スクロールする枠が器の幅を占め、
-  // 表そのものは列の幅に合わせる。
+  // 文章の行の長さは制限しない。文字の幅は言語によって違い、一つの上限では決められないため、
+  // 段落も表を包む枠も器の幅を使う。
   const paragraphPosition = await page
     .locator(".rendered-content > p")
     .first()
@@ -248,8 +248,12 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
     .locator(".rendered-content .table-scroll")
     .first()
     .boundingBox();
-  expect(paragraphPosition.width).toBeLessThanOrEqual(46 * 16);
-  expect(tableScrollPosition.width).toBeGreaterThan(paragraphPosition.width);
+  const contentWidth = await page
+    .locator(".rendered-content")
+    .boundingBox()
+    .then((box) => box.width);
+  expect(paragraphPosition.width).toBe(contentWidth);
+  expect(tableScrollPosition.width).toBe(contentWidth);
 
   // 見出しは題名から本文へ段階的に小さくなる。同じ大きさの段が並ばない。
   const scale = await page.evaluate(() => {

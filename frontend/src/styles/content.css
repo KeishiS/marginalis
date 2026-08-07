@@ -12,22 +12,6 @@
   margin-block-end: 0;
 }
 
-/*
- * 文章は1行が長くなりすぎると折り返し位置を追いにくい。段落、リスト、見出しは行の長さを
- * 制限し、表、コード、数式は器の幅まで使えるようにする。
- */
-.rendered-content > h1,
-.rendered-content > h2,
-.rendered-content > h3,
-.rendered-content > h4,
-.rendered-content > p,
-.rendered-content > ul,
-.rendered-content > ol,
-.rendered-content > dl,
-.rendered-content > blockquote {
-  max-width: var(--reading-measure);
-}
-
 .rendered-content h1,
 .rendered-content h2,
 .rendered-content h3,
