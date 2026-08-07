@@ -7,7 +7,7 @@
     inputs.nixpkgs.follows = "nixpkgs";
   };
   inputs.adocweave = {
-    url = "github:KeishiS/adocweave/88c98d22f0e43b23348e5281d65d4d02f3bba97a";
+    url = "github:KeishiS/adocweave/28a3162c9fe979237e0857333f28c7cf7fec4788";
     inputs.nixpkgs.follows = "nixpkgs";
     inputs.rust-overlay.follows = "rust-overlay";
   };
@@ -117,7 +117,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-0.33.0" = "sha256-pK192ra6uJpYIlP+f2pNGafeVEzVhoxxioIUOQnglaQ=";
+                "adocweave-0.36.0" = "sha256-qPBEt4UCj3y7nGXTSKfq0ggIFsi0BhxiIuoc410WhzY=";
                 "mcp-authorization-server-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
                 "mcp-authorization-server-cimd-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
               };
@@ -298,7 +298,7 @@
                 cmp schema9.json schema9-original.json
                 jq -e '
                   .format == "marginalis-archive-17"
-                  and .adocweave_package_version == "0.33.0"
+                  and .adocweave_package_version == "0.36.0"
                   and .note_profile_version == 5
                   and (.notes | length) == 2
                   and (.note_acl | length) == 2
@@ -560,7 +560,7 @@
                 + "test -f \"$backup/COMPLETE\"; "
                 + "test -f \"$backup/marginalis-archive.json\"; "
                 + "jq -e '.format == \"marginalis-archive-17\" "
-                + "and .adocweave_package_version == \"0.33.0\" "
+                + "and .adocweave_package_version == \"0.36.0\" "
                 + "and .note_profile_version == 5 and (.notes | length == 1)' "
                 + "\"$backup/marginalis-archive.json\"; "
                 + "test $(stat -c %a \"$backup\") = 700; "

@@ -19,6 +19,10 @@ use marginalis_domain::{
 };
 use serde::{Deserialize, Serialize};
 
+/// archiveの構造を表す形式名。
+///
+/// 項目の追加、削除または意味の変更で上げます。AdocWeave package版とnote profile版は
+/// manifestへ別の項目として記録するため、解析器だけが変わった場合は形式名を変えません。
 pub const ARCHIVE_FORMAT: &str = "marginalis-archive-17";
 /// archive内のノートを受理できる入力規則の版。
 ///
@@ -58,12 +62,15 @@ const fn migration_contract(
 #[cfg(test)]
 const PRE_PROVENANCE_CONTRACT: MigrationContract =
     migration_contract("marginalis-archive-14", "0.27.0", 5, false, false);
-/// 直前の現行形式。AdocWeave更新時の再検証を試験する。
+/// 直前の契約。AdocWeave更新時の再検証を試験する。
+///
+/// 形式は現行と同じで、記録するAdocWeave package版だけが異なります。
 #[cfg(test)]
 const LATEST_MIGRATION_CONTRACT: MigrationContract =
-    migration_contract("marginalis-archive-16", "0.27.0", 5, true, true);
+    migration_contract("marginalis-archive-17", "0.33.0", 5, true, true);
 /// 移行元として受理する旧archive契約。形式、AdocWeave package版、note profile版の組。
 const SUPPORTED_MIGRATION_CONTRACTS: &[MigrationContract] = &[
+    migration_contract("marginalis-archive-17", "0.33.0", 5, true, true),
     migration_contract("marginalis-archive-16", "0.27.0", 5, true, true),
     migration_contract("marginalis-archive-15", "0.27.0", 5, true, false),
     migration_contract("marginalis-archive-14", "0.27.0", 5, false, false),
@@ -954,6 +961,29 @@ mod tests {
         assert_eq!(provenance.created_via, NoteCreationSource::Unknown);
         assert!(!provenance.review_tracking_known);
         assert_eq!(provenance.reviewed_revision, None);
+    }
+
+    /// 形式名が現行と同じでも、AdocWeave package版が違うarchiveは移行の入力として扱う。
+    ///
+    /// 解析器だけが変わった更新では形式名を上げないため、現行かどうかは形式名だけでは
+    /// 決まらない。取り込む前に本文を現行の規則で再検証する必要がある。
+    #[test]
+    fn the_current_format_with_a_previous_adocweave_version_is_migrated() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let current = create_archive(&content(), &snapshot);
+        let mut previous = current.clone();
+        stamp_contract(&mut previous, LATEST_MIGRATION_CONTRACT);
+        assert_eq!(previous.format, current.format);
+        assert_ne!(
+            previous.adocweave_package_version,
+            current.adocweave_package_version
+        );
+
+        assert_eq!(
+            validate_archive(&content(), &previous),
+            Err(ArchiveValidationError)
+        );
+        assert_eq!(migrate_previous_archive(&content(), &previous), Ok(current));
     }
 
     /// 独自の文書属性へ接頭辞を付ける前の契約。

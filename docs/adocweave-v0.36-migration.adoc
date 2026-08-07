@@ -1,0 +1,69 @@
+= AdocWeave 0.36移行判断
+
+== 目的
+
+[#top]
+この文書は、AdocWeave 0.33.0から0.36.0への更新がMarginalisへ与える影響を記録します。
+現行の入力方法は xref:rest-api.adoc#top[REST API]、archiveの変換手順は
+xref:nixos.adoc#top[NixOSでの運用]を参照してください。
+
+前回の更新は xref:adocweave-v0.33-migration.adoc#top[AdocWeave 0.33移行判断]にあります。
+
+== 固定する依存
+
+MarginalisはAdocWeave package版``0.36.0``を、release tagが指すcommitで使用します。CargoとNixの
+両方で、このcommitと取得内容のhashを固定します。文書検査に使うtextlint用Processorも同じ版の
+配布物へそろえます。タグ作成前のcommitは最終的な依存には使用しません。
+
+== 参考文献一覧へ番号を渡せるようにする
+
+0.36.0は、利用側アプリが生成した参考文献一覧の項目へ番号を渡す``number``を追加しました。
+番号を渡した一覧は``ol``、渡さない一覧は従来どおり``ul``として出力されます。番号の値そのものは
+HTMLへ書き込まれず、``ol``の項番として表示されます。
+
+0.33.0から使っていた``with_label``は、利用側が引用の表示文字列を渡さなかった場合にだけ読まれる
+値でした。Marginalisはすべての引用へ表示文字列を渡すため、番号を``with_label``へ渡しても出力に
+現れず、``:marginalis-citation-style: numeric``を指定したノートでも一覧は番号なしの箇条書きの
+ままでした。番号を項番として表示する実装は、この更新の後に別途行います。
+
+番号は一覧全体の性質として扱われます。すべての項目が番号を持つか、どの項目も持たないかの
+どちらかで、AdocWeaveが無効・重複・本文が同じIDを定義している項目を落とした後に残る番号が、
+並び順で1、2、…、nと読める必要があります。条件を満たさない入力は``invalid-generated-bibliography-numbering``
+としてerror severityで報告され、参考文献一覧が出力されません。Marginalisはerror severityの診断が
+あるノートを描画しないため、番号を渡す実装では、この条件を満たす場合だけ番号を渡します。
+
+== 日本語の本文で不要な空白を出力しなくなる
+
+0.35.0は、語間に空白を置かない文字の直後では、記法が要求した空白を出力しなくなりました。対象は
+段落内の改行と、inline macroの直前に必要な空白です。日本語のノートでは、原文をどこで折り返しても
+本文に空きが残らず、``結果は cite:[smith2024] です。``のような書き方でも引用の直前に空白が
+入りません。macroの直後の空白と、書式記号の前後の空白は従来どおり出力します。
+
+保存する本文は変わりません。表示だけが変わるため、ノートを書き直す必要はありません。
+
+== そのほかの版の影響
+
+0.34.0は、filesystem resourceを読むhost向けRust APIを整理し、``ResourceError``へのvariant追加と
+巻き戻しAPIの削除という破壊的変更を含みます。Marginalisは外部resourceを受理せず、ノート本文の
+文字列だけを解析するため、この経路を使用しません。0.34.0のtable解析の修正と0.35.0のLanguage
+Server関連の変更も、入力を受理する条件を変えません。
+
+== 保存形式への影響
+
+SQLite schema versionは20のままです。v0.35.1のdatabaseはそのままv0.36.0で起動できます。
+今回新しく拒否する本文はないため、database内の全ノートを事前に変換する必要はありません。
+
+archive形式は``marginalis-archive-17``のままです。archiveの項目とその意味は変わらず、
+変わるのはmanifestが記録するAdocWeave package版だけであるため、形式名を上げません。形式名は
+archiveの構造を表し、解析器の版はmanifestの``adocweave_package_version``が表します。
+
+v0.33.0からv0.35.1までが書き出したarchive 17は、記録しているAdocWeave package版が``0.33.0``で
+現行と違うため、``migrate-archive``で変換してから取り込みます。変換では本文を0.36.0で再検証し、
+ノートの作成経路、人手確認状態、書誌情報の取込元と対応情報を含む既存の記録を維持します。
+形式名が同じでも、版の違うarchiveを現行archiveとして直接取り込むことはできません。
+
+== 公開契約への影響
+
+入力を受理する条件は変わらないため、authoring profile版は15のままです。REST APIとMCPが広告する
+AdocWeave package版は``0.36.0``へ変わります。REST APIの版``v3``、MCP tool schema、OAuth scope、
+NixOSのoptionと環境変数は変わりません。

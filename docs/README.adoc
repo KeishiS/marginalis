@@ -31,8 +31,8 @@
 * xref:requirements.adoc#top[要件定義]
 * xref:traceability.adoc#top[要件と検証の対応表]
 * xref:architecture.adoc#top[アーキテクチャ]
+* xref:adocweave-v0.36-migration.adoc#top[AdocWeave 0.36移行判断]
 * xref:adocweave-v0.33-migration.adoc#top[AdocWeave 0.33移行判断]
-* xref:adocweave-v0.27-migration.adoc#top[AdocWeave 0.27移行判断]
 * xref:adr/0001-auth0をmcpのauthorization-serverに採用.adoc#top[Auth0をMCPのAuthorization Serverに採用]（廃止。ADR
 0007で置き換え）
 * xref:adr/0002-sqliteを正本として維持する.adoc#top[SQLiteを正本として維持]
@@ -63,6 +63,7 @@
 * xref:adocweave-v0.20-migration.adoc#top[AdocWeave 0.20移行判断]
 * xref:adocweave-v0.22-migration.adoc#top[AdocWeave 0.22移行判断]
 * xref:adocweave-v0.23-migration.adoc#top[AdocWeave 0.23移行判断]
+* xref:adocweave-v0.27-migration.adoc#top[AdocWeave 0.27移行判断]
 * xref:v0.3.0-design.adoc#top[v0.3.0再設計判断記録]
 * xref:v0.3.0-operations.adoc#top[v0.3.0運用記録]
 * xref:research-search-vision.adoc#top[連環（Renkan）— 個人研究の記憶を横断する探索基盤]
