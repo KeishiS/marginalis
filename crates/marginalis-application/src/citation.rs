@@ -80,16 +80,19 @@ impl CitationStyle {
         }
     }
 
-    /// 参考文献一覧の項目の見出しに使う表示テキストを作る。
+    /// 参考文献一覧で項目に付ける番号を決める。
     ///
-    /// 番号で示すスタイルでは初出順の番号を返します。AsciiDocはbibliography anchorの
-    /// カンマ以降を表示テキストとして読み、項目と本文からの参照を`[1]`の形にします。
-    /// 著者・年のスタイルでは見出しを付けず、citation keyのままにします。
+    /// 番号で示すスタイルでは本文での初出順の番号を返し、文書adapterはこれを番号付き
+    /// 一覧の項番として描画器へ渡します。著者・年のスタイルでは番号を付けません。
+    ///
+    /// 番号は`u32`で表せる範囲だけを扱います。表せない場合は`None`を返し、番号のない
+    /// 一覧として描画します。1つのノートが持てる引用の数は本文の大きさで抑えられており、
+    /// この範囲を超える入力は現実には作れません。
     #[must_use]
-    pub fn entry_label(self, number: usize) -> Option<String> {
+    pub fn entry_number(self, number: usize) -> Option<u32> {
         match self {
             Self::AuthorYear => None,
-            Self::Numeric => Some(number.to_string()),
+            Self::Numeric => u32::try_from(number).ok(),
         }
     }
 

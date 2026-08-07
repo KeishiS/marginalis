@@ -245,11 +245,16 @@ CSL-JSONファイルの一括取込は、application層で入力検査、既存�
 Web UIとREST APIだけに公開し、MCPの書誌情報toolは従来の一項目単位の操作に限定します。
 
 引用の表示文字列と参考文献項目の文字列はapplication層が組み立て、``NoteContent`` portへ渡します。
-文書adapterは、参考文献一覧を``[bibliography]``ブロックとして本文の末尾へ加えてからAdocWeaveへ渡し、
-引用の表示はAdocWeaveの解決入力として渡します。anchor、本文から項目へのlink、項目から本文への
-戻りlinkはAdocWeaveが生成するため、MarginalisはHTMLを組み立てません。生成した一覧は保存する本文へ
-書き込みません。書誌情報の文字列は表示であって記法ではないため、文書adapterがAsciiDocの記法として
-解釈されない形へ直します。
+番号で示すスタイルで使う項目の番号も、本文での初出順を知っているapplication層が決めます。
+文書adapterは、参考文献一覧と引用の表示をAdocWeaveの構造化した描画入力として渡します。
+anchor、本文から項目へのlink、項目から本文への戻りlink、番号付き一覧の項番はAdocWeaveが
+生成するため、MarginalisはHTMLを組み立てません。生成した一覧は保存する本文へ書き込みません。
+書誌情報の文字列は表示であって記法ではないため、AdocWeaveが記法として解釈しない値として
+受け取ります。
+
+本文が同じcitation keyを定義している項目を一覧から除くのは文書adapterです。除いた後に番号が
+連番でなくなる場合は番号を渡しません。AdocWeaveは番号を一覧全体の性質として扱い、連番でない
+入力を誤りとして報告するため、番号のない一覧へ退避して描画を続けます。
 
 アーカイブのJSON項目を表す型と、形式の版および移行できる旧契約は``marginalis-archive``に置きます。
 保存形式はAsciiDocの解析とは変更理由が異なるため、独立したcrateにします。
