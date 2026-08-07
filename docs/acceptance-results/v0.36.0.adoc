@@ -1,0 +1,114 @@
+= v0.36.0受入結果
+
+[#top]
+== 対象
+
+* タグ: ``v0.36.0``
+* 対象: ``claude/v0.36.0-release``のリリース候補
+* 人手受入対象Pull Request: ``#383``
+* 人手受入対象コミット: ``0dbe47ca631a04a9da869343a26aa58cf425c363``
+* 人手受入対象tree: ``c883c2df573227f0fccee54c1fd9a354ae3b74e4``
+* 最終リリース対象: ``refs/tags/v0.36.0^{commit}``
+* 判定日: 2026-08-07
+* 公開判定: 公開可
+
+``main``へはsquash方式でマージするため、人手受入対象のコミットは``main``の履歴に残りません。
+確認に必要な場合は、記録したPull Request番号から``refs/pull/<番号>/head``を取得します。
+
+== 結果
+
+[cols="1,1,1,1",options="header"]
+|===
+|区分
+|結果
+|実施日
+|証跡・判断
+
+|自動検証
+|成功
+|2026-08-07
+|https://github.com/KeishiS/marginalis/pull/381[依存更新Pull Request \#381]、
+https://github.com/KeishiS/marginalis/pull/382[機能Pull Request \#382]と
+https://github.com/KeishiS/marginalis/pull/383[リリースPull Request \#383]で、React・TypeScript、Rust、
+公開契約、依存境界、共有Authorization Serverの固定、AdocWeaveの固定、設計条件との対応、カバレッジ、
+ブラウザー試験、AArch64、archive移行、NixOS VM E2Eが成功した
+
+|番号付きの参考文献一覧
+|成功
+|2026-08-07
+|https://github.com/KeishiS/marginalis/pull/383[リリースPull Request \#383]に対応して実施した利用者受入で、
+``numeric``のノートで参考文献一覧が番号付きになり、本文の``[1]``と一覧の1番目が対応すること、同じ文献を
+複数回引用しても項目と番号が1つであること、項目から本文の各引用位置へ戻れること、``author-year``では
+番号のない箇条書きのままであることを確認した
+
+|本文が定義した参考文献との併用
+|成功
+|2026-08-07
+|https://github.com/KeishiS/marginalis/pull/383[リリースPull Request \#383]に対応した利用者受入で、
+``[bibliography]``ブロックで定義した項目が著者の記述のまま優先されること、その除外で番号が飛ぶ場合も
+描画に失敗せず、番号のない箇条書きとして残りの項目が表示されることを確認した
+
+|日本語の本文の空白
+|成功
+|2026-08-07
+|https://github.com/KeishiS/marginalis/pull/383[リリースPull Request \#383]に対応した利用者受入で、
+原文を途中で折り返した段落と、macroの直前へ空白を置いた本文の表示に余分な空きが残らないことを、
+閲覧画面と編集画面のプレビューの両方で確認した
+
+|既存databaseからの更新
+|成功
+|2026-08-07
+|https://github.com/KeishiS/marginalis/pull/383[リリースPull Request \#383]に対応した利用者受入で、
+v0.35.1のschema 20を残したままv0.36.0を配備し、起動、OIDCログイン、Web UI、既存のノートの表示を
+確認した
+
+|archive移行・復元
+|成功
+|2026-08-07
+|https://github.com/KeishiS/marginalis/pull/383[リリースPull Request \#383]に対応した利用者受入で、
+v0.35.1が書き出したarchive 17が``import-archive``で拒否されること、``migrate-archive``で変換した後に
+隔離した空のschema 20へ復元でき、ノート、ACL、参照、削除状態、revision、作成経路、人手確認記録、
+書誌ライブラリー、取込元と対応情報、数式マクロ設定が一致することを確認した
+
+|公開契約の差分確認
+|成功
+|2026-08-07
+|https://github.com/KeishiS/marginalis/pull/383[リリースPull Request \#383]で、v0.35.1タグと比較して、
+OpenAPI、MCP tool schema、NixOS moduleのoption、SQLite schema、archive形式、OAuth metadataとscopeの
+差分が、広告するAdocWeave package版だけであることを確認した
+|===
+
+自動検証と実環境での確認がすべて成功したため、v0.36.0を公開できます。
+
+== 今回の確認で重点を置いた点
+
+この版は、番号で示す引用スタイルの参考文献一覧を番号付きで表示します。あわせてAdocWeaveを0.36.0へ
+更新したため、日本語の本文の表示と、archiveの取り込み手順が変わります。ノートの本文、SQLite schema、
+REST APIの要求と応答、MCP tool schemaは変えていません。
+
+*番号付きの参考文献一覧*: ``:marginalis-citation-style: numeric``を指定したノートで、参考文献一覧が
+番号付きで表示され、本文の``[1]``と一覧の1番目が対応することを確認しました。同じ文献を複数回引用しても
+項目と番号が1つだけであること、項目から本文の各引用位置へ戻れること、``author-year``のノートでは
+従来どおり番号のない箇条書きになることも確かめました。
+
+*本文が定義した参考文献との併用*: ``[bibliography]``ブロックで自分で定義した項目と``cite:``を同じ
+ノートで使い、著者が書いた記述が優先されること、その除外によって番号が飛ぶ場合でも描画に失敗せず、
+番号のない箇条書きとして残りの項目が表示されることを確認しました。
+
+*日本語の本文の空白*: 原文を途中で折り返した段落と、``結果は cite:[smith2024] です。``のように
+macroの直前へ空白を置いた本文で、表示に余分な空きが残らないことを確認しました。閲覧画面と編集画面の
+プレビューの両方で確かめました。
+
+*既存databaseからの更新*: v0.35.1のschema 20を残したままv0.36.0を配備し、起動、OIDCログイン、
+Web UI、既存のノートの表示を確認しました。
+
+*archive移行・復元*: v0.35.1が書き出したarchive 17を``import-archive``が拒否すること、
+``migrate-archive``で変換した後に、本番から隔離した空のschema 20へ復元できることを確認しました。
+復元後にノート、ACL、参照、削除状態、revision、作成経路、人手確認記録、書誌ライブラリー、取込元と
+対応情報、数式マクロ設定が一致することも確かめました。
+
+*公開契約の差分*: OpenAPI、MCP tool schema、NixOS moduleのoption、SQLite schema、archive形式、
+OAuth metadataとscopeについて、v0.35.1タグと比べた差分が、広告するAdocWeave package版だけで
+あることを機械的に確認しました。
+
+利用者、Cookie、token、認可code、PKCE verifier、実際のノート本文や書誌情報は記録していません。
