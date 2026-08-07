@@ -7,13 +7,20 @@
   z-index: 20;
 }
 
+/*
+ * 狭い画面では、移動先を隠さず折り返す。移動手段は4つだけなので、開閉する仕掛けを作るより
+ * そのまま並べたほうが到達しやすい。幅が足りる間は1行のままになる。
+ */
 .page-header-inner {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
   justify-content: space-between;
   margin-inline: auto;
   max-width: var(--content-width);
   min-height: 4rem;
+  padding-block: var(--space-2);
   padding-inline: var(--space-5);
 }
 
@@ -47,21 +54,59 @@
 .primary-navigation {
   align-items: center;
   display: flex;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  justify-content: flex-end;
 }
 
-.primary-navigation > a:not(.button) {
+/*
+ * 移動先はdetailsの中に置き、狭い画面では開閉するメニューにする。JavaScriptを使わない。
+ */
+.navigation-list {
+  align-items: center;
+  display: flex;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * 幅が足りる画面ではsummaryを隠し、開閉の状態にかかわらず移動先を常に見せる。
+ * 閉じたdetailsの内容はブラウザーが隠すため、この指定で明示的に見せる。
+ */
+@media (width > 60rem) {
+  .navigation-menu-button {
+    display: none;
+  }
+
+  .navigation-menu::details-content {
+    block-size: auto;
+    content-visibility: visible;
+  }
+}
+
+/* 指で押せるよう、移動先の高さを確保する。 */
+.navigation-list a {
+  align-items: center;
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
+  display: inline-flex;
   font-size: var(--text-small);
   font-weight: 600;
+  min-height: 2.75rem;
   padding: var(--space-2) var(--space-3);
   text-decoration: none;
 }
 
-.primary-navigation > a:not(.button):hover {
+.navigation-list a:hover {
   background: var(--color-surface-subtle);
   color: var(--color-text);
+}
+
+/* 現在いる画面を示す。 */
+.navigation-list a[aria-current="page"] {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
 .page-main {
@@ -132,7 +177,47 @@
     padding-inline: var(--space-3);
   }
 
-  .primary-navigation > a:not(.button) {
+  /* 狭い画面では、移動先を開閉するメニューへまとめる。 */
+  .navigation-menu-button {
+    align-items: center;
+    border: var(--border-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    cursor: pointer;
+    display: inline-flex;
+    font-size: var(--text-small);
+    font-weight: 650;
+    justify-content: center;
+    list-style: none;
+    min-height: 2.75rem;
+    padding-inline: var(--space-3);
+    user-select: none;
+  }
+
+  .navigation-menu-button::-webkit-details-marker {
     display: none;
+  }
+
+  .navigation-menu {
+    position: relative;
+  }
+
+  /* 開いたメニューは本文へ重ねる。ヘッダーの高さを増やして本文を押し下げない。 */
+  .navigation-menu[open] .navigation-list {
+    background: var(--color-surface);
+    border: var(--border-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    display: grid;
+    inset-block-start: calc(100% + var(--space-2));
+    inset-inline-start: 0;
+    min-width: 12rem;
+    padding: var(--space-2);
+    position: absolute;
+    z-index: 30;
+  }
+
+  .navigation-list a {
+    width: 100%;
   }
 }

@@ -119,7 +119,7 @@ async fn application_shell(
     let config = serde_json::to_string(&ApplicationConfigResponse {
         api_base: external_path(&state.cookie_path, "/api/v3"),
         base_path: state.cookie_path.clone(),
-        path: internal_path,
+        path: internal_path.clone(),
         search: uri
             .query()
             .map_or(String::new(), |query| format!("?{query}")),
@@ -133,6 +133,7 @@ async fn application_shell(
     let mut response = Html(page_document(
         "Marginalis",
         &state.cookie_path,
+        &internal_path,
         &content,
         &["/assets/page.js", "/assets/editor.js"],
     ))
