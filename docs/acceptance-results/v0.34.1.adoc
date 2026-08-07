@@ -15,9 +15,21 @@
 ``main``へはsquash方式でマージするため、人手受入対象のコミットは``main``の履歴に残りません。
 確認に必要な場合は、記録したPull Request番号から``refs/pull/<番号>/head``を取得します。
 
-人手受入後に変更したファイルは``CHANGELOG.adoc``とこの受入結果だけです。人手受入対象のtreeは、
-Pull Request \#365をmergeした``main``のtreeと一致します。したがって、人手受入したプログラムと
-最終リリースのプログラムは同じです。
+人手受入の直後は、変更したファイルが``CHANGELOG.adoc``とこの受入結果だけでした。その後、公開前の
+release gateが新しく公開された脆弱性情報で失敗したため、次の3ファイルを追加で変更しています。
+
+* ``frontend/pnpm-workspace.yaml``（新規）
+* ``frontend/pnpm-lock.yaml``
+* ``flake.nix``
+
+内容は、``stylelint``が間接的に取り込む``js-yaml``を修正版へ上書きし
+（CVE-2026-59870、GHSA-5p4m-2wfm-xmqj）、Nixの取得ハッシュを合わせたものです。詳しくは
+https://github.com/KeishiS/marginalis/pull/372[Pull Request \#372]を参照してください。
+
+``js-yaml``は``stylelint``の依存であり、配布するプログラムには含まれません。Rustのcrate、
+フロントエンドの配布物、SQLite schema、archive形式、OpenAPI、MCP tool schema、NixOS moduleの
+どれも変わりません。したがって、人手受入で確認した動作は最終リリースでも同じです。この判断により、
+人手受入はやり直していません。
 
 == 結果
 
