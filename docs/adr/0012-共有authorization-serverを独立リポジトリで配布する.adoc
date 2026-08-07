@@ -20,8 +20,7 @@ ADR 0008に基づき、OAuth Authorization Serverの中核とClient ID Metadata 
 * 安全性修正を、Marginalisの公開周期とは独立した周期で公開できること
 
 Issue 314では、独立リポジトリ、crate registry、固定したGit dependencyを比較しました。第2の利用側として
-想定している xref:../research-search-vision.adoc#top[連環（Renkan）] はまだ実装が始まっておらず、公開APIは
-今後も変わります。一方で、境界の検証と脆弱性対応の分離は先に必要です。
+想定している連環（Renkan）はまだ実装が始まっておらず、公開APIは今後も変わります。一方で、境界の検証と脆弱性対応の分離は先に必要です。
 
 == 決定
 

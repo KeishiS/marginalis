@@ -24,7 +24,6 @@
 
 * xref:development.adoc#top[GitHubを使う開発手順]
 * xref:documentation.adoc#top[文書管理方針]
-* xref:repository-asciidoc-evaluation.adoc#top[リポジトリ文書のAsciiDoc化評価]
 * xref:coverage.adoc#top[カバレッジ]
 * xref:observability.adoc#top[ログと障害診断]
 * xref:security.adoc#top[セキュリティ]
@@ -53,10 +52,7 @@
 
 * xref:../CHANGELOG.adoc#top[変更履歴]
 * xref:roadmap.adoc#top[ロードマップ]
-* xref:mcp-authorization-server-evaluation.adoc#top[MCP向けAuthorization Serverの評価手順]
 * https://github.com/KeishiS/marginalis/issues[GitHub Issues]
-* xref:issue-migration.adoc#top[旧ローカルIssue移行対応表]
-* xref:interviews.adoc#top[要件ヒアリング記録]
 * xref:adocweave-v0.11-migration.adoc#top[AdocWeave 0.11移行判断]
 * xref:adocweave-v0.17-migration.adoc#top[AdocWeave 0.17移行判断]
 * xref:adocweave-v0.19-migration.adoc#top[AdocWeave 0.19移行判断]
@@ -64,14 +60,13 @@
 * xref:adocweave-v0.22-migration.adoc#top[AdocWeave 0.22移行判断]
 * xref:adocweave-v0.23-migration.adoc#top[AdocWeave 0.23移行判断]
 * xref:adocweave-v0.27-migration.adoc#top[AdocWeave 0.27移行判断]
-* xref:v0.3.0-design.adoc#top[v0.3.0再設計判断記録]
-* xref:v0.3.0-operations.adoc#top[v0.3.0運用記録]
-* xref:research-search-vision.adoc#top[連環（Renkan）— 個人研究の記憶を横断する探索基盤]
 
 == 文書の読み分け
 
 現行の動作について資料間に差がある場合は、REST APIには``openapi.json``、システム要件には
 ``requirements.adoc``、設計には``architecture.adoc``、NixOSでの運用には``nixos.adoc``を優先します。
 
-バージョン番号が付いた資料、ヒアリング記録、将来構想、完了済みIssueは、作成時点の記録です。
-現在の仕様を確認する目的では使用しません。
+バージョン番号が付いた資料と完了済みIssueは、作成時点の記録です。現在の仕様を確認する目的では
+使用しません。過去の版に固有の記録（v0.3.0再設計判断、要件ヒアリング、旧ローカルIssue対応表など）は、
+削除前の最終版である``v0.36.0``タグ上の``docs/``から参照できます。探索サービスの連環（Renkan）は
+https://github.com/KeishiS/renkan で開発しています。

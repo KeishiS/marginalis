@@ -162,8 +162,8 @@ ADRを追加する場合は``docs/adr/NNNN-短い名称.adoc``とし、状態、
 
 == AsciiDoc文書の規則
 
-``AGENTS.md``を除く人間向け文書は、 xref:repository-asciidoc-evaluation.adoc#top[再評価]と
-https://github.com/KeishiS/marginalis/issues/334[Issue \#334]に従ってAsciiDocで管理します。
+``AGENTS.md``を除く人間向け文書はAsciiDocで管理します
+（ https://github.com/KeishiS/marginalis/issues/334[Issue \#334]で移行済み）。
 新しいMarkdown文書は追加しません。
 
 AsciiDoc文書はAdocWeave v0.36.0のstrict profileで解析し、local targetを検査します。文書間の``xref``は
@@ -192,10 +192,10 @@ AsciiDoc文書はAdocWeave v0.36.0のstrict profileで解析し、local target�
 
 == Issueと履歴
 
-作業項目はGitHub Issuesで管理します。リポジトリ内にIssueファイルを追加しません。v0.5.0までの
-ローカルIssueは xref:issue-migration.adoc#top[移行対応表]から、GitHub Issue、現行文書、または
-``v0.5.0``タグ上の原文へ辿れます。完了済みIssueは現行仕様の根拠にせず、設計判断の確認が必要な場合
-だけ参照します。
+作業項目はGitHub Issuesで管理します。リポジトリ内にIssueファイルを追加しません。v0.5.0以前の
+ローカルIssueの原文は``v0.5.0``タグ上の``issues/``、GitHub Issueへの移行対応表は``v0.36.0``タグ上の
+``docs/issue-migration.adoc``から辿れます。完了済みIssueは現行仕様の根拠にせず、設計判断の確認が
+必要な場合だけ参照します。
 
 == 監査結果と移行順序
 
