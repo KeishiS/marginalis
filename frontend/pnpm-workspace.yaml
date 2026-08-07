@@ -1,0 +1,5 @@
+# stylelintが間接的に取り込むjs-yamlは、!!omapの解決でCPU時間が入力長の2乗になる
+# 脆弱性（CVE-2026-59870、GHSA-5p4m-2wfm-xmqj）を含む。修正版へ上書きする。
+# stylelint側が修正版を取り込んだら、この上書きを外す。
+overrides:
+  js-yaml@>=4.0.0 <4.3.1: "^4.3.1"
