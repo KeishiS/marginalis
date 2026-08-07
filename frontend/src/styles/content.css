@@ -180,12 +180,18 @@
   padding: var(--space-3) var(--space-4);
 }
 
+/*
+ * 表はコードブロックと同じく、要素の内側で横スクロールする。表そのものでは、列の幅を保ったまま
+ * 器の幅で頭打ちにできないため、外側の枠をスクロールさせる。枠は描画後にWeb UIが足す。
+ */
+.rendered-content .table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .rendered-content table {
   border-collapse: collapse;
-  display: block;
-  max-width: 100%;
   min-width: max-content;
-  overflow-x: auto;
 }
 
 .rendered-content th,

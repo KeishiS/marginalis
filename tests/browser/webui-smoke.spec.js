@@ -238,17 +238,18 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(documentPosition).not.toBeNull();
   expect(documentPosition.width).toBeGreaterThan(1000);
 
-  // 文章は行の長さを制限し、表とコードは器の幅まで使う。
+  // 文章は行の長さを制限し、表とコードは器の幅まで使う。表は横スクロールする枠が器の幅を占め、
+  // 表そのものは列の幅に合わせる。
   const paragraphPosition = await page
     .locator(".rendered-content > p")
     .first()
     .boundingBox();
-  const tablePosition = await page
-    .locator(".rendered-content table")
+  const tableScrollPosition = await page
+    .locator(".rendered-content .table-scroll")
     .first()
     .boundingBox();
   expect(paragraphPosition.width).toBeLessThanOrEqual(46 * 16);
-  expect(tablePosition.width).toBeGreaterThan(paragraphPosition.width);
+  expect(tableScrollPosition.width).toBeGreaterThan(paragraphPosition.width);
 
   // 見出しは題名から本文へ段階的に小さくなる。同じ大きさの段が並ばない。
   const scale = await page.evaluate(() => {
@@ -323,6 +324,27 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
     .boundingBox();
   expect(tagPosition).not.toBeNull();
   expect(tagPosition.x + tagPosition.width).toBeLessThanOrEqual(360);
+
+  // 表とコードブロックは、本文ごと横へ広げず要素の内側でスクロールする。
+  const scrollable = await page.evaluate(() => {
+    const measure = (selector) => {
+      const element = document.querySelector(selector);
+      return {
+        width: Math.round(element.getBoundingClientRect().width),
+        scrollWidth: element.scrollWidth,
+      };
+    };
+    return {
+      document: document.documentElement.scrollWidth,
+      table: measure(".rendered-content .table-scroll"),
+      code: measure(".rendered-content pre"),
+    };
+  });
+  expect(scrollable.document).toBeLessThanOrEqual(360);
+  expect(scrollable.table.width).toBeLessThanOrEqual(336);
+  expect(scrollable.table.scrollWidth).toBeGreaterThan(scrollable.table.width);
+  expect(scrollable.code.width).toBeLessThanOrEqual(336);
+
   await expect(page).toHaveScreenshot(
     "note-view-narrow.png",
     SCREENSHOT_OPTIONS,
