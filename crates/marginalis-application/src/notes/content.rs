@@ -64,11 +64,12 @@ pub struct NoteCitationSegment {
 pub struct NoteBibliographyEntry {
     pub citation_key: String,
     pub text: String,
-    /// 項目の見出しとして表示する短い文字列。
+    /// 一覧の中でこの項目が占める位置。
     ///
-    /// 番号で示すスタイルでは初出順の番号が入ります。文書adapterはこの値を記法として
-    /// 解釈せず、参考文献項目の補助的な表示名として描画器へ渡します。
-    pub label: Option<String>,
+    /// 番号で示すスタイルでは、本文での初出順に振った番号が入ります。著者と年で示す
+    /// スタイルでは`None`です。番号は一覧全体の性質であり、番号を持つ項目と持たない項目を
+    /// 混ぜません。
+    pub number: Option<u32>,
 }
 
 /// 描画時に文書adapterへ渡す解決結果一式。

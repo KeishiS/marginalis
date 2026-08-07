@@ -69,7 +69,7 @@ impl NoteApplication {
                 Some(NoteBibliographyEntry {
                     citation_key: key.clone(),
                     text: style.entry_text(item),
-                    label: style.entry_label(numbers[key]),
+                    number: style.entry_number(numbers[key]),
                 })
             })
             .collect();
@@ -223,8 +223,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["smith2024", "tanaka2025"]
         );
-        assert_eq!(resolved.entries[0].label.as_deref(), Some("1"));
-        assert_eq!(resolved.entries[1].label.as_deref(), Some("2"));
+        assert_eq!(resolved.entries[0].number, Some(1));
+        assert_eq!(resolved.entries[1].number, Some(2));
         assert!(resolved.entries[0].text.starts_with("Smith"));
     }
 
@@ -326,7 +326,7 @@ mod tests {
             vec![NoteBibliographyEntry {
                 citation_key: "smith2024".into(),
                 text: "Smith, A. (2024). An Example Article.".into(),
-                label: None,
+                number: None,
             }]
         );
         assert_eq!(resolved.diagnostics.len(), 1);

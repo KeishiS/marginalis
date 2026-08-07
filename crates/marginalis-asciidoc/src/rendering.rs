@@ -117,19 +117,44 @@ fn generated_bibliography(
         .iter()
         .map(|entry| entry.id.as_str())
         .collect::<Vec<_>>();
-    let generated = entries
+    let remaining = entries
         .iter()
         .filter(|entry| !defined.contains(&entry.citation_key.as_str()))
+        .collect::<Vec<_>>();
+    if remaining.is_empty() {
+        return None;
+    }
+    let numbered = numbers_count_up_from_one(&remaining);
+    let generated = remaining
+        .iter()
         .map(|entry| {
             let generated = GeneratedBibliographyEntry::new(&entry.citation_key, &entry.text);
-            match &entry.label {
-                Some(label) => generated.with_label(label),
-                None => generated,
+            match entry.number {
+                Some(number) if numbered => generated.with_number(number),
+                _ => generated,
             }
         })
         .collect::<Vec<_>>();
-    (!generated.is_empty())
-        .then(|| GeneratedBibliography::new(GENERATED_BIBLIOGRAPHY_TITLE, generated))
+    Some(GeneratedBibliography::new(
+        GENERATED_BIBLIOGRAPHY_TITLE,
+        generated,
+    ))
+}
+
+/// 一覧へ残った項目が、並び順どおりに1、2、…、nの番号を持つかどうか。
+///
+/// AdocWeaveは番号を一覧全体の性質として扱い、この条件を満たさない入力を誤りとして報告し、
+/// 参考文献一覧を出力しない。番号の付いた一覧は本文の引用と番号で対応するため、番号が飛べば
+/// 読み手を別の項目へ導いてしまうからである。
+///
+/// 番号は引用を解決した時点で決まるが、本文が同じcitation keyを定義している項目はここで
+/// 一覧から外れるため、残った番号が飛ぶことがある。その場合は番号を渡さず、番号のない一覧
+/// として描画する。本文の引用は解決したときの番号を表示したままになるが、一覧を出せずに
+/// ノート全体の描画へ失敗するよりも、読める結果を残すほうがよい。
+fn numbers_count_up_from_one(entries: &[&NoteBibliographyEntry]) -> bool {
+    entries.iter().enumerate().all(|(position, entry)| {
+        u32::try_from(position + 1).is_ok_and(|expected| entry.number == Some(expected))
+    })
 }
 
 #[cfg(test)]
@@ -350,7 +375,7 @@ mod tests {
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "smith2024".into(),
                     text: "Smith, A. (2024). An Example Article.".into(),
-                    label: None,
+                    number: None,
                 }],
                 ..Default::default()
             },
@@ -368,32 +393,110 @@ mod tests {
         assert!(!html.contains(">smith2024<"));
     }
 
-    /// 項目の見出しを持つ場合も、citation keyをlink先のIDとして維持する。
+    /// 番号を持つ項目は番号付きの一覧として並べ、citation keyをlink先のIDとして維持する。
     #[test]
-    fn a_numbered_entry_puts_the_number_in_the_anchor_label() {
+    fn numbered_entries_are_rendered_as_an_ordered_list() {
+        let html = render_note(
+            &note("結果は cite:[smith2024] で報告されています。\n追試も cite:[tanaka2025] で行われました。"),
+            NoteRenderInputs {
+                citations: &[
+                    resolution(0, "smith2024", "1"),
+                    resolution(1, "tanaka2025", "2"),
+                ],
+                bibliography: &[
+                    NoteBibliographyEntry {
+                        citation_key: "smith2024".into(),
+                        text: "Smith, A. (2024). An Example Article.".into(),
+                        number: Some(1),
+                    },
+                    NoteBibliographyEntry {
+                        citation_key: "tanaka2025".into(),
+                        text: "田中 (2025). 追試の報告.".into(),
+                        number: Some(2),
+                    },
+                ],
+                ..Default::default()
+            },
+        )
+        .expect("render numbered citations");
+
+        // 一覧が番号付きになり、本文の番号順に項目が並ぶ。
+        assert!(html.contains("<ol>"));
+        assert!(!html.contains("<ul>"));
+        let first = html.find("An Example Article").expect("first entry");
+        let second = html.find("追試の報告").expect("second entry");
+        assert!(first < second);
+        // IDはcitation keyのままで、本文と項目を相互にたどれる。
+        assert!(html.contains("id=\"smith2024\""));
+        assert!(html.contains("id=\"tanaka2025\""));
+        assert_eq!(html.matches("href=\"#smith2024\"").count(), 1);
+        assert_eq!(html.matches("class=\"bibliography-backref\"").count(), 2);
+        // 番号は書誌情報の記述には混ざらない。
+        assert!(!html.contains("[1] Smith"));
+        assert!(!html.contains("1. Smith"));
+    }
+
+    /// 番号を持たない項目は、従来どおり番号のない一覧として並べる。
+    #[test]
+    fn entries_without_a_number_stay_an_unordered_list() {
         let html = render_note(
             &note("結果は cite:[smith2024] で報告されています。"),
             NoteRenderInputs {
-                citations: &[resolution(0, "smith2024", "1")],
+                citations: &[resolution(0, "smith2024", "Smith 2024")],
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "smith2024".into(),
                     text: "Smith, A. (2024). An Example Article.".into(),
-                    label: Some("1".into()),
+                    number: None,
                 }],
                 ..Default::default()
             },
         )
-        .expect("render numbered citation");
+        .expect("render an entry without a number");
 
-        // 項目の見出しが番号になり、IDはcitation keyのままである。
-        assert!(html.contains("id=\"smith2024\""));
-        assert!(!html.contains("smith2024,1"));
-        assert_eq!(html.matches("href=\"#smith2024\"").count(), 1);
-        // 番号は書誌情報の記述には現れない。
+        assert!(html.contains("<ul>"));
+        assert!(!html.contains("<ol>"));
         assert!(html.contains("An Example Article"));
-        assert!(!html.contains("[1] Smith"));
-        // 項目側から本文の引用位置へ戻れる。
-        assert_eq!(html.matches("class=\"bibliography-backref\"").count(), 1);
+    }
+
+    /// 本文が定義した項目を除いた結果、番号が飛ぶ場合は番号を渡さない。
+    ///
+    /// AdocWeaveは飛んだ番号を誤りとして報告し、参考文献一覧を出力しない。描画に失敗させず、
+    /// 番号のない一覧として残りの項目を見せる。
+    #[test]
+    fn a_gap_left_by_a_document_defined_entry_falls_back_to_an_unordered_list() {
+        let html = render_note(
+            &note(
+                "先行研究 cite:[smith2024] と cite:[tanaka2025] を見ます。\n\n[bibliography]\n== 出典\n\n* [[[smith2024]]] 著者が書いた記述",
+            ),
+            NoteRenderInputs {
+                citations: &[
+                    resolution(0, "smith2024", "1"),
+                    resolution(1, "tanaka2025", "2"),
+                ],
+                bibliography: &[
+                    NoteBibliographyEntry {
+                        citation_key: "smith2024".into(),
+                        text: "Smith, A. (2024). An Example Article.".into(),
+                        number: Some(1),
+                    },
+                    NoteBibliographyEntry {
+                        citation_key: "tanaka2025".into(),
+                        text: "田中 (2025). 追試の報告.".into(),
+                        number: Some(2),
+                    },
+                ],
+                ..Default::default()
+            },
+        )
+        .expect("render a bibliography whose numbers do not count up from one");
+
+        // 本文が定義した項目は著者の記述のまま残り、生成した項目は重ならない。
+        assert!(html.contains("著者が書いた記述"));
+        assert!(!html.contains("An Example Article"));
+        // 残った項目は番号のない一覧として並ぶ。
+        assert!(html.contains("追試の報告"));
+        assert!(html.contains("<ul>"));
+        assert!(!html.contains("<ol>"));
     }
 
     /// 本文が同じcitation keyを定義している場合は、生成した項目を重ねない。
@@ -408,7 +511,7 @@ mod tests {
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "smith2024".into(),
                     text: "Smith, A. (2024). An Example Article.".into(),
-                    label: None,
+                    number: None,
                 }],
                 ..Default::default()
             },
@@ -431,7 +534,7 @@ mod tests {
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "trick".into(),
                     text: "Effective C++ and More Effective C++; *強調* image:secret[] <<other>> {attribute} pass:[x] +x+ ++x++ +++x+++ <b>&".into(),
-                    label: None,
+                    number: None,
                 }],
                 ..Default::default()
             },
@@ -455,7 +558,7 @@ mod tests {
                 bibliography: &[NoteBibliographyEntry {
                     citation_key: "doi2022".into(),
                     text: "Smith, A. (2022). Example. https://doi.org/10.1234/example.".into(),
-                    label: None,
+                    number: None,
                 }],
                 ..Default::default()
             },
