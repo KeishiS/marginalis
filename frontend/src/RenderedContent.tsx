@@ -4,7 +4,11 @@ import boldsymbolUrl from "mathjax/input/tex/extensions/boldsymbol.js?url&no-inl
 import mathtoolsUrl from "mathjax/input/tex/extensions/mathtools.js?url&no-inline";
 import mathJaxUrl from "mathjax/tex-svg.js?url";
 import { MathMacro } from "./api";
-import { enhanceSourceBlocks, prepareMath } from "./renderedContentEnhancement";
+import {
+  enhanceSourceBlocks,
+  prepareMath,
+  wrapTables,
+} from "./renderedContentEnhancement";
 
 interface MathJaxRuntime {
   startup: { promise: Promise<void> };
@@ -58,6 +62,7 @@ export function RenderedContent({
     const element = container.current;
     if (!element || !active) return;
     enhanceSourceBlocks(element);
+    wrapTables(element);
     if (!prepareMath(element)) return;
     if (failedHtml === html) {
       element.dataset.mathStatus = "failed";

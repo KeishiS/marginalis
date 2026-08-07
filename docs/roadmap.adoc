@@ -7,31 +7,37 @@ https://github.com/KeishiS/marginalis/issues[GitHub Issues]を参照してくだ
 
 == 現在地
 
-``v0.33.0``の受入確認を進めています。AdocWeave 0.33.0への更新と構造化した参考文献描画を含みます。
-確認項目は xref:acceptance-results/v0.33.0.adoc#top[v0.33.0受入結果]を参照してください。この文書には
-公開履歴を書き写さず、未完了の判断と作業だけを置きます。
+``v0.35.0``の受入確認を進めています。Web UIの可読性とモバイル対応、MCPのscope上限に関する2つの
+不具合修正を含みます。確認項目は xref:acceptance-results/v0.35.0.adoc#top[v0.35.0受入結果]を
+参照してください。この文書には公開履歴を書き写さず、未完了の判断と作業だけを置きます。
+
+scope上限の修正は当初``v0.34.1``として公開する予定でしたが、公開前のrelease gateが新しく公開された
+脆弱性情報で失敗し、解消の間にWeb UIの改善を取り込んだため、単独では公開せずv0.35.0へ統合しました。
 
 == 公開予定
 
-=== v0.34.0 — Authorization Serverの独立配布
+=== 参考文献一覧の項番
 
-まず https://github.com/KeishiS/marginalis/issues/336[Issue 336]でscope上限の既定値を一つの規則へ集約します。
-次に、``mcp-authorization-server``と``mcp-authorization-server-cimd``を
-https://github.com/KeishiS/mcp-authorization-server[KeishiS/mcp-authorization-server]へ移し、同じworkspaceで
-管理します。新リポジトリでは契約試験、依存境界、脆弱性検査、固定した公開APIを整え、v0.1.0を
-公開します。
+https://github.com/KeishiS/marginalis/issues/371[Issue 371]で、``numeric``を指定したノートの参考文献一覧へ
+項番を表示します。本文の引用は``[1]``、``[2]``と表示されるのに、一覧が番号なしの箇条書きになるため、
+参照先を辿れません。
 
-Marginalisは公開済みv0.1.0のcommitをGit dependencyとして固定し、ローカルcrateを削除します。
-SQLite repository、HTTP endpoint、同意画面、利用者設定、MCP tool認可はMarginalisに残します。
-現在の責務と更新手順は
-xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]を正本とします。
-
-xref:research-search-vision.adoc#top[連環（Renkan）]はMarginalisとは別の探索サービスです。Renkanへの統合と
-PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。Marginalis側では
-別のresourceと保存先を使う試験実装により、分離した中核が製品固有の型へ依存しないことを確認します。
+描画するのはAdocWeaveです。``GeneratedBibliography``へ番号付きで描画する意思を渡せるようにする提案を
+https://github.com/KeishiS/adocweave/issues/508[AdocWeave Issue 508]で出しています。AdocWeaveが対応版を
+公開してから、Marginalisの固定revisionを更新して着手します。公開する版はその時点で判断します。
 
 パッチ版は予定へ固定しません。各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
 なった場合だけ公開します。
+
+=== 共有Authorization Serverの更新
+
+xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]に従い、上流が版を
+公開したときに固定revisionを更新します。上流の``main``はv0.1.0より進んでいますが、公開済みタグが
+ないため取り込めません。上流で``base64``と``sha2``の更新も保留しています。これらはMarginalisも同じ版を
+固定しているため、上流を先に公開してからMarginalisのrevisionを更新します。
+
+xref:research-search-vision.adoc#top[連環（Renkan）]はMarginalisとは別の探索サービスです。Renkanへの統合と
+PostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。
 
 == 検索のサービス境界
 

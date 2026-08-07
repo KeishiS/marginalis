@@ -1,3 +1,24 @@
+/**
+ * 表を横スクロールできる枠で包む。
+ *
+ * 表だけでは、列の幅を保ったまま器の幅で頭打ちにできない。`min-width`は`max-width`より優先される
+ * ため、内容の幅を保とうとすると本文ごと横へはみ出す。`thead`と`tbody`を別々の表として扱うと列が
+ * ずれるため、外側に枠を足してそこをスクロールさせる。
+ */
+export function wrapTables(container: HTMLElement) {
+  for (const table of container.querySelectorAll<HTMLTableElement>("table")) {
+    if (table.parentElement?.classList.contains("table-scroll")) continue;
+    const scroll = document.createElement("div");
+    scroll.className = "table-scroll";
+    // キーボードだけでも横へスクロールできるようにする。
+    scroll.tabIndex = 0;
+    scroll.setAttribute("role", "region");
+    scroll.setAttribute("aria-label", "表");
+    table.replaceWith(scroll);
+    scroll.append(table);
+  }
+}
+
 export function enhanceSourceBlocks(container: HTMLElement) {
   for (const code of container.querySelectorAll<HTMLElement>(
     "figure.source-block > pre > code",
