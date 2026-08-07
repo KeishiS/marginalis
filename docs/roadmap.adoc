@@ -36,13 +36,13 @@ xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの�
 ないため取り込めません。上流で``base64``と``sha2``の更新も保留しています。これらはMarginalisも同じ版を
 固定しているため、上流を先に公開してからMarginalisのrevisionを更新します。
 
-連環（Renkan）はMarginalisとは別の探索サービスとして構想しています（構想の記録は``v0.36.0``タグ上の
-``docs/research-search-vision.adoc``を参照）。Renkanへの統合とPostgreSQL adapterはRenkan側の計画で
-管理し、その版をMarginalisの公開予定へ含めません。
+https://github.com/KeishiS/renkan[連環（Renkan）]はMarginalisとは別の探索サービスです。Renkanへの
+統合とPostgreSQL adapterはRenkan側の計画で管理し、その版をMarginalisの公開予定へ含めません。
 
 == 検索のサービス境界
 
-全文検索、意味検索、検索索引、順位付けはMarginalisへ実装せず、連環（Renkan）へ委ねます。MarginalisはAsciiDocノートの正本、編集、共有を
+全文検索、意味検索、検索索引、順位付けはMarginalisへ実装せず、
+https://github.com/KeishiS/renkan[連環（Renkan）]へ委ねます。MarginalisはAsciiDocノートの正本、編集、共有を
 担当し、RenkanはMarginalisを最初のデータソースとして検索投影を作り、ほかの研究資料と横断して
 探索します。検索基盤、Marginalisとの接続契約、検索API、MCP、評価はRenkan側の計画で管理し、
 Marginalisの公開予定へ含めません。

@@ -18,7 +18,8 @@ PKCE S256、resourceとscopeの検査、不透明token、refresh token rotation�
 います。別サービスで同じ安全性を満たすMCP認可が必要になった場合、この構造では処理を複製するか、
 Marginalisを別サービスの認可主体として扱うことになります。
 
-連環（Renkan）はMarginalisの機能ではなく、複数の研究資料を対象とする別の探索サービスの構想です。MarginalisとRenkanで利用者の認証基盤を共有しても、resource、scope、token、
+https://github.com/KeishiS/renkan[連環（Renkan）]はMarginalisの機能ではなく、複数の研究資料を
+対象とする別の探索サービスです。MarginalisとRenkanで利用者の認証基盤を共有しても、resource、scope、token、
 grant、保存先は混在させません。
 
 == 決定

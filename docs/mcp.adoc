@@ -75,8 +75,8 @@ redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を
 ``review_status``を返します。``list_notes``では、これらの値による完全一致の絞り込みも指定できます。
 作成経路はAIの利用を証明する値ではなく、人手確認も内容の正確性を保証しません。MCPから人手確認を
 設定するtoolは提供せず、所有者がWeb UIで現在のrevisionを確認した場合だけ``reviewed``になります。
-全文検索、検索索引、順位付けはMarginalisのMCPへ追加せず、別サービスとして構想している
-連環（Renkan）が担当します。
+全文検索、検索索引、順位付けはMarginalisのMCPへ追加せず、別サービスの
+https://github.com/KeishiS/renkan[連環（Renkan）]が担当します。
 
 CSL-JSONファイルの一括取込は、ファイル全体の事前確認と項目ごとの競合解決を利用者へ求めるため、
 Web UIとREST APIだけで提供します。MCPでは、``bibliography:write``による一項目ずつの追加を使用します。
