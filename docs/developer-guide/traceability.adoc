@@ -48,7 +48,7 @@
 |SQLite認可・参照試験、ブラウザー試験
 |非開示確認
 |REQ-DATA-006
-|application入力検査、SQLite所有者境界・競合・revision試験、REST・MCP公開契約試験
+|ドメインCSL-JSON不変条件試験、SQLite破損検出・所有者境界・競合・revision試験、REST・MCP通信経路試験と公開契約試験
 |Web UIでの検索、追加、編集、削除とMCPでの検索、追加、削除
 |REQ-DATA-007
 |引用解決の所有者境界と重複排除の試験、生成した参考文献の相互link試験、番号付き一覧の項番と退避の試験、書誌情報を記法として解釈しない試験

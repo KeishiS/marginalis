@@ -5,8 +5,7 @@ use marginalis_application::{
     NoteUseCaseError, NoteUseCases, NoteWritePolicy,
 };
 use marginalis_contract::{
-    McpAddBibliographyItemInput, McpAddBibliographyItemsInput, McpBibliographyImportError,
-    McpBibliographyImportOutput, McpBibliographyItem, McpBibliographyListOutput,
+    McpAddBibliographyItemInput, McpBibliographyItem, McpBibliographyListOutput,
     McpCreateNoteInput, McpDeleteBibliographyItemInput, McpDeleteNoteInput, McpEmptyInput,
     McpGetNoteInput, McpGetNoteOutput, McpListNotesInput, McpListNotesOutput,
     McpNoteProfileExample, McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput,
@@ -68,7 +67,6 @@ enum McpToolOutput {
     Revision(McpNoteRevisionOutput),
     BibliographyList(McpBibliographyListOutput),
     BibliographyItem(McpBibliographyItem),
-    BibliographyImport(McpBibliographyImportOutput),
     Empty(McpEmptyInput),
 }
 
@@ -195,9 +193,6 @@ async fn execute_mcp_tool(
         }
         Some(McpToolName::AddBibliographyItem) => {
             add_bibliography_item_tool(bibliography, actor, call.arguments).await
-        }
-        Some(McpToolName::AddBibliographyItems) => {
-            add_bibliography_items_tool(bibliography, actor, call.arguments).await
         }
         Some(McpToolName::DeleteBibliographyItem) => {
             delete_bibliography_item_tool(bibliography, actor, call.arguments).await
@@ -417,46 +412,6 @@ async fn add_bibliography_item_tool(
         .map_err(McpToolFailure::Bibliography)
 }
 
-async fn add_bibliography_items_tool(
-    bibliography: Option<&BibliographyApplication>,
-    actor: Actor,
-    arguments: serde_json::Value,
-) -> Result<McpToolOutput, McpToolFailure> {
-    let Ok(input) = serde_json::from_value::<McpAddBibliographyItemsInput>(arguments) else {
-        return Err(McpToolFailure::InvalidArguments(
-            "CSL-JSON bibliography batch arguments are invalid",
-        ));
-    };
-    if input.csl_json_items.is_empty() || input.csl_json_items.len() > 100 {
-        return Err(McpToolFailure::InvalidArguments(
-            "csl_json_items must contain between 1 and 100 items",
-        ));
-    }
-    let Some(bibliography) = bibliography else {
-        return Err(McpToolFailure::Bibliography(
-            BibliographyUseCaseError::Unavailable,
-        ));
-    };
-    let mut items = Vec::new();
-    let mut errors = Vec::new();
-    for (input_index, csl_json) in input.csl_json_items.into_iter().enumerate() {
-        let citation_key = csl_json
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned);
-        match bibliography
-            .add_bibliography_item(actor.clone(), csl_json)
-            .await
-        {
-            Ok(item) => items.push(bibliography_item_output(item)),
-            Err(error) => errors.push(bibliography_import_error(input_index, citation_key, error)),
-        }
-    }
-    Ok(McpToolOutput::BibliographyImport(
-        McpBibliographyImportOutput { items, errors },
-    ))
-}
-
 async fn delete_bibliography_item_tool(
     bibliography: Option<&BibliographyApplication>,
     actor: Actor,
@@ -485,21 +440,6 @@ async fn delete_bibliography_item_tool(
         .await
         .map(|()| McpToolOutput::Empty(McpEmptyInput {}))
         .map_err(McpToolFailure::Bibliography)
-}
-
-fn bibliography_import_error(
-    input_index: usize,
-    citation_key: Option<String>,
-    error: BibliographyUseCaseError,
-) -> McpBibliographyImportError {
-    // 項目別の失敗も、単独の失敗と同じ写像から`code`と`message`を得る。
-    let problem = bibliography_problem(error);
-    McpBibliographyImportError {
-        input_index,
-        citation_key,
-        code: problem.code.as_str().into(),
-        message: problem.message,
-    }
 }
 
 fn bibliography_item_output(item: marginalis_domain::BibliographyItem) -> McpBibliographyItem {

@@ -396,8 +396,10 @@ mod tests {
         let item = BibliographyItem::create(
             item_id,
             &alice,
-            "smith2026".into(),
-            r#"{"id":"smith2026","type":"book"}"#.into(),
+            marginalis_domain::ValidatedCslJson::new(&serde_json::json!({
+                "id": "smith2026", "type": "book"
+            }))
+            .expect("valid CSL-JSON"),
             UnixMillis::new(10),
         );
         let source_id = BibliographyImportSourceId::new(

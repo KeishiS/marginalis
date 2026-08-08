@@ -282,19 +282,20 @@ mod tests {
 
     use super::*;
 
-    fn item(csl: Value) -> BibliographyItem {
-        let citation_key = csl
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or("key")
-            .to_owned();
+    fn item(mut csl: Value) -> BibliographyItem {
+        let object = csl.as_object_mut().expect("CSL-JSON object");
+        object
+            .entry("id")
+            .or_insert_with(|| Value::String("key".into()));
+        object
+            .entry("type")
+            .or_insert_with(|| Value::String("book".into()));
         BibliographyItem::create(
             BibliographyItemId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000010").expect("UUIDv7"),
             ),
             &Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
-            citation_key,
-            csl.to_string(),
+            marginalis_domain::ValidatedCslJson::new(&csl).expect("valid CSL-JSON"),
             UnixMillis::new(0),
         )
     }

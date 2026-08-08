@@ -207,4 +207,5 @@ mod oauth;
 
 mod rest_notes;
 
+mod bibliography;
 mod bibliography_import;

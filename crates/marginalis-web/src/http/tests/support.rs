@@ -1157,6 +1157,7 @@ impl McpOAuthUseCases for TestMcpOAuth {
 /// すべてを直す必要があった。
 pub(super) struct TestApp {
     pub(super) notes: Arc<dyn NoteUseCases>,
+    pub(super) bibliography: Option<Arc<marginalis_application::BibliographyApplication>>,
     pub(super) bibliography_import:
         Option<Arc<dyn marginalis_application::BibliographyImportUseCases>>,
     pub(super) sessions: Arc<dyn WebSessionUseCases>,
@@ -1168,6 +1169,7 @@ impl Default for TestApp {
     fn default() -> Self {
         Self {
             notes: Arc::new(Notes),
+            bibliography: None,
             bibliography_import: None,
             sessions: Arc::new(Sessions),
             cookie_path: "/".into(),
@@ -1192,6 +1194,14 @@ impl TestApp {
         bibliography_import: Arc<dyn marginalis_application::BibliographyImportUseCases>,
     ) -> Self {
         self.bibliography_import = Some(bibliography_import);
+        self
+    }
+
+    pub(super) fn bibliography(
+        mut self,
+        bibliography: Arc<marginalis_application::BibliographyApplication>,
+    ) -> Self {
+        self.bibliography = Some(bibliography);
         self
     }
 
@@ -1221,6 +1231,10 @@ impl TestApp {
         );
         let state = match self.bibliography_import {
             Some(bibliography_import) => state.with_bibliography_import(bibliography_import),
+            None => state,
+        };
+        let state = match self.bibliography {
+            Some(bibliography) => state.with_bibliography(bibliography),
             None => state,
         };
         let state = match self.mcp {

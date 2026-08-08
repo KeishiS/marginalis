@@ -116,7 +116,7 @@ impl BibliographyImportRepository for SqliteDatabase {
                          WHERE item_id = ? AND owner_issuer = ? AND owner_subject = ?
                            AND revision = ?",
                     )
-                    .bind(csl_json)
+                    .bind(csl_json.encoded())
                     .bind(updated_at.get())
                     .bind(item_id.to_string())
                     .bind(actor.issuer())

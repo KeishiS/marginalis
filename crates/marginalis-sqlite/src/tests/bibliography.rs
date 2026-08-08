@@ -11,8 +11,10 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
     let item = BibliographyItem::create(
         item_id,
         alice.identity(),
-        "smith2024".into(),
-        r#"{"id":"smith2024","type":"article-journal","title":"Example"}"#.into(),
+        validated_csl_json(
+            "smith2024",
+            r#"{"id":"smith2024","type":"article-journal","title":"Example"}"#,
+        ),
         UnixMillis::new(100),
     );
     database
@@ -43,8 +45,7 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
             .update_owned_item(
                 &bob,
                 item_id,
-                "smith2025",
-                r#"{"id":"smith2025","type":"book"}"#,
+                &validated_csl_json("smith2025", r#"{"id":"smith2025","type":"book"}"#),
                 UnixMillis::new(200),
                 Revision::INITIAL,
             )
@@ -55,8 +56,7 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
         .update_owned_item(
             &alice,
             item_id,
-            "smith2025",
-            r#"{"id":"smith2025","type":"book"}"#,
+            &validated_csl_json("smith2025", r#"{"id":"smith2025","type":"book"}"#),
             UnixMillis::new(200),
             Revision::INITIAL,
         )
@@ -103,8 +103,10 @@ async fn citation_keys_are_read_only_from_the_named_owner() {
             EntityId::from_str("0197c9bc-0000-7000-8000-000000000094").expect("v7 item ID"),
         ),
         alice.identity(),
-        "smith2024".into(),
-        r#"{"id":"smith2024","type":"article-journal","title":"Alice の登録"}"#.into(),
+        validated_csl_json(
+            "smith2024",
+            r#"{"id":"smith2024","type":"article-journal","title":"Alice の登録"}"#,
+        ),
         UnixMillis::new(100),
     );
     let bob_item = BibliographyItem::create(
@@ -112,8 +114,10 @@ async fn citation_keys_are_read_only_from_the_named_owner() {
             EntityId::from_str("0197c9bc-0000-7000-8000-000000000095").expect("v7 item ID"),
         ),
         bob.identity(),
-        "tanaka2025".into(),
-        r#"{"id":"tanaka2025","type":"book","title":"Bob の登録"}"#.into(),
+        validated_csl_json(
+            "tanaka2025",
+            r#"{"id":"tanaka2025","type":"book","title":"Bob の登録"}"#,
+        ),
         UnixMillis::new(100),
     );
     for item in [&alice_item, &bob_item] {
@@ -151,15 +155,25 @@ async fn citation_keys_are_read_only_from_the_named_owner() {
 async fn bibliography_search_treats_like_metacharacters_as_text() {
     let database = database().await;
     let alice = actor("https://id.example.test", "alice");
-    for (id, key) in [
-        ("0197c9bc-0000-7000-8000-000000000096", "rate%_literal"),
-        ("0197c9bc-0000-7000-8000-000000000097", "ordinary"),
+    for (id, key, title) in [
+        (
+            "0197c9bc-0000-7000-8000-000000000096",
+            "rate_literal",
+            "rate%_literal",
+        ),
+        (
+            "0197c9bc-0000-7000-8000-000000000097",
+            "ordinary",
+            "ordinary",
+        ),
     ] {
         let item = BibliographyItem::create(
             BibliographyItemId::new(EntityId::from_str(id).expect("v7 item ID")),
             alice.identity(),
-            key.into(),
-            format!(r#"{{"id":"{key}","type":"book"}}"#),
+            ValidatedCslJson::new(&serde_json::json!({
+                "id": key, "type": "book", "title": title
+            }))
+            .expect("valid CSL-JSON"),
             UnixMillis::new(100),
         );
         database
@@ -177,11 +191,39 @@ async fn bibliography_search_treats_like_metacharacters_as_text() {
             .iter()
             .map(BibliographyItem::citation_key)
             .collect::<Vec<_>>(),
-        vec!["rate%_literal"]
+        vec!["rate_literal"]
     );
     let underscore = database
         .search_owned_items(&alice, "_")
         .await
         .expect("literal underscore search");
     assert_eq!(underscore.len(), 1);
+}
+
+#[tokio::test]
+async fn bibliography_decode_rejects_semantically_corrupt_csl_json() {
+    let database = database().await;
+    let alice = actor("https://id.example.test", "alice");
+    let item = bibliography_item(
+        "0197c9bc-0000-7000-8000-000000000098",
+        &alice,
+        "smith2024",
+        r#"{"id":"smith2024","type":"book"}"#,
+    );
+    database
+        .create_owned_item(&item)
+        .await
+        .expect("create item");
+
+    sqlx::query("UPDATE bibliography_items SET csl_json = ? WHERE item_id = ?")
+        .bind(r#"{"id":"different","type":"book"}"#)
+        .bind(item.item_id().to_string())
+        .execute(&database.pool)
+        .await
+        .expect("inject semantically corrupt row");
+
+    assert_eq!(
+        database.search_owned_items(&alice, "").await,
+        Err(StorageError::CorruptData)
+    );
 }

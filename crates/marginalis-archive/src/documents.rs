@@ -611,9 +611,10 @@ mod tests {
                 EntityId::from_str("0197c9bc-0000-7000-8000-0000000000a1").expect("UUIDv7"),
             ),
             &identity(owner),
-            citation_key.into(),
-            serde_json::json!({ "id": citation_key, "type": "book", "title": "Example" })
-                .to_string(),
+            marginalis_domain::ValidatedCslJson::new(
+                &serde_json::json!({ "id": citation_key, "type": "book", "title": "Example" }),
+            )
+            .expect("valid CSL-JSON"),
             UnixMillis::new(1000),
         )
     }
@@ -626,9 +627,10 @@ mod tests {
         BibliographyItem::create(
             BibliographyItemId::new(EntityId::from_str(id).expect("UUIDv7")),
             &identity(owner),
-            citation_key.into(),
-            serde_json::json!({ "id": citation_key, "type": "book", "title": "Example" })
-                .to_string(),
+            marginalis_domain::ValidatedCslJson::new(
+                &serde_json::json!({ "id": citation_key, "type": "book", "title": "Example" }),
+            )
+            .expect("valid CSL-JSON"),
             UnixMillis::new(1000),
         )
     }

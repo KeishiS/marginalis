@@ -372,8 +372,7 @@ impl BibliographyRepository for EmptyLibrary {
         &self,
         _actor: &Actor,
         _item_id: marginalis_domain::BibliographyItemId,
-        _citation_key: &str,
-        _csl_json: &str,
+        _csl_json: &marginalis_domain::ValidatedCslJson,
         _updated_at: UnixMillis,
         _expected_revision: Revision,
     ) -> Result<BibliographyItem, StorageError> {
@@ -463,15 +462,14 @@ impl OneItemLibrary {
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000021").expect("UUIDv7"),
             ),
             &Self::owner(),
-            "smith2024".into(),
-            serde_json::json!({
+            marginalis_domain::ValidatedCslJson::new(&serde_json::json!({
                 "id": "smith2024",
                 "type": "article-journal",
                 "title": "An Example Article",
                 "author": [{ "family": "Smith", "given": "Alex" }],
                 "issued": { "date-parts": [[2024]] }
-            })
-            .to_string(),
+            }))
+            .expect("valid CSL-JSON"),
             UnixMillis::new(0),
         )
     }
@@ -483,15 +481,14 @@ impl OneItemLibrary {
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000022").expect("UUIDv7"),
             ),
             &Self::owner(),
-            "tanaka2025".into(),
-            serde_json::json!({
+            marginalis_domain::ValidatedCslJson::new(&serde_json::json!({
                 "id": "tanaka2025",
                 "type": "article-journal",
                 "title": "追試の報告",
                 "author": [{ "family": "Tanaka", "given": "Bun" }],
                 "issued": { "date-parts": [[2025]] }
-            })
-            .to_string(),
+            }))
+            .expect("valid CSL-JSON"),
             UnixMillis::new(0),
         )
     }
@@ -529,8 +526,7 @@ impl BibliographyRepository for OneItemLibrary {
         &self,
         _actor: &Actor,
         _item_id: marginalis_domain::BibliographyItemId,
-        _citation_key: &str,
-        _csl_json: &str,
+        _csl_json: &marginalis_domain::ValidatedCslJson,
         _updated_at: UnixMillis,
         _expected_revision: Revision,
     ) -> Result<BibliographyItem, StorageError> {

@@ -6,12 +6,12 @@ use async_trait::async_trait;
 use marginalis_domain::{
     Actor, BibliographyContentDigest, BibliographyImportLink, BibliographyImportSource,
     BibliographyImportSourceId, BibliographyItem, BibliographyItemId,
-    MAX_BIBLIOGRAPHY_IMPORT_SOURCE_NAME_CHARACTERS, Revision, UnixMillis,
+    MAX_BIBLIOGRAPHY_IMPORT_SOURCE_NAME_CHARACTERS, Revision, UnixMillis, ValidatedCslJson,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::{Clock, Random, StorageError, csl_json::validate_and_encode};
+use crate::{Clock, Random, StorageError};
 
 mod plan;
 mod preview;
@@ -26,19 +26,17 @@ use preview::{classify_import, is_canonical_digest};
 #[derive(Debug)]
 struct ValidatedItem {
     external_item_id: String,
-    citation_key: String,
-    encoded: String,
+    csl_json: ValidatedCslJson,
     digest: BibliographyContentDigest,
 }
 
 fn validate_item(value: &Value) -> Result<ValidatedItem, &'static str> {
-    let validated = validate_and_encode(value)?;
+    let validated = ValidatedCslJson::new(value).map_err(|error| error.code())?;
     let digest =
-        BibliographyContentDigest::new(Sha256::digest(validated.encoded.as_bytes()).into());
+        BibliographyContentDigest::new(Sha256::digest(validated.encoded().as_bytes()).into());
     Ok(ValidatedItem {
-        external_item_id: validated.citation_key.clone(),
-        citation_key: validated.citation_key,
-        encoded: validated.encoded,
+        external_item_id: validated.citation_key().to_owned(),
+        csl_json: validated,
         digest,
     })
 }
@@ -150,7 +148,7 @@ pub enum BibliographyImportItemMutation {
     },
     Update {
         item_id: BibliographyItemId,
-        csl_json: String,
+        csl_json: ValidatedCslJson,
         expected_revision: Revision,
         link: BibliographyImportLink,
         updated_at: UnixMillis,

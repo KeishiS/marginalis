@@ -158,9 +158,7 @@ fn scope_description(scope: &str) -> &'static str {
         "notes:write" => "create_note、update_note、get_note_profileでノートを作成・更新します。",
         "notes:delete" => "delete_noteでノートを削除します。",
         "bibliography:read" => "search_bibliographyで書誌情報を検索します。",
-        "bibliography:write" => {
-            "add_bibliography_item、add_bibliography_itemsで書誌情報を追加します。"
-        }
+        "bibliography:write" => "add_bibliography_itemで書誌情報を一項目ずつ追加します。",
         "bibliography:delete" => "delete_bibliography_itemで書誌情報を削除します。",
         _ => "このクライアントが要求した権限です。",
     }

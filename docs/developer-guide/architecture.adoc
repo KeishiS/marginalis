@@ -267,6 +267,10 @@ CSL-JSONファイルの一括取込は、application層で入力検査、既存�
 対応、書誌項目を同じtransactionで更新します。対話的な事前確認を必要とするため、この一括取込経路は
 Web UIとREST APIだけに公開し、MCPの書誌情報toolは従来の一項目単位の操作に限定します。
 
+CSL-JSON一項目の構造、容量、``id``、``type``の検査は``marginalis-domain``の検査済み型を正本とします。
+通常の追加・更新、一括取込、archive、SQLiteからの復元は同じ検査を使います。adapterは不正な保存値を
+業務データの破損へ写像し、HTTPやMCPの応答生成中にpanicしません。
+
 引用の表示文字列と参考文献項目の文字列はapplication層が組み立て、``NoteContent`` portへ渡します。
 番号で示すスタイルで使う項目の番号も、本文での初出順を知っているapplication層が決めます。
 文書adapterは、参考文献一覧と引用の表示をAdocWeaveの構造化した描画入力として渡します。

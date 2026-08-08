@@ -1273,6 +1273,7 @@ version = "0.36.0"
 dependencies = [
  "schemars 1.2.2",
  "serde",
+ "serde_json",
  "thiserror 2.0.19",
  "url",
  "uuid",
