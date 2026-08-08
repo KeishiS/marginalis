@@ -104,7 +104,7 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |``cargo make docs-check``と``cargo make traceability-check``
 |失敗したtask名と標準出力
 |``verify``
-|変更分類に応じて``verify-core``と``native-aarch64``、または``verify-docs``の成功を集約
+|変更分類に応じて``verify-core``、``native-aarch64``、``browser-smoke``、または``verify-docs``の成功を集約
 |（ゲートのため単体の再実行なし）
 |集約stepの標準出力
 |``coverage``
@@ -214,12 +214,10 @@ gh pr checks --watch
 ----
 . Pull Request作成後にsquash方式のauto-mergeを設定します。``main``のrulesetでは
 GitHub Actionsの``verify``と``nixos-e2e``が必須です。両者は集約用のゲートjobで、``verify``は
-``verify-core``と``native-aarch64``の成功も集約するため、これらのチェックと必要なレビューが
+``verify-core``、``native-aarch64``、``browser-smoke``の成功も集約するため、これらのチェックと必要なレビューが
 完了するまで実際のマージは行われません。文書だけの変更でもチェック名は維持し、``verify``は
 ``verify-docs``の文書検査の成功、``nixos-e2e``は明示的な省略成功として完了するため、
 必須チェックが待機状態に残りません。
-``browser-smoke``は、継続的に安定して完了することを確認してからrulesetの必須チェックへ
-追加します。追加前も失敗を無視せず、原因を解消してからマージします。
 +
 [source,sh]
 ----
