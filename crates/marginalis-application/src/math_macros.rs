@@ -188,7 +188,7 @@ fn safe_tex_definition(name: &str, replacement: &str) -> bool {
         }
     }
     // 奇数個の末尾backslashは、生成時に加える定義末尾の`}`をescapeする。
-    brace_depth == 0 && consecutive_backslashes % 2 == 0
+    brace_depth == 0 && consecutive_backslashes.is_multiple_of(2)
 }
 
 fn valid_argument_references(replacement: &str, argument_count: u8) -> bool {
