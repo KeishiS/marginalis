@@ -2,9 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn math_macros_are_private_and_revision_guarded() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let bob = actor("https://id.example.test", "bob");
     let macros = vec![
