@@ -115,7 +115,7 @@ jobs:
         run: nix develop --command cargo make release-package-aarch64
 
   verify:
-    needs: [changes, verify-core, verify-docs, native-aarch64]
+    needs: [changes, verify-core, verify-docs, native-aarch64, browser-smoke]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -124,6 +124,7 @@ jobs:
           CORE_RESULT: ${{ needs.verify-core.result }}
           DOCS_RESULT: ${{ needs.verify-docs.result }}
           NATIVE_RESULT: ${{ needs.native-aarch64.result }}
+          BROWSER_RESULT: ${{ needs.browser-smoke.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
         run: |
           if [ "$DOCS_ONLY" = true ]; then
@@ -131,6 +132,7 @@ jobs:
           else
             test "$CORE_RESULT" = success
             test "$NATIVE_RESULT" = success
+            test "$BROWSER_RESULT" = success
           fi
 
   browser-smoke:

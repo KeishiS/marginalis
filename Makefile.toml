@@ -103,11 +103,12 @@ set -eu
 bash .github/scripts/test-markdown-links.sh
 bash .github/scripts/test-asciidoc.sh
 bash .github/scripts/test-documentation-corpus.sh
+bash .github/scripts/test-release-instructions.sh
 bash .github/scripts/check-docs.sh
 '''
 
 [tasks.traceability-check]
-description = "Validate requirement coverage against the traceability table"
+description = "Validate traceability identifiers and required table fields"
 script_runner = "@shell"
 script = '''
 set -eu
@@ -159,9 +160,13 @@ bash .github/scripts/test-release-metadata.sh
 bash .github/scripts/check-release-metadata.sh
 '''
 
-[tasks.release-gate]
-description = "Run every automated gate required before an RC or final release"
+[tasks.release-gate-core]
+description = "Run release checks that do not require an interactive browser"
 dependencies = ["verify", "coverage", "release-metadata", "nix-release-check", "release-package"]
+
+[tasks.release-gate]
+description = "Run every automated gate required before a release"
+dependencies = ["release-gate-core", "browser-smoke", "browser-editor-firefox"]
 
 [tasks.unused-dependencies]
 description = "Reject dependencies that are declared but never used"

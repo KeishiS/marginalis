@@ -11,6 +11,7 @@ trap 'rm -rf "$temporary_directory"' EXIT
 metadata="$temporary_directory/metadata.json"
 metadata_input="${1:-}"
 project_root="${2:-.}"
+release_tag="${3:-${RELEASE_TAG:-}}"
 
 if [[ -n "$metadata_input" ]]; then
   cp "$metadata_input" "$metadata"
@@ -30,6 +31,16 @@ expected_version="$(
     | if length == 1 then .[0] else error("workspace crateの版が揃っていません") end' \
     "$metadata"
 )" || fail "workspace crateの版が揃っていません。"
+
+if [[ -n "$release_tag" ]]; then
+  if [[ ! "$release_tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    fail "リリースタグはv<MAJOR>.<MINOR>.<PATCH>形式で指定してください: ${release_tag}"
+  fi
+  expected_tag="v${expected_version}"
+  if [[ "$release_tag" != "$expected_tag" ]]; then
+    fail "リリースタグがworkspaceの版と一致しません: expected=${expected_tag}, actual=${release_tag}"
+  fi
+fi
 
 test -s LICENSE-MIT || fail "LICENSE-MITがありません。"
 test -s LICENSE-APACHE || fail "LICENSE-APACHEがありません。"

@@ -23,12 +23,28 @@ Pull Requestを``main``へマージします。
 タグを入力し、検証の成功を確認します。
 . 検証した``main``の先端へリリースタグを作成してプッシュし、タグのプッシュで再実行される
 ``release-gate``も成功することを確認します。
-. タグに対してGitHub Releaseを作成し、Release Notesへ変更内容、互換性への影響、必要な場合は
-データの移行手順を記載します。
+. タグに対するGitHub Releaseを下書きとして作成し、Release Notesへ変更内容、互換性への影響、
+必要な場合はデータの移行手順を記載します。公開した版の機械可読な契約を取得できるように、
+生成済みの``docs/openapi.json``と``docs/mcp-tools.json``を同名のassetとして下書きへ添付します。
 +
 [source,sh]
 ----
-gh release create v<版> --title v<版> --notes-file <Release Notesのファイル>
+gh release create v<MAJOR>.<MINOR>.<PATCH> --draft docs/openapi.json docs/mcp-tools.json \
+  --title v<MAJOR>.<MINOR>.<PATCH> --notes-file <Release Notesのファイル>
+----
+. 下書きの``isDraft``が``true``であり、``assets``に``openapi.json``と``mcp-tools.json``だけが
+それぞれ一つずつ含まれることを確認します。不足や重複がある場合は公開せず、下書きを修正します。
++
+[source,sh]
+----
+gh release view v<MAJOR>.<MINOR>.<PATCH> --json isDraft,assets \
+  --jq '{isDraft, assets: [.assets[].name]}'
+----
+. Release Notesとassetの確認後に、下書きを公開します。
++
+[source,sh]
+----
+gh release edit v<MAJOR>.<MINOR>.<PATCH> --draft=false
 ----
 
 パッチ版は予定へ固定せず、各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "作成予定のリリースタグ（例: v0.6.0）"
+        description: "作成予定のリリースタグ（v<MAJOR>.<MINOR>.<PATCH>）"
         required: true
         type: string
 
@@ -15,6 +15,27 @@ permissions:
   contents: read
 
 jobs:
+  browser-compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup
+      - name: Check the production Web UI in Chromium
+        run: nix develop --command cargo make browser-smoke
+      - name: Check editor compatibility in Firefox
+        run: nix develop --command cargo make browser-editor-firefox
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-browser-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/browser-smoke
+          if-no-files-found: ignore
+          retention-days: 7
+
   release-package-aarch64:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
@@ -33,7 +54,7 @@ jobs:
         run: nix develop --command cargo make release-package-aarch64
 
   release-gate:
-    needs: release-package-aarch64
+    needs: [browser-compatibility, release-package-aarch64]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -55,5 +76,9 @@ jobs:
           fi
       - name: Set up Nix
         uses: ./.github/actions/setup
-      - name: Run automated release gate
-        run: nix develop --command cargo make release-gate
+      # ブラウザー検査はbrowser-compatibilityで並列実行する。公開taskのrelease-gateは、
+      # ローカル実行で両ブラウザー検査を含む完全な検証として維持する。
+      - name: Run automated release gate core
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        run: nix develop --command cargo make release-gate-core
