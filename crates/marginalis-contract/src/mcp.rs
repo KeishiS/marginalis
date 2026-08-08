@@ -7,7 +7,7 @@ use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ProblemResponse;
+use crate::{ProblemResponse, rest::nullable};
 
 const NOTE_ID_PATTERN: &str = ENTITY_ID_PATTERN;
 const MINIMUM_REVISION: i64 = Revision::MINIMUM_VALUE;
@@ -232,23 +232,6 @@ pub struct McpBibliographyImportOutput {
     pub errors: Vec<McpBibliographyImportError>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct McpNoteSummary {
-    pub note_id: String,
-    pub title: String,
-    pub tags: Vec<String>,
-    pub updated_at_ms: i64,
-    #[schemars(range(min = MINIMUM_REVISION))]
-    pub revision: i64,
-    pub created_via: NoteCreationSource,
-    pub review_status: NoteReviewStatus,
-    #[schemars(required)]
-    pub reviewed_revision: Option<i64>,
-    #[schemars(required)]
-    pub reviewed_at_ms: Option<i64>,
-}
-
 #[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpListNotesInput {
@@ -259,7 +242,7 @@ pub struct McpListNotesInput {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpListNotesOutput {
-    pub notes: Vec<McpNoteSummary>,
+    pub notes: Vec<crate::NoteSummaryResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -275,8 +258,10 @@ pub struct McpGetNoteOutput {
     pub created_via: NoteCreationSource,
     pub review_status: NoteReviewStatus,
     #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub reviewed_revision: Option<i64>,
     #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub reviewed_at_ms: Option<i64>,
 }
 
@@ -496,12 +481,12 @@ mod tests {
             assert_eq!(alternatives.len(), 2);
             assert_eq!(
                 alternatives[1],
-                serde_json::json!({"$ref": "#/$defs/ProblemResponse"}),
+                serde_json::json!({"$ref": "#/$defs/Problem"}),
                 "{}は共通の失敗出力を宣言します",
                 contract.name.as_str()
             );
             assert_eq!(
-                contract.output_schema["$defs"]["ProblemResponse"]["additionalProperties"],
+                contract.output_schema["$defs"]["Problem"]["additionalProperties"],
                 false
             );
         }
@@ -510,7 +495,7 @@ mod tests {
     #[test]
     fn note_outputs_require_sync_metadata_and_reject_unknown_fields() {
         let list_schema = schema::<McpListNotesOutput>();
-        let summary = &list_schema["$defs"]["McpNoteSummary"];
+        let summary = &list_schema["$defs"]["NoteSummary"];
         assert_eq!(
             summary["required"],
             serde_json::json!([

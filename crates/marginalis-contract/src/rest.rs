@@ -7,12 +7,37 @@ use marginalis_domain::{
     ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY, NoteAccess, NoteCreationSource,
     NotePermission, NoteReviewStatus, NoteValidationTarget, Revision,
 };
-use schemars::JsonSchema;
+use schemars::{JsonSchema, SchemaGenerator, generate::SchemaSettings};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 pub const API_VERSION: &str = "v3";
 pub const API_PREFIX: &str = "/api/v3";
+
+/// ノートと書誌のrevisionが取り得る最小値。schemars属性から参照する。
+const MINIMUM_REVISION: i64 = Revision::MINIMUM_VALUE;
+
+/// `#[schemars(required)]`を付けたOption fieldへ、nullを許す型を戻すtransform。
+///
+/// schemarsの`required`は内側の型のschemaを使うため、そのままではnullが表現から消える。
+/// 応答は「必須だがnullになりうる」項目としてこの2つを組み合わせる。
+pub(crate) fn nullable(schema: &mut schemars::Schema) {
+    if let Some(object) = schema.as_object_mut() {
+        match object.get_mut("type") {
+            Some(Value::String(single)) => {
+                let single = std::mem::take(single);
+                object.insert(
+                    "type".into(),
+                    Value::Array(vec![Value::String(single), Value::String("null".into())]),
+                );
+            }
+            Some(Value::Array(types)) if !types.iter().any(|kind| kind == "null") => {
+                types.push(Value::String("null".into()));
+            }
+            _ => {}
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RestRouteContract {
@@ -189,45 +214,54 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
     },
 ];
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteDraft")]
 pub struct NoteDraftInput {
+    #[schemars(extend("x-maxBytes" = NOTE_POLICY.max_source_bytes))]
     pub source: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BibliographyItemInput {
+    #[schemars(extend("type" = "object"))]
     pub csl_json: Value,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "BibliographyItem")]
 pub struct BibliographyItemResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub item_id: String,
     pub citation_key: String,
+    #[schemars(extend("type" = "object"))]
     pub csl_json: Value,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BibliographyImportSourceInput {
     New { display_name: String },
     Existing { source_id: String },
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BibliographyImportPreviewInput {
     pub source: BibliographyImportSourceInput,
+    #[schemars(length(min = 1, max = 1000))]
     pub items: Vec<Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[schemars(rename = "BibliographyImportClassification")]
 pub enum BibliographyImportClassificationResponse {
     Create,
     UpdateFromExternal,
@@ -238,52 +272,84 @@ pub enum BibliographyImportClassificationResponse {
     Rejected,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "BibliographyImportSource")]
 pub struct BibliographyImportSourceResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub source_id: String,
     pub method: String,
+    #[schemars(length(min = 1, max = 128))]
     pub display_name: String,
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
     pub created_at_ms: i64,
     pub last_imported_at_ms: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "BibliographyImportCandidate")]
 pub struct BibliographyImportCandidateResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub item_id: String,
     pub citation_key: String,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub title: Option<String>,
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
     pub matched_by: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "BibliographyImportEntry")]
 pub struct BibliographyImportEntryResponse {
     pub position: usize,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub external_item_id: Option<String>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub citation_key: Option<String>,
     pub classification: BibliographyImportClassificationResponse,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub item_id: Option<String>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub item_revision: Option<i64>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    #[schemars(extend("type" = "object"))]
     pub current_csl_json: Option<Value>,
     pub candidates: Vec<BibliographyImportCandidateResponse>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub rejection_code: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "BibliographyImportPreview")]
 pub struct BibliographyImportPreviewResponse {
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub source_id: Option<String>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub source_revision: Option<i64>,
+    #[schemars(regex(pattern = "^[0-9a-f]{64}$"))]
     pub preview_token: String,
     pub entries: Vec<BibliographyImportEntryResponse>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[schemars(rename = "BibliographyImportDecisionAction")]
 pub enum BibliographyImportDecisionKindInput {
     ApplySuggested,
     CreateSeparate,
@@ -294,27 +360,36 @@ pub enum BibliographyImportDecisionKindInput {
     Exclude,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "BibliographyImportDecision")]
 pub struct BibliographyImportDecisionInput {
     pub position: usize,
     pub action: BibliographyImportDecisionKindInput,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub candidate_item_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BibliographyImportApplyInput {
     pub source: BibliographyImportSourceInput,
+    #[schemars(length(min = 1, max = 1000))]
     pub items: Vec<Value>,
+    #[schemars(regex(pattern = "^[0-9a-f]{64}$"))]
     pub preview_token: String,
+    #[schemars(length(min = 1, max = 1000))]
     pub decisions: Vec<BibliographyImportDecisionInput>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "BibliographyImportResult")]
 pub struct BibliographyImportResultResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub source_id: String,
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub source_revision: i64,
     pub created: usize,
     pub updated: usize,
@@ -322,134 +397,171 @@ pub struct BibliographyImportResultResponse {
     pub excluded: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "MathMacro")]
 pub struct MathMacroResponse {
+    #[schemars(regex(pattern = "^[A-Za-z]{1,32}$"))]
     pub name: String,
+    #[schemars(length(min = 1, max = 512))]
     pub replacement: String,
+    #[schemars(range(max = 9))]
     pub argument_count: u8,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// 数式マクロ設定。要求と応答で同じ構造を使う。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct MathMacroSettingsInput {
+#[schemars(rename = "MathMacroSettings")]
+pub struct MathMacroSettings {
+    #[schemars(length(max = 64))]
     pub macros: Vec<MathMacroResponse>,
+    #[schemars(range(min = 0))]
     pub revision: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct MathMacroSettingsResponse {
-    pub macros: Vec<MathMacroResponse>,
-    pub revision: i64,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpScopeCeilingInput {
     pub scopes: Vec<String>,
+    #[schemars(range(min = 0))]
     pub revision: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "McpScopeCeiling")]
 pub struct McpScopeCeilingResponse {
     pub supported_scopes: Vec<String>,
     pub scopes: Vec<String>,
+    #[schemars(range(min = 0))]
     pub revision: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "McpClientAuthorization")]
 pub struct McpClientAuthorizationResponse {
+    #[schemars(length(min = 1, max = 2048))]
     pub client_id: String,
+    #[schemars(length(min = 1, max = 128))]
     pub display_name: String,
     pub registration_method: String,
     pub granted_scopes: Vec<String>,
     pub scope_ceiling_configured: bool,
     pub scope_ceiling: Vec<String>,
+    #[schemars(range(min = 0))]
     pub scope_ceiling_revision: i64,
     pub authorized_at_ms: i64,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub last_used_at_ms: Option<i64>,
     pub active: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Note")]
 pub struct NoteResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub note_id: String,
     pub title: String,
     pub source: String,
     pub tags: Vec<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
     pub created_via: NoteCreationSource,
     pub review_status: NoteReviewStatus,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub reviewed_revision: Option<i64>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub reviewed_at_ms: Option<i64>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteSummary")]
 pub struct NoteSummaryResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub note_id: String,
     pub title: String,
     pub tags: Vec<String>,
     pub updated_at_ms: i64,
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
     pub created_via: NoteCreationSource,
     pub review_status: NoteReviewStatus,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub reviewed_revision: Option<i64>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub reviewed_at_ms: Option<i64>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+/// 一覧の1項目。ノート要約に実効アクセス水準を加えたもの。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[schemars(rename = "NoteListEntry")]
 pub struct NoteListEntryResponse {
-    pub note_id: String,
-    pub title: String,
-    pub tags: Vec<String>,
-    pub updated_at_ms: i64,
-    pub revision: i64,
-    pub created_via: NoteCreationSource,
-    pub review_status: NoteReviewStatus,
-    pub reviewed_revision: Option<i64>,
-    pub reviewed_at_ms: Option<i64>,
+    #[serde(flatten)]
+    pub summary: NoteSummaryResponse,
     pub access: NoteAccess,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteReview")]
 pub struct NoteReviewResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub note_id: String,
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub current_revision: i64,
     pub status: NoteReviewStatus,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub reviewed_revision: Option<i64>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub reviewed_at_ms: Option<i64>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub reviewer_issuer: Option<String>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub reviewer_subject: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "DeletedNoteListEntry")]
 pub struct DeletedNoteListEntryResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub note_id: String,
     pub title: String,
     pub deleted_at_ms: i64,
     pub purge_at_ms: i64,
+    #[schemars(range(min = MINIMUM_REVISION))]
     pub revision: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "RelatedNotes")]
 pub struct RelatedNotesResponse {
     pub outgoing: Vec<NoteSummaryResponse>,
     pub incoming: Vec<NoteSummaryResponse>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteView")]
 pub struct NoteViewResponse {
     pub note: NoteResponse,
     pub access: NoteAccess,
@@ -462,8 +574,9 @@ pub struct NoteViewResponse {
 ///
 /// 点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけを含む。線は始点と
 /// 終点の両方が点として含まれる場合だけ返す。閲覧できないノートの存在も件数も現れない。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteGraph")]
 pub struct NoteGraphResponse {
     pub notes: Vec<NoteGraphNoteResponse>,
     pub works: Vec<NoteGraphWorkResponse>,
@@ -472,9 +585,11 @@ pub struct NoteGraphResponse {
 }
 
 /// 図に出すノート。本文は含まない。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteGraphNote")]
 pub struct NoteGraphNoteResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub note_id: String,
     pub title: String,
     pub tags: Vec<String>,
@@ -482,67 +597,83 @@ pub struct NoteGraphNoteResponse {
 }
 
 /// 図に出す文献。書誌情報そのものではなく、引用されたという事実を表す。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteGraphWork")]
 pub struct NoteGraphWorkResponse {
     pub citation_key: String,
     /// 引用元のノートを書いた利用者のライブラリーで解決できた場合の題名。
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
     pub title: Option<String>,
 }
 
 /// ノートからノートへの参照。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteGraphReference")]
 pub struct NoteGraphReferenceResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub source_note_id: String,
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub target_note_id: String,
 }
 
 /// ノートから文献への引用。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteGraphCitation")]
 pub struct NoteGraphCitationResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
     pub source_note_id: String,
     pub citation_key: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteAclEntry")]
 pub struct NoteAclEntryInput {
+    #[schemars(length(min = 1, max = 1024))]
     pub subject: String,
     pub permission: NotePermission,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteAclUpdate")]
 pub struct NoteAclUpdateInput {
     pub entries: Vec<NoteAclEntryInput>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteAclGrant")]
 pub struct NoteAclGrantResponse {
     pub issuer: String,
+    #[schemars(length(min = 1, max = 1024))]
     pub subject: String,
     pub permission: NotePermission,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteAcl")]
 pub struct NoteAclResponse {
     pub entries: Vec<NoteAclGrantResponse>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NotePreview")]
 pub struct NotePreviewResponse {
     pub html: String,
     pub diagnostics: Vec<NoteDiagnosticResponse>,
     pub math_macros: Vec<MathMacroResponse>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Session")]
 pub struct SessionResponse {
     pub issuer: String,
     pub subject: String,
@@ -552,8 +683,9 @@ pub struct SessionResponse {
 ///
 /// REST応答と同じく、サーバーとWeb UIの間の公開契約である。Web UI側は生成した
 /// parserで検査してから使用し、解釈できない値を利用者向けエラーとして扱う。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[schemars(rename = "ApplicationConfig")]
 pub struct ApplicationConfigResponse {
     /// REST APIの外部prefix。
     pub api_base: String,
@@ -567,8 +699,9 @@ pub struct ApplicationConfigResponse {
     pub style_nonce: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Health")]
 pub struct HealthResponse {
     pub status: String,
     pub api_version: String,
@@ -576,6 +709,7 @@ pub struct HealthResponse {
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Problem")]
 pub struct ProblemResponse {
     pub code: ProblemCode,
     pub message: String,
@@ -616,25 +750,6 @@ pub enum ProblemCode {
 }
 
 impl ProblemCode {
-    const ALL: [Self; 16] = [
-        Self::AuthenticationRequired,
-        Self::AuthenticationUnavailable,
-        Self::CsrfRejected,
-        Self::CsrfRequired,
-        Self::CsrfInvalid,
-        Self::SameOriginRequired,
-        Self::OriginNotAllowed,
-        Self::NotFound,
-        Self::Forbidden,
-        Self::Conflict,
-        Self::RetentionExpired,
-        Self::PreconditionRequired,
-        Self::InvalidRequest,
-        Self::ValidationFailed,
-        Self::RenderFailed,
-        Self::Unavailable,
-    ];
-
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AuthenticationRequired => "authentication_required",
@@ -659,6 +774,7 @@ impl ProblemCode {
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteDiagnostic")]
 pub struct NoteDiagnosticResponse {
     pub code: String,
     pub severity: DiagnosticSeverityResponse,
@@ -670,6 +786,7 @@ pub struct NoteDiagnosticResponse {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[schemars(rename = "DiagnosticSeverity")]
 pub enum DiagnosticSeverityResponse {
     Error,
     Warning,
@@ -679,6 +796,7 @@ pub enum DiagnosticSeverityResponse {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Utf8ByteSpan")]
 pub struct Utf8ByteSpanResponse {
     pub start: u32,
     pub end: u32,
@@ -691,64 +809,44 @@ pub enum Utf8ByteUnit {
     Utf8Byte,
 }
 
+/// 公開契約schemaの正本であるRust型から``components.schemas``を生成する。
+///
+/// ここへ型を足すと、OpenAPIとTypeScript契約の両方へ同じschemaが出力される。
+pub(crate) fn component_schemas() -> Value {
+    let mut settings = SchemaSettings::draft2020_12();
+    settings.definitions_path = "#/components/schemas/".into();
+    let mut generator = SchemaGenerator::new(settings);
+    generator.subschema_for::<HealthResponse>();
+    generator.subschema_for::<SessionResponse>();
+    generator.subschema_for::<ApplicationConfigResponse>();
+    generator.subschema_for::<MathMacroSettings>();
+    generator.subschema_for::<McpScopeCeilingInput>();
+    generator.subschema_for::<McpScopeCeilingResponse>();
+    generator.subschema_for::<McpClientAuthorizationResponse>();
+    generator.subschema_for::<NoteDraftInput>();
+    generator.subschema_for::<BibliographyItemInput>();
+    generator.subschema_for::<BibliographyItemResponse>();
+    generator.subschema_for::<BibliographyImportSourceInput>();
+    generator.subschema_for::<BibliographyImportPreviewInput>();
+    generator.subschema_for::<BibliographyImportSourceResponse>();
+    generator.subschema_for::<BibliographyImportPreviewResponse>();
+    generator.subschema_for::<BibliographyImportApplyInput>();
+    generator.subschema_for::<BibliographyImportResultResponse>();
+    generator.subschema_for::<NoteResponse>();
+    generator.subschema_for::<NoteSummaryResponse>();
+    generator.subschema_for::<NoteListEntryResponse>();
+    generator.subschema_for::<NoteReviewResponse>();
+    generator.subschema_for::<DeletedNoteListEntryResponse>();
+    generator.subschema_for::<NoteViewResponse>();
+    generator.subschema_for::<NoteGraphResponse>();
+    generator.subschema_for::<NotePreviewResponse>();
+    generator.subschema_for::<NoteAclUpdateInput>();
+    generator.subschema_for::<NoteAclResponse>();
+    generator.subschema_for::<ProblemResponse>();
+    Value::Object(generator.take_definitions(true))
+}
+
 pub fn openapi_document() -> Value {
-    let provenance_properties = json!({
-        "created_via": {"type": "string", "enum": ["web", "rest", "mcp", "unknown"]},
-        "review_status": {"type": "string", "enum": ["unknown", "pending", "reviewed"]},
-        "reviewed_revision": {"type": ["integer", "null"], "minimum": Revision::MINIMUM_VALUE},
-        "reviewed_at_ms": {"type": ["integer", "null"]}
-    });
-    let note = json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["note_id", "title", "source", "tags", "created_at_ms", "updated_at_ms", "revision", "created_via", "review_status", "reviewed_revision", "reviewed_at_ms"],
-        "properties": {
-            "note_id": note_id_schema(),
-            "title": {"type": "string"},
-            "source": {"type": "string"},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "created_at_ms": {"type": "integer"},
-            "updated_at_ms": {"type": "integer"},
-            "revision": revision_schema(),
-            "created_via": provenance_properties["created_via"].clone(),
-            "review_status": provenance_properties["review_status"].clone(),
-            "reviewed_revision": provenance_properties["reviewed_revision"].clone(),
-            "reviewed_at_ms": provenance_properties["reviewed_at_ms"].clone()
-        }
-    });
-    let note_summary = json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["note_id", "title", "tags", "updated_at_ms", "revision", "created_via", "review_status", "reviewed_revision", "reviewed_at_ms"],
-        "properties": {
-            "note_id": note_id_schema(),
-            "title": {"type": "string"},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "updated_at_ms": {"type": "integer"},
-            "revision": revision_schema(),
-            "created_via": provenance_properties["created_via"].clone(),
-            "review_status": provenance_properties["review_status"].clone(),
-            "reviewed_revision": provenance_properties["reviewed_revision"].clone(),
-            "reviewed_at_ms": provenance_properties["reviewed_at_ms"].clone()
-        }
-    });
-    let note_list_entry = json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["note_id", "title", "tags", "updated_at_ms", "revision", "created_via", "review_status", "reviewed_revision", "reviewed_at_ms", "access"],
-        "properties": {
-            "note_id": note_id_schema(),
-            "title": {"type": "string"},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "updated_at_ms": {"type": "integer"},
-            "revision": revision_schema(),
-            "created_via": provenance_properties["created_via"].clone(),
-            "review_status": provenance_properties["review_status"].clone(),
-            "reviewed_revision": provenance_properties["reviewed_revision"].clone(),
-            "reviewed_at_ms": provenance_properties["reviewed_at_ms"].clone(),
-            "access": {"enum": ["read", "edit", "manage"]}
-        }
-    });
     json!({
         "openapi": "3.1.0",
         "info": {
@@ -772,328 +870,16 @@ pub fn openapi_document() -> Value {
                     "schema": {"type": "integer", "minimum": 1, "maximum": MAX_GRAPH_DEPTH},
                     "description": "起点から辿る線の本数。originを指定した場合だけ使う。既定は1"},
                 "CreationSource": {"name": "created_via", "in": "query", "required": false,
-                    "schema": provenance_properties["created_via"].clone()},
+                    "schema": {"$ref": "#/components/schemas/NoteCreationSource"}},
                 "ReviewStatus": {"name": "review_status", "in": "query", "required": false,
-                    "schema": provenance_properties["review_status"].clone()},
+                    "schema": {"$ref": "#/components/schemas/NoteReviewStatus"}},
                 "McpScopeCeilingRevision": {"name": "revision", "in": "query", "required": true,
                     "schema": {"type": "integer", "minimum": 1},
                     "description": "解除する上限のrevision。現在の値と一致しない場合は409を返す"},
                 "CsrfToken": {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1}},
                 "IfMatch": {"name": "If-Match", "in": "header", "required": true, "schema": {"type": "string", "pattern": "^\\\"rev-[1-9][0-9]*\\\"$"}}
             },
-            "schemas": {
-                "Health": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["status", "api_version"],
-                    "properties": {"status": {"const": "ok"}, "api_version": {"const": API_VERSION}}
-                },
-                "Session": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["issuer", "subject"],
-                    "properties": {"issuer": {"type": "string", "format": "uri"}, "subject": {"type": "string"}}
-                },
-                "MathMacro": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["name", "replacement", "argument_count"],
-                    "properties": {
-                        "name": {"type": "string", "pattern": "^[A-Za-z]{1,32}$"},
-                        "replacement": {"type": "string", "minLength": 1, "maxLength": 512},
-                        "argument_count": {"type": "integer", "minimum": 0, "maximum": 9}
-                    }
-                },
-                "MathMacroSettings": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["macros", "revision"],
-                    "properties": {
-                        "macros": {"type": "array", "maxItems": 64, "items": {"$ref": "#/components/schemas/MathMacro"}},
-                        "revision": {"type": "integer", "minimum": 0}
-                    }
-                },
-                "McpScopeCeilingInput": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["scopes", "revision"],
-                    "properties": {
-                        "scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
-                        "revision": {"type": "integer", "minimum": 0}
-                    }
-                },
-                "McpScopeCeiling": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["supported_scopes", "scopes", "revision"],
-                    "properties": {
-                        "supported_scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
-                        "scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
-                        "revision": {"type": "integer", "minimum": 0}
-                    }
-                },
-                "McpClientAuthorization": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["client_id", "display_name", "registration_method", "granted_scopes", "scope_ceiling_configured", "scope_ceiling", "scope_ceiling_revision", "authorized_at_ms", "last_used_at_ms", "active"],
-                    "properties": {
-                        "client_id": {"type": "string", "minLength": 1, "maxLength": 2048},
-                        "display_name": {"type": "string", "minLength": 1, "maxLength": 128},
-                        "registration_method": {"type": "string", "enum": ["metadata_document", "dynamic"]},
-                        "granted_scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
-                        "scope_ceiling_configured": {"type": "boolean"},
-                        "scope_ceiling": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
-                        "scope_ceiling_revision": {"type": "integer", "minimum": 0},
-                        "authorized_at_ms": {"type": "integer"},
-                        "last_used_at_ms": {"type": ["integer", "null"]},
-                        "active": {"type": "boolean"}
-                    }
-                },
-                "NoteDraft": note_draft_schema(),
-                "BibliographyItemInput": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["csl_json"],
-                    "properties": {"csl_json": {"type": "object"}}
-                },
-                "BibliographyItem": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["item_id", "citation_key", "csl_json", "created_at_ms", "updated_at_ms", "revision"],
-                    "properties": {
-                        "item_id": note_id_schema(),
-                        "citation_key": {"type": "string"},
-                        "csl_json": {"type": "object"},
-                        "created_at_ms": {"type": "integer"},
-                        "updated_at_ms": {"type": "integer"},
-                        "revision": revision_schema()
-                    }
-                },
-                "BibliographyImportSourceInput": {
-                    "oneOf": [
-                        {
-                            "type": "object", "additionalProperties": false,
-                            "required": ["kind", "display_name"],
-                            "properties": {
-                                "kind": {"const": "new"},
-                                "display_name": {"type": "string", "minLength": 1, "maxLength": 128}
-                            }
-                        },
-                        {
-                            "type": "object", "additionalProperties": false,
-                            "required": ["kind", "source_id"],
-                            "properties": {
-                                "kind": {"const": "existing"},
-                                "source_id": note_id_schema()
-                            }
-                        }
-                    ]
-                },
-                "BibliographyImportPreviewInput": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["source", "items"],
-                    "properties": {
-                        "source": {"$ref": "#/components/schemas/BibliographyImportSourceInput"},
-                        "items": {"type": "array", "minItems": 1, "maxItems": 1000, "items": {}}
-                    }
-                },
-                "BibliographyImportSource": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["source_id", "method", "display_name", "revision", "created_at_ms", "last_imported_at_ms"],
-                    "properties": {
-                        "source_id": note_id_schema(),
-                        "method": {"const": "csl_json_file"},
-                        "display_name": {"type": "string", "minLength": 1, "maxLength": 128},
-                        "revision": revision_schema(),
-                        "created_at_ms": {"type": "integer"},
-                        "last_imported_at_ms": {"type": "integer"}
-                    }
-                },
-                "BibliographyImportCandidate": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["item_id", "citation_key", "title", "revision", "matched_by"],
-                    "properties": {
-                        "item_id": note_id_schema(),
-                        "citation_key": {"type": "string"},
-                        "title": {"type": ["string", "null"]},
-                        "revision": revision_schema(),
-                        "matched_by": {"type": "array", "items": {"type": "string"}}
-                    }
-                },
-                "BibliographyImportEntry": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["position", "external_item_id", "citation_key", "classification", "item_id", "item_revision", "current_csl_json", "candidates", "rejection_code"],
-                    "properties": {
-                        "position": {"type": "integer", "minimum": 0},
-                        "external_item_id": {"type": ["string", "null"]},
-                        "citation_key": {"type": ["string", "null"]},
-                        "classification": {"enum": ["create", "update_from_external", "unchanged", "keep_local", "conflict", "duplicate_candidate", "rejected"]},
-                        "item_id": {"oneOf": [note_id_schema(), {"type": "null"}]},
-                        "item_revision": {"type": ["integer", "null"], "minimum": 1},
-                        "current_csl_json": {"type": ["object", "null"]},
-                        "candidates": {"type": "array", "items": {"$ref": "#/components/schemas/BibliographyImportCandidate"}},
-                        "rejection_code": {"type": ["string", "null"]}
-                    }
-                },
-                "BibliographyImportPreview": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["source_id", "source_revision", "preview_token", "entries"],
-                    "properties": {
-                        "source_id": {"oneOf": [note_id_schema(), {"type": "null"}]},
-                        "source_revision": {"type": ["integer", "null"], "minimum": 1},
-                        "preview_token": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                        "entries": {"type": "array", "items": {"$ref": "#/components/schemas/BibliographyImportEntry"}}
-                    }
-                },
-                "BibliographyImportDecision": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["position", "action", "candidate_item_id"],
-                    "properties": {
-                        "position": {"type": "integer", "minimum": 0},
-                        "action": {"enum": ["apply_suggested", "create_separate", "keep_local", "use_external", "link_existing_keep_local", "link_existing_use_external", "exclude"]},
-                        "candidate_item_id": {"oneOf": [note_id_schema(), {"type": "null"}]}
-                    }
-                },
-                "BibliographyImportApplyInput": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["source", "items", "preview_token", "decisions"],
-                    "properties": {
-                        "source": {"$ref": "#/components/schemas/BibliographyImportSourceInput"},
-                        "items": {"type": "array", "minItems": 1, "maxItems": 1000, "items": {}},
-                        "preview_token": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                        "decisions": {"type": "array", "minItems": 1, "maxItems": 1000, "items": {"$ref": "#/components/schemas/BibliographyImportDecision"}}
-                    }
-                },
-                "BibliographyImportResult": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["source_id", "source_revision", "created", "updated", "kept", "excluded"],
-                    "properties": {
-                        "source_id": note_id_schema(),
-                        "source_revision": revision_schema(),
-                        "created": {"type": "integer", "minimum": 0},
-                        "updated": {"type": "integer", "minimum": 0},
-                        "kept": {"type": "integer", "minimum": 0},
-                        "excluded": {"type": "integer", "minimum": 0}
-                    }
-                },
-                "Note": note,
-                "NoteSummary": note_summary,
-                "NoteListEntry": note_list_entry,
-                "NoteReview": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["note_id", "current_revision", "status", "reviewed_revision", "reviewed_at_ms", "reviewer_issuer", "reviewer_subject"],
-                    "properties": {
-                        "note_id": note_id_schema(),
-                        "current_revision": revision_schema(),
-                        "status": provenance_properties["review_status"].clone(),
-                        "reviewed_revision": provenance_properties["reviewed_revision"].clone(),
-                        "reviewed_at_ms": provenance_properties["reviewed_at_ms"].clone(),
-                        "reviewer_issuer": {"type": ["string", "null"], "format": "uri"},
-                        "reviewer_subject": {"type": ["string", "null"]}
-                    }
-                },
-                "DeletedNoteListEntry": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["note_id", "title", "deleted_at_ms", "purge_at_ms", "revision"],
-                    "properties": {
-                        "note_id": note_id_schema(),
-                        "title": {"type": "string"},
-                        "deleted_at_ms": {"type": "integer", "format": "int64"},
-                        "purge_at_ms": {"type": "integer", "format": "int64"},
-                        "revision": revision_schema()
-                    }
-                },
-                "NoteView": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["note", "access", "html", "related", "math_macros"],
-                    "properties": {
-                        "note": {"$ref": "#/components/schemas/Note"},
-                        "access": {"enum": ["read", "edit", "manage"]},
-                        "html": {"type": "string"},
-                        "related": {
-                            "type": "object", "additionalProperties": false,
-                            "required": ["outgoing", "incoming"],
-                            "properties": {
-                                "outgoing": {"type": "array", "items": {"$ref": "#/components/schemas/NoteSummary"}},
-                                "incoming": {"type": "array", "items": {"$ref": "#/components/schemas/NoteSummary"}}
-                            }
-                        },
-                        "math_macros": {"type": "array", "items": {"$ref": "#/components/schemas/MathMacro"}}
-                    }
-                },
-                "NoteGraph": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["notes", "works", "references", "citations"],
-                    "properties": {
-                        "notes": {"type": "array", "items": {"$ref": "#/components/schemas/NoteGraphNote"}},
-                        "works": {"type": "array", "items": {"$ref": "#/components/schemas/NoteGraphWork"}},
-                        "references": {"type": "array", "items": {"$ref": "#/components/schemas/NoteGraphReference"}},
-                        "citations": {"type": "array", "items": {"$ref": "#/components/schemas/NoteGraphCitation"}}
-                    }
-                },
-                "NoteGraphNote": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["note_id", "title", "tags", "updated_at_ms"],
-                    "properties": {
-                        "note_id": note_id_schema(),
-                        "title": {"type": "string"},
-                        "tags": {"type": "array", "items": {"type": "string"}},
-                        "updated_at_ms": {"type": "integer", "format": "int64"}
-                    }
-                },
-                "NoteGraphWork": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["citation_key", "title"],
-                    "properties": {
-                        "citation_key": {"type": "string"},
-                        "title": {"type": ["string", "null"]}
-                    }
-                },
-                "NoteGraphReference": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["source_note_id", "target_note_id"],
-                    "properties": {
-                        "source_note_id": note_id_schema(),
-                        "target_note_id": note_id_schema()
-                    }
-                },
-                "NoteGraphCitation": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["source_note_id", "citation_key"],
-                    "properties": {
-                        "source_note_id": note_id_schema(),
-                        "citation_key": {"type": "string"}
-                    }
-                },
-                "NotePreview": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["html", "diagnostics", "math_macros"],
-                    "properties": {
-                        "html": {"type": "string"},
-                        "diagnostics": {
-                            "type": "array",
-                            "items": {"$ref": "#/components/schemas/NoteDiagnostic"}
-                        },
-                        "math_macros": {"type": "array", "items": {"$ref": "#/components/schemas/MathMacro"}}
-                    }
-                },
-                "NoteDiagnostic": note_diagnostic_schema(),
-                "NoteAclEntry": {
-                    "type": "object", "additionalProperties": false, "required": ["subject", "permission"],
-                    "properties": {
-                        "subject": {"type": "string", "minLength": 1, "maxLength": 1024},
-                        "permission": {"enum": ["read", "edit"]}
-                    }
-                },
-                "NoteAclGrant": {
-                    "type": "object", "additionalProperties": false, "required": ["issuer", "subject", "permission"],
-                    "properties": {
-                        "issuer": {"type": "string", "format": "uri", "maxLength": 2048},
-                        "subject": {"type": "string", "minLength": 1, "maxLength": 1024},
-                        "permission": {"enum": ["read", "edit"]}
-                    }
-                },
-                "NoteAcl": {
-                    "type": "object", "additionalProperties": false, "required": ["entries"],
-                    "properties": {"entries": {"type": "array", "items": {"$ref": "#/components/schemas/NoteAclGrant"}}}
-                },
-                "NoteAclUpdate": {
-                    "type": "object", "additionalProperties": false, "required": ["entries"],
-                    "properties": {"entries": {"type": "array", "items": {"$ref": "#/components/schemas/NoteAclEntry"}}}
-                },
-                "Problem": problem_schema()
-            },
+            "schemas": component_schemas(),
             "responses": {
                 "NotFound": problem_response("note or authorization is not visible"),
                 "Conflict": problem_response("the If-Match revision is stale"),
@@ -1438,96 +1224,8 @@ fn problem_response(description: &str) -> Value {
     json!({"description": description, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}})
 }
 
-fn problem_schema() -> Value {
-    let codes = ProblemCode::ALL
-        .into_iter()
-        .map(|code| serde_json::to_value(code).expect("problem code is serializable"))
-        .collect::<Vec<_>>();
-    json!({
-        "type": "object", "additionalProperties": false, "required": ["code", "message"],
-        "properties": {
-            "code": {"enum": codes},
-            "message": {"type": "string"},
-            "diagnostics": {
-                "type": "array",
-                "items": {"$ref": "#/components/schemas/NoteDiagnostic"}
-            }
-        }
-    })
-}
-
-fn note_diagnostic_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["code", "severity", "target", "message"],
-        "properties": {
-            "code": {"type": "string"},
-            "severity": {"enum": ["error", "warning", "information", "hint"]},
-            "target": {
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": ["field"],
-                        "properties": {
-                            "field": {"enum": ["source", "title", "body", "tags"]}
-                        }
-                    },
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": ["field", "index"],
-                        "properties": {
-                            "field": {"enum": ["tag", "acl_entry"]},
-                            "index": {"type": "integer", "minimum": 0}
-                        }
-                    }
-                ]
-            },
-            "span": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["start", "end", "unit"],
-                "properties": {
-                    "start": {"type": "integer", "minimum": 0},
-                    "end": {"type": "integer", "minimum": 0},
-                    "unit": {"const": "utf8_byte"}
-                }
-            },
-            "message": {"type": "string"}
-        }
-    })
-}
-
-fn note_draft_schema() -> Value {
-    object_schema(
-        json!({
-            "source": {"type": "string", "x-maxBytes": NOTE_POLICY.max_source_bytes}
-        }),
-        &["source"],
-    )
-}
-
 fn note_id_schema() -> Value {
     json!({"type": "string", "format": "uuid", "pattern": ENTITY_ID_PATTERN})
-}
-
-fn revision_schema() -> Value {
-    json!({"type": "integer", "minimum": Revision::MINIMUM_VALUE})
-}
-
-fn object_schema(properties: Value, required: &[&str]) -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": required,
-        "properties": properties
-    })
-}
-
-pub fn typescript_contracts() -> &'static str {
-    include_str!("typescript-contracts.ts")
 }
 
 #[cfg(test)]
@@ -1584,7 +1282,15 @@ mod tests {
     #[test]
     fn generated_schemas_reference_domain_identifier_rules() {
         assert_eq!(note_id_schema()["pattern"], ENTITY_ID_PATTERN);
-        assert_eq!(revision_schema()["minimum"], Revision::MINIMUM_VALUE);
+        let schemas = component_schemas();
+        assert_eq!(
+            schemas["Note"]["properties"]["note_id"]["pattern"],
+            ENTITY_ID_PATTERN
+        );
+        assert_eq!(
+            schemas["Note"]["properties"]["revision"]["minimum"],
+            Revision::MINIMUM_VALUE
+        );
     }
 
     #[test]

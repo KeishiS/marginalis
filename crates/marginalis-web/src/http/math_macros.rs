@@ -2,7 +2,7 @@
 
 use axum::{Json, extract::State, http::HeaderMap};
 use marginalis_application::MathMacro;
-use marginalis_contract::{MathMacroResponse, MathMacroSettingsInput, MathMacroSettingsResponse};
+use marginalis_contract::{MathMacroResponse, MathMacroSettings};
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor},
@@ -13,7 +13,7 @@ use super::{
 pub(super) async fn read_math_macros(
     State(state): State<ApiState>,
     headers: HeaderMap,
-) -> HandlerResult<Json<MathMacroSettingsResponse>> {
+) -> HandlerResult<Json<MathMacroSettings>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let settings = state
         .math_macros
@@ -26,8 +26,8 @@ pub(super) async fn read_math_macros(
 pub(super) async fn replace_math_macros(
     State(state): State<ApiState>,
     headers: HeaderMap,
-    Json(input): Json<MathMacroSettingsInput>,
-) -> HandlerResult<Json<MathMacroSettingsResponse>> {
+    Json(input): Json<MathMacroSettings>,
+) -> HandlerResult<Json<MathMacroSettings>> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let settings = state
         .math_macros
@@ -49,10 +49,8 @@ pub(super) async fn replace_math_macros(
     Ok(Json(settings_response(settings)))
 }
 
-fn settings_response(
-    settings: marginalis_application::MathMacroSettings,
-) -> MathMacroSettingsResponse {
-    MathMacroSettingsResponse {
+fn settings_response(settings: marginalis_application::MathMacroSettings) -> MathMacroSettings {
+    MathMacroSettings {
         macros: settings
             .macros
             .into_iter()

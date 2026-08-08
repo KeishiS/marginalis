@@ -12,7 +12,7 @@ mod html;
 mod math_macros;
 mod mcp_scope_ceilings;
 mod mcp_transport;
-mod notes;
+pub(crate) mod notes;
 mod oauth;
 mod security;
 mod state;

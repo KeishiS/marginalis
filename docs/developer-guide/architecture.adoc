@@ -293,9 +293,11 @@ crate内moduleを使う。各crateの``lib.rs``は公開facade、routerまたは
 実行経路と公開型を短く一覧できる状態に保つ。
 
 Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセットの配信を担当し、Reactは
-画面遷移とブラウザー内状態を担当します。RESTのTypeScript型、実行時の応答検査、クライアント関数は
-``marginalis-contract/src/typescript-contracts.ts``を正本として
+画面遷移とブラウザー内状態を担当します。RESTのTypeScript型と実行時の応答検査は、
+``marginalis-contract``のRust型が持つJSON Schemaを正本として
 ``frontend/src/generated/contracts.ts``へ生成し、フロントエンド側では手書きで複製しません。
+HTTPクライアント関数は契約ではないため``frontend/src/client.ts``に置き、生成した型と検査だけを
+参照します。
 編集内容、保存処理、共有設定の状態遷移は、それぞれ``editorState.ts``、``editorActivityState.ts``、
 ``accessControlState.ts``の純粋なreducerへ置きます。Reactコンポーネントは入力、REST呼び出し、
 副作用の調整を担当し、状態遷移の規則をイベント処理へ分散させません。保存前プレビューの遅延、

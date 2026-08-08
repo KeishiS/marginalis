@@ -10,8 +10,8 @@ use marginalis_contract::{
     McpCreateNoteInput, McpDeleteBibliographyItemInput, McpDeleteNoteInput, McpEmptyInput,
     McpGetNoteInput, McpGetNoteOutput, McpListNotesInput, McpListNotesOutput,
     McpNoteProfileExample, McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput,
-    McpNoteProfileRule, McpNoteProfileSyntax, McpNoteRevisionOutput, McpNoteSummary,
-    McpSearchBibliographyInput, McpToolName, McpUpdateNoteInput, ProblemResponse,
+    McpNoteProfileRule, McpNoteProfileSyntax, McpNoteRevisionOutput, McpSearchBibliographyInput,
+    McpToolName, McpUpdateNoteInput, ProblemResponse,
 };
 use marginalis_domain::{
     Actor, BibliographyItemId, EntityId, Note, NoteCreationSource, NoteDraft, Revision,
@@ -202,20 +202,7 @@ async fn execute_mcp_tool(
                     McpToolOutput::NoteList(McpListNotesOutput {
                         notes: notes
                             .into_iter()
-                            .map(|entry| McpNoteSummary {
-                                note_id: entry.summary.note_id.to_string(),
-                                title: entry.summary.title,
-                                tags: entry.summary.tags,
-                                updated_at_ms: entry.summary.updated_at.get(),
-                                revision: entry.summary.revision.get(),
-                                created_via: entry.summary.created_via,
-                                review_status: entry.summary.review_status,
-                                reviewed_revision: entry
-                                    .summary
-                                    .reviewed_revision
-                                    .map(Revision::get),
-                                reviewed_at_ms: entry.summary.reviewed_at.map(|time| time.get()),
-                            })
+                            .map(|entry| crate::http::notes::note_summary_response(entry.summary))
                             .collect(),
                     })
                 })
