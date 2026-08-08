@@ -62,9 +62,7 @@ fn empty_state() -> BibliographyImportState {
 
 #[tokio::test]
 async fn import_commit_creates_owner_scoped_source_item_and_link() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let bob = actor("https://id.example.test", "bob");
     let item = item(&alice);
@@ -116,9 +114,7 @@ async fn import_commit_creates_owner_scoped_source_item_and_link() {
 
 #[tokio::test]
 async fn revision_conflict_rolls_back_every_item_and_the_source() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let original = item(&alice);
     database
@@ -179,9 +175,7 @@ async fn revision_conflict_rolls_back_every_item_and_the_source() {
 
 #[tokio::test]
 async fn an_unrelated_library_change_invalidates_the_whole_preview() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let original = item(&alice);
     database
@@ -248,9 +242,7 @@ async fn an_unrelated_library_change_invalidates_the_whole_preview() {
 
 #[tokio::test]
 async fn import_rejects_a_source_owned_by_another_actor() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let bob = actor("https://id.example.test", "bob");
     let result = database
@@ -270,9 +262,7 @@ async fn import_rejects_a_source_owned_by_another_actor() {
 
 #[tokio::test]
 async fn loading_import_state_rejects_a_baseline_newer_than_the_item() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let item = item(&alice);
     database
@@ -308,9 +298,7 @@ async fn loading_import_state_rejects_a_baseline_newer_than_the_item() {
 
 #[tokio::test]
 async fn archive_snapshot_restores_import_sources_links_and_baselines() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let item = item(&alice);
     database
@@ -336,9 +324,7 @@ async fn archive_snapshot_restores_import_sources_links_and_baselines() {
     assert_eq!(snapshot.bibliography_import_sources().len(), 1);
     assert_eq!(snapshot.bibliography_import_links().len(), 1);
 
-    let restored = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("restore target");
+    let restored = super::database().await;
     let plan = RestorePlan::new(snapshot.clone(), Vec::new(), Vec::new()).expect("restore plan");
     restored.restore(&plan).await.expect("restore");
     assert_eq!(

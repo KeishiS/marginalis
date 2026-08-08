@@ -2,9 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn bibliography_is_private_unique_and_revision_guarded() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let bob = actor("https://id.example.test", "bob");
     let item_id = BibliographyItemId::new(
@@ -97,9 +95,7 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
 /// 保存側で確かめる。
 #[tokio::test]
 async fn citation_keys_are_read_only_from_the_named_owner() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     let bob = actor("https://id.example.test", "bob");
     let alice_item = BibliographyItem::create(
@@ -153,9 +149,7 @@ async fn citation_keys_are_read_only_from_the_named_owner() {
 
 #[tokio::test]
 async fn bibliography_search_treats_like_metacharacters_as_text() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization");
+    let database = database().await;
     let alice = actor("https://id.example.test", "alice");
     for (id, key) in [
         ("0197c9bc-0000-7000-8000-000000000096", "rate%_literal"),
