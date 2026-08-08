@@ -10,7 +10,8 @@ use marginalis_application::{
 use marginalis_domain::{
     Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteAccess,
     NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
-    NoteReviewTracking, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, WebSession,
+    NoteReviewTracking, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, ValidatedCslJson,
+    WebSession,
 };
 
 use super::*;
@@ -69,10 +70,13 @@ fn bibliography_item(id_hex: &str, owner: &Actor, key: &str, csl_json: &str) -> 
     BibliographyItem::create(
         BibliographyItemId::new(EntityId::from_str(id_hex).expect("v7 bibliography item ID")),
         owner.identity(),
-        key.into(),
-        csl_json.into(),
+        validated_csl_json(key, csl_json),
         UnixMillis::new(100),
     )
+}
+
+fn validated_csl_json(key: &str, csl_json: &str) -> ValidatedCslJson {
+    ValidatedCslJson::from_encoded(key, csl_json).expect("valid CSL-JSON")
 }
 
 /// `Note::restore`の定型を省く試験用のseed。

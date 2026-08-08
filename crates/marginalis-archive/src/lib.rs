@@ -527,16 +527,6 @@ fn validate_archive_contents(
             let invalid = || ArchiveContentsError::BibliographyItem {
                 position: index + 1,
             };
-            let object = item.csl_json.as_object().ok_or_else(invalid)?;
-            if object.get("id").and_then(serde_json::Value::as_str)
-                != Some(item.citation_key.as_str())
-                || object
-                    .get("type")
-                    .and_then(serde_json::Value::as_str)
-                    .is_none_or(str::is_empty)
-            {
-                return Err(invalid());
-            }
             BibliographyItem::restore(
                 item.item_id
                     .parse::<EntityId>()
@@ -825,8 +815,10 @@ mod tests {
                 EntityId::from_str("0197c9bc-0000-7000-8000-0000000000b1").expect("UUIDv7"),
             ),
             &owner,
-            "smith2026".into(),
-            r#"{"id":"smith2026","title":"Example","type":"article-journal"}"#.into(),
+            marginalis_domain::ValidatedCslJson::new(&serde_json::json!({
+                "id": "smith2026", "title": "Example", "type": "article-journal"
+            }))
+            .expect("valid CSL-JSON"),
             UnixMillis::new(10),
         );
         let source_id = BibliographyImportSourceId::new(

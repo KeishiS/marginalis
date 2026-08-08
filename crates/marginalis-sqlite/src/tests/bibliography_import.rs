@@ -35,8 +35,10 @@ fn item(owner: &Actor) -> BibliographyItem {
     BibliographyItem::create(
         item_id(),
         owner.identity(),
-        "smith2024".into(),
-        r#"{"id":"smith2024","type":"book","title":"Before"}"#.into(),
+        validated_csl_json(
+            "smith2024",
+            r#"{"id":"smith2024","type":"book","title":"Before"}"#,
+        ),
         UnixMillis::new(100),
     )
 }
@@ -148,7 +150,10 @@ async fn revision_conflict_rolls_back_every_item_and_the_source() {
                 mutations: vec![
                     BibliographyImportItemMutation::Update {
                         item_id: item_id(),
-                        csl_json: r#"{"id":"smith2024","type":"book","title":"After"}"#.into(),
+                        csl_json: validated_csl_json(
+                            "smith2024",
+                            r#"{"id":"smith2024","type":"book","title":"After"}"#,
+                        ),
                         expected_revision: Revision::INITIAL,
                         link: link("smith2024", revision(2)),
                         updated_at: UnixMillis::new(200),
@@ -171,6 +176,65 @@ async fn revision_conflict_rolls_back_every_item_and_the_source() {
     assert_eq!(state.source.expect("source").revision(), Revision::INITIAL);
     assert_eq!(state.items, vec![original]);
     assert_eq!(state.links, vec![link("smith2024", Revision::INITIAL)]);
+}
+
+#[tokio::test]
+async fn import_update_rejects_a_citation_key_change_at_the_adapter_boundary() {
+    let database = database().await;
+    let alice = actor("https://id.example.test", "alice");
+    let original = item(&alice);
+    database
+        .apply_import(
+            &alice,
+            BibliographyImportCommit {
+                source: source(&alice),
+                expected_state: empty_state(),
+                imported_at: UnixMillis::new(100),
+                mutations: vec![BibliographyImportItemMutation::Create {
+                    link: link("smith2024", Revision::INITIAL),
+                    item: original.clone(),
+                }],
+                excluded: 0,
+            },
+        )
+        .await
+        .expect("initial import");
+    let expected_state = database
+        .load_import_state(&alice, Some(source_id()))
+        .await
+        .expect("state at preview");
+
+    let result = database
+        .apply_import(
+            &alice,
+            BibliographyImportCommit {
+                source: source(&alice),
+                expected_state,
+                imported_at: UnixMillis::new(200),
+                mutations: vec![BibliographyImportItemMutation::Update {
+                    item_id: item_id(),
+                    csl_json: validated_csl_json(
+                        "different-key",
+                        r#"{"id":"different-key","type":"book","title":"After"}"#,
+                    ),
+                    expected_revision: Revision::INITIAL,
+                    link: link("smith2024", revision(2)),
+                    updated_at: UnixMillis::new(200),
+                }],
+                excluded: 0,
+            },
+        )
+        .await;
+
+    assert_eq!(result, Err(StorageError::Conflict));
+    assert_eq!(
+        database
+            .load_import_state(&alice, Some(source_id()))
+            .await
+            .expect("state after rejection")
+            .items,
+        vec![original]
+    );
 }
 
 #[tokio::test]
@@ -203,8 +267,7 @@ async fn an_unrelated_library_change_invalidates_the_whole_preview() {
             EntityId::from_str("0197c9bc-0000-7000-8000-0000000000c3").expect("UUIDv7"),
         ),
         alice.identity(),
-        "unrelated".into(),
-        r#"{"id":"unrelated","type":"book"}"#.into(),
+        validated_csl_json("unrelated", r#"{"id":"unrelated","type":"book"}"#),
         UnixMillis::new(150),
     );
     database

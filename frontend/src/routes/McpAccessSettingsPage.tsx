@@ -19,8 +19,7 @@ const SCOPE_DESCRIPTIONS: Record<string, string> = {
   "notes:write": "作成・更新: create_note、update_note、get_note_profile",
   "notes:delete": "削除: delete_note",
   "bibliography:read": "閲覧: search_bibliography",
-  "bibliography:write":
-    "作成・更新: add_bibliography_item、add_bibliography_items",
+  "bibliography:write": "作成: add_bibliography_item",
   "bibliography:delete": "削除: delete_bibliography_item",
 };
 

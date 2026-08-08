@@ -158,11 +158,11 @@ fn classify_entry(
         });
     }
 
-    let candidates = duplicate_candidates(value, &validated.citation_key, &state.items);
+    let candidates = duplicate_candidates(value, validated.csl_json.citation_key(), &state.items);
     Ok(BibliographyImportEntry {
         position,
         external_item_id: Some(validated.external_item_id),
-        citation_key: Some(validated.citation_key),
+        citation_key: Some(validated.csl_json.citation_key().to_owned()),
         classification: if candidates.is_empty() {
             BibliographyImportClassification::Create
         } else {

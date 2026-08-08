@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use marginalis_application::{
     NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork,
 };
-use marginalis_domain::{Actor, UnixMillis};
+use marginalis_domain::{Actor, UnixMillis, ValidatedCslJson};
 use sqlx::Row;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_id_from_text};
@@ -128,7 +128,10 @@ impl SqliteDatabase {
             }
             let citation_key: String = row.try_get("citation_key").map_err(database_error)?;
             let csl_json: Option<String> = row.try_get("csl_json").map_err(database_error)?;
-            let title = csl_json.as_deref().and_then(csl_title);
+            let title = match csl_json.as_deref() {
+                Some(csl_json) => csl_title(&citation_key, csl_json)?,
+                None => None,
+            };
             works
                 .entry(citation_key.clone())
                 .and_modify(|known| {
@@ -169,10 +172,12 @@ fn graph_note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<NoteGraphNote, Sq
 }
 
 /// 図に出す文献の題名。CSL-JSONの`title`だけを読み、他の項目は取り出さない。
-fn csl_title(csl_json: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(csl_json)
-        .ok()?
-        .get("title")?
-        .as_str()
-        .map(str::to_owned)
+fn csl_title(citation_key: &str, csl_json: &str) -> Result<Option<String>, SqliteStoreError> {
+    let csl_json = ValidatedCslJson::from_encoded(citation_key, csl_json)
+        .map_err(|_| SqliteStoreError::CorruptData)?;
+    Ok(csl_json
+        .value()
+        .get("title")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned))
 }

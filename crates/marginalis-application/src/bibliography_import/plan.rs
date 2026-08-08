@@ -149,8 +149,7 @@ fn create_mutation(
     let item = BibliographyItem::create(
         BibliographyItemId::new(random.uuid_v7()),
         source.owner(),
-        validated.citation_key,
-        validated.encoded,
+        validated.csl_json,
         imported_at,
     );
     let link = link(
@@ -224,7 +223,7 @@ fn update_mutation(
         .citation_key
         .as_ref()
         .ok_or(BibliographyImportUseCaseError::Conflict)?;
-    let object = serde_json::from_str::<Value>(&validated.encoded)
+    let object = serde_json::from_str::<Value>(validated.csl_json.encoded())
         .map_err(|_| BibliographyImportUseCaseError::InvalidInput("invalid_json"))?;
     let mut object =
         object
@@ -234,8 +233,8 @@ fn update_mutation(
                 "item_not_object",
             ))?;
     object.insert("id".into(), Value::String(citation_key.clone()));
-    validated.encoded = serde_json::to_string(&object)
-        .map_err(|_| BibliographyImportUseCaseError::InvalidInput("invalid_json"))?;
+    validated.csl_json = marginalis_domain::ValidatedCslJson::new(&Value::Object(object))
+        .map_err(|_| BibliographyImportUseCaseError::InvalidInput("invalid_csl_json"))?;
     let next_revision = revision
         .get()
         .checked_add(1)
@@ -250,7 +249,7 @@ fn update_mutation(
     )?;
     Ok(BibliographyImportItemMutation::Update {
         item_id,
-        csl_json: validated.encoded,
+        csl_json: validated.csl_json,
         expected_revision: revision,
         link,
         updated_at: imported_at,
@@ -399,7 +398,7 @@ mod tests {
         else {
             panic!("expected update")
         };
-        let csl_json: Value = serde_json::from_str(csl_json).expect("CSL-JSON");
+        let csl_json: Value = serde_json::from_str(csl_json.encoded()).expect("CSL-JSON");
         assert_eq!(csl_json["id"], "local-key");
         assert_eq!(link.external_item_id(), "external-key");
     }

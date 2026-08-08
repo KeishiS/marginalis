@@ -24,7 +24,6 @@ pub enum McpToolName {
     DeleteNote,
     SearchBibliography,
     AddBibliographyItem,
-    AddBibliographyItems,
     DeleteBibliographyItem,
 }
 
@@ -39,7 +38,6 @@ impl McpToolName {
             Self::DeleteNote => "delete_note",
             Self::SearchBibliography => "search_bibliography",
             Self::AddBibliographyItem => "add_bibliography_item",
-            Self::AddBibliographyItems => "add_bibliography_items",
             Self::DeleteBibliographyItem => "delete_bibliography_item",
         }
     }
@@ -51,7 +49,7 @@ impl McpToolName {
             Self::CreateNote | Self::UpdateNote => &["notes:write"],
             Self::DeleteNote => &["notes:delete"],
             Self::SearchBibliography => &["bibliography:read"],
-            Self::AddBibliographyItem | Self::AddBibliographyItems => &["bibliography:write"],
+            Self::AddBibliographyItem => &["bibliography:write"],
             Self::DeleteBibliographyItem => &["bibliography:delete"],
         }
     }
@@ -67,7 +65,7 @@ impl McpToolName {
             Self::CreateNote | Self::UpdateNote => &[&["notes:write"]],
             Self::DeleteNote => &[&["notes:delete"]],
             Self::SearchBibliography => &[&["bibliography:read"]],
-            Self::AddBibliographyItem | Self::AddBibliographyItems => &[&["bibliography:write"]],
+            Self::AddBibliographyItem => &[&["bibliography:write"]],
             Self::DeleteBibliographyItem => &[&["bibliography:delete"]],
         }
     }
@@ -86,7 +84,6 @@ impl TryFrom<&str> for McpToolName {
             "delete_note" => Ok(Self::DeleteNote),
             "search_bibliography" => Ok(Self::SearchBibliography),
             "add_bibliography_item" => Ok(Self::AddBibliographyItem),
-            "add_bibliography_items" => Ok(Self::AddBibliographyItems),
             "delete_bibliography_item" => Ok(Self::DeleteBibliographyItem),
             _ => Err(UnknownMcpTool),
         }
@@ -184,14 +181,6 @@ pub struct McpAddBibliographyItemInput {
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct McpAddBibliographyItemsInput {
-    /// CSL-JSON items。各項目の`id`と`type`は必須。
-    #[schemars(length(min = 1, max = 100))]
-    pub csl_json_items: Vec<Value>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct McpDeleteBibliographyItemInput {
     #[schemars(regex(pattern = NOTE_ID_PATTERN))]
     pub item_id: String,
@@ -214,22 +203,6 @@ pub struct McpBibliographyItem {
 #[serde(deny_unknown_fields)]
 pub struct McpBibliographyListOutput {
     pub items: Vec<McpBibliographyItem>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct McpBibliographyImportError {
-    pub input_index: usize,
-    pub citation_key: Option<String>,
-    pub code: String,
-    pub message: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct McpBibliographyImportOutput {
-    pub items: Vec<McpBibliographyItem>,
-    pub errors: Vec<McpBibliographyImportError>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -379,10 +352,6 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
             McpToolName::AddBibliographyItem,
             "Add one bibliography item in CSL-JSON format; requires bibliography:write; id and type are required and values are never inferred",
         ),
-        McpToolContract::new::<McpAddBibliographyItemsInput, McpBibliographyImportOutput>(
-            McpToolName::AddBibliographyItems,
-            "Add multiple bibliography items in CSL-JSON format; requires bibliography:write; successful items and per-input errors are returned",
-        ),
         McpToolContract::new::<McpDeleteBibliographyItemInput, McpEmptyInput>(
             McpToolName::DeleteBibliographyItem,
             "Delete an owned bibliography item at the expected revision; requires bibliography:delete",
@@ -403,7 +372,7 @@ mod tests {
     #[test]
     fn tool_catalog_has_unique_typed_names_and_closed_input_objects() {
         let contracts = mcp_tool_contracts();
-        assert_eq!(contracts.len(), 10);
+        assert_eq!(contracts.len(), 9);
         assert_eq!(
             contracts
                 .iter()
@@ -436,10 +405,6 @@ mod tests {
             (McpToolName::SearchBibliography, &["bibliography:read"][..]),
             (
                 McpToolName::AddBibliographyItem,
-                &["bibliography:write"][..],
-            ),
-            (
-                McpToolName::AddBibliographyItems,
                 &["bibliography:write"][..],
             ),
             (

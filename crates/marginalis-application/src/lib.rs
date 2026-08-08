@@ -31,7 +31,6 @@ pub use mcp_authorization_server::{
 mod bibliography;
 mod bibliography_import;
 mod citation;
-mod csl_json;
 mod identity;
 mod math_macros;
 mod mcp_oauth;

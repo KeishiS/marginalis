@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, BibliographyItem, BibliographyItemId, Identity, Revision, UnixMillis,
+    Actor, BibliographyItem, BibliographyItemId, Identity, Revision, UnixMillis, ValidatedCslJson,
 };
 use serde_json::Value;
 
-use crate::{Clock, Random, StorageError, csl_json::validate_and_encode};
+use crate::{Clock, Random, StorageError};
 
 /// 書誌ライブラリー操作の失敗理由。
 ///
@@ -69,8 +69,7 @@ pub trait BibliographyRepository: Send + Sync {
         &self,
         actor: &Actor,
         item_id: BibliographyItemId,
-        citation_key: &str,
-        csl_json: &str,
+        csl_json: &ValidatedCslJson,
         updated_at: UnixMillis,
         expected_revision: Revision,
     ) -> Result<BibliographyItem, StorageError>;
@@ -122,13 +121,12 @@ impl BibliographyApplication {
         actor: Actor,
         csl_json: Value,
     ) -> Result<BibliographyItem, BibliographyUseCaseError> {
-        let validated =
-            validate_and_encode(&csl_json).map_err(|_| BibliographyUseCaseError::InvalidCslJson)?;
+        let validated = ValidatedCslJson::new(&csl_json)
+            .map_err(|_| BibliographyUseCaseError::InvalidCslJson)?;
         let item = BibliographyItem::create(
             BibliographyItemId::new(self.random.uuid_v7()),
             actor.identity(),
-            validated.citation_key,
-            validated.encoded,
+            validated,
             self.clock.now(),
         );
         self.repository
@@ -145,14 +143,13 @@ impl BibliographyApplication {
         expected_revision: Revision,
         csl_json: Value,
     ) -> Result<BibliographyItem, BibliographyUseCaseError> {
-        let validated =
-            validate_and_encode(&csl_json).map_err(|_| BibliographyUseCaseError::InvalidCslJson)?;
+        let validated = ValidatedCslJson::new(&csl_json)
+            .map_err(|_| BibliographyUseCaseError::InvalidCslJson)?;
         self.repository
             .update_owned_item(
                 &actor,
                 item_id,
-                &validated.citation_key,
-                &validated.encoded,
+                &validated,
                 self.clock.now(),
                 expected_revision,
             )
@@ -188,22 +185,18 @@ mod tests {
     #[test]
     fn csl_json_requires_an_id_and_type() {
         assert_eq!(
-            validate_and_encode(&serde_json::json!({
+            ValidatedCslJson::new(&serde_json::json!({
                 "id": "smith2024",
                 "type": "article-journal",
                 "title": "Example"
             }))
-            .map(|validated| validated.citation_key),
+            .map(|validated| validated.citation_key().to_owned()),
             Ok("smith2024".into())
         );
-        assert_eq!(
-            validate_and_encode(&serde_json::json!({"id": "bad key", "type": "book"})),
-            Err("invalid_id")
+        assert!(
+            ValidatedCslJson::new(&serde_json::json!({"id": "bad key", "type": "book"})).is_err()
         );
-        assert_eq!(
-            validate_and_encode(&serde_json::json!({"id": "smith2024"})),
-            Err("missing_type")
-        );
+        assert!(ValidatedCslJson::new(&serde_json::json!({"id": "smith2024"})).is_err());
     }
 
     #[test]

@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use marginalis_application::{BibliographyRepository, StorageError};
 use marginalis_domain::{
     Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Revision, UnixMillis,
+    ValidatedCslJson,
 };
 use sqlx::Row;
 
@@ -102,8 +103,7 @@ impl BibliographyRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         item_id: BibliographyItemId,
-        citation_key: &str,
-        csl_json: &str,
+        csl_json: &ValidatedCslJson,
         updated_at: UnixMillis,
         expected_revision: Revision,
     ) -> Result<BibliographyItem, StorageError> {
@@ -114,8 +114,8 @@ impl BibliographyRepository for SqliteDatabase {
              RETURNING item_id, owner_issuer, owner_subject, citation_key, csl_json,
                        created_at_ms, updated_at_ms, revision",
         )
-        .bind(citation_key)
-        .bind(csl_json)
+        .bind(csl_json.citation_key())
+        .bind(csl_json.encoded())
         .bind(updated_at.get())
         .bind(item_id.to_string())
         .bind(actor.issuer())
