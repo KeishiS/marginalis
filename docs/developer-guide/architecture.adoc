@@ -200,6 +200,7 @@ marginalis-contract/src/
 marginalis-web/src/http/mcp_transport/
 ├── mod.rs           Streamable HTTPとJSON-RPCの処理順序
 ├── authorization.rs Bearer token、scope、browser origin
+├── jsonrpc.rs       JSON-RPC 2.0のwire型
 ├── protocol.rs      media type、初期化、protocol version
 └── tools.rs         入力検査、use case呼出し、契約型への変換
 ----
@@ -370,6 +371,8 @@ marginalis-sqlite/src/
 ├── schema.rs        schema検証
 ├── session.rs       Web/OIDC session
 ├── notes.rs         noteと所有者認可
+├── note_graph.rs    ノートと引用文献の関係図の読み取り
+├── note_acl.rs      ノートACLの読み書き
 └── archive.rs       検証済みarchiveを一つのトランザクションで格納
 ----
 

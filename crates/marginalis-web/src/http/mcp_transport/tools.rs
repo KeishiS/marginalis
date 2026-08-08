@@ -18,7 +18,7 @@ use marginalis_domain::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::mcp::JsonRpcResponse;
+use super::jsonrpc::JsonRpcResponse;
 
 use super::super::{
     auth::parse_note_id,
@@ -176,254 +176,315 @@ impl McpToolFailure {
     }
 }
 
+/// tool名でツールごとの実装関数へ振り分ける。入力検査と呼出しは各関数が持つ。
 async fn execute_mcp_tool(
     notes: &dyn NoteUseCases,
     bibliography: Option<&BibliographyApplication>,
     actor: Actor,
     call: McpToolCall,
 ) -> Result<McpToolOutput, McpToolFailure> {
-    let result = match call.tool {
-        Some(McpToolName::ListNotes) => {
-            let Ok(input) = serde_json::from_value::<McpListNotesInput>(call.arguments) else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "list arguments are invalid",
-                ));
-            };
-            notes
-                .list_visible_notes(
-                    actor,
-                    NoteListQuery {
-                        created_via: input.created_via,
-                        review_status: input.review_status,
-                    },
-                )
-                .await
-                .map(|notes| {
-                    McpToolOutput::NoteList(McpListNotesOutput {
-                        notes: notes
-                            .into_iter()
-                            .map(|entry| crate::http::notes::note_summary_response(entry.summary))
-                            .collect(),
-                    })
-                })
-        }
-        Some(McpToolName::GetNoteProfile)
-            if call
-                .arguments
-                .as_object()
-                .is_none_or(|value| !value.is_empty()) =>
-        {
-            return Err(McpToolFailure::InvalidArguments(
-                "profile arguments are invalid",
-            ));
-        }
-        Some(McpToolName::GetNoteProfile) => Ok(McpToolOutput::NoteProfile(Box::new(
-            note_profile_output(notes.note_profile()),
-        ))),
-        Some(McpToolName::GetNote) => {
-            let Ok(input) = serde_json::from_value::<McpGetNoteInput>(call.arguments) else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "get arguments are invalid",
-                ));
-            };
-            let Some(note_id) = parse_note_id(&input.note_id).ok() else {
-                return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
-            };
-            notes.read_note(actor, note_id).await.map(|note| {
-                McpToolOutput::Note(McpGetNoteOutput {
-                    note_id: note.note_id().to_string(),
-                    title: note.title().to_owned(),
-                    source: note.source().to_owned(),
-                    tags: note.tags().to_vec(),
-                    updated_at_ms: note.updated_at().get(),
-                    revision: note.revision().get(),
-                    created_via: note.created_via(),
-                    review_status: note.review_status(),
-                    reviewed_revision: note.last_review().map(|review| review.revision().get()),
-                    reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
-                })
-            })
-        }
-        Some(McpToolName::CreateNote) => {
-            let Ok(input) = serde_json::from_value::<McpCreateNoteInput>(call.arguments) else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "note arguments are invalid",
-                ));
-            };
-            notes
-                .create_note(
-                    actor,
-                    NoteDraft {
-                        source: input.source,
-                        title: String::new(),
-                        tags: Vec::new(),
-                    },
-                    NoteWritePolicy::RejectWarnings,
-                    NoteCreationSource::Mcp,
-                )
-                .await
-                .map(note_revision_output)
-        }
-        Some(McpToolName::UpdateNote) => {
-            let Ok(input) = serde_json::from_value::<McpUpdateNoteInput>(call.arguments) else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "update arguments are invalid",
-                ));
-            };
-            let Some(note_id) = parse_note_id(&input.note_id).ok() else {
-                return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
-            };
-            let Ok(expected_revision) = Revision::new(input.expected_revision) else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "expected_revision is invalid",
-                ));
-            };
-            notes
-                .update_note(
-                    actor,
-                    note_id,
-                    NoteDraft {
-                        source: input.source,
-                        title: String::new(),
-                        tags: Vec::new(),
-                    },
-                    expected_revision,
-                    NoteWritePolicy::RejectWarnings,
-                )
-                .await
-                .map(note_revision_output)
-        }
-        Some(McpToolName::DeleteNote) => {
-            let Ok(input) = serde_json::from_value::<McpDeleteNoteInput>(call.arguments) else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "delete arguments are invalid",
-                ));
-            };
-            let Some(note_id) = parse_note_id(&input.note_id).ok() else {
-                return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
-            };
-            let Ok(expected_revision) = Revision::new(input.expected_revision) else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "expected_revision is invalid",
-                ));
-            };
-            notes
-                .soft_delete_note(actor, note_id, expected_revision)
-                .await
-                .map(note_revision_output)
-        }
+    match call.tool {
+        Some(McpToolName::ListNotes) => list_notes_tool(notes, actor, call.arguments).await,
+        Some(McpToolName::GetNoteProfile) => get_note_profile_tool(notes, &call.arguments),
+        Some(McpToolName::GetNote) => get_note_tool(notes, actor, call.arguments).await,
+        Some(McpToolName::CreateNote) => create_note_tool(notes, actor, call.arguments).await,
+        Some(McpToolName::UpdateNote) => update_note_tool(notes, actor, call.arguments).await,
+        Some(McpToolName::DeleteNote) => delete_note_tool(notes, actor, call.arguments).await,
         Some(McpToolName::SearchBibliography) => {
-            let Ok(input) = serde_json::from_value::<McpSearchBibliographyInput>(call.arguments)
-            else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "bibliography search arguments are invalid",
-                ));
-            };
-            let Some(bibliography) = bibliography else {
-                return Err(McpToolFailure::Bibliography(
-                    BibliographyUseCaseError::Unavailable,
-                ));
-            };
-            return bibliography
-                .search_bibliography(actor, input.query)
-                .await
-                .map(|items| {
-                    McpToolOutput::BibliographyList(McpBibliographyListOutput {
-                        items: items.into_iter().map(bibliography_item_output).collect(),
-                    })
-                })
-                .map_err(McpToolFailure::Bibliography);
+            search_bibliography_tool(bibliography, actor, call.arguments).await
         }
         Some(McpToolName::AddBibliographyItem) => {
-            let Ok(input) = serde_json::from_value::<McpAddBibliographyItemInput>(call.arguments)
-            else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "CSL-JSON bibliography arguments are invalid",
-                ));
-            };
-            let Some(bibliography) = bibliography else {
-                return Err(McpToolFailure::Bibliography(
-                    BibliographyUseCaseError::Unavailable,
-                ));
-            };
-            return bibliography
-                .add_bibliography_item(actor, input.csl_json)
-                .await
-                .map(|item| McpToolOutput::BibliographyItem(bibliography_item_output(item)))
-                .map_err(McpToolFailure::Bibliography);
+            add_bibliography_item_tool(bibliography, actor, call.arguments).await
         }
         Some(McpToolName::AddBibliographyItems) => {
-            let Ok(input) = serde_json::from_value::<McpAddBibliographyItemsInput>(call.arguments)
-            else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "CSL-JSON bibliography batch arguments are invalid",
-                ));
-            };
-            if input.csl_json_items.is_empty() || input.csl_json_items.len() > 100 {
-                return Err(McpToolFailure::InvalidArguments(
-                    "csl_json_items must contain between 1 and 100 items",
-                ));
-            }
-            let Some(bibliography) = bibliography else {
-                return Err(McpToolFailure::Bibliography(
-                    BibliographyUseCaseError::Unavailable,
-                ));
-            };
-            let mut items = Vec::new();
-            let mut errors = Vec::new();
-            for (input_index, csl_json) in input.csl_json_items.into_iter().enumerate() {
-                let citation_key = csl_json
-                    .get("id")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_owned);
-                match bibliography
-                    .add_bibliography_item(actor.clone(), csl_json)
-                    .await
-                {
-                    Ok(item) => items.push(bibliography_item_output(item)),
-                    Err(error) => {
-                        errors.push(bibliography_import_error(input_index, citation_key, error))
-                    }
-                }
-            }
-            return Ok(McpToolOutput::BibliographyImport(
-                McpBibliographyImportOutput { items, errors },
-            ));
+            add_bibliography_items_tool(bibliography, actor, call.arguments).await
         }
         Some(McpToolName::DeleteBibliographyItem) => {
-            let Ok(input) =
-                serde_json::from_value::<McpDeleteBibliographyItemInput>(call.arguments)
-            else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "bibliography delete arguments are invalid",
-                ));
-            };
-            let Ok(entity_id) = input.item_id.parse::<EntityId>() else {
-                return Err(McpToolFailure::InvalidArguments("item_id is invalid"));
-            };
-            let Ok(expected_revision) = Revision::new(input.expected_revision) else {
-                return Err(McpToolFailure::InvalidArguments(
-                    "expected_revision is invalid",
-                ));
-            };
-            let Some(bibliography) = bibliography else {
-                return Err(McpToolFailure::Bibliography(
-                    BibliographyUseCaseError::Unavailable,
-                ));
-            };
-            return bibliography
-                .delete_bibliography_item(
-                    actor,
-                    BibliographyItemId::new(entity_id),
-                    expected_revision,
-                )
-                .await
-                .map(|()| McpToolOutput::Empty(McpEmptyInput {}))
-                .map_err(McpToolFailure::Bibliography);
+            delete_bibliography_item_tool(bibliography, actor, call.arguments).await
         }
-        None => return Err(McpToolFailure::UnknownTool),
+        None => Err(McpToolFailure::UnknownTool),
+    }
+}
+
+async fn list_notes_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpListNotesInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "list arguments are invalid",
+        ));
     };
-    result.map_err(McpToolFailure::UseCase)
+    notes
+        .list_visible_notes(
+            actor,
+            NoteListQuery {
+                created_via: input.created_via,
+                review_status: input.review_status,
+            },
+        )
+        .await
+        .map(|notes| {
+            McpToolOutput::NoteList(McpListNotesOutput {
+                notes: notes
+                    .into_iter()
+                    .map(|entry| crate::http::notes::note_summary_response(entry.summary))
+                    .collect(),
+            })
+        })
+        .map_err(McpToolFailure::UseCase)
+}
+
+fn get_note_profile_tool(
+    notes: &dyn NoteUseCases,
+    arguments: &serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    if arguments.as_object().is_none_or(|value| !value.is_empty()) {
+        return Err(McpToolFailure::InvalidArguments(
+            "profile arguments are invalid",
+        ));
+    }
+    Ok(McpToolOutput::NoteProfile(Box::new(note_profile_output(
+        notes.note_profile(),
+    ))))
+}
+
+async fn get_note_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpGetNoteInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "get arguments are invalid",
+        ));
+    };
+    let Some(note_id) = parse_note_id(&input.note_id).ok() else {
+        return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
+    };
+    notes
+        .read_note(actor, note_id)
+        .await
+        .map(|note| {
+            McpToolOutput::Note(McpGetNoteOutput {
+                note_id: note.note_id().to_string(),
+                title: note.title().to_owned(),
+                source: note.source().to_owned(),
+                tags: note.tags().to_vec(),
+                updated_at_ms: note.updated_at().get(),
+                revision: note.revision().get(),
+                created_via: note.created_via(),
+                review_status: note.review_status(),
+                reviewed_revision: note.last_review().map(|review| review.revision().get()),
+                reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
+            })
+        })
+        .map_err(McpToolFailure::UseCase)
+}
+
+async fn create_note_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpCreateNoteInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "note arguments are invalid",
+        ));
+    };
+    notes
+        .create_note(
+            actor,
+            NoteDraft {
+                source: input.source,
+                title: String::new(),
+                tags: Vec::new(),
+            },
+            NoteWritePolicy::RejectWarnings,
+            NoteCreationSource::Mcp,
+        )
+        .await
+        .map(note_revision_output)
+        .map_err(McpToolFailure::UseCase)
+}
+
+async fn update_note_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpUpdateNoteInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "update arguments are invalid",
+        ));
+    };
+    let Some(note_id) = parse_note_id(&input.note_id).ok() else {
+        return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
+    };
+    let Ok(expected_revision) = Revision::new(input.expected_revision) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "expected_revision is invalid",
+        ));
+    };
+    notes
+        .update_note(
+            actor,
+            note_id,
+            NoteDraft {
+                source: input.source,
+                title: String::new(),
+                tags: Vec::new(),
+            },
+            expected_revision,
+            NoteWritePolicy::RejectWarnings,
+        )
+        .await
+        .map(note_revision_output)
+        .map_err(McpToolFailure::UseCase)
+}
+
+async fn delete_note_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpDeleteNoteInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "delete arguments are invalid",
+        ));
+    };
+    let Some(note_id) = parse_note_id(&input.note_id).ok() else {
+        return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
+    };
+    let Ok(expected_revision) = Revision::new(input.expected_revision) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "expected_revision is invalid",
+        ));
+    };
+    notes
+        .soft_delete_note(actor, note_id, expected_revision)
+        .await
+        .map(note_revision_output)
+        .map_err(McpToolFailure::UseCase)
+}
+
+async fn search_bibliography_tool(
+    bibliography: Option<&BibliographyApplication>,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpSearchBibliographyInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "bibliography search arguments are invalid",
+        ));
+    };
+    let Some(bibliography) = bibliography else {
+        return Err(McpToolFailure::Bibliography(
+            BibliographyUseCaseError::Unavailable,
+        ));
+    };
+    bibliography
+        .search_bibliography(actor, input.query)
+        .await
+        .map(|items| {
+            McpToolOutput::BibliographyList(McpBibliographyListOutput {
+                items: items.into_iter().map(bibliography_item_output).collect(),
+            })
+        })
+        .map_err(McpToolFailure::Bibliography)
+}
+
+async fn add_bibliography_item_tool(
+    bibliography: Option<&BibliographyApplication>,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpAddBibliographyItemInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "CSL-JSON bibliography arguments are invalid",
+        ));
+    };
+    let Some(bibliography) = bibliography else {
+        return Err(McpToolFailure::Bibliography(
+            BibliographyUseCaseError::Unavailable,
+        ));
+    };
+    bibliography
+        .add_bibliography_item(actor, input.csl_json)
+        .await
+        .map(|item| McpToolOutput::BibliographyItem(bibliography_item_output(item)))
+        .map_err(McpToolFailure::Bibliography)
+}
+
+async fn add_bibliography_items_tool(
+    bibliography: Option<&BibliographyApplication>,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpAddBibliographyItemsInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "CSL-JSON bibliography batch arguments are invalid",
+        ));
+    };
+    if input.csl_json_items.is_empty() || input.csl_json_items.len() > 100 {
+        return Err(McpToolFailure::InvalidArguments(
+            "csl_json_items must contain between 1 and 100 items",
+        ));
+    }
+    let Some(bibliography) = bibliography else {
+        return Err(McpToolFailure::Bibliography(
+            BibliographyUseCaseError::Unavailable,
+        ));
+    };
+    let mut items = Vec::new();
+    let mut errors = Vec::new();
+    for (input_index, csl_json) in input.csl_json_items.into_iter().enumerate() {
+        let citation_key = csl_json
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        match bibliography
+            .add_bibliography_item(actor.clone(), csl_json)
+            .await
+        {
+            Ok(item) => items.push(bibliography_item_output(item)),
+            Err(error) => errors.push(bibliography_import_error(input_index, citation_key, error)),
+        }
+    }
+    Ok(McpToolOutput::BibliographyImport(
+        McpBibliographyImportOutput { items, errors },
+    ))
+}
+
+async fn delete_bibliography_item_tool(
+    bibliography: Option<&BibliographyApplication>,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpDeleteBibliographyItemInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "bibliography delete arguments are invalid",
+        ));
+    };
+    let Ok(entity_id) = input.item_id.parse::<EntityId>() else {
+        return Err(McpToolFailure::InvalidArguments("item_id is invalid"));
+    };
+    let Ok(expected_revision) = Revision::new(input.expected_revision) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "expected_revision is invalid",
+        ));
+    };
+    let Some(bibliography) = bibliography else {
+        return Err(McpToolFailure::Bibliography(
+            BibliographyUseCaseError::Unavailable,
+        ));
+    };
+    bibliography
+        .delete_bibliography_item(actor, BibliographyItemId::new(entity_id), expected_revision)
+        .await
+        .map(|()| McpToolOutput::Empty(McpEmptyInput {}))
+        .map_err(McpToolFailure::Bibliography)
 }
 
 fn bibliography_import_error(

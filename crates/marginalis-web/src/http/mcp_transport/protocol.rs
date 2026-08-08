@@ -4,7 +4,7 @@ use axum::http::{HeaderMap, header};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 
-use crate::mcp::{
+use super::jsonrpc::{
     JsonRpcRequest, MCP_PROTOCOL_VERSION, MODERN_MCP_PROTOCOL_VERSION,
     SUPPORTED_MCP_PROTOCOL_VERSIONS,
 };
