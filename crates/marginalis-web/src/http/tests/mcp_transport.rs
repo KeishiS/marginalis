@@ -214,7 +214,7 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             && tool["outputSchema"]["anyOf"]
                 .as_array()
                 .is_some_and(|variants| variants.len() == 2)
-            && tool["outputSchema"]["$defs"]["ProblemResponse"]["additionalProperties"] == false
+            && tool["outputSchema"]["$defs"]["Problem"]["additionalProperties"] == false
     }));
 
     let profile = mcp_app()
@@ -288,7 +288,7 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert_eq!(
         listed_output,
         marginalis_contract::McpListNotesOutput {
-            notes: vec![marginalis_contract::McpNoteSummary {
+            notes: vec![marginalis_contract::NoteSummaryResponse {
                 note_id: "0197c9bc-0000-7000-8000-000000000002".into(),
                 title: "同期ノート".into(),
                 tags: vec!["同期".into(), "試験".into()],

@@ -401,15 +401,27 @@ dependencies = ["frontend-build"]
 command = "cargo"
 args = ["check", "--workspace", "--all-targets", "--all-features", "--locked"]
 
+[tasks.browser-smoke-site]
+description = "Assemble the static smoke-test site from the frontend build and the implementation-derived HTML shell"
+dependencies = ["frontend-build"]
+script_runner = "@shell"
+script = '''
+set -eu
+rm -rf target/browser-smoke-site
+mkdir -p target/browser-smoke-site
+cp -R frontend/dist/. target/browser-smoke-site/
+cargo run --quiet --locked -p marginalis-web --bin browser-fixture > target/browser-smoke-site/index.html
+'''
+
 [tasks.browser-smoke]
 description = "Run the lightweight Chromium browser tests without Kanidm or a NixOS VM"
-dependencies = ["frontend-build"]
+dependencies = ["browser-smoke-site"]
 command = "playwright"
 args = ["test", "--config", "tests/browser/playwright.smoke.config.js"]
 
 [tasks.browser-editor-firefox]
 description = "Check editor selection and typography compatibility in Firefox"
-dependencies = ["frontend-build"]
+dependencies = ["browser-smoke-site"]
 env = { "MARGINALIS_BROWSER" = "firefox", "MARGINALIS_COMPAT_ONLY" = "true" }
 command = "playwright"
 args = ["test", "--config", "tests/browser/playwright.smoke.config.js"]

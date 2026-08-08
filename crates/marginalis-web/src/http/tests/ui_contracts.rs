@@ -265,7 +265,10 @@ async fn rendered_note_view_api_maps_missing_and_render_failed_notes_to_stable_e
 /// 実際の出力を1件ずつ引いて確かめる。
 #[tokio::test]
 async fn every_bundled_asset_has_a_route() {
-    let names = crate::http::assets::bundled_asset_names().collect::<Vec<_>>();
+    let names = crate::http::assets::BUNDLE_FILES
+        .iter()
+        .map(|(name, _, _)| *name)
+        .collect::<Vec<_>>();
     assert!(
         names.contains(&"editor.js"),
         "配布物の一覧が空か、想定と違います: {names:?}"

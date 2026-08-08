@@ -86,21 +86,6 @@ impl SqliteDatabase {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub(crate) async fn upsert_mcp_client(
-        &self,
-        client: &McpOAuthClient,
-        registered_at: McpTimestamp,
-    ) -> Result<(), SqliteStoreError> {
-        upsert_client(
-            &self.pool,
-            client,
-            McpClientRegistrationMethod::Dynamic,
-            registered_at,
-        )
-        .await
-    }
-
     /// configured persistence boundに空きがある場合だけclientを原子的に登録する。
     pub async fn register_mcp_client_bounded(
         &self,
@@ -125,17 +110,6 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         Ok(result.rows_affected() == 1)
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn mcp_client(
-        &self,
-        client_id: &str,
-    ) -> Result<Option<McpOAuthClient>, SqliteStoreError> {
-        Ok(self
-            .registered_mcp_client(client_id)
-            .await?
-            .map(|registered| registered.client))
     }
 
     pub async fn registered_mcp_client(
@@ -477,7 +451,7 @@ impl SqliteDatabase {
 ///
 /// `registered_at_ms`は最初に登録した時刻のまま残す。認可のたびに更新すると、使われなくなった
 /// clientを定期削除が回収できなくなるためである。
-async fn upsert_client<'e, E>(
+pub(crate) async fn upsert_client<'e, E>(
     executor: E,
     client: &McpOAuthClient,
     registration_method: McpClientRegistrationMethod,

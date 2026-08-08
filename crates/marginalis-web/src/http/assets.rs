@@ -26,12 +26,6 @@ pub(super) async fn bundle_asset(
     }
 }
 
-/// 配信している`dist/assets`直下のファイル名。配布物と経路の対応を試験で確かめるために公開します。
-#[cfg(test)]
-pub(crate) fn bundled_asset_names() -> impl Iterator<Item = &'static str> {
-    BUNDLE_FILES.iter().map(|(name, _, _)| *name)
-}
-
 pub(super) async fn mathjax_font_javascript(
     axum::extract::Path(file_name): axum::extract::Path<String>,
 ) -> Response {

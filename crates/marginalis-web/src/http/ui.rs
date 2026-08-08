@@ -170,3 +170,65 @@ mod tests {
         );
     }
 }
+
+/// ブラウザーsmoke試験が静的配信で使うHTMLシェルを、実装のHTML生成から導出する。
+///
+/// 実サーバーはrequestごとに[`application_shell`]で同じ枠を描く。静的配信では
+/// pathをJavaScriptで補正する必要があるため、固定nonceのContent Security Policyと
+/// 補正scriptだけをここで追加する。
+pub fn browser_smoke_shell() -> String {
+    const NONCE: &str = "browser-smoke";
+    let config = serde_json::to_string(&ApplicationConfigResponse {
+        api_base: "/api/v3".to_owned(),
+        base_path: String::new(),
+        path: "/".to_owned(),
+        search: String::new(),
+        style_nonce: NONCE.to_owned(),
+    })
+    .expect("application configuration is serializable");
+    let content = format!(
+        "<div data-application-root data-application-config=\"{}\"><p>画面を読み込んでいます。</p></div><noscript>Marginalisの利用にはJavaScriptが必要です。</noscript>",
+        escape_html(&config),
+    );
+    let document = page_document(
+        "Marginalis browser smoke",
+        "/",
+        "/",
+        &content,
+        &["/assets/page.js", "/assets/editor.js"],
+    );
+    let policy = format!(
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self' 'nonce-{NONCE}'; style-src 'self' 'nonce-{NONCE}'; font-src 'self' data:; base-uri 'none'\">",
+    );
+    let path_fixup = format!(
+        "<script nonce=\"{NONCE}\">const applicationRoot=document.querySelector(\"[data-application-root]\");const applicationConfig=JSON.parse(applicationRoot.dataset.applicationConfig);applicationConfig.path=window.location.pathname;applicationConfig.search=window.location.search;applicationRoot.dataset.applicationConfig=JSON.stringify(applicationConfig);</script>",
+    );
+    document
+        .replacen(
+            "<meta charset=\"utf-8\">",
+            &format!("<meta charset=\"utf-8\">{policy}"),
+            1,
+        )
+        .replacen("</body>", &format!("{path_fixup}</body>"), 1)
+}
+
+#[cfg(test)]
+mod shell_tests {
+    use super::browser_smoke_shell;
+
+    /// smoke試験のシェルが、実装と同じナビゲーションと起動設定を持つことを確認する。
+    #[test]
+    fn browser_smoke_shell_derives_navigation_and_config_from_the_implementation() {
+        let shell = browser_smoke_shell();
+        for fragment in [
+            "<html lang=\"ja\">",
+            "aria-label=\"主要な画面\"",
+            "data-application-root",
+            "Content-Security-Policy",
+            "nonce-browser-smoke",
+            "src=\"/assets/editor.js\"",
+        ] {
+            assert!(shell.contains(fragment), "{fragment}が必要です");
+        }
+    }
+}
