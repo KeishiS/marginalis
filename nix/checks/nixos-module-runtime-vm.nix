@@ -173,7 +173,7 @@ pkgs.testers.nixosTest {
     machine.succeed(
       "journalctl -u marginalis-diagnose.service -o cat | "
       + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-      + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 20'"
+      + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 21'"
     )
     machine.succeed(
       "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
@@ -200,7 +200,7 @@ pkgs.testers.nixosTest {
     machine.execute("systemctl start marginalis.service")
     machine.wait_until_succeeds(
       "timeout 5s journalctl --no-pager -u marginalis.service -o cat | "
-      + "grep -F 'unsupported database schema version 5; expected 20'"
+      + "grep -F 'unsupported database schema version 5; expected 21'"
     )
     machine.succeed("systemctl stop marginalis.service")
     machine.succeed(
@@ -217,7 +217,7 @@ pkgs.testers.nixosTest {
           + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
           + "'.database.schema.ok == false "
           + "and .database.schema.actual == 5 "
-          + "and .database.schema.expected == 20 "
+          + "and .database.schema.expected == 21 "
           + "and .database.integrity.ok "
           + "and .database.integrity.actual == \"ok\" "
           + "and .database.foreign_keys.ok "
