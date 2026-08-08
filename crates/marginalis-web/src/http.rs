@@ -22,6 +22,7 @@ mod ui;
 mod tests;
 
 pub use state::{ApiState, InvalidMcpEndpoint, McpEndpoint};
+pub use ui::browser_smoke_shell;
 
 use super::{RequestId, assign_request_id};
 use std::{sync::Arc, time::Duration};
