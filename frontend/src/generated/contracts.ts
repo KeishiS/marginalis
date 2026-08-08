@@ -230,7 +230,7 @@ export interface NoteView {
   note: Note;
   related: RelatedNotes;
 }
-export type ProblemCode = "authentication_required" | "authentication_unavailable" | "csrf_rejected" | "csrf_required" | "csrf_invalid" | "same_origin_required" | "origin_not_allowed" | "not_found" | "forbidden" | "conflict" | "retention_expired" | "precondition_required" | "invalid_request" | "validation_failed" | "render_failed" | "unavailable";
+export type ProblemCode = "authentication_required" | "authentication_unavailable" | "csrf_rejected" | "csrf_required" | "csrf_invalid" | "same_origin_required" | "origin_not_allowed" | "not_found" | "forbidden" | "conflict" | "retention_expired" | "invalid_sync_cursor" | "sync_cursor_expired" | "precondition_required" | "invalid_request" | "validation_failed" | "render_failed" | "unavailable";
 export interface RelatedNotes {
   incoming: NoteSummary[];
   outgoing: NoteSummary[];
@@ -1636,6 +1636,8 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "forbidden",
       "conflict",
       "retention_expired",
+      "invalid_sync_cursor",
+      "sync_cursor_expired",
       "precondition_required",
       "invalid_request",
       "validation_failed",

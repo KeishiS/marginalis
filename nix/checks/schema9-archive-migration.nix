@@ -109,32 +109,32 @@ pkgs.runCommand "marginalis-schema9-archive-migration"
         and (.source | contains(":tags:") | not))
     ' migrated-archive.json
 
-    export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema20.sqlite"
+    export MARGINALIS_DATABASE_URL="sqlite:$PWD/schema21.sqlite"
     ${self.packages.${system}.default}/bin/marginalis \
       import-archive --input "$PWD/migrated-archive.json"
-    test "$(sqlite3 schema20.sqlite \
-      'SELECT MAX(version) FROM schema_migrations')" = 20
-    sqlite3 -json schema20.sqlite \
+    test "$(sqlite3 schema21.sqlite \
+      'SELECT MAX(version) FROM schema_migrations')" = 21
+    sqlite3 -json schema21.sqlite \
       'SELECT note_id, creator_issuer, creator_subject, title, source,
               tags_json, created_at_ms, updated_at_ms, revision, deleted_at_ms
-       FROM notes ORDER BY note_id' > schema20-notes.json
-    sqlite3 -json schema20.sqlite \
+       FROM notes ORDER BY note_id' > schema21-notes.json
+    sqlite3 -json schema21.sqlite \
       'SELECT source_note_id, target_note_id
        FROM note_references ORDER BY source_note_id, target_note_id' \
-      > schema20-references.json
-    sqlite3 -json schema20.sqlite \
+      > schema21-references.json
+    sqlite3 -json schema21.sqlite \
       'SELECT note_id, issuer, subject, permission
-       FROM note_acl ORDER BY note_id, issuer, subject' > schema20-acl.json
+       FROM note_acl ORDER BY note_id, issuer, subject' > schema21-acl.json
     # 本文はタグの属性名だけが変わる。題名、タグ、時刻、revision、削除状態は
     # 移行前と一致しなければならない。書き出し方の違いを比較へ持ち込まないよう、
     # 両方を同じ整形で並べ直してから照合する。
     jq -S '[.[] | .source |= sub(":tags: "; ":marginalis-tags: ")]' \
       schema9-notes.json > schema9-notes-expected.json
-    jq -S '.' schema20-notes.json > schema20-notes-normalized.json
-    diff -u schema9-notes-expected.json schema20-notes-normalized.json
-    cmp schema9-references.json schema20-references.json
-    cmp schema9-acl.json schema20-acl.json
-    test "$(sqlite3 schema20.sqlite \
+    jq -S '.' schema21-notes.json > schema21-notes-normalized.json
+    diff -u schema9-notes-expected.json schema21-notes-normalized.json
+    cmp schema9-references.json schema21-references.json
+    cmp schema9-acl.json schema21-acl.json
+    test "$(sqlite3 schema21.sqlite \
       "SELECT COUNT(*) FROM sqlite_schema
        WHERE type = 'table' AND name IN
          ('mcp_clients', 'mcp_authorization_codes',

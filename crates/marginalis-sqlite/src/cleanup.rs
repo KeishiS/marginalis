@@ -13,6 +13,8 @@ pub struct AuthStatePurgeCounts {
     pub mcp_authorization_codes: u64,
     pub mcp_client_authorizations: u64,
     pub mcp_clients: u64,
+    pub note_sync_cursors: u64,
+    pub note_sync_changes: u64,
 }
 
 impl SqliteDatabase {
@@ -134,6 +136,27 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?
         .rows_affected();
+        let note_sync_cursors =
+            sqlx::query("DELETE FROM note_sync_cursors WHERE expires_at_ms <= ?")
+                // 有効期限後もしばらくhashだけを残し、期限切れと未知のcursorを区別する。
+                .bind(
+                    now.get()
+                        .saturating_sub(marginalis_application::NOTE_SYNC_CURSOR_RETENTION_MS),
+                )
+                .execute(&mut *transaction)
+                .await
+                .map_err(database_error)?
+                .rows_affected();
+        let note_sync_changes =
+            sqlx::query("DELETE FROM note_sync_changes WHERE changed_at_ms <= ?")
+                .bind(
+                    now.get()
+                        .saturating_sub(marginalis_application::NOTE_SYNC_CURSOR_RETENTION_MS),
+                )
+                .execute(&mut *transaction)
+                .await
+                .map_err(database_error)?
+                .rows_affected();
         transaction.commit().await.map_err(database_error)?;
         Ok(AuthStatePurgeCounts {
             web_sessions,
@@ -143,6 +166,8 @@ impl SqliteDatabase {
             mcp_authorization_codes,
             mcp_client_authorizations,
             mcp_clients,
+            note_sync_cursors,
+            note_sync_changes,
         })
     }
 }

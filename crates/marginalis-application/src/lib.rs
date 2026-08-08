@@ -59,12 +59,14 @@ pub use math_macros::{
 };
 pub use mcp_oauth::McpOAuthApplication;
 pub use notes::{
-    AccessibleNote, NoteAclRepository, NoteApplication, NoteApplicationDependencies,
+    AccessibleNote, NOTE_SYNC_CURSOR_RETENTION_MS, NOTE_SYNC_DEFAULT_PAGE_SIZE,
+    NOTE_SYNC_MAX_PAGE_SIZE, NoteAclRepository, NoteApplication, NoteApplicationDependencies,
     NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
     NoteCommandRepository, NoteContent, NoteContentError, NoteGraph, NoteGraphCitation,
     NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks,
     NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
-    NoteReviewRepository, NoteViewSnapshot,
+    NoteReviewRepository, NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason,
+    NoteSyncRepository, NoteSyncRepositoryError, NoteViewSnapshot,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{
@@ -327,6 +329,12 @@ pub enum NoteUseCaseError {
     Conflict,
     #[error("note restoration period has expired")]
     RetentionExpired,
+    #[error("sync page limit is invalid")]
+    InvalidSyncLimit,
+    #[error("sync cursor is invalid")]
+    InvalidSyncCursor,
+    #[error("sync cursor has expired")]
+    SyncCursorExpired,
     #[error("note is invalid")]
     Validation(Vec<NoteValidationDiagnostic>),
     #[error("note input contains warnings")]
@@ -591,6 +599,12 @@ pub trait NoteUseCases: Send + Sync {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<NoteReviewDetails, NoteUseCaseError>;
+    async fn sync_notes(
+        &self,
+        actor: Actor,
+        cursor: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<notes::NoteSyncPage, NoteUseCaseError>;
 }
 
 /// Kanidm groupはOIDC login時に検証し、このCookie sessionの有効期間はsnapshotとして固定する。

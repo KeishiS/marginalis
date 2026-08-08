@@ -46,7 +46,11 @@ Kanidm を使う場合は ``caCertificateFile`` に PEM trust anchor を指定�
 に適用します。
 SQLiteデータベースは``dataDir``（既定値``/var/lib/marginalis``）直下の``marginalis.sqlite``に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、``dataDir``自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは20です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは21です。旧versionを起動時に自動移行しません。
+
+schema 20から更新する場合は、v0.36.0の実行環境で``export-archive``を実行し、archive 17を現行の
+``migrate-archive``で再検証してから、空のschema 21へ``import-archive``してください。同期cursorと変更索引、
+MCPの認可状態はarchiveへ含まれないため、外部検索サービスを再認可し、全量同期から再開します。
 
 schema 19から更新する場合は、v0.31.0の実行環境で``export-archive``を実行します。出力したarchive 15を
 現行の``migrate-archive``でarchive 17へ変換し、``verify-restore``で検証してから、新しい版の空の
@@ -95,7 +99,7 @@ sudo -u marginalis marginalis migrate-archive \
 ----
 
 schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
-現行の``migrate-archive``でarchive 17へ変換してから、空のschema 20へ取り込んでください。
+現行の``migrate-archive``でarchive 17へ変換してから、空のschema 21へ取り込んでください。
 この経路では全ノートをAdocWeave 0.40.0の規則で再検証し、題名、タグ、参照索引を再構築します。
 ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
 
@@ -235,10 +239,10 @@ v0.16.0が作成したarchive 9、v0.15.0が作成したarchive 8は、復元前
 形式名が同じarchive 17を変換するのは、記録しているAdocWeave package版が``0.33.0``または
 ``0.36.0``で、現行の``0.40.0``と違うためです。archiveの構造は同じでも、本文を現行の規則で
 再検証してから取り込みます。
-SQLite schema 20には引用の索引、MCP OAuthの状態表、scope上限、
+SQLite schema 21には引用の索引、MCP OAuthの状態表、scope上限、同期cursorと変更索引、
 認可済みクライアントの管理情報、数式マクロ設定、ノートの作成経路と人手確認記録、書誌情報の取込元と対応情報があるため、
 稼働中の旧databaseファイルはそのまま使用できません。archiveを書き出してから変換し、空の
-schema 20へ復元してください。
+schema 21へ復元してください。
 
 [source,sh]
 ----
@@ -281,10 +285,10 @@ header後の属性操作など、現行のAdocWeaveが拒否する記述をv0.10
 書き出しからやり直します。エラーに示された``position``は、
 archiveの``notes``または``note_acl``配列内の1から始まる位置です。診断へ本文や識別子は
 出力されません。
-. 成功したarchive 17を、次節の手順で空のschema 20へ取り込みます。
+. 成功したarchive 17を、次節の手順で空のschema 21へ取り込みます。
 
 CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行操作を適用し、入力archiveの不変、
-旧archiveの直接取込拒否、schema 20でのノート、ACL、参照、削除状態、revision、数式マクロ設定、来歴と人手確認の一致、archive 17の
+旧archiveの直接取込拒否、schema 21でのノート、ACL、参照、削除状態、revision、数式マクロ設定、来歴と人手確認の一致、archive 17の
 再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
 
 == 他の道具で読める形での取り出し

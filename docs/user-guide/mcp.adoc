@@ -59,6 +59,8 @@ redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を
 |ノートの作成・更新、ノート記述規則の取得
 |``notes:delete``
 |ノートの削除
+|``notes:sync``
+|外部の検索用コピーとの継続同期
 |``bibliography:read``
 |書誌情報の検索
 |``bibliography:write``
@@ -77,6 +79,17 @@ redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を
 設定するtoolは提供せず、所有者がWeb UIで現在のrevisionを確認した場合だけ``reviewed``になります。
 全文検索、検索索引、順位付けはMarginalisのMCPへ追加せず、別サービスの
 https://github.com/KeishiS/renkan[連環（Renkan）]が担当します。
+
+``sync_notes``は、連環のような外部検索サービスへ可視ノートを複製する専用toolです。最初はcursorを
+省略して初期一覧を取得し、返された``next_cursor``を次の呼出しへ渡します。初期一覧の後は、作成・更新・
+復元を``upsert``、削除と共有取消を``remove``として取得します。cursorは35日間有効です。期限切れの場合は
+古い投影へ継ぎ足さず、新しい領域で全量同期を完了してから入れ替えてください。
+一回に返す件数は``limit``で1件から100件まで指定でき、省略時は50件です。本文が大きい場合は応答量を
+約4 MiBに抑えるため、指定件数より少なくても``has_more``が``true``になることがあります。
+
+``notes:sync``への同意は、本文を外部の検索用コピーへ継続保存する許可です。Marginalisで認可を取り消すと
+以後の取得は止まりますが、外部に保存済みのコピーをMarginalisから削除することはできません。コピーの
+削除は接続先で行います。通常の``notes:read``だけでは``sync_notes``を実行できません。
 
 CSL-JSONファイルの一括取込は、ファイル全体の事前確認と項目ごとの競合解決を利用者へ求めるため、
 Web UIとREST APIだけで提供します。MCPでは、``bibliography:write``による一項目ずつの追加を使用します。

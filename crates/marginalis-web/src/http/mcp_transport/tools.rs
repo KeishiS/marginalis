@@ -1,8 +1,8 @@
 //! MCP toolの入力検査、use case呼出し、契約型への変換。
 
 use marginalis_application::{
-    BibliographyApplication, BibliographyUseCaseError, NoteListQuery, NoteProfile,
-    NoteUseCaseError, NoteUseCases, NoteWritePolicy,
+    BibliographyApplication, BibliographyUseCaseError, NoteListQuery, NoteProfile, NoteSyncEntry,
+    NoteSyncPhase, NoteSyncRemovalReason, NoteUseCaseError, NoteUseCases, NoteWritePolicy,
 };
 use marginalis_contract::{
     McpAddBibliographyItemInput, McpBibliographyItem, McpBibliographyListOutput,
@@ -10,6 +10,7 @@ use marginalis_contract::{
     McpGetNoteInput, McpGetNoteOutput, McpListNotesInput, McpListNotesOutput,
     McpNoteProfileExample, McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput,
     McpNoteProfileRule, McpNoteProfileSyntax, McpNoteRevisionOutput, McpSearchBibliographyInput,
+    McpSyncEntry, McpSyncNotesInput, McpSyncNotesOutput, McpSyncPhase, McpSyncRemovalReason,
     McpToolName, McpUpdateNoteInput, ProblemResponse,
 };
 use marginalis_domain::{
@@ -62,6 +63,7 @@ pub(super) fn decode_tool_call(params: Option<serde_json::Value>) -> Result<McpT
 #[serde(untagged)]
 enum McpToolOutput {
     NoteList(McpListNotesOutput),
+    NoteSync(McpSyncNotesOutput),
     NoteProfile(Box<McpNoteProfileOutput>),
     Note(McpGetNoteOutput),
     Revision(McpNoteRevisionOutput),
@@ -144,6 +146,9 @@ impl McpToolFailure {
                 | NoteUseCaseError::NotFound
                 | NoteUseCaseError::Conflict
                 | NoteUseCaseError::RetentionExpired
+                | NoteUseCaseError::InvalidSyncLimit
+                | NoteUseCaseError::InvalidSyncCursor
+                | NoteUseCaseError::SyncCursorExpired
                 | NoteUseCaseError::RenderFailed,
             )
             | Self::Bibliography(_) => "rejected",
@@ -159,6 +164,9 @@ impl McpToolFailure {
             Self::UseCase(NoteUseCaseError::NotFound) => "not-found",
             Self::UseCase(NoteUseCaseError::Conflict) => "conflict",
             Self::UseCase(NoteUseCaseError::RetentionExpired) => "retention-expired",
+            Self::UseCase(NoteUseCaseError::InvalidSyncLimit) => "invalid-sync-limit",
+            Self::UseCase(NoteUseCaseError::InvalidSyncCursor) => "invalid-sync-cursor",
+            Self::UseCase(NoteUseCaseError::SyncCursorExpired) => "sync-cursor-expired",
             Self::UseCase(NoteUseCaseError::RenderFailed) => "render-failed",
             Self::UseCase(NoteUseCaseError::Unavailable) => "unavailable",
             Self::UseCase(NoteUseCaseError::CorruptData) => "corrupt-data",
@@ -183,6 +191,7 @@ async fn execute_mcp_tool(
 ) -> Result<McpToolOutput, McpToolFailure> {
     match call.tool {
         Some(McpToolName::ListNotes) => list_notes_tool(notes, actor, call.arguments).await,
+        Some(McpToolName::SyncNotes) => sync_notes_tool(notes, actor, call.arguments).await,
         Some(McpToolName::GetNoteProfile) => get_note_profile_tool(notes, &call.arguments),
         Some(McpToolName::GetNote) => get_note_tool(notes, actor, call.arguments).await,
         Some(McpToolName::CreateNote) => create_note_tool(notes, actor, call.arguments).await,
@@ -199,6 +208,48 @@ async fn execute_mcp_tool(
         }
         None => Err(McpToolFailure::UnknownTool),
     }
+}
+
+async fn sync_notes_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let input = serde_json::from_value::<McpSyncNotesInput>(arguments)
+        .map_err(|_| McpToolFailure::InvalidArguments("sync arguments are invalid"))?;
+    notes
+        .sync_notes(actor, input.cursor, input.limit)
+        .await
+        .map(|page| {
+            McpToolOutput::NoteSync(McpSyncNotesOutput {
+                phase: match page.phase {
+                    NoteSyncPhase::Snapshot => McpSyncPhase::Snapshot,
+                    NoteSyncPhase::Changes => McpSyncPhase::Changes,
+                },
+                entries: page
+                    .entries
+                    .into_iter()
+                    .map(|entry| match entry {
+                        NoteSyncEntry::Upsert(note) => McpSyncEntry::Upsert {
+                            note: note_output(*note),
+                        },
+                        NoteSyncEntry::Remove { note_id, reason } => McpSyncEntry::Remove {
+                            note_id: note_id.to_string(),
+                            reason: match reason {
+                                NoteSyncRemovalReason::Deleted => McpSyncRemovalReason::Deleted,
+                                NoteSyncRemovalReason::AccessRevoked => {
+                                    McpSyncRemovalReason::AccessRevoked
+                                }
+                            },
+                        },
+                    })
+                    .collect(),
+                next_cursor: page.next_cursor,
+                has_more: page.has_more,
+                cursor_expires_at_ms: page.cursor_expires_at.get(),
+            })
+        })
+        .map_err(McpToolFailure::UseCase)
 }
 
 async fn list_notes_tool(
@@ -261,21 +312,23 @@ async fn get_note_tool(
     notes
         .read_note(actor, note_id)
         .await
-        .map(|note| {
-            McpToolOutput::Note(McpGetNoteOutput {
-                note_id: note.note_id().to_string(),
-                title: note.title().to_owned(),
-                source: note.source().to_owned(),
-                tags: note.tags().to_vec(),
-                updated_at_ms: note.updated_at().get(),
-                revision: note.revision().get(),
-                created_via: note.created_via(),
-                review_status: note.review_status(),
-                reviewed_revision: note.last_review().map(|review| review.revision().get()),
-                reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
-            })
-        })
+        .map(|note| McpToolOutput::Note(note_output(note)))
         .map_err(McpToolFailure::UseCase)
+}
+
+fn note_output(note: Note) -> McpGetNoteOutput {
+    McpGetNoteOutput {
+        note_id: note.note_id().to_string(),
+        title: note.title().to_owned(),
+        source: note.source().to_owned(),
+        tags: note.tags().to_vec(),
+        updated_at_ms: note.updated_at().get(),
+        revision: note.revision().get(),
+        created_via: note.created_via(),
+        review_status: note.review_status(),
+        reviewed_revision: note.last_review().map(|review| review.revision().get()),
+        reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
+    }
 }
 
 async fn create_note_tool(

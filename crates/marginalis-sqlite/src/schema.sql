@@ -142,6 +142,103 @@ SELECT note_id, issuer, subject,
        CASE permission WHEN 'read' THEN 1 WHEN 'edit' THEN 2 END AS access_level
 FROM note_acl;
 
+-- 検索用投影へ渡す変更の最新状態。本文は保持せず、読取時に現在の可視ノートへ結合する。
+CREATE TABLE note_sync_state (
+    singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+    next_sequence INTEGER NOT NULL CHECK (next_sequence >= 0)
+) STRICT;
+INSERT INTO note_sync_state (singleton, next_sequence) VALUES (1, 0);
+
+CREATE TABLE note_sync_changes (
+    change_sequence INTEGER PRIMARY KEY AUTOINCREMENT CHECK (change_sequence > 0),
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    note_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('upsert', 'remove')),
+    reason TEXT CHECK (
+        (kind = 'upsert' AND reason IS NULL)
+        OR (kind = 'remove' AND reason IN ('deleted', 'access_revoked'))
+    ),
+    changed_at_ms INTEGER NOT NULL,
+    UNIQUE (issuer, subject, note_id)
+) STRICT;
+CREATE INDEX note_sync_changes_principal_sequence_idx
+ON note_sync_changes (issuer, subject, change_sequence);
+
+CREATE TABLE note_sync_cursors (
+    cursor_hash BLOB PRIMARY KEY NOT NULL CHECK (length(cursor_hash) = 32),
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    phase TEXT NOT NULL CHECK (phase IN ('snapshot', 'changes')),
+    after_note_id TEXT,
+    after_sequence INTEGER NOT NULL CHECK (after_sequence >= 0),
+    high_watermark INTEGER NOT NULL CHECK (high_watermark >= 0),
+    expires_at_ms INTEGER NOT NULL,
+    CHECK ((phase = 'snapshot') OR after_note_id IS NULL)
+) STRICT;
+CREATE INDEX note_sync_cursors_expiry_idx ON note_sync_cursors (expires_at_ms);
+
+CREATE TRIGGER note_sync_after_note_insert
+AFTER INSERT ON notes
+BEGIN
+    INSERT INTO note_sync_changes (
+        issuer, subject, note_id, kind, reason, changed_at_ms
+    ) VALUES (NEW.creator_issuer, NEW.creator_subject, NEW.note_id,
+              'upsert', NULL, NEW.updated_at_ms)
+    ON CONFLICT (issuer, subject, note_id) DO UPDATE SET
+        change_sequence = excluded.change_sequence, kind = excluded.kind,
+        reason = excluded.reason, changed_at_ms = excluded.changed_at_ms;
+    UPDATE note_sync_state SET next_sequence =
+        (SELECT COALESCE(MAX(change_sequence), 0) FROM note_sync_changes) WHERE singleton = 1;
+END;
+
+CREATE TRIGGER note_sync_after_note_update
+AFTER UPDATE ON notes
+BEGIN
+    INSERT INTO note_sync_changes (
+        issuer, subject, note_id, kind, reason, changed_at_ms
+    ) SELECT access.issuer, access.subject, NEW.note_id,
+             CASE WHEN NEW.deleted_at_ms IS NULL THEN 'upsert' ELSE 'remove' END,
+             CASE WHEN NEW.deleted_at_ms IS NULL THEN NULL ELSE 'deleted' END,
+             NEW.updated_at_ms
+        FROM note_access access WHERE access.note_id = NEW.note_id
+    ON CONFLICT (issuer, subject, note_id) DO UPDATE SET
+        change_sequence = excluded.change_sequence, kind = excluded.kind,
+        reason = excluded.reason, changed_at_ms = excluded.changed_at_ms;
+    UPDATE note_sync_state SET next_sequence =
+        (SELECT COALESCE(MAX(change_sequence), 0) FROM note_sync_changes) WHERE singleton = 1;
+END;
+
+CREATE TRIGGER note_sync_after_acl_insert
+AFTER INSERT ON note_acl
+BEGIN
+    INSERT INTO note_sync_changes (
+        issuer, subject, note_id, kind, reason, changed_at_ms
+    ) SELECT NEW.issuer, NEW.subject, NEW.note_id, 'upsert', NULL,
+             notes.updated_at_ms
+        FROM notes WHERE notes.note_id = NEW.note_id
+    ON CONFLICT (issuer, subject, note_id) DO UPDATE SET
+        change_sequence = excluded.change_sequence, kind = excluded.kind,
+        reason = excluded.reason, changed_at_ms = excluded.changed_at_ms;
+    UPDATE note_sync_state SET next_sequence =
+        (SELECT COALESCE(MAX(change_sequence), 0) FROM note_sync_changes) WHERE singleton = 1;
+END;
+
+CREATE TRIGGER note_sync_after_acl_delete
+AFTER DELETE ON note_acl
+BEGIN
+    INSERT INTO note_sync_changes (
+        issuer, subject, note_id, kind, reason, changed_at_ms
+    ) SELECT OLD.issuer, OLD.subject, OLD.note_id,
+             'remove', 'access_revoked', notes.updated_at_ms
+        FROM notes WHERE notes.note_id = OLD.note_id
+    ON CONFLICT (issuer, subject, note_id) DO UPDATE SET
+        change_sequence = excluded.change_sequence, kind = excluded.kind,
+        reason = excluded.reason, changed_at_ms = excluded.changed_at_ms;
+    UPDATE note_sync_state SET next_sequence =
+        (SELECT COALESCE(MAX(change_sequence), 0) FROM note_sync_changes) WHERE singleton = 1;
+END;
+
 CREATE TABLE web_sessions (
     session_id_hash BLOB PRIMARY KEY NOT NULL,
     csrf_token_hash BLOB NOT NULL,

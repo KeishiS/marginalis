@@ -241,6 +241,7 @@ async fn owner_can_read_and_replace_their_mcp_scope_ceiling() {
                 "notes:read",
                 "notes:write",
                 "notes:delete",
+                "notes:sync",
                 "bibliography:read",
                 "bibliography:write",
                 "bibliography:delete"
@@ -306,6 +307,7 @@ async fn owner_can_list_and_restrict_their_mcp_client_authorizations() {
             "notes:read",
             "notes:write",
             "notes:delete",
+            "notes:sync",
             "bibliography:read",
             "bibliography:write",
             "bibliography:delete"
@@ -384,6 +386,7 @@ async fn owner_can_clear_one_mcp_client_scope_ceiling() {
             "notes:read",
             "notes:write",
             "notes:delete",
+            "notes:sync",
             "bibliography:read",
             "bibliography:write",
             "bibliography:delete"

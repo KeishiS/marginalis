@@ -188,6 +188,8 @@ mod schema;
 
 mod notes;
 
+mod note_sync;
+
 mod bibliography;
 
 mod bibliography_import;
