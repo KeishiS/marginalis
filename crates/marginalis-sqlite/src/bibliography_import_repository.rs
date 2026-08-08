@@ -5,7 +5,7 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use marginalis_application::{
     BibliographyImportCommit, BibliographyImportItemMutation, BibliographyImportRepository,
-    BibliographyImportRepositoryError, BibliographyImportResult, BibliographyImportState,
+    BibliographyImportResult, BibliographyImportState, StorageError,
 };
 use marginalis_domain::{
     Actor, BibliographyContentDigest, BibliographyImportLink, BibliographyImportMethod,
@@ -14,14 +14,14 @@ use marginalis_domain::{
 };
 use sqlx::{Row, Sqlite, Transaction};
 
-use crate::{SqliteDatabase, bibliography_repository::decode_item, database_error};
+use crate::{SqliteDatabase, bibliography_repository::decode_item, storage_error};
 
 #[async_trait]
 impl BibliographyImportRepository for SqliteDatabase {
     async fn list_import_sources(
         &self,
         actor: &Actor,
-    ) -> Result<Vec<BibliographyImportSource>, BibliographyImportRepositoryError> {
+    ) -> Result<Vec<BibliographyImportSource>, StorageError> {
         let rows = sqlx::query(
             "SELECT source_id, owner_issuer, owner_subject, method, display_name, revision,
                     created_at_ms, last_imported_at_ms
@@ -33,7 +33,7 @@ impl BibliographyImportRepository for SqliteDatabase {
         .bind(actor.subject())
         .fetch_all(&self.pool)
         .await
-        .map_err(map_database_error)?;
+        .map_err(storage_error)?;
         rows.into_iter().map(decode_source).collect()
     }
 
@@ -41,10 +41,10 @@ impl BibliographyImportRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         source_id: Option<BibliographyImportSourceId>,
-    ) -> Result<BibliographyImportState, BibliographyImportRepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(map_database_error)?;
+    ) -> Result<BibliographyImportState, StorageError> {
+        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
         let state = load_state_in_transaction(&mut transaction, actor, source_id).await?;
-        transaction.commit().await.map_err(map_database_error)?;
+        transaction.commit().await.map_err(storage_error)?;
         Ok(state)
     }
 
@@ -52,14 +52,14 @@ impl BibliographyImportRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         commit: BibliographyImportCommit,
-    ) -> Result<BibliographyImportResult, BibliographyImportRepositoryError> {
+    ) -> Result<BibliographyImportResult, StorageError> {
         if commit.source.owner() != actor.identity() {
-            return Err(BibliographyImportRepositoryError::NotFound);
+            return Err(StorageError::NotFound);
         }
         if !commit_is_consistent(&commit) {
-            return Err(BibliographyImportRepositoryError::Conflict);
+            return Err(StorageError::Conflict);
         }
-        let mut transaction = self.pool.begin().await.map_err(map_database_error)?;
+        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
         let current_state = load_state_in_transaction(
             &mut transaction,
             actor,
@@ -71,7 +71,7 @@ impl BibliographyImportRepository for SqliteDatabase {
         )
         .await?;
         if current_state != commit.expected_state {
-            return Err(BibliographyImportRepositoryError::Conflict);
+            return Err(StorageError::Conflict);
         }
         let source_revision = persist_source(&mut transaction, actor, &commit).await?;
         let mut created = 0;
@@ -81,7 +81,7 @@ impl BibliographyImportRepository for SqliteDatabase {
             match mutation {
                 BibliographyImportItemMutation::Create { item, link } => {
                     if item.owner() != actor.identity() {
-                        return Err(BibliographyImportRepositoryError::NotFound);
+                        return Err(StorageError::NotFound);
                     }
                     sqlx::query(
                         "INSERT INTO bibliography_items (
@@ -126,7 +126,7 @@ impl BibliographyImportRepository for SqliteDatabase {
                     .await
                     .map_err(map_write_error)?;
                     if result.rows_affected() != 1 {
-                        return Err(BibliographyImportRepositoryError::Conflict);
+                        return Err(StorageError::Conflict);
                     }
                     persist_link(&mut transaction, actor, link).await?;
                     updated += 1;
@@ -146,17 +146,17 @@ impl BibliographyImportRepository for SqliteDatabase {
                     .bind(expected_revision.get())
                     .fetch_one(&mut *transaction)
                     .await
-                    .map_err(map_database_error)?
+                    .map_err(storage_error)?
                         == 1;
                     if !exists {
-                        return Err(BibliographyImportRepositoryError::Conflict);
+                        return Err(StorageError::Conflict);
                     }
                     persist_link(&mut transaction, actor, link).await?;
                     kept += 1;
                 }
             }
         }
-        transaction.commit().await.map_err(map_database_error)?;
+        transaction.commit().await.map_err(storage_error)?;
         Ok(BibliographyImportResult {
             source_id: commit.source.source_id(),
             source_revision,
@@ -200,7 +200,7 @@ async fn load_state_in_transaction(
     transaction: &mut Transaction<'_, Sqlite>,
     actor: &Actor,
     source_id: Option<BibliographyImportSourceId>,
-) -> Result<BibliographyImportState, BibliographyImportRepositoryError> {
+) -> Result<BibliographyImportState, StorageError> {
     let source = if let Some(source_id) = source_id {
         sqlx::query(
             "SELECT source_id, owner_issuer, owner_subject, method, display_name, revision,
@@ -213,7 +213,7 @@ async fn load_state_in_transaction(
         .bind(actor.subject())
         .fetch_optional(&mut **transaction)
         .await
-        .map_err(map_database_error)?
+        .map_err(storage_error)?
         .map(decode_source)
         .transpose()?
     } else {
@@ -232,7 +232,7 @@ async fn load_state_in_transaction(
         .bind(actor.subject())
         .fetch_all(&mut **transaction)
         .await
-        .map_err(map_database_error)?;
+        .map_err(storage_error)?;
         rows.into_iter()
             .map(decode_link)
             .collect::<Result<_, _>>()?
@@ -250,19 +250,19 @@ async fn load_state_in_transaction(
     .bind(actor.subject())
     .fetch_all(&mut **transaction)
     .await
-    .map_err(map_database_error)?;
+    .map_err(storage_error)?;
     let items = rows
         .into_iter()
         .map(decode_item)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| BibliographyImportRepositoryError::CorruptData)?;
+        .map_err(|_| StorageError::CorruptData)?;
     if links.iter().any(|link| {
         items
             .iter()
             .find(|item| item.item_id() == link.item_id())
             .is_none_or(|item| link.imported_item_revision() > item.revision())
     }) {
-        return Err(BibliographyImportRepositoryError::CorruptData);
+        return Err(StorageError::CorruptData);
     }
     Ok(BibliographyImportState {
         source,
@@ -276,10 +276,10 @@ async fn persist_source(
     transaction: &mut Transaction<'_, Sqlite>,
     actor: &Actor,
     commit: &BibliographyImportCommit,
-) -> Result<Revision, BibliographyImportRepositoryError> {
+) -> Result<Revision, StorageError> {
     if let Some(expected_source) = &commit.expected_state.source {
         if expected_source.source_id() != commit.source.source_id() {
-            return Err(BibliographyImportRepositoryError::Conflict);
+            return Err(StorageError::Conflict);
         }
         let expected_revision = expected_source.revision();
         let result = sqlx::query(
@@ -296,13 +296,13 @@ async fn persist_source(
         .await
         .map_err(map_write_error)?;
         if result.rows_affected() != 1 {
-            return Err(BibliographyImportRepositoryError::Conflict);
+            return Err(StorageError::Conflict);
         }
         return expected_revision
             .get()
             .checked_add(1)
             .and_then(|value| Revision::new(value).ok())
-            .ok_or(BibliographyImportRepositoryError::CorruptData);
+            .ok_or(StorageError::CorruptData);
     }
     sqlx::query(
         "INSERT INTO bibliography_import_sources (
@@ -326,7 +326,7 @@ async fn persist_link(
     transaction: &mut Transaction<'_, Sqlite>,
     actor: &Actor,
     link: &BibliographyImportLink,
-) -> Result<(), BibliographyImportRepositoryError> {
+) -> Result<(), StorageError> {
     let result = sqlx::query(
         "INSERT INTO bibliography_import_links (
             source_id, external_item_id, item_id, owner_issuer, owner_subject,
@@ -350,14 +350,14 @@ async fn persist_link(
     .await
     .map_err(map_write_error)?;
     if result.rows_affected() != 1 {
-        return Err(BibliographyImportRepositoryError::Conflict);
+        return Err(StorageError::Conflict);
     }
     Ok(())
 }
 
 pub(crate) fn decode_source(
     row: sqlx::sqlite::SqliteRow,
-) -> Result<BibliographyImportSource, BibliographyImportRepositoryError> {
+) -> Result<BibliographyImportSource, StorageError> {
     let source_id: String = row.try_get("source_id").map_err(corrupt)?;
     let source_id = EntityId::from_str(&source_id)
         .map(BibliographyImportSourceId::new)
@@ -365,7 +365,7 @@ pub(crate) fn decode_source(
     let method: String = row.try_get("method").map_err(corrupt)?;
     let method = match method.as_str() {
         "csl_json_file" => BibliographyImportMethod::CslJsonFile,
-        _ => return Err(BibliographyImportRepositoryError::CorruptData),
+        _ => return Err(StorageError::CorruptData),
     };
     BibliographyImportSource::restore(
         source_id,
@@ -385,7 +385,7 @@ pub(crate) fn decode_source(
 
 pub(crate) fn decode_link(
     row: sqlx::sqlite::SqliteRow,
-) -> Result<BibliographyImportLink, BibliographyImportRepositoryError> {
+) -> Result<BibliographyImportLink, StorageError> {
     let source_id: String = row.try_get("source_id").map_err(corrupt)?;
     let item_id: String = row.try_get("item_id").map_err(corrupt)?;
     let digest: Vec<u8> = row.try_get("imported_digest").map_err(corrupt)?;
@@ -404,7 +404,7 @@ pub(crate) fn decode_link(
     .map_err(corrupt)
 }
 
-fn map_write_error(error: sqlx::Error) -> BibliographyImportRepositoryError {
+fn map_write_error(error: sqlx::Error) -> StorageError {
     if error.as_database_error().is_some_and(|error| {
         error.is_unique_violation()
             || error.is_foreign_key_violation()
@@ -413,17 +413,12 @@ fn map_write_error(error: sqlx::Error) -> BibliographyImportRepositoryError {
                 .and_then(|code| code.parse::<i32>().ok())
                 .is_some_and(|code| matches!(code & 0xff, 5 | 6))
     }) {
-        BibliographyImportRepositoryError::Conflict
+        StorageError::Conflict
     } else {
-        map_database_error(error)
+        storage_error(error)
     }
 }
 
-fn map_database_error(error: sqlx::Error) -> BibliographyImportRepositoryError {
-    let _ = database_error(error);
-    BibliographyImportRepositoryError::Unavailable
-}
-
-fn corrupt<T>(_: T) -> BibliographyImportRepositoryError {
-    BibliographyImportRepositoryError::CorruptData
+fn corrupt<T>(_: T) -> StorageError {
+    StorageError::CorruptData
 }

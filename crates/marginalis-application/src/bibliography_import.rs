@@ -11,7 +11,7 @@ use marginalis_domain::{
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::{Clock, Random, csl_json::validate_and_encode};
+use crate::{Clock, Random, StorageError, csl_json::validate_and_encode};
 
 mod plan;
 mod preview;
@@ -181,18 +181,6 @@ pub struct BibliographyImportResult {
     pub excluded: usize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum BibliographyImportRepositoryError {
-    #[error("bibliography import source was not found")]
-    NotFound,
-    #[error("bibliography import state changed")]
-    Conflict,
-    #[error("stored bibliography import data is invalid")]
-    CorruptData,
-    #[error("bibliography import storage is unavailable")]
-    Unavailable,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum BibliographyImportUseCaseError {
     #[error("bibliography import input is invalid: {0}")]
@@ -209,24 +197,36 @@ pub enum BibliographyImportUseCaseError {
     Unavailable,
 }
 
+impl From<StorageError> for BibliographyImportUseCaseError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::NotFound => Self::NotFound,
+            StorageError::Conflict => Self::Conflict,
+            StorageError::CorruptData => Self::CorruptData,
+            // 取込元に保存期限は無く、`RetentionExpired`はこの系統では発生しない。
+            StorageError::RetentionExpired | StorageError::Unavailable => Self::Unavailable,
+        }
+    }
+}
+
 #[async_trait]
 pub trait BibliographyImportRepository: Send + Sync {
     async fn list_import_sources(
         &self,
         actor: &Actor,
-    ) -> Result<Vec<BibliographyImportSource>, BibliographyImportRepositoryError>;
+    ) -> Result<Vec<BibliographyImportSource>, StorageError>;
 
     async fn load_import_state(
         &self,
         actor: &Actor,
         source_id: Option<BibliographyImportSourceId>,
-    ) -> Result<BibliographyImportState, BibliographyImportRepositoryError>;
+    ) -> Result<BibliographyImportState, StorageError>;
 
     async fn apply_import(
         &self,
         actor: &Actor,
         commit: BibliographyImportCommit,
-    ) -> Result<BibliographyImportResult, BibliographyImportRepositoryError>;
+    ) -> Result<BibliographyImportResult, StorageError>;
 }
 
 #[async_trait]
@@ -285,7 +285,7 @@ impl BibliographyImportApplication {
             .repository
             .load_import_state(actor, source_id)
             .await
-            .map_err(map_repository_error)?
+            .map_err(BibliographyImportUseCaseError::from)?
             .canonicalized();
         if source_id.is_some() && state.source.is_none() {
             return Err(BibliographyImportUseCaseError::NotFound);
@@ -304,7 +304,7 @@ impl BibliographyImportUseCases for BibliographyImportApplication {
         self.repository
             .list_import_sources(&actor)
             .await
-            .map_err(map_repository_error)
+            .map_err(BibliographyImportUseCaseError::from)
     }
 
     async fn preview_bibliography_import(
@@ -359,7 +359,7 @@ impl BibliographyImportUseCases for BibliographyImportApplication {
         self.repository
             .apply_import(&actor, commit)
             .await
-            .map_err(map_repository_error)
+            .map_err(BibliographyImportUseCaseError::from)
     }
 }
 
@@ -390,21 +390,6 @@ fn validate_import_input(
         ));
     }
     Ok(())
-}
-
-fn map_repository_error(
-    error: BibliographyImportRepositoryError,
-) -> BibliographyImportUseCaseError {
-    match error {
-        BibliographyImportRepositoryError::NotFound => BibliographyImportUseCaseError::NotFound,
-        BibliographyImportRepositoryError::Conflict => BibliographyImportUseCaseError::Conflict,
-        BibliographyImportRepositoryError::CorruptData => {
-            BibliographyImportUseCaseError::CorruptData
-        }
-        BibliographyImportRepositoryError::Unavailable => {
-            BibliographyImportUseCaseError::Unavailable
-        }
-    }
 }
 
 #[cfg(test)]

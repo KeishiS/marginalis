@@ -49,6 +49,22 @@ pub enum SqliteStoreError {
     Database(String),
 }
 
+/// SQLite内部の失敗を、applicationのrepository port共通の`StorageError`へ写す。
+impl From<SqliteStoreError> for marginalis_application::StorageError {
+    fn from(error: SqliteStoreError) -> Self {
+        match error {
+            SqliteStoreError::NotFound => Self::NotFound,
+            SqliteStoreError::Conflict => Self::Conflict,
+            // アーカイブ復元先が空でないのは保存状態が前提条件を満たさない失敗であり、
+            // 再試行では解消しないため`CorruptData`と同じ分類にする。
+            SqliteStoreError::ArchiveTargetNotEmpty | SqliteStoreError::CorruptData => {
+                Self::CorruptData
+            }
+            SqliteStoreError::Database(_) => Self::Unavailable,
+        }
+    }
+}
+
 impl SqliteDatabase {
     /// 現行のSQLite schemaへ接続する。
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
@@ -104,6 +120,11 @@ fn is_memory_database_url(database_url: &str) -> bool {
 
 pub(crate) fn database_error(error: sqlx::Error) -> SqliteStoreError {
     SqliteStoreError::Database(error.to_string())
+}
+
+/// repository実装がsqlxの失敗を`StorageError`へ写すための共通関数。
+pub(crate) fn storage_error(error: sqlx::Error) -> marginalis_application::StorageError {
+    database_error(error).into()
 }
 
 /// SQLiteの`LIKE`で、入力をワイルドカードではなく文字列として含有検索するpattern。

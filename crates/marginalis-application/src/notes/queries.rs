@@ -1,15 +1,13 @@
 //! ノート一覧と単一ノートの問い合わせ。
 
-use async_trait::async_trait;
 use marginalis_domain::{Actor, DeletedNoteListEntry, Note, NoteId, NoteListEntry};
 
-use crate::{NoteListQuery, NoteQueries, NoteUseCaseError};
+use crate::{NoteListQuery, NoteUseCaseError};
 
-use super::{NoteApplication, map_repository_error};
+use super::NoteApplication;
 
-#[async_trait]
-impl NoteQueries for NoteApplication {
-    async fn list_visible_notes(
+impl NoteApplication {
+    pub async fn list_visible_notes(
         &self,
         actor: Actor,
         query: NoteListQuery,
@@ -17,20 +15,20 @@ impl NoteQueries for NoteApplication {
         self.queries
             .list_visible_notes(&actor, &query)
             .await
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 
-    async fn list_owned_deleted_notes(
+    pub async fn list_owned_deleted_notes(
         &self,
         actor: Actor,
     ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError> {
         self.queries
             .list_owned_deleted_notes(&actor)
             .await
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 
-    async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
+    pub async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
         self.read_visible_note(&actor, note_id).await
     }
 }

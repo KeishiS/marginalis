@@ -1,15 +1,13 @@
 //! 所有者によるノートの人手確認。
 
-use async_trait::async_trait;
 use marginalis_domain::{Actor, Note, NoteId, Revision};
 
-use crate::{NoteReviewDetails, NoteReviews, NoteUseCaseError};
+use crate::{NoteReviewDetails, NoteUseCaseError};
 
-use super::{NoteApplication, map_repository_error};
+use super::NoteApplication;
 
-#[async_trait]
-impl NoteReviews for NoteApplication {
-    async fn read_note_review(
+impl NoteApplication {
+    pub async fn read_note_review(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -18,10 +16,10 @@ impl NoteReviews for NoteApplication {
             .read_owned_note_review(&actor, note_id)
             .await
             .map(review_details)
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 
-    async fn mark_note_reviewed(
+    pub async fn mark_note_reviewed(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -31,7 +29,7 @@ impl NoteReviews for NoteApplication {
             .mark_owned_note_reviewed(&actor, note_id, expected_revision, self.clock.now())
             .await
             .map(review_details)
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 }
 
@@ -53,27 +51,20 @@ mod tests {
 
     use marginalis_domain::{Actor, NoteCreationSource, NoteDraft, NoteReviewStatus, Revision};
 
-    use crate::{NoteCommands, NoteReviews, NoteWritePolicy};
+    use crate::NoteWritePolicy;
 
-    use super::NoteApplication;
     use crate::notes::test_support::{
-        AcceptContent, EmptyLibrary, FixedClock, FixedRandom, MemoryNotes, NoLinks, NoMathMacros,
+        AcceptContent, EmptyLibrary, MemoryNotes, NoMathMacros, note_application,
     };
 
     #[tokio::test]
     async fn owner_review_uses_the_application_clock_and_returns_the_public_projection() {
         let repository = Arc::new(MemoryNotes::default());
-        let application = NoteApplication::new(
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
-            repository,
+        let application = note_application(
+            &repository,
             Arc::new(AcceptContent::default()),
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
-            Arc::new(NoLinks),
-            Arc::new(FixedClock),
-            Arc::new(FixedRandom),
         );
         let actor =
             Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");

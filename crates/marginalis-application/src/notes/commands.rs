@@ -1,15 +1,13 @@
 //! ノートの作成、更新、論理削除、復元。
 
-use async_trait::async_trait;
 use marginalis_domain::{Actor, Note, NoteCreationSource, NoteDraft, NoteId, Revision};
 
-use crate::{NoteCommands, NoteUseCaseError, NoteWritePolicy, ValidatedNoteDraft};
+use crate::{NoteUseCaseError, NoteWritePolicy, ValidatedNoteDraft};
 
-use super::{NoteApplication, NoteLinks, cited_keys, map_repository_error, reference_targets};
+use super::{NoteApplication, NoteLinks, cited_keys, reference_targets};
 
-#[async_trait]
-impl NoteCommands for NoteApplication {
-    async fn create_note(
+impl NoteApplication {
+    pub async fn create_note(
         &self,
         actor: Actor,
         draft: NoteDraft,
@@ -53,11 +51,11 @@ impl NoteCommands for NoteApplication {
                 },
             )
             .await
-            .map_err(map_repository_error)?;
+            .map_err(NoteUseCaseError::from)?;
         Ok(note)
     }
 
-    async fn update_note(
+    pub async fn update_note(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -106,10 +104,10 @@ impl NoteCommands for NoteApplication {
                 self.clock.now(),
             )
             .await
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 
-    async fn soft_delete_note(
+    pub async fn soft_delete_note(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -118,10 +116,10 @@ impl NoteCommands for NoteApplication {
         self.commands
             .soft_delete_visible_note(&actor, note_id, expected_revision, self.clock.now())
             .await
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 
-    async fn restore_note(
+    pub async fn restore_note(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -130,7 +128,7 @@ impl NoteCommands for NoteApplication {
         self.commands
             .restore_owned_deleted_note(&actor, note_id, expected_revision, self.clock.now())
             .await
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 }
 
@@ -157,28 +155,22 @@ mod tests {
         NoteReviewTracking, Revision, UnixMillis,
     };
 
-    use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteQueries, NoteValidationTarget};
+    use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteValidationTarget};
 
     use super::*;
     use crate::notes::test_support::{
-        AcceptContent, CitingContent, EmptyLibrary, FixedClock, FixedRandom, MemoryNotes, NoLinks,
-        NoMathMacros, OneItemLibrary, OwnerMathMacros,
+        AcceptContent, CitingContent, EmptyLibrary, MemoryNotes, NoMathMacros, OneItemLibrary,
+        OwnerMathMacros, note_application,
     };
 
     #[tokio::test]
     async fn creates_a_note_using_only_application_ports() {
         let repository = Arc::new(MemoryNotes::default());
-        let application = NoteApplication::new(
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
+        let application = note_application(
+            &repository,
             Arc::new(AcceptContent::default()),
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
-            Arc::new(NoLinks),
-            Arc::new(FixedClock),
-            Arc::new(FixedRandom),
         );
         let actor =
             Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
@@ -240,19 +232,13 @@ mod tests {
             })
             .expect("stored note"),
         );
-        let application = NoteApplication::new(
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
+        let application = note_application(
+            &repository,
             Arc::new(CitingContent {
                 keys: vec!["smith2024".into()],
             }),
             Arc::new(OneItemLibrary),
             Arc::new(OwnerMathMacros),
-            Arc::new(NoLinks),
-            Arc::new(FixedClock),
-            Arc::new(FixedRandom),
         );
         let editor =
             Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");
@@ -292,17 +278,11 @@ mod tests {
     #[tokio::test]
     async fn strict_writes_reject_warnings_before_mutation() {
         let repository = Arc::new(MemoryNotes::default());
-        let application = NoteApplication::new(
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
+        let application = note_application(
+            &repository,
             Arc::new(AcceptContent::default()),
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
-            Arc::new(NoLinks),
-            Arc::new(FixedClock),
-            Arc::new(FixedRandom),
         );
         let actor =
             Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");

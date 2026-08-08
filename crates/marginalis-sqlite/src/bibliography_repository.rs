@@ -3,13 +3,13 @@
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use marginalis_application::{BibliographyRepository, BibliographyRepositoryError};
+use marginalis_application::{BibliographyRepository, StorageError};
 use marginalis_domain::{
     Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Revision, UnixMillis,
 };
 use sqlx::Row;
 
-use crate::{SqliteDatabase, database_error};
+use crate::{SqliteDatabase, storage_error};
 
 #[async_trait]
 impl BibliographyRepository for SqliteDatabase {
@@ -17,7 +17,7 @@ impl BibliographyRepository for SqliteDatabase {
         &self,
         actor: &Actor,
         query: &str,
-    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+    ) -> Result<Vec<BibliographyItem>, StorageError> {
         let pattern = crate::like_contains_pattern(query);
         let rows = sqlx::query(
             "SELECT item_id, owner_issuer, owner_subject, citation_key, csl_json,
@@ -36,7 +36,7 @@ impl BibliographyRepository for SqliteDatabase {
         .bind(&pattern)
         .fetch_all(&self.pool)
         .await
-        .map_err(|error| map_error(database_error(error)))?;
+        .map_err(storage_error)?;
 
         rows.into_iter().map(decode_item).collect()
     }
@@ -45,7 +45,7 @@ impl BibliographyRepository for SqliteDatabase {
         &self,
         owner: &Identity,
         citation_keys: &[String],
-    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+    ) -> Result<Vec<BibliographyItem>, StorageError> {
         if citation_keys.is_empty() {
             return Ok(Vec::new());
         }
@@ -63,18 +63,12 @@ impl BibliographyRepository for SqliteDatabase {
         for citation_key in citation_keys {
             query = query.bind(citation_key.clone());
         }
-        let rows = query
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|error| map_error(database_error(error)))?;
+        let rows = query.fetch_all(&self.pool).await.map_err(storage_error)?;
 
         rows.into_iter().map(decode_item).collect()
     }
 
-    async fn create_owned_item(
-        &self,
-        item: &BibliographyItem,
-    ) -> Result<(), BibliographyRepositoryError> {
+    async fn create_owned_item(&self, item: &BibliographyItem) -> Result<(), StorageError> {
         sqlx::query(
             "INSERT INTO bibliography_items (
                 item_id, owner_issuer, owner_subject, citation_key, csl_json,
@@ -96,9 +90,9 @@ impl BibliographyRepository for SqliteDatabase {
                 .as_database_error()
                 .is_some_and(|error| error.is_unique_violation())
             {
-                BibliographyRepositoryError::Conflict
+                StorageError::Conflict
             } else {
-                map_error(database_error(error))
+                storage_error(error)
             }
         })?;
         Ok(())
@@ -112,7 +106,7 @@ impl BibliographyRepository for SqliteDatabase {
         csl_json: &str,
         updated_at: UnixMillis,
         expected_revision: Revision,
-    ) -> Result<BibliographyItem, BibliographyRepositoryError> {
+    ) -> Result<BibliographyItem, StorageError> {
         let row = sqlx::query(
             "UPDATE bibliography_items
              SET citation_key = ?, csl_json = ?, updated_at_ms = ?, revision = revision + 1
@@ -134,9 +128,9 @@ impl BibliographyRepository for SqliteDatabase {
                 .as_database_error()
                 .is_some_and(|error| error.is_unique_violation())
             {
-                BibliographyRepositoryError::Conflict
+                StorageError::Conflict
             } else {
-                map_error(database_error(error))
+                storage_error(error)
             }
         })?;
         if let Some(row) = row {
@@ -151,12 +145,12 @@ impl BibliographyRepository for SqliteDatabase {
         .bind(actor.subject())
         .fetch_one(&self.pool)
         .await
-        .map_err(|error| map_error(database_error(error)))?
+        .map_err(storage_error)?
             != 0;
         Err(if exists {
-            BibliographyRepositoryError::Conflict
+            StorageError::Conflict
         } else {
-            BibliographyRepositoryError::NotFound
+            StorageError::NotFound
         })
     }
 
@@ -165,12 +159,8 @@ impl BibliographyRepository for SqliteDatabase {
         actor: &Actor,
         item_id: BibliographyItemId,
         expected_revision: Revision,
-    ) -> Result<(), BibliographyRepositoryError> {
-        let mut transaction = self
-            .pool
-            .begin()
-            .await
-            .map_err(|error| map_error(database_error(error)))?;
+    ) -> Result<(), StorageError> {
+        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
         let result = sqlx::query(
             "DELETE FROM bibliography_items
              WHERE item_id = ? AND owner_issuer = ? AND owner_subject = ? AND revision = ?",
@@ -181,12 +171,9 @@ impl BibliographyRepository for SqliteDatabase {
         .bind(expected_revision.get())
         .execute(&mut *transaction)
         .await
-        .map_err(|error| map_error(database_error(error)))?;
+        .map_err(storage_error)?;
         if result.rows_affected() == 1 {
-            transaction
-                .commit()
-                .await
-                .map_err(|error| map_error(database_error(error)))?;
+            transaction.commit().await.map_err(storage_error)?;
             return Ok(());
         }
         let exists = sqlx::query_scalar::<_, i64>(
@@ -198,31 +185,29 @@ impl BibliographyRepository for SqliteDatabase {
         .bind(actor.subject())
         .fetch_one(&mut *transaction)
         .await
-        .map_err(|error| map_error(database_error(error)))?
+        .map_err(storage_error)?
             != 0;
         Err(if exists {
-            BibliographyRepositoryError::Conflict
+            StorageError::Conflict
         } else {
-            BibliographyRepositoryError::NotFound
+            StorageError::NotFound
         })
     }
 }
 
-pub(crate) fn decode_item(
-    row: sqlx::sqlite::SqliteRow,
-) -> Result<BibliographyItem, BibliographyRepositoryError> {
-    let corrupt = |_| BibliographyRepositoryError::CorruptData;
+pub(crate) fn decode_item(row: sqlx::sqlite::SqliteRow) -> Result<BibliographyItem, StorageError> {
+    let corrupt = |_| StorageError::CorruptData;
     let item_id_text: String = row.try_get("item_id").map_err(corrupt)?;
     let item_id = EntityId::from_str(&item_id_text)
         .map(BibliographyItemId::new)
-        .map_err(|_| BibliographyRepositoryError::CorruptData)?;
+        .map_err(|_| StorageError::CorruptData)?;
     let owner = Identity::new(
         row.try_get("owner_issuer").map_err(corrupt)?,
         row.try_get("owner_subject").map_err(corrupt)?,
     )
-    .map_err(|_| BibliographyRepositoryError::CorruptData)?;
+    .map_err(|_| StorageError::CorruptData)?;
     let revision = Revision::new(row.try_get("revision").map_err(corrupt)?)
-        .map_err(|_| BibliographyRepositoryError::CorruptData)?;
+        .map_err(|_| StorageError::CorruptData)?;
     BibliographyItem::restore(
         item_id,
         owner,
@@ -232,16 +217,5 @@ pub(crate) fn decode_item(
         UnixMillis::new(row.try_get("updated_at_ms").map_err(corrupt)?),
         revision,
     )
-    .map_err(|_| BibliographyRepositoryError::CorruptData)
-}
-
-fn map_error(error: crate::SqliteStoreError) -> BibliographyRepositoryError {
-    match error {
-        crate::SqliteStoreError::NotFound => BibliographyRepositoryError::NotFound,
-        crate::SqliteStoreError::Conflict => BibliographyRepositoryError::Conflict,
-        crate::SqliteStoreError::CorruptData | crate::SqliteStoreError::ArchiveTargetNotEmpty => {
-            BibliographyRepositoryError::CorruptData
-        }
-        crate::SqliteStoreError::Database(_) => BibliographyRepositoryError::Unavailable,
-    }
+    .map_err(|_| StorageError::CorruptData)
 }

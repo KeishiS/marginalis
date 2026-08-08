@@ -13,8 +13,8 @@ use crate::{
     Clock, McpAuthenticatedActor, McpAuthorizationClient, McpAuthorizationRequest,
     McpClientAuthorization, McpClientMetadataResolver, McpEffectiveScopeCeiling, McpOAuthClient,
     McpOAuthRepository, McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy,
-    McpScopeCeilingRepository, McpScopeCeilingRepositoryError, McpScopeCeilingSetting,
-    McpScopeCeilingUseCaseError, McpTokenPair, McpValidatedAuthorizationRequest, Random,
+    McpScopeCeilingRepository, McpScopeCeilingSetting, McpScopeCeilingUseCaseError, McpTokenPair,
+    McpValidatedAuthorizationRequest, Random, StorageError,
 };
 
 /// MarginalisのMCP Authorization Server設定。
@@ -383,17 +383,16 @@ fn principal(actor: &Actor) -> Principal {
     Principal::new(actor.issuer().into(), actor.subject().into())
 }
 
-fn map_scope_ceiling_repository_error(
-    error: McpScopeCeilingRepositoryError,
-) -> McpScopeCeilingUseCaseError {
+fn map_scope_ceiling_repository_error(error: StorageError) -> McpScopeCeilingUseCaseError {
     match error {
-        McpScopeCeilingRepositoryError::Invalid => McpScopeCeilingUseCaseError::Invalid,
-        McpScopeCeilingRepositoryError::Conflict => McpScopeCeilingUseCaseError::Conflict,
-        McpScopeCeilingRepositoryError::CorruptData => McpScopeCeilingUseCaseError::CorruptData,
-        McpScopeCeilingRepositoryError::ClientNotFound => {
-            McpScopeCeilingUseCaseError::ClientNotFound
+        StorageError::Conflict => McpScopeCeilingUseCaseError::Conflict,
+        StorageError::CorruptData => McpScopeCeilingUseCaseError::CorruptData,
+        // この系統でrepositoryが報告する不在は、認可済みMCP clientの不在だけである。
+        StorageError::NotFound => McpScopeCeilingUseCaseError::ClientNotFound,
+        // scope上限に保存期限は無く、`RetentionExpired`はこの系統では発生しない。
+        StorageError::RetentionExpired | StorageError::Unavailable => {
+            McpScopeCeilingUseCaseError::Unavailable
         }
-        McpScopeCeilingRepositoryError::Unavailable => McpScopeCeilingUseCaseError::Unavailable,
     }
 }
 

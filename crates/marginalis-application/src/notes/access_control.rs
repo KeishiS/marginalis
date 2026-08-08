@@ -1,20 +1,17 @@
 //! 所有者によるノートACLの読み取りと置き換え。
 
-use async_trait::async_trait;
 use marginalis_domain::{
     Actor, Identity, Note, NoteAclEntry, NoteId, NoteValidationTarget, Revision,
 };
 
 use crate::{
-    NoteAccessControl, NoteAclChange, NoteAclState, NoteUseCaseError, NoteValidationCode,
-    NoteValidationDiagnostic,
+    NoteAclChange, NoteAclState, NoteUseCaseError, NoteValidationCode, NoteValidationDiagnostic,
 };
 
-use super::{NoteApplication, map_repository_error};
+use super::NoteApplication;
 
-#[async_trait]
-impl NoteAccessControl for NoteApplication {
-    async fn read_note_acl(
+impl NoteApplication {
+    pub async fn read_note_acl(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -22,10 +19,10 @@ impl NoteAccessControl for NoteApplication {
         self.access_control
             .read_note_acl(&actor, note_id)
             .await
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 
-    async fn replace_note_acl(
+    pub async fn replace_note_acl(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -59,7 +56,7 @@ impl NoteAccessControl for NoteApplication {
                 self.clock.now(),
             )
             .await
-            .map_err(map_repository_error)
+            .map_err(NoteUseCaseError::from)
     }
 }
 

@@ -5,6 +5,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use marginalis_domain::{Actor, Identity};
 
+use crate::StorageError;
+
 pub const MAX_MATH_MACROS: usize = 64;
 pub const MAX_MATH_MACRO_NAME_CHARACTERS: usize = 32;
 pub const MAX_MATH_MACRO_REPLACEMENT_CHARACTERS: usize = 512;
@@ -26,16 +28,6 @@ pub struct MathMacroSettings {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum MathMacroRepositoryError {
-    #[error("math macro settings conflict")]
-    Conflict,
-    #[error("stored math macro settings are invalid")]
-    CorruptData,
-    #[error("math macro settings storage is unavailable")]
-    Unavailable,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum MathMacroUseCaseError {
     #[error("math macro settings are invalid")]
     Invalid,
@@ -47,19 +39,29 @@ pub enum MathMacroUseCaseError {
     CorruptData,
 }
 
+impl From<StorageError> for MathMacroUseCaseError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::Conflict => Self::Conflict,
+            StorageError::CorruptData => Self::CorruptData,
+            // 未保存の設定は既定値を返すため`NotFound`は発生せず、保存期限も無い。
+            StorageError::NotFound | StorageError::RetentionExpired | StorageError::Unavailable => {
+                Self::Unavailable
+            }
+        }
+    }
+}
+
 #[async_trait]
 pub trait MathMacroRepository: Send + Sync {
-    async fn read_math_macros(
-        &self,
-        owner: &Identity,
-    ) -> Result<MathMacroSettings, MathMacroRepositoryError>;
+    async fn read_math_macros(&self, owner: &Identity) -> Result<MathMacroSettings, StorageError>;
 
     async fn replace_math_macros(
         &self,
         owner: &Identity,
         macros: &[MathMacro],
         expected_revision: i64,
-    ) -> Result<MathMacroSettings, MathMacroRepositoryError>;
+    ) -> Result<MathMacroSettings, StorageError>;
 }
 
 #[async_trait]
@@ -96,7 +98,7 @@ impl MathMacroUseCases for MathMacroApplication {
         self.repository
             .read_math_macros(actor.identity())
             .await
-            .map_err(map_repository_error)
+            .map_err(MathMacroUseCaseError::from)
     }
 
     async fn replace_math_macros(
@@ -112,7 +114,7 @@ impl MathMacroUseCases for MathMacroApplication {
         self.repository
             .replace_math_macros(actor.identity(), &macros, expected_revision)
             .await
-            .map_err(map_repository_error)
+            .map_err(MathMacroUseCaseError::from)
     }
 }
 
@@ -161,14 +163,6 @@ fn valid_argument_references(replacement: &str, argument_count: u8) -> bool {
         index += 2;
     }
     true
-}
-
-fn map_repository_error(error: MathMacroRepositoryError) -> MathMacroUseCaseError {
-    match error {
-        MathMacroRepositoryError::Conflict => MathMacroUseCaseError::Conflict,
-        MathMacroRepositoryError::CorruptData => MathMacroUseCaseError::CorruptData,
-        MathMacroRepositoryError::Unavailable => MathMacroUseCaseError::Unavailable,
-    }
 }
 
 #[cfg(test)]

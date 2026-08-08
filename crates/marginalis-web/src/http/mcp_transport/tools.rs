@@ -1,8 +1,8 @@
 //! MCP toolの入力検査、use case呼出し、契約型への変換。
 
 use marginalis_application::{
-    BibliographyUseCaseError, BibliographyUseCases, NoteListQuery, NoteProfile, NoteUseCaseError,
-    NoteUseCases, NoteWritePolicy,
+    BibliographyApplication, BibliographyUseCaseError, NoteListQuery, NoteProfile,
+    NoteUseCaseError, NoteUseCases, NoteWritePolicy,
 };
 use marginalis_contract::{
     McpAddBibliographyItemInput, McpAddBibliographyItemsInput, McpBibliographyImportError,
@@ -74,7 +74,7 @@ enum McpToolOutput {
 
 pub(super) async fn mcp_tool_call(
     notes: &dyn NoteUseCases,
-    bibliography: Option<&dyn BibliographyUseCases>,
+    bibliography: Option<&BibliographyApplication>,
     actor: Actor,
     id: serde_json::Value,
     call: McpToolCall,
@@ -178,7 +178,7 @@ impl McpToolFailure {
 
 async fn execute_mcp_tool(
     notes: &dyn NoteUseCases,
-    bibliography: Option<&dyn BibliographyUseCases>,
+    bibliography: Option<&BibliographyApplication>,
     actor: Actor,
     call: McpToolCall,
 ) -> Result<McpToolOutput, McpToolFailure> {

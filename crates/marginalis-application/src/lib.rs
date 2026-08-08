@@ -39,39 +39,56 @@ mod notes;
 mod session;
 mod snapshot;
 
-pub use bibliography::{
-    BibliographyApplication, BibliographyRepository, BibliographyRepositoryError,
-    BibliographyUseCaseError, BibliographyUseCases,
-};
+pub use bibliography::{BibliographyApplication, BibliographyRepository, BibliographyUseCaseError};
 pub use bibliography_import::{
     BibliographyImportApplication, BibliographyImportCandidate, BibliographyImportClassification,
     BibliographyImportCommit, BibliographyImportDecision, BibliographyImportDecisionKind,
     BibliographyImportEntry, BibliographyImportInput, BibliographyImportItemMutation,
-    BibliographyImportPreview, BibliographyImportRepository, BibliographyImportRepositoryError,
-    BibliographyImportResult, BibliographyImportSourceSelection, BibliographyImportState,
-    BibliographyImportUseCaseError, BibliographyImportUseCases,
+    BibliographyImportPreview, BibliographyImportRepository, BibliographyImportResult,
+    BibliographyImportSourceSelection, BibliographyImportState, BibliographyImportUseCaseError,
+    BibliographyImportUseCases,
 };
 pub use citation::CitationStyle;
 pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
 };
 pub use math_macros::{
-    MathMacro, MathMacroApplication, MathMacroRepository, MathMacroRepositoryError,
-    MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases, validate_math_macros,
+    MathMacro, MathMacroApplication, MathMacroRepository, MathMacroSettings, MathMacroUseCaseError,
+    MathMacroUseCases, validate_math_macros,
 };
 pub use mcp_oauth::McpOAuthApplication;
 pub use notes::{
-    AccessibleNote, NoteAclRepository, NoteApplication, NoteBibliographyEntry, NoteCitationQuery,
-    NoteCitationResolution, NoteCitationSegment, NoteCommandRepository, NoteContent,
-    NoteContentError, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery,
-    NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks, NoteQueryRepository,
-    NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs, NoteRepositoryError,
+    AccessibleNote, NoteAclRepository, NoteApplication, NoteApplicationDependencies,
+    NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
+    NoteCommandRepository, NoteContent, NoteContentError, NoteGraph, NoteGraphCitation,
+    NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks,
+    NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
     NoteReviewRepository, NoteViewSnapshot,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{
     InvalidSnapshot, LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
 };
+
+/// 永続化方式に依存しない、repository port共通の失敗理由。
+///
+/// すべての系統のrepositoryがこの型を返し、系統ごとの意味づけと利用者向けの表現は、
+/// 各ユースケースのエラー型とtransport側の写像が決める。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum StorageError {
+    #[error("stored entity was not found")]
+    NotFound,
+    #[error("stored state conflicts with the expected revision")]
+    Conflict,
+    #[error("restoration period has expired")]
+    RetentionExpired,
+    /// 保存済みの内容が現行の規則を満たさない。再試行では解消しない。
+    #[error("stored data is invalid")]
+    CorruptData,
+    /// 一時的に処理できない。再試行で解消しうる。
+    #[error("storage is unavailable")]
+    Unavailable,
+}
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> UnixMillis;
@@ -326,6 +343,18 @@ pub enum NoteUseCaseError {
     CorruptData,
 }
 
+impl From<StorageError> for NoteUseCaseError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::NotFound => Self::NotFound,
+            StorageError::Conflict => Self::Conflict,
+            StorageError::RetentionExpired => Self::RetentionExpired,
+            StorageError::CorruptData => Self::CorruptData,
+            StorageError::Unavailable => Self::Unavailable,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpAuthenticatedActor {
     pub actor: Actor,
@@ -369,20 +398,6 @@ pub type McpStoredClientAuthorization =
     McpClientAuthorizationRecord<Option<McpScopeCeilingSetting>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum McpScopeCeilingRepositoryError {
-    #[error("MCP scope ceiling settings are invalid")]
-    Invalid,
-    #[error("MCP scope ceiling settings conflict")]
-    Conflict,
-    #[error("stored MCP scope ceiling settings are invalid")]
-    CorruptData,
-    #[error("MCP client was not found")]
-    ClientNotFound,
-    #[error("MCP scope ceiling storage is unavailable")]
-    Unavailable,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum McpScopeCeilingUseCaseError {
     #[error("MCP scope ceiling settings are invalid")]
     Invalid,
@@ -402,18 +417,18 @@ pub trait McpScopeCeilingRepository: Send + Sync {
         &self,
         actor: &Actor,
         now: UnixMillis,
-    ) -> Result<Vec<McpStoredClientAuthorization>, McpScopeCeilingRepositoryError>;
+    ) -> Result<Vec<McpStoredClientAuthorization>, StorageError>;
 
     async fn principal_scope_ceiling(
         &self,
         actor: &Actor,
-    ) -> Result<Option<McpScopeCeilingSetting>, McpScopeCeilingRepositoryError>;
+    ) -> Result<Option<McpScopeCeilingSetting>, StorageError>;
 
     async fn scope_ceilings(
         &self,
         actor: &Actor,
         client_id: &str,
-    ) -> Result<McpStoredScopeCeilings, McpScopeCeilingRepositoryError>;
+    ) -> Result<McpStoredScopeCeilings, StorageError>;
 
     async fn replace_principal_scope_ceiling(
         &self,
@@ -421,7 +436,7 @@ pub trait McpScopeCeilingRepository: Send + Sync {
         scopes: &[String],
         expected_revision: i64,
         now: UnixMillis,
-    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingRepositoryError>;
+    ) -> Result<McpScopeCeilingSetting, StorageError>;
 
     /// clientの上限設定を取り除き、未設定へ戻す。
     ///
@@ -432,7 +447,7 @@ pub trait McpScopeCeilingRepository: Send + Sync {
         client_id: &str,
         expected_revision: i64,
         now: UnixMillis,
-    ) -> Result<(), McpScopeCeilingRepositoryError>;
+    ) -> Result<(), StorageError>;
 
     async fn replace_client_scope_ceiling(
         &self,
@@ -441,7 +456,7 @@ pub trait McpScopeCeilingRepository: Send + Sync {
         scopes: &[String],
         expected_revision: i64,
         now: UnixMillis,
-    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingRepositoryError>;
+    ) -> Result<McpScopeCeilingSetting, StorageError>;
 }
 
 /// HTML内のノート参照へ付与するtransport固有の公開パス。
@@ -482,9 +497,12 @@ pub struct NoteReviewDetails {
     pub reviewer: Option<Identity>,
 }
 
-/// 閲覧可能なノートを取得する問い合わせ境界。
+/// transportへ公開するノート操作の内向き境界。
+///
+/// RESTとMCPはどちらもこの境界全体を1つの実装から受け取るため、問い合わせ、変更、表示、
+/// ACL、人手確認を別のtraitへ分けない。
 #[async_trait]
-pub trait NoteQueries: Send + Sync {
+pub trait NoteUseCases: Send + Sync {
     async fn list_visible_notes(
         &self,
         actor: Actor,
@@ -495,11 +513,6 @@ pub trait NoteQueries: Send + Sync {
         actor: Actor,
     ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError>;
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
-}
-
-/// ノートの内容と削除状態を変更するcommand境界。
-#[async_trait]
-pub trait NoteCommands: Send + Sync {
     async fn create_note(
         &self,
         actor: Actor,
@@ -527,11 +540,6 @@ pub trait NoteCommands: Send + Sync {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
-}
-
-/// ノートの検証、描画、書き出しを扱う表示境界。
-#[async_trait]
-pub trait NotePresentation: Send + Sync {
     async fn preview_new_note(
         &self,
         actor: Actor,
@@ -559,11 +567,6 @@ pub trait NotePresentation: Send + Sync {
         query: NoteGraphQuery,
     ) -> Result<NoteGraph, NoteUseCaseError>;
     fn note_profile(&self) -> NoteProfile;
-}
-
-/// ノートごとの直接ACLを管理する境界。
-#[async_trait]
-pub trait NoteAccessControl: Send + Sync {
     async fn read_note_acl(
         &self,
         actor: Actor,
@@ -576,11 +579,6 @@ pub trait NoteAccessControl: Send + Sync {
         entries: Vec<NoteAclChange>,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError>;
-}
-
-/// 所有者だけが利用できる、人手確認の問い合わせと更新境界。
-#[async_trait]
-pub trait NoteReviews: Send + Sync {
     async fn read_note_review(
         &self,
         actor: Actor,
@@ -592,23 +590,6 @@ pub trait NoteReviews: Send + Sync {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<NoteReviewDetails, NoteUseCaseError>;
-}
-
-/// 複数transportへまとめて渡す場合のfacade。
-pub trait NoteUseCases:
-    NoteQueries + NoteCommands + NotePresentation + NoteAccessControl + NoteReviews + Send + Sync
-{
-}
-
-impl<T> NoteUseCases for T where
-    T: NoteQueries
-        + NoteCommands
-        + NotePresentation
-        + NoteAccessControl
-        + NoteReviews
-        + Send
-        + Sync
-{
 }
 
 /// Kanidm groupはOIDC login時に検証し、このCookie sessionの有効期間はsnapshotとして固定する。

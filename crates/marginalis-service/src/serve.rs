@@ -1,8 +1,8 @@
 //! HTTP serviceのcomposition root。
 
 use marginalis_application::{
-    McpOAuthApplication, McpResourcePolicy, NoteApplication, OidcAuthenticationApplication,
-    WebSessionApplication,
+    McpOAuthApplication, McpResourcePolicy, NoteApplication, NoteApplicationDependencies,
+    OidcAuthenticationApplication, WebSessionApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
@@ -71,8 +71,10 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::sync::Arc::new(oidc_provider),
         REQUIRED_USER_GROUP,
     ));
+    // すべてのrepository portを同じSQLite adapterが担うため、Arcを1つ作って共有する。
+    let storage = std::sync::Arc::new(database.clone());
     let sessions = std::sync::Arc::new(WebSessionApplication::new(
-        std::sync::Arc::new(database.clone()),
+        storage.clone(),
         std::sync::Arc::new(SystemClock),
         std::sync::Arc::new(SystemRandom),
         marginalis_application::SessionLifetime {
@@ -81,30 +83,27 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
     ));
     let notes = std::sync::Arc::new(NoteApplication::new(
-        std::sync::Arc::new(database.clone()),
-        std::sync::Arc::new(database.clone()),
-        std::sync::Arc::new(database.clone()),
-        std::sync::Arc::new(database.clone()),
-        std::sync::Arc::new(AsciiDocNoteContent),
-        std::sync::Arc::new(database.clone()),
-        std::sync::Arc::new(database.clone()),
-        std::sync::Arc::new(marginalis_web::http::HttpNoteLinkResolver),
-        std::sync::Arc::new(SystemClock),
-        std::sync::Arc::new(SystemRandom),
+        NoteApplicationDependencies::with_storage(
+            &storage,
+            std::sync::Arc::new(AsciiDocNoteContent),
+            std::sync::Arc::new(marginalis_web::http::HttpNoteLinkResolver),
+            std::sync::Arc::new(SystemClock),
+            std::sync::Arc::new(SystemRandom),
+        ),
     ));
     let bibliography = std::sync::Arc::new(marginalis_application::BibliographyApplication::new(
-        std::sync::Arc::new(database.clone()),
+        storage.clone(),
         std::sync::Arc::new(SystemClock),
         std::sync::Arc::new(SystemRandom),
     ));
     let bibliography_import =
         std::sync::Arc::new(marginalis_application::BibliographyImportApplication::new(
-            std::sync::Arc::new(database.clone()),
+            storage.clone(),
             std::sync::Arc::new(SystemClock),
             std::sync::Arc::new(SystemRandom),
         ));
     let math_macros = std::sync::Arc::new(marginalis_application::MathMacroApplication::new(
-        std::sync::Arc::new(database.clone()),
+        storage.clone(),
     ));
     let state = marginalis_web::http::ApiState::new(
         notes.clone(),
@@ -135,8 +134,8 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let endpoint = marginalis_web::http::McpEndpoint::new(
             std::sync::Arc::new(
                 McpOAuthApplication::new(
-                    std::sync::Arc::new(database.clone()),
-                    std::sync::Arc::new(database.clone()),
+                    storage.clone(),
+                    storage.clone(),
                     std::sync::Arc::new(SystemClock),
                     std::sync::Arc::new(SystemRandom),
                     resource_policy,

@@ -7,7 +7,7 @@ use std::{
 };
 
 use marginalis_application::{
-    BibliographyImportUseCases, BibliographyUseCases, MathMacroUseCases, McpOAuthUseCases,
+    BibliographyApplication, BibliographyImportUseCases, MathMacroUseCases, McpOAuthUseCases,
     NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
 };
 use mcp_authorization_server::{AuthorizationServerEndpoints, ResourcePolicy};
@@ -15,7 +15,7 @@ use mcp_authorization_server::{AuthorizationServerEndpoints, ResourcePolicy};
 #[derive(Clone)]
 pub struct ApiState {
     pub notes: Arc<dyn NoteUseCases>,
-    pub bibliography: Option<Arc<dyn BibliographyUseCases>>,
+    pub bibliography: Option<Arc<BibliographyApplication>>,
     pub bibliography_import: Option<Arc<dyn BibliographyImportUseCases>>,
     pub math_macros: Arc<dyn MathMacroUseCases>,
     pub sessions: Arc<dyn WebSessionUseCases>,
@@ -159,7 +159,7 @@ impl ApiState {
         self
     }
 
-    pub fn with_bibliography(mut self, bibliography: Arc<dyn BibliographyUseCases>) -> Self {
+    pub fn with_bibliography(mut self, bibliography: Arc<BibliographyApplication>) -> Self {
         self.bibliography = Some(bibliography);
         self
     }
