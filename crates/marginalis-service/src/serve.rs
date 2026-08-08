@@ -125,6 +125,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "notes:read".into(),
                 "notes:write".into(),
                 "notes:delete".into(),
+                "notes:sync".into(),
                 "bibliography:read".into(),
                 "bibliography:write".into(),
                 "bibliography:delete".into(),

@@ -157,6 +157,10 @@ fn scope_description(scope: &str) -> &'static str {
         "notes:read" => "list_notes、get_note、get_note_profileでノートを読み取ります。",
         "notes:write" => "create_note、update_note、get_note_profileでノートを作成・更新します。",
         "notes:delete" => "delete_noteでノートを削除します。",
+        "notes:sync" => concat!(
+            "sync_notesで、閲覧できるノートの本文と変更を外部の検索用コピーへ継続的に同期します。",
+            "許可を取り消しても、Marginalisから外部に保存済みのコピーは削除できません。"
+        ),
         "bibliography:read" => "search_bibliographyで書誌情報を検索します。",
         "bibliography:write" => "add_bibliography_itemで書誌情報を一項目ずつ追加します。",
         "bibliography:delete" => "delete_bibliography_itemで書誌情報を削除します。",

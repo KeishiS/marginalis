@@ -79,6 +79,18 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
             ProblemCode::RetentionExpired,
             "note restoration period has expired",
         ),
+        NoteUseCaseError::InvalidSyncLimit => ProblemResponse::new(
+            ProblemCode::InvalidRequest,
+            "sync page limit must be between 1 and 100",
+        ),
+        NoteUseCaseError::InvalidSyncCursor => ProblemResponse::new(
+            ProblemCode::InvalidSyncCursor,
+            "sync cursor is invalid for this user",
+        ),
+        NoteUseCaseError::SyncCursorExpired => ProblemResponse::new(
+            ProblemCode::SyncCursorExpired,
+            "sync cursor has expired; start a full synchronization",
+        ),
         NoteUseCaseError::Validation(diagnostics) => ProblemResponse {
             code: ProblemCode::ValidationFailed,
             message: "note input is invalid".into(),
@@ -142,9 +154,9 @@ pub(super) const fn problem_status(code: ProblemCode) -> StatusCode {
         | ProblemCode::Forbidden => StatusCode::FORBIDDEN,
         ProblemCode::NotFound => StatusCode::NOT_FOUND,
         ProblemCode::Conflict => StatusCode::CONFLICT,
-        ProblemCode::RetentionExpired => StatusCode::GONE,
+        ProblemCode::RetentionExpired | ProblemCode::SyncCursorExpired => StatusCode::GONE,
         ProblemCode::PreconditionRequired => StatusCode::PRECONDITION_REQUIRED,
-        ProblemCode::InvalidRequest => StatusCode::BAD_REQUEST,
+        ProblemCode::InvalidRequest | ProblemCode::InvalidSyncCursor => StatusCode::BAD_REQUEST,
         ProblemCode::ValidationFailed | ProblemCode::RenderFailed => {
             StatusCode::UNPROCESSABLE_ENTITY
         }

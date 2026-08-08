@@ -23,7 +23,8 @@ use super::{
     AccessibleNote, NoteAclRepository, NoteApplication, NoteApplicationDependencies,
     NoteCitationQuery, NoteCommandRepository, NoteContent, NoteContentError, NoteGraph,
     NoteGraphQuery, NoteLinkResolver, NoteLinks, NoteQueryRepository, NoteReferenceQuery,
-    NoteRenderInputs, NoteReviewRepository, NoteViewSnapshot,
+    NoteRenderInputs, NoteReviewRepository, NoteSyncPage, NoteSyncRepository,
+    NoteSyncRepositoryError, NoteViewSnapshot,
 };
 
 /// 決定的なclockと乱数を使い、repository4種を同じ`MemoryNotes`が担う試験用のservice。
@@ -38,6 +39,7 @@ pub(super) fn note_application(
         commands: repository.clone(),
         access_control: repository.clone(),
         reviews: repository.clone(),
+        sync: repository.clone(),
         content,
         bibliography,
         math_macros,
@@ -45,6 +47,20 @@ pub(super) fn note_application(
         clock: Arc::new(FixedClock),
         random: Arc::new(FixedRandom),
     })
+}
+
+#[async_trait]
+impl NoteSyncRepository for MemoryNotes {
+    async fn sync_notes(
+        &self,
+        _actor: &Actor,
+        _cursor: Option<&str>,
+        _limit: usize,
+        _next_cursor: &str,
+        _now: UnixMillis,
+    ) -> Result<NoteSyncPage, NoteSyncRepositoryError> {
+        Err(NoteSyncRepositoryError::Storage(StorageError::Unavailable))
+    }
 }
 
 pub(super) struct MemoryNotes {

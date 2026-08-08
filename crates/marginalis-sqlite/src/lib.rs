@@ -13,6 +13,7 @@ mod note_acl;
 mod note_graph;
 mod note_repository;
 mod note_reviews;
+mod note_sync;
 mod notes;
 mod schema;
 mod session;

@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn one_challenge_contains_every_missing_requirement_and_existing_scope() {
-        let supported = ["notes:read", "notes:write", "notes:delete"]
+        let supported = ["notes:read", "notes:write", "notes:delete", "notes:sync"]
             .map(str::to_owned)
             .to_vec();
         let granted = vec!["notes:read".to_owned()];
@@ -216,6 +216,10 @@ mod tests {
                 &[&["notes:write"], &["notes:delete"]],
             ),
             Some("notes:read notes:write notes:delete".into())
+        );
+        assert_eq!(
+            incremental_scope_challenge(&supported, &granted, &[&["notes:sync"]]),
+            Some("notes:read notes:sync".into())
         );
         assert_eq!(
             incremental_scope_challenge(&supported, &granted, &[&["notes:read", "notes:write"]],),

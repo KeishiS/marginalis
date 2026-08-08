@@ -9,8 +9,9 @@ use marginalis_application::{
     NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteGraph, NoteGraphNote,
     NoteGraphQuery, NoteListQuery, NotePreview, NoteProfile, NoteProfileExample, NoteProfileLimits,
     NoteProfileNormalization, NoteProfileSyntax, NoteRenderContext, NoteReviewDetails,
-    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
-    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    NoteSyncPage, NoteSyncPhase, NoteUseCaseError, NoteUseCases, NoteValidationCode,
+    NoteValidationDiagnostic, NoteView, NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes,
+    WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, DeletedNoteListEntry, Identity, Note, NoteAccess,
@@ -185,6 +186,21 @@ macro_rules! implement_note_use_cases {
                     reviewed_revision: Some(reviewed_revision),
                     reviewed_at: Some(UnixMillis::new(3)),
                     reviewer: Some(actor.identity().clone()),
+                })
+            }
+
+            async fn sync_notes(
+                &self,
+                _actor: Actor,
+                _cursor: Option<String>,
+                _limit: Option<usize>,
+            ) -> Result<NoteSyncPage, NoteUseCaseError> {
+                Ok(NoteSyncPage {
+                    phase: NoteSyncPhase::Snapshot,
+                    entries: Vec::new(),
+                    next_cursor: "next-sync-cursor".into(),
+                    has_more: false,
+                    cursor_expires_at: UnixMillis::new(3_024_000_000),
                 })
             }
         }
@@ -839,6 +855,7 @@ impl TestMcpAccessTokens for TestMcpAuthenticator {
                 | "read-token"
                 | "write-token"
                 | "bibliography-read-token"
+                | "sync-token"
         ) && resource_uri.ends_with("/mcp"))
         .then(|| McpAuthenticatedActor {
             actor: Actor::try_new("https://kanidm.example.test".into(), "alice".into())
@@ -847,6 +864,7 @@ impl TestMcpAccessTokens for TestMcpAuthenticator {
                 "read-token" | "external-token" => vec!["notes:read".into()],
                 "write-token" => vec!["notes:write".into()],
                 "bibliography-read-token" => vec!["bibliography:read".into()],
+                "sync-token" => vec!["notes:sync".into()],
                 _ => vec![
                     "notes:read".into(),
                     "notes:write".into(),
@@ -1072,6 +1090,7 @@ impl McpOAuthUseCases for TestMcpOAuth {
                         "notes:read".into(),
                         "notes:write".into(),
                         "notes:delete".into(),
+                        "notes:sync".into(),
                         "bibliography:read".into(),
                         "bibliography:write".into(),
                         "bibliography:delete".into(),
@@ -1247,6 +1266,7 @@ impl TestApp {
                         "notes:read".into(),
                         "notes:write".into(),
                         "notes:delete".into(),
+                        "notes:sync".into(),
                         "bibliography:read".into(),
                         "bibliography:write".into(),
                         "bibliography:delete".into(),

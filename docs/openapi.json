@@ -1583,6 +1583,8 @@
           "forbidden",
           "conflict",
           "retention_expired",
+          "invalid_sync_cursor",
+          "sync_cursor_expired",
           "precondition_required",
           "invalid_request",
           "validation_failed",

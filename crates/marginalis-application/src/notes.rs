@@ -16,6 +16,7 @@ mod graph;
 mod presentation;
 mod queries;
 mod reviews;
+mod sync;
 
 pub use content::{
     NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
@@ -24,6 +25,10 @@ pub use content::{
 };
 pub use graph::{
     NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork,
+};
+pub use sync::{
+    NOTE_SYNC_CURSOR_RETENTION_MS, NOTE_SYNC_DEFAULT_PAGE_SIZE, NOTE_SYNC_MAX_PAGE_SIZE,
+    NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason,
 };
 
 use crate::{
@@ -147,6 +152,29 @@ pub trait NoteReviewRepository: Send + Sync {
     ) -> Result<Note, StorageError>;
 }
 
+/// 検索用投影が、可視ノートの初期一覧と以後の変更を同じcursorで取得するport。
+#[async_trait]
+pub trait NoteSyncRepository: Send + Sync {
+    async fn sync_notes(
+        &self,
+        actor: &Actor,
+        cursor: Option<&str>,
+        limit: usize,
+        next_cursor: &str,
+        now: marginalis_domain::UnixMillis,
+    ) -> Result<NoteSyncPage, NoteSyncRepositoryError>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum NoteSyncRepositoryError {
+    #[error("sync cursor is invalid")]
+    InvalidCursor,
+    #[error("sync cursor has expired")]
+    CursorExpired,
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+}
+
 /// 本文から導いた、ノートが指し示す先の一覧。
 ///
 /// ノート参照と引用は、どちらも本文の解析から得て同じtransactionで置き換える。別々のport
@@ -166,6 +194,7 @@ pub struct NoteApplicationDependencies {
     pub commands: Arc<dyn NoteCommandRepository>,
     pub access_control: Arc<dyn NoteAclRepository>,
     pub reviews: Arc<dyn NoteReviewRepository>,
+    pub sync: Arc<dyn NoteSyncRepository>,
     pub content: Arc<dyn NoteContent>,
     pub bibliography: Arc<dyn BibliographyRepository>,
     pub math_macros: Arc<dyn MathMacroRepository>,
@@ -190,6 +219,7 @@ impl NoteApplicationDependencies {
             + NoteCommandRepository
             + NoteAclRepository
             + NoteReviewRepository
+            + NoteSyncRepository
             + BibliographyRepository
             + MathMacroRepository
             + 'static,
@@ -199,6 +229,7 @@ impl NoteApplicationDependencies {
             commands: storage.clone(),
             access_control: storage.clone(),
             reviews: storage.clone(),
+            sync: storage.clone(),
             content,
             bibliography: storage.clone(),
             math_macros: storage.clone(),
@@ -215,6 +246,7 @@ pub struct NoteApplication {
     commands: Arc<dyn NoteCommandRepository>,
     access_control: Arc<dyn NoteAclRepository>,
     reviews: Arc<dyn NoteReviewRepository>,
+    sync: Arc<dyn NoteSyncRepository>,
     content: Arc<dyn NoteContent>,
     bibliography: Arc<dyn BibliographyRepository>,
     math_macros: Arc<dyn MathMacroRepository>,
@@ -230,6 +262,7 @@ impl NoteApplication {
             commands: dependencies.commands,
             access_control: dependencies.access_control,
             reviews: dependencies.reviews,
+            sync: dependencies.sync,
             content: dependencies.content,
             bibliography: dependencies.bibliography,
             math_macros: dependencies.math_macros,
@@ -392,6 +425,15 @@ impl NoteUseCases for NoteApplication {
         expected_revision: Revision,
     ) -> Result<NoteReviewDetails, NoteUseCaseError> {
         NoteApplication::mark_note_reviewed(self, actor, note_id, expected_revision).await
+    }
+
+    async fn sync_notes(
+        &self,
+        actor: Actor,
+        cursor: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<NoteSyncPage, NoteUseCaseError> {
+        NoteApplication::sync_notes(self, actor, cursor, limit).await
     }
 }
 

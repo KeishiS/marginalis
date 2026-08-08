@@ -201,7 +201,7 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
     let response = app
         .oneshot(
             Request::get(
-                "/oauth/authorize?response_type=code&client_id=long-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A48123%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmarginalis%2Fmcp&scope=notes%3Aread%20notes%3Awrite%20bibliography%3Aread&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256",
+                "/oauth/authorize?response_type=code&client_id=long-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A48123%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmarginalis%2Fmcp&scope=notes%3Aread%20notes%3Awrite%20notes%3Async%20bibliography%3Aread&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256",
             )
             .header(
                 header::COOKIE,
@@ -238,6 +238,9 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
     assert!(html.contains("移動先のホスト</dt><dd><code>127.0.0.1</code>"));
     assert!(html.contains("<code>notes:read</code>"));
     assert!(html.contains("<code>notes:write</code>"));
+    assert!(html.contains("<code>notes:sync</code>"));
+    assert!(html.contains("外部の検索用コピーへ継続的に同期します。"));
+    assert!(html.contains("Marginalisから外部に保存済みのコピーは削除できません。"));
     assert!(html.contains("list_notes、get_note、get_note_profileでノートを読み取ります。"));
     assert!(html.contains("<code>bibliography:read</code>"));
     assert!(html.contains("書誌情報を検索します。"));

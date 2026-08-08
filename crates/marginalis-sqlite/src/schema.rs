@@ -2,7 +2,7 @@
 
 use sqlx::SqlitePool;
 
-pub(crate) const SCHEMA_VERSION: i64 = 20;
+pub(crate) const SCHEMA_VERSION: i64 = 21;
 const INITIAL_SCHEMA: &str = include_str!("schema.sql");
 
 pub(crate) async fn initialize_or_validate_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {

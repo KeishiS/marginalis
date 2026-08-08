@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use marginalis_application::{
     AccessibleNote, NoteAclRepository, NoteAclState, NoteCommandRepository, NoteGraph,
     NoteGraphQuery, NoteLinks, NoteListQuery, NoteQueryRepository, NoteReviewRepository,
-    NoteViewSnapshot, StorageError,
+    NoteSyncPage, NoteSyncRepository, NoteSyncRepositoryError, NoteViewSnapshot, StorageError,
 };
 use marginalis_domain::{
     Actor, DeletedNoteListEntry, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, Revision,
@@ -73,6 +73,21 @@ impl NoteQueryRepository for SqliteDatabase {
         SqliteDatabase::note_graph(self, actor, query)
             .await
             .map_err(StorageError::from)
+    }
+}
+
+#[async_trait]
+impl NoteSyncRepository for SqliteDatabase {
+    async fn sync_notes(
+        &self,
+        actor: &Actor,
+        cursor: Option<&str>,
+        limit: usize,
+        next_cursor: &str,
+        now: UnixMillis,
+    ) -> Result<NoteSyncPage, NoteSyncRepositoryError> {
+        self.sync_notes_page(actor, cursor, limit, next_cursor, now)
+            .await
     }
 }
 

@@ -100,14 +100,17 @@ REST・MCP応答には確認者を含めず、作成経路と確認状態で認�
 PKCE S256を使用すること。Protected Resource MetadataとAuthorization Server Metadataを公開し、
 Client ID Metadata Documentを優先すること。resource、scope、redirect URI、認可code、不透明access
 tokenを検証し、認可応答にはAuthorization Serverを識別する``iss``を含めること。
-* *REQ-API-005 — MCP権限範囲*: MCPではノートと書誌情報にそれぞれ読み取り、書き込み、削除の
-``scope``を定義し、対象と操作が一致するscopeだけで各toolを許可すること。``scope``は操作の種類だけを
+* *REQ-API-005 — MCP権限範囲*: MCPでは、ノートに読み取り、書き込み、削除、外部検索用同期の
+``scope``を定義し、書誌情報に読み取り、書き込み、削除の``scope``を定義すること。対象と操作が
+一致するscopeだけで各toolを許可すること。``scope``は操作の種類だけを
 制限し、操作できるノートや書誌情報の範囲を広げないこと。利用者全体とクライアント別のscope上限を
 区別し、対応scope、両方の上限、
 クライアントの要求、利用者の同意の共通部分だけを発行すること。利用者は自分の上限だけを変更でき、
 上限を狭めた場合は新しい上限を超える認可codeとtoken familyを同じtransactionで失効すること。
 初回の認証challengeは``notes:read``だけを示し、実行時にscopeが不足した場合は、現在のtokenが持つscopeと
 今回の操作に必要なscopeを一つの``WWW-Authenticate`` challengeへまとめること。
+``notes:sync``は外部検索用コピーへの継続同期だけを許可し、同意画面でコピーの保存と取消後の
+削除責任を説明すること。既存tokenへ新しいscopeを自動追加しないこと。
 * *REQ-API-006 — MCP接続解除*: RFC 7009 endpointと、利用者本人の認証を要するREST APIから
 認可を取り消せること。対象のaccess tokenとrefresh tokenを同じtoken family単位で直ちに
 失効すること。
@@ -118,6 +121,9 @@ tokenを検証し、認可応答にはAuthorization Serverを識別する``iss``
 ``structuredContent``と同じ契約型をJSON化した内容とし、不可視なノートの存在や属性を開示しないこと。
 ``create_note``と``update_note``は警告を含む入力を変更前に拒否し、重大度と位置を保った診断を
 ``isError: true``のtool結果として返すこと。
+``sync_notes``はcursorを省略した初期一覧と、それに続く``upsert``・``remove``を一つのcursor系列で
+返すこと。cursorはactorに結び付け、期限切れを型で区別し、共有取消後は古いcursorから本文を
+取得できないこと。削除を示すtombstoneはノートの物理削除後もcursorの有効期間だけ保持すること。
 * *REQ-API-008 — 失敗表現の共通化*: 同じ業務上の失敗に対して、REST APIとMCPが同じ``code``と
 同じ``message``を返すこと。失敗表現は入力と成功出力と同じく公開契約として定義し、``docs/openapi.json``と
 ``docs/mcp-tools.json``へ出力すること。保存内容の破損は一時的な障害と型で区別し、利用者向けの
