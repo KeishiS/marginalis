@@ -18,16 +18,16 @@ command = "cargo"
 args = ["fmt", "--all"]
 
 [tasks.fmt-nix]
-description = "Format the Nix flake"
-command = "nixfmt"
-args = ["flake.nix", "nix/module.nix"]
+description = "Format the Nix flake and its imported modules"
+script_runner = "@shell"
+script = '''
+set -eu
+find flake.nix nix -name '*.nix' -print0 | xargs -0 nixfmt
+'''
 
 [tasks.fmt-check]
 description = "Check Rust, Nix, and frontend formatting without modifying files"
 dependencies = ["fmt-check-rust", "fmt-check-nix", "frontend-format-check"]
-
-[tasks.format-check]
-alias = "fmt-check"
 
 [tasks.fmt-check-rust]
 description = "Check Rust formatting without modifying files"
@@ -36,8 +36,11 @@ args = ["fmt", "--all", "--", "--check"]
 
 [tasks.fmt-check-nix]
 description = "Check Nix formatting without modifying files"
-command = "nixfmt"
-args = ["--check", "flake.nix", "nix/module.nix"]
+script_runner = "@shell"
+script = '''
+set -eu
+find flake.nix nix -name '*.nix' -print0 | xargs -0 nixfmt --check
+'''
 
 [tasks.check]
 description = "Type-check all workspace targets and features"
@@ -59,12 +62,6 @@ description = "Run all workspace tests"
 dependencies = ["frontend-build"]
 command = "cargo"
 args = ["test", "--workspace", "--all-features"]
-
-[tasks.build]
-description = "Build all workspace targets and features"
-dependencies = ["frontend-build"]
-command = "cargo"
-args = ["build", "--workspace", "--all-targets", "--all-features"]
 
 [tasks.flake-check]
 description = "Evaluate every declared Nix flake system without building outputs"
@@ -158,25 +155,8 @@ description = "Verify release version consistency and declared dual-license file
 script_runner = "@shell"
 script = '''
 set -eu
-expected_version="$(
-  cargo metadata --locked --no-deps --format-version 1 |
-    jq -er '[.packages[].version] | unique | if length == 1 then .[0] else error("workspace package versions differ") end'
-)"
-test -s LICENSE-MIT
-test -s LICENSE-APACHE
-cargo metadata --locked --no-deps --format-version 1 | jq -e \
-  --arg version "$expected_version" '
-  all(.packages[];
-    .version == $version
-    and .license == "MIT OR Apache-2.0"
-    and .publish == [])
-'
-test "$(
-  nix eval --raw .#packages.x86_64-linux.default.version
-)" = "$expected_version"
-test "$(
-  nix eval --raw .#packages.x86_64-linux.frontend.version
-)" = "$expected_version"
+bash .github/scripts/test-release-metadata.sh
+bash .github/scripts/check-release-metadata.sh
 '''
 
 [tasks.release-gate]
@@ -221,68 +201,8 @@ description = "Reject retired v0.2 components and routes from the production gra
 script_runner = "@shell"
 script = '''
 set -eu
-actual=$(
-  cargo metadata --locked --format-version 1 |
-    jq -r '
-      . as $metadata
-      | ($metadata.packages[]
-          | select(.name == "marginalis-service")
-          | .id) as $root
-      | ($metadata.resolve.nodes
-          | map({key: .id, value: [.deps[].pkg]})
-          | from_entries) as $graph
-      | def closure($pending; $seen):
-          if ($pending | length) == 0 then $seen
-          else
-            [$pending[]
-              | select(. as $id | ($seen | index($id) | not))] as $new
-            | closure([$new[] as $id | $graph[$id][]?]; $seen + $new)
-          end;
-        closure([$root]; [])[] as $id
-      | select($metadata.workspace_members | index($id))
-      | $metadata.packages[]
-      | select(.id == $id)
-      | .name
-    ' |
-    sort -u
-)
-expected='marginalis-application
-marginalis-archive
-marginalis-asciidoc
-marginalis-auth-oidc
-marginalis-contract
-marginalis-domain
-marginalis-service
-marginalis-sqlite
-marginalis-web'
-test "$actual" = "$expected" || {
-  echo "unexpected workspace crate in marginalis-service production dependencies" >&2
-  diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
-  exit 1
-}
-
-if rg -n \
-  '/api/v1|marginalis[_-](files|membership)|membershipTokenFile|root_password|MARGINALIS_ROOT' \
-  Cargo.toml crates --glob 'Cargo.toml' --glob '*.rs'
-then
-  echo "retired v0.2 production symbol or route remains" >&2
-  exit 1
-fi
-
-# 公開済みの記録は当時の名前のまま残す。ADRは検査の対象外とする。
-if rg -n \
-  'MARGINALIS_MCP_(AUTHORIZATION_ISSUER|UPSTREAM_ISSUER_CLAIM|UPSTREAM_SUBJECT_CLAIM|GROUPS_CLAIM|EXTERNAL_ISSUER)|externalAuthorization|marginalis-auth-oauth' \
-  . \
-  --glob '!docs/frozen/**' \
-  --glob '!docs/developer-guide/adr/**' \
-  --glob '!Makefile.toml' \
-  --glob '!target/**' \
-  --glob '!test-results/**' \
-  --glob '!.git/**'
-then
-  echo "retired external Authorization Server dependency or configuration remains" >&2
-  exit 1
-fi
+bash .github/scripts/test-production-reachability.sh
+bash .github/scripts/check-production-reachability.sh
 '''
 
 [tasks.coverage]
@@ -346,50 +266,38 @@ jq -e '
 '''
 
 [tasks.adocweave-version-check]
-description = "Verify the pinned AdocWeave package version and supply-chain identity"
+description = "Verify every AdocWeave version reference against the Cargo.toml and Cargo.lock canon"
 script_runner = "@shell"
 script = '''
 set -eu
-expected_version="0.36.0"
-expected_revision="28a3162c9fe979237e0857333f28c7cf7fec4788"
-expected_hash="sha256-qPBEt4UCj3y7nGXTSKfq0ggIFsi0BhxiIuoc410WhzY="
-
-cargo metadata --locked --format-version 1 | jq -e \
-  --arg version "$expected_version" \
-  --arg revision "$expected_revision" '
-    [.packages[]
-      | select(.name == "adocweave")
-      | select(
-          .version == $version
-          and (.source | contains("rev=" + $revision))
-          and (.source | endswith("#" + $revision))
-        )]
-    | length == 1
-  ' >/dev/null
-
-grep -Fq "pub const ADOCWEAVE_SOURCE_REVISION: &str = \"$expected_revision\";" \
-  crates/marginalis-asciidoc/src/lib.rs
-grep -Fq "pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = \"$expected_version\";" \
-  crates/marginalis-asciidoc/src/lib.rs
-grep -Fq "\"adocweave-$expected_version\" = \"$expected_hash\";" flake.nix
-
-adocweave_manifest="$(
-  cargo metadata --locked --format-version 1 \
-    | jq -r --arg version "$expected_version" \
-      '.packages[] | select(.name == "adocweave" and .version == $version) | .manifest_path'
-)"
-test -f "$(dirname "$adocweave_manifest")/conformance/cases.json"
-
-if grep -Eq 'WASM_API_VERSION|PINNED_CONTRACTS|CONTRACT_VERSION|contractVersion' \
-  crates/marginalis-asciidoc/src/lib.rs; then
-  echo "legacy AdocWeave version identity remains" >&2
-  exit 1
-fi
+bash .github/scripts/test-adocweave-version.sh
+bash .github/scripts/check-adocweave-version.sh
 '''
 
 [tasks.verify]
 description = "Run formatting, static analysis, unit and integration tests, and flake evaluation"
-dependencies = ["frontend-verify", "fmt-check", "check", "clippy", "test", "security-audit", "dependency-boundaries", "shared-authorization-server", "unused-dependencies", "observability-check", "production-reachability", "contract-check", "adocweave-version-check", "docs-check", "traceability-check", "actionlint", "ci-path-classifier", "protocol-regression-assets", "flake-check", "release-metadata"]
+dependencies = [
+  "frontend-verify",
+  "fmt-check",
+  "check",
+  "clippy",
+  "test",
+  "security-audit",
+  "dependency-boundaries",
+  "shared-authorization-server",
+  "unused-dependencies",
+  "observability-check",
+  "production-reachability",
+  "contract-check",
+  "adocweave-version-check",
+  "docs-check",
+  "traceability-check",
+  "actionlint",
+  "ci-path-classifier",
+  "protocol-regression-assets",
+  "flake-check",
+  "release-metadata",
+]
 
 [tasks.ci-verify]
 description = "Run the GitHub Actions verify suite"

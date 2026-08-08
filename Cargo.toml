@@ -6,10 +6,11 @@ members = [
     "crates/marginalis-auth-oidc",
     "crates/marginalis-contract",
     "crates/marginalis-domain",
-    "crates/marginalis-documentation",
     "crates/marginalis-service",
     "crates/marginalis-sqlite",
     "crates/marginalis-web",
+    # CI専用の文書検査ツール。製品コードのcrates/とは区別してtools/で管理する。
+    "tools/marginalis-documentation",
 ]
 resolver = "2"
 

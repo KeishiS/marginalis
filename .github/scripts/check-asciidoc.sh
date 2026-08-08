@@ -33,9 +33,19 @@ fi
 
 cargo run --quiet --locked -p marginalis-documentation -- \
   check-xrefs --project-root . "${documents[@]}"
-npm ci --ignore-scripts --prefix tools/textlint >/dev/null
-npm audit --audit-level=high --prefix tools/textlint >/dev/null
-npm test --silent --prefix tools/textlint
-npm run --silent --prefix tools/textlint lint -- "${documents[@]}"
+
+# lockfileとNode.jsの版が前回の導入時から変わらない限り、npm ciと脆弱性監査の
+# ネットワークアクセスを省略する。CIのrunnerはnode_modulesを持たずに始まるため、
+# CIでは毎回導入と監査を行う。
+textlint_root=tools/textlint
+stamp_file="$textlint_root/node_modules/.marginalis-install-stamp"
+stamp_value="$(node --version) $(sha256sum "$textlint_root/package-lock.json" | cut -d' ' -f1)"
+if [[ ! -f "$stamp_file" || "$(cat "$stamp_file")" != "$stamp_value" ]]; then
+  npm ci --ignore-scripts --prefix "$textlint_root" >/dev/null
+  npm audit --audit-level=high --prefix "$textlint_root" >/dev/null
+  printf '%s' "$stamp_value" >"$stamp_file"
+fi
+npm test --silent --prefix "$textlint_root"
+npm run --silent --prefix "$textlint_root" lint -- "${documents[@]}"
 
 echo "AsciiDoc文書を検査しました: ${document_count}件"

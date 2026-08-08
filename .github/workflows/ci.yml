@@ -13,6 +13,9 @@ concurrency:
 permissions:
   contents: read
 
+# 条件分岐はjobレベルの`if:`だけで行い、step単位の分岐を置かない。必須チェックの
+# `verify`と`nixos-e2e`はゲートjobとして常に実行し、文書だけの変更では実作業jobを
+# 丸ごと省略したうえでゲートが成功を報告する。
 jobs:
   changes:
     runs-on: ubuntu-24.04
@@ -43,6 +46,7 @@ jobs:
 
   verify-core:
     needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -50,16 +54,27 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Set up Nix
+        uses: ./.github/actions/setup
+      - name: Verify
+        run: nix develop --command cargo make ci-verify
+
+  verify-docs:
+    needs: changes
+    if: needs.changes.outputs.docs-only == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set up Nix
+        uses: ./.github/actions/setup
       - name: Check documentation
-        if: needs.changes.outputs.docs-only == 'true'
         run: |
           nix develop --command cargo make docs-check
           nix develop --command cargo make traceability-check
-      - name: Verify
-        if: needs.changes.outputs.docs-only != 'true'
-        run: nix develop --command cargo make ci-verify
 
   coverage:
     needs: changes
@@ -69,8 +84,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Set up Nix
+        uses: ./.github/actions/setup
       - name: Measure workspace and integration-path coverage
         run: nix develop --command cargo make ci-coverage
       - name: Upload coverage report
@@ -92,26 +107,29 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Set up Nix
+        uses: ./.github/actions/setup
       - name: Check all Rust targets natively
         run: nix develop --command cargo make native-check
       - name: Build the aarch64 Linux release package
         run: nix develop --command cargo make release-package-aarch64
 
   verify:
-    needs: [changes, verify-core, native-aarch64]
+    needs: [changes, verify-core, verify-docs, native-aarch64]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require the core and native checks
+      - name: Require the checks that match the change classification
         env:
           CORE_RESULT: ${{ needs.verify-core.result }}
+          DOCS_RESULT: ${{ needs.verify-docs.result }}
           NATIVE_RESULT: ${{ needs.native-aarch64.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
         run: |
-          test "$CORE_RESULT" = success
-          if [ "$DOCS_ONLY" != true ]; then
+          if [ "$DOCS_ONLY" = true ]; then
+            test "$DOCS_RESULT" = success
+          else
+            test "$CORE_RESULT" = success
             test "$NATIVE_RESULT" = success
           fi
 
@@ -123,8 +141,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Set up Nix
+        uses: ./.github/actions/setup
       - name: Check the production Web UI in Chromium
         run: nix develop --command cargo make browser-smoke
       - name: Check editor compatibility in Firefox
@@ -138,26 +156,24 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  nixos-e2e:
+  nixos-e2e-vm:
     needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Check out the repository
-        if: needs.changes.outputs.docs-only != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install Nix
-        if: needs.changes.outputs.docs-only != 'true'
-        uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Set up Nix
+        uses: ./.github/actions/setup
       # このjobはCIのcritical pathであり、所要時間の大半をNixのビルドが占める。
       # 入力が変化しない成果物をrun間で再利用するため、Nix storeをcacheへ保存する。
       # 書き込みは`main`へのpush時だけとし、Pull Requestは読み取りだけを行う。
       # 既定branchのcacheはすべてのbranchから読めるため、Pull Requestもこれを利用できる。
       - name: Restore and save the Nix store
-        if: needs.changes.outputs.docs-only != 'true'
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          primary-key: nix-nixos-e2e-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}
+          primary-key: nix-nixos-e2e-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock', 'nix/**') }}
           restore-prefixes-first-match: nix-nixos-e2e-${{ runner.os }}-
           save: ${{ github.event_name == 'push' }}
           gc-max-store-size-linux: 5G
@@ -165,7 +181,6 @@ jobs:
           purge-prefixes: nix-nixos-e2e-${{ runner.os }}-
           purge-created: 604800
       - name: Run NixOS VM E2E
-        if: needs.changes.outputs.docs-only != 'true'
         run: |
           raw_log="$(mktemp)"
           trap 'rm -f "$raw_log"' EXIT
@@ -181,13 +196,26 @@ jobs:
           fi
           exit "$status"
       - name: Upload NixOS E2E failure log
-        if: failure() && needs.changes.outputs.docs-only != 'true'
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nixos-e2e-failure-${{ github.run_id }}-${{ github.run_attempt }}
           path: nixos-e2e.log
           if-no-files-found: error
           retention-days: 7
-      - name: Skip NixOS VM E2E for documentation-only changes
-        if: needs.changes.outputs.docs-only == 'true'
-        run: echo "Documentation-only changes do not affect the NixOS runtime"
+
+  nixos-e2e:
+    needs: [changes, nixos-e2e-vm]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the NixOS VM E2E unless the change is documentation-only
+        env:
+          VM_RESULT: ${{ needs.nixos-e2e-vm.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
+        run: |
+          if [ "$DOCS_ONLY" = true ]; then
+            echo "Documentation-only changes do not affect the NixOS runtime"
+          else
+            test "$VM_RESULT" = success
+          fi
