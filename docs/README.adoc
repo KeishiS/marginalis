@@ -80,9 +80,6 @@ Marginalisの文書は、利用者・運用者向けの``user-guide/``と、設�
 |xref:developer-guide/acceptance.adoc#top[受入基準]
 |受入担当者
 |各バージョンに共通する受入基準
-|xref:developer-guide/roadmap.adoc#top[ロードマップ]
-|保守担当者・開発者
-|現在地、優先順位、公開単位
 |===
 
 == 設計判断の記録（ADR）
@@ -106,8 +103,7 @@ Auth0をMCPのAuthorization Serverに採用]（廃止。ADR 0007で置き換え�
 == 過去の記録と今後の計画
 
 * https://github.com/KeishiS/marginalis/releases[GitHub Releases]（版ごとの変更内容と移行手順）
-* xref:developer-guide/roadmap.adoc#top[ロードマップ]
-* https://github.com/KeishiS/marginalis/issues[GitHub Issues]
+* https://github.com/KeishiS/marginalis/issues[GitHub Issues]（作業計画と完了条件）
 
 == 文書の読み分け
 

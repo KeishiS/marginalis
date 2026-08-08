@@ -37,8 +37,9 @@ Marginalisを直接起動するには、少なくとも次の情報が必要で�
 
 == 開発
 
-設計上の規則は xref:docs/developer-guide/requirements.adoc#top[要件定義]と xref:docs/developer-guide/architecture.adoc#top[アーキテクチャ]、
-今後の作業計画は xref:docs/developer-guide/roadmap.adoc#top[ロードマップ]を参照してください。
+設計上の規則は xref:docs/developer-guide/requirements.adoc#top[要件定義]と
+xref:docs/developer-guide/architecture.adoc#top[アーキテクチャ]、今後の作業計画は
+https://github.com/KeishiS/marginalis/issues[GitHub Issues]を参照してください。
 
 検証は次のコマンドで実行できます。
 

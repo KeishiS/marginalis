@@ -31,8 +31,9 @@ Pull Requestを``main``へマージします。
 gh release create v<版> --title v<版> --notes-file <Release Notesのファイル>
 ----
 
-リリースを中止する場合は、タグとGitHub Releaseを作成せず、必要な修正を通常のPull Requestとして
-続けます。過去の版の変更内容と移行手順はGitHub Releasesを、v0.36.0以前の記録は各タグ上の
+パッチ版は予定へ固定せず、各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
+なった場合だけ公開します。リリースを中止する場合は、タグとGitHub Releaseを作成せず、必要な修正を
+通常のPull Requestとして続けます。過去の版の変更内容と移行手順はGitHub Releasesを、v0.36.0以前の記録は各タグ上の
 ``CHANGELOG.adoc``と``docs/acceptance-results/``を参照してください。
 
 日次バックアップ、30世代の保持、四半期の復元確認については

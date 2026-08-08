@@ -142,6 +142,24 @@ refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family
 * *ARCH-AUTHZ-002 — 実効アクセス水準*: 実効アクセス水準は``Read < Edit < Manage``の順序で表す。
 SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``または``Edit``を同じ判断表へまとめる。
 
+== 検索のサービス境界
+
+全文検索、意味検索、検索索引、順位付けはMarginalisへ実装せず、
+https://github.com/KeishiS/renkan[連環（Renkan）]へ委ねます。MarginalisはAsciiDocノートの正本、編集、共有を
+担当し、RenkanはMarginalisを最初のデータソースとして検索投影を作り、ほかの研究資料と横断して
+探索します。検索基盤、Marginalisとの接続契約、検索API、MCP、評価はRenkan側の計画で管理します。
+
+Marginalisのノート一覧にはタグと更新日による絞り込みを残します。関係の図では、表示する部分グラフを
+組み直すために題名、本文、タグを単純に照合します。編集画面では開いている文書内を検索できます。
+これらは検索索引、順位付け、横断検索を持たない局所的な操作であり、全文検索へ拡張しません。
+
+== 保留中の再検討条件
+
+* *PostgreSQL*: 複数ホスト、高可用性、復旧目標、代表負荷などの
+xref:adr/0002-sqliteを正本として維持する.adoc#再検討条件[再検討条件]が実測で成立した場合だけ再検討します。
+* *添付Resource*: 保存先、MIME type、容量、認可、バックアップを一つの公開契約として
+定義できる場合に再検討します。
+
 == ソース配置
 
 [source,text]

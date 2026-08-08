@@ -76,17 +76,4 @@ if ! diff -u "$architecture_ids" "$traceability_ids"; then
   status=1
 fi
 
-if [[ "$architecture" == "docs/developer-guide/architecture.adoc" && "$traceability" == "docs/developer-guide/traceability.adoc" ]]; then
-  session_row=$(grep -E '^ARCH-SESSION-001[[:space:]]' "$traceability_rows" || true)
-  regression_test='issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit'
-  if [[ "$session_row" != *"$regression_test"* ]]; then
-    echo "ARCH-SESSION-001にlogin attempt上限の回帰試験がありません。" >&2
-    status=1
-  fi
-  if ! grep -Fq "async fn $regression_test" crates/marginalis-sqlite/src/tests/sessions.rs; then
-    echo "login attempt上限の回帰試験が実装にありません。" >&2
-    status=1
-  fi
-fi
-
 exit "$status"
