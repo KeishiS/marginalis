@@ -3,7 +3,7 @@ set -euo pipefail
 
 status=0
 source_root="${1:-crates}"
-event_catalog="${2:-docs/observability.adoc}"
+event_catalog="${2:-docs/developer-guide/observability.adoc}"
 production_globs=(
   --glob '*.rs'
   --glob '!**/tests.rs'
@@ -122,7 +122,7 @@ if [[ "$source_root" == "crates" ]]; then
 
   if ! diff -u "$documented_events" "$implementation_events"; then
     echo "production実装とログevent一覧が一致しません。" >&2
-    echo "実装とdocs/observability.adocを同じ変更で更新してください。" >&2
+    echo "実装とdocs/developer-guide/observability.adocを同じ変更で更新してください。" >&2
     status=1
   fi
 fi

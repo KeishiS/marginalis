@@ -61,7 +61,9 @@ fn write_bundle_list(manifest_dir: &Path, relative_directory: &str) {
             )
         })
         .collect::<String>();
-    let generated = format!("const BUNDLE_FILES: &[(&str, &str, &[u8])] = &[\n{entries}];\n");
+    let generated = format!(
+        "/// 埋め込んだ`dist/assets`直下の(名前, MIME type, 内容)。試験も配布物と経路の対応確認に読む。\npub(crate) const BUNDLE_FILES: &[(&str, &str, &[u8])] = &[\n{entries}];\n"
+    );
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("build output directory"))
         .join("bundle_assets.rs");
     fs::write(output, generated).expect("write embedded bundle list");

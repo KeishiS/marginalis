@@ -70,15 +70,7 @@ pub(super) async fn list_notes(
         notes
             .into_iter()
             .map(|entry| NoteListEntryResponse {
-                note_id: entry.summary.note_id.to_string(),
-                title: entry.summary.title,
-                tags: entry.summary.tags,
-                updated_at_ms: entry.summary.updated_at.get(),
-                revision: entry.summary.revision.get(),
-                created_via: entry.summary.created_via,
-                review_status: entry.summary.review_status,
-                reviewed_revision: entry.summary.reviewed_revision.map(Revision::get),
-                reviewed_at_ms: entry.summary.reviewed_at.map(|time| time.get()),
+                summary: note_summary_response(entry.summary),
                 access: entry.access,
             })
             .collect(),
@@ -480,7 +472,8 @@ fn note_response(note: Note) -> NoteResponse {
     }
 }
 
-fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
+/// application層のノート要約を公開契約の表現へ変換する。RESTとMCPで共用する。
+pub(crate) fn note_summary_response(note: NoteSummary) -> NoteSummaryResponse {
     NoteSummaryResponse {
         note_id: note.note_id.to_string(),
         title: note.title,

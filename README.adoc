@@ -14,13 +14,13 @@ Kanidmで利用者の認証とグループ管理を行い、Web UI、REST API、
 * ``/api/v3``は公開REST APIです。仕様は link:docs/openapi.json[OpenAPI]を参照してください。
 * MCPはStreamable HTTPで動作し、Authorization Serverを内蔵します。Web UIと同じKanidmで
 ログインし、認可codeとtokenはMarginalisが管理します。接続方法は
-xref:docs/mcp.adoc#top[MCPへの接続と認可]を参照してください。
+xref:docs/user-guide/mcp.adoc#top[MCPへの接続と認可]を参照してください。
 * 削除したノートは30日間保管し、日次のNixOSタイマーが期限を過ぎたデータを物理削除します。
 
 == 利用と運用
 
-NixOSの設定、秘密情報、バックアップについては xref:docs/nixos.adoc#top[NixOSでの運用]、
-MCPへの接続方法については xref:docs/mcp.adoc#top[MCPへの接続と認可]を参照してください。
+NixOSの設定、秘密情報、バックアップについては xref:docs/user-guide/nixos.adoc#top[NixOSでの運用]、
+MCPへの接続方法については xref:docs/user-guide/mcp.adoc#top[MCPへの接続と認可]を参照してください。
 
 Marginalisを直接起動するには、少なくとも次の情報が必要です。
 
@@ -37,8 +37,9 @@ Marginalisを直接起動するには、少なくとも次の情報が必要で�
 
 == 開発
 
-設計上の規則は xref:docs/requirements.adoc#top[要件定義]と xref:docs/architecture.adoc#top[アーキテクチャ]、
-今後の作業計画は xref:docs/roadmap.adoc#top[ロードマップ]を参照してください。
+設計上の規則は xref:docs/developer-guide/requirements.adoc#top[要件定義]と
+xref:docs/developer-guide/architecture.adoc#top[アーキテクチャ]、今後の作業計画は
+https://github.com/KeishiS/marginalis/issues[GitHub Issues]を参照してください。
 
 検証は次のコマンドで実行できます。
 
@@ -53,7 +54,7 @@ cargo make pre-push
 
 ``verify``は開発中の通常検証、``pre-push``はカバレッジとすべてのNixOS VM E2Eを含む
 push前検証です。Nix開発環境の準備とPull Requestの手順は
-xref:docs/development.adoc#top[GitHubを使う開発手順]を参照してください。
+xref:docs/developer-guide/development.adoc#top[GitHubを使う開発手順]を参照してください。
 
 詳細は xref:docs/README.adoc#top[文書案内]を参照してください。
 

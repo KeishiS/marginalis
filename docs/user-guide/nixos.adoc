@@ -439,7 +439,7 @@ SQLを実行できなかった場合は、``database.failures``の``check``で�
 ``database.failures``は出力されません。
 
 安定したjournal event名、共通field、記録禁止情報、障害時の絞り込み方は
-xref:observability.adoc#top[ログと障害診断]を参照してください。監視や通知では、人向けのログ本文ではなく
+xref:../developer-guide/observability.adoc#top[ログと障害診断]を参照してください。監視や通知では、人向けのログ本文ではなく
 ``event``を使用します。
 
 [source,bash]

@@ -6,7 +6,7 @@
 https://github.com/KeishiS/mcp-authorization-server[KeishiS/mcp-authorization-server]の``docs/architecture.adoc``と
 ``docs/maintenance.adoc``を正本とします。ここでは同じ内容を繰り返しません。
 
-Marginalisへの接続方法と利用者が確認できる動作は xref:mcp.adoc#top[MCPへの接続と認可]、中核を製品から
+Marginalisへの接続方法と利用者が確認できる動作は xref:../user-guide/mcp.adoc#top[MCPへの接続と認可]、中核を製品から
 分けた理由は xref:adr/0008-mcp-authorization-serverの中核を製品から分離する.adoc#top[ADR 0008]、独立リポジトリ
 へ移した理由は xref:adr/0012-共有authorization-serverを独立リポジトリで配布する.adoc#top[ADR 0012]を参照して
 ください。
@@ -87,7 +87,14 @@ bash .github/scripts/check-shared-authorization-server-release.sh
 
 [arabic]
 . 上流リポジトリで公開されたtagから、対象commitの40桁の完全なSHAを確認します。tag名ではなくSHAを
-使います。
+使います。注釈付きタグでは``refs/tags/<tag>``が指すのはタグobjectであり、commitではないため、
+次の2段階でタグobjectを解決して最終的なcommitのSHAを取得します。
++
+[source,sh]
+----
+gh api repos/KeishiS/mcp-authorization-server/git/ref/tags/<tag> --jq '.object.sha' |
+  xargs -I{} gh api repos/KeishiS/mcp-authorization-server/git/tags/{} --jq '.object.sha'
+----
 . ルート``Cargo.toml``の2 crateの``version``と``rev``を、同じ値へ同時に更新します。
 . ``cargo check --workspace``を実行して``Cargo.lock``を更新します。
 . ``flake.nix``の``cargoLock.outputHashes``のkeyとハッシュを更新します。keyは``<crate名>-<版>``です。

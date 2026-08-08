@@ -16,13 +16,7 @@
         "name": "created_via",
         "required": false,
         "schema": {
-          "enum": [
-            "web",
-            "rest",
-            "mcp",
-            "unknown"
-          ],
-          "type": "string"
+          "$ref": "#/components/schemas/NoteCreationSource"
         }
       },
       "CsrfToken": {
@@ -99,12 +93,7 @@
         "name": "review_status",
         "required": false,
         "schema": {
-          "enum": [
-            "unknown",
-            "pending",
-            "reviewed"
-          ],
-          "type": "string"
+          "$ref": "#/components/schemas/NoteReviewStatus"
         }
       }
     },
@@ -211,6 +200,40 @@
       }
     },
     "schemas": {
+      "ApplicationConfig": {
+        "additionalProperties": false,
+        "description": "サーバーが初期HTMLへ埋め込み、Web UIが起動時に読む設定。\n\nREST応答と同じく、サーバーとWeb UIの間の公開契約である。Web UI側は生成した\nparserで検査してから使用し、解釈できない値を利用者向けエラーとして扱う。",
+        "properties": {
+          "apiBase": {
+            "description": "REST APIの外部prefix。",
+            "type": "string"
+          },
+          "basePath": {
+            "description": "画面URLの外部prefix。サブパス配置ではその値になる。",
+            "type": "string"
+          },
+          "path": {
+            "description": "prefixを除いた画面内のpath。",
+            "type": "string"
+          },
+          "search": {
+            "description": "`?`を含む問い合わせ文字列。無い場合は空文字。",
+            "type": "string"
+          },
+          "styleNonce": {
+            "description": "実行時に生成するstyleへ付けるContent Security Policyのnonce。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiBase",
+          "basePath",
+          "path",
+          "search",
+          "styleNonce"
+        ],
+        "type": "object"
+      },
       "BibliographyImportApplyInput": {
         "additionalProperties": false,
         "properties": {
@@ -223,7 +246,7 @@
             "type": "array"
           },
           "items": {
-            "items": {},
+            "items": true,
             "maxItems": 1000,
             "minItems": 1,
             "type": "array"
@@ -251,7 +274,6 @@
             "type": "string"
           },
           "item_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
@@ -262,6 +284,7 @@
             "type": "array"
           },
           "revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
@@ -281,33 +304,32 @@
         ],
         "type": "object"
       },
+      "BibliographyImportClassification": {
+        "enum": [
+          "create",
+          "update_from_external",
+          "unchanged",
+          "keep_local",
+          "conflict",
+          "duplicate_candidate",
+          "rejected"
+        ],
+        "type": "string"
+      },
       "BibliographyImportDecision": {
         "additionalProperties": false,
         "properties": {
           "action": {
-            "enum": [
-              "apply_suggested",
-              "create_separate",
-              "keep_local",
-              "use_external",
-              "link_existing_keep_local",
-              "link_existing_use_external",
-              "exclude"
-            ]
+            "$ref": "#/components/schemas/BibliographyImportDecisionAction"
           },
           "candidate_item_id": {
-            "oneOf": [
-              {
-                "format": "uuid",
-                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "position": {
+            "format": "uint",
             "minimum": 0,
             "type": "integer"
           }
@@ -318,6 +340,18 @@
           "candidate_item_id"
         ],
         "type": "object"
+      },
+      "BibliographyImportDecisionAction": {
+        "enum": [
+          "apply_suggested",
+          "create_separate",
+          "keep_local",
+          "use_external",
+          "link_existing_keep_local",
+          "link_existing_use_external",
+          "exclude"
+        ],
+        "type": "string"
       },
       "BibliographyImportEntry": {
         "additionalProperties": false,
@@ -335,15 +369,7 @@
             ]
           },
           "classification": {
-            "enum": [
-              "create",
-              "update_from_external",
-              "unchanged",
-              "keep_local",
-              "conflict",
-              "duplicate_candidate",
-              "rejected"
-            ]
+            "$ref": "#/components/schemas/BibliographyImportClassification"
           },
           "current_csl_json": {
             "type": [
@@ -358,18 +384,13 @@
             ]
           },
           "item_id": {
-            "oneOf": [
-              {
-                "format": "uuid",
-                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "item_revision": {
+            "format": "int64",
             "minimum": 1,
             "type": [
               "integer",
@@ -377,6 +398,7 @@
             ]
           },
           "position": {
+            "format": "uint",
             "minimum": 0,
             "type": "integer"
           },
@@ -414,18 +436,13 @@
             "type": "string"
           },
           "source_id": {
-            "oneOf": [
-              {
-                "format": "uuid",
-                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "source_revision": {
+            "format": "int64",
             "minimum": 1,
             "type": [
               "integer",
@@ -445,7 +462,7 @@
         "additionalProperties": false,
         "properties": {
           "items": {
-            "items": {},
+            "items": true,
             "maxItems": 1000,
             "minItems": 1,
             "type": "array"
@@ -464,27 +481,31 @@
         "additionalProperties": false,
         "properties": {
           "created": {
+            "format": "uint",
             "minimum": 0,
             "type": "integer"
           },
           "excluded": {
+            "format": "uint",
             "minimum": 0,
             "type": "integer"
           },
           "kept": {
+            "format": "uint",
             "minimum": 0,
             "type": "integer"
           },
           "source_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "source_revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
           "updated": {
+            "format": "uint",
             "minimum": 0,
             "type": "integer"
           }
@@ -503,6 +524,7 @@
         "additionalProperties": false,
         "properties": {
           "created_at_ms": {
+            "format": "int64",
             "type": "integer"
           },
           "display_name": {
@@ -511,17 +533,18 @@
             "type": "string"
           },
           "last_imported_at_ms": {
+            "format": "int64",
             "type": "integer"
           },
           "method": {
-            "const": "csl_json_file"
+            "type": "string"
           },
           "revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
           "source_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           }
@@ -542,12 +565,11 @@
             "additionalProperties": false,
             "properties": {
               "display_name": {
-                "maxLength": 128,
-                "minLength": 1,
                 "type": "string"
               },
               "kind": {
-                "const": "new"
+                "const": "new",
+                "type": "string"
               }
             },
             "required": [
@@ -560,11 +582,10 @@
             "additionalProperties": false,
             "properties": {
               "kind": {
-                "const": "existing"
+                "const": "existing",
+                "type": "string"
               },
               "source_id": {
-                "format": "uuid",
-                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
                 "type": "string"
               }
             },
@@ -583,21 +604,23 @@
             "type": "string"
           },
           "created_at_ms": {
+            "format": "int64",
             "type": "integer"
           },
           "csl_json": {
             "type": "object"
           },
           "item_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
           "updated_at_ms": {
+            "format": "int64",
             "type": "integer"
           }
         },
@@ -631,7 +654,6 @@
             "type": "integer"
           },
           "note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
@@ -640,6 +662,7 @@
             "type": "integer"
           },
           "revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
@@ -656,14 +679,23 @@
         ],
         "type": "object"
       },
+      "DiagnosticSeverity": {
+        "enum": [
+          "error",
+          "warning",
+          "information",
+          "hint"
+        ],
+        "type": "string"
+      },
       "Health": {
         "additionalProperties": false,
         "properties": {
           "api_version": {
-            "const": "v3"
+            "type": "string"
           },
           "status": {
-            "const": "ok"
+            "type": "string"
           }
         },
         "required": [
@@ -676,6 +708,7 @@
         "additionalProperties": false,
         "properties": {
           "argument_count": {
+            "format": "uint8",
             "maximum": 9,
             "minimum": 0,
             "type": "integer"
@@ -699,6 +732,7 @@
       },
       "MathMacroSettings": {
         "additionalProperties": false,
+        "description": "数式マクロ設定。要求と応答で同じ構造を使う。",
         "properties": {
           "macros": {
             "items": {
@@ -708,6 +742,7 @@
             "type": "array"
           },
           "revision": {
+            "format": "int64",
             "minimum": 0,
             "type": "integer"
           }
@@ -725,6 +760,7 @@
             "type": "boolean"
           },
           "authorized_at_ms": {
+            "format": "int64",
             "type": "integer"
           },
           "client_id": {
@@ -741,33 +777,29 @@
             "items": {
               "type": "string"
             },
-            "type": "array",
-            "uniqueItems": true
+            "type": "array"
           },
           "last_used_at_ms": {
+            "format": "int64",
             "type": [
               "integer",
               "null"
             ]
           },
           "registration_method": {
-            "enum": [
-              "metadata_document",
-              "dynamic"
-            ],
             "type": "string"
           },
           "scope_ceiling": {
             "items": {
               "type": "string"
             },
-            "type": "array",
-            "uniqueItems": true
+            "type": "array"
           },
           "scope_ceiling_configured": {
             "type": "boolean"
           },
           "scope_ceiling_revision": {
+            "format": "int64",
             "minimum": 0,
             "type": "integer"
           }
@@ -790,6 +822,7 @@
         "additionalProperties": false,
         "properties": {
           "revision": {
+            "format": "int64",
             "minimum": 0,
             "type": "integer"
           },
@@ -797,15 +830,13 @@
             "items": {
               "type": "string"
             },
-            "type": "array",
-            "uniqueItems": true
+            "type": "array"
           },
           "supported_scopes": {
             "items": {
               "type": "string"
             },
-            "type": "array",
-            "uniqueItems": true
+            "type": "array"
           }
         },
         "required": [
@@ -819,6 +850,7 @@
         "additionalProperties": false,
         "properties": {
           "revision": {
+            "format": "int64",
             "minimum": 0,
             "type": "integer"
           },
@@ -826,8 +858,7 @@
             "items": {
               "type": "string"
             },
-            "type": "array",
-            "uniqueItems": true
+            "type": "array"
           }
         },
         "required": [
@@ -840,37 +871,28 @@
         "additionalProperties": false,
         "properties": {
           "created_at_ms": {
+            "format": "int64",
             "type": "integer"
           },
           "created_via": {
-            "enum": [
-              "web",
-              "rest",
-              "mcp",
-              "unknown"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/NoteCreationSource"
           },
           "note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "review_status": {
-            "enum": [
-              "unknown",
-              "pending",
-              "reviewed"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/NoteReviewStatus"
           },
           "reviewed_at_ms": {
+            "format": "int64",
             "type": [
               "integer",
               "null"
             ]
           },
           "reviewed_revision": {
+            "format": "int64",
             "minimum": 1,
             "type": [
               "integer",
@@ -878,6 +900,7 @@
             ]
           },
           "revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
@@ -894,6 +917,7 @@
             "type": "string"
           },
           "updated_at_ms": {
+            "format": "int64",
             "type": "integer"
           }
         },
@@ -911,6 +935,15 @@
           "reviewed_at_ms"
         ],
         "type": "object"
+      },
+      "NoteAccess": {
+        "description": "ノートに対する実効アクセス水準。大きい水準は小さい水準の操作を含む。\n\nREST、MCP、Web UIで同じ表現を使用する。",
+        "enum": [
+          "read",
+          "edit",
+          "manage"
+        ],
+        "type": "string"
       },
       "NoteAcl": {
         "additionalProperties": false,
@@ -931,10 +964,7 @@
         "additionalProperties": false,
         "properties": {
           "permission": {
-            "enum": [
-              "read",
-              "edit"
-            ]
+            "$ref": "#/components/schemas/NotePermission"
           },
           "subject": {
             "maxLength": 1024,
@@ -952,15 +982,10 @@
         "additionalProperties": false,
         "properties": {
           "issuer": {
-            "format": "uri",
-            "maxLength": 2048,
             "type": "string"
           },
           "permission": {
-            "enum": [
-              "read",
-              "edit"
-            ]
+            "$ref": "#/components/schemas/NotePermission"
           },
           "subject": {
             "maxLength": 1024,
@@ -990,6 +1015,16 @@
         ],
         "type": "object"
       },
+      "NoteCreationSource": {
+        "description": "ノートを最初に保存した、サーバー側で判定する接続経路。\n\n作成者の種類、AIの利用、内容の品質を証明する値ではない。",
+        "enum": [
+          "web",
+          "rest",
+          "mcp",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "NoteDiagnostic": {
         "additionalProperties": false,
         "properties": {
@@ -1000,75 +1035,20 @@
             "type": "string"
           },
           "severity": {
-            "enum": [
-              "error",
-              "warning",
-              "information",
-              "hint"
-            ]
+            "$ref": "#/components/schemas/DiagnosticSeverity"
           },
           "span": {
-            "additionalProperties": false,
-            "properties": {
-              "end": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "start": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "unit": {
-                "const": "utf8_byte"
-              }
-            },
-            "required": [
-              "start",
-              "end",
-              "unit"
-            ],
-            "type": "object"
-          },
-          "target": {
-            "oneOf": [
+            "anyOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "field": {
-                    "enum": [
-                      "source",
-                      "title",
-                      "body",
-                      "tags"
-                    ]
-                  }
-                },
-                "required": [
-                  "field"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/Utf8ByteSpan"
               },
               {
-                "additionalProperties": false,
-                "properties": {
-                  "field": {
-                    "enum": [
-                      "tag",
-                      "acl_entry"
-                    ]
-                  },
-                  "index": {
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "field",
-                  "index"
-                ],
-                "type": "object"
+                "type": "null"
               }
             ]
+          },
+          "target": {
+            "$ref": "#/components/schemas/NoteValidationTarget"
           }
         },
         "required": [
@@ -1094,6 +1074,7 @@
       },
       "NoteGraph": {
         "additionalProperties": false,
+        "description": "関係の図に出す点と線。\n\n点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけを含む。線は始点と\n終点の両方が点として含まれる場合だけ返す。閲覧できないノートの存在も件数も現れない。",
         "properties": {
           "citations": {
             "items": {
@@ -1130,12 +1111,12 @@
       },
       "NoteGraphCitation": {
         "additionalProperties": false,
+        "description": "ノートから文献への引用。",
         "properties": {
           "citation_key": {
             "type": "string"
           },
           "source_note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           }
@@ -1148,9 +1129,9 @@
       },
       "NoteGraphNote": {
         "additionalProperties": false,
+        "description": "図に出すノート。本文は含まない。",
         "properties": {
           "note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
@@ -1178,14 +1159,13 @@
       },
       "NoteGraphReference": {
         "additionalProperties": false,
+        "description": "ノートからノートへの参照。",
         "properties": {
           "source_note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "target_note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           }
@@ -1198,11 +1178,13 @@
       },
       "NoteGraphWork": {
         "additionalProperties": false,
+        "description": "図に出す文献。書誌情報そのものではなく、引用されたという事実を表す。",
         "properties": {
           "citation_key": {
             "type": "string"
           },
           "title": {
+            "description": "引用元のノートを書いた利用者のライブラリーで解決できた場合の題名。",
             "type": [
               "string",
               "null"
@@ -1216,44 +1198,30 @@
         "type": "object"
       },
       "NoteListEntry": {
-        "additionalProperties": false,
+        "description": "一覧の1項目。ノート要約に実効アクセス水準を加えたもの。",
         "properties": {
           "access": {
-            "enum": [
-              "read",
-              "edit",
-              "manage"
-            ]
+            "$ref": "#/components/schemas/NoteAccess"
           },
           "created_via": {
-            "enum": [
-              "web",
-              "rest",
-              "mcp",
-              "unknown"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/NoteCreationSource"
           },
           "note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "review_status": {
-            "enum": [
-              "unknown",
-              "pending",
-              "reviewed"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/NoteReviewStatus"
           },
           "reviewed_at_ms": {
+            "format": "int64",
             "type": [
               "integer",
               "null"
             ]
           },
           "reviewed_revision": {
+            "format": "int64",
             "minimum": 1,
             "type": [
               "integer",
@@ -1261,6 +1229,7 @@
             ]
           },
           "revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
@@ -1274,6 +1243,7 @@
             "type": "string"
           },
           "updated_at_ms": {
+            "format": "int64",
             "type": "integer"
           }
         },
@@ -1290,6 +1260,14 @@
           "access"
         ],
         "type": "object"
+      },
+      "NotePermission": {
+        "description": "ACLで共有先へ与える権限。REST、MCP、archiveで同じ表現を使用する。",
+        "enum": [
+          "read",
+          "edit"
+        ],
+        "type": "string"
       },
       "NotePreview": {
         "additionalProperties": false,
@@ -1321,21 +1299,23 @@
         "additionalProperties": false,
         "properties": {
           "current_revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
           "note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "reviewed_at_ms": {
+            "format": "int64",
             "type": [
               "integer",
               "null"
             ]
           },
           "reviewed_revision": {
+            "format": "int64",
             "minimum": 1,
             "type": [
               "integer",
@@ -1343,7 +1323,6 @@
             ]
           },
           "reviewer_issuer": {
-            "format": "uri",
             "type": [
               "string",
               "null"
@@ -1356,12 +1335,7 @@
             ]
           },
           "status": {
-            "enum": [
-              "unknown",
-              "pending",
-              "reviewed"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/NoteReviewStatus"
           }
         },
         "required": [
@@ -1375,38 +1349,37 @@
         ],
         "type": "object"
       },
+      "NoteReviewStatus": {
+        "description": "現在のrevisionに対する人手確認状態。",
+        "enum": [
+          "unknown",
+          "pending",
+          "reviewed"
+        ],
+        "type": "string"
+      },
       "NoteSummary": {
         "additionalProperties": false,
         "properties": {
           "created_via": {
-            "enum": [
-              "web",
-              "rest",
-              "mcp",
-              "unknown"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/NoteCreationSource"
           },
           "note_id": {
-            "format": "uuid",
             "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "review_status": {
-            "enum": [
-              "unknown",
-              "pending",
-              "reviewed"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/NoteReviewStatus"
           },
           "reviewed_at_ms": {
+            "format": "int64",
             "type": [
               "integer",
               "null"
             ]
           },
           "reviewed_revision": {
+            "format": "int64",
             "minimum": 1,
             "type": [
               "integer",
@@ -1414,6 +1387,7 @@
             ]
           },
           "revision": {
+            "format": "int64",
             "minimum": 1,
             "type": "integer"
           },
@@ -1427,6 +1401,7 @@
             "type": "string"
           },
           "updated_at_ms": {
+            "format": "int64",
             "type": "integer"
           }
         },
@@ -1443,15 +1418,106 @@
         ],
         "type": "object"
       },
+      "NoteValidationTarget": {
+        "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "const": "source",
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "const": "title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "const": "body",
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "const": "tag",
+                "type": "string"
+              },
+              "index": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "field",
+              "index"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "const": "tags",
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "const": "acl_entry",
+                "type": "string"
+              },
+              "index": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "field",
+              "index"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "NoteView": {
         "additionalProperties": false,
         "properties": {
           "access": {
-            "enum": [
-              "read",
-              "edit",
-              "manage"
-            ]
+            "$ref": "#/components/schemas/NoteAccess"
           },
           "html": {
             "type": "string"
@@ -1466,26 +1532,7 @@
             "$ref": "#/components/schemas/Note"
           },
           "related": {
-            "additionalProperties": false,
-            "properties": {
-              "incoming": {
-                "items": {
-                  "$ref": "#/components/schemas/NoteSummary"
-                },
-                "type": "array"
-              },
-              "outgoing": {
-                "items": {
-                  "$ref": "#/components/schemas/NoteSummary"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "outgoing",
-              "incoming"
-            ],
-            "type": "object"
+            "$ref": "#/components/schemas/RelatedNotes"
           }
         },
         "required": [
@@ -1501,24 +1548,7 @@
         "additionalProperties": false,
         "properties": {
           "code": {
-            "enum": [
-              "authentication_required",
-              "authentication_unavailable",
-              "csrf_rejected",
-              "csrf_required",
-              "csrf_invalid",
-              "same_origin_required",
-              "origin_not_allowed",
-              "not_found",
-              "forbidden",
-              "conflict",
-              "retention_expired",
-              "precondition_required",
-              "invalid_request",
-              "validation_failed",
-              "render_failed",
-              "unavailable"
-            ]
+            "$ref": "#/components/schemas/ProblemCode"
           },
           "diagnostics": {
             "items": {
@@ -1536,11 +1566,53 @@
         ],
         "type": "object"
       },
+      "ProblemCode": {
+        "enum": [
+          "authentication_required",
+          "authentication_unavailable",
+          "csrf_rejected",
+          "csrf_required",
+          "csrf_invalid",
+          "same_origin_required",
+          "origin_not_allowed",
+          "not_found",
+          "forbidden",
+          "conflict",
+          "retention_expired",
+          "precondition_required",
+          "invalid_request",
+          "validation_failed",
+          "render_failed",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "RelatedNotes": {
+        "additionalProperties": false,
+        "properties": {
+          "incoming": {
+            "items": {
+              "$ref": "#/components/schemas/NoteSummary"
+            },
+            "type": "array"
+          },
+          "outgoing": {
+            "items": {
+              "$ref": "#/components/schemas/NoteSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "outgoing",
+          "incoming"
+        ],
+        "type": "object"
+      },
       "Session": {
         "additionalProperties": false,
         "properties": {
           "issuer": {
-            "format": "uri",
             "type": "string"
           },
           "subject": {
@@ -1552,6 +1624,36 @@
           "subject"
         ],
         "type": "object"
+      },
+      "Utf8ByteSpan": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/Utf8ByteUnit"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "unit"
+        ],
+        "type": "object"
+      },
+      "Utf8ByteUnit": {
+        "enum": [
+          "utf8_byte"
+        ],
+        "type": "string"
       }
     }
   },

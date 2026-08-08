@@ -227,4 +227,4 @@ OAuth endpointはOAuthの``error``を持つJSONを返します。tokenを含む�
 
 運用時は``marginalis diagnose``でSQLite schemaとMCP有効化設定を確認してください。認証状態の削除件数は
 ``marginalis purge-expired``の構造化ログで確認できます。CIMDの取得と検証を調べる場合は、
-xref:observability.adoc#top[ログと障害診断]に記載した``mcp.oauth.client_metadata.*`` eventを確認してください。
+xref:../developer-guide/observability.adoc#top[ログと障害診断]に記載した``mcp.oauth.client_metadata.*`` eventを確認してください。

@@ -1,245 +1,6 @@
-// 正本はcrates/marginalis-contract/srcにあります。生成先では直接編集しないでください。
-// 公開契約を変える場合は、正本とRustの契約を同時に編集してください。
-export interface Note {
-  note_id: string;
-  title: string;
-  source: string;
-  tags: string[];
-  created_at_ms: number;
-  updated_at_ms: number;
-  revision: number;
-  created_via: NoteCreationSource;
-  review_status: NoteReviewStatus;
-  reviewed_revision: number | null;
-  reviewed_at_ms: number | null;
-}
-export type NoteCreationSource = "web" | "rest" | "mcp" | "unknown";
-export type NoteReviewStatus = "unknown" | "pending" | "reviewed";
-export interface NoteSummary {
-  note_id: string;
-  title: string;
-  tags: string[];
-  updated_at_ms: number;
-  revision: number;
-  created_via: NoteCreationSource;
-  review_status: NoteReviewStatus;
-  reviewed_revision: number | null;
-  reviewed_at_ms: number | null;
-}
-export type NoteAccess = "read" | "edit" | "manage";
-export interface NoteListEntry extends NoteSummary {
-  access: NoteAccess;
-}
-export interface NoteReview {
-  note_id: string;
-  current_revision: number;
-  status: NoteReviewStatus;
-  reviewed_revision: number | null;
-  reviewed_at_ms: number | null;
-  reviewer_issuer: string | null;
-  reviewer_subject: string | null;
-}
-export interface DeletedNoteListEntry {
-  note_id: string;
-  title: string;
-  deleted_at_ms: number;
-  purge_at_ms: number;
-  revision: number;
-}
-export interface RelatedNotes {
-  outgoing: NoteSummary[];
-  incoming: NoteSummary[];
-}
-export interface MathMacro {
-  name: string;
-  replacement: string;
-  argument_count: number;
-}
-export interface MathMacroSettings {
-  macros: MathMacro[];
-  revision: number;
-}
-export interface McpScopeCeilingInput {
-  scopes: string[];
-  revision: number;
-}
-export interface McpScopeCeiling extends McpScopeCeilingInput {
-  supported_scopes: string[];
-}
-export interface McpClientAuthorization {
-  client_id: string;
-  display_name: string;
-  registration_method: "metadata_document" | "dynamic";
-  granted_scopes: string[];
-  scope_ceiling_configured: boolean;
-  scope_ceiling: string[];
-  scope_ceiling_revision: number;
-  authorized_at_ms: number;
-  last_used_at_ms: number | null;
-  active: boolean;
-}
-export interface NoteView {
-  note: Note;
-  access: NoteAccess;
-  html: string;
-  math_macros: MathMacro[];
-  related: RelatedNotes;
-}
-export interface NoteGraphNote {
-  note_id: string;
-  title: string;
-  tags: string[];
-  updated_at_ms: number;
-}
-export interface NoteGraphWork {
-  citation_key: string;
-  title: string | null;
-}
-export interface NoteGraphReference {
-  source_note_id: string;
-  target_note_id: string;
-}
-export interface NoteGraphCitation {
-  source_note_id: string;
-  citation_key: string;
-}
-export interface NoteGraph {
-  notes: NoteGraphNote[];
-  works: NoteGraphWork[];
-  references: NoteGraphReference[];
-  citations: NoteGraphCitation[];
-}
-export interface NoteDraft {
-  source: string;
-}
-export interface BibliographyItem {
-  item_id: string;
-  citation_key: string;
-  csl_json: Record<string, unknown>;
-  created_at_ms: number;
-  updated_at_ms: number;
-  revision: number;
-}
-export type BibliographyImportSourceInput =
-  | { kind: "new"; display_name: string }
-  | { kind: "existing"; source_id: string };
-export interface BibliographyImportSource {
-  source_id: string;
-  method: "csl_json_file";
-  display_name: string;
-  revision: number;
-  created_at_ms: number;
-  last_imported_at_ms: number;
-}
-export type BibliographyImportClassification =
-  | "create"
-  | "update_from_external"
-  | "unchanged"
-  | "keep_local"
-  | "conflict"
-  | "duplicate_candidate"
-  | "rejected";
-export interface BibliographyImportCandidate {
-  item_id: string;
-  citation_key: string;
-  title: string | null;
-  revision: number;
-  matched_by: string[];
-}
-export interface BibliographyImportEntry {
-  position: number;
-  external_item_id: string | null;
-  citation_key: string | null;
-  classification: BibliographyImportClassification;
-  item_id: string | null;
-  item_revision: number | null;
-  current_csl_json: Record<string, unknown> | null;
-  candidates: BibliographyImportCandidate[];
-  rejection_code: string | null;
-}
-export interface BibliographyImportPreview {
-  source_id: string | null;
-  source_revision: number | null;
-  preview_token: string;
-  entries: BibliographyImportEntry[];
-}
-export type BibliographyImportDecisionAction =
-  | "apply_suggested"
-  | "create_separate"
-  | "keep_local"
-  | "use_external"
-  | "link_existing_keep_local"
-  | "link_existing_use_external"
-  | "exclude";
-export interface BibliographyImportDecision {
-  position: number;
-  action: BibliographyImportDecisionAction;
-  candidate_item_id: string | null;
-}
-export interface BibliographyImportResult {
-  source_id: string;
-  source_revision: number;
-  created: number;
-  updated: number;
-  kept: number;
-  excluded: number;
-}
-export interface NotePreview {
-  html: string;
-  math_macros: MathMacro[];
-  diagnostics: NoteDiagnostic[];
-}
-export type NotePermission = "read" | "edit";
-export interface NoteAclEntry {
-  subject: string;
-  permission: NotePermission;
-}
-export interface NoteAclGrant extends NoteAclEntry {
-  issuer: string;
-}
-export interface NoteDiagnostic {
-  code: string;
-  severity: "error" | "warning" | "information" | "hint";
-  target: ValidationTarget;
-  span?: { start: number; end: number; unit: "utf8_byte" };
-  message: string;
-}
-export type ValidationTarget =
-  | { field: "source" | "title" | "body" | "tags" }
-  | { field: "tag" | "acl_entry"; index: number };
-export type ProblemCode =
-  | "authentication_required"
-  | "authentication_unavailable"
-  | "csrf_rejected"
-  | "csrf_required"
-  | "csrf_invalid"
-  | "same_origin_required"
-  | "origin_not_allowed"
-  | "not_found"
-  | "forbidden"
-  | "conflict"
-  | "retention_expired"
-  | "precondition_required"
-  | "invalid_request"
-  | "validation_failed"
-  | "render_failed"
-  | "unavailable";
-export interface Problem {
-  code: ProblemCode | "invalid_response" | "network_error";
-  message: string;
-  diagnostics?: NoteDiagnostic[];
-}
-
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly problem: Problem,
-  ) {
-    super(problem.message);
-  }
-}
-
-/** サーバーが初期HTMLへ埋め込む起動設定。 */
+// このファイルはmarginalis-contractから生成します。直接編集しないでください。
+// 再生成: cargo run -p marginalis-contract --bin generate
+/* eslint-disable */
 export interface ApplicationConfig {
   apiBase: string;
   basePath: string;
@@ -247,1237 +8,1909 @@ export interface ApplicationConfig {
   search: string;
   styleNonce: string;
 }
-
-/**
- * 起動設定を検査して読み取る。
- *
- * REST応答と同じく、解釈できない値は例外として扱う。項目の欠落や型の誤りを
- * 型アサーションで見逃さない。
- */
-export function parseApplicationConfig(value: unknown): ApplicationConfig {
-  const object = record(value, "application config");
-  return {
-    apiBase: text(object.apiBase, "application config.apiBase"),
-    basePath: text(object.basePath, "application config.basePath"),
-    path: text(object.path, "application config.path"),
-    search: text(object.search, "application config.search"),
-    styleNonce: text(object.styleNonce, "application config.styleNonce"),
-  };
+export interface BibliographyImportApplyInput {
+  decisions: BibliographyImportDecision[];
+  items: unknown[];
+  preview_token: string;
+  source: BibliographyImportSourceInput;
 }
-
-export function parseNote(value: unknown): Note {
-  const object = record(value, "note");
-  return {
-    note_id: text(object.note_id, "note.note_id"),
-    title: text(object.title, "note.title"),
-    source: text(object.source, "note.source"),
-    tags: textArray(object.tags, "note.tags"),
-    created_at_ms: integer(object.created_at_ms, "note.created_at_ms"),
-    updated_at_ms: integer(object.updated_at_ms, "note.updated_at_ms"),
-    revision: positiveInteger(object.revision, "note.revision"),
-    ...parseNoteProvenance(object, "note"),
-  };
+export interface BibliographyImportCandidate {
+  citation_key: string;
+  item_id: string;
+  matched_by: string[];
+  revision: number;
+  title: string | null;
 }
-
-export function parseBibliographyItem(value: unknown): BibliographyItem {
-  const object = record(value, "bibliography item");
-  return {
-    item_id: text(object.item_id, "bibliography item.item_id"),
-    citation_key: text(object.citation_key, "bibliography item.citation_key"),
-    csl_json: record(object.csl_json, "bibliography item.csl_json"),
-    created_at_ms: integer(
-      object.created_at_ms,
-      "bibliography item.created_at_ms",
-    ),
-    updated_at_ms: integer(
-      object.updated_at_ms,
-      "bibliography item.updated_at_ms",
-    ),
-    revision: positiveInteger(object.revision, "bibliography item.revision"),
-  };
+export type BibliographyImportClassification = "create" | "update_from_external" | "unchanged" | "keep_local" | "conflict" | "duplicate_candidate" | "rejected";
+export interface BibliographyImportDecision {
+  action: BibliographyImportDecisionAction;
+  candidate_item_id: string | null;
+  position: number;
 }
-
-export function parseBibliographyItems(value: unknown): BibliographyItem[] {
-  if (!Array.isArray(value)) throw new Error("bibliography items are invalid");
-  return value.map(parseBibliographyItem);
+export type BibliographyImportDecisionAction = "apply_suggested" | "create_separate" | "keep_local" | "use_external" | "link_existing_keep_local" | "link_existing_use_external" | "exclude";
+export interface BibliographyImportEntry {
+  candidates: BibliographyImportCandidate[];
+  citation_key: string | null;
+  classification: BibliographyImportClassification;
+  current_csl_json: Record<string, unknown> | null;
+  external_item_id: string | null;
+  item_id: string | null;
+  item_revision: number | null;
+  position: number;
+  rejection_code: string | null;
 }
-
-function parseBibliographyImportSource(
-  value: unknown,
-): BibliographyImportSource {
-  const object = record(value, "bibliography import source");
-  if (object.method !== "csl_json_file") {
-    throw new Error("bibliography import source.method is invalid");
-  }
-  return {
-    source_id: text(object.source_id, "bibliography import source.source_id"),
-    method: object.method,
-    display_name: text(
-      object.display_name,
-      "bibliography import source.display_name",
-    ),
-    revision: positiveInteger(
-      object.revision,
-      "bibliography import source.revision",
-    ),
-    created_at_ms: integer(
-      object.created_at_ms,
-      "bibliography import source.created_at_ms",
-    ),
-    last_imported_at_ms: integer(
-      object.last_imported_at_ms,
-      "bibliography import source.last_imported_at_ms",
-    ),
-  };
+export interface BibliographyImportPreview {
+  entries: BibliographyImportEntry[];
+  preview_token: string;
+  source_id: string | null;
+  source_revision: number | null;
 }
-
-function parseBibliographyImportSources(
-  value: unknown,
-): BibliographyImportSource[] {
-  if (!Array.isArray(value)) {
-    throw new Error("bibliography import sources are invalid");
-  }
-  return value.map(parseBibliographyImportSource);
+export interface BibliographyImportPreviewInput {
+  items: unknown[];
+  source: BibliographyImportSourceInput;
 }
-
-const IMPORT_CLASSIFICATIONS: BibliographyImportClassification[] = [
-  "create",
-  "update_from_external",
-  "unchanged",
-  "keep_local",
-  "conflict",
-  "duplicate_candidate",
-  "rejected",
-];
-
-function parseBibliographyImportCandidate(
-  value: unknown,
-): BibliographyImportCandidate {
-  const object = record(value, "bibliography import candidate");
-  return {
-    item_id: text(object.item_id, "bibliography import candidate.item_id"),
-    citation_key: text(
-      object.citation_key,
-      "bibliography import candidate.citation_key",
-    ),
-    title:
-      object.title === null
-        ? null
-        : text(object.title, "bibliography import candidate.title"),
-    revision: positiveInteger(
-      object.revision,
-      "bibliography import candidate.revision",
-    ),
-    matched_by: textArray(
-      object.matched_by,
-      "bibliography import candidate.matched_by",
-    ),
-  };
+export interface BibliographyImportResult {
+  created: number;
+  excluded: number;
+  kept: number;
+  source_id: string;
+  source_revision: number;
+  updated: number;
 }
-
-function parseBibliographyImportEntry(value: unknown): BibliographyImportEntry {
-  const object = record(value, "bibliography import entry");
-  if (
-    typeof object.classification !== "string" ||
-    !IMPORT_CLASSIFICATIONS.includes(
-      object.classification as BibliographyImportClassification,
-    )
-  ) {
-    throw new Error("bibliography import entry.classification is invalid");
-  }
-  if (!Array.isArray(object.candidates)) {
-    throw new Error("bibliography import entry.candidates is invalid");
-  }
-  return {
-    position: nonNegativeInteger(
-      object.position,
-      "bibliography import entry.position",
-    ),
-    external_item_id:
-      object.external_item_id === null
-        ? null
-        : text(
-            object.external_item_id,
-            "bibliography import entry.external_item_id",
-          ),
-    citation_key:
-      object.citation_key === null
-        ? null
-        : text(object.citation_key, "bibliography import entry.citation_key"),
-    classification: object.classification as BibliographyImportClassification,
-    item_id:
-      object.item_id === null
-        ? null
-        : text(object.item_id, "bibliography import entry.item_id"),
-    item_revision:
-      object.item_revision === null
-        ? null
-        : positiveInteger(
-            object.item_revision,
-            "bibliography import entry.item_revision",
-          ),
-    current_csl_json:
-      object.current_csl_json === null
-        ? null
-        : record(
-            object.current_csl_json,
-            "bibliography import entry.current_csl_json",
-          ),
-    candidates: object.candidates.map(parseBibliographyImportCandidate),
-    rejection_code:
-      object.rejection_code === null
-        ? null
-        : text(
-            object.rejection_code,
-            "bibliography import entry.rejection_code",
-          ),
-  };
+export interface BibliographyImportSource {
+  created_at_ms: number;
+  display_name: string;
+  last_imported_at_ms: number;
+  method: string;
+  revision: number;
+  source_id: string;
 }
-
-function parseBibliographyImportPreview(
-  value: unknown,
-): BibliographyImportPreview {
-  const object = record(value, "bibliography import preview");
-  if (!Array.isArray(object.entries)) {
-    throw new Error("bibliography import preview.entries is invalid");
-  }
-  const previewToken = text(
-    object.preview_token,
-    "bibliography import preview.preview_token",
-  );
-  if (!/^[0-9a-f]{64}$/.test(previewToken)) {
-    throw new Error("bibliography import preview.preview_token is invalid");
-  }
-  return {
-    source_id:
-      object.source_id === null
-        ? null
-        : text(object.source_id, "bibliography import preview.source_id"),
-    source_revision:
-      object.source_revision === null
-        ? null
-        : positiveInteger(
-            object.source_revision,
-            "bibliography import preview.source_revision",
-          ),
-    preview_token: previewToken,
-    entries: object.entries.map(parseBibliographyImportEntry),
-  };
+export type BibliographyImportSourceInput = { display_name: string; kind: "new"; } | { kind: "existing"; source_id: string; };
+export interface BibliographyItem {
+  citation_key: string;
+  created_at_ms: number;
+  csl_json: Record<string, unknown>;
+  item_id: string;
+  revision: number;
+  updated_at_ms: number;
 }
-
-function parseBibliographyImportResult(
-  value: unknown,
-): BibliographyImportResult {
-  const object = record(value, "bibliography import result");
-  return {
-    source_id: text(object.source_id, "bibliography import result.source_id"),
-    source_revision: positiveInteger(
-      object.source_revision,
-      "bibliography import result.source_revision",
-    ),
-    created: nonNegativeInteger(
-      object.created,
-      "bibliography import result.created",
-    ),
-    updated: nonNegativeInteger(
-      object.updated,
-      "bibliography import result.updated",
-    ),
-    kept: nonNegativeInteger(object.kept, "bibliography import result.kept"),
-    excluded: nonNegativeInteger(
-      object.excluded,
-      "bibliography import result.excluded",
-    ),
-  };
+export interface BibliographyItemInput {
+  csl_json: Record<string, unknown>;
 }
-
-export function parseNotePreview(value: unknown): NotePreview {
-  const object = record(value, "preview");
-  return {
-    html: text(object.html, "preview.html"),
-    math_macros: parseMathMacros(object.math_macros, "preview.math_macros"),
-    diagnostics: parseNoteDiagnostics(
-      object.diagnostics,
-      "preview.diagnostics",
-    ),
-  };
+export interface DeletedNoteListEntry {
+  deleted_at_ms: number;
+  note_id: string;
+  purge_at_ms: number;
+  revision: number;
+  title: string;
 }
-
-function parseMathMacro(value: unknown, label: string): MathMacro {
-  const object = record(value, label);
-  const argumentCount = integer(
-    object.argument_count,
-    `${label}.argument_count`,
-  );
-  if (argumentCount < 0 || argumentCount > 9) {
-    throw new Error(`${label}.argument_count is invalid`);
-  }
-  return {
-    name: text(object.name, `${label}.name`),
-    replacement: text(object.replacement, `${label}.replacement`),
-    argument_count: argumentCount,
-  };
+export type DiagnosticSeverity = "error" | "warning" | "information" | "hint";
+export interface Health {
+  api_version: string;
+  status: string;
 }
-
-function parseMathMacros(value: unknown, label: string): MathMacro[] {
-  return array(value, label).map((entry, index) =>
-    parseMathMacro(entry, `${label}[${index}]`),
-  );
+export interface MathMacro {
+  argument_count: number;
+  name: string;
+  replacement: string;
 }
-
-export function parseMathMacroSettings(value: unknown): MathMacroSettings {
-  const object = record(value, "math macro settings");
-  const revision = integer(object.revision, "math macro settings.revision");
-  if (revision < 0) throw new Error("math macro settings.revision is invalid");
-  return {
-    macros: parseMathMacros(object.macros, "math macro settings.macros"),
-    revision,
-  };
+export interface MathMacroSettings {
+  macros: MathMacro[];
+  revision: number;
 }
-
-export function parseMcpScopeCeiling(value: unknown): McpScopeCeiling {
-  const object = record(value, "MCP scope ceiling");
-  const revision = integer(object.revision, "MCP scope ceiling.revision");
-  if (revision < 0) throw new Error("MCP scope ceiling.revision is invalid");
-  return {
-    supported_scopes: textArray(
-      object.supported_scopes,
-      "MCP scope ceiling.supported_scopes",
-    ),
-    scopes: textArray(object.scopes, "MCP scope ceiling.scopes"),
-    revision,
-  };
+export interface McpClientAuthorization {
+  active: boolean;
+  authorized_at_ms: number;
+  client_id: string;
+  display_name: string;
+  granted_scopes: string[];
+  last_used_at_ms: number | null;
+  registration_method: string;
+  scope_ceiling: string[];
+  scope_ceiling_configured: boolean;
+  scope_ceiling_revision: number;
 }
-
-export function parseMcpClientAuthorization(
-  value: unknown,
-): McpClientAuthorization {
-  const object = record(value, "MCP client authorization");
-  const registrationMethod = text(
-    object.registration_method,
-    "MCP client authorization.registration_method",
-  );
-  if (
-    registrationMethod !== "metadata_document" &&
-    registrationMethod !== "dynamic"
-  ) {
-    throw new Error("MCP client authorization.registration_method is invalid");
-  }
-  const revision = integer(
-    object.scope_ceiling_revision,
-    "MCP client authorization.scope_ceiling_revision",
-  );
-  if (revision < 0) {
-    throw new Error(
-      "MCP client authorization.scope_ceiling_revision is invalid",
-    );
-  }
-  if (typeof object.scope_ceiling_configured !== "boolean") {
-    throw new Error(
-      "MCP client authorization.scope_ceiling_configured is invalid",
-    );
-  }
-  if (typeof object.active !== "boolean") {
-    throw new Error("MCP client authorization.active is invalid");
-  }
-  return {
-    client_id: text(object.client_id, "MCP client authorization.client_id"),
-    display_name: text(
-      object.display_name,
-      "MCP client authorization.display_name",
-    ),
-    registration_method: registrationMethod,
-    granted_scopes: textArray(
-      object.granted_scopes,
-      "MCP client authorization.granted_scopes",
-    ),
-    scope_ceiling_configured: object.scope_ceiling_configured,
-    scope_ceiling: textArray(
-      object.scope_ceiling,
-      "MCP client authorization.scope_ceiling",
-    ),
-    scope_ceiling_revision: revision,
-    authorized_at_ms: integer(
-      object.authorized_at_ms,
-      "MCP client authorization.authorized_at_ms",
-    ),
-    last_used_at_ms:
-      object.last_used_at_ms === null
-        ? null
-        : integer(
-            object.last_used_at_ms,
-            "MCP client authorization.last_used_at_ms",
-          ),
-    active: object.active,
-  };
+export interface McpScopeCeiling {
+  revision: number;
+  scopes: string[];
+  supported_scopes: string[];
 }
-
-export function parseMcpClientAuthorizations(
-  value: unknown,
-): McpClientAuthorization[] {
-  return array(value, "MCP client authorizations").map(
-    parseMcpClientAuthorization,
-  );
+export interface McpScopeCeilingInput {
+  revision: number;
+  scopes: string[];
 }
-
-export function parseNoteSummary(value: unknown): NoteSummary {
-  const object = record(value, "note summary");
-  return {
-    note_id: text(object.note_id, "note summary.note_id"),
-    title: text(object.title, "note summary.title"),
-    tags: textArray(object.tags, "note summary.tags"),
-    updated_at_ms: integer(object.updated_at_ms, "note summary.updated_at_ms"),
-    revision: positiveInteger(object.revision, "note summary.revision"),
-    ...parseNoteProvenance(object, "note summary"),
-  };
+export interface Note {
+  created_at_ms: number;
+  created_via: NoteCreationSource;
+  note_id: string;
+  review_status: NoteReviewStatus;
+  reviewed_at_ms: number | null;
+  reviewed_revision: number | null;
+  revision: number;
+  source: string;
+  tags: string[];
+  title: string;
+  updated_at_ms: number;
 }
-
-function parseNoteProvenance(
-  object: Record<string, unknown>,
-  path: string,
-): Pick<
-  NoteSummary,
-  "created_via" | "review_status" | "reviewed_revision" | "reviewed_at_ms"
-> {
-  const createdVia = object.created_via;
-  if (
-    createdVia !== "web" &&
-    createdVia !== "rest" &&
-    createdVia !== "mcp" &&
-    createdVia !== "unknown"
-  ) {
-    throw new Error(`${path}.created_via is invalid`);
-  }
-  const reviewStatus = object.review_status;
-  if (
-    reviewStatus !== "unknown" &&
-    reviewStatus !== "pending" &&
-    reviewStatus !== "reviewed"
-  ) {
-    throw new Error(`${path}.review_status is invalid`);
-  }
-  return {
-    created_via: createdVia,
-    review_status: reviewStatus,
-    reviewed_revision:
-      object.reviewed_revision === null
-        ? null
-        : positiveInteger(
-            object.reviewed_revision,
-            `${path}.reviewed_revision`,
-          ),
-    reviewed_at_ms:
-      object.reviewed_at_ms === null
-        ? null
-        : integer(object.reviewed_at_ms, `${path}.reviewed_at_ms`),
-  };
+export type NoteAccess = "read" | "edit" | "manage";
+export interface NoteAcl {
+  entries: NoteAclGrant[];
 }
-
-export function parseNoteReview(value: unknown): NoteReview {
-  const object = record(value, "note review");
-  const provenance = parseNoteProvenance(
-    {
-      created_via: "unknown",
-      review_status: object.status,
-      reviewed_revision: object.reviewed_revision,
-      reviewed_at_ms: object.reviewed_at_ms,
-    },
-    "note review",
-  );
-  return {
-    note_id: text(object.note_id, "note review.note_id"),
-    current_revision: positiveInteger(
-      object.current_revision,
-      "note review.current_revision",
-    ),
-    status: provenance.review_status,
-    reviewed_revision: provenance.reviewed_revision,
-    reviewed_at_ms: provenance.reviewed_at_ms,
-    reviewer_issuer:
-      object.reviewer_issuer === null
-        ? null
-        : text(object.reviewer_issuer, "note review.reviewer_issuer"),
-    reviewer_subject:
-      object.reviewer_subject === null
-        ? null
-        : text(object.reviewer_subject, "note review.reviewer_subject"),
-  };
+export interface NoteAclEntry {
+  permission: NotePermission;
+  subject: string;
 }
-
-export function parseNoteSummaries(value: unknown): NoteSummary[] {
-  if (!Array.isArray(value)) throw new Error("note summaries are invalid");
-  return value.map(parseNoteSummary);
+export interface NoteAclGrant {
+  issuer: string;
+  permission: NotePermission;
+  subject: string;
 }
-
-export function parseNoteListEntry(value: unknown): NoteListEntry {
-  const summary = parseNoteSummary(value);
-  const object = record(value, "note list entry");
-  const access = object.access;
-  if (access !== "read" && access !== "edit" && access !== "manage") {
-    throw new Error("note list entry.access is invalid");
-  }
-  return { ...summary, access };
+export interface NoteAclUpdate {
+  entries: NoteAclEntry[];
 }
-
-export function parseNoteListEntries(value: unknown): NoteListEntry[] {
-  if (!Array.isArray(value)) throw new Error("note list entries are invalid");
-  return value.map(parseNoteListEntry);
+export type NoteCreationSource = "web" | "rest" | "mcp" | "unknown";
+export interface NoteDiagnostic {
+  code: string;
+  message: string;
+  severity: DiagnosticSeverity;
+  span?: Utf8ByteSpan | null;
+  target: NoteValidationTarget;
 }
-
-export function parseDeletedNoteListEntries(
-  value: unknown,
-): DeletedNoteListEntry[] {
-  if (!Array.isArray(value)) {
-    throw new Error("deleted note list entries are invalid");
-  }
-  return value.map((entry, index) => {
-    const object = record(entry, `deleted note list entries[${index}]`);
-    return {
-      note_id: text(
-        object.note_id,
-        `deleted note list entries[${index}].note_id`,
-      ),
-      title: text(object.title, `deleted note list entries[${index}].title`),
-      deleted_at_ms: integer(
-        object.deleted_at_ms,
-        `deleted note list entries[${index}].deleted_at_ms`,
-      ),
-      purge_at_ms: integer(
-        object.purge_at_ms,
-        `deleted note list entries[${index}].purge_at_ms`,
-      ),
-      revision: positiveInteger(
-        object.revision,
-        `deleted note list entries[${index}].revision`,
-      ),
-    };
-  });
+export interface NoteDraft {
+  source: string;
 }
-
-export function parseNoteGraph(value: unknown): NoteGraph {
-  const object = record(value, "note graph");
-  return {
-    notes: array(object.notes, "note graph.notes").map((entry) => {
-      const note = record(entry, "note graph.notes[]");
-      return {
-        note_id: text(note.note_id, "note graph.notes[].note_id"),
-        title: text(note.title, "note graph.notes[].title"),
-        tags: textArray(note.tags, "note graph.notes[].tags"),
-        updated_at_ms: integer(
-          note.updated_at_ms,
-          "note graph.notes[].updated_at_ms",
-        ),
-      };
-    }),
-    works: array(object.works, "note graph.works").map((entry) => {
-      const work = record(entry, "note graph.works[]");
-      return {
-        citation_key: text(
-          work.citation_key,
-          "note graph.works[].citation_key",
-        ),
-        title:
-          work.title === null
-            ? null
-            : text(work.title, "note graph.works[].title"),
-      };
-    }),
-    references: array(object.references, "note graph.references").map(
-      (entry) => {
-        const edge = record(entry, "note graph.references[]");
-        return {
-          source_note_id: text(
-            edge.source_note_id,
-            "note graph.references[].source_note_id",
-          ),
-          target_note_id: text(
-            edge.target_note_id,
-            "note graph.references[].target_note_id",
-          ),
-        };
+export interface NoteGraph {
+  citations: NoteGraphCitation[];
+  notes: NoteGraphNote[];
+  references: NoteGraphReference[];
+  works: NoteGraphWork[];
+}
+export interface NoteGraphCitation {
+  citation_key: string;
+  source_note_id: string;
+}
+export interface NoteGraphNote {
+  note_id: string;
+  tags: string[];
+  title: string;
+  updated_at_ms: number;
+}
+export interface NoteGraphReference {
+  source_note_id: string;
+  target_note_id: string;
+}
+export interface NoteGraphWork {
+  citation_key: string;
+  title: string | null;
+}
+export interface NoteListEntry {
+  access: NoteAccess;
+  created_via: NoteCreationSource;
+  note_id: string;
+  review_status: NoteReviewStatus;
+  reviewed_at_ms: number | null;
+  reviewed_revision: number | null;
+  revision: number;
+  tags: string[];
+  title: string;
+  updated_at_ms: number;
+}
+export type NotePermission = "read" | "edit";
+export interface NotePreview {
+  diagnostics: NoteDiagnostic[];
+  html: string;
+  math_macros: MathMacro[];
+}
+export interface NoteReview {
+  current_revision: number;
+  note_id: string;
+  reviewed_at_ms: number | null;
+  reviewed_revision: number | null;
+  reviewer_issuer: string | null;
+  reviewer_subject: string | null;
+  status: NoteReviewStatus;
+}
+export type NoteReviewStatus = "unknown" | "pending" | "reviewed";
+export interface NoteSummary {
+  created_via: NoteCreationSource;
+  note_id: string;
+  review_status: NoteReviewStatus;
+  reviewed_at_ms: number | null;
+  reviewed_revision: number | null;
+  revision: number;
+  tags: string[];
+  title: string;
+  updated_at_ms: number;
+}
+export type NoteValidationTarget = { field: "source"; } | { field: "title"; } | { field: "body"; } | { field: "tag"; index: number; } | { field: "tags"; } | { field: "acl_entry"; index: number; };
+export interface NoteView {
+  access: NoteAccess;
+  html: string;
+  math_macros: MathMacro[];
+  note: Note;
+  related: RelatedNotes;
+}
+export type ProblemCode = "authentication_required" | "authentication_unavailable" | "csrf_rejected" | "csrf_required" | "csrf_invalid" | "same_origin_required" | "origin_not_allowed" | "not_found" | "forbidden" | "conflict" | "retention_expired" | "precondition_required" | "invalid_request" | "validation_failed" | "render_failed" | "unavailable";
+export interface RelatedNotes {
+  incoming: NoteSummary[];
+  outgoing: NoteSummary[];
+}
+export interface Session {
+  issuer: string;
+  subject: string;
+}
+export interface Utf8ByteSpan {
+  end: number;
+  start: number;
+  unit: Utf8ByteUnit;
+}
+export type Utf8ByteUnit = "utf8_byte";
+export type ValidationTarget = NoteValidationTarget;
+/** サーバーの失敗応答。クライアントが合成する応答不正・通信失敗のcodeを含む。 */
+export interface Problem {
+  code: ProblemCode | "invalid_response" | "network_error";
+  message: string;
+  diagnostics?: NoteDiagnostic[];
+}
+export const CONTRACT_SCHEMAS: Record<string, unknown> = {
+  "ApplicationConfig": {
+    "additionalProperties": false,
+    "description": "サーバーが初期HTMLへ埋め込み、Web UIが起動時に読む設定。\n\nREST応答と同じく、サーバーとWeb UIの間の公開契約である。Web UI側は生成した\nparserで検査してから使用し、解釈できない値を利用者向けエラーとして扱う。",
+    "properties": {
+      "apiBase": {
+        "description": "REST APIの外部prefix。",
+        "type": "string"
       },
-    ),
-    citations: array(object.citations, "note graph.citations").map((entry) => {
-      const edge = record(entry, "note graph.citations[]");
-      return {
-        source_note_id: text(
-          edge.source_note_id,
-          "note graph.citations[].source_note_id",
-        ),
-        citation_key: text(
-          edge.citation_key,
-          "note graph.citations[].citation_key",
-        ),
-      };
-    }),
-  };
-}
-
-export function parseNoteView(value: unknown): NoteView {
-  const object = record(value, "note view");
-  const access = object.access;
-  if (access !== "read" && access !== "edit" && access !== "manage") {
-    throw new Error("note view.access is invalid");
-  }
-  const related = record(object.related, "note view.related");
-  return {
-    note: parseNote(object.note),
-    access,
-    html: text(object.html, "note view.html"),
-    math_macros: parseMathMacros(object.math_macros, "note view.math_macros"),
-    related: {
-      outgoing: parseNoteSummaries(related.outgoing),
-      incoming: parseNoteSummaries(related.incoming),
-    },
-  };
-}
-
-export function parseNoteAcl(value: unknown): { entries: NoteAclGrant[] } {
-  const object = record(value, "acl");
-  if (!Array.isArray(object.entries)) {
-    throw new Error("acl.entries is invalid");
-  }
-  return {
-    entries: object.entries.map((entry, index) => {
-      const grant = record(entry, `acl.entries[${index}]`);
-      const permission = grant.permission;
-      if (permission !== "read" && permission !== "edit") {
-        throw new Error(`acl.entries[${index}].permission is invalid`);
+      "basePath": {
+        "description": "画面URLの外部prefix。サブパス配置ではその値になる。",
+        "type": "string"
+      },
+      "path": {
+        "description": "prefixを除いた画面内のpath。",
+        "type": "string"
+      },
+      "search": {
+        "description": "`?`を含む問い合わせ文字列。無い場合は空文字。",
+        "type": "string"
+      },
+      "styleNonce": {
+        "description": "実行時に生成するstyleへ付けるContent Security Policyのnonce。",
+        "type": "string"
       }
-      return {
-        issuer: text(grant.issuer, `acl.entries[${index}].issuer`),
-        subject: text(grant.subject, `acl.entries[${index}].subject`),
-        permission,
-      };
-    }),
-  };
-}
-
-export function parseProblem(value: unknown): Problem {
-  const object = record(value, "problem");
-  const code = problemCode(object.code);
-  return {
-    code,
-    message: text(object.message, "problem.message"),
-    diagnostics: Array.isArray(object.diagnostics)
-      ? parseNoteDiagnostics(object.diagnostics, "problem.diagnostics")
-      : undefined,
-  };
-}
-
-function problemCode(value: unknown): ProblemCode {
-  if (
-    value !== "authentication_required" &&
-    value !== "authentication_unavailable" &&
-    value !== "csrf_rejected" &&
-    value !== "csrf_required" &&
-    value !== "csrf_invalid" &&
-    value !== "same_origin_required" &&
-    value !== "origin_not_allowed" &&
-    value !== "not_found" &&
-    value !== "forbidden" &&
-    value !== "conflict" &&
-    value !== "retention_expired" &&
-    value !== "precondition_required" &&
-    value !== "invalid_request" &&
-    value !== "validation_failed" &&
-    value !== "render_failed" &&
-    value !== "unavailable"
-  ) {
-    throw new Error("problem.code is invalid");
-  }
-  return value;
-}
-
-function parseNoteDiagnostics(value: unknown, path: string): NoteDiagnostic[] {
-  if (!Array.isArray(value)) throw new Error(`${path} is invalid`);
-  return value.map((diagnostic, index) =>
-    parseNoteDiagnostic(diagnostic, index, path),
-  );
-}
-
-function parseNoteDiagnostic(
-  value: unknown,
-  index: number,
-  path: string,
-): NoteDiagnostic {
-  const diagnosticPath = `${path}[${index}]`;
-  const diagnostic = record(value, diagnosticPath);
-  const target = record(diagnostic.target, `${diagnosticPath}.target`);
-  const validationTarget = parseValidationTarget(
-    target,
-    `${diagnosticPath}.target`,
-  );
-  const span =
-    diagnostic.span === undefined
-      ? undefined
-      : parseUtf8ByteSpan(diagnostic.span, diagnosticPath);
-  const severity = diagnostic.severity;
-  if (
-    severity !== "error" &&
-    severity !== "warning" &&
-    severity !== "information" &&
-    severity !== "hint"
-  ) {
-    throw new Error(`${diagnosticPath}.severity is invalid`);
-  }
-  return {
-    code: text(diagnostic.code, `${diagnosticPath}.code`),
-    severity,
-    target: validationTarget,
-    ...(span === undefined ? {} : { span }),
-    message: text(diagnostic.message, `${diagnosticPath}.message`),
-  };
-}
-
-function parseValidationTarget(
-  target: Record<string, unknown>,
-  path: string,
-): ValidationTarget {
-  const field = text(target.field, `${path}.field`);
-  if (
-    field === "source" ||
-    field === "title" ||
-    field === "body" ||
-    field === "tags"
-  ) {
-    if (target.index !== undefined) {
-      throw new Error(`${path}.index is not allowed`);
-    }
-    return { field };
-  }
-  if (field === "tag" || field === "acl_entry") {
-    return {
-      field,
-      index: nonNegativeInteger(target.index, `${path}.index`),
-    };
-  }
-  throw new Error(`${path}.field is invalid`);
-}
-
-function parseUtf8ByteSpan(
-  value: unknown,
-  diagnosticPath: string,
-): NoteDiagnostic["span"] {
-  const span = record(value, `${diagnosticPath}.span`);
-  if (span.unit !== "utf8_byte") {
-    throw new Error(`${diagnosticPath}.span.unit is invalid`);
-  }
-  const start = nonNegativeInteger(span.start, `${diagnosticPath}.span.start`);
-  const end = nonNegativeInteger(span.end, `${diagnosticPath}.span.end`);
-  if (end < start) {
-    throw new Error(`${diagnosticPath}.span.end is before span.start`);
-  }
-  return {
-    start,
-    end,
-    unit: span.unit,
-  };
-}
-
-export async function listNotes(
-  apiBase: string,
-  signal?: AbortSignal,
-): Promise<NoteListEntry[]> {
-  return requestJson(`${apiBase}/notes`, { signal }, parseNoteListEntries);
-}
-
-export async function listDeletedNotes(
-  apiBase: string,
-  signal?: AbortSignal,
-): Promise<DeletedNoteListEntry[]> {
-  return requestJson(
-    `${apiBase}/notes/deleted`,
-    { signal },
-    parseDeletedNoteListEntries,
-  );
-}
-
-export async function searchBibliography(
-  apiBase: string,
-  query = "",
-  signal?: AbortSignal,
-): Promise<BibliographyItem[]> {
-  const suffix = query ? `?query=${encodeURIComponent(query)}` : "";
-  return requestJson(
-    `${apiBase}/bibliography${suffix}`,
-    { signal },
-    parseBibliographyItems,
-  );
-}
-
-export async function addBibliographyItem(
-  apiBase: string,
-  cslJson: Record<string, unknown>,
-): Promise<BibliographyItem> {
-  return requestJson(
-    `${apiBase}/bibliography`,
-    mutationRequest("POST", { csl_json: cslJson }),
-    parseBibliographyItem,
-  );
-}
-
-export async function updateBibliographyItem(
-  apiBase: string,
-  itemId: string,
-  cslJson: Record<string, unknown>,
-  expectedRevision: number,
-): Promise<BibliographyItem> {
-  return requestJson(
-    `${apiBase}/bibliography/${encodeURIComponent(itemId)}`,
-    mutationRequest("PUT", { csl_json: cslJson }, expectedRevision),
-    parseBibliographyItem,
-  );
-}
-
-export async function deleteBibliographyItem(
-  apiBase: string,
-  itemId: string,
-  expectedRevision: number,
-): Promise<void> {
-  const response = await fetch(
-    `${apiBase}/bibliography/${encodeURIComponent(itemId)}`,
-    mutationRequest("DELETE", undefined, expectedRevision),
-  );
-  if (!response.ok) {
-    let problem: Problem;
-    try {
-      problem = parseProblem(await response.json());
-    } catch {
-      problem = {
-        code: "invalid_response",
-        message: "サーバーから解釈できない応答を受け取りました。",
-      };
-    }
-    throw new ApiError(response.status, problem);
-  }
-}
-
-export async function listBibliographyImportSources(
-  apiBase: string,
-  signal?: AbortSignal,
-): Promise<BibliographyImportSource[]> {
-  return requestJson(
-    `${apiBase}/bibliography/import-sources`,
-    { signal },
-    parseBibliographyImportSources,
-  );
-}
-
-export async function previewBibliographyImport(
-  apiBase: string,
-  source: BibliographyImportSourceInput,
-  items: unknown[],
-): Promise<BibliographyImportPreview> {
-  return requestJson(
-    `${apiBase}/bibliography/import-previews`,
-    jsonPostRequest({ source, items }),
-    parseBibliographyImportPreview,
-  );
-}
-
-export async function applyBibliographyImport(
-  apiBase: string,
-  source: BibliographyImportSourceInput,
-  items: unknown[],
-  previewToken: string,
-  decisions: BibliographyImportDecision[],
-): Promise<BibliographyImportResult> {
-  return requestJson(
-    `${apiBase}/bibliography/imports`,
-    mutationRequest("POST", {
-      source,
-      items,
-      preview_token: previewToken,
-      decisions,
-    }),
-    parseBibliographyImportResult,
-  );
-}
-
-export async function readNote(
-  apiBase: string,
-  noteId: string,
-  signal?: AbortSignal,
-): Promise<Note> {
-  return requestJson(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}`,
-    { signal },
-    parseNote,
-  );
-}
-
-export async function readNoteView(
-  apiBase: string,
-  noteId: string,
-  signal?: AbortSignal,
-): Promise<NoteView> {
-  return requestJson(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}/view`,
-    { signal },
-    parseNoteView,
-  );
-}
-
-export async function readMathMacros(
-  apiBase: string,
-  signal?: AbortSignal,
-): Promise<MathMacroSettings> {
-  return requestJson(
-    `${apiBase}/math-macros`,
-    { signal },
-    parseMathMacroSettings,
-  );
-}
-
-export async function replaceMathMacros(
-  apiBase: string,
-  settings: MathMacroSettings,
-): Promise<MathMacroSettings> {
-  return requestJson(
-    `${apiBase}/math-macros`,
-    mutationRequest("PUT", settings),
-    parseMathMacroSettings,
-  );
-}
-
-export async function readMcpScopeCeiling(
-  apiBase: string,
-  signal?: AbortSignal,
-): Promise<McpScopeCeiling> {
-  return requestJson(
-    `${apiBase}/mcp-scope-ceilings`,
-    { signal },
-    parseMcpScopeCeiling,
-  );
-}
-
-export async function replaceMcpScopeCeiling(
-  apiBase: string,
-  settings: McpScopeCeilingInput,
-): Promise<McpScopeCeiling> {
-  return requestJson(
-    `${apiBase}/mcp-scope-ceilings`,
-    mutationRequest("PUT", settings),
-    parseMcpScopeCeiling,
-  );
-}
-
-export async function listMcpAuthorizations(
-  apiBase: string,
-  signal?: AbortSignal,
-): Promise<McpClientAuthorization[]> {
-  return requestJson(
-    `${apiBase}/mcp-authorizations`,
-    { signal },
-    parseMcpClientAuthorizations,
-  );
-}
-
-export async function replaceMcpClientScopeCeiling(
-  apiBase: string,
-  clientId: string,
-  settings: McpScopeCeilingInput,
-): Promise<McpClientAuthorization> {
-  return requestJson(
-    `${apiBase}/mcp-authorizations/${encodeURIComponent(clientId)}/scope-ceiling`,
-    mutationRequest("PUT", settings),
-    parseMcpClientAuthorization,
-  );
-}
-
-export async function deleteMcpClientScopeCeiling(
-  apiBase: string,
-  clientId: string,
-  revision: number,
-): Promise<McpClientAuthorization> {
-  return requestJson(
-    `${apiBase}/mcp-authorizations/${encodeURIComponent(clientId)}/scope-ceiling?revision=${encodeURIComponent(String(revision))}`,
-    mutationRequest("DELETE"),
-    parseMcpClientAuthorization,
-  );
-}
-
-export async function revokeMcpAuthorization(
-  apiBase: string,
-  clientId: string,
-): Promise<void> {
-  const response = await fetch(
-    `${apiBase}/mcp-authorizations/${encodeURIComponent(clientId)}`,
-    mutationRequest("DELETE"),
-  );
-  if (!response.ok) {
-    let problem: Problem;
-    try {
-      problem = parseProblem(await response.json());
-    } catch {
-      problem = {
-        code: "invalid_response",
-        message: "サーバーから解釈できない応答を受け取りました。",
-      };
-    }
-    throw new ApiError(response.status, problem);
-  }
-}
-
-/** 図に出す範囲。`origin`を指定すると、そこから`depth`本以内の線で辿れる範囲だけになる。 */
-export interface NoteGraphScope {
-  query?: string;
-  origin?: string;
-  depth?: number;
-}
-
-export async function readNoteGraph(
-  apiBase: string,
-  scope: NoteGraphScope = {},
-  signal?: AbortSignal,
-): Promise<NoteGraph> {
-  const parameters = new URLSearchParams();
-  if (scope.query) parameters.set("query", scope.query);
-  if (scope.origin) {
-    parameters.set("origin", scope.origin);
-    parameters.set("depth", String(scope.depth ?? 1));
-  }
-  const suffix = parameters.size > 0 ? `?${parameters.toString()}` : "";
-  return requestJson(
-    `${apiBase}/notes/graph${suffix}`,
-    { signal },
-    parseNoteGraph,
-  );
-}
-
-export async function createNote(
-  apiBase: string,
-  draft: NoteDraft,
-): Promise<Note> {
-  return requestJson(
-    `${apiBase}/web/notes`,
-    mutationRequest("POST", draft),
-    parseNote,
-  );
-}
-
-export async function updateNote(
-  apiBase: string,
-  noteId: string,
-  draft: NoteDraft,
-  expectedRevision: number,
-): Promise<Note> {
-  return requestJson(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}`,
-    mutationRequest("PUT", draft, expectedRevision),
-    parseNote,
-  );
-}
-
-export async function deleteNote(
-  apiBase: string,
-  noteId: string,
-  expectedRevision: number,
-): Promise<Note> {
-  return requestJson(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}`,
-    mutationRequest("DELETE", undefined, expectedRevision),
-    parseNote,
-  );
-}
-
-export async function restoreNote(
-  apiBase: string,
-  noteId: string,
-  expectedRevision: number,
-): Promise<Note> {
-  return requestJson(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}/restore`,
-    mutationRequest("POST", undefined, expectedRevision),
-    parseNote,
-  );
-}
-
-export async function previewNewNote(
-  apiBase: string,
-  draft: NoteDraft,
-  signal?: AbortSignal,
-): Promise<NotePreview> {
-  return requestJson(
-    `${apiBase}/notes/preview`,
-    { ...mutationRequest("POST", draft), signal },
-    parseNotePreview,
-  );
-}
-
-export async function previewNoteUpdate(
-  apiBase: string,
-  noteId: string,
-  draft: NoteDraft,
-  signal?: AbortSignal,
-): Promise<NotePreview> {
-  return requestJson(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}/preview`,
-    { ...mutationRequest("POST", draft), signal },
-    parseNotePreview,
-  );
-}
-
-export async function readNoteAcl(
-  apiBase: string,
-  noteId: string,
-  signal?: AbortSignal,
-): Promise<{ entries: NoteAclGrant[]; revision: number }> {
-  const response = await requestJsonResponse(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}/acl`,
-    { signal },
-    parseNoteAcl,
-  );
-  if (response.revision < 1) {
-    throw new ApiError(200, {
-      code: "invalid_response",
-      message: "サーバーからETagを取得できませんでした。",
-    });
-  }
-  return { ...response.value, revision: response.revision };
-}
-
-export async function replaceNoteAcl(
-  apiBase: string,
-  noteId: string,
-  entries: NoteAclEntry[],
-  expectedRevision: number,
-): Promise<Note> {
-  return requestJson(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}/acl`,
-    mutationRequest("PUT", { entries }, expectedRevision),
-    parseNote,
-  );
-}
-
-export async function markNoteReviewed(
-  apiBase: string,
-  noteId: string,
-  expectedRevision: number,
-): Promise<NoteReview> {
-  return requestJson(
-    `${apiBase}/notes/${encodeURIComponent(noteId)}/review`,
-    mutationRequest("POST", undefined, expectedRevision),
-    parseNoteReview,
-  );
-}
-
-function mutationRequest(
-  method: "POST" | "PUT" | "DELETE",
-  body?: unknown,
-  expectedRevision?: number,
-): RequestInit {
-  const csrfToken = readCookie("marginalis_csrf");
-  return {
-    method,
-    credentials: "same-origin",
-    headers: {
-      "content-type": "application/json",
-      "x-csrf-token": csrfToken,
-      ...(expectedRevision === undefined
-        ? {}
-        : { "if-match": `"rev-${expectedRevision}"` }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  };
-}
-
-function jsonPostRequest(body: unknown): RequestInit {
-  return {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  };
-}
-
-async function requestJson<T>(
-  url: string,
-  init: RequestInit | undefined,
-  parse: (value: unknown) => T,
-): Promise<T> {
-  return (await requestJsonResponse(url, init, parse)).value;
-}
-
-async function requestJsonResponse<T>(
-  url: string,
-  init: RequestInit | undefined,
-  parse: (value: unknown) => T,
-): Promise<{ value: T; revision: number }> {
-  const response = await fetch(url, {
-    credentials: "same-origin",
-    ...init,
-  });
-  const payload: unknown = await response.json();
-  if (!response.ok) {
-    let problem: Problem;
-    try {
-      problem = parseProblem(payload);
-    } catch {
-      problem = {
-        code: "invalid_response",
-        message: "サーバーから解釈できない応答を受け取りました。",
-      };
-    }
-    throw new ApiError(response.status, problem);
+    "required": [
+      "apiBase",
+      "basePath",
+      "path",
+      "search",
+      "styleNonce"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportApplyInput": {
+    "additionalProperties": false,
+    "properties": {
+      "decisions": {
+        "items": {
+          "$ref": "#/components/schemas/BibliographyImportDecision"
+        },
+        "maxItems": 1000,
+        "minItems": 1,
+        "type": "array"
+      },
+      "items": {
+        "items": true,
+        "maxItems": 1000,
+        "minItems": 1,
+        "type": "array"
+      },
+      "preview_token": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "source": {
+        "$ref": "#/components/schemas/BibliographyImportSourceInput"
+      }
+    },
+    "required": [
+      "source",
+      "items",
+      "preview_token",
+      "decisions"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportCandidate": {
+    "additionalProperties": false,
+    "properties": {
+      "citation_key": {
+        "type": "string"
+      },
+      "item_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "matched_by": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "title": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "item_id",
+      "citation_key",
+      "title",
+      "revision",
+      "matched_by"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportClassification": {
+    "enum": [
+      "create",
+      "update_from_external",
+      "unchanged",
+      "keep_local",
+      "conflict",
+      "duplicate_candidate",
+      "rejected"
+    ],
+    "type": "string"
+  },
+  "BibliographyImportDecision": {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "$ref": "#/components/schemas/BibliographyImportDecisionAction"
+      },
+      "candidate_item_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "position": {
+        "format": "uint",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "position",
+      "action",
+      "candidate_item_id"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportDecisionAction": {
+    "enum": [
+      "apply_suggested",
+      "create_separate",
+      "keep_local",
+      "use_external",
+      "link_existing_keep_local",
+      "link_existing_use_external",
+      "exclude"
+    ],
+    "type": "string"
+  },
+  "BibliographyImportEntry": {
+    "additionalProperties": false,
+    "properties": {
+      "candidates": {
+        "items": {
+          "$ref": "#/components/schemas/BibliographyImportCandidate"
+        },
+        "type": "array"
+      },
+      "citation_key": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "classification": {
+        "$ref": "#/components/schemas/BibliographyImportClassification"
+      },
+      "current_csl_json": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "external_item_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "item_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "item_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "position": {
+        "format": "uint",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "rejection_code": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "position",
+      "external_item_id",
+      "citation_key",
+      "classification",
+      "item_id",
+      "item_revision",
+      "current_csl_json",
+      "candidates",
+      "rejection_code"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportPreview": {
+    "additionalProperties": false,
+    "properties": {
+      "entries": {
+        "items": {
+          "$ref": "#/components/schemas/BibliographyImportEntry"
+        },
+        "type": "array"
+      },
+      "preview_token": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "source_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "source_id",
+      "source_revision",
+      "preview_token",
+      "entries"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportPreviewInput": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": true,
+        "maxItems": 1000,
+        "minItems": 1,
+        "type": "array"
+      },
+      "source": {
+        "$ref": "#/components/schemas/BibliographyImportSourceInput"
+      }
+    },
+    "required": [
+      "source",
+      "items"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportResult": {
+    "additionalProperties": false,
+    "properties": {
+      "created": {
+        "format": "uint",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "excluded": {
+        "format": "uint",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "kept": {
+        "format": "uint",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "source_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "source_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "updated": {
+        "format": "uint",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "source_id",
+      "source_revision",
+      "created",
+      "updated",
+      "kept",
+      "excluded"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportSource": {
+    "additionalProperties": false,
+    "properties": {
+      "created_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "display_name": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "last_imported_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "method": {
+        "type": "string"
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "source_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source_id",
+      "method",
+      "display_name",
+      "revision",
+      "created_at_ms",
+      "last_imported_at_ms"
+    ],
+    "type": "object"
+  },
+  "BibliographyImportSourceInput": {
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "kind": {
+            "const": "new",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "display_name"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "existing",
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "source_id"
+        ],
+        "type": "object"
+      }
+    ]
+  },
+  "BibliographyItem": {
+    "additionalProperties": false,
+    "properties": {
+      "citation_key": {
+        "type": "string"
+      },
+      "created_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "csl_json": {
+        "type": "object"
+      },
+      "item_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "updated_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_id",
+      "citation_key",
+      "csl_json",
+      "created_at_ms",
+      "updated_at_ms",
+      "revision"
+    ],
+    "type": "object"
+  },
+  "BibliographyItemInput": {
+    "additionalProperties": false,
+    "properties": {
+      "csl_json": {
+        "type": "object"
+      }
+    },
+    "required": [
+      "csl_json"
+    ],
+    "type": "object"
+  },
+  "DeletedNoteListEntry": {
+    "additionalProperties": false,
+    "properties": {
+      "deleted_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "purge_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "title": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "note_id",
+      "title",
+      "deleted_at_ms",
+      "purge_at_ms",
+      "revision"
+    ],
+    "type": "object"
+  },
+  "DiagnosticSeverity": {
+    "enum": [
+      "error",
+      "warning",
+      "information",
+      "hint"
+    ],
+    "type": "string"
+  },
+  "Health": {
+    "additionalProperties": false,
+    "properties": {
+      "api_version": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "api_version"
+    ],
+    "type": "object"
+  },
+  "MathMacro": {
+    "additionalProperties": false,
+    "properties": {
+      "argument_count": {
+        "format": "uint8",
+        "maximum": 9,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "name": {
+        "pattern": "^[A-Za-z]{1,32}$",
+        "type": "string"
+      },
+      "replacement": {
+        "maxLength": 512,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "replacement",
+      "argument_count"
+    ],
+    "type": "object"
+  },
+  "MathMacroSettings": {
+    "additionalProperties": false,
+    "description": "数式マクロ設定。要求と応答で同じ構造を使う。",
+    "properties": {
+      "macros": {
+        "items": {
+          "$ref": "#/components/schemas/MathMacro"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "macros",
+      "revision"
+    ],
+    "type": "object"
+  },
+  "McpClientAuthorization": {
+    "additionalProperties": false,
+    "properties": {
+      "active": {
+        "type": "boolean"
+      },
+      "authorized_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "client_id": {
+        "maxLength": 2048,
+        "minLength": 1,
+        "type": "string"
+      },
+      "display_name": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "granted_scopes": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "last_used_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "registration_method": {
+        "type": "string"
+      },
+      "scope_ceiling": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "scope_ceiling_configured": {
+        "type": "boolean"
+      },
+      "scope_ceiling_revision": {
+        "format": "int64",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "client_id",
+      "display_name",
+      "registration_method",
+      "granted_scopes",
+      "scope_ceiling_configured",
+      "scope_ceiling",
+      "scope_ceiling_revision",
+      "authorized_at_ms",
+      "last_used_at_ms",
+      "active"
+    ],
+    "type": "object"
+  },
+  "McpScopeCeiling": {
+    "additionalProperties": false,
+    "properties": {
+      "revision": {
+        "format": "int64",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "scopes": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "supported_scopes": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "supported_scopes",
+      "scopes",
+      "revision"
+    ],
+    "type": "object"
+  },
+  "McpScopeCeilingInput": {
+    "additionalProperties": false,
+    "properties": {
+      "revision": {
+        "format": "int64",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "scopes": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "scopes",
+      "revision"
+    ],
+    "type": "object"
+  },
+  "Note": {
+    "additionalProperties": false,
+    "properties": {
+      "created_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "created_via": {
+        "$ref": "#/components/schemas/NoteCreationSource"
+      },
+      "note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "review_status": {
+        "$ref": "#/components/schemas/NoteReviewStatus"
+      },
+      "reviewed_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "reviewed_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "source": {
+        "type": "string"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": {
+        "type": "string"
+      },
+      "updated_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "note_id",
+      "title",
+      "source",
+      "tags",
+      "created_at_ms",
+      "updated_at_ms",
+      "revision",
+      "created_via",
+      "review_status",
+      "reviewed_revision",
+      "reviewed_at_ms"
+    ],
+    "type": "object"
+  },
+  "NoteAccess": {
+    "description": "ノートに対する実効アクセス水準。大きい水準は小さい水準の操作を含む。\n\nREST、MCP、Web UIで同じ表現を使用する。",
+    "enum": [
+      "read",
+      "edit",
+      "manage"
+    ],
+    "type": "string"
+  },
+  "NoteAcl": {
+    "additionalProperties": false,
+    "properties": {
+      "entries": {
+        "items": {
+          "$ref": "#/components/schemas/NoteAclGrant"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "entries"
+    ],
+    "type": "object"
+  },
+  "NoteAclEntry": {
+    "additionalProperties": false,
+    "properties": {
+      "permission": {
+        "$ref": "#/components/schemas/NotePermission"
+      },
+      "subject": {
+        "maxLength": 1024,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "subject",
+      "permission"
+    ],
+    "type": "object"
+  },
+  "NoteAclGrant": {
+    "additionalProperties": false,
+    "properties": {
+      "issuer": {
+        "type": "string"
+      },
+      "permission": {
+        "$ref": "#/components/schemas/NotePermission"
+      },
+      "subject": {
+        "maxLength": 1024,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "issuer",
+      "subject",
+      "permission"
+    ],
+    "type": "object"
+  },
+  "NoteAclUpdate": {
+    "additionalProperties": false,
+    "properties": {
+      "entries": {
+        "items": {
+          "$ref": "#/components/schemas/NoteAclEntry"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "entries"
+    ],
+    "type": "object"
+  },
+  "NoteCreationSource": {
+    "description": "ノートを最初に保存した、サーバー側で判定する接続経路。\n\n作成者の種類、AIの利用、内容の品質を証明する値ではない。",
+    "enum": [
+      "web",
+      "rest",
+      "mcp",
+      "unknown"
+    ],
+    "type": "string"
+  },
+  "NoteDiagnostic": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "type": "string"
+      },
+      "message": {
+        "type": "string"
+      },
+      "severity": {
+        "$ref": "#/components/schemas/DiagnosticSeverity"
+      },
+      "span": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Utf8ByteSpan"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "target": {
+        "$ref": "#/components/schemas/NoteValidationTarget"
+      }
+    },
+    "required": [
+      "code",
+      "severity",
+      "target",
+      "message"
+    ],
+    "type": "object"
+  },
+  "NoteDraft": {
+    "additionalProperties": false,
+    "properties": {
+      "source": {
+        "type": "string",
+        "x-maxBytes": 524288
+      }
+    },
+    "required": [
+      "source"
+    ],
+    "type": "object"
+  },
+  "NoteGraph": {
+    "additionalProperties": false,
+    "description": "関係の図に出す点と線。\n\n点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけを含む。線は始点と\n終点の両方が点として含まれる場合だけ返す。閲覧できないノートの存在も件数も現れない。",
+    "properties": {
+      "citations": {
+        "items": {
+          "$ref": "#/components/schemas/NoteGraphCitation"
+        },
+        "type": "array"
+      },
+      "notes": {
+        "items": {
+          "$ref": "#/components/schemas/NoteGraphNote"
+        },
+        "type": "array"
+      },
+      "references": {
+        "items": {
+          "$ref": "#/components/schemas/NoteGraphReference"
+        },
+        "type": "array"
+      },
+      "works": {
+        "items": {
+          "$ref": "#/components/schemas/NoteGraphWork"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "notes",
+      "works",
+      "references",
+      "citations"
+    ],
+    "type": "object"
+  },
+  "NoteGraphCitation": {
+    "additionalProperties": false,
+    "description": "ノートから文献への引用。",
+    "properties": {
+      "citation_key": {
+        "type": "string"
+      },
+      "source_note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source_note_id",
+      "citation_key"
+    ],
+    "type": "object"
+  },
+  "NoteGraphNote": {
+    "additionalProperties": false,
+    "description": "図に出すノート。本文は含まない。",
+    "properties": {
+      "note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": {
+        "type": "string"
+      },
+      "updated_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "note_id",
+      "title",
+      "tags",
+      "updated_at_ms"
+    ],
+    "type": "object"
+  },
+  "NoteGraphReference": {
+    "additionalProperties": false,
+    "description": "ノートからノートへの参照。",
+    "properties": {
+      "source_note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "target_note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source_note_id",
+      "target_note_id"
+    ],
+    "type": "object"
+  },
+  "NoteGraphWork": {
+    "additionalProperties": false,
+    "description": "図に出す文献。書誌情報そのものではなく、引用されたという事実を表す。",
+    "properties": {
+      "citation_key": {
+        "type": "string"
+      },
+      "title": {
+        "description": "引用元のノートを書いた利用者のライブラリーで解決できた場合の題名。",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "citation_key",
+      "title"
+    ],
+    "type": "object"
+  },
+  "NoteListEntry": {
+    "description": "一覧の1項目。ノート要約に実効アクセス水準を加えたもの。",
+    "properties": {
+      "access": {
+        "$ref": "#/components/schemas/NoteAccess"
+      },
+      "created_via": {
+        "$ref": "#/components/schemas/NoteCreationSource"
+      },
+      "note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "review_status": {
+        "$ref": "#/components/schemas/NoteReviewStatus"
+      },
+      "reviewed_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "reviewed_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": {
+        "type": "string"
+      },
+      "updated_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "note_id",
+      "title",
+      "tags",
+      "updated_at_ms",
+      "revision",
+      "created_via",
+      "review_status",
+      "reviewed_revision",
+      "reviewed_at_ms",
+      "access"
+    ],
+    "type": "object"
+  },
+  "NotePermission": {
+    "description": "ACLで共有先へ与える権限。REST、MCP、archiveで同じ表現を使用する。",
+    "enum": [
+      "read",
+      "edit"
+    ],
+    "type": "string"
+  },
+  "NotePreview": {
+    "additionalProperties": false,
+    "properties": {
+      "diagnostics": {
+        "items": {
+          "$ref": "#/components/schemas/NoteDiagnostic"
+        },
+        "type": "array"
+      },
+      "html": {
+        "type": "string"
+      },
+      "math_macros": {
+        "items": {
+          "$ref": "#/components/schemas/MathMacro"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "html",
+      "diagnostics",
+      "math_macros"
+    ],
+    "type": "object"
+  },
+  "NoteReview": {
+    "additionalProperties": false,
+    "properties": {
+      "current_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "reviewed_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "reviewed_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "reviewer_issuer": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reviewer_subject": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "status": {
+        "$ref": "#/components/schemas/NoteReviewStatus"
+      }
+    },
+    "required": [
+      "note_id",
+      "current_revision",
+      "status",
+      "reviewed_revision",
+      "reviewed_at_ms",
+      "reviewer_issuer",
+      "reviewer_subject"
+    ],
+    "type": "object"
+  },
+  "NoteReviewStatus": {
+    "description": "現在のrevisionに対する人手確認状態。",
+    "enum": [
+      "unknown",
+      "pending",
+      "reviewed"
+    ],
+    "type": "string"
+  },
+  "NoteSummary": {
+    "additionalProperties": false,
+    "properties": {
+      "created_via": {
+        "$ref": "#/components/schemas/NoteCreationSource"
+      },
+      "note_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "review_status": {
+        "$ref": "#/components/schemas/NoteReviewStatus"
+      },
+      "reviewed_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "reviewed_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": {
+        "type": "string"
+      },
+      "updated_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "note_id",
+      "title",
+      "tags",
+      "updated_at_ms",
+      "revision",
+      "created_via",
+      "review_status",
+      "reviewed_revision",
+      "reviewed_at_ms"
+    ],
+    "type": "object"
+  },
+  "NoteValidationTarget": {
+    "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "const": "source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "const": "title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "const": "body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "const": "tag",
+            "type": "string"
+          },
+          "index": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "field",
+          "index"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "const": "tags",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "const": "acl_entry",
+            "type": "string"
+          },
+          "index": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "field",
+          "index"
+        ],
+        "type": "object"
+      }
+    ]
+  },
+  "NoteView": {
+    "additionalProperties": false,
+    "properties": {
+      "access": {
+        "$ref": "#/components/schemas/NoteAccess"
+      },
+      "html": {
+        "type": "string"
+      },
+      "math_macros": {
+        "items": {
+          "$ref": "#/components/schemas/MathMacro"
+        },
+        "type": "array"
+      },
+      "note": {
+        "$ref": "#/components/schemas/Note"
+      },
+      "related": {
+        "$ref": "#/components/schemas/RelatedNotes"
+      }
+    },
+    "required": [
+      "note",
+      "access",
+      "html",
+      "related",
+      "math_macros"
+    ],
+    "type": "object"
+  },
+  "Problem": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "$ref": "#/components/schemas/ProblemCode"
+      },
+      "diagnostics": {
+        "items": {
+          "$ref": "#/components/schemas/NoteDiagnostic"
+        },
+        "type": "array"
+      },
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "code",
+      "message"
+    ],
+    "type": "object"
+  },
+  "ProblemCode": {
+    "enum": [
+      "authentication_required",
+      "authentication_unavailable",
+      "csrf_rejected",
+      "csrf_required",
+      "csrf_invalid",
+      "same_origin_required",
+      "origin_not_allowed",
+      "not_found",
+      "forbidden",
+      "conflict",
+      "retention_expired",
+      "precondition_required",
+      "invalid_request",
+      "validation_failed",
+      "render_failed",
+      "unavailable"
+    ],
+    "type": "string"
+  },
+  "RelatedNotes": {
+    "additionalProperties": false,
+    "properties": {
+      "incoming": {
+        "items": {
+          "$ref": "#/components/schemas/NoteSummary"
+        },
+        "type": "array"
+      },
+      "outgoing": {
+        "items": {
+          "$ref": "#/components/schemas/NoteSummary"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "outgoing",
+      "incoming"
+    ],
+    "type": "object"
+  },
+  "Session": {
+    "additionalProperties": false,
+    "properties": {
+      "issuer": {
+        "type": "string"
+      },
+      "subject": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "issuer",
+      "subject"
+    ],
+    "type": "object"
+  },
+  "Utf8ByteSpan": {
+    "additionalProperties": false,
+    "properties": {
+      "end": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "start": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "unit": {
+        "$ref": "#/components/schemas/Utf8ByteUnit"
+      }
+    },
+    "required": [
+      "start",
+      "end",
+      "unit"
+    ],
+    "type": "object"
+  },
+  "Utf8ByteUnit": {
+    "enum": [
+      "utf8_byte"
+    ],
+    "type": "string"
   }
+};
+
+function resolveSchema(schema: unknown): unknown {
+  if (
+    typeof schema === "object" &&
+    schema !== null &&
+    "$ref" in schema &&
+    typeof (schema as { $ref: unknown }).$ref === "string"
+  ) {
+    const name = (schema as { $ref: string }).$ref.split("/").pop() ?? "";
+    const target = CONTRACT_SCHEMAS[name];
+    if (target === undefined) throw new Error(`schema ${name} is missing`);
+    return resolveSchema(target);
+  }
+  return schema;
+}
+
+function matchesType(value: unknown, type: string): boolean {
+  switch (type) {
+    case "object":
+      return typeof value === "object" && value !== null && !Array.isArray(value);
+    case "array":
+      return Array.isArray(value);
+    case "string":
+      return typeof value === "string";
+    case "integer":
+      return Number.isSafeInteger(value);
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "null":
+      return value === null;
+    default:
+      return true;
+  }
+}
+
+function isValid(value: unknown, schema: unknown): boolean {
   try {
-    const value = parse(payload);
-    const match = response.headers.get("etag")?.match(/^"rev-([1-9][0-9]*)"$/);
-    return {
-      value,
-      revision: match ? positiveInteger(Number(match[1]), "response ETag") : 0,
-    };
+    assertValid(value, schema, "value");
+    return true;
   } catch {
-    throw new ApiError(response.status, {
-      code: "invalid_response",
-      message: "サーバーから解釈できない応答を受け取りました。",
-    });
+    return false;
   }
 }
 
-function readCookie(name: string): string {
-  for (const cookie of document.cookie.split(";")) {
-    const [key, ...value] = cookie.trim().split("=");
-    if (key === name) {
-      return decodeURIComponent(value.join("="));
+function assertValid(value: unknown, rawSchema: unknown, path: string): void {
+  const schema = resolveSchema(rawSchema);
+  if (schema === true || schema === undefined) return;
+  if (schema === false) throw new Error(`${path} is invalid`);
+  if (typeof schema !== "object" || schema === null) return;
+  const s = schema as Record<string, unknown>;
+  if (Array.isArray(s.allOf)) {
+    for (const member of s.allOf) assertValid(value, member, path);
+  }
+  const alternatives = (s.oneOf ?? s.anyOf) as unknown[] | undefined;
+  if (Array.isArray(alternatives)) {
+    if (!alternatives.some((member) => isValid(value, member))) {
+      throw new Error(`${path} is invalid`);
     }
   }
-  return "";
+  if (s.type !== undefined) {
+    const types = Array.isArray(s.type) ? s.type : [s.type];
+    if (!types.some((type) => typeof type === "string" && matchesType(value, type))) {
+      throw new Error(`${path} is invalid`);
+    }
+  }
+  if (s.const !== undefined && JSON.stringify(value) !== JSON.stringify(s.const)) {
+    throw new Error(`${path} is invalid`);
+  }
+  if (Array.isArray(s.enum)) {
+    if (!s.enum.some((member) => JSON.stringify(member) === JSON.stringify(value))) {
+      throw new Error(`${path} is invalid`);
+    }
+  }
+  if (typeof value === "string") {
+    if (typeof s.minLength === "number" && value.length < s.minLength) {
+      throw new Error(`${path} is invalid`);
+    }
+    if (typeof s.maxLength === "number" && value.length > s.maxLength) {
+      throw new Error(`${path} is invalid`);
+    }
+    if (typeof s.pattern === "string" && !new RegExp(s.pattern).test(value)) {
+      throw new Error(`${path} is invalid`);
+    }
+  }
+  if (typeof value === "number") {
+    if (typeof s.minimum === "number" && value < s.minimum) {
+      throw new Error(`${path} is invalid`);
+    }
+    if (typeof s.maximum === "number" && value > s.maximum) {
+      throw new Error(`${path} is invalid`);
+    }
+  }
+  if (Array.isArray(value)) {
+    if (typeof s.minItems === "number" && value.length < s.minItems) {
+      throw new Error(`${path} is invalid`);
+    }
+    if (typeof s.maxItems === "number" && value.length > s.maxItems) {
+      throw new Error(`${path} is invalid`);
+    }
+    if (s.items !== undefined) {
+      value.forEach((item, index) => assertValid(item, s.items, `${path}[${index}]`));
+    }
+  }
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const properties = (s.properties ?? {}) as Record<string, unknown>;
+    if (Array.isArray(s.required)) {
+      for (const name of s.required) {
+        if (typeof name === "string" && record[name] === undefined) {
+          throw new Error(`${path}.${name} is missing`);
+        }
+      }
+    }
+    for (const [name, property] of Object.entries(properties)) {
+      if (record[name] !== undefined) {
+        assertValid(record[name], property, `${path}.${name}`);
+      }
+    }
+    if (s.additionalProperties === false && s.properties !== undefined) {
+      for (const name of Object.keys(record)) {
+        if (!(name in properties)) {
+          throw new Error(`${path}.${name} is not allowed`);
+        }
+      }
+    }
+  }
 }
 
-function record(value: unknown, name: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${name} is invalid`);
-  }
-  return value as Record<string, unknown>;
+function parseAs<T>(value: unknown, schemaName: string, label: string): T {
+  assertValid(value, CONTRACT_SCHEMAS[schemaName], label);
+  return value as T;
 }
-function text(value: unknown, name: string): string {
-  if (typeof value !== "string") throw new Error(`${name} is invalid`);
-  return value;
+
+function parseArrayAs<T>(value: unknown, schemaName: string, label: string): T[] {
+  if (!Array.isArray(value)) throw new Error(`${label} are invalid`);
+  return value.map((item, index) => parseAs<T>(item, schemaName, `${label}[${index}]`));
 }
-function integer(value: unknown, name: string): number {
-  if (!Number.isSafeInteger(value)) throw new Error(`${name} is invalid`);
-  return value as number;
+export function parseApplicationConfig(value: unknown): ApplicationConfig {
+  return parseAs<ApplicationConfig>(value, "ApplicationConfig", "application config");
 }
-function positiveInteger(value: unknown, name: string): number {
-  const result = integer(value, name);
-  if (result < 1) throw new Error(`${name} is invalid`);
-  return result;
+export function parseNote(value: unknown): Note {
+  return parseAs<Note>(value, "Note", "note");
 }
-function nonNegativeInteger(value: unknown, name: string): number {
-  const result = integer(value, name);
-  if (result < 0) throw new Error(`${name} is invalid`);
-  return result;
+export function parseNoteSummary(value: unknown): NoteSummary {
+  return parseAs<NoteSummary>(value, "NoteSummary", "note summary");
 }
-function array(value: unknown, name: string): unknown[] {
-  if (!Array.isArray(value)) throw new Error(`${name} is invalid`);
-  return value;
+export function parseNoteSummaries(value: unknown): NoteSummary[] {
+  return parseArrayAs<NoteSummary>(value, "NoteSummary", "note summaries");
 }
-function textArray(value: unknown, name: string): string[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new Error(`${name} is invalid`);
-  }
-  return value;
+export function parseNoteListEntry(value: unknown): NoteListEntry {
+  return parseAs<NoteListEntry>(value, "NoteListEntry", "note list entry");
+}
+export function parseNoteListEntries(value: unknown): NoteListEntry[] {
+  return parseArrayAs<NoteListEntry>(value, "NoteListEntry", "note list entries");
+}
+export function parseDeletedNoteListEntries(value: unknown): DeletedNoteListEntry[] {
+  return parseArrayAs<DeletedNoteListEntry>(value, "DeletedNoteListEntry", "deleted note list entries");
+}
+export function parseNoteReview(value: unknown): NoteReview {
+  return parseAs<NoteReview>(value, "NoteReview", "note review");
+}
+export function parseNoteGraph(value: unknown): NoteGraph {
+  return parseAs<NoteGraph>(value, "NoteGraph", "note graph");
+}
+export function parseNoteView(value: unknown): NoteView {
+  return parseAs<NoteView>(value, "NoteView", "note view");
+}
+export function parseNoteAcl(value: unknown): NoteAcl {
+  return parseAs<NoteAcl>(value, "NoteAcl", "note ACL");
+}
+export function parseNotePreview(value: unknown): NotePreview {
+  return parseAs<NotePreview>(value, "NotePreview", "note preview");
+}
+export function parseProblem(value: unknown): Problem {
+  return parseAs<Problem>(value, "Problem", "problem");
+}
+export function parseMathMacroSettings(value: unknown): MathMacroSettings {
+  return parseAs<MathMacroSettings>(value, "MathMacroSettings", "math macro settings");
+}
+export function parseMcpScopeCeiling(value: unknown): McpScopeCeiling {
+  return parseAs<McpScopeCeiling>(value, "McpScopeCeiling", "MCP scope ceiling");
+}
+export function parseMcpClientAuthorization(value: unknown): McpClientAuthorization {
+  return parseAs<McpClientAuthorization>(value, "McpClientAuthorization", "MCP client authorization");
+}
+export function parseMcpClientAuthorizations(value: unknown): McpClientAuthorization[] {
+  return parseArrayAs<McpClientAuthorization>(value, "McpClientAuthorization", "MCP client authorizations");
+}
+export function parseBibliographyItem(value: unknown): BibliographyItem {
+  return parseAs<BibliographyItem>(value, "BibliographyItem", "bibliography item");
+}
+export function parseBibliographyItems(value: unknown): BibliographyItem[] {
+  return parseArrayAs<BibliographyItem>(value, "BibliographyItem", "bibliography items");
+}
+export function parseBibliographyImportSources(value: unknown): BibliographyImportSource[] {
+  return parseArrayAs<BibliographyImportSource>(value, "BibliographyImportSource", "bibliography import sources");
+}
+export function parseBibliographyImportPreview(value: unknown): BibliographyImportPreview {
+  return parseAs<BibliographyImportPreview>(value, "BibliographyImportPreview", "bibliography import preview");
+}
+export function parseBibliographyImportResult(value: unknown): BibliographyImportResult {
+  return parseAs<BibliographyImportResult>(value, "BibliographyImportResult", "bibliography import result");
 }

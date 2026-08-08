@@ -25,10 +25,10 @@ assert_classification true \
   README.adoc \
   CONTRIBUTING.adoc \
   SECURITY.adoc \
-  docs/architecture.adoc \
+  docs/developer-guide/architecture.adoc \
   .github/ISSUE_TEMPLATE/feature.yml
-assert_classification false docs/architecture.adoc frontend/src/Application.tsx
+assert_classification false docs/developer-guide/architecture.adoc frontend/src/Application.tsx
 assert_classification false docs/openapi.json
 assert_classification false docs/mcp-tools.json
-assert_classification true docs/acceptance.adoc
-assert_classification true $'docs/architecture.adoc\nfrontend/src/Application.tsx'
+assert_classification true docs/developer-guide/acceptance.adoc
+assert_classification true $'docs/developer-guide/architecture.adoc\nfrontend/src/Application.tsx'

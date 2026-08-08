@@ -12,7 +12,7 @@ mod html;
 mod math_macros;
 mod mcp_scope_ceilings;
 mod mcp_transport;
-mod notes;
+pub(crate) mod notes;
 mod oauth;
 mod security;
 mod state;
@@ -22,6 +22,7 @@ mod ui;
 mod tests;
 
 pub use state::{ApiState, InvalidMcpEndpoint, McpEndpoint};
+pub use ui::browser_smoke_shell;
 
 use super::{RequestId, assign_request_id};
 use std::{sync::Arc, time::Duration};

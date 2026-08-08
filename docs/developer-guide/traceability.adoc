@@ -29,7 +29,7 @@
 |SQLiteファイル診断・CLI秘密情報非記録試験、NixOS VM反復診断・ファイル不変性試験
 |障害診断
 |REQ-OPS-007
-|``cargo make observability-check``、``observability_logs_safe_http_and_mcp_results``、
+|``cargo make observability-check``、``marginalis-web::http::tests``のログ安全性試験、
 ``checks.x86_64-linux.kanidm-discovery-vm``
 |event・request IDによる障害診断
 |REQ-DATA-001
@@ -129,7 +129,7 @@ metadata契約試験
 |application所有者選択試験、SQLite分離・revision試験、REST契約試験、React設定画面・MathJaxで許可するpackageの単体・ブラウザー試験
 |``\argmax``・``\bm``の閲覧と共有表示
 |REQ-UI-008
-|外部側と現在値を含むREST応答検査、``BibliographyImportPanel.test.tsx``、ブラウザー試験
+|外部側と現在値を含むREST応答検査、React書誌取込画面の単体試験、ブラウザー試験
 |内容比較、キーボードによる事前確認、競合解決、適用
 |REQ-ACL-001
 |application・SQLite・React試験
@@ -173,7 +173,9 @@ metadata契約試験
 == 設計条件と検証の対応
 
 xref:architecture.adoc#一貫して満たすべき設計条件[アーキテクチャ]に記載する設計条件は、実装方法に近い
-不変条件です。要件より細かな単位で、条件から外れる変更を直接検出する主な検証先を示します。
+不変条件です。要件より細かな単位で、条件から外れる変更を直接検出する主な検証先を、テスト関数名では
+なくmodule名の粒度で示します。試験の改名では表を更新せず、moduleの追加・削除・移動のときだけ
+更新します。
 
 [cols="1,1",options="header",]
 |===
@@ -181,57 +183,41 @@ xref:architecture.adoc#一貫して満たすべき設計条件[アーキテク�
 |主な自動検証
 |ARCH-IMPORT-001
 |``marginalis-application::bibliography_import``のtoken・分類・保存計画試験、
-``marginalis-sqlite::tests::bibliography_import``の全書誌状態の再照合・原子的適用・競合試験、
+``marginalis-sqlite::tests::bibliography_import``の再照合・原子的適用・競合試験、
 ``marginalis-web::http::tests::bibliography_import``、archive往復試験
 |ARCH-AUTHN-001
-|``marginalis-auth-oidc``のgroup claim試験、
-``marginalis-sqlite::tests::sessions::sessions_retain_the_validated_identity``、OAuth HTTP結合試験
+|``marginalis-auth-oidc``のgroup claim試験、``marginalis-sqlite::tests::sessions``の検証済み
+identity保持試験、OAuth HTTP結合試験
 |ARCH-AUTHZ-001
 |``marginalis-sqlite::tests::notes``の所有者・ACL・削除・復元試験、REST・MCP・ブラウザーACL試験
 |ARCH-AUTHZ-002
-|``marginalis-sqlite::tests::notes::note_access_levels_follow_one_decision_table_and_acl_failures_roll_back``
+|``marginalis-sqlite::tests::notes``の認可決定表とACL失敗時rollbackの試験
 |ARCH-BOUNDARY-001
 |``dependency-boundaries``、``marginalis-application``のport単体試験、REST・MCP失敗一致試験
 |ARCH-DATA-001
-|``marginalis-sqlite::tests::notes::single_source_updates_and_purges_notes_transactionally``、
-ACL失敗時のrollback試験
+|``marginalis-sqlite::tests::notes``のtransaction整合とrollbackの試験
 |ARCH-DOMAIN-001
-|``marginalis-domain::model::tests::note_restoration_enforces_revision_and_time_ordering``、
-SQLite・archiveの復元試験
+|``marginalis-domain::model``の復元順序試験、SQLite・archiveの復元試験
 |ARCH-IDENTITY-001
-|``marginalis-domain::model::tests::identity_rejects_active_content_and_unbounded_values``、OIDC
-issuer検査
+|``marginalis-domain::model``の識別子検査試験、OIDC issuer検査
 |ARCH-IDENTITY-002
-|``marginalis-domain::model::tests::entity_id_rejects_non_v7_uuid``、REST・archive・SQLite復元試験
+|``marginalis-domain::model``のUUID v7検査、REST・archive・SQLite復元試験
 |ARCH-OAUTH-001
 |``marginalis-sqlite::tests::oauth``のtoken family・取消・再利用試験、``observability-check``、archive契約試験
 |ARCH-OAUTH-002
-|``mcp_authorization_server::testkit::assert_repository_contract``を試験用repositoryとSQLite
-adapterへ適用する試験、``token_issuance_failure_rolls_back_authorization_code_consumption``
+|``mcp_authorization_server::testkit``の共有repository契約試験をSQLite adapterへ適用する試験、
+``marginalis-sqlite::tests::oauth``のtoken発行失敗時rollback試験
 |ARCH-OAUTH-003
-a|
-* ``marginalis-application::mcp_oauth::tests``
-** ``unset_scope_ceiling_uses_every_supported_scope_without_becoming_configured``
-** ``configured_scope_ceiling_preserves_an_empty_or_partial_setting``
-* ``marginalis-sqlite::tests::oauth::client_id_metadata_document_clients_complete_the_authorization_flow``
-* ``client_authorizations_are_owner_scoped_and_record_use_and_revocation``
-* ``marginalis-web::http::tests::rest_notes::owner_can_list_and_restrict_their_mcp_client_authorizations``
-* ``marginalis-web::http::tests::oauth::authorization_consent_withholds_scopes_beyond_the_ceiling``
-* ``marginalis-web::http::tests::oauth::authorization_rejects_a_request_entirely_beyond_the_ceiling``
-* ``marginalis-web::http::tests::rest_notes::owner_can_clear_one_mcp_client_scope_ceiling``
-* ``McpAccessSettingsPage.test.tsx``
+|``marginalis-application::mcp_oauth``のscope上限試験、``marginalis-sqlite::tests::oauth``の
+CIMD認可・本人境界試験、``marginalis-web::http::tests::oauth``・``rest_notes``の同意と上限管理の
+試験、React設定画面の単体試験
 |ARCH-OIDC-001
-|``marginalis-auth-oidc::tests::id_tokens_are_limited_to_es256``、Kanidm NixOS VM
+|``marginalis-auth-oidc``のES256限定試験、Kanidm NixOS VM
 |ARCH-PROVENANCE-001
-a|
-* ``marginalis-domain::model::tests::review_status_distinguishes_unknown_pending_current_and_stale``
-* ``marginalis-sqlite::tests::notes::provenance_filters_and_review_state_follow_the_current_revision``
-* ``marginalis-archive::documents::tests::an_edited_note_file_replaces_the_stored_source``
-* ``marginalis-archive::documents::tests::an_edited_acl_advances_the_revision``
-* REST・MCP・archive契約試験
+|``marginalis-domain::model``の確認状態試験、``marginalis-sqlite::tests::notes``の来歴・確認状態
+試験、``marginalis-archive::documents``の外部編集試験、REST・MCP・archive契約試験
 |ARCH-SESSION-001
-|``marginalis-sqlite::tests::sessions``の期限・並行延長試験、
-``issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit``
+|``marginalis-sqlite::tests::sessions``の期限・並行延長・login attempt上限試験
 |===
 
 == 上流crateとの検証の分担

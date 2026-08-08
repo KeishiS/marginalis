@@ -133,7 +133,7 @@ OAuthの認可を開始したクライアントと、認可コードをトーク
 == REST API
 
 HTTPを使ってノートの取得や更新などを行う接続方法です。MarginalisのREST APIは``/api/v3``以下で
-提供します。詳しい接続先と入出力は link:openapi.json[OpenAPI]を参照してください。
+提供します。詳しい接続先と入出力は link:../openapi.json[OpenAPI]を参照してください。
 
 == revision
 

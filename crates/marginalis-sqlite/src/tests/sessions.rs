@@ -2,9 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn sessions_retain_the_validated_identity() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization succeeds");
+    let database = database().await;
     let session = WebSession {
         session_id: "session-token".into(),
         csrf_token: "csrf-token".into(),
@@ -148,9 +146,7 @@ async fn concurrent_session_lookups_extend_one_session_without_snapshot_failures
 
 #[tokio::test]
 async fn explicit_auth_cleanup_removes_expired_rows_without_new_issuance() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization succeeds");
+    let database = database().await;
     let attempts = database.oidc_login_attempt_store();
     attempts
         .issue(
@@ -218,9 +214,7 @@ async fn explicit_auth_cleanup_removes_expired_rows_without_new_issuance() {
 
 #[tokio::test]
 async fn issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit() {
-    let database = SqliteDatabase::connect("sqlite::memory:")
-        .await
-        .expect("schema initialization succeeds");
+    let database = database().await;
     let mut transaction = database.pool.begin().await.expect("begin transaction");
     for index in 0_i64..1_024 {
         sqlx::query(

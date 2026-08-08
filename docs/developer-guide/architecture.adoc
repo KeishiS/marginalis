@@ -3,7 +3,7 @@
 [#top]
 この文書は、開発者に向けて、コンポーネントの役割、依存関係、一貫して満たすべき設計条件を
 説明します。利用者向けの機能は xref:requirements.adoc#top[現行要件]、HTTPの入出力は
-link:openapi.json[OpenAPI]を参照してください。
+link:../openapi.json[OpenAPI]を参照してください。
 
 == 構成
 
@@ -142,6 +142,24 @@ refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family
 * *ARCH-AUTHZ-002 — 実効アクセス水準*: 実効アクセス水準は``Read < Edit < Manage``の順序で表す。
 SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``または``Edit``を同じ判断表へまとめる。
 
+== 検索のサービス境界
+
+全文検索、意味検索、検索索引、順位付けはMarginalisへ実装せず、
+https://github.com/KeishiS/renkan[連環（Renkan）]へ委ねます。MarginalisはAsciiDocノートの正本、編集、共有を
+担当し、RenkanはMarginalisを最初のデータソースとして検索投影を作り、ほかの研究資料と横断して
+探索します。検索基盤、Marginalisとの接続契約、検索API、MCP、評価はRenkan側の計画で管理します。
+
+Marginalisのノート一覧にはタグと更新日による絞り込みを残します。関係の図では、表示する部分グラフを
+組み直すために題名、本文、タグを単純に照合します。編集画面では開いている文書内を検索できます。
+これらは検索索引、順位付け、横断検索を持たない局所的な操作であり、全文検索へ拡張しません。
+
+== 保留中の再検討条件
+
+* *PostgreSQL*: 複数ホスト、高可用性、復旧目標、代表負荷などの
+xref:adr/0002-sqliteを正本として維持する.adoc#再検討条件[再検討条件]が実測で成立した場合だけ再検討します。
+* *添付Resource*: 保存先、MIME type、容量、認可、バックアップを一つの公開契約として
+定義できる場合に再検討します。
+
 == ソース配置
 
 [source,text]
@@ -275,9 +293,11 @@ crate内moduleを使う。各crateの``lib.rs``は公開facade、routerまたは
 実行経路と公開型を短く一覧できる状態に保つ。
 
 Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセットの配信を担当し、Reactは
-画面遷移とブラウザー内状態を担当します。RESTのTypeScript型、実行時の応答検査、クライアント関数は
-``marginalis-contract/src/typescript-contracts.ts``を正本として
+画面遷移とブラウザー内状態を担当します。RESTのTypeScript型と実行時の応答検査は、
+``marginalis-contract``のRust型が持つJSON Schemaを正本として
 ``frontend/src/generated/contracts.ts``へ生成し、フロントエンド側では手書きで複製しません。
+HTTPクライアント関数は契約ではないため``frontend/src/client.ts``に置き、生成した型と検査だけを
+参照します。
 編集内容、保存処理、共有設定の状態遷移は、それぞれ``editorState.ts``、``editorActivityState.ts``、
 ``accessControlState.ts``の純粋なreducerへ置きます。Reactコンポーネントは入力、REST呼び出し、
 副作用の調整を担当し、状態遷移の規則をイベント処理へ分散させません。保存前プレビューの遅延、
@@ -292,7 +312,7 @@ AsciiDoc文書の入力は``AsciiDocEditor.tsx``へ閉じ込めたCodeMirrorが�
 HTML生成はサーバー側のAdocWeaveだけが担当します。サーバーはHTMLごとにCSP nonceを生成し、
 CodeMirrorが実行時に作る基礎CSSだけを許可します。採用理由と操作上の制約は
 xref:adr/0003-codemirrorをasciidoc編集基盤に採用.adoc#top[CodeMirror採用判断]と
-xref:web-ui-editor.adoc#top[AsciiDoc編集画面]を参照してください。
+xref:../user-guide/web-ui-editor.adoc#top[AsciiDoc編集画面]を参照してください。
 成功型は``error``を保持できず、失敗型はHTTP境界で常に``error``へ変換します。RESTでは位置と重大度を
 共通の``NoteDiagnostic``契約として返し、成功したプレビューも診断を失わず画面へ渡します。
 検証時に抽出したノート参照は作成、更新、プレビューで再利用し、同じ入力を参照抽出のためだけに

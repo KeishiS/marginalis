@@ -12,20 +12,13 @@
 . 外部のGit依存が意図した公開版を指していることを確認します。``cargo make shared-authorization-server``が、
 共有Authorization Serverの2 crateについて、版が同じであること、同じリポジトリの40桁の完全SHAから取得して
 いること、``Cargo.lock``の取得元が宣言と一致すること、``flake.nix``に取得ハッシュがあることを検査します。
-指しているSHAが上流の公開済みタグに対応することは、次のように確認します。
-+
-[source,sh]
-----
-gh api repos/KeishiS/mcp-authorization-server/git/ref/tags/<tag> --jq '.object.sha' |
-  xargs -I{} gh api repos/KeishiS/mcp-authorization-server/git/tags/{} --jq '.object.sha'
-grep -n 'rev =' Cargo.toml
-grep -n 'mcp-authorization-server' Cargo.lock flake.nix
-----
-+
-上流の未公開コミットや、タグが付いていないコミットを指したまま公開しません。
+指しているSHAが上流の公開済みタグに対応することの確認は
+xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]のタグ解決手順に
+従います。上流の未公開コミットや、タグが付いていないコミットを指したまま公開しません。
 . xref:acceptance.adoc#top[受入基準]の人手受入を実施し、実施日、結果、失敗または未実施の項目が
 ある場合の判断をリリース用Pull Requestへ記載します。
-. 必須チェックの成功を確認し、Pull Requestをsquash方式で``main``へマージします。
+. 必須チェックの成功を確認し、 xref:development.adoc#top[GitHubを使う開発手順]のマージ方式で
+Pull Requestを``main``へマージします。
 . ``main``の先端で``release-gate``ワークフローを手動実行します。``release_tag``には作成予定の
 タグを入力し、検証の成功を確認します。
 . 検証した``main``の先端へリリースタグを作成してプッシュし、タグのプッシュで再実行される
@@ -38,9 +31,10 @@ grep -n 'mcp-authorization-server' Cargo.lock flake.nix
 gh release create v<版> --title v<版> --notes-file <Release Notesのファイル>
 ----
 
-リリースを中止する場合は、タグとGitHub Releaseを作成せず、必要な修正を通常のPull Requestとして
-続けます。過去の版の変更内容と移行手順はGitHub Releasesを、v0.36.0以前の記録は各タグ上の
+パッチ版は予定へ固定せず、各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
+なった場合だけ公開します。リリースを中止する場合は、タグとGitHub Releaseを作成せず、必要な修正を
+通常のPull Requestとして続けます。過去の版の変更内容と移行手順はGitHub Releasesを、v0.36.0以前の記録は各タグ上の
 ``CHANGELOG.adoc``と``docs/acceptance-results/``を参照してください。
 
 日次バックアップ、30世代の保持、四半期の復元確認については
-xref:nixos.adoc#top[NixOSでの運用]を参照してください。
+xref:../user-guide/nixos.adoc#top[NixOSでの運用]を参照してください。

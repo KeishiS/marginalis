@@ -2,7 +2,7 @@
 
 [#top]
 この文書は、AIエージェントを含む開発参加者向けの案内です。開発環境、検証、GitHubでの詳しい
-作業手順は xref:docs/development.adoc#top[GitHubを使う開発手順]、システムの仕様や運用手順は
+作業手順は xref:docs/developer-guide/development.adoc#top[GitHubを使う開発手順]、システムの仕様や運用手順は
 xref:docs/README.adoc#top[資料案内]を参照してください。
 
 == 作業の始め方
@@ -12,13 +12,12 @@ xref:docs/README.adoc#top[資料案内]を参照してください。
 . 最新の``main``から目的が分かる作業ブランチを作成します。
 . 既存の形式とコンポーネントの役割分担に従い、変更に対応する文書とテストも更新します。
 . 関連する検証を実行し、目的、主な差分、検証結果をPull Requestへ記載します。
-. Pull Requestからsquash方式で``main``へマージします。``main``へ直接pushしません。
-1つのPull Requestが``main``の1 commitに対応するため、``main``の履歴を一列で読めます。
-手順は xref:docs/development.adoc#top[GitHubを使う開発手順]を参照してください。
+. Pull Requestから``main``へマージします。``main``へ直接pushしません。マージ方式と操作は
+xref:docs/developer-guide/development.adoc#top[GitHubを使う開発手順]を参照してください。
 
 新しい作業項目と完了条件はGitHub Issuesで管理します。機能の修正、改善、追加では、
 Issue Formに現在と理想の動作例を記載してください。設計判断を長期に参照する場合は、
-実装Issueとは別に xref:docs/documentation.adoc#top[文書管理方針]に従ってADRを追加します。
+実装Issueとは別に xref:docs/developer-guide/documentation.adoc#top[文書管理方針]に従ってADRを追加します。
 
 Pull Requestには、変更の目的、利用者や運用者が理解できる主な差分、実行した検証、互換性と
 移行への影響、セキュリティーと運用への影響、関連Issueを記載します。確認が不要な項目は、
@@ -26,18 +25,10 @@ Pull Requestには、変更の目的、利用者や運用者が理解できる�
 
 == 基本検証
 
-[source,text]
-----
-cargo make format
-cargo make verify
-cargo make pre-push
-----
-
-``verify``は開発中の通常検証、``pre-push``はカバレッジ測定とすべてのNixOS VM E2Eテストを
-含むpush前の検証です。
-
-文書だけを変更した場合も``cargo make docs-check``を実行します。公開前の検証と受入は
-xref:docs/release.adoc#top[リリース手順]に従います。
+検証コマンドとその使い分けは
+xref:docs/developer-guide/development.adoc#top[GitHubを使う開発手順]を正本とします。開発中は
+``cargo make verify``、push前は``cargo make pre-push``を実行します。公開前の検証と受入は
+xref:docs/developer-guide/release.adoc#top[リリース手順]に従います。
 
 == セキュリティー
 

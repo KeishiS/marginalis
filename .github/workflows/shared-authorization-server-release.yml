@@ -78,7 +78,7 @@ jobs:
             '' \
             '## 対応' \
             '' \
-            '更新する場合は、`docs/mcp-authorization-server-maintenance.adoc`の手順に従います。' \
+            '更新する場合は、`docs/developer-guide/mcp-authorization-server-maintenance.adoc`の手順に従います。' \
             '更新を保留する場合は、理由と再確認時期をこのIssueへ記録し、openのまま維持します。' \
             '同じReleaseについて定期実行がIssueを重複作成することはありません。' \
             >"$body_file"

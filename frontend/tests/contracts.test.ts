@@ -99,7 +99,7 @@ describe("生成済みREST応答検査", () => {
         diagnostics: [
           {
             ...preview.diagnostics[0],
-            span: { start: 14, end: 10, unit: "utf8_byte" },
+            span: { start: 10, end: 14, unit: "byte" },
           },
         ],
       }),

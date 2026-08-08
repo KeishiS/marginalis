@@ -2,7 +2,7 @@
 
 ## 文書の執筆
 
-- リポジトリ固有の用語は[用語集](docs/glossary.adoc)に従う。新しい用語を導入する場合は、既存の
+- リポジトリ固有の用語は[用語集](docs/user-guide/glossary.adoc)に従う。新しい用語を導入する場合は、既存の
   用語で説明できないか確認し、必要であれば用語集も同時に更新する。
 - 同じ説明を複数の文書へ繰り返さず、詳しい説明を置く文書へのリンクを使用する。
 
@@ -12,12 +12,12 @@
 
 ## GitHub操作
 
-- Pull Request作成後は、原則としてrebase方式のauto-mergeを設定する。必須チェックが成功し、
-  必要なレビューを得るまで実際のマージは行われない。
-- `main`との衝突を解消するために`main`をマージした場合は、rebase方式を使用できないため
-  squash方式でマージする。force pushで履歴を書き換えない。
+- Pull Request作成後はsquash方式のauto-mergeを設定する。必須チェックが成功し、
+  必要なレビューを得るまで実際のマージは行われない。マージ方式の理由と操作は
+  [GitHubを使う開発手順](docs/developer-guide/development.adoc)に従う。
+- `main`との衝突は`main`を作業ブランチへマージして解消する。force pushで履歴を書き換えない。
 - リリースタグは、リリース用Pull Requestが`main`へマージされ、
   対象コミットでリリースゲートが成功した後に作成する。
 - 機能の修正、改善、追加ではIssueテンプレートに現在と理想の動作例を記載する。
 
-詳細な手順は[GitHubを使う開発手順](docs/development.adoc)に従う。
+詳細な手順は[GitHubを使う開発手順](docs/developer-guide/development.adoc)に従う。

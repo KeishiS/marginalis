@@ -73,27 +73,6 @@ impl SqliteDatabase {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub(crate) async fn note(
-        &self,
-        note_id: NoteId,
-        include_deleted: bool,
-    ) -> Result<Option<Note>, SqliteStoreError> {
-        let row = if include_deleted {
-            sqlx::query("SELECT * FROM notes WHERE note_id = ?")
-                .bind(note_id.to_string())
-                .fetch_optional(&self.pool)
-                .await
-        } else {
-            sqlx::query("SELECT * FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL")
-                .bind(note_id.to_string())
-                .fetch_optional(&self.pool)
-                .await
-        }
-        .map_err(database_error)?;
-        row.map(note_from_row).transpose()
-    }
-
     /// 所有者またはACLで共有された利用者だけに、削除済みでない正本を返す。
     pub async fn accessible_note(
         &self,
