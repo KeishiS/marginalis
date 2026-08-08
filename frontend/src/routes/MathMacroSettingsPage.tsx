@@ -1,11 +1,20 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import {
+  ApiError,
   ApplicationConfig,
   MathMacro,
   readMathMacros,
   replaceMathMacros,
 } from "../api";
+import {
+  mathMacroBytes,
+  MAX_MATH_MACROS,
+  MAX_MATH_MACRO_ARGUMENTS,
+  MAX_MATH_MACRO_NAME_CHARACTERS,
+  MAX_MATH_MACRO_TOTAL_BYTES,
+  validateMathMacros,
+} from "../mathMacroState";
 
 const EXAMPLES: MathMacro[] = [
   {
@@ -26,6 +35,8 @@ export function MathMacroSettingsPage({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  const totalBytes = macros === null ? 0 : mathMacroBytes(macros);
+  const validationProblem = macros === null ? null : validateMathMacros(macros);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -58,6 +69,7 @@ export function MathMacroSettingsPage({
   function add(
     macro: MathMacro = { name: "", replacement: "", argument_count: 0 },
   ) {
+    if ((macros?.length ?? 0) >= MAX_MATH_MACROS) return;
     setMacros((current) => [...(current ?? []), macro]);
     setMessage("");
   }
@@ -65,16 +77,25 @@ export function MathMacroSettingsPage({
   function addExample(example: MathMacro) {
     setMacros((current) => {
       const values = current ?? [];
-      return values.some((macro) => macro.name === example.name)
+      return values.length >= MAX_MATH_MACROS ||
+        values.some((macro) => macro.name === example.name)
         ? values
         : [...values, example];
     });
     setMessage("");
   }
 
+  function remove(index: number) {
+    setMacros(
+      (current) =>
+        current?.filter((_, itemIndex) => itemIndex !== index) ?? null,
+    );
+    setMessage("");
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (macros === null || saving) return;
+    if (macros === null || saving || validationProblem !== null) return;
     setSaving(true);
     setMessage("");
     try {
@@ -86,11 +107,9 @@ export function MathMacroSettingsPage({
       setRevision(saved.revision);
       setFailed(false);
       setMessage("数式マクロを保存しました。");
-    } catch {
+    } catch (error: unknown) {
       setFailed(true);
-      setMessage(
-        "数式マクロを保存できませんでした。入力内容を確認し、画面を再読み込みしてからお試しください。",
-      );
+      setMessage(saveFailureMessage(error));
     } finally {
       setSaving(false);
     }
@@ -131,7 +150,18 @@ export function MathMacroSettingsPage({
           </div>
           <p className="field-help">
             コマンド名には先頭の <code>\</code> を含めません。置換内容では引数を{" "}
-            <code>#1</code> から <code>#9</code> で参照できます。
+            <code>#1</code> から <code>#{MAX_MATH_MACRO_ARGUMENTS}</code>{" "}
+            で参照できます。最大
+            {MAX_MATH_MACROS}
+            件、コマンド名と置換内容の合計は
+            {MAX_MATH_MACRO_TOTAL_BYTES / 1024} KiBまでです。 コマンド名の{" "}
+            <code>def</code> は使用できません。置換内容の波括弧を対応させ、
+            <code>%</code> は <code>\%</code> と記述してください。
+          </p>
+          <p className="field-help" role="status">
+            {macros.length} / {MAX_MATH_MACROS}件、
+            {totalBytes.toLocaleString()} /{" "}
+            {MAX_MATH_MACRO_TOTAL_BYTES.toLocaleString()}バイト
           </p>
           <div className="math-macro-list">
             {macros.map((macro, index) => (
@@ -142,7 +172,7 @@ export function MathMacroSettingsPage({
                   <input
                     required
                     pattern="[A-Za-z]+"
-                    maxLength={32}
+                    maxLength={MAX_MATH_MACRO_NAME_CHARACTERS}
                     value={macro.name}
                     onChange={(event) =>
                       update(index, { name: event.target.value })
@@ -155,7 +185,7 @@ export function MathMacroSettingsPage({
                     required
                     type="number"
                     min={0}
-                    max={9}
+                    max={MAX_MATH_MACRO_ARGUMENTS}
                     value={macro.argument_count}
                     onChange={(event) =>
                       update(index, {
@@ -168,38 +198,39 @@ export function MathMacroSettingsPage({
                   置換内容
                   <input
                     required
-                    maxLength={512}
                     value={macro.replacement}
                     onChange={(event) =>
                       update(index, { replacement: event.target.value })
                     }
                   />
                 </label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMacros(
-                      macros.filter((_, itemIndex) => itemIndex !== index),
-                    )
-                  }
-                >
+                <button type="button" onClick={() => remove(index)}>
                   削除
                 </button>
               </fieldset>
             ))}
           </div>
           <div className="editor-actions">
-            <button type="button" onClick={() => add()}>
+            <button
+              type="button"
+              disabled={macros.length >= MAX_MATH_MACROS}
+              onClick={() => add()}
+            >
               マクロを追加
             </button>
             <button
               className="button button-primary"
               type="submit"
-              disabled={saving}
+              disabled={saving || validationProblem !== null}
             >
               {saving ? "保存しています…" : "保存"}
             </button>
           </div>
+          {validationProblem && (
+            <p className="problem-inline" role="alert">
+              {validationProblem}
+            </p>
+          )}
           {message && (
             <p
               className={failed ? "problem-inline" : "state-message"}
@@ -212,4 +243,14 @@ export function MathMacroSettingsPage({
       )}
     </section>
   );
+}
+
+function saveFailureMessage(error: unknown): string {
+  if (error instanceof ApiError && error.problem.code === "conflict") {
+    return "別の画面で数式マクロが更新されています。この画面の内容を控えてから再読み込みし、最新の設定へ反映してください。";
+  }
+  if (error instanceof ApiError && error.problem.code === "validation_failed") {
+    return "入力内容が保存条件を満たしていません。件数、全体の大きさ、コマンド名、引数の参照を確認してください。";
+  }
+  return "数式マクロを保存できませんでした。通信状態を確認して、もう一度お試しください。";
 }

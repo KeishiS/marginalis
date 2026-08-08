@@ -60,3 +60,28 @@ async fn math_macros_are_private_and_revision_guarded() {
         2
     );
 }
+
+#[tokio::test]
+async fn legacy_tex_unsafe_macro_is_restored_for_display_boundary_filtering() {
+    let database = database().await;
+    let alice = actor("https://id.example.test", "alice");
+    let legacy = vec![MathMacro {
+        name: "unused".into(),
+        replacement: "{broken".into(),
+        argument_count: 0,
+    }];
+
+    database
+        .replace_math_macros(alice.identity(), &legacy, 0)
+        .await
+        .expect("store legacy settings fixture");
+
+    assert_eq!(
+        database
+            .read_math_macros(alice.identity())
+            .await
+            .expect("restore legacy settings")
+            .macros,
+        legacy
+    );
+}

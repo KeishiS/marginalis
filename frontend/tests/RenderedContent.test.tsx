@@ -155,10 +155,7 @@ test("許可したTeX packageだけを同一オリジンから読み込む", asy
           "boldsymbol",
           "mathtools",
         ],
-        macros: {
-          argmax: String.raw`\operatorname*{arg\,max}`,
-          bm: [String.raw`\boldsymbol{#1}`, 1],
-        },
+        macros: {},
       },
     }),
   );
@@ -176,6 +173,71 @@ test("許可したTeX packageだけを同一オリジンから読み込む", asy
   expect(configuredPackages).not.toContain("autoload");
   expect(configuredPackages).not.toContain("require");
   document.querySelector("script[src$='/tex-svg.js']")?.remove();
+});
+
+test("共有ランタイムでも変更後の所有者マクロを局所的に組版する", async () => {
+  const inputs: string[] = [];
+  const typesetPromise = vi.fn(async ([element]: HTMLElement[]) => {
+    inputs.push(element.textContent ?? "");
+  });
+  window.MathJax = {
+    startup: { promise: Promise.resolve() },
+    typesetPromise,
+  };
+  const html = String.raw`<code class="math-latex" data-math-language="latexmath" data-math-display="inline">\owner{x}</code>`;
+  const { rerender } = render(
+    <RenderedContent
+      html={html}
+      mathMacros={[{ name: "owner", replacement: "old-#1", argument_count: 1 }]}
+      styleNonce="test-nonce"
+    />,
+  );
+  await waitFor(() => expect(typesetPromise).toHaveBeenCalledOnce());
+  expect(inputs[0]).toContain(String.raw`\def\owner#1{old-#1}`);
+
+  rerender(
+    <RenderedContent
+      html={html}
+      mathMacros={[{ name: "owner", replacement: "new-#1", argument_count: 1 }]}
+      styleNonce="test-nonce"
+    />,
+  );
+  await waitFor(() => expect(typesetPromise).toHaveBeenCalledTimes(2));
+  expect(inputs[1]).toContain(String.raw`\def\owner#1{new-#1}`);
+  expect(inputs[1]).not.toContain("old-#1");
+});
+
+test("旧保存値の不正なマクロだけを除外して数式を組版する", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const inputs: string[] = [];
+  const typesetPromise = vi.fn(async ([element]: HTMLElement[]) => {
+    inputs.push(element.textContent ?? "");
+  });
+  window.MathJax = {
+    startup: { promise: Promise.resolve() },
+    typesetPromise,
+  };
+
+  render(
+    <RenderedContent
+      html={String.raw`<code class="math-latex" data-math-language="latexmath" data-math-display="inline">\safe{x}</code>`}
+      mathMacros={[
+        { name: "safe", replacement: "#1", argument_count: 1 },
+        { name: "unused", replacement: "{broken", argument_count: 0 },
+        { name: "def", replacement: "unused", argument_count: 0 },
+      ]}
+      styleNonce="test-nonce"
+    />,
+  );
+
+  await waitFor(() => expect(typesetPromise).toHaveBeenCalledOnce());
+  expect(inputs[0]).toContain(String.raw`\def\safe#1{#1}`);
+  expect(inputs[0]).not.toContain(String.raw`\def\unused`);
+  expect(inputs[0]).not.toContain(String.raw`\def\def`);
+  expect(consoleError).toHaveBeenCalledWith(
+    "安全に適用できない数式マクロを除外しました。数式マクロ設定を確認してください。",
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 test("非表示中に届いた数式を再表示時に組版する", async () => {

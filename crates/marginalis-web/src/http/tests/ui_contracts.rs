@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn math_macro_contract_limits_match_application_policy() {
+    use marginalis_application::{
+        MAX_MATH_MACRO_ARGUMENTS, MAX_MATH_MACRO_NAME_CHARACTERS,
+        MAX_MATH_MACRO_REPLACEMENT_CHARACTERS, MAX_MATH_MACRO_TOTAL_BYTES, MAX_MATH_MACROS,
+    };
+
+    let openapi = marginalis_contract::openapi_document();
+    let schemas = &openapi["components"]["schemas"];
+    let macro_schema = &schemas["MathMacro"]["properties"];
+    let list_schema = &schemas["MathMacroSettings"]["properties"]["macros"];
+    assert_eq!(
+        macro_schema["name"]["maxLength"],
+        MAX_MATH_MACRO_NAME_CHARACTERS
+    );
+    assert_eq!(
+        macro_schema["replacement"]["maxLength"],
+        MAX_MATH_MACRO_REPLACEMENT_CHARACTERS
+    );
+    assert_eq!(
+        macro_schema["argument_count"]["maximum"],
+        MAX_MATH_MACRO_ARGUMENTS
+    );
+    assert_eq!(list_schema["maxItems"], MAX_MATH_MACROS);
+    assert_eq!(
+        list_schema["x-marginalis-max-name-replacement-bytes"],
+        MAX_MATH_MACRO_TOTAL_BYTES
+    );
+}
+
+#[test]
 fn external_paths_preserve_the_configured_subpath() {
     assert_eq!(external_path("/", "/notes/123"), "/notes/123");
     assert!(valid_return_to("/notes/new?from=home", "/"));
