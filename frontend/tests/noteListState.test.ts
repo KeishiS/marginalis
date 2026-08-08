@@ -62,6 +62,59 @@ describe("note list state", () => {
     ).toMatchObject({ notes: [notes[0]], page: 1, pageCount: 1, total: 1 });
   });
 
+  it("更新日の境界を利用者のローカル暦日の開始として扱う", () => {
+    const cutoff = new Date(2026, 2, 8).getTime();
+    const before = { ...note(1), updated_at_ms: cutoff - 1 };
+    const boundary = { ...note(2), updated_at_ms: cutoff };
+
+    const page = selectNoteListPage([before, boundary], {
+      tags: [],
+      updatedAfter: "2026-03-08",
+      page: 1,
+    });
+
+    expect(page.notes).toEqual([boundary]);
+  });
+
+  it("夏時間の切替日にも指定地域の暦日境界を使う", () => {
+    const originalTimeZone = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      const before = {
+        ...note(1),
+        updated_at_ms: Date.parse("2026-03-08T04:59:59.999Z"),
+      };
+      const boundary = {
+        ...note(2),
+        updated_at_ms: Date.parse("2026-03-08T05:00:00Z"),
+      };
+      expect(
+        selectNoteListPage([before, boundary], {
+          tags: [],
+          updatedAfter: "2026-03-08",
+          page: 1,
+        }).notes,
+      ).toEqual([boundary]);
+    } finally {
+      process.env.TZ = originalTimeZone;
+    }
+  });
+
+  it("西暦100年より前の日付も1900年代へ読み替えない", () => {
+    const boundary = new Date(0);
+    boundary.setFullYear(99, 0, 2);
+    boundary.setHours(0, 0, 0, 0);
+    const included = { ...note(1), updated_at_ms: boundary.getTime() };
+    const excluded = { ...note(2), updated_at_ms: boundary.getTime() - 1 };
+    expect(
+      selectNoteListPage([excluded, included], {
+        tags: [],
+        updatedAfter: "0099-01-02",
+        page: 1,
+      }).notes,
+    ).toEqual([included]);
+  });
+
   it("固定件数でページ分割し、URLを正規化する", () => {
     const page = selectNoteListPage(
       Array.from({ length: NOTE_LIST_PAGE_SIZE + 1 }, (_, index) =>
