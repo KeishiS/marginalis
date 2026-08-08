@@ -48,8 +48,9 @@ AsciiDoc engine、HTTP serverを起動する必要がありません。
 ``marginalis-asciidoc``が自前で検査します。
 
 なお、AdocWeave packageの版とnote profileの版は入力規則ではなく依存と公開契約の同一性を表すため、
-``NOTE_POLICY``には含めず``marginalis-asciidoc``の定数に置きます。``cargo make adocweave-version-check``が
-``Cargo.lock``と``flake.nix``の固定値との一致を検査します。
+``NOTE_POLICY``には含めず``marginalis-asciidoc``の定数に置きます。版の正本は``Cargo.toml``のrevisionと
+``Cargo.lock``の解決結果で、``cargo make adocweave-version-check``が定数、``flake.nix``、textlint plugin、
+生成済みOpenAPIなどリポジトリ内の参照との一致を検査します。
 ``marginalis-auth-oidc``は外部identity provider portを実装し、OIDC discovery・code exchange・
 ID token検証を担当します。利用を許可する``server-users``所属の判断はapplicationが担当します。
 MCP用OAuthの製品非依存の型、resourceとscopeのpolicy、PKCEとredirect URIの検査は

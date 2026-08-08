@@ -95,10 +95,18 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |文書だけの変更かを一か所の規則で分類
 |``bash .github/scripts/classify-ci-change.sh upstream/main HEAD``
 |path分類stepの標準出力
-|``verify``
+|``verify-core``
 |整形、静的解析、単体・結合試験、依存・ログ・公開契約・文書・Nix評価
 |``cargo make ci-verify``
 |失敗したtask名と標準出力
+|``verify-docs``
+|文書だけの変更での文書と追跡表の検査
+|``cargo make docs-check``と``cargo make traceability-check``
+|失敗したtask名と標準出力
+|``verify``
+|変更分類に応じて``verify-core``と``native-aarch64``、または``verify-docs``の成功を集約
+|（ゲートのため単体の再実行なし）
+|集約stepの標準出力
 |``coverage``
 |workspaceと統合経路のcoverage測定
 |``cargo make ci-coverage``
@@ -111,21 +119,25 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |production用Web UIの起動、主要操作、固定画像、ChromiumとFirefoxの編集欄互換性、ブラウザー例外
 |``cargo make browser-smoke``と``cargo make browser-editor-firefox``
 |失敗時の``browser-smoke-failure-*`` artifactにscreenshotとtrace
-|``nixos-e2e``
+|``nixos-e2e-vm``
 |Nix package、module、TLS、Kanidm、内蔵OAuth、永続化、保守unit
 |``cargo make ci-nixos-e2e``
 |試験実行失敗時の``nixos-e2e-failure-*`` artifactに、秘密情報を除去したrunner出力
+|``nixos-e2e``
+|文書だけの変更を除き``nixos-e2e-vm``の成功を集約
+|（ゲートのため単体の再実行なし）
+|集約stepの標準出力
 |``release-gate``
 |公開対象の版、全検証、Nix packageを公開前に確認
 |``cargo make release-gate``
 |失敗したtask名と標準出力
 |===
 +
-``nixos-e2e``はCIのcritical pathであり、所要時間の大半をNixのビルドが占めます。このjobだけは
+``nixos-e2e-vm``はCIのcritical pathであり、所要時間の大半をNixのビルドが占めます。このjobだけは
 Nix storeをGitHub Actionsのcacheへ保存し、run間で再利用します。cacheへの書き込みは``main``への
 push時だけに限り、Pull Requestは読み取りだけを行います。既定branchのcacheはすべてのbranchから
-読めるため、Pull Requestもこれを利用できます。``flake.nix``、``flake.lock``、``Cargo.lock``のいずれかを
-変更した場合はcacheに一致せず、従来と同じ時間がかかります。
+読めるため、Pull Requestもこれを利用できます。``flake.nix``、``flake.lock``、``Cargo.lock``、
+``nix/``配下のいずれかを変更した場合はcacheに一致せず、従来と同じ時間がかかります。
 このjobはdevShellを使用しないため、CIでは``nix develop``を経由せず``nix flake check -L``を直接
 実行します。実行内容はローカルの``cargo make ci-nixos-e2e``と同じです。
 +
@@ -200,10 +212,11 @@ gh pr diff
 gh pr checks --watch
 ----
 . Pull Request作成後にsquash方式のauto-mergeを設定します。``main``のrulesetでは
-GitHub Actionsの``verify``と``nixos-e2e``が必須です。``verify``は中核検査に加えて
-``native-aarch64``の成功も集約するため、これらのチェックと必要なレビューが完了するまで
-実際のマージは行われません。文書だけの変更でもチェック名は維持し、``verify``は文書検査、
-``nixos-e2e``は明示的な省略成功として完了するため、必須チェックが待機状態に残りません。
+GitHub Actionsの``verify``と``nixos-e2e``が必須です。両者は集約用のゲートjobで、``verify``は
+``verify-core``と``native-aarch64``の成功も集約するため、これらのチェックと必要なレビューが
+完了するまで実際のマージは行われません。文書だけの変更でもチェック名は維持し、``verify``は
+``verify-docs``の文書検査の成功、``nixos-e2e``は明示的な省略成功として完了するため、
+必須チェックが待機状態に残りません。
 ``browser-smoke``は、継続的に安定して完了することを確認してからrulesetの必須チェックへ
 追加します。追加前も失敗を無視せず、原因を解消してからマージします。
 +
