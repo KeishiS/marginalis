@@ -414,7 +414,12 @@ pub struct MathMacroResponse {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "MathMacroSettings")]
 pub struct MathMacroSettings {
-    #[schemars(length(max = 64))]
+    /// 全項目のコマンド名と置換内容をUTF-8 byte数で合計した上限も拡張属性で公開する。
+    /// JSON配列へ符号化した後の大きさではない。
+    #[schemars(
+        length(max = 64),
+        extend("x-marginalis-max-name-replacement-bytes" = 16384)
+    )]
     pub macros: Vec<MathMacroResponse>,
     #[schemars(range(min = 0))]
     pub revision: i64,

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use marginalis_application::{
-    MathMacro, MathMacroRepository, MathMacroSettings, StorageError, validate_math_macros,
+    MathMacro, MathMacroRepository, MathMacroSettings, StorageError, validate_stored_math_macros,
 };
 use marginalis_domain::Identity;
 use serde::{Deserialize, Serialize};
@@ -114,6 +114,6 @@ pub(crate) fn decode_settings(
             argument_count: item.argument_count,
         })
         .collect::<Vec<_>>();
-    validate_math_macros(&macros).map_err(|_| StorageError::CorruptData)?;
+    validate_stored_math_macros(&macros).map_err(|_| StorageError::CorruptData)?;
     Ok(MathMacroSettings { macros, revision })
 }

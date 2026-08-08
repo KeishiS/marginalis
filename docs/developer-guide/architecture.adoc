@@ -332,7 +332,11 @@ xref:../user-guide/web-ui-editor.adoc#top[AsciiDoc編集画面]を参照して�
 同じ表示境界へ置きます。数式マクロは利用者の識別子ごとにSQLiteへ保存し、サーバーがノート所有者を
 選んで閲覧・プレビュー応答へ含めます。``RenderedContent.tsx``はMathJax本体を画面全体で再利用し、
 応答のマクロは各数式の局所定義として組版時に加えます。これにより、別の所有者の設定を共有する
-MathJax実行環境へ残しません。外部CDNや未検査のHTMLは追加しません。
+MathJax実行環境へ残しません。新しく保存する設定はapplication層で、局所定義の構文を壊さないことも
+検査します。旧版で保存済みの値は従来の構造検査で復元し、局所定義へ安全に加えられない項目だけを
+``RenderedContent.tsx``で除外します。不正な未使用項目によって、同じ応答に含まれる安全なマクロや
+通常の数式まで組版できなくなることを防ぐためです。MathJaxの非公開APIには依存せず、外部CDNや
+未検査のHTMLは追加しません。
 Viteの成果物はGitで管理せず、開発時は``cargo make``、
 配布時はNixが``frontend/dist``を生成してRustバイナリーへ埋め込む。アセット、画面遷移、REST APIの
 外部URLはViteで固定せず、Rustの``external_path``でbase URLのサブパスを反映する。

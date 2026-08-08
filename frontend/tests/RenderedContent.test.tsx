@@ -207,6 +207,39 @@ test("共有ランタイムでも変更後の所有者マクロを局所的に�
   expect(inputs[1]).not.toContain("old-#1");
 });
 
+test("旧保存値の不正なマクロだけを除外して数式を組版する", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const inputs: string[] = [];
+  const typesetPromise = vi.fn(async ([element]: HTMLElement[]) => {
+    inputs.push(element.textContent ?? "");
+  });
+  window.MathJax = {
+    startup: { promise: Promise.resolve() },
+    typesetPromise,
+  };
+
+  render(
+    <RenderedContent
+      html={String.raw`<code class="math-latex" data-math-language="latexmath" data-math-display="inline">\safe{x}</code>`}
+      mathMacros={[
+        { name: "safe", replacement: "#1", argument_count: 1 },
+        { name: "unused", replacement: "{broken", argument_count: 0 },
+        { name: "def", replacement: "unused", argument_count: 0 },
+      ]}
+      styleNonce="test-nonce"
+    />,
+  );
+
+  await waitFor(() => expect(typesetPromise).toHaveBeenCalledOnce());
+  expect(inputs[0]).toContain(String.raw`\def\safe#1{#1}`);
+  expect(inputs[0]).not.toContain(String.raw`\def\unused`);
+  expect(inputs[0]).not.toContain(String.raw`\def\def`);
+  expect(consoleError).toHaveBeenCalledWith(
+    "安全に適用できない数式マクロを除外しました。数式マクロ設定を確認してください。",
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
 test("非表示中に届いた数式を再表示時に組版する", async () => {
   const typesetClear = vi.fn();
   const typesetPromise = vi.fn().mockResolvedValue(undefined);

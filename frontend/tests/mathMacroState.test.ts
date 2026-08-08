@@ -29,6 +29,41 @@ test("マクロ名、置換内容、引数参照を保存規則と同じ条件�
   ).toBeNull();
 });
 
+test("TeX定義を壊す名前、波括弧、comment、末尾backslashを拒否する", () => {
+  for (const [name, replacement] of [
+    ["def", "x"],
+    ["broken", "{x"],
+    ["broken", "}x"],
+    ["broken", "x%comment"],
+    ["broken", String.raw`x\\%comment`],
+    ["broken", "x\\"],
+  ]) {
+    expect(
+      validateMathMacros([{ name, replacement, argument_count: 0 }]),
+      `name=${name}, replacement=${JSON.stringify(replacement)}`,
+    ).not.toBeNull();
+  }
+  for (const replacement of [
+    String.raw`{x}`,
+    String.raw`\{x\}`,
+    String.raw`x\%`,
+    String.raw`x\\{y}\\`,
+  ]) {
+    expect(
+      validateMathMacros([{ name: "safe", replacement, argument_count: 0 }]),
+      `replacement=${JSON.stringify(replacement)}`,
+    ).toBeNull();
+  }
+});
+
+test("非BMP文字をUnicode code point単位で数える", () => {
+  expect(
+    validateMathMacros([
+      { name: "emoji", replacement: "😀".repeat(300), argument_count: 0 },
+    ]),
+  ).toBeNull();
+});
+
 test("全体の大きさをUTF-8のバイト数で数える", () => {
   expect(
     mathMacroBytes([{ name: "a", replacement: "あ", argument_count: 0 }]),
@@ -43,5 +78,5 @@ test("全体の大きさをUTF-8のバイト数で数える", () => {
         argument_count: 0,
       },
     ]),
-  ).toContain("16 KiB以下");
+  ).toContain(`${MAX_MATH_MACRO_TOTAL_BYTES}バイト以下`);
 });

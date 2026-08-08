@@ -4,6 +4,7 @@ import boldsymbolUrl from "mathjax/input/tex/extensions/boldsymbol.js?url&no-inl
 import mathtoolsUrl from "mathjax/input/tex/extensions/mathtools.js?url&no-inline";
 import mathJaxUrl from "mathjax/tex-svg.js?url";
 import { MathMacro } from "./api";
+import { validMathMacroForRendering } from "./mathMacroState";
 import {
   enhanceSourceBlocks,
   prepareMath,
@@ -199,8 +200,14 @@ async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {
  * 定義範囲を数式内へ閉じ、別のノートやプレビューへ漏れないようにする。
  */
 function applyMathMacros(element: HTMLElement, macros: MathMacro[]) {
-  if (macros.length === 0) return;
-  const definitions = macros
+  const applicable = macros.filter(validMathMacroForRendering);
+  if (applicable.length !== macros.length) {
+    console.error(
+      "安全に適用できない数式マクロを除外しました。数式マクロ設定を確認してください。",
+    );
+  }
+  if (applicable.length === 0) return;
+  const definitions = applicable
     .map((macro) => {
       const argumentsDeclaration = Array.from(
         { length: macro.argument_count },

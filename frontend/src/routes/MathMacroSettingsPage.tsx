@@ -10,6 +10,8 @@ import {
 import {
   mathMacroBytes,
   MAX_MATH_MACROS,
+  MAX_MATH_MACRO_ARGUMENTS,
+  MAX_MATH_MACRO_NAME_CHARACTERS,
   MAX_MATH_MACRO_TOTAL_BYTES,
   validateMathMacros,
 } from "../mathMacroState";
@@ -148,9 +150,13 @@ export function MathMacroSettingsPage({
           </div>
           <p className="field-help">
             コマンド名には先頭の <code>\</code> を含めません。置換内容では引数を{" "}
-            <code>#1</code> から <code>#9</code> で参照できます。最大
+            <code>#1</code> から <code>#{MAX_MATH_MACRO_ARGUMENTS}</code>{" "}
+            で参照できます。最大
             {MAX_MATH_MACROS}
-            件、コマンド名と置換内容の合計は16 KiBまでです。
+            件、コマンド名と置換内容の合計は
+            {MAX_MATH_MACRO_TOTAL_BYTES / 1024} KiBまでです。 コマンド名の{" "}
+            <code>def</code> は使用できません。置換内容の波括弧を対応させ、
+            <code>%</code> は <code>\%</code> と記述してください。
           </p>
           <p className="field-help" role="status">
             {macros.length} / {MAX_MATH_MACROS}件、
@@ -166,7 +172,7 @@ export function MathMacroSettingsPage({
                   <input
                     required
                     pattern="[A-Za-z]+"
-                    maxLength={32}
+                    maxLength={MAX_MATH_MACRO_NAME_CHARACTERS}
                     value={macro.name}
                     onChange={(event) =>
                       update(index, { name: event.target.value })
@@ -179,7 +185,7 @@ export function MathMacroSettingsPage({
                     required
                     type="number"
                     min={0}
-                    max={9}
+                    max={MAX_MATH_MACRO_ARGUMENTS}
                     value={macro.argument_count}
                     onChange={(event) =>
                       update(index, {
@@ -192,7 +198,6 @@ export function MathMacroSettingsPage({
                   置換内容
                   <input
                     required
-                    maxLength={512}
                     value={macro.replacement}
                     onChange={(event) =>
                       update(index, { replacement: event.target.value })

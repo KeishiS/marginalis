@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { MAX_MATH_MACRO_TOTAL_BYTES } from "../src/mathMacroState";
 import { MathMacroSettingsPage } from "../src/routes/MathMacroSettingsPage";
 
 const CONFIG = {
@@ -91,7 +92,9 @@ test("重複名と全体の大きさを保存前に案内する", async () => {
   vi.stubGlobal("fetch", fetchMock);
   const { unmount } = render(<MathMacroSettingsPage config={CONFIG} />);
 
-  expect(await screen.findByRole("alert")).toHaveTextContent("16 KiB以下");
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    `${MAX_MATH_MACRO_TOTAL_BYTES}バイト以下`,
+  );
   expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   expect(screen.getByText(/33 \/ 64件/)).toBeInTheDocument();
 
@@ -112,4 +115,16 @@ test("重複名と全体の大きさを保存前に案内する", async () => {
   await waitFor(() =>
     expect(screen.getByRole("alert")).toHaveTextContent("重複しています"),
   );
+});
+
+test("置換内容をUnicode code point単位で検査する", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(settingsResponse([], 1)));
+  render(<MathMacroSettingsPage config={CONFIG} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: /argmax/ }));
+  const replacement = screen.getByLabelText("置換内容");
+  expect(replacement).not.toHaveAttribute("maxlength");
+  fireEvent.change(replacement, { target: { value: "😀".repeat(300) } });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
 });

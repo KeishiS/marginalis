@@ -119,6 +119,21 @@ impl MathMacroUseCases for MathMacroApplication {
 }
 
 pub fn validate_math_macros(macros: &[MathMacro]) -> Result<(), MathMacroUseCaseError> {
+    validate_stored_math_macros(macros)?;
+    if macros
+        .iter()
+        .any(|item| !safe_tex_definition(&item.name, &item.replacement))
+    {
+        return Err(MathMacroUseCaseError::Invalid);
+    }
+    Ok(())
+}
+
+/// 旧版で保存できた設定を復元するときの検査。
+///
+/// TeX定義へ安全に埋め込めない項目も読み取りは許可し、表示境界でその項目だけを除外する。
+/// 新しい保存では[`validate_math_macros`]が追加の安全性も検査する。
+pub fn validate_stored_math_macros(macros: &[MathMacro]) -> Result<(), MathMacroUseCaseError> {
     if macros.len() > MAX_MATH_MACROS
         || macros
             .iter()
@@ -144,6 +159,36 @@ pub fn validate_math_macros(macros: &[MathMacro]) -> Result<(), MathMacroUseCase
         }
     }
     Ok(())
+}
+
+fn safe_tex_definition(name: &str, replacement: &str) -> bool {
+    // `\def\def{...}`は、後続マクロの定義に使う`\def`自体を上書きする。
+    if name == "def" {
+        return false;
+    }
+    let mut brace_depth = 0_u32;
+    let mut consecutive_backslashes = 0_u32;
+    for character in replacement.chars() {
+        if character == '\\' {
+            consecutive_backslashes += 1;
+            continue;
+        }
+        let escaped = consecutive_backslashes % 2 == 1;
+        consecutive_backslashes = 0;
+        match character {
+            '%' if !escaped => return false,
+            '{' if !escaped => brace_depth += 1,
+            '}' if !escaped => {
+                let Some(next) = brace_depth.checked_sub(1) else {
+                    return false;
+                };
+                brace_depth = next;
+            }
+            _ => {}
+        }
+    }
+    // 奇数個の末尾backslashは、生成時に加える定義末尾の`}`をescapeする。
+    brace_depth == 0 && consecutive_backslashes % 2 == 0
 }
 
 fn valid_argument_references(replacement: &str, argument_count: u8) -> bool {
@@ -217,6 +262,43 @@ mod tests {
             assert_eq!(
                 validate_math_macros(&macros),
                 Err(MathMacroUseCaseError::Invalid)
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_values_that_can_break_generated_tex_definitions() {
+        for (name, replacement) in [
+            ("def", "x"),
+            ("broken", "{x"),
+            ("broken", "}x"),
+            ("broken", r"x\"),
+            ("broken", "x%comment"),
+            ("broken", r"x\\%comment"),
+        ] {
+            assert_eq!(
+                validate_math_macros(&[MathMacro {
+                    name: name.into(),
+                    replacement: replacement.into(),
+                    argument_count: 0,
+                }]),
+                Err(MathMacroUseCaseError::Invalid),
+                "name={name}, replacement={replacement:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_balanced_groups_and_escaped_tex_braces_and_percent() {
+        for replacement in [r"{x}", r"\{x\}", r"x\%", r"x\\{y}\\"] {
+            assert_eq!(
+                validate_math_macros(&[MathMacro {
+                    name: "safe".into(),
+                    replacement: replacement.into(),
+                    argument_count: 0,
+                }]),
+                Ok(()),
+                "replacement={replacement:?}"
             );
         }
     }

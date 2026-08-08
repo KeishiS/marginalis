@@ -4,6 +4,7 @@ import {
   CONTRACT_SCHEMAS,
   parseApplicationConfig,
   parseDeletedNoteListEntries,
+  parseMathMacroSettings,
   parseNote,
   parseNotePreview,
   parseNoteView,
@@ -14,12 +15,18 @@ import {
   MAX_MATH_MACRO_ARGUMENTS,
   MAX_MATH_MACRO_NAME_CHARACTERS,
   MAX_MATH_MACRO_REPLACEMENT_CHARACTERS,
+  MAX_MATH_MACRO_TOTAL_BYTES,
 } from "../src/mathMacroState";
 
 describe("生成済みREST応答検査", () => {
   it("数式マクロ画面の入力上限を生成済み契約と一致させる", () => {
     const settings = CONTRACT_SCHEMAS.MathMacroSettings as {
-      properties: { macros: { maxItems: number } };
+      properties: {
+        macros: {
+          maxItems: number;
+          "x-marginalis-max-name-replacement-bytes": number;
+        };
+      };
     };
     const macro = CONTRACT_SCHEMAS.MathMacro as {
       properties: {
@@ -29,6 +36,9 @@ describe("生成済みREST応答検査", () => {
       };
     };
     expect(settings.properties.macros.maxItems).toBe(MAX_MATH_MACROS);
+    expect(
+      settings.properties.macros["x-marginalis-max-name-replacement-bytes"],
+    ).toBe(MAX_MATH_MACRO_TOTAL_BYTES);
     expect(macro.properties.name.minLength).toBe(1);
     expect(macro.properties.name.maxLength).toBe(
       MAX_MATH_MACRO_NAME_CHARACTERS,
@@ -41,6 +51,26 @@ describe("生成済みREST応答検査", () => {
     expect(macro.properties.argument_count.maximum).toBe(
       MAX_MATH_MACRO_ARGUMENTS,
     );
+  });
+
+  it("数式マクロの文字数をUnicodeコードポイントで検査する", () => {
+    const replacement = "😀".repeat(300);
+    const settings = {
+      macros: [{ name: "emoji", replacement, argument_count: 0 }],
+      revision: 0,
+    };
+    expect(parseMathMacroSettings(settings)).toEqual(settings);
+    expect(() =>
+      parseMathMacroSettings({
+        ...settings,
+        macros: [
+          {
+            ...settings.macros[0],
+            replacement: "😀".repeat(513),
+          },
+        ],
+      }),
+    ).toThrow();
   });
   it("必須項目の型が異なるノートを拒否する", () => {
     expect(() =>

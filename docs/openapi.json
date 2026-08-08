@@ -737,11 +737,13 @@
         "description": "数式マクロ設定。要求と応答で同じ構造を使う。",
         "properties": {
           "macros": {
+            "description": "全項目のコマンド名と置換内容をUTF-8 byte数で合計した上限も拡張属性で公開する。\nJSON配列へ符号化した後の大きさではない。",
             "items": {
               "$ref": "#/components/schemas/MathMacro"
             },
             "maxItems": 64,
-            "type": "array"
+            "type": "array",
+            "x-marginalis-max-name-replacement-bytes": 16384
           },
           "revision": {
             "format": "int64",
