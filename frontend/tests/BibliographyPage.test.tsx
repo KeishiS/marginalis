@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
@@ -63,7 +64,7 @@ test("文献カードの操作を情報部分と分けて並べる", async () =>
   expect(card.parentElement).toBe(remove.parentElement?.parentElement);
 });
 
-test("カードを選ぶと編集中になり、別のカードへ確認なしで切り替わる", async () => {
+test("未保存の編集を確認してから別のカードへ切り替える", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(libraryResponse()));
 
   render(<BibliographyPage config={CONFIG} />);
@@ -80,9 +81,17 @@ test("カードを選ぶと編集中になり、別のカードへ確認なし�
   expect(screen.getByRole("button", { name: "更新" })).toBeTruthy();
   expect((input as HTMLTextAreaElement).value).toContain("smith2024");
 
-  // 未保存のまま書き換えても、別のカードを選べば確認なしで切り替わる。
   fireEvent.change(input, { target: { value: '{"id":"draft"}' } });
   fireEvent.click(second);
+  expect(screen.getByRole("dialog")).toHaveTextContent(
+    "編集中の内容を破棄しますか",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "取り消す" }));
+  expect(first).toHaveAttribute("aria-current", "true");
+  expect(input).toHaveValue('{"id":"draft"}');
+
+  fireEvent.click(second);
+  fireEvent.click(screen.getByRole("button", { name: "変更を破棄" }));
   expect(second).toHaveAttribute("aria-current", "true");
   expect(first).toHaveAttribute("aria-current", "false");
   expect((input as HTMLTextAreaElement).value).toContain("tanaka2025");
@@ -138,9 +147,55 @@ test("成功の知らせと失敗を、役割と見た目で区別する", async
 
   // 失敗は利用者の対応が要るため、割り込んで伝える。
   fireEvent.click(screen.getAllByRole("button", { name: "削除" })[0]);
+  expect(screen.getByRole("dialog")).toHaveTextContent(
+    "書誌情報の削除は取り消せません",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "削除する" }));
   const problem = await waitFor(() => screen.getByRole("alert"));
   expect(problem.textContent).toContain("削除できませんでした");
   expect(problem.className).toBe("problem-inline");
+});
+
+test("登録失敗を後から開いた削除確認へ混ぜない", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(libraryResponse())
+      .mockResolvedValueOnce(new Response("", { status: 503 })),
+  );
+  render(<BibliographyPage config={CONFIG} />);
+  await screen.findByRole("button", { name: /smith2024/ });
+
+  fireEvent.click(screen.getByRole("button", { name: "登録" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "登録できませんでした",
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: "削除" })[0]);
+
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "取り消す" }));
+  expect(
+    screen.getByText("登録できませんでした", { exact: false }),
+  ).toBeVisible();
+});
+
+test("未保存のCSL-JSONがある場合だけ画面離脱を警告する", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(libraryResponse()));
+  render(<BibliographyPage config={CONFIG} />);
+  await screen.findByRole("button", { name: /smith2024/ });
+
+  const cleanEvent = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(cleanEvent);
+  expect(cleanEvent.defaultPrevented).toBe(false);
+
+  fireEvent.change(screen.getByLabelText("CSL-JSON"), {
+    target: { value: '{"id":"draft"}' },
+  });
+  const dirtyEvent = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(dirtyEvent);
+  expect(dirtyEvent.defaultPrevented).toBe(true);
 });
 
 test("URLのqueryを初期の絞り込み条件として読む", async () => {

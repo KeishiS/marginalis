@@ -767,7 +767,9 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
         "type": "integer"
       },
       "name": {
-        "pattern": "^[A-Za-z]{1,32}$",
+        "maxLength": 32,
+        "minLength": 1,
+        "pattern": "^[A-Za-z]+$",
         "type": "string"
       },
       "replacement": {
@@ -788,11 +790,13 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
     "description": "数式マクロ設定。要求と応答で同じ構造を使う。",
     "properties": {
       "macros": {
+        "description": "全項目のコマンド名と置換内容をUTF-8 byte数で合計した上限も拡張属性で公開する。\nJSON配列へ符号化した後の大きさではない。",
         "items": {
           "$ref": "#/components/schemas/MathMacro"
         },
         "maxItems": 64,
-        "type": "array"
+        "type": "array",
+        "x-marginalis-max-name-replacement-bytes": 16384
       },
       "revision": {
         "format": "int64",
@@ -1785,10 +1789,12 @@ function assertValid(value: unknown, rawSchema: unknown, path: string): void {
     }
   }
   if (typeof value === "string") {
-    if (typeof s.minLength === "number" && value.length < s.minLength) {
+    // JSON Schemaの文字列長はUnicode code point数であり、JavaScriptのUTF-16 code unit数ではない。
+    const characterLength = Array.from(value).length;
+    if (typeof s.minLength === "number" && characterLength < s.minLength) {
       throw new Error(`${path} is invalid`);
     }
-    if (typeof s.maxLength === "number" && value.length > s.maxLength) {
+    if (typeof s.maxLength === "number" && characterLength > s.maxLength) {
       throw new Error(`${path} is invalid`);
     }
     if (typeof s.pattern === "string" && !new RegExp(s.pattern).test(value)) {

@@ -11,20 +11,20 @@ build_tree() {
   echo 'MIT License' >"$root/LICENSE-MIT"
   echo 'Apache License' >"$root/LICENSE-APACHE"
   jq -n '{packages: [
-    {name: "marginalis-domain", version: "0.36.0",
+    {name: "marginalis-domain", version: "1.2.3",
      license: "MIT OR Apache-2.0", publish: []},
-    {name: "marginalis-service", version: "0.36.0",
+    {name: "marginalis-service", version: "1.2.3",
      license: "MIT OR Apache-2.0", publish: []}
   ]}' >"$root/metadata.json"
 }
 
 build_tree "$work_dir/good"
-bash "$script_dir/check-release-metadata.sh" \
+RELEASE_TAG="v1.2.3" bash "$script_dir/check-release-metadata.sh" \
   "$work_dir/good/metadata.json" "$work_dir/good" >/dev/null
 
 reject() {
   local description=$1
-  if bash "$script_dir/check-release-metadata.sh" \
+  if RELEASE_TAG="${2:-}" bash "$script_dir/check-release-metadata.sh" \
     "$work_dir/bad/metadata.json" "$work_dir/bad" >/dev/null 2>&1; then
     echo "受理してはいけない状態を受理しました: $description" >&2
     exit 1
@@ -38,7 +38,7 @@ rebuild() {
 
 # crateごとに版が食い違う場合
 rebuild
-jq '.packages[1].version = "0.37.0"' \
+jq '.packages[1].version = "1.2.4"' \
   "$work_dir/bad/metadata.json" >"$work_dir/bad/metadata.new"
 mv "$work_dir/bad/metadata.new" "$work_dir/bad/metadata.json"
 reject "版の不一致"
@@ -61,5 +61,19 @@ reject "publish禁止の欠落"
 rebuild
 rm "$work_dir/bad/LICENSE-APACHE"
 reject "ライセンス文書の欠落"
+
+# vから始まる通常版の形式でない場合
+rebuild
+reject "vがないリリースタグ" "1.2.3"
+
+rebuild
+reject "要素が不足したリリースタグ" "v1.2"
+
+rebuild
+reject "先頭に不要な0があるリリースタグ" "v01.2.3"
+
+# 形式が正しくてもworkspaceの版と違う場合
+rebuild
+reject "workspaceの版と異なるリリースタグ" "v1.2.4"
 
 echo "リリースmetadata検査の自己テストに成功しました。"

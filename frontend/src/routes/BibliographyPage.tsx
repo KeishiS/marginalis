@@ -8,6 +8,7 @@ import {
   searchBibliography,
   updateBibliographyItem,
 } from "../api";
+import { ConfirmationDialog } from "../ConfirmationDialog";
 import { BibliographyImportPanel } from "./BibliographyImportPanel";
 
 /** 操作の結果。失敗は利用者の対応を促すため、成功の知らせと区別して伝える。 */
@@ -19,6 +20,9 @@ interface Message {
 const notice = (text: string): Message => ({ text, failed: false });
 const failure = (text: string): Message => ({ text, failed: true });
 
+const EMPTY_INPUT =
+  '{\n  "id": "smith2024",\n  "type": "article-journal",\n  "title": "Example title"\n}';
+
 /** URLの`query`を初期の絞り込み条件として読む。関係の図から文献を選んだ場合に使う。 */
 function initialQuery(search: string): string {
   return new URLSearchParams(search).get("query") ?? "";
@@ -27,15 +31,22 @@ function initialQuery(search: string): string {
 export function BibliographyPage({ config }: { config: ApplicationConfig }) {
   const [items, setItems] = useState<BibliographyItem[] | null>(null);
   const [query, setQuery] = useState(() => initialQuery(config.search));
-  const [input, setInput] = useState(
-    '{\n  "id": "smith2024",\n  "type": "article-journal",\n  "title": "Example title"\n}',
-  );
+  const [input, setInput] = useState(EMPTY_INPUT);
+  const [savedInput, setSavedInput] = useState(EMPTY_INPUT);
   const [message, setMessage] = useState<Message | null>(null);
   const [loadError, setLoadError] = useState("");
   const [searching, setSearching] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [editing, setEditing] = useState<BibliographyItem | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<
+    BibliographyItem | "cancel" | null
+  >(null);
+  const [pendingDelete, setPendingDelete] = useState<BibliographyItem | null>(
+    null,
+  );
+  const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
   const activeSearch = useRef<AbortController | null>(null);
+  const dirty = input !== savedInput;
 
   const load = useCallback(
     async (search: string) => {
@@ -89,6 +100,46 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
     },
     [],
   );
+  useEffect(() => {
+    const warnAboutUnsavedChanges = (event: BeforeUnloadEvent) => {
+      if (dirty) event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warnAboutUnsavedChanges);
+    return () =>
+      window.removeEventListener("beforeunload", warnAboutUnsavedChanges);
+  }, [dirty]);
+
+  function beginEditing(item: BibliographyItem) {
+    const value = JSON.stringify(item.csl_json, null, 2);
+    setEditing(item);
+    setInput(value);
+    setSavedInput(value);
+    setMessage(notice(`${item.citation_key}を編集中です。`));
+  }
+
+  function cancelEditing() {
+    setEditing(null);
+    setInput(EMPTY_INPUT);
+    setSavedInput(EMPTY_INPUT);
+    setMessage(notice("編集を取り消しました。"));
+  }
+
+  function requestEditing(item: BibliographyItem) {
+    if (editing?.item_id === item.item_id) return;
+    if (dirty) {
+      setPendingEdit(item);
+    } else {
+      beginEditing(item);
+    }
+  }
+
+  function requestCancelEditing() {
+    if (dirty) {
+      setPendingEdit("cancel");
+    } else {
+      cancelEditing();
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -106,7 +157,6 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           value as Record<string, unknown>,
           editing.revision,
         );
-        setEditing(null);
         setMessage(notice("書誌情報を更新しました。"));
       } else {
         await addBibliographyItem(
@@ -115,6 +165,9 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         );
         setMessage(notice("書誌情報を登録しました。"));
       }
+      setEditing(null);
+      setInput(EMPTY_INPUT);
+      setSavedInput(EMPTY_INPUT);
       await load(query);
     } catch {
       setMessage(
@@ -132,10 +185,17 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
     setMutating(true);
     try {
       await deleteBibliographyItem(config.apiBase, item.item_id, item.revision);
+      if (editing?.item_id === item.item_id) {
+        setEditing(null);
+        setInput(EMPTY_INPUT);
+        setSavedInput(EMPTY_INPUT);
+      }
+      setPendingDelete(null);
+      setDeleteProblem(null);
       setMessage(notice("書誌情報を削除しました。"));
       await load(query);
     } catch {
-      setMessage(failure("書誌情報を削除できませんでした。"));
+      setDeleteProblem("書誌情報を削除できませんでした。");
     } finally {
       setMutating(false);
     }
@@ -204,10 +264,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
               className="button button-secondary"
               type="button"
               disabled={mutating}
-              onClick={() => {
-                setEditing(null);
-                setMessage(notice("編集を取り消しました。"));
-              }}
+              onClick={requestCancelEditing}
             >
               取消
             </button>
@@ -215,6 +272,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         </div>
       </form>
       {message &&
+        pendingDelete === null &&
         (message.failed ? (
           <p className="problem-inline" role="alert">
             {message.text}
@@ -243,15 +301,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                 className="bibliography-item"
                 type="button"
                 aria-current={editing?.item_id === item.item_id}
-                onClick={() => {
-                  // 選び直しでは読み込み直さない。押し間違いで編集中の内容が消えるため。
-                  if (editing?.item_id === item.item_id) {
-                    return;
-                  }
-                  setEditing(item);
-                  setInput(JSON.stringify(item.csl_json, null, 2));
-                  setMessage(notice(`${item.citation_key}を編集中です。`));
-                }}
+                onClick={() => requestEditing(item)}
               >
                 <strong>{item.citation_key}</strong>
                 <span>
@@ -265,7 +315,10 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                   className="button button-danger"
                   type="button"
                   disabled={mutating}
-                  onClick={() => void remove(item)}
+                  onClick={() => {
+                    setPendingDelete(item);
+                    setDeleteProblem(null);
+                  }}
                 >
                   削除
                 </button>
@@ -273,6 +326,44 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
             </li>
           ))}
         </ul>
+      )}
+      {pendingEdit !== null && (
+        <ConfirmationDialog
+          id="discard-bibliography-edit"
+          eyebrow="未保存の変更"
+          heading="編集中の内容を破棄しますか"
+          description="保存していないCSL-JSONは元に戻せません。"
+          busy={false}
+          problem={null}
+          confirmLabel="変更を破棄"
+          busyLabel="変更を破棄しています…"
+          confirmClassName="button button-danger"
+          onCancel={() => setPendingEdit(null)}
+          onConfirm={() => {
+            const next = pendingEdit;
+            setPendingEdit(null);
+            if (next === "cancel") cancelEditing();
+            else beginEditing(next);
+          }}
+        />
+      )}
+      {pendingDelete !== null && (
+        <ConfirmationDialog
+          id="delete-bibliography-item"
+          eyebrow="書誌情報の削除"
+          heading={`${pendingDelete.citation_key}を削除しますか`}
+          description="書誌情報の削除は取り消せません。"
+          busy={mutating}
+          problem={deleteProblem}
+          confirmLabel="削除する"
+          busyLabel="削除しています…"
+          confirmClassName="button button-danger"
+          onCancel={() => {
+            setPendingDelete(null);
+            setDeleteProblem(null);
+          }}
+          onConfirm={() => void remove(pendingDelete)}
+        />
       )}
     </section>
   );

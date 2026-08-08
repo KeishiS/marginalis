@@ -52,9 +52,7 @@ export function selectNoteListPage(
   notes: NoteListEntry[],
   query: NoteListQuery,
 ): NoteListPage {
-  const cutoff = query.updatedAfter
-    ? Date.parse(`${query.updatedAfter}T00:00:00Z`)
-    : null;
+  const cutoff = query.updatedAfter ? localDateStart(query.updatedAfter) : null;
   const filtered = notes.filter(
     (note) =>
       query.tags.every((tag) => note.tags.includes(tag)) &&
@@ -72,6 +70,15 @@ export function selectNoteListPage(
     pageCount,
     total: filtered.length,
   };
+}
+
+/** `input[type=date]`の暦日を、表示と同じ利用者のローカル時刻の開始へ直します。 */
+function localDateStart(value: string): number {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
 }
 
 function validDate(value: string): string {

@@ -52,8 +52,10 @@ pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
 };
 pub use math_macros::{
-    MathMacro, MathMacroApplication, MathMacroRepository, MathMacroSettings, MathMacroUseCaseError,
-    MathMacroUseCases, validate_math_macros,
+    MAX_MATH_MACRO_ARGUMENTS, MAX_MATH_MACRO_NAME_CHARACTERS,
+    MAX_MATH_MACRO_REPLACEMENT_CHARACTERS, MAX_MATH_MACRO_TOTAL_BYTES, MAX_MATH_MACROS, MathMacro,
+    MathMacroApplication, MathMacroRepository, MathMacroSettings, MathMacroUseCaseError,
+    MathMacroUseCases, validate_math_macros, validate_stored_math_macros,
 };
 pub use mcp_oauth::McpOAuthApplication;
 pub use notes::{

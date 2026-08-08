@@ -22,6 +22,7 @@ const CONFIG = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
 });
 
 function graphResponse() {
@@ -77,6 +78,16 @@ test("URLの起点と階層を読み、そのまま要求へ渡す", async () =>
   );
 });
 
+test("URLの検索語を入力と要求へ復元する", async () => {
+  const { urls } = recordingFetch();
+
+  render(<GraphPage config={{ ...CONFIG, search: "?query=Rust" }} />);
+
+  await waitFor(() => expect(urls.length).toBe(1));
+  expect(urls[0]).toBe("/api/v3/notes/graph?query=Rust");
+  expect(screen.getByLabelText("語で絞り込む")).toHaveValue("Rust");
+});
+
 test("上限を超える階層は既定の1として扱う", async () => {
   const { urls } = recordingFetch();
 
@@ -101,9 +112,27 @@ test("階層を選び直すと読み直し、全体へ戻せる", async () => {
   });
   await waitFor(() => expect(urls.length).toBe(2));
   expect(urls[1]).toBe(`/api/v3/notes/graph?origin=${NOTE}&depth=4`);
+  expect(window.location.search).toBe(`?origin=${NOTE}&depth=4`);
 
   fireEvent.click(screen.getByRole("button", { name: "全体を見る" }));
   await waitFor(() => expect(urls.length).toBe(3));
   expect(urls[2]).toBe("/api/v3/notes/graph");
+  expect(window.location.search).toBe("");
   expect(screen.queryByText("辿る階層")).toBeNull();
+});
+
+test("検索条件の変更をURLへ反映する", async () => {
+  const { urls } = recordingFetch();
+  render(<GraphPage config={CONFIG} />);
+  await waitFor(() => expect(urls.length).toBe(1));
+
+  fireEvent.change(screen.getByLabelText("語で絞り込む"), {
+    target: { value: "日本語 検索" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "絞り込む" }));
+
+  await waitFor(() => expect(urls.length).toBe(2));
+  expect(window.location.search).toBe(
+    "?query=%E6%97%A5%E6%9C%AC%E8%AA%9E+%E6%A4%9C%E7%B4%A2",
+  );
 });

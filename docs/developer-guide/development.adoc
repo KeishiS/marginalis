@@ -104,7 +104,7 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |``cargo make docs-check``と``cargo make traceability-check``
 |失敗したtask名と標準出力
 |``verify``
-|変更分類に応じて``verify-core``と``native-aarch64``、または``verify-docs``の成功を集約
+|変更分類に応じて``verify-core``、``native-aarch64``、``browser-smoke``、または``verify-docs``の成功を集約
 |（ゲートのため単体の再実行なし）
 |集約stepの標準出力
 |``coverage``
@@ -182,8 +182,9 @@ nix develop --command cargo make docs-check
 nix develop --command cargo make traceability-check
 ----
 +
-``docs-check``は空白とローカルリンクを検査します。``traceability-check``は要件ID、設計条件ID、検証先の
-対応を検査します。アーキテクチャの「一貫して満たすべき設計条件」を変更する場合は、
+``docs-check``は空白とローカルリンクを検査します。``traceability-check``は要件IDと設計条件IDの
+過不足・重複、および検証先の空欄を形式検査します。検証内容が要件や設計条件を十分に確認するかは、
+要件、設計、試験の変更時にレビューします。アーキテクチャの「一貫して満たすべき設計条件」を変更する場合は、
 条件を直接確認する試験と xref:traceability.adoc#design-verification[要件と検証の対応表]も同じ変更で
 更新します。
 +
@@ -213,12 +214,10 @@ gh pr checks --watch
 ----
 . Pull Request作成後にsquash方式のauto-mergeを設定します。``main``のrulesetでは
 GitHub Actionsの``verify``と``nixos-e2e``が必須です。両者は集約用のゲートjobで、``verify``は
-``verify-core``と``native-aarch64``の成功も集約するため、これらのチェックと必要なレビューが
+``verify-core``、``native-aarch64``、``browser-smoke``の成功も集約するため、これらのチェックと必要なレビューが
 完了するまで実際のマージは行われません。文書だけの変更でもチェック名は維持し、``verify``は
 ``verify-docs``の文書検査の成功、``nixos-e2e``は明示的な省略成功として完了するため、
 必須チェックが待機状態に残りません。
-``browser-smoke``は、継続的に安定して完了することを確認してからrulesetの必須チェックへ
-追加します。追加前も失敗を無視せず、原因を解消してからマージします。
 +
 [source,sh]
 ----
@@ -229,8 +228,8 @@ squash方式では、作業ブランチのcommitをまとめた1個のcommitが`
 ``main``の1 commitに対応するため、``main``の履歴を一列で読めます。かわりに、作業ブランチで分けた
 個々のcommitは``main``へ残りません。残す必要がある変更は、Pull Requestを分けます。
 +
-rulesetはsquash方式とmerge方式を許可しますが、上の理由からsquash方式を使用します。
-merge方式を選ぶと``main``に分岐が生じ、以降の履歴を一列で読めなくなります。
+``main``のrulesetはsquash方式だけを許可します。これにより``main``に分岐を作らず、
+以降の履歴を一列で読める状態を維持します。
 +
 auto-mergeを設定できない場合は、rulesetの必須チェックとリポジトリの
 ``Allow auto-merge``設定を確認します。ブランチ保護の無効化、管理者権限による
@@ -273,5 +272,5 @@ xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの�
 
 バージョンとリリース文書を変更する場合も、専用ブランチとPull Requestを使用します。
 ``release-gate``の手動実行、タグの作成、GitHub Releaseの作成を含むリリースの手順は
-xref:release.adoc#top[リリース手順]を正本とします。``v0.2.0``の正式リリース後はリリース候補版を
-公開せず、``v0.x.y``形式の通常版だけを公開します。
+xref:release.adoc#top[リリース手順]を正本とします。リリース候補版は公開せず、
+``v<MAJOR>.<MINOR>.<PATCH>``形式の通常版だけを公開します。
