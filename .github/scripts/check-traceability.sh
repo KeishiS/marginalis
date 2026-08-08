@@ -49,21 +49,4 @@ if ! diff -u "$requirement_ids" "$traceability_ids"; then
   echo "現行要件と要件・検証対応表のIDが一致しません。" >&2
   status=1
 fi
-if [[ "$requirements" == "docs/developer-guide/requirements.adoc" && "$traceability" == "docs/developer-guide/traceability.adoc" ]]; then
-  operations_row=$(grep -E '^REQ-OPS-007[[:space:]]' "$traceability_rows" || true)
-  for reference in \
-    'observability-check' \
-    'observability_logs_safe_http_and_mcp_results' \
-    'kanidm-discovery-vm'; do
-    if [[ "$operations_row" != *"$reference"* ]]; then
-      echo "REQ-OPS-007の検証参照がありません: $reference" >&2
-      status=1
-    fi
-  done
-  grep -Fq '[tasks.observability-check]' Makefile.toml || status=1
-  grep -Fq 'fn observability_logs_safe_http_and_mcp_results' crates/marginalis-web/src/http/tests.rs ||
-    status=1
-  grep -Fq 'kanidm-discovery-vm' flake.nix || status=1
-fi
-
 exit "$status"

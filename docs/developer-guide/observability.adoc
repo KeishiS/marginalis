@@ -273,3 +273,14 @@ HTTP header由来の値を表すfield名と未正規化URIがないこと、実�
 event一覧が一致することを検査します。検査自身の変異fixtureは、禁止例を一つずつ混入した場合に
 失敗することを確認します。HTTP試験とNixOS VM試験は、requestの成功、拒否、障害、discovery、
 保守処理の主要eventを実際の出力でも確認します。
+
+== 継続して監視する項目
+
+運用では、障害時の確認とは別に次を継続して監視します。
+
+* ChatGPT、Claude Code、Codex CLIのMCP接続
+* 所有者と直接ACL共有先のtransport横断認可
+* AdocWeave package版、note profile、OpenAPI、MCPツール定義の一致
+* バックアップ最終成功時刻、保存世代数、四半期復元試験
+* データベース容量、ノート数、revision競合
+* SQLite診断の失敗分類と旧schema拒否時のファイル不変性
