@@ -50,13 +50,15 @@ export function RenderedContent({
   mathMacros?: MathMacro[];
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const [failedHtml, setFailedHtml] = useState<string | null>(null);
+  const [failedRender, setFailedRender] = useState<string | null>(null);
+  const macroSignature = JSON.stringify(mathMacros);
+  const renderKey = `${html}\0${macroSignature}`;
 
   useLayoutEffect(() => {
     const element = container.current;
     // MathJaxとコード表示処理が子要素を変更するため、HTMLが変わった時だけ置き換える。
     if (element) element.innerHTML = html;
-  }, [html]);
+  }, [html, macroSignature]);
 
   useEffect(() => {
     const element = container.current;
@@ -64,7 +66,8 @@ export function RenderedContent({
     enhanceSourceBlocks(element);
     wrapTables(element);
     if (!prepareMath(element)) return;
-    if (failedHtml === html) {
+    applyMathMacros(element, mathMacros);
+    if (failedRender === renderKey) {
       element.dataset.mathStatus = "failed";
       return;
     }
@@ -72,7 +75,7 @@ export function RenderedContent({
     let current = true;
     // 組版中に表示対象が変わっても古い処理が現在のDOMを変更しないよう、複製上で処理する。
     const staging = element.cloneNode(true) as HTMLElement;
-    void loadMathJax(styleNonce, mathMacros)
+    void loadMathJax(styleNonce)
       .then((mathJax) =>
         enqueueMathJaxTypeset(async () => {
           let cleared = false;
@@ -98,17 +101,25 @@ export function RenderedContent({
         if (current) {
           element.dataset.mathStatus = "failed";
           console.error("MathJaxによる数式の組版に失敗しました。", error);
-          setFailedHtml(html);
+          setFailedRender(renderKey);
         }
       });
     return () => {
       current = false;
     };
-  }, [active, failedHtml, html, mathMacros, styleNonce]);
+  }, [
+    active,
+    failedRender,
+    html,
+    macroSignature,
+    mathMacros,
+    renderKey,
+    styleNonce,
+  ]);
 
   return (
     <>
-      {failedHtml === html && (
+      {failedRender === renderKey && (
         <p className="math-rendering-error" role="alert">
           数式を描画できませんでした。LaTeXの内容を確認するか、画面を再読み込みしてください。
         </p>
@@ -130,10 +141,7 @@ function enqueueMathJaxTypeset<T>(task: () => Promise<T>): Promise<T> {
   return result;
 }
 
-async function loadMathJax(
-  styleNonce: string,
-  mathMacros: MathMacro[],
-): Promise<MathJaxRuntime> {
+async function loadMathJax(styleNonce: string): Promise<MathJaxRuntime> {
   if (isMathJaxRuntime(window.MathJax)) return window.MathJax;
   if (mathJaxLoader) return mathJaxLoader;
 
@@ -166,14 +174,7 @@ async function loadMathJax(
       tex: {
         maxMacros: 1000,
         packages: [...ENABLED_TEX_PACKAGES],
-        macros: Object.fromEntries(
-          mathMacros.map((macro) => [
-            macro.name,
-            macro.argument_count === 0
-              ? macro.replacement
-              : [macro.replacement, macro.argument_count],
-          ]),
-        ),
+        macros: {},
       },
       svg: { fontCache: "local" },
     };
@@ -189,6 +190,33 @@ async function loadMathJax(
     document.head.append(script);
   });
   return mathJaxLoader;
+}
+
+/**
+ * 所有者ごとのマクロを各数式の局所定義として加える。
+ *
+ * MathJax本体は画面全体で再利用するため、起動時の設定へ利用者別マクロを残さない。波括弧で
+ * 定義範囲を数式内へ閉じ、別のノートやプレビューへ漏れないようにする。
+ */
+function applyMathMacros(element: HTMLElement, macros: MathMacro[]) {
+  if (macros.length === 0) return;
+  const definitions = macros
+    .map((macro) => {
+      const argumentsDeclaration = Array.from(
+        { length: macro.argument_count },
+        (_, index) => `#${index + 1}`,
+      ).join("");
+      return `\\def\\${macro.name}${argumentsDeclaration}{${macro.replacement}}`;
+    })
+    .join("");
+  for (const formula of element.querySelectorAll<HTMLElement>(
+    ".math-inline, .math-display",
+  )) {
+    const value = formula.textContent ?? "";
+    const opening = value.slice(0, 2);
+    const closing = value.slice(-2);
+    formula.textContent = `${opening}{${definitions}${value.slice(2, -2)}}${closing}`;
+  }
 }
 
 async function waitForMathJaxRuntime(): Promise<MathJaxRuntime> {

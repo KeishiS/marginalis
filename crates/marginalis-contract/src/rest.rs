@@ -401,7 +401,7 @@ pub struct BibliographyImportResultResponse {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "MathMacro")]
 pub struct MathMacroResponse {
-    #[schemars(regex(pattern = "^[A-Za-z]{1,32}$"))]
+    #[schemars(length(min = 1, max = 32), regex(pattern = "^[A-Za-z]+$"))]
     pub name: String,
     #[schemars(length(min = 1, max = 512))]
     pub replacement: String,

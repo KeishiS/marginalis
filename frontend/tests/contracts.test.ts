@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CONTRACT_SCHEMAS,
   parseApplicationConfig,
   parseDeletedNoteListEntries,
   parseNote,
@@ -8,8 +9,39 @@ import {
   parseNoteView,
   parseProblem,
 } from "../src/generated/contracts";
+import {
+  MAX_MATH_MACROS,
+  MAX_MATH_MACRO_ARGUMENTS,
+  MAX_MATH_MACRO_NAME_CHARACTERS,
+  MAX_MATH_MACRO_REPLACEMENT_CHARACTERS,
+} from "../src/mathMacroState";
 
 describe("生成済みREST応答検査", () => {
+  it("数式マクロ画面の入力上限を生成済み契約と一致させる", () => {
+    const settings = CONTRACT_SCHEMAS.MathMacroSettings as {
+      properties: { macros: { maxItems: number } };
+    };
+    const macro = CONTRACT_SCHEMAS.MathMacro as {
+      properties: {
+        name: { minLength: number; maxLength: number; pattern: string };
+        replacement: { minLength: number; maxLength: number };
+        argument_count: { maximum: number };
+      };
+    };
+    expect(settings.properties.macros.maxItems).toBe(MAX_MATH_MACROS);
+    expect(macro.properties.name.minLength).toBe(1);
+    expect(macro.properties.name.maxLength).toBe(
+      MAX_MATH_MACRO_NAME_CHARACTERS,
+    );
+    expect(macro.properties.name.pattern).toBe("^[A-Za-z]+$");
+    expect(macro.properties.replacement.minLength).toBe(1);
+    expect(macro.properties.replacement.maxLength).toBe(
+      MAX_MATH_MACRO_REPLACEMENT_CHARACTERS,
+    );
+    expect(macro.properties.argument_count.maximum).toBe(
+      MAX_MATH_MACRO_ARGUMENTS,
+    );
+  });
   it("必須項目の型が異なるノートを拒否する", () => {
     expect(() =>
       parseNote({

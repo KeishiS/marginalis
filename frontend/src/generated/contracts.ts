@@ -767,7 +767,9 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
         "type": "integer"
       },
       "name": {
-        "pattern": "^[A-Za-z]{1,32}$",
+        "maxLength": 32,
+        "minLength": 1,
+        "pattern": "^[A-Za-z]+$",
         "type": "string"
       },
       "replacement": {
