@@ -123,10 +123,12 @@ function assertValid(value: unknown, rawSchema: unknown, path: string): void {
     }
   }
   if (typeof value === "string") {
-    if (typeof s.minLength === "number" && value.length < s.minLength) {
+    // JSON Schemaの文字列長はUnicode code point数であり、JavaScriptのUTF-16 code unit数ではない。
+    const characterLength = Array.from(value).length;
+    if (typeof s.minLength === "number" && characterLength < s.minLength) {
       throw new Error(`${path} is invalid`);
     }
-    if (typeof s.maxLength === "number" && value.length > s.maxLength) {
+    if (typeof s.maxLength === "number" && characterLength > s.maxLength) {
       throw new Error(`${path} is invalid`);
     }
     if (typeof s.pattern === "string" && !new RegExp(s.pattern).test(value)) {

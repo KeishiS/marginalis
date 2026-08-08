@@ -178,3 +178,39 @@ test("許可していないTeX packageを数式から読み込まない", async 
   );
   expect(unexpectedExtensionRequests).toEqual([]);
 });
+
+test("旧保存値の不正な未使用マクロを除外して安全なマクロを組版する", async ({
+  page,
+  browserDiagnostics,
+}) => {
+  browserDiagnostics.allow((diagnostic) => diagnostic.kind === "console.error");
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: String.raw`<p><code class="math-latex" data-math-language="latexmath" data-math-display="inline">\safe{x}</code></p>`,
+        math_macros: [
+          { name: "safe", replacement: "#1", argument_count: 1 },
+          { name: "unused", replacement: "{broken", argument_count: 0 },
+          { name: "comment", replacement: "x%broken", argument_count: 0 },
+          { name: "def", replacement: "unused", argument_count: 0 },
+        ],
+        diagnostics: [],
+      }),
+    });
+  });
+
+  await page.goto("/notes/new");
+  await page.getByRole("button", { name: "執筆" }).click();
+  await page
+    .getByRole("textbox", { name: "AsciiDoc文書" })
+    .fill("= 旧マクロの確認\n\nstem:[x]");
+  await page.getByRole("button", { name: "分割" }).click();
+
+  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
+  await expect(page.locator(".preview-content mjx-merror")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(browserDiagnostics.diagnostics).toEqual([
+    expect.objectContaining({ kind: "console.error" }),
+  ]);
+});

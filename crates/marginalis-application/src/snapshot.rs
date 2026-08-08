@@ -7,7 +7,7 @@ use marginalis_domain::{
     NotePermission,
 };
 
-use crate::{MathMacroSettings, validate_math_macros};
+use crate::{MathMacroSettings, validate_stored_math_macros};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MathMacroSettingsSnapshot {
@@ -213,7 +213,7 @@ impl LogicalSnapshot {
         for (index, entry) in settings.iter().enumerate() {
             if entry.settings.revision < 1
                 || !owners.insert(entry.owner.clone())
-                || validate_math_macros(&entry.settings.macros).is_err()
+                || validate_stored_math_macros(&entry.settings.macros).is_err()
             {
                 return Err(InvalidSnapshot::InvalidMathMacroSettings {
                     position: index + 1,
@@ -382,6 +382,29 @@ mod tests {
         assert_eq!(plan.references().len(), 1);
         // 引用も同じ規則で重複を取り除く。
         assert_eq!(plan.citations().len(), 1);
+    }
+
+    #[test]
+    fn snapshot_accepts_legacy_tex_unsafe_macro_for_display_boundary_filtering() {
+        let owner = Identity::new("https://id.example.test".into(), "alice".into())
+            .expect("alice identity");
+        let settings = MathMacroSettingsSnapshot::new(
+            owner,
+            MathMacroSettings {
+                macros: vec![crate::MathMacro {
+                    name: "legacy".into(),
+                    replacement: "{broken".into(),
+                    argument_count: 0,
+                }],
+                revision: 1,
+            },
+        );
+        assert!(
+            LogicalSnapshot::new(Vec::new(), Vec::new())
+                .expect("snapshot")
+                .with_math_macro_settings(vec![settings])
+                .is_ok()
+        );
     }
 
     #[test]

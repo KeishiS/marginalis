@@ -82,8 +82,17 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
   await page.waitForLoadState("networkidle");
   await expect(page.locator(".graph-origin")).toContainText("先行研究の整理");
   expect(await page.locator(".graph-origin select").inputValue()).toBe("2");
+  await page.locator(".graph-origin select").selectOption("4");
+  await expect(page).toHaveURL(`/graph?origin=${noteId}&depth=4`);
   await page.getByRole("button", { name: "全体を見る" }).click();
   await expect(page.locator(".graph-origin")).toHaveCount(0);
+  await expect(page).toHaveURL("/graph");
+
+  await page.getByRole("textbox", { name: "語で絞り込む" }).fill("研究 メモ");
+  await page.getByRole("button", { name: "絞り込む" }).click();
+  await expect(page).toHaveURL(
+    "/graph?query=%E7%A0%94%E7%A9%B6+%E3%83%A1%E3%83%A2",
+  );
 
   // 図と同じ内容を一覧からも辿れる。
   await page.getByText("つながりの一覧").click();
@@ -101,6 +110,9 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
 
   // 図はマウスがなくても使える。絞り込みの次にTabで届く点をEnterで開く。
   await page.emulateMedia({ colorScheme: "light" });
+  await page.getByRole("button", { name: "条件を解除" }).click();
+  await expect(page).toHaveURL("/graph");
+  await expect(vertices).toHaveCount(3);
   await page.getByRole("button", { name: "絞り込む" }).focus();
   await page.keyboard.press("Tab");
   expect(

@@ -9,14 +9,42 @@ import { graphModel } from "../graph/model";
 /** 起点から辿れる線の本数。公開契約の上限に合わせる。 */
 const DEPTHS = [1, 2, 3, 4, 5];
 
-/** URLの`origin`と`depth`を初期の表示範囲として読む。閲覧画面から辿った場合に使う。 */
-function initialScope(search: string): { origin: string; depth: number } {
+/** URLの検索語、起点、階層を初期の表示範囲として読む。 */
+function initialScope(search: string): {
+  query: string;
+  origin: string;
+  depth: number;
+} {
   const parameters = new URLSearchParams(search);
   const depth = Number(parameters.get("depth"));
   return {
+    query: parameters.get("query") ?? "",
     origin: parameters.get("origin") ?? "",
     depth: DEPTHS.includes(depth) ? depth : 1,
   };
+}
+
+function replaceGraphSearch({
+  query,
+  origin,
+  depth,
+}: {
+  query: string;
+  origin: string;
+  depth: number;
+}) {
+  const parameters = new URLSearchParams();
+  if (query) parameters.set("query", query);
+  if (origin) {
+    parameters.set("origin", origin);
+    parameters.set("depth", String(depth));
+  }
+  const search = parameters.toString();
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`,
+  );
 }
 
 /**
@@ -26,10 +54,13 @@ function initialScope(search: string): { origin: string; depth: number } {
  * ようにする。
  */
 export function GraphPage({ config }: { config: ApplicationConfig }) {
-  const [input, setInput] = useState("");
-  const [query, setQuery] = useState("");
   const [scope, setScope] = useState(() => initialScope(config.search));
-  const { origin, depth } = scope;
+  const [input, setInput] = useState(scope.query);
+  const { query, origin, depth } = scope;
+  const changeScope = useCallback((next: typeof scope) => {
+    setScope(next);
+    replaceGraphSearch(next);
+  }, []);
   const load = useCallback(
     (signal: AbortSignal) =>
       readNoteGraph(config.apiBase, { query, origin, depth }, signal),
@@ -61,7 +92,7 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
         className="graph-search"
         onSubmit={(event) => {
           event.preventDefault();
-          setQuery(input);
+          changeScope({ ...scope, query: input });
         }}
       >
         <label>
@@ -81,7 +112,7 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
             type="button"
             onClick={() => {
               setInput("");
-              setQuery("");
+              changeScope({ ...scope, query: "" });
             }}
           >
             条件を解除
@@ -100,7 +131,10 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
             <select
               value={depth}
               onChange={(event) =>
-                setScope({ origin, depth: Number(event.target.value) })
+                changeScope({
+                  ...scope,
+                  depth: Number(event.target.value),
+                })
               }
             >
               {DEPTHS.map((value) => (
@@ -113,7 +147,7 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
           <button
             className="button button-secondary"
             type="button"
-            onClick={() => setScope({ origin: "", depth: 1 })}
+            onClick={() => changeScope({ ...scope, origin: "", depth: 1 })}
           >
             全体を見る
           </button>
