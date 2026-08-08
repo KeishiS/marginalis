@@ -36,7 +36,7 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
     );
     assert_eq!(
         database.create_owned_item(&item).await,
-        Err(BibliographyRepositoryError::Conflict)
+        Err(StorageError::Conflict)
     );
     assert_eq!(
         database
@@ -49,7 +49,7 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
                 Revision::INITIAL,
             )
             .await,
-        Err(BibliographyRepositoryError::NotFound)
+        Err(StorageError::NotFound)
     );
     let updated = database
         .update_owned_item(
@@ -68,13 +68,13 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
         database
             .delete_owned_item(&alice, item_id, Revision::INITIAL)
             .await,
-        Err(BibliographyRepositoryError::Conflict)
+        Err(StorageError::Conflict)
     );
     assert_eq!(
         database
             .delete_owned_item(&bob, item_id, Revision::INITIAL)
             .await,
-        Err(BibliographyRepositoryError::NotFound)
+        Err(StorageError::NotFound)
     );
     database
         .delete_owned_item(&alice, item_id, revision(2))

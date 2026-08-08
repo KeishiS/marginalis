@@ -1,13 +1,12 @@
 use async_trait::async_trait;
 use marginalis_application::{
-    MathMacro, MathMacroRepository, MathMacroRepositoryError, MathMacroSettings,
-    validate_math_macros,
+    MathMacro, MathMacroRepository, MathMacroSettings, StorageError, validate_math_macros,
 };
 use marginalis_domain::Identity;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
-use crate::{SqliteDatabase, database_error};
+use crate::{SqliteDatabase, storage_error};
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -19,10 +18,7 @@ pub(crate) struct StoredMathMacro {
 
 #[async_trait]
 impl MathMacroRepository for SqliteDatabase {
-    async fn read_math_macros(
-        &self,
-        owner: &Identity,
-    ) -> Result<MathMacroSettings, MathMacroRepositoryError> {
+    async fn read_math_macros(&self, owner: &Identity) -> Result<MathMacroSettings, StorageError> {
         let row = sqlx::query(
             "SELECT macros_json, revision FROM math_macro_settings
              WHERE owner_issuer = ? AND owner_subject = ?",
@@ -31,7 +27,7 @@ impl MathMacroRepository for SqliteDatabase {
         .bind(owner.subject())
         .fetch_optional(&self.pool)
         .await
-        .map_err(map_database_error)?;
+        .map_err(storage_error)?;
         row.map_or_else(|| Ok(MathMacroSettings::default()), decode_settings)
     }
 
@@ -40,7 +36,7 @@ impl MathMacroRepository for SqliteDatabase {
         owner: &Identity,
         macros: &[MathMacro],
         expected_revision: i64,
-    ) -> Result<MathMacroSettings, MathMacroRepositoryError> {
+    ) -> Result<MathMacroSettings, StorageError> {
         let stored = macros
             .iter()
             .map(|item| StoredMathMacro {
@@ -49,9 +45,8 @@ impl MathMacroRepository for SqliteDatabase {
                 argument_count: item.argument_count,
             })
             .collect::<Vec<_>>();
-        let encoded =
-            serde_json::to_string(&stored).map_err(|_| MathMacroRepositoryError::Unavailable)?;
-        let mut transaction = self.pool.begin().await.map_err(map_database_error)?;
+        let encoded = serde_json::to_string(&stored).map_err(|_| StorageError::Unavailable)?;
+        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
         let revision = if expected_revision == 0 {
             let result = sqlx::query(
                 "INSERT INTO math_macro_settings (
@@ -64,9 +59,9 @@ impl MathMacroRepository for SqliteDatabase {
             .bind(&encoded)
             .execute(&mut *transaction)
             .await
-            .map_err(map_database_error)?;
+            .map_err(storage_error)?;
             if result.rows_affected() != 1 {
-                return Err(MathMacroRepositoryError::Conflict);
+                return Err(StorageError::Conflict);
             }
             1
         } else {
@@ -82,14 +77,14 @@ impl MathMacroRepository for SqliteDatabase {
             .bind(expected_revision)
             .fetch_optional(&mut *transaction)
             .await
-            .map_err(map_database_error)?;
+            .map_err(storage_error)?;
             let Some(row) = row else {
-                return Err(MathMacroRepositoryError::Conflict);
+                return Err(StorageError::Conflict);
             };
             row.try_get("revision")
-                .map_err(|_| MathMacroRepositoryError::CorruptData)?
+                .map_err(|_| StorageError::CorruptData)?
         };
-        transaction.commit().await.map_err(map_database_error)?;
+        transaction.commit().await.map_err(storage_error)?;
         Ok(MathMacroSettings {
             macros: macros.to_vec(),
             revision,
@@ -99,18 +94,18 @@ impl MathMacroRepository for SqliteDatabase {
 
 pub(crate) fn decode_settings(
     row: sqlx::sqlite::SqliteRow,
-) -> Result<MathMacroSettings, MathMacroRepositoryError> {
+) -> Result<MathMacroSettings, StorageError> {
     let encoded: String = row
         .try_get("macros_json")
-        .map_err(|_| MathMacroRepositoryError::CorruptData)?;
+        .map_err(|_| StorageError::CorruptData)?;
     let revision: i64 = row
         .try_get("revision")
-        .map_err(|_| MathMacroRepositoryError::CorruptData)?;
+        .map_err(|_| StorageError::CorruptData)?;
     if revision <= 0 {
-        return Err(MathMacroRepositoryError::CorruptData);
+        return Err(StorageError::CorruptData);
     }
     let stored: Vec<StoredMathMacro> =
-        serde_json::from_str(&encoded).map_err(|_| MathMacroRepositoryError::CorruptData)?;
+        serde_json::from_str(&encoded).map_err(|_| StorageError::CorruptData)?;
     let macros = stored
         .into_iter()
         .map(|item| MathMacro {
@@ -119,16 +114,6 @@ pub(crate) fn decode_settings(
             argument_count: item.argument_count,
         })
         .collect::<Vec<_>>();
-    validate_math_macros(&macros).map_err(|_| MathMacroRepositoryError::CorruptData)?;
+    validate_math_macros(&macros).map_err(|_| StorageError::CorruptData)?;
     Ok(MathMacroSettings { macros, revision })
-}
-
-fn map_database_error(error: sqlx::Error) -> MathMacroRepositoryError {
-    match database_error(error) {
-        crate::SqliteStoreError::CorruptData => MathMacroRepositoryError::CorruptData,
-        crate::SqliteStoreError::NotFound
-        | crate::SqliteStoreError::Conflict
-        | crate::SqliteStoreError::ArchiveTargetNotEmpty
-        | crate::SqliteStoreError::Database(_) => MathMacroRepositoryError::Unavailable,
-    }
 }

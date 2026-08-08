@@ -5,11 +5,10 @@ use marginalis_application::{
     AuthenticationUseCaseError, MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases,
     McpAuthenticatedActor, McpAuthorizationClient, McpClientRegistrationMethod, McpOAuthClient,
     McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingSetting,
-    McpScopeCeilingUseCaseError, McpTokenPair, McpValidatedAuthorizationRequest, NoteAccessControl,
-    NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteCommands,
-    NoteGraph, NoteGraphNote, NoteGraphQuery, NoteListQuery, NotePresentation, NotePreview,
-    NoteProfile, NoteProfileExample, NoteProfileLimits, NoteProfileNormalization,
-    NoteProfileSyntax, NoteQueries, NoteRenderContext, NoteReviewDetails, NoteReviews,
+    McpScopeCeilingUseCaseError, McpTokenPair, McpValidatedAuthorizationRequest, NoteAclChange,
+    NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteGraph, NoteGraphNote,
+    NoteGraphQuery, NoteListQuery, NotePreview, NoteProfile, NoteProfileExample, NoteProfileLimits,
+    NoteProfileNormalization, NoteProfileSyntax, NoteRenderContext, NoteReviewDetails,
     NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
     NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
@@ -26,10 +25,10 @@ use tracing_subscriber::fmt::MakeWriter;
 
 // テストから使うfake実装、harness、log捕捉。テスト本体はtests.rsと配下のsubmoduleへ置く。
 
-macro_rules! implement_note_boundaries {
+macro_rules! implement_note_use_cases {
     ($type:ty) => {
         #[async_trait]
-        impl NoteQueries for $type {
+        impl NoteUseCases for $type {
             async fn list_visible_notes(
                 &self,
                 actor: Actor,
@@ -52,10 +51,7 @@ macro_rules! implement_note_boundaries {
             ) -> Result<Note, NoteUseCaseError> {
                 <$type>::read_note(self, actor, note_id).await
             }
-        }
 
-        #[async_trait]
-        impl NoteCommands for $type {
             async fn create_note(
                 &self,
                 actor: Actor,
@@ -94,10 +90,7 @@ macro_rules! implement_note_boundaries {
             ) -> Result<Note, NoteUseCaseError> {
                 <$type>::restore_note(self, actor, note_id, expected_revision).await
             }
-        }
 
-        #[async_trait]
-        impl NotePresentation for $type {
             async fn preview_new_note(
                 &self,
                 actor: Actor,
@@ -141,10 +134,7 @@ macro_rules! implement_note_boundaries {
             fn note_profile(&self) -> NoteProfile {
                 <$type>::note_profile(self)
             }
-        }
 
-        #[async_trait]
-        impl NoteAccessControl for $type {
             async fn read_note_acl(
                 &self,
                 actor: Actor,
@@ -162,10 +152,7 @@ macro_rules! implement_note_boundaries {
             ) -> Result<Note, NoteUseCaseError> {
                 <$type>::replace_note_acl(self, actor, note_id, entries, expected_revision).await
             }
-        }
 
-        #[async_trait]
-        impl NoteReviews for $type {
             async fn read_note_review(
                 &self,
                 actor: Actor,
@@ -716,8 +703,8 @@ impl UiNotes {
     }
 }
 
-implement_note_boundaries!(Notes);
-implement_note_boundaries!(UiNotes);
+implement_note_use_cases!(Notes);
+implement_note_use_cases!(UiNotes);
 
 pub(super) struct Sessions;
 

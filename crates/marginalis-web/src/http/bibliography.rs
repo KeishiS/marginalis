@@ -6,7 +6,7 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::BibliographyUseCases;
+use marginalis_application::BibliographyApplication;
 use marginalis_contract::{BibliographyItemInput, BibliographyItemResponse, ProblemCode};
 use marginalis_domain::{BibliographyItem, BibliographyItemId, EntityId};
 use serde::Deserialize;
@@ -103,7 +103,7 @@ pub(super) fn parse_item_id(item_id: String) -> HandlerResult<BibliographyItemId
         })
 }
 
-fn bibliography(state: &ApiState) -> HandlerResult<&dyn BibliographyUseCases> {
+fn bibliography(state: &ApiState) -> HandlerResult<&BibliographyApplication> {
     state.bibliography.as_deref().ok_or_else(|| {
         problem(
             StatusCode::SERVICE_UNAVAILABLE,

@@ -1,6 +1,6 @@
 use marginalis_application::{
-    BibliographyImportCommit, BibliographyImportItemMutation, BibliographyImportRepositoryError,
-    BibliographyImportState, RestorePlan,
+    BibliographyImportCommit, BibliographyImportItemMutation, BibliographyImportState, RestorePlan,
+    StorageError,
 };
 use marginalis_domain::{
     BibliographyContentDigest, BibliographyImportLink, BibliographyImportSource,
@@ -162,7 +162,7 @@ async fn revision_conflict_rolls_back_every_item_and_the_source() {
             },
         )
         .await;
-    assert_eq!(result, Err(BibliographyImportRepositoryError::Conflict));
+    assert_eq!(result, Err(StorageError::Conflict));
 
     let state = database
         .load_import_state(&alice, Some(source_id()))
@@ -227,7 +227,7 @@ async fn an_unrelated_library_change_invalidates_the_whole_preview() {
             },
         )
         .await;
-    assert_eq!(result, Err(BibliographyImportRepositoryError::Conflict));
+    assert_eq!(result, Err(StorageError::Conflict));
 
     let current = database
         .load_import_state(&alice, Some(source_id()))
@@ -257,7 +257,7 @@ async fn import_rejects_a_source_owned_by_another_actor() {
             },
         )
         .await;
-    assert_eq!(result, Err(BibliographyImportRepositoryError::NotFound));
+    assert_eq!(result, Err(StorageError::NotFound));
 }
 
 #[tokio::test]
@@ -292,7 +292,7 @@ async fn loading_import_state_rejects_a_baseline_newer_than_the_item() {
 
     assert_eq!(
         database.load_import_state(&alice, Some(source_id())).await,
-        Err(BibliographyImportRepositoryError::CorruptData)
+        Err(StorageError::CorruptData)
     );
 }
 

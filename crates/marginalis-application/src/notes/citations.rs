@@ -4,14 +4,11 @@ use std::collections::HashMap;
 
 use marginalis_domain::{BibliographyItem, Identity, NoteValidationTarget};
 
-use crate::{
-    BibliographyRepositoryError, CitationStyle, NoteAdvisoryDiagnostic, NoteAdvisorySeverity,
-    NoteUseCaseError,
-};
+use crate::{CitationStyle, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteUseCaseError};
 
 use super::{
     NoteApplication, NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution,
-    NoteCitationSegment,
+    NoteCitationSegment, map_owner_resource_error,
 };
 
 impl NoteApplication {
@@ -38,10 +35,7 @@ impl NoteApplication {
             .bibliography
             .items_by_citation_keys(owner, &cited_keys)
             .await
-            .map_err(|error| match error {
-                BibliographyRepositoryError::CorruptData => NoteUseCaseError::CorruptData,
-                _ => NoteUseCaseError::Unavailable,
-            })?;
+            .map_err(map_owner_resource_error)?;
         let items = items
             .into_iter()
             .map(|item| (item.citation_key().to_owned(), item))
@@ -176,7 +170,7 @@ mod tests {
 
     use super::*;
     use crate::notes::test_support::{
-        AcceptContent, FixedClock, FixedRandom, MemoryNotes, NoLinks, NoMathMacros, OneItemLibrary,
+        AcceptContent, MemoryNotes, NoMathMacros, OneItemLibrary, note_application,
     };
 
     /// 番号で示すスタイルは、本文での初出順に通し番号を振る。
@@ -359,17 +353,11 @@ mod tests {
 
     fn citation_application() -> NoteApplication {
         let repository = Arc::new(MemoryNotes::default());
-        NoteApplication::new(
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
-            repository,
+        note_application(
+            &repository,
             Arc::new(AcceptContent::default()),
             Arc::new(OneItemLibrary),
             Arc::new(NoMathMacros),
-            Arc::new(NoLinks),
-            Arc::new(FixedClock),
-            Arc::new(FixedRandom),
         )
     }
 }

@@ -4,8 +4,8 @@ use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, DeletedNoteListEntry, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
-    Revision,
+    Actor, DeletedNoteListEntry, Note, NoteAccess, NoteAclEntry, NoteCreationSource, NoteDraft,
+    NoteId, NoteListEntry, Revision,
 };
 
 mod access_control;
@@ -27,24 +27,10 @@ pub use graph::{
 };
 
 use crate::{
-    BibliographyRepository, Clock, MathMacroRepository, NoteAclState, NoteUseCaseError, Random,
-    RelatedNotes,
+    BibliographyRepository, Clock, MathMacroRepository, NoteAclChange, NoteAclState, NotePreview,
+    NoteProfile, NoteRenderContext, NoteReviewDetails, NoteUseCaseError, NoteUseCases, NoteView,
+    NoteWritePolicy, Random, RelatedNotes, StorageError,
 };
-
-/// 永続化方式に依存しないrepositoryの失敗理由。
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum NoteRepositoryError {
-    #[error("note was not found")]
-    NotFound,
-    #[error("note revision conflicts")]
-    Conflict,
-    #[error("note restoration period has expired")]
-    RetentionExpired,
-    #[error("stored note data is invalid")]
-    CorruptData,
-    #[error("note storage is unavailable")]
-    Unavailable,
-}
 
 /// 可視性を適用してノートを読み取るport。
 #[async_trait]
@@ -53,32 +39,32 @@ pub trait NoteQueryRepository: Send + Sync {
         &self,
         actor: &Actor,
         query: &crate::NoteListQuery,
-    ) -> Result<Vec<NoteListEntry>, NoteRepositoryError>;
+    ) -> Result<Vec<NoteListEntry>, StorageError>;
     async fn list_owned_deleted_notes(
         &self,
         actor: &Actor,
-    ) -> Result<Vec<DeletedNoteListEntry>, NoteRepositoryError>;
+    ) -> Result<Vec<DeletedNoteListEntry>, StorageError>;
     async fn accessible_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Option<AccessibleNote>, NoteRepositoryError>;
+    ) -> Result<Option<AccessibleNote>, StorageError>;
     async fn visible_notes_by_id(
         &self,
         actor: &Actor,
         note_ids: &[NoteId],
-    ) -> Result<Vec<Note>, NoteRepositoryError>;
+    ) -> Result<Vec<Note>, StorageError>;
     async fn note_view_snapshot(
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Option<NoteViewSnapshot>, NoteRepositoryError>;
+    ) -> Result<Option<NoteViewSnapshot>, StorageError>;
     /// 閲覧できるノートと、それらが引用する文献の関係を1回の読み取りで返す。
     async fn note_graph(
         &self,
         actor: &Actor,
         query: &NoteGraphQuery,
-    ) -> Result<NoteGraph, NoteRepositoryError>;
+    ) -> Result<NoteGraph, StorageError>;
 }
 
 /// 現在の利用者が閲覧できるノートと、その利用者に対する実効アクセス水準。
@@ -99,11 +85,7 @@ pub struct NoteViewSnapshot {
 /// 認可、revision、削除状態を一つのtransactionへ拘束する変更port。
 #[async_trait]
 pub trait NoteCommandRepository: Send + Sync {
-    async fn create_note(
-        &self,
-        note: &Note,
-        links: NoteLinks<'_>,
-    ) -> Result<(), NoteRepositoryError>;
+    async fn create_note(&self, note: &Note, links: NoteLinks<'_>) -> Result<(), StorageError>;
     #[allow(clippy::too_many_arguments)]
     async fn update_visible_note(
         &self,
@@ -113,21 +95,21 @@ pub trait NoteCommandRepository: Send + Sync {
         draft: &NoteDraft,
         links: NoteLinks<'_>,
         now: marginalis_domain::UnixMillis,
-    ) -> Result<Note, NoteRepositoryError>;
+    ) -> Result<Note, StorageError>;
     async fn soft_delete_visible_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
         expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
-    ) -> Result<Note, NoteRepositoryError>;
+    ) -> Result<Note, StorageError>;
     async fn restore_owned_deleted_note(
         &self,
         actor: &Actor,
         note_id: NoteId,
         expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
-    ) -> Result<Note, NoteRepositoryError>;
+    ) -> Result<Note, StorageError>;
 }
 
 /// 所有者だけが利用できるACL操作port。
@@ -137,7 +119,7 @@ pub trait NoteAclRepository: Send + Sync {
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<NoteAclState, NoteRepositoryError>;
+    ) -> Result<NoteAclState, StorageError>;
     async fn replace_note_acl(
         &self,
         actor: &Actor,
@@ -145,7 +127,7 @@ pub trait NoteAclRepository: Send + Sync {
         entries: &[NoteAclEntry],
         expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
-    ) -> Result<Note, NoteRepositoryError>;
+    ) -> Result<Note, StorageError>;
 }
 
 /// 所有者だけが利用できる人手確認操作port。
@@ -155,14 +137,14 @@ pub trait NoteReviewRepository: Send + Sync {
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Note, NoteRepositoryError>;
+    ) -> Result<Note, StorageError>;
     async fn mark_owned_note_reviewed(
         &self,
         actor: &Actor,
         note_id: NoteId,
         expected_revision: Revision,
         reviewed_at: marginalis_domain::UnixMillis,
-    ) -> Result<Note, NoteRepositoryError>;
+    ) -> Result<Note, StorageError>;
 }
 
 /// 本文から導いた、ノートが指し示す先の一覧。
@@ -173,6 +155,58 @@ pub trait NoteReviewRepository: Send + Sync {
 pub struct NoteLinks<'a> {
     pub reference_targets: &'a [NoteId],
     pub cited_keys: &'a [String],
+}
+
+/// `NoteApplication`が依存するportの束。
+///
+/// 同じ型のArcを位置引数で並べると、repositoryを取り違えても型検査で気づけない。
+/// fieldの名前で結び付けを固定する。
+pub struct NoteApplicationDependencies {
+    pub queries: Arc<dyn NoteQueryRepository>,
+    pub commands: Arc<dyn NoteCommandRepository>,
+    pub access_control: Arc<dyn NoteAclRepository>,
+    pub reviews: Arc<dyn NoteReviewRepository>,
+    pub content: Arc<dyn NoteContent>,
+    pub bibliography: Arc<dyn BibliographyRepository>,
+    pub math_macros: Arc<dyn MathMacroRepository>,
+    pub links: Arc<dyn NoteLinkResolver>,
+    pub clock: Arc<dyn Clock>,
+    pub random: Arc<dyn Random>,
+}
+
+impl NoteApplicationDependencies {
+    /// すべてのrepository portを同じstorage adapterが実装する構成をまとめて作る。
+    ///
+    /// composition rootがrepositoryごとに`Arc::new`を並べずに済む。
+    pub fn with_storage<S>(
+        storage: &Arc<S>,
+        content: Arc<dyn NoteContent>,
+        links: Arc<dyn NoteLinkResolver>,
+        clock: Arc<dyn Clock>,
+        random: Arc<dyn Random>,
+    ) -> Self
+    where
+        S: NoteQueryRepository
+            + NoteCommandRepository
+            + NoteAclRepository
+            + NoteReviewRepository
+            + BibliographyRepository
+            + MathMacroRepository
+            + 'static,
+    {
+        Self {
+            queries: storage.clone(),
+            commands: storage.clone(),
+            access_control: storage.clone(),
+            reviews: storage.clone(),
+            content,
+            bibliography: storage.clone(),
+            math_macros: storage.clone(),
+            links,
+            clock,
+            random,
+        }
+    }
 }
 
 /// transportへ公開するノート操作のapplication service。
@@ -190,30 +224,18 @@ pub struct NoteApplication {
 }
 
 impl NoteApplication {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        queries: Arc<dyn NoteQueryRepository>,
-        commands: Arc<dyn NoteCommandRepository>,
-        access_control: Arc<dyn NoteAclRepository>,
-        reviews: Arc<dyn NoteReviewRepository>,
-        content: Arc<dyn NoteContent>,
-        bibliography: Arc<dyn BibliographyRepository>,
-        math_macros: Arc<dyn MathMacroRepository>,
-        links: Arc<dyn NoteLinkResolver>,
-        clock: Arc<dyn Clock>,
-        random: Arc<dyn Random>,
-    ) -> Self {
+    pub fn new(dependencies: NoteApplicationDependencies) -> Self {
         Self {
-            queries,
-            commands,
-            access_control,
-            reviews,
-            content,
-            bibliography,
-            math_macros,
-            links,
-            clock,
-            random,
+            queries: dependencies.queries,
+            commands: dependencies.commands,
+            access_control: dependencies.access_control,
+            reviews: dependencies.reviews,
+            content: dependencies.content,
+            bibliography: dependencies.bibliography,
+            math_macros: dependencies.math_macros,
+            links: dependencies.links,
+            clock: dependencies.clock,
+            random: dependencies.random,
         }
     }
 
@@ -225,19 +247,162 @@ impl NoteApplication {
         self.queries
             .accessible_note(actor, note_id)
             .await
-            .map_err(map_repository_error)?
+            .map_err(NoteUseCaseError::from)?
             .map(|accessible| accessible.note)
             .ok_or(NoteUseCaseError::NotFound)
     }
 }
 
-fn map_repository_error(error: NoteRepositoryError) -> NoteUseCaseError {
+/// `NoteUseCases`の各操作は責務ごとのsubmoduleにある固有メソッドが実装し、ここでは
+/// 呼び出しを委譲するだけにする。
+#[async_trait]
+impl NoteUseCases for NoteApplication {
+    async fn list_visible_notes(
+        &self,
+        actor: Actor,
+        query: crate::NoteListQuery,
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+        NoteApplication::list_visible_notes(self, actor, query).await
+    }
+
+    async fn list_owned_deleted_notes(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError> {
+        NoteApplication::list_owned_deleted_notes(self, actor).await
+    }
+
+    async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
+        NoteApplication::read_note(self, actor, note_id).await
+    }
+
+    async fn create_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+        policy: NoteWritePolicy,
+        created_via: NoteCreationSource,
+    ) -> Result<Note, NoteUseCaseError> {
+        NoteApplication::create_note(self, actor, draft, policy, created_via).await
+    }
+
+    async fn update_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        draft: NoteDraft,
+        expected_revision: Revision,
+        policy: NoteWritePolicy,
+    ) -> Result<Note, NoteUseCaseError> {
+        NoteApplication::update_note(self, actor, note_id, draft, expected_revision, policy).await
+    }
+
+    async fn soft_delete_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+    ) -> Result<Note, NoteUseCaseError> {
+        NoteApplication::soft_delete_note(self, actor, note_id, expected_revision).await
+    }
+
+    async fn restore_note(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+    ) -> Result<Note, NoteUseCaseError> {
+        NoteApplication::restore_note(self, actor, note_id, expected_revision).await
+    }
+
+    async fn preview_new_note(
+        &self,
+        actor: Actor,
+        draft: NoteDraft,
+        context: NoteRenderContext,
+    ) -> Result<NotePreview, NoteUseCaseError> {
+        NoteApplication::preview_new_note(self, actor, draft, context).await
+    }
+
+    async fn preview_note_update(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        draft: NoteDraft,
+        context: NoteRenderContext,
+    ) -> Result<NotePreview, NoteUseCaseError> {
+        NoteApplication::preview_note_update(self, actor, note_id, draft, context).await
+    }
+
+    fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
+        NoteApplication::export_note_source(self, note)
+    }
+
+    async fn read_note_view(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        context: NoteRenderContext,
+    ) -> Result<NoteView, NoteUseCaseError> {
+        NoteApplication::read_note_view(self, actor, note_id, context).await
+    }
+
+    async fn read_note_graph(
+        &self,
+        actor: Actor,
+        query: NoteGraphQuery,
+    ) -> Result<NoteGraph, NoteUseCaseError> {
+        NoteApplication::read_note_graph(self, actor, query).await
+    }
+
+    fn note_profile(&self) -> NoteProfile {
+        NoteApplication::note_profile(self)
+    }
+
+    async fn read_note_acl(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteAclState, NoteUseCaseError> {
+        NoteApplication::read_note_acl(self, actor, note_id).await
+    }
+
+    async fn replace_note_acl(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        entries: Vec<NoteAclChange>,
+        expected_revision: Revision,
+    ) -> Result<Note, NoteUseCaseError> {
+        NoteApplication::replace_note_acl(self, actor, note_id, entries, expected_revision).await
+    }
+
+    async fn read_note_review(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<NoteReviewDetails, NoteUseCaseError> {
+        NoteApplication::read_note_review(self, actor, note_id).await
+    }
+
+    async fn mark_note_reviewed(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+    ) -> Result<NoteReviewDetails, NoteUseCaseError> {
+        NoteApplication::mark_note_reviewed(self, actor, note_id, expected_revision).await
+    }
+}
+
+/// 所有者の書誌ライブラリーやマクロ設定など、ノート本体ではない付随資源の読み取り失敗を写す。
+///
+/// `NotFound`や`Conflict`をそのまま返すと、ノート自体の不在や競合と区別できない。保存内容の
+/// 破損以外は一時的な失敗として扱う。
+fn map_owner_resource_error(error: StorageError) -> NoteUseCaseError {
     match error {
-        NoteRepositoryError::NotFound => NoteUseCaseError::NotFound,
-        NoteRepositoryError::Conflict => NoteUseCaseError::Conflict,
-        NoteRepositoryError::RetentionExpired => NoteUseCaseError::RetentionExpired,
-        NoteRepositoryError::CorruptData => NoteUseCaseError::CorruptData,
-        NoteRepositoryError::Unavailable => NoteUseCaseError::Unavailable,
+        StorageError::CorruptData => NoteUseCaseError::CorruptData,
+        _ => NoteUseCaseError::Unavailable,
     }
 }
 

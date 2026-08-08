@@ -7,9 +7,9 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     Clock, McpAuthenticatedPrincipal, McpAuthorizationRequest, McpClientMetadataResolver,
     McpClientMetadataResolverError, McpOAuthApplication, McpRegisteredOAuthClient,
-    McpResourcePolicy, McpScopeCeilingRepository, McpScopeCeilingRepositoryError,
-    McpScopeCeilingSetting, McpScopeCeilingUseCaseError, McpStoredClientAuthorization,
-    McpStoredScopeCeilings, McpTimestamp as UnixMillis, Random,
+    McpResourcePolicy, McpScopeCeilingRepository, McpScopeCeilingSetting,
+    McpScopeCeilingUseCaseError, McpStoredClientAuthorization, McpStoredScopeCeilings,
+    McpTimestamp as UnixMillis, Random, StorageError,
 };
 use marginalis_domain::EntityId as ApplicationEntityId;
 use sha2::{Digest, Sha256};
@@ -522,7 +522,7 @@ async fn client_authorizations_are_owner_scoped_and_record_use_and_revocation() 
         database
             .delete_client_scope_ceiling(&alice, &client.client_id, 1, at(17))
             .await,
-        Err(McpScopeCeilingRepositoryError::Conflict)
+        Err(StorageError::Conflict)
     ));
     database
         .delete_client_scope_ceiling(&alice, &client.client_id, 2, at(17))
@@ -714,7 +714,7 @@ async fn replacing_scope_ceilings_is_revision_guarded_and_revokes_existing_grant
         database
             .replace_principal_scope_ceiling(&actor, &["notes:read".into()], 1, at(5))
             .await,
-        Err(McpScopeCeilingRepositoryError::Conflict)
+        Err(StorageError::Conflict)
     ));
 
     assert_eq!(
@@ -741,7 +741,7 @@ async fn replacing_scope_ceilings_is_revision_guarded_and_revokes_existing_grant
                 at(7)
             )
             .await,
-        Err(McpScopeCeilingRepositoryError::ClientNotFound)
+        Err(StorageError::NotFound)
     ));
 }
 

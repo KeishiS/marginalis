@@ -1,11 +1,11 @@
 use std::str::FromStr;
 
 use marginalis_application::{
-    BibliographyImportRepository, BibliographyRepository, BibliographyRepositoryError, MathMacro,
-    MathMacroRepository, MathMacroRepositoryError, McpAuthorizationCodeExchange,
-    McpAuthorizationGrant, McpClientRegistrationMethod, McpOAuthClient, McpRefreshTokenRotation,
-    McpRefreshTokenRotationOutcome, McpResolvedRedirectUri, McpTimestamp, OidcLoginAttempt,
-    OidcLoginAttemptStore, RestorePlan,
+    BibliographyImportRepository, BibliographyRepository, MathMacro, MathMacroRepository,
+    McpAuthorizationCodeExchange, McpAuthorizationGrant, McpClientRegistrationMethod,
+    McpOAuthClient, McpRefreshTokenRotation, McpRefreshTokenRotationOutcome,
+    McpResolvedRedirectUri, McpTimestamp, OidcLoginAttempt, OidcLoginAttemptStore, RestorePlan,
+    StorageError,
 };
 use marginalis_domain::{
     Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteAccess,

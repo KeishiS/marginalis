@@ -2,19 +2,15 @@
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use marginalis_domain::{
     Actor, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteSummary,
 };
 
-use crate::{
-    MathMacroRepositoryError, NotePresentation, NotePreview, NoteProfile, NoteRenderContext,
-    NoteUseCaseError, ValidatedNoteDraft,
-};
+use crate::{NotePreview, NoteProfile, NoteRenderContext, NoteUseCaseError, ValidatedNoteDraft};
 
 use super::{
     NoteApplication, NoteGraph, NoteGraphQuery, NoteReferenceQuery, NoteReferenceResolution,
-    NoteRenderInputs, map_repository_error, reference_targets,
+    NoteRenderInputs, map_owner_resource_error, reference_targets,
 };
 
 impl NoteApplication {
@@ -45,7 +41,7 @@ impl NoteApplication {
             .queries
             .visible_notes_by_id(actor, &target_ids)
             .await
-            .map_err(map_repository_error)?;
+            .map_err(NoteUseCaseError::from)?;
         let resolutions = self.reference_resolutions(&targets, context, &reference_queries)?;
         let citations = self
             .citation_resolutions(owner, &citation_queries, citation_style)
@@ -66,7 +62,7 @@ impl NoteApplication {
             .math_macros
             .read_math_macros(owner)
             .await
-            .map_err(map_math_macro_repository_error)?
+            .map_err(map_owner_resource_error)?
             .macros;
         Ok(NotePreview {
             html,
@@ -122,9 +118,8 @@ impl NoteApplication {
     }
 }
 
-#[async_trait]
-impl NotePresentation for NoteApplication {
-    async fn preview_new_note(
+impl NoteApplication {
+    pub async fn preview_new_note(
         &self,
         actor: Actor,
         draft: NoteDraft,
@@ -144,7 +139,7 @@ impl NotePresentation for NoteApplication {
         .await
     }
 
-    async fn preview_note_update(
+    pub async fn preview_note_update(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -155,7 +150,7 @@ impl NotePresentation for NoteApplication {
             .queries
             .accessible_note(&actor, note_id)
             .await
-            .map_err(map_repository_error)?
+            .map_err(NoteUseCaseError::from)?
             .filter(|accessible| {
                 accessible
                     .access
@@ -176,13 +171,13 @@ impl NotePresentation for NoteApplication {
         .await
     }
 
-    fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
+    pub fn export_note_source(&self, note: &Note) -> Result<String, NoteUseCaseError> {
         self.content
             .export(note)
             .map_err(|_| NoteUseCaseError::Unavailable)
     }
 
-    async fn read_note_graph(
+    pub async fn read_note_graph(
         &self,
         actor: Actor,
         query: NoteGraphQuery,
@@ -191,7 +186,7 @@ impl NotePresentation for NoteApplication {
             .queries
             .note_graph(&actor, &query)
             .await
-            .map_err(map_repository_error)?;
+            .map_err(NoteUseCaseError::from)?;
         // 起点からの絞り込みは、閲覧できる範囲が確定した後で行う。認可の判断はrepositoryが
         // 済ませており、ここで扱うのは表示範囲だけである。
         Ok(match query.origin {
@@ -200,11 +195,11 @@ impl NotePresentation for NoteApplication {
         })
     }
 
-    fn note_profile(&self) -> NoteProfile {
+    pub fn note_profile(&self) -> NoteProfile {
         self.content.profile()
     }
 
-    async fn read_note_view(
+    pub async fn read_note_view(
         &self,
         actor: Actor,
         note_id: NoteId,
@@ -214,7 +209,7 @@ impl NotePresentation for NoteApplication {
             .queries
             .note_view_snapshot(&actor, note_id)
             .await
-            .map_err(map_repository_error)?
+            .map_err(NoteUseCaseError::from)?
             .ok_or(NoteUseCaseError::NotFound)?;
         sort_related_notes(&mut snapshot.related.outgoing);
         sort_related_notes(&mut snapshot.related.incoming);
@@ -250,7 +245,7 @@ impl NotePresentation for NoteApplication {
             .math_macros
             .read_math_macros(snapshot.note.owner())
             .await
-            .map_err(map_math_macro_repository_error)?
+            .map_err(map_owner_resource_error)?
             .macros;
         Ok(crate::NoteView {
             note: snapshot.note,
@@ -259,15 +254,6 @@ impl NotePresentation for NoteApplication {
             related: snapshot.related,
             math_macros,
         })
-    }
-}
-
-fn map_math_macro_repository_error(error: MathMacroRepositoryError) -> NoteUseCaseError {
-    match error {
-        MathMacroRepositoryError::CorruptData => NoteUseCaseError::CorruptData,
-        MathMacroRepositoryError::Conflict | MathMacroRepositoryError::Unavailable => {
-            NoteUseCaseError::Unavailable
-        }
     }
 }
 
@@ -289,29 +275,23 @@ mod tests {
         NoteReviewTracking, Revision, UnixMillis,
     };
 
-    use crate::{NoteAdvisorySeverity, NoteCommands};
+    use crate::NoteAdvisorySeverity;
 
     use super::*;
     use crate::notes::test_support::{
-        AcceptContent, CitingContent, EmptyLibrary, FixedClock, FixedRandom, MemoryNotes, NoLinks,
-        NoMathMacros, OneItemLibrary, OwnerMathMacros,
+        AcceptContent, CitingContent, EmptyLibrary, MemoryNotes, NoMathMacros, OneItemLibrary,
+        OwnerMathMacros, note_application,
     };
 
     #[tokio::test]
     async fn preview_preserves_advisories_without_reanalysis() {
         let repository = Arc::new(MemoryNotes::default());
         let content = Arc::new(AcceptContent::default());
-        let application = NoteApplication::new(
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
+        let application = note_application(
+            &repository,
             content.clone(),
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
-            Arc::new(NoLinks),
-            Arc::new(FixedClock),
-            Arc::new(FixedRandom),
         );
         let actor =
             Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
@@ -377,19 +357,13 @@ mod tests {
             })
             .expect("stored note"),
         );
-        let application = NoteApplication::new(
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
-            repository.clone(),
+        let application = note_application(
+            &repository,
             Arc::new(CitingContent {
                 keys: vec!["smith2024".into()],
             }),
             Arc::new(OneItemLibrary),
             Arc::new(OwnerMathMacros),
-            Arc::new(NoLinks),
-            Arc::new(FixedClock),
-            Arc::new(FixedRandom),
         );
         let editor =
             Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");

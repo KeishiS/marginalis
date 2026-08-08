@@ -1,7 +1,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -14,18 +14,38 @@ use marginalis_domain::{
 };
 
 use crate::{
-    BibliographyRepository, BibliographyRepositoryError, CitationStyle, Clock, MathMacro,
-    MathMacroRepository, MathMacroRepositoryError, MathMacroSettings, NoteAclState,
-    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile, NoteRenderContext,
-    NoteValidationDiagnostic, Random, ValidatedNoteDraft,
+    BibliographyRepository, CitationStyle, Clock, MathMacro, MathMacroRepository,
+    MathMacroSettings, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile,
+    NoteRenderContext, NoteValidationDiagnostic, Random, StorageError, ValidatedNoteDraft,
 };
 
 use super::{
-    AccessibleNote, NoteAclRepository, NoteCitationQuery, NoteCommandRepository, NoteContent,
-    NoteContentError, NoteGraph, NoteGraphQuery, NoteLinkResolver, NoteLinks, NoteQueryRepository,
-    NoteReferenceQuery, NoteRenderInputs, NoteRepositoryError, NoteReviewRepository,
-    NoteViewSnapshot,
+    AccessibleNote, NoteAclRepository, NoteApplication, NoteApplicationDependencies,
+    NoteCitationQuery, NoteCommandRepository, NoteContent, NoteContentError, NoteGraph,
+    NoteGraphQuery, NoteLinkResolver, NoteLinks, NoteQueryRepository, NoteReferenceQuery,
+    NoteRenderInputs, NoteReviewRepository, NoteViewSnapshot,
 };
+
+/// 決定的なclockと乱数を使い、repository4種を同じ`MemoryNotes`が担う試験用のservice。
+pub(super) fn note_application(
+    repository: &Arc<MemoryNotes>,
+    content: Arc<dyn NoteContent>,
+    bibliography: Arc<dyn BibliographyRepository>,
+    math_macros: Arc<dyn MathMacroRepository>,
+) -> NoteApplication {
+    NoteApplication::new(NoteApplicationDependencies {
+        queries: repository.clone(),
+        commands: repository.clone(),
+        access_control: repository.clone(),
+        reviews: repository.clone(),
+        content,
+        bibliography,
+        math_macros,
+        links: Arc::new(NoLinks),
+        clock: Arc::new(FixedClock),
+        random: Arc::new(FixedRandom),
+    })
+}
 
 pub(super) struct MemoryNotes {
     pub(super) notes: Mutex<Vec<Note>>,
@@ -49,7 +69,7 @@ impl NoteQueryRepository for MemoryNotes {
         &self,
         _actor: &Actor,
         _query: &crate::NoteListQuery,
-    ) -> Result<Vec<NoteListEntry>, NoteRepositoryError> {
+    ) -> Result<Vec<NoteListEntry>, StorageError> {
         Ok(self
             .notes
             .lock()
@@ -65,7 +85,7 @@ impl NoteQueryRepository for MemoryNotes {
     async fn list_owned_deleted_notes(
         &self,
         _actor: &Actor,
-    ) -> Result<Vec<DeletedNoteListEntry>, NoteRepositoryError> {
+    ) -> Result<Vec<DeletedNoteListEntry>, StorageError> {
         Ok(Vec::new())
     }
 
@@ -73,7 +93,7 @@ impl NoteQueryRepository for MemoryNotes {
         &self,
         _actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Option<AccessibleNote>, NoteRepositoryError> {
+    ) -> Result<Option<AccessibleNote>, StorageError> {
         let access = *self.accessible_as.lock().expect("access lock");
         Ok(access.and_then(|access| {
             self.notes
@@ -90,7 +110,7 @@ impl NoteQueryRepository for MemoryNotes {
         &self,
         actor: &Actor,
         note_ids: &[NoteId],
-    ) -> Result<Vec<Note>, NoteRepositoryError> {
+    ) -> Result<Vec<Note>, StorageError> {
         let mut notes = Vec::new();
         for note_id in note_ids {
             if let Some(accessible) = self.accessible_note(actor, *note_id).await? {
@@ -104,7 +124,7 @@ impl NoteQueryRepository for MemoryNotes {
         &self,
         _actor: &Actor,
         _note_id: NoteId,
-    ) -> Result<Option<NoteViewSnapshot>, NoteRepositoryError> {
+    ) -> Result<Option<NoteViewSnapshot>, StorageError> {
         Ok(None)
     }
 
@@ -112,18 +132,14 @@ impl NoteQueryRepository for MemoryNotes {
         &self,
         _actor: &Actor,
         _query: &NoteGraphQuery,
-    ) -> Result<NoteGraph, NoteRepositoryError> {
+    ) -> Result<NoteGraph, StorageError> {
         Ok(NoteGraph::default())
     }
 }
 
 #[async_trait]
 impl NoteCommandRepository for MemoryNotes {
-    async fn create_note(
-        &self,
-        note: &Note,
-        _links: NoteLinks<'_>,
-    ) -> Result<(), NoteRepositoryError> {
+    async fn create_note(&self, note: &Note, _links: NoteLinks<'_>) -> Result<(), StorageError> {
         self.notes.lock().expect("notes lock").push(note.clone());
         Ok(())
     }
@@ -136,9 +152,9 @@ impl NoteCommandRepository for MemoryNotes {
         _draft: &NoteDraft,
         _links: NoteLinks<'_>,
         _now: UnixMillis,
-    ) -> Result<Note, NoteRepositoryError> {
+    ) -> Result<Note, StorageError> {
         self.update_calls.fetch_add(1, Ordering::Relaxed);
-        Err(NoteRepositoryError::Unavailable)
+        Err(StorageError::Unavailable)
     }
 
     async fn soft_delete_visible_note(
@@ -147,8 +163,8 @@ impl NoteCommandRepository for MemoryNotes {
         _note_id: NoteId,
         _expected_revision: Revision,
         _now: UnixMillis,
-    ) -> Result<Note, NoteRepositoryError> {
-        Err(NoteRepositoryError::Unavailable)
+    ) -> Result<Note, StorageError> {
+        Err(StorageError::Unavailable)
     }
 
     async fn restore_owned_deleted_note(
@@ -157,8 +173,8 @@ impl NoteCommandRepository for MemoryNotes {
         _note_id: NoteId,
         _expected_revision: Revision,
         _now: UnixMillis,
-    ) -> Result<Note, NoteRepositoryError> {
-        Err(NoteRepositoryError::Unavailable)
+    ) -> Result<Note, StorageError> {
+        Err(StorageError::Unavailable)
     }
 }
 
@@ -168,7 +184,7 @@ impl NoteAclRepository for MemoryNotes {
         &self,
         _actor: &Actor,
         _note_id: NoteId,
-    ) -> Result<NoteAclState, NoteRepositoryError> {
+    ) -> Result<NoteAclState, StorageError> {
         Ok(NoteAclState {
             entries: Vec::new(),
             revision: Revision::INITIAL,
@@ -182,8 +198,8 @@ impl NoteAclRepository for MemoryNotes {
         _entries: &[NoteAclEntry],
         _expected_revision: Revision,
         _now: UnixMillis,
-    ) -> Result<Note, NoteRepositoryError> {
-        Err(NoteRepositoryError::Unavailable)
+    ) -> Result<Note, StorageError> {
+        Err(StorageError::Unavailable)
     }
 }
 
@@ -193,7 +209,7 @@ impl NoteReviewRepository for MemoryNotes {
         &self,
         actor: &Actor,
         note_id: NoteId,
-    ) -> Result<Note, NoteRepositoryError> {
+    ) -> Result<Note, StorageError> {
         self.accessible_note(actor, note_id)
             .await?
             .filter(|accessible| {
@@ -202,7 +218,7 @@ impl NoteReviewRepository for MemoryNotes {
                     && accessible.note.deleted_at().is_none()
             })
             .map(|accessible| accessible.note)
-            .ok_or(NoteRepositoryError::NotFound)
+            .ok_or(StorageError::NotFound)
     }
 
     async fn mark_owned_note_reviewed(
@@ -211,13 +227,13 @@ impl NoteReviewRepository for MemoryNotes {
         note_id: NoteId,
         expected_revision: Revision,
         reviewed_at: UnixMillis,
-    ) -> Result<Note, NoteRepositoryError> {
+    ) -> Result<Note, StorageError> {
         let current = self.read_owned_note_review(actor, note_id).await?;
         if current.revision() != expected_revision {
-            return Err(NoteRepositoryError::Conflict);
+            return Err(StorageError::Conflict);
         }
-        let next_revision = Revision::new(current.revision().get() + 1)
-            .map_err(|_| NoteRepositoryError::CorruptData)?;
+        let next_revision =
+            Revision::new(current.revision().get() + 1).map_err(|_| StorageError::CorruptData)?;
         let reviewed = Note::restore(NoteRestore {
             note_id,
             owner: current.owner().clone(),
@@ -237,12 +253,12 @@ impl NoteReviewRepository for MemoryNotes {
                 actor.identity().clone(),
             ))),
         })
-        .map_err(|_| NoteRepositoryError::CorruptData)?;
+        .map_err(|_| StorageError::CorruptData)?;
         let mut notes = self.notes.lock().expect("notes lock");
         let stored = notes
             .iter_mut()
             .find(|note| note.note_id() == note_id)
-            .ok_or(NoteRepositoryError::NotFound)?;
+            .ok_or(StorageError::NotFound)?;
         *stored = reviewed.clone();
         Ok(reviewed)
     }
@@ -336,7 +352,7 @@ impl BibliographyRepository for EmptyLibrary {
         &self,
         _actor: &Actor,
         _query: &str,
-    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+    ) -> Result<Vec<BibliographyItem>, StorageError> {
         Ok(Vec::new())
     }
 
@@ -344,14 +360,11 @@ impl BibliographyRepository for EmptyLibrary {
         &self,
         _owner: &Identity,
         _citation_keys: &[String],
-    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+    ) -> Result<Vec<BibliographyItem>, StorageError> {
         Ok(Vec::new())
     }
 
-    async fn create_owned_item(
-        &self,
-        _item: &BibliographyItem,
-    ) -> Result<(), BibliographyRepositoryError> {
+    async fn create_owned_item(&self, _item: &BibliographyItem) -> Result<(), StorageError> {
         unreachable!("this test does not write bibliography items")
     }
 
@@ -363,7 +376,7 @@ impl BibliographyRepository for EmptyLibrary {
         _csl_json: &str,
         _updated_at: UnixMillis,
         _expected_revision: Revision,
-    ) -> Result<BibliographyItem, BibliographyRepositoryError> {
+    ) -> Result<BibliographyItem, StorageError> {
         unreachable!("this test does not write bibliography items")
     }
 
@@ -372,7 +385,7 @@ impl BibliographyRepository for EmptyLibrary {
         _actor: &Actor,
         _item_id: marginalis_domain::BibliographyItemId,
         _expected_revision: Revision,
-    ) -> Result<(), BibliographyRepositoryError> {
+    ) -> Result<(), StorageError> {
         unreachable!("this test does not write bibliography items")
     }
 }
@@ -394,10 +407,7 @@ pub(super) struct NoMathMacros;
 
 #[async_trait]
 impl MathMacroRepository for NoMathMacros {
-    async fn read_math_macros(
-        &self,
-        _owner: &Identity,
-    ) -> Result<MathMacroSettings, MathMacroRepositoryError> {
+    async fn read_math_macros(&self, _owner: &Identity) -> Result<MathMacroSettings, StorageError> {
         Ok(MathMacroSettings::default())
     }
 
@@ -406,7 +416,7 @@ impl MathMacroRepository for NoMathMacros {
         _owner: &Identity,
         _macros: &[MathMacro],
         _expected_revision: i64,
-    ) -> Result<MathMacroSettings, MathMacroRepositoryError> {
+    ) -> Result<MathMacroSettings, StorageError> {
         unreachable!("note tests do not replace MathJax macros")
     }
 }
@@ -415,10 +425,7 @@ pub(super) struct OwnerMathMacros;
 
 #[async_trait]
 impl MathMacroRepository for OwnerMathMacros {
-    async fn read_math_macros(
-        &self,
-        owner: &Identity,
-    ) -> Result<MathMacroSettings, MathMacroRepositoryError> {
+    async fn read_math_macros(&self, owner: &Identity) -> Result<MathMacroSettings, StorageError> {
         Ok(MathMacroSettings {
             macros: (owner == &OneItemLibrary::owner())
                 .then(|| MathMacro {
@@ -437,7 +444,7 @@ impl MathMacroRepository for OwnerMathMacros {
         _owner: &Identity,
         _macros: &[MathMacro],
         _expected_revision: i64,
-    ) -> Result<MathMacroSettings, MathMacroRepositoryError> {
+    ) -> Result<MathMacroSettings, StorageError> {
         unreachable!("note tests do not replace MathJax macros")
     }
 }
@@ -496,7 +503,7 @@ impl BibliographyRepository for OneItemLibrary {
         &self,
         _actor: &Actor,
         _query: &str,
-    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+    ) -> Result<Vec<BibliographyItem>, StorageError> {
         Ok(Vec::new())
     }
 
@@ -504,7 +511,7 @@ impl BibliographyRepository for OneItemLibrary {
         &self,
         owner: &Identity,
         citation_keys: &[String],
-    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError> {
+    ) -> Result<Vec<BibliographyItem>, StorageError> {
         if owner != &Self::owner() {
             return Ok(Vec::new());
         }
@@ -514,10 +521,7 @@ impl BibliographyRepository for OneItemLibrary {
             .collect())
     }
 
-    async fn create_owned_item(
-        &self,
-        _item: &BibliographyItem,
-    ) -> Result<(), BibliographyRepositoryError> {
+    async fn create_owned_item(&self, _item: &BibliographyItem) -> Result<(), StorageError> {
         unreachable!("this test does not write bibliography items")
     }
 
@@ -529,7 +533,7 @@ impl BibliographyRepository for OneItemLibrary {
         _csl_json: &str,
         _updated_at: UnixMillis,
         _expected_revision: Revision,
-    ) -> Result<BibliographyItem, BibliographyRepositoryError> {
+    ) -> Result<BibliographyItem, StorageError> {
         unreachable!("this test does not write bibliography items")
     }
 
@@ -538,7 +542,7 @@ impl BibliographyRepository for OneItemLibrary {
         _actor: &Actor,
         _item_id: marginalis_domain::BibliographyItemId,
         _expected_revision: Revision,
-    ) -> Result<(), BibliographyRepositoryError> {
+    ) -> Result<(), StorageError> {
         unreachable!("this test does not write bibliography items")
     }
 }

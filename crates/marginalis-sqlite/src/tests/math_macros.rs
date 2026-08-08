@@ -49,7 +49,7 @@ async fn math_macros_are_private_and_revision_guarded() {
     );
     assert_eq!(
         database.replace_math_macros(alice.identity(), &[], 0).await,
-        Err(MathMacroRepositoryError::Conflict)
+        Err(StorageError::Conflict)
     );
     assert_eq!(
         database

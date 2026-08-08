@@ -8,19 +8,7 @@ use marginalis_domain::{
 };
 use serde_json::Value;
 
-use crate::{Clock, Random, csl_json::validate_and_encode};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum BibliographyRepositoryError {
-    #[error("bibliography item was not found")]
-    NotFound,
-    #[error("bibliography item conflicts")]
-    Conflict,
-    #[error("stored bibliography data is invalid")]
-    CorruptData,
-    #[error("bibliography storage is unavailable")]
-    Unavailable,
-}
+use crate::{Clock, Random, StorageError, csl_json::validate_and_encode};
 
 /// 書誌ライブラリー操作の失敗理由。
 ///
@@ -44,13 +32,25 @@ pub enum BibliographyUseCaseError {
     CorruptData,
 }
 
+impl From<StorageError> for BibliographyUseCaseError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::NotFound => Self::NotFound,
+            StorageError::Conflict => Self::Conflict,
+            StorageError::CorruptData => Self::CorruptData,
+            // 書誌ライブラリーに保存期限は無く、`RetentionExpired`はこの系統では発生しない。
+            StorageError::RetentionExpired | StorageError::Unavailable => Self::Unavailable,
+        }
+    }
+}
+
 #[async_trait]
 pub trait BibliographyRepository: Send + Sync {
     async fn search_owned_items(
         &self,
         actor: &Actor,
         query: &str,
-    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError>;
+    ) -> Result<Vec<BibliographyItem>, StorageError>;
 
     /// 指定した所有者のライブラリーから、citation keyが一致する項目だけを読み取る。
     ///
@@ -60,12 +60,9 @@ pub trait BibliographyRepository: Send + Sync {
         &self,
         owner: &Identity,
         citation_keys: &[String],
-    ) -> Result<Vec<BibliographyItem>, BibliographyRepositoryError>;
+    ) -> Result<Vec<BibliographyItem>, StorageError>;
 
-    async fn create_owned_item(
-        &self,
-        item: &BibliographyItem,
-    ) -> Result<(), BibliographyRepositoryError>;
+    async fn create_owned_item(&self, item: &BibliographyItem) -> Result<(), StorageError>;
 
     #[allow(clippy::too_many_arguments)]
     async fn update_owned_item(
@@ -76,46 +73,19 @@ pub trait BibliographyRepository: Send + Sync {
         csl_json: &str,
         updated_at: UnixMillis,
         expected_revision: Revision,
-    ) -> Result<BibliographyItem, BibliographyRepositoryError>;
+    ) -> Result<BibliographyItem, StorageError>;
 
     async fn delete_owned_item(
         &self,
         actor: &Actor,
         item_id: BibliographyItemId,
         expected_revision: Revision,
-    ) -> Result<(), BibliographyRepositoryError>;
+    ) -> Result<(), StorageError>;
 }
 
-#[async_trait]
-pub trait BibliographyUseCases: Send + Sync {
-    async fn search_bibliography(
-        &self,
-        actor: Actor,
-        query: String,
-    ) -> Result<Vec<BibliographyItem>, BibliographyUseCaseError>;
-
-    async fn add_bibliography_item(
-        &self,
-        actor: Actor,
-        csl_json: Value,
-    ) -> Result<BibliographyItem, BibliographyUseCaseError>;
-
-    async fn update_bibliography_item(
-        &self,
-        actor: Actor,
-        item_id: BibliographyItemId,
-        expected_revision: Revision,
-        csl_json: Value,
-    ) -> Result<BibliographyItem, BibliographyUseCaseError>;
-
-    async fn delete_bibliography_item(
-        &self,
-        actor: Actor,
-        item_id: BibliographyItemId,
-        expected_revision: Revision,
-    ) -> Result<(), BibliographyUseCaseError>;
-}
-
+/// transportへ公開する書誌ライブラリー操作のapplication service。
+///
+/// 実装がこの1つだけでテストダブルも無いため、traitを介さず具体型のまま公開する。
 pub struct BibliographyApplication {
     repository: Arc<dyn BibliographyRepository>,
     clock: Arc<dyn Clock>,
@@ -134,11 +104,8 @@ impl BibliographyApplication {
             random,
         }
     }
-}
 
-#[async_trait]
-impl BibliographyUseCases for BibliographyApplication {
-    async fn search_bibliography(
+    pub async fn search_bibliography(
         &self,
         actor: Actor,
         query: String,
@@ -147,10 +114,10 @@ impl BibliographyUseCases for BibliographyApplication {
         self.repository
             .search_owned_items(&actor, query)
             .await
-            .map_err(map_repository_error)
+            .map_err(BibliographyUseCaseError::from)
     }
 
-    async fn add_bibliography_item(
+    pub async fn add_bibliography_item(
         &self,
         actor: Actor,
         csl_json: Value,
@@ -167,11 +134,11 @@ impl BibliographyUseCases for BibliographyApplication {
         self.repository
             .create_owned_item(&item)
             .await
-            .map_err(map_repository_error)?;
+            .map_err(BibliographyUseCaseError::from)?;
         Ok(item)
     }
 
-    async fn update_bibliography_item(
+    pub async fn update_bibliography_item(
         &self,
         actor: Actor,
         item_id: BibliographyItemId,
@@ -190,10 +157,10 @@ impl BibliographyUseCases for BibliographyApplication {
                 expected_revision,
             )
             .await
-            .map_err(map_repository_error)
+            .map_err(BibliographyUseCaseError::from)
     }
 
-    async fn delete_bibliography_item(
+    pub async fn delete_bibliography_item(
         &self,
         actor: Actor,
         item_id: BibliographyItemId,
@@ -202,7 +169,7 @@ impl BibliographyUseCases for BibliographyApplication {
         self.repository
             .delete_owned_item(&actor, item_id, expected_revision)
             .await
-            .map_err(map_repository_error)
+            .map_err(BibliographyUseCaseError::from)
     }
 }
 
@@ -212,15 +179,6 @@ fn validate_search_query(query: &str) -> Result<&str, BibliographyUseCaseError> 
         return Err(BibliographyUseCaseError::InvalidSearchQuery);
     }
     Ok(query)
-}
-
-fn map_repository_error(error: BibliographyRepositoryError) -> BibliographyUseCaseError {
-    match error {
-        BibliographyRepositoryError::NotFound => BibliographyUseCaseError::NotFound,
-        BibliographyRepositoryError::Conflict => BibliographyUseCaseError::Conflict,
-        BibliographyRepositoryError::CorruptData => BibliographyUseCaseError::CorruptData,
-        BibliographyRepositoryError::Unavailable => BibliographyUseCaseError::Unavailable,
-    }
 }
 
 #[cfg(test)]
