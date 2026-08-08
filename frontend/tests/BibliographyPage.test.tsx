@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
@@ -153,6 +154,31 @@ test("成功の知らせと失敗を、役割と見た目で区別する", async
   const problem = await waitFor(() => screen.getByRole("alert"));
   expect(problem.textContent).toContain("削除できませんでした");
   expect(problem.className).toBe("problem-inline");
+});
+
+test("登録失敗を後から開いた削除確認へ混ぜない", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(libraryResponse())
+      .mockResolvedValueOnce(new Response("", { status: 503 })),
+  );
+  render(<BibliographyPage config={CONFIG} />);
+  await screen.findByRole("button", { name: /smith2024/ });
+
+  fireEvent.click(screen.getByRole("button", { name: "登録" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "登録できませんでした",
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: "削除" })[0]);
+
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "取り消す" }));
+  expect(
+    screen.getByText("登録できませんでした", { exact: false }),
+  ).toBeVisible();
 });
 
 test("未保存のCSL-JSONがある場合だけ画面離脱を警告する", async () => {

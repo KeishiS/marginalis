@@ -44,6 +44,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
   const [pendingDelete, setPendingDelete] = useState<BibliographyItem | null>(
     null,
   );
+  const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
   const activeSearch = useRef<AbortController | null>(null);
   const dirty = input !== savedInput;
 
@@ -190,10 +191,11 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         setSavedInput(EMPTY_INPUT);
       }
       setPendingDelete(null);
+      setDeleteProblem(null);
       setMessage(notice("書誌情報を削除しました。"));
       await load(query);
     } catch {
-      setMessage(failure("書誌情報を削除できませんでした。"));
+      setDeleteProblem("書誌情報を削除できませんでした。");
     } finally {
       setMutating(false);
     }
@@ -313,7 +315,10 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                   className="button button-danger"
                   type="button"
                   disabled={mutating}
-                  onClick={() => setPendingDelete(item)}
+                  onClick={() => {
+                    setPendingDelete(item);
+                    setDeleteProblem(null);
+                  }}
                 >
                   削除
                 </button>
@@ -349,13 +354,13 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           heading={`${pendingDelete.citation_key}を削除しますか`}
           description="書誌情報の削除は取り消せません。"
           busy={mutating}
-          problem={message?.failed ? message.text : null}
+          problem={deleteProblem}
           confirmLabel="削除する"
           busyLabel="削除しています…"
           confirmClassName="button button-danger"
           onCancel={() => {
             setPendingDelete(null);
-            setMessage(null);
+            setDeleteProblem(null);
           }}
           onConfirm={() => void remove(pendingDelete)}
         />
