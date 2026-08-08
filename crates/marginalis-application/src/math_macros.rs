@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn matches_shared_validation_cases() {
         let cases: Vec<ValidationCase> = serde_json::from_str(include_str!(
-            "../../../tests/fixtures/math-macro-validation.json"
+            "../../../frontend/tests/fixtures/math-macro-validation.json"
         ))
         .expect("shared math macro validation cases");
 

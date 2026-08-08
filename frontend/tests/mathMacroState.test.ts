@@ -5,7 +5,7 @@ import {
   MAX_MATH_MACRO_TOTAL_BYTES,
   validateMathMacros,
 } from "../src/mathMacroState";
-import validationCases from "../../tests/fixtures/math-macro-validation.json";
+import validationCases from "./fixtures/math-macro-validation.json";
 
 test("Rustと共有する境界例を同じ結果に判定する", () => {
   for (const validationCase of validationCases) {
