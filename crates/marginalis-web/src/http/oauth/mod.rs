@@ -2,6 +2,7 @@
 
 mod authorization;
 mod common;
+mod consent_page;
 mod registration;
 mod revocation;
 mod token;

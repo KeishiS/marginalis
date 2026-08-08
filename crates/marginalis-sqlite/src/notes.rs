@@ -1,18 +1,17 @@
 //! ノート正本、所有者認可、ソフトデリートの永続化。
+//!
+//! 関係図の読み取りは`note_graph`、ACLの読み書きは`note_acl`へ分け、行の復元などの
+//! 共有部分をこのファイルへ置く。
 
 use std::str::FromStr;
 
-use std::collections::{BTreeMap, HashSet};
-
 use marginalis_application::{
-    AccessibleNote, NoteAclState, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery,
-    NoteGraphReference, NoteGraphWork, NoteLinks, NoteListQuery, NoteViewSnapshot, RelatedNotes,
+    AccessibleNote, NoteLinks, NoteListQuery, NoteViewSnapshot, RelatedNotes,
 };
 use marginalis_domain::{
-    Actor, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteAclEntry,
-    NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NotePermission, NoteRestore,
-    NoteReviewRecord, NoteReviewStatus, NoteReviewTracking, NoteSummary, Revision,
-    SOFT_DELETE_RETENTION_MS, UnixMillis,
+    Actor, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteCreationSource,
+    NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewRecord, NoteReviewStatus,
+    NoteReviewTracking, NoteSummary, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
 use sqlx::{QueryBuilder, Row, Sqlite};
 
@@ -193,152 +192,6 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         rows.into_iter().map(deleted_note_entry_from_row).collect()
-    }
-
-    /// 閲覧できるノートと、それらが引用する文献の関係を1回の読み取りtransactionで返す。
-    ///
-    /// 認可は各問い合わせの中で`note_access`へ結合して適用する。取得後に絞り込む形にすると、
-    /// 絞り込み漏れがそのまま情報の開示になる。線は始点と終点の両方が可視な場合だけ返すため、
-    /// 閲覧できないノートの存在も件数も現れない。
-    pub async fn note_graph(
-        &self,
-        actor: &Actor,
-        query: &NoteGraphQuery,
-    ) -> Result<NoteGraph, SqliteStoreError> {
-        let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        // 語の指定がない場合はすべての可視ノートを対象にする。空文字は指定なしと同じに扱う。
-        let text = query
-            .text
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(crate::like_contains_pattern);
-
-        let notes = sqlx::query(
-            "SELECT notes.note_id, notes.title, notes.tags_json, notes.updated_at_ms
-             FROM notes
-             JOIN note_access access ON access.note_id = notes.note_id
-             WHERE notes.deleted_at_ms IS NULL
-               AND access.issuer = ? AND access.subject = ?
-               AND (?3 IS NULL
-                    OR lower(notes.title) LIKE ?3 ESCAPE '!'
-                    OR lower(notes.source) LIKE ?3 ESCAPE '!'
-                    OR lower(notes.tags_json) LIKE ?3 ESCAPE '!')
-             ORDER BY notes.note_id ASC",
-        )
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .bind(text.as_deref())
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        let notes = notes
-            .into_iter()
-            .map(graph_note_from_row)
-            .collect::<Result<Vec<_>, _>>()?;
-        let visible = notes
-            .iter()
-            .map(|note| note.note_id)
-            .collect::<HashSet<_>>();
-
-        let references = sqlx::query(
-            "SELECT reference.source_note_id, reference.target_note_id
-             FROM note_references reference
-             JOIN note_access source_access ON source_access.note_id = reference.source_note_id
-             JOIN note_access target_access ON target_access.note_id = reference.target_note_id
-             JOIN notes source_note ON source_note.note_id = reference.source_note_id
-             JOIN notes target_note ON target_note.note_id = reference.target_note_id
-             WHERE source_access.issuer = ? AND source_access.subject = ?
-               AND target_access.issuer = ? AND target_access.subject = ?
-               AND source_note.deleted_at_ms IS NULL
-               AND target_note.deleted_at_ms IS NULL
-             ORDER BY reference.source_note_id ASC, reference.target_note_id ASC",
-        )
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-
-        let citations = sqlx::query(
-            "SELECT citation.source_note_id, citation.citation_key,
-                    (SELECT item.csl_json FROM bibliography_items item
-                      WHERE item.owner_issuer = source_note.creator_issuer
-                        AND item.owner_subject = source_note.creator_subject
-                        AND item.citation_key = citation.citation_key) AS csl_json
-             FROM note_citations citation
-             JOIN notes source_note ON source_note.note_id = citation.source_note_id
-             JOIN note_access access ON access.note_id = citation.source_note_id
-             WHERE access.issuer = ? AND access.subject = ?
-               AND source_note.deleted_at_ms IS NULL
-             ORDER BY citation.source_note_id ASC, citation.citation_key ASC",
-        )
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        transaction.commit().await.map_err(database_error)?;
-
-        let references = references
-            .into_iter()
-            .map(|row| {
-                Ok(NoteGraphReference {
-                    source_note_id: note_id_from_text(
-                        row.try_get("source_note_id").map_err(database_error)?,
-                    )?,
-                    target_note_id: note_id_from_text(
-                        row.try_get("target_note_id").map_err(database_error)?,
-                    )?,
-                })
-            })
-            .collect::<Result<Vec<_>, SqliteStoreError>>()?
-            .into_iter()
-            // 語で絞り込んだ場合、両端が残っている線だけを描く。
-            .filter(|edge| {
-                visible.contains(&edge.source_note_id) && visible.contains(&edge.target_note_id)
-            })
-            .collect::<Vec<_>>();
-
-        let mut works: BTreeMap<String, Option<String>> = BTreeMap::new();
-        let mut citation_edges = Vec::new();
-        for row in citations {
-            let source_note_id =
-                note_id_from_text(row.try_get("source_note_id").map_err(database_error)?)?;
-            if !visible.contains(&source_note_id) {
-                continue;
-            }
-            let citation_key: String = row.try_get("citation_key").map_err(database_error)?;
-            let csl_json: Option<String> = row.try_get("csl_json").map_err(database_error)?;
-            let title = csl_json.as_deref().and_then(csl_title);
-            works
-                .entry(citation_key.clone())
-                .and_modify(|known| {
-                    if known.is_none() {
-                        *known = title.clone();
-                    }
-                })
-                .or_insert(title);
-            citation_edges.push(NoteGraphCitation {
-                source_note_id,
-                citation_key,
-            });
-        }
-
-        Ok(NoteGraph {
-            notes,
-            works: works
-                .into_iter()
-                .map(|(citation_key, title)| NoteGraphWork {
-                    citation_key,
-                    title,
-                })
-                .collect(),
-            references,
-            citations: citation_edges,
-        })
     }
 
     /// 認可確認と楽観的更新を同一transactionで行う。
@@ -569,111 +422,6 @@ impl SqliteDatabase {
             reference_targets,
             related: RelatedNotes { outgoing, incoming },
         }))
-    }
-
-    pub async fn read_note_acl(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-    ) -> Result<NoteAclState, SqliteStoreError> {
-        let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        require_active_note_access(&mut transaction, actor, note_id, NoteAccess::Manage).await?;
-        let rows = sqlx::query(
-            "SELECT issuer, subject, permission FROM note_acl
-             WHERE note_id = ? ORDER BY issuer, subject",
-        )
-        .bind(note_id.to_string())
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        let entries = rows
-            .into_iter()
-            .map(|row| {
-                let permission = match row
-                    .try_get::<String, _>("permission")
-                    .map_err(database_error)?
-                    .as_str()
-                {
-                    "read" => NotePermission::Read,
-                    "edit" => NotePermission::Edit,
-                    _ => return Err(SqliteStoreError::CorruptData),
-                };
-                let identity = Identity::new(
-                    row.try_get("issuer").map_err(database_error)?,
-                    row.try_get("subject").map_err(database_error)?,
-                )
-                .map_err(|_| SqliteStoreError::CorruptData)?;
-                Ok(NoteAclEntry::new(identity, permission))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let revision = Revision::new(
-            sqlx::query_scalar::<_, i64>("SELECT revision FROM notes WHERE note_id = ?")
-                .bind(note_id.to_string())
-                .fetch_one(&mut *transaction)
-                .await
-                .map_err(database_error)?,
-        )
-        .map_err(|_| SqliteStoreError::CorruptData)?;
-        transaction.commit().await.map_err(database_error)?;
-        Ok(NoteAclState { entries, revision })
-    }
-
-    pub async fn replace_note_acl(
-        &self,
-        actor: &Actor,
-        note_id: NoteId,
-        entries: &[NoteAclEntry],
-        expected_revision: Revision,
-        updated_at: UnixMillis,
-    ) -> Result<Note, SqliteStoreError> {
-        let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        let result = sqlx::query(
-            "UPDATE notes
-             SET revision = revision + 1, updated_at_ms = ?, review_tracking_known = 1
-             WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
-               AND EXISTS (SELECT 1 FROM note_access access
-                           WHERE access.note_id = notes.note_id
-                             AND access.issuer = ? AND access.subject = ?
-                             AND access.access_level >= 3)",
-        )
-        .bind(updated_at.get())
-        .bind(note_id.to_string())
-        .bind(expected_revision.get())
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .execute(&mut *transaction)
-        .await
-        .map_err(database_error)?;
-        if result.rows_affected() != 1 {
-            let error =
-                classify_failed_mutation(&mut transaction, actor, note_id, NoteAccess::Manage)
-                    .await?;
-            transaction.rollback().await.map_err(database_error)?;
-            return Err(error);
-        }
-        sqlx::query("DELETE FROM note_acl WHERE note_id = ?")
-            .bind(note_id.to_string())
-            .execute(&mut *transaction)
-            .await
-            .map_err(database_error)?;
-        for entry in entries {
-            sqlx::query(
-                "INSERT INTO note_acl (note_id, issuer, subject, permission) VALUES (?, ?, ?, ?)",
-            )
-            .bind(note_id.to_string())
-            .bind(entry.identity().issuer())
-            .bind(entry.identity().subject())
-            .bind(match entry.permission() {
-                NotePermission::Read => "read",
-                NotePermission::Edit => "edit",
-            })
-            .execute(&mut *transaction)
-            .await
-            .map_err(database_error)?;
-        }
-        let note = note_from_row(note_row(&mut transaction, note_id).await?)?;
-        transaction.commit().await.map_err(database_error)?;
-        Ok(note)
     }
 }
 
@@ -983,27 +731,8 @@ fn review_status(
     }
 }
 
-fn graph_note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<NoteGraphNote, SqliteStoreError> {
-    let tags_json: String = row.try_get("tags_json").map_err(database_error)?;
-    Ok(NoteGraphNote {
-        note_id: note_id_from_text(row.try_get("note_id").map_err(database_error)?)?,
-        title: row.try_get("title").map_err(database_error)?,
-        tags: serde_json::from_str(&tags_json).map_err(|_| SqliteStoreError::CorruptData)?,
-        updated_at: UnixMillis::new(row.try_get("updated_at_ms").map_err(database_error)?),
-    })
-}
-
-fn note_id_from_text(value: String) -> Result<NoteId, SqliteStoreError> {
+pub(crate) fn note_id_from_text(value: String) -> Result<NoteId, SqliteStoreError> {
     EntityId::from_str(&value)
         .map(NoteId::new)
         .map_err(|_| SqliteStoreError::CorruptData)
-}
-
-/// 図に出す文献の題名。CSL-JSONの`title`だけを読み、他の項目は取り出さない。
-fn csl_title(csl_json: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(csl_json)
-        .ok()?
-        .get("title")?
-        .as_str()
-        .map(str::to_owned)
 }

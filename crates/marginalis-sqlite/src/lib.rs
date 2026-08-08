@@ -9,6 +9,8 @@ mod math_macro_repository;
 mod mcp;
 mod mcp_oauth_repository;
 mod mcp_scope_ceiling_repository;
+mod note_acl;
+mod note_graph;
 mod note_repository;
 mod note_reviews;
 mod notes;
