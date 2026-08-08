@@ -60,6 +60,7 @@ const fn migration_contract(
 
 /// 移行元として受理する旧archive契約。形式、AdocWeave package版、note profile版の組。
 const SUPPORTED_MIGRATION_CONTRACTS: &[MigrationContract] = &[
+    migration_contract("marginalis-archive-17", "0.36.0", 5, true, true),
     migration_contract("marginalis-archive-17", "0.33.0", 5, true, true),
     migration_contract("marginalis-archive-16", "0.27.0", 5, true, true),
     migration_contract("marginalis-archive-15", "0.27.0", 5, true, false),
@@ -750,7 +751,7 @@ mod tests {
     ///
     /// 形式は現行と同じで、記録するAdocWeave package版だけが異なる。
     const LATEST_MIGRATION_CONTRACT: MigrationContract =
-        migration_contract("marginalis-archive-17", "0.33.0", 5, true, true);
+        migration_contract("marginalis-archive-17", "0.36.0", 5, true, true);
 
     /// 試験では実際の解析器を注入する。本番の依存はportだけである。
     fn content() -> AsciiDocNoteContent {

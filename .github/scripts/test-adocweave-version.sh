@@ -7,8 +7,8 @@ trap 'rm -rf "$work_dir"' EXIT
 
 revision=1111111111111111111111111111111111111111
 other_revision=2222222222222222222222222222222222222222
-version=0.36.0
-other_version=0.37.0
+version=0.40.0
+other_version=0.41.0
 
 # 検査対象の参照を最小構成で再現したリポジトリを組み立てます。
 build_tree() {
@@ -112,7 +112,7 @@ reject "flake inputのrevision不一致"
 
 # flakeのcargoハッシュ鍵が版のliteral直書きへ戻った場合
 rebuild
-sed -i 's/adocweave-${adocweaveVersion}/adocweave-0.36.0/' "$work_dir/bad/flake.nix"
+sed -i 's/adocweave-${adocweaveVersion}/adocweave-0.40.0/' "$work_dir/bad/flake.nix"
 reject "cargoハッシュ鍵のliteral直書き"
 
 # textlint pluginのtarball URLが古い場合
