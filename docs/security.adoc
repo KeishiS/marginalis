@@ -17,7 +17,8 @@ systemdサービスの保護設定は xref:nixos.adoc#top[NixOSでの運用]を�
 https://github.com/KeishiS/marginalis/issues[GitHub Issues]で受け付けます。
 
 セキュリティー修正は、原則として最新の通常版を対象にパッチ版または次の通常版で提供します。過去の
-通常版を継続して保守する互換期間は設けません。更新時は xref:../CHANGELOG.adoc#top[変更履歴]と
+通常版を継続して保守する互換期間は設けません。更新時は
+https://github.com/KeishiS/marginalis/releases[GitHub Releases]の該当版のRelease Notesと
 xref:release.adoc#top[リリース手順]で、対象版と必要な運用操作を確認してください。
 
 == 実装上の判断

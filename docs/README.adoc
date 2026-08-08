@@ -18,7 +18,7 @@
 * xref:nixos.adoc#top[NixOSでの運用]
 * xref:observability.adoc#top[ログと障害診断]
 * xref:release.adoc#top[リリース手順]
-* xref:acceptance.adoc#top[受入基準と版別結果]
+* xref:acceptance.adoc#top[受入基準]
 
 == 設計・開発向け
 
@@ -30,8 +30,6 @@
 * xref:requirements.adoc#top[要件定義]
 * xref:traceability.adoc#top[要件と検証の対応表]
 * xref:architecture.adoc#top[アーキテクチャ]
-* xref:adocweave-v0.36-migration.adoc#top[AdocWeave 0.36移行判断]
-* xref:adocweave-v0.33-migration.adoc#top[AdocWeave 0.33移行判断]
 * xref:adr/0001-auth0をmcpのauthorization-serverに採用.adoc#top[Auth0をMCPのAuthorization Serverに採用]（廃止。ADR
 0007で置き換え）
 * xref:adr/0002-sqliteを正本として維持する.adoc#top[SQLiteを正本として維持]
@@ -50,16 +48,9 @@
 
 == 過去の記録と今後の計画
 
-* xref:../CHANGELOG.adoc#top[変更履歴]
+* https://github.com/KeishiS/marginalis/releases[GitHub Releases]（版ごとの変更内容と移行手順）
 * xref:roadmap.adoc#top[ロードマップ]
 * https://github.com/KeishiS/marginalis/issues[GitHub Issues]
-* xref:adocweave-v0.11-migration.adoc#top[AdocWeave 0.11移行判断]
-* xref:adocweave-v0.17-migration.adoc#top[AdocWeave 0.17移行判断]
-* xref:adocweave-v0.19-migration.adoc#top[AdocWeave 0.19移行判断]
-* xref:adocweave-v0.20-migration.adoc#top[AdocWeave 0.20移行判断]
-* xref:adocweave-v0.22-migration.adoc#top[AdocWeave 0.22移行判断]
-* xref:adocweave-v0.23-migration.adoc#top[AdocWeave 0.23移行判断]
-* xref:adocweave-v0.27-migration.adoc#top[AdocWeave 0.27移行判断]
 
 == 文書の読み分け
 
@@ -67,6 +58,7 @@
 ``requirements.adoc``、設計には``architecture.adoc``、NixOSでの運用には``nixos.adoc``を優先します。
 
 バージョン番号が付いた資料と完了済みIssueは、作成時点の記録です。現在の仕様を確認する目的では
-使用しません。過去の版に固有の記録（v0.3.0再設計判断、要件ヒアリング、旧ローカルIssue対応表など）は、
-削除前の最終版である``v0.36.0``タグ上の``docs/``から参照できます。探索サービスの連環（Renkan）は
+使用しません。版ごとの変更内容と移行手順はGitHub Releasesを参照してください。過去の版に固有の
+記録（v0.3.0再設計判断、変更履歴、版別受入結果、AdocWeave移行判断など）は、削除前の最終版で
+ある``v0.36.0``タグ上の``CHANGELOG.adoc``と``docs/``から参照できます。探索サービスの連環（Renkan）は
 https://github.com/KeishiS/renkan で開発しています。

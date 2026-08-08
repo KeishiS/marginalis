@@ -116,8 +116,8 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |``cargo make ci-nixos-e2e``
 |試験実行失敗時の``nixos-e2e-failure-*`` artifactに、秘密情報を除去したrunner出力
 |``release-gate``
-|公開対象の版、受入結果、全検証、Nix packageを公開前に確認
-|``MARGINALIS_RELEASE_TAG=vX.Y.Z cargo make release-gate``
+|公開対象の版、全検証、Nix packageを公開前に確認
+|``cargo make release-gate``
 |失敗したtask名と標準出力
 |===
 +
@@ -171,7 +171,7 @@ nix develop --command cargo make traceability-check
 ----
 +
 ``docs-check``は空白とローカルリンクを検査します。``traceability-check``は要件ID、設計条件ID、検証先の
-対応と版別受入証跡を検査します。アーキテクチャの「一貫して満たすべき設計条件」を変更する場合は、
+対応を検査します。アーキテクチャの「一貫して満たすべき設計条件」を変更する場合は、
 条件を直接確認する試験と xref:traceability.adoc#design-verification[要件と検証の対応表]も同じ変更で
 更新します。
 +
@@ -278,7 +278,7 @@ xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの�
 
 == リリース
 
-バージョン、変更履歴、リリース文書を変更する場合も、専用ブランチとPull Requestを使用します。
+バージョンとリリース文書を変更する場合も、専用ブランチとPull Requestを使用します。
 Pull Requestの必須チェックと xref:release.adoc#top[リリース手順]の検証が成功した後に``main``へマージし、
 ``main``の先端で``release-gate``を手動実行します。入力する``release_tag``には作成予定のタグを
 指定します。gateの成功後、検証した``main``のコミットへタグを付けます。タグのpushでも同じ

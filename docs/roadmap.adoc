@@ -2,14 +2,14 @@
 
 [#top]
 この文書は、公開済み機能の履歴ではなく、現在の作業、次に必要な判断、保留中の候補を示します。
-公開済みの利用者影響は xref:../CHANGELOG.adoc#top[変更履歴]、個別の完了条件は
-https://github.com/KeishiS/marginalis/issues[GitHub Issues]を参照してください。
+公開済みの利用者影響は https://github.com/KeishiS/marginalis/releases[GitHub Releases]、個別の
+完了条件は https://github.com/KeishiS/marginalis/issues[GitHub Issues]を参照してください。
 
 == 現在地
 
 ``v0.35.0``の受入確認を進めています。Web UIの可読性とモバイル対応、MCPのscope上限に関する2つの
-不具合修正を含みます。確認項目は xref:acceptance-results/v0.35.0.adoc#top[v0.35.0受入結果]を
-参照してください。この文書には公開履歴を書き写さず、未完了の判断と作業だけを置きます。
+不具合修正を含みます。確認項目は xref:acceptance.adoc#top[受入基準]を参照してください。
+この文書には公開履歴を書き写さず、未完了の判断と作業だけを置きます。
 
 scope上限の修正は当初``v0.34.1``として公開する予定でしたが、公開前のrelease gateが新しく公開された
 脆弱性情報で失敗し、解消の間にWeb UIの改善を取り込んだため、単独では公開せずv0.35.0へ統合しました。

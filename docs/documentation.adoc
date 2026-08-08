@@ -27,10 +27,6 @@
 |自動化エージェント
 |エージェント固有の作業制約
 |権限、Git、協働規則の変更
-|``CHANGELOG.adoc``
-|利用者・運用者
-|公開済みの利用者影響
-|各リリース
 |``docs/README.adoc``
 |全読者
 |読者別の資料案内と、優先して参照する資料の提示
@@ -99,10 +95,6 @@
 |受入担当者
 |各バージョンに共通する受入基準
 |恒久的な受入基準の変更
-|``docs/acceptance-results/``
-|受入担当者・保守担当者
-|版別の実施日、結果、証跡、公開判断
-|リリース候補の受入実施
 |``docs/roadmap.adoc``
 |保守担当者・開発者
 |現在地、優先順位、公開単位
@@ -154,7 +146,7 @@ READMEなどの概要、ロードマップ、Issue、バージョン番号付き
 * *設計判断*: 長期に参照する選択理由、代替案、再検討条件
 * *将来計画*: ロードマップ上の方向、順序、公開単位
 * *作業項目*: GitHub Issue上の背景、依存関係、動作例、完了条件
-* *公開履歴*: CHANGELOGとGit tag上の文書
+* *公開履歴*: GitHub ReleasesのRelease NotesとGit tag上の文書
 * *現在の仕様として扱わない記録*: バージョン番号付きsnapshot、ヒアリング、研究上の考察
 
 ADRを追加する場合は``docs/adr/NNNN-短い名称.adoc``とし、状態、日付、背景、決定、結果、代替案、
@@ -168,7 +160,7 @@ ADRを追加する場合は``docs/adr/NNNN-短い名称.adoc``とし、状態、
 
 AsciiDoc文書はAdocWeave v0.36.0のstrict profileで解析し、local targetを検査します。文書間の``xref``は
 参照先の``.adoc``と明示IDを指定します。明示IDの存在はAdocWeaveの構造化公開APIを使用する
-``marginalis-documentation`` crateで検査します。traceabilityと受入結果の表も、同じ公開APIが返す
+``marginalis-documentation`` crateで検査します。traceabilityの表も、同じ公開APIが返す
 ``Table``、``TableRow``、``TableCell``から読み取ります。AsciiDocの構文規則は専用scriptへ書き写しません。自然文は
 同じ版のtextlint Processorに同梱されたWebAssemblyで解析し、source blockやinline codeを校正対象から
 除外します。
@@ -181,8 +173,8 @@ AsciiDoc文書はAdocWeave v0.36.0のstrict profileで解析し、local target�
 場合はinline codeとして記述します。内容を通常の解析に通さないpassthrough記法は、人間向け文書では
 使用しません。
 
-固定名が必要な``AGENTS.md``にはMarkdownのlink検査を適用します。traceability、release metadata、
-受入索引、観測event対応はAsciiDocの構造に合わせて検査し、文書形式の変更で検査範囲を狭めません。
+固定名が必要な``AGENTS.md``にはMarkdownのlink検査を適用します。traceabilityと観測event対応は
+AsciiDocの構造に合わせて検査し、文書形式の変更で検査範囲を狭めません。
 
 == 状態と用語
 

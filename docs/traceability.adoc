@@ -281,7 +281,7 @@ MarginalisのSQLite adapterへ適用します。同じ関数を両方へ適用�
 * *共有Authorization Serverの固定*: ``nix develop --command cargo make shared-authorization-server``
 * *カバレッジ*: ``nix develop --command cargo make coverage``
 * *NixOS受入*: ``nix build .#checks.x86_64-linux.nixos-module-vm``および関連VM
-* *版別の人手受入*: xref:acceptance.adoc#top[受入基準]からリンクする版別結果
+* *人手受入*: xref:acceptance.adoc#top[受入基準]の人手項目（結果はリリース用Pull Requestへ記載）
 
 要件または設計条件を追加、削除、改名する場合は、対応する試験とこの表を同じ変更で更新します。
 文書検査は、要件IDと設計条件IDについて、重複、対応表への記載漏れ、対応表だけに残ったIDを拒否します。
