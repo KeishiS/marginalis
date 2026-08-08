@@ -4,7 +4,7 @@
 この文書は、現在のMarginalisが提供する機能と運用上の前提を定めます。各要件の識別子は、設計、
 試験、受入の対応を追跡するために固定します。検証先は xref:traceability.adoc#top[要件と検証の対応表]、
 実装方法は xref:architecture.adoc#top[アーキテクチャ]、REST APIの入出力は
-link:openapi.json[OpenAPI]を参照してください。
+link:../openapi.json[OpenAPI]を参照してください。
 
 == 想定する運用環境
 

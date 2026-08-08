@@ -3,7 +3,7 @@
 [#top]
 この文書は、Web UIで長いAsciiDoc文書を編集する利用者と、編集機能を保守する開発者を対象に、
 表示方式、入力操作、既知の制約を説明します。保存と競合のREST契約は xref:rest-api.adoc#top[REST API]、
-編集基盤の採用理由は xref:adr/0003-codemirrorをasciidoc編集基盤に採用.adoc#top[CodeMirror採用判断]を
+編集基盤の採用理由は xref:../developer-guide/adr/0003-codemirrorをasciidoc編集基盤に採用.adoc#top[CodeMirror採用判断]を
 優先してください。見たまま編集、共同編集、添付ファイルは対象外です。
 
 == 表示方式

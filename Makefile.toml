@@ -274,7 +274,7 @@ if rg -n \
   'MARGINALIS_MCP_(AUTHORIZATION_ISSUER|UPSTREAM_ISSUER_CLAIM|UPSTREAM_SUBJECT_CLAIM|GROUPS_CLAIM|EXTERNAL_ISSUER)|externalAuthorization|marginalis-auth-oauth' \
   . \
   --glob '!docs/frozen/**' \
-  --glob '!docs/adr/**' \
+  --glob '!docs/developer-guide/adr/**' \
   --glob '!Makefile.toml' \
   --glob '!target/**' \
   --glob '!test-results/**' \

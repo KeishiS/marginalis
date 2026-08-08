@@ -3,7 +3,7 @@
 [#top]
 この文書は運用者と開発者に向けて、Marginalisが出力する構造化ログの契約、秘密情報の境界、
 主要event、障害時の調べ方を定めます。systemd unitの操作は
-xref:nixos.adoc#top[NixOSでの運用]、CIの失敗は xref:development.adoc#top[GitHubを使う開発手順]を参照してください。
+xref:../user-guide/nixos.adoc#top[NixOSでの運用]、CIの失敗は xref:development.adoc#top[GitHubを使う開発手順]を参照してください。
 productionコードが出力するログの正本はこの文書です。試験用コード、依存ライブラリ、
 Webブラウザーのconsole、GitHub Actionsの標準出力は対象外です。
 

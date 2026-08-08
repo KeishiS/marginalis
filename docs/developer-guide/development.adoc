@@ -250,47 +250,15 @@ Marginalisのworkspaceには含まれないため、これらを変更すると�
 
 依存指定には、branch名、tag名、ローカルpathのいずれも使いません。branchは追従してしまい、tagは
 付け替えられるため、同じ指定が別の内容を指す可能性があります。ローカルpathは他の利用側から参照
-できません。かわりに40桁の完全なcommit SHAを使います。
+できません。かわりに40桁の完全なcommit SHAを使います。版とrevisionはルート``Cargo.toml``の
+``[workspace.dependencies]``で一度だけ宣言し、2 crateへ同じ値を与えます。
 
-上流の公開済みタグから対象のSHAを求めるには、次のコマンドを使用します。
-
-[source,sh]
-----
-gh api repos/KeishiS/mcp-authorization-server/git/ref/tags/<tag> --jq '.object.sha' |
-  xargs -I{} gh api repos/KeishiS/mcp-authorization-server/git/tags/{} --jq '.object.sha'
-----
-
-注釈付きタグでは、``refs/tags/<tag>``が指すのはタグobjectであり、commitではありません。上の2段階で
-タグobjectを解決し、最終的なcommitのSHAを取得します。
-
-版とrevisionはルート``Cargo.toml``の``[workspace.dependencies]``で一度だけ宣言し、2 crateへ同じ値を
-与えます。更新後は次を実行します。
-
-[source,sh]
-----
-cargo check --workspace
-nix build .#default
-cargo make shared-authorization-server
-----
-
-具体的な更新手順と検証範囲は
+上流タグからのSHAの解決を含む具体的な更新手順と検証範囲は
 xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]を参照してください。
 
 == リリース
 
 バージョンとリリース文書を変更する場合も、専用ブランチとPull Requestを使用します。
-Pull Requestの必須チェックと xref:release.adoc#top[リリース手順]の検証が成功した後に``main``へマージし、
-``main``の先端で``release-gate``を手動実行します。入力する``release_tag``には作成予定のタグを
-指定します。gateの成功後、検証した``main``のコミットへタグを付けます。タグのpushでも同じ
-gateが再実行されます。
-
-GitHub Actionsの確認には次のコマンドを使用します。
-
-[source,sh]
-----
-gh run list --workflow release-gate.yml
-gh run watch <run-id>
-----
-
-``v0.2.0``の正式リリース後はリリース候補版を公開せず、``v0.x.y``形式の通常版だけを
-この手順で公開します。
+``release-gate``の手動実行、タグの作成、GitHub Releaseの作成を含むリリースの手順は
+xref:release.adoc#top[リリース手順]を正本とします。``v0.2.0``の正式リリース後はリリース候補版を
+公開せず、``v0.x.y``形式の通常版だけを公開します。

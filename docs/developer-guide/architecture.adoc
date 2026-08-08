@@ -3,7 +3,7 @@
 [#top]
 この文書は、開発者に向けて、コンポーネントの役割、依存関係、一貫して満たすべき設計条件を
 説明します。利用者向けの機能は xref:requirements.adoc#top[現行要件]、HTTPの入出力は
-link:openapi.json[OpenAPI]を参照してください。
+link:../openapi.json[OpenAPI]を参照してください。
 
 == 構成
 
@@ -292,7 +292,7 @@ AsciiDoc文書の入力は``AsciiDocEditor.tsx``へ閉じ込めたCodeMirrorが�
 HTML生成はサーバー側のAdocWeaveだけが担当します。サーバーはHTMLごとにCSP nonceを生成し、
 CodeMirrorが実行時に作る基礎CSSだけを許可します。採用理由と操作上の制約は
 xref:adr/0003-codemirrorをasciidoc編集基盤に採用.adoc#top[CodeMirror採用判断]と
-xref:web-ui-editor.adoc#top[AsciiDoc編集画面]を参照してください。
+xref:../user-guide/web-ui-editor.adoc#top[AsciiDoc編集画面]を参照してください。
 成功型は``error``を保持できず、失敗型はHTTP境界で常に``error``へ変換します。RESTでは位置と重大度を
 共通の``NoteDiagnostic``契約として返し、成功したプレビューも診断を失わず画面へ渡します。
 検証時に抽出したノート参照は作成、更新、プレビューで再利用し、同じ入力を参照抽出のためだけに

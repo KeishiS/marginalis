@@ -2,7 +2,7 @@
 
 [#top]
 この文書は、REST APIを利用する人に向けて、認証、主な接続先、権限、入力エラーを説明します。
-正式な入出力は link:openapi.json[OpenAPI 3.1]で定めています。
+正式な入出力は link:../openapi.json[OpenAPI 3.1]で定めています。
 
 == 概要
 

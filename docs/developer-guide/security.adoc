@@ -3,7 +3,7 @@
 [#top]
 この文書は、開発者と監査担当者に向けて、依存ライブラリの脆弱性と暗号方式に関する例外判断を
 記録します。認証・認可の設計条件は xref:architecture.adoc#top[アーキテクチャ]、NixOSの秘密情報と
-systemdサービスの保護設定は xref:nixos.adoc#top[NixOSでの運用]を参照してください。
+systemdサービスの保護設定は xref:../user-guide/nixos.adoc#top[NixOSでの運用]を参照してください。
 
 [#問題の報告]
 == 問題の報告

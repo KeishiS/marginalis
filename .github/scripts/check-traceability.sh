@@ -5,8 +5,8 @@ status=0
 temporary_directory=$(mktemp -d)
 trap 'rm -rf "$temporary_directory"' EXIT
 
-requirements="${1:-docs/requirements.adoc}"
-traceability="${2:-docs/traceability.adoc}"
+requirements="${1:-docs/developer-guide/requirements.adoc}"
+traceability="${2:-docs/developer-guide/traceability.adoc}"
 requirement_ids="$temporary_directory/requirement-ids"
 traceability_rows="$temporary_directory/traceability-rows"
 traceability_ids="$temporary_directory/traceability-ids"
@@ -49,7 +49,7 @@ if ! diff -u "$requirement_ids" "$traceability_ids"; then
   echo "現行要件と要件・検証対応表のIDが一致しません。" >&2
   status=1
 fi
-if [[ "$requirements" == "docs/requirements.adoc" && "$traceability" == "docs/traceability.adoc" ]]; then
+if [[ "$requirements" == "docs/developer-guide/requirements.adoc" && "$traceability" == "docs/developer-guide/traceability.adoc" ]]; then
   operations_row=$(grep -E '^REQ-OPS-007[[:space:]]' "$traceability_rows" || true)
   for reference in \
     'observability-check' \

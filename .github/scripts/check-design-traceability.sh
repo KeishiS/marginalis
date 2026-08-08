@@ -5,8 +5,8 @@ status=0
 temporary_directory=$(mktemp -d)
 trap 'rm -rf "$temporary_directory"' EXIT
 
-architecture="${1:-docs/architecture.adoc}"
-traceability="${2:-docs/traceability.adoc}"
+architecture="${1:-docs/developer-guide/architecture.adoc}"
+traceability="${2:-docs/developer-guide/traceability.adoc}"
 architecture_ids="$temporary_directory/architecture-ids"
 traceability_rows="$temporary_directory/traceability-rows"
 traceability_ids="$temporary_directory/traceability-ids"
@@ -76,7 +76,7 @@ if ! diff -u "$architecture_ids" "$traceability_ids"; then
   status=1
 fi
 
-if [[ "$architecture" == "docs/architecture.adoc" && "$traceability" == "docs/traceability.adoc" ]]; then
+if [[ "$architecture" == "docs/developer-guide/architecture.adoc" && "$traceability" == "docs/developer-guide/traceability.adoc" ]]; then
   session_row=$(grep -E '^ARCH-SESSION-001[[:space:]]' "$traceability_rows" || true)
   regression_test='issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_limit'
   if [[ "$session_row" != *"$regression_test"* ]]; then
