@@ -23,12 +23,36 @@ Pull Requestを``main``へマージします。
 タグを入力し、検証の成功を確認します。
 . 検証した``main``の先端へリリースタグを作成してプッシュし、タグのプッシュで再実行される
 ``release-gate``も成功することを確認します。
-. タグに対してGitHub Releaseを作成し、Release Notesへ変更内容、互換性への影響、必要な場合は
-データの移行手順を記載します。
+. タグに対するGitHub Releaseを下書きとして作成し、Release Notesへ変更内容、互換性への影響、
+必要な場合はデータの移行手順を記載します。公開した版の機械可読な契約を取得できるように、
+対象タグに記録された``docs/openapi.json``と``docs/mcp-tools.json``を同名のassetとして下書きへ
+添付します。作業treeのファイルは使わないため、タグの検証後に``main``が進んでも公開内容は変わりません。
+``--verify-tag``で既存タグだけを受け入れ、タグ名の入力誤りによる新しいタグの作成を防ぎます。
 +
 [source,sh]
 ----
-gh release create v<版> --title v<版> --notes-file <Release Notesのファイル>
+release_tag=v<MAJOR>.<MINOR>.<PATCH>
+release_assets=$(mktemp -d)
+trap 'rm -rf "$release_assets"' EXIT
+git show "$release_tag:docs/openapi.json" >"$release_assets/openapi.json"
+git show "$release_tag:docs/mcp-tools.json" >"$release_assets/mcp-tools.json"
+gh release create "$release_tag" --verify-tag --draft \
+  "$release_assets/openapi.json" "$release_assets/mcp-tools.json" \
+  --title "$release_tag" --notes-file <Release Notesのファイル>
+----
+. 下書きの``isDraft``が``true``であり、``assets``に``openapi.json``と``mcp-tools.json``だけが
+それぞれ一つずつ含まれることを確認します。不足や重複がある場合は公開せず、下書きを修正します。
++
+[source,sh]
+----
+test "$(gh release view "$release_tag" --json isDraft,assets \
+  --jq '(.isDraft == true) and (([.assets[].name] | sort) == ["mcp-tools.json", "openapi.json"])')" = true
+----
+. Release Notesとassetの確認後に、下書きを公開します。
++
+[source,sh]
+----
+gh release edit "$release_tag" --draft=false
 ----
 
 パッチ版は予定へ固定せず、各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
