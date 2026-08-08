@@ -5,6 +5,21 @@ import {
   MAX_MATH_MACRO_TOTAL_BYTES,
   validateMathMacros,
 } from "../src/mathMacroState";
+import validationCases from "../../tests/fixtures/math-macro-validation.json";
+
+test("Rustと共有する境界例を同じ結果に判定する", () => {
+  for (const validationCase of validationCases) {
+    const actual =
+      validateMathMacros([
+        {
+          name: validationCase.name,
+          replacement: validationCase.replacement,
+          argument_count: validationCase.argument_count,
+        },
+      ]) === null;
+    expect(actual, validationCase.description).toBe(validationCase.valid);
+  }
+});
 
 test("マクロ名、置換内容、引数参照を保存規則と同じ条件で検査する", () => {
   expect(
@@ -27,33 +42,6 @@ test("マクロ名、置換内容、引数参照を保存規則と同じ条件�
       { name: "valid", replacement: "#1", argument_count: 1 },
     ]),
   ).toBeNull();
-});
-
-test("TeX定義を壊す名前、波括弧、comment、末尾backslashを拒否する", () => {
-  for (const [name, replacement] of [
-    ["def", "x"],
-    ["broken", "{x"],
-    ["broken", "}x"],
-    ["broken", "x%comment"],
-    ["broken", String.raw`x\\%comment`],
-    ["broken", "x\\"],
-  ]) {
-    expect(
-      validateMathMacros([{ name, replacement, argument_count: 0 }]),
-      `name=${name}, replacement=${JSON.stringify(replacement)}`,
-    ).not.toBeNull();
-  }
-  for (const replacement of [
-    String.raw`{x}`,
-    String.raw`\{x\}`,
-    String.raw`x\%`,
-    String.raw`x\\{y}\\`,
-  ]) {
-    expect(
-      validateMathMacros([{ name: "safe", replacement, argument_count: 0 }]),
-      `replacement=${JSON.stringify(replacement)}`,
-    ).toBeNull();
-  }
 });
 
 test("非BMP文字をUnicode code point単位で数える", () => {

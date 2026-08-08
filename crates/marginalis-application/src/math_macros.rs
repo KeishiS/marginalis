@@ -214,6 +214,15 @@ fn valid_argument_references(replacement: &str, argument_count: u8) -> bool {
 mod tests {
     use super::*;
 
+    #[derive(serde::Deserialize)]
+    struct ValidationCase {
+        description: String,
+        name: String,
+        replacement: String,
+        argument_count: u8,
+        valid: bool,
+    }
+
     #[test]
     fn accepts_argmax_and_one_argument_bold_alias() {
         assert_eq!(
@@ -267,39 +276,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_values_that_can_break_generated_tex_definitions() {
-        for (name, replacement) in [
-            ("def", "x"),
-            ("broken", "{x"),
-            ("broken", "}x"),
-            ("broken", r"x\"),
-            ("broken", "x%comment"),
-            ("broken", r"x\\%comment"),
-        ] {
-            assert_eq!(
-                validate_math_macros(&[MathMacro {
-                    name: name.into(),
-                    replacement: replacement.into(),
-                    argument_count: 0,
-                }]),
-                Err(MathMacroUseCaseError::Invalid),
-                "name={name}, replacement={replacement:?}"
-            );
-        }
-    }
+    fn matches_shared_validation_cases() {
+        let cases: Vec<ValidationCase> = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/math-macro-validation.json"
+        ))
+        .expect("shared math macro validation cases");
 
-    #[test]
-    fn accepts_balanced_groups_and_escaped_tex_braces_and_percent() {
-        for replacement in [r"{x}", r"\{x\}", r"x\%", r"x\\{y}\\"] {
-            assert_eq!(
-                validate_math_macros(&[MathMacro {
-                    name: "safe".into(),
-                    replacement: replacement.into(),
-                    argument_count: 0,
-                }]),
-                Ok(()),
-                "replacement={replacement:?}"
-            );
+        for case in cases {
+            let actual = validate_math_macros(&[MathMacro {
+                name: case.name,
+                replacement: case.replacement,
+                argument_count: case.argument_count,
+            }])
+            .is_ok();
+            assert_eq!(actual, case.valid, "{}", case.description);
         }
     }
 }

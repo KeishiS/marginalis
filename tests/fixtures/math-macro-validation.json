@@ -1,0 +1,121 @@
+[
+  {
+    "description": "通常の置換内容",
+    "name": "safe",
+    "replacement": "x",
+    "argument_count": 0,
+    "valid": true
+  },
+  {
+    "description": "対応する波括弧",
+    "name": "safe",
+    "replacement": "{x}",
+    "argument_count": 0,
+    "valid": true
+  },
+  {
+    "description": "escapeした波括弧",
+    "name": "safe",
+    "replacement": "\\{x\\}",
+    "argument_count": 0,
+    "valid": true
+  },
+  {
+    "description": "escapeしたpercent",
+    "name": "safe",
+    "replacement": "x\\%",
+    "argument_count": 0,
+    "valid": true
+  },
+  {
+    "description": "偶数個の末尾backslash",
+    "name": "safe",
+    "replacement": "x\\\\",
+    "argument_count": 0,
+    "valid": true
+  },
+  {
+    "description": "有効な引数参照",
+    "name": "safe",
+    "replacement": "#1+#2",
+    "argument_count": 2,
+    "valid": true
+  },
+  {
+    "description": "定義用command名",
+    "name": "def",
+    "replacement": "x",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "半角英字以外のcommand名",
+    "name": "safe1",
+    "replacement": "x",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "空の置換内容",
+    "name": "safe",
+    "replacement": "",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "制御文字を含む置換内容",
+    "name": "safe",
+    "replacement": "x\ny",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "閉じていない波括弧",
+    "name": "safe",
+    "replacement": "{x",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "先行する閉じ波括弧",
+    "name": "safe",
+    "replacement": "}x",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "escapeしていないpercent",
+    "name": "safe",
+    "replacement": "x%comment",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "偶数個のbackslashに続くpercent",
+    "name": "safe",
+    "replacement": "x\\\\%comment",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "単独の末尾backslash",
+    "name": "safe",
+    "replacement": "x\\",
+    "argument_count": 0,
+    "valid": false
+  },
+  {
+    "description": "引数の数を超える参照",
+    "name": "safe",
+    "replacement": "#2",
+    "argument_count": 1,
+    "valid": false
+  },
+  {
+    "description": "不正な引数参照",
+    "name": "safe",
+    "replacement": "#0",
+    "argument_count": 1,
+    "valid": false
+  }
+]
