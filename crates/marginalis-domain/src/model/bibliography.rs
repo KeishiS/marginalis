@@ -48,6 +48,7 @@ const MAX_CITATION_KEY_BYTES: usize = 128;
 pub struct ValidatedCslJson {
     citation_key: String,
     encoded: String,
+    value: Value,
 }
 
 impl ValidatedCslJson {
@@ -81,6 +82,7 @@ impl ValidatedCslJson {
         Ok(Self {
             citation_key: citation_key.to_owned(),
             encoded,
+            value: value.clone(),
         })
     }
 
@@ -103,6 +105,10 @@ impl ValidatedCslJson {
 
     pub fn encoded(&self) -> &str {
         &self.encoded
+    }
+
+    pub const fn value(&self) -> &Value {
+        &self.value
     }
 }
 

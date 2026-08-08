@@ -178,12 +178,18 @@ fn commit_is_consistent(commit: &BibliographyImportCommit) -> bool {
         }
         BibliographyImportItemMutation::Update {
             item_id,
+            csl_json,
             expected_revision,
             link,
             ..
         } => {
             link.source_id() == source_id
                 && link.item_id() == *item_id
+                && commit.expected_state.items.iter().any(|item| {
+                    item.item_id() == *item_id
+                        && item.revision() == *expected_revision
+                        && item.citation_key() == csl_json.citation_key()
+                })
                 && expected_revision
                     .get()
                     .checked_add(1)

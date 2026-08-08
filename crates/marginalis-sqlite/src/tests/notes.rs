@@ -823,6 +823,46 @@ async fn the_graph_hides_notes_and_edges_the_actor_cannot_see() {
     assert_eq!(filtered.works.len(), 1);
 }
 
+#[tokio::test]
+async fn graph_rejects_semantically_corrupt_bibliography_items() {
+    let database = database().await;
+    let alice = user("alice");
+    let note = graph_note("0197c9bc-0000-7000-8000-0000000000b1", "引用を含むノート");
+    database
+        .create_note(
+            &note,
+            NoteLinks {
+                reference_targets: &[],
+                cited_keys: &["smith2024".to_owned()],
+            },
+        )
+        .await
+        .expect("create note");
+    let item = bibliography_item(
+        "0197c9bc-0000-7000-8000-0000000000b2",
+        &alice,
+        "smith2024",
+        r#"{"id":"smith2024","type":"book","title":"Example"}"#,
+    );
+    database
+        .create_owned_item(&item)
+        .await
+        .expect("create bibliography item");
+    sqlx::query("UPDATE bibliography_items SET csl_json = ? WHERE item_id = ?")
+        .bind(r#"{"id":"different","type":"book","title":"Corrupt"}"#)
+        .bind(item.item_id().to_string())
+        .execute(&database.pool)
+        .await
+        .expect("inject corrupt CSL-JSON");
+
+    assert_eq!(
+        database
+            .note_graph(&alice, &NoteGraphQuery::default())
+            .await,
+        Err(SqliteStoreError::CorruptData)
+    );
+}
+
 /// 想定規模（REQ-OPS-003の約1,000ノート）で、図の問い合わせが一度で全体を返すことを確かめる。
 ///
 /// 点と線の本数を数えるだけの試験である。所要時間は環境で変わるため上限を判定しない。
