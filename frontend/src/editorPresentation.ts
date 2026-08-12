@@ -1,5 +1,4 @@
 import { ApiError, NoteDiagnostic, Problem } from "./api";
-import { utf8ByteOffsetToLineColumn } from "./textPosition";
 
 export function toProblem(error: unknown): Problem {
   if (error instanceof ApiError) {
@@ -15,6 +14,8 @@ export function problemMessage(problem: Problem): string {
   switch (problem.code) {
     case "validation_failed":
       return "入力内容を確認してください。";
+    case "advisories_rejected":
+      return "警告を解消してから保存してください。";
     case "conflict":
       return "ほかの操作でノートが更新されました。";
     case "authentication_required":
@@ -24,18 +25,11 @@ export function problemMessage(problem: Problem): string {
   }
 }
 
-export function diagnosticLocation(
-  source: string,
-  diagnostic: NoteDiagnostic,
-): string {
-  if (!canSelectDiagnostic(diagnostic)) {
+export function diagnosticLocation(diagnostic: NoteDiagnostic): string {
+  if (!diagnostic.position) {
     return "";
   }
-  const location = utf8ByteOffsetToLineColumn(
-    source,
-    diagnostic.span?.start ?? 0,
-  );
-  return `${location.line}行${location.column}列: `;
+  return `${diagnostic.position.line}行${diagnostic.position.column}列: `;
 }
 
 export function canSelectDiagnostic(diagnostic: NoteDiagnostic): boolean {

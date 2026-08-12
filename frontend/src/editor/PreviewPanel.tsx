@@ -10,7 +10,6 @@ import {
 
 export function PreviewPanel({
   active,
-  body,
   html,
   diagnostics,
   loading,
@@ -20,7 +19,6 @@ export function PreviewPanel({
   styleNonce,
 }: {
   active: boolean;
-  body: string;
   html: string;
   diagnostics: NoteDiagnostic[];
   loading: boolean;
@@ -61,7 +59,7 @@ export function PreviewPanel({
                   <span className="diagnostic-severity">
                     {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
                   </span>
-                  {diagnosticLocation(body, diagnostic)}
+                  {diagnosticLocation(diagnostic)}
                   {diagnosticMessage(diagnostic.code, diagnostic.message)}{" "}
                   {canSelectDiagnostic(diagnostic) && (
                     <button
@@ -90,7 +88,7 @@ export function PreviewPanel({
                 <span className="diagnostic-severity">
                   {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
                 </span>
-                {diagnosticLocation(body, diagnostic)}
+                {diagnosticLocation(diagnostic)}
                 {diagnosticMessage(diagnostic.code, diagnostic.message)}{" "}
                 {canSelectDiagnostic(diagnostic) && (
                   <button

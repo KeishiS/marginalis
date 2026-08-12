@@ -212,8 +212,12 @@ MCPではHTTPヘッダーを使わないため、変更ツールの型付き引�
 
 入力規則に違反した場合は、HTTP状態コード``422``と``code: "validation_failed"``を返します。
 ``diagnostics``には、問題の種類を表す``code``、重大度を表す``severity``、対象項目、文書中の位置、
-説明を含めます。``severity``は``error``、``warning``、``information``、``hint``のいずれかです。位置は
-UTF-8で符号化した``source``上のバイト範囲です。AdocWeave由来の診断では、AdocWeaveの安定した
+説明を含めます。``severity``は``error``、``warning``、``information``、``hint``のいずれかです。
+``span``はUTF-8で符号化した``source``上の0始まり半開区間です。``position``は人が確認するための
+1始まりの行・列で、列はLanguage Server Protocol（LSP）の既定と同じUTF-16 code unitで数えます。
+日本語のBMP文字は1、絵文字などBMP外の文字は2進みます。LSPの``Position``へ渡す場合は行・列から
+それぞれ1を引きます。UTF-8位置を使うLSPクライアントや範囲選択には``span``を使用します。
+AdocWeave由来の診断では、AdocWeaveの安定した
 ``code``をそのまま使用します。画面の日本語表示は英語の``message``ではなく``code``から決定します。
 ACLの対象が不正、重複、または所有者自身である場合は、対象を``acl_entry``とその添字で示します。
 
@@ -227,6 +231,7 @@ ACLの対象が不正、重複、または所有者自身である場合は、�
       "code": "invalid_title",
       "severity": "error",
       "target": { "field": "source" },
+      "position": { "line": 1, "column": 1 },
       "message": "title must be non-empty, single-line, and at most 200 characters"
     }
   ]

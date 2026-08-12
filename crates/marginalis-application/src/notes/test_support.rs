@@ -297,6 +297,7 @@ impl NoteContent for AcceptContent {
                 severity: NoteAdvisorySeverity::Warning,
                 target: NoteValidationTarget::Source,
                 span: None,
+                position: None,
                 message: "test advisory".into(),
             }],
             reference_queries: Vec::new(),
@@ -335,7 +336,35 @@ impl NoteContent for AcceptContent {
     }
 
     fn profile(&self) -> NoteProfile {
-        unreachable!("this test does not read the authoring profile")
+        NoteProfile {
+            profile_version: 1,
+            adocweave_package_version: "test",
+            limits: crate::NoteProfileLimits {
+                max_title_characters: 1,
+                max_source_bytes: 1,
+                max_tags: 1,
+                max_tag_characters: 1,
+            },
+            normalization: crate::NoteProfileNormalization {
+                title: Vec::new(),
+                tags: Vec::new(),
+            },
+            syntax: crate::NoteProfileSyntax {
+                common_blocks: Vec::new(),
+                common_inlines: Vec::new(),
+                source_language_optional: true,
+                allowed_math_languages: Vec::new(),
+                allowed_document_attributes: Vec::new(),
+                allowed_citation_styles: Vec::new(),
+                title_forbidden: Vec::new(),
+                tag_forbidden: Vec::new(),
+            },
+            authoring_guidance: Vec::new(),
+            allowed_source_languages: Vec::new(),
+            forbidden_rules: Vec::new(),
+            advisory_rules: Vec::new(),
+            examples: Vec::new(),
+        }
     }
 }
 
@@ -578,6 +607,7 @@ impl NoteContent for CitingContent {
                 keys: self.keys.clone(),
                 locator: None,
                 span: Utf8ByteSpan { start: 0, end: 1 },
+                position: crate::NoteSourcePosition { line: 1, column: 1 },
             }],
             citation_style: CitationStyle::default(),
         })

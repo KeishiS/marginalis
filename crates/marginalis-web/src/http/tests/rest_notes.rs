@@ -546,6 +546,10 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
     assert_eq!(preview["diagnostics"][0]["severity"], "warning");
     assert_eq!(preview["diagnostics"][0]["target"]["field"], "source");
     assert_eq!(preview["diagnostics"][0]["span"]["unit"], "utf8_byte");
+    assert_eq!(
+        preview["diagnostics"][0]["position"],
+        serde_json::json!({"line": 3, "column": 3})
+    );
 
     let invalid = authenticated_app()
         .oneshot(

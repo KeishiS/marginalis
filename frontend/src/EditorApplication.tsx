@@ -273,7 +273,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           problem={problem}
           heading="保存できませんでした"
           headingId="save-problem-heading"
-          source={form.source}
           onSelectDiagnostic={selectDiagnostic}
         />
       )}
@@ -336,7 +335,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           >
             <PreviewPanel
               active={effectiveViewMode !== "write"}
-              body={form.source}
               html={preview.html}
               diagnostics={preview.diagnostics}
               loading={preview.loading}

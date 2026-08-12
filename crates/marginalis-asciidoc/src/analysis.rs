@@ -15,7 +15,8 @@ use unicode_normalization::UnicodeNormalization;
 use crate::RenderError;
 use crate::configuration::{UNPROCESSED_DIRECTIVE_RULE, analysis_options};
 use crate::policy::{
-    advisory_diagnostic, diagnostic, diagnostic_sort_key, span, validate_note_content_profile,
+    advisory_diagnostic, diagnostic, diagnostic_sort_key, source_position, span,
+    validate_note_content_profile,
 };
 
 pub(crate) fn analyze_valid_source(source: &str) -> Result<adocweave::Analysis, RenderError> {
@@ -115,15 +116,20 @@ fn citation_queries_from_analysis(analysis: &adocweave::Analysis) -> Vec<NoteCit
         .citations()
         .into_iter()
         .enumerate()
-        .map(|(citation_index, citation)| NoteCitationQuery {
-            citation_index,
-            keys: citation.keys.into_iter().map(|key| key.value).collect(),
-            locator: citation
-                .attributes
-                .into_iter()
-                .find(|attribute| attribute.name.as_deref() == Some("locator"))
-                .map(|attribute| attribute.value),
-            span: span(citation.range),
+        .map(|(citation_index, citation)| {
+            let source_span = span(citation.range);
+            NoteCitationQuery {
+                citation_index,
+                keys: citation.keys.into_iter().map(|key| key.value).collect(),
+                locator: citation
+                    .attributes
+                    .into_iter()
+                    .find(|attribute| attribute.name.as_deref() == Some("locator"))
+                    .map(|attribute| attribute.value),
+                span: source_span,
+                position: source_position(analysis.source_document(), source_span)
+                    .expect("AdocWeave citation ranges are valid source positions"),
+            }
         })
         .collect()
 }
@@ -296,6 +302,24 @@ pub(crate) fn validate_draft(
                 NoteValidationTarget::Source,
                 None,
             )),
+        }
+    }
+    if let Ok(document) = adocweave::text::SourceDocument::new(&draft.source) {
+        for item in &mut errors {
+            if item.target == NoteValidationTarget::Source {
+                item.position = source_position(
+                    &document,
+                    item.span.unwrap_or(Utf8ByteSpan { start: 0, end: 0 }),
+                );
+            }
+        }
+        for item in &mut advisories {
+            if item.target == NoteValidationTarget::Source {
+                item.position = source_position(
+                    &document,
+                    item.span.unwrap_or(Utf8ByteSpan { start: 0, end: 0 }),
+                );
+            }
         }
     }
     errors.sort_by_key(|item| diagnostic_sort_key(&item.target, item.span, &item.code));
@@ -508,6 +532,48 @@ mod tests {
                 start,
                 end: start + 9,
             })
+        );
+    }
+
+    #[test]
+    fn diagnostics_include_lsp_compatible_positions_for_crlf_and_non_bmp_text() {
+        let source = "= Test\r\n\r\n😀 日本語  \r\n";
+        let validated = validate_draft(NoteDraft {
+            source: source.into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect("trailing whitespace is an advisory");
+        let diagnostic = validated
+            .diagnostics
+            .iter()
+            .find(|item| item.code == "trailing-whitespace")
+            .expect("trailing whitespace diagnostic");
+        assert_eq!(
+            diagnostic.position,
+            Some(marginalis_application::NoteSourcePosition { line: 3, column: 7 })
+        );
+        let span = diagnostic.span.expect("source span");
+        assert_eq!(&source[span.start as usize..span.end as usize], "  ");
+    }
+
+    #[test]
+    fn source_diagnostic_without_a_span_points_to_the_document_start() {
+        let errors = validate_draft(NoteDraft {
+            source: "本文だけです。".into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect_err("document title is required");
+        let diagnostic = errors
+            .iter()
+            .find(|item| item.code == NoteValidationCode::InvalidTitle.as_str())
+            .expect("title diagnostic");
+
+        assert_eq!(diagnostic.span, None);
+        assert_eq!(
+            diagnostic.position,
+            Some(marginalis_application::NoteSourcePosition { line: 1, column: 1 })
         );
     }
 

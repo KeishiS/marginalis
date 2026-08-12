@@ -752,6 +752,7 @@ pub enum ProblemCode {
     PreconditionRequired,
     InvalidRequest,
     ValidationFailed,
+    AdvisoriesRejected,
     RenderFailed,
     Unavailable,
 }
@@ -775,6 +776,7 @@ impl ProblemCode {
             Self::PreconditionRequired => "precondition_required",
             Self::InvalidRequest => "invalid_request",
             Self::ValidationFailed => "validation_failed",
+            Self::AdvisoriesRejected => "advisories_rejected",
             Self::RenderFailed => "render_failed",
             Self::Unavailable => "unavailable",
         }
@@ -790,7 +792,20 @@ pub struct NoteDiagnosticResponse {
     pub target: NoteValidationTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span: Option<Utf8ByteSpanResponse>,
+    /// 本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<NoteSourcePositionResponse>,
     pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteSourcePosition")]
+pub struct NoteSourcePositionResponse {
+    #[schemars(range(min = 1))]
+    pub line: u32,
+    #[schemars(range(min = 1))]
+    pub column: u32,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -862,7 +877,7 @@ pub fn openapi_document() -> Value {
             "title": "Marginalis REST API",
             "version": API_VERSION,
             "x-adocweave-package-version": "0.40.0",
-            "x-note-profile-version": 15
+            "x-note-profile-version": 16
         },
         "paths": rest_paths(),
         "components": {

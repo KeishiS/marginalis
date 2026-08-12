@@ -11,6 +11,10 @@ use super::{
     NoteCitationSegment, map_owner_resource_error,
 };
 
+pub(super) const UNKNOWN_CITATION_KEY_CODE: &str = "unknown_citation_key";
+pub(super) const UNKNOWN_CITATION_KEY_DESCRIPTION: &str =
+    "a citation key is not registered in the note owner's bibliography library";
+
 impl NoteApplication {
     /// 引用のcitation keyを、ノートを書いた利用者の書誌ライブラリーで解決する。
     ///
@@ -147,10 +151,11 @@ fn unknown_citation_diagnostics(
                 .cloned()
                 .collect::<Vec<_>>();
             (!missing.is_empty()).then(|| NoteAdvisoryDiagnostic {
-                code: "unknown_citation_key".into(),
+                code: UNKNOWN_CITATION_KEY_CODE.into(),
                 severity: NoteAdvisorySeverity::Warning,
                 target: NoteValidationTarget::Source,
                 span: Some(query.span),
+                position: Some(query.position),
                 message: format!(
                     "the bibliography library has no item for {}",
                     missing.join(", ")
@@ -186,18 +191,30 @@ mod tests {
                 keys: vec!["smith2024".into()],
                 locator: None,
                 span: Utf8ByteSpan { start: 10, end: 30 },
+                position: crate::NoteSourcePosition {
+                    line: 1,
+                    column: 11,
+                },
             },
             NoteCitationQuery {
                 citation_index: 1,
                 keys: vec!["tanaka2025".into()],
                 locator: None,
                 span: Utf8ByteSpan { start: 40, end: 60 },
+                position: crate::NoteSourcePosition {
+                    line: 1,
+                    column: 41,
+                },
             },
             NoteCitationQuery {
                 citation_index: 2,
                 keys: vec!["smith2024".into()],
                 locator: None,
                 span: Utf8ByteSpan { start: 70, end: 90 },
+                position: crate::NoteSourcePosition {
+                    line: 1,
+                    column: 71,
+                },
             },
         ];
 
@@ -231,6 +248,10 @@ mod tests {
             keys: vec!["smith2024".into(), "tanaka2025".into()],
             locator: None,
             span: Utf8ByteSpan { start: 10, end: 40 },
+            position: crate::NoteSourcePosition {
+                line: 1,
+                column: 11,
+            },
         }];
 
         let resolved = application
@@ -250,6 +271,10 @@ mod tests {
             keys: vec!["smith2024".into()],
             locator: None,
             span: Utf8ByteSpan { start: 10, end: 30 },
+            position: crate::NoteSourcePosition {
+                line: 1,
+                column: 11,
+            },
         }];
 
         let resolved = application
@@ -276,12 +301,20 @@ mod tests {
                 keys: vec!["smith2024".into(), "missing2024".into()],
                 locator: Some("p. 12".into()),
                 span: Utf8ByteSpan { start: 10, end: 40 },
+                position: crate::NoteSourcePosition {
+                    line: 1,
+                    column: 11,
+                },
             },
             NoteCitationQuery {
                 citation_index: 1,
                 keys: vec!["smith2024".into()],
                 locator: None,
                 span: Utf8ByteSpan { start: 60, end: 80 },
+                position: crate::NoteSourcePosition {
+                    line: 1,
+                    column: 61,
+                },
             },
         ];
 

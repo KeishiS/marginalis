@@ -117,10 +117,12 @@ tokenを検証し、認可応答にはAuthorization Serverを識別する``iss``
 * *REQ-API-007 — MCP tool契約*: ``list_notes``は可視ノートのID、題名、タグ、更新日時、revision、
 作成経路、人手確認状態を返し、作成経路と人手確認状態による完全一致の絞り込みを受け付けること。
 ``get_note``も同じ更新情報を返すこと。``get_note_profile``は、本文と参考文献を相互に移動できる
-完全なAsciiDoc文書例と、書誌情報を推測しない注意事項を返すこと。成功時の``text``は
-``structuredContent``と同じ契約型をJSON化した内容とし、不可視なノートの存在や属性を開示しないこと。
+完全なAsciiDoc文書例、書誌情報を推測しない注意事項、実効advisory規則と重大度、MCPではwarningを
+含む書き込みを拒否する方針を返すこと。``structuredContent``は公開契約型、``text``は同じ結果から
+組み立てた人とモデル向けの説明とし、不可視なノートの存在や属性を開示しないこと。
 ``create_note``と``update_note``は警告を含む入力を変更前に拒否し、重大度と位置を保った診断を
-``isError: true``のtool結果として返すこと。
+``advisories_rejected``と``isError: true``のtool結果として返すこと。診断位置はUTF-8 byte spanに加え、
+LSP既定のUTF-16 code unitで数えた1始まりの行・列を返すこと。
 ``sync_notes``はcursorを省略した初期一覧と、それに続く``upsert``・``remove``を一つのcursor系列で
 返すこと。cursorはactorに結び付け、期限切れを型で区別し、共有取消後は古いcursorから本文を
 取得できないこと。削除を示すtombstoneはノートの物理削除後もcursorの有効期間だけ保持すること。

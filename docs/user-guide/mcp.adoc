@@ -99,6 +99,25 @@ MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取
 クライアントは、存在しない一括取込toolを探したり、競合解決を推測して複数回の追加へ置き換えたりせず、
 この案内を利用者へ伝えてください。
 
+== ノート記述規則と診断
+
+ノートを作成または更新する前に``get_note_profile``を呼び出します。このtoolは、入力上限、正規化、
+使用できるAsciiDoc記法、禁止規則、文書例に加えて、実効的な``advisory_rules``を返します。
+``advisory_rules``の文書規則はAdocWeaveのlint規則とMarginalisの解析設定から生成し、書誌ライブラリーに
+無い引用キーの規則は引用解決処理と同じapplication定数から加えるため、実際の検査条件と別々には
+管理しません。``warnings_reject_write``が``true``の場合、``warning``が一件でもある入力は
+``create_note``と``update_note``で保存されません。``information``と``hint``だけでは拒否されません。
+
+入力そのものが不正な場合は``validation_failed``、保存できる入力に警告が残っている場合は
+``advisories_rejected``を返します。診断の``position``は1始まりの行・列です。列はLanguage Server
+Protocol（LSP）の既定と同じUTF-16 code unitで数えるため、LSPの``Position``へ渡すときは行・列から
+それぞれ1を引きます。``span``は0始まりのUTF-8バイト範囲として残し、入力範囲の選択やUTF-8位置を
+使うクライアントで使用します。
+
+tool結果の``structuredContent``は生成済みJSON Schemaに従う機械処理用の値です。``content``の``text``は、
+同じ結果から組み立てた人とモデル向けの説明です。``text``はJSONの複製ではなく、将来、説明の改善で
+表現が変わる可能性があるため、項目を取り出す処理では``structuredContent``を使用してください。
+
 同意画面では、クライアントが要求したscopeのうち、許可するものだけを選択できます。選ばなかった
 scopeは認可code、access token、refresh tokenへ記録されません。要求にないscopeを同意画面から追加する
 こともできません。何も選ばずに許可しようとした場合は、scopeを暗黙に補わず、再選択を求めます。
@@ -238,6 +257,8 @@ OAuthクライアントはRFC 7009の``/oauth/revoke``へtokenと``client_id``�
 
 MCP endpointでは、tokenがない場合と不正な場合に``401``と``WWW-Authenticate``を返します。必要なscopeが
 ない場合は``403 insufficient_scope``です。SQLiteを利用できない場合は``503``として扱います。
+tool自体の入力検査や業務上の拒否は、HTTP接続を維持したまま``isError: true``のtool結果として返します。
+エラーの種類と診断は``structuredContent``を確認し、利用者へ示す要約には``content``の``text``を使えます。
 
 OAuth endpointはOAuthの``error``を持つJSONを返します。tokenを含む応答には``Cache-Control: no-store``を
 付けます。token、認可code、PKCE verifier、session cookieはログへ出力しません。

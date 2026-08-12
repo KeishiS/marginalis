@@ -136,6 +136,7 @@ describe("生成済みREST応答検査", () => {
           severity: "warning",
           target: { field: "source" },
           span: { start: 10, end: 14, unit: "utf8_byte" },
+          position: { line: 3, column: 2 },
           message: "warning",
         },
       ],

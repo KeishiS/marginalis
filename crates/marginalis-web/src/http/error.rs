@@ -7,8 +7,8 @@ use marginalis_application::{
     NoteValidationDiagnostic,
 };
 use marginalis_contract::{
-    DiagnosticSeverityResponse, NoteDiagnosticResponse, ProblemCode, ProblemResponse,
-    Utf8ByteSpanResponse, Utf8ByteUnit,
+    DiagnosticSeverityResponse, NoteDiagnosticResponse, NoteSourcePositionResponse, ProblemCode,
+    ProblemResponse, Utf8ByteSpanResponse, Utf8ByteUnit,
 };
 use marginalis_domain::Utf8ByteSpan;
 
@@ -17,6 +17,15 @@ fn span_response(span: Utf8ByteSpan) -> Utf8ByteSpanResponse {
         start: span.start,
         end: span.end,
         unit: Utf8ByteUnit::Utf8Byte,
+    }
+}
+
+const fn position_response(
+    position: marginalis_application::NoteSourcePosition,
+) -> NoteSourcePositionResponse {
+    NoteSourcePositionResponse {
+        line: position.line,
+        column: position.column,
     }
 }
 
@@ -31,6 +40,7 @@ pub(super) fn advisory_response(diagnostic: NoteAdvisoryDiagnostic) -> NoteDiagn
         },
         target: diagnostic.target,
         span: diagnostic.span.map(span_response),
+        position: diagnostic.position.map(position_response),
         message: diagnostic.message,
     }
 }
@@ -41,6 +51,7 @@ fn validation_response(diagnostic: NoteValidationDiagnostic) -> NoteDiagnosticRe
         severity: DiagnosticSeverityResponse::Error,
         target: diagnostic.target,
         span: diagnostic.span.map(span_response),
+        position: diagnostic.position.map(position_response),
         message: diagnostic.message,
     }
 }
@@ -96,11 +107,17 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
             message: "note input is invalid".into(),
             diagnostics: diagnostics.into_iter().map(validation_response).collect(),
         },
-        NoteUseCaseError::AdvisoriesRejected(diagnostics) => ProblemResponse {
-            code: ProblemCode::ValidationFailed,
-            message: "note input contains warnings".into(),
-            diagnostics: diagnostics.into_iter().map(advisory_response).collect(),
-        },
+        NoteUseCaseError::AdvisoriesRejected(diagnostics) => {
+            let diagnostics = diagnostics
+                .into_iter()
+                .map(advisory_response)
+                .collect::<Vec<_>>();
+            ProblemResponse {
+                code: ProblemCode::AdvisoriesRejected,
+                message: advisory_rejection_message(&diagnostics),
+                diagnostics,
+            }
+        }
         NoteUseCaseError::RenderFailed => {
             ProblemResponse::new(ProblemCode::RenderFailed, "note cannot be rendered safely")
         }
@@ -157,10 +174,29 @@ pub(super) const fn problem_status(code: ProblemCode) -> StatusCode {
         ProblemCode::RetentionExpired | ProblemCode::SyncCursorExpired => StatusCode::GONE,
         ProblemCode::PreconditionRequired => StatusCode::PRECONDITION_REQUIRED,
         ProblemCode::InvalidRequest | ProblemCode::InvalidSyncCursor => StatusCode::BAD_REQUEST,
-        ProblemCode::ValidationFailed | ProblemCode::RenderFailed => {
-            StatusCode::UNPROCESSABLE_ENTITY
-        }
+        ProblemCode::ValidationFailed
+        | ProblemCode::AdvisoriesRejected
+        | ProblemCode::RenderFailed => StatusCode::UNPROCESSABLE_ENTITY,
     }
+}
+
+fn advisory_rejection_message(diagnostics: &[NoteDiagnosticResponse]) -> String {
+    let warnings = diagnostics
+        .iter()
+        .filter(|item| item.severity == DiagnosticSeverityResponse::Warning)
+        .collect::<Vec<_>>();
+    let count = warnings.len();
+    let Some(first) = warnings.first() else {
+        return "note advisories must be resolved before saving".into();
+    };
+    let location = first.position.map_or_else(String::new, |position| {
+        format!(" at line {}, column {}", position.line, position.column)
+    });
+    format!(
+        "{count} warning{} must be resolved before saving; first: {}{location}",
+        if count == 1 { "" } else { "s" },
+        first.code,
+    )
 }
 
 fn problem_response(problem: ProblemResponse) -> (StatusCode, Json<ProblemResponse>) {
@@ -268,5 +304,51 @@ pub(super) fn authentication_error(
             ProblemCode::AuthenticationUnavailable,
             "authentication is unavailable",
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use marginalis_application::{
+        NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteSourcePosition,
+    };
+    use marginalis_domain::{NoteValidationTarget, Utf8ByteSpan};
+
+    use super::*;
+
+    #[test]
+    fn rest_mapping_distinguishes_warning_rejection_and_summarizes_its_first_position() {
+        let (status, Json(problem)) = note_error(NoteUseCaseError::AdvisoriesRejected(vec![
+            NoteAdvisoryDiagnostic {
+                code: "macro-boundary".into(),
+                severity: NoteAdvisorySeverity::Warning,
+                target: NoteValidationTarget::Source,
+                span: Some(Utf8ByteSpan { start: 20, end: 24 }),
+                position: Some(NoteSourcePosition { line: 4, column: 7 }),
+                message: "a space is required before the inline macro".into(),
+            },
+        ]));
+
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(problem.code, ProblemCode::AdvisoriesRejected);
+        assert_eq!(
+            problem.message,
+            "1 warning must be resolved before saving; first: macro-boundary at line 4, column 7"
+        );
+        assert_eq!(
+            problem.diagnostics[0].position,
+            Some(NoteSourcePositionResponse { line: 4, column: 7 })
+        );
+    }
+
+    #[test]
+    fn malformed_advisory_rejection_does_not_panic_at_the_transport_boundary() {
+        let problem = note_problem(NoteUseCaseError::AdvisoriesRejected(Vec::new()));
+
+        assert_eq!(problem.code, ProblemCode::AdvisoriesRejected);
+        assert_eq!(
+            problem.message,
+            "note advisories must be resolved before saving"
+        );
     }
 }

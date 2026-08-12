@@ -3,7 +3,8 @@
 use marginalis_domain::{Note, NoteDraft, NoteId, Utf8ByteSpan};
 
 use crate::{
-    CitationStyle, NoteProfile, NoteRenderContext, NoteValidationDiagnostic, ValidatedNoteDraft,
+    CitationStyle, NoteProfile, NoteRenderContext, NoteSourcePosition, NoteValidationDiagnostic,
+    ValidatedNoteDraft,
 };
 
 /// 文書内で見つかったノート参照。
@@ -39,6 +40,8 @@ pub struct NoteCitationQuery {
     pub locator: Option<String>,
     /// 本文中で引用が占める範囲。診断の位置に使う。
     pub span: Utf8ByteSpan,
+    /// 引用の先頭位置。列はUTF-16 code unitで数えた1始まり。
+    pub position: NoteSourcePosition,
 }
 
 /// 書誌ライブラリーで解決を終えた引用の表示。

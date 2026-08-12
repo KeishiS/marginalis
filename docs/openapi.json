@@ -1038,6 +1038,17 @@
           "message": {
             "type": "string"
           },
+          "position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoteSourcePosition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+          },
           "severity": {
             "$ref": "#/components/schemas/DiagnosticSeverity"
           },
@@ -1362,6 +1373,26 @@
         ],
         "type": "string"
       },
+      "NoteSourcePosition": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "format": "uint32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "format": "uint32",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
       "NoteSummary": {
         "additionalProperties": false,
         "properties": {
@@ -1588,6 +1619,7 @@
           "precondition_required",
           "invalid_request",
           "validation_failed",
+          "advisories_rejected",
           "render_failed",
           "unavailable"
         ],
@@ -1667,7 +1699,7 @@
     "title": "Marginalis REST API",
     "version": "v3",
     "x-adocweave-package-version": "0.40.0",
-    "x-note-profile-version": 15
+    "x-note-profile-version": 16
   },
   "openapi": "3.1.0",
   "paths": {

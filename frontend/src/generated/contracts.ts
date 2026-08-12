@@ -152,6 +152,7 @@ export type NoteCreationSource = "web" | "rest" | "mcp" | "unknown";
 export interface NoteDiagnostic {
   code: string;
   message: string;
+  position?: NoteSourcePosition | null;
   severity: DiagnosticSeverity;
   span?: Utf8ByteSpan | null;
   target: NoteValidationTarget;
@@ -211,6 +212,10 @@ export interface NoteReview {
   status: NoteReviewStatus;
 }
 export type NoteReviewStatus = "unknown" | "pending" | "reviewed";
+export interface NoteSourcePosition {
+  column: number;
+  line: number;
+}
 export interface NoteSummary {
   created_via: NoteCreationSource;
   note_id: string;
@@ -230,7 +235,7 @@ export interface NoteView {
   note: Note;
   related: RelatedNotes;
 }
-export type ProblemCode = "authentication_required" | "authentication_unavailable" | "csrf_rejected" | "csrf_required" | "csrf_invalid" | "same_origin_required" | "origin_not_allowed" | "not_found" | "forbidden" | "conflict" | "retention_expired" | "invalid_sync_cursor" | "sync_cursor_expired" | "precondition_required" | "invalid_request" | "validation_failed" | "render_failed" | "unavailable";
+export type ProblemCode = "authentication_required" | "authentication_unavailable" | "csrf_rejected" | "csrf_required" | "csrf_invalid" | "same_origin_required" | "origin_not_allowed" | "not_found" | "forbidden" | "conflict" | "retention_expired" | "invalid_sync_cursor" | "sync_cursor_expired" | "precondition_required" | "invalid_request" | "validation_failed" | "advisories_rejected" | "render_failed" | "unavailable";
 export interface RelatedNotes {
   incoming: NoteSummary[];
   outgoing: NoteSummary[];
@@ -1091,6 +1096,17 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "message": {
         "type": "string"
       },
+      "position": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NoteSourcePosition"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+      },
       "severity": {
         "$ref": "#/components/schemas/DiagnosticSeverity"
       },
@@ -1415,6 +1431,26 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
     ],
     "type": "string"
   },
+  "NoteSourcePosition": {
+    "additionalProperties": false,
+    "properties": {
+      "column": {
+        "format": "uint32",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "line": {
+        "format": "uint32",
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "line",
+      "column"
+    ],
+    "type": "object"
+  },
   "NoteSummary": {
     "additionalProperties": false,
     "properties": {
@@ -1641,6 +1677,7 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "precondition_required",
       "invalid_request",
       "validation_failed",
+      "advisories_rejected",
       "render_failed",
       "unavailable"
     ],

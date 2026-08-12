@@ -272,13 +272,23 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata."
         ]
     );
-    let text: serde_json::Value = serde_json::from_str(
-        profile["result"]["content"][0]["text"]
-            .as_str()
-            .expect("text"),
-    )
-    .expect("serialized profile output");
-    assert_eq!(text, profile["result"]["structuredContent"]);
+    assert!(profile_output.warnings_reject_write);
+    assert!(
+        profile_output
+            .advisory_rules
+            .iter()
+            .any(|rule| rule.code == "macro-boundary"
+                && rule.severity == marginalis_contract::DiagnosticSeverityResponse::Warning)
+    );
+    let text = profile["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text");
+    assert!(text.contains("Note profile version 6"));
+    assert!(text.contains("MCP note writes reject warnings: true"));
+    assert!(text.contains("macro-boundary"));
+    assert!(text.contains("Allowed source languages: rust"));
+    assert!(text.contains("Examples:"));
+    assert!(text.contains("bibliography — Complete document"));
 
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
@@ -313,13 +323,11 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             }],
         }
     );
-    let text: serde_json::Value = serde_json::from_str(
-        listed["result"]["content"][0]["text"]
-            .as_str()
-            .expect("text"),
-    )
-    .expect("serialized list output");
-    assert_eq!(text, listed["result"]["structuredContent"]);
+    let text = listed["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text");
+    assert!(text.contains("1 visible note"));
+    assert!(text.contains("同期ノート (revision 3)"));
 
     let synchronized = mcp_app()
         .oneshot(
@@ -344,6 +352,11 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
             .expect("typed sync output");
     assert_eq!(output.phase, marginalis_contract::McpSyncPhase::Snapshot);
     assert_eq!(output.next_cursor, "next-sync-cursor");
+    let text = synchronized["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text");
+    assert!(text.contains("Synchronization snapshot"));
+    assert!(text.contains("next-sync-cursor"));
 
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
@@ -365,13 +378,11 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert_eq!(fetched_output.updated_at_ms, 2_000);
     assert_eq!(fetched_output.tags, vec!["同期", "試験"]);
     assert_eq!(fetched_output.revision, 3);
-    let text: serde_json::Value = serde_json::from_str(
-        fetched["result"]["content"][0]["text"]
-            .as_str()
-            .expect("text"),
-    )
-    .expect("serialized get output");
-    assert_eq!(text, fetched["result"]["structuredContent"]);
+    let text = fetched["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text");
+    assert!(text.contains("同期ノート (revision 3)"));
+    assert!(text.contains("AsciiDoc source:"));
 
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
@@ -795,13 +806,18 @@ async fn mcp_rejects_invalid_json_rpc_envelopes_and_reports_tool_errors_as_resul
             .is_none()
     );
     assert_eq!(
+        validation["result"]["structuredContent"]["diagnostics"][0]["position"],
+        serde_json::json!({"line": 1, "column": 1})
+    );
+    assert_eq!(
         validation["result"]["structuredContent"]["diagnostics"][1]["span"]["unit"],
         "utf8_byte"
     );
-    let text: serde_json::Value =
-        serde_json::from_str(validation["result"]["content"][0]["text"].as_str().unwrap())
-            .expect("serialized structured error");
-    assert_eq!(text, validation["result"]["structuredContent"]);
+    let text = validation["result"]["content"][0]["text"]
+        .as_str()
+        .expect("natural-language error");
+    assert!(text.contains("note input is invalid (validation_failed)"));
+    assert!(text.contains("error invalid_title"));
 }
 
 #[tokio::test]
@@ -852,9 +868,17 @@ async fn mcp_create_and_update_reject_warnings_with_typed_diagnostics() {
             serde_json::from_slice(&body).expect("warning response JSON");
         assert_eq!(response["result"]["isError"], true);
         let structured = response["result"]["structuredContent"].clone();
-        assert_eq!(structured["code"], "validation_failed");
+        assert_eq!(structured["code"], "advisories_rejected");
+        assert_eq!(
+            structured["message"],
+            "1 warning must be resolved before saving; first: macro-boundary at line 3, column 8"
+        );
         assert_eq!(structured["diagnostics"][0]["severity"], "warning");
         assert_eq!(structured["diagnostics"][0]["span"]["unit"], "utf8_byte");
+        assert_eq!(
+            structured["diagnostics"][0]["position"],
+            serde_json::json!({"line": 3, "column": 8})
+        );
         assert_eq!(structured["diagnostics"][1]["severity"], "information");
         assert!(structured["diagnostics"][1].get("span").is_none());
         assert_eq!(structured["diagnostics"][2]["severity"], "hint");
@@ -863,13 +887,11 @@ async fn mcp_create_and_update_reject_warnings_with_typed_diagnostics() {
                 .expect("mutation output contract"),
             McpNoteMutationOutput::Failure(_)
         ));
-        let text: serde_json::Value = serde_json::from_str(
-            response["result"]["content"][0]["text"]
-                .as_str()
-                .expect("text result"),
-        )
-        .expect("serialized warning result");
-        assert_eq!(text, structured);
+        let text = response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text result");
+        assert!(text.contains("1 warning must be resolved"));
+        assert!(text.contains("warning macro-boundary at line 3, column 8"));
     }
 }
 
