@@ -61,7 +61,8 @@ pub(super) fn initialize_result(
     Ok(serde_json::json!({
         "protocolVersion": protocol_version,
         "capabilities":{"tools":{}},
-        "serverInfo":{"name":"marginalis","version":env!("CARGO_PKG_VERSION")}
+        "serverInfo":{"name":"marginalis","version":env!("CARGO_PKG_VERSION")},
+        "instructions": marginalis_contract::MCP_SERVER_INSTRUCTIONS
     }))
 }
 
