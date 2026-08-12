@@ -204,6 +204,17 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert!(catalog["result"].get("_meta").is_none());
     let tools = catalog["result"]["tools"].as_array().expect("tools array");
     assert!(tools.iter().any(|tool| tool["name"] == "get_note_profile"));
+    let add_bibliography_item = tools
+        .iter()
+        .find(|tool| tool["name"] == "add_bibliography_item")
+        .expect("add bibliography item tool");
+    let description = add_bibliography_item["description"]
+        .as_str()
+        .expect("tool description");
+    assert!(description.contains("exactly one bibliography item"));
+    assert!(description.contains("bulk import"));
+    assert!(!description.contains("Web UI"));
+    assert!(!description.contains("REST API"));
     assert!(
         tools
             .iter()
@@ -889,6 +900,16 @@ async fn mcp_negotiates_initialization_and_validates_the_protocol_header() {
         let response: serde_json::Value =
             serde_json::from_slice(&body).expect("initialize response");
         assert_eq!(response["result"]["protocolVersion"], expected);
+        assert_eq!(
+            response["result"]["instructions"],
+            marginalis_contract::MCP_SERVER_INSTRUCTIONS
+        );
+        assert!(
+            !response["result"]["instructions"]
+                .as_str()
+                .expect("server instructions")
+                .contains("REST API")
+        );
     }
 
     let invalid_capabilities = mcp_app()
@@ -1018,6 +1039,16 @@ async fn mcp_2026_requests_are_stateless_self_describing_and_header_checked() {
     );
     assert_eq!(discover["result"]["cacheScope"], "private");
     assert_eq!(
+        discover["result"]["instructions"],
+        marginalis_contract::MCP_SERVER_INSTRUCTIONS
+    );
+    assert!(
+        !discover["result"]["instructions"]
+            .as_str()
+            .expect("server instructions")
+            .contains("REST API")
+    );
+    assert_eq!(
         discover["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
         "marginalis"
     );
@@ -1052,6 +1083,20 @@ async fn mcp_2026_requests_are_stateless_self_describing_and_header_checked() {
     assert_eq!(list["result"]["cacheScope"], "private");
     assert_eq!(list["result"]["ttlMs"], 3_600_000);
     assert_eq!(list["result"]["tools"][0]["name"], "list_notes");
+    let add_bibliography_item = list["result"]["tools"]
+        .as_array()
+        .expect("tools array")
+        .iter()
+        .find(|tool| tool["name"] == "add_bibliography_item")
+        .expect("add bibliography item tool");
+    assert_eq!(
+        add_bibliography_item["description"],
+        marginalis_contract::mcp_tool_contracts()
+            .into_iter()
+            .find(|tool| tool.name == marginalis_contract::McpToolName::AddBibliographyItem)
+            .expect("add bibliography item contract")
+            .description
+    );
 
     let call = mcp_app()
         .oneshot(

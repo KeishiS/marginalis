@@ -2688,7 +2688,7 @@
   },
   {
     "name": "add_bibliography_item",
-    "description": "Add one bibliography item in CSL-JSON format; requires bibliography:write; id and type are required and values are never inferred",
+    "description": "Add exactly one bibliography item in CSL-JSON format; requires bibliography:write; id and type are required and values are never inferred; MCP does not support bibliography bulk import",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,

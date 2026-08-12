@@ -326,7 +326,7 @@ async fn dispatch_mcp_method(
                 "supportedVersions": supported_versions(),
                 "capabilities": {"tools": {}},
                 "_meta": server_metadata(),
-                "instructions": "Use get_note_profile before creating or updating notes.",
+                "instructions": marginalis_contract::MCP_SERVER_INSTRUCTIONS,
                 "ttlMs": 3600000,
                 "cacheScope": "private"
             }),
