@@ -120,7 +120,7 @@ metadata契約試験、``notes:sync``専用scopeと同意文言の試験
 |React状態・画面単体試験、ブラウザー試験
 |一覧の復帰
 |REQ-UI-004
-|AdocWeave診断、REST契約、TypeScript応答検査、React編集・UTF-8位置単体試験、ブラウザー試験
+|AdocWeave診断、REST契約、TypeScript応答検査、React編集・サーバー由来のLSP互換位置・UTF-8範囲選択の単体試験、ブラウザー試験
 |警告表示、診断からの修正
 |REQ-UI-005
 |AdocWeave公開HTML・React描画fixture・MathJax失敗試験、ブラウザー試験

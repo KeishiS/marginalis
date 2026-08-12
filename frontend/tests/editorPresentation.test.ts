@@ -20,16 +20,14 @@ test("保存状態は利用者が次に取る操作を優先して示す", () =>
   ).toBe("更新内容の競合を解消してください。");
 });
 
-test("UTF-8 byte位置を行と列へ変換する", () => {
-  const source = "= 題名\n\n日本語";
-  const start = new TextEncoder().encode("= 題名\n\n").length;
-
+test("サーバーが返した行と列を表示する", () => {
   expect(
-    diagnosticLocation(source, {
+    diagnosticLocation({
       code: "asciidoc_parse_failed",
       severity: "error",
       target: { field: "source" },
-      span: { start, end: start + 3, unit: "utf8_byte" },
+      span: { start: 10, end: 13, unit: "utf8_byte" },
+      position: { line: 3, column: 1 },
       message: "invalid",
     }),
   ).toBe("3行1列: ");
@@ -42,6 +40,9 @@ test("公開経路と問題表示を一か所で正規化する", () => {
   expect(
     problemMessage({ code: "validation_failed", message: "internal detail" }),
   ).toBe("入力内容を確認してください。");
+  expect(
+    problemMessage({ code: "advisories_rejected", message: "internal detail" }),
+  ).toBe("警告を解消してから保存してください。");
 });
 
 test("行の長さ超過は上限と対処を示す", () => {

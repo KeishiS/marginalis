@@ -11,13 +11,11 @@ export function ProblemMessage({
   problem,
   heading,
   headingId,
-  source,
   onSelectDiagnostic,
 }: {
   problem: Problem;
   heading: string;
   headingId: string;
-  source?: string;
   onSelectDiagnostic?: (diagnostic: NoteDiagnostic) => void;
 }) {
   return (
@@ -31,7 +29,7 @@ export function ProblemMessage({
               <span className="diagnostic-severity">
                 {diagnosticSeverityLabel(diagnostic.severity)}:{" "}
               </span>
-              {source ? diagnosticLocation(source, diagnostic) : ""}
+              {diagnosticLocation(diagnostic)}
               {diagnosticMessage(diagnostic.code, diagnostic.message)}{" "}
               {canSelectDiagnostic(diagnostic) && onSelectDiagnostic && (
                 <button

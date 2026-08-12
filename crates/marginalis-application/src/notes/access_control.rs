@@ -94,6 +94,7 @@ fn acl_validation(index: usize, problem: AclValidationProblem) -> NoteUseCaseErr
         code: problem.code().as_str().into(),
         target: NoteValidationTarget::AclEntry { index },
         span: None,
+        position: None,
         message: problem.message().into(),
     }])
 }

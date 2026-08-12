@@ -343,6 +343,7 @@ mod tests {
             severity,
             target: NoteValidationTarget::Source,
             span: None,
+            position: None,
             message: "test advisory".into(),
         })
         .collect();

@@ -10,6 +10,8 @@ use serde_json::Value;
 /// MCPクライアントが接続時に読む、toolの使い分けに関する案内。
 pub const MCP_SERVER_INSTRUCTIONS: &str = concat!(
     "Use get_note_profile before creating or updating notes. ",
+    "MCP note writes reject every warning-severity diagnostic; follow the profile's advisory ",
+    "rules and authoring guidance before writing. ",
     "Bibliography bulk import is not available through MCP; add items one at a time with ",
     "add_bibliography_item."
 );
@@ -324,6 +326,8 @@ pub struct McpNoteProfileOutput {
     pub authoring_guidance: Vec<String>,
     pub allowed_source_languages: Vec<String>,
     pub forbidden_rules: Vec<McpNoteProfileRule>,
+    pub advisory_rules: Vec<McpNoteProfileAdvisoryRule>,
+    pub warnings_reject_write: bool,
     pub examples: Vec<McpNoteProfileExample>,
 }
 
@@ -368,6 +372,14 @@ pub struct McpNoteProfileRule {
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct McpNoteProfileAdvisoryRule {
+    pub code: String,
+    pub description: String,
+    pub severity: crate::DiagnosticSeverityResponse,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct McpNoteProfileExample {
     pub kind: String,
     pub description: String,
@@ -386,7 +398,7 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
         ),
         McpToolContract::new::<McpEmptyInput, McpNoteProfileOutput>(
             McpToolName::GetNoteProfile,
-            "Read the current note profile; requires notes:read or notes:write",
+            "Read the current note profile, including advisory rules and the MCP warning policy; requires notes:read or notes:write",
         ),
         McpToolContract::new::<McpGetNoteInput, McpGetNoteOutput>(
             McpToolName::GetNote,
@@ -573,6 +585,21 @@ mod tests {
                 serde_json::json!({"note_id": "id", "unexpected": true})
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn note_profile_contract_requires_advisory_rules_and_the_warning_policy() {
+        let profile_schema = schema::<McpNoteProfileOutput>();
+        let required = profile_schema["required"]
+            .as_array()
+            .expect("profile required fields");
+
+        assert!(required.contains(&Value::String("advisory_rules".into())));
+        assert!(required.contains(&Value::String("warnings_reject_write".into())));
+        assert_eq!(
+            profile_schema["$defs"]["McpNoteProfileAdvisoryRule"]["required"],
+            serde_json::json!(["code", "description", "severity"])
         );
     }
 }

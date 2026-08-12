@@ -230,6 +230,8 @@ pub struct NoteValidationDiagnostic {
     pub code: String,
     pub target: NoteValidationTarget,
     pub span: Option<Utf8ByteSpan>,
+    /// 本文上の1始まりの行・列。列はLSP既定と同じUTF-16 code unitで数える。
+    pub position: Option<NoteSourcePosition>,
     pub message: String,
 }
 
@@ -240,7 +242,19 @@ pub struct NoteAdvisoryDiagnostic {
     pub severity: NoteAdvisorySeverity,
     pub target: NoteValidationTarget,
     pub span: Option<Utf8ByteSpan>,
+    /// 本文上の1始まりの行・列。列はLSP既定と同じUTF-16 code unitで数える。
+    pub position: Option<NoteSourcePosition>,
     pub message: String,
+}
+
+/// 人間向けに示す本文上の位置。
+///
+/// LSPの`Position`へは両方から1を引けばよい。範囲選択と他の位置符号化への変換には、
+/// 診断が別に保持するUTF-8 byte spanを使用する。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NoteSourcePosition {
+    pub line: u32,
+    pub column: u32,
 }
 
 /// 検証済みの入力と、同じ解析で得た付随情報。
@@ -273,6 +287,14 @@ pub struct NoteProfileLimits {
 pub struct NoteProfileRule {
     pub code: NoteValidationCode,
     pub description: &'static str,
+}
+
+/// ノートprofileで有効な、保存を妨げないAdocWeaveの規則。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteProfileAdvisoryRule {
+    pub code: &'static str,
+    pub description: &'static str,
+    pub severity: NoteAdvisorySeverity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -314,6 +336,7 @@ pub struct NoteProfile {
     pub authoring_guidance: Vec<&'static str>,
     pub allowed_source_languages: Vec<&'static str>,
     pub forbidden_rules: Vec<NoteProfileRule>,
+    pub advisory_rules: Vec<NoteProfileAdvisoryRule>,
     pub examples: Vec<NoteProfileExample>,
 }
 

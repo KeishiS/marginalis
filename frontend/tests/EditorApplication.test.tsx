@@ -283,6 +283,7 @@ test("診断からUTF-8位置に対応する入力範囲へ移動する", async 
               severity: "error",
               target: { field: "source" },
               span: { start, end: start + 6, unit: "utf8_byte" },
+              position: { line: 3, column: 1 },
               message: "invalid source",
             },
           ],

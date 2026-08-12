@@ -1,22 +1,25 @@
 //! MCP toolの入力検査、use case呼出し、契約型への変換。
 
 use marginalis_application::{
-    BibliographyApplication, BibliographyUseCaseError, NoteListQuery, NoteProfile, NoteSyncEntry,
-    NoteSyncPhase, NoteSyncRemovalReason, NoteUseCaseError, NoteUseCases, NoteWritePolicy,
+    BibliographyApplication, BibliographyUseCaseError, NoteAdvisorySeverity, NoteListQuery,
+    NoteProfile, NoteSyncEntry, NoteSyncPhase, NoteSyncRemovalReason, NoteUseCaseError,
+    NoteUseCases, NoteWritePolicy,
 };
 use marginalis_contract::{
-    McpAddBibliographyItemInput, McpBibliographyItem, McpBibliographyListOutput,
-    McpCreateNoteInput, McpDeleteBibliographyItemInput, McpDeleteNoteInput, McpEmptyInput,
-    McpGetNoteInput, McpGetNoteOutput, McpListNotesInput, McpListNotesOutput,
-    McpNoteProfileExample, McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput,
-    McpNoteProfileRule, McpNoteProfileSyntax, McpNoteRevisionOutput, McpSearchBibliographyInput,
-    McpSyncEntry, McpSyncNotesInput, McpSyncNotesOutput, McpSyncPhase, McpSyncRemovalReason,
-    McpToolName, McpUpdateNoteInput, ProblemResponse,
+    DiagnosticSeverityResponse, McpAddBibliographyItemInput, McpBibliographyItem,
+    McpBibliographyListOutput, McpCreateNoteInput, McpDeleteBibliographyItemInput,
+    McpDeleteNoteInput, McpEmptyInput, McpGetNoteInput, McpGetNoteOutput, McpListNotesInput,
+    McpListNotesOutput, McpNoteProfileAdvisoryRule, McpNoteProfileExample, McpNoteProfileLimits,
+    McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule, McpNoteProfileSyntax,
+    McpNoteRevisionOutput, McpSearchBibliographyInput, McpSyncEntry, McpSyncNotesInput,
+    McpSyncNotesOutput, McpSyncPhase, McpSyncRemovalReason, McpToolName, McpUpdateNoteInput,
+    ProblemResponse,
 };
 use marginalis_domain::{
     Actor, BibliographyItemId, EntityId, Note, NoteCreationSource, NoteDraft, Revision,
 };
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
 
 use super::jsonrpc::JsonRpcResponse;
 
@@ -70,6 +73,194 @@ enum McpToolOutput {
     BibliographyList(McpBibliographyListOutput),
     BibliographyItem(McpBibliographyItem),
     Empty(McpEmptyInput),
+}
+
+impl McpToolOutput {
+    fn text(&self) -> String {
+        match self {
+            Self::NoteList(output) => {
+                let count = output.notes.len();
+                let mut text = format!(
+                    "{count} visible {}.",
+                    if count == 1 { "note" } else { "notes" }
+                );
+                for note in &output.notes {
+                    let _ = write!(
+                        text,
+                        "\n- {} — {} (revision {})",
+                        note.note_id, note.title, note.revision
+                    );
+                }
+                text
+            }
+            Self::NoteSync(output) => {
+                let phase = match output.phase {
+                    McpSyncPhase::Snapshot => "snapshot",
+                    McpSyncPhase::Changes => "changes",
+                };
+                let count = output.entries.len();
+                let mut text = format!(
+                    "Synchronization {phase}: {count} {}; has_more={}; next_cursor={}",
+                    if count == 1 { "entry" } else { "entries" },
+                    output.has_more,
+                    output.next_cursor
+                );
+                for entry in &output.entries {
+                    match entry {
+                        McpSyncEntry::Upsert { note } => {
+                            let _ = write!(
+                                text,
+                                "\n- upsert {} — {} (revision {})",
+                                note.note_id, note.title, note.revision
+                            );
+                        }
+                        McpSyncEntry::Remove { note_id, reason } => {
+                            let reason = match reason {
+                                McpSyncRemovalReason::Deleted => "deleted",
+                                McpSyncRemovalReason::AccessRevoked => "access revoked",
+                            };
+                            let _ = write!(text, "\n- remove {note_id} ({reason})");
+                        }
+                    }
+                }
+                text
+            }
+            Self::NoteProfile(output) => {
+                let mut text = format!(
+                    "Note profile version {} (AdocWeave {}).\nMCP note writes reject warnings: {}.\nLimits after normalization: title {} characters, source {} bytes, {} tags, {} characters per tag.",
+                    output.profile_version,
+                    output.adocweave_package_version,
+                    output.warnings_reject_write,
+                    output.limits.max_title_characters,
+                    output.limits.max_source_bytes,
+                    output.limits.max_tags,
+                    output.limits.max_tag_characters,
+                );
+                text.push_str("\nTitle normalization:");
+                for rule in &output.normalization.title {
+                    let _ = write!(text, "\n- {rule}");
+                }
+                text.push_str("\nTag normalization:");
+                for rule in &output.normalization.tags {
+                    let _ = write!(text, "\n- {rule}");
+                }
+                let _ = write!(
+                    text,
+                    "\nCommon blocks: {}.\nCommon inline forms: {}.\nSource block language is optional: {}.",
+                    output.syntax.common_blocks.join(", "),
+                    output.syntax.common_inlines.join(", "),
+                    output.syntax.source_language_optional,
+                );
+                let _ = write!(
+                    text,
+                    "\nAllowed source languages: {}.\nAllowed math languages: {}.\nAllowed document attributes: {}.\nAllowed citation styles: {}.",
+                    output.allowed_source_languages.join(", "),
+                    output.syntax.allowed_math_languages.join(", "),
+                    output.syntax.allowed_document_attributes.join(", "),
+                    output.syntax.allowed_citation_styles.join(", "),
+                );
+                let _ = write!(
+                    text,
+                    "\nForbidden title values: {}.\nForbidden tag values: {}.",
+                    output.syntax.title_forbidden.join(", "),
+                    output.syntax.tag_forbidden.join(", "),
+                );
+                text.push_str("\nAdvisory rules:");
+                for rule in &output.advisory_rules {
+                    let _ = write!(
+                        text,
+                        "\n- {} ({}): {}",
+                        rule.code,
+                        diagnostic_severity_name(rule.severity),
+                        rule.description
+                    );
+                }
+                text.push_str("\nForbidden rules:");
+                for rule in &output.forbidden_rules {
+                    let _ = write!(text, "\n- {}: {}", rule.code, rule.description);
+                }
+                text.push_str("\nAuthoring guidance:");
+                for guidance in &output.authoring_guidance {
+                    let _ = write!(text, "\n- {guidance}");
+                }
+                text.push_str("\nExamples:");
+                for example in &output.examples {
+                    let _ = write!(
+                        text,
+                        "\n- {} — {}:\n{}",
+                        example.kind,
+                        example.description,
+                        indent(&example.body)
+                    );
+                }
+                text
+            }
+            Self::Note(note) => note_text(note),
+            Self::Revision(output) => format!(
+                "Note {} is at revision {}.",
+                output.note_id, output.revision
+            ),
+            Self::BibliographyList(output) => {
+                let count = output.items.len();
+                let mut text = format!(
+                    "{count} bibliography {}.",
+                    if count == 1 { "item" } else { "items" }
+                );
+                for item in &output.items {
+                    let _ = write!(
+                        text,
+                        "\n- {} — {} (revision {})",
+                        item.item_id, item.citation_key, item.revision
+                    );
+                }
+                text
+            }
+            Self::BibliographyItem(item) => {
+                let csl = serde_json::to_string_pretty(&item.csl_json)
+                    .expect("CSL-JSON contract output serialization must not fail");
+                format!(
+                    "Bibliography item {} — {} (revision {}).\nCSL-JSON:\n{}",
+                    item.item_id,
+                    item.citation_key,
+                    item.revision,
+                    indent(&csl)
+                )
+            }
+            Self::Empty(_) => "Operation completed.".into(),
+        }
+    }
+}
+
+fn note_text(note: &McpGetNoteOutput) -> String {
+    format!(
+        "Note {} — {} (revision {}).\nTags: {}\nAsciiDoc source:\n{}",
+        note.note_id,
+        note.title,
+        note.revision,
+        if note.tags.is_empty() {
+            "(none)".into()
+        } else {
+            note.tags.join(", ")
+        },
+        indent(&note.source)
+    )
+}
+
+fn indent(value: &str) -> String {
+    value
+        .lines()
+        .map(|line| format!("    {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+const fn diagnostic_severity_name(severity: DiagnosticSeverityResponse) -> &'static str {
+    match severity {
+        DiagnosticSeverityResponse::Error => "error",
+        DiagnosticSeverityResponse::Warning => "warning",
+        DiagnosticSeverityResponse::Information => "information",
+        DiagnosticSeverityResponse::Hint => "hint",
+    }
 }
 
 pub(super) async fn mcp_tool_call(
@@ -514,8 +705,7 @@ fn mcp_bibliography_error(
 }
 
 fn mcp_tool_success(id: serde_json::Value, output: McpToolOutput) -> JsonRpcResponse {
-    let text =
-        serde_json::to_string(&output).expect("MCP contract output serialization must not fail");
+    let text = output.text();
     let structured_content =
         serde_json::to_value(output).expect("MCP contract output serialization must not fail");
     JsonRpcResponse::success(
@@ -537,7 +727,7 @@ fn mcp_tool_error(id: serde_json::Value, error: NoteUseCaseError) -> JsonRpcResp
 /// 失敗出力schemaと同じ型を通すため、契約検査が実行時応答との差を検出できる。
 fn mcp_problem_result(id: serde_json::Value, problem: ProblemResponse) -> JsonRpcResponse {
     let value = serde_json::to_value(&problem).expect("problem response is serializable");
-    let text = serde_json::to_string(&problem).expect("problem response is serializable");
+    let text = problem_text(&problem);
     JsonRpcResponse::success(
         id,
         serde_json::json!({
@@ -546,6 +736,23 @@ fn mcp_problem_result(id: serde_json::Value, problem: ProblemResponse) -> JsonRp
             "isError":true
         }),
     )
+}
+
+fn problem_text(problem: &ProblemResponse) -> String {
+    let mut text = format!("{} ({}).", problem.message, problem.code.as_str());
+    for diagnostic in &problem.diagnostics {
+        let location = diagnostic.position.map_or_else(String::new, |position| {
+            format!(" at line {}, column {}", position.line, position.column)
+        });
+        let _ = write!(
+            text,
+            "\n- {} {}{location}: {}",
+            diagnostic_severity_name(diagnostic.severity),
+            diagnostic.code,
+            diagnostic.message
+        );
+    }
+    text
 }
 
 fn note_profile_output(profile: NoteProfile) -> McpNoteProfileOutput {
@@ -636,6 +843,20 @@ fn note_profile_output(profile: NoteProfile) -> McpNoteProfileOutput {
                 description: rule.description.into(),
             })
             .collect(),
+        advisory_rules: profile
+            .advisory_rules
+            .into_iter()
+            .map(|rule| McpNoteProfileAdvisoryRule {
+                code: rule.code.into(),
+                description: rule.description.into(),
+                severity: match rule.severity {
+                    NoteAdvisorySeverity::Warning => DiagnosticSeverityResponse::Warning,
+                    NoteAdvisorySeverity::Information => DiagnosticSeverityResponse::Information,
+                    NoteAdvisorySeverity::Hint => DiagnosticSeverityResponse::Hint,
+                },
+            })
+            .collect(),
+        warnings_reject_write: true,
         examples: profile
             .examples
             .into_iter()

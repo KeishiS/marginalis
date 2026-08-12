@@ -324,6 +324,13 @@ application層でそれぞれ``NoteValidationDiagnostic``と``NoteAdvisoryDiagno
 変更操作は``NoteWritePolicy``を受け取り、同じ解析結果に含まれる警告を許容するか判定します。RESTは
 警告を許容し、MCPの``create_note``と``update_note``は警告を拒否します。MCPで拒否する場合も診断の
 重大度をerrorへ変えず、application層が永続化portを呼ぶ前に診断付きの失敗を返します。
+MCPが公開する文書のadvisory規則は、AdocWeaveの``LINT_RULES``と実際に渡す``analysis_options``から
+``marginalis-asciidoc``が導出します。未登録の引用キーはapplication層で検出するため、その規則も
+同じ層でprofileへ加えます。MCPでwarningを拒否するという接続方法固有の方針は、汎用的な
+``NoteProfile``へ混ぜず、MCP transportが``warnings_reject_write``として加えます。
+本文診断は、範囲選択と位置符号化の変換に使う0始まりのUTF-8 byte spanと、人やLSPクライアントが
+直ちに参照できる1始まりの行・列を併記します。行・列はAdocWeaveの``SourceDocument``からLSP既定の
+UTF-16 code unitで一度だけ計算します。Web UIとMCPクライアントは独自に本文先頭から数え直しません。
 AsciiDoc文書の入力は``AsciiDocEditor.tsx``へ閉じ込めたCodeMirrorが担当し、Reactのフォーム状態には
 常に完全な文字列を渡します。CodeMirror側でAsciiDocを別の文書モデルへ変換しません。解析と
 HTML生成はサーバー側のAdocWeaveだけが担当します。サーバーはHTMLごとにCSP nonceを生成し、
@@ -332,6 +339,8 @@ xref:adr/0003-codemirrorをasciidoc編集基盤に採用.adoc#top[CodeMirror採�
 xref:../user-guide/web-ui-editor.adoc#top[AsciiDoc編集画面]を参照してください。
 成功型は``error``を保持できず、失敗型はHTTP境界で常に``error``へ変換します。RESTでは位置と重大度を
 共通の``NoteDiagnostic``契約として返し、成功したプレビューも診断を失わず画面へ渡します。
+MCP tool結果では、機械処理用の``structuredContent``だけを公開契約で固定し、``content``の``text``は
+同じ型から組み立てる人とモデル向けの説明とします。JSONを文字列化して二重に返しません。
 検証時に抽出したノート参照は作成、更新、プレビューで再利用し、同じ入力を参照抽出のためだけに
 再解析しません。競合する三つの文書の行対応は``editorConflict.ts``、問題と診断の表示規則は
 ``editorPresentation.ts``へ置きます。これらはReactや通信に依存しないため、大きな文書を含む

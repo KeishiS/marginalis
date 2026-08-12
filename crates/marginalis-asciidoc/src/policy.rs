@@ -6,10 +6,11 @@ use adocweave::semantic::{
     Block, DelimitedContent, Inline, MathLanguage, SemanticNode, VerbatimKind, walk,
 };
 use adocweave::text::TextRange;
+use adocweave::text::{PositionEncoding, SourceDocument, TextSize};
 use marginalis_application::{
-    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile, NoteProfileExample,
-    NoteProfileLimits, NoteProfileNormalization, NoteProfileRule, NoteProfileSyntax,
-    NoteValidationCode, NoteValidationDiagnostic,
+    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile, NoteProfileAdvisoryRule,
+    NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileRule,
+    NoteProfileSyntax, NoteSourcePosition, NoteValidationCode, NoteValidationDiagnostic,
 };
 use marginalis_domain::{NOTE_POLICY, NoteValidationTarget, Utf8ByteSpan};
 
@@ -96,6 +97,7 @@ pub(crate) fn diagnostic(
         code: code.as_str().into(),
         target,
         span,
+        position: None,
         message: diagnostic_message(code),
     }
 }
@@ -112,6 +114,7 @@ pub(crate) fn advisory_diagnostic(
         severity,
         target,
         span,
+        position: None,
         message: message.into(),
     }
 }
@@ -152,6 +155,21 @@ pub(crate) const fn span(range: TextRange) -> Utf8ByteSpan {
     }
 }
 
+/// AdocWeaveとLSPの既定に合わせ、UTF-16 code unitで数えた1始まりの表示位置へ直す。
+pub(crate) fn source_position(
+    document: &SourceDocument,
+    source_span: Utf8ByteSpan,
+) -> Option<NoteSourcePosition> {
+    let offset = TextSize::new(source_span.start as usize).ok()?;
+    let position = document
+        .offset_to_position(offset, PositionEncoding::Utf16)
+        .ok()?;
+    Some(NoteSourcePosition {
+        line: position.line.checked_add(1)?,
+        column: position.character.checked_add(1)?,
+    })
+}
+
 pub(crate) fn diagnostic_sort_key(
     target: &NoteValidationTarget,
     span: Option<Utf8ByteSpan>,
@@ -171,6 +189,7 @@ pub(crate) fn diagnostic_sort_key(
 
 /// 検証器と同じ正本から生成する機械可読なノート入力規則。
 pub fn note_profile() -> NoteProfile {
+    let analysis = crate::configuration::analysis_options();
     NoteProfile {
         profile_version: AUTHORING_PROFILE_VERSION,
         adocweave_package_version: PINNED_ADOCWEAVE_PACKAGE_VERSION,
@@ -234,6 +253,31 @@ pub fn note_profile() -> NoteProfile {
             .map(|rule| NoteProfileRule {
                 code: rule.code(),
                 description: rule.message(),
+            })
+            .collect(),
+        advisory_rules: adocweave::output::diagnostics::LINT_RULES
+            .iter()
+            .filter_map(|descriptor| {
+                let settings = analysis.diagnostics.lint.rule(descriptor.id);
+                let severity = match (settings.enabled, settings.severity) {
+                    (true, adocweave::output::diagnostics::Severity::Warning) => {
+                        NoteAdvisorySeverity::Warning
+                    }
+                    (true, adocweave::output::diagnostics::Severity::Information) => {
+                        NoteAdvisorySeverity::Information
+                    }
+                    (true, adocweave::output::diagnostics::Severity::Hint) => {
+                        NoteAdvisorySeverity::Hint
+                    }
+                    (false, _) | (true, adocweave::output::diagnostics::Severity::Error) => {
+                        return None;
+                    }
+                };
+                Some(NoteProfileAdvisoryRule {
+                    code: descriptor.id.as_str(),
+                    description: descriptor.description,
+                    severity,
+                })
             })
             .collect(),
         examples: vec![
@@ -653,5 +697,30 @@ mod tests {
             NOTE_POLICY.allowed_math_languages.to_vec()
         );
         assert_eq!(profile.profile_version, AUTHORING_PROFILE_VERSION);
+        let effective = crate::configuration::analysis_options();
+        let expected = adocweave::output::diagnostics::LINT_RULES
+            .iter()
+            .filter(|descriptor| {
+                let settings = effective.diagnostics.lint.rule(descriptor.id);
+                settings.enabled
+                    && settings.severity != adocweave::output::diagnostics::Severity::Error
+            })
+            .map(|descriptor| descriptor.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            profile
+                .advisory_rules
+                .iter()
+                .map(|rule| rule.code)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(
+            profile
+                .advisory_rules
+                .iter()
+                .any(|rule| rule.code == "macro-boundary"
+                    && rule.severity == NoteAdvisorySeverity::Warning)
+        );
     }
 }

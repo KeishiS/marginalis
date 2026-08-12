@@ -96,6 +96,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -129,6 +140,26 @@
             "reviewed"
           ],
           "type": "string"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
+          ],
+          "type": "object"
         },
         "NoteSummary": {
           "additionalProperties": false,
@@ -325,6 +356,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -579,6 +611,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -612,6 +655,26 @@
             "reviewed"
           ],
           "type": "string"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
+          ],
+          "type": "object"
         },
         "NoteValidationTarget": {
           "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
@@ -748,6 +811,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -800,7 +864,7 @@
   },
   {
     "name": "get_note_profile",
-    "description": "Read the current note profile; requires notes:read or notes:write",
+    "description": "Read the current note profile, including advisory rules and the MCP warning policy; requires notes:read or notes:write",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -817,6 +881,26 @@
             "hint"
           ],
           "type": "string"
+        },
+        "McpNoteProfileAdvisoryRule": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverity"
+            }
+          },
+          "required": [
+            "code",
+            "description",
+            "severity"
+          ],
+          "type": "object"
         },
         "McpNoteProfileExample": {
           "additionalProperties": false,
@@ -902,6 +986,12 @@
             "adocweave_package_version": {
               "type": "string"
             },
+            "advisory_rules": {
+              "items": {
+                "$ref": "#/$defs/McpNoteProfileAdvisoryRule"
+              },
+              "type": "array"
+            },
             "allowed_source_languages": {
               "items": {
                 "type": "string"
@@ -939,6 +1029,9 @@
             },
             "syntax": {
               "$ref": "#/$defs/McpNoteProfileSyntax"
+            },
+            "warnings_reject_write": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -950,6 +1043,8 @@
             "authoring_guidance",
             "allowed_source_languages",
             "forbidden_rules",
+            "advisory_rules",
+            "warnings_reject_write",
             "examples"
           ],
           "type": "object"
@@ -1042,6 +1137,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -1064,6 +1170,26 @@
             "severity",
             "target",
             "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
           ],
           "type": "object"
         },
@@ -1202,6 +1328,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -1362,6 +1489,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -1395,6 +1533,26 @@
             "reviewed"
           ],
           "type": "string"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
+          ],
+          "type": "object"
         },
         "NoteValidationTarget": {
           "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
@@ -1531,6 +1689,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -1637,6 +1796,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -1659,6 +1829,26 @@
             "severity",
             "target",
             "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
           ],
           "type": "object"
         },
@@ -1797,6 +1987,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -1914,6 +2105,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -1936,6 +2138,26 @@
             "severity",
             "target",
             "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
           ],
           "type": "object"
         },
@@ -2074,6 +2296,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -2186,6 +2409,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -2208,6 +2442,26 @@
             "severity",
             "target",
             "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
           ],
           "type": "object"
         },
@@ -2346,6 +2600,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -2476,6 +2731,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -2498,6 +2764,26 @@
             "severity",
             "target",
             "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
           ],
           "type": "object"
         },
@@ -2636,6 +2922,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -2752,6 +3039,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -2774,6 +3072,26 @@
             "severity",
             "target",
             "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
           ],
           "type": "object"
         },
@@ -2912,6 +3230,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],
@@ -3010,6 +3329,17 @@
             "message": {
               "type": "string"
             },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
             "severity": {
               "$ref": "#/$defs/DiagnosticSeverity"
             },
@@ -3032,6 +3362,26 @@
             "severity",
             "target",
             "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
           ],
           "type": "object"
         },
@@ -3170,6 +3520,7 @@
             "precondition_required",
             "invalid_request",
             "validation_failed",
+            "advisories_rejected",
             "render_failed",
             "unavailable"
           ],

@@ -7,11 +7,11 @@ use marginalis_application::{
     McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingSetting,
     McpScopeCeilingUseCaseError, McpTokenPair, McpValidatedAuthorizationRequest, NoteAclChange,
     NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteGraph, NoteGraphNote,
-    NoteGraphQuery, NoteListQuery, NotePreview, NoteProfile, NoteProfileExample, NoteProfileLimits,
-    NoteProfileNormalization, NoteProfileSyntax, NoteRenderContext, NoteReviewDetails,
-    NoteSyncPage, NoteSyncPhase, NoteUseCaseError, NoteUseCases, NoteValidationCode,
-    NoteValidationDiagnostic, NoteView, NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes,
-    WebSessionUseCases,
+    NoteGraphQuery, NoteListQuery, NotePreview, NoteProfile, NoteProfileAdvisoryRule,
+    NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax,
+    NoteRenderContext, NoteReviewDetails, NoteSourcePosition, NoteSyncPage, NoteSyncPhase,
+    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
+    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, DeletedNoteListEntry, Identity, Note, NoteAccess,
@@ -269,6 +269,17 @@ pub(super) fn assert_log_line(logs: &str, expected_fields: &[&str]) {
 
 pub(super) struct Notes;
 
+fn test_source_position(source: &str, byte_offset: usize) -> NoteSourcePosition {
+    let prefix = &source[..byte_offset];
+    let line_start = prefix.rfind('\n').map_or(0, |index| index + 1);
+    NoteSourcePosition {
+        line: u32::try_from(prefix.bytes().filter(|byte| *byte == b'\n').count() + 1)
+            .expect("test line"),
+        column: u32::try_from(prefix[line_start..].encode_utf16().count() + 1)
+            .expect("test column"),
+    }
+}
+
 pub(super) fn test_advisories(source: &str) -> Vec<NoteAdvisoryDiagnostic> {
     source.find("xref").map_or_else(Vec::new, |start| {
         vec![
@@ -280,6 +291,7 @@ pub(super) fn test_advisories(source: &str) -> Vec<NoteAdvisoryDiagnostic> {
                     start: start as u32,
                     end: start as u32 + 4,
                 }),
+                position: Some(test_source_position(source, start)),
                 message: "a space is required before the inline macro".into(),
             },
             NoteAdvisoryDiagnostic {
@@ -287,6 +299,7 @@ pub(super) fn test_advisories(source: &str) -> Vec<NoteAdvisoryDiagnostic> {
                 severity: NoteAdvisorySeverity::Information,
                 target: NoteValidationTarget::Source,
                 span: None,
+                position: None,
                 message: "document information".into(),
             },
             NoteAdvisoryDiagnostic {
@@ -294,6 +307,7 @@ pub(super) fn test_advisories(source: &str) -> Vec<NoteAdvisoryDiagnostic> {
                 severity: NoteAdvisorySeverity::Hint,
                 target: NoteValidationTarget::Source,
                 span: None,
+                position: None,
                 message: "document hint".into(),
             },
         ]
@@ -368,6 +382,7 @@ impl Notes {
                     code: NoteValidationCode::InvalidTitle.as_str().into(),
                     target: NoteValidationTarget::Source,
                     span: None,
+                    position: Some(NoteSourcePosition { line: 1, column: 1 }),
                     message: "title is invalid".into(),
                 },
                 NoteValidationDiagnostic {
@@ -376,6 +391,7 @@ impl Notes {
                         .into(),
                     target: NoteValidationTarget::Source,
                     span: Some(Utf8ByteSpan { start: 8, end: 13 }),
+                    position: Some(NoteSourcePosition { line: 1, column: 9 }),
                     message: "source language is not allowed".into(),
                 },
             ]));
@@ -408,6 +424,7 @@ impl Notes {
                     code: NoteValidationCode::InvalidTitle.as_str().into(),
                     target: NoteValidationTarget::Source,
                     span: None,
+                    position: Some(NoteSourcePosition { line: 1, column: 1 }),
                     message: "title is invalid".into(),
                 },
             ]))
@@ -521,6 +538,11 @@ impl Notes {
             authoring_guidance: vec![BIBLIOGRAPHY_GUIDANCE],
             allowed_source_languages: vec!["rust"],
             forbidden_rules: Vec::new(),
+            advisory_rules: vec![NoteProfileAdvisoryRule {
+                code: "macro-boundary",
+                description: "インラインマクロ境界の不足",
+                severity: NoteAdvisorySeverity::Warning,
+            }],
             examples: vec![NoteProfileExample {
                 kind: "bibliography",
                 description: "Complete document with a bibliography entry and an in-text reference",

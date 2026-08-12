@@ -196,7 +196,19 @@ impl NoteApplication {
     }
 
     pub fn note_profile(&self) -> NoteProfile {
-        self.content.profile()
+        let mut profile = self.content.profile();
+        if !profile
+            .advisory_rules
+            .iter()
+            .any(|rule| rule.code == super::citations::UNKNOWN_CITATION_KEY_CODE)
+        {
+            profile.advisory_rules.push(crate::NoteProfileAdvisoryRule {
+                code: super::citations::UNKNOWN_CITATION_KEY_CODE,
+                description: super::citations::UNKNOWN_CITATION_KEY_DESCRIPTION,
+                severity: crate::NoteAdvisorySeverity::Warning,
+            });
+        }
+        profile
     }
 
     pub async fn read_note_view(
@@ -282,6 +294,30 @@ mod tests {
         AcceptContent, CitingContent, EmptyLibrary, MemoryNotes, NoMathMacros, OneItemLibrary,
         OwnerMathMacros, note_application,
     };
+
+    #[test]
+    fn profile_includes_the_application_citation_warning() {
+        let repository = Arc::new(MemoryNotes::default());
+        let application = note_application(
+            &repository,
+            Arc::new(AcceptContent::default()),
+            Arc::new(EmptyLibrary),
+            Arc::new(NoMathMacros),
+        );
+
+        assert!(
+            application
+                .note_profile()
+                .advisory_rules
+                .iter()
+                .any(|rule| {
+                    rule.code == super::super::citations::UNKNOWN_CITATION_KEY_CODE
+                        && rule.description
+                            == super::super::citations::UNKNOWN_CITATION_KEY_DESCRIPTION
+                        && rule.severity == NoteAdvisorySeverity::Warning
+                })
+        );
+    }
 
     #[tokio::test]
     async fn preview_preserves_advisories_without_reanalysis() {
