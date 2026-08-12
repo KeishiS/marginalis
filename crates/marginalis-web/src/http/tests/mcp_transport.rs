@@ -213,7 +213,8 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         .expect("tool description");
     assert!(description.contains("exactly one bibliography item"));
     assert!(description.contains("bulk import"));
-    assert!(description.contains("Web UI or REST API"));
+    assert!(!description.contains("Web UI"));
+    assert!(!description.contains("REST API"));
     assert!(
         tools
             .iter()
@@ -903,6 +904,12 @@ async fn mcp_negotiates_initialization_and_validates_the_protocol_header() {
             response["result"]["instructions"],
             marginalis_contract::MCP_SERVER_INSTRUCTIONS
         );
+        assert!(
+            !response["result"]["instructions"]
+                .as_str()
+                .expect("server instructions")
+                .contains("REST API")
+        );
     }
 
     let invalid_capabilities = mcp_app()
@@ -1034,6 +1041,12 @@ async fn mcp_2026_requests_are_stateless_self_describing_and_header_checked() {
     assert_eq!(
         discover["result"]["instructions"],
         marginalis_contract::MCP_SERVER_INSTRUCTIONS
+    );
+    assert!(
+        !discover["result"]["instructions"]
+            .as_str()
+            .expect("server instructions")
+            .contains("REST API")
     );
     assert_eq!(
         discover["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],

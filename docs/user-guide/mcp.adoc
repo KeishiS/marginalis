@@ -94,9 +94,10 @@ https://github.com/KeishiS/renkan[連環（Renkan）]が担当します。
 CSL-JSONファイルの一括取込は、ファイル全体の事前確認と項目ごとの競合解決を利用者へ求めるため、
 Web UIとREST APIだけで提供します。MCPでは、``bibliography:write``による一項目ずつの追加を使用します。
 一括取込の事前確認tokenや取込元の対応情報をMCP toolの公開契約には含めません。
-MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取込が非対応であることと、代わりに
-Web UIまたはREST APIを使うことを示します。クライアントは、存在しない一括取込toolを探したり、競合解決を
-推測して複数回の追加へ置き換えたりせず、この案内を利用者へ伝えてください。
+MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取込が非対応であり、一項目ずつ追加する
+必要があることを示します。MCPクライアントへ返す説明には、Web UIやREST APIへの案内を含めません。
+クライアントは、存在しない一括取込toolを探したり、競合解決を推測して複数回の追加へ置き換えたりせず、
+この案内を利用者へ伝えてください。
 
 同意画面では、クライアントが要求したscopeのうち、許可するものだけを選択できます。選ばなかった
 scopeは認可code、access token、refresh tokenへ記録されません。要求にないscopeを同意画面から追加する

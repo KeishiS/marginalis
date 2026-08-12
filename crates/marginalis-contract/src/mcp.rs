@@ -10,8 +10,8 @@ use serde_json::Value;
 /// MCPクライアントが接続時に読む、toolの使い分けに関する案内。
 pub const MCP_SERVER_INSTRUCTIONS: &str = concat!(
     "Use get_note_profile before creating or updating notes. ",
-    "Bibliography bulk import is not available through MCP: add items one at a time with ",
-    "add_bibliography_item, or use the Web UI or REST API for file preview and conflict resolution."
+    "Bibliography bulk import is not available through MCP; add items one at a time with ",
+    "add_bibliography_item."
 );
 
 use crate::{ProblemResponse, rest::nullable};
@@ -410,7 +410,7 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
         ),
         McpToolContract::new::<McpAddBibliographyItemInput, McpBibliographyItem>(
             McpToolName::AddBibliographyItem,
-            "Add exactly one bibliography item in CSL-JSON format; requires bibliography:write; id and type are required and values are never inferred; MCP does not support bibliography bulk import, so use the Web UI or REST API for file preview and conflict resolution",
+            "Add exactly one bibliography item in CSL-JSON format; requires bibliography:write; id and type are required and values are never inferred; MCP does not support bibliography bulk import",
         ),
         McpToolContract::new::<McpDeleteBibliographyItemInput, McpEmptyInput>(
             McpToolName::DeleteBibliographyItem,
@@ -458,7 +458,8 @@ mod tests {
             .expect("add bibliography item contract");
         for guidance in [add.description, MCP_SERVER_INSTRUCTIONS] {
             assert!(guidance.contains("bulk import"));
-            assert!(guidance.contains("Web UI or REST API"));
+            assert!(!guidance.contains("Web UI"));
+            assert!(!guidance.contains("REST API"));
         }
         assert!(add.description.contains("exactly one bibliography item"));
         assert!(MCP_SERVER_INSTRUCTIONS.contains("add_bibliography_item"));
