@@ -39,6 +39,15 @@ import {
   parseNoteReview,
   parseNoteView,
   parseProblem,
+  parseWebhookSecret,
+  parseWebhookSubscriptionCreated,
+  parseWebhookSubscriptions,
+  parseWebhookVerification,
+  type WebhookSecret,
+  type WebhookSubscription,
+  type WebhookSubscriptionCreated,
+  type WebhookSubscriptionDraft,
+  type WebhookVerification,
 } from "./generated/contracts";
 
 export class ApiError extends Error {
@@ -295,6 +304,80 @@ export async function revokeMcpAuthorization(
   }
 }
 
+export async function listWebhookSubscriptions(
+  apiBase: string,
+  signal?: AbortSignal,
+): Promise<WebhookSubscription[]> {
+  return requestJson(
+    `${apiBase}/webhooks`,
+    { signal },
+    parseWebhookSubscriptions,
+  );
+}
+
+export async function createWebhookSubscription(
+  apiBase: string,
+  draft: WebhookSubscriptionDraft,
+): Promise<WebhookSubscriptionCreated> {
+  return requestJson(
+    `${apiBase}/webhooks`,
+    mutationRequest("POST", draft),
+    parseWebhookSubscriptionCreated,
+  );
+}
+
+export async function verifyWebhookSubscription(
+  apiBase: string,
+  subscriptionId: string,
+): Promise<WebhookVerification> {
+  return requestJson(
+    `${apiBase}/webhooks/${encodeURIComponent(subscriptionId)}/verify`,
+    mutationRequest("POST"),
+    parseWebhookVerification,
+  );
+}
+
+export async function regenerateWebhookSecret(
+  apiBase: string,
+  subscriptionId: string,
+): Promise<WebhookSecret> {
+  return requestJson(
+    `${apiBase}/webhooks/${encodeURIComponent(subscriptionId)}/secret`,
+    mutationRequest("POST"),
+    parseWebhookSecret,
+  );
+}
+
+export async function deleteWebhookSubscription(
+  apiBase: string,
+  subscriptionId: string,
+): Promise<void> {
+  await requestNoContent(
+    `${apiBase}/webhooks/${encodeURIComponent(subscriptionId)}`,
+    mutationRequest("DELETE"),
+  );
+}
+
+export async function retryWebhookDelivery(
+  apiBase: string,
+  subscriptionId: string,
+): Promise<void> {
+  await requestNoContent(
+    `${apiBase}/webhooks/${encodeURIComponent(subscriptionId)}/retry`,
+    mutationRequest("POST"),
+  );
+}
+
+export async function discardWebhookDelivery(
+  apiBase: string,
+  subscriptionId: string,
+): Promise<void> {
+  await requestNoContent(
+    `${apiBase}/webhooks/${encodeURIComponent(subscriptionId)}/discard`,
+    mutationRequest("POST"),
+  );
+}
+
 /** 図に出す範囲。`origin`を指定すると、そこから`depth`本以内の線で辿れる範囲だけになる。 */
 export interface NoteGraphScope {
   query?: string;
@@ -436,6 +519,23 @@ export async function markNoteReviewed(
     mutationRequest("POST", undefined, expectedRevision),
     parseNoteReview,
   );
+}
+
+/** 204を返すendpointの共通処理。失敗はProblemとして解釈して投げる。 */
+async function requestNoContent(url: string, init: RequestInit): Promise<void> {
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    let problem: Problem;
+    try {
+      problem = parseProblem(await response.json());
+    } catch {
+      problem = {
+        code: "invalid_response",
+        message: "サーバーから解釈できない応答を受け取りました。",
+      };
+    }
+    throw new ApiError(response.status, problem);
+  }
 }
 
 function mutationRequest(

@@ -1730,7 +1730,8 @@
             "enum": [
               "delivery_exhausted",
               "destination_rejected",
-              "owner_disabled"
+              "owner_disabled",
+              null
             ],
             "type": [
               "string",
@@ -1755,7 +1756,8 @@
               "non_success_status",
               "connect_failed",
               "timed_out",
-              "destination_rejected"
+              "destination_rejected",
+              null
             ],
             "type": [
               "string",
@@ -1868,7 +1870,8 @@
               "non_success_status",
               "connect_failed",
               "timed_out",
-              "destination_rejected"
+              "destination_rejected",
+              null
             ],
             "type": [
               "string",

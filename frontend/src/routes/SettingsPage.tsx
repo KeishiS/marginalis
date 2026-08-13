@@ -22,6 +22,11 @@ export function SettingsPage({ config }: { config: ApplicationConfig }) {
           title="MCPのアクセス制御"
           description="すべてのMCPクライアントへ許可できる操作の上限を設定します。"
         />
+        <SettingsCard
+          href={externalPath(config.basePath, "/settings/webhooks")}
+          title="Webhook通知"
+          description="ノートと書誌情報の変更を外部のURLへ通知します。"
+        />
       </div>
     </section>
   );

@@ -31,6 +31,11 @@ const McpAccessSettingsPage = lazy(() =>
     default: module.McpAccessSettingsPage,
   })),
 );
+const WebhookSettingsPage = lazy(() =>
+  import("./routes/WebhookSettingsPage").then((module) => ({
+    default: module.WebhookSettingsPage,
+  })),
+);
 const DeletedNotesPage = lazy(() =>
   import("./routes/DeletedNotesPage").then((module) => ({
     default: module.DeletedNotesPage,
@@ -51,6 +56,7 @@ type Route =
   | { kind: "settings" }
   | { kind: "math-macros" }
   | { kind: "mcp-access-settings" }
+  | { kind: "webhook-settings" }
   | { kind: "deleted-notes" }
   | { kind: "not-found" };
 
@@ -99,6 +105,16 @@ export function Application({ config }: { config: ApplicationConfig }) {
           <McpAccessSettingsPage config={config} />
         </Suspense>
       );
+    case "webhook-settings":
+      return (
+        <Suspense
+          fallback={
+            <StatusMessage>Webhookの設定を読み込んでいます。</StatusMessage>
+          }
+        >
+          <WebhookSettingsPage config={config} />
+        </Suspense>
+      );
     case "deleted-notes":
       return (
         <Suspense
@@ -140,6 +156,7 @@ function parseRoute(pathname: string): Route {
   if (pathname === "/settings/math-macros") return { kind: "math-macros" };
   if (pathname === "/settings/mcp-access")
     return { kind: "mcp-access-settings" };
+  if (pathname === "/settings/webhooks") return { kind: "webhook-settings" };
   if (pathname === "/notes/deleted") return { kind: "deleted-notes" };
   if (pathname === "/notes/new") return { kind: "create" };
   const match = pathname.match(/^\/notes\/([^/]+)(?:\/(edit|access))?$/);

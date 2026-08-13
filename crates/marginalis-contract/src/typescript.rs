@@ -322,6 +322,34 @@ const PARSERS: &[(&str, &str, &str, &str, bool)] = &[
         "bibliography import result",
         false,
     ),
+    (
+        "parseWebhookSubscriptions",
+        "WebhookSubscription",
+        "WebhookSubscription",
+        "webhook subscriptions",
+        true,
+    ),
+    (
+        "parseWebhookSubscriptionCreated",
+        "WebhookSubscriptionCreated",
+        "WebhookSubscriptionCreated",
+        "created webhook subscription",
+        false,
+    ),
+    (
+        "parseWebhookSecret",
+        "WebhookSecret",
+        "WebhookSecret",
+        "webhook secret",
+        false,
+    ),
+    (
+        "parseWebhookVerification",
+        "WebhookVerification",
+        "WebhookVerification",
+        "webhook verification",
+        false,
+    ),
 ];
 
 fn parse_functions() -> String {

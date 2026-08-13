@@ -36,6 +36,12 @@ pub(crate) fn nullable(schema: &mut schemars::Schema) {
             }
             _ => {}
         }
+        // enumを持つ型では、値の一覧にもnullを含めないとnullが妥当にならない。
+        if let Some(Value::Array(members)) = object.get_mut("enum")
+            && !members.iter().any(Value::is_null)
+        {
+            members.push(Value::Null);
+        }
     }
 }
 

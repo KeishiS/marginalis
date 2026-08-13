@@ -72,7 +72,7 @@ use self::{
     ui::{
         access_note_page, bibliography_page, create_note_page, deleted_notes_page, edit_note_page,
         graph_page, home, math_macro_settings_page, mcp_access_settings_page, settings_page,
-        view_note,
+        view_note, webhook_settings_page,
     },
     webhooks::{
         create_webhook, delete_webhook, discard_webhook_delivery, list_webhooks,
@@ -126,6 +126,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/settings/math-macros", get(math_macro_settings_page))
         .route("/settings", get(settings_page))
         .route("/settings/mcp-access", get(mcp_access_settings_page))
+        .route("/settings/webhooks", get(webhook_settings_page))
         .route("/notes/deleted", get(deleted_notes_page))
         .route("/notes/new", get(create_note_page))
         .route("/notes/{note_id}/edit", get(edit_note_page))
