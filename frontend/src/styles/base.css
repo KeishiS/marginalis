@@ -28,22 +28,25 @@ body {
   }
 }
 
-button,
-input,
-select {
-  font: inherit;
-}
+/* base層に置き、componentのユーティリティclassを優先させる。 */
+@layer base {
+  button,
+  input,
+  select {
+    font: inherit;
+  }
 
-a,
-button,
-input,
-select,
-[tabindex] {
-  outline-offset: 0.18rem;
-}
+  a,
+  button,
+  input,
+  select,
+  [tabindex] {
+    outline-offset: 0.18rem;
+  }
 
-:focus-visible {
-  outline: 0.18rem solid var(--color-primary);
+  :focus-visible {
+    outline: 0.18rem solid var(--color-primary);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
