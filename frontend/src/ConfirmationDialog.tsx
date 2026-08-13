@@ -1,7 +1,18 @@
-import { KeyboardEvent, ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef } from "react";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function ConfirmationDialog({
-  id,
   eyebrow,
   heading,
   description,
@@ -9,11 +20,10 @@ export function ConfirmationDialog({
   problem,
   confirmLabel,
   busyLabel,
-  confirmClassName = "button button-primary",
+  destructive = false,
   onCancel,
   onConfirm,
 }: {
-  id: string;
   eyebrow: string;
   heading: string;
   description: ReactNode;
@@ -21,93 +31,77 @@ export function ConfirmationDialog({
   problem: string | null;
   confirmLabel: string;
   busyLabel: string;
-  confirmClassName?: string;
+  destructive?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const dialog = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
 
+  // 実行中は確認画面自体へフォーカスを保ち、二重送信と背景の操作を防ぐ。
+  // 失敗して実行中が解けたときは「取り消す」へフォーカスを戻す。
   useEffect(() => {
     if (busy) {
-      dialog.current?.focus();
+      content.current?.focus();
     } else {
       cancelButton.current?.focus();
     }
   }, [busy]);
 
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape" && !busy) {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    if (busy) {
-      event.preventDefault();
-      dialog.current?.focus();
-      return;
-    }
-    const buttons = Array.from(
-      dialog.current?.querySelectorAll<HTMLButtonElement>(
-        "button:not(:disabled)",
-      ) ?? [],
-    );
-    const first = buttons[0];
-    const last = buttons.at(-1);
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last?.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first?.focus();
-    }
-  }
-
   return (
-    <div className="dialog-backdrop">
-      <div
-        ref={dialog}
-        className="confirmation-dialog surface"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${id}-heading`}
-        aria-describedby={`${id}-description`}
-        tabIndex={-1}
-        onKeyDown={handleKeyDown}
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) {
+          onCancel();
+        }
+      }}
+    >
+      <AlertDialogContent
+        ref={content}
+        onEscapeKeyDown={(event) => {
+          if (busy) {
+            event.preventDefault();
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          // 閉じたあとの戻り先は呼び出し側が管理する(削除ボタンへ戻すなど)。
+          event.preventDefault();
+        }}
       >
-        <p className="page-eyebrow">{eyebrow}</p>
-        <h2 id={`${id}-heading`}>{heading}</h2>
-        <p id={`${id}-description`}>{description}</p>
-        {problem !== null && (
-          <p className="problem-inline" role="alert">
-            {problem}
+        <AlertDialogHeader>
+          <p className="text-xs font-bold tracking-[0.12em] text-primary uppercase">
+            {eyebrow}
           </p>
+          <AlertDialogTitle>{heading}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        {problem !== null && (
+          <Alert variant="destructive">
+            <AlertDescription>{problem}</AlertDescription>
+          </Alert>
         )}
-        <div
-          className="confirmation-dialog-actions"
-          aria-live="polite"
-          aria-busy={busy}
-        >
-          <button
+        <AlertDialogFooter aria-live="polite" aria-busy={busy}>
+          <AlertDialogCancel
             ref={cancelButton}
-            className="button button-secondary"
-            type="button"
             disabled={busy}
             onClick={onCancel}
           >
             取り消す
-          </button>
-          <button
-            className={confirmClassName}
-            type="button"
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant={destructive ? "destructive" : "default"}
             disabled={busy}
-            onClick={onConfirm}
+            onClick={(event) => {
+              // 成否の判断は呼び出し側が持つため、押しただけでは閉じない。
+              event.preventDefault();
+              onConfirm();
+            }}
           >
             {busy ? busyLabel : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

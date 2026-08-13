@@ -23,6 +23,11 @@ if (root) {
     const config = parseApplicationConfig(
       JSON.parse(root.dataset.applicationConfig ?? "null"),
     );
+    // Radix(react-remove-scroll)はモーダル表示中に<style>要素を挿入する。
+    // CSPはnonce付きのstyle要素だけを許可するため、MathJaxと同じ
+    // サーバー発行のnonceをグローバル経由で渡す。
+    (window as { __webpack_nonce__?: string }).__webpack_nonce__ =
+      config.styleNonce;
     createRoot(root).render(
       <React.StrictMode>
         <Application config={config} />
