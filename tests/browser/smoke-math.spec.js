@@ -7,7 +7,7 @@ const {
   detailScreenshotOptions,
 } = require("./fixtures/smoke-helpers");
 
-test("数式を組版したまま分割表示とプレビュー表示を切り替える", async ({
+test("数式を組版したまま執筆とプレビューを切り替える", async ({
   page,
 }) => {
   const fontRequests = [];
@@ -32,8 +32,8 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
     const source = (await route.request().postDataJSON()).source;
     const html = source.includes(String.raw`stem:[\lambda]`)
       ? String.raw`<p>インライン数式 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">f(x) \coloneqq \argmax_{x \in S} f(x) + \bm{x},\quad x \in \mathbb{R}</code>のチェックです。</p>` +
-        (source.includes("プレビューから分割への確認")
-          ? "<p>プレビューから分割への確認</p>"
+        (source.includes("プレビューからの再組版確認")
+          ? "<p>プレビューからの再組版確認</p>"
           : "")
       : "<p>プレビュー</p>";
     await route.fulfill({
@@ -73,7 +73,7 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
       ".preview-content .math-latex:not([data-math-prepared='true'])",
     ),
   ).toHaveCount(1);
-  await page.getByRole("button", { name: "分割" }).click();
+  await page.getByRole("button", { name: "プレビュー" }).click();
 
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(page.locator(".preview-content mjx-merror")).toHaveCount(0);
@@ -81,8 +81,6 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
   await expect(
     page.locator(".preview-content [data-math-prepared='true']"),
   ).toHaveCount(1);
-  await page.getByRole("button", { name: "プレビュー" }).click();
-  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(
     page.locator(
       ".preview-content .math-latex:not([data-math-prepared='true'])",
@@ -99,7 +97,7 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
 
 インライン数式 stem:[\lambda]のチェックです。
 
-プレビューから分割への確認`,
+プレビューからの再組版確認`,
   );
   await expect(
     page.locator(
@@ -107,8 +105,6 @@ test("数式を組版したまま分割表示とプレビュー表示を切り�
     ),
   ).toHaveCount(1);
   await page.getByRole("button", { name: "プレビュー" }).click();
-  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
-  await page.getByRole("button", { name: "分割" }).click();
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(
     page.locator(
@@ -160,7 +156,7 @@ test("許可していないTeX packageを数式から読み込まない", async 
   await page
     .getByRole("textbox", { name: "AsciiDoc文書" })
     .fill("= TeX package制限\n\nstem:[x]");
-  await page.getByRole("button", { name: "分割" }).click();
+  await page.getByRole("button", { name: "プレビュー" }).click();
 
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
@@ -205,7 +201,7 @@ test("旧保存値の不正な未使用マクロを除外して安全なマク�
   await page
     .getByRole("textbox", { name: "AsciiDoc文書" })
     .fill("= 旧マクロの確認\n\nstem:[x]");
-  await page.getByRole("button", { name: "分割" }).click();
+  await page.getByRole("button", { name: "プレビュー" }).click();
 
   await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(page.locator(".preview-content mjx-merror")).toHaveCount(0);

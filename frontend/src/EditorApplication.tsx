@@ -1,6 +1,5 @@
 import {
   FormEvent,
-  UIEvent,
   useEffect,
   useMemo,
   useReducer,
@@ -30,7 +29,6 @@ import { editPath, listPath, notePath } from "./paths";
 import { ConflictPanel } from "./editor/ConflictPanel";
 import { EditorViewToolbar } from "./editor/EditorViewToolbar";
 import { EditorViewMode } from "./editor/viewMode";
-import { useMediaQuery } from "./useMediaQuery";
 import { PreviewPanel } from "./editor/PreviewPanel";
 import { ProblemMessage } from "./editor/ProblemMessage";
 
@@ -61,17 +59,10 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const { saving, problem, notice } = activity;
   const editorForm = useRef<HTMLFormElement>(null);
   const sourceEditor = useRef<AsciiDocEditorHandle>(null);
-  const previewScroll = useRef<HTMLDivElement>(null);
-  const scrollSource = useRef<"editor" | "preview" | null>(null);
   const toastSequence = useRef(0);
   const [isComposing, setIsComposing] = useState(false);
   const [saveToast, setSaveToast] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<EditorViewMode>("split");
-  const [editorWidth, setEditorWidth] = useState(50);
-  const [syncScroll, setSyncScroll] = useState(true);
-  const narrowViewport = useMediaQuery("(max-width: 60rem)");
-  const effectiveViewMode =
-    narrowViewport && viewMode === "split" ? "write" : viewMode;
+  const [viewMode, setViewMode] = useState<EditorViewMode>("write");
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(baseline),
     [baseline, form],
@@ -137,7 +128,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     const end = utf8ByteOffsetToTextOffset(form.source, span.end);
     const select = () =>
       sourceEditor.current?.selectRange(start, Math.max(start, end));
-    if (effectiveViewMode === "preview") {
+    if (viewMode === "preview") {
       setViewMode("write");
       window.requestAnimationFrame(select);
     } else {
@@ -155,42 +146,6 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     if (mode !== "preview") {
       window.requestAnimationFrame(() => sourceEditor.current?.focus());
     }
-  }
-
-  function synchronizeFromEditor(ratio: number) {
-    if (
-      !syncScroll ||
-      effectiveViewMode !== "split" ||
-      scrollSource.current === "preview"
-    ) {
-      return;
-    }
-    const preview = previewScroll.current;
-    if (!preview) return;
-    scrollSource.current = "editor";
-    const maximum = Math.max(0, preview.scrollHeight - preview.clientHeight);
-    preview.scrollTop = ratio * maximum;
-    window.requestAnimationFrame(() => {
-      if (scrollSource.current === "editor") scrollSource.current = null;
-    });
-  }
-
-  function synchronizeFromPreview(event: UIEvent<HTMLDivElement>) {
-    if (
-      !syncScroll ||
-      effectiveViewMode !== "split" ||
-      scrollSource.current === "editor"
-    ) {
-      return;
-    }
-    const preview = event.currentTarget;
-    const maximum = preview.scrollHeight - preview.clientHeight;
-    const ratio = maximum > 0 ? preview.scrollTop / maximum : 0;
-    scrollSource.current = "preview";
-    sourceEditor.current?.setScrollRatio(ratio);
-    window.requestAnimationFrame(() => {
-      if (scrollSource.current === "preview") scrollSource.current = null;
-    });
   }
 
   async function save(event: FormEvent) {
@@ -302,22 +257,9 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
 
       <form className="editor-form" onSubmit={save} ref={editorForm}>
         <div className="grid gap-3 rounded-md border bg-card p-3 shadow-xs">
-          <EditorViewToolbar
-            mode={effectiveViewMode}
-            requestedMode={viewMode}
-            narrow={narrowViewport}
-            editorWidth={editorWidth}
-            syncScroll={syncScroll}
-            onModeChange={changeViewMode}
-            onEditorWidthChange={setEditorWidth}
-            onSyncScrollChange={setSyncScroll}
-          />
+          <EditorViewToolbar mode={viewMode} onModeChange={changeViewMode} />
         </div>
-        <div
-          className="editor-workspace"
-          data-editor-width={editorWidth}
-          data-view-mode={effectiveViewMode}
-        >
+        <div className="editor-workspace" data-view-mode={viewMode}>
           <div className="editor-source-pane">
             <div className="source-editor-field">
               <span id="source-editor-label">AsciiDoc文書</span>
@@ -330,19 +272,13 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
                 labelledBy="source-editor-label"
                 onCompositionChange={setIsComposing}
                 onSave={() => editorForm.current?.requestSubmit()}
-                onScroll={synchronizeFromEditor}
                 styleNonce={config.styleNonce}
               />
             </div>
           </div>
-          <div className="editor-divider" aria-hidden="true" />
-          <div
-            className="preview-scroll"
-            ref={previewScroll}
-            onScroll={synchronizeFromPreview}
-          >
+          <div className="preview-scroll">
             <PreviewPanel
-              active={effectiveViewMode !== "write"}
+              active={viewMode !== "write"}
               html={preview.html}
               diagnostics={preview.diagnostics}
               loading={preview.loading}

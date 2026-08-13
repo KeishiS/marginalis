@@ -426,8 +426,8 @@ test("表示を切り替えても入力欄を維持する", async () => {
 
   const workspace = document.querySelector(".editor-workspace");
   const editor = screen.getByRole("textbox", { name: "AsciiDoc文書" });
-  expect(workspace).toHaveAttribute("data-view-mode", "split");
-  expect(screen.getByRole("button", { name: "分割" })).toHaveAttribute(
+  expect(workspace).toHaveAttribute("data-view-mode", "write");
+  expect(screen.getByRole("button", { name: "執筆" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -439,56 +439,6 @@ test("表示を切り替えても入力欄を維持する", async () => {
   fireEvent.click(screen.getByRole("button", { name: "執筆" }));
   expect(workspace).toHaveAttribute("data-view-mode", "write");
   await waitFor(() => expect(editor).toHaveFocus());
-});
-
-test("分割幅をinline styleを使わずに変更する", () => {
-  vi.stubGlobal("fetch", vi.fn<typeof fetch>());
-  render(<EditorApplication config={CONFIG} />);
-
-  const workspace = document.querySelector(".editor-workspace");
-  expect(workspace).toHaveAttribute("data-editor-width", "50");
-  expect(workspace).not.toHaveAttribute("style");
-
-  fireEvent.change(screen.getByRole("slider", { name: /執筆欄の幅/ }), {
-    target: { value: "65" },
-  });
-
-  expect(workspace).toHaveAttribute("data-editor-width", "65");
-  expect(workspace).not.toHaveAttribute("style");
-  expect(screen.getByText("65%")).toBeInTheDocument();
-});
-
-test("狭い画面では分割せず執筆とプレビューを明示的に切り替える", () => {
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn(() => ({
-      matches: true,
-      media: "(max-width: 60rem)",
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  );
-  vi.stubGlobal("fetch", vi.fn<typeof fetch>());
-  render(<EditorApplication config={CONFIG} />);
-
-  expect(document.querySelector(".editor-workspace")).toHaveAttribute(
-    "data-view-mode",
-    "write",
-  );
-  expect(screen.getByRole("button", { name: "分割" })).toBeDisabled();
-  expect(
-    screen.getByText("この画面幅では執筆表示に切り替えています。"),
-  ).toBeInTheDocument();
-
-  fireEvent.click(screen.getByRole("button", { name: "プレビュー" }));
-  expect(document.querySelector(".editor-workspace")).toHaveAttribute(
-    "data-view-mode",
-    "preview",
-  );
 });
 
 function jsonResponse(body: unknown, status = 200): Response {

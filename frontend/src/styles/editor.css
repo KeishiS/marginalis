@@ -6,9 +6,7 @@
 }
 
 .editor-view-toolbar,
-.editor-view-buttons,
-.editor-width-control,
-.scroll-sync-control {
+.editor-view-buttons {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -35,83 +33,25 @@
   color: var(--color-text);
 }
 
-.editor-width-control input {
-  accent-color: var(--color-primary);
-  inline-size: clamp(7rem, 18vw, 14rem);
-}
-
-.editor-width-control output {
-  color: var(--color-text-muted);
-  min-inline-size: 3ch;
-}
-
-.editor-view-note {
-  color: var(--color-text-muted);
-  font-size: var(--text-caption);
-}
-
 .editor-workspace {
   background: var(--color-surface);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--border-thin) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
 }
 
-.editor-workspace[data-editor-width="30"] {
-  grid-template-columns: minmax(0, 30fr) 0.0625rem minmax(0, 70fr);
-}
-
-.editor-workspace[data-editor-width="35"] {
-  grid-template-columns: minmax(0, 35fr) 0.0625rem minmax(0, 65fr);
-}
-
-.editor-workspace[data-editor-width="40"] {
-  grid-template-columns: minmax(0, 40fr) 0.0625rem minmax(0, 60fr);
-}
-
-.editor-workspace[data-editor-width="45"] {
-  grid-template-columns: minmax(0, 45fr) 0.0625rem minmax(0, 55fr);
-}
-
-.editor-workspace[data-editor-width="55"] {
-  grid-template-columns: minmax(0, 55fr) 0.0625rem minmax(0, 45fr);
-}
-
-.editor-workspace[data-editor-width="60"] {
-  grid-template-columns: minmax(0, 60fr) 0.0625rem minmax(0, 40fr);
-}
-
-.editor-workspace[data-editor-width="65"] {
-  grid-template-columns: minmax(0, 65fr) 0.0625rem minmax(0, 35fr);
-}
-
-.editor-workspace[data-editor-width="70"] {
-  grid-template-columns: minmax(0, 70fr) 0.0625rem minmax(0, 30fr);
-}
-
-.editor-workspace[data-view-mode="write"],
-.editor-workspace[data-view-mode="preview"] {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.editor-workspace[data-view-mode="write"] .editor-divider,
 .editor-workspace[data-view-mode="write"] .preview-scroll,
-.editor-workspace[data-view-mode="preview"] .editor-source-pane,
-.editor-workspace[data-view-mode="preview"] .editor-divider {
+.editor-workspace[data-view-mode="preview"] .editor-source-pane {
   display: none;
 }
 
 .editor-source-pane,
 .preview-scroll {
   min-width: 0;
-}
-
-.editor-divider {
-  background: var(--color-border);
 }
 
 .preview-scroll {
@@ -245,12 +185,6 @@
 @media (width <= 60rem) {
   .editor-form {
     --editor-height: clamp(25rem, calc(100dvh - 17rem), 54rem);
-  }
-
-  .editor-workspace,
-  .editor-workspace[data-view-mode="write"],
-  .editor-workspace[data-view-mode="preview"] {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .preview-scroll {

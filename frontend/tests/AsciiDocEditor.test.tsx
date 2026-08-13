@@ -24,7 +24,6 @@ test("日本語IMEの変換状態と保存ショートカットを親へ通知�
       onChange={() => {}}
       onCompositionChange={composition}
       onSave={save}
-      onScroll={() => {}}
       styleNonce="test-style-nonce"
     />,
     {
@@ -119,7 +118,6 @@ function LabelledEditor({
         onChange={onChange}
         onCompositionChange={() => {}}
         onSave={() => {}}
-        onScroll={() => {}}
         styleNonce="test-style-nonce"
       />
     </>
