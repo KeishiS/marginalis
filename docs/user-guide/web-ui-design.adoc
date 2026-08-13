@@ -50,21 +50,53 @@
 
 == 目盛りとCSSの置き場所
 
-色、余白、文字の大きさ、角丸、影、本文幅は``frontend/src/styles/tokens.css``のCSS custom
-propertiesで定義します。個別の部品では、この目盛りの変数だけを使います。
+色、角丸、書体などのdesign token（画面全体で共有する目盛り）は、
+``frontend/src/styles/globals.css``のCSS custom propertiesで定義します。役割名はshadcn/uiの
+規約に合わせ、``--background``（画面の地）、``--card``（浮かせた面）、``--primary``（主要操作）、
+``--destructive``（取り消せない操作）、``--muted``（補助的な面と文字）、``--border``（境界線）、
+``--ring``（フォーカス表示）のように、値ではなく役割で選びます。状態表示のために``--success``と
+``--warning``も定義します。
 
-余白は``--space-1``から``--space-16``まで、0.25rem刻みの段で選びます。文字の大きさは
-``--text-caption``、``--text-small``、``--text-body``、``--text-subheading``、``--text-heading``の
-ように用途で選びます。名前は小さい順に並び、大小関係が名前から分かります。境界線の太さは``--border-thin``と``--border-thick``です。値そのものではなく段を
-選ぶため、近い値が少しずつ増えることがありません。
+色はoklch表記で書きます。oklchは明度、彩度、色相で色を表す表記で、色相を固定したまま明度だけを
+変えられるため、ライト表示からダーク表示を導きやすくなります。各値には元のhex値をコメントで
+併記します。姉妹サービスRenkanとは役割名と画面構成を共通にし、配色の値だけを各サービス固有と
+します（Renkanは緑の暖色系、Marginalisは青の寒色系）。
 
-段は、見て区別できる差だけを置きます。0.85remと0.9remのように1px未満しか違わない段は、
-選ぶ基準を説明できないため作りません。
+画面部品はshadcn/uiのcomponentとTailwind CSSのユーティリティclassで組み立てます。部品では
+トークンを参照するclass（``bg-primary``、``text-muted-foreground``など）だけを使い、色値を直接
+書きません。余白と文字の大きさもTailwindの目盛りから選び、任意の値を書き並べません。採用している
+componentは次のとおりです。追加手順は
+xref:../developer-guide/development.adoc#top[GitHubを使う開発手順]を参照してください。
 
-閲覧本文の文字の大きさは、画面部品とは別の目盛りを使います。``--text-reading-body``、
-``--text-reading-h3``、``--text-reading-h2``、``--text-reading-h1``、``--text-reading-title``で、
-用途ではなく見出しの階層で選びます。隣り合う段の比は1.12から1.18に収め、題名から本文まで段階的に
-変えます。上位だけが大きく離れると、本文が相対的に小さく見えて読みにくくなるためです。
+[cols="1,2",options="header",]
+|===
+|component
+|用途
+|``button``
+|主要操作、補助操作、取り消せない操作のボタン
+|``input``
+|一行の入力欄
+|``label``
+|入力欄の名前
+|``badge``
+|タグなどの短い属性表示
+|===
+
+``frontend/src/components/ui/``の生成コードは直接編集しません。横断的な調整は、生成コードが
+出力する``data-slot``属性を対象にしたCSSで行います。
+
+既存の画面は、``frontend/src/styles/``の役割別CSSファイル（``tokens.css``、``base.css``、
+``layout.css``、``components.css``、``editor.css``、``graph.css``、``content.css``）と、
+kebab-caseに役割の接頭辞を付けたclass名で作られています。この体系は新しい体系へ画面単位で
+置き換えている途中で、完了までは両方が共存します。進捗は
+https://github.com/KeishiS/marginalis/issues/432[Issue \#432]で追跡します。新しい規則は
+原則としてTailwindのユーティリティで書き、やむを得ず手書きCSSへ足す場合は対象の画面のファイルへ
+置きます。
+
+閲覧本文の文字の大きさは、画面部品とは別の目盛り（``tokens.css``の``--text-reading-body``、
+``--text-reading-h3``、``--text-reading-h2``、``--text-reading-h1``、``--text-reading-title``）を
+使い、用途ではなく見出しの階層で選びます。隣り合う段の比は1.12から1.18に収め、題名から本文まで
+段階的に変えます。上位だけが大きく離れると、本文が相対的に小さく見えて読みにくくなるためです。
 
 AdocWeaveは文書題名を``h1.document-title``、``==``の章見出しを``h1``として描画します。両方を同じ
 大きさにすると、章見出しが題名と同じ扱いになり本文との差が広がります。``h1.document-title``と
@@ -73,37 +105,13 @@ AdocWeaveは文書題名を``h1.document-title``、``==``の章見出しを``h1`
 定義リストでは、用語を画面部品の書体と太字で示し、説明は用語より内側から始めて縦線で範囲を示します。
 用語は見出しではないため、見出しの階層と競合しないよう本文と同じ大きさにします。
 
-CSSは役割ごとに分けます。新しい規則は次の基準で置き場所を決めます。
+``citation``、``bibliography-anchor``、``source-block``、``math-latex``などはAdocWeaveが生成する
+HTMLのclassです。Marginalisが決める名前ではないため``content.css``へ集め、改名しません。
 
-[cols="1,1",options="header",]
-|===
-|ファイル
-|置くもの
-|``tokens.css``
-|目盛りの定義。ここだけは直値で書く
-|``base.css``
-|要素の既定、フォーカス表示、動きを減らす設定
-|``layout.css``
-|ヘッダー、``main``、画面全体の枠組みと余白
-|``components.css``
-|ボタン、入力欄、一覧、通知、診断など画面共通の部品
-|``editor.css``
-|編集画面の枠組み、CodeMirror、プレビュー
-|``graph.css``
-|関係の図の点、線、一覧
-|``content.css``
-|描画したノート本文の表示。AdocWeaveが生成するclassもここへ集める
-|===
-
-画面幅による並び替えは、対象の規則と同じファイルへ書きます。
-
-class名はkebab-caseとし、役割ごとの接頭辞（``page-``、``note-``、``editor-``、``bibliography-``、
-``access-``、``conflict-``、``toast-``など）を先頭に付けます。``citation``、``bibliography-anchor``、
-``source-block``、``math-latex``などはAdocWeaveが生成するHTMLのclassです。Marginalisが決める
-名前ではないため``content.css``へ集め、改名しません。
-
-目盛りから外れた値は``cargo make frontend-verify``のstylelintが拒否します。外部の部品へ合わせる
-ためにやむを得ず外す場合は、その行に理由を書きます。
+手書きCSS（``frontend/src/styles/``）では、目盛りから外れた値を``cargo make frontend-verify``の
+stylelintが拒否します。直値を書いてよいのは目盛りを定義する``globals.css``と``tokens.css``だけで、
+CodeMirrorなど外部の部品へ合わせるためにやむを得ず外す場合は、その行に理由を書きます。Tailwindが
+生成するCSSは検査の対象にしません。
 
 ライト表示とダーク表示は、OSとブラウザーの``prefers-color-scheme``設定に従います。どちらの
 表示でも、本文、補助情報、フォーカス、成功、警告、失敗を色だけに依存せず、文字または境界線でも
