@@ -9,17 +9,23 @@ body {
   min-height: 100dvh;
 }
 
-a {
-  color: var(--color-primary);
+/*
+ * リンクの既定はbase層に置き、Buttonなどのユーティリティclassが
+ * 文字色と下線を上書きできるようにする。
+ */
+@layer base {
+  a {
+    color: var(--color-primary);
 
-  /* Tailwindのpreflightが下線を消すため、ブラウザー既定に頼らず明示する。 */
-  text-decoration-line: underline;
-  text-decoration-thickness: 0.08em;
-  text-underline-offset: 0.18em;
-}
+    /* Tailwindのpreflightが下線を消すため、ブラウザー既定に頼らず明示する。 */
+    text-decoration-line: underline;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.18em;
+  }
 
-a:hover {
-  color: var(--color-primary-hover);
+  a:hover {
+    color: var(--color-primary-hover);
+  }
 }
 
 button,

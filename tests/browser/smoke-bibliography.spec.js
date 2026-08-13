@@ -41,7 +41,7 @@ test("書誌情報の未保存編集と削除を確認してから反映する",
   const input = page.getByRole("textbox", { name: "CSL-JSON" });
   await input.fill('{"id":"draft"}');
   await page.getByRole("button", { name: /tanaka2025/ }).click();
-  const discard = page.getByRole("dialog");
+  const discard = page.getByRole("alertdialog");
   await expect(discard).toContainText("編集中の内容を破棄しますか");
   await discard.getByRole("button", { name: "取り消す" }).click();
   await expect(input).toHaveValue('{"id":"draft"}');
@@ -52,9 +52,11 @@ test("書誌情報の未保存編集と削除を確認してから反映する",
 
   const item = page.locator(".bibliography-list li", { hasText: "tanaka2025" });
   await item.getByRole("button", { name: "削除" }).click();
-  const deletion = page.getByRole("dialog");
+  const deletion = page.getByRole("alertdialog");
   await expect(deletion).toContainText("書誌情報の削除は取り消せません");
   await deletion.getByRole("button", { name: "削除する" }).click();
   await expect(item).toHaveCount(0);
-  await expect(page.getByRole("status")).toContainText("削除しました");
+  await expect(
+    page.getByRole("status").filter({ hasText: "削除しました" }),
+  ).toContainText("削除しました");
 });

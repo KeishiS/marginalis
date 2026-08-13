@@ -83,7 +83,7 @@ test("未保存の編集を確認してから別のカードへ切り替える",
 
   fireEvent.change(input, { target: { value: '{"id":"draft"}' } });
   fireEvent.click(second);
-  expect(screen.getByRole("dialog")).toHaveTextContent(
+  expect(screen.getByRole("alertdialog")).toHaveTextContent(
     "編集中の内容を破棄しますか",
   );
   fireEvent.click(screen.getByRole("button", { name: "取り消す" }));
@@ -112,15 +112,18 @@ test("主要な操作と取り消しにくい操作を色で区別する", async
   await waitFor(() => screen.getByRole("button", { name: /smith2024/ }));
 
   // 主要な操作はアクセント色、取り消しにくい操作は警告色を使う。
-  expect(screen.getByRole("button", { name: "登録" }).className).toContain(
-    "button-primary",
+  expect(screen.getByRole("button", { name: "登録" })).toHaveAttribute(
+    "data-variant",
+    "default",
   );
-  expect(
-    screen.getAllByRole("button", { name: "削除" })[0].className,
-  ).toContain("button-danger");
+  expect(screen.getAllByRole("button", { name: "削除" })[0]).toHaveAttribute(
+    "data-variant",
+    "destructive",
+  );
   // 絞り込みは補助操作であり、アクセント色を重ねない。
-  expect(screen.getByRole("button", { name: "検索" }).className).not.toContain(
-    "button-primary",
+  expect(screen.getByRole("button", { name: "検索" })).not.toHaveAttribute(
+    "data-variant",
+    "default",
   );
 });
 
@@ -143,17 +146,17 @@ test("成功の知らせと失敗を、役割と見た目で区別する", async
   fireEvent.click(card);
   const notice = screen.getByRole("status");
   expect(notice.textContent).toContain("編集中です");
-  expect(notice.className).toBe("state-message");
+  expect(notice).toHaveAttribute("data-slot", "status-message");
 
   // 失敗は利用者の対応が要るため、割り込んで伝える。
   fireEvent.click(screen.getAllByRole("button", { name: "削除" })[0]);
-  expect(screen.getByRole("dialog")).toHaveTextContent(
+  expect(screen.getByRole("alertdialog")).toHaveTextContent(
     "書誌情報の削除は取り消せません",
   );
   fireEvent.click(screen.getByRole("button", { name: "削除する" }));
   const problem = await waitFor(() => screen.getByRole("alert"));
   expect(problem.textContent).toContain("削除できませんでした");
-  expect(problem.className).toBe("problem-inline");
+  expect(problem).toHaveAttribute("data-slot", "alert");
 });
 
 test("登録失敗を後から開いた削除確認へ混ぜない", async () => {
@@ -173,7 +176,7 @@ test("登録失敗を後から開いた削除確認へ混ぜない", async () =>
   );
   fireEvent.click(screen.getAllByRole("button", { name: "削除" })[0]);
 
-  const dialog = screen.getByRole("dialog");
+  const dialog = screen.getByRole("alertdialog");
   expect(within(dialog).queryByRole("alert")).toBeNull();
   fireEvent.click(within(dialog).getByRole("button", { name: "取り消す" }));
   expect(

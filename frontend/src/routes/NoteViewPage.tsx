@@ -1,5 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
 import {
   ApplicationConfig,
   deleteNote,
@@ -63,7 +67,8 @@ export function NoteViewPage({
   function closeDeleteDialog() {
     setDeleteOpen(false);
     setDeleteProblem(null);
-    deleteButton.current?.focus();
+    // 確認画面のフォーカストラップが解除されてから削除ボタンへ戻す。
+    setTimeout(() => deleteButton.current?.focus(), 0);
   }
   async function confirmDelete() {
     if (view === null || deleting) return;
@@ -102,17 +107,9 @@ export function NoteViewPage({
     }
   }
   if (failed)
-    return (
-      <p className="problem-inline" role="alert">
-        ノートを読み込めませんでした。
-      </p>
-    );
+    return <ProblemAlert>ノートを読み込めませんでした。</ProblemAlert>;
   if (view === null)
-    return (
-      <p className="state-message" role="status">
-        ノートを読み込んでいます。
-      </p>
-    );
+    return <StatusMessage>ノートを読み込んでいます。</StatusMessage>;
   return (
     <section className="note-viewer" aria-label="ノートの閲覧">
       <div className="note-view-toolbar surface">
@@ -120,18 +117,24 @@ export function NoteViewPage({
           <span className="note-identity-label">note ID</span>
           <div className="note-identity-value">
             <code>{view.note.note_id}</code>
-            <button
-              className="button button-secondary button-small"
+            <Button
+              variant="outline"
+              size="sm"
               type="button"
               aria-label="note IDをコピー"
               onClick={() => void copyNoteId()}
             >
               コピー
-            </button>
+            </Button>
             {view.note.tags.length > 0 && (
-              <ul className="tag-list note-view-tags" aria-label="ノートのタグ">
+              <ul
+                className="m-0 flex list-none flex-wrap gap-2 p-0"
+                aria-label="ノートのタグ"
+              >
                 {view.note.tags.map((tag) => (
-                  <li key={tag}>{tag}</li>
+                  <li key={tag}>
+                    <Badge variant="secondary">{tag}</Badge>
+                  </li>
                 ))}
               </ul>
             )}
@@ -158,65 +161,53 @@ export function NoteViewPage({
               </dd>
             </div>
           </dl>
-          {reviewProblem && (
-            <p className="problem-inline" role="alert">
-              {reviewProblem}
-            </p>
-          )}
+          {reviewProblem && <ProblemAlert>{reviewProblem}</ProblemAlert>}
         </div>
         <nav className="page-actions" aria-label="ノート操作">
-          <a
-            className="button button-secondary"
-            href={externalPath(
-              config.basePath,
-              `/${canonicalSearch(config.search)}`,
-            )}
-          >
-            一覧
-          </a>
-          {view.access !== "read" && (
+          <Button variant="outline" asChild>
             <a
-              className="button button-primary"
-              href={editPath(config, noteId)}
+              href={externalPath(
+                config.basePath,
+                `/${canonicalSearch(config.search)}`,
+              )}
             >
-              編集
+              一覧
             </a>
+          </Button>
+          {view.access !== "read" && (
+            <Button asChild>
+              <a href={editPath(config, noteId)}>編集</a>
+            </Button>
           )}
           {view.access === "manage" && (
             <>
               {(review?.status ?? view.note.review_status) !== "reviewed" && (
-                <button
-                  className="button button-secondary"
+                <Button
+                  variant="outline"
                   type="button"
                   disabled={reviewing}
                   onClick={() => void confirmReview()}
                 >
                   {reviewing ? "確認を記録しています" : "確認済みにする"}
-                </button>
+                </Button>
               )}
-              <a
-                className="button button-secondary"
-                href={accessPath(config, noteId)}
-              >
-                共有設定
-              </a>
-              <button
+              <Button variant="outline" asChild>
+                <a href={accessPath(config, noteId)}>共有設定</a>
+              </Button>
+              <Button
                 ref={deleteButton}
-                className="button button-danger"
+                variant="destructive"
                 type="button"
                 onClick={openDeleteDialog}
               >
                 削除
-              </button>
+              </Button>
             </>
           )}
           {/* 2階層まで開くのは、参照先と参照元の一覧では見えない範囲から始めるためである。 */}
-          <a
-            className="button button-secondary"
-            href={graphPath(config, { noteId, depth: 2 })}
-          >
-            周辺の関係
-          </a>
+          <Button variant="outline" asChild>
+            <a href={graphPath(config, { noteId, depth: 2 })}>周辺の関係</a>
+          </Button>
         </nav>
       </div>
       <div className="document-surface">
@@ -281,7 +272,7 @@ function RelatedNotes({
         <section key={label}>
           <h2>{label}</h2>
           {notes.length === 0 ? (
-            <p className="state-message">{label}のノートはありません。</p>
+            <StatusMessage>{label}のノートはありません。</StatusMessage>
           ) : (
             <ul>
               {notes.map((note) => (

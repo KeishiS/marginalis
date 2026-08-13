@@ -172,9 +172,9 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(Number.parseInt(termWeight, 10)).toBeGreaterThanOrEqual(700);
 
   await page.getByRole("button", { name: "note IDをコピー" }).click();
-  await expect(page.getByRole("status")).toHaveText(
-    "note IDをコピーしました。",
-  );
+  await expect(
+    page.getByRole("status").filter({ hasText: "note ID" }),
+  ).toHaveText("note IDをコピーしました。");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     noteId,
   );
@@ -250,7 +250,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   });
   const deleteButton = page.getByRole("button", { name: "削除", exact: true });
   await deleteButton.click();
-  const dialog = page.getByRole("dialog", {
+  const dialog = page.getByRole("alertdialog", {
     name: "このノートを削除しますか？",
   });
   await expect(dialog).toContainText("広い閲覧画面");
@@ -278,7 +278,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   await expect(page.getByText("rev-2")).toBeVisible();
   await page.getByRole("button", { name: "復元", exact: true }).click();
   await expect(
-    page.getByRole("dialog", { name: "このノートを復元しますか？" }),
+    page.getByRole("alertdialog", { name: "このノートを復元しますか？" }),
   ).toContainText("広い閲覧画面");
   await page.getByRole("button", { name: "復元する" }).click();
   await expect(page).toHaveURL(/\/?notice=note-restored$/);

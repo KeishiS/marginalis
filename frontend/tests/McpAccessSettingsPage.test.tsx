@@ -88,11 +88,11 @@ test("認可済みクライアントのscopeを制限し、確認後に接続を
   );
 
   fireEvent.click(client.getByRole("button", { name: "接続を取り消す" }));
-  expect(screen.getByRole("dialog")).toHaveTextContent(
+  expect(screen.getByRole("alertdialog")).toHaveTextContent(
     "access tokenとrefresh tokenを直ちに失効",
   );
   fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", {
+    within(screen.getByRole("alertdialog")).getByRole("button", {
       name: "接続を取り消す",
     }),
   );

@@ -73,7 +73,9 @@ export function BibliographyImportEntryDecision({
           {entry.position + 1}. {entry.citation_key ?? "識別子なし"}
         </strong>
         <span>{CLASSIFICATION_LABELS[entry.classification]}</span>
-        {rejection && <span className="problem-inline">{rejection}</span>}
+        {rejection && (
+          <span className="text-sm text-destructive">{rejection}</span>
+        )}
       </div>
       <label>
         処理

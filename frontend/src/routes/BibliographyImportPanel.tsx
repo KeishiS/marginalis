@@ -1,5 +1,8 @@
 import { ChangeEvent, useState } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Button } from "@/components/ui/button";
+
 import {
   applyBibliographyImport,
   BibliographyImportDecision,
@@ -189,13 +192,13 @@ export function BibliographyImportPanel({
   if (!open) {
     return (
       <div className="bibliography-import-launcher">
-        <button
-          className="button button-secondary"
+        <Button
+          variant="outline"
           type="button"
           onClick={() => void showPanel()}
         >
           CSL-JSONをまとめて取り込む
-        </button>
+        </Button>
       </div>
     );
   }
@@ -212,14 +215,14 @@ export function BibliographyImportPanel({
             ファイルの内容と競合を事前確認してから、一度に保存します。入力にない文献は削除しません。
           </p>
         </div>
-        <button
-          className="button button-secondary"
+        <Button
+          variant="outline"
           type="button"
           disabled={busy}
           onClick={() => setOpen(false)}
         >
           閉じる
-        </button>
+        </Button>
       </div>
       <div className="bibliography-import-controls">
         <label>
@@ -259,8 +262,7 @@ export function BibliographyImportPanel({
           />
         </label>
         {fileName && <p className="field-help">選択中: {fileName}</p>}
-        <button
-          className="button button-primary"
+        <Button
           type="button"
           disabled={
             busy ||
@@ -271,16 +273,14 @@ export function BibliographyImportPanel({
           onClick={() => void runPreview()}
         >
           {busy ? "確認しています…" : "事前確認"}
-        </button>
+        </Button>
       </div>
-      {message && (
-        <p
-          className={failed ? "problem-inline" : "state-message"}
-          role={failed ? "alert" : "status"}
-        >
-          {message}
-        </p>
-      )}
+      {message &&
+        (failed ? (
+          <ProblemAlert>{message}</ProblemAlert>
+        ) : (
+          <StatusMessage>{message}</StatusMessage>
+        ))}
       {preview && items && (
         <>
           <ol className="bibliography-import-results">
@@ -300,14 +300,13 @@ export function BibliographyImportPanel({
               />
             ))}
           </ol>
-          <button
-            className="button button-primary"
+          <Button
             type="button"
             disabled={busy || unresolved}
             onClick={() => void applyImport()}
           >
             {busy ? "取り込んでいます…" : "選択した計画を取り込む"}
-          </button>
+          </Button>
         </>
       )}
     </section>

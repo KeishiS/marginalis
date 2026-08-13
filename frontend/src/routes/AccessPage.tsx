@@ -1,5 +1,8 @@
 import { useCallback, useState } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Button } from "@/components/ui/button";
+
 import { AccessControl } from "../AccessControl";
 import { ApplicationConfig, readNote } from "../api";
 import { notePath } from "../paths";
@@ -28,17 +31,9 @@ export function AccessPage({
   const revision =
     updated?.noteId === noteId ? updated.revision : (note?.revision ?? 0);
   if (failed)
-    return (
-      <p className="problem-inline" role="alert">
-        共有設定を読み込めませんでした。
-      </p>
-    );
+    return <ProblemAlert>共有設定を読み込めませんでした。</ProblemAlert>;
   if (note === null)
-    return (
-      <p className="state-message" role="status">
-        共有設定を読み込んでいます。
-      </p>
-    );
+    return <StatusMessage>共有設定を読み込んでいます。</StatusMessage>;
   return (
     <section
       className="access-page page-section"
@@ -54,9 +49,9 @@ export function AccessPage({
         </div>
       </div>
       <nav className="page-actions" aria-label="ノート操作">
-        <a className="button button-secondary" href={notePath(config, noteId)}>
-          閲覧画面へ戻る
-        </a>
+        <Button variant="outline" asChild>
+          <a href={notePath(config, noteId)}>閲覧画面へ戻る</a>
+        </Button>
       </nav>
       <AccessControl
         apiBase={config.apiBase}

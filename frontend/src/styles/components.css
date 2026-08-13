@@ -369,16 +369,6 @@ select:hover {
   margin: 0;
 }
 
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.tag-list li,
 .access-permission {
   background: var(--color-primary-soft);
   border-radius: var(--radius-pill);
@@ -386,14 +376,6 @@ select:hover {
   font-size: var(--text-caption);
   font-weight: 650;
   padding: var(--space-1) var(--space-2);
-}
-
-.pagination {
-  align-items: center;
-  display: flex;
-  gap: var(--space-4);
-  justify-content: center;
-  margin-block: var(--space-6);
 }
 
 .document-surface {
@@ -461,15 +443,6 @@ select:hover {
   overflow-wrap: anywhere;
   padding: var(--space-2) var(--space-2);
   user-select: all;
-}
-
-.note-view-tags {
-  min-width: 0;
-}
-
-.note-view-tags li {
-  max-width: 100%;
-  overflow-wrap: anywhere;
 }
 
 .copy-feedback {
@@ -934,43 +907,6 @@ select:hover {
   flex-wrap: wrap;
   gap: var(--space-3);
   padding-block-start: var(--space-5);
-}
-
-.dialog-backdrop {
-  align-items: center;
-  background: color-mix(in srgb, var(--color-text) 38%, transparent);
-  display: flex;
-  inset: 0;
-  justify-content: center;
-  padding: var(--space-4);
-  position: fixed;
-  z-index: 60;
-}
-
-.confirmation-dialog {
-  display: grid;
-  gap: var(--space-4);
-  max-height: calc(100dvh - var(--space-8));
-  max-width: 36rem;
-  overflow: auto;
-  padding: clamp(var(--space-5), 4vw, var(--space-8));
-  width: 100%;
-}
-
-.confirmation-dialog h2,
-.confirmation-dialog p {
-  margin-block: 0;
-}
-
-.confirmation-dialog strong {
-  overflow-wrap: anywhere;
-}
-
-.confirmation-dialog-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  justify-content: flex-end;
 }
 
 @media (width <= 30rem) {
