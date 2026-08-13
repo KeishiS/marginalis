@@ -60,7 +60,6 @@ test("文献カードの操作を情報部分と分けて並べる", async () =>
   // 情報部分は編集を始める操作、削除はその外側に置く。入れ子のボタンを作らない。
   expect(card.tagName).toBe("BUTTON");
   expect(card.contains(remove)).toBe(false);
-  expect(remove.parentElement?.className).toBe("bibliography-item-actions");
   expect(card.parentElement).toBe(remove.parentElement?.parentElement);
 });
 

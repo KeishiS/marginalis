@@ -1,18 +1,16 @@
+import { PageHeader } from "@/components/PageHeader";
+
 import { ApplicationConfig } from "../api";
 import { externalPath } from "../paths";
 
 export function SettingsPage({ config }: { config: ApplicationConfig }) {
   return (
-    <section className="page-section settings-index">
-      <div className="page-heading">
-        <div>
-          <p className="page-eyebrow">Settings</p>
-          <h1>設定</h1>
-          <p className="page-description">
-            ノートの表示方法と、外部のMCPクライアントへ許可できる操作を管理します。
-          </p>
-        </div>
-      </div>
+    <section className="grid gap-6">
+      <PageHeader
+        eyebrow="Settings"
+        title="設定"
+        description="ノートの表示方法と、外部のMCPクライアントへ許可できる操作を管理します。"
+      />
       <div className="grid gap-4 sm:grid-cols-2">
         <SettingsCard
           href={externalPath(config.basePath, "/settings/math-macros")}

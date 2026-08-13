@@ -9,6 +9,7 @@ import {
   updateBibliographyItem,
 } from "../api";
 import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -206,25 +207,21 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
   }
 
   return (
-    <section className="page-section bibliography-library">
-      <div className="page-heading">
-        <div>
-          <p className="page-eyebrow">Bibliography</p>
-          <h1>書誌ライブラリー</h1>
-          <p className="page-description">
-            CSL-JSON形式の文献情報を、ノートとは独立して管理します。
-          </p>
-        </div>
-      </div>
+    <section className="grid gap-6">
+      <PageHeader
+        eyebrow="Bibliography"
+        title="書誌ライブラリー"
+        description="CSL-JSON形式の文献情報を、ノートとは独立して管理します。"
+      />
       <form
-        className="bibliography-search"
+        className="grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (mutating) return;
           void load(query);
         }}
       >
-        <label>
+        <label className="grid gap-2 font-semibold">
           文献を検索
           <Input
             disabled={mutating}
@@ -241,13 +238,11 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         apiBase={config.apiBase}
         onApplied={() => load(query)}
       />
-      <form
-        className="bibliography-input"
-        onSubmit={(event) => void submit(event)}
-      >
-        <label>
+      <form className="grid gap-3" onSubmit={(event) => void submit(event)}>
+        <label className="grid gap-2 font-semibold">
           CSL-JSON
           <textarea
+            className="w-full resize-y rounded-md border bg-card p-3 font-mono text-sm"
             rows={12}
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -255,7 +250,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
             disabled={mutating}
           />
         </label>
-        <div className="bibliography-actions">
+        <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={mutating}>
             {mutating ? "処理しています…" : editing ? "更新" : "登録"}
           </Button>
@@ -284,11 +279,16 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
       ) : items.length === 0 ? (
         <StatusMessage>登録済みの書誌情報はありません。</StatusMessage>
       ) : (
-        <ul className="bibliography-list">
+        <ul className="m-0 grid list-none gap-3 p-0">
           {items.map((item) => (
-            <li key={item.item_id}>
+            <li
+              key={item.item_id}
+              className="flex items-center justify-between gap-4 rounded-md border bg-card p-4"
+            >
+              {/* カードの情報部分そのものを、編集を始める操作にする。
+                  編集中は色だけでなく左端の帯でも示す。 */}
               <button
-                className="bibliography-item"
+                className="grid min-w-0 cursor-pointer gap-1 rounded-sm border-0 bg-transparent p-1 text-start hover:bg-muted aria-[current=true]:border-l-4 aria-[current=true]:border-solid aria-[current=true]:border-l-primary aria-[current=true]:pl-3"
                 type="button"
                 aria-current={editing?.item_id === item.item_id}
                 onClick={() => requestEditing(item)}
@@ -300,7 +300,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                     : "題名なし"}
                 </span>
               </button>
-              <div className="bibliography-item-actions">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant="destructive"
                   type="button"
