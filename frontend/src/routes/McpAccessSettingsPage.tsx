@@ -11,6 +11,9 @@ import {
   replaceMcpScopeCeiling,
   revokeMcpAuthorization,
 } from "../api";
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Button } from "@/components/ui/button";
+
 import { ConfirmationDialog } from "../ConfirmationDialog";
 import { externalPath } from "../paths";
 
@@ -239,22 +242,15 @@ export function McpAccessSettingsPage({
             あなたのノートと書誌情報について、MCPクライアントへ許可できる操作の上限を設定します。各クライアントへ実際に与える権限は、この上限を超えません。
           </p>
         </div>
-        <a
-          className="button button-secondary"
-          href={externalPath(config.basePath, "/settings")}
-        >
-          設定へ戻る
-        </a>
+        <Button variant="outline" asChild>
+          <a href={externalPath(config.basePath, "/settings")}>設定へ戻る</a>
+        </Button>
       </div>
       {settings === null || authorizations === null ? (
         !message ? (
-          <p className="state-message" role="status">
-            MCPのアクセス設定を読み込んでいます。
-          </p>
+          <StatusMessage>MCPのアクセス設定を読み込んでいます。</StatusMessage>
         ) : (
-          <p className="problem-inline" role="alert">
-            {message}
-          </p>
+          <ProblemAlert>{message}</ProblemAlert>
         )
       ) : (
         <div className="mcp-access-settings-content">
@@ -284,16 +280,15 @@ export function McpAccessSettingsPage({
               上限を狭めると、新しい上限を超えるMCP接続だけが直ちに失効します。上限を広げても既存の接続へ権限は追加されません。
             </p>
             {message ? (
-              <p
-                className={failed ? "problem-inline" : "success-inline"}
-                role={failed ? "alert" : "status"}
-              >
-                {message}
-              </p>
+              failed ? (
+                <ProblemAlert>{message}</ProblemAlert>
+              ) : (
+                <StatusMessage>{message}</StatusMessage>
+              )
             ) : null}
-            <button className="button button-primary" disabled={saving}>
+            <Button disabled={saving}>
               {saving ? "保存しています…" : "アクセス設定を保存"}
-            </button>
+            </Button>
           </form>
           <section aria-labelledby="mcp-client-authorizations-heading">
             <div className="section-heading">
@@ -305,9 +300,9 @@ export function McpAccessSettingsPage({
               </p>
             </div>
             {authorizations.length === 0 ? (
-              <p className="state-message">
+              <StatusMessage>
                 認可済みのMCPクライアントはありません。
-              </p>
+              </StatusMessage>
             ) : (
               <div className="mcp-client-list">
                 {authorizations.map((client) => (
@@ -384,8 +379,7 @@ export function McpAccessSettingsPage({
                       </div>
                     </fieldset>
                     <div className="mcp-client-actions">
-                      <button
-                        className="button button-primary"
+                      <Button
                         type="button"
                         disabled={busyClient !== null}
                         onClick={() => void saveClient(client)}
@@ -393,25 +387,25 @@ export function McpAccessSettingsPage({
                         {!client.scope_ceiling_configured
                           ? "上限を設定"
                           : "上限を保存"}
-                      </button>
+                      </Button>
                       {client.scope_ceiling_configured ? (
-                        <button
-                          className="button button-secondary"
+                        <Button
+                          variant="outline"
                           type="button"
                           disabled={busyClient !== null}
                           onClick={() => void clearClientCeiling(client)}
                         >
                           上限を解除
-                        </button>
+                        </Button>
                       ) : null}
-                      <button
-                        className="button button-danger"
+                      <Button
+                        variant="destructive"
                         type="button"
                         disabled={!client.active || busyClient !== null}
                         onClick={() => setRevokeTarget(client)}
                       >
                         接続を取り消す
-                      </button>
+                      </Button>
                     </div>
                   </article>
                 ))}
@@ -422,13 +416,12 @@ export function McpAccessSettingsPage({
       )}
       {revokeTarget !== null ? (
         <ConfirmationDialog
-          id="revoke-mcp-client"
           eyebrow="MCP access"
           heading="MCPクライアントの接続を取り消しますか？"
           description="このクライアントへ発行したaccess tokenとrefresh tokenを直ちに失効します。再び使うにはOAuth認可が必要です。"
           confirmLabel="接続を取り消す"
           busyLabel="取り消しています…"
-          confirmClassName="button button-danger"
+          destructive
           busy={busyClient !== null}
           problem={failed ? message : null}
           onCancel={() => setRevokeTarget(null)}

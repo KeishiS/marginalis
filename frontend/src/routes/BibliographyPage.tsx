@@ -8,6 +8,10 @@ import {
   searchBibliography,
   updateBibliographyItem,
 } from "../api";
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import { ConfirmationDialog } from "../ConfirmationDialog";
 import { BibliographyImportPanel } from "./BibliographyImportPanel";
 
@@ -222,16 +226,16 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
       >
         <label>
           文献を検索
-          <input
+          <Input
             disabled={mutating}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="citation key、題名、著者、DOI"
           />
         </label>
-        <button type="submit" disabled={mutating}>
+        <Button variant="outline" type="submit" disabled={mutating}>
           {searching ? "検索しています…" : "検索"}
-        </button>
+        </Button>
       </form>
       <BibliographyImportPanel
         apiBase={config.apiBase}
@@ -252,47 +256,33 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           />
         </label>
         <div className="bibliography-actions">
-          <button
-            className="button button-primary"
-            type="submit"
-            disabled={mutating}
-          >
+          <Button type="submit" disabled={mutating}>
             {mutating ? "処理しています…" : editing ? "更新" : "登録"}
-          </button>
+          </Button>
           {editing && (
-            <button
-              className="button button-secondary"
+            <Button
+              variant="outline"
               type="button"
               disabled={mutating}
               onClick={requestCancelEditing}
             >
               取消
-            </button>
+            </Button>
           )}
         </div>
       </form>
       {message &&
         pendingDelete === null &&
         (message.failed ? (
-          <p className="problem-inline" role="alert">
-            {message.text}
-          </p>
+          <ProblemAlert>{message.text}</ProblemAlert>
         ) : (
-          <p className="state-message" role="status">
-            {message.text}
-          </p>
+          <StatusMessage>{message.text}</StatusMessage>
         ))}
-      {loadError && (
-        <p className="problem-inline" role="alert">
-          {loadError}
-        </p>
-      )}
+      {loadError && <ProblemAlert>{loadError}</ProblemAlert>}
       {items === null ? (
-        <p className="state-message" role="status">
-          書誌情報を読み込んでいます。
-        </p>
+        <StatusMessage>書誌情報を読み込んでいます。</StatusMessage>
       ) : items.length === 0 ? (
-        <p className="state-message">登録済みの書誌情報はありません。</p>
+        <StatusMessage>登録済みの書誌情報はありません。</StatusMessage>
       ) : (
         <ul className="bibliography-list">
           {items.map((item) => (
@@ -311,8 +301,8 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                 </span>
               </button>
               <div className="bibliography-item-actions">
-                <button
-                  className="button button-danger"
+                <Button
+                  variant="destructive"
                   type="button"
                   disabled={mutating}
                   onClick={() => {
@@ -321,7 +311,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
                   }}
                 >
                   削除
-                </button>
+                </Button>
               </div>
             </li>
           ))}
@@ -329,7 +319,6 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
       )}
       {pendingEdit !== null && (
         <ConfirmationDialog
-          id="discard-bibliography-edit"
           eyebrow="未保存の変更"
           heading="編集中の内容を破棄しますか"
           description="保存していないCSL-JSONは元に戻せません。"
@@ -337,7 +326,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           problem={null}
           confirmLabel="変更を破棄"
           busyLabel="変更を破棄しています…"
-          confirmClassName="button button-danger"
+          destructive
           onCancel={() => setPendingEdit(null)}
           onConfirm={() => {
             const next = pendingEdit;
@@ -349,7 +338,6 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
       )}
       {pendingDelete !== null && (
         <ConfirmationDialog
-          id="delete-bibliography-item"
           eyebrow="書誌情報の削除"
           heading={`${pendingDelete.citation_key}を削除しますか`}
           description="書誌情報の削除は取り消せません。"
@@ -357,7 +345,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           problem={deleteProblem}
           confirmLabel="削除する"
           busyLabel="削除しています…"
-          confirmClassName="button button-danger"
+          destructive
           onCancel={() => {
             setPendingDelete(null);
             setDeleteProblem(null);

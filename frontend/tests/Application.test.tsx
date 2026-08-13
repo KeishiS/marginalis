@@ -268,12 +268,11 @@ describe("Application", () => {
         "0197c9bc-0000-7000-8000-000000000001",
       ),
     );
-    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
-      "note IDをコピーしました。",
-    );
+    const copyFeedback = screen.getByText("note IDをコピーしました。");
+    expect(copyFeedback).toHaveAttribute("role", "status");
 
     fireEvent.click(deleteButton);
-    const dialog = screen.getByRole("dialog", {
+    const dialog = screen.getByRole("alertdialog", {
       name: "このノートを削除しますか？",
     });
     expect(dialog).toHaveTextContent("設計メモ");
@@ -285,8 +284,9 @@ describe("Application", () => {
     fireEvent.keyDown(dialog, { key: "Tab" });
     expect(cancelButton).toHaveFocus();
     fireEvent.click(cancelButton);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(deleteButton).toHaveFocus();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // Radixは閉じたあとのフォーカス復帰を非同期に行う。
+    await waitFor(() => expect(deleteButton).toHaveFocus());
   });
 
   it("note IDをコピーできない場合に失敗を通知する", async () => {
@@ -438,7 +438,7 @@ describe("Application", () => {
       "画面を再読み込みしてから",
     );
     expect(screen.getByText("残す本文")).toBeInTheDocument();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     expect(fetch).toHaveBeenLastCalledWith(
       "/marginalis/api/v3/notes/0197c9bc-0000-7000-8000-000000000001",
       expect.objectContaining({

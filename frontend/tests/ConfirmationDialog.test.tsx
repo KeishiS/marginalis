@@ -8,7 +8,6 @@ afterEach(cleanup);
 function dialog(busy: boolean, onCancel = vi.fn()) {
   return (
     <ConfirmationDialog
-      id="test-confirmation"
       eyebrow="Confirm"
       heading="操作を続けますか？"
       description="確認してください。"
@@ -26,7 +25,7 @@ test("送信中は確認画面へフォーカスを保ち、操作可能にな�
   const onCancel = vi.fn();
   const { rerender } = render(dialog(false, onCancel));
   const cancel = screen.getByRole("button", { name: "取り消す" });
-  const confirmation = screen.getByRole("dialog");
+  const confirmation = screen.getByRole("alertdialog");
   expect(cancel).toHaveFocus();
 
   rerender(dialog(true, onCancel));

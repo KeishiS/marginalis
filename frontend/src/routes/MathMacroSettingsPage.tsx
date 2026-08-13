@@ -1,5 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Button } from "@/components/ui/button";
+
 import {
   ApiError,
   ApplicationConfig,
@@ -127,13 +130,9 @@ export function MathMacroSettingsPage({
         </div>
       </div>
       {macros === null && !message ? (
-        <p className="state-message" role="status">
-          数式マクロを読み込んでいます。
-        </p>
+        <StatusMessage>数式マクロを読み込んでいます。</StatusMessage>
       ) : macros === null ? (
-        <p className="problem-inline" role="alert">
-          {message}
-        </p>
+        <ProblemAlert>{message}</ProblemAlert>
       ) : (
         <form onSubmit={save}>
           <div className="math-macro-examples" aria-label="定義例">
@@ -218,27 +217,22 @@ export function MathMacroSettingsPage({
             >
               マクロを追加
             </button>
-            <button
-              className="button button-primary"
+            <Button
               type="submit"
               disabled={saving || validationProblem !== null}
             >
               {saving ? "保存しています…" : "保存"}
-            </button>
+            </Button>
           </div>
           {validationProblem && (
-            <p className="problem-inline" role="alert">
-              {validationProblem}
-            </p>
+            <ProblemAlert>{validationProblem}</ProblemAlert>
           )}
-          {message && (
-            <p
-              className={failed ? "problem-inline" : "state-message"}
-              role={failed ? "alert" : "status"}
-            >
-              {message}
-            </p>
-          )}
+          {message &&
+            (failed ? (
+              <ProblemAlert>{message}</ProblemAlert>
+            ) : (
+              <StatusMessage>{message}</StatusMessage>
+            ))}
         </form>
       )}
     </section>

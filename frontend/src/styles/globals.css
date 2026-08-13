@@ -98,6 +98,16 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+@layer components {
+  /*
+   * リンクをButtonとして使う場合(asChild)、リンク既定の下線を消します。
+   * 生成コードを書き換えず、data-slot属性を対象に一括で適用します。
+   */
+  a[data-slot="button"]:not([data-variant="link"]) {
+    text-decoration-line: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

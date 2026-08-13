@@ -1,5 +1,10 @@
 import { FormEvent, useCallback, useMemo } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import { ApplicationConfig, listNotes, NoteListEntry } from "../api";
 import { formatDateTime } from "../formatting";
 import {
@@ -37,9 +42,9 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
             記録した知識を、更新日やタグから見つけられます。
           </p>
         </div>
-        <a className="button button-secondary" href={deletedNotesPath(config)}>
-          削除済みノート
-        </a>
+        <Button variant="outline" asChild>
+          <a href={deletedNotesPath(config)}>削除済みノート</a>
+        </Button>
       </div>
       {notice === "note-deleted" && (
         <p className="notice" role="status">
@@ -53,19 +58,15 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
       )}
       <NoteListFilters config={config} query={query} />
       {failed ? (
-        <p className="problem-inline" role="alert">
-          ノート一覧を読み込めませんでした。
-        </p>
+        <ProblemAlert>ノート一覧を読み込めませんでした。</ProblemAlert>
       ) : notes === null ? (
-        <p className="state-message" role="status">
-          ノート一覧を読み込んでいます。
-        </p>
+        <StatusMessage>ノート一覧を読み込んでいます。</StatusMessage>
       ) : page?.total === 0 ? (
-        <p className="state-message">
+        <StatusMessage>
           {notes.length === 0
             ? "閲覧できるノートはありません。"
             : "条件に一致するノートはありません。"}
-        </p>
+        </StatusMessage>
       ) : (
         <>
           <p className="list-result-count" role="status">
@@ -100,9 +101,14 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
                   </div>
                 </dl>
                 {note.tags.length > 0 && (
-                  <ul className="tag-list" aria-label="ノートのタグ">
+                  <ul
+                    className="m-0 flex list-none flex-wrap gap-2 p-0"
+                    aria-label="ノートのタグ"
+                  >
                     {note.tags.map((tag) => (
-                      <li key={tag}>{tag}</li>
+                      <li key={tag}>
+                        <Badge variant="secondary">{tag}</Badge>
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -110,15 +116,22 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
             ))}
           </ul>
           {page && page.pageCount > 1 && (
-            <nav className="pagination" aria-label="ノート一覧のページ">
+            <nav
+              className="flex items-center justify-center gap-4"
+              aria-label="ノート一覧のページ"
+            >
               {page.page > 1 && (
-                <a href={listPath(config, page.page - 1)}>前へ</a>
+                <Button variant="outline" size="sm" asChild>
+                  <a href={listPath(config, page.page - 1)}>前へ</a>
+                </Button>
               )}
-              <span>
+              <span className="text-sm text-muted-foreground">
                 {page.page} / {page.pageCount}
               </span>
               {page.page < page.pageCount && (
-                <a href={listPath(config, page.page + 1)}>次へ</a>
+                <Button variant="outline" size="sm" asChild>
+                  <a href={listPath(config, page.page + 1)}>次へ</a>
+                </Button>
               )}
             </nav>
           )}
@@ -172,7 +185,7 @@ function NoteListFilters({
     >
       <label>
         タグ
-        <input
+        <Input
           name="tag"
           type="text"
           defaultValue={query.tags.join(", ")}
@@ -181,14 +194,16 @@ function NoteListFilters({
       </label>
       <label>
         この日以降に更新
-        <input
+        <Input
           name="updated_after"
           type="date"
           defaultValue={query.updatedAfter}
         />
       </label>
       <input name="page" type="hidden" value="1" readOnly />
-      <button type="submit">絞り込む</button>
+      <Button variant="outline" type="submit">
+        絞り込む
+      </Button>
       {(query.tags.length > 0 || query.updatedAfter) && (
         <a href={externalPath(config.basePath, "/")}>条件を解除</a>
       )}

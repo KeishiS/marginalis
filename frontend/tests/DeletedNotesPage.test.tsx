@@ -80,7 +80,7 @@ test("削除済みノートの保持情報を表示し、確認後に復元す�
   expect(screen.getByText("復元期限を過ぎています。")).toBeInTheDocument();
   const restoreButton = screen.getAllByRole("button", { name: /^復元$/ })[0];
   fireEvent.click(restoreButton);
-  expect(screen.getByRole("dialog")).toHaveTextContent("復元するノート");
+  expect(screen.getByRole("alertdialog")).toHaveTextContent("復元するノート");
   expect(screen.getByRole("button", { name: "取り消す" })).toHaveFocus();
   fireEvent.click(screen.getByRole("button", { name: "復元する" }));
 
@@ -151,9 +151,10 @@ test.each([
     fireEvent.click(screen.getByRole("button", { name: "復元する" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    // モーダル表示中の背面は支援技術から隠れるため、hiddenを含めて一覧の残存を確かめる。
     expect(
-      screen.getByRole("heading", { name: "境界のノート" }),
+      screen.getByRole("heading", { name: "境界のノート", hidden: true }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   },
 );

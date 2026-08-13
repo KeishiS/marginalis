@@ -1,5 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Button } from "@/components/ui/button";
+
 import {
   ApplicationConfig,
   DeletedNoteListEntry,
@@ -44,7 +47,8 @@ export function DeletedNotesPage({
   function closeRestoreDialog() {
     setSelected(null);
     setProblem(null);
-    restoreTrigger.current?.focus();
+    // 確認画面のフォーカストラップが解除されてから復元ボタンへ戻す。
+    setTimeout(() => restoreTrigger.current?.focus(), 0);
   }
 
   async function confirmRestore() {
@@ -73,20 +77,18 @@ export function DeletedNotesPage({
             所有するノートは、削除後30日以内であれば復元できます。
           </p>
         </div>
-        <a className="button button-secondary" href={listPath(config)}>
-          ノート一覧へ戻る
-        </a>
+        <Button variant="outline" asChild>
+          <a href={listPath(config)}>ノート一覧へ戻る</a>
+        </Button>
       </div>
       {failed ? (
-        <p className="problem-inline" role="alert">
+        <ProblemAlert>
           削除済みノートを読み込めませんでした。接続を確認して画面を再読み込みしてください。
-        </p>
+        </ProblemAlert>
       ) : notes === null ? (
-        <p className="state-message" role="status">
-          削除済みノートを読み込んでいます。
-        </p>
+        <StatusMessage>削除済みノートを読み込んでいます。</StatusMessage>
       ) : notes.length === 0 ? (
-        <p className="state-message">削除済みノートはありません。</p>
+        <StatusMessage>削除済みノートはありません。</StatusMessage>
       ) : (
         <ul className="note-list deleted-note-list">
           {notes.map((note) => {
@@ -119,15 +121,14 @@ export function DeletedNotesPage({
                   </div>
                 </dl>
                 <p className="deleted-note-retention">{retention.label}</p>
-                <button
-                  className="button button-primary"
+                <Button
                   type="button"
                   onClick={(event) =>
                     openRestoreDialog(note, event.currentTarget)
                   }
                 >
                   復元
-                </button>
+                </Button>
               </li>
             );
           })}
@@ -135,7 +136,6 @@ export function DeletedNotesPage({
       )}
       {selected !== null && (
         <ConfirmationDialog
-          id="note-restore"
           eyebrow="Restore note"
           heading="このノートを復元しますか？"
           description={

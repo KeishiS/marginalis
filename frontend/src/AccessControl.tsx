@@ -6,6 +6,10 @@ import {
   useRef,
 } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import { ApiError, readNoteAcl, replaceNoteAcl } from "./api";
 import {
   accessControlReducer,
@@ -72,11 +76,7 @@ export function AccessControl({
   }, [apiBase, noteId]);
 
   if (entries === null) {
-    return error ? (
-      <p className="problem-inline" role="alert">
-        {error}
-      </p>
-    ) : null;
+    return error ? <ProblemAlert>{error}</ProblemAlert> : null;
   }
   const currentEntries = entries;
 
@@ -132,26 +132,27 @@ export function AccessControl({
                 {entry.permission === "edit" ? "閲覧・編集" : "閲覧"}
               </span>
             </span>
-            <button
+            <Button
               type="button"
-              className="button button-danger button-small"
+              variant="destructive"
+              size="sm"
               disabled={status === "saving"}
               onClick={() =>
                 dispatch({ type: "remove", subject: entry.subject })
               }
             >
               削除
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
       {currentEntries.length === 0 && (
-        <p className="state-message">追加の共有先はありません。</p>
+        <StatusMessage>追加の共有先はありません。</StatusMessage>
       )}
       <form className="access-form" onSubmit={add}>
         <label>
           利用者subject
-          <input
+          <Input
             disabled={status === "saving"}
             value={subject}
             onChange={(event) =>
@@ -175,34 +176,21 @@ export function AccessControl({
             <option value="edit">閲覧・編集</option>
           </select>
         </label>
-        <button
-          className="button button-secondary"
-          type="submit"
-          disabled={status === "saving"}
-        >
+        <Button variant="outline" type="submit" disabled={status === "saving"}>
           共有先を追加
-        </button>
+        </Button>
       </form>
       <div className="form-actions">
-        <button
-          className="button button-primary"
-          type="button"
-          onClick={save}
-          disabled={status === "saving"}
-        >
+        <Button type="button" onClick={save} disabled={status === "saving"}>
           {status === "saving" ? "保存しています…" : "共有設定を保存"}
-        </button>
+        </Button>
         {notice && (
           <p className="notice-inline" role="status">
             {notice}
           </p>
         )}
       </div>
-      {error && (
-        <p className="problem-inline" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <ProblemAlert>{error}</ProblemAlert>}
     </section>
   );
 }

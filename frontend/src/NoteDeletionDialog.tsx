@@ -15,7 +15,6 @@ export function NoteDeletionDialog({
 }) {
   return (
     <ConfirmationDialog
-      id="note-delete"
       eyebrow="Delete note"
       heading="このノートを削除しますか？"
       description={
@@ -28,7 +27,7 @@ export function NoteDeletionDialog({
       problem={problem}
       confirmLabel="削除する"
       busyLabel="削除しています…"
-      confirmClassName="button button-danger"
+      destructive
       onCancel={onCancel}
       onConfirm={onConfirm}
     />

@@ -1,5 +1,7 @@
 import { lazy, Suspense } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+
 import { ApplicationConfig } from "./api";
 import { AccessPage } from "./routes/AccessPage";
 import { BibliographyPage } from "./routes/BibliographyPage";
@@ -70,11 +72,7 @@ export function Application({ config }: { config: ApplicationConfig }) {
     case "graph":
       return (
         <Suspense
-          fallback={
-            <p className="state-message" role="status">
-              関係の図を読み込んでいます。
-            </p>
-          }
+          fallback={<StatusMessage>関係の図を読み込んでいます。</StatusMessage>}
         >
           <GraphPage config={config} />
         </Suspense>
@@ -85,9 +83,7 @@ export function Application({ config }: { config: ApplicationConfig }) {
       return (
         <Suspense
           fallback={
-            <p className="state-message" role="status">
-              数式マクロ設定を読み込んでいます。
-            </p>
+            <StatusMessage>数式マクロ設定を読み込んでいます。</StatusMessage>
           }
         >
           <MathMacroSettingsPage config={config} />
@@ -97,9 +93,7 @@ export function Application({ config }: { config: ApplicationConfig }) {
       return (
         <Suspense
           fallback={
-            <p className="state-message" role="status">
-              MCPのアクセス設定を読み込んでいます。
-            </p>
+            <StatusMessage>MCPのアクセス設定を読み込んでいます。</StatusMessage>
           }
         >
           <McpAccessSettingsPage config={config} />
@@ -109,20 +103,14 @@ export function Application({ config }: { config: ApplicationConfig }) {
       return (
         <Suspense
           fallback={
-            <p className="state-message" role="status">
-              削除済みノートを読み込んでいます。
-            </p>
+            <StatusMessage>削除済みノートを読み込んでいます。</StatusMessage>
           }
         >
           <DeletedNotesPage config={config} />
         </Suspense>
       );
     case "not-found":
-      return (
-        <p className="problem-inline" role="alert">
-          指定された画面はありません。
-        </p>
-      );
+      return <ProblemAlert>指定された画面はありません。</ProblemAlert>;
   }
 }
 
@@ -137,11 +125,7 @@ function EditorRoute({
 }) {
   return (
     <Suspense
-      fallback={
-        <p className="state-message" role="status">
-          編集画面を読み込んでいます。
-        </p>
-      }
+      fallback={<StatusMessage>編集画面を読み込んでいます。</StatusMessage>}
     >
       <EditorApplication config={{ ...config, mode, noteId }} />
     </Suspense>

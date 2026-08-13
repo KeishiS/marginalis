@@ -92,7 +92,9 @@ test("CSL-JSONの競合をキーボードで解決して一括取り込みする
   await expect(apply).toBeEnabled();
   await apply.click();
 
-  await expect(page.getByRole("status")).toContainText("保持1件");
+  await expect(
+    page.getByRole("status").filter({ hasText: "保持1件" }),
+  ).toContainText("保持1件");
   expect(applied.preview_token).toBe("a".repeat(64));
   expect(applied.decisions).toEqual([
     { position: 0, action: "keep_local", candidate_item_id: null },
