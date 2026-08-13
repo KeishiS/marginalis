@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 
 import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 
 import { AccessControl } from "../AccessControl";
@@ -35,20 +36,14 @@ export function AccessPage({
   if (note === null)
     return <StatusMessage>共有設定を読み込んでいます。</StatusMessage>;
   return (
-    <section
-      className="access-page page-section"
-      aria-labelledby="access-page-heading"
-    >
-      <div className="page-heading">
-        <div>
-          <p className="page-eyebrow">Access</p>
-          <h1 id="access-page-heading">共有設定</h1>
-          <p className="page-description">
-            このノートを閲覧または編集できる利用者を管理します。
-          </p>
-        </div>
-      </div>
-      <nav className="page-actions" aria-label="ノート操作">
+    <section className="grid gap-6" aria-labelledby="access-page-heading">
+      <PageHeader
+        eyebrow="Access"
+        title="共有設定"
+        titleId="access-page-heading"
+        description="このノートを閲覧または編集できる利用者を管理します。"
+      />
+      <nav className="flex flex-wrap gap-2" aria-label="ノート操作">
         <Button variant="outline" asChild>
           <a href={notePath(config, noteId)}>閲覧画面へ戻る</a>
         </Button>

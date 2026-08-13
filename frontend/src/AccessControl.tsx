@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -116,21 +117,26 @@ export function AccessControl({
 
   return (
     <section
-      className="access-control surface"
+      className="grid max-w-4xl gap-4 rounded-md border bg-card p-[clamp(var(--space-4),3vw,var(--space-6))] shadow-xs"
       aria-labelledby="access-control-heading"
     >
-      <h2 id="access-control-heading">共有設定</h2>
-      <p className="section-description">
+      <h2 className="m-0" id="access-control-heading">
+        共有設定
+      </h2>
+      <p className="m-0 max-w-2xl text-muted-foreground">
         同じ認証基盤の利用者subjectを正確に入力してください。
       </p>
-      <ul className="access-list">
+      <ul className="m-0 grid list-none gap-3 p-0">
         {currentEntries.map((entry) => (
-          <li key={entry.subject}>
-            <span>
-              <code>{entry.subject}</code>
-              <span className="access-permission">
+          <li
+            key={entry.subject}
+            className="flex flex-col items-stretch justify-between gap-4 rounded-sm bg-muted p-3 min-[60rem]:flex-row min-[60rem]:items-center"
+          >
+            <span className="flex min-w-0 flex-wrap items-center gap-3">
+              <code className="[overflow-wrap:anywhere]">{entry.subject}</code>
+              <Badge variant="secondary">
                 {entry.permission === "edit" ? "閲覧・編集" : "閲覧"}
-              </span>
+              </Badge>
             </span>
             <Button
               type="button"
@@ -149,8 +155,11 @@ export function AccessControl({
       {currentEntries.length === 0 && (
         <StatusMessage>追加の共有先はありません。</StatusMessage>
       )}
-      <form className="access-form" onSubmit={add}>
-        <label>
+      <form
+        className="flex flex-wrap items-end gap-3 border-t pt-4"
+        onSubmit={add}
+      >
+        <label className="grid flex-[1_1_20rem] gap-1 text-sm font-semibold">
           利用者subject
           <Input
             disabled={status === "saving"}
@@ -160,7 +169,7 @@ export function AccessControl({
             }
           />
         </label>
-        <label>
+        <label className="grid gap-1 text-sm font-semibold">
           権限
           <select
             disabled={status === "saving"}
@@ -180,12 +189,12 @@ export function AccessControl({
           共有先を追加
         </Button>
       </form>
-      <div className="form-actions">
+      <div className="flex flex-wrap items-center gap-4">
         <Button type="button" onClick={save} disabled={status === "saving"}>
           {status === "saving" ? "保存しています…" : "共有設定を保存"}
         </Button>
         {notice && (
-          <p className="notice-inline" role="status">
+          <p className="m-0 text-sm text-success" role="status">
             {notice}
           </p>
         )}

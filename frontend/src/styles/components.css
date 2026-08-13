@@ -1,33 +1,40 @@
-button,
-.button {
-  align-items: center;
-  border: var(--border-thin) solid transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  display: inline-flex;
-  font-size: var(--text-small);
-  font-weight: 650;
-  gap: var(--space-2);
-  justify-content: center;
-  line-height: 1.25;
-  min-height: 2.5rem;
-  padding: var(--space-2) var(--space-4);
-  text-decoration: none;
-  transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease,
-    transform 140ms ease;
-}
+/*
+ * 移行前の画面とRust側HTMLが使う基礎スタイル。base層に置き、shadcnの
+ * componentが持つユーティリティclassを優先させる。旧CSSの削除とあわせて
+ * 整理する(Issue #438)。
+ */
+@layer base {
+  button,
+  .button {
+    align-items: center;
+    border: var(--border-thin) solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: inline-flex;
+    font-size: var(--text-small);
+    font-weight: 650;
+    gap: var(--space-2);
+    justify-content: center;
+    line-height: 1.25;
+    min-height: 2.5rem;
+    padding: var(--space-2) var(--space-4);
+    text-decoration: none;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease,
+      transform 140ms ease;
+  }
 
-button:hover:not(:disabled),
-.button:hover {
-  transform: translateY(-0.0625rem);
-}
+  button:hover:not(:disabled),
+  .button:hover {
+    transform: translateY(-0.0625rem);
+  }
 
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.52;
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+  }
 }
 
 .button-primary {
@@ -66,43 +73,21 @@ button:not([class]):hover:not(:disabled) {
   padding: var(--space-1) var(--space-3);
 }
 
-input:not([type="range"], [type="checkbox"]),
-select {
-  background: var(--color-surface);
-  border: var(--border-thin) solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text);
-  min-height: 2.65rem;
-  padding: var(--space-2) var(--space-3);
-}
+@layer base {
+  input:not([type="range"], [type="checkbox"]),
+  select {
+    background: var(--color-surface);
+    border: var(--border-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    min-height: 2.65rem;
+    padding: var(--space-2) var(--space-3);
+  }
 
-input:not([type="range"], [type="checkbox"]):hover,
-select:hover {
-  border-color: var(--color-border-strong);
-}
-
-.note-list-filters {
-  align-items: end;
-  background: var(--color-surface);
-  border: var(--border-thin) solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  padding: var(--space-4);
-}
-
-.note-list-filters label,
-.access-form label {
-  display: grid;
-  font-size: var(--text-small);
-  font-weight: 650;
-  gap: var(--space-1);
-}
-
-.note-list-filters input {
-  min-width: min(16rem, 78vw);
+  input:not([type="range"], [type="checkbox"]):hover,
+  select:hover {
+    border-color: var(--color-border-strong);
+  }
 }
 
 .bibliography-search,
@@ -292,218 +277,6 @@ select:hover {
   gap: var(--space-2);
 }
 
-.list-result-count {
-  color: var(--color-text-muted);
-  font-size: var(--text-small);
-  margin: 0;
-}
-
-.note-list {
-  display: grid;
-  gap: var(--space-3);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.note-list > li {
-  background: var(--color-surface);
-  border: var(--border-thin) solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  padding: var(--space-4) var(--space-5);
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms ease;
-}
-
-.note-list > li:hover {
-  border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-0.1rem);
-}
-
-.note-list > li > a {
-  color: var(--color-text);
-  font-size: var(--text-body);
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.note-list > li > a:hover {
-  color: var(--color-primary);
-}
-
-.deleted-note-list h2 {
-  font-size: var(--text-body);
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.deleted-note-retention {
-  color: var(--color-text-muted);
-  font-size: var(--text-small);
-  margin-block: 0 var(--space-3);
-}
-
-.note-list dl {
-  display: flex;
-  flex-wrap: wrap;
-  font-size: var(--text-small);
-  gap: var(--space-2) var(--space-5);
-  margin-block: var(--space-2);
-}
-
-.note-list dl > div {
-  display: flex;
-  gap: var(--space-1);
-}
-
-.note-list dt {
-  color: var(--color-text-muted);
-  font-weight: 600;
-}
-
-.note-list dd {
-  margin: 0;
-}
-
-.access-permission {
-  background: var(--color-primary-soft);
-  border-radius: var(--radius-pill);
-  color: var(--color-primary);
-  font-size: var(--text-caption);
-  font-weight: 650;
-  padding: var(--space-1) var(--space-2);
-}
-
-.document-surface {
-  background: var(--color-surface);
-  border: var(--border-thin) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  margin-inline: auto;
-  max-width: var(--reading-width);
-  min-width: 0;
-  padding: clamp(var(--space-5), 4vw, var(--space-12));
-  width: 100%;
-}
-
-.note-viewer {
-  display: grid;
-  gap: var(--space-5);
-  min-width: 0;
-}
-
-.note-view-toolbar {
-  align-items: flex-start;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  justify-content: space-between;
-  margin-inline: auto;
-  max-width: var(--reading-width);
-  min-width: 0;
-  padding: var(--space-3) var(--space-4);
-  width: 100%;
-}
-
-.note-view-toolbar .page-actions {
-  margin: 0;
-}
-
-.note-identity {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.note-identity-label {
-  color: var(--color-text-muted);
-  font-size: var(--text-caption);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.note-identity-value {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.note-identity-value code {
-  background: var(--color-surface-subtle);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-monospace);
-  font-size: var(--text-small);
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  padding: var(--space-2) var(--space-2);
-  user-select: all;
-}
-
-.copy-feedback {
-  color: var(--color-text-muted);
-  font-size: var(--text-caption);
-  margin: 0;
-}
-
-.copy-feedback-success {
-  color: var(--color-success);
-}
-
-.copy-feedback-failure {
-  color: var(--color-danger);
-}
-
-.related-notes {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: var(--space-8) auto 0;
-  max-width: var(--reading-width);
-  min-width: 0;
-  width: 100%;
-}
-
-.related-notes section {
-  background: var(--color-surface);
-  border: var(--border-thin) solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-}
-
-.related-notes h2 {
-  font-size: var(--text-body);
-  margin-block-start: 0;
-}
-
-.related-notes section > ul,
-.related-notes section > details > ul {
-  display: grid;
-  gap: var(--space-2);
-  list-style: none;
-  padding: 0;
-}
-
-.related-notes section > ul > li,
-.related-notes section > details > ul > li {
-  background: var(--color-surface-subtle);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3);
-}
-
-.related-notes [aria-label="タグ"] {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  list-style: none;
-  padding: 0;
-}
-
 .notice,
 .problem,
 .warnings,
@@ -514,8 +287,7 @@ select:hover {
   padding: var(--space-4) var(--space-4);
 }
 
-.notice,
-.notice-inline {
+.notice {
   color: var(--color-success);
 }
 
@@ -610,67 +382,6 @@ select:hover {
 
 .conflict-body .changed {
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
-}
-
-.access-control {
-  display: grid;
-  gap: var(--space-4);
-  max-width: 58rem;
-  padding: clamp(var(--space-4), 3vw, var(--space-6));
-}
-
-.access-control h2 {
-  margin: 0;
-}
-
-.access-list {
-  display: grid;
-  gap: var(--space-3);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.access-list li {
-  align-items: center;
-  background: var(--color-surface-subtle);
-  border-radius: var(--radius-sm);
-  display: flex;
-  gap: var(--space-4);
-  justify-content: space-between;
-  padding: var(--space-3);
-}
-
-.access-list li > span {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.access-list code {
-  overflow-wrap: anywhere;
-}
-
-.access-form {
-  align-items: end;
-  border-block-start: var(--border-thin) solid var(--color-border);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding-block-start: var(--space-4);
-}
-
-.access-form label:first-child {
-  flex: 1 1 20rem;
-}
-
-.form-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
 }
 
 .oauth-consent-page {
@@ -788,29 +499,6 @@ select:hover {
 
 .oauth-loopback-warning {
   margin: 0;
-}
-
-.settings-card-list {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
-}
-
-.settings-card {
-  color: var(--color-text);
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-5);
-  text-decoration: none;
-}
-
-.settings-card strong {
-  color: var(--color-primary);
-  font-size: var(--text-large);
-}
-
-.settings-card:hover strong {
-  text-decoration: underline;
 }
 
 .mcp-access-settings form {
@@ -982,32 +670,8 @@ select:hover {
 }
 
 @media (width <= 60rem) {
-  .related-notes,
   .conflict-fields {
     grid-template-columns: 1fr;
-  }
-
-  .note-view-toolbar {
-    align-items: stretch;
-  }
-
-  .note-view-toolbar .page-actions {
-    width: 100%;
-  }
-
-  .note-list-filters {
-    align-items: stretch;
-    display: grid;
-  }
-
-  .note-list-filters input {
-    min-width: 0;
-    width: 100%;
-  }
-
-  .access-list li {
-    align-items: stretch;
-    flex-direction: column;
   }
 
   .toast-region {
