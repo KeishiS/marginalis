@@ -51,6 +51,9 @@ pkgs.testers.nixosTest {
       + "grep -F 'http.request.completed' | grep -F 'outcome=' | grep -Fq success"
     )
     machine.succeed(
+      "journalctl -u marginalis.service -o cat | grep -Fq 'webhook.worker.started'"
+    )
+    machine.succeed(
       "test $(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/oidc/login) = 503"
     )
     machine.wait_until_succeeds(
@@ -136,6 +139,9 @@ pkgs.testers.nixosTest {
     )
     machine.succeed("umount /var/lib/marginalis-backups/test")
     machine.succeed("systemctl stop marginalis.service")
+    machine.succeed(
+      "journalctl -u marginalis.service -o cat | grep -Fq 'webhook.worker.stopped'"
+    )
     machine.succeed("cp /var/lib/marginalis/marginalis.sqlite /tmp/corrupt.sqlite")
     machine.succeed(
       "printf 'not-a-sqlite-database' | "

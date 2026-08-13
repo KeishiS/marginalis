@@ -150,6 +150,16 @@ refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family
 複製しない。
 * *ARCH-AUTHZ-002 — 実効アクセス水準*: 実効アクセス水準は``Read < Edit < Manage``の順序で表す。
 SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``または``Edit``を同じ判断表へまとめる。
+* *ARCH-HOOK-001 — Webhook eventの生成と配送の境界*: 通知対象のeventは、変更を確定する
+SQLiteの同じtransaction内のtriggerがoutboxへ記録する（transactional outbox）。配送は
+subscriptionごとに先頭のeventだけをlease付きで取得して順序を保ち、HTTP送信は
+``marginalis-webhook-http`` adapterへ隔離する。application層はrepositoryとsenderのportだけへ
+依存し、ログは配送結果を受け取ったcomposition rootが記録する。
+* *ARCH-HOOK-002 — Webhook送信先の二重検査*: 送信先URLは登録時に構文とIP literalを検査し、
+送信直前にもすべてのDNS解決結果を検査して解決済みaddressへ接続を固定する。どちらも
+公開networkのHTTPS（port 443）だけを許可して特別用途address（RFC 6890）を拒否し、
+redirectへ従わない。例外は運用者が明示したhostに限る。secretは作成・再生成の応答だけへ返し、
+ログと通常の取得応答へ出さない。
 
 == 検索のサービス境界
 
@@ -182,6 +192,7 @@ crates/
 ├── marginalis-auth-oidc       Kanidm OIDC adapter
 ├── marginalis-sqlite          SQLite adapter
 ├── marginalis-web             HTTP adapter
+├── marginalis-webhook-http    Webhook送信adapter（宛先検査・署名・HTTP POST）
 └── marginalis-service         composition rootと実行バイナリ
 
 frontend/

@@ -15,6 +15,7 @@ pub(crate) const OIDC_CLIENT_SECRET: &str = "MARGINALIS_OIDC_CLIENT_SECRET";
 pub(crate) const OIDC_CA_CERTIFICATE_FILE: &str = "MARGINALIS_OIDC_CA_CERTIFICATE_FILE";
 pub(crate) const MCP_ENABLE: &str = "MARGINALIS_MCP_ENABLE";
 pub(crate) const MCP_ALLOWED_ORIGINS: &str = "MARGINALIS_MCP_ALLOWED_ORIGINS";
+pub(crate) const WEBHOOK_ALLOWED_HOSTS: &str = "MARGINALIS_WEBHOOK_ALLOWED_HOSTS";
 
 /// 変数を設定する必要がある条件。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,6 +89,11 @@ pub(crate) const VARIABLES: &[Variable] = &[
     },
     Variable {
         name: MCP_ALLOWED_ORIGINS,
+        requirement: Requirement::Optional,
+        exposure: Exposure::ElementCount,
+    },
+    Variable {
+        name: WEBHOOK_ALLOWED_HOSTS,
         requirement: Requirement::Optional,
         exposure: Exposure::ElementCount,
     },
