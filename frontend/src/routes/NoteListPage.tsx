@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useMemo } from "react";
 
 import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,31 +31,24 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
   const page = notes === null ? null : selectNoteListPage(notes, query);
   const notice = new URLSearchParams(config.search).get("notice");
   return (
-    <section
-      className="note-index page-section"
-      aria-labelledby="note-index-heading"
-    >
-      <div className="page-heading">
-        <div>
-          <p className="page-eyebrow">Library</p>
-          <h1 id="note-index-heading">ノート</h1>
-          <p className="page-description">
-            記録した知識を、更新日やタグから見つけられます。
-          </p>
-        </div>
+    <section className="grid gap-6" aria-labelledby="note-index-heading">
+      <PageHeader
+        eyebrow="Library"
+        title="ノート"
+        titleId="note-index-heading"
+        description="記録した知識を、更新日やタグから見つけられます。"
+      >
         <Button variant="outline" asChild>
           <a href={deletedNotesPath(config)}>削除済みノート</a>
         </Button>
-      </div>
+      </PageHeader>
       {notice === "note-deleted" && (
-        <p className="notice" role="status">
+        <StatusMessage>
           ノートを削除しました。削除後30日以内であれば復元できます。
-        </p>
+        </StatusMessage>
       )}
       {notice === "note-restored" && (
-        <p className="notice" role="status">
-          ノートを復元しました。
-        </p>
+        <StatusMessage>ノートを復元しました。</StatusMessage>
       )}
       <NoteListFilters config={config} query={query} />
       {failed ? (
@@ -69,17 +63,27 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
         </StatusMessage>
       ) : (
         <>
-          <p className="list-result-count" role="status">
+          <p className="m-0 text-sm text-muted-foreground" role="status">
             {page?.total}件のノート
           </p>
-          <ul className="note-list">
+          <ul className="m-0 grid list-none gap-3 p-0">
             {page?.notes.map((note) => (
-              <li key={note.note_id}>
-                <a href={notePath(config, note.note_id)}>{note.title}</a>
-                <dl>
-                  <div>
-                    <dt>更新</dt>
-                    <dd>
+              <li
+                key={note.note_id}
+                className="rounded-md border bg-card px-5 py-4 shadow-xs transition hover:border-input hover:shadow-md"
+              >
+                <a
+                  href={notePath(config, note.note_id)}
+                  className="font-bold text-foreground no-underline hover:text-primary"
+                >
+                  {note.title}
+                </a>
+                <dl className="my-2 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                  <div className="flex gap-1">
+                    <dt className="m-0 font-semibold text-muted-foreground">
+                      更新
+                    </dt>
+                    <dd className="m-0">
                       <time
                         dateTime={new Date(note.updated_at_ms).toISOString()}
                       >
@@ -87,17 +91,27 @@ export function NoteListPage({ config }: { config: ApplicationConfig }) {
                       </time>
                     </dd>
                   </div>
-                  <div>
-                    <dt>アクセス</dt>
-                    <dd>{accessLabel(note.access)}</dd>
+                  <div className="flex gap-1">
+                    <dt className="m-0 font-semibold text-muted-foreground">
+                      アクセス
+                    </dt>
+                    <dd className="m-0">{accessLabel(note.access)}</dd>
                   </div>
-                  <div>
-                    <dt>作成経路</dt>
-                    <dd>{creationSourceLabel(note.created_via)}</dd>
+                  <div className="flex gap-1">
+                    <dt className="m-0 font-semibold text-muted-foreground">
+                      作成経路
+                    </dt>
+                    <dd className="m-0">
+                      {creationSourceLabel(note.created_via)}
+                    </dd>
                   </div>
-                  <div>
-                    <dt>人手確認</dt>
-                    <dd>{reviewStatusLabel(note.review_status)}</dd>
+                  <div className="flex gap-1">
+                    <dt className="m-0 font-semibold text-muted-foreground">
+                      人手確認
+                    </dt>
+                    <dd className="m-0">
+                      {reviewStatusLabel(note.review_status)}
+                    </dd>
                   </div>
                 </dl>
                 {note.tags.length > 0 && (
@@ -178,23 +192,25 @@ function NoteListFilters({
   }
   return (
     <form
-      className="note-list-filters"
+      className="grid items-stretch gap-4 rounded-md border bg-card p-4 shadow-xs min-[60rem]:flex min-[60rem]:flex-wrap min-[60rem]:items-end"
       action={externalPath(config.basePath, "/")}
       method="get"
       onSubmit={resetPage}
     >
-      <label>
+      <label className="grid gap-1 text-sm font-semibold">
         タグ
         <Input
+          className="min-[60rem]:min-w-[min(16rem,78vw)]"
           name="tag"
           type="text"
           defaultValue={query.tags.join(", ")}
           placeholder="research, rust"
         />
       </label>
-      <label>
+      <label className="grid gap-1 text-sm font-semibold">
         この日以降に更新
         <Input
+          className="min-[60rem]:min-w-[min(16rem,78vw)]"
           name="updated_after"
           type="date"
           defaultValue={query.updatedAfter}

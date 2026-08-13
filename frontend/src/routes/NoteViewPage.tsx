@@ -111,12 +111,16 @@ export function NoteViewPage({
   if (view === null)
     return <StatusMessage>ノートを読み込んでいます。</StatusMessage>;
   return (
-    <section className="note-viewer" aria-label="ノートの閲覧">
-      <div className="note-view-toolbar surface">
-        <div className="note-identity">
-          <span className="note-identity-label">note ID</span>
-          <div className="note-identity-value">
-            <code>{view.note.note_id}</code>
+    <section className="grid min-w-0 gap-5" aria-label="ノートの閲覧">
+      <div className="mx-auto flex w-full max-w-(--reading-width) min-w-0 flex-wrap items-stretch justify-between gap-4 rounded-md border bg-card px-4 py-3 shadow-xs min-[60rem]:items-start">
+        <div className="grid min-w-0 gap-1">
+          <span className="text-xs font-bold tracking-wide text-muted-foreground">
+            note ID
+          </span>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <code className="max-w-full rounded-sm bg-muted p-2 font-mono text-sm [overflow-wrap:anywhere] select-all">
+              {view.note.note_id}
+            </code>
             <Button
               variant="outline"
               size="sm"
@@ -141,7 +145,9 @@ export function NoteViewPage({
           </div>
           {copyStatus !== "idle" && (
             <p
-              className={`copy-feedback copy-feedback-${copyStatus}`}
+              className={`m-0 text-xs ${
+                copyStatus === "success" ? "text-success" : "text-destructive"
+              }`}
               role={copyStatus === "failure" ? "alert" : "status"}
             >
               {copyStatus === "success"
@@ -149,21 +155,30 @@ export function NoteViewPage({
                 : "note IDをコピーできませんでした。"}
             </p>
           )}
-          <dl className="note-provenance">
-            <div>
-              <dt>作成経路</dt>
-              <dd>{creationSourceLabel(view.note.created_via)}</dd>
+          <dl className="m-0 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+            <div className="flex gap-1">
+              <dt className="m-0 font-semibold text-muted-foreground">
+                作成経路
+              </dt>
+              <dd className="m-0">
+                {creationSourceLabel(view.note.created_via)}
+              </dd>
             </div>
-            <div>
-              <dt>人手確認</dt>
-              <dd>
+            <div className="flex gap-1">
+              <dt className="m-0 font-semibold text-muted-foreground">
+                人手確認
+              </dt>
+              <dd className="m-0">
                 {reviewStatusLabel(review?.status ?? view.note.review_status)}
               </dd>
             </div>
           </dl>
           {reviewProblem && <ProblemAlert>{reviewProblem}</ProblemAlert>}
         </div>
-        <nav className="page-actions" aria-label="ノート操作">
+        <nav
+          className="flex w-full flex-wrap items-start gap-2 min-[60rem]:w-auto"
+          aria-label="ノート操作"
+        >
           <Button variant="outline" asChild>
             <a
               href={externalPath(
@@ -210,7 +225,7 @@ export function NoteViewPage({
           </Button>
         </nav>
       </div>
-      <div className="document-surface">
+      <div className="mx-auto w-full max-w-(--reading-width) min-w-0 rounded-lg border bg-card p-[clamp(var(--space-5),4vw,var(--space-12))] shadow-xs">
         <RenderedContent
           html={view.html}
           mathMacros={view.math_macros}
@@ -267,16 +282,19 @@ function RelatedNotes({
     ["参照元", view.related.incoming],
   ];
   return (
-    <aside className="related-notes" aria-label="関連ノート">
+    <aside
+      className="mx-auto mt-8 grid w-full max-w-(--reading-width) min-w-0 grid-cols-1 gap-4 min-[60rem]:grid-cols-2"
+      aria-label="関連ノート"
+    >
       {groups.map(([label, notes]) => (
-        <section key={label}>
-          <h2>{label}</h2>
+        <section key={label} className="rounded-md border bg-card p-4">
+          <h2 className="mt-0 mb-3 text-base">{label}</h2>
           {notes.length === 0 ? (
             <StatusMessage>{label}のノートはありません。</StatusMessage>
           ) : (
-            <ul>
+            <ul className="m-0 grid list-none gap-2 p-0">
               {notes.map((note) => (
-                <li key={note.note_id}>
+                <li key={note.note_id} className="rounded-sm bg-muted p-3">
                   <a href={notePath(config, note.note_id)}>{note.title}</a>
                 </li>
               ))}

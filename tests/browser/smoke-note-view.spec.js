@@ -106,7 +106,8 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   await page.goto(`/notes/${noteId}`);
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.fonts.ready);
-  const documentSurface = page.locator(".document-surface");
+  // 閲覧本文を包む枠。旧document-surface classの代わりに、本文との親子関係で特定する。
+  const documentSurface = page.locator("div:has(> .rendered-content)");
   await expect(documentSurface).toBeVisible();
   const typography = await page.evaluate(() => ({
     reading: getComputedStyle(document.querySelector(".rendered-content"))

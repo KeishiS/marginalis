@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 
 import {
@@ -65,22 +66,17 @@ export function DeletedNotesPage({
   }
 
   return (
-    <section
-      className="note-index page-section"
-      aria-labelledby="deleted-heading"
-    >
-      <div className="page-heading">
-        <div>
-          <p className="page-eyebrow">Recently deleted</p>
-          <h1 id="deleted-heading">削除済みノート</h1>
-          <p className="page-description">
-            所有するノートは、削除後30日以内であれば復元できます。
-          </p>
-        </div>
+    <section className="grid gap-6" aria-labelledby="deleted-heading">
+      <PageHeader
+        eyebrow="Recently deleted"
+        title="削除済みノート"
+        titleId="deleted-heading"
+        description="所有するノートは、削除後30日以内であれば復元できます。"
+      >
         <Button variant="outline" asChild>
           <a href={listPath(config)}>ノート一覧へ戻る</a>
         </Button>
-      </div>
+      </PageHeader>
       {failed ? (
         <ProblemAlert>
           削除済みノートを読み込めませんでした。接続を確認して画面を再読み込みしてください。
@@ -90,16 +86,23 @@ export function DeletedNotesPage({
       ) : notes.length === 0 ? (
         <StatusMessage>削除済みノートはありません。</StatusMessage>
       ) : (
-        <ul className="note-list deleted-note-list">
+        <ul className="m-0 grid list-none gap-3 p-0">
           {notes.map((note) => {
             const retention = noteRetentionStatus(note.purge_at_ms);
             return (
-              <li key={note.note_id}>
-                <h2>{note.title}</h2>
-                <dl>
-                  <div>
-                    <dt>削除</dt>
-                    <dd>
+              <li
+                key={note.note_id}
+                className="rounded-md border bg-card px-5 py-4 shadow-xs"
+              >
+                <h2 className="m-0 text-base font-bold [overflow-wrap:anywhere]">
+                  {note.title}
+                </h2>
+                <dl className="my-2 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                  <div className="flex gap-1">
+                    <dt className="m-0 font-semibold text-muted-foreground">
+                      削除
+                    </dt>
+                    <dd className="m-0">
                       <time
                         dateTime={new Date(note.deleted_at_ms).toISOString()}
                       >
@@ -107,20 +110,26 @@ export function DeletedNotesPage({
                       </time>
                     </dd>
                   </div>
-                  <div>
-                    <dt>完全削除予定</dt>
-                    <dd>
+                  <div className="flex gap-1">
+                    <dt className="m-0 font-semibold text-muted-foreground">
+                      完全削除予定
+                    </dt>
+                    <dd className="m-0">
                       <time dateTime={new Date(note.purge_at_ms).toISOString()}>
                         {formatDateTime(note.purge_at_ms)}
                       </time>
                     </dd>
                   </div>
-                  <div>
-                    <dt>revision</dt>
-                    <dd>rev-{note.revision}</dd>
+                  <div className="flex gap-1">
+                    <dt className="m-0 font-semibold text-muted-foreground">
+                      revision
+                    </dt>
+                    <dd className="m-0">rev-{note.revision}</dd>
                   </div>
                 </dl>
-                <p className="deleted-note-retention">{retention.label}</p>
+                <p className="mt-0 mb-3 text-sm text-muted-foreground">
+                  {retention.label}
+                </p>
                 <Button
                   type="button"
                   onClick={(event) =>
