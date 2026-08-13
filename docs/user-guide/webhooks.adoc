@@ -1,0 +1,126 @@
+= Webhook通知
+
+[#top]
+この文書は、ノートと書誌情報の変更通知を外部システムで受け取る人に向けて、登録の手順、
+通知の内容、署名の検証方法、配送の約束事を説明します。ここに記載する本文の形式、header、
+既定値は公開契約であり、変更する場合はRelease Notesで告知します。
+
+== 概要
+
+Webhookは、Marginalis内のデータ変更を指定したURLへHTTP POSTで知らせる仕組みです。
+通知には「何がいつ変わったか」だけが含まれ、ノート本文や書誌情報の内容は含まれません。
+受け取った側は、通知を手がかりにREST APIまたはMCPで最新の内容を取得します。
+
+Webhookは利用者ごとの設定です。自分が閲覧できる変更のうち、自分が所有するノートと
+書誌情報の変更だけが通知の対象になります。
+
+== 登録から通知開始まで
+
+設定画面``/settings/webhooks``から、送信先URLと通知するeventの種別を選んで登録します。
+REST APIから操作する場合の接続先は link:../openapi.json[OpenAPI 3.1]の``/api/v3/webhooks``系を
+参照してください。
+
+. 送信先URLとevent種別を選んで登録します。応答に署名検証用のsecretが1回だけ表示されるため、
+  受信側の安全な場所へ保存してください。secretはあとから取得できません。忘れた場合は再生成します。
+. 「送信先を確認して有効化」を実行します。Marginalisが署名付きのchallenge本文
+  （``{"contract_version":1,"challenge":"<乱数>"}``）を送信先へPOSTし、受信側が状態code 2xxで
+  応答本文に同じchallenge値を含めて返した場合だけ、購読が有効になります。
+. 有効化の後、対象のeventが発生するたびに通知が届きます。
+
+送信先URLは、公開networkのHTTPS（port 443）だけを登録できます。private addressやHTTP、
+その他のportへの送信先は拒否します。運用者が
+xref:nixos.adoc#top[NixOSでの運用]の``webhook.allowedHosts``へ明示したhostだけが例外です。
+
+== 通知の内容
+
+通知はJSON本文のHTTP POSTです。
+
+[source,json]
+----
+{
+  "contract_version": 1,
+  "event_id": "6f1a2b3c4d5e6f701122334455667788",
+  "kind": "note.updated",
+  "sequence": 42,
+  "target_id": "0197c9bc-0000-7000-8000-000000000001",
+  "revision": 7,
+  "occurred_at_ms": 1755100000000
+}
+----
+
+[cols="1,2",options="header",]
+|===
+|項目
+|意味
+|``contract_version``
+|本文の形式の版。形式を変える場合はこの値を上げ、Release Notesで告知します
+|``event_id``
+|eventごとに一意な識別子。再送でも変わらないため、受信側の重複除去に使います
+|``kind``
+|eventの種別（下の一覧）
+|``sequence``
+|発生順に増える整列番号
+|``target_id``
+|変更されたノートまたは書誌項目のID
+|``revision``
+|変更後のrevision
+|``occurred_at_ms``
+|変更が確定した時刻（Unix時間、millisecond）
+|===
+
+event種別は次の7つです: ``note.created``、``note.updated``、``note.deleted``、``note.restored``、
+``bibliography_item.created``、``bibliography_item.updated``、``bibliography_item.deleted``。
+``note.updated``は本文の変更だけを通知し、共有設定や人手確認の変更は通知しません。
+
+== 署名の検証
+
+すべての送信には次の2つのheaderが付きます。challenge検証の送信も同じ方式で署名します。
+
+[cols="1,2",options="header",]
+|===
+|header
+|値
+|``x-marginalis-timestamp``
+|送信時刻（Unix時間、millisecond）
+|``x-marginalis-signature``
+|``v1=<hex>``。``<timestamp>.<body>``をsecretでHMAC-SHA256した値の小文字16進表現
+|===
+
+受信側は、``x-marginalis-timestamp``の値と受信した本文をこの順で``.``でつなぎ、保存している
+secretを鍵としてHMAC-SHA256を計算し、``v1=``に続く値と一致することを確認してください。
+時刻が現在から大きく離れた通知を拒否すると、通知の再生（リプレイ）への耐性が上がります。
+署名の一致確認には、実行時間が入力に依存しない比較関数の使用を推奨します。
+
+== 配送の約束事
+
+* *at-least-once*: 通知は1回以上届きます。同じ``event_id``の通知が複数回届くことがあるため、
+  受信側で``event_id``による重複除去を行ってください。
+* *順序*: 同じ送信先へは``sequence``の順で届きます。配送に失敗している間、その送信先への
+  後続の通知は保留されます。
+* *成功の判定*: 受信側が状態code 2xxを返した場合だけ成功です。応答本文は読み捨てます
+  （64KiBまで）。redirectには従いません。
+* *再試行*: 失敗した通知は5秒から始まる指数backoff（上限1時間）で最大10回試行します。
+  上限へ達すると購読は停止し、設定画面から失敗した配送の再試行または破棄で再開できます。
+* *timeout*: 1回の送信は10秒でtimeoutします。受信側は通知を受け取ったらすぐ2xxを返し、
+  重い処理は応答の後に行ってください。
+* *同時配送*: 同時に配送する通知は4件までです。
+* *保持期間*: 配送済み・破棄済みの通知の記録は7日で削除します。7日を超えて失敗し続けた
+  通知は再送できません。
+
+== secretの取り扱い
+
+* secretは登録とsecret再生成の応答でだけ返し、一覧、ログ、エラー応答には出しません。
+* secretを再生成すると、以後の送信は新しいsecretで署名します。受信側の検証設定を
+  同時に更新してください。
+* Webhookの購読は xref:nixos.adoc#top[バックアップ]の対象外です。復元した環境では
+  必要に応じて登録し直してください。
+
+== 通知が届かない場合
+
+. 設定画面``/settings/webhooks``で購読の状態と直近の失敗分類（応答が2xx以外、接続失敗、
+  timeout、宛先拒否）を確認します。
+. 運用者は xref:../developer-guide/observability.adoc#top[ログと障害診断]の
+  ``webhook.delivery.failed``と``webhook.subscription.disabled`` eventを確認します。ログには
+  webhook IDと失敗分類だけが記録され、送信先URLとsecretは記録されません。
+. 送信先を修理した後、設定画面から「失敗した配送を再試行」を実行すると、保留中の通知が
+  順に再開します。

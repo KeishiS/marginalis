@@ -192,10 +192,32 @@ kanidm system oauth2 update-scope-map marginalis \
 redirect URI がすでに登録済みなら最初のコマンドは不要です。Marginalis は Kanidm REST API を照会しないため、
 service account、API token、custom ACP は不要です。
 
+== Webhook通知の運用
+
+利用者が登録したWebhookの配送は、``marginalis.service``の中の常駐workerが行います。専用のserviceや
+timerはありません。利用者向けの登録手順と通知の内容は xref:webhooks.adoc#top[Webhook通知]を
+参照してください。
+
+送信先は既定で公開networkのHTTPS（port 443）だけを許可し、private addressへの送信を登録時と
+送信直前の両方で拒否します。自分が管理するnetwork内の受信サーバーへ配送したい場合だけ、
+``webhook.allowedHosts``へそのhost名を列挙します。列挙したhostはHTTP、任意のport、
+private addressも許可されるため、管理下にない名前を書かないでください。
+
+[source,nix]
+----
+services.marginalis.webhook.allowedHosts = [ "receiver.internal.example" ];
+----
+
+配送の失敗は``webhook.delivery.failed``、再試行の上限による購読の停止は
+``webhook.subscription.disabled`` eventで記録します。ログにはwebhook IDと失敗分類だけが残り、
+送信先URLと署名secretは残りません。詳細は
+xref:../developer-guide/observability.adoc#top[ログと障害診断]を参照してください。
+
 == 定期処理
 
 * ``marginalis-purge-expired.timer`` は毎日実行され、30 日を超えたソフトデリート済みノートと、
 期限切れ・失効済みのWeb/OIDC認証状態、MCPの認可codeとtoken、参照されない古いclientを削除します。
+保持期間の7日を過ぎた配送済み・破棄済みのWebhook配送記録も同時に削除します。
 * ``backupDirectory``を設定すると``marginalis-backup.timer``が毎日実行されます。単一のSQLite read
 transactionからsnapshotを取得するため、HTTP serviceを停止しません。
 * 成功世代は``backup-<Unix時刻ミリ秒>``というディレクトリで、``marginalis-archive.json``と

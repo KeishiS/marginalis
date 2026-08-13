@@ -41,6 +41,9 @@ Marginalisの文書は、利用者・運用者向けの``user-guide/``と、設�
 |xref:user-guide/mcp.adoc#top[MCPとOAuth]
 |MCP利用者・運用者
 |MCP tool、scope、OAuth接続の説明と利用方法
+|xref:user-guide/webhooks.adoc#top[Webhook通知]
+|外部連携の利用者・開発者
+|変更通知の登録、署名検証、配送の約束事
 |xref:user-guide/nixos.adoc#top[NixOSでの運用]
 |運用者
 |配備、秘密情報、backup、復元、診断
@@ -99,6 +102,8 @@ Auth0をMCPのAuthorization Serverに採用]（廃止。ADR 0007で置き換え�
 * xref:developer-guide/adr/0010-外部書誌はcsl-jsonから一方向に取り込む.adoc#top[0010 外部ツールの書誌情報はCSL-JSONから一方向に取り込む]
 * xref:developer-guide/adr/0011-ノートの作成経路と人手確認を分けて記録する.adoc#top[0011 ノートの作成経路と人手確認を分けて記録する]
 * xref:developer-guide/adr/0012-共有authorization-serverを独立リポジトリで配布する.adoc#top[0012 共有Authorization Serverを独立リポジトリで配布する]
+* xref:developer-guide/adr/0013-検索投影向けの委任scopeと増分同期.adoc#top[0013 検索投影向けの委任scopeと増分同期]
+* xref:developer-guide/adr/0014-webhook署名secretを平文で保存する.adoc#top[0014 Webhook署名secretを平文で保存する]
 
 == 過去の記録と今後の計画
 

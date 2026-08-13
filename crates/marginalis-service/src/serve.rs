@@ -106,7 +106,8 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         storage.clone(),
     ));
     // 送信adapterは配送workerと購読の所有確認で同じ検査条件を使うため共有する。
-    let webhook_allowed_hosts = webhook_allowed_hosts_from_environment();
+    let webhook_allowed_hosts =
+        crate::environment::comma_separated(crate::environment::WEBHOOK_ALLOWED_HOSTS);
     let webhook_sender = std::sync::Arc::new(marginalis_webhook_http::WebhookHttpSender::new(
         webhook_allowed_hosts.clone(),
     ));
@@ -265,21 +266,6 @@ fn spawn_webhook_delivery_worker(
             "webhook delivery worker drained and stopped"
         );
     })
-}
-
-/// private networkの送信先を許可する管理者allowlist。comma区切りのhost名。
-fn webhook_allowed_hosts_from_environment() -> Vec<String> {
-    std::env::var("MARGINALIS_WEBHOOK_ALLOWED_HOSTS")
-        .ok()
-        .map(|value| {
-            value
-                .split(',')
-                .map(str::trim)
-                .filter(|host| !host.is_empty())
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 async fn shutdown_signal() {

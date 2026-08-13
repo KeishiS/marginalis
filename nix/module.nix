@@ -160,6 +160,15 @@ in
       };
 
     };
+
+    webhook = {
+      allowedHosts = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "receiver.internal.example" ];
+        description = "Host names exempted from the public-HTTPS-only webhook destination policy. Deliveries to these hosts may use HTTP, any port, and private addresses; list only receivers on networks you control.";
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -245,6 +254,7 @@ in
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
+        MARGINALIS_WEBHOOK_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.webhook.allowedHosts;
       };
       serviceConfig =
         commonServiceConfig
@@ -316,6 +326,7 @@ in
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
+        MARGINALIS_WEBHOOK_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.webhook.allowedHosts;
       };
       serviceConfig = localServiceConfig // {
         Type = "oneshot";
