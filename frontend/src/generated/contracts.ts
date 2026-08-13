@@ -256,10 +256,10 @@ export interface WebhookSecret {
 }
 export interface WebhookSubscription {
   created_at_ms: number;
-  disabled_reason: "delivery_exhausted" | "destination_rejected" | "owner_disabled";
+  disabled_reason: "delivery_exhausted" | "destination_rejected" | "owner_disabled" | null;
   event_kinds: WebhookEventKind[];
   last_attempted_at_ms: number | null;
-  last_failure: "non_success_status" | "connect_failed" | "timed_out" | "destination_rejected";
+  last_failure: "non_success_status" | "connect_failed" | "timed_out" | "destination_rejected" | null;
   next_attempt_at_ms: number | null;
   pending_count: number;
   revision: number;
@@ -278,7 +278,7 @@ export interface WebhookSubscriptionDraft {
 }
 export type WebhookSubscriptionState = "pending_challenge" | "active" | "disabled";
 export interface WebhookVerification {
-  failure: "non_success_status" | "connect_failed" | "timed_out" | "destination_rejected";
+  failure: "non_success_status" | "connect_failed" | "timed_out" | "destination_rejected" | null;
   verified: boolean;
 }
 export type ValidationTarget = NoteValidationTarget;
@@ -1819,7 +1819,8 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
         "enum": [
           "delivery_exhausted",
           "destination_rejected",
-          "owner_disabled"
+          "owner_disabled",
+          null
         ],
         "type": [
           "string",
@@ -1844,7 +1845,8 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
           "non_success_status",
           "connect_failed",
           "timed_out",
-          "destination_rejected"
+          "destination_rejected",
+          null
         ],
         "type": [
           "string",
@@ -1957,7 +1959,8 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
           "non_success_status",
           "connect_failed",
           "timed_out",
-          "destination_rejected"
+          "destination_rejected",
+          null
         ],
         "type": [
           "string",
@@ -2181,4 +2184,16 @@ export function parseBibliographyImportPreview(value: unknown): BibliographyImpo
 }
 export function parseBibliographyImportResult(value: unknown): BibliographyImportResult {
   return parseAs<BibliographyImportResult>(value, "BibliographyImportResult", "bibliography import result");
+}
+export function parseWebhookSubscriptions(value: unknown): WebhookSubscription[] {
+  return parseArrayAs<WebhookSubscription>(value, "WebhookSubscription", "webhook subscriptions");
+}
+export function parseWebhookSubscriptionCreated(value: unknown): WebhookSubscriptionCreated {
+  return parseAs<WebhookSubscriptionCreated>(value, "WebhookSubscriptionCreated", "created webhook subscription");
+}
+export function parseWebhookSecret(value: unknown): WebhookSecret {
+  return parseAs<WebhookSecret>(value, "WebhookSecret", "webhook secret");
+}
+export function parseWebhookVerification(value: unknown): WebhookVerification {
+  return parseAs<WebhookVerification>(value, "WebhookVerification", "webhook verification");
 }
