@@ -78,10 +78,6 @@ use self::{
         create_webhook, delete_webhook, discard_webhook_delivery, list_webhooks,
         regenerate_webhook_secret, retry_webhook_delivery, verify_webhook,
     },
-    webhooks::{
-        create_webhook, delete_webhook, discard_webhook_delivery, list_webhooks,
-        regenerate_webhook_secret, retry_webhook_delivery, verify_webhook,
-    },
 };
 
 pub use marginalis_contract::API_VERSION;
