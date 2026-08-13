@@ -1,7 +1,7 @@
 //! HTTP serviceのcomposition root。
 
 use marginalis_application::{
-    McpOAuthApplication, McpResourcePolicy, NoteApplication, NoteApplicationDependencies,
+    Clock, McpOAuthApplication, McpResourcePolicy, NoteApplication, NoteApplicationDependencies,
     OidcAuthenticationApplication, WebSessionApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
@@ -152,20 +152,117 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         state
     };
+    // 停止シグナルをHTTP listenerとWebhook配送workerで共有する。
+    let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = shutdown_sender.send(true);
+    });
+    let worker = spawn_webhook_delivery_worker(storage.clone(), shutdown_receiver.clone());
     let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
     tracing::info!(event = "service.listening", address = %configuration.http.listen_address, "Marginalis server listening");
+    let mut http_shutdown = shutdown_receiver;
     axum::serve(
         listener,
         marginalis_web::http::router(state)
             .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(async move {
+        let _ = http_shutdown.changed().await;
+    })
     .await?;
+    let _ = worker.await;
     tracing::info!(
         event = "service.shutdown.completed",
         "HTTP listener stopped after draining requests"
     );
     Ok(())
+}
+
+/// Webhook配送workerを常駐taskとして起動する。
+///
+/// 1秒間隔で期限の来た配送を処理し、停止シグナルで実行中のtickを終えてから
+/// 抜ける。結果のログはここで記録し、application層はログに依存しない。
+fn spawn_webhook_delivery_worker(
+    storage: std::sync::Arc<SqliteDatabase>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        tracing::info!(
+            event = "webhook.worker.started",
+            "webhook delivery worker started"
+        );
+        let sender = marginalis_webhook_http::WebhookHttpSender::new(
+            webhook_allowed_hosts_from_environment(),
+        );
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                _ = shutdown.changed() => break,
+                _ = interval.tick() => {}
+            }
+            if *shutdown.borrow() {
+                break;
+            }
+            let now = SystemClock.now();
+            match marginalis_application::webhook_delivery_tick(storage.as_ref(), &sender, now)
+                .await
+            {
+                Ok(outcome) => {
+                    for webhook_id in &outcome.delivered {
+                        tracing::info!(
+                            event = "webhook.delivery.succeeded",
+                            webhook_id = %webhook_id,
+                            "webhook event delivered"
+                        );
+                    }
+                    for (webhook_id, failure) in &outcome.failed {
+                        tracing::warn!(
+                            event = "webhook.delivery.failed",
+                            webhook_id = %webhook_id,
+                            reason = failure.as_str(),
+                            "webhook delivery failed and will retry until the limit"
+                        );
+                    }
+                    for webhook_id in &outcome.disabled {
+                        tracing::warn!(
+                            event = "webhook.subscription.disabled",
+                            webhook_id = %webhook_id,
+                            reason = "delivery_exhausted",
+                            "webhook subscription disabled after exhausting retries"
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::error!(
+                        event = "webhook.worker.tick_failed",
+                        error = %error,
+                        "webhook delivery tick failed"
+                    );
+                }
+            }
+        }
+        tracing::info!(
+            event = "webhook.worker.stopped",
+            "webhook delivery worker drained and stopped"
+        );
+    })
+}
+
+/// private networkの送信先を許可する管理者allowlist。comma区切りのhost名。
+fn webhook_allowed_hosts_from_environment() -> Vec<String> {
+    std::env::var("MARGINALIS_WEBHOOK_ALLOWED_HOSTS")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|host| !host.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 async fn shutdown_signal() {

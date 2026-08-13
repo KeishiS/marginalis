@@ -37,6 +37,7 @@ mod mcp_oauth;
 mod notes;
 mod session;
 mod snapshot;
+mod webhooks;
 
 pub use bibliography::{BibliographyApplication, BibliographyRepository, BibliographyUseCaseError};
 pub use bibliography_import::{
@@ -71,6 +72,13 @@ pub use notes::{
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{
     InvalidSnapshot, LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
+};
+pub use webhooks::{
+    WEBHOOK_BACKOFF_BASE_MS, WEBHOOK_BACKOFF_MAX_MS, WEBHOOK_CONTRACT_VERSION,
+    WEBHOOK_DELIVERY_BATCH, WEBHOOK_LEASE_MS, WEBHOOK_MAX_ATTEMPTS, WEBHOOK_RETENTION_MS,
+    WebhookDeliveryFailure, WebhookDeliveryRepository, WebhookDeliverySender, WebhookOutboxEvent,
+    WebhookPendingDelivery, WebhookTickOutcome, webhook_backoff_ms, webhook_delivery_body,
+    webhook_delivery_tick,
 };
 
 /// 永続化方式に依存しない、repository port共通の失敗理由。

@@ -1,0 +1,21 @@
+[package]
+name = "marginalis-webhook-http"
+description = "Webhook delivery adapter that signs and posts events to verified public destinations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+hmac.workspace = true
+marginalis-application = { path = "../marginalis-application" }
+marginalis-domain = { path = "../marginalis-domain" }
+reqwest.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true

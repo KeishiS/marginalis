@@ -50,9 +50,10 @@ marginalis-auth-oidc: marginalis-application, marginalis-domain
 marginalis-contract: marginalis-domain
 marginalis-documentation:
 marginalis-domain:
-marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web, mcp-authorization-server-cimd
+marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web, marginalis-webhook-http, mcp-authorization-server-cimd
 marginalis-sqlite: marginalis-application, marginalis-domain, mcp-authorization-server
 marginalis-web: marginalis-application, marginalis-contract, marginalis-domain, mcp-authorization-server
+marginalis-webhook-http: marginalis-application, marginalis-domain
 EOF
 fi
 

@@ -1,5 +1,6 @@
 use marginalis_application::{
     BibliographyImportCommit, BibliographyImportItemMutation, BibliographyImportState, NoteLinks,
+    WebhookDeliveryFailure, WebhookDeliveryRepository,
 };
 use marginalis_domain::{
     BibliographyContentDigest, BibliographyImportLink, BibliographyImportSource,
@@ -325,4 +326,166 @@ async fn fan_out_targets_only_matching_active_subscriptions() {
         deliveries,
         vec![("sub-active".to_string(), "pending".to_string(), 0)]
     );
+}
+
+/// 取得は期限とleaseを尊重し、同じsubscriptionでは順序の先頭だけを占有する。
+#[tokio::test]
+async fn claiming_respects_order_lease_and_subscription_state() {
+    let database = database().await;
+    insert_subscription(
+        &database,
+        "sub-a",
+        "alice",
+        "active",
+        r#"["note.created","note.updated"]"#,
+    )
+    .await;
+    let first = note_seed("0197c9bc-0000-7000-8000-0000000000e3", "alice", "One")
+        .source("one")
+        .build();
+    database
+        .create_note(&first, NoteLinks::default())
+        .await
+        .expect("create first note");
+    database
+        .update_visible_note(
+            &user("alice"),
+            note_id("0197c9bc-0000-7000-8000-0000000000e3"),
+            revision(1),
+            &draft("Two", "= Two\n\ntwo", &[]),
+            NoteLinks::default(),
+            UnixMillis::new(200),
+        )
+        .await
+        .expect("update note");
+
+    // 2件が配送待ちでも、先頭の1件だけが取得される。
+    let now = UnixMillis::new(1_000);
+    let lease_until = UnixMillis::new(61_000);
+    let claimed = database
+        .claim_due_deliveries(now, lease_until, 10)
+        .await
+        .expect("claim head");
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].event.kind, "note.created");
+    assert_eq!(claimed[0].attempt_count, 0);
+
+    // lease中は同じ配送を再取得できない。
+    assert!(
+        database
+            .claim_due_deliveries(now, lease_until, 10)
+            .await
+            .expect("claim during lease")
+            .is_empty()
+    );
+
+    // lease期限が切れると同じ先頭を再取得できる(異常終了からの引き継ぎ)。
+    let after_lease = UnixMillis::new(62_000);
+    let reclaimed = database
+        .claim_due_deliveries(after_lease, UnixMillis::new(122_000), 10)
+        .await
+        .expect("claim after lease expiry");
+    assert_eq!(reclaimed.len(), 1);
+    assert_eq!(reclaimed[0].event.kind, "note.created");
+
+    // 失敗の記録でleaseが解け、次回試行まで取得されない。
+    database
+        .record_failed(
+            "sub-a",
+            reclaimed[0].event.sequence,
+            WebhookDeliveryFailure::ConnectFailed,
+            1,
+            UnixMillis::new(200_000),
+            after_lease,
+        )
+        .await
+        .expect("record failure");
+    assert!(
+        database
+            .claim_due_deliveries(UnixMillis::new(150_000), UnixMillis::new(210_000), 10)
+            .await
+            .expect("claim before next attempt")
+            .is_empty()
+    );
+
+    // 先頭を配送済みにすると、次のeventが取得できるようになる。
+    database
+        .record_delivered(
+            "sub-a",
+            reclaimed[0].event.sequence,
+            UnixMillis::new(210_000),
+        )
+        .await
+        .expect("record delivered");
+    let next = database
+        .claim_due_deliveries(UnixMillis::new(220_000), UnixMillis::new(280_000), 10)
+        .await
+        .expect("claim next event");
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0].event.kind, "note.updated");
+
+    // subscriptionを無効化すると、残りの配送は取得されない。
+    database
+        .disable_exhausted_subscription("sub-a", UnixMillis::new(230_000))
+        .await
+        .expect("disable subscription");
+    assert!(
+        database
+            .claim_due_deliveries(UnixMillis::new(300_000), UnixMillis::new(360_000), 10)
+            .await
+            .expect("claim after disable")
+            .is_empty()
+    );
+    let (state, reason) = sqlx::query_as::<_, (String, Option<String>)>(
+        "SELECT state, disabled_reason FROM webhook_subscriptions WHERE subscription_id = 'sub-a'",
+    )
+    .fetch_one(&database.pool)
+    .await
+    .expect("subscription state");
+    assert_eq!(
+        (state.as_str(), reason.as_deref()),
+        ("disabled", Some("delivery_exhausted"))
+    );
+}
+
+/// 保持期間を過ぎた配送済みeventは消え、未配送が残るeventは保持される。
+#[tokio::test]
+async fn purging_keeps_undelivered_events_and_removes_expired_ones() {
+    let database = database().await;
+    insert_subscription(&database, "sub-a", "alice", "active", r#"["note.created"]"#).await;
+    let note = note_seed("0197c9bc-0000-7000-8000-0000000000e4", "alice", "Kept")
+        .source("kept")
+        .build();
+    database
+        .create_note(&note, NoteLinks::default())
+        .await
+        .expect("create note");
+    let claimed = database
+        .claim_due_deliveries(UnixMillis::new(1_000), UnixMillis::new(61_000), 10)
+        .await
+        .expect("claim");
+    // 1件目: 配送済みとして古い時刻を記録し、保持期限切れにする。
+    database
+        .record_delivered("sub-a", claimed[0].event.sequence, UnixMillis::new(2_000))
+        .await
+        .expect("deliver");
+
+    // 2件目: 未配送のまま古いeventとして残す。
+    let pending = note_seed("0197c9bc-0000-7000-8000-0000000000e5", "alice", "Pending")
+        .source("pending")
+        .build();
+    database
+        .create_note(&pending, NoteLinks::default())
+        .await
+        .expect("create pending note");
+
+    let far_future = UnixMillis::new(2_000 + 8 * 24 * 60 * 60 * 1000);
+    let removed = database
+        .purge_expired_events(far_future)
+        .await
+        .expect("purge");
+    assert_eq!(removed, 1);
+    let remaining = outbox_rows(&database).await;
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].1, pending.note_id().to_string());
 }

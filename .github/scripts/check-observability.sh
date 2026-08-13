@@ -70,7 +70,7 @@ if [[ "$source_root" == "crates" ]]; then
   implementation_events="$temporary_directory/implementation-events"
   documented_events="$temporary_directory/documented-events"
   documented_catalog="$temporary_directory/documented-catalog"
-  event_pattern='(?:http|mcp|oidc|service|maintenance|command)(?:\.[a-z][a-z0-9_]*)+'
+  event_pattern='(?:http|mcp|oidc|service|maintenance|command|webhook)(?:\.[a-z][a-z0-9_]*)+'
   documented_event_pattern="\`($event_pattern)\`"
 
   if [[ $(grep -c '^// observability-event-catalog:start$' "$event_catalog") -ne 1 ||

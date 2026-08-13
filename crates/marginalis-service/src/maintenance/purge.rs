@@ -18,6 +18,9 @@ async fn purge_expired_state() -> Result<(), Box<dyn std::error::Error>> {
     let now = SystemClock.now();
     let note_cutoff = UnixMillis::new(now.get().saturating_sub(SOFT_DELETE_RETENTION_MS));
     let note_count = database.purge_deleted_before(note_cutoff).await?;
+    let webhook_events =
+        marginalis_application::WebhookDeliveryRepository::purge_expired_events(&database, now)
+            .await?;
     let auth_counts = database
         .purge_expired_auth_state(
             now,
@@ -39,6 +42,7 @@ async fn purge_expired_state() -> Result<(), Box<dyn std::error::Error>> {
         mcp_clients = auth_counts.mcp_clients,
         note_sync_cursors = auth_counts.note_sync_cursors,
         note_sync_changes = auth_counts.note_sync_changes,
+        webhook_events,
         note_cutoff_ms = note_cutoff.get(),
         "purged expired persisted state"
     );
