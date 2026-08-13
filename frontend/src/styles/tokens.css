@@ -1,6 +1,10 @@
+/*
+ * 手書きCSS(editor.css、graph.css、content.css、layout.css)が使う目盛り。
+ * 色の正本はglobals.cssのdesign tokenであり、ここでは旧名を新トークンの
+ * 別名として残すだけで、色の値そのものは定義しない。旧名の参照を
+ * 使い切ったら別名から順に削除する。
+ */
 :root {
-  color-scheme: light dark;
-
   --font-ui:
     "Noto Sans JP Variable", "Noto Sans JP", system-ui, -apple-system,
     blinkmacsystemfont, "Segoe UI", sans-serif;
@@ -16,23 +20,26 @@
   font-synthesis: none;
   line-height: 1.6;
 
-  --color-canvas: #f6f7fb;
-  --color-surface: #fff;
-  --color-surface-subtle: #f1f4f9;
-  --color-text: #172033;
-  --color-text-muted: #667085;
-  --color-border: #d9dfeb;
-  --color-border-strong: #b8c2d4;
-  --color-primary: #3157d5;
-  --color-primary-hover: #2746b3;
-  --color-primary-soft: #e9edff;
-  --color-on-primary: #fff;
-  --color-danger: #b42318;
-  --color-danger-soft: #fff0ee;
-  --color-success: #067647;
-  --color-success-soft: #ecfdf3;
-  --color-warning: #9a6700;
-  --color-warning-soft: #fff8e6;
+  /* 旧色トークンの別名。役割の対応はdocs/user-guide/web-ui-design.adocを参照。 */
+  --color-canvas: var(--color-background);
+  --color-surface: var(--color-card);
+  --color-surface-subtle: var(--color-muted);
+  --color-text: var(--color-foreground);
+  --color-text-muted: var(--color-muted-foreground);
+  --color-border-strong: var(--color-input);
+  --color-danger: var(--color-destructive);
+  --color-danger-soft: color-mix(
+    in srgb,
+    var(--color-destructive) 12%,
+    var(--color-card)
+  );
+  --color-warning-soft: color-mix(
+    in srgb,
+    var(--color-warning) 12%,
+    var(--color-card)
+  );
+
+  /* 編集欄専用の色。CodeMirrorの選択範囲とアクティブ行に使う。 */
   --color-editor-selection: #9fc5f8;
   --color-editor-active-line: #edf4fd;
   --color-editor-active-gutter: #dce8f6;
@@ -80,23 +87,6 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-canvas: #10131a;
-    --color-surface: #171b24;
-    --color-surface-subtle: #202632;
-    --color-text: #edf1f7;
-    --color-text-muted: #a5afbf;
-    --color-border: #303847;
-    --color-border-strong: #465166;
-    --color-primary: #8098f9;
-    --color-primary-hover: #9bafff;
-    --color-primary-soft: #252f59;
-    --color-on-primary: #10162d;
-    --color-danger: #fda29b;
-    --color-danger-soft: #3b2022;
-    --color-success: #75e0a7;
-    --color-success-soft: #17372a;
-    --color-warning: #fec84b;
-    --color-warning-soft: #382f18;
     --color-editor-selection: #496b96;
     --color-editor-active-line: #202832;
     --color-editor-active-gutter: #2a3440;

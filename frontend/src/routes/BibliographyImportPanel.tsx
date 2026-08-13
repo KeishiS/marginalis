@@ -211,8 +211,13 @@ export function BibliographyImportPanel({
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 id="bibliography-import-heading">CSL-JSONの一括取り込み</h2>
-          <p>
+          <h2
+            id="bibliography-import-heading"
+            className="m-0 text-xl font-bold"
+          >
+            CSL-JSONの一括取り込み
+          </h2>
+          <p className="m-0 text-muted-foreground">
             ファイルの内容と競合を事前確認してから、一度に保存します。入力にない文献は削除しません。
           </p>
         </div>

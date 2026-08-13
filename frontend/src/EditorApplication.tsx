@@ -192,7 +192,9 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   if (config.mode === "edit" && revision === null) {
     return (
       <section aria-labelledby="editor-heading">
-        <h1 id="editor-heading">ノートの編集</h1>
+        <h1 id="editor-heading" className="text-xl font-bold">
+          ノートの編集
+        </h1>
         {loadProblem && (
           <ProblemMessage
             problem={loadProblem}
@@ -214,7 +216,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           </p>
           <h1
             id="editor-heading"
-            className="m-0 text-(length:--text-note-title) leading-tight tracking-[-0.035em]"
+            className="m-0 text-(length:--text-note-title) leading-tight font-bold tracking-[-0.035em]"
           >
             {revision === null ? "ノートの作成" : "ノートの編集"}
           </h1>

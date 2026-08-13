@@ -1,74 +1,9 @@
-.page-header {
-  backdrop-filter: blur(1rem);
-  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-  border-block-end: var(--border-thin) solid var(--color-border);
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-
 /*
- * 狭い画面では、移動先を隠さず折り返す。移動手段は4つだけなので、開閉する仕掛けを作るより
- * そのまま並べたほうが到達しやすい。幅が足りる間は1行のままになる。
+ * Rust側が生成するヘッダーの、detailsとsummaryによる開閉メニューの仕組み。
+ * 開閉にJavaScriptを使わないための表示切替(::details-content)はユーティリティ
+ * classで書けないため、ここだけ手書きCSSで受け持つ。色や余白などの見た目は
+ * HTML側のユーティリティclassが持つ。
  */
-.page-header-inner {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  justify-content: space-between;
-  margin-inline: auto;
-  max-width: var(--content-width);
-  min-height: 4rem;
-  padding-block: var(--space-2);
-  padding-inline: var(--space-5);
-}
-
-.brand {
-  align-items: center;
-  color: var(--color-text);
-  display: inline-flex;
-  font-size: var(--text-body);
-  font-weight: 750;
-  gap: var(--space-3);
-  letter-spacing: -0.015em;
-  text-decoration: none;
-}
-
-.brand:hover {
-  color: var(--color-text);
-}
-
-.brand-mark {
-  align-items: center;
-  background: var(--color-primary);
-  border-radius: var(--radius-sm);
-  color: var(--color-on-primary);
-  display: inline-flex;
-  font-size: var(--text-small);
-  height: 2rem;
-  justify-content: center;
-  width: 2rem;
-}
-
-.primary-navigation {
-  align-items: center;
-  display: flex;
-  gap: var(--space-2);
-  justify-content: flex-end;
-}
-
-/*
- * 移動先はdetailsの中に置き、狭い画面では開閉するメニューにする。JavaScriptを使わない。
- */
-.navigation-list {
-  align-items: center;
-  display: flex;
-  gap: var(--space-1);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
 
 /*
  * 幅が足りる画面ではsummaryを隠し、開閉の状態にかかわらず移動先を常に見せる。
@@ -85,95 +20,13 @@
   }
 }
 
-/* 指で押せるよう、移動先の高さを確保する。 */
-.navigation-list a {
-  align-items: center;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
-  display: inline-flex;
-  font-size: var(--text-small);
-  font-weight: 600;
-  min-height: 2.75rem;
-  padding: var(--space-2) var(--space-3);
-  text-decoration: none;
-}
-
-.navigation-list a:hover {
-  background: var(--color-surface-subtle);
-  color: var(--color-text);
-}
-
-/* 現在いる画面を示す。 */
-.navigation-list a[aria-current="page"] {
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-}
-
-.page-main {
-  margin-inline: auto;
-  max-width: var(--content-width);
-  padding: var(--space-10) var(--space-5) var(--space-16);
-}
-
-.page-section {
-  display: grid;
-  gap: var(--space-6);
-}
-
-.page-heading,
-.editor-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  justify-content: space-between;
-}
-
-.page-heading h1 {
-  font-size: var(--text-note-title);
-  letter-spacing: -0.035em;
-  line-height: 1.2;
-  margin: 0;
-}
-
-.page-eyebrow {
-  color: var(--color-primary);
-  font-size: var(--text-caption);
-  font-weight: 750;
-  letter-spacing: 0.12em;
-  margin: 0 0 var(--space-1);
-  text-transform: uppercase;
-}
-
-.page-description,
-.section-description {
-  color: var(--color-text-muted);
-  margin-block: var(--space-2) 0;
-  max-width: 42rem;
-}
-
-.surface {
-  background: var(--color-surface);
-  border: var(--border-thin) solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
 @media (width <= 60rem) {
-  .page-main {
-    padding: var(--space-6) var(--space-3) var(--space-12);
-  }
-
-  .page-header-inner {
-    padding-inline: var(--space-3);
-  }
-
-  /* 狭い画面では、移動先を開閉するメニューへまとめる。 */
+  /* 狭い画面では、移動先を開閉するメニューへまとめる。指で押せる高さを確保する。 */
   .navigation-menu-button {
     align-items: center;
-    border: var(--border-thin) solid var(--color-border-strong);
+    border: var(--border-thin) solid var(--color-input);
     border-radius: var(--radius-sm);
-    color: var(--color-text);
+    color: var(--color-foreground);
     cursor: pointer;
     display: inline-flex;
     font-size: var(--text-small);
@@ -195,7 +48,7 @@
 
   /* 開いたメニューは本文へ重ねる。ヘッダーの高さを増やして本文を押し下げない。 */
   .navigation-menu[open] .navigation-list {
-    background: var(--color-surface);
+    background: var(--color-card);
     border: var(--border-thin) solid var(--color-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
@@ -206,9 +59,5 @@
     padding: var(--space-2);
     position: absolute;
     z-index: 30;
-  }
-
-  .navigation-list a {
-    width: 100%;
   }
 }

@@ -288,7 +288,7 @@ function RelatedNotes({
     >
       {groups.map(([label, notes]) => (
         <section key={label} className="rounded-md border bg-card p-4">
-          <h2 className="mt-0 mb-3 text-base">{label}</h2>
+          <h2 className="mt-0 mb-3 text-base font-bold">{label}</h2>
           {notes.length === 0 ? (
             <StatusMessage>{label}のノートはありません。</StatusMessage>
           ) : (
