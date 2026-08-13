@@ -52,7 +52,8 @@ marginalis-contract
 marginalis-domain
 marginalis-service
 marginalis-sqlite
-marginalis-web'
+marginalis-web
+marginalis-webhook-http'
 test "$actual" = "$expected" || {
   echo "marginalis-serviceの本番依存に想定外のworkspace crateがあります。" >&2
   diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true

@@ -207,6 +207,40 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |``maintenance.restore_verification.failed``
 |===
 
+=== Webhook配送
+
+[cols="1,1,1,1",options="header",]
+|===
+|event
+|level
+|主なfield
+|意味
+|``webhook.worker.started``
+|INFO
+|なし
+|配送workerの起動
+|``webhook.worker.stopped``
+|INFO
+|なし
+|停止シグナル後の配送workerの終了
+|``webhook.worker.tick_failed``
+|ERROR
+|``error``
+|1回分の配送処理が保存層の失敗で完了しなかった
+|``webhook.delivery.succeeded``
+|INFO
+|``webhook_id``
+|eventを送信先へ配送した
+|``webhook.delivery.failed``
+|WARN
+|``webhook_id``、``reason``
+|配送に失敗し、上限まで再試行する
+|``webhook.subscription.disabled``
+|WARN
+|``webhook_id``、``reason``
+|試行上限へ達した送信先を無効化した
+|===
+
 ``maintenance.restore_cleanup.failed``は、隔離復元の結果にかかわらず一時directoryを削除できなかった
 ことを示します。SQLite診断は標準出力のJSONに``event: diagnostics.completed``と各検査結果を出し、
 異常時はjournalにも``maintenance.diagnostics.failed``を記録します。

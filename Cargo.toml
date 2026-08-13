@@ -9,6 +9,7 @@ members = [
     "crates/marginalis-service",
     "crates/marginalis-sqlite",
     "crates/marginalis-web",
+    "crates/marginalis-webhook-http",
     # CI専用の文書検査ツール。製品コードのcrates/とは区別してtools/で管理する。
     "tools/marginalis-documentation",
 ]
@@ -28,7 +29,7 @@ mcp-authorization-server = { version = "=0.1.0", git = "https://github.com/Keish
 mcp-authorization-server-cimd = { version = "=0.1.0", git = "https://github.com/KeishiS/mcp-authorization-server.git", rev = "555224bd869576249ee36d082960858ea8d0618b" }
 unicode-normalization = "0.1.25"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
-tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 url = "2.5.8"
 uuid = { version = "1.18.1", features = ["serde", "v7"] }
 base64 = "0.22.1"

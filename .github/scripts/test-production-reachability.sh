@@ -18,6 +18,7 @@ build_tree() {
     ["marginalis-application", "marginalis-archive", "marginalis-asciidoc",
      "marginalis-auth-oidc", "marginalis-contract", "marginalis-domain",
      "marginalis-service", "marginalis-sqlite", "marginalis-web",
+     "marginalis-webhook-http",
      "marginalis-documentation"] as $names
     | {
         workspace_members: $names,

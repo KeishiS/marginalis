@@ -1295,6 +1295,7 @@ dependencies = [
  "marginalis-domain",
  "marginalis-sqlite",
  "marginalis-web",
+ "marginalis-webhook-http",
  "mcp-authorization-server-cimd",
  "rand 0.8.7",
  "reqwest",
@@ -1351,6 +1352,21 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "marginalis-webhook-http"
+version = "0.39.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "hmac",
+ "marginalis-application",
+ "marginalis-domain",
+ "reqwest",
+ "sha2 0.10.9",
+ "tokio",
+ "url",
 ]
 
 [[package]]
