@@ -101,6 +101,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "= VMで作成したノート\n:marginalis-tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*\n\n* 最初の行 +\n続きの行\n* 次の項目";
   await source.fill(documentSource);
   await expect(page.getByText("未保存の変更があります。")).toBeVisible();
+  await page.getByRole("button", { name: "プレビュー" }).click();
   await expect(page.locator(".preview-content")).toContainText(
     "日本語と絵文字😀",
   );
@@ -118,7 +119,6 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "data-line-number",
     "1",
   );
-  await page.getByRole("button", { name: "プレビュー" }).click();
   await expect
     .poll(async () => {
       if ((await page.locator(".preview-content mjx-container").count()) > 0) {
