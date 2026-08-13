@@ -250,6 +250,37 @@ export interface Utf8ByteSpan {
   unit: Utf8ByteUnit;
 }
 export type Utf8ByteUnit = "utf8_byte";
+export type WebhookEventKind = "note.created" | "note.updated" | "note.deleted" | "note.restored" | "bibliography_item.created" | "bibliography_item.updated" | "bibliography_item.deleted";
+export interface WebhookSecret {
+  secret: string;
+}
+export interface WebhookSubscription {
+  created_at_ms: number;
+  disabled_reason: "delivery_exhausted" | "destination_rejected" | "owner_disabled";
+  event_kinds: WebhookEventKind[];
+  last_attempted_at_ms: number | null;
+  last_failure: "non_success_status" | "connect_failed" | "timed_out" | "destination_rejected";
+  next_attempt_at_ms: number | null;
+  pending_count: number;
+  revision: number;
+  state: WebhookSubscriptionState;
+  subscription_id: string;
+  updated_at_ms: number;
+  url: string;
+}
+export interface WebhookSubscriptionCreated {
+  secret: string;
+  subscription: WebhookSubscription;
+}
+export interface WebhookSubscriptionDraft {
+  event_kinds: WebhookEventKind[];
+  url: string;
+}
+export type WebhookSubscriptionState = "pending_challenge" | "active" | "disabled";
+export interface WebhookVerification {
+  failure: "non_success_status" | "connect_failed" | "timed_out" | "destination_rejected";
+  verified: boolean;
+}
 export type ValidationTarget = NoteValidationTarget;
 /** サーバーの失敗応答。クライアントが合成する応答不正・通信失敗のcodeを含む。 */
 export interface Problem {
@@ -1750,6 +1781,198 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "utf8_byte"
     ],
     "type": "string"
+  },
+  "WebhookEventKind": {
+    "description": "Webhookが通知するeventの種別。",
+    "enum": [
+      "note.created",
+      "note.updated",
+      "note.deleted",
+      "note.restored",
+      "bibliography_item.created",
+      "bibliography_item.updated",
+      "bibliography_item.deleted"
+    ],
+    "type": "string"
+  },
+  "WebhookSecret": {
+    "additionalProperties": false,
+    "properties": {
+      "secret": {
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "secret"
+    ],
+    "type": "object"
+  },
+  "WebhookSubscription": {
+    "additionalProperties": false,
+    "properties": {
+      "created_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "disabled_reason": {
+        "enum": [
+          "delivery_exhausted",
+          "destination_rejected",
+          "owner_disabled"
+        ],
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "event_kinds": {
+        "items": {
+          "$ref": "#/components/schemas/WebhookEventKind"
+        },
+        "type": "array"
+      },
+      "last_attempted_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "last_failure": {
+        "enum": [
+          "non_success_status",
+          "connect_failed",
+          "timed_out",
+          "destination_rejected"
+        ],
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "next_attempt_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "pending_count": {
+        "format": "int64",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "state": {
+        "$ref": "#/components/schemas/WebhookSubscriptionState"
+      },
+      "subscription_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "updated_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "subscription_id",
+      "url",
+      "event_kinds",
+      "state",
+      "disabled_reason",
+      "created_at_ms",
+      "updated_at_ms",
+      "revision",
+      "last_attempted_at_ms",
+      "last_failure",
+      "next_attempt_at_ms",
+      "pending_count"
+    ],
+    "type": "object"
+  },
+  "WebhookSubscriptionCreated": {
+    "additionalProperties": false,
+    "description": "登録直後の応答。secretはこの応答とsecret再生成の応答でだけ返す。",
+    "properties": {
+      "secret": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "subscription": {
+        "$ref": "#/components/schemas/WebhookSubscription"
+      }
+    },
+    "required": [
+      "subscription",
+      "secret"
+    ],
+    "type": "object"
+  },
+  "WebhookSubscriptionDraft": {
+    "additionalProperties": false,
+    "properties": {
+      "event_kinds": {
+        "items": {
+          "$ref": "#/components/schemas/WebhookEventKind"
+        },
+        "minItems": 1,
+        "type": "array"
+      },
+      "url": {
+        "description": "通知の送信先URL。公開networkのHTTPS(port 443)だけを受け付ける。",
+        "maxLength": 2048,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "url",
+      "event_kinds"
+    ],
+    "type": "object"
+  },
+  "WebhookSubscriptionState": {
+    "enum": [
+      "pending_challenge",
+      "active",
+      "disabled"
+    ],
+    "type": "string"
+  },
+  "WebhookVerification": {
+    "additionalProperties": false,
+    "description": "所有確認の結果。失敗しても購読は残り、やり直せる。",
+    "properties": {
+      "failure": {
+        "enum": [
+          "non_success_status",
+          "connect_failed",
+          "timed_out",
+          "destination_rejected"
+        ],
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "verified": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "verified",
+      "failure"
+    ],
+    "type": "object"
   }
 };
 

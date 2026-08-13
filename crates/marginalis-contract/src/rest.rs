@@ -212,6 +212,41 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         specification_path: "/api/v3/mcp-authorizations/{client_id}",
         probe_path: "/api/v3/mcp-authorizations/mcp-0197c9bc-0000-7000-8000-000000000001",
     },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/webhooks",
+        probe_path: "/api/v3/webhooks",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/webhooks",
+        probe_path: "/api/v3/webhooks",
+    },
+    RestRouteContract {
+        method: "DELETE",
+        specification_path: "/api/v3/webhooks/{subscription_id}",
+        probe_path: "/api/v3/webhooks/0197c9bc-0000-7000-8000-000000000001",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/webhooks/{subscription_id}/verify",
+        probe_path: "/api/v3/webhooks/0197c9bc-0000-7000-8000-000000000001/verify",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/webhooks/{subscription_id}/secret",
+        probe_path: "/api/v3/webhooks/0197c9bc-0000-7000-8000-000000000001/secret",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/webhooks/{subscription_id}/retry",
+        probe_path: "/api/v3/webhooks/0197c9bc-0000-7000-8000-000000000001/retry",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/webhooks/{subscription_id}/discard",
+        probe_path: "/api/v3/webhooks/0197c9bc-0000-7000-8000-000000000001/discard",
+    },
 ];
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -462,6 +497,123 @@ pub struct McpClientAuthorizationResponse {
     #[schemars(transform = nullable)]
     pub last_used_at_ms: Option<i64>,
     pub active: bool,
+}
+
+/// Webhookが通知するeventの種別。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[schemars(rename = "WebhookEventKind")]
+pub enum WebhookEventKind {
+    #[serde(rename = "note.created")]
+    NoteCreated,
+    #[serde(rename = "note.updated")]
+    NoteUpdated,
+    #[serde(rename = "note.deleted")]
+    NoteDeleted,
+    #[serde(rename = "note.restored")]
+    NoteRestored,
+    #[serde(rename = "bibliography_item.created")]
+    BibliographyItemCreated,
+    #[serde(rename = "bibliography_item.updated")]
+    BibliographyItemUpdated,
+    #[serde(rename = "bibliography_item.deleted")]
+    BibliographyItemDeleted,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "WebhookSubscriptionState")]
+pub enum WebhookSubscriptionState {
+    PendingChallenge,
+    Active,
+    Disabled,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "WebhookDisabledReason")]
+pub enum WebhookDisabledReason {
+    DeliveryExhausted,
+    DestinationRejected,
+    OwnerDisabled,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "WebhookDeliveryFailureReason")]
+pub enum WebhookDeliveryFailureReason {
+    NonSuccessStatus,
+    ConnectFailed,
+    TimedOut,
+    DestinationRejected,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "WebhookSubscriptionDraft")]
+pub struct WebhookSubscriptionInput {
+    /// 通知の送信先URL。公開networkのHTTPS(port 443)だけを受け付ける。
+    #[schemars(length(min = 1, max = 2048))]
+    pub url: String,
+    #[schemars(length(min = 1))]
+    pub event_kinds: Vec<WebhookEventKind>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "WebhookSubscription")]
+pub struct WebhookSubscriptionResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
+    pub subscription_id: String,
+    pub url: String,
+    pub event_kinds: Vec<WebhookEventKind>,
+    pub state: WebhookSubscriptionState,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    pub disabled_reason: Option<WebhookDisabledReason>,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    #[schemars(range(min = 0))]
+    pub revision: i64,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    pub last_attempted_at_ms: Option<i64>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    pub last_failure: Option<WebhookDeliveryFailureReason>,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    pub next_attempt_at_ms: Option<i64>,
+    #[schemars(range(min = 0))]
+    pub pending_count: i64,
+}
+
+/// 登録直後の応答。secretはこの応答とsecret再生成の応答でだけ返す。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "WebhookSubscriptionCreated")]
+pub struct WebhookSubscriptionCreatedResponse {
+    pub subscription: WebhookSubscriptionResponse,
+    #[schemars(length(min = 1))]
+    pub secret: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "WebhookSecret")]
+pub struct WebhookSecretResponse {
+    #[schemars(length(min = 1))]
+    pub secret: String,
+}
+
+/// 所有確認の結果。失敗しても購読は残り、やり直せる。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "WebhookVerification")]
+pub struct WebhookVerificationResponse {
+    pub verified: bool,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    pub failure: Option<WebhookDeliveryFailureReason>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -847,6 +999,11 @@ pub(crate) fn component_schemas() -> Value {
     generator.subschema_for::<McpScopeCeilingInput>();
     generator.subschema_for::<McpScopeCeilingResponse>();
     generator.subschema_for::<McpClientAuthorizationResponse>();
+    generator.subschema_for::<WebhookSubscriptionInput>();
+    generator.subschema_for::<WebhookSubscriptionResponse>();
+    generator.subschema_for::<WebhookSubscriptionCreatedResponse>();
+    generator.subschema_for::<WebhookSecretResponse>();
+    generator.subschema_for::<WebhookVerificationResponse>();
     generator.subschema_for::<NoteDraftInput>();
     generator.subschema_for::<BibliographyItemInput>();
     generator.subschema_for::<BibliographyItemResponse>();
@@ -1177,6 +1334,70 @@ fn rest_paths() -> Value {
                 ("503", response_ref("Unavailable"))
             ]))
         },
+        "/api/v3/webhooks": {
+            "get": operation("List the current user's webhook subscriptions", &[], None, responses(&[
+                ("200", array_response("webhook subscriptions with delivery status", "WebhookSubscription")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("503", response_ref("Unavailable"))
+            ])),
+            "post": operation("Register a webhook subscription", &["CsrfToken"], Some("WebhookSubscriptionDraft"), responses(&[
+                ("201", schema_response("registered subscription with its only readable secret", "WebhookSubscriptionCreated")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("422", response_ref("ValidationFailed")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/webhooks/{subscription_id}": {
+            "parameters": [subscription_id_parameter()],
+            "delete": operation("Delete an owned webhook subscription", &["CsrfToken"], None, responses(&[
+                ("204", json!({"description": "webhook subscription deleted"})),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/webhooks/{subscription_id}/verify": {
+            "parameters": [subscription_id_parameter()],
+            "post": operation("Send a signed challenge and activate the subscription on success", &["CsrfToken"], None, responses(&[
+                ("200", schema_response("verification result", "WebhookVerification")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/webhooks/{subscription_id}/secret": {
+            "parameters": [subscription_id_parameter()],
+            "post": operation("Regenerate the signing secret of an owned subscription", &["CsrfToken"], None, responses(&[
+                ("200", schema_response("newly generated secret", "WebhookSecret")),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/webhooks/{subscription_id}/retry": {
+            "parameters": [subscription_id_parameter()],
+            "post": operation("Retry the oldest pending delivery immediately", &["CsrfToken"], None, responses(&[
+                ("204", json!({"description": "the oldest pending delivery was scheduled for an immediate retry"})),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/webhooks/{subscription_id}/discard": {
+            "parameters": [subscription_id_parameter()],
+            "post": operation("Discard the oldest pending delivery and unblock the queue", &["CsrfToken"], None, responses(&[
+                ("204", json!({"description": "the oldest pending delivery was discarded"})),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
         "/api/v3/notes/{note_id}/source": {
             "parameters": [parameter_ref("NoteId")],
             "get": {
@@ -1250,6 +1471,10 @@ fn problem_response(description: &str) -> Value {
 
 fn note_id_schema() -> Value {
     json!({"type": "string", "format": "uuid", "pattern": ENTITY_ID_PATTERN})
+}
+
+fn subscription_id_parameter() -> Value {
+    json!({"name": "subscription_id", "in": "path", "required": true, "schema": note_id_schema()})
 }
 
 #[cfg(test)]

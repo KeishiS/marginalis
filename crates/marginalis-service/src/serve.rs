@@ -105,6 +105,19 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let math_macros = std::sync::Arc::new(marginalis_application::MathMacroApplication::new(
         storage.clone(),
     ));
+    // 送信adapterは配送workerと購読の所有確認で同じ検査条件を使うため共有する。
+    let webhook_allowed_hosts = webhook_allowed_hosts_from_environment();
+    let webhook_sender = std::sync::Arc::new(marginalis_webhook_http::WebhookHttpSender::new(
+        webhook_allowed_hosts.clone(),
+    ));
+    let webhooks =
+        std::sync::Arc::new(marginalis_application::WebhookSubscriptionApplication::new(
+            storage.clone(),
+            webhook_sender.clone(),
+            std::sync::Arc::new(SystemClock),
+            std::sync::Arc::new(SystemRandom),
+            webhook_allowed_hosts,
+        ));
     let state = marginalis_web::http::ApiState::new(
         notes.clone(),
         math_macros,
@@ -114,7 +127,8 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         configuration.http.base_url.origin().ascii_serialization(),
     )
     .with_bibliography(bibliography)
-    .with_bibliography_import(bibliography_import);
+    .with_bibliography_import(bibliography_import)
+    .with_webhooks(webhooks);
     let state = if configuration.mcp_enabled {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
@@ -158,7 +172,8 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         shutdown_signal().await;
         let _ = shutdown_sender.send(true);
     });
-    let worker = spawn_webhook_delivery_worker(storage.clone(), shutdown_receiver.clone());
+    let worker =
+        spawn_webhook_delivery_worker(storage.clone(), webhook_sender, shutdown_receiver.clone());
     let listener = tokio::net::TcpListener::bind(configuration.http.listen_address).await?;
     tracing::info!(event = "service.listening", address = %configuration.http.listen_address, "Marginalis server listening");
     let mut http_shutdown = shutdown_receiver;
@@ -185,15 +200,13 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// 抜ける。結果のログはここで記録し、application層はログに依存しない。
 fn spawn_webhook_delivery_worker(
     storage: std::sync::Arc<SqliteDatabase>,
+    sender: std::sync::Arc<marginalis_webhook_http::WebhookHttpSender>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         tracing::info!(
             event = "webhook.worker.started",
             "webhook delivery worker started"
-        );
-        let sender = marginalis_webhook_http::WebhookHttpSender::new(
-            webhook_allowed_hosts_from_environment(),
         );
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -206,8 +219,12 @@ fn spawn_webhook_delivery_worker(
                 break;
             }
             let now = SystemClock.now();
-            match marginalis_application::webhook_delivery_tick(storage.as_ref(), &sender, now)
-                .await
+            match marginalis_application::webhook_delivery_tick(
+                storage.as_ref(),
+                sender.as_ref(),
+                now,
+            )
+            .await
             {
                 Ok(outcome) => {
                     for webhook_id in &outcome.delivered {
