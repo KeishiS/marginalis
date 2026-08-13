@@ -91,13 +91,31 @@ xref:../developer-guide/development.adoc#top[GitHubを使う開発手順]を参�
 ``frontend/src/components/ui/``の生成コードは直接編集しません。横断的な調整は、生成コードが
 出力する``data-slot``属性を対象にしたCSSで行います。
 
-既存の画面は、``frontend/src/styles/``の役割別CSSファイル（``tokens.css``、``base.css``、
-``layout.css``、``components.css``、``editor.css``、``graph.css``、``content.css``）と、
-kebab-caseに役割の接頭辞を付けたclass名で作られています。この体系は新しい体系へ画面単位で
-置き換えている途中で、完了までは両方が共存します。進捗は
-https://github.com/KeishiS/marginalis/issues/432[Issue \#432]で追跡します。新しい規則は
-原則としてTailwindのユーティリティで書き、やむを得ず手書きCSSへ足す場合は対象の画面のファイルへ
-置きます。
+ユーティリティで書けない、または外部の部品と機構に密着した規則だけを、
+``frontend/src/styles/``の手書きCSSに残しています。それぞれの担当は次のとおりです。
+
+[cols="1,2",options="header",]
+|===
+|ファイル
+|置くもの
+|``tokens.css``
+|余白・文字などの目盛りと、手書きCSSが使う旧色名の別名（色の正本は``globals.css``）
+|``base.css``
+|要素の既定とリンク、フォーカス表示、動きを減らす設定（base層に置き、componentを優先させる）
+|``layout.css``
+|ヘッダーの``details``/``summary``による開閉メニューの機構
+|``components.css``
+|編集画面の診断・競合表示など、移行順の都合で残る画面部品
+|``editor.css``
+|編集画面の枠組みとCodeMirrorの``.cm-*``上書き
+|``graph.css``
+|関係の図のSVGへの``data-*``属性スタイル
+|``content.css``
+|描画したノート本文の表示。AdocWeaveが生成するclassもここへ集める
+|===
+
+新しい規則は原則としてTailwindのユーティリティで書き、やむを得ず手書きCSSへ足す場合は
+対象の画面のファイルへ置きます。
 
 閲覧本文の文字の大きさは、画面部品とは別の目盛り（``tokens.css``の``--text-reading-body``、
 ``--text-reading-h3``、``--text-reading-h2``、``--text-reading-h1``、``--text-reading-title``）を
@@ -173,8 +191,7 @@ citation keyと操作結果を確認する画面を経てから実行します�
 支援技術へは``role="status"``で穏やかに伝えます。
 
 利用者の対応が要る失敗は共通部品``ProblemAlert``で示し、``role="alert"``で割り込んで伝えます。
-原因と次の操作を画面内に残します。競合も同じ扱いです。移行前の画面（編集と関係の図）は、
-同じ役割を旧classの``state-message``と``problem-inline``で示します。
+原因と次の操作を画面内に残します。競合も同じ扱いです。
 
 保存成功は画面右上へ通知し、一定時間後に消します。通知と同時に編集画面内の保存状態も更新するため、
 通知を見逃しても現在の状態を確認できます。``Ctrl\+S``または``Command\+S``による保存も、保存ボタンと

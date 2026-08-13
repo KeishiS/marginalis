@@ -334,7 +334,8 @@ UTF-16 code unitで一度だけ計算します。Web UIとMCPクライアント�
 AsciiDoc文書の入力は``AsciiDocEditor.tsx``へ閉じ込めたCodeMirrorが担当し、Reactのフォーム状態には
 常に完全な文字列を渡します。CodeMirror側でAsciiDocを別の文書モデルへ変換しません。解析と
 HTML生成はサーバー側のAdocWeaveだけが担当します。サーバーはHTMLごとにCSP nonceを生成し、
-CodeMirrorが実行時に作る基礎CSSだけを許可します。採用理由と操作上の制約は
+実行時に``style``要素を挿入する部品(CodeMirrorの基礎CSS、MathJaxの組版スタイル、
+Radixのスクロール固定)をこのnonceだけで許可します。採用理由と操作上の制約は
 xref:adr/0003-codemirrorをasciidoc編集基盤に採用.adoc#top[CodeMirror採用判断]と
 xref:../user-guide/web-ui-editor.adoc#top[AsciiDoc編集画面]を参照してください。
 成功型は``error``を保持できず、失敗型はHTTP境界で常に``error``へ変換します。RESTでは位置と重大度を
