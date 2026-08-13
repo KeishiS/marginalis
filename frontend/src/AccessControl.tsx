@@ -120,7 +120,7 @@ export function AccessControl({
       className="grid max-w-4xl gap-4 rounded-md border bg-card p-[clamp(var(--space-4),3vw,var(--space-6))] shadow-xs"
       aria-labelledby="access-control-heading"
     >
-      <h2 className="m-0" id="access-control-heading">
+      <h2 className="m-0 text-xl font-bold" id="access-control-heading">
         共有設定
       </h2>
       <p className="m-0 max-w-2xl text-muted-foreground">

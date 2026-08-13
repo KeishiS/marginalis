@@ -301,7 +301,10 @@ export function McpAccessSettingsPage({
           </form>
           <section aria-labelledby="mcp-client-authorizations-heading">
             <div className="mb-4">
-              <h2 id="mcp-client-authorizations-heading">
+              <h2
+                id="mcp-client-authorizations-heading"
+                className="m-0 text-xl font-bold"
+              >
                 認可済みクライアント
               </h2>
               <p className="m-0 text-muted-foreground">
@@ -321,7 +324,9 @@ export function McpAccessSettingsPage({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="m-0">{client.display_name}</h3>
+                        <h3 className="m-0 text-lg font-bold">
+                          {client.display_name}
+                        </h3>
                         <code className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
                           {client.client_id}
                         </code>

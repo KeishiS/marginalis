@@ -25,7 +25,7 @@ export function PageHeader({
         </p>
         <h1
           id={titleId}
-          className="m-0 text-(length:--text-note-title) leading-tight tracking-[-0.035em]"
+          className="m-0 text-(length:--text-note-title) leading-tight font-bold tracking-[-0.035em]"
         >
           {title}
         </h1>
