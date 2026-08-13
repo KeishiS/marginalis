@@ -145,7 +145,8 @@
 
 .graph-vertex:hover circle,
 .graph-vertex:focus-visible circle {
-  fill: var(--color-primary-hover);
+  /* stylelint-disable-next-line scale-unlimited/declaration-strict-value -- hover時だけ一段濃くする。 */
+  fill: color-mix(in srgb, var(--color-primary) 80%, var(--color-foreground));
 }
 
 .graph-vertex:focus-visible {
