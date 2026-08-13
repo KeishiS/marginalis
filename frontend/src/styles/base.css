@@ -11,6 +11,9 @@ body {
 
 a {
   color: var(--color-primary);
+
+  /* Tailwindのpreflightが下線を消すため、ブラウザー既定に頼らず明示する。 */
+  text-decoration-line: underline;
   text-decoration-thickness: 0.08em;
   text-underline-offset: 0.18em;
 }

@@ -27,6 +27,19 @@ cargo make frontend-verify
 通常の``cargo make verify``と``cargo make coverage``は必要なフロントエンドアセットを先に
 構築します。``frontend/dist``と``frontend/node_modules``は生成物であり、Gitへ追加しません。
 
+Web UIの操作部品にはshadcn/uiを使用します。新しいcomponentは次の手順で追加します。
+
+[arabic]
+. ``frontend``ディレクトリーで``pnpm dlx shadcn@latest add <component名>``を実行します。
+生成コードは``frontend/src/components/ui/``へ入ります。生成コードは直接編集せず、
+横断的な調整は``data-slot``属性を対象にしたCSSで行います。
+. ``cargo make fmt``で整形します。
+. xref:../user-guide/web-ui-design.adoc#top[Web UIの画面設計]の採用component一覧を更新します。
+
+フロントエンドの依存を追加または更新した場合は、``flake.nix``の``fetchPnpmDeps``の``hash``も
+更新します。古いままの場合は``nix build .#frontend``が期待ハッシュの不一致で失敗するため、
+エラーメッセージの``got:``の値へ差し替えます。
+
 ``gh auth status``で、操作対象のGitHubアカウントとホストを確認してください。認証情報や
 アクセストークンをコマンド、ログ、Issue、Pull Requestへ記録してはいけません。
 本書では、GitHub上の本リポジトリを指すGitリモート名を``upstream``とします。

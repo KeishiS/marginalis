@@ -1,14 +1,33 @@
 /**
  * 目盛りから外れた値を拒否する。
  *
- * 色、余白、文字の大きさは`src/styles/tokens.css`の変数から選ぶ。直書きを許すと、
- * 区別のつかない値が少しずつ増える。CodeMirrorなど外部の部品へ合わせる箇所だけ、
- * 該当行に理由を書いて`stylelint-disable-next-line`で外す。
+ * 色、余白、文字の大きさは`src/styles/tokens.css`と`src/styles/globals.css`の変数から
+ * 選ぶ。直書きを許すと、区別のつかない値が少しずつ増える。CodeMirrorなど外部の部品へ
+ * 合わせる箇所だけ、該当行に理由を書いて`stylelint-disable-next-line`で外す。
+ * Tailwindが生成するユーティリティは検査対象にしない(手書きCSSだけを検査する)。
  */
 export default {
   extends: ["stylelint-config-standard"],
   plugins: ["stylelint-declaration-strict-value"],
   rules: {
+    // Tailwindはpackage名の`@import "tailwindcss"`を文字列表記で解決する。
+    "import-notation": "string",
+    // Tailwind CSS v4のCSS-first設定で使うat-ruleを認める。
+    "at-rule-no-unknown": [
+      true,
+      {
+        ignoreAtRules: [
+          "theme",
+          "custom-variant",
+          "apply",
+          "source",
+          "utility",
+          "variant",
+          "plugin",
+          "reference",
+        ],
+      },
+    ],
     "scale-unlimited/declaration-strict-value": [
       [
         "/color/",
@@ -65,8 +84,8 @@ export default {
   },
   overrides: [
     {
-      // 目盛りそのものを定義するため、この一つのファイルだけ直値で書く。
-      files: ["src/styles/tokens.css"],
+      // 目盛りそのものを定義するため、これらのファイルだけ直値で書く。
+      files: ["src/styles/tokens.css", "src/styles/globals.css"],
       rules: { "scale-unlimited/declaration-strict-value": null },
     },
   ],

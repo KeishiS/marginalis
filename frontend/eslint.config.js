@@ -29,4 +29,12 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // shadcn/uiの生成コードはcomponentと補助関数を同じファイルへ置くため、
+    // これらのファイルに限りfast refreshの警告を除外する。
+    files: ["src/components/ui/**/*.tsx"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
 );

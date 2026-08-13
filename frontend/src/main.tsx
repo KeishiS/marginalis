@@ -6,6 +6,7 @@ import "@fontsource-variable/noto-serif-jp/wght.css";
 
 import { parseApplicationConfig } from "./api";
 import { Application } from "./Application";
+import "./styles/globals.css";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/layout.css";
