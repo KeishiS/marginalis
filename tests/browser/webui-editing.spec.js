@@ -72,23 +72,10 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   ).toBeVisible();
   const source = page.getByRole("textbox", { name: "AsciiDoc文書" });
   await expect(source).toBeFocused();
-  await expect(page.getByRole("button", { name: "分割" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "執筆" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  const workspace = page.locator(".editor-workspace");
-  await expect(workspace).not.toHaveAttribute("style", /.+/);
-  await page.getByRole("slider", { name: /執筆欄の幅/ }).fill("65");
-  await expect(workspace).toHaveAttribute("data-editor-width", "65");
-  const paneRatio = await page.evaluate(() => {
-    const sourcePane = document.querySelector(".editor-source-pane");
-    const previewPane = document.querySelector(".preview-scroll");
-    return (
-      sourcePane.getBoundingClientRect().width /
-      previewPane.getBoundingClientRect().width
-    );
-  });
-  expect(paneRatio).toBeCloseTo(65 / 35, 1);
   expect(
     await page.evaluate(() =>
       window.__marginalisCspViolations.filter(
@@ -109,11 +96,12 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "data-view-mode",
     "preview",
   );
-  await page.getByRole("button", { name: "分割" }).click();
+  await page.getByRole("button", { name: "執筆" }).click();
   const documentSource =
     "= VMで作成したノート\n:marginalis-tags: 受入試験, 日本語\n:stem: latexmath\n\n.実行例\n[source,rust]\n----\nfn main() {}\n----\n\nstem:[x^2 + y^2]\n\n日本語と絵文字😀\r\n\n*強調した本文*\n\n* 最初の行 +\n続きの行\n* 次の項目";
   await source.fill(documentSource);
   await expect(page.getByText("未保存の変更があります。")).toBeVisible();
+  await page.getByRole("button", { name: "プレビュー" }).click();
   await expect(page.locator(".preview-content")).toContainText(
     "日本語と絵文字😀",
   );
@@ -157,31 +145,11 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(
     page.locator(".preview-content [data-math-prepared='true']"),
   ).toHaveCount(1);
-  await page.getByRole("button", { name: "分割" }).click();
-  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
   await expect(
     page.locator(
       ".preview-content .math-latex:not([data-math-prepared='true'])",
     ),
   ).toHaveCount(0);
-
-  await page.getByRole("button", { name: "執筆" }).click();
-  await source.fill(`${documentSource}\n\n分割表示用の更新`);
-  await expect(
-    page.locator(
-      ".preview-content .math-latex:not([data-math-prepared='true'])",
-    ),
-  ).toHaveCount(1);
-  await page.getByRole("button", { name: "分割" }).click();
-  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
-  await page.getByRole("button", { name: "プレビュー" }).click();
-  await expect(page.locator(".preview-content mjx-container")).toBeVisible();
-  await expect(
-    page.locator(
-      ".preview-content .math-latex:not([data-math-prepared='true'])",
-    ),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "分割" }).click();
 
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();
@@ -210,6 +178,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "日本語と絵文字😀",
   );
   await source.fill("= VMで作成したノート\n\ninclude::secret[]");
+  await page.getByRole("button", { name: "プレビュー" }).click();
   await expect(
     page.getByRole("heading", { name: "プレビューできませんでした" }),
   ).toBeVisible();
@@ -217,6 +186,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(page.locator(".preview-content")).toContainText(
     "日本語と絵文字😀",
   );
+  await page.getByRole("button", { name: "執筆" }).click();
   await source.fill(
     "= VMで作成したノート\n\n更新した本文\n\n== 結果\n\n成功😀",
   );

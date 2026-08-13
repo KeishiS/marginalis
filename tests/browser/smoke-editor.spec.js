@@ -57,12 +57,12 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
 
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(page).toHaveScreenshot(
-    "editor-wide-split.png",
+    "editor-wide.png",
     editorScreenshotOptions(page),
   );
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page).toHaveScreenshot(
-    "editor-wide-split-dark.png",
+    "editor-wide-dark.png",
     editorScreenshotOptions(page),
   );
   await page.emulateMedia({ colorScheme: "light" });
@@ -71,7 +71,6 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
     "data-view-mode",
     "write",
   );
-  await expect(page.getByRole("button", { name: "分割" })).toBeDisabled();
   await expect(page).toHaveScreenshot(
     "editor-narrow-write.png",
     editorScreenshotOptions(page),

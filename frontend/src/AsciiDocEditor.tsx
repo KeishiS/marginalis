@@ -45,7 +45,6 @@ import { utf8ByteOffsetToTextOffset } from "./textPosition";
 export interface AsciiDocEditorHandle {
   focus: () => void;
   selectRange: (anchor: number, head: number) => void;
-  setScrollRatio: (ratio: number) => void;
 }
 
 interface AsciiDocEditorProps {
@@ -56,7 +55,6 @@ interface AsciiDocEditorProps {
   onChange: (value: string) => void;
   onCompositionChange: (composing: boolean) => void;
   onSave: () => void;
-  onScroll: (ratio: number) => void;
   styleNonce: string;
 }
 
@@ -72,7 +70,6 @@ export const AsciiDocEditor = forwardRef<
     onChange,
     onCompositionChange,
     onSave,
-    onScroll,
     styleNonce,
   },
   forwardedRef,
@@ -85,7 +82,6 @@ export const AsciiDocEditor = forwardRef<
   const onChangeRef = useRef(onChange);
   const onCompositionChangeRef = useRef(onCompositionChange);
   const onSaveRef = useRef(onSave);
-  const onScrollRef = useRef(onScroll);
   const readOnly = useRef(new Compartment());
   const editable = useRef(new Compartment());
 
@@ -93,8 +89,7 @@ export const AsciiDocEditor = forwardRef<
     onChangeRef.current = onChange;
     onCompositionChangeRef.current = onCompositionChange;
     onSaveRef.current = onSave;
-    onScrollRef.current = onScroll;
-  }, [onChange, onCompositionChange, onSave, onScroll]);
+  }, [onChange, onCompositionChange, onSave]);
 
   useLayoutEffect(() => {
     const parent = container.current;
@@ -158,16 +153,9 @@ export const AsciiDocEditor = forwardRef<
         ],
       }),
     });
-    const reportScroll = () => {
-      onScrollRef.current(scrollRatio(editor.scrollDOM));
-    };
-    editor.scrollDOM.addEventListener("scroll", reportScroll, {
-      passive: true,
-    });
     view.current = editor;
     editor.contentDOM.focus({ preventScroll: true });
     return () => {
-      editor.scrollDOM.removeEventListener("scroll", reportScroll);
       editor.destroy();
       view.current = null;
     };
@@ -227,28 +215,12 @@ export const AsciiDocEditor = forwardRef<
         });
         editor.focus();
       },
-      setScrollRatio(ratio) {
-        const editor = view.current;
-        if (!editor) return;
-        const scroll = editor.scrollDOM;
-        const maximum = Math.max(0, scroll.scrollHeight - scroll.clientHeight);
-        scroll.scrollTop = clampRatio(ratio) * maximum;
-      },
     }),
     [],
   );
 
   return <div className="ascii-doc-editor" ref={container} />;
 });
-
-function scrollRatio(element: HTMLElement): number {
-  const maximum = element.scrollHeight - element.clientHeight;
-  return maximum > 0 ? clampRatio(element.scrollTop / maximum) : 0;
-}
-
-function clampRatio(value: number): number {
-  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
-}
 
 function toCodeMirrorDiagnostic(
   source: string,
