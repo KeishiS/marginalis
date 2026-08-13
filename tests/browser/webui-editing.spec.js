@@ -178,6 +178,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "日本語と絵文字😀",
   );
   await source.fill("= VMで作成したノート\n\ninclude::secret[]");
+  await page.getByRole("button", { name: "プレビュー" }).click();
   await expect(
     page.getByRole("heading", { name: "プレビューできませんでした" }),
   ).toBeVisible();
@@ -185,6 +186,7 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(page.locator(".preview-content")).toContainText(
     "日本語と絵文字😀",
   );
+  await page.getByRole("button", { name: "執筆" }).click();
   await source.fill(
     "= VMで作成したノート\n\n更新した本文\n\n== 結果\n\n成功😀",
   );
