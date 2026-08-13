@@ -349,3 +349,161 @@ CREATE TABLE mcp_refresh_tokens (
     token_family_id BLOB NOT NULL CHECK (length(token_family_id) = 32)
 ) STRICT;
 CREATE INDEX mcp_refresh_family_idx ON mcp_refresh_tokens (token_family_id);
+
+-- Webhookの送信先。secretはHMAC署名に平文が必要なため平文で保存する(ADR 0014)。
+-- archiveへは含めない。challenge応答を確認するまでstateはpending_challengeのまま。
+CREATE TABLE webhook_subscriptions (
+    subscription_id TEXT PRIMARY KEY NOT NULL,
+    owner_issuer TEXT NOT NULL,
+    owner_subject TEXT NOT NULL,
+    url TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    event_kinds_json TEXT NOT NULL CHECK (json_valid(event_kinds_json)),
+    state TEXT NOT NULL CHECK (state IN ('pending_challenge', 'active', 'disabled')),
+    disabled_reason TEXT CHECK (
+        (state = 'disabled' AND disabled_reason IN
+            ('delivery_exhausted', 'destination_rejected', 'owner_disabled'))
+        OR (state != 'disabled' AND disabled_reason IS NULL)
+    ),
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0)
+) STRICT;
+CREATE INDEX webhook_subscriptions_owner_idx
+ON webhook_subscriptions (owner_issuer, owner_subject);
+
+-- 配送待ちevent(transactional outbox)。データ変更と同じtransactionでトリガが追記する。
+-- 本文・CSL-JSON・identityは保持しない。event_idは再送でも変わらない。
+CREATE TABLE webhook_outbox_events (
+    event_sequence INTEGER PRIMARY KEY AUTOINCREMENT CHECK (event_sequence > 0),
+    event_id TEXT NOT NULL UNIQUE,
+    owner_issuer TEXT NOT NULL,
+    owner_subject TEXT NOT NULL,
+    event_kind TEXT NOT NULL CHECK (event_kind IN (
+        'note.created', 'note.updated', 'note.deleted', 'note.restored',
+        'bibliography_item.created', 'bibliography_item.updated',
+        'bibliography_item.deleted'
+    )),
+    target_id TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    occurred_at_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX webhook_outbox_events_owner_idx
+ON webhook_outbox_events (owner_issuer, owner_subject, event_sequence);
+
+-- subscriptionごとの配送状態。eventの発生時に有効な送信先だけへ展開する。
+-- 同じ送信先へはevent_sequence順に配送し、失敗中は後続を保留する。
+CREATE TABLE webhook_deliveries (
+    subscription_id TEXT NOT NULL
+        REFERENCES webhook_subscriptions (subscription_id) ON DELETE CASCADE,
+    event_sequence INTEGER NOT NULL
+        REFERENCES webhook_outbox_events (event_sequence) ON DELETE CASCADE,
+    state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'discarded')),
+    attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0),
+    next_attempt_at_ms INTEGER NOT NULL,
+    lease_expires_at_ms INTEGER,
+    last_failure TEXT CHECK (last_failure IN
+        ('non_success_status', 'connect_failed', 'timed_out',
+         'destination_rejected')),
+    last_attempted_at_ms INTEGER,
+    PRIMARY KEY (subscription_id, event_sequence)
+) STRICT;
+CREATE INDEX webhook_deliveries_due_idx
+ON webhook_deliveries (state, next_attempt_at_ms);
+
+-- 有効な送信先のうちevent種別を購読しているものへ、配送行を同じtransactionで展開する。
+CREATE TRIGGER webhook_fan_out_after_event_insert
+AFTER INSERT ON webhook_outbox_events
+BEGIN
+    INSERT INTO webhook_deliveries (
+        subscription_id, event_sequence, state, attempt_count,
+        next_attempt_at_ms, lease_expires_at_ms, last_failure, last_attempted_at_ms
+    )
+    SELECT s.subscription_id, NEW.event_sequence, 'pending', 0,
+           NEW.occurred_at_ms, NULL, NULL, NULL
+    FROM webhook_subscriptions s
+    WHERE s.owner_issuer = NEW.owner_issuer
+      AND s.owner_subject = NEW.owner_subject
+      AND s.state = 'active'
+      AND EXISTS (
+          SELECT 1 FROM json_each(s.event_kinds_json)
+          WHERE json_each.value = NEW.event_kind
+      );
+END;
+
+CREATE TRIGGER webhook_after_note_insert
+AFTER INSERT ON notes
+BEGIN
+    INSERT INTO webhook_outbox_events (
+        event_id, owner_issuer, owner_subject, event_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (lower(hex(randomblob(16))), NEW.creator_issuer, NEW.creator_subject,
+              'note.created', NEW.note_id, NEW.revision, NEW.updated_at_ms);
+END;
+
+-- 本文の変更だけをnote.updatedとする。ACLや人手確認だけのrevision更新では発火しない。
+CREATE TRIGGER webhook_after_note_update
+AFTER UPDATE ON notes
+WHEN OLD.deleted_at_ms IS NULL AND NEW.deleted_at_ms IS NULL
+    AND NEW.source IS NOT OLD.source
+BEGIN
+    INSERT INTO webhook_outbox_events (
+        event_id, owner_issuer, owner_subject, event_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (lower(hex(randomblob(16))), NEW.creator_issuer, NEW.creator_subject,
+              'note.updated', NEW.note_id, NEW.revision, NEW.updated_at_ms);
+END;
+
+CREATE TRIGGER webhook_after_note_delete
+AFTER UPDATE ON notes
+WHEN OLD.deleted_at_ms IS NULL AND NEW.deleted_at_ms IS NOT NULL
+BEGIN
+    INSERT INTO webhook_outbox_events (
+        event_id, owner_issuer, owner_subject, event_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (lower(hex(randomblob(16))), NEW.creator_issuer, NEW.creator_subject,
+              'note.deleted', NEW.note_id, NEW.revision, NEW.updated_at_ms);
+END;
+
+CREATE TRIGGER webhook_after_note_restore
+AFTER UPDATE ON notes
+WHEN OLD.deleted_at_ms IS NOT NULL AND NEW.deleted_at_ms IS NULL
+BEGIN
+    INSERT INTO webhook_outbox_events (
+        event_id, owner_issuer, owner_subject, event_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (lower(hex(randomblob(16))), NEW.creator_issuer, NEW.creator_subject,
+              'note.restored', NEW.note_id, NEW.revision, NEW.updated_at_ms);
+END;
+
+CREATE TRIGGER webhook_after_bibliography_insert
+AFTER INSERT ON bibliography_items
+BEGIN
+    INSERT INTO webhook_outbox_events (
+        event_id, owner_issuer, owner_subject, event_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (lower(hex(randomblob(16))), NEW.owner_issuer, NEW.owner_subject,
+              'bibliography_item.created', NEW.item_id, NEW.revision, NEW.updated_at_ms);
+END;
+
+-- 一括取込でも、実際に内容が変わりrevisionが進んだ項目だけを対象にする。
+CREATE TRIGGER webhook_after_bibliography_update
+AFTER UPDATE ON bibliography_items
+WHEN NEW.revision != OLD.revision
+BEGIN
+    INSERT INTO webhook_outbox_events (
+        event_id, owner_issuer, owner_subject, event_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (lower(hex(randomblob(16))), NEW.owner_issuer, NEW.owner_subject,
+              'bibliography_item.updated', NEW.item_id, NEW.revision, NEW.updated_at_ms);
+END;
+
+CREATE TRIGGER webhook_after_bibliography_delete
+AFTER DELETE ON bibliography_items
+BEGIN
+    INSERT INTO webhook_outbox_events (
+        event_id, owner_issuer, owner_subject, event_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (lower(hex(randomblob(16))), OLD.owner_issuer, OLD.owner_subject,
+              'bibliography_item.deleted', OLD.item_id, OLD.revision, OLD.updated_at_ms);
+END;

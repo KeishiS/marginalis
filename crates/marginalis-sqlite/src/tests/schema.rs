@@ -42,7 +42,7 @@ async fn initialization_rejects_the_previous_schema_version() {
         .execute(&pool)
         .await
         .expect("migration table");
-    sqlx::query("INSERT INTO schema_migrations (version) VALUES (20)")
+    sqlx::query("INSERT INTO schema_migrations (version) VALUES (21)")
         .execute(&pool)
         .await
         .expect("old version");
@@ -53,6 +53,6 @@ async fn initialization_rejects_the_previous_schema_version() {
     assert!(
         error
             .to_string()
-            .contains("unsupported database schema version 20; expected 21")
+            .contains("unsupported database schema version 21; expected 22")
     );
 }
