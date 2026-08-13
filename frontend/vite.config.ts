@@ -1,3 +1,4 @@
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { cpSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -8,8 +9,14 @@ const require = createRequire(import.meta.url);
 
 export default defineConfig({
   base: "./",
+  resolve: {
+    alias: {
+      "@": resolve(import.meta.dirname, "src"),
+    },
+  },
   plugins: [
     react(),
+    tailwindcss(),
     {
       name: "copy-mathjax-font-data",
       closeBundle() {

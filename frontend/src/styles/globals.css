@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+/*
+ * Marginalisのdesign token。
+ * 色は従来の青の寒色系(tokens.css)をoklch表記へ写像したものです(コメントは元のhex値)。
+ * dark modeはprefers-color-schemeへ追随し、切替UIは持ちません。
+ * 役割名は姉妹サービスRenkanのdocs/web-ui.adocにある対応表と揃え、
+ * 一覧はdocs/user-guide/web-ui-design.adocに記載します。
+ * 画面移行が完了するまで、既存画面はtokens.cssの旧トークンを併用します。
+ */
+:root {
+  color-scheme: light dark;
+
+  --background: oklch(97.65% 0.0054 274.97deg); /* #f6f7fb */
+  --foreground: oklch(24.49% 0.0388 264.35deg); /* #172033 */
+  --card: oklch(100% 0 0deg); /* #fff */
+  --card-foreground: var(--foreground);
+  --popover: oklch(100% 0 0deg);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(50.88% 0.1984 266.36deg); /* #3157d5 */
+  --primary-foreground: oklch(100% 0 0deg);
+  --secondary: oklch(94.84% 0.0246 275.91deg); /* #e9edff */
+  --secondary-foreground: oklch(44.3% 0.1767 266.66deg); /* #2746b3 */
+  --muted: oklch(96.63% 0.0074 260.73deg); /* #f1f4f9 */
+  --muted-foreground: oklch(54.44% 0.035 265.11deg); /* #667085 */
+  --accent: oklch(94.84% 0.0246 275.91deg);
+  --accent-foreground: oklch(44.3% 0.1767 266.66deg);
+  --destructive: oklch(50.03% 0.1821 29.51deg); /* #b42318 */
+  --destructive-foreground: oklch(100% 0 0deg);
+  --border: oklch(90.26% 0.0176 264.48deg); /* #d9dfeb */
+  --input: oklch(81.19% 0.0277 262.33deg); /* #b8c2d4 */
+  --ring: oklch(50.88% 0.1984 266.36deg);
+  --success: oklch(49.87% 0.1168 157.07deg); /* #067647 */
+  --warning: oklch(55.42% 0.1169 75.01deg); /* #9a6700 */
+  --radius: 0.75rem;
+}
+
+/* 色相を保ったまま明度を反転し、暗い地でも同じ役割の色が同じ意味を持つようにします。 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(18.69% 0.0151 266.77deg); /* #10131a */
+    --foreground: oklch(95.68% 0.0091 258.34deg); /* #edf1f7 */
+    --card: oklch(22.22% 0.0187 266.14deg); /* #171b24 */
+    --popover: oklch(22.22% 0.0187 266.14deg);
+    --primary: oklch(70.34% 0.1446 271.74deg); /* #8098f9 */
+    --primary-foreground: oklch(20.8% 0.0465 270.88deg); /* #10162d */
+    --secondary: oklch(31.93% 0.0759 271.44deg); /* #252f59 */
+    --secondary-foreground: oklch(76.99% 0.1171 272.66deg); /* #9bafff */
+    --muted: oklch(26.82% 0.0241 264.04deg); /* #202632 */
+    --muted-foreground: oklch(75.12% 0.0256 259.82deg); /* #a5afbf */
+    --accent: oklch(31.93% 0.0759 271.44deg);
+    --accent-foreground: oklch(76.99% 0.1171 272.66deg);
+    --destructive: oklch(80.14% 0.1094 24.57deg); /* #fda29b */
+    --destructive-foreground: oklch(28.01% 0.042 15.34deg); /* #3b2022 */
+    --border: oklch(33.97% 0.0286 262.89deg); /* #303847 */
+    --input: oklch(43.38% 0.0376 263.21deg); /* #465166 */
+    --ring: oklch(70.34% 0.1446 271.74deg);
+    --success: oklch(82.74% 0.1293 158.51deg); /* #75e0a7 */
+    --warning: oklch(85.94% 0.1499 84.74deg); /* #fec84b */
+  }
+}
+
+@theme inline {
+  --font-sans:
+    "Noto Sans JP Variable", "Noto Sans JP", system-ui, -apple-system,
+    blinkmacsystemfont, "Segoe UI", sans-serif;
+  --font-serif:
+    "Noto Serif JP Variable", "Noto Serif JP", ui-serif, georgia,
+    "Times New Roman", serif;
+  --font-mono:
+    "Noto Sans Mono Variable", "Noto Sans Mono", "Noto Sans JP Variable",
+    "Noto Sans Mono CJK JP", ui-monospace, "Cascadia Code", "SFMono-Regular",
+    consolas, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /*
+   * 移行完了までの互換層。既存画面はブラウザー既定の余白、行頭記号、見出しの
+   * 大きさへ依存しているため、Tailwindのpreflightが消す既定を復元します。
+   * base層のpreflightより後に置くことで既定を取り戻し、ユーティリティclassは
+   * これより強い層にあるため移行後の画面には影響しません。旧CSSの削除と
+   * あわせて撤去します(Issue #438)。
+   */
+  :where(h1, h2, h3, h4, h5, h6) {
+    font-size: revert;
+    font-weight: revert;
+    margin-block: revert;
+  }
+
+  :where(p, blockquote, dl, ul, ol, pre, figure) {
+    margin-block: revert;
+  }
+
+  :where(ul, ol) {
+    list-style: revert;
+    padding-inline-start: revert;
+  }
+
+  :where(dd) {
+    margin-inline-start: revert;
+  }
+
+  :where(blockquote, figure) {
+    margin-inline: revert;
+  }
+
+  :where(b, strong) {
+    font-weight: revert;
+  }
+}
