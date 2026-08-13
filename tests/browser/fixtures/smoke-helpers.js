@@ -17,7 +17,8 @@ function escapeHtml(value) {
 const SCREENSHOT_OPTIONS = {
   animations: "disabled",
   // Linux環境ごとのフォント描画差を許容し、配置の大きな崩れは検出します。
-  maxDiffPixelRatio: 0.03,
+  // 文字量の多い画面では描画環境の差だけで3%を超えることがあるため、5%とします。
+  maxDiffPixelRatio: 0.05,
 };
 
 /**
