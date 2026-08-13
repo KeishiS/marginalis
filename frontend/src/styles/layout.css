@@ -121,7 +121,6 @@
 }
 
 .page-heading,
-.editor-heading,
 .editor-actions {
   align-items: center;
   display: flex;
@@ -130,8 +129,7 @@
   justify-content: space-between;
 }
 
-.page-heading h1,
-.editor-heading h1 {
+.page-heading h1 {
   font-size: var(--text-note-title);
   letter-spacing: -0.035em;
   line-height: 1.2;

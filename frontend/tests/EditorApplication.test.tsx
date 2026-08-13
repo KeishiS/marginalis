@@ -153,8 +153,8 @@ test("キーボード保存の成功を右上の通知で伝える", async () =>
   fireEvent.keyDown(editor, { key: "s", ctrlKey: true });
 
   const message = await screen.findByText("保存しました。");
-  expect(message.closest(".toast")).toBeInTheDocument();
-  expect(message.closest(".toast-region")).toHaveAttribute(
+  expect(message.closest('[data-slot="toast"]')).toBeInTheDocument();
+  expect(message.closest('[data-slot="toast-region"]')).toHaveAttribute(
     "aria-live",
     "polite",
   );

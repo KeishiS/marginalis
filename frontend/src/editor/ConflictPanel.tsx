@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
 
 import { EditorForm as FormState } from "../editorState";
 import { alignThreeVersions } from "../editorConflict";
@@ -32,13 +33,9 @@ export function ConflictPanel({
         editing={editing.source}
         current={current.source}
       />
-      <button
-        className="button button-secondary"
-        type="button"
-        onClick={onUseCurrentRevision}
-      >
+      <Button variant="outline" type="button" onClick={onUseCurrentRevision}>
         更新番号{currentRevision}を編集の基準にする
-      </button>
+      </Button>
       <p>
         この操作では保存しません。比較後にフォームの「保存」を選んでください。
       </p>

@@ -347,78 +347,8 @@ button:not([class]):hover:not(:disabled) {
   text-align: center;
 }
 
-.toast-region {
-  inset-block-start: 5rem;
-  inset-inline-end: 1.25rem;
-  pointer-events: none;
-  position: fixed;
-  z-index: 50;
-}
-
-.toast {
-  align-items: flex-start;
-  background: var(--color-surface);
-  border: var(--border-thin) solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  display: flex;
-  gap: var(--space-3);
-  max-width: min(23rem, calc(100vw - 2rem));
-  padding: var(--space-3) var(--space-4);
-}
-
-.toast-success {
-  border-inline-start: var(--border-thick) solid var(--color-success);
-}
-
-.toast-mark {
-  align-items: center;
-  background: var(--color-success-soft);
-  border-radius: var(--radius-pill);
-  color: var(--color-success);
-  display: inline-flex;
-  flex: 0 0 auto;
-  font-weight: 800;
-  height: 1.75rem;
-  justify-content: center;
-  width: 1.75rem;
-}
-
-.toast p {
-  margin: 0;
-}
-
-.toast-title {
-  font-size: var(--text-small);
-  font-weight: 700;
-}
-
-.toast-description {
-  color: var(--color-text-muted);
-  font-size: var(--text-caption);
-}
-
 @media (width <= 60rem) {
   .conflict-fields {
     grid-template-columns: 1fr;
   }
-
-  .toast-region {
-    inset-block-start: 4.75rem;
-    inset-inline: 0.75rem;
-  }
-
-  .toast {
-    max-width: none;
-    width: 100%;
-  }
-}
-
-/* 入力欄や一覧の中へ、その場の失敗として表示する。 */
-.problem-inline {
-  background: var(--color-danger-soft);
-  border: var(--border-thin) solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  color: var(--color-danger);
-  padding: var(--space-3);
 }

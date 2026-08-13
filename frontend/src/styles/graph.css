@@ -1,18 +1,3 @@
-/* 関係の図。点はノートと文献、線は参照と引用を表す。 */
-
-.graph-search {
-  align-items: end;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.graph-search label {
-  display: grid;
-  gap: var(--space-1);
-  font-size: var(--text-small);
-}
-
 /* 起点を指定しているときだけ出る帯。今どの範囲を見ているかを図の上で示す。 */
 .graph-origin {
   align-items: center;

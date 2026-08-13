@@ -1,5 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 
+import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import { ApplicationConfig, NoteGraph, readNoteGraph } from "../api";
 import { useApiResource } from "../useApiResource";
 import { GraphCanvas } from "../graph/GraphCanvas";
@@ -77,38 +82,34 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
       : undefined;
 
   return (
-    <section className="page-section graph-page">
-      <div className="page-heading">
-        <div>
-          <p className="page-eyebrow">Graph</p>
-          <h1>関係の図</h1>
-          <p className="page-description">
-            閲覧できるノートと、それらが引用している文献のつながりを示します。
-          </p>
-        </div>
-      </div>
+    <section className="grid gap-6">
+      <PageHeader
+        eyebrow="Graph"
+        title="関係の図"
+        description="閲覧できるノートと、それらが引用している文献のつながりを示します。"
+      />
 
       <form
-        className="graph-search"
+        className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           changeScope({ ...scope, query: input });
         }}
       >
-        <label>
+        <label className="grid min-w-[min(20rem,78vw)] gap-1 text-sm font-semibold">
           語で絞り込む
-          <input
+          <Input
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="題名、本文、タグに含まれる語"
           />
         </label>
-        <button className="button button-primary" type="submit">
+        <Button variant="outline" type="submit">
           絞り込む
-        </button>
+        </Button>
         {query !== "" && (
-          <button
-            className="button button-secondary"
+          <Button
+            variant="outline"
             type="button"
             onClick={() => {
               setInput("");
@@ -116,7 +117,7 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
             }}
           >
             条件を解除
-          </button>
+          </Button>
         )}
       </form>
 
@@ -144,35 +145,31 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
               ))}
             </select>
           </label>
-          <button
-            className="button button-secondary"
+          <Button
+            variant="outline"
             type="button"
             onClick={() => changeScope({ ...scope, origin: "", depth: 1 })}
           >
             全体を見る
-          </button>
+          </Button>
         </div>
       )}
 
       {resource.status === "loading" && (
-        <p className="state-message" role="status">
-          関係を読み込んでいます。
-        </p>
+        <StatusMessage>関係を読み込んでいます。</StatusMessage>
       )}
       {resource.status === "failed" && (
-        <p className="problem-inline" role="alert">
-          関係を読み込めませんでした。
-        </p>
+        <ProblemAlert>関係を読み込めませんでした。</ProblemAlert>
       )}
       {model !== null &&
         (model.vertices.length === 0 ? (
-          <p className="state-message">
+          <StatusMessage>
             {origin !== ""
               ? "起点にしたノートが見つかりません。"
               : query === ""
                 ? "閲覧できるノートはありません。"
                 : "条件に一致するノートはありません。"}
-          </p>
+          </StatusMessage>
         ) : (
           <>
             <GraphCanvas config={config} model={model} />
