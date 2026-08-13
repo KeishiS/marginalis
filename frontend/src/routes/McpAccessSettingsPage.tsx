@@ -12,6 +12,8 @@ import {
   revokeMcpAuthorization,
 } from "../api";
 import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { PageHeader } from "@/components/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { ConfirmationDialog } from "../ConfirmationDialog";
@@ -233,19 +235,16 @@ export function McpAccessSettingsPage({
   }
 
   return (
-    <section className="page-section mcp-access-settings">
-      <div className="page-heading">
-        <div>
-          <p className="page-eyebrow">Settings</p>
-          <h1>MCPのアクセス制御</h1>
-          <p className="page-description">
-            あなたのノートと書誌情報について、MCPクライアントへ許可できる操作の上限を設定します。各クライアントへ実際に与える権限は、この上限を超えません。
-          </p>
-        </div>
+    <section className="grid gap-6">
+      <PageHeader
+        eyebrow="Settings"
+        title="MCPのアクセス制御"
+        description="あなたのノートと書誌情報について、MCPクライアントへ許可できる操作の上限を設定します。各クライアントへ実際に与える権限は、この上限を超えません。"
+      >
         <Button variant="outline" asChild>
           <a href={externalPath(config.basePath, "/settings")}>設定へ戻る</a>
         </Button>
-      </div>
+      </PageHeader>
       {settings === null || authorizations === null ? (
         !message ? (
           <StatusMessage>MCPのアクセス設定を読み込んでいます。</StatusMessage>
@@ -253,30 +252,40 @@ export function McpAccessSettingsPage({
           <ProblemAlert>{message}</ProblemAlert>
         )
       ) : (
-        <div className="mcp-access-settings-content">
-          <form className="surface" onSubmit={save}>
-            <fieldset>
-              <legend>すべてのクライアントに対する上限</legend>
-              <p className="field-help">
+        <div className="grid gap-5">
+          <form
+            className="grid gap-4 rounded-md border bg-card p-5 shadow-xs"
+            onSubmit={save}
+          >
+            <fieldset className="m-0 border-0 p-0">
+              <legend className="mb-1 font-bold">
+                すべてのクライアントに対する上限
+              </legend>
+              <p className="m-0 text-sm text-muted-foreground">
                 チェックを外した操作は、どのMCPクライアントにも許可できません。ノートの共有設定による閲覧範囲が広がることはありません。
               </p>
-              <div className="mcp-scope-options">
+              <div className="mt-3 grid gap-2">
                 {settings.supported_scopes.map((scope) => (
-                  <label key={scope}>
+                  <label
+                    key={scope}
+                    className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-sm bg-muted p-3"
+                  >
                     <input
                       type="checkbox"
                       checked={selected.includes(scope)}
                       onChange={(event) => toggle(scope, event.target.checked)}
                     />
-                    <span>
+                    <span className="grid gap-1">
                       <code>{scope}</code>
-                      <small>{SCOPE_DESCRIPTIONS[scope] ?? scope}</small>
+                      <small className="text-muted-foreground">
+                        {SCOPE_DESCRIPTIONS[scope] ?? scope}
+                      </small>
                     </span>
                   </label>
                 ))}
               </div>
             </fieldset>
-            <p className="field-help">
+            <p className="m-0 text-sm text-muted-foreground">
               上限を狭めると、新しい上限を超えるMCP接続だけが直ちに失効します。上限を広げても既存の接続へ権限は追加されません。
             </p>
             {message ? (
@@ -291,11 +300,11 @@ export function McpAccessSettingsPage({
             </Button>
           </form>
           <section aria-labelledby="mcp-client-authorizations-heading">
-            <div className="section-heading">
+            <div className="mb-4">
               <h2 id="mcp-client-authorizations-heading">
                 認可済みクライアント
               </h2>
-              <p>
+              <p className="m-0 text-muted-foreground">
                 接続時に同意した操作を確認し、クライアントごとに制限または取消できます。
               </p>
             </div>
@@ -304,57 +313,71 @@ export function McpAccessSettingsPage({
                 認可済みのMCPクライアントはありません。
               </StatusMessage>
             ) : (
-              <div className="mcp-client-list">
+              <div className="grid gap-5">
                 {authorizations.map((client) => (
                   <article
-                    className="surface mcp-client-card"
+                    className="grid min-w-0 gap-4 rounded-md border bg-card p-5 shadow-xs"
                     key={client.client_id}
                   >
-                    <div className="mcp-client-heading">
-                      <div>
-                        <h3>{client.display_name}</h3>
-                        <code>{client.client_id}</code>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="m-0">{client.display_name}</h3>
+                        <code className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                          {client.client_id}
+                        </code>
                       </div>
-                      <span
-                        className={
-                          client.active ? "status-active" : "status-inactive"
-                        }
-                      >
+                      <Badge variant={client.active ? "secondary" : "outline"}>
                         {client.active ? "有効" : "無効"}
-                      </span>
+                      </Badge>
                     </div>
-                    <dl className="oauth-detail-list">
-                      <div>
-                        <dt>登録方式</dt>
-                        <dd>
+                    <dl className="m-0 grid gap-3">
+                      <div className="grid min-w-0 gap-1 rounded-sm bg-muted p-3">
+                        <dt className="text-sm font-semibold text-muted-foreground">
+                          登録方式
+                        </dt>
+                        <dd className="m-0 min-w-0">
                           {client.registration_method === "metadata_document"
                             ? "Client ID Metadata Document"
                             : "動的クライアント登録"}
                         </dd>
                       </div>
-                      <div>
-                        <dt>認可日時</dt>
-                        <dd>{formatTimestamp(client.authorized_at_ms)}</dd>
+                      <div className="grid min-w-0 gap-1 rounded-sm bg-muted p-3">
+                        <dt className="text-sm font-semibold text-muted-foreground">
+                          認可日時
+                        </dt>
+                        <dd className="m-0 min-w-0">
+                          {formatTimestamp(client.authorized_at_ms)}
+                        </dd>
                       </div>
-                      <div>
-                        <dt>最終利用日時</dt>
-                        <dd>
+                      <div className="grid min-w-0 gap-1 rounded-sm bg-muted p-3">
+                        <dt className="text-sm font-semibold text-muted-foreground">
+                          最終利用日時
+                        </dt>
+                        <dd className="m-0 min-w-0">
                           {client.last_used_at_ms === null
                             ? "まだ利用されていません"
                             : formatTimestamp(client.last_used_at_ms)}
                         </dd>
                       </div>
                     </dl>
-                    <fieldset disabled={busyClient === client.client_id}>
-                      <legend>クライアント別の上限</legend>
-                      <p className="field-help">
+                    <fieldset
+                      className="m-0 border-0 p-0"
+                      disabled={busyClient === client.client_id}
+                    >
+                      <legend className="mb-1 font-bold">
+                        クライアント別の上限
+                      </legend>
+                      <p className="m-0 text-sm text-muted-foreground">
                         {!client.scope_ceiling_configured
                           ? "未設定です。現在はサーバーが対応する全scopeを許可できます。上限を設定すると、選んだscopeだけを許可します。"
                           : "選んだscopeだけを許可しています。上限は今後の認可を制限する設定であり、それ自体が権限を与えることはありません。範囲を広げても既存tokenへ権限は追加されないため、追加した操作にはOAuth再認可が必要です。"}
                       </p>
-                      <div className="mcp-scope-options">
+                      <div className="mt-3 grid gap-2">
                         {(settings?.supported_scopes ?? []).map((scope) => (
-                          <label key={scope}>
+                          <label
+                            key={scope}
+                            className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-sm bg-muted p-3"
+                          >
                             <input
                               type="checkbox"
                               checked={(
@@ -368,9 +391,9 @@ export function McpAccessSettingsPage({
                                 )
                               }
                             />
-                            <span>
+                            <span className="grid gap-1">
                               <code>{scope}</code>
-                              <small>
+                              <small className="text-muted-foreground">
                                 {SCOPE_DESCRIPTIONS[scope] ?? scope}
                               </small>
                             </span>
@@ -378,7 +401,7 @@ export function McpAccessSettingsPage({
                         ))}
                       </div>
                     </fieldset>
-                    <div className="mcp-client-actions">
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
                         disabled={busyClient !== null}

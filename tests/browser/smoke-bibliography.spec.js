@@ -50,7 +50,10 @@ test("書誌情報の未保存編集と削除を確認してから反映する",
   await discard.getByRole("button", { name: "変更を破棄" }).click();
   await expect(input).toContainText("tanaka2025");
 
-  const item = page.locator(".bibliography-list li", { hasText: "tanaka2025" });
+  // 文献カードのli。情報部分のbuttonと削除buttonを一つのカードが含む。
+  const item = page
+    .locator("li", { has: page.getByRole("button", { name: /tanaka2025/ }) })
+    .last();
   await item.getByRole("button", { name: "削除" }).click();
   const deletion = page.getByRole("alertdialog");
   await expect(deletion).toContainText("書誌情報の削除は取り消せません");

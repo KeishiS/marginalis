@@ -67,19 +67,22 @@ export function BibliographyImportEntryDecision({
     : null;
 
   return (
-    <li>
-      <div>
+    <li className="grid gap-3 rounded-sm border bg-card p-3">
+      <div className="flex flex-wrap gap-2">
         <strong>
           {entry.position + 1}. {entry.citation_key ?? "識別子なし"}
         </strong>
-        <span>{CLASSIFICATION_LABELS[entry.classification]}</span>
+        <span className="text-muted-foreground">
+          {CLASSIFICATION_LABELS[entry.classification]}
+        </span>
         {rejection && (
           <span className="text-sm text-destructive">{rejection}</span>
         )}
       </div>
-      <label>
+      <label className="grid gap-1 text-sm font-semibold">
         処理
         <select
+          className="w-full"
           aria-label={`${entry.position + 1}件目の処理`}
           value={value}
           disabled={disabled}
@@ -130,20 +133,17 @@ export function BibliographyImportEntryDecision({
           <option value="exclude">今回の計画から除外</option>
         </select>
       </label>
-      <div className="bibliography-import-comparison">
-        <details>
-          <summary>外部側のCSL-JSON</summary>
-          <pre>{JSON.stringify(externalCslJson, null, 2)}</pre>
-        </details>
+      <div className="grid gap-2 min-[60rem]:grid-cols-[repeat(auto-fit,minmax(18rem,1fr))]">
+        <ComparisonDetails label="外部側のCSL-JSON" value={externalCslJson} />
         {entry.current_csl_json && (
-          <details>
-            <summary>Marginalis側の現在値</summary>
-            <pre>{JSON.stringify(entry.current_csl_json, null, 2)}</pre>
-          </details>
+          <ComparisonDetails
+            label="Marginalis側の現在値"
+            value={entry.current_csl_json}
+          />
         )}
       </div>
       {entry.candidates.length > 0 && (
-        <ul className="bibliography-import-candidates">
+        <ul className="m-0 list-none p-0 text-sm text-muted-foreground">
           {entry.candidates.map((candidate) => (
             <li key={candidate.item_id}>
               {candidate.citation_key}
@@ -157,5 +157,25 @@ export function BibliographyImportEntryDecision({
         </ul>
       )}
     </li>
+  );
+}
+
+/** 比較用のCSL-JSONを、折りたたみで場所を取らずに示す。 */
+function ComparisonDetails({
+  label,
+  value,
+}: {
+  label: string;
+  value: unknown;
+}) {
+  return (
+    <details className="min-w-0 rounded-sm border bg-muted p-2">
+      <summary className="cursor-pointer text-sm font-semibold">
+        {label}
+      </summary>
+      <pre className="mt-2 mb-0 max-h-80 overflow-auto text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    </details>
   );
 }

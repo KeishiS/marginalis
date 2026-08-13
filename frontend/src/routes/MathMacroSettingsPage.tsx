@@ -1,7 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { ProblemAlert, StatusMessage } from "@/components/feedback";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import {
   ApiError,
@@ -119,35 +121,36 @@ export function MathMacroSettingsPage({
   }
 
   return (
-    <section className="page-section math-macro-settings">
-      <div className="page-heading">
-        <div>
-          <p className="page-eyebrow">Settings</p>
-          <h1>数式マクロ</h1>
-          <p className="page-description">
-            所有するノートで繰り返し使うMathJaxコマンドを定義します。共有されたノートにも、ノート所有者の設定が適用されます。
-          </p>
-        </div>
-      </div>
+    <section className="grid gap-6">
+      <PageHeader
+        eyebrow="Settings"
+        title="数式マクロ"
+        description="所有するノートで繰り返し使うMathJaxコマンドを定義します。共有されたノートにも、ノート所有者の設定が適用されます。"
+      />
       {macros === null && !message ? (
         <StatusMessage>数式マクロを読み込んでいます。</StatusMessage>
       ) : macros === null ? (
         <ProblemAlert>{message}</ProblemAlert>
       ) : (
-        <form onSubmit={save}>
-          <div className="math-macro-examples" aria-label="定義例">
-            <span>定義例を追加</span>
+        <form className="grid gap-4" onSubmit={save}>
+          <div
+            className="flex flex-wrap items-center gap-3"
+            aria-label="定義例"
+          >
+            <span className="font-bold">定義例を追加</span>
             {EXAMPLES.map((example) => (
-              <button
+              <Button
                 key={example.name}
+                variant="outline"
+                size="sm"
                 type="button"
                 onClick={() => addExample(example)}
               >
                 <code>\{example.name}</code>
-              </button>
+              </Button>
             ))}
           </div>
-          <p className="field-help">
+          <p className="m-0 text-sm text-muted-foreground">
             コマンド名には先頭の <code>\</code> を含めません。置換内容では引数を{" "}
             <code>#1</code> から <code>#{MAX_MATH_MACRO_ARGUMENTS}</code>{" "}
             で参照できます。最大
@@ -157,18 +160,23 @@ export function MathMacroSettingsPage({
             <code>def</code> は使用できません。置換内容の波括弧を対応させ、
             <code>%</code> は <code>\%</code> と記述してください。
           </p>
-          <p className="field-help" role="status">
+          <p className="m-0 text-sm text-muted-foreground" role="status">
             {macros.length} / {MAX_MATH_MACROS}件、
             {totalBytes.toLocaleString()} /{" "}
             {MAX_MATH_MACRO_TOTAL_BYTES.toLocaleString()}バイト
           </p>
-          <div className="math-macro-list">
+          <div className="grid gap-4">
             {macros.map((macro, index) => (
-              <fieldset key={index} className="math-macro-row">
-                <legend>マクロ {index + 1}</legend>
-                <label>
+              <fieldset
+                key={index}
+                className="m-0 flex flex-wrap items-end gap-3 rounded-md border bg-card p-4"
+              >
+                <legend className="px-1 text-sm font-bold">
+                  マクロ {index + 1}
+                </legend>
+                <label className="grid gap-2 text-sm font-semibold">
                   コマンド名
-                  <input
+                  <Input
                     required
                     pattern="[A-Za-z]+"
                     maxLength={MAX_MATH_MACRO_NAME_CHARACTERS}
@@ -178,9 +186,10 @@ export function MathMacroSettingsPage({
                     }
                   />
                 </label>
-                <label>
+                <label className="grid gap-2 text-sm font-semibold">
                   引数の数
-                  <input
+                  <Input
+                    className="w-24"
                     required
                     type="number"
                     min={0}
@@ -193,9 +202,9 @@ export function MathMacroSettingsPage({
                     }
                   />
                 </label>
-                <label className="math-macro-replacement">
+                <label className="grid flex-[1_1_20rem] gap-2 text-sm font-semibold">
                   置換内容
-                  <input
+                  <Input
                     required
                     value={macro.replacement}
                     onChange={(event) =>
@@ -203,20 +212,25 @@ export function MathMacroSettingsPage({
                     }
                   />
                 </label>
-                <button type="button" onClick={() => remove(index)}>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => remove(index)}
+                >
                   削除
-                </button>
+                </Button>
               </fieldset>
             ))}
           </div>
-          <div className="editor-actions">
-            <button
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
               type="button"
               disabled={macros.length >= MAX_MATH_MACROS}
               onClick={() => add()}
             >
               マクロを追加
-            </button>
+            </Button>
             <Button
               type="submit"
               disabled={saving || validationProblem !== null}

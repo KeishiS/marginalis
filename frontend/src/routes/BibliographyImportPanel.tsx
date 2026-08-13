@@ -2,6 +2,7 @@ import { ChangeEvent, useState } from "react";
 
 import { ProblemAlert, StatusMessage } from "@/components/feedback";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import {
   applyBibliographyImport,
@@ -191,7 +192,7 @@ export function BibliographyImportPanel({
 
   if (!open) {
     return (
-      <div className="bibliography-import-launcher">
+      <div className="my-4 mb-6">
         <Button
           variant="outline"
           type="button"
@@ -205,10 +206,10 @@ export function BibliographyImportPanel({
 
   return (
     <section
-      className="bibliography-import"
+      className="grid gap-4 rounded-md border bg-muted p-5"
       aria-labelledby="bibliography-import-heading"
     >
-      <div className="section-heading-row">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 id="bibliography-import-heading">CSL-JSONの一括取り込み</h2>
           <p>
@@ -224,10 +225,11 @@ export function BibliographyImportPanel({
           閉じる
         </Button>
       </div>
-      <div className="bibliography-import-controls">
-        <label>
+      <div className="grid items-end gap-3 min-[60rem]:grid-cols-[repeat(auto-fit,minmax(16rem,1fr))]">
+        <label className="grid gap-1 text-sm font-semibold">
           取込元
           <select
+            className="w-full"
             value={selectedSourceId}
             disabled={busy || preview !== null}
             onChange={(event) => setSelectedSourceId(event.target.value)}
@@ -241,9 +243,9 @@ export function BibliographyImportPanel({
           </select>
         </label>
         {selectedSourceId === "new" && (
-          <label>
+          <label className="grid gap-1 text-sm font-semibold">
             取込元の表示名
-            <input
+            <Input
               value={newSourceName}
               maxLength={128}
               disabled={busy || preview !== null}
@@ -252,16 +254,20 @@ export function BibliographyImportPanel({
             />
           </label>
         )}
-        <label>
+        <label className="grid gap-1 text-sm font-semibold">
           CSL-JSONファイル
-          <input
+          <Input
             type="file"
             accept="application/json,.json"
             disabled={busy || preview !== null}
             onChange={(event) => void readFile(event)}
           />
         </label>
-        {fileName && <p className="field-help">選択中: {fileName}</p>}
+        {fileName && (
+          <p className="m-0 text-sm text-muted-foreground">
+            選択中: {fileName}
+          </p>
+        )}
         <Button
           type="button"
           disabled={
@@ -283,7 +289,7 @@ export function BibliographyImportPanel({
         ))}
       {preview && items && (
         <>
-          <ol className="bibliography-import-results">
+          <ol className="m-0 grid list-decimal gap-3 pl-6">
             {preview.entries.map((entry) => (
               <BibliographyImportEntryDecision
                 key={entry.position}
