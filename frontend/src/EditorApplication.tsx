@@ -8,6 +8,8 @@ import {
   useState,
 } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { AsciiDocEditor, type AsciiDocEditorHandle } from "./AsciiDocEditor";
 import {
   Problem,
@@ -249,23 +251,29 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   }
 
   return (
-    <section className="editor-page" aria-labelledby="editor-heading">
-      <div className="page-heading editor-heading">
+    <section className="grid gap-5" aria-labelledby="editor-heading">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="page-eyebrow">Editor</p>
-          <h1 id="editor-heading">
+          <p className="m-0 text-xs font-bold tracking-[0.12em] text-primary uppercase">
+            Editor
+          </p>
+          <h1
+            id="editor-heading"
+            className="m-0 text-(length:--text-note-title) leading-tight tracking-[-0.035em]"
+          >
             {revision === null ? "ノートの作成" : "ノートの編集"}
           </h1>
           {revision !== null && (
-            <p className="metadata">更新番号: {revision}</p>
+            <p className="mt-1 mb-0 text-sm text-muted-foreground">
+              更新番号: {revision}
+            </p>
           )}
         </div>
-        <a
-          className="button button-secondary"
-          href={noteId ? notePath(config, noteId) : listPath(config)}
-        >
-          {noteId ? "閲覧画面へ戻る" : "一覧へ戻る"}
-        </a>
+        <Button variant="outline" asChild>
+          <a href={noteId ? notePath(config, noteId) : listPath(config)}>
+            {noteId ? "閲覧画面へ戻る" : "一覧へ戻る"}
+          </a>
+        </Button>
       </div>
 
       {problem && (
@@ -293,7 +301,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       )}
 
       <form className="editor-form" onSubmit={save} ref={editorForm}>
-        <div className="editor-controls surface">
+        <div className="grid gap-3 rounded-md border bg-card p-3 shadow-xs">
           <EditorViewToolbar
             mode={effectiveViewMode}
             requestedMode={viewMode}
@@ -346,14 +354,10 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           </div>
         </div>
         <div className="editor-actions">
-          <button
-            className="button button-primary"
-            type="submit"
-            disabled={saving || !isDirty || isComposing}
-          >
+          <Button type="submit" disabled={saving || !isDirty || isComposing}>
             {saving ? "保存しています…" : "保存"}
-          </button>
-          <span className="editor-status" role="status">
+          </Button>
+          <span className="text-sm text-muted-foreground" role="status">
             {isComposing
               ? "日本語入力を確定してください。"
               : editorStatus({
@@ -366,15 +370,28 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
           </span>
         </div>
       </form>
-      <div className="toast-region" aria-live="polite" aria-atomic="true">
+      <div
+        data-slot="toast-region"
+        className="pointer-events-none fixed end-5 top-20 z-50 max-[60rem]:start-3 max-[60rem]:end-3 max-[60rem]:top-[4.75rem]"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         {saveToast !== null && (
-          <div className="toast toast-success">
-            <span className="toast-mark" aria-hidden="true">
+          <div
+            data-slot="toast"
+            className="flex max-w-[22rem] items-start gap-3 rounded-md border bg-card p-3 shadow-lg max-[60rem]:w-full max-[60rem]:max-w-none"
+          >
+            <span
+              className="grid size-6 shrink-0 place-items-center rounded-full bg-success text-xs font-bold text-primary-foreground"
+              aria-hidden="true"
+            >
               ✓
             </span>
             <div>
-              <p className="toast-title">保存しました。</p>
-              <p className="toast-description">変更内容は最新です。</p>
+              <p className="m-0 font-bold">保存しました。</p>
+              <p className="m-0 text-sm text-muted-foreground">
+                変更内容は最新です。
+              </p>
             </div>
           </div>
         )}

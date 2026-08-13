@@ -5,12 +5,6 @@
   gap: var(--space-4);
 }
 
-.editor-controls {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3);
-}
-
 .editor-view-toolbar,
 .editor-view-buttons,
 .editor-width-control,
@@ -246,16 +240,6 @@
   padding: var(--space-3);
   position: sticky;
   z-index: 10;
-}
-
-.editor-status,
-.metadata {
-  color: var(--color-text-muted);
-  font-size: var(--text-small);
-}
-
-.metadata {
-  margin-block: var(--space-1) 0;
 }
 
 @media (width <= 60rem) {

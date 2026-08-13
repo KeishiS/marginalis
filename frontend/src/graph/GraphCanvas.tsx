@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StatusMessage } from "@/components/feedback";
 import { select } from "d3-selection";
 import { zoom, zoomIdentity, type ZoomTransform } from "d3-zoom";
 import {
@@ -100,11 +101,7 @@ export function GraphCanvas({
   const bounds = useMemo(() => fitBounds(placed), [placed]);
 
   if (placed === null) {
-    return (
-      <p className="state-message" role="status">
-        配置を計算しています。
-      </p>
-    );
+    return <StatusMessage>配置を計算しています。</StatusMessage>;
   }
 
   const radius = (vertex: GraphVertex) =>

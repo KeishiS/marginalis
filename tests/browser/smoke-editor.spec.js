@@ -143,7 +143,7 @@ test("5,000行の文書を編集して保存できる", async ({ page }) => {
   await page.getByRole("button", { name: "執筆" }).click();
   await expect(editor).toBeFocused();
   await editor.press("Control+s");
-  const toast = page.locator(".toast");
+  const toast = page.locator('[data-slot="toast"]');
   await expect(toast.getByText("保存しました。")).toBeVisible();
   const toastPosition = await toast.boundingBox();
   const viewport = page.viewportSize();
