@@ -1,12 +1,15 @@
 @import "tailwindcss";
 
+/* Rust側が生成するHTML(ヘッダーとOAuth同意画面)のclassも走査対象へ含める。 */
+@source "../../../crates/marginalis-web/src/http";
+
 /*
  * Marginalisのdesign token。
  * 色は従来の青の寒色系(tokens.css)をoklch表記へ写像したものです(コメントは元のhex値)。
  * dark modeはprefers-color-schemeへ追随し、切替UIは持ちません。
  * 役割名は姉妹サービスRenkanのdocs/web-ui.adocにある対応表と揃え、
  * 一覧はdocs/user-guide/web-ui-design.adocに記載します。
- * 画面移行が完了するまで、既存画面はtokens.cssの旧トークンを併用します。
+ * 手書きCSSが使う旧色名は、tokens.cssでこのトークンへの別名として定義します。
  */
 :root {
   color-scheme: light dark;
@@ -115,39 +118,5 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-  }
-
-  /*
-   * 移行完了までの互換層。既存画面はブラウザー既定の余白、行頭記号、見出しの
-   * 大きさへ依存しているため、Tailwindのpreflightが消す既定を復元します。
-   * base層のpreflightより後に置くことで既定を取り戻し、ユーティリティclassは
-   * これより強い層にあるため移行後の画面には影響しません。旧CSSの削除と
-   * あわせて撤去します(Issue #438)。
-   */
-  :where(h1, h2, h3, h4, h5, h6) {
-    font-size: revert;
-    font-weight: revert;
-    margin-block: revert;
-  }
-
-  :where(p, blockquote, dl, ul, ol, pre, figure) {
-    margin-block: revert;
-  }
-
-  :where(ul, ol) {
-    list-style: revert;
-    padding-inline-start: revert;
-  }
-
-  :where(dd) {
-    margin-inline-start: revert;
-  }
-
-  :where(blockquote, figure) {
-    margin-inline: revert;
-  }
-
-  :where(b, strong) {
-    font-weight: revert;
   }
 }

@@ -184,7 +184,7 @@ async fn authorization_consent_preserves_an_omitted_redirect_uri() {
         .expect("consent page");
     let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
     assert!(!html.contains("name=\"redirect_uri\""));
-    assert!(html.contains("移動先のホスト</dt><dd><code>client.example.test</code>"));
+    assert!(html.contains("移動先のホスト</dt>") && html.contains(">client.example.test</code>"));
 }
 
 #[tokio::test]
@@ -231,33 +231,26 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
     assert!(html.contains("href=\"/marginalis/assets/editor.css\""));
     assert!(html.contains("action=\"/marginalis/oauth/authorize/consent\""));
     assert!(html.contains("MCPクライアントを許可しますか？"));
-    assert!(html.contains(
-        "<p class=\"oauth-detail-label\">クライアント識別子</p><h2 id=\"oauth-client-heading\" class=\"oauth-client-id\"><code>long-client</code></h2>"
-    ));
-    assert!(html.contains("<dt>クライアントが提供した表示名</dt>"));
-    assert!(html.contains("移動先のホスト</dt><dd><code>127.0.0.1</code>"));
-    assert!(html.contains("<code>notes:read</code>"));
-    assert!(html.contains("<code>notes:write</code>"));
-    assert!(html.contains("<code>notes:sync</code>"));
+    assert!(html.contains(">クライアント識別子</p>"));
+    assert!(html.contains("<h2 id=\"oauth-client-heading\""));
+    assert!(html.contains("><code>long-client</code></h2>"));
+    assert!(html.contains(">クライアントが提供した表示名</dt>"));
+    assert!(html.contains("移動先のホスト</dt>"));
+    assert!(html.contains("<code class=\"[overflow-wrap:anywhere]\">127.0.0.1</code>"));
+    assert!(html.contains(">notes:read</code>"));
+    assert!(html.contains(">notes:write</code>"));
+    assert!(html.contains(">notes:sync</code>"));
     assert!(html.contains("外部の検索用コピーへ継続的に同期します。"));
     assert!(html.contains("Marginalisから外部に保存済みのコピーは削除できません。"));
     assert!(html.contains("list_notes、get_note、get_note_profileでノートを読み取ります。"));
-    assert!(html.contains("<code>bibliography:read</code>"));
+    assert!(html.contains(">bibliography:read</code>"));
     assert!(html.contains("書誌情報を検索します。"));
     assert!(html.contains(
-        "type=\"checkbox\" name=\"selected_scope\" value=\"notes:read\" form=\"oauth-consent-form\" checked"
+        "name=\"selected_scope\" value=\"notes:read\" form=\"oauth-consent-form\" checked"
     ));
     assert!(html.contains("この端末上のアプリへ戻ります"));
-    assert!(
-        html.contains(
-            "class=\"button button-primary\" name=\"decision\" value=\"approve\">許可する"
-        )
-    );
-    assert!(
-        html.contains(
-            "class=\"button button-secondary\" name=\"decision\" value=\"deny\">拒否する"
-        )
-    );
+    assert!(html.contains("name=\"decision\" value=\"approve\">許可する"));
+    assert!(html.contains("name=\"decision\" value=\"deny\">拒否する"));
     assert!(html.contains(&"非常に長いクライアント名".repeat(24)));
 
     let client_id_position = html.find("<code>long-client</code>").expect("client ID");
@@ -295,12 +288,10 @@ async fn authorization_consent_shows_the_complete_long_client_id_before_the_disp
         .await
         .expect("consent page");
     let html = std::str::from_utf8(&body).expect("UTF-8 HTML");
-    let primary_client_id = format!(
-        "<h2 id=\"oauth-client-heading\" class=\"oauth-client-id\"><code>{client_id}</code></h2>"
-    );
+    let primary_client_id = format!("><code>{client_id}</code></h2>");
     let client_id_position = html.find(&primary_client_id).expect("complete client ID");
     let display_name_position = html
-        .find("<dt>クライアントが提供した表示名</dt>")
+        .find(">クライアントが提供した表示名</dt>")
         .expect("client-provided display name");
     assert!(client_id_position < display_name_position);
 }

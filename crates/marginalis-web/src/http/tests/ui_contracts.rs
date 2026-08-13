@@ -162,7 +162,8 @@ async fn authenticated_home_defers_the_empty_state_to_react() {
     let body = String::from_utf8(body.to_vec()).expect("HTML");
     // ヘッダーの移動先は一覧要素で並べるため、本文だけを対象にする。
     let main = body
-        .split_once("<main class=\"page-main\">")
+        .split_once("<main class=\"page-main")
+        .and_then(|(_, rest)| rest.split_once('>'))
         .and_then(|(_, rest)| rest.split_once("</main>"))
         .map(|(content, _)| content)
         .expect("main content");

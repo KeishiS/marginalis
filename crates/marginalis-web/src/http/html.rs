@@ -41,6 +41,7 @@ pub(super) fn page_document(
     scripts: &[&str],
 ) -> String {
     let current = current_navigation(current_path);
+    // 移動先のリンク。現在の画面はaria-currentで示し、見た目もアクセント色の面で区別する。
     let destinations = NAVIGATION
         .iter()
         .map(|(href, _, label)| {
@@ -50,15 +51,16 @@ pub(super) fn page_document(
                 ""
             };
             format!(
-                "<li><a href=\"{}\"{marker}>{label}</a></li>",
+                "<li><a class=\"inline-flex min-h-11 w-full items-center rounded-sm px-3 py-2 text-sm font-semibold text-muted-foreground no-underline hover:bg-muted hover:text-foreground aria-[current=page]:bg-secondary aria-[current=page]:text-secondary-foreground\" href=\"{}\"{marker}>{label}</a></li>",
                 escape_html(&external_path(cookie_path, href)),
             )
         })
         .collect::<String>();
     // 狭い画面では開閉するメニュー、広い画面では横に並べた移動先として表示する。
-    // detailsとsummaryを使い、開閉にJavaScriptを必要としない。
+    // detailsとsummaryを使い、開閉にJavaScriptを必要としない。開閉の仕組みに関わる
+    // 見た目(summaryの表示切替と::details-content)はlayout.cssのnavigation-*が受け持つ。
     let navigation = format!(
-        "<details class=\"navigation-menu\"><summary class=\"navigation-menu-button\">メニュー</summary><ul class=\"navigation-list\">{destinations}</ul></details>",
+        "<details class=\"navigation-menu\"><summary class=\"navigation-menu-button\">メニュー</summary><ul class=\"navigation-list m-0 flex list-none items-center gap-1 p-0\">{destinations}</ul></details>",
     );
     let new_note = external_path(cookie_path, "/notes/new");
     let home = external_path(cookie_path, "/");
@@ -73,7 +75,7 @@ pub(super) fn page_document(
         })
         .collect::<String>();
     format!(
-        "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\">{}</head><body><header class=\"page-header\"><div class=\"page-header-inner\"><a class=\"brand\" href=\"{}\"><span class=\"brand-mark\" aria-hidden=\"true\">M</span><span>Marginalis</span></a><nav class=\"primary-navigation\" aria-label=\"主要な画面\">{}<a class=\"button button-primary\" href=\"{}\">新規ノート</a></nav></div></header><main class=\"page-main\">{}</main></body></html>",
+        "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\">{}</head><body><header class=\"page-header sticky top-0 z-20 border-b bg-card/90 backdrop-blur-lg\"><div class=\"mx-auto flex min-h-16 max-w-(--content-width) flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2 min-[60rem]:px-5\"><a class=\"brand inline-flex items-center gap-3 font-bold tracking-tight text-foreground no-underline\" href=\"{}\"><span class=\"grid size-8 place-items-center rounded-sm bg-primary text-sm text-primary-foreground\" aria-hidden=\"true\">M</span><span>Marginalis</span></a><nav class=\"flex items-center justify-end gap-2\" aria-label=\"主要な画面\">{}<a class=\"inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium whitespace-nowrap text-primary-foreground no-underline hover:bg-primary/90\" href=\"{}\">新規ノート</a></nav></div></header><main class=\"page-main mx-auto max-w-(--content-width) px-3 pt-6 pb-12 min-[60rem]:px-5 min-[60rem]:pt-10 min-[60rem]:pb-16\">{}</main></body></html>",
         escape_html(title),
         escape_html(&stylesheet),
         scripts,
@@ -107,7 +109,8 @@ mod tests {
         assert!(document.contains("href=\"/marginalis/\""));
         assert!(document.contains("aria-label=\"主要な画面\""));
         assert!(document.contains("href=\"/marginalis/notes/new\""));
-        assert!(document.contains("<main class=\"page-main\"><h1>本文</h1></main>"));
+        assert!(document.contains("<h1>本文</h1></main>"));
+        assert!(document.contains("class=\"page-main"));
         assert!(!document.contains("src=\"/marginalis/assets/editor.js\""));
     }
 
@@ -119,12 +122,13 @@ mod tests {
         for label in ["ノート", "書誌", "関係の図", "設定", "新規ノート"] {
             assert!(document.contains(label), "{label}への移動手段が必要です");
         }
-        assert!(document.contains("<a href=\"/bibliography\" aria-current=\"page\">書誌</a>"));
+        assert!(document.contains("aria-current=\"page\">書誌</a>"));
+        assert!(document.contains("href=\"/bibliography\" aria-current"));
         assert_eq!(document.matches("aria-current=\"page\"").count(), 1);
 
         // 個別のノートもノートの画面として示す。
         let note = page_document("Marginalis", "/", "/notes/abc", "<div></div>", &[]);
-        assert!(note.contains("<a href=\"/\" aria-current=\"page\">ノート</a>"));
+        assert!(note.contains("aria-current=\"page\">ノート</a>"));
 
         // 主要な移動先でない画面は、どれも現在位置として示さない。
         let consent = page_document("認可", "/", "/oauth/authorize", "<div></div>", &[]);
