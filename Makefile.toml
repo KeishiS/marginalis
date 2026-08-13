@@ -425,8 +425,10 @@ args = ["run", "build"]
 description = "Keep production Web UI code and self-hosted fonts within reviewed size budgets"
 dependencies = ["frontend-build"]
 script = '''
+# shadcn/ui(Radix)の確認ダイアログは一覧・閲覧画面の初期経路で使うため、
+# 導入時にentry上限を300000から360000へ改定した(#434)。
 entry_bytes="$(wc -c < frontend/dist/assets/editor.js)"
-maximum_entry_bytes=300000
+maximum_entry_bytes=360000
 if [ "$entry_bytes" -gt "$maximum_entry_bytes" ]; then
   echo "the initial Web UI entry is ${entry_bytes} bytes; the limit is ${maximum_entry_bytes} bytes." >&2
   exit 1
