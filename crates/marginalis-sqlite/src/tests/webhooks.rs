@@ -1,6 +1,7 @@
 use marginalis_application::{
     BibliographyImportCommit, BibliographyImportItemMutation, BibliographyImportState, NoteLinks,
-    WebhookDeliveryFailure, WebhookDeliveryRepository,
+    WebhookDeliveryFailure, WebhookDeliveryRepository, WebhookSubscriptionRepository,
+    WebhookSubscriptionState,
 };
 use marginalis_domain::{
     BibliographyContentDigest, BibliographyImportLink, BibliographyImportSource,
@@ -488,4 +489,212 @@ async fn purging_keeps_undelivered_events_and_removes_expired_ones() {
     let remaining = outbox_rows(&database).await;
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].1, pending.note_id().to_string());
+}
+
+/// 購読の管理は所有者だけへ働き、一覧は配送状況の要約を含む。
+#[tokio::test]
+async fn subscription_management_is_scoped_to_the_owner() {
+    let database = database().await;
+    let alice = user("alice");
+    let bob = user("bob");
+    database
+        .create_owned_subscription(
+            &alice,
+            "0197c9bc-0000-7000-8000-0000000000f1",
+            "https://receiver.example.test/hook",
+            &["note.created".to_string()],
+            "secret-1",
+            UnixMillis::new(1_000),
+        )
+        .await
+        .expect("create subscription");
+
+    // 一覧と資格情報は所有者だけが読める。
+    let owned = database
+        .list_owned_subscriptions(&alice)
+        .await
+        .expect("list owned");
+    assert_eq!(owned.len(), 1);
+    assert_eq!(owned[0].state, WebhookSubscriptionState::PendingChallenge);
+    assert_eq!(owned[0].event_kinds, vec!["note.created".to_string()]);
+    assert_eq!(owned[0].pending_count, 0);
+    assert!(
+        database
+            .list_owned_subscriptions(&bob)
+            .await
+            .expect("list bob")
+            .is_empty()
+    );
+    assert_eq!(
+        database
+            .owned_subscription_credentials(&bob, "0197c9bc-0000-7000-8000-0000000000f1")
+            .await
+            .expect("credentials for bob"),
+        None
+    );
+
+    // 有効化とsecretの更新はrevisionを進める。
+    assert!(
+        database
+            .activate_owned_subscription(
+                &alice,
+                "0197c9bc-0000-7000-8000-0000000000f1",
+                UnixMillis::new(2_000),
+            )
+            .await
+            .expect("activate")
+    );
+    assert!(
+        database
+            .replace_owned_secret(
+                &alice,
+                "0197c9bc-0000-7000-8000-0000000000f1",
+                "secret-2",
+                UnixMillis::new(3_000),
+            )
+            .await
+            .expect("replace secret")
+    );
+    let credentials = database
+        .owned_subscription_credentials(&alice, "0197c9bc-0000-7000-8000-0000000000f1")
+        .await
+        .expect("credentials");
+    assert_eq!(
+        credentials,
+        Some((
+            "https://receiver.example.test/hook".to_string(),
+            "secret-2".to_string()
+        ))
+    );
+    let owned = database
+        .list_owned_subscriptions(&alice)
+        .await
+        .expect("list after updates");
+    assert_eq!(owned[0].state, WebhookSubscriptionState::Active);
+    assert_eq!(owned[0].revision, 3);
+
+    // 削除も所有者だけができ、削除後は見えない。
+    assert!(
+        !database
+            .delete_owned_subscription(&bob, "0197c9bc-0000-7000-8000-0000000000f1")
+            .await
+            .expect("delete by bob")
+    );
+    assert!(
+        database
+            .delete_owned_subscription(&alice, "0197c9bc-0000-7000-8000-0000000000f1")
+            .await
+            .expect("delete by alice")
+    );
+    assert!(
+        database
+            .list_owned_subscriptions(&alice)
+            .await
+            .expect("list after delete")
+            .is_empty()
+    );
+}
+
+/// 再試行は失敗中の先頭を初期化して停止を解除し、破棄は後続を進める。
+#[tokio::test]
+async fn retry_and_discard_operate_on_the_head_delivery() {
+    let database = database().await;
+    let alice = user("alice");
+    insert_subscription(
+        &database,
+        "sub-a",
+        "alice",
+        "active",
+        r#"["note.created","note.updated"]"#,
+    )
+    .await;
+    let note = note_seed("0197c9bc-0000-7000-8000-0000000000f2", "alice", "One")
+        .source("one")
+        .build();
+    database
+        .create_note(&note, NoteLinks::default())
+        .await
+        .expect("create note");
+    database
+        .update_visible_note(
+            &alice,
+            note_id("0197c9bc-0000-7000-8000-0000000000f2"),
+            revision(1),
+            &draft("Two", "= Two\n\ntwo", &[]),
+            NoteLinks::default(),
+            UnixMillis::new(200),
+        )
+        .await
+        .expect("update note");
+
+    // 先頭を試行上限まで失敗させ、subscriptionを無効化した状態を作る。
+    let claimed = database
+        .claim_due_deliveries(UnixMillis::new(1_000), UnixMillis::new(61_000), 10)
+        .await
+        .expect("claim head");
+    database
+        .record_failed(
+            "sub-a",
+            claimed[0].event.sequence,
+            WebhookDeliveryFailure::TimedOut,
+            10,
+            UnixMillis::new(3_600_000),
+            UnixMillis::new(1_500),
+        )
+        .await
+        .expect("record failure");
+    database
+        .disable_exhausted_subscription("sub-a", UnixMillis::new(1_600))
+        .await
+        .expect("disable");
+
+    // 一覧は停止と失敗分類、配送待ち2件を示す。
+    let owned = database
+        .list_owned_subscriptions(&alice)
+        .await
+        .expect("list disabled");
+    assert_eq!(owned[0].state, WebhookSubscriptionState::Disabled);
+    assert_eq!(
+        owned[0].disabled_reason.as_deref(),
+        Some("delivery_exhausted")
+    );
+    assert_eq!(owned[0].last_failure.as_deref(), Some("timed_out"));
+    assert_eq!(owned[0].pending_count, 2);
+
+    // 再試行は先頭の試行回数を初期化し、購読を有効へ戻す。
+    assert!(
+        database
+            .retry_owned_head_delivery(&alice, "sub-a", UnixMillis::new(2_000))
+            .await
+            .expect("retry")
+    );
+    let reclaimed = database
+        .claim_due_deliveries(UnixMillis::new(2_500), UnixMillis::new(62_500), 10)
+        .await
+        .expect("claim after retry");
+    assert_eq!(reclaimed.len(), 1);
+    assert_eq!(reclaimed[0].event.kind, "note.created");
+    assert_eq!(reclaimed[0].attempt_count, 0);
+
+    // 破棄は先頭を取り除き、後続のeventが取得できるようになる。
+    assert!(
+        database
+            .discard_owned_head_delivery(&alice, "sub-a", UnixMillis::new(3_000))
+            .await
+            .expect("discard")
+    );
+    let next = database
+        .claim_due_deliveries(UnixMillis::new(3_500), UnixMillis::new(63_500), 10)
+        .await
+        .expect("claim after discard");
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0].event.kind, "note.updated");
+
+    // 所有していない利用者の操作は対象なしとして拒否する。
+    assert!(
+        !database
+            .retry_owned_head_delivery(&user("bob"), "sub-a", UnixMillis::new(4_000))
+            .await
+            .expect("retry by bob")
+    );
 }

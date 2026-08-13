@@ -4,12 +4,15 @@
 //! addressへ接続を固定する。redirectは追わない。本文と時刻をHMAC-SHA256で
 //! 署名したheaderを付け、応答は状態codeだけで判定して本文は上限まで読み捨てる。
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use hmac::{Hmac, Mac};
-use marginalis_application::{WebhookDeliveryFailure, WebhookDeliverySender};
+use marginalis_application::{
+    WebhookDeliveryFailure, WebhookDeliverySender, is_public_webhook_address,
+    validate_webhook_destination,
+};
 use marginalis_domain::UnixMillis;
 use sha2::Sha256;
 
@@ -43,64 +46,41 @@ impl WebhookHttpSender {
         self
     }
 
-    fn is_allowed_host(&self, host: &str) -> bool {
-        self.allowed_hosts
-            .iter()
-            .any(|allowed| allowed.eq_ignore_ascii_case(host))
-    }
-
     /// URLを検査し、接続を固定する解決済みaddressを返す。
     ///
-    /// 既定ではpublicなHTTPS(port 443)だけを許し、userinfo付きURLと
-    /// 特別用途addressを拒否する。allowlistのhostだけは例外とする。
+    /// 構文とliteralの検査は登録時と同じapplication層の検査を使い、
+    /// 名前で指定された宛先は送信直前にすべての解決結果を検査する。
     async fn checked_destination(
         &self,
         url: &str,
     ) -> Result<(url::Url, String, Vec<SocketAddr>), WebhookDeliveryFailure> {
-        let parsed =
-            url::Url::parse(url).map_err(|_| WebhookDeliveryFailure::DestinationRejected)?;
-        if !parsed.username().is_empty() || parsed.password().is_some() {
-            return Err(WebhookDeliveryFailure::DestinationRejected);
-        }
-        let Some(host) = parsed.host_str().map(str::to_string) else {
-            return Err(WebhookDeliveryFailure::DestinationRejected);
-        };
-        let allowed = self.is_allowed_host(&host);
-        if !allowed {
-            if parsed.scheme() != "https" {
-                return Err(WebhookDeliveryFailure::DestinationRejected);
-            }
-            if parsed.port().is_some_and(|port| port != 443) {
-                return Err(WebhookDeliveryFailure::DestinationRejected);
-            }
-        }
-        let port = parsed
-            .port_or_known_default()
-            .ok_or(WebhookDeliveryFailure::DestinationRejected)?;
-        // IPのliteralはDNSを介さず直接検査し、名前はすべての解決結果を検査する。
-        let addresses: Vec<SocketAddr> = match parsed.host() {
-            Some(url::Host::Ipv4(v4)) => vec![SocketAddr::new(IpAddr::V4(v4), port)],
-            Some(url::Host::Ipv6(v6)) => vec![SocketAddr::new(IpAddr::V6(v6), port)],
-            Some(url::Host::Domain(name)) => {
-                let resolved: Vec<SocketAddr> = tokio::net::lookup_host((name, port))
-                    .await
-                    .map_err(|_| WebhookDeliveryFailure::ConnectFailed)?
-                    .collect();
+        let destination = validate_webhook_destination(url, &self.allowed_hosts)
+            .map_err(|_| WebhookDeliveryFailure::DestinationRejected)?;
+        // IPのliteralは検査済みなのでDNSを介さず接続し、名前は解決結果を検査する。
+        let addresses: Vec<SocketAddr> = match destination.literal {
+            Some(address) => vec![SocketAddr::new(address, destination.port)],
+            None => {
+                let resolved: Vec<SocketAddr> =
+                    tokio::net::lookup_host((destination.host.as_str(), destination.port))
+                        .await
+                        .map_err(|_| WebhookDeliveryFailure::ConnectFailed)?
+                        .collect();
                 if resolved.is_empty() {
                     return Err(WebhookDeliveryFailure::ConnectFailed);
                 }
                 resolved
             }
-            None => return Err(WebhookDeliveryFailure::DestinationRejected),
         };
-        if !allowed
+        if !destination.exempt
             && addresses
                 .iter()
-                .any(|address| !is_public_address(address.ip()))
+                .any(|address| !is_public_webhook_address(address.ip()))
         {
             return Err(WebhookDeliveryFailure::DestinationRejected);
         }
-        Ok((parsed, host, addresses))
+        let parsed =
+            url::Url::parse(url).map_err(|_| WebhookDeliveryFailure::DestinationRejected)?;
+        Ok((parsed, destination.host, addresses))
     }
 
     async fn post_signed(
@@ -207,45 +187,6 @@ impl WebhookDeliverySender for WebhookHttpSender {
             Ok(())
         } else {
             Err(WebhookDeliveryFailure::DestinationRejected)
-        }
-    }
-}
-
-/// 公開networkのaddressだけを許す。特別用途address(RFC 6890)を拒否する。
-fn is_public_address(address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(v4) => {
-            let octets = v4.octets();
-            !(v4.is_unspecified()
-                || v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                || v4.is_multicast()
-                // 100.64.0.0/10 (shared address space)
-                || (octets[0] == 100 && (octets[1] & 0b1100_0000) == 64)
-                // 192.0.0.0/24 (IETF protocol assignments)
-                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
-                // 198.18.0.0/15 (benchmarking)
-                || (octets[0] == 198 && (octets[1] & 0b1111_1110) == 18)
-                // 240.0.0.0/4 (reserved)
-                || octets[0] >= 240)
-        }
-        IpAddr::V6(v6) => {
-            if let Some(mapped) = v6.to_ipv4_mapped() {
-                return is_public_address(IpAddr::V4(mapped));
-            }
-            let segments = v6.segments();
-            !(v6.is_unspecified()
-                || v6.is_loopback()
-                || v6.is_multicast()
-                // fc00::/7 (unique local)
-                || (segments[0] & 0xfe00) == 0xfc00
-                // fe80::/10 (link local)
-                || (segments[0] & 0xffc0) == 0xfe80
-                // 2001:db8::/32 (documentation)
-                || (segments[0] == 0x2001 && segments[1] == 0x0db8))
         }
     }
 }

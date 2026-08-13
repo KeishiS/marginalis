@@ -260,6 +260,30 @@ pub(super) fn math_macro_error(
     })
 }
 
+pub(super) fn webhook_error(
+    error: marginalis_application::WebhookUseCaseError,
+) -> (StatusCode, Json<ProblemResponse>) {
+    use marginalis_application::{StorageError, WebhookUseCaseError};
+
+    problem_response(match error {
+        WebhookUseCaseError::NotFound | WebhookUseCaseError::Storage(StorageError::NotFound) => {
+            ProblemResponse::new(ProblemCode::NotFound, "webhook subscription was not found")
+        }
+        WebhookUseCaseError::InvalidDestination => ProblemResponse::new(
+            ProblemCode::ValidationFailed,
+            "webhook destination URL is not allowed",
+        ),
+        WebhookUseCaseError::InvalidEventKinds => ProblemResponse::new(
+            ProblemCode::ValidationFailed,
+            "webhook event kinds are empty or unknown",
+        ),
+        WebhookUseCaseError::Storage(_) => ProblemResponse::new(
+            ProblemCode::Unavailable,
+            "webhook subscriptions are unavailable",
+        ),
+    })
+}
+
 pub(super) fn mcp_scope_ceiling_error(
     error: marginalis_application::McpScopeCeilingUseCaseError,
 ) -> (StatusCode, Json<ProblemResponse>) {

@@ -1692,6 +1692,198 @@
           "utf8_byte"
         ],
         "type": "string"
+      },
+      "WebhookEventKind": {
+        "description": "Webhookが通知するeventの種別。",
+        "enum": [
+          "note.created",
+          "note.updated",
+          "note.deleted",
+          "note.restored",
+          "bibliography_item.created",
+          "bibliography_item.updated",
+          "bibliography_item.deleted"
+        ],
+        "type": "string"
+      },
+      "WebhookSecret": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "type": "object"
+      },
+      "WebhookSubscription": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disabled_reason": {
+            "enum": [
+              "delivery_exhausted",
+              "destination_rejected",
+              "owner_disabled"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_kinds": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventKind"
+            },
+            "type": "array"
+          },
+          "last_attempted_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_failure": {
+            "enum": [
+              "non_success_status",
+              "connect_failed",
+              "timed_out",
+              "destination_rejected"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_attempt_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pending_count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WebhookSubscriptionState"
+          },
+          "subscription_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "updated_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription_id",
+          "url",
+          "event_kinds",
+          "state",
+          "disabled_reason",
+          "created_at_ms",
+          "updated_at_ms",
+          "revision",
+          "last_attempted_at_ms",
+          "last_failure",
+          "next_attempt_at_ms",
+          "pending_count"
+        ],
+        "type": "object"
+      },
+      "WebhookSubscriptionCreated": {
+        "additionalProperties": false,
+        "description": "登録直後の応答。secretはこの応答とsecret再生成の応答でだけ返す。",
+        "properties": {
+          "secret": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "subscription": {
+            "$ref": "#/components/schemas/WebhookSubscription"
+          }
+        },
+        "required": [
+          "subscription",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "WebhookSubscriptionDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "event_kinds": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "url": {
+            "description": "通知の送信先URL。公開networkのHTTPS(port 443)だけを受け付ける。",
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "event_kinds"
+        ],
+        "type": "object"
+      },
+      "WebhookSubscriptionState": {
+        "enum": [
+          "pending_challenge",
+          "active",
+          "disabled"
+        ],
+        "type": "string"
+      },
+      "WebhookVerification": {
+        "additionalProperties": false,
+        "description": "所有確認の結果。失敗しても購読は残り、やり直せる。",
+        "properties": {
+          "failure": {
+            "enum": [
+              "non_success_status",
+              "connect_failed",
+              "timed_out",
+              "destination_rejected"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verified",
+          "failure"
+        ],
+        "type": "object"
       }
     }
   },
@@ -3020,6 +3212,283 @@
           }
         },
         "summary": "Create a note from the Web UI"
+      }
+    },
+    "/api/v3/webhooks": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookSubscription"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "webhook subscriptions with delivery status"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "List the current user's webhook subscriptions"
+      },
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookSubscriptionDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSubscriptionCreated"
+                }
+              }
+            },
+            "description": "registered subscription with its only readable secret"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Register a webhook subscription"
+      }
+    },
+    "/api/v3/webhooks/{subscription_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "webhook subscription deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Delete an owned webhook subscription"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "subscription_id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/v3/webhooks/{subscription_id}/discard": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "subscription_id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "the oldest pending delivery was discarded"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Discard the oldest pending delivery and unblock the queue"
+      }
+    },
+    "/api/v3/webhooks/{subscription_id}/retry": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "subscription_id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "the oldest pending delivery was scheduled for an immediate retry"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Retry the oldest pending delivery immediately"
+      }
+    },
+    "/api/v3/webhooks/{subscription_id}/secret": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "subscription_id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSecret"
+                }
+              }
+            },
+            "description": "newly generated secret"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Regenerate the signing secret of an owned subscription"
+      }
+    },
+    "/api/v3/webhooks/{subscription_id}/verify": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "subscription_id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookVerification"
+                }
+              }
+            },
+            "description": "verification result"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Send a signed challenge and activate the subscription on success"
       }
     }
   }

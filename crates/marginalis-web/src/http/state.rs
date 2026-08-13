@@ -8,7 +8,7 @@ use std::{
 
 use marginalis_application::{
     BibliographyApplication, BibliographyImportUseCases, MathMacroUseCases, McpOAuthUseCases,
-    NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases,
+    NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases, WebhookUseCases,
 };
 use mcp_authorization_server::{AuthorizationServerEndpoints, ResourcePolicy};
 
@@ -23,6 +23,7 @@ pub struct ApiState {
     pub cookie_path: String,
     pub browser_origin: String,
     pub mcp: Option<Arc<McpEndpoint>>,
+    pub webhooks: Option<Arc<dyn WebhookUseCases>>,
     pub(super) mcp_registration_limiter: McpRegistrationRateLimiter,
 }
 
@@ -147,6 +148,7 @@ impl ApiState {
             cookie_path,
             browser_origin,
             mcp: None,
+            webhooks: None,
             mcp_registration_limiter: McpRegistrationRateLimiter::new(
                 30,
                 Duration::from_secs(10 * 60),
@@ -169,6 +171,11 @@ impl ApiState {
         bibliography_import: Arc<dyn BibliographyImportUseCases>,
     ) -> Self {
         self.bibliography_import = Some(bibliography_import);
+        self
+    }
+
+    pub fn with_webhooks(mut self, webhooks: Arc<dyn WebhookUseCases>) -> Self {
+        self.webhooks = Some(webhooks);
         self
     }
 }

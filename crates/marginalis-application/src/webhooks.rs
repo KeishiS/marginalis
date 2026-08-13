@@ -6,9 +6,9 @@
 //! composition root(service)が受け持つ。
 
 use async_trait::async_trait;
-use marginalis_domain::UnixMillis;
+use marginalis_domain::{Actor, UnixMillis};
 
-use crate::StorageError;
+use crate::{Clock, Random, StorageError};
 
 /// payloadの契約版。受信側が形の変更を検知できるように本文へ含める。
 pub const WEBHOOK_CONTRACT_VERSION: u32 = 1;
@@ -209,6 +209,454 @@ pub async fn webhook_delivery_tick(
     Ok(outcome)
 }
 
+/// 購読できるevent種別。契約と設定画面の一覧に使う。
+pub const WEBHOOK_EVENT_KINDS: [&str; 7] = [
+    "note.created",
+    "note.updated",
+    "note.deleted",
+    "note.restored",
+    "bibliography_item.created",
+    "bibliography_item.updated",
+    "bibliography_item.deleted",
+];
+
+/// subscriptionの状態。DBのstate列と同じ語彙を使う。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WebhookSubscriptionState {
+    PendingChallenge,
+    Active,
+    Disabled,
+}
+
+impl WebhookSubscriptionState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PendingChallenge => "pending_challenge",
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "pending_challenge" => Some(Self::PendingChallenge),
+            "active" => Some(Self::Active),
+            "disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+/// 一覧と設定画面に出すsubscriptionの概要。secretは含めない。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WebhookSubscriptionOverview {
+    pub subscription_id: String,
+    pub url: String,
+    pub event_kinds: Vec<String>,
+    pub state: WebhookSubscriptionState,
+    pub disabled_reason: Option<String>,
+    pub created_at: UnixMillis,
+    pub updated_at: UnixMillis,
+    pub revision: i64,
+    /// 直近の配送試行。まだ試行がなければNone。
+    pub last_attempted_at: Option<UnixMillis>,
+    pub last_failure: Option<String>,
+    /// 次に試行する予定の時刻。配送待ちがなければNone。
+    pub next_attempt_at: Option<UnixMillis>,
+    /// 配送待ちevent数。
+    pub pending_count: i64,
+}
+
+/// 検査済みの送信先。adapterはこの結果のhostとportで接続する。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WebhookDestination {
+    pub host: String,
+    pub port: u16,
+    /// 管理者allowlistに含まれ、address検査とHTTPS限定を免除するか。
+    pub exempt: bool,
+    /// hostがIPのliteralの場合、そのaddress。
+    pub literal: Option<std::net::IpAddr>,
+}
+
+/// 送信先URLが検査を通らなかったことを示す。理由は応答へ出さない。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("webhook destination URL is not allowed")]
+pub struct InvalidWebhookDestination;
+
+/// 送信先URLの検査。public HTTPS(port 443)以外とuserinfo付きURLを拒否し、
+/// IPのliteralは特別用途addressを拒否する。allowlistのhostだけを例外にする。
+/// 名前で指定された宛先の解決結果の検査は、送信直前にadapterが行う。
+pub fn validate_webhook_destination(
+    url: &str,
+    allowed_hosts: &[String],
+) -> Result<WebhookDestination, InvalidWebhookDestination> {
+    let parsed = url::Url::parse(url).map_err(|_| InvalidWebhookDestination)?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(InvalidWebhookDestination);
+    }
+    let Some(host) = parsed.host_str().map(str::to_string) else {
+        return Err(InvalidWebhookDestination);
+    };
+    let exempt = allowed_hosts
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(&host));
+    if !exempt {
+        if parsed.scheme() != "https" {
+            return Err(InvalidWebhookDestination);
+        }
+        if parsed.port().is_some_and(|port| port != 443) {
+            return Err(InvalidWebhookDestination);
+        }
+    }
+    let port = parsed
+        .port_or_known_default()
+        .ok_or(InvalidWebhookDestination)?;
+    let literal = match parsed.host() {
+        Some(url::Host::Ipv4(v4)) => Some(std::net::IpAddr::V4(v4)),
+        Some(url::Host::Ipv6(v6)) => Some(std::net::IpAddr::V6(v6)),
+        _ => None,
+    };
+    if !exempt && literal.is_some_and(|address| !is_public_webhook_address(address)) {
+        return Err(InvalidWebhookDestination);
+    }
+    Ok(WebhookDestination {
+        host,
+        port,
+        exempt,
+        literal,
+    })
+}
+
+/// 公開networkのaddressだけを許す。特別用途address(RFC 6890)を拒否する。
+pub fn is_public_webhook_address(address: std::net::IpAddr) -> bool {
+    match address {
+        std::net::IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            !(v4.is_unspecified()
+                || v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.is_multicast()
+                // 100.64.0.0/10 (shared address space)
+                || (octets[0] == 100 && (octets[1] & 0b1100_0000) == 64)
+                // 192.0.0.0/24 (IETF protocol assignments)
+                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
+                // 198.18.0.0/15 (benchmarking)
+                || (octets[0] == 198 && (octets[1] & 0b1111_1110) == 18)
+                // 240.0.0.0/4 (reserved)
+                || octets[0] >= 240)
+        }
+        std::net::IpAddr::V6(v6) => {
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return is_public_webhook_address(std::net::IpAddr::V4(mapped));
+            }
+            let segments = v6.segments();
+            !(v6.is_unspecified()
+                || v6.is_loopback()
+                || v6.is_multicast()
+                // fc00::/7 (unique local)
+                || (segments[0] & 0xfe00) == 0xfc00
+                // fe80::/10 (link local)
+                || (segments[0] & 0xffc0) == 0xfe80
+                // 2001:db8::/32 (documentation)
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8))
+        }
+    }
+}
+
+/// subscription管理の永続化。実装はSQLite adapterが持つ。
+#[async_trait]
+pub trait WebhookSubscriptionRepository: Send + Sync {
+    async fn list_owned_subscriptions(
+        &self,
+        actor: &Actor,
+    ) -> Result<Vec<WebhookSubscriptionOverview>, StorageError>;
+    async fn create_owned_subscription(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+        url: &str,
+        event_kinds: &[String],
+        secret: &str,
+        now: UnixMillis,
+    ) -> Result<(), StorageError>;
+    /// 検証に使うため、所有するsubscriptionのURLとsecretを読む。
+    async fn owned_subscription_credentials(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<Option<(String, String)>, StorageError>;
+    async fn activate_owned_subscription(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+        now: UnixMillis,
+    ) -> Result<bool, StorageError>;
+    async fn delete_owned_subscription(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<bool, StorageError>;
+    async fn replace_owned_secret(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+        secret: &str,
+        now: UnixMillis,
+    ) -> Result<bool, StorageError>;
+    /// 失敗中の先頭の配送を即時再試行へ戻す。無効化済みなら有効へ戻す。
+    async fn retry_owned_head_delivery(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+        now: UnixMillis,
+    ) -> Result<bool, StorageError>;
+    /// 失敗中の先頭の配送を破棄し、後続を進められるようにする。
+    async fn discard_owned_head_delivery(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+        now: UnixMillis,
+    ) -> Result<bool, StorageError>;
+}
+
+/// subscription管理の失敗。webはこれをHTTPの失敗表現へ写す。
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum WebhookUseCaseError {
+    #[error("webhook subscription was not found")]
+    NotFound,
+    #[error("webhook destination URL is not allowed")]
+    InvalidDestination,
+    #[error("webhook event kinds are empty or unknown")]
+    InvalidEventKinds,
+    #[error("storage failed: {0}")]
+    Storage(#[from] StorageError),
+}
+
+/// 所有確認の結果。失敗は分類ごと画面へ返す。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WebhookVerificationOutcome {
+    Activated,
+    Failed(WebhookDeliveryFailure),
+}
+
+/// subscription管理のユースケース。webはこのtraitだけへ依存する。
+#[async_trait]
+pub trait WebhookUseCases: Send + Sync {
+    async fn list_subscriptions(
+        &self,
+        actor: &Actor,
+    ) -> Result<Vec<WebhookSubscriptionOverview>, WebhookUseCaseError>;
+    /// 登録する。返り値は(概要, secretの平文)。secretはこの応答でだけ返す。
+    async fn create_subscription(
+        &self,
+        actor: &Actor,
+        url: &str,
+        event_kinds: Vec<String>,
+    ) -> Result<(WebhookSubscriptionOverview, String), WebhookUseCaseError>;
+    /// 署名付きchallengeを送信先へ送り、応答を確認して有効化する。
+    async fn verify_subscription(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<WebhookVerificationOutcome, WebhookUseCaseError>;
+    /// secretを再生成し、新しい平文を返す。
+    async fn regenerate_secret(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<String, WebhookUseCaseError>;
+    async fn delete_subscription(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError>;
+    async fn retry_delivery(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError>;
+    async fn discard_delivery(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError>;
+}
+
+/// subscription管理の実装。repositoryとsenderを組み合わせる。
+pub struct WebhookSubscriptionApplication {
+    repository: std::sync::Arc<dyn WebhookSubscriptionRepository>,
+    sender: std::sync::Arc<dyn WebhookDeliverySender>,
+    clock: std::sync::Arc<dyn Clock>,
+    random: std::sync::Arc<dyn Random>,
+    allowed_hosts: Vec<String>,
+}
+
+impl WebhookSubscriptionApplication {
+    pub fn new(
+        repository: std::sync::Arc<dyn WebhookSubscriptionRepository>,
+        sender: std::sync::Arc<dyn WebhookDeliverySender>,
+        clock: std::sync::Arc<dyn Clock>,
+        random: std::sync::Arc<dyn Random>,
+        allowed_hosts: Vec<String>,
+    ) -> Self {
+        Self {
+            repository,
+            sender,
+            clock,
+            random,
+            allowed_hosts,
+        }
+    }
+
+    fn validated_event_kinds(event_kinds: Vec<String>) -> Result<Vec<String>, WebhookUseCaseError> {
+        if event_kinds.is_empty()
+            || event_kinds
+                .iter()
+                .any(|kind| !WEBHOOK_EVENT_KINDS.contains(&kind.as_str()))
+        {
+            return Err(WebhookUseCaseError::InvalidEventKinds);
+        }
+        let mut kinds = event_kinds;
+        kinds.sort_unstable();
+        kinds.dedup();
+        Ok(kinds)
+    }
+}
+
+#[async_trait]
+impl WebhookUseCases for WebhookSubscriptionApplication {
+    async fn list_subscriptions(
+        &self,
+        actor: &Actor,
+    ) -> Result<Vec<WebhookSubscriptionOverview>, WebhookUseCaseError> {
+        Ok(self.repository.list_owned_subscriptions(actor).await?)
+    }
+
+    async fn create_subscription(
+        &self,
+        actor: &Actor,
+        url: &str,
+        event_kinds: Vec<String>,
+    ) -> Result<(WebhookSubscriptionOverview, String), WebhookUseCaseError> {
+        validate_webhook_destination(url, &self.allowed_hosts)
+            .map_err(|InvalidWebhookDestination| WebhookUseCaseError::InvalidDestination)?;
+        let kinds = Self::validated_event_kinds(event_kinds)?;
+        let subscription_id = self.random.uuid_v7().to_string();
+        let secret = self.random.opaque_token();
+        let now = self.clock.now();
+        self.repository
+            .create_owned_subscription(actor, &subscription_id, url, &kinds, &secret, now)
+            .await?;
+        let overview = self
+            .repository
+            .list_owned_subscriptions(actor)
+            .await?
+            .into_iter()
+            .find(|subscription| subscription.subscription_id == subscription_id)
+            .ok_or(WebhookUseCaseError::NotFound)?;
+        Ok((overview, secret))
+    }
+
+    async fn verify_subscription(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<WebhookVerificationOutcome, WebhookUseCaseError> {
+        let Some((url, secret)) = self
+            .repository
+            .owned_subscription_credentials(actor, subscription_id)
+            .await?
+        else {
+            return Err(WebhookUseCaseError::NotFound);
+        };
+        let challenge = self.random.opaque_token();
+        let now = self.clock.now();
+        match self
+            .sender
+            .verify_destination(&url, &secret, now, &challenge)
+            .await
+        {
+            Ok(()) => {
+                if !self
+                    .repository
+                    .activate_owned_subscription(actor, subscription_id, now)
+                    .await?
+                {
+                    return Err(WebhookUseCaseError::NotFound);
+                }
+                Ok(WebhookVerificationOutcome::Activated)
+            }
+            Err(failure) => Ok(WebhookVerificationOutcome::Failed(failure)),
+        }
+    }
+
+    async fn regenerate_secret(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<String, WebhookUseCaseError> {
+        let secret = self.random.opaque_token();
+        let now = self.clock.now();
+        if !self
+            .repository
+            .replace_owned_secret(actor, subscription_id, &secret, now)
+            .await?
+        {
+            return Err(WebhookUseCaseError::NotFound);
+        }
+        Ok(secret)
+    }
+
+    async fn delete_subscription(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError> {
+        if !self
+            .repository
+            .delete_owned_subscription(actor, subscription_id)
+            .await?
+        {
+            return Err(WebhookUseCaseError::NotFound);
+        }
+        Ok(())
+    }
+
+    async fn retry_delivery(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError> {
+        let now = self.clock.now();
+        if !self
+            .repository
+            .retry_owned_head_delivery(actor, subscription_id, now)
+            .await?
+        {
+            return Err(WebhookUseCaseError::NotFound);
+        }
+        Ok(())
+    }
+
+    async fn discard_delivery(
+        &self,
+        actor: &Actor,
+        subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError> {
+        let now = self.clock.now();
+        if !self
+            .repository
+            .discard_owned_head_delivery(actor, subscription_id, now)
+            .await?
+        {
+            return Err(WebhookUseCaseError::NotFound);
+        }
+        Ok(())
+    }
+}
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -402,5 +850,296 @@ mod tests {
         assert_eq!(webhook_backoff_ms(10), 2_560_000);
         assert_eq!(webhook_backoff_ms(11), WEBHOOK_BACKOFF_MAX_MS);
         assert_eq!(webhook_backoff_ms(30), WEBHOOK_BACKOFF_MAX_MS);
+    }
+
+    /// 送信先URLの検査は、公開HTTPS以外とuserinfo付きURLを拒否する。
+    #[test]
+    fn destination_validation_permits_only_public_https() {
+        let none: &[String] = &[];
+        assert!(validate_webhook_destination("https://receiver.example.test/hook", none).is_ok());
+        assert!(validate_webhook_destination("http://receiver.example.test/hook", none).is_err());
+        assert!(validate_webhook_destination("https://receiver.example.test:8443/", none).is_err());
+        assert!(
+            validate_webhook_destination("https://user:pass@receiver.example.test/", none).is_err()
+        );
+        assert!(validate_webhook_destination("https://10.0.0.8/hook", none).is_err());
+        assert!(validate_webhook_destination("https://[::1]/hook", none).is_err());
+        assert!(validate_webhook_destination("https://203.0.113.9/hook", none).is_err());
+        assert!(validate_webhook_destination("https://93.184.216.34/hook", none).is_ok());
+    }
+
+    /// allowlistのhostはhttpとprivate addressも許し、検査の免除が記録される。
+    #[test]
+    fn destination_validation_exempts_allowlisted_hosts() {
+        let allowed = vec!["receiver.internal".to_string(), "127.0.0.1".to_string()];
+        let destination =
+            validate_webhook_destination("http://receiver.internal:8080/hook", &allowed)
+                .expect("allowlisted host");
+        assert!(destination.exempt);
+        assert_eq!(destination.port, 8080);
+        assert!(validate_webhook_destination("http://127.0.0.1:3000/hook", &allowed).is_ok());
+        assert!(validate_webhook_destination("http://127.0.0.2:3000/hook", &allowed).is_err());
+    }
+
+    struct FixedClock;
+
+    impl Clock for FixedClock {
+        fn now(&self) -> UnixMillis {
+            UnixMillis::new(1_700_000_000_000)
+        }
+    }
+
+    struct FixedRandom;
+
+    impl Random for FixedRandom {
+        fn uuid_v7(&self) -> marginalis_domain::EntityId {
+            use std::str::FromStr;
+            marginalis_domain::EntityId::from_str("01890f3c-6a4d-7cc2-98b3-84b68f68c6e1")
+                .expect("fixed UUIDv7")
+        }
+
+        fn opaque_token(&self) -> String {
+            "opaque-token-1".into()
+        }
+    }
+
+    fn actor() -> Actor {
+        Actor::try_new("https://idp.example.test/".into(), "owner-1".into()).expect("actor")
+    }
+
+    fn overview(
+        subscription_id: &str,
+        state: WebhookSubscriptionState,
+    ) -> WebhookSubscriptionOverview {
+        WebhookSubscriptionOverview {
+            subscription_id: subscription_id.into(),
+            url: "https://receiver.example.test/hook".into(),
+            event_kinds: vec!["note.created".into()],
+            state,
+            disabled_reason: None,
+            created_at: UnixMillis::new(1_000),
+            updated_at: UnixMillis::new(1_000),
+            revision: 0,
+            last_attempted_at: None,
+            last_failure: None,
+            next_attempt_at: None,
+            pending_count: 0,
+        }
+    }
+
+    struct CreatedSubscription {
+        subscription_id: String,
+        event_kinds: Vec<String>,
+    }
+
+    #[derive(Default)]
+    struct StubSubscriptions {
+        created: Mutex<Vec<CreatedSubscription>>,
+        activated: Mutex<Vec<String>>,
+        credentials: Mutex<Option<(String, String)>>,
+    }
+
+    #[async_trait]
+    impl WebhookSubscriptionRepository for StubSubscriptions {
+        async fn list_owned_subscriptions(
+            &self,
+            _actor: &Actor,
+        ) -> Result<Vec<WebhookSubscriptionOverview>, StorageError> {
+            Ok(self
+                .created
+                .lock()
+                .expect("created lock")
+                .iter()
+                .map(|created| {
+                    overview(
+                        &created.subscription_id,
+                        WebhookSubscriptionState::PendingChallenge,
+                    )
+                })
+                .collect())
+        }
+        async fn create_owned_subscription(
+            &self,
+            _actor: &Actor,
+            subscription_id: &str,
+            url: &str,
+            event_kinds: &[String],
+            secret: &str,
+            _now: UnixMillis,
+        ) -> Result<(), StorageError> {
+            let _ = (url, secret);
+            self.created
+                .lock()
+                .expect("created lock")
+                .push(CreatedSubscription {
+                    subscription_id: subscription_id.into(),
+                    event_kinds: event_kinds.to_vec(),
+                });
+            Ok(())
+        }
+        async fn owned_subscription_credentials(
+            &self,
+            _actor: &Actor,
+            _subscription_id: &str,
+        ) -> Result<Option<(String, String)>, StorageError> {
+            Ok(self.credentials.lock().expect("credentials lock").clone())
+        }
+        async fn activate_owned_subscription(
+            &self,
+            _actor: &Actor,
+            subscription_id: &str,
+            _now: UnixMillis,
+        ) -> Result<bool, StorageError> {
+            self.activated
+                .lock()
+                .expect("activated lock")
+                .push(subscription_id.into());
+            Ok(true)
+        }
+        async fn delete_owned_subscription(
+            &self,
+            _actor: &Actor,
+            _subscription_id: &str,
+        ) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn replace_owned_secret(
+            &self,
+            _actor: &Actor,
+            _subscription_id: &str,
+            _secret: &str,
+            _now: UnixMillis,
+        ) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+        async fn retry_owned_head_delivery(
+            &self,
+            _actor: &Actor,
+            _subscription_id: &str,
+            _now: UnixMillis,
+        ) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+        async fn discard_owned_head_delivery(
+            &self,
+            _actor: &Actor,
+            _subscription_id: &str,
+            _now: UnixMillis,
+        ) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+    }
+
+    fn subscription_application(
+        repository: std::sync::Arc<StubSubscriptions>,
+        result: Result<(), WebhookDeliveryFailure>,
+    ) -> WebhookSubscriptionApplication {
+        WebhookSubscriptionApplication::new(
+            repository,
+            std::sync::Arc::new(StubSender {
+                result,
+                bodies: Mutex::new(Vec::new()),
+            }),
+            std::sync::Arc::new(FixedClock),
+            std::sync::Arc::new(FixedRandom),
+            Vec::new(),
+        )
+    }
+
+    /// 登録は送信先とevent種別を検査し、secretをこの応答でだけ返す。
+    #[tokio::test]
+    async fn create_subscription_validates_input_and_returns_the_secret_once() {
+        let repository = std::sync::Arc::new(StubSubscriptions::default());
+        let application = subscription_application(repository.clone(), Ok(()));
+        let (subscription, secret) = application
+            .create_subscription(
+                &actor(),
+                "https://receiver.example.test/hook",
+                vec!["note.created".into(), "note.created".into()],
+            )
+            .await
+            .expect("create");
+        assert_eq!(secret, "opaque-token-1");
+        assert_eq!(
+            subscription.state,
+            WebhookSubscriptionState::PendingChallenge
+        );
+        {
+            let created = repository.created.lock().expect("created lock");
+            // 重複したevent種別は1つへ畳む。
+            assert_eq!(created[0].event_kinds, vec!["note.created".to_string()]);
+        }
+
+        let error = application
+            .create_subscription(
+                &actor(),
+                "http://receiver.example.test/",
+                vec!["note.created".into()],
+            )
+            .await
+            .expect_err("insecure URL");
+        assert_eq!(error, WebhookUseCaseError::InvalidDestination);
+        let error = application
+            .create_subscription(
+                &actor(),
+                "https://receiver.example.test/",
+                vec!["unknown.kind".into()],
+            )
+            .await
+            .expect_err("unknown kind");
+        assert_eq!(error, WebhookUseCaseError::InvalidEventKinds);
+    }
+
+    /// 所有確認は成功した場合だけ購読を有効化し、失敗は分類を返す。
+    #[tokio::test]
+    async fn verification_activates_only_after_the_challenge_succeeds() {
+        let repository = std::sync::Arc::new(StubSubscriptions::default());
+        *repository.credentials.lock().expect("credentials lock") = Some((
+            "https://receiver.example.test/hook".into(),
+            "secret-1".into(),
+        ));
+        let application = subscription_application(repository.clone(), Ok(()));
+        let outcome = application
+            .verify_subscription(&actor(), "sub-a")
+            .await
+            .expect("verify");
+        assert_eq!(outcome, WebhookVerificationOutcome::Activated);
+        assert_eq!(
+            *repository.activated.lock().expect("activated lock"),
+            vec!["sub-a".to_string()]
+        );
+
+        let repository = std::sync::Arc::new(StubSubscriptions::default());
+        *repository.credentials.lock().expect("credentials lock") = Some((
+            "https://receiver.example.test/hook".into(),
+            "secret-1".into(),
+        ));
+        let application = subscription_application(
+            repository.clone(),
+            Err(WebhookDeliveryFailure::NonSuccessStatus),
+        );
+        let outcome = application
+            .verify_subscription(&actor(), "sub-a")
+            .await
+            .expect("verify");
+        assert_eq!(
+            outcome,
+            WebhookVerificationOutcome::Failed(WebhookDeliveryFailure::NonSuccessStatus)
+        );
+        assert!(
+            repository
+                .activated
+                .lock()
+                .expect("activated lock")
+                .is_empty()
+        );
+
+        let repository = std::sync::Arc::new(StubSubscriptions::default());
+        let application = subscription_application(repository, Ok(()));
+        let error = application
+            .verify_subscription(&actor(), "missing")
+            .await
+            .expect_err("unknown subscription");
+        assert_eq!(error, WebhookUseCaseError::NotFound);
     }
 }

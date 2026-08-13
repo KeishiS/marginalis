@@ -17,6 +17,7 @@ mod oauth;
 mod security;
 mod state;
 mod ui;
+mod webhooks;
 
 #[cfg(test)]
 mod tests;
@@ -72,6 +73,10 @@ use self::{
         access_note_page, bibliography_page, create_note_page, deleted_notes_page, edit_note_page,
         graph_page, home, math_macro_settings_page, mcp_access_settings_page, settings_page,
         view_note,
+    },
+    webhooks::{
+        create_webhook, delete_webhook, discard_webhook_delivery, list_webhooks,
+        regenerate_webhook_secret, retry_webhook_delivery, verify_webhook,
     },
 };
 
@@ -160,6 +165,27 @@ pub fn router(state: ApiState) -> Router {
             "/api/v3/mcp-authorizations/{client_id}/scope-ceiling",
             axum::routing::put(replace_client_mcp_scope_ceiling)
                 .delete(delete_client_mcp_scope_ceiling),
+        )
+        .route("/api/v3/webhooks", get(list_webhooks).post(create_webhook))
+        .route(
+            "/api/v3/webhooks/{subscription_id}",
+            axum::routing::delete(delete_webhook),
+        )
+        .route(
+            "/api/v3/webhooks/{subscription_id}/verify",
+            post(verify_webhook),
+        )
+        .route(
+            "/api/v3/webhooks/{subscription_id}/secret",
+            post(regenerate_webhook_secret),
+        )
+        .route(
+            "/api/v3/webhooks/{subscription_id}/retry",
+            post(retry_webhook_delivery),
+        )
+        .route(
+            "/api/v3/webhooks/{subscription_id}/discard",
+            post(discard_webhook_delivery),
         )
         .route(
             "/api/v3/bibliography",
