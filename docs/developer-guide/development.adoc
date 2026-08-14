@@ -225,7 +225,7 @@ gh pr create --base main --head codex/<purpose>
 gh pr diff
 gh pr checks --watch
 ----
-. Pull Request作成後にmerge queueへ投入します。``main``のrulesetでは
+. Pull Request作成後にsquash方式のauto-mergeを設定します。``main``のrulesetでは
 GitHub Actionsの``verify``と``nixos-e2e``が必須です。両者は集約用のゲートjobで、``verify``は
 ``verify-core``、``native-aarch64``、``browser-smoke``の成功も集約するため、これらのチェックと必要なレビューが
 完了するまで実際のマージは行われません。文書だけの変更でもチェック名は維持し、``verify``は
@@ -237,11 +237,12 @@ GitHub Actionsの``verify``と``nixos-e2e``が必須です。両者は集約用�
 gh pr merge --auto --squash --delete-branch
 ----
 +
-merge queueは、投入されたPull Requestを最新の``main``へ重ねた一時branchを作り、そこで必須
-チェックを実行してからマージします。このため、作業ブランチをあらかじめ``main``の最新へ揃える
-必要はありません。``main``が先に進んで古くなったPull Requestも、``main``を取り込んで
-push し直すことなくそのまま投入できます。複数のPull Requestを投入した場合は、queueが
-順番に検証してマージします。
+rulesetは必須チェックの成功を要求しますが、作業ブランチが``main``の最新であることは
+要求しません(merge queueはorganization所有のリポジトリ限定のため、本リポジトリでは
+使えません)。このため、``main``が先へ進んで古くなったPull Requestも、``main``を取り込んで
+pushし直すことなくauto-mergeでそのままマージされます。別々に検証された変更の組み合わせは、
+マージ後の``main``へのpushで実行されるCIが検証します。そこで失敗した場合は、``main``を
+直接直さず、修正のPull Requestを続けて出します。
 +
 squash方式では、作業ブランチのcommitをまとめた1個のcommitが``main``へ入ります。1つのPull Requestが
 ``main``の1 commitに対応するため、``main``の履歴を一列で読めます。かわりに、作業ブランチで分けた
@@ -250,8 +251,9 @@ squash方式では、作業ブランチのcommitをまとめた1個のcommitが`
 ``main``のrulesetはsquash方式だけを許可します。これにより``main``に分岐を作らず、
 以降の履歴を一列で読める状態を維持します。
 +
-queueへ投入できない場合は、rulesetの必須チェックとmerge queueの設定を確認します。
-ブランチ保護の無効化、管理者権限による必須チェックの回避、force pushは行いません。
+auto-mergeを設定できない場合は、rulesetの必須チェックとリポジトリの
+``Allow auto-merge``設定を確認します。ブランチ保護の無効化、管理者権限による
+必須チェックの回避、force pushは行いません。
 +
 作業ブランチが``main``と衝突した場合だけは、force pushを避けるため``main``を作業ブランチへ
 マージして解消します。squash方式では、この解消用のマージcommitも``main``へは残りません。
