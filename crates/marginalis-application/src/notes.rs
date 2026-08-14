@@ -330,7 +330,6 @@ impl NoteUseCases for NoteApplication {
         NoteApplication::read_note_fragment(self, actor, note_id, start_line, end_line).await
     }
 
-<<<<<<< HEAD
     async fn apply_note_patch(
         &self,
         actor: Actor,
@@ -352,8 +351,6 @@ impl NoteUseCases for NoteApplication {
         .await
     }
 
-=======
->>>>>>> upstream/main
     async fn create_note(
         &self,
         actor: Actor,
