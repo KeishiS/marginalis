@@ -65,9 +65,10 @@ pub use notes::{
     NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
     NoteCommandRepository, NoteContent, NoteContentError, NoteGraph, NoteGraphCitation,
     NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks,
-    NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
-    NoteReviewRepository, NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason,
-    NoteSyncRepository, NoteSyncRepositoryError, NoteViewSnapshot,
+    NotePatchError, NotePatchOutcome, NoteQueryRepository, NoteReferenceQuery,
+    NoteReferenceResolution, NoteRenderInputs, NoteReviewRepository, NoteSyncEntry, NoteSyncPage,
+    NoteSyncPhase, NoteSyncRemovalReason, NoteSyncRepository, NoteSyncRepositoryError,
+    NoteViewSnapshot, apply_note_patch,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{
