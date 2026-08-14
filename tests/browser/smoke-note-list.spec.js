@@ -1,10 +1,7 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
 const {
   pendingWebProvenance,
-  escapeHtml,
   SCREENSHOT_OPTIONS,
-  editorScreenshotOptions,
-  detailScreenshotOptions,
 } = require("./fixtures/smoke-helpers");
 
 test("production build starts and renders a note returned by the API", async ({

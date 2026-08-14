@@ -10,9 +10,10 @@
   },
   "scripts": {
     "build": "tsc --noEmit && vite build",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "prettier --write . ../tests/browser",
+    "format:check": "prettier --check . ../tests/browser",
     "lint": "eslint . --max-warnings 0",
+    "lint:tests": "eslint --config ../eslint.config.js --max-warnings 0 ../tests/browser",
     "lint:css": "stylelint \"src/**/*.css\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

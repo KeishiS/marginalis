@@ -79,7 +79,9 @@ async function expectCompleteSelection(page) {
           .filter(({ width }) => width > 0);
         const top = Math.min(...visible.map((box) => box.top));
         const bottom = Math.max(...visible.map((box) => box.bottom));
-        const final = visible.sort((left, right) => left.top - right.top).at(-1);
+        const final = visible
+          .sort((left, right) => left.top - right.top)
+          .at(-1);
         return (
           visible.length > 0 &&
           visible.every(

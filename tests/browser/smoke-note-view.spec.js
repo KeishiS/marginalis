@@ -1,10 +1,7 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
 const {
   pendingWebProvenance,
-  escapeHtml,
   SCREENSHOT_OPTIONS,
-  editorScreenshotOptions,
-  detailScreenshotOptions,
 } = require("./fixtures/smoke-helpers");
 
 test("閲覧画面でnote IDをコピーし、広い本文を表示する", async ({

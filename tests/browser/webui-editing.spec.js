@@ -189,7 +189,9 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "1",
   );
   await expect(page.locator(".page-main mjx-container")).toBeVisible();
-  const renderedListItems = page.locator(".page-main .rendered-content ul > li");
+  const renderedListItems = page.locator(
+    ".page-main .rendered-content ul > li",
+  );
   await expect(renderedListItems).toHaveCount(2);
   await expect(renderedListItems.first().locator("br")).toHaveCount(1);
   await page.getByRole("link", { name: "編集" }).click();

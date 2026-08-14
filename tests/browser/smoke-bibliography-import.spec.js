@@ -1,11 +1,4 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
-const {
-  pendingWebProvenance,
-  escapeHtml,
-  SCREENSHOT_OPTIONS,
-  editorScreenshotOptions,
-  detailScreenshotOptions,
-} = require("./fixtures/smoke-helpers");
 
 test("CSL-JSONの競合をキーボードで解決して一括取り込みする", async ({
   page,
