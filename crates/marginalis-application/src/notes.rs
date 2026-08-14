@@ -326,8 +326,17 @@ impl NoteUseCases for NoteApplication {
         note_id: NoteId,
         start_line: usize,
         end_line: usize,
+        expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError> {
-        NoteApplication::read_note_fragment(self, actor, note_id, start_line, end_line).await
+        NoteApplication::read_note_fragment(
+            self,
+            actor,
+            note_id,
+            start_line,
+            end_line,
+            expected_revision,
+        )
+        .await
     }
 
     async fn apply_note_patch(

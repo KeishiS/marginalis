@@ -1035,6 +1035,10 @@
             "limits": {
               "$ref": "#/$defs/McpNoteProfileLimits"
             },
+            "marginalis_version": {
+              "description": "このサーバーのMarginalisの版。tool契約は版と同時にしか変わらないため、\nクライアントが手元のtool一覧の世代を照合する識別子として使える。",
+              "type": "string"
+            },
             "normalization": {
               "$ref": "#/$defs/McpNoteProfileNormalization"
             },
@@ -1053,6 +1057,7 @@
           "required": [
             "profile_version",
             "adocweave_package_version",
+            "marginalis_version",
             "limits",
             "normalization",
             "syntax",
@@ -2120,7 +2125,7 @@
   },
   {
     "name": "get_note_fragment",
-    "description": "Read the verbatim AsciiDoc source of an inclusive 1-based line range; requires notes:read",
+    "description": "Read the verbatim AsciiDoc source of an inclusive 1-based line range; pass the revision from get_note_outline as expected_revision so a concurrent update is rejected as a conflict instead of returning lines the outline no longer describes; requires notes:read",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -2130,6 +2135,15 @@
           "format": "uint",
           "minimum": 1,
           "type": "integer"
+        },
+        "expected_revision": {
+          "description": "`get_note_outline`で得たrevision。指定した場合、現在のrevisionと異なると\n本文を返さず競合として拒否する。行範囲の根拠が古くないことを確かめられる。",
+          "format": "int64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "note_id": {
           "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",

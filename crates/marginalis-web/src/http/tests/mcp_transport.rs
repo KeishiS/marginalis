@@ -1523,3 +1523,69 @@ async fn outline_and_fragment_read_without_the_full_source() {
         "invalid_request"
     );
 }
+
+/// fragmentはoutlineで得たrevisionを根拠として渡せ、食い違いは本文を返さず競合になる。
+#[tokio::test]
+async fn fragment_rejects_a_stale_expected_revision_without_returning_lines() {
+    // 一致するrevisionでは本文を返す。
+    let matching = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_note_fragment","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002","start_line":4,"end_line":4,"expected_revision":3}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(matching).await.expect("response");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let fragment: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(
+        fragment["result"]["structuredContent"]["fragment"],
+        "本文\n"
+    );
+
+    // 古いrevisionでは本文を含めずconflictを返す。
+    let stale = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_note_fragment","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002","start_line":4,"end_line":4,"expected_revision":2}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(stale).await.expect("response");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let rejected: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(rejected["result"]["isError"], true);
+    assert_eq!(rejected["result"]["structuredContent"]["code"], "conflict");
+    assert!(
+        !rejected["result"].to_string().contains("本文"),
+        "競合応答は本文を含めません"
+    );
+}
+
+/// profileは、tool契約の世代照合に使えるMarginalisの版を返す。
+#[tokio::test]
+async fn note_profile_reports_the_server_generation() {
+    let request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_note_profile","arguments":{}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(request).await.expect("response");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let profile: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(
+        profile["result"]["structuredContent"]["marginalis_version"],
+        env!("CARGO_PKG_VERSION")
+    );
+}
