@@ -242,7 +242,9 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
     assert!(html.contains(">notes:sync</code>"));
     assert!(html.contains("外部の検索用コピーへ継続的に同期します。"));
     assert!(html.contains("Marginalisから外部に保存済みのコピーは削除できません。"));
-    assert!(html.contains("list_notes、get_note、get_note_profileでノートを読み取ります。"));
+    assert!(html.contains(
+        "list_notes、get_note、get_note_outline、get_note_fragment、get_note_profileでノートを読み取ります。"
+    ));
     assert!(html.contains(">bibliography:read</code>"));
     assert!(html.contains("書誌情報を検索します。"));
     assert!(html.contains(
