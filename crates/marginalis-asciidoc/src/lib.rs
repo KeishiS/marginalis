@@ -43,6 +43,13 @@ impl NoteContent for AsciiDocNoteContent {
         analysis::has_anchor(source, anchor).map_err(|_| NoteContentError)
     }
 
+    fn outline(
+        &self,
+        source: &str,
+    ) -> Result<marginalis_application::NoteOutline, NoteContentError> {
+        analysis::outline(source).map_err(|_| NoteContentError)
+    }
+
     fn render(
         &self,
         note: &Note,

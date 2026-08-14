@@ -319,6 +319,13 @@ impl NoteContent for AcceptContent {
         Ok(CitationStyle::default())
     }
 
+    fn outline(&self, _body: &str) -> Result<crate::NoteOutline, NoteContentError> {
+        Ok(crate::NoteOutline {
+            sections: Vec::new(),
+            line_count: 0,
+        })
+    }
+
     fn has_anchor(&self, _body: &str, _anchor: &str) -> Result<bool, NoteContentError> {
         Ok(false)
     }
@@ -623,6 +630,13 @@ impl NoteContent for CitingContent {
 
     fn citation_style(&self, _body: &str) -> Result<CitationStyle, NoteContentError> {
         Ok(CitationStyle::default())
+    }
+
+    fn outline(&self, _body: &str) -> Result<crate::NoteOutline, NoteContentError> {
+        Ok(crate::NoteOutline {
+            sections: Vec::new(),
+            line_count: 0,
+        })
     }
 
     fn has_anchor(&self, _body: &str, _anchor: &str) -> Result<bool, NoteContentError> {
