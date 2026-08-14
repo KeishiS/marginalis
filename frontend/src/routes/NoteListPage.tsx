@@ -221,7 +221,9 @@ function NoteListFilters({
         絞り込む
       </Button>
       {(query.tags.length > 0 || query.updatedAfter) && (
-        <a href={externalPath(config.basePath, "/")}>条件を解除</a>
+        <Button variant="ghost" asChild>
+          <a href={externalPath(config.basePath, "/")}>条件を解除</a>
+        </Button>
       )}
     </form>
   );

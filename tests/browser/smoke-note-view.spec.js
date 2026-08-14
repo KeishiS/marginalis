@@ -118,7 +118,10 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(typography.reading).toContain("Noto Serif JP Variable");
   const documentPosition = await documentSurface.boundingBox();
   expect(documentPosition).not.toBeNull();
-  expect(documentPosition.width).toBeGreaterThan(1000);
+  // 画面全体の75%を上限とする方針(#477)の中で、十分な読み幅を保つ。
+  const viewportWidth = page.viewportSize().width;
+  expect(documentPosition.width).toBeGreaterThan(viewportWidth * 0.6);
+  expect(documentPosition.width).toBeLessThanOrEqual(viewportWidth * 0.75);
 
   // 文章の行の長さは制限しない。文字の幅は言語によって違い、一つの上限では決められないため、
   // 段落も表を包む枠も器の幅を使う。
@@ -236,12 +239,14 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
     SCREENSHOT_OPTIONS,
   );
 
-  // 幅の広い画面では、上限まで本文領域を広げる。ヘッダーと左右端がそろうことも確認する。
+  // 幅の広い画面では、画面全体の75%を上限として本文領域を広げる(#477)。
+  // ヘッダーと左右端がそろうことも確認する。
   await page.setViewportSize({ width: 1600, height: 900 });
   await expect(documentSurface).toBeVisible();
   const widePosition = await documentSurface.boundingBox();
   expect(widePosition).not.toBeNull();
-  expect(widePosition.width).toBeGreaterThan(1400);
+  expect(widePosition.width).toBeGreaterThan(1600 * 0.6);
+  expect(widePosition.width).toBeLessThanOrEqual(1600 * 0.75);
   const brandPosition = await page.locator(".brand").boundingBox();
   expect(brandPosition).not.toBeNull();
   expect(Math.abs(brandPosition.x - widePosition.x)).toBeLessThanOrEqual(1);

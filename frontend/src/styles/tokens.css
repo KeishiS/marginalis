@@ -51,7 +51,10 @@
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --radius-pill: 999px;
-  --content-width: 98.5rem;
+
+  /* ヘッダーとmainの最大幅。広い画面では表示領域の75%とし、
+     小さな画面では実質的に制限しない(60remを下回らないため)。 */
+  --content-width: max(60rem, 75vw);
   --reading-width: 96rem;
 
   /* 余白の目盛り。0.25rem刻みで、値ではなく段で選ぶ。 */
