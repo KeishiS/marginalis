@@ -288,6 +288,8 @@ export interface Problem {
   message: string;
   diagnostics?: NoteDiagnostic[];
 }
+/** テンプレートノートを識別するタグ。正本はmarginalis-domainのNOTE_TEMPLATE_TAG。 */
+export const NOTE_TEMPLATE_TAG = "テンプレート";
 export const CONTRACT_SCHEMAS: Record<string, unknown> = {
   "ApplicationConfig": {
     "additionalProperties": false,
