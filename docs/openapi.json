@@ -1618,6 +1618,7 @@
           "sync_cursor_expired",
           "precondition_required",
           "invalid_request",
+          "patch_rejected",
           "validation_failed",
           "advisories_rejected",
           "render_failed",

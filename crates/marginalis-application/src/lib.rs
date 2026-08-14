@@ -291,6 +291,8 @@ pub struct NotePreview {
 pub struct NoteProfileLimits {
     pub max_title_characters: usize,
     pub max_source_bytes: usize,
+    pub max_patch_bytes: usize,
+    pub max_patch_hunks: usize,
     pub max_tags: usize,
     pub max_tag_characters: usize,
 }

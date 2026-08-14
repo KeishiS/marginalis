@@ -838,7 +838,7 @@ async fn mcp_create_and_update_reject_warnings_with_typed_diagnostics() {
             "id": "update-warning",
             "method": "tools/call",
             "params": {
-                "name": "update_note",
+                "name": "replace_note_source",
                 "arguments": {
                     "note_id": "0197c9bc-0000-7000-8000-000000000002",
                     "source": source,
@@ -1328,4 +1328,198 @@ fn browser_mutations_require_the_application_origin() {
     );
     headers.insert("sec-fetch-site", "cross-site".parse().expect("metadata"));
     assert!(validate_mutation_origin(&headers, &state).is_err());
+}
+
+/// 廃止したupdate_noteは未知のtoolとして拒否し、新しいtoolが一覧へ現れる。
+#[tokio::test]
+async fn update_note_is_gone_and_partial_tools_are_listed() {
+    let list = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer valid-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(list).await.expect("list response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("list body");
+    let listed: serde_json::Value = serde_json::from_slice(&body).expect("list JSON");
+    let names: Vec<&str> = listed["result"]["tools"]
+        .as_array()
+        .expect("tool array")
+        .iter()
+        .map(|tool| tool["name"].as_str().expect("tool name"))
+        .collect();
+    assert_eq!(names.len(), 13);
+    for name in [
+        "get_note_outline",
+        "get_note_fragment",
+        "apply_note_patch",
+        "replace_note_source",
+    ] {
+        assert!(names.contains(&name), "{name}が一覧にあります");
+    }
+    assert!(!names.contains(&"update_note"));
+
+    let removed = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer write-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"update_note","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002","source":"= T","expected_revision":3}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(removed).await.expect("removed response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("removed body");
+    let rejected: serde_json::Value = serde_json::from_slice(&body).expect("removed JSON");
+    assert_eq!(rejected["error"]["message"], "Unknown tool");
+}
+
+/// 読み取りだけのtokenでは、patch適用が不足scopeとして拒否される。
+#[tokio::test]
+async fn apply_note_patch_requires_the_write_scope() {
+    let denied_request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"apply_note_patch","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002","patch":"x","expected_revision":3}}}"#,
+        ))
+        .expect("request");
+    let denied = mcp_app().oneshot(denied_request).await.expect("response");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+    assert!(
+        denied
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                value.contains("error=\"insufficient_scope\"")
+                    && value.contains("scope=\"notes:read notes:write\"")
+            })
+    );
+}
+
+/// patchの適用は変更量を返し、dry runではrevisionがnullになる。
+#[tokio::test]
+async fn apply_note_patch_reports_changes_and_dry_run_keeps_revision_null() {
+    let patch = "--- a/note.adoc\\n+++ b/note.adoc\\n@@ -4,1 +4,1 @@\\n-本文\\n\\\\ No newline at end of file\\n+改稿した本文\\n\\\\ No newline at end of file\\n";
+    for (dry_run, expected_revision) in [
+        (false, serde_json::json!(3)),
+        (true, serde_json::Value::Null),
+    ] {
+        let call = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"apply_note_patch","arguments":{{"note_id":"0197c9bc-0000-7000-8000-000000000002","patch":"{patch}","expected_revision":3,"dry_run":{dry_run}}}}}}}"#,
+        );
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, "Bearer write-token")
+            .body(Body::from(call))
+            .expect("request");
+        let response = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let applied: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+        assert_eq!(applied["result"].get("isError"), None, "dry_run={dry_run}");
+        let structured = &applied["result"]["structuredContent"];
+        assert_eq!(structured["revision"], expected_revision);
+        assert_eq!(structured["dry_run"], serde_json::json!(dry_run));
+        assert_eq!(structured["hunks_applied"], 1);
+        assert_eq!(structured["lines_added"], 1);
+        assert_eq!(structured["lines_removed"], 1);
+    }
+}
+
+/// 一致しないpatchはpatch_rejectedと、位置つきの診断で拒否される。
+#[tokio::test]
+async fn mismatched_patches_return_the_patch_rejected_code() {
+    let patch = "--- a/note.adoc\\n+++ b/note.adoc\\n@@ -4,1 +4,1 @@\\n-別の本文\\n+改稿\\n";
+    let call = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"apply_note_patch","arguments":{{"note_id":"0197c9bc-0000-7000-8000-000000000002","patch":"{patch}","expected_revision":3}}}}}}"#,
+    );
+    let request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer write-token")
+        .body(Body::from(call))
+        .expect("request");
+    let response = mcp_app().oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let rejected: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(rejected["result"]["isError"], true);
+    let structured = &rejected["result"]["structuredContent"];
+    assert_eq!(structured["code"], "patch_rejected");
+    assert_eq!(structured["diagnostics"][0]["code"], "patch_hunk_mismatch");
+    assert_eq!(structured["diagnostics"][0]["position"]["line"], 4);
+}
+
+/// outlineとfragmentは本文全体を送らずに読み取りを進められる。
+#[tokio::test]
+async fn outline_and_fragment_read_without_the_full_source() {
+    let outline_request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_note_outline","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002"}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(outline_request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let outline: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    let structured = &outline["result"]["structuredContent"];
+    assert_eq!(structured["revision"], 3);
+    assert_eq!(structured["line_count"], 4);
+    assert!(structured.get("source").is_none());
+
+    let fragment_request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_note_fragment","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002","start_line":4,"end_line":4}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(fragment_request).await.expect("response");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let fragment: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    let structured = &fragment["result"]["structuredContent"];
+    assert_eq!(structured["fragment"], "本文\n");
+
+    // 範囲外はinvalid_requestとして拒否する。
+    let out_of_range = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_note_fragment","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002","start_line":1,"end_line":99}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(out_of_range).await.expect("response");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let rejected: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(rejected["result"]["isError"], true);
+    assert_eq!(
+        rejected["result"]["structuredContent"]["code"],
+        "invalid_request"
+    );
 }

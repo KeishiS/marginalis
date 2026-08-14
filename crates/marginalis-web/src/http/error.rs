@@ -102,10 +102,12 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
             ProblemCode::InvalidRequest,
             "line range is outside the stored source",
         ),
-        // 位置の詳細はMCPのtool出力が返す。ここでは分類だけを共通の失敗表現へ写す。
-        NoteUseCaseError::PatchRejected(reason) => {
-            ProblemResponse::new(ProblemCode::InvalidRequest, &reason.to_string())
-        }
+        // 拒否の理由と位置は、clientがpatchを直せるように診断として返す。
+        NoteUseCaseError::PatchRejected(reason) => ProblemResponse {
+            code: ProblemCode::PatchRejected,
+            message: reason.to_string(),
+            diagnostics: vec![patch_rejection_diagnostic(reason)],
+        },
         NoteUseCaseError::SyncCursorExpired => ProblemResponse::new(
             ProblemCode::SyncCursorExpired,
             "sync cursor has expired; start a full synchronization",
@@ -134,6 +136,41 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
         NoteUseCaseError::Unavailable | NoteUseCaseError::CorruptData => {
             ProblemResponse::new(ProblemCode::Unavailable, "note operation is unavailable")
         }
+    }
+}
+
+/// patch拒否の理由を、位置つきの機械可読な診断へ写す。
+///
+/// `patch_hunk_mismatch`の位置は保存済み原文側、`patch_invalid_format`の位置は
+/// patch本文側の1始まりの行番号を指す。
+fn patch_rejection_diagnostic(
+    reason: marginalis_application::NotePatchError,
+) -> NoteDiagnosticResponse {
+    use marginalis_application::NotePatchError;
+
+    let (code, line) = match reason {
+        NotePatchError::PatchTooLarge => ("patch_too_large", None),
+        NotePatchError::TooManyHunks => ("patch_too_many_hunks", None),
+        NotePatchError::InvalidFormat { line } => ("patch_invalid_format", Some(line)),
+        NotePatchError::UnsupportedHeader => ("patch_unsupported_header", None),
+        NotePatchError::HunkOutOfOrder { .. } => ("patch_hunk_out_of_order", None),
+        NotePatchError::HunkOutOfRange { .. } => ("patch_hunk_out_of_range", None),
+        NotePatchError::HunkMismatch { source_line, .. } => {
+            ("patch_hunk_mismatch", Some(source_line))
+        }
+    };
+    NoteDiagnosticResponse {
+        code: code.into(),
+        severity: DiagnosticSeverityResponse::Error,
+        target: marginalis_domain::NoteValidationTarget::Source,
+        span: None,
+        position: line.and_then(|line| {
+            Some(NoteSourcePositionResponse {
+                line: u32::try_from(line).ok()?,
+                column: 1,
+            })
+        }),
+        message: reason.to_string(),
     }
 }
 
@@ -183,6 +220,7 @@ pub(super) const fn problem_status(code: ProblemCode) -> StatusCode {
         ProblemCode::PreconditionRequired => StatusCode::PRECONDITION_REQUIRED,
         ProblemCode::InvalidRequest | ProblemCode::InvalidSyncCursor => StatusCode::BAD_REQUEST,
         ProblemCode::ValidationFailed
+        | ProblemCode::PatchRejected
         | ProblemCode::AdvisoriesRejected
         | ProblemCode::RenderFailed => StatusCode::UNPROCESSABLE_ENTITY,
     }

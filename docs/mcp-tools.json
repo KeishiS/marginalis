@@ -355,6 +355,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -810,6 +811,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -928,6 +930,18 @@
             "applies_after_normalization": {
               "type": "boolean"
             },
+            "max_patch_bytes": {
+              "description": "`apply_note_patch`が受け取るUnified DiffのUTF-8バイト数の上限。",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_patch_hunks": {
+              "description": "一つのUnified Diffに含められるhunk数の上限。",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
             "max_source_bytes": {
               "format": "uint",
               "minimum": 0,
@@ -953,6 +967,8 @@
             "applies_after_normalization",
             "max_title_characters",
             "max_source_bytes",
+            "max_patch_bytes",
+            "max_patch_hunks",
             "max_tags",
             "max_tag_characters"
           ],
@@ -1327,6 +1343,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -1381,7 +1398,7 @@
   },
   {
     "name": "get_note",
-    "description": "Read one visible note; requires notes:read",
+    "description": "Read one visible note in full; for long notes prefer get_note_outline and get_note_fragment; requires notes:read",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -1688,6 +1705,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -1730,6 +1748,695 @@
       "anyOf": [
         {
           "$ref": "#/$defs/McpGetNoteOutput"
+        },
+        {
+          "$ref": "#/$defs/Problem"
+        }
+      ],
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_note_outline",
+    "description": "Read the heading hierarchy and inclusive 1-based line ranges of a note without its body, to choose which range to read next; requires notes:read",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "note_id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "note_id"
+      ],
+      "title": "McpGetNoteOutlineInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "DiagnosticSeverity": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "type": "string"
+        },
+        "McpNoteOutlineOutput": {
+          "additionalProperties": false,
+          "description": "本文を省いた文書の構成。文書題名は`title`が持ち、`sections`には含まない。",
+          "properties": {
+            "line_count": {
+              "description": "原文の総行数。1始まりの最終行の番号と一致する。",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "note_id": {
+              "type": "string"
+            },
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "sections": {
+              "items": {
+                "$ref": "#/$defs/McpNoteOutlineSection"
+              },
+              "type": "array"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "title",
+            "revision",
+            "line_count",
+            "sections"
+          ],
+          "type": "object"
+        },
+        "McpNoteOutlineSection": {
+          "additionalProperties": false,
+          "description": "見出し1つと、その節が占める行範囲。",
+          "properties": {
+            "anchor": {
+              "description": "原文に`[#id]`と明示されたアンカー。自動生成のIDは返さない。",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "end_line": {
+              "description": "節の末尾の行。子節を含む階層範囲で、親子の範囲は重なる。",
+              "format": "uint",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "level": {
+              "description": "見出しの深さ。`==`が1。",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "start_line": {
+              "format": "uint",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "level",
+            "title",
+            "anchor",
+            "start_line",
+            "end_line"
+          ],
+          "type": "object"
+        },
+        "NoteDiagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverity"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpan"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Problem": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnostic"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "retention_expired",
+            "invalid_sync_cursor",
+            "sync_cursor_expired",
+            "precondition_required",
+            "invalid_request",
+            "patch_rejected",
+            "validation_failed",
+            "advisories_rejected",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "Utf8ByteSpan": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpNoteOutlineOutput"
+        },
+        {
+          "$ref": "#/$defs/Problem"
+        }
+      ],
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_note_fragment",
+    "description": "Read the verbatim AsciiDoc source of an inclusive 1-based line range; requires notes:read",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "行範囲は両端を含む1始まり。範囲は`get_note_outline`で確認する。",
+      "properties": {
+        "end_line": {
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "note_id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "type": "string"
+        },
+        "start_line": {
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "note_id",
+        "start_line",
+        "end_line"
+      ],
+      "title": "McpGetNoteFragmentInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "DiagnosticSeverity": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "type": "string"
+        },
+        "McpNoteFragmentOutput": {
+          "additionalProperties": false,
+          "properties": {
+            "end_line": {
+              "format": "uint",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "fragment": {
+              "description": "指定した行範囲のAsciiDoc原文。要約や変換は行わない。",
+              "type": "string"
+            },
+            "note_id": {
+              "type": "string"
+            },
+            "revision": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "start_line": {
+              "format": "uint",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "note_id",
+            "revision",
+            "start_line",
+            "end_line",
+            "fragment"
+          ],
+          "type": "object"
+        },
+        "NoteDiagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverity"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpan"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Problem": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnostic"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "retention_expired",
+            "invalid_sync_cursor",
+            "sync_cursor_expired",
+            "precondition_required",
+            "invalid_request",
+            "patch_rejected",
+            "validation_failed",
+            "advisories_rejected",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "Utf8ByteSpan": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpNoteFragmentOutput"
         },
         {
           "$ref": "#/$defs/Problem"
@@ -1986,6 +2693,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -2039,11 +2747,364 @@
     }
   },
   {
-    "name": "update_note",
-    "description": "Update a note at the expected revision; requires notes:write; warnings reject the write and are returned as diagnostics",
+    "name": "apply_note_patch",
+    "description": "Apply a unified diff against a/note.adoc and b/note.adoc strictly at the expected revision; hunks must match the stored source exactly and are never fuzzed; dry_run validates without saving; requires notes:write; warnings reject the write",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
+      "description": "保存済み原文と変更内容のUnified Diff。厳密に適用され、位置の再探索は行われない。",
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "description": "trueでは適用と検証まで行い、保存せずrevisionも増やさない。既定はfalse。",
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "format": "int64",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "note_id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "type": "string"
+        },
+        "patch": {
+          "description": "`--- a/note.adoc`と`+++ b/note.adoc`のfile headerを持つ単一ファイルのUnified Diff。",
+          "maxLength": 524288,
+          "type": "string"
+        }
+      },
+      "required": [
+        "note_id",
+        "patch",
+        "expected_revision"
+      ],
+      "title": "McpApplyNotePatchInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "DiagnosticSeverity": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "type": "string"
+        },
+        "McpNotePatchOutput": {
+          "additionalProperties": false,
+          "description": "patch適用の結果。全文は返さない。",
+          "properties": {
+            "diagnostics": {
+              "description": "保存を拒否しない診断。warningがあれば適用自体が失敗として返る。",
+              "items": {
+                "$ref": "#/$defs/NoteDiagnostic"
+              },
+              "type": "array"
+            },
+            "dry_run": {
+              "type": "boolean"
+            },
+            "hunks_applied": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "lines_added": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "lines_removed": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "note_id": {
+              "type": "string"
+            },
+            "revision": {
+              "description": "保存後のrevision。dry runでは保存しないためnull。",
+              "format": "int64",
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "note_id",
+            "revision",
+            "dry_run",
+            "hunks_applied",
+            "lines_added",
+            "lines_removed",
+            "diagnostics"
+          ],
+          "type": "object"
+        },
+        "NoteDiagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NoteSourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "本文上の1始まりの表示位置。列はUTF-16 code unit単位で、LSPの既定位置符号化と一致する。"
+            },
+            "severity": {
+              "$ref": "#/$defs/DiagnosticSeverity"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Utf8ByteSpan"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/NoteValidationTarget"
+            }
+          },
+          "required": [
+            "code",
+            "severity",
+            "target",
+            "message"
+          ],
+          "type": "object"
+        },
+        "NoteSourcePosition": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "line",
+            "column"
+          ],
+          "type": "object"
+        },
+        "NoteValidationTarget": {
+          "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "source",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "body",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tag",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "tags",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "const": "acl_entry",
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "field",
+                "index"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Problem": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ProblemCode"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/NoteDiagnostic"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "ProblemCode": {
+          "enum": [
+            "authentication_required",
+            "authentication_unavailable",
+            "csrf_rejected",
+            "csrf_required",
+            "csrf_invalid",
+            "same_origin_required",
+            "origin_not_allowed",
+            "not_found",
+            "forbidden",
+            "conflict",
+            "retention_expired",
+            "invalid_sync_cursor",
+            "sync_cursor_expired",
+            "precondition_required",
+            "invalid_request",
+            "patch_rejected",
+            "validation_failed",
+            "advisories_rejected",
+            "render_failed",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "Utf8ByteSpan": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unit": {
+              "$ref": "#/$defs/Utf8ByteUnit"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "unit"
+          ],
+          "type": "object"
+        },
+        "Utf8ByteUnit": {
+          "enum": [
+            "utf8_byte"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpNotePatchOutput"
+        },
+        {
+          "$ref": "#/$defs/Problem"
+        }
+      ],
+      "description": "tool呼び出しの結果。成功出力か、共通の失敗表現のいずれかになる。",
+      "title": "McpToolOutcome",
+      "type": "object"
+    }
+  },
+  {
+    "name": "replace_note_source",
+    "description": "Replace the entire AsciiDoc source at the expected revision, for full rewrites, imports, and recovery; for small edits prefer apply_note_patch; requires notes:write; warnings reject the write",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "ノートのAsciiDoc原文全体を置き換える入力。旧`update_note`と同じ形。",
       "properties": {
         "expected_revision": {
           "format": "int64",
@@ -2064,7 +3125,7 @@
         "source",
         "expected_revision"
       ],
-      "title": "McpUpdateNoteInput",
+      "title": "McpReplaceNoteSourceInput",
       "type": "object"
     },
     "outputSchema": {
@@ -2295,6 +3356,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -2599,6 +3661,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -2921,6 +3984,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -3229,6 +4293,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
@@ -3519,6 +4584,7 @@
             "sync_cursor_expired",
             "precondition_required",
             "invalid_request",
+            "patch_rejected",
             "validation_failed",
             "advisories_rejected",
             "render_failed",
