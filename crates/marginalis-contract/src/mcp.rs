@@ -542,7 +542,7 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
         ),
         McpToolContract::new::<McpApplyNotePatchInput, McpNotePatchOutput>(
             McpToolName::ApplyNotePatch,
-            "Apply a unified diff against a/note.adoc and b/note.adoc strictly at the expected revision; hunks must match the stored source exactly and are never fuzzed; dry_run validates without saving; requires notes:write; warnings reject the write",
+            "Apply a unified diff against a/note.adoc and b/note.adoc strictly at the expected revision; hunks must match the stored source exactly and are never fuzzed; generate the patch by saving the fetched source and the edited version byte-for-byte and running `diff -u --label a/note.adoc --label b/note.adoc current updated` (plain diff writes file names and timestamps into the header and is rejected); dry_run validates without saving; requires notes:write; warnings reject the write",
         ),
         McpToolContract::new::<McpReplaceNoteSourceInput, McpNoteRevisionOutput>(
             McpToolName::ReplaceNoteSource,
