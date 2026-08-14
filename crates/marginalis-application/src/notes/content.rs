@@ -83,6 +83,29 @@ pub struct NoteRenderInputs<'a> {
     pub bibliography: &'a [NoteBibliographyEntry],
 }
 
+/// 本文を省いた文書の構成。長文ノートから読む範囲を選ぶために使う。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteOutline {
+    /// 文書題名を除く見出しの一覧。出現順。
+    pub sections: Vec<NoteOutlineSection>,
+    /// 原文の総行数。1始まりの最終行の番号と一致する。
+    pub line_count: usize,
+}
+
+/// 見出し1つと、その節が占める行範囲。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteOutlineSection {
+    /// 見出しの深さ。`==`が1。
+    pub level: u8,
+    pub title: String,
+    /// 原文に`[#id]`と明示されたアンカー。自動生成のIDは返さない。
+    pub anchor: Option<String>,
+    /// 見出し行の1始まりの行番号。
+    pub start_line: usize,
+    /// 節の末尾の1始まりの行番号。子節を含む階層範囲で、親子の範囲は重なる。
+    pub end_line: usize,
+}
+
 /// 文書adapterが保存済みの内容を解析または変換できない場合の失敗。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("note content could not be processed")]
@@ -101,6 +124,8 @@ pub trait NoteContent: Send + Sync {
     /// 保存済みのノートを表示するときは下書きの検証結果が手元にないため、本文から読み直す。
     fn citation_style(&self, body: &str) -> Result<CitationStyle, NoteContentError>;
     fn has_anchor(&self, body: &str, anchor: &str) -> Result<bool, NoteContentError>;
+    /// 本文を省いた文書の構成を返す。行番号は診断と同じ数え方を使う。
+    fn outline(&self, body: &str) -> Result<NoteOutline, NoteContentError>;
     fn render(&self, note: &Note, inputs: NoteRenderInputs<'_>)
     -> Result<String, NoteContentError>;
     fn export(&self, note: &Note) -> Result<String, NoteContentError>;

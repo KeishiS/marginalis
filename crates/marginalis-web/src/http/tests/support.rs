@@ -53,6 +53,24 @@ macro_rules! implement_note_use_cases {
                 <$type>::read_note(self, actor, note_id).await
             }
 
+            async fn read_note_outline(
+                &self,
+                _actor: Actor,
+                _note_id: NoteId,
+            ) -> Result<(Note, marginalis_application::NoteOutline), NoteUseCaseError> {
+                unimplemented!("outline is not exercised by these tests")
+            }
+
+            async fn read_note_fragment(
+                &self,
+                _actor: Actor,
+                _note_id: NoteId,
+                _start_line: usize,
+                _end_line: usize,
+            ) -> Result<(Note, String), NoteUseCaseError> {
+                unimplemented!("fragments are not exercised by these tests")
+            }
+
             async fn create_note(
                 &self,
                 actor: Actor,

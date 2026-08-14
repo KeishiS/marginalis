@@ -134,6 +134,65 @@ fn citation_queries_from_analysis(analysis: &adocweave::Analysis) -> Vec<NoteCit
         .collect()
 }
 
+/// 本文を省いた文書の構成を返す。
+///
+/// 見出しはAdocWeaveの構造投影から読み、行番号は診断と同じ位置変換を使う。文書題名は
+/// ノートのtitleが別に持つため、一覧から除く。
+pub(crate) fn outline(source: &str) -> Result<marginalis_application::NoteOutline, RenderError> {
+    use adocweave::semantic::SectionKind;
+
+    let analysis = analyze_valid_source(source)?;
+    let document = analysis.source_document();
+    let line_count = source_line_count(source);
+    let mut sections: Vec<marginalis_application::NoteOutlineSection> = Vec::new();
+    for heading in analysis.structure().headings() {
+        if heading.kind == SectionKind::DocumentTitle {
+            continue;
+        }
+        let start_line = source_position(document, span(heading.range))
+            .ok_or(RenderError)?
+            .line as usize;
+        // 明示した`[#id]`はアンカー側の範囲がIDの出所になり、自動生成のIDは
+        // 見出し本文の範囲と一致する。一致する場合はIDを推測して返さない。
+        let anchor = (heading.id_range != heading.title_range).then(|| heading.id.clone());
+        sections.push(marginalis_application::NoteOutlineSection {
+            level: heading.level,
+            title: heading.title.clone(),
+            anchor,
+            start_line,
+            end_line: line_count,
+        });
+    }
+    // 節の末尾は、次に現れる同じ深さ以浅の見出しの直前の行とする(子節を含む階層範囲)。
+    let boundaries: Vec<(usize, u8)> = sections
+        .iter()
+        .map(|section| (section.start_line, section.level))
+        .collect();
+    for (index, section) in sections.iter_mut().enumerate() {
+        if let Some((next_start, _)) = boundaries[index + 1..]
+            .iter()
+            .find(|(_, level)| *level <= section.level)
+        {
+            section.end_line = next_start - 1;
+        }
+    }
+    Ok(marginalis_application::NoteOutline {
+        sections,
+        line_count,
+    })
+}
+
+/// 原文の総行数。末尾改行は行として数えない。
+fn source_line_count(source: &str) -> usize {
+    if source.is_empty() {
+        0
+    } else if source.ends_with('\n') {
+        source.split('\n').count() - 1
+    } else {
+        source.split('\n').count()
+    }
+}
+
 pub(crate) fn has_anchor(source: &str, anchor: &str) -> Result<bool, RenderError> {
     Ok(analyze_valid_source(source)?
         .reference_targets()
@@ -836,5 +895,66 @@ mod tests {
         })
         .expect("valid draft")
         .draft
+    }
+
+    /// outlineは見出しの階層と行範囲を返し、文書題名を一覧から除く。
+    #[test]
+    fn outline_reports_hierarchical_line_ranges() {
+        let source = concat!(
+            "= Title\n",         // 1
+            "\n",                // 2
+            "== Alpha\n",        // 3
+            "\n",                // 4
+            "alpha body\n",      // 5
+            "\n",                // 6
+            "=== Alpha child\n", // 7
+            "\n",                // 8
+            "child body\n",      // 9
+            "\n",                // 10
+            "== Beta\n",         // 11
+            "\n",                // 12
+            "beta body\n",       // 13
+        );
+        let outline = outline(source).expect("outline");
+        assert_eq!(outline.line_count, 13);
+        let summary: Vec<(u8, &str, usize, usize)> = outline
+            .sections
+            .iter()
+            .map(|section| {
+                (
+                    section.level,
+                    section.title.as_str(),
+                    section.start_line,
+                    section.end_line,
+                )
+            })
+            .collect();
+        // Alphaの範囲は子節Alpha childを含み、Betaの直前で終わる。
+        assert_eq!(
+            summary,
+            vec![
+                (1, "Alpha", 3, 10),
+                (2, "Alpha child", 7, 10),
+                (1, "Beta", 11, 13),
+            ]
+        );
+    }
+
+    /// 明示した`[#id]`だけをアンカーとして返し、自動生成のIDは返さない。
+    #[test]
+    fn outline_returns_only_explicit_anchors() {
+        let source = "= Title\n\n[#sec-problem]\n== Problem\n\n== Approach\n";
+        let outline = outline(source).expect("outline");
+        assert_eq!(outline.sections.len(), 2);
+        assert_eq!(outline.sections[0].anchor.as_deref(), Some("sec-problem"));
+        assert_eq!(outline.sections[1].anchor, None);
+    }
+
+    /// 見出しのない文書は空の一覧と総行数だけを返す。
+    #[test]
+    fn outline_of_a_flat_document_is_empty() {
+        let outline = outline("= Title\n\nbody only\n").expect("outline");
+        assert!(outline.sections.is_empty());
+        assert_eq!(outline.line_count, 3);
     }
 }

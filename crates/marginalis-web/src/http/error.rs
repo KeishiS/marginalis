@@ -98,6 +98,10 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
             ProblemCode::InvalidSyncCursor,
             "sync cursor is invalid for this user",
         ),
+        NoteUseCaseError::InvalidLineRange => ProblemResponse::new(
+            ProblemCode::InvalidRequest,
+            "line range is outside the stored source",
+        ),
         NoteUseCaseError::SyncCursorExpired => ProblemResponse::new(
             ProblemCode::SyncCursorExpired,
             "sync cursor has expired; start a full synchronization",

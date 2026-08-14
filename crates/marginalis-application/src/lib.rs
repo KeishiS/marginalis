@@ -65,10 +65,10 @@ pub use notes::{
     NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
     NoteCommandRepository, NoteContent, NoteContentError, NoteGraph, NoteGraphCitation,
     NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks,
-    NotePatchError, NotePatchOutcome, NoteQueryRepository, NoteReferenceQuery,
-    NoteReferenceResolution, NoteRenderInputs, NoteReviewRepository, NoteSyncEntry, NoteSyncPage,
-    NoteSyncPhase, NoteSyncRemovalReason, NoteSyncRepository, NoteSyncRepositoryError,
-    NoteViewSnapshot, apply_note_patch,
+    NoteOutline, NoteOutlineSection, NotePatchError, NotePatchOutcome, NoteQueryRepository,
+    NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs, NoteReviewRepository,
+    NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason, NoteSyncRepository,
+    NoteSyncRepositoryError, NoteViewSnapshot, apply_note_patch,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{
@@ -370,6 +370,8 @@ pub enum NoteUseCaseError {
     InvalidSyncCursor,
     #[error("sync cursor has expired")]
     SyncCursorExpired,
+    #[error("line range is outside the stored source")]
+    InvalidLineRange,
     #[error("note is invalid")]
     Validation(Vec<NoteValidationDiagnostic>),
     #[error("note input contains warnings")]
@@ -557,6 +559,20 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
     ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError>;
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
+    /// ノート本文を返さず、見出しの階層と行範囲を返す。
+    async fn read_note_outline(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<(Note, notes::NoteOutline), NoteUseCaseError>;
+    /// 指定した行範囲(両端を含む1始まり)のAsciiDoc原文断片を返す。
+    async fn read_note_fragment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        start_line: usize,
+        end_line: usize,
+    ) -> Result<(Note, String), NoteUseCaseError>;
     async fn create_note(
         &self,
         actor: Actor,

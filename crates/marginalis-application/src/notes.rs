@@ -21,8 +21,8 @@ mod sync;
 
 pub use content::{
     NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
-    NoteContent, NoteContentError, NoteLinkResolver, NoteReferenceQuery, NoteReferenceResolution,
-    NoteRenderInputs,
+    NoteContent, NoteContentError, NoteLinkResolver, NoteOutline, NoteOutlineSection,
+    NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
 };
 pub use graph::{
     NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork,
@@ -309,6 +309,24 @@ impl NoteUseCases for NoteApplication {
 
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError> {
         NoteApplication::read_note(self, actor, note_id).await
+    }
+
+    async fn read_note_outline(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<(Note, NoteOutline), NoteUseCaseError> {
+        NoteApplication::read_note_outline(self, actor, note_id).await
+    }
+
+    async fn read_note_fragment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        start_line: usize,
+        end_line: usize,
+    ) -> Result<(Note, String), NoteUseCaseError> {
+        NoteApplication::read_note_fragment(self, actor, note_id, start_line, end_line).await
     }
 
     async fn create_note(
