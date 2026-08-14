@@ -3,7 +3,9 @@ import { EditorState } from "@codemirror/state";
 import { CompletionContext } from "@codemirror/autocomplete";
 
 import {
+  citationKeyCompletionSource,
   createTagCandidateLoader,
+  noteReferenceCompletionSource,
   tagCompletionSource,
 } from "../src/editor/completion";
 
@@ -101,5 +103,66 @@ describe("createTagCandidateLoader", () => {
     expect(await load()).toEqual([]);
     expect(await load()).toEqual(["rust"]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("noteReferenceCompletionSource", () => {
+  const notes = () =>
+    Promise.resolve([
+      {
+        noteId: "0197c9bc-0000-7000-8000-000000000001",
+        title: "先行研究の整理",
+      },
+      { noteId: "0197c9bc-0000-7000-8000-000000000002", title: "検証メモ" },
+    ]);
+  const source = noteReferenceCompletionSource(notes);
+
+  it("xref:note:の直後から題名の候補を出し、確定でnote IDを挿入する", async () => {
+    const doc = "関連は xref:note:";
+    const result = await source(contextAt(doc));
+    expect(result?.from).toBe(doc.length);
+    expect(result?.options.map((option) => option.label)).toEqual([
+      "先行研究の整理",
+      "検証メモ",
+    ]);
+    expect(result?.options[0].apply).toBe(
+      "0197c9bc-0000-7000-8000-000000000001[]",
+    );
+  });
+
+  it("入力途中の文字列を補完対象の範囲として示す", async () => {
+    const doc = "xref:note:先行";
+    const result = await source(contextAt(doc));
+    expect(result?.from).toBe("xref:note:".length);
+  });
+
+  it("xref:note:が無い位置では何も返さない", async () => {
+    expect(await source(contextAt("xref:"))).toBeNull();
+    expect(await source(contextAt("本文"))).toBeNull();
+  });
+});
+
+describe("citationKeyCompletionSource", () => {
+  const keys = () => Promise.resolve(["ito2025", "smith2024"]);
+  const source = citationKeyCompletionSource(keys);
+
+  it("cite:[の中でcitation keyを補完する", async () => {
+    const doc = "根拠は cite:[smi";
+    const result = await source(contextAt(doc));
+    expect(result?.from).toBe(doc.length - "smi".length);
+    expect(result?.options.map((option) => option.label)).toEqual([
+      "ito2025",
+      "smith2024",
+    ]);
+  });
+
+  it("同じ括弧内に入力済みのkeyを候補から除く", async () => {
+    const doc = "cite:[smith2024, ";
+    const result = await source(contextAt(doc));
+    expect(result?.options.map((option) => option.label)).toEqual(["ito2025"]);
+  });
+
+  it("括弧の外では何も返さない", async () => {
+    expect(await source(contextAt("cite:[smith2024] の後"))).toBeNull();
   });
 });

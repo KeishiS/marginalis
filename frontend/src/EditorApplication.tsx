@@ -28,7 +28,11 @@ import { editorStatus, toProblem } from "./editorPresentation";
 import { editPath, listPath, notePath } from "./paths";
 import { ConflictPanel } from "./editor/ConflictPanel";
 import {
+  citationKeyCompletionSource,
+  createCitationKeyLoader,
+  createNoteCandidateLoader,
   createTagCandidateLoader,
+  noteReferenceCompletionSource,
   tagCompletionSource,
 } from "./editor/completion";
 import { EditorViewToolbar } from "./editor/EditorViewToolbar";
@@ -73,7 +77,11 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   );
   const draft = useMemo(() => ({ source: form.source }), [form.source]);
   const completionSources = useMemo(
-    () => [tagCompletionSource(createTagCandidateLoader(config.apiBase))],
+    () => [
+      tagCompletionSource(createTagCandidateLoader(config.apiBase)),
+      noteReferenceCompletionSource(createNoteCandidateLoader(config.apiBase)),
+      citationKeyCompletionSource(createCitationKeyLoader(config.apiBase)),
+    ],
     [config.apiBase],
   );
   const preview = useEditorPreview(

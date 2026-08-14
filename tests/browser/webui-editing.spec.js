@@ -348,6 +348,14 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await expect(completionSource).toContainText(":marginalis-tags: 受入試験");
   await expect(completionTooltip).toHaveCount(0);
 
+  // ノート間参照は、題名の候補から選ぶとnote IDが挿入される(#496)。
+  await page.keyboard.type("\n\n関連は xref:note:");
+  await expect(completionTooltip).toContainText("競合後に保存する題名");
+  await page.keyboard.press("Enter");
+  expect(
+    await completionSource.evaluate((element) => element.textContent ?? ""),
+  ).toMatch(/xref:note:[0-9a-f-]{36}\[\]/);
+
   expect(await page.evaluate(() => window.__marginalisCspViolations)).toEqual(
     [],
   );
