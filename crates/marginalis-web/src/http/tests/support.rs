@@ -92,18 +92,6 @@ macro_rules! implement_note_use_cases {
                 .await
             }
 
-            async fn apply_note_patch(
-                &self,
-                _actor: Actor,
-                _note_id: NoteId,
-                _patch: &str,
-                _expected_revision: Revision,
-                _policy: NoteWritePolicy,
-                _dry_run: bool,
-            ) -> Result<marginalis_application::NotePatchApplication, NoteUseCaseError> {
-                unimplemented!("patches are not exercised by these tests")
-            }
-
             async fn create_note(
                 &self,
                 actor: Actor,
