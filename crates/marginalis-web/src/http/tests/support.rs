@@ -55,32 +55,41 @@ macro_rules! implement_note_use_cases {
 
             async fn read_note_outline(
                 &self,
-                _actor: Actor,
-                _note_id: NoteId,
+                actor: Actor,
+                note_id: NoteId,
             ) -> Result<(Note, marginalis_application::NoteOutline), NoteUseCaseError> {
-                unimplemented!("outline is not exercised by these tests")
+                <$type>::read_note_outline(self, actor, note_id).await
             }
 
             async fn read_note_fragment(
                 &self,
-                _actor: Actor,
-                _note_id: NoteId,
-                _start_line: usize,
-                _end_line: usize,
+                actor: Actor,
+                note_id: NoteId,
+                start_line: usize,
+                end_line: usize,
             ) -> Result<(Note, String), NoteUseCaseError> {
-                unimplemented!("fragments are not exercised by these tests")
+                <$type>::read_note_fragment(self, actor, note_id, start_line, end_line).await
             }
 
             async fn apply_note_patch(
                 &self,
-                _actor: Actor,
-                _note_id: NoteId,
-                _patch: &str,
-                _expected_revision: Revision,
-                _policy: NoteWritePolicy,
-                _dry_run: bool,
+                actor: Actor,
+                note_id: NoteId,
+                patch: &str,
+                expected_revision: Revision,
+                policy: NoteWritePolicy,
+                dry_run: bool,
             ) -> Result<marginalis_application::NotePatchApplication, NoteUseCaseError> {
-                unimplemented!("patches are not exercised by these tests")
+                <$type>::apply_note_patch(
+                    self,
+                    actor,
+                    note_id,
+                    patch,
+                    expected_revision,
+                    policy,
+                    dry_run,
+                )
+                .await
             }
 
             async fn create_note(
@@ -399,6 +408,64 @@ impl Notes {
         }
     }
 
+    /// 実物のoutlineはAsciiDoc解析を要するため、行数だけを計算した空の構成を返す。
+    pub(super) async fn read_note_outline(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<(Note, marginalis_application::NoteOutline), NoteUseCaseError> {
+        let note = Notes::read_note(self, actor, note_id).await?;
+        let line_count = note.source().lines().count();
+        Ok((
+            note,
+            marginalis_application::NoteOutline {
+                sections: Vec::new(),
+                line_count,
+            },
+        ))
+    }
+
+    pub(super) async fn read_note_fragment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        start_line: usize,
+        end_line: usize,
+    ) -> Result<(Note, String), NoteUseCaseError> {
+        let note = Notes::read_note(self, actor, note_id).await?;
+        let lines: Vec<&str> = note.source().lines().collect();
+        if start_line == 0 || end_line < start_line || end_line > lines.len() {
+            return Err(NoteUseCaseError::InvalidLineRange);
+        }
+        let fragment = format!("{}\n", lines[start_line - 1..end_line].join("\n"));
+        Ok((note, fragment))
+    }
+
+    /// patchの解釈と適用は本物の実装を使い、保存だけをfakeで置き換える。
+    pub(super) async fn apply_note_patch(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        patch: &str,
+        expected_revision: Revision,
+        _policy: NoteWritePolicy,
+        dry_run: bool,
+    ) -> Result<marginalis_application::NotePatchApplication, NoteUseCaseError> {
+        let note = Notes::read_note(self, actor, note_id).await?;
+        if note.revision() != expected_revision {
+            return Err(NoteUseCaseError::Conflict);
+        }
+        let outcome = marginalis_application::apply_note_patch(note.source(), patch)
+            .map_err(NoteUseCaseError::PatchRejected)?;
+        Ok(marginalis_application::NotePatchApplication {
+            note: (!dry_run).then(|| note.clone()),
+            hunks_applied: outcome.hunks_applied,
+            lines_added: outcome.lines_added,
+            lines_removed: outcome.lines_removed,
+            advisories: Vec::new(),
+        })
+    }
+
     pub(super) async fn create_note(
         &self,
         _actor: Actor,
@@ -548,6 +615,8 @@ impl Notes {
             limits: NoteProfileLimits {
                 max_title_characters: 200,
                 max_source_bytes: 524_288,
+                max_patch_bytes: 524_288,
+                max_patch_hunks: 100,
                 max_tags: 50,
                 max_tag_characters: 64,
             },
@@ -590,6 +659,37 @@ pub(super) struct UiNotes {
 }
 
 impl UiNotes {
+    // Web UIの試験は部分取得とpatchを使わないため、対象なしとして拒否する。
+    pub(super) async fn read_note_outline(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+    ) -> Result<(Note, marginalis_application::NoteOutline), NoteUseCaseError> {
+        Err(NoteUseCaseError::NotFound)
+    }
+
+    pub(super) async fn read_note_fragment(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _start_line: usize,
+        _end_line: usize,
+    ) -> Result<(Note, String), NoteUseCaseError> {
+        Err(NoteUseCaseError::NotFound)
+    }
+
+    pub(super) async fn apply_note_patch(
+        &self,
+        _actor: Actor,
+        _note_id: NoteId,
+        _patch: &str,
+        _expected_revision: Revision,
+        _policy: NoteWritePolicy,
+        _dry_run: bool,
+    ) -> Result<marginalis_application::NotePatchApplication, NoteUseCaseError> {
+        Err(NoteUseCaseError::NotFound)
+    }
+
     pub(super) async fn list_visible_notes(
         &self,
         _actor: Actor,

@@ -6,13 +6,15 @@ use marginalis_application::{
     NoteUseCases, NoteWritePolicy,
 };
 use marginalis_contract::{
-    DiagnosticSeverityResponse, McpAddBibliographyItemInput, McpBibliographyItem,
-    McpBibliographyListOutput, McpCreateNoteInput, McpDeleteBibliographyItemInput,
-    McpDeleteNoteInput, McpEmptyInput, McpGetNoteInput, McpGetNoteOutput, McpListNotesInput,
-    McpListNotesOutput, McpNoteProfileAdvisoryRule, McpNoteProfileExample, McpNoteProfileLimits,
+    DiagnosticSeverityResponse, McpAddBibliographyItemInput, McpApplyNotePatchInput,
+    McpBibliographyItem, McpBibliographyListOutput, McpCreateNoteInput,
+    McpDeleteBibliographyItemInput, McpDeleteNoteInput, McpEmptyInput, McpGetNoteFragmentInput,
+    McpGetNoteInput, McpGetNoteOutlineInput, McpGetNoteOutput, McpListNotesInput,
+    McpListNotesOutput, McpNoteFragmentOutput, McpNoteOutlineOutput, McpNoteOutlineSection,
+    McpNotePatchOutput, McpNoteProfileAdvisoryRule, McpNoteProfileExample, McpNoteProfileLimits,
     McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule, McpNoteProfileSyntax,
-    McpNoteRevisionOutput, McpSearchBibliographyInput, McpSyncEntry, McpSyncNotesInput,
-    McpSyncNotesOutput, McpSyncPhase, McpSyncRemovalReason, McpToolName, McpUpdateNoteInput,
+    McpNoteRevisionOutput, McpReplaceNoteSourceInput, McpSearchBibliographyInput, McpSyncEntry,
+    McpSyncNotesInput, McpSyncNotesOutput, McpSyncPhase, McpSyncRemovalReason, McpToolName,
     ProblemResponse,
 };
 use marginalis_domain::{
@@ -69,6 +71,9 @@ enum McpToolOutput {
     NoteSync(McpSyncNotesOutput),
     NoteProfile(Box<McpNoteProfileOutput>),
     Note(McpGetNoteOutput),
+    NoteOutline(McpNoteOutlineOutput),
+    NoteFragment(McpNoteFragmentOutput),
+    NotePatch(McpNotePatchOutput),
     Revision(McpNoteRevisionOutput),
     BibliographyList(McpBibliographyListOutput),
     BibliographyItem(McpBibliographyItem),
@@ -196,6 +201,72 @@ impl McpToolOutput {
                 text
             }
             Self::Note(note) => note_text(note),
+            Self::NoteOutline(outline) => {
+                let mut text = format!(
+                    "Note {} — {} (revision {}, {} lines).",
+                    outline.note_id, outline.title, outline.revision, outline.line_count
+                );
+                if outline.sections.is_empty() {
+                    text.push_str("\nNo section headings.");
+                } else {
+                    text.push_str("\nSections (level, lines, anchor):");
+                    for section in &outline.sections {
+                        let _ = write!(
+                            text,
+                            "\n- {} {} (level {}, lines {}-{}{})",
+                            "=".repeat(usize::from(section.level) + 1),
+                            section.title,
+                            section.level,
+                            section.start_line,
+                            section.end_line,
+                            section
+                                .anchor
+                                .as_deref()
+                                .map(|anchor| format!(", anchor #{anchor}"))
+                                .unwrap_or_default(),
+                        );
+                    }
+                }
+                text
+            }
+            Self::NoteFragment(fragment) => format!(
+                "Note {} (revision {}), lines {}-{}:\n{}",
+                fragment.note_id,
+                fragment.revision,
+                fragment.start_line,
+                fragment.end_line,
+                indent(&fragment.fragment)
+            ),
+            Self::NotePatch(patch) => {
+                let mut text = if patch.dry_run {
+                    format!(
+                        "Dry run: patch for note {} would apply {} hunk(s) (+{} -{} lines) and passes validation; nothing was saved.",
+                        patch.note_id, patch.hunks_applied, patch.lines_added, patch.lines_removed
+                    )
+                } else {
+                    format!(
+                        "Applied {} hunk(s) (+{} -{} lines) to note {}; now at revision {}.",
+                        patch.hunks_applied,
+                        patch.lines_added,
+                        patch.lines_removed,
+                        patch.note_id,
+                        patch.revision.unwrap_or_default()
+                    )
+                };
+                if !patch.diagnostics.is_empty() {
+                    text.push_str("\nDiagnostics:");
+                    for diagnostic in &patch.diagnostics {
+                        let _ = write!(
+                            text,
+                            "\n- {} ({}): {}",
+                            diagnostic.code,
+                            diagnostic_severity_name(diagnostic.severity),
+                            diagnostic.message
+                        );
+                    }
+                }
+                text
+            }
             Self::Revision(output) => format!(
                 "Note {} is at revision {}.",
                 output.note_id, output.revision
@@ -341,10 +412,7 @@ impl McpToolFailure {
                 | NoteUseCaseError::InvalidSyncCursor
                 | NoteUseCaseError::SyncCursorExpired
                 | NoteUseCaseError::InvalidLineRange
-<<<<<<< HEAD
                 | NoteUseCaseError::PatchRejected(_)
-=======
->>>>>>> upstream/main
                 | NoteUseCaseError::RenderFailed,
             )
             | Self::Bibliography(_) => "rejected",
@@ -364,10 +432,7 @@ impl McpToolFailure {
             Self::UseCase(NoteUseCaseError::InvalidSyncCursor) => "invalid-sync-cursor",
             Self::UseCase(NoteUseCaseError::SyncCursorExpired) => "sync-cursor-expired",
             Self::UseCase(NoteUseCaseError::InvalidLineRange) => "invalid-line-range",
-<<<<<<< HEAD
             Self::UseCase(NoteUseCaseError::PatchRejected(_)) => "patch-rejected",
-=======
->>>>>>> upstream/main
             Self::UseCase(NoteUseCaseError::RenderFailed) => "render-failed",
             Self::UseCase(NoteUseCaseError::Unavailable) => "unavailable",
             Self::UseCase(NoteUseCaseError::CorruptData) => "corrupt-data",
@@ -395,8 +460,19 @@ async fn execute_mcp_tool(
         Some(McpToolName::SyncNotes) => sync_notes_tool(notes, actor, call.arguments).await,
         Some(McpToolName::GetNoteProfile) => get_note_profile_tool(notes, &call.arguments),
         Some(McpToolName::GetNote) => get_note_tool(notes, actor, call.arguments).await,
+        Some(McpToolName::GetNoteOutline) => {
+            get_note_outline_tool(notes, actor, call.arguments).await
+        }
+        Some(McpToolName::GetNoteFragment) => {
+            get_note_fragment_tool(notes, actor, call.arguments).await
+        }
         Some(McpToolName::CreateNote) => create_note_tool(notes, actor, call.arguments).await,
-        Some(McpToolName::UpdateNote) => update_note_tool(notes, actor, call.arguments).await,
+        Some(McpToolName::ApplyNotePatch) => {
+            apply_note_patch_tool(notes, actor, call.arguments).await
+        }
+        Some(McpToolName::ReplaceNoteSource) => {
+            replace_note_source_tool(notes, actor, call.arguments).await
+        }
         Some(McpToolName::DeleteNote) => delete_note_tool(notes, actor, call.arguments).await,
         Some(McpToolName::SearchBibliography) => {
             search_bibliography_tool(bibliography, actor, call.arguments).await
@@ -558,14 +634,126 @@ async fn create_note_tool(
         .map_err(McpToolFailure::UseCase)
 }
 
-async fn update_note_tool(
+async fn get_note_outline_tool(
     notes: &dyn NoteUseCases,
     actor: Actor,
     arguments: serde_json::Value,
 ) -> Result<McpToolOutput, McpToolFailure> {
-    let Ok(input) = serde_json::from_value::<McpUpdateNoteInput>(arguments) else {
+    let Ok(input) = serde_json::from_value::<McpGetNoteOutlineInput>(arguments) else {
         return Err(McpToolFailure::InvalidArguments(
-            "update arguments are invalid",
+            "outline arguments are invalid",
+        ));
+    };
+    let Some(note_id) = parse_note_id(&input.note_id).ok() else {
+        return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
+    };
+    notes
+        .read_note_outline(actor, note_id)
+        .await
+        .map(|(note, outline)| {
+            McpToolOutput::NoteOutline(McpNoteOutlineOutput {
+                note_id: note.note_id().to_string(),
+                title: note.title().to_owned(),
+                revision: note.revision().get(),
+                line_count: outline.line_count,
+                sections: outline
+                    .sections
+                    .into_iter()
+                    .map(|section| McpNoteOutlineSection {
+                        level: section.level,
+                        title: section.title,
+                        anchor: section.anchor,
+                        start_line: section.start_line,
+                        end_line: section.end_line,
+                    })
+                    .collect(),
+            })
+        })
+        .map_err(McpToolFailure::UseCase)
+}
+
+async fn get_note_fragment_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpGetNoteFragmentInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "fragment arguments are invalid",
+        ));
+    };
+    let Some(note_id) = parse_note_id(&input.note_id).ok() else {
+        return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
+    };
+    notes
+        .read_note_fragment(actor, note_id, input.start_line, input.end_line)
+        .await
+        .map(|(note, fragment)| {
+            McpToolOutput::NoteFragment(McpNoteFragmentOutput {
+                note_id: note.note_id().to_string(),
+                revision: note.revision().get(),
+                start_line: input.start_line,
+                end_line: input.end_line,
+                fragment,
+            })
+        })
+        .map_err(McpToolFailure::UseCase)
+}
+
+async fn apply_note_patch_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpApplyNotePatchInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "patch arguments are invalid",
+        ));
+    };
+    let Some(note_id) = parse_note_id(&input.note_id).ok() else {
+        return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
+    };
+    let Ok(expected_revision) = Revision::new(input.expected_revision) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "expected_revision is invalid",
+        ));
+    };
+    notes
+        .apply_note_patch(
+            actor,
+            note_id,
+            &input.patch,
+            expected_revision,
+            NoteWritePolicy::RejectWarnings,
+            input.dry_run,
+        )
+        .await
+        .map(|applied| {
+            McpToolOutput::NotePatch(McpNotePatchOutput {
+                note_id: input.note_id,
+                revision: applied.note.map(|note| note.revision().get()),
+                dry_run: input.dry_run,
+                hunks_applied: applied.hunks_applied,
+                lines_added: applied.lines_added,
+                lines_removed: applied.lines_removed,
+                diagnostics: applied
+                    .advisories
+                    .into_iter()
+                    .map(super::super::error::advisory_response)
+                    .collect(),
+            })
+        })
+        .map_err(McpToolFailure::UseCase)
+}
+
+async fn replace_note_source_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    let Ok(input) = serde_json::from_value::<McpReplaceNoteSourceInput>(arguments) else {
+        return Err(McpToolFailure::InvalidArguments(
+            "replace arguments are invalid",
         ));
     };
     let Some(note_id) = parse_note_id(&input.note_id).ok() else {
@@ -773,6 +961,8 @@ fn note_profile_output(profile: NoteProfile) -> McpNoteProfileOutput {
             applies_after_normalization: true,
             max_title_characters: profile.limits.max_title_characters,
             max_source_bytes: profile.limits.max_source_bytes,
+            max_patch_bytes: profile.limits.max_patch_bytes,
+            max_patch_hunks: profile.limits.max_patch_hunks,
             max_tags: profile.limits.max_tags,
             max_tag_characters: profile.limits.max_tag_characters,
         },

@@ -349,6 +349,8 @@ impl NoteContent for AcceptContent {
             limits: crate::NoteProfileLimits {
                 max_title_characters: 1,
                 max_source_bytes: 1,
+                max_patch_bytes: 1,
+                max_patch_hunks: 1,
                 max_tags: 1,
                 max_tag_characters: 1,
             },

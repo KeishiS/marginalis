@@ -838,7 +838,7 @@ async fn mcp_create_and_update_reject_warnings_with_typed_diagnostics() {
             "id": "update-warning",
             "method": "tools/call",
             "params": {
-                "name": "update_note",
+                "name": "replace_note_source",
                 "arguments": {
                     "note_id": "0197c9bc-0000-7000-8000-000000000002",
                     "source": source,

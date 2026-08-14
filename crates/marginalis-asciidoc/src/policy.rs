@@ -196,6 +196,8 @@ pub fn note_profile() -> NoteProfile {
         limits: NoteProfileLimits {
             max_title_characters: NOTE_POLICY.max_title_characters,
             max_source_bytes: NOTE_POLICY.max_source_bytes,
+            max_patch_bytes: NOTE_POLICY.max_patch_bytes,
+            max_patch_hunks: NOTE_POLICY.max_patch_hunks,
             max_tags: NOTE_POLICY.max_tags,
             max_tag_characters: NOTE_POLICY.max_tag_characters,
         },
