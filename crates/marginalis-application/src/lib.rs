@@ -65,10 +65,10 @@ pub use notes::{
     NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
     NoteCommandRepository, NoteContent, NoteContentError, NoteGraph, NoteGraphCitation,
     NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks,
-    NoteOutline, NoteOutlineSection, NotePatchError, NotePatchOutcome, NoteQueryRepository,
-    NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs, NoteReviewRepository,
-    NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason, NoteSyncRepository,
-    NoteSyncRepositoryError, NoteViewSnapshot, apply_note_patch,
+    NoteOutline, NoteOutlineSection, NotePatchApplication, NotePatchError, NotePatchOutcome,
+    NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
+    NoteReviewRepository, NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason,
+    NoteSyncRepository, NoteSyncRepositoryError, NoteViewSnapshot, apply_note_patch,
 };
 pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{
@@ -372,6 +372,9 @@ pub enum NoteUseCaseError {
     SyncCursorExpired,
     #[error("line range is outside the stored source")]
     InvalidLineRange,
+    /// patchを保存済みの原文へ適用できない。理由と位置を機械可読に含む。
+    #[error("patch cannot be applied: {0}")]
+    PatchRejected(notes::NotePatchError),
     #[error("note is invalid")]
     Validation(Vec<NoteValidationDiagnostic>),
     #[error("note input contains warnings")]
@@ -573,6 +576,16 @@ pub trait NoteUseCases: Send + Sync {
         start_line: usize,
         end_line: usize,
     ) -> Result<(Note, String), NoteUseCaseError>;
+    /// 保存済み原文へUnified Diffを厳密に適用する。dry runでは検証まで行い保存しない。
+    async fn apply_note_patch(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        patch: &str,
+        expected_revision: Revision,
+        policy: NoteWritePolicy,
+        dry_run: bool,
+    ) -> Result<notes::NotePatchApplication, NoteUseCaseError>;
     async fn create_note(
         &self,
         actor: Actor,

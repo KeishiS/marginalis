@@ -19,6 +19,7 @@ mod queries;
 mod reviews;
 mod sync;
 
+pub use commands::NotePatchApplication;
 pub use content::{
     NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
     NoteContent, NoteContentError, NoteLinkResolver, NoteOutline, NoteOutlineSection,
@@ -327,6 +328,27 @@ impl NoteUseCases for NoteApplication {
         end_line: usize,
     ) -> Result<(Note, String), NoteUseCaseError> {
         NoteApplication::read_note_fragment(self, actor, note_id, start_line, end_line).await
+    }
+
+    async fn apply_note_patch(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        patch: &str,
+        expected_revision: Revision,
+        policy: NoteWritePolicy,
+        dry_run: bool,
+    ) -> Result<NotePatchApplication, NoteUseCaseError> {
+        NoteApplication::apply_note_patch(
+            self,
+            actor,
+            note_id,
+            patch,
+            expected_revision,
+            policy,
+            dry_run,
+        )
+        .await
     }
 
     async fn create_note(
