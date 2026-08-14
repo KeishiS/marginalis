@@ -5,10 +5,12 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 
+# 実際の版とは独立した試験用の値。正本はCargo.lock(ここではmetadata.json)であり、
+# 参照側はbuild.rs導出のenv!か、URLなど正本から機械的に決まる文字列だけを持つ。
 revision=1111111111111111111111111111111111111111
 other_revision=2222222222222222222222222222222222222222
-version=0.40.1
-other_version=0.41.0
+version=9.8.7
+other_version=9.9.0
 
 # 検査対象の参照を最小構成で再現したリポジトリを組み立てます。
 build_tree() {
@@ -19,10 +21,11 @@ build_tree() {
 [workspace.dependencies]
 adocweave = { git = "https://github.com/KeishiS/adocweave.git", rev = "$tree_revision", package = "adocweave" }
 EOF
-  cat >"$root/crates/marginalis-asciidoc/src/lib.rs" <<EOF
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "$tree_revision";
-pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "$tree_version";
+  cat >"$root/crates/marginalis-asciidoc/src/lib.rs" <<'EOF'
+pub const ADOCWEAVE_SOURCE_REVISION: &str = env!("MARGINALIS_ADOCWEAVE_REVISION");
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = env!("MARGINALIS_ADOCWEAVE_VERSION");
 EOF
+  echo 'fn main() {}' >"$root/crates/marginalis-asciidoc/build.rs"
   cat >"$root/flake.nix" <<EOF
   inputs.adocweave = {
     url = "github:KeishiS/adocweave/$tree_revision";
@@ -39,11 +42,11 @@ EOF
     >"$root/tools/textlint/package-lock.json"
   jq -n --arg version "$tree_version" \
     '{info: {"x-adocweave-package-version": $version}}' >"$root/docs/openapi.json"
-  cat >"$root/crates/marginalis-contract/src/rest.rs" <<EOF
-            "x-adocweave-package-version": "$tree_version",
+  cat >"$root/crates/marginalis-contract/src/rest.rs" <<'EOF'
+            "x-adocweave-package-version": env!("MARGINALIS_ADOCWEAVE_VERSION"),
 EOF
-  cat >"$root/crates/marginalis-service/tests/cli.rs" <<EOF
-    assert_eq!(archive_json["adocweave_package_version"], "$tree_version");
+  cat >"$root/crates/marginalis-service/tests/cli.rs" <<'EOF'
+    assert_eq!(archive_json["adocweave_package_version"], marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION);
     incompatible_json["adocweave_package_version"] = "0.10.1".into();
 EOF
   mkdir -p "$root/adocweave-checkout/conformance"
@@ -94,16 +97,21 @@ jq --arg version "$other_version" '.packages[0].version = $version' \
 mv "$work_dir/bad/metadata.new" "$work_dir/bad/metadata.json"
 reject "参照側の版の残置"
 
-# Rust定数のrevisionが古い場合
+# Rust定数がliteral直書きへ戻った場合
 rebuild
-sed -i "s/$revision/$other_revision/" "$work_dir/bad/crates/marginalis-asciidoc/src/lib.rs"
-reject "Rust定数のrevision不一致"
-
-# Rust定数の版が古い場合
-rebuild
-sed -i "s/PINNED_ADOCWEAVE_PACKAGE_VERSION: \&str = \"$version\"/PINNED_ADOCWEAVE_PACKAGE_VERSION: \&str = \"$other_version\"/" \
+sed -i "s/env!(\"MARGINALIS_ADOCWEAVE_REVISION\")/\"$revision\"/" \
   "$work_dir/bad/crates/marginalis-asciidoc/src/lib.rs"
-reject "Rust定数の版不一致"
+reject "Rust定数revisionのliteral直書き"
+
+rebuild
+sed -i "s/env!(\"MARGINALIS_ADOCWEAVE_VERSION\")/\"$version\"/" \
+  "$work_dir/bad/crates/marginalis-asciidoc/src/lib.rs"
+reject "Rust定数版のliteral直書き"
+
+# build.rsが無い場合
+rebuild
+rm "$work_dir/bad/crates/marginalis-asciidoc/build.rs"
+reject "導出build.rsの欠落"
 
 # flake inputのrevisionが古い場合
 rebuild
@@ -112,7 +120,7 @@ reject "flake inputのrevision不一致"
 
 # flakeのcargoハッシュ鍵が版のliteral直書きへ戻った場合
 rebuild
-sed -i 's/adocweave-${adocweaveVersion}/adocweave-0.40.1/' "$work_dir/bad/flake.nix"
+sed -i "s/adocweave-\${adocweaveVersion}/adocweave-$version/" "$work_dir/bad/flake.nix"
 reject "cargoハッシュ鍵のliteral直書き"
 
 # textlint pluginのtarball URLが古い場合
@@ -130,15 +138,17 @@ rebuild
 sed -i "s/$version/$other_version/" "$work_dir/bad/docs/openapi.json"
 reject "OpenAPIの版不一致"
 
-# OpenAPI生成元の版が古い場合
+# OpenAPI生成元がliteral直書きへ戻った場合
 rebuild
-sed -i "s/$version/$other_version/" "$work_dir/bad/crates/marginalis-contract/src/rest.rs"
-reject "OpenAPI生成元の版不一致"
+sed -i "s/env!(\"MARGINALIS_ADOCWEAVE_VERSION\")/\"$version\"/" \
+  "$work_dir/bad/crates/marginalis-contract/src/rest.rs"
+reject "OpenAPI生成元のliteral直書き"
 
-# 結合試験に現行版の参照がない場合
+# 結合試験の現行版参照が定数でない場合
 rebuild
-sed -i "s/$version/$other_version/" "$work_dir/bad/crates/marginalis-service/tests/cli.rs"
-reject "結合試験の現行版参照の欠落"
+sed -i "s/marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION/\"$version\"/" \
+  "$work_dir/bad/crates/marginalis-service/tests/cli.rs"
+reject "結合試験の現行版literal直書き"
 
 # conformance fixtureが同梱されていない場合
 rebuild

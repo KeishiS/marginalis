@@ -11,8 +11,9 @@ mod configuration;
 mod policy;
 mod rendering;
 
-pub const ADOCWEAVE_SOURCE_REVISION: &str = "0b97d24adc3ad241011621933cd6400ad17bba74";
-pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = "0.40.1";
+// 版とrevisionはbuild.rsがCargo.lockの解決結果から導出する。手書きの版数を残さない。
+pub const ADOCWEAVE_SOURCE_REVISION: &str = env!("MARGINALIS_ADOCWEAVE_REVISION");
+pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = env!("MARGINALIS_ADOCWEAVE_VERSION");
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
 pub const AUTHORING_PROFILE_VERSION: u32 = 16;
 
