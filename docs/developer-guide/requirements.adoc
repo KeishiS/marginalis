@@ -116,7 +116,8 @@ tokenを検証し、認可応答にはAuthorization Serverを識別する``iss``
 失効すること。
 * *REQ-API-007 — MCP tool契約*: ``list_notes``は可視ノートのID、題名、タグ、更新日時、revision、
 作成経路、人手確認状態を返し、作成経路と人手確認状態による完全一致の絞り込みを受け付けること。
-``get_note``も同じ更新情報を返すこと。``get_note_profile``は、本文と参考文献を相互に移動できる
+``get_note``も同じ更新情報を返すこと。``list_note_templates``は、テンプレート識別タグの付いた
+可視ノートの概要だけを返すこと。``get_note_profile``は、本文と参考文献を相互に移動できる
 完全なAsciiDoc文書例、文献情報を推測しない注意事項、実効advisory規則と重大度、MCPではwarningを
 含む書き込みを拒否する方針を返すこと。``structuredContent``は公開契約型、``text``は同じ結果から
 組み立てた人とモデル向けの説明とし、不可視なノートの存在や属性を開示しないこと。
