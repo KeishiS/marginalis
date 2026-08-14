@@ -213,15 +213,16 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         title="書誌ライブラリー"
         description="CSL-JSON形式の文献情報を、ノートとは独立して管理します。"
       />
+      {/* ノート一覧の絞り込みと同じく、広い画面では入力欄の隣へ内容幅のボタンを置く。 */}
       <form
-        className="grid gap-3"
+        className="grid items-stretch gap-3 min-[60rem]:flex min-[60rem]:items-end"
         onSubmit={(event) => {
           event.preventDefault();
           if (mutating) return;
           void load(query);
         }}
       >
-        <label className="grid gap-2 font-semibold">
+        <label className="grid gap-2 font-semibold min-[60rem]:flex-1">
           文献を検索
           <Input
             disabled={mutating}
