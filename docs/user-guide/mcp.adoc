@@ -104,7 +104,7 @@ MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取
 長文ノートでは、全文を送受信する``get_note``のかわりに、次の順路で読み書きします。
 
 . ``get_note_outline``で、本文を含まない文書の構成を取得します。見出しごとの深さ、題名、
-  原文に``[#id]``と明示されたアンカー（ないノートでは``null``）、1始まりで両端を含む行範囲を
+  原文に``[#id]``と明示されたアンカー（ない見出しでは``null``）、1始まりで両端を含む行範囲を
   返します。節の範囲は子節を含み、親子の範囲は重なります。
 . ``get_note_fragment``で、選んだ行範囲のAsciiDoc原文をそのまま取得します。要約や変換は行いません。
 . ``apply_note_patch``で、変更箇所だけをUnified Diffとして送ります。
@@ -112,6 +112,26 @@ MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取
 ``apply_note_patch``のpatchは、``--- a/note.adoc``と``+++ b/note.adoc``のfile headerを持つ
 単一ファイルのUnified Diffだけを受理します。適用は厳密で、hunkに記録した変更前の行と文脈行が
 保存済み原文の指定位置に完全一致した場合だけ変更し、位置をずらした再探索は行いません。
+
+patchは``diff``コマンドで作るのが確実です。推奨する手順は次のとおりです。
+
+. 現行の原文とrevisionを取得し、原文をbyteそのままファイルへ保存します。末尾に改行を
+  足したり削ったりしないでください（shellでは``echo``ではなく``printf '%s'``を使います）。
+  一部の節だけを編集する場合も、diffは全文どうしで取ります。hunkの行番号は文書全体の
+  1始まりの行番号であり、断片どうしの差分では位置が一致しません。
+. 更新後の内容を別のファイルへ保存します。
+. 2つのファイルの差分をUnified Diff形式で出力します。``--label``を指定しないと、``diff``は
+  headerへ実ファイル名と時刻を書くため、固定名を要求するMarginalisに拒否されます。
++
+[source,sh]
+----
+diff -u --label a/note.adoc --label b/note.adoc current.adoc updated.adoc
+----
++
+``diff``は差分がある場合に終了code 1を返すため、scriptでは失敗と混同しないでください。
+末尾に改行のない文書では``\ No newline at end of file``の印が自動で付き、Marginalisも
+この印を解釈します。
+. 出力全体を``patch``として、取得時のrevisionを``expected_revision``へ指定して送信します。
 一致しない場合は``patch_rejected``と、対象hunkの位置を示す診断を返すため、最新の原文を
 読み直してpatchを作り直してください。``expected_revision``が現在のrevisionと違う場合は
 ``conflict``です。``dry_run: true``を指定すると、適用と全文検証まで行い、保存せずrevisionも
