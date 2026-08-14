@@ -84,6 +84,9 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |CSRFトークンが必要。未設定へ戻し、既存の接続は維持する
 |===
 
+Webhook購読の管理（``/api/v3/webhooks``系）は、署名の検証方法や配送の約束事とあわせて
+xref:webhooks.adoc#top[Webhook通知]で説明します。
+
 == ノートの入力と権限
 
 ノートの作成・更新では、JSON形式の``source``へ完全なAsciiDoc文書を入れて送信します。題名は
