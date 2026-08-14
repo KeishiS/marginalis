@@ -341,10 +341,12 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await page.goto(`${baseUrl}/notes/new`);
   const completionSource = page.getByRole("textbox", { name: "AsciiDoc文書" });
   await completionSource.click();
+  await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.type("= 補完を確認するノート\n:marginalis-tags: 受");
   const completionTooltip = page.locator(".cm-tooltip-autocomplete");
+  // 候補の再問い合わせと確定キーの競合を避けるため、候補そのものをクリックして確定する。
   await expect(completionTooltip).toContainText("受入試験");
-  await page.keyboard.press("Enter");
+  await completionTooltip.getByText("受入試験").click();
   await expect(completionSource).toContainText(":marginalis-tags: 受入試験");
   await expect(completionTooltip).toHaveCount(0);
 
