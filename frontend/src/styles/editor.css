@@ -14,7 +14,7 @@
 }
 
 .editor-view-buttons {
-  background: var(--color-surface-subtle);
+  background: var(--color-muted);
   border-radius: var(--radius-sm);
   padding: var(--space-1);
 }
@@ -22,19 +22,19 @@
 .button-segment {
   background: transparent;
   border: 0;
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   min-height: 2.1rem;
   padding: var(--space-1) var(--space-3);
 }
 
 .editor-view-buttons button[aria-pressed="true"] {
-  background: var(--color-surface);
+  background: var(--color-card);
   box-shadow: var(--shadow-sm);
-  color: var(--color-text);
+  color: var(--color-foreground);
 }
 
 .editor-workspace {
-  background: var(--color-surface);
+  background: var(--color-card);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
@@ -66,9 +66,9 @@
 }
 
 .source-editor-field > span {
-  background: var(--color-surface-subtle);
+  background: var(--color-muted);
   border-block-end: var(--border-thin) solid var(--color-border);
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   font-size: var(--text-caption);
   font-weight: 650;
   padding: var(--space-2) var(--space-3);
@@ -80,8 +80,8 @@
 }
 
 .ascii-doc-editor .cm-editor {
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--color-card);
+  color: var(--color-foreground);
   height: calc(var(--editor-height) - 2.3rem);
   min-height: 0;
 }
@@ -98,9 +98,9 @@
 }
 
 .ascii-doc-editor .cm-gutters {
-  background: var(--color-surface-subtle);
+  background: var(--color-muted);
   border-inline-end: var(--border-thin) solid var(--color-border);
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   font-family: var(--font-monospace);
 }
 
@@ -135,11 +135,11 @@
 }
 
 .ascii-doc-editor .cm-tooltip-lint {
-  background: var(--color-surface);
+  background: var(--color-card);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
-  color: var(--color-text);
+  color: var(--color-foreground);
 }
 
 .ascii-doc-editor .cm-diagnosticText {
@@ -168,12 +168,12 @@
 }
 
 .preview-heading span {
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   font-size: var(--text-caption);
 }
 
 .editor-actions {
-  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  background: color-mix(in srgb, var(--color-card) 92%, transparent);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-md);
   bottom: 1rem;

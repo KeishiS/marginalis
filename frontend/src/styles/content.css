@@ -107,7 +107,7 @@
 
 /* 用語は見出しではない。見出しの階層と競合しないよう、本文と同じ大きさのまま字面で示す。 */
 .rendered-content dt {
-  color: var(--color-text);
+  color: var(--color-foreground);
   font-family: var(--font-ui);
   font-size: var(--text-reading-body);
   font-weight: 700;
@@ -132,17 +132,21 @@
 }
 
 .rendered-content figure.source-block figcaption {
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   font-size: var(--text-small);
   font-weight: 650;
   margin-block-end: var(--space-2);
 }
 
 .rendered-content pre {
-  background: color-mix(in srgb, var(--color-canvas) 75%, var(--color-surface));
+  background: color-mix(
+    in srgb,
+    var(--color-background) 75%,
+    var(--color-card)
+  );
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-md);
-  color: var(--color-text);
+  color: var(--color-foreground);
   font-family: var(--font-monospace);
   font-size: var(--text-small);
   line-height: 1.55;
@@ -158,7 +162,7 @@
 }
 
 .rendered-content pre[data-language]::before {
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   content: attr(data-language);
   display: block;
   font-family: inherit;
@@ -189,7 +193,7 @@
 
 .rendered-content code[data-line-numbers-enhanced="true"] .source-line::before {
   border-inline-end: var(--border-thin) solid var(--color-border);
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   content: attr(data-line-number);
   display: inline-block;
   margin-inline-end: 1ch;
@@ -200,7 +204,7 @@
 }
 
 .rendered-content blockquote {
-  background: var(--color-surface-subtle);
+  background: var(--color-muted);
   border-inline-start: var(--border-thick) solid var(--color-primary);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   margin-inline: 0;
@@ -229,7 +233,7 @@
 }
 
 .rendered-content th {
-  background: var(--color-surface-subtle);
+  background: var(--color-muted);
 }
 
 .rendered-content mjx-container[display="true"] {
@@ -239,10 +243,10 @@
 
 /* 数式を組版できなかった場所へ、本文の代わりに表示する。 */
 .math-rendering-error {
-  background: var(--color-danger-soft);
-  border: var(--border-thin) solid var(--color-danger);
+  background: var(--color-destructive-soft);
+  border: var(--border-thin) solid var(--color-destructive);
   border-radius: var(--radius-sm);
-  color: var(--color-danger);
+  color: var(--color-destructive);
   padding: var(--space-3);
 }
 

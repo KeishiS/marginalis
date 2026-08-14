@@ -9,7 +9,7 @@
  * dark modeはprefers-color-schemeへ追随し、切替UIは持ちません。
  * 役割名は姉妹サービスRenkanのdocs/web-ui.adocにある対応表と揃え、
  * 一覧はdocs/user-guide/web-ui-design.adocに記載します。
- * 手書きCSSが使う旧色名は、tokens.cssでこのトークンへの別名として定義します。
+ * 手書きCSSも、Tailwindが出力する--color-*と--radius-*をそのまま参照します。
  */
 :root {
   color-scheme: light dark;
@@ -35,7 +35,6 @@
   --ring: oklch(50.88% 0.1984 266.36deg);
   --success: oklch(49.87% 0.1168 157.07deg); /* #067647 */
   --warning: oklch(55.42% 0.1169 75.01deg); /* #9a6700 */
-  --radius: 0.75rem;
 }
 
 /* 色相を保ったまま明度を反転し、暗い地でも同じ役割の色が同じ意味を持つようにします。 */
@@ -64,16 +63,10 @@
 }
 
 @theme inline {
-  --font-sans:
-    "Noto Sans JP Variable", "Noto Sans JP", system-ui, -apple-system,
-    blinkmacsystemfont, "Segoe UI", sans-serif;
-  --font-serif:
-    "Noto Serif JP Variable", "Noto Serif JP", ui-serif, georgia,
-    "Times New Roman", serif;
-  --font-mono:
-    "Noto Sans Mono Variable", "Noto Sans Mono", "Noto Sans JP Variable",
-    "Noto Sans Mono CJK JP", ui-monospace, "Cascadia Code", "SFMono-Regular",
-    consolas, monospace;
+  /* 書体の正本はtokens.css。同じ並びを二重に書かず、変数参照でつなぐ。 */
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-reading);
+  --font-mono: var(--font-monospace);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -95,10 +88,16 @@
   --color-ring: var(--ring);
   --color-success: var(--success);
   --color-warning: var(--warning);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+
+  /*
+   * 角丸の目盛り。手書きCSSとユーティリティ(rounded-*)が同じ変数を共有する。
+   * 以前はtokens.cssの同名変数がこの定義を意図せず上書きしていたため、
+   * 実際に表示されていた値をここへ一本化した。
+   */
+  --radius-sm: 0.45rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1rem;
 }
 
 @layer components {

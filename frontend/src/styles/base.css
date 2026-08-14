@@ -3,8 +3,8 @@
 }
 
 body {
-  background: var(--color-canvas);
-  color: var(--color-text);
+  background: var(--color-background);
+  color: var(--color-foreground);
   margin: 0;
   min-height: 100dvh;
 }
@@ -34,6 +34,18 @@ body {
   input,
   select {
     font: inherit;
+  }
+
+  /* ネイティブselectの既定。shadcnに対応するcomponentがないため、
+     Inputと同じ高さ(2.25rem)・枠・角丸でここから揃える。 */
+  select {
+    background: var(--color-card);
+    border: var(--border-thin) solid var(--color-input);
+    border-radius: var(--radius-md);
+    color: var(--color-foreground);
+    font-size: var(--text-small);
+    min-height: 2.25rem;
+    padding-inline: var(--space-2);
   }
 
   a,
