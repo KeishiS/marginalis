@@ -251,6 +251,16 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(brandPosition).not.toBeNull();
   expect(Math.abs(brandPosition.x - widePosition.x)).toBeLessThanOrEqual(1);
 
+  // さらに広い画面では、長文の読みやすさを保つため96rem(1536px)を超えない。
+  // この上限は一覧など他の画面と共有し、画面を移動しても要素の幅が変わらないようにする。
+  await page.setViewportSize({ width: 2560, height: 900 });
+  await expect(documentSurface).toBeVisible();
+  const ultraWidePosition = await documentSurface.boundingBox();
+  expect(ultraWidePosition).not.toBeNull();
+  expect(ultraWidePosition.width).toBeLessThanOrEqual(1536);
+  expect(ultraWidePosition.width).toBeGreaterThan(1400);
+  await page.setViewportSize({ width: 1600, height: 900 });
+
   await page.evaluate(() => {
     document.cookie = "marginalis_csrf=browser-csrf; path=/";
   });

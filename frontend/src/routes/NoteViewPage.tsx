@@ -112,7 +112,7 @@ export function NoteViewPage({
     return <StatusMessage>ノートを読み込んでいます。</StatusMessage>;
   return (
     <section className="grid min-w-0 gap-5" aria-label="ノートの閲覧">
-      <div className="mx-auto flex w-full max-w-(--reading-width) min-w-0 flex-wrap items-stretch justify-between gap-4 rounded-md border bg-card px-4 py-3 shadow-xs min-[60rem]:items-start">
+      <div className="flex w-full min-w-0 flex-wrap items-stretch justify-between gap-4 rounded-md border bg-card px-4 py-3 shadow-xs min-[60rem]:items-start">
         <div className="grid min-w-0 gap-1">
           <span className="text-xs font-bold tracking-wide text-muted-foreground">
             note ID
@@ -225,7 +225,7 @@ export function NoteViewPage({
           </Button>
         </nav>
       </div>
-      <div className="mx-auto w-full max-w-(--reading-width) min-w-0 rounded-lg border bg-card p-[clamp(var(--space-5),4vw,var(--space-12))] shadow-xs">
+      <div className="w-full min-w-0 rounded-lg border bg-card p-[clamp(var(--space-5),4vw,var(--space-12))] shadow-xs">
         <RenderedContent
           html={view.html}
           mathMacros={view.math_macros}
@@ -283,7 +283,7 @@ function RelatedNotes({
   ];
   return (
     <aside
-      className="mx-auto mt-8 grid w-full max-w-(--reading-width) min-w-0 grid-cols-1 gap-4 min-[60rem]:grid-cols-2"
+      className="mt-8 grid w-full min-w-0 grid-cols-1 gap-4 min-[60rem]:grid-cols-2"
       aria-label="関連ノート"
     >
       {groups.map(([label, notes]) => (
