@@ -4,8 +4,10 @@
  * 整理する(Issue #438)。
  */
 @layer base {
-  button,
-  .button {
+  /* class無しの素のbuttonだけを対象にする。shadcnのButtonやCodeMirrorの
+     buttonはclassを持ち、それぞれの定義で大きさを決める。全buttonへ
+     min-heightを課すと、utilityのh-9より優先されて高さが揃わなくなる。 */
+  button:not([class]) {
     align-items: center;
     border: var(--border-thin) solid transparent;
     border-radius: var(--radius-sm);
@@ -26,12 +28,11 @@
       transform 140ms ease;
   }
 
-  button:hover:not(:disabled),
-  .button:hover {
+  button:not([class]):hover:not(:disabled) {
     transform: translateY(-0.0625rem);
   }
 
-  button:disabled {
+  button:not([class]):disabled {
     cursor: not-allowed;
     opacity: 0.52;
   }
@@ -50,7 +51,9 @@ button:not([class]):hover:not(:disabled) {
 }
 
 @layer base {
-  input:not([type="range"], [type="checkbox"]),
+  /* buttonと同じく、class無しの素のinputだけを対象にする。shadcnのInputは
+     classでh-9を持ち、min-heightを課すと高さが揃わなくなる。 */
+  input:not([type="range"], [type="checkbox"], [class]),
   select {
     background: var(--color-surface);
     border: var(--border-thin) solid var(--color-border);
@@ -60,7 +63,7 @@ button:not([class]):hover:not(:disabled) {
     padding: var(--space-2) var(--space-3);
   }
 
-  input:not([type="range"], [type="checkbox"]):hover,
+  input:not([type="range"], [type="checkbox"], [class]):hover,
   select:hover {
     border-color: var(--color-border-strong);
   }
