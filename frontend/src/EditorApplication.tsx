@@ -27,6 +27,10 @@ import { useEditorPreview } from "./useEditorPreview";
 import { editorStatus, toProblem } from "./editorPresentation";
 import { editPath, listPath, notePath } from "./paths";
 import { ConflictPanel } from "./editor/ConflictPanel";
+import {
+  createTagCandidateLoader,
+  tagCompletionSource,
+} from "./editor/completion";
 import { EditorViewToolbar } from "./editor/EditorViewToolbar";
 import { EditorViewMode } from "./editor/viewMode";
 import { PreviewPanel } from "./editor/PreviewPanel";
@@ -68,6 +72,10 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
     [baseline, form],
   );
   const draft = useMemo(() => ({ source: form.source }), [form.source]);
+  const completionSources = useMemo(
+    () => [tagCompletionSource(createTagCandidateLoader(config.apiBase))],
+    [config.apiBase],
+  );
   const preview = useEditorPreview(
     config.apiBase,
     revision === null ? null : noteId,
@@ -267,6 +275,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
               <span id="source-editor-label">AsciiDoc文書</span>
               <AsciiDocEditor
                 ref={sourceEditor}
+                completionSources={completionSources}
                 value={form.source}
                 diagnostics={preview.diagnostics}
                 disabled={saving}

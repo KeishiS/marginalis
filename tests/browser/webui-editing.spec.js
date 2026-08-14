@@ -335,6 +335,21 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
     "= 警告を確認するノート\n\nこの結果は xref:note:0197c9bc-0000-7000-8000-000000000002[参照]に記載されています。",
   );
   await expect(page.locator(".cm-lintRange-warning")).toHaveCount(0);
+
+  // タグ属性行では、既存ノートで使用中のタグが補完候補として出る(#497)。
+  // 補完の吹き出しも実CSPの下で表示できることをここで確かめる。
+  await page.goto(`${baseUrl}/notes/new`);
+  const completionSource = page.getByRole("textbox", { name: "AsciiDoc文書" });
+  await completionSource.click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("= 補完を確認するノート\n:marginalis-tags: 受");
+  const completionTooltip = page.locator(".cm-tooltip-autocomplete");
+  // 候補の再問い合わせと確定キーの競合を避けるため、候補そのものをクリックして確定する。
+  await expect(completionTooltip).toContainText("受入試験");
+  await completionTooltip.getByText("受入試験").click();
+  await expect(completionSource).toContainText(":marginalis-tags: 受入試験");
+  await expect(completionTooltip).toHaveCount(0);
+
   expect(await page.evaluate(() => window.__marginalisCspViolations)).toEqual(
     [],
   );
