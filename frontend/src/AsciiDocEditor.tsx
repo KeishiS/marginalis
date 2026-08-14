@@ -12,6 +12,11 @@ import {
   insertTab,
 } from "@codemirror/commands";
 import {
+  autocompletion,
+  completionKeymap,
+  type CompletionSource,
+} from "@codemirror/autocomplete";
+import {
   type Diagnostic,
   lintGutter,
   lintKeymap,
@@ -56,6 +61,7 @@ interface AsciiDocEditorProps {
   onCompositionChange: (composing: boolean) => void;
   onSave: () => void;
   styleNonce: string;
+  completionSources?: CompletionSource[];
 }
 
 export const AsciiDocEditor = forwardRef<
@@ -71,6 +77,7 @@ export const AsciiDocEditor = forwardRef<
     onCompositionChange,
     onSave,
     styleNonce,
+    completionSources,
   },
   forwardedRef,
 ) {
@@ -79,6 +86,7 @@ export const AsciiDocEditor = forwardRef<
   const initialValue = useRef(value);
   const initialLabel = useRef(labelledBy);
   const initialStyleNonce = useRef(styleNonce);
+  const initialCompletionSources = useRef(completionSources);
   const onChangeRef = useRef(onChange);
   const onCompositionChangeRef = useRef(onCompositionChange);
   const onSaveRef = useRef(onSave);
@@ -110,6 +118,10 @@ export const AsciiDocEditor = forwardRef<
           crosshairCursor(),
           highlightActiveLine(),
           highlightSelectionMatches(),
+          // 候補の取得は各sourceが担い、対象外の文脈ではnullを返して黙る。
+          ...(initialCompletionSources.current?.length
+            ? [autocompletion({ override: initialCompletionSources.current })]
+            : []),
           EditorView.cspNonce.of(initialStyleNonce.current),
           EditorView.lineWrapping,
           EditorState.tabSize.of(4),
@@ -130,6 +142,7 @@ export const AsciiDocEditor = forwardRef<
               },
             },
             { key: "Tab", run: insertTab, shift: indentLess },
+            ...completionKeymap,
             ...lintKeymap,
             ...searchKeymap,
             ...historyKeymap,
