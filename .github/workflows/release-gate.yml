@@ -82,3 +82,36 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
         run: nix develop --command cargo make release-gate-core
+
+  # タグのプッシュでゲートが成功したら、そのタグの内容から下書きReleaseを作成する。
+  # checkoutはタグの内容そのものであり、後からmainが進んでも公開内容は変わらない。
+  # Release Notesの記載と公開(--draft=false)は人が行う。
+  draft-release:
+    if: github.event_name == 'push'
+    needs: release-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create the draft release with contract assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          state=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null || echo absent)
+          if [ "$state" = "false" ]; then
+            echo "公開済みのReleaseがあるため何もしません。"
+            exit 0
+          fi
+          if [ "$state" = "absent" ]; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              docs/openapi.json docs/mcp-tools.json \
+              --title "$RELEASE_TAG" \
+              --notes "Release Notesを記載してから公開してください。"
+          fi
+          test "$(gh release view "$RELEASE_TAG" --json isDraft,assets \
+            --jq '(.isDraft == true) and (([.assets[].name] | sort) == ["mcp-tools.json", "openapi.json"])')" = true

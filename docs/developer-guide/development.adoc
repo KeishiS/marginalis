@@ -144,6 +144,10 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |公開対象の版、全検証、Nix packageを公開前に確認
 |``cargo make release-gate``
 |失敗したtask名と標準出力
+|``draft-release``
+|タグのプッシュでゲート成功後に、タグの内容から下書きReleaseと契約assetを作成
+|（タグのプッシュ時だけ実行。ローカルの再実行なし）
+|作成された下書きReleaseとjobの標準出力
 |===
 +
 ``nixos-e2e-vm``はCIのcritical pathであり、所要時間の大半をNixのビルドが占めます。このjobだけは

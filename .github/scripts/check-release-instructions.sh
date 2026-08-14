@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# リリース操作の要点が失われていないことを検査します。
+#   - 下書きReleaseの作成と契約assetの添付は、release-gate.ymlのdraft-releaseジョブが
+#     タグの内容から自動で行います(--verify-tagと下書き・asset集合の厳密な確認を含む)。
+#   - リリース手順の文書には、Release Notesの記載、下書きの確認、明示的な公開が
+#     この順序で残っていなければなりません。
+
 release_guide="${1:-docs/developer-guide/release.adoc}"
+release_workflow="${2:-.github/workflows/release-gate.yml}"
 
 fail() {
   echo "$1" >&2
@@ -20,21 +27,32 @@ require_line() {
   instruction_lines["$name"]="${matches[0]%%:*}"
 }
 
+# 行頭の字下げを無視して、workflow内の必須の操作を照合します。
+require_workflow_line() {
+  local name=$1
+  local instruction=$2
+  local count
+  count=$(sed 's/^[[:space:]]*//' "$release_workflow" | grep -cFx -- "$instruction" || true)
+  if [[ "$count" -ne 1 ]]; then
+    fail "release workflowに必要な操作が一つだけ記載されていません: $name"
+  fi
+}
+
+require_workflow_line create 'gh release create "$RELEASE_TAG" --verify-tag --draft \'
+require_workflow_line assets 'docs/openapi.json docs/mcp-tools.json \'
+require_workflow_line view 'test "$(gh release view "$RELEASE_TAG" --json isDraft,assets \'
+require_workflow_line assertion \
+  '--jq '\''(.isDraft == true) and (([.assets[].name] | sort) == ["mcp-tools.json", "openapi.json"])'\'')" = true'
+
 require_line tag 'release_tag=v<MAJOR>.<MINOR>.<PATCH>'
-require_line temporary_directory 'release_assets=$(mktemp -d)'
-require_line cleanup 'trap '\''rm -rf "$release_assets"'\'' EXIT'
-require_line openapi 'git show "$release_tag:docs/openapi.json" >"$release_assets/openapi.json"'
-require_line mcp_tools 'git show "$release_tag:docs/mcp-tools.json" >"$release_assets/mcp-tools.json"'
-require_line create 'gh release create "$release_tag" --verify-tag --draft \'
-require_line assets '  "$release_assets/openapi.json" "$release_assets/mcp-tools.json" \'
-require_line release_metadata '  --title "$release_tag" --notes-file <Release Notesのファイル>'
+require_line notes 'gh release edit "$release_tag" --notes-file <Release Notesのファイル>'
 require_line view 'test "$(gh release view "$release_tag" --json isDraft,assets \'
 require_line assertion \
   '  --jq '\''(.isDraft == true) and (([.assets[].name] | sort) == ["mcp-tools.json", "openapi.json"])'\'')" = true'
 require_line publish 'gh release edit "$release_tag" --draft=false'
 
 ordered_steps=(
-  tag temporary_directory cleanup openapi mcp_tools create assets release_metadata view assertion publish
+  tag notes view assertion publish
 )
 previous_line=0
 for step in "${ordered_steps[@]}"; do
@@ -45,4 +63,4 @@ for step in "${ordered_steps[@]}"; do
   previous_line=$current_line
 done
 
-echo "対象タグの公開契約抽出、Releaseの下書き作成、厳密な確認、明示的な公開手順を確認しました。"
+echo "自動下書きの作成・厳密な確認と、Notes記載・確認・明示的な公開の手順を確認しました。"
