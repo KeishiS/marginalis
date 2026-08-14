@@ -11,6 +11,12 @@ import { afterEach, expect, test, vi } from "vitest";
 import { EditorApplication, EditorConfig } from "../src/EditorApplication";
 import { Note, NoteDiagnostic } from "../src/api";
 
+// TemplatePickerは専用のTemplatePicker.test.tsxで検証する。ここでは取得を伴わない
+// 空実装にして、既存の逐次fetch mockへ余分な呼び出しが混ざらないようにする。
+vi.mock("../src/editor/TemplatePicker", () => ({
+  TemplatePicker: () => null,
+}));
+
 vi.mock("../src/AsciiDocEditor", async () => {
   const React = await import("react");
   return {

@@ -36,6 +36,7 @@ import {
   tagCompletionSource,
 } from "./editor/completion";
 import { EditorViewToolbar } from "./editor/EditorViewToolbar";
+import { TemplatePicker } from "./editor/TemplatePicker";
 import { EditorViewMode } from "./editor/viewMode";
 import { PreviewPanel } from "./editor/PreviewPanel";
 import { ProblemMessage } from "./editor/ProblemMessage";
@@ -276,6 +277,14 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
       <form className="editor-form" onSubmit={save} ref={editorForm}>
         <div className="grid gap-3 rounded-md border bg-card p-3 shadow-xs">
           <EditorViewToolbar mode={viewMode} onModeChange={changeViewMode} />
+          {config.mode === "create" && (
+            <TemplatePicker
+              apiBase={config.apiBase}
+              disabled={saving}
+              dirty={isDirty}
+              onApply={changeSource}
+            />
+          )}
         </div>
         <div className="editor-workspace" data-view-mode={viewMode}>
           <div className="editor-source-pane">
