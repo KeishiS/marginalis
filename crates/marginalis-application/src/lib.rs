@@ -559,6 +559,11 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
         query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError>;
+    /// テンプレートノート(NOTE_TEMPLATE_TAGの付いた閲覧できるノート)の一覧。
+    async fn list_note_templates(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError>;
     async fn list_owned_deleted_notes(
         &self,
         actor: Actor,

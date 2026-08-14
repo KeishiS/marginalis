@@ -8,5 +8,5 @@ pub use bibliography_import::*;
 pub use model::*;
 pub use policy::{
     CITATION_STYLE_DOCUMENT_ATTRIBUTE, DOCUMENT_ATTRIBUTE_PREFIX, MAX_GRAPH_DEPTH, NOTE_POLICY,
-    NotePolicy, TAGS_DOCUMENT_ATTRIBUTE,
+    NOTE_TEMPLATE_TAG, NotePolicy, TAGS_DOCUMENT_ATTRIBUTE,
 };

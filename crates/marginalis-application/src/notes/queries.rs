@@ -1,6 +1,8 @@
 //! ノート一覧と単一ノートの問い合わせ。
 
-use marginalis_domain::{Actor, DeletedNoteListEntry, Note, NoteId, NoteListEntry, Revision};
+use marginalis_domain::{
+    Actor, DeletedNoteListEntry, NOTE_TEMPLATE_TAG, Note, NoteId, NoteListEntry, Revision,
+};
 
 use crate::{NoteListQuery, NoteUseCaseError};
 
@@ -16,6 +18,28 @@ impl NoteApplication {
             .list_visible_notes(&actor, &query)
             .await
             .map_err(NoteUseCaseError::from)
+    }
+
+    /// テンプレートノートの一覧。
+    ///
+    /// [`NOTE_TEMPLATE_TAG`]の付いた閲覧できるノートを、通常の一覧と同じ可視性で返す。
+    /// テンプレートは通常のノートであり、専用の保存領域を持たない。
+    pub async fn list_note_templates(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+        Ok(self
+            .list_visible_notes(actor, crate::NoteListQuery::default())
+            .await?
+            .into_iter()
+            .filter(|entry| {
+                entry
+                    .summary
+                    .tags
+                    .iter()
+                    .any(|tag| tag == NOTE_TEMPLATE_TAG)
+            })
+            .collect())
     }
 
     pub async fn list_owned_deleted_notes(
@@ -98,7 +122,56 @@ fn source_fragment(source: &str, start_line: usize, end_line: usize) -> Option<S
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use marginalis_domain::{Actor, NOTE_TEMPLATE_TAG, NoteCreationSource, NoteDraft};
+
+    use crate::NoteWritePolicy;
+    use crate::notes::test_support::{
+        AcceptContent, EmptyLibrary, MemoryNotes, NoMathMacros, note_application,
+    };
+
     use super::source_fragment;
+
+    /// テンプレート一覧は、識別タグの付いたノートだけを返す。
+    #[tokio::test]
+    async fn template_listing_returns_only_tagged_notes() {
+        let repository = Arc::new(MemoryNotes::default());
+        let application = note_application(
+            &repository,
+            Arc::new(AcceptContent::default()),
+            Arc::new(EmptyLibrary),
+            Arc::new(NoMathMacros),
+        );
+        let actor =
+            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        for (title, tags) in [
+            ("実験記録の雛形", vec![NOTE_TEMPLATE_TAG.to_owned()]),
+            ("通常のノート", vec!["研究".to_owned()]),
+        ] {
+            application
+                .create_note(
+                    actor.clone(),
+                    NoteDraft {
+                        source: format!("= {title}\n\n本文"),
+                        title: title.into(),
+                        tags,
+                    },
+                    NoteWritePolicy::AllowAdvisories,
+                    NoteCreationSource::Rest,
+                )
+                .await
+                .expect("create note");
+        }
+
+        let templates = application
+            .list_note_templates(actor)
+            .await
+            .expect("list templates");
+
+        assert_eq!(templates.len(), 1);
+        assert_eq!(templates[0].summary.title, "実験記録の雛形");
+    }
 
     /// 断片は原文の行をそのまま切り出し、末尾改行は範囲の位置に従う。
     #[test]

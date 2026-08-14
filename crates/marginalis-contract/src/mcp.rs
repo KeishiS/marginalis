@@ -15,6 +15,8 @@ pub const MCP_SERVER_INSTRUCTIONS: &str = concat!(
     "For long notes, read with get_note_outline and get_note_fragment instead of get_note, ",
     "and edit with apply_note_patch instead of resending the whole source; ",
     "replace_note_source rewrites the entire note. ",
+    "Before creating a note with create_note, list templates with list_note_templates and ",
+    "start from a matching template when one fits the intended content. ",
     "Bibliography bulk import is not available through MCP; add items one at a time with ",
     "add_bibliography_item."
 );
@@ -30,6 +32,7 @@ const MAX_PATCH_BYTES: usize = NOTE_POLICY.max_patch_bytes;
 #[serde(rename_all = "snake_case")]
 pub enum McpToolName {
     ListNotes,
+    ListNoteTemplates,
     SyncNotes,
     GetNoteProfile,
     GetNote,
@@ -48,6 +51,7 @@ impl McpToolName {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ListNotes => "list_notes",
+            Self::ListNoteTemplates => "list_note_templates",
             Self::SyncNotes => "sync_notes",
             Self::GetNoteProfile => "get_note_profile",
             Self::GetNote => "get_note",
@@ -65,9 +69,11 @@ impl McpToolName {
 
     pub const fn accepted_scopes(self) -> &'static [&'static str] {
         match self {
-            Self::ListNotes | Self::GetNote | Self::GetNoteOutline | Self::GetNoteFragment => {
-                &["notes:read"]
-            }
+            Self::ListNotes
+            | Self::ListNoteTemplates
+            | Self::GetNote
+            | Self::GetNoteOutline
+            | Self::GetNoteFragment => &["notes:read"],
             Self::SyncNotes => &["notes:sync"],
             Self::GetNoteProfile => &["notes:read", "notes:write"],
             Self::CreateNote | Self::ApplyNotePatch | Self::ReplaceNoteSource => &["notes:write"],
@@ -84,9 +90,11 @@ impl McpToolName {
     /// 現在は`get_note_profile`だけがreadまたはwriteのどちらでも利用できる。
     pub const fn scope_requirements(self) -> &'static [&'static [&'static str]] {
         match self {
-            Self::ListNotes | Self::GetNote | Self::GetNoteOutline | Self::GetNoteFragment => {
-                &[&["notes:read"]]
-            }
+            Self::ListNotes
+            | Self::ListNoteTemplates
+            | Self::GetNote
+            | Self::GetNoteOutline
+            | Self::GetNoteFragment => &[&["notes:read"]],
             Self::SyncNotes => &[&["notes:sync"]],
             Self::GetNoteProfile => &[&["notes:read", "notes:write"]],
             Self::CreateNote | Self::ApplyNotePatch | Self::ReplaceNoteSource => {
@@ -106,6 +114,7 @@ impl TryFrom<&str> for McpToolName {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "list_notes" => Ok(Self::ListNotes),
+            "list_note_templates" => Ok(Self::ListNoteTemplates),
             "sync_notes" => Ok(Self::SyncNotes),
             "get_note_profile" => Ok(Self::GetNoteProfile),
             "get_note" => Ok(Self::GetNote),
@@ -291,6 +300,12 @@ pub struct McpListNotesInput {
 #[serde(deny_unknown_fields)]
 pub struct McpListNotesOutput {
     pub notes: Vec<crate::NoteSummaryResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpListNoteTemplatesOutput {
+    pub templates: Vec<crate::NoteSummaryResponse>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -524,6 +539,10 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
             McpToolName::ListNotes,
             "List visible note summaries, optionally filtered by creation source and review status; requires notes:read",
         ),
+        McpToolContract::new::<McpEmptyInput, McpListNoteTemplatesOutput>(
+            McpToolName::ListNoteTemplates,
+            "List visible notes tagged 'テンプレート' that serve as templates for new notes; read a template body with get_note; requires notes:read",
+        ),
         McpToolContract::new::<McpSyncNotesInput, McpSyncNotesOutput>(
             McpToolName::SyncNotes,
             "Synchronize a persistent search projection with a snapshot followed by changes; requires notes:sync",
@@ -546,7 +565,7 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
         ),
         McpToolContract::new::<McpCreateNoteInput, McpNoteRevisionOutput>(
             McpToolName::CreateNote,
-            "Create a note; requires notes:write; warnings reject the write and are returned as diagnostics",
+            "Create a note; before creating, call list_note_templates and reuse the structure of a matching template when one fits the intended content; requires notes:write; warnings reject the write and are returned as diagnostics",
         ),
         McpToolContract::new::<McpApplyNotePatchInput, McpNotePatchOutput>(
             McpToolName::ApplyNotePatch,
@@ -583,12 +602,14 @@ fn schema<T: JsonSchema>() -> Value {
 mod tests {
     use std::collections::HashSet;
 
+    use marginalis_domain::NOTE_TEMPLATE_TAG;
+
     use super::*;
 
     #[test]
     fn tool_catalog_has_unique_typed_names_and_closed_input_objects() {
         let contracts = mcp_tool_contracts();
-        assert_eq!(contracts.len(), 13);
+        assert_eq!(contracts.len(), 14);
         assert_eq!(
             contracts
                 .iter()
@@ -621,10 +642,28 @@ mod tests {
         assert!(MCP_SERVER_INSTRUCTIONS.contains("add_bibliography_item"));
     }
 
+    /// テンプレートの案内が、tool説明・server instructions・識別タグで一致していること。
+    #[test]
+    fn template_guidance_names_the_tag_and_the_tool() {
+        let contracts = mcp_tool_contracts();
+        let templates = contracts
+            .iter()
+            .find(|contract| contract.name == McpToolName::ListNoteTemplates)
+            .expect("list_note_templates contract");
+        assert!(templates.description.contains(NOTE_TEMPLATE_TAG));
+        let create = contracts
+            .iter()
+            .find(|contract| contract.name == McpToolName::CreateNote)
+            .expect("create_note contract");
+        assert!(create.description.contains("list_note_templates"));
+        assert!(MCP_SERVER_INSTRUCTIONS.contains("list_note_templates"));
+    }
+
     #[test]
     fn tool_scopes_separate_notes_from_bibliography() {
         let expected = [
             (McpToolName::ListNotes, &["notes:read"][..]),
+            (McpToolName::ListNoteTemplates, &["notes:read"][..]),
             (McpToolName::SyncNotes, &["notes:sync"][..]),
             (
                 McpToolName::GetNoteProfile,

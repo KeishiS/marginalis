@@ -38,6 +38,13 @@ macro_rules! implement_note_use_cases {
                 <$type>::list_visible_notes(self, actor, query).await
             }
 
+            async fn list_note_templates(
+                &self,
+                actor: Actor,
+            ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+                <$type>::list_note_templates(self, actor).await
+            }
+
             async fn list_owned_deleted_notes(
                 &self,
                 actor: Actor,
@@ -391,6 +398,20 @@ impl Notes {
         }])
     }
 
+    pub(super) async fn list_note_templates(
+        &self,
+        _actor: Actor,
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+        let note = mcp_note();
+        let mut summary = NoteSummary::from(&note);
+        summary.title = "実験記録の雛形".into();
+        summary.tags = vec!["テンプレート".into()];
+        Ok(vec![NoteListEntry {
+            summary,
+            access: NoteAccess::Manage,
+        }])
+    }
+
     pub(super) async fn list_owned_deleted_notes(
         &self,
         _actor: Actor,
@@ -702,6 +723,21 @@ impl UiNotes {
         _dry_run: bool,
     ) -> Result<marginalis_application::NotePatchApplication, NoteUseCaseError> {
         Err(NoteUseCaseError::NotFound)
+    }
+
+    pub(super) async fn list_note_templates(
+        &self,
+        _actor: Actor,
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+        Ok(self
+            .notes
+            .iter()
+            .filter(|note| note.tags().iter().any(|tag| tag == "テンプレート"))
+            .map(|note| NoteListEntry {
+                summary: NoteSummary::from(note),
+                access: NoteAccess::Edit,
+            })
+            .collect())
     }
 
     pub(super) async fn list_visible_notes(

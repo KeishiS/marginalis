@@ -44,10 +44,19 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # タグのプッシュでは、検証はタグの内容そのものに対して行われるため、
+      # 「mainの先端」ではなく「main上のcommit」であることを確かめる。先端との
+      # 一致を要求すると、gateの実行中に別のPRがマージされただけで失敗する。
       - name: Validate release commit
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           git fetch --no-tags origin main
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          if [ "$EVENT_NAME" = "push" ]; then
+            git merge-base --is-ancestor HEAD origin/main
+          else
+            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          fi
       - name: Set up Nix
         uses: ./.github/actions/setup
       - name: Build the aarch64 Linux release package
@@ -62,6 +71,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # dispatchはmainの先端に対する事前検証のため先端一致を要求する。タグの
+      # プッシュでは内容がタグで確定しているため、main上のcommitであればよい
+      # (先端一致を要求すると、gate実行中の別PRのマージだけで失敗する)。
       - name: Validate release target
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -70,9 +82,11 @@ jobs:
           set -eu
           test -n "$RELEASE_TAG"
           git fetch --no-tags origin main
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
             test "$GITHUB_REF" = "refs/heads/main"
+          else
+            git merge-base --is-ancestor HEAD origin/main
           fi
       - name: Set up Nix
         uses: ./.github/actions/setup
