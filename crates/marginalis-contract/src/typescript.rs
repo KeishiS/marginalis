@@ -21,7 +21,9 @@ pub fn typescript_contracts() -> String {
         output.push_str(&type_declaration(name, schema, &schemas));
     }
     output.push_str(TYPE_SUPPLEMENTS);
-    output.push_str("/** テンプレートノートを識別するタグ。正本はmarginalis-domainのNOTE_TEMPLATE_TAG。 */\n");
+    output.push_str(
+        "/** テンプレートノートを識別するタグ。正本はmarginalis-domainのNOTE_TEMPLATE_TAG。 */\n",
+    );
     output.push_str(&format!(
         "export const NOTE_TEMPLATE_TAG = {};\n",
         serde_json::to_string(marginalis_domain::NOTE_TEMPLATE_TAG).expect("template tag")
