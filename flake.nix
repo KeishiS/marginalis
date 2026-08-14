@@ -77,13 +77,23 @@
           frontend = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
             pname = "marginalis-web-ui";
             inherit version;
-            src = ./frontend;
+            # Tailwindはglobals.cssの@sourceで、Rust側が生成するHTMLのclassも
+            # 走査する。frontendディレクトリーだけを入力にすると@sourceの参照先が
+            # ビルド環境に存在せず、共通レイアウトの規則がCSSから欠ける(#487)。
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions [
+                ./frontend
+                ./crates/marginalis-web/src/http
+              ];
+            };
+            sourceRoot = "source/frontend";
             pnpmDeps = pkgs.fetchPnpmDeps {
               inherit (finalAttrs)
                 pname
                 version
-                src
                 ;
+              src = ./frontend;
               inherit pnpm;
               fetcherVersion = 4;
               hash = "sha256-HnSDhWKtgL3zIZwzou8LjrSUMr/Z41Qap8OgmkNbpIc=";
@@ -97,6 +107,21 @@
               runHook preBuild
               pnpm build
               runHook postBuild
+            '';
+            # @sourceの参照先がビルド入力に含まれない構成変更を検出する。
+            # 参照先が無いままだと該当classの規則が静かに欠けるため、ここで失敗させる。
+            postBuild = ''
+              while IFS= read -r referenced; do
+                if [ ! -e "src/styles/$referenced" ]; then
+                  echo "@sourceの参照先がビルド入力にありません: $referenced" >&2
+                  echo "flake.nixのfrontend srcのfilesetへ追加してください。" >&2
+                  exit 1
+                fi
+              done < <(sed -n 's/^@source "\(.*\)";$/\1/p' src/styles/*.css)
+              if ! grep -qF 'max-width:var(--content-width)' dist/assets/*.css; then
+                echo "共通レイアウトの幅規則がCSSに含まれていません(#487)。" >&2
+                exit 1
+              fi
             '';
             installPhase = ''
               runHook preInstall

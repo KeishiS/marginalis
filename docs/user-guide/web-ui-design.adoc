@@ -99,6 +99,12 @@ xref:../developer-guide/development.adoc#top[GitHubを使う開発手順]を参�
 ``frontend/src/components/ui/``の生成コードは直接編集しません。横断的な調整は、生成コードが
 出力する``data-slot``属性を対象にしたCSSで行います。
 
+Rust側が生成するHTML(共通ヘッダーとOAuth同意画面)のclassは、``globals.css``の``@source``で
+``crates/marginalis-web/src/http``を走査対象へ含めることで、同じ仕組みからCSSを生成します。
+Nixのfrontendビルドは入力を限定するため、``flake.nix``のfrontend派生の入力にも同じ
+ディレクトリーを含めています。``@source``の参照先がビルド入力に無い場合と、共通レイアウトの
+幅規則がCSSに含まれない場合は、Nixビルドが失敗して知らせます。
+
 ユーティリティで書けない、または外部の部品と機構に密着した規則だけを、
 ``frontend/src/styles/``の手書きCSSに残しています。それぞれの担当は次のとおりです。
 
