@@ -75,6 +75,11 @@ redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を
 
 ``list_notes``と``get_note``は、ノートを最初に保存した入口を表す``created_via``と、現在のrevisionに対する
 ``review_status``を返します。``list_notes``では、これらの値による完全一致の絞り込みも指定できます。
+
+ノートの作成では、``list_note_templates``が「テンプレート」タグの付いた閲覧できるノートの概要を
+返します。作成する内容に沿うテンプレートがある場合は、``get_note``で本文を取得し、その構造を
+雛形として``create_note``の入力を組み立てます。テンプレートは通常のノートであり、タグを付け外し
+するだけで一覧へ出し入れできます。
 作成経路はAIの利用を証明する値ではなく、人手確認も内容の正確性を保証しません。MCPから人手確認を
 設定するtoolは提供せず、所有者がWeb UIで現在のrevisionを確認した場合だけ``reviewed``になります。
 全文検索、検索索引、順位付けはMarginalisのMCPへ追加せず、別サービスの
@@ -289,10 +294,11 @@ ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノー�
 [arabic]
 . 公開MCP URLだけを指定し、初回challengeが``notes:read``だけを示すことを確認して接続します。metadataの
 発見、client登録、Kanidmへのログインを経て、``notes:read``だけに同意します。
-. ``tools/list``を取得し、公開している13件のtool名と完全に一致することを確認します。廃止済みの
+. ``tools/list``を取得し、公開している14件のtool名と完全に一致することを確認します。廃止済みの
 ``update_note``が残っている場合はクライアントのcacheであり、コネクターの再登録で更新してから
 続けます。ノートの一覧と本文を読み取り、作成経路と人手確認状態が表示され、
-``list_notes``で両方を絞り込めることも確認します。``get_note_outline``で見出しと行範囲を取得し、
+``list_notes``で両方を絞り込めることも確認します。「テンプレート」タグを付けたノートが
+``list_note_templates``に現れることを確認します。``get_note_outline``で見出しと行範囲を取得し、
 ``get_note_fragment``へoutlineのrevisionを``expected_revision``として渡して、選んだ範囲の原文だけが
 返ることを確認します。``apply_note_patch``を呼び出し、
 ``notes:read notes:write``を示す追加認可が始まることを確認します。

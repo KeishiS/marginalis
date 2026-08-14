@@ -57,6 +57,12 @@ pub const TAGS_DOCUMENT_ATTRIBUTE: &str = "marginalis-tags";
 /// 引用の表示スタイルを選ぶ文書属性の名前。
 pub const CITATION_STYLE_DOCUMENT_ATTRIBUTE: &str = "marginalis-citation-style";
 
+/// テンプレートノートを識別するタグ。
+///
+/// このタグを付けたノートは、新規作成の雛形として一覧に出す。専用の属性や設定を
+/// 増やさず、通常のタグ運用の中でテンプレートを管理できるようにするための規約である。
+pub const NOTE_TEMPLATE_TAG: &str = "テンプレート";
+
 /// グラフビューで、起点から辿れる線の本数の上限。
 ///
 /// 上限がないと、階層数の指定が全体表示と変わらなくなり、範囲を絞ろうとした利用者の意図と
