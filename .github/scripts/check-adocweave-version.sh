@@ -50,12 +50,15 @@ expected_version=$(jq -er --arg revision "$expected_revision" '
 ' "$metadata") ||
   fail "Cargo.lockが解決したAdocWeaveがCargo.tomlの宣言と一致しません。"
 
-# 3. Rust実装が公開する定数を照合します。
+# 3. Rust実装が公開する定数が、build.rsによるCargo.lock由来の導出であることを
+#    確かめます。手書きのliteralへ戻ると、版上げのたびに更新漏れの余地が生まれます。
 library=crates/marginalis-asciidoc/src/lib.rs
-grep -Fq "pub const ADOCWEAVE_SOURCE_REVISION: &str = \"$expected_revision\";" "$library" ||
-  fail "$library のADOCWEAVE_SOURCE_REVISIONが正本のrevisionと一致しません。"
-grep -Fq "pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = \"$expected_version\";" "$library" ||
-  fail "$library のPINNED_ADOCWEAVE_PACKAGE_VERSIONが正本の版と一致しません。"
+grep -Fq 'pub const ADOCWEAVE_SOURCE_REVISION: &str = env!("MARGINALIS_ADOCWEAVE_REVISION");' "$library" ||
+  fail "$library のADOCWEAVE_SOURCE_REVISIONをbuild.rs導出のenv!参照にしてください。"
+grep -Fq 'pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = env!("MARGINALIS_ADOCWEAVE_VERSION");' "$library" ||
+  fail "$library のPINNED_ADOCWEAVE_PACKAGE_VERSIONをbuild.rs導出のenv!参照にしてください。"
+test -f crates/marginalis-asciidoc/build.rs ||
+  fail "crates/marginalis-asciidoc/build.rs がありません。"
 
 # 4. flake.nixのinputが同じrevisionを指し、cargoハッシュの鍵をCargo.lockから導出して
 #    いることを確かめます。ハッシュ値そのものの正しさはNixのbuildが検証します。
@@ -80,15 +83,19 @@ jq -e --arg url "$plugin_url" \
 jq -e --arg version "$expected_version" \
   '.info["x-adocweave-package-version"] == $version' docs/openapi.json >/dev/null ||
   fail "docs/openapi.json のx-adocweave-package-versionが正本の版と一致しません。"
-grep -Fq "\"x-adocweave-package-version\": \"$expected_version\"," \
+grep -Fq '"x-adocweave-package-version": env!("MARGINALIS_ADOCWEAVE_VERSION"),' \
   crates/marginalis-contract/src/rest.rs ||
-  fail "crates/marginalis-contract/src/rest.rs のx-adocweave-package-versionが正本の版と一致しません。"
+  fail "crates/marginalis-contract/src/rest.rs のx-adocweave-package-versionをbuild.rs導出のenv!参照にしてください。"
 
-# 7. archive CLIの結合試験が現行版を参照していることを確かめます。旧版のliteralは互換
-#    fixtureとして意図的に残るため、残置の検出はcargo testの実行結果に委ねます。
+# 7. archive CLIの結合試験が現行版を定数で参照していることを確かめます。旧版のliteralは
+#    互換fixtureとして意図的に残ります。現行版のliteral直書きは更新漏れの元です。
 grep -F 'adocweave_package_version' crates/marginalis-service/tests/cli.rs |
-  grep -Fq "\"$expected_version\"" ||
-  fail "crates/marginalis-service/tests/cli.rs に現行版のadocweave_package_version参照がありません。"
+  grep -Fq 'PINNED_ADOCWEAVE_PACKAGE_VERSION' ||
+  fail "crates/marginalis-service/tests/cli.rs の現行版参照はPINNED_ADOCWEAVE_PACKAGE_VERSION定数を使ってください。"
+if grep -F 'adocweave_package_version' crates/marginalis-service/tests/cli.rs |
+  grep -Fq "\"$expected_version\""; then
+  fail "crates/marginalis-service/tests/cli.rs に現行版のliteral直書きが残っています。定数を使ってください。"
+fi
 
 # 8. 固定したrevisionがconformance fixtureを同梱していることを確かめます。
 adocweave_manifest=$(jq -r --arg version "$expected_version" '
