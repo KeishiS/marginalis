@@ -301,6 +301,13 @@ impl NoteUseCases for NoteApplication {
         NoteApplication::list_visible_notes(self, actor, query).await
     }
 
+    async fn list_note_templates(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
+        NoteApplication::list_note_templates(self, actor).await
+    }
+
     async fn list_owned_deleted_notes(
         &self,
         actor: Actor,

@@ -1353,12 +1353,13 @@ async fn update_note_is_gone_and_partial_tools_are_listed() {
         .iter()
         .map(|tool| tool["name"].as_str().expect("tool name"))
         .collect();
-    assert_eq!(names.len(), 13);
+    assert_eq!(names.len(), 14);
     for name in [
         "get_note_outline",
         "get_note_fragment",
         "apply_note_patch",
         "replace_note_source",
+        "list_note_templates",
     ] {
         assert!(names.contains(&name), "{name}が一覧にあります");
     }
@@ -1566,6 +1567,50 @@ async fn fragment_rejects_a_stale_expected_revision_without_returning_lines() {
         !rejected["result"].to_string().contains("本文"),
         "競合応答は本文を含めません"
     );
+}
+
+/// テンプレート一覧は、識別タグの付いた閲覧できるノートの概要を返す。
+#[tokio::test]
+async fn note_templates_are_listed_with_their_summaries() {
+    let request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_note_templates","arguments":{}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(request).await.expect("response");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let listed: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    let templates = &listed["result"]["structuredContent"]["templates"];
+    assert_eq!(templates.as_array().map(Vec::len), Some(1));
+    assert_eq!(templates[0]["title"], "実験記録の雛形");
+    assert_eq!(templates[0]["tags"][0], "テンプレート");
+    assert!(
+        listed["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text")
+            .contains("1 template note.")
+    );
+
+    // 引数は空のobjectだけを受け付ける。
+    let invalid = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_note_templates","arguments":{"limit":1}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(invalid).await.expect("response");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let rejected: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(rejected["error"]["code"], -32602);
 }
 
 /// profileは、tool契約の世代照合に使えるMarginalisの版を返す。
