@@ -13,6 +13,10 @@ pub struct NotePolicy {
     pub max_title_characters: usize,
     /// AsciiDoc文書のUTF-8バイト数の上限。
     pub max_source_bytes: usize,
+    /// MCPの`apply_note_patch`が受け取るUnified DiffのUTF-8バイト数の上限。
+    pub max_patch_bytes: usize,
+    /// 一つのUnified Diffに含められるhunk数の上限。
+    pub max_patch_hunks: usize,
     /// 一つのノートへ付けられるタグの最大数。
     pub max_tags: usize,
     /// タグ一つあたりの最大文字数。
@@ -63,6 +67,8 @@ pub const MAX_GRAPH_DEPTH: u32 = 5;
 pub const NOTE_POLICY: NotePolicy = NotePolicy {
     max_title_characters: 200,
     max_source_bytes: 512 * 1024,
+    max_patch_bytes: 512 * 1024,
+    max_patch_hunks: 100,
     max_tags: 50,
     max_tag_characters: 64,
     max_output_bytes: 50 * 1024 * 1024,
@@ -132,6 +138,16 @@ impl NotePolicy {
             self.max_source_bytes
         )
     }
+
+    /// patchが大きすぎる場合の説明。
+    pub fn patch_too_large_message(&self) -> String {
+        format!("patch must be at most {} UTF-8 bytes", self.max_patch_bytes)
+    }
+
+    /// patchのhunkが多すぎる場合の説明。
+    pub fn too_many_patch_hunks_message(&self) -> String {
+        format!("a patch may contain at most {} hunks", self.max_patch_hunks)
+    }
 }
 
 #[cfg(test)]
@@ -160,6 +176,16 @@ mod tests {
             NOTE_POLICY
                 .source_too_large_message()
                 .contains(&NOTE_POLICY.max_source_bytes.to_string())
+        );
+        assert!(
+            NOTE_POLICY
+                .patch_too_large_message()
+                .contains(&NOTE_POLICY.max_patch_bytes.to_string())
+        );
+        assert!(
+            NOTE_POLICY
+                .too_many_patch_hunks_message()
+                .contains(&NOTE_POLICY.max_patch_hunks.to_string())
         );
     }
 

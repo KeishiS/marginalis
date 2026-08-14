@@ -13,6 +13,7 @@ mod citations;
 mod commands;
 mod content;
 mod graph;
+mod patch;
 mod presentation;
 mod queries;
 mod reviews;
@@ -26,6 +27,7 @@ pub use content::{
 pub use graph::{
     NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork,
 };
+pub use patch::{NotePatchError, NotePatchOutcome, apply_note_patch};
 pub use sync::{
     NOTE_SYNC_CURSOR_RETENTION_MS, NOTE_SYNC_DEFAULT_PAGE_SIZE, NOTE_SYNC_MAX_PAGE_SIZE,
     NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason,
