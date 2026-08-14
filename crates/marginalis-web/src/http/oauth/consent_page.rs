@@ -36,10 +36,12 @@ pub(super) fn consent_page(
             "<section class=\"mx-auto grid max-w-3xl gap-6\" aria-labelledby=\"oauth-consent-heading\">",
             "<div>",
             "<p class=\"m-0 text-xs font-bold tracking-[0.12em] text-primary uppercase\">MCP access</p>",
-            "<h1 id=\"oauth-consent-heading\" class=\"m-0 text-(length:--text-note-title) leading-tight tracking-[-0.035em]\">MCPクライアントを許可しますか？</h1>",
+            "<h1 id=\"oauth-consent-heading\" class=\"m-0 text-(length:--text-note-title) leading-tight ",
+            "tracking-[-0.035em]\">MCPクライアントを許可しますか？</h1>",
             "<p class=\"mt-2 mb-0 max-w-2xl text-muted-foreground\">許可する前に、接続するクライアントと要求された権限を確認してください。</p>",
             "</div>",
-            "<div class=\"grid min-w-0 gap-6 rounded-md border bg-card p-[clamp(var(--space-5),4vw,var(--space-8))] shadow-xs\">",
+            "<div class=\"grid min-w-0 gap-6 rounded-md border bg-card ",
+            "p-[clamp(var(--space-5),4vw,var(--space-8))] shadow-xs\">",
             "{client_summary}{scope_section}{withheld_section}{loopback_warning}{consent_form}",
             "</div></section>",
         ),
@@ -68,10 +70,15 @@ fn consent_client_summary(
         concat!(
             "<section class=\"min-w-0\" aria-labelledby=\"oauth-client-heading\">",
             "<p class=\"m-0 mb-1 text-xs font-bold tracking-wide text-muted-foreground\">クライアント識別子</p>",
-            "<h2 id=\"oauth-client-heading\" class=\"m-0 mb-3 font-mono text-xl [overflow-wrap:anywhere]\"><code>{client_id}</code></h2>",
+            "<h2 id=\"oauth-client-heading\" class=\"m-0 mb-3 font-mono text-xl ",
+            "[overflow-wrap:anywhere]\"><code>{client_id}</code></h2>",
             "<dl class=\"m-0 grid gap-3\">",
-            "<div class=\"grid min-w-0 gap-1 rounded-sm bg-muted p-3\"><dt class=\"text-sm font-semibold text-muted-foreground\">クライアントが提供した表示名</dt><dd class=\"m-0 min-w-0\">{display_name}</dd></div>",
-            "<div class=\"grid min-w-0 gap-1 rounded-sm bg-muted p-3\"><dt class=\"text-sm font-semibold text-muted-foreground\">移動先のホスト</dt><dd class=\"m-0 min-w-0\"><code class=\"[overflow-wrap:anywhere]\">{redirect_host}</code></dd></div>",
+            "<div class=\"grid min-w-0 gap-1 rounded-sm bg-muted p-3\">",
+            "<dt class=\"text-sm font-semibold text-muted-foreground\">クライアントが提供した表示名</dt>",
+            "<dd class=\"m-0 min-w-0\">{display_name}</dd></div>",
+            "<div class=\"grid min-w-0 gap-1 rounded-sm bg-muted p-3\">",
+            "<dt class=\"text-sm font-semibold text-muted-foreground\">移動先のホスト</dt>",
+            "<dd class=\"m-0 min-w-0\"><code class=\"[overflow-wrap:anywhere]\">{redirect_host}</code></dd></div>",
             "</dl></section>",
         ),
         display_name = escape_html(&request.client.display_name),
@@ -84,7 +91,10 @@ fn consent_scope_section(scopes: &[String], selection_error: Option<&str>) -> St
     let error = selection_error
         .map(|message| {
             format!(
-                "<p class=\"m-0 rounded-md border border-destructive bg-card p-3 text-sm text-destructive\" role=\"alert\">{}</p>",
+                concat!(
+                    "<p class=\"m-0 rounded-md border border-destructive bg-card p-3 text-sm ",
+                    "text-destructive\" role=\"alert\">{}</p>",
+                ),
                 escape_html(message)
             )
         })
@@ -97,10 +107,12 @@ fn consent_scope_section(scopes: &[String], selection_error: Option<&str>) -> St
             .map(|scope| {
                 format!(
                     concat!(
-                        "<li class=\"grid min-w-0 gap-1 rounded-sm bg-secondary px-3 py-2 text-secondary-foreground\"><label class=\"grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-3\">",
+                        "<li class=\"grid min-w-0 gap-1 rounded-sm bg-secondary px-3 py-2 text-secondary-foreground\">",
+                        "<label class=\"grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-3\">",
                         "<input class=\"mt-1\" type=\"checkbox\" name=\"selected_scope\" value=\"{scope}\" ",
                         "form=\"oauth-consent-form\" checked>",
-                        "<span class=\"grid min-w-0 gap-1\"><code class=\"[overflow-wrap:anywhere]\">{scope}</code><span class=\"text-foreground\">{description}</span></span>",
+                        "<span class=\"grid min-w-0 gap-1\"><code class=\"[overflow-wrap:anywhere]\">{scope}</code>",
+                        "<span class=\"text-foreground\">{description}</span></span>",
                         "</label></li>",
                     ),
                     scope = escape_html(scope),
@@ -133,7 +145,11 @@ fn consent_withheld_section(scopes: &[String]) -> String {
         .iter()
         .map(|scope| {
             format!(
-                "<li class=\"grid min-w-0 gap-1 rounded-sm bg-card px-3 py-2\"><code class=\"[overflow-wrap:anywhere]\">{scope}</code><span>{description}</span></li>",
+                concat!(
+                    "<li class=\"grid min-w-0 gap-1 rounded-sm bg-card px-3 py-2\">",
+                    "<code class=\"[overflow-wrap:anywhere]\">{scope}</code>",
+                    "<span>{description}</span></li>",
+                ),
                 scope = escape_html(scope),
                 description = scope_description(scope),
             )
@@ -141,7 +157,8 @@ fn consent_withheld_section(scopes: &[String]) -> String {
         .collect::<String>();
     format!(
         concat!(
-            "<aside class=\"grid gap-2 rounded-md border border-warning/45 bg-warning/10 p-4\" aria-labelledby=\"oauth-withheld-heading\">",
+            "<aside class=\"grid gap-2 rounded-md border border-warning/45 bg-warning/10 p-4\"",
+            " aria-labelledby=\"oauth-withheld-heading\">",
             "<h2 id=\"oauth-withheld-heading\" class=\"m-0 text-base font-bold\">許可できない権限があります</h2>",
             "<p class=\"m-0\">このクライアントは次の権限も要求しましたが、あなたが設定したscope上限を超えるため、",
             "ここでは許可できません。必要な場合は、MCPアクセス設定で上限を広げてから、",
@@ -154,8 +171,14 @@ fn consent_withheld_section(scopes: &[String]) -> String {
 
 fn scope_description(scope: &str) -> &'static str {
     match scope {
-        "notes:read" => "list_notes、get_note、get_note_profileでノートを読み取ります。",
-        "notes:write" => "create_note、update_note、get_note_profileでノートを作成・更新します。",
+        "notes:read" => concat!(
+            "list_notes、get_note、get_note_outline、get_note_fragment、get_note_profileで",
+            "ノートを読み取ります。"
+        ),
+        "notes:write" => concat!(
+            "create_note、apply_note_patch、replace_note_source、get_note_profileで",
+            "ノートを作成・更新します。"
+        ),
         "notes:delete" => "delete_noteでノートを削除します。",
         "notes:sync" => concat!(
             "sync_notesで、閲覧できるノートの本文と変更を外部の検索用コピーへ継続的に同期します。",
@@ -205,10 +228,15 @@ fn consent_form(
     ));
     format!(
         concat!(
-            "<form id=\"oauth-consent-form\" class=\"flex flex-wrap gap-3 border-t pt-5 max-[30rem]:flex-col max-[30rem]:items-stretch\" method=\"post\" action=\"{action}\">",
+            "<form id=\"oauth-consent-form\" class=\"flex flex-wrap gap-3 border-t pt-5 max-[30rem]:flex-col ",
+            "max-[30rem]:items-stretch\" method=\"post\" action=\"{action}\">",
             "{fields}",
-            "<button class=\"inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90\" name=\"decision\" value=\"approve\">許可する</button>",
-            "<button class=\"inline-flex h-9 items-center justify-center rounded-md border bg-background px-4 py-2 text-sm font-medium shadow-xs hover:bg-accent hover:text-accent-foreground\" name=\"decision\" value=\"deny\">拒否する</button>",
+            "<button class=\"inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm ",
+            "font-medium text-primary-foreground hover:bg-primary/90\" name=\"decision\" ",
+            "value=\"approve\">許可する</button>",
+            "<button class=\"inline-flex h-9 items-center justify-center rounded-md border bg-background px-4 py-2 ",
+            "text-sm font-medium shadow-xs hover:bg-accent hover:text-accent-foreground\" name=\"decision\" ",
+            "value=\"deny\">拒否する</button>",
             "</form>",
         ),
         action = escape_html(consent_path),
