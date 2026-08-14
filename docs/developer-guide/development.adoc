@@ -49,6 +49,15 @@ Web UIの操作部品にはshadcn/uiを使用します。新しいcomponentは�
 ``main``は保護ブランチです。ローカル・GitHubのどちらでも直接pushせず、すべての変更を
 Pull Requestからマージします。
 
+Pull Requestは、``main``へ独立してrevertできる変更単位で分けます。互いに依存する変更は、
+Pull Requestを積み重ねずに1つへまとめます。squash方式では作業ブランチ内のcommit数が
+``main``の履歴に影響しないため、大きな変更でもPull Request内は複数のcommitで構いません。
+段階を分ける必要がある場合も、別のPull Requestを積むのではなく、前段のマージを待ってから
+次のPull Requestを作成します。マージのたびに後続の基点が``main``の履歴から消え、
+付け替えと追随の作業や、基点ブランチの削除による後続の消失が起きるためです。
+依存のない変更どうしだけを並列のPull Requestにします。担当ファイルが重ならなければ
+追随なしで順にマージでき、重なる場合はGitHubが競合として止めます。
+
 [arabic]
 . ``main``をfast-forwardで最新化します。
 +
@@ -225,7 +234,10 @@ gh pr create --base main --head codex/<purpose>
 gh pr diff
 gh pr checks --watch
 ----
-. Pull Request作成後にsquash方式のauto-mergeを設定します。``main``のrulesetでは
+. Pull Request作成後、すぐにsquash方式のauto-mergeを設定します。CIの完了を待たずに
+次の作業へ移れます。作業途中でまだマージしたくないPull Requestは、``--draft``で作成し、
+準備が整ってから``gh pr ready``でreadyへ切り替えたうえでauto-mergeを設定します。
+``main``のrulesetでは
 GitHub Actionsの``verify``と``nixos-e2e``が必須です。両者は集約用のゲートjobで、``verify``は
 ``verify-core``、``native-aarch64``、``browser-smoke``の成功も集約するため、これらのチェックと必要なレビューが
 完了するまで実際のマージは行われません。文書だけの変更でもチェック名は維持し、``verify``は
