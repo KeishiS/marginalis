@@ -175,7 +175,7 @@ async fn note_lifecycle_emits_exactly_one_event_per_confirmed_change() {
     assert_eq!(owners, vec![(ISSUER.to_string(), "alice".to_string())]);
 }
 
-/// 書誌項目の直接操作と一括取込が、確定した作成・更新・削除ごとに1件のeventになる。
+/// 文献項目の直接操作と一括取込が、確定した作成・更新・削除ごとに1件のeventになる。
 #[tokio::test]
 async fn bibliography_changes_emit_events_for_direct_and_bulk_operations() {
     let database = database().await;

@@ -103,7 +103,7 @@ fn citation_segments(resolution: &NoteCitationResolution) -> Vec<CitationSegment
         .collect()
 }
 
-/// 引用済みの書誌項目から、AdocWeaveへ渡す構造化入力を組み立てる。
+/// 引用済みの文献項目から、AdocWeaveへ渡す構造化入力を組み立てる。
 ///
 /// 本文が同じcitation keyの項目を既に定義している場合は、生成した項目を重ねない。
 /// 同じanchorが二つあると文書として成り立たず、著者が書いた記述を優先すべきためである。
@@ -446,7 +446,7 @@ mod tests {
         assert!(html.contains("id=\"tanaka2025\""));
         assert_eq!(html.matches("href=\"#smith2024\"").count(), 1);
         assert_eq!(html.matches("class=\"bibliography-backref\"").count(), 2);
-        // 番号は書誌情報の記述には混ざらない。
+        // 番号は文献情報の記述には混ざらない。
         assert!(!html.contains("[1] Smith"));
         assert!(!html.contains("1. Smith"));
     }
@@ -539,7 +539,7 @@ mod tests {
         assert!(html.contains("href=\"#smith2024\""));
     }
 
-    /// 書誌情報の文字列は表示であり、AsciiDocの記法として解釈しない。
+    /// 文献情報の文字列は表示であり、AsciiDocの記法として解釈しない。
     #[test]
     fn bibliography_text_is_shown_as_written_and_never_as_markup() {
         let html = render_note(
@@ -563,7 +563,7 @@ mod tests {
 
     /// DOIやURLは、linkではなく読める文字列として並べる。
     ///
-    /// 書誌情報を記法として解釈しない方針の結果であり、逆斜線は表示に残らない。
+    /// 文献情報を記法として解釈しない方針の結果であり、逆斜線は表示に残らない。
     #[test]
     fn an_address_in_an_entry_stays_readable_without_becoming_a_link() {
         let html = render_note(

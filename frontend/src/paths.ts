@@ -60,7 +60,7 @@ export function accessPath(context: PathContext, noteId: string): string {
 }
 
 /**
- * 関係の図のURL。ノートを指定すると、そのノートを起点にした範囲を開く。
+ * グラフビューのURL。ノートを指定すると、そのノートを起点にした範囲を開く。
  *
  * 一覧の絞り込み条件は図には効かないため、ここでは引き継がない。
  */

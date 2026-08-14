@@ -246,7 +246,7 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
         "list_notes、get_note、get_note_outline、get_note_fragment、get_note_profileでノートを読み取ります。"
     ));
     assert!(html.contains(">bibliography:read</code>"));
-    assert!(html.contains("書誌情報を検索します。"));
+    assert!(html.contains("文献情報を検索します。"));
     assert!(html.contains(
         "name=\"selected_scope\" value=\"notes:read\" form=\"oauth-consent-form\" checked"
     ));

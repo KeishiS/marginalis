@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { ApplicationConfig, NoteGraph, readNoteGraph } from "../api";
 import { useApiResource } from "../useApiResource";
 import { GraphCanvas } from "../graph/GraphCanvas";
-import { GraphList } from "../graph/GraphList";
 import { graphModel } from "../graph/model";
 
 /** 起点から辿れる線の本数。公開契約の上限に合わせる。 */
@@ -85,7 +84,7 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
     <section className="grid gap-6">
       <PageHeader
         eyebrow="Graph"
-        title="関係の図"
+        title="グラフビュー"
         description="閲覧できるノートと、それらが引用している文献のつながりを示します。"
       />
 
@@ -171,10 +170,7 @@ export function GraphPage({ config }: { config: ApplicationConfig }) {
                 : "条件に一致するノートはありません。"}
           </StatusMessage>
         ) : (
-          <>
-            <GraphCanvas config={config} model={model} />
-            <GraphList config={config} model={model} />
-          </>
+          <GraphCanvas config={config} model={model} />
         ))}
     </section>
   );

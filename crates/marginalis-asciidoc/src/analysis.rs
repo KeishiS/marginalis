@@ -107,7 +107,7 @@ fn citation_style_from_analysis(analysis: &adocweave::Analysis) -> CitationStyle
         .unwrap_or_default()
 }
 
-/// `cite:`が名指すcitation keyを、書誌ライブラリーへの問い合わせへ直す。
+/// `cite:`が名指すcitation keyを、文献ライブラリへの問い合わせへ直す。
 ///
 /// AdocWeaveは位置引数をcitation key、名前付き引数を引用の補足として返す。Marginalisは
 /// `locator`だけを引用へ添える値として扱い、他の名前付き引数は表示に使わない。

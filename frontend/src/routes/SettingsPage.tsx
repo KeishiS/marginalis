@@ -25,7 +25,7 @@ export function SettingsPage({ config }: { config: ApplicationConfig }) {
         <SettingsCard
           href={externalPath(config.basePath, "/settings/webhooks")}
           title="Webhook通知"
-          description="ノートと書誌情報の変更を外部のURLへ通知します。"
+          description="ノートと文献情報の変更を外部のURLへ通知します。"
         />
       </div>
     </section>

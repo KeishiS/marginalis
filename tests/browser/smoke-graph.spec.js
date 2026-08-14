@@ -4,7 +4,7 @@ const {
   detailScreenshotOptions,
 } = require("./fixtures/smoke-helpers");
 
-test("関係の図で点を選ぶと、その画面へ移動できる", async ({ page }) => {
+test("グラフビューで点を選ぶと、その画面へ移動できる", async ({ page }) => {
   const noteId = "0197c9bc-0000-7000-8000-000000000001";
   const otherId = "0197c9bc-0000-7000-8000-000000000002";
   await page.route("**/api/v3/notes/graph*", async (route) => {
@@ -41,7 +41,7 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
     1,
   );
 
-  // ノートの点は閲覧画面、文献の点は書誌ライブラリーを指す。
+  // ノートの点は閲覧画面、文献の点は文献ライブラリを指す。
   const note = page.locator('.graph-vertex[data-kind="note"]').first();
   expect(await note.getAttribute("href")).toBe(`/notes/${noteId}`);
   const work = page.locator('.graph-vertex[data-kind="work"]').first();
@@ -90,12 +90,6 @@ test("関係の図で点を選ぶと、その画面へ移動できる", async ({
   await expect(page).toHaveURL(
     "/graph?query=%E7%A0%94%E7%A9%B6+%E3%83%A1%E3%83%A2",
   );
-
-  // 図と同じ内容を一覧からも辿れる。
-  await page.getByText("つながりの一覧").click();
-  await expect(
-    page.locator(".graph-outline a", { hasText: "先行研究の整理" }),
-  ).toBeVisible();
 
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(page).toHaveScreenshot("graph-wide.png", SCREENSHOT_OPTIONS);

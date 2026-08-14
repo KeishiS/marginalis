@@ -255,7 +255,7 @@ export function BibliographyImportPanel({
               maxLength={128}
               disabled={busy || preview !== null}
               onChange={(event) => setNewSourceName(event.target.value)}
-              placeholder="例: Zoteroの研究ライブラリー"
+              placeholder="例: Zoteroの研究ライブラリ"
             />
           </label>
         )}

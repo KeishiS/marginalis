@@ -16,9 +16,9 @@ pub(super) const UNKNOWN_CITATION_KEY_DESCRIPTION: &str =
     "a citation key is not registered in the note owner's bibliography library";
 
 impl NoteApplication {
-    /// 引用のcitation keyを、ノートを書いた利用者の書誌ライブラリーで解決する。
+    /// 引用のcitation keyを、ノートを書いた利用者の文献ライブラリで解決する。
     ///
-    /// 閲覧者ではなく作成者のライブラリーを使うため、同じノートは誰が見ても同じ表示になる。
+    /// 閲覧者ではなく作成者のライブラリを使うため、同じノートは誰が見ても同じ表示になる。
     /// 解決できたkeyだけが参考文献一覧へ並び、同じ文献を何度引用しても項目は1つになる。
     pub(super) async fn citation_resolutions(
         &self,
@@ -136,7 +136,7 @@ fn citation_segments(
     segments
 }
 
-/// 書誌ライブラリーに無いcitation keyを、保存を妨げない警告として報告する。
+/// 文献ライブラリに無いcitation keyを、保存を妨げない警告として報告する。
 fn unknown_citation_diagnostics(
     queries: &[NoteCitationQuery],
     unknown_keys: &[String],
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(linked.anchor.as_deref(), Some("smith2024"));
     }
 
-    /// 引用は指定した所有者のライブラリーで解決し、未登録のkeyは警告として報告する。
+    /// 引用は指定した所有者のライブラリで解決し、未登録のkeyは警告として報告する。
     #[tokio::test]
     async fn resolves_for_the_named_owner_and_reports_unknown_keys() {
         let application = citation_application();

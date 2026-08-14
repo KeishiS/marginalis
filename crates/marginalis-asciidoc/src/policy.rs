@@ -640,7 +640,7 @@ mod tests {
         assert!(violations(&source).contains(&NoteValidationCode::DuplicateAnchor));
     }
 
-    /// 書誌ライブラリーを参照する引用と、標準のbibliographyの両方を受理する。
+    /// 文献ライブラリを参照する引用と、標準のbibliographyの両方を受理する。
     ///
     /// citation keyの解決は保存時ではなく描画時に行うため、入力規則としては引用の
     /// 書き方だけを見る。未登録のkeyは保存を妨げない警告として別に報告する。

@@ -1,6 +1,6 @@
 //! Marginalisの永続化方式から独立した業務モデルの実装。
 //!
-//! 共通の識別子と版番号をこのファイルで定義し、ノート、書誌、identityの各系統は
+//! 共通の識別子と版番号をこのファイルで定義し、ノート、文献、identityの各系統は
 //! 子moduleへ分ける。公開名はすべて`marginalis_domain`直下から変わらない。
 
 mod bibliography;

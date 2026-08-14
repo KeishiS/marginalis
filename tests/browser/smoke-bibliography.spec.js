@@ -1,6 +1,6 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
 
-test("書誌情報の未保存編集と削除を確認してから反映する", async ({ page }) => {
+test("文献情報の未保存編集と削除を確認してから反映する", async ({ page }) => {
   let items = [
     {
       item_id: "0197c9bc-0000-7000-8000-0000000000a1",
@@ -56,7 +56,7 @@ test("書誌情報の未保存編集と削除を確認してから反映する",
     .last();
   await item.getByRole("button", { name: "削除" }).click();
   const deletion = page.getByRole("alertdialog");
-  await expect(deletion).toContainText("書誌情報の削除は取り消せません");
+  await expect(deletion).toContainText("文献情報の削除は取り消せません");
   await deletion.getByRole("button", { name: "削除する" }).click();
   await expect(item).toHaveCount(0);
   await expect(

@@ -28,7 +28,7 @@ const failure = (text: string): Message => ({ text, failed: true });
 const EMPTY_INPUT =
   '{\n  "id": "smith2024",\n  "type": "article-journal",\n  "title": "Example title"\n}';
 
-/** URLの`query`を初期の絞り込み条件として読む。関係の図から文献を選んだ場合に使う。 */
+/** URLの`query`を初期の絞り込み条件として読む。グラフビューから文献を選んだ場合に使う。 */
 function initialQuery(search: string): string {
   return new URLSearchParams(search).get("query") ?? "";
 }
@@ -71,7 +71,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         }
       } catch {
         if (!controller.signal.aborted) {
-          setLoadError("書誌ライブラリーを読み込めませんでした。");
+          setLoadError("文献ライブラリを読み込めませんでした。");
         }
       } finally {
         if (!controller.signal.aborted && activeSearch.current === controller) {
@@ -94,7 +94,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          setLoadError("書誌ライブラリーを読み込めませんでした。");
+          setLoadError("文献ライブラリを読み込めませんでした。");
         }
       });
     return () => controller.abort();
@@ -162,13 +162,13 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
           value as Record<string, unknown>,
           editing.revision,
         );
-        setMessage(notice("書誌情報を更新しました。"));
+        setMessage(notice("文献情報を更新しました。"));
       } else {
         await addBibliographyItem(
           config.apiBase,
           value as Record<string, unknown>,
         );
-        setMessage(notice("書誌情報を登録しました。"));
+        setMessage(notice("文献情報を登録しました。"));
       }
       setEditing(null);
       setInput(EMPTY_INPUT);
@@ -197,10 +197,10 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
       }
       setPendingDelete(null);
       setDeleteProblem(null);
-      setMessage(notice("書誌情報を削除しました。"));
+      setMessage(notice("文献情報を削除しました。"));
       await load(query);
     } catch {
-      setDeleteProblem("書誌情報を削除できませんでした。");
+      setDeleteProblem("文献情報を削除できませんでした。");
     } finally {
       setMutating(false);
     }
@@ -210,7 +210,7 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
     <section className="grid gap-6">
       <PageHeader
         eyebrow="Bibliography"
-        title="書誌ライブラリー"
+        title="文献ライブラリ"
         description="CSL-JSON形式の文献情報を、ノートとは独立して管理します。"
       />
       {/* ノート一覧の絞り込みと同じく、広い画面では入力欄の隣へ内容幅のボタンを置く。 */}
@@ -276,9 +276,9 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
         ))}
       {loadError && <ProblemAlert>{loadError}</ProblemAlert>}
       {items === null ? (
-        <StatusMessage>書誌情報を読み込んでいます。</StatusMessage>
+        <StatusMessage>文献情報を読み込んでいます。</StatusMessage>
       ) : items.length === 0 ? (
-        <StatusMessage>登録済みの書誌情報はありません。</StatusMessage>
+        <StatusMessage>登録済みの文献情報はありません。</StatusMessage>
       ) : (
         <ul className="m-0 grid list-none gap-3 p-0">
           {items.map((item) => (
@@ -339,9 +339,9 @@ export function BibliographyPage({ config }: { config: ApplicationConfig }) {
       )}
       {pendingDelete !== null && (
         <ConfirmationDialog
-          eyebrow="書誌情報の削除"
+          eyebrow="文献情報の削除"
           heading={`${pendingDelete.citation_key}を削除しますか`}
-          description="書誌情報の削除は取り消せません。"
+          description="文献情報の削除は取り消せません。"
           busy={mutating}
           problem={deleteProblem}
           confirmLabel="削除する"

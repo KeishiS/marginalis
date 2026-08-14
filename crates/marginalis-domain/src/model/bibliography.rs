@@ -1,4 +1,4 @@
-//! 書誌情報の識別子と正本。
+//! 文献情報の識別子と正本。
 
 use core::fmt;
 use serde_json::Value;

@@ -488,7 +488,7 @@ impl NoteUseCases for NoteApplication {
     }
 }
 
-/// 所有者の書誌ライブラリーやマクロ設定など、ノート本体ではない付随資源の読み取り失敗を写す。
+/// 所有者の文献ライブラリやマクロ設定など、ノート本体ではない付随資源の読み取り失敗を写す。
 ///
 /// `NotFound`や`Conflict`をそのまま返すと、ノート自体の不在や競合と区別できない。保存内容の
 /// 破損以外は一時的な失敗として扱う。
@@ -501,7 +501,7 @@ fn map_owner_resource_error(error: StorageError) -> NoteUseCaseError {
 
 /// 本文が名指したcitation keyを、重複なく並べる。
 ///
-/// 書誌ライブラリーに実在するかどうかは問わない。ライブラリーは後から変わるため、保存する
+/// 文献ライブラリに実在するかどうかは問わない。ライブラリは後から変わるため、保存する
 /// のは「本文が何を引用したか」であって「解決できたか」ではない。
 fn cited_keys(queries: &[NoteCitationQuery]) -> Vec<String> {
     let mut keys = queries

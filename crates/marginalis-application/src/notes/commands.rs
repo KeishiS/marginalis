@@ -87,7 +87,7 @@ impl NoteApplication {
             citation_style,
         } = validated;
         if !citation_queries.is_empty() {
-            // 引用は閲覧時に作成者のライブラリーで解決する。共有されたノートを別の利用者が
+            // 引用は閲覧時に作成者のライブラリで解決する。共有されたノートを別の利用者が
             // 更新する場合も同じ基準で判定しないと、保存できた引用が表示では解決されない。
             let owner = self
                 .read_visible_note(&actor, note_id)
@@ -166,7 +166,7 @@ impl NoteApplication {
             citation_style,
         } = validated;
         if !citation_queries.is_empty() {
-            // update_noteと同じく、引用は閲覧時の解決先である所有者のライブラリーで判定する。
+            // update_noteと同じく、引用は閲覧時の解決先である所有者のライブラリで判定する。
             diagnostics.extend(
                 self.citation_resolutions(note.owner(), &citation_queries, citation_style)
                     .await?

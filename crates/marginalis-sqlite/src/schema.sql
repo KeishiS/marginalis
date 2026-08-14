@@ -42,8 +42,8 @@ CREATE TABLE note_references (
 CREATE INDEX note_references_target_idx
 ON note_references (target_note_id, source_note_id);
 
--- 本文が`cite:`で名指したcitation key。関係の図で、ノートと文献を結ぶ線に使う。
--- 参照先の書誌項目が実在するかどうかは保存時に問わない。ライブラリーは後から変わるためである。
+-- 本文が`cite:`で名指したcitation key。グラフビューで、ノートと文献を結ぶ線に使う。
+-- 参照先の文献項目が実在するかどうかは保存時に問わない。ライブラリは後から変わるためである。
 CREATE TABLE note_citations (
     source_note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
     citation_key TEXT NOT NULL,
@@ -82,8 +82,8 @@ CREATE TABLE bibliography_import_sources (
 CREATE INDEX bibliography_import_sources_owner_idx
 ON bibliography_import_sources (owner_issuer, owner_subject, last_imported_at_ms DESC, source_id);
 
--- 取込元内の外部IDと書誌項目を対応させる。owner列を両方の外部キーに含め、異なる
--- 利用者の取込元と書誌項目を結び付けられないようにする。
+-- 取込元内の外部IDと文献項目を対応させる。owner列を両方の外部キーに含め、異なる
+-- 利用者の取込元と文献項目を結び付けられないようにする。
 CREATE TABLE bibliography_import_links (
     source_id TEXT NOT NULL,
     external_item_id TEXT NOT NULL,

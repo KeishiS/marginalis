@@ -38,7 +38,7 @@ test("未解決の競合を止め、選択した計画だけを適用する", as
   const source = {
     source_id: SOURCE_ID,
     method: "csl_json_file",
-    display_name: "Zotero研究ライブラリー",
+    display_name: "Zotero研究ライブラリ",
     revision: 1,
     created_at_ms: 100,
     last_imported_at_ms: 100,
@@ -121,7 +121,7 @@ test("未解決の競合を止め、選択した計画だけを適用する", as
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
   fireEvent.change(screen.getByLabelText("取込元の表示名"), {
-    target: { value: "Zotero研究ライブラリー" },
+    target: { value: "Zotero研究ライブラリ" },
   });
   const items = [
     { id: "external-1", title: "外部側の文献" },
@@ -167,7 +167,7 @@ test("未解決の競合を止め、選択した計画だけを適用する", as
     String((fetchMock.mock.calls[1][1] as RequestInit).body),
   );
   expect(previewRequest).toEqual({
-    source: { kind: "new", display_name: "Zotero研究ライブラリー" },
+    source: { kind: "new", display_name: "Zotero研究ライブラリ" },
     items,
   });
 

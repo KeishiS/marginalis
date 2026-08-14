@@ -158,39 +158,6 @@
   stroke-width: 3;
 }
 
-.graph-outline {
-  background: var(--color-card);
-  border: var(--border-thin) solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-}
-
-.graph-outline summary {
-  cursor: pointer;
-  font-size: var(--text-small);
-}
-
-.graph-outline ul {
-  display: grid;
-  gap: var(--space-2);
-  list-style: none;
-  margin: var(--space-3) 0 0;
-  padding: 0;
-}
-
-.graph-outline li {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.graph-outline-kind,
-.graph-outline-degree {
-  color: var(--color-muted-foreground);
-  font-size: var(--text-caption);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .graph-edge,
   .graph-vertex circle {

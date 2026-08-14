@@ -188,7 +188,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
       .locator("li")
       .allTextContents(),
   ).toEqual(["設計", "Rust", "長いタグ名でも狭い画面からはみ出さない"]);
-  // 閲覧画面から、このノートを起点にした関係の図へ移れる。
+  // 閲覧画面から、このノートを起点にしたグラフビューへ移れる。
   expect(
     await page.getByRole("link", { name: "周辺の関係" }).getAttribute("href"),
   ).toBe(`/graph?origin=${noteId}&depth=2`);

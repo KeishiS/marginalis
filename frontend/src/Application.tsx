@@ -9,7 +9,7 @@ import { NoteListPage } from "./routes/NoteListPage";
 import { NoteViewPage } from "./routes/NoteViewPage";
 import { SettingsPage } from "./routes/SettingsPage";
 
-// 関係の図は描画に専用の計算を伴う。開かない利用者へ読み込ませないため、経路に入って
+// グラフビューは描画に専用の計算を伴う。開かない利用者へ読み込ませないため、経路に入って
 // はじめて取得する。
 const GraphPage = lazy(() =>
   import("./routes/GraphPage").then((module) => ({
@@ -78,7 +78,9 @@ export function Application({ config }: { config: ApplicationConfig }) {
     case "graph":
       return (
         <Suspense
-          fallback={<StatusMessage>関係の図を読み込んでいます。</StatusMessage>}
+          fallback={
+            <StatusMessage>グラフビューを読み込んでいます。</StatusMessage>
+          }
         >
           <GraphPage config={config} />
         </Suspense>

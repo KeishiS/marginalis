@@ -89,9 +89,9 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
     );
 }
 
-/// citation keyでの読み取りは、指定した所有者のライブラリーだけを見る。
+/// citation keyでの読み取りは、指定した所有者のライブラリだけを見る。
 ///
-/// 引用の解決はノート作成者のライブラリーを使うため、他の利用者の項目が混ざらないことを
+/// 引用の解決はノート作成者のライブラリを使うため、他の利用者の項目が混ざらないことを
 /// 保存側で確かめる。
 #[tokio::test]
 async fn citation_keys_are_read_only_from_the_named_owner() {

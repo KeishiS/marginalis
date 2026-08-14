@@ -36,7 +36,7 @@ MCPのClient ID Metadata Documentは、利用者が指定した外部URLをサ�
 
 ``cargo make verify``は、RustSecの最新データベースを使って``Cargo.lock``を検査します。脆弱性に加え、
 soundness違反、保守終了、yankも失敗として扱います。ここでいうsoundness違反は、安全なRustコード
-から未定義動作へ到達できるライブラリー上の問題です。例外を設ける場合は、情報のID、影響を受けない
+から未定義動作へ到達できるライブラリ上の問題です。例外を設ける場合は、情報のID、影響を受けない
 根拠、例外を解除する条件をこの文書へ記録します。
 
 同じ検査は、GitHub Actionsの``Dependency security audit``で毎週月曜日にも実行します。Rustは

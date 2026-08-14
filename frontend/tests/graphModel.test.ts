@@ -116,7 +116,7 @@ test("想定規模のノート数でも、点と線を数え落とさない", ()
   expect(model.vertices[0].degree).toBe(notes / works);
 });
 
-test("点の移動先は、ノートが閲覧画面、文献が書誌ライブラリーである", () => {
+test("点の移動先は、ノートが閲覧画面、文献が文献ライブラリである", () => {
   const config = {
     apiBase: "/api/v3",
     basePath: "/",

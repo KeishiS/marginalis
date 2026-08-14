@@ -53,11 +53,11 @@
 |ドメインCSL-JSON不変条件試験、SQLite破損検出・所有者境界・競合・revision試験、REST・MCP通信経路試験と公開契約試験
 |Web UIでの検索、追加、編集、削除とMCPでの検索、追加、削除
 |REQ-DATA-007
-|引用解決の所有者境界と重複排除の試験、生成した参考文献の相互link試験、番号付き一覧の項番と退避の試験、書誌情報を記法として解釈しない試験
+|引用解決の所有者境界と重複排除の試験、生成した参考文献の相互link試験、番号付き一覧の項番と退避の試験、文献情報を記法として解釈しない試験
 |共有したノートでの引用表示
 |REQ-DATA-008
 |図の認可境界・絞り込み・片端の欠けた線の試験、起点と階層数の試験、想定規模の試験、REST経路と認証と範囲外指定の試験、ブラウザー試験
-|関係の図の表示
+|グラフビューの表示
 |REQ-DATA-009
 |domain復元試験、SQLiteの作成経路・確認状態・所有者・競合・revision無効化試験、REST・MCP・OpenAPI契約試験、
 archive往復・旧契約混在拒否・文書書庫の本文とACLの外部編集試験、React表示・確認操作試験
@@ -99,7 +99,7 @@ archive往復・旧契約混在拒否・文書書庫の本文とACLの外部編�
 |OAuth application・SQLite単体試験、CIMD取得境界・``iss``・metadata・MCP HTTP試験、NixOS module評価
 |MCP接続
 |REQ-API-005
-|ノート・書誌scope対応、scope上限の共通部分・revision・選択的失効の単体試験、同意scopeの部分選択・フォーム改変拒否のHTTP試験、
+|ノート・文献scope対応、scope上限の共通部分・revision・選択的失効の単体試験、同意scopeの部分選択・フォーム改変拒否のHTTP試験、
 認可済みclientの本人境界・最終利用・上限変更のSQLite試験、REST・React設定画面試験、初回・段階的scope challengeのprotocol版別結合試験、
 metadata契約試験、``notes:sync``専用scopeと同意文言の試験
 |MCP権限照合、同意scopeの選択、client別上限変更後の再認可、段階的scope追加
@@ -133,7 +133,7 @@ patchの厳密適用・dry_run・階層outline・断片取得の単体とHTTP契
 |application所有者選択試験、SQLite分離・revision試験、REST契約試験、React設定画面・MathJaxで許可するpackageの単体・ブラウザー試験
 |``\argmax``・``\bm``の閲覧と共有表示
 |REQ-UI-008
-|外部側と現在値を含むREST応答検査、React書誌取込画面の単体試験、ブラウザー試験
+|外部側と現在値を含むREST応答検査、React文献取込画面の単体試験、ブラウザー試験
 |内容比較、キーボードによる事前確認、競合解決、適用
 |REQ-HOOK-001
 |``marginalis-application``の購読ユースケース試験、``marginalis-sqlite``の所有境界試験、

@@ -1,4 +1,4 @@
-//! `cite:`が指す書誌項目を、本文中の引用表示と参考文献項目の文字列へ直す。
+//! `cite:`が指す文献項目を、本文中の引用表示と参考文献項目の文字列へ直す。
 //!
 //! ここで作る文字列は、AsciiDocの記法ではなく表示そのものです。記法として解釈されない
 //! ようにする処理は文書adapterが受け持ちます。
@@ -96,7 +96,7 @@ impl CitationStyle {
         }
     }
 
-    /// 参考文献一覧の1項目に使う書誌情報の表示を作る。
+    /// 参考文献一覧の1項目に使う文献情報の表示を作る。
     pub fn entry_text(self, item: &BibliographyItem) -> String {
         let csl = parsed(item);
         let mut parts = Vec::new();

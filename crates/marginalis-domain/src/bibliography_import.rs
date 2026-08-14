@@ -1,4 +1,4 @@
-//! 外部書誌情報の一方向取り込みで永続化する業務モデル。
+//! 外部文献情報の一方向取り込みで永続化する業務モデル。
 
 use std::fmt;
 
@@ -29,7 +29,7 @@ impl fmt::Display for BibliographyImportSourceId {
     }
 }
 
-/// 取込元から書誌情報を受け取る方式。
+/// 取込元から文献情報を受け取る方式。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BibliographyImportMethod {
@@ -150,7 +150,7 @@ impl BibliographyContentDigest {
     }
 }
 
-/// 取込元の一項目とMarginalis内の書誌項目の対応。
+/// 取込元の一項目とMarginalis内の文献項目の対応。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BibliographyImportLink {
     source_id: BibliographyImportSourceId,

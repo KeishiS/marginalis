@@ -14,8 +14,8 @@ pub(super) fn escape_html(value: &str) -> String {
 /// 主要な移動先。`current_path`と照合して、いま開いている画面を示す。
 const NAVIGATION: &[(&str, &str, &str)] = &[
     ("/", "/notes", "ノート"),
-    ("/bibliography", "/bibliography", "書誌"),
-    ("/graph", "/graph", "関係の図"),
+    ("/bibliography", "/bibliography", "文献"),
+    ("/graph", "/graph", "グラフビュー"),
     ("/settings", "/settings", "設定"),
 ];
 
@@ -155,10 +155,10 @@ mod tests {
     fn page_document_lists_every_destination_and_marks_the_current_screen() {
         let document = page_document("Marginalis", "/", "/bibliography", "<div></div>", &[]);
 
-        for label in ["ノート", "書誌", "関係の図", "設定", "新規ノート"] {
+        for label in ["ノート", "文献", "グラフビュー", "設定", "新規ノート"] {
             assert!(document.contains(label), "{label}への移動手段が必要です");
         }
-        assert!(document.contains("aria-current=\"page\">書誌</a>"));
+        assert!(document.contains("aria-current=\"page\">文献</a>"));
         assert!(document.contains("href=\"/bibliography\" aria-current"));
         assert_eq!(document.matches("aria-current=\"page\"").count(), 1);
 
