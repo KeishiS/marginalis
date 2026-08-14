@@ -94,4 +94,16 @@ test("production build starts and renders a note returned by the API", async ({
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(menuButton).toBeHidden();
   await expect(navigation.getByRole("link", { name: "設定" })).toBeVisible();
+
+  // さらに広い画面では、一覧の要素も閲覧画面と同じ96rem(1536px)の上限を共有する。
+  // 画面を移動しても要素の幅が変わらないようにするため。
+  await page.setViewportSize({ width: 2560, height: 800 });
+  const filterForm = page.locator("form", {
+    has: page.getByRole("button", { name: "絞り込む" }),
+  });
+  await expect(filterForm).toBeVisible();
+  const filterPosition = await filterForm.boundingBox();
+  expect(filterPosition).not.toBeNull();
+  expect(filterPosition.width).toBeLessThanOrEqual(1536);
+  expect(filterPosition.width).toBeGreaterThan(1400);
 });
