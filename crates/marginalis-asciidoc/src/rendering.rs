@@ -190,6 +190,21 @@ mod tests {
         .expect("note")
     }
 
+    /// 定義リストは、用語の次の行に書いた説明文も同じ行に書いた場合と同様に説明として扱う。
+    /// AdocWeave v0.40.1より前は説明文がリスト外の段落になり、`dd`が空になっていた(#482)。
+    #[test]
+    fn description_lists_attach_descriptions_written_on_the_following_line() {
+        let html = render_note(
+            &note("用語A::\n次の行に書いた説明です。\n用語B:: 同じ行に書いた説明です。"),
+            NoteRenderInputs::default(),
+        )
+        .expect("render");
+        assert!(html.contains("<dd>次の行に書いた説明です。</dd>"));
+        assert!(html.contains("<dd>同じ行に書いた説明です。</dd>"));
+        assert!(!html.contains("<dd></dd>"));
+        assert_eq!(html.matches("<dl>").count(), 1);
+    }
+
     #[test]
     fn supported_blocks_render_without_raw_markup() {
         let html = render_note(
