@@ -1,7 +1,7 @@
 /* 起点を指定しているときだけ出る帯。今どの範囲を見ているかを図の上で示す。 */
 .graph-origin {
   align-items: center;
-  background: var(--color-surface-subtle);
+  background: var(--color-muted);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-md);
   display: flex;
@@ -24,7 +24,7 @@
 }
 
 .graph-canvas {
-  background: var(--color-surface);
+  background: var(--color-card);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
@@ -48,8 +48,8 @@
 
 /* 点に触れたときの吹き出し。実寸を測って上下左右を図の枠の内側へ収める。 */
 .graph-detail {
-  background: var(--color-surface);
-  border: var(--border-thin) solid var(--color-border-strong);
+  background: var(--color-card);
+  border: var(--border-thin) solid var(--color-input);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   box-sizing: border-box;
@@ -81,7 +81,7 @@
 }
 
 .graph-detail dt {
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   flex: none;
   font-size: var(--text-caption);
   width: 5.5rem;
@@ -95,13 +95,13 @@
 }
 
 .graph-canvas figcaption {
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   font-size: var(--text-caption);
   padding: var(--space-2) var(--space-3) var(--space-1);
 }
 
 .graph-edge {
-  stroke: var(--color-border-strong);
+  stroke: var(--color-input);
   stroke-width: 1.5;
   transition: opacity 140ms ease;
 }
@@ -117,7 +117,7 @@
 
 .graph-vertex circle {
   fill: var(--color-primary);
-  stroke: var(--color-surface);
+  stroke: var(--color-card);
   stroke-width: 2;
   transition:
     fill 140ms ease,
@@ -131,15 +131,15 @@
 
 /* どことも繋がっていない点は、輪郭だけにして探しやすくする。 */
 .graph-vertex[data-isolated="true"] circle {
-  fill: var(--color-surface);
-  stroke: var(--color-border-strong);
+  fill: var(--color-card);
+  stroke: var(--color-input);
 }
 
 .graph-vertex text {
-  fill: var(--color-text);
+  fill: var(--color-foreground);
   font-size: var(--text-caption);
   paint-order: stroke;
-  stroke: var(--color-surface);
+  stroke: var(--color-card);
   stroke-width: 3;
 }
 
@@ -154,12 +154,12 @@
 }
 
 .graph-vertex:focus-visible circle {
-  stroke: var(--color-text);
+  stroke: var(--color-foreground);
   stroke-width: 3;
 }
 
 .graph-outline {
-  background: var(--color-surface);
+  background: var(--color-card);
   border: var(--border-thin) solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
@@ -187,7 +187,7 @@
 
 .graph-outline-kind,
 .graph-outline-degree {
-  color: var(--color-text-muted);
+  color: var(--color-muted-foreground);
   font-size: var(--text-caption);
 }
 

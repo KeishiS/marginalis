@@ -1,8 +1,8 @@
 /*
  * 手書きCSS(editor.css、graph.css、content.css、layout.css)が使う目盛り。
- * 色の正本はglobals.cssのdesign tokenであり、ここでは旧名を新トークンの
- * 別名として残すだけで、色の値そのものは定義しない。旧名の参照を
- * 使い切ったら別名から順に削除する。
+ * 色の正本はglobals.cssのdesign tokenで、手書きCSSもTailwindが出力する
+ * --color-*をそのまま参照する。書体の正本はここにあり、Tailwind側は
+ * globals.cssの@themeがこの変数を参照する。角丸はglobals.cssの--radius-*を使う。
  */
 :root {
   --font-ui:
@@ -20,15 +20,8 @@
   font-synthesis: none;
   line-height: 1.6;
 
-  /* 旧色トークンの別名。役割の対応はdocs/user-guide/web-ui-design.adocを参照。 */
-  --color-canvas: var(--color-background);
-  --color-surface: var(--color-card);
-  --color-surface-subtle: var(--color-muted);
-  --color-text: var(--color-foreground);
-  --color-text-muted: var(--color-muted-foreground);
-  --color-border-strong: var(--color-input);
-  --color-danger: var(--color-destructive);
-  --color-danger-soft: color-mix(
+  /* 状態表示の淡い地色。地色へ状態色を薄く混ぜ、文字色に同じ状態色を使える濃さにする。 */
+  --color-destructive-soft: color-mix(
     in srgb,
     var(--color-destructive) 12%,
     var(--color-card)
@@ -47,10 +40,6 @@
   --shadow-md: 0 10px 28px rgb(16 24 40 / 10%);
   --border-thin: 0.0625rem;
   --border-thick: 0.25rem;
-  --radius-sm: 0.45rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-pill: 999px;
 
   /* ヘッダーとmainの最大幅。広い画面では表示領域の75%とし、長文の読みやすさを保つ
      ため96remを超えない。小さな画面では実質的に制限しない(60remを下回らないため)。

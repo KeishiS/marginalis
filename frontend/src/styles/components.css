@@ -1,75 +1,7 @@
 /*
- * 移行前の画面とRust側HTMLが使う基礎スタイル。base層に置き、shadcnの
- * componentが持つユーティリティclassを優先させる。旧CSSの削除とあわせて
- * 整理する(Issue #438)。
+ * 編集画面の診断・競合表示。構造が深く入れ子になるため、ユーティリティclassではなく
+ * 手書きCSSで受け持つ。
  */
-@layer base {
-  /* class無しの素のbuttonだけを対象にする。shadcnのButtonやCodeMirrorの
-     buttonはclassを持ち、それぞれの定義で大きさを決める。全buttonへ
-     min-heightを課すと、utilityのh-9より優先されて高さが揃わなくなる。 */
-  button:not([class]) {
-    align-items: center;
-    border: var(--border-thin) solid transparent;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    display: inline-flex;
-    font-size: var(--text-small);
-    font-weight: 650;
-    gap: var(--space-2);
-    justify-content: center;
-    line-height: 1.25;
-    min-height: 2.5rem;
-    padding: var(--space-2) var(--space-4);
-    text-decoration: none;
-    transition:
-      background-color 140ms ease,
-      border-color 140ms ease,
-      color 140ms ease,
-      transform 140ms ease;
-  }
-
-  button:not([class]):hover:not(:disabled) {
-    transform: translateY(-0.0625rem);
-  }
-
-  button:not([class]):disabled {
-    cursor: not-allowed;
-    opacity: 0.52;
-  }
-}
-
-button:not([class]) {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-  color: var(--color-text);
-}
-
-button:not([class]):hover:not(:disabled) {
-  background: var(--color-surface-subtle);
-  border-color: var(--color-border-strong);
-  color: var(--color-text);
-}
-
-@layer base {
-  /* buttonと同じく、class無しの素のinputだけを対象にする。shadcnのInputは
-     classでh-9を持ち、min-heightを課すと高さが揃わなくなる。 */
-  input:not([type="range"], [type="checkbox"], [class]),
-  select {
-    background: var(--color-surface);
-    border: var(--border-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    color: var(--color-text);
-    min-height: 2.65rem;
-    padding: var(--space-2) var(--space-3);
-  }
-
-  input:not([type="range"], [type="checkbox"], [class]):hover,
-  select:hover {
-    border-color: var(--color-border-strong);
-  }
-}
-
-.notice,
 .problem,
 .warnings,
 .conflict-panel {
@@ -79,14 +11,10 @@ button:not([class]):hover:not(:disabled) {
   padding: var(--space-4) var(--space-4);
 }
 
-.notice {
-  color: var(--color-success);
-}
-
 .problem,
 .conflict-panel {
-  background: var(--color-danger-soft);
-  border-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
+  background: var(--color-destructive-soft);
+  border-color: color-mix(in srgb, var(--color-destructive) 45%, transparent);
 }
 
 .warnings {
@@ -113,30 +41,8 @@ button:not([class]):hover:not(:disabled) {
   color: var(--color-primary);
   cursor: pointer;
   font: inherit;
-  min-height: auto;
   padding: 0;
   text-decoration: underline;
-}
-
-.conflict-fields {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.conflict-fields section {
-  border: var(--border-thin) solid var(--color-border);
-  min-width: 0;
-  padding: var(--space-3);
-}
-
-.conflict-fields h3,
-.conflict-fields dl {
-  margin-block: 0 var(--space-2);
-}
-
-.conflict-fields h3 {
-  font-weight: 700;
 }
 
 /* 枠の中の見出し・本文・一覧の間隔。preflightが既定余白を持たないため明示する。 */
@@ -150,11 +56,6 @@ button:not([class]):hover:not(:disabled) {
 .warnings > * + *,
 .conflict-panel > * + * {
   margin-block-start: var(--space-2);
-}
-
-.conflict-fields dd {
-  margin-inline-start: 0;
-  overflow-wrap: anywhere;
 }
 
 .conflict-body-scroll {
@@ -192,10 +93,4 @@ button:not([class]):hover:not(:disabled) {
 
 .conflict-body .changed {
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
-}
-
-@media (width <= 60rem) {
-  .conflict-fields {
-    grid-template-columns: 1fr;
-  }
 }

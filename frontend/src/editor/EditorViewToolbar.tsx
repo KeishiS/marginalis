@@ -16,7 +16,7 @@ export function EditorViewToolbar({
       <div className="editor-view-buttons" role="group" aria-label="表示">
         {modes.map((item) => (
           <button
-            className="button button-segment"
+            className="button-segment"
             key={item.mode}
             type="button"
             aria-pressed={mode === item.mode}
