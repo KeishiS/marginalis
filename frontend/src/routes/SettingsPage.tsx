@@ -9,7 +9,7 @@ export function SettingsPage({ config }: { config: ApplicationConfig }) {
       <PageHeader
         eyebrow="Settings"
         title="設定"
-        description="ノートの表示方法と、外部のMCPクライアントへ許可できる操作を管理します。"
+        description="ノートの表示方法、外部のMCPクライアントへ許可できる操作、変更のWebhook通知を管理します。"
       />
       <div className="grid gap-4 sm:grid-cols-2">
         <SettingsCard

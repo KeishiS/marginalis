@@ -340,7 +340,10 @@ export function WebhookSettingsPage({ config }: { config: ApplicationConfig }) {
                 ))}
               </div>
             </fieldset>
-            <Button disabled={creating || selectedKinds.length === 0}>
+            <Button
+              className="min-[60rem]:justify-self-start"
+              disabled={creating || selectedKinds.length === 0}
+            >
               {creating ? "登録しています…" : "Webhookを登録"}
             </Button>
           </form>

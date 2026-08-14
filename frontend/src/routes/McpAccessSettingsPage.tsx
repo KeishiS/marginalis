@@ -20,8 +20,10 @@ import { ConfirmationDialog } from "../ConfirmationDialog";
 import { externalPath } from "../paths";
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
-  "notes:read": "閲覧: list_notes、get_note、get_note_profile",
-  "notes:write": "作成・更新: create_note、update_note、get_note_profile",
+  "notes:read":
+    "閲覧: list_notes、get_note、get_note_outline、get_note_fragment、get_note_profile",
+  "notes:write":
+    "作成・更新: create_note、apply_note_patch、replace_note_source、get_note_profile",
   "notes:delete": "削除: delete_note",
   "notes:sync": "外部検索用コピーとの継続同期: sync_notes",
   "bibliography:read": "閲覧: search_bibliography",
@@ -295,7 +297,11 @@ export function McpAccessSettingsPage({
                 <StatusMessage>{message}</StatusMessage>
               )
             ) : null}
-            <Button disabled={saving}>
+            {/* 数式マクロ設定の保存と同じく、広い画面では内容幅のボタンにする。 */}
+            <Button
+              className="min-[60rem]:justify-self-start"
+              disabled={saving}
+            >
               {saving ? "保存しています…" : "アクセス設定を保存"}
             </Button>
           </form>
