@@ -67,8 +67,17 @@ macro_rules! implement_note_use_cases {
                 note_id: NoteId,
                 start_line: usize,
                 end_line: usize,
+                expected_revision: Option<Revision>,
             ) -> Result<(Note, String), NoteUseCaseError> {
-                <$type>::read_note_fragment(self, actor, note_id, start_line, end_line).await
+                <$type>::read_note_fragment(
+                    self,
+                    actor,
+                    note_id,
+                    start_line,
+                    end_line,
+                    expected_revision,
+                )
+                .await
             }
 
             async fn apply_note_patch(
@@ -431,8 +440,12 @@ impl Notes {
         note_id: NoteId,
         start_line: usize,
         end_line: usize,
+        expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError> {
         let note = Notes::read_note(self, actor, note_id).await?;
+        if expected_revision.is_some_and(|expected| note.revision() != expected) {
+            return Err(NoteUseCaseError::Conflict);
+        }
         let lines: Vec<&str> = note.source().lines().collect();
         if start_line == 0 || end_line < start_line || end_line > lines.len() {
             return Err(NoteUseCaseError::InvalidLineRange);
@@ -674,6 +687,7 @@ impl UiNotes {
         _note_id: NoteId,
         _start_line: usize,
         _end_line: usize,
+        _expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError> {
         Err(NoteUseCaseError::NotFound)
     }

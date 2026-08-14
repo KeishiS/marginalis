@@ -571,12 +571,14 @@ pub trait NoteUseCases: Send + Sync {
         note_id: NoteId,
     ) -> Result<(Note, notes::NoteOutline), NoteUseCaseError>;
     /// 指定した行範囲(両端を含む1始まり)のAsciiDoc原文断片を返す。
+    /// `expected_revision`を指定した場合、現在のrevisionと異なると本文を返さず競合として拒否する。
     async fn read_note_fragment(
         &self,
         actor: Actor,
         note_id: NoteId,
         start_line: usize,
         end_line: usize,
+        expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError>;
     /// 保存済み原文へUnified Diffを厳密に適用する。dry runでは検証まで行い保存しない。
     async fn apply_note_patch(

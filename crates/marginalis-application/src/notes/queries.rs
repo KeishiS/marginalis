@@ -1,6 +1,6 @@
 //! ノート一覧と単一ノートの問い合わせ。
 
-use marginalis_domain::{Actor, DeletedNoteListEntry, Note, NoteId, NoteListEntry};
+use marginalis_domain::{Actor, DeletedNoteListEntry, Note, NoteId, NoteListEntry, Revision};
 
 use crate::{NoteListQuery, NoteUseCaseError};
 
@@ -51,15 +51,20 @@ impl NoteApplication {
     /// 指定した行範囲(両端を含む1始まり)の原文断片を返す。
     ///
     /// 断片は原文のbyte列をそのまま切り出す。範囲の末尾が原文の途中なら改行で終わり、
-    /// 最終行を含む場合だけ原文の末尾改行の有無に従う。
+    /// 最終行を含む場合だけ原文の末尾改行の有無に従う。`expected_revision`を指定した
+    /// 場合は、行範囲の根拠にした版と現在の版の食い違いを、本文を返す前に競合として拒否する。
     pub async fn read_note_fragment(
         &self,
         actor: Actor,
         note_id: NoteId,
         start_line: usize,
         end_line: usize,
+        expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError> {
         let note = self.read_visible_note(&actor, note_id).await?;
+        if expected_revision.is_some_and(|expected| note.revision() != expected) {
+            return Err(NoteUseCaseError::Conflict);
+        }
         let fragment = source_fragment(note.source(), start_line, end_line)
             .ok_or(NoteUseCaseError::InvalidLineRange)?;
         Ok((note, fragment))

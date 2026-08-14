@@ -207,6 +207,11 @@ pub struct McpGetNoteFragmentInput {
     pub start_line: usize,
     #[schemars(range(min = 1))]
     pub end_line: usize,
+    /// `get_note_outline`で得たrevision。指定した場合、現在のrevisionと異なると
+    /// 本文を返さず競合として拒否する。行範囲の根拠が古くないことを確かめられる。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub expected_revision: Option<i64>,
 }
 
 /// 保存済み原文と変更内容のUnified Diff。厳密に適用され、位置の再探索は行われない。
@@ -440,6 +445,9 @@ pub type McpNoteMutationOutput = McpToolOutcome<McpNoteRevisionOutput>;
 pub struct McpNoteProfileOutput {
     pub profile_version: u32,
     pub adocweave_package_version: String,
+    /// このサーバーのMarginalisの版。tool契約は版と同時にしか変わらないため、
+    /// クライアントが手元のtool一覧の世代を照合する識別子として使える。
+    pub marginalis_version: String,
     pub limits: McpNoteProfileLimits,
     pub normalization: McpNoteProfileNormalization,
     pub syntax: McpNoteProfileSyntax,
@@ -534,7 +542,7 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
         ),
         McpToolContract::new::<McpGetNoteFragmentInput, McpNoteFragmentOutput>(
             McpToolName::GetNoteFragment,
-            "Read the verbatim AsciiDoc source of an inclusive 1-based line range; requires notes:read",
+            "Read the verbatim AsciiDoc source of an inclusive 1-based line range; pass the revision from get_note_outline as expected_revision so a concurrent update is rejected as a conflict instead of returning lines the outline no longer describes; requires notes:read",
         ),
         McpToolContract::new::<McpCreateNoteInput, McpNoteRevisionOutput>(
             McpToolName::CreateNote,

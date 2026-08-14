@@ -107,6 +107,10 @@ MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取
   原文に``[#id]``と明示されたアンカー（ない見出しでは``null``）、1始まりで両端を含む行範囲を
   返します。節の範囲は子節を含み、親子の範囲は重なります。
 . ``get_note_fragment``で、選んだ行範囲のAsciiDoc原文をそのまま取得します。要約や変換は行いません。
+  outlineで得たrevisionを``expected_revision``へ渡すと、outline取得後に別の操作でノートが
+  更新されていた場合に、古い行範囲の本文を返さず``conflict``として拒否します。省略した場合は
+  現在の本文を返すため、応答のrevisionをoutlineの値と比較し、異なればoutlineから取り直して
+  ください。
 . ``apply_note_patch``で、変更箇所だけをUnified Diffとして送ります。
 
 ``apply_note_patch``のpatchは、``--- a/note.adoc``と``+++ b/note.adoc``のfile headerを持つ
@@ -141,6 +145,27 @@ diff -u --label a/note.adoc --label b/note.adoc current.adoc updated.adoc
 全面的な書き直し、外部からの取り込み、復旧には``replace_note_source``で原文全体を置き換えます。
 旧``update_note``はこのtoolへ改名され、``update_note``という名前の呼出しは未知のtoolとして
 失敗します。
+
+=== tool一覧が古い場合
+
+サーバーは``tools/list``の応答を保存せず、要求のたびに実行中のサーバーへ組み込まれた
+tool定義からその場で生成します。このため、返される一覧は常に動作中の版と一致し、
+サーバー側に古い一覧が残ることはありません。廃止済みのtool（``update_note``など）が見えたり、
+新しいtoolを名前で呼び出せなかったりする場合は、クライアント側が過去に取得した
+``tools/list``をcacheしています。
+
+世代は次の2か所で確認できます。tool契約はMarginalisの版と同時にしか変わりません。
+
+* ``get_note_profile``の``marginalis_version``（tool呼び出しだけで確認できます）
+* initialize応答の``serverInfo.version``
+
+``profile_version``はノート記述規則の版であり、tool契約の版ではありません。
+
+Marginalisのtransportはstateless HTTPのため、tool一覧の変更をサーバーからクライアントへ
+通知する手段（``notifications/tools/list_changed``）はありません。cacheの更新はクライアント側の
+操作だけが行えます。再接続で更新されない場合は、クライアントのMCPコネクター（サーバー登録）を
+いったん削除して登録し直してください。認可はサーバー側に残っているため、再登録後のOAuthは
+既存tokenの範囲で完了します。
 
 == ノート記述規則と診断
 
@@ -264,9 +289,12 @@ ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノー�
 [arabic]
 . 公開MCP URLだけを指定し、初回challengeが``notes:read``だけを示すことを確認して接続します。metadataの
 発見、client登録、Kanidmへのログインを経て、``notes:read``だけに同意します。
-. ``tools/list``を取得し、ノートの一覧と本文を読み取ります。作成経路と人手確認状態が表示され、
+. ``tools/list``を取得し、公開している13件のtool名と完全に一致することを確認します。廃止済みの
+``update_note``が残っている場合はクライアントのcacheであり、コネクターの再登録で更新してから
+続けます。ノートの一覧と本文を読み取り、作成経路と人手確認状態が表示され、
 ``list_notes``で両方を絞り込めることも確認します。``get_note_outline``で見出しと行範囲を取得し、
-``get_note_fragment``で選んだ範囲の原文だけが返ることを確認します。``apply_note_patch``を呼び出し、
+``get_note_fragment``へoutlineのrevisionを``expected_revision``として渡して、選んだ範囲の原文だけが
+返ることを確認します。``apply_note_patch``を呼び出し、
 ``notes:read notes:write``を示す追加認可が始まることを確認します。
 . 一度は追加認可を拒否し、更新できず、元のread tokenで閲覧を続けられることを確認します。再度実行して
 ``notes:write``にも同意し、新しいtokenで更新できることを確認します。
