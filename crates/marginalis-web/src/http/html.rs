@@ -51,8 +51,15 @@ pub(super) fn page_document(
                 ""
             };
             format!(
-                "<li><a class=\"inline-flex min-h-11 w-full items-center rounded-sm px-3 py-2 text-sm font-semibold text-muted-foreground no-underline hover:bg-muted hover:text-foreground aria-[current=page]:bg-secondary aria-[current=page]:text-secondary-foreground\" href=\"{}\"{marker}>{label}</a></li>",
-                escape_html(&external_path(cookie_path, href)),
+                concat!(
+                    "<li><a class=\"inline-flex min-h-11 w-full items-center rounded-sm px-3 py-2 text-sm ",
+                    "font-semibold text-muted-foreground no-underline hover:bg-muted hover:text-foreground ",
+                    "aria-[current=page]:bg-secondary aria-[current=page]:text-secondary-foreground\"",
+                    " href=\"{href}\"{marker}>{label}</a></li>",
+                ),
+                href = escape_html(&external_path(cookie_path, href)),
+                marker = marker,
+                label = label,
             )
         })
         .collect::<String>();
@@ -60,7 +67,13 @@ pub(super) fn page_document(
     // detailsとsummaryを使い、開閉にJavaScriptを必要としない。開閉の仕組みに関わる
     // 見た目(summaryの表示切替と::details-content)はlayout.cssのnavigation-*が受け持つ。
     let navigation = format!(
-        "<details class=\"navigation-menu\"><summary class=\"navigation-menu-button\">メニュー</summary><ul class=\"navigation-list m-0 flex list-none items-center gap-1 p-0\">{destinations}</ul></details>",
+        concat!(
+            "<details class=\"navigation-menu\">",
+            "<summary class=\"navigation-menu-button\">メニュー</summary>",
+            "<ul class=\"navigation-list m-0 flex list-none items-center gap-1 p-0\">{destinations}</ul>",
+            "</details>",
+        ),
+        destinations = destinations,
     );
     let new_note = external_path(cookie_path, "/notes/new");
     let home = external_path(cookie_path, "/");
@@ -74,15 +87,38 @@ pub(super) fn page_document(
             )
         })
         .collect::<String>();
+    // 1要素を1行とし、長いclass一覧はclassの区切りで行を分ける(連結して同じ1文字列になる)。
     format!(
-        "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\">{}</head><body><header class=\"page-header sticky top-0 z-20 px-4 pt-3 min-[60rem]:px-10\"><div class=\"mx-auto flex min-h-16 max-w-(--content-width) flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border bg-card/90 px-4 py-2 shadow-xs backdrop-blur-lg min-[60rem]:px-10\"><a class=\"brand inline-flex items-center gap-3 font-bold tracking-tight text-foreground no-underline\" href=\"{}\"><span class=\"grid size-8 place-items-center rounded-sm bg-primary text-sm text-primary-foreground\" aria-hidden=\"true\">M</span><span>Marginalis</span></a><nav class=\"flex items-center justify-end gap-2\" aria-label=\"主要な画面\">{}<a class=\"inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium whitespace-nowrap text-primary-foreground no-underline hover:bg-primary/90\" href=\"{}\">新規ノート</a></nav></div></header><main class=\"page-main mx-auto max-w-(--content-width) px-4 pt-8 pb-20 min-[60rem]:px-10 min-[60rem]:pt-12 min-[60rem]:pb-28\">{}</main></body></html>",
-        escape_html(title),
-        escape_html(&stylesheet),
-        scripts,
-        escape_html(&home),
-        navigation,
-        escape_html(&new_note),
-        content,
+        concat!(
+            "<!doctype html><html lang=\"ja\"><head>",
+            "<meta charset=\"utf-8\">",
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
+            "<title>{title}</title>",
+            "<link rel=\"stylesheet\" href=\"{stylesheet}\">{scripts}</head><body>",
+            "<header class=\"page-header sticky top-0 z-20 px-4 pt-3 min-[60rem]:px-10\">",
+            "<div class=\"mx-auto flex min-h-16 max-w-(--content-width) flex-wrap items-center justify-between ",
+            "gap-x-3 gap-y-2 rounded-lg border bg-card/90 px-4 py-2 shadow-xs backdrop-blur-lg ",
+            "min-[60rem]:px-10\">",
+            "<a class=\"brand inline-flex items-center gap-3 font-bold tracking-tight text-foreground ",
+            "no-underline\" href=\"{home}\">",
+            "<span class=\"grid size-8 place-items-center rounded-sm bg-primary text-sm ",
+            "text-primary-foreground\" aria-hidden=\"true\">M</span>",
+            "<span>Marginalis</span></a>",
+            "<nav class=\"flex items-center justify-end gap-2\" aria-label=\"主要な画面\">{navigation}",
+            "<a class=\"inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-primary px-4 py-2 ",
+            "text-sm font-medium whitespace-nowrap text-primary-foreground no-underline ",
+            "hover:bg-primary/90\" href=\"{new_note}\">新規ノート</a>",
+            "</nav></div></header>",
+            "<main class=\"page-main mx-auto max-w-(--content-width) px-4 pt-8 pb-20 ",
+            "min-[60rem]:px-10 min-[60rem]:pt-12 min-[60rem]:pb-28\">{content}</main></body></html>",
+        ),
+        title = escape_html(title),
+        stylesheet = escape_html(&stylesheet),
+        scripts = scripts,
+        home = escape_html(&home),
+        navigation = navigation,
+        new_note = escape_html(&new_note),
+        content = content,
     )
 }
 
