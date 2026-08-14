@@ -32,14 +32,18 @@ describe("note list state", () => {
     ).toEqual({
       tags: ["research", "rust"],
       updatedAfter: "2026-07-01",
+      reviewStatus: "",
       page: 2,
     });
   });
 
   it("不正な日付とページを既定値へ戻す", () => {
-    expect(parseNoteListQuery("?updated_after=2026-02-30&page=-1")).toEqual({
+    expect(
+      parseNoteListQuery("?updated_after=2026-02-30&page=-1&review_status=x"),
+    ).toEqual({
       tags: [],
       updatedAfter: "",
+      reviewStatus: "",
       page: 1,
     });
   });
@@ -57,6 +61,7 @@ describe("note list state", () => {
       selectNoteListPage(notes, {
         tags: ["research", "rust"],
         updatedAfter: "2026-07-01",
+        reviewStatus: "",
         page: 9,
       }),
     ).toMatchObject({ notes: [notes[0]], page: 1, pageCount: 1, total: 1 });
@@ -70,6 +75,7 @@ describe("note list state", () => {
     const page = selectNoteListPage([before, boundary], {
       tags: [],
       updatedAfter: "2026-03-08",
+      reviewStatus: "",
       page: 1,
     });
 
@@ -92,6 +98,7 @@ describe("note list state", () => {
         selectNoteListPage([before, boundary], {
           tags: [],
           updatedAfter: "2026-03-08",
+          reviewStatus: "",
           page: 1,
         }).notes,
       ).toEqual([boundary]);
@@ -110,6 +117,7 @@ describe("note list state", () => {
       selectNoteListPage([excluded, included], {
         tags: [],
         updatedAfter: "0099-01-02",
+        reviewStatus: "",
         page: 1,
       }).notes,
     ).toEqual([included]);
@@ -120,11 +128,40 @@ describe("note list state", () => {
       Array.from({ length: NOTE_LIST_PAGE_SIZE + 1 }, (_, index) =>
         note(index + 1),
       ),
-      { tags: [], updatedAfter: "", page: 2 },
+      { tags: [], updatedAfter: "", reviewStatus: "", page: 2 },
     );
     expect(page.notes).toHaveLength(1);
-    expect(noteListSearch({ tags: ["rust"], updatedAfter: "", page: 2 })).toBe(
-      "?tag=rust&page=2",
+    expect(
+      noteListSearch({
+        tags: ["rust"],
+        updatedAfter: "",
+        reviewStatus: "",
+        page: 2,
+      }),
+    ).toBe("?tag=rust&page=2");
+  });
+
+  it("確認状態で絞り込み、条件をURLへ反映する", () => {
+    const pending = note(1);
+    const reviewed = { ...note(2), review_status: "reviewed" as const };
+    expect(
+      selectNoteListPage([pending, reviewed], {
+        tags: [],
+        updatedAfter: "",
+        reviewStatus: "reviewed",
+        page: 1,
+      }).notes,
+    ).toEqual([reviewed]);
+    expect(parseNoteListQuery("?review_status=pending").reviewStatus).toBe(
+      "pending",
     );
+    expect(
+      noteListSearch({
+        tags: [],
+        updatedAfter: "",
+        reviewStatus: "pending",
+        page: 1,
+      }),
+    ).toBe("?review_status=pending");
   });
 });

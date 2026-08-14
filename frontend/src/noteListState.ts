@@ -2,9 +2,12 @@ import { NoteListEntry } from "./api";
 
 export const NOTE_LIST_PAGE_SIZE = 20;
 
+export type NoteReviewFilter = "" | "pending" | "reviewed";
+
 export interface NoteListQuery {
   tags: string[];
   updatedAfter: string;
+  reviewStatus: NoteReviewFilter;
   page: number;
 }
 
@@ -23,10 +26,12 @@ export function parseNoteListQuery(search: string): NoteListQuery {
     .map((value) => value.trim())
     .filter((value, index, values) => value && values.indexOf(value) === index);
   const updatedAfter = validDate(parameters.get("updated_after") ?? "");
+  const reviewStatus = validReviewFilter(parameters.get("review_status") ?? "");
   const requestedPage = Number(parameters.get("page") ?? "1");
   return {
     tags,
     updatedAfter,
+    reviewStatus,
     page:
       Number.isSafeInteger(requestedPage) && requestedPage > 0
         ? requestedPage
@@ -43,6 +48,9 @@ export function noteListSearch(
   if (query.updatedAfter) {
     parameters.set("updated_after", query.updatedAfter);
   }
+  if (query.reviewStatus) {
+    parameters.set("review_status", query.reviewStatus);
+  }
   if (page > 1) parameters.set("page", String(page));
   const value = parameters.toString();
   return value ? `?${value}` : "";
@@ -56,7 +64,8 @@ export function selectNoteListPage(
   const filtered = notes.filter(
     (note) =>
       query.tags.every((tag) => note.tags.includes(tag)) &&
-      (cutoff === null || note.updated_at_ms >= cutoff),
+      (cutoff === null || note.updated_at_ms >= cutoff) &&
+      (query.reviewStatus === "" || note.review_status === query.reviewStatus),
   );
   const pageCount = Math.max(
     1,
@@ -88,4 +97,8 @@ function validDate(value: string): string {
     date.toISOString().slice(0, 10) !== value
     ? ""
     : value;
+}
+
+function validReviewFilter(value: string): NoteReviewFilter {
+  return value === "pending" || value === "reviewed" ? value : "";
 }
