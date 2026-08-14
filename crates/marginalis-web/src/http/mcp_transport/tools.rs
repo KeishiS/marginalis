@@ -9,13 +9,13 @@ use marginalis_contract::{
     DiagnosticSeverityResponse, McpAddBibliographyItemInput, McpApplyNotePatchInput,
     McpBibliographyItem, McpBibliographyListOutput, McpCreateNoteInput,
     McpDeleteBibliographyItemInput, McpDeleteNoteInput, McpEmptyInput, McpGetNoteFragmentInput,
-    McpGetNoteInput, McpGetNoteOutlineInput, McpGetNoteOutput, McpListNotesInput,
-    McpListNotesOutput, McpNoteFragmentOutput, McpNoteOutlineOutput, McpNoteOutlineSection,
-    McpNotePatchOutput, McpNoteProfileAdvisoryRule, McpNoteProfileExample, McpNoteProfileLimits,
-    McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule, McpNoteProfileSyntax,
-    McpNoteRevisionOutput, McpReplaceNoteSourceInput, McpSearchBibliographyInput, McpSyncEntry,
-    McpSyncNotesInput, McpSyncNotesOutput, McpSyncPhase, McpSyncRemovalReason, McpToolName,
-    ProblemResponse,
+    McpGetNoteInput, McpGetNoteOutlineInput, McpGetNoteOutput, McpListNoteTemplatesOutput,
+    McpListNotesInput, McpListNotesOutput, McpNoteFragmentOutput, McpNoteOutlineOutput,
+    McpNoteOutlineSection, McpNotePatchOutput, McpNoteProfileAdvisoryRule, McpNoteProfileExample,
+    McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule,
+    McpNoteProfileSyntax, McpNoteRevisionOutput, McpReplaceNoteSourceInput,
+    McpSearchBibliographyInput, McpSyncEntry, McpSyncNotesInput, McpSyncNotesOutput, McpSyncPhase,
+    McpSyncRemovalReason, McpToolName, ProblemResponse,
 };
 use marginalis_domain::{
     Actor, BibliographyItemId, EntityId, Note, NoteCreationSource, NoteDraft, Revision,
@@ -68,6 +68,7 @@ pub(super) fn decode_tool_call(params: Option<serde_json::Value>) -> Result<McpT
 #[serde(untagged)]
 enum McpToolOutput {
     NoteList(McpListNotesOutput),
+    NoteTemplateList(McpListNoteTemplatesOutput),
     NoteSync(McpSyncNotesOutput),
     NoteProfile(Box<McpNoteProfileOutput>),
     Note(McpGetNoteOutput),
@@ -90,6 +91,21 @@ impl McpToolOutput {
                     if count == 1 { "note" } else { "notes" }
                 );
                 for note in &output.notes {
+                    let _ = write!(
+                        text,
+                        "\n- {} — {} (revision {})",
+                        note.note_id, note.title, note.revision
+                    );
+                }
+                text
+            }
+            Self::NoteTemplateList(output) => {
+                let count = output.templates.len();
+                let mut text = format!(
+                    "{count} template {}.",
+                    if count == 1 { "note" } else { "notes" }
+                );
+                for note in &output.templates {
                     let _ = write!(
                         text,
                         "\n- {} — {} (revision {})",
@@ -458,6 +474,9 @@ async fn execute_mcp_tool(
 ) -> Result<McpToolOutput, McpToolFailure> {
     match call.tool {
         Some(McpToolName::ListNotes) => list_notes_tool(notes, actor, call.arguments).await,
+        Some(McpToolName::ListNoteTemplates) => {
+            list_note_templates_tool(notes, actor, &call.arguments).await
+        }
         Some(McpToolName::SyncNotes) => sync_notes_tool(notes, actor, call.arguments).await,
         Some(McpToolName::GetNoteProfile) => get_note_profile_tool(notes, &call.arguments),
         Some(McpToolName::GetNote) => get_note_tool(notes, actor, call.arguments).await,
@@ -552,6 +571,30 @@ async fn list_notes_tool(
         .map(|notes| {
             McpToolOutput::NoteList(McpListNotesOutput {
                 notes: notes
+                    .into_iter()
+                    .map(|entry| crate::http::notes::note_summary_response(entry.summary))
+                    .collect(),
+            })
+        })
+        .map_err(McpToolFailure::UseCase)
+}
+
+async fn list_note_templates_tool(
+    notes: &dyn NoteUseCases,
+    actor: Actor,
+    arguments: &serde_json::Value,
+) -> Result<McpToolOutput, McpToolFailure> {
+    if arguments.as_object().is_none_or(|value| !value.is_empty()) {
+        return Err(McpToolFailure::InvalidArguments(
+            "template list arguments are invalid",
+        ));
+    }
+    notes
+        .list_note_templates(actor)
+        .await
+        .map(|templates| {
+            McpToolOutput::NoteTemplateList(McpListNoteTemplatesOutput {
+                templates: templates
                     .into_iter()
                     .map(|entry| crate::http::notes::note_summary_response(entry.summary))
                     .collect(),

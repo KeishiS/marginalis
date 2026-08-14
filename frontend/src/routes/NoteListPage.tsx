@@ -216,11 +216,19 @@ function NoteListFilters({
           defaultValue={query.updatedAfter}
         />
       </label>
+      <label className="grid gap-1 text-sm font-semibold">
+        人手確認
+        <select name="review_status" defaultValue={query.reviewStatus}>
+          <option value="">すべて</option>
+          <option value="pending">確認待ち</option>
+          <option value="reviewed">確認済み</option>
+        </select>
+      </label>
       <input name="page" type="hidden" value="1" readOnly />
       <Button variant="outline" type="submit">
         絞り込む
       </Button>
-      {(query.tags.length > 0 || query.updatedAfter) && (
+      {(query.tags.length > 0 || query.updatedAfter || query.reviewStatus) && (
         <Button variant="ghost" asChild>
           <a href={externalPath(config.basePath, "/")}>条件を解除</a>
         </Button>
