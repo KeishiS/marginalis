@@ -22,7 +22,9 @@ Pull Requestを``main``へマージします。
 . ``main``の先端で``release-gate``ワークフローを手動実行します。``release_tag``には作成予定の
 タグを入力し、検証の成功を確認します。
 . 検証した``main``の先端へリリースタグを作成してプッシュし、タグのプッシュで再実行される
-``release-gate``も成功することを確認します。
+``release-gate``も成功することを確認します。タグ起点の検証はタグの内容そのものに対して
+行われるため、実行中に別のPull Requestが``main``へマージされても失敗しません(タグが
+``main``上のcommitであることは検証されます)。
 . タグのプッシュで実行された``release-gate``が成功すると、``draft-release``ジョブが同じタグの
 内容から下書きのGitHub Releaseを自動作成します。公開した版の機械可読な契約を取得できるように、
 対象タグに記録された``docs/openapi.json``と``docs/mcp-tools.json``が同名のassetとして下書きへ
