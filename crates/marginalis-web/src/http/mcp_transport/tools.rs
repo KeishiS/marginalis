@@ -132,9 +132,10 @@ impl McpToolOutput {
             }
             Self::NoteProfile(output) => {
                 let mut text = format!(
-                    "Note profile version {} (AdocWeave {}).\nMCP note writes reject warnings: {}.\nLimits after normalization: title {} characters, source {} bytes, {} tags, {} characters per tag.",
+                    "Note profile version {} (AdocWeave {}, Marginalis {}).\nMCP note writes reject warnings: {}.\nLimits after normalization: title {} characters, source {} bytes, {} tags, {} characters per tag.",
                     output.profile_version,
                     output.adocweave_package_version,
+                    output.marginalis_version,
                     output.warnings_reject_write,
                     output.limits.max_title_characters,
                     output.limits.max_source_bytes,
@@ -685,8 +686,25 @@ async fn get_note_fragment_tool(
     let Some(note_id) = parse_note_id(&input.note_id).ok() else {
         return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
     };
+    let expected_revision = match input.expected_revision {
+        None => None,
+        Some(revision) => match Revision::new(revision) {
+            Ok(revision) => Some(revision),
+            Err(_) => {
+                return Err(McpToolFailure::InvalidArguments(
+                    "expected_revision is invalid",
+                ));
+            }
+        },
+    };
     notes
-        .read_note_fragment(actor, note_id, input.start_line, input.end_line)
+        .read_note_fragment(
+            actor,
+            note_id,
+            input.start_line,
+            input.end_line,
+            expected_revision,
+        )
         .await
         .map(|(note, fragment)| {
             McpToolOutput::NoteFragment(McpNoteFragmentOutput {
@@ -957,6 +975,8 @@ fn note_profile_output(profile: NoteProfile) -> McpNoteProfileOutput {
     McpNoteProfileOutput {
         profile_version: profile.profile_version,
         adocweave_package_version: profile.adocweave_package_version.into(),
+        // workspace全体で版を共有するため、このcrateの版がserverの版と一致する。
+        marginalis_version: env!("CARGO_PKG_VERSION").to_owned(),
         limits: McpNoteProfileLimits {
             applies_after_normalization: true,
             max_title_characters: profile.limits.max_title_characters,
