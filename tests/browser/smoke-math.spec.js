@@ -1,15 +1,6 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
-const {
-  pendingWebProvenance,
-  escapeHtml,
-  SCREENSHOT_OPTIONS,
-  editorScreenshotOptions,
-  detailScreenshotOptions,
-} = require("./fixtures/smoke-helpers");
 
-test("数式を組版したまま執筆とプレビューを切り替える", async ({
-  page,
-}) => {
+test("数式を組版したまま執筆とプレビューを切り替える", async ({ page }) => {
   const fontRequests = [];
   const extensionResponses = [];
   page.on("request", (request) => {

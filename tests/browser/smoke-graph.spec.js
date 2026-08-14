@@ -1,9 +1,6 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
 const {
-  pendingWebProvenance,
-  escapeHtml,
   SCREENSHOT_OPTIONS,
-  editorScreenshotOptions,
   detailScreenshotOptions,
 } = require("./fixtures/smoke-helpers");
 

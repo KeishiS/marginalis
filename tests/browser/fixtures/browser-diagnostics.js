@@ -58,7 +58,6 @@ const test = base.extend({
   ],
 });
 
-
 module.exports = {
   browserDiagnostic,
   diagnosticSummary,

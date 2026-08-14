@@ -2,9 +2,7 @@ const { expect, test } = require("./fixtures/browser-diagnostics");
 const {
   pendingWebProvenance,
   escapeHtml,
-  SCREENSHOT_OPTIONS,
   editorScreenshotOptions,
-  detailScreenshotOptions,
 } = require("./fixtures/smoke-helpers");
 
 test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", async ({ page }) => {

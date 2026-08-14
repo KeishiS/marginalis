@@ -386,6 +386,14 @@ cwd = "frontend"
 command = "pnpm"
 args = ["run", "lint"]
 
+# flat configは設定ファイルの場所を基点とするため、リポジトリ直下のeslint.config.jsを
+# 使いworkspace直下から実行する。整形はfrontendのformat:checkがtests/browserも含める。
+[tasks.browser-tests-lint]
+description = "Lint the Playwright specs in tests/browser"
+dependencies = ["frontend-install"]
+command = "frontend/node_modules/.bin/eslint"
+args = ["--max-warnings", "0", "tests/browser"]
+
 [tasks.frontend-lint-css]
 description = "Reject colours, spacing and font sizes written outside the design tokens"
 dependencies = ["frontend-install"]
@@ -470,4 +478,4 @@ echo "self-hosted Web fonts: ${font_bytes}/${maximum_font_bytes} bytes"
 
 [tasks.frontend-verify]
 description = "Run frontend formatting, analysis, tests, audit, and build"
-dependencies = ["frontend-format-check", "frontend-lint", "frontend-lint-css", "frontend-typecheck", "frontend-test", "frontend-security-audit", "frontend-build", "frontend-bundle-size"]
+dependencies = ["frontend-format-check", "frontend-lint", "browser-tests-lint", "frontend-lint-css", "frontend-typecheck", "frontend-test", "frontend-security-audit", "frontend-build", "frontend-bundle-size"]
