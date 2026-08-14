@@ -241,7 +241,7 @@ export function McpAccessSettingsPage({
       <PageHeader
         eyebrow="Settings"
         title="MCPのアクセス制御"
-        description="あなたのノートと書誌情報について、MCPクライアントへ許可できる操作の上限を設定します。各クライアントへ実際に与える権限は、この上限を超えません。"
+        description="あなたのノートと文献情報について、MCPクライアントへ許可できる操作の上限を設定します。各クライアントへ実際に与える権限は、この上限を超えません。"
       >
         <Button variant="outline" asChild>
           <a href={externalPath(config.basePath, "/settings")}>設定へ戻る</a>

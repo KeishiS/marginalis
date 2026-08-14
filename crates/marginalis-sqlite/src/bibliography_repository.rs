@@ -1,4 +1,4 @@
-//! CSL-JSON書誌ライブラリーのSQLite実装。
+//! CSL-JSON文献ライブラリのSQLite実装。
 
 use std::str::FromStr;
 

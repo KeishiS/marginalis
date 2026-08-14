@@ -174,7 +174,7 @@ fn patch_rejection_diagnostic(
     }
 }
 
-/// 書誌ライブラリー操作の失敗を公開エラー表現へ写像する唯一の関数。
+/// 文献ライブラリ操作の失敗を公開エラー表現へ写像する唯一の関数。
 pub(super) fn bibliography_problem(error: BibliographyUseCaseError) -> ProblemResponse {
     match error {
         BibliographyUseCaseError::InvalidSearchQuery => ProblemResponse::new(

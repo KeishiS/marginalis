@@ -1,4 +1,4 @@
-//! 利用者ごとのCSL-JSON書誌ライブラリー。
+//! 利用者ごとのCSL-JSON文献ライブラリ。
 
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{Clock, Random, StorageError};
 
-/// 書誌ライブラリー操作の失敗理由。
+/// 文献ライブラリ操作の失敗理由。
 ///
 /// ここでの文言は開発者向けの記録用であり、利用者向けの`code`と`message`は
 /// transport側の写像が決める。
@@ -38,7 +38,7 @@ impl From<StorageError> for BibliographyUseCaseError {
             StorageError::NotFound => Self::NotFound,
             StorageError::Conflict => Self::Conflict,
             StorageError::CorruptData => Self::CorruptData,
-            // 書誌ライブラリーに保存期限は無く、`RetentionExpired`はこの系統では発生しない。
+            // 文献ライブラリに保存期限は無く、`RetentionExpired`はこの系統では発生しない。
             StorageError::RetentionExpired | StorageError::Unavailable => Self::Unavailable,
         }
     }
@@ -52,9 +52,9 @@ pub trait BibliographyRepository: Send + Sync {
         query: &str,
     ) -> Result<Vec<BibliographyItem>, StorageError>;
 
-    /// 指定した所有者のライブラリーから、citation keyが一致する項目だけを読み取る。
+    /// 指定した所有者のライブラリから、citation keyが一致する項目だけを読み取る。
     ///
-    /// ノートの引用は作成者のライブラリーで解決するため、閲覧している利用者ではなく
+    /// ノートの引用は作成者のライブラリで解決するため、閲覧している利用者ではなく
     /// 所有者のidentityを受け取る。呼び出し側は、閲覧できるノートの描画にだけ使う。
     async fn items_by_citation_keys(
         &self,
@@ -82,7 +82,7 @@ pub trait BibliographyRepository: Send + Sync {
     ) -> Result<(), StorageError>;
 }
 
-/// transportへ公開する書誌ライブラリー操作のapplication service。
+/// transportへ公開する文献ライブラリ操作のapplication service。
 ///
 /// 実装がこの1つだけでテストダブルも無いため、traitを介さず具体型のまま公開する。
 pub struct BibliographyApplication {

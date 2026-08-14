@@ -397,7 +397,7 @@ impl Random for FixedRandom {
     }
 }
 
-/// 引用のないノートだけを扱う試験用の書誌ライブラリー。
+/// 引用のないノートだけを扱う試験用の文献ライブラリ。
 pub(super) struct EmptyLibrary;
 
 #[async_trait]
@@ -502,7 +502,7 @@ impl MathMacroRepository for OwnerMathMacros {
     }
 }
 
-/// 1件だけ登録された書誌ライブラリー。所有者が一致する問い合わせにだけ答える。
+/// 1件だけ登録された文献ライブラリ。所有者が一致する問い合わせにだけ答える。
 pub(super) struct OneItemLibrary;
 
 impl OneItemLibrary {

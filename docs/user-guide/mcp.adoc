@@ -62,14 +62,14 @@ redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を
 |``notes:sync``
 |外部の検索用コピーとの継続同期
 |``bibliography:read``
-|書誌情報の検索
+|文献情報の検索
 |``bibliography:write``
-|書誌情報の追加
+|文献情報の追加
 |``bibliography:delete``
-|書誌情報の削除
+|文献情報の削除
 |===
 
-ノート用scopeは書誌情報の操作を許可せず、書誌用scopeもノートの操作を許可しません。たとえば、
+ノート用scopeは文献情報の操作を許可せず、文献用scopeもノートの操作を許可しません。たとえば、
 ``notes:read``だけを持つtokenで``search_bibliography``を呼び出すと、``bibliography:read``を示す
 ``403 insufficient_scope``を返します。
 
@@ -171,7 +171,7 @@ Marginalisのtransportはstateless HTTPのため、tool一覧の変更をサー�
 
 ノートを作成または更新する前に``get_note_profile``を呼び出します。このtoolは、入力上限、正規化、
 使用できるAsciiDoc記法、禁止規則、文書例に加えて、実効的な``advisory_rules``を返します。
-``advisory_rules``の文書規則はAdocWeaveのlint規則とMarginalisの解析設定から生成し、書誌ライブラリーに
+``advisory_rules``の文書規則はAdocWeaveのlint規則とMarginalisの解析設定から生成し、文献ライブラリに
 無い引用キーの規則は引用解決処理と同じapplication定数から加えるため、実際の検査条件と別々には
 管理しません。``warnings_reject_write``が``true``の場合、``warning``が一件でもある入力は
 ``create_note``、``apply_note_patch``、``replace_note_source``で保存されません。``information``と``hint``だけでは拒否されません。
@@ -277,7 +277,7 @@ Protected Resource Metadataから内蔵Authorization Serverを発見し、ブラ
 更新前にAuth0で発行したaccess token、refresh token、client IDは内蔵Authorization Serverへ移行されません。
 更新後はクライアント側の既存接続を削除し、改めて接続してください。
 
-v0.29.0より前に発行したtokenには書誌用scopeが含まれません。MCPから書誌情報を操作する場合は、
+v0.29.0より前に発行したtokenには文献用scopeが含まれません。MCPから文献情報を操作する場合は、
 クライアントを改めて認可し、必要な``bibliography:*`` scopeへ同意してください。既存tokenへ新しいscopeが
 自動で追加されることはありません。
 

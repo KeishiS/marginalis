@@ -603,7 +603,7 @@ async fn every_rest_contract_has_a_registered_router_method() {
 /// 図の要求は、認可を通したうえで点と線をそのまま写す。
 #[tokio::test]
 async fn the_note_graph_endpoint_returns_visible_notes_and_filters_by_word() {
-    let app = ui_app(vec![ui_note("関係の図")], false, "/");
+    let app = ui_app(vec![ui_note("グラフビュー")], false, "/");
     let response = app
         .clone()
         .oneshot(authenticated_request("/api/v3/notes/graph"))
@@ -622,7 +622,7 @@ async fn the_note_graph_endpoint_returns_visible_notes_and_filters_by_word() {
     assert!(graph["notes"][0].get("source").is_none());
     assert!(graph["works"].as_array().expect("works").is_empty());
 
-    let filtered = ui_app(vec![ui_note("関係の図")], false, "/")
+    let filtered = ui_app(vec![ui_note("グラフビュー")], false, "/")
         .oneshot(authenticated_request(
             "/api/v3/notes/graph?query=%E4%B8%80%E8%87%B4%E3%81%97%E3%81%AA%E3%81%84",
         ))
@@ -646,7 +646,7 @@ async fn the_note_graph_endpoint_rejects_an_unusable_scope() {
         "/api/v3/notes/graph?origin=0197c9bc-0000-7000-8000-000000000001&depth=0",
         "/api/v3/notes/graph?origin=0197c9bc-0000-7000-8000-000000000001&depth=6",
     ] {
-        let response = ui_app(vec![ui_note("関係の図")], false, "/")
+        let response = ui_app(vec![ui_note("グラフビュー")], false, "/")
             .oneshot(authenticated_request(path))
             .await
             .expect("response");
@@ -657,7 +657,7 @@ async fn the_note_graph_endpoint_rejects_an_unusable_scope() {
 /// 認証していない要求は図を返さない。
 #[tokio::test]
 async fn the_note_graph_endpoint_requires_authentication() {
-    let response = ui_app(vec![ui_note("関係の図")], false, "/")
+    let response = ui_app(vec![ui_note("グラフビュー")], false, "/")
         .oneshot(
             Request::get("/api/v3/notes/graph")
                 .body(Body::empty())

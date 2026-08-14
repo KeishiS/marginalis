@@ -57,7 +57,7 @@ pub const TAGS_DOCUMENT_ATTRIBUTE: &str = "marginalis-tags";
 /// 引用の表示スタイルを選ぶ文書属性の名前。
 pub const CITATION_STYLE_DOCUMENT_ATTRIBUTE: &str = "marginalis-citation-style";
 
-/// 関係の図で、起点から辿れる線の本数の上限。
+/// グラフビューで、起点から辿れる線の本数の上限。
 ///
 /// 上限がないと、階層数の指定が全体表示と変わらなくなり、範囲を絞ろうとした利用者の意図と
 /// 離れる。読み取りの入力規則であるため、ノート入力の規則とは別に置く。

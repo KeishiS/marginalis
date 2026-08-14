@@ -29,7 +29,7 @@ pub enum NoteReferenceResolution {
     },
 }
 
-/// 本文が書誌ライブラリーへ問い合わせる引用1件。
+/// 本文が文献ライブラリへ問い合わせる引用1件。
 ///
 /// `cite:[a, b]`のように1つの引用が複数のcitation keyを名指すため、keyは並びで持つ。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,7 +44,7 @@ pub struct NoteCitationQuery {
     pub position: NoteSourcePosition,
 }
 
-/// 書誌ライブラリーで解決を終えた引用の表示。
+/// 文献ライブラリで解決を終えた引用の表示。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteCitationResolution {
     pub citation_index: usize,

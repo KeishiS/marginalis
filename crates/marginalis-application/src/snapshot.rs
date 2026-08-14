@@ -127,7 +127,7 @@ impl LogicalSnapshot {
         })
     }
 
-    /// 書誌項目と取込元との対応を、一つの整合性境界として追加する。
+    /// 文献項目と取込元との対応を、一つの整合性境界として追加する。
     pub fn with_bibliography_data(
         mut self,
         bibliography_items: Vec<BibliographyItem>,

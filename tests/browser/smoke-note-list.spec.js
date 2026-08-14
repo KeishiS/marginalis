@@ -64,8 +64,8 @@ test("production build starts and renders a note returned by the API", async ({
   await expect(menu).toHaveAttribute("open", "");
   for (const [label, href] of [
     ["ノート", "/"],
-    ["書誌", "/bibliography"],
-    ["関係の図", "/graph"],
+    ["文献", "/bibliography"],
+    ["グラフビュー", "/graph"],
     ["設定", "/settings"],
   ]) {
     const destination = navigation.getByRole("link", {

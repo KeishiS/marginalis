@@ -12,7 +12,7 @@ include!(concat!(env!("OUT_DIR"), "/bundle_assets.rs"));
 /// `dist/assets`直下の配布物を名前で引いて返す。
 ///
 /// 名前を経路へ書き並べません。分割読み込みで増えるchunkは名前へhashが付くため、書き並べる方式では
-/// 新しい出力が配信されないまま気付けません。実際に、関係の図のchunkが404になり、moduleとして
+/// 新しい出力が配信されないまま気付けません。実際に、グラフビューのchunkが404になり、moduleとして
 /// 読み込めずに画面全体が空になりました。
 pub(super) async fn bundle_asset(
     axum::extract::Path(file_name): axum::extract::Path<String>,

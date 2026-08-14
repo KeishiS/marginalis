@@ -1,10 +1,10 @@
-//! ノートと書誌情報の関係の図、および表示範囲の絞り込み。
+//! ノートと文献情報のグラフビュー、および表示範囲の絞り込み。
 
 use std::collections::{HashMap, HashSet};
 
 use marginalis_domain::{MAX_GRAPH_DEPTH, NoteId, UnixMillis};
 
-/// 関係の図に出す点と線。
+/// グラフビューに出す点と線。
 ///
 /// 点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけとする。線は始点と
 /// 終点の両方が点として出る場合だけ返す。閲覧できないノートの存在も件数も現れない。
@@ -25,11 +25,11 @@ pub struct NoteGraphNote {
     pub updated_at: UnixMillis,
 }
 
-/// 図に出す文献。書誌ライブラリーの内容ではなく、引用されたという事実だけを表す。
+/// 図に出す文献。文献ライブラリの内容ではなく、引用されたという事実だけを表す。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteGraphWork {
     pub citation_key: String,
-    /// 引用元のノートを書いた利用者のライブラリーで解決できた場合の題名。
+    /// 引用元のノートを書いた利用者のライブラリで解決できた場合の題名。
     pub title: Option<String>,
 }
 

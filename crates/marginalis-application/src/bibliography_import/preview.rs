@@ -34,7 +34,7 @@ pub(super) fn classify_import(
 /// 入力と、分類に影響する読み取り状態を結び付ける事前確認token。
 ///
 /// 署名や認可tokenではない。適用時に同じ値を再計算し、事前確認後に入力、取込元、対応、
-/// 所有者の書誌ライブラリーのいずれかが変わった場合に、全体を変更せず再確認を求める。
+/// 所有者の文献ライブラリのいずれかが変わった場合に、全体を変更せず再確認を求める。
 pub(super) fn import_state_token(
     input: &BibliographyImportInput,
     state: &BibliographyImportState,

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 pub const API_VERSION: &str = "v3";
 pub const API_PREFIX: &str = "/api/v3";
 
-/// ノートと書誌のrevisionが取り得る最小値。schemars属性から参照する。
+/// ノートと文献のrevisionが取り得る最小値。schemars属性から参照する。
 const MINIMUM_REVISION: i64 = Revision::MINIMUM_VALUE;
 
 /// `#[schemars(required)]`を付けたOption fieldへ、nullを許す型を戻すtransform。
@@ -733,7 +733,7 @@ pub struct NoteViewResponse {
     pub math_macros: Vec<MathMacroResponse>,
 }
 
-/// 関係の図に出す点と線。
+/// グラフビューに出す点と線。
 ///
 /// 点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけを含む。線は始点と
 /// 終点の両方が点として含まれる場合だけ返す。閲覧できないノートの存在も件数も現れない。
@@ -759,13 +759,13 @@ pub struct NoteGraphNoteResponse {
     pub updated_at_ms: i64,
 }
 
-/// 図に出す文献。書誌情報そのものではなく、引用されたという事実を表す。
+/// 図に出す文献。文献情報そのものではなく、引用されたという事実を表す。
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "NoteGraphWork")]
 pub struct NoteGraphWorkResponse {
     pub citation_key: String,
-    /// 引用元のノートを書いた利用者のライブラリーで解決できた場合の題名。
+    /// 引用元のノートを書いた利用者のライブラリで解決できた場合の題名。
     #[schemars(required)]
     #[schemars(transform = nullable)]
     pub title: Option<String>,

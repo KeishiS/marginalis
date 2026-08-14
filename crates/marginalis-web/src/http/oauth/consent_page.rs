@@ -184,9 +184,9 @@ fn scope_description(scope: &str) -> &'static str {
             "sync_notesで、閲覧できるノートの本文と変更を外部の検索用コピーへ継続的に同期します。",
             "許可を取り消しても、Marginalisから外部に保存済みのコピーは削除できません。"
         ),
-        "bibliography:read" => "search_bibliographyで書誌情報を検索します。",
-        "bibliography:write" => "add_bibliography_itemで書誌情報を一項目ずつ追加します。",
-        "bibliography:delete" => "delete_bibliography_itemで書誌情報を削除します。",
+        "bibliography:read" => "search_bibliographyで文献情報を検索します。",
+        "bibliography:write" => "add_bibliography_itemで文献情報を一項目ずつ追加します。",
+        "bibliography:delete" => "delete_bibliography_itemで文献情報を削除します。",
         _ => "このクライアントが要求した権限です。",
     }
 }

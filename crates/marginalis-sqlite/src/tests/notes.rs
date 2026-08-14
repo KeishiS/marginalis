@@ -801,7 +801,7 @@ async fn the_graph_hides_notes_and_edges_the_actor_cannot_see() {
     assert_eq!(reader_graph.notes[0].title, "共有するノート");
     assert!(reader_graph.references.is_empty());
     assert_eq!(reader_graph.citations.len(), 1);
-    // 引用された文献だけが出る。作成者のライブラリーで解決できた題名を添える。
+    // 引用された文献だけが出る。作成者のライブラリで解決できた題名を添える。
     assert_eq!(reader_graph.works.len(), 1);
     assert_eq!(reader_graph.works[0].citation_key, "smith2024");
     assert_eq!(reader_graph.works[0].title.as_deref(), Some("An Example"));

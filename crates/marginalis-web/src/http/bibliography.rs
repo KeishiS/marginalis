@@ -1,4 +1,4 @@
-//! 利用者ごとの書誌ライブラリーREST API。
+//! 利用者ごとの文献ライブラリREST API。
 
 use axum::{
     Json,

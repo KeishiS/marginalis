@@ -63,7 +63,7 @@ test("CSL-JSONの競合をキーボードで解決して一括取り込みする
   await page
     .getByRole("button", { name: "CSL-JSONをまとめて取り込む" })
     .click();
-  await page.getByLabel("取込元の表示名").fill("Zotero研究ライブラリー");
+  await page.getByLabel("取込元の表示名").fill("Zotero研究ライブラリ");
   await page.getByLabel("CSL-JSONファイル").setInputFiles({
     name: "library.json",
     mimeType: "application/json",

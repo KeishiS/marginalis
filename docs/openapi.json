@@ -1089,7 +1089,7 @@
       },
       "NoteGraph": {
         "additionalProperties": false,
-        "description": "関係の図に出す点と線。\n\n点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけを含む。線は始点と\n終点の両方が点として含まれる場合だけ返す。閲覧できないノートの存在も件数も現れない。",
+        "description": "グラフビューに出す点と線。\n\n点は現在の利用者が閲覧できるノートと、そのノートが引用している文献だけを含む。線は始点と\n終点の両方が点として含まれる場合だけ返す。閲覧できないノートの存在も件数も現れない。",
         "properties": {
           "citations": {
             "items": {
@@ -1193,13 +1193,13 @@
       },
       "NoteGraphWork": {
         "additionalProperties": false,
-        "description": "図に出す文献。書誌情報そのものではなく、引用されたという事実を表す。",
+        "description": "図に出す文献。文献情報そのものではなく、引用されたという事実を表す。",
         "properties": {
           "citation_key": {
             "type": "string"
           },
           "title": {
-            "description": "引用元のノートを書いた利用者のライブラリーで解決できた場合の題名。",
+            "description": "引用元のノートを書いた利用者のライブラリで解決できた場合の題名。",
             "type": [
               "string",
               "null"

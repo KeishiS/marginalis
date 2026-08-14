@@ -26,9 +26,9 @@ const EVENT_KIND_DESCRIPTIONS: Record<WebhookEventKind, string> = {
   "note.updated": "ノート本文の更新",
   "note.deleted": "ノートの削除",
   "note.restored": "ノートの復元",
-  "bibliography_item.created": "書誌情報の追加",
-  "bibliography_item.updated": "書誌情報の更新",
-  "bibliography_item.deleted": "書誌情報の削除",
+  "bibliography_item.created": "文献情報の追加",
+  "bibliography_item.updated": "文献情報の更新",
+  "bibliography_item.deleted": "文献情報の削除",
 };
 
 const EVENT_KINDS = Object.keys(EVENT_KIND_DESCRIPTIONS) as WebhookEventKind[];
@@ -249,7 +249,7 @@ export function WebhookSettingsPage({ config }: { config: ApplicationConfig }) {
       <PageHeader
         eyebrow="Settings"
         title="Webhook通知"
-        description="ノートと書誌情報の変更を、指定したURLへHTTP POSTで通知します。通知の本文には変更の種別と対象IDだけが含まれ、ノート本文は含まれません。"
+        description="ノートと文献情報の変更を、指定したURLへHTTP POSTで通知します。通知の本文には変更の種別と対象IDだけが含まれ、ノート本文は含まれません。"
       >
         <Button variant="outline" asChild>
           <a href={externalPath(config.basePath, "/settings")}>設定へ戻る</a>

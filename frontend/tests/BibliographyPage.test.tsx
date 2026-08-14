@@ -150,7 +150,7 @@ test("成功の知らせと失敗を、役割と見た目で区別する", async
   // 失敗は利用者の対応が要るため、割り込んで伝える。
   fireEvent.click(screen.getAllByRole("button", { name: "削除" })[0]);
   expect(screen.getByRole("alertdialog")).toHaveTextContent(
-    "書誌情報の削除は取り消せません",
+    "文献情報の削除は取り消せません",
   );
   fireEvent.click(screen.getByRole("button", { name: "削除する" }));
   const problem = await waitFor(() => screen.getByRole("alert"));
@@ -209,7 +209,7 @@ test("URLのqueryを初期の絞り込み条件として読む", async () => {
   );
 
   await waitFor(() => screen.getByRole("button", { name: /smith2024/ }));
-  // 関係の図から文献を選んだ場合に、その項目へ絞った状態で開く。
+  // グラフビューから文献を選んだ場合に、その項目へ絞った状態で開く。
   expect(String(fetchMock.mock.calls[0][0])).toContain("query=smith2024");
   expect((screen.getByLabelText("文献を検索") as HTMLInputElement).value).toBe(
     "smith2024",
@@ -240,12 +240,12 @@ test("登録後の一覧再読込でも成功通知を保持する", async () =>
 
   fireEvent.click(screen.getByRole("button", { name: "登録" }));
 
-  expect(await screen.findByText("書誌情報を登録しました。")).toHaveAttribute(
+  expect(await screen.findByText("文献情報を登録しました。")).toHaveAttribute(
     "role",
     "status",
   );
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-  expect(screen.getByText("書誌情報を登録しました。")).toBeInTheDocument();
+  expect(screen.getByText("文献情報を登録しました。")).toBeInTheDocument();
 });
 
 test("遅れて完了した古い検索結果を表示しない", async () => {
@@ -297,7 +297,7 @@ test("遅れて完了した古い検索結果を表示しない", async () => {
   expect(screen.queryByRole("button", { name: /smith2024/ })).toBeNull();
 });
 
-test("書誌情報の変更中は検索条件を切り替えない", async () => {
+test("文献情報の変更中は検索条件を切り替えない", async () => {
   let completeMutation!: (response: Response) => void;
   const mutation = new Promise<Response>((resolve) => {
     completeMutation = resolve;
