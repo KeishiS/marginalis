@@ -66,6 +66,26 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   expect(stylesheet.status()).toBe(200);
   expect(stylesheet.headers()["content-type"]).toContain("text/css");
 
+  // 本番packageのCSSにも、Rust生成HTMLだけが使う共通レイアウトの規則が
+  // 含まれること(#487)。欠けるとヘッダーと本文が全幅へ広がる。
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const layout = await page.evaluate(() => {
+    const headerInner = document.querySelector(".page-header > div");
+    const main = document.querySelector(".page-main");
+    return {
+      headerMaxWidth: getComputedStyle(headerInner).maxWidth,
+      mainMaxWidth: getComputedStyle(main).maxWidth,
+      headerWidth: headerInner.getBoundingClientRect().width,
+      mainLeft: main.getBoundingClientRect().left,
+    };
+  });
+  expect(layout.headerMaxWidth).not.toBe("none");
+  expect(layout.mainMaxWidth).not.toBe("none");
+  // 1600px幅では表示領域の75%(1200px)を上限に中央へ置かれ、左右に余白ができる。
+  expect(layout.headerWidth).toBeLessThanOrEqual(1600 * 0.75 + 1);
+  expect(layout.mainLeft).toBeGreaterThan(100);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   await page.getByRole("link", { name: "新規ノート" }).click();
   await expect(
     page.getByRole("heading", { name: "ノートの作成" }),
