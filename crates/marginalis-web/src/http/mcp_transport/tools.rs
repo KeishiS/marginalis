@@ -341,7 +341,10 @@ impl McpToolFailure {
                 | NoteUseCaseError::InvalidSyncCursor
                 | NoteUseCaseError::SyncCursorExpired
                 | NoteUseCaseError::InvalidLineRange
+<<<<<<< HEAD
                 | NoteUseCaseError::PatchRejected(_)
+=======
+>>>>>>> upstream/main
                 | NoteUseCaseError::RenderFailed,
             )
             | Self::Bibliography(_) => "rejected",
@@ -361,7 +364,10 @@ impl McpToolFailure {
             Self::UseCase(NoteUseCaseError::InvalidSyncCursor) => "invalid-sync-cursor",
             Self::UseCase(NoteUseCaseError::SyncCursorExpired) => "sync-cursor-expired",
             Self::UseCase(NoteUseCaseError::InvalidLineRange) => "invalid-line-range",
+<<<<<<< HEAD
             Self::UseCase(NoteUseCaseError::PatchRejected(_)) => "patch-rejected",
+=======
+>>>>>>> upstream/main
             Self::UseCase(NoteUseCaseError::RenderFailed) => "render-failed",
             Self::UseCase(NoteUseCaseError::Unavailable) => "unavailable",
             Self::UseCase(NoteUseCaseError::CorruptData) => "corrupt-data",

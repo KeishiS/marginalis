@@ -102,10 +102,13 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
             ProblemCode::InvalidRequest,
             "line range is outside the stored source",
         ),
+<<<<<<< HEAD
         // 位置の詳細はMCPのtool出力が返す。ここでは分類だけを共通の失敗表現へ写す。
         NoteUseCaseError::PatchRejected(reason) => {
             ProblemResponse::new(ProblemCode::InvalidRequest, &reason.to_string())
         }
+=======
+>>>>>>> upstream/main
         NoteUseCaseError::SyncCursorExpired => ProblemResponse::new(
             ProblemCode::SyncCursorExpired,
             "sync cursor has expired; start a full synchronization",
