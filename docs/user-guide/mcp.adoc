@@ -54,9 +54,9 @@ redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を
 |scope
 |許可する操作
 |``notes:read``
-|ノートの一覧・本文の取得、ノート記述規則の取得
+|ノートの一覧・本文・構成(outline)・断片の取得、ノート記述規則の取得
 |``notes:write``
-|ノートの作成・更新、ノート記述規則の取得
+|ノートの作成、patchによる部分更新、全文置換、ノート記述規則の取得
 |``notes:delete``
 |ノートの削除
 |``notes:sync``
@@ -99,6 +99,29 @@ MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取
 クライアントは、存在しない一括取込toolを探したり、競合解決を推測して複数回の追加へ置き換えたりせず、
 この案内を利用者へ伝えてください。
 
+== 部分取得とpatchによる更新
+
+長文ノートでは、全文を送受信する``get_note``のかわりに、次の順路で読み書きします。
+
+. ``get_note_outline``で、本文を含まない文書の構成を取得します。見出しごとの深さ、題名、
+  原文に``[#id]``と明示されたアンカー（ないノートでは``null``）、1始まりで両端を含む行範囲を
+  返します。節の範囲は子節を含み、親子の範囲は重なります。
+. ``get_note_fragment``で、選んだ行範囲のAsciiDoc原文をそのまま取得します。要約や変換は行いません。
+. ``apply_note_patch``で、変更箇所だけをUnified Diffとして送ります。
+
+``apply_note_patch``のpatchは、``--- a/note.adoc``と``+++ b/note.adoc``のfile headerを持つ
+単一ファイルのUnified Diffだけを受理します。適用は厳密で、hunkに記録した変更前の行と文脈行が
+保存済み原文の指定位置に完全一致した場合だけ変更し、位置をずらした再探索は行いません。
+一致しない場合は``patch_rejected``と、対象hunkの位置を示す診断を返すため、最新の原文を
+読み直してpatchを作り直してください。``expected_revision``が現在のrevisionと違う場合は
+``conflict``です。``dry_run: true``を指定すると、適用と全文検証まで行い、保存せずrevisionも
+増やしません。適用後の全文は``create_note``と同じ検証を通り、``warning``が1件でもあれば
+保存されません。patchの上限（バイト数とhunk数）は``get_note_profile``の``limits``で確認できます。
+
+全面的な書き直し、外部からの取り込み、復旧には``replace_note_source``で原文全体を置き換えます。
+旧``update_note``はこのtoolへ改名され、``update_note``という名前の呼出しは未知のtoolとして
+失敗します。
+
 == ノート記述規則と診断
 
 ノートを作成または更新する前に``get_note_profile``を呼び出します。このtoolは、入力上限、正規化、
@@ -106,7 +129,7 @@ MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取
 ``advisory_rules``の文書規則はAdocWeaveのlint規則とMarginalisの解析設定から生成し、書誌ライブラリーに
 無い引用キーの規則は引用解決処理と同じapplication定数から加えるため、実際の検査条件と別々には
 管理しません。``warnings_reject_write``が``true``の場合、``warning``が一件でもある入力は
-``create_note``と``update_note``で保存されません。``information``と``hint``だけでは拒否されません。
+``create_note``、``apply_note_patch``、``replace_note_source``で保存されません。``information``と``hint``だけでは拒否されません。
 
 入力そのものが不正な場合は``validation_failed``、保存できる入力に警告が残っている場合は
 ``advisories_rejected``を返します。診断の``position``は1始まりの行・列です。列はLanguage Server
@@ -131,7 +154,7 @@ scopeは認可code、access token、refresh tokenへ記録されません。要�
 初回の認証challengeは、基本的な閲覧に必要な``notes:read``だけを示します。接続後にtokenのscopeでは
 実行できないtoolを呼び出すと、MCP endpointは``403``と``WWW-Authenticate``の
 ``error="insufficient_scope"``を返します。``scope``には現在のtokenが持つscopeと、今回の操作に不足する
-scopeをまとめて、サーバーの正規順序で示します。たとえば``notes:read``で接続した後に``update_note``を
+scopeをまとめて、サーバーの正規順序で示します。たとえば``notes:read``で接続した後に``apply_note_patch``を
 呼び出すと、``scope="notes:read notes:write"``を返します。クライアントはこの集合でOAuth認可をやり直し、
 利用者が同意したscopeだけを持つ新しいtokenで元の操作を再試行します。``notes:delete``は削除操作を
 要求するまで自動では追加されません。
@@ -222,10 +245,14 @@ ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノー�
 . 公開MCP URLだけを指定し、初回challengeが``notes:read``だけを示すことを確認して接続します。metadataの
 発見、client登録、Kanidmへのログインを経て、``notes:read``だけに同意します。
 . ``tools/list``を取得し、ノートの一覧と本文を読み取ります。作成経路と人手確認状態が表示され、
-``list_notes``で両方を絞り込めることも確認します。``update_note``を呼び出し、``notes:read notes:write``を
-示す追加認可が始まることを確認します。
+``list_notes``で両方を絞り込めることも確認します。``get_note_outline``で見出しと行範囲を取得し、
+``get_note_fragment``で選んだ範囲の原文だけが返ることを確認します。``apply_note_patch``を呼び出し、
+``notes:read notes:write``を示す追加認可が始まることを確認します。
 . 一度は追加認可を拒否し、更新できず、元のread tokenで閲覧を続けられることを確認します。再度実行して
 ``notes:write``にも同意し、新しいtokenで更新できることを確認します。
+. ``apply_note_patch``を``dry_run: true``で実行して保存されないこと、同じpatchの保存でrevisionが
+進むこと、古い``expected_revision``が``conflict``になること、原文と一致しないpatchが
+``patch_rejected``と位置つきの診断で拒否されることを確認します。
 . 試験用ノートを作成して更新し、別の試験利用者へ閲覧権限と編集権限を順に設定します。共有先では
 付与された権限を超える操作が拒否されることも確認します。
 . 削除操作で``notes:delete``を含む追加認可が始まることを確認します。同意後に試験用ノートを削除し、
