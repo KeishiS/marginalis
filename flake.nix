@@ -7,7 +7,7 @@
     inputs.nixpkgs.follows = "nixpkgs";
   };
   inputs.adocweave = {
-    url = "github:KeishiS/adocweave/27cc6447041d19ae395119063bed35b1fad2d179";
+    url = "github:KeishiS/adocweave/0b97d24adc3ad241011621933cd6400ad17bba74";
     inputs.nixpkgs.follows = "nixpkgs";
     inputs.rust-overlay.follows = "rust-overlay";
   };
@@ -125,7 +125,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-${adocweaveVersion}" = "sha256-6xvnxvTk+fywULhxkZt7tjbDQc7i0ccfZrNF6NnxHHA=";
+                "adocweave-${adocweaveVersion}" = "sha256-na03cwua6oPnAFmvGcNSIXes/R7rXzChEaDOwg0h4DI=";
                 "mcp-authorization-server-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
                 "mcp-authorization-server-cimd-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
               };

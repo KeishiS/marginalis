@@ -220,9 +220,9 @@ systemd credentialで渡すこと。
 
 == 対応する保存形式
 
-* *REQ-FORMAT-001 — 現行形式*: SQLiteスキーマ22と、AdocWeave package版0.40.0を記録した
+* *REQ-FORMAT-001 — 現行形式*: SQLiteスキーマ22と、AdocWeave package版0.40.1を記録した
 ``marginalis-archive-17``だけを通常処理で受理すること。``migrate-archive``だけはarchive 7から17までの
-対応契約を入力として受理し、AdocWeave 0.40.0で全件を再検証したarchive 17を別ファイルへ出力すること。
+対応契約を入力として受理し、AdocWeave 0.40.1で全件を再検証したarchive 17を別ファイルへ出力すること。
 archive 17でもAdocWeave package版が異なるものは移行の入力として扱うこと。その他の旧形式を自動移行
 しないこと。
 * *REQ-FORMAT-002 — 文書としての取り出し*: ノートをAsciiDocファイル、書誌情報をCSL-JSONの配列
