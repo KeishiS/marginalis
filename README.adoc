@@ -2,17 +2,17 @@
 
 [#top]
 Marginalisは、研究ノートをAsciiDoc形式で作成・管理するセルフホスト型のナレッジベースです。
-Kanidmで利用者の認証とグループ管理を行い、Web UI、REST API、MCPを提供します。
+標準のOIDC IdP(参照実装: Kanidm)で利用者を認証し、Web UI、REST API、MCPを提供します。
 
 == 仕様
 
 * ノートの本文、題名、タグ、アクセス権限、削除状態はSQLiteで管理します。
 ノート単位のAsciiDoc書き出しと、ノート、ACL、削除状態を含むJSONアーカイブの読み込み・
 書き出しができます。WebセッションやMCPトークンなどの認証状態はアーカイブに含めません。
-* Kanidmの``server-users``グループに属する利用者がアクセスできます。ノートは所有者と、
+* 設定したOIDC claim要件(既定はKanidmの``server-users``グループ)を満たす利用者がアクセスできます。ノートは所有者と、
 所有者がACLで直接共有した利用者だけが閲覧できます。
 * ``/api/v3``は公開REST APIです。仕様は link:docs/openapi.json[OpenAPI]を参照してください。
-* MCPはStreamable HTTPで動作し、Authorization Serverを内蔵します。Web UIと同じKanidmで
+* MCPはStreamable HTTPで動作し、Authorization Serverを内蔵します。Web UIと同じIdPで
 ログインし、認可codeとtokenはMarginalisが管理します。接続方法は
 xref:docs/user-guide/mcp.adoc#top[MCPへの接続と認可]を参照してください。
 * 削除したノートは30日間保管し、日次のNixOSタイマーが期限を過ぎたデータを物理削除します。

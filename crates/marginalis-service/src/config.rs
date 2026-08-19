@@ -36,6 +36,28 @@ pub struct OidcConfig {
     pub issuer_url: Url,
     pub client_id: String,
     pub ca_certificate_file: Option<PathBuf>,
+    /// `openid`以外に要求する追加scope。既定は参照実装(Kanidm)向けの値。
+    pub scopes: Vec<String>,
+    /// 利用可否の判定に使うclaim名。既定は`groups`。
+    pub group_claim: String,
+    /// 許可するID token署名アルゴリズム。既定はES256のみ(ADR 0015)。
+    pub allowed_algorithms: Vec<OidcSigningAlgorithm>,
+    pub token_endpoint_auth: OidcTokenEndpointAuthMethod,
+    /// 利用を許可するclaim値の一覧。空は「issuerで認証できれば許可」(環境変数では`*`で表す)。
+    pub allowed_claim_values: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OidcSigningAlgorithm {
+    Es256,
+    Rs256,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OidcTokenEndpointAuthMethod {
+    #[default]
+    ClientSecretPost,
+    ClientSecretBasic,
 }
 
 /// secret値は公開設定から分離する。Debugを実装せずログ出力を防ぐ。
@@ -60,6 +82,16 @@ pub enum ConfigurationError {
     InvalidMcpAllowedOrigin,
     #[error("{} must be `true` or `false`", environment::MCP_ENABLE)]
     InvalidMcpEnable,
+    #[error(
+        "{} must contain comma-separated values of ES256 or RS256",
+        environment::OIDC_ALLOWED_ALGORITHMS
+    )]
+    InvalidOidcAlgorithm,
+    #[error(
+        "{} must be `client_secret_post` or `client_secret_basic`",
+        environment::OIDC_TOKEN_ENDPOINT_AUTH
+    )]
+    InvalidOidcTokenEndpointAuth,
 }
 
 impl ServerConfig {
@@ -82,6 +114,12 @@ impl ServerConfig {
                 client_id,
                 ca_certificate_file: environment::value(environment::OIDC_CA_CERTIFICATE_FILE)
                     .map(PathBuf::from),
+                scopes: oidc_scopes(),
+                group_claim: environment::value(environment::OIDC_GROUP_CLAIM)
+                    .unwrap_or_else(|| "groups".into()),
+                allowed_algorithms: oidc_allowed_algorithms()?,
+                token_endpoint_auth: oidc_token_endpoint_auth()?,
+                allowed_claim_values: oidc_allowed_claim_values(),
             },
             mcp_enabled: environment::mcp_enabled()?,
             mcp_allowed_origins: validate_mcp_allowed_origins(environment::comma_separated(
@@ -100,6 +138,56 @@ impl StorageConfig {
         Ok(Self {
             database_url: required(environment::DATABASE_URL)?,
         })
+    }
+}
+
+/// 追加scope。未設定は参照実装(Kanidm)向けの既定値。
+fn oidc_scopes() -> Vec<String> {
+    if environment::value(environment::OIDC_SCOPES).is_none() {
+        return vec!["profile".into(), "email".into(), "groups_name".into()];
+    }
+    environment::comma_separated(environment::OIDC_SCOPES)
+        .into_iter()
+        // openidはライブラリが常に付与するため、明示されても重複させない。
+        .filter(|scope| scope != "openid")
+        .collect()
+}
+
+fn oidc_allowed_algorithms() -> Result<Vec<OidcSigningAlgorithm>, ConfigurationError> {
+    if environment::value(environment::OIDC_ALLOWED_ALGORITHMS).is_none() {
+        return Ok(vec![OidcSigningAlgorithm::Es256]);
+    }
+    let values = environment::comma_separated(environment::OIDC_ALLOWED_ALGORITHMS);
+    if values.is_empty() {
+        return Err(ConfigurationError::InvalidOidcAlgorithm);
+    }
+    values
+        .iter()
+        .map(|value| match value.as_str() {
+            "ES256" => Ok(OidcSigningAlgorithm::Es256),
+            "RS256" => Ok(OidcSigningAlgorithm::Rs256),
+            _ => Err(ConfigurationError::InvalidOidcAlgorithm),
+        })
+        .collect()
+}
+
+fn oidc_token_endpoint_auth() -> Result<OidcTokenEndpointAuthMethod, ConfigurationError> {
+    match environment::value(environment::OIDC_TOKEN_ENDPOINT_AUTH).as_deref() {
+        None => Ok(OidcTokenEndpointAuthMethod::default()),
+        Some("client_secret_post") => Ok(OidcTokenEndpointAuthMethod::ClientSecretPost),
+        Some("client_secret_basic") => Ok(OidcTokenEndpointAuthMethod::ClientSecretBasic),
+        Some(_) => Err(ConfigurationError::InvalidOidcTokenEndpointAuth),
+    }
+}
+
+/// 許可するclaim値の一覧。未設定は既定の`server-users`、`*`は空の一覧
+/// (=issuerで認証できれば許可)を表す。環境変数は空文字を未設定として扱うため、
+/// 「明示的に空」を`*`で区別する。
+fn oidc_allowed_claim_values() -> Vec<String> {
+    match environment::value(environment::OIDC_ALLOWED_CLAIM_VALUES).as_deref() {
+        None => vec!["server-users".into()],
+        Some("*") => Vec::new(),
+        Some(_) => environment::comma_separated(environment::OIDC_ALLOWED_CLAIM_VALUES),
     }
 }
 

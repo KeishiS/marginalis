@@ -9,6 +9,7 @@ use marginalis_application::{
     OidcLoginAttemptStore, Random,
 };
 use marginalis_domain::UnixMillis;
+pub use openidconnect::core::CoreJwsSigningAlgorithm as OidcSigningAlgorithm;
 use openidconnect::{
     AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
     EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
@@ -24,12 +25,24 @@ const MAX_GROUPS_PER_ID_TOKEN: usize = 128;
 const MAX_GROUP_NAME_BYTES: usize = 256;
 
 fn allowed_id_token_algorithms(
+    allowed: &[CoreJwsSigningAlgorithm],
     supported: &[CoreJwsSigningAlgorithm],
 ) -> Vec<CoreJwsSigningAlgorithm> {
-    [CoreJwsSigningAlgorithm::EcdsaP256Sha256]
-        .into_iter()
+    allowed
+        .iter()
         .filter(|algorithm| supported.contains(algorithm))
+        .cloned()
         .collect()
+}
+
+/// token endpointへのclient認証方式。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OidcTokenEndpointAuth {
+    /// 既定。credentialをPOST本文で送る(`client_secret_post`)。
+    #[default]
+    ClientSecretPost,
+    /// credentialをAuthorizationヘッダーで送る(`client_secret_basic`)。
+    ClientSecretBasic,
 }
 
 #[derive(Clone)]
@@ -39,6 +52,10 @@ pub struct OidcConfiguration {
     client_secret: ClientSecret,
     redirect_url: RedirectUrl,
     cookie_path: String,
+    scopes: Vec<String>,
+    group_claim: String,
+    allowed_algorithms: Vec<CoreJwsSigningAlgorithm>,
+    token_endpoint_auth: OidcTokenEndpointAuth,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -47,9 +64,16 @@ pub enum OidcConfigurationError {
     InvalidIssuerUrl,
     #[error("Base URL must be an absolute HTTPS URL")]
     InvalidBaseUrl,
+    #[error("OIDC client credentials must not be empty")]
+    EmptyCredential,
+    #[error("OIDC group claim name must not be empty")]
+    EmptyGroupClaim,
+    #[error("at least one ID token signing algorithm must be allowed")]
+    NoAllowedAlgorithm,
 }
 
 impl OidcConfiguration {
+    /// 既定はKanidm 1.10を参照実装とする値(ADR 0015)。他のIdPは`with_*`で調整する。
     pub fn new(
         issuer_url: String,
         client_id: String,
@@ -57,6 +81,9 @@ impl OidcConfiguration {
         base_url: &str,
     ) -> Result<Self, OidcConfigurationError> {
         let issuer_url = validate_issuer_url(issuer_url)?;
+        if client_id.trim().is_empty() || client_secret.trim().is_empty() {
+            return Err(OidcConfigurationError::EmptyCredential);
+        }
         let redirect_url = callback_url(base_url)?;
         let cookie_path = cookie_path(base_url)?;
         Ok(Self {
@@ -65,7 +92,43 @@ impl OidcConfiguration {
             client_secret: ClientSecret::new(client_secret),
             redirect_url,
             cookie_path,
+            scopes: vec!["profile".into(), "email".into(), "groups_name".into()],
+            group_claim: "groups".into(),
+            allowed_algorithms: vec![CoreJwsSigningAlgorithm::EcdsaP256Sha256],
+            token_endpoint_auth: OidcTokenEndpointAuth::default(),
         })
+    }
+
+    /// `openid`以外に要求する追加scope。既定は参照実装向けのprofile/email/groups_name。
+    pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
+        self.scopes = scopes;
+        self
+    }
+
+    /// group所属を読むclaim名。既定は`groups`。
+    pub fn with_group_claim(mut self, claim: String) -> Result<Self, OidcConfigurationError> {
+        if claim.trim().is_empty() {
+            return Err(OidcConfigurationError::EmptyGroupClaim);
+        }
+        self.group_claim = claim;
+        Ok(self)
+    }
+
+    /// 許可するID token署名アルゴリズム。既定はES256のみ(ADR 0015)。
+    pub fn with_allowed_algorithms(
+        mut self,
+        algorithms: Vec<CoreJwsSigningAlgorithm>,
+    ) -> Result<Self, OidcConfigurationError> {
+        if algorithms.is_empty() {
+            return Err(OidcConfigurationError::NoAllowedAlgorithm);
+        }
+        self.allowed_algorithms = algorithms;
+        Ok(self)
+    }
+
+    pub fn with_token_endpoint_auth(mut self, auth: OidcTokenEndpointAuth) -> Self {
+        self.token_endpoint_auth = auth;
+        self
     }
 
     pub fn issuer_url(&self) -> &IssuerUrl {
@@ -82,6 +145,9 @@ impl OidcConfiguration {
     }
     pub fn cookie_path(&self) -> &str {
         &self.cookie_path
+    }
+    pub fn group_claim(&self) -> &str {
+        &self.group_claim
     }
 }
 
@@ -144,6 +210,8 @@ pub struct OidcAuthentication {
     client: DiscoveredOidcClient,
     http_client: reqwest::Client,
     cookie_path: String,
+    scopes: Vec<String>,
+    group_claim: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -220,10 +288,12 @@ struct GroupClaimPayload {
     claims: serde_json::Map<String, serde_json::Value>,
 }
 
-/// 検証済みID tokenのpayloadから、Kanidmで設定した文字列配列のgroup claimを読む。
+/// 検証済みID tokenのpayloadから、設定したclaim名のgroup所属を読む。
 ///
-/// この関数はJWTの署名検証をしない。必ず`IdToken::claims`の成功後にだけ呼び出す。claimが欠落、
-/// 文字列配列以外、空のgroup名を含む場合はfail closedで拒否する。
+/// この関数はJWTの署名検証をしない。必ず`IdToken::claims`の成功後にだけ呼び出す。claimの値は
+/// 文字列配列に加えて単一の文字列も受理する(IdPにより単数で発行されるため)。claimが欠落、
+/// それ以外の型、空のgroup名を含む場合はfail closedで拒否する。claim名が`email`の場合は、
+/// 未検証のメールアドレスを認可の根拠にしないため`email_verified`がtrueであることも要求する。
 fn groups_from_verified_id_token(
     id_token: &str,
     group_claim: &str,
@@ -240,11 +310,25 @@ fn groups_from_verified_id_token(
         .map_err(|_| OidcCallbackRejection::Groups)?;
     let payload = serde_json::from_slice::<GroupClaimPayload>(&payload)
         .map_err(|_| OidcCallbackRejection::Groups)?;
-    let values = payload
+    if group_claim == "email"
+        && payload
+            .claims
+            .get("email_verified")
+            .and_then(serde_json::Value::as_bool)
+            != Some(true)
+    {
+        return Err(OidcCallbackRejection::Groups);
+    }
+    let claim = payload
         .claims
         .get(group_claim)
-        .and_then(serde_json::Value::as_array)
         .ok_or(OidcCallbackRejection::Groups)?;
+    let single = std::slice::from_ref(claim);
+    let values: &[serde_json::Value] = match claim {
+        serde_json::Value::Array(values) => values,
+        serde_json::Value::String(_) => single,
+        _ => return Err(OidcCallbackRejection::Groups),
+    };
     if values.len() > MAX_GROUPS_PER_ID_TOKEN {
         return Err(OidcCallbackRejection::Groups);
     }
@@ -279,8 +363,10 @@ impl OidcAuthentication {
             CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
                 .await
                 .map_err(|_| OidcDiscoveryError::Discovery)?;
-        let signing_algorithms =
-            allowed_id_token_algorithms(metadata.id_token_signing_alg_values_supported());
+        let signing_algorithms = allowed_id_token_algorithms(
+            &configuration.allowed_algorithms,
+            metadata.id_token_signing_alg_values_supported(),
+        );
         if signing_algorithms.is_empty() {
             return Err(OidcDiscoveryError::Discovery);
         }
@@ -291,10 +377,15 @@ impl OidcAuthentication {
                 configuration.client_id().clone(),
                 Some(configuration.client_secret().clone()),
             )
-            .set_auth_type(AuthType::RequestBody)
+            .set_auth_type(match configuration.token_endpoint_auth {
+                OidcTokenEndpointAuth::ClientSecretPost => AuthType::RequestBody,
+                OidcTokenEndpointAuth::ClientSecretBasic => AuthType::BasicAuth,
+            })
             .set_redirect_uri(configuration.redirect_url().clone()),
             http_client,
             cookie_path: configuration.cookie_path().into(),
+            scopes: configuration.scopes.clone(),
+            group_claim: configuration.group_claim.clone(),
         })
     }
 
@@ -336,10 +427,8 @@ impl OidcAuthentication {
                 move || Nonce::new(nonce),
             )
             .set_pkce_challenge(challenge)
-            .add_scope(Scope::new("profile".into()))
-            .add_scope(Scope::new("email".into()))
-            // Kanidmの`groups_name` scopeは、group名だけからなる文字列配列の`groups` claimを発行する。
-            .add_scope(Scope::new("groups_name".into()))
+            // openidはライブラリが常に付与する。追加分は設定から渡す(既定は参照実装向けの値)。
+            .add_scopes(self.scopes.iter().cloned().map(Scope::new))
             .url();
         Ok(url.into())
     }
@@ -352,7 +441,6 @@ impl OidcAuthentication {
         clock: &Time,
         code: &str,
         state: &str,
-        group_claim: &str,
     ) -> Result<VerifiedOidcIdentity, OidcCallbackError>
     where
         Attempts: OidcLoginAttemptStore,
@@ -377,7 +465,7 @@ impl OidcAuthentication {
         let claims = id_token
             .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
             .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Claims))?;
-        let groups = groups_from_verified_id_token(&id_token.to_string(), group_claim)
+        let groups = groups_from_verified_id_token(&id_token.to_string(), &self.group_claim)
             .map_err(OidcCallbackError::Rejected)?;
         Ok(VerifiedOidcIdentity {
             issuer: claims.issuer().as_str().to_owned(),
@@ -465,7 +553,7 @@ where
         let identity = self
             .oidc()
             .await?
-            .complete_login(&self.attempts, &self.clock, code, state, "groups")
+            .complete_login(&self.attempts, &self.clock, code, state)
             .await
             .map_err(|error| match error {
                 OidcCallbackError::Rejected(_) => IdentityProviderError::Rejected,
@@ -539,19 +627,94 @@ mod tests {
         );
     }
 
+    /// 既定の許可一覧(ES256のみ)は、providerがRS256しか出さない場合に空へ縮退する。
     #[test]
-    fn id_tokens_are_limited_to_es256() {
+    fn id_token_algorithms_are_limited_to_the_allowed_list() {
+        let default_allowed = [CoreJwsSigningAlgorithm::EcdsaP256Sha256];
         assert_eq!(
-            allowed_id_token_algorithms(&[
-                CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
-                CoreJwsSigningAlgorithm::EcdsaP256Sha256,
-                CoreJwsSigningAlgorithm::HmacSha256,
-            ]),
+            allowed_id_token_algorithms(
+                &default_allowed,
+                &[
+                    CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
+                    CoreJwsSigningAlgorithm::EcdsaP256Sha256,
+                    CoreJwsSigningAlgorithm::HmacSha256,
+                ]
+            ),
             vec![CoreJwsSigningAlgorithm::EcdsaP256Sha256]
         );
         assert!(
-            allowed_id_token_algorithms(&[CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256])
-                .is_empty()
+            allowed_id_token_algorithms(
+                &default_allowed,
+                &[CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256]
+            )
+            .is_empty()
+        );
+        // RS256をopt-inした場合だけ交差に現れる。
+        assert_eq!(
+            allowed_id_token_algorithms(
+                &[
+                    CoreJwsSigningAlgorithm::EcdsaP256Sha256,
+                    CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
+                ],
+                &[CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256]
+            ),
+            vec![CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256]
+        );
+    }
+
+    /// claimの単一文字列は1件の集合として受理し、emailで認可する場合はemail_verifiedを要求する。
+    #[test]
+    fn email_claims_require_verification_and_accept_single_strings() {
+        let token = |payload: &str| format!("h.{}.s", URL_SAFE_NO_PAD.encode(payload));
+
+        let verified = token(r#"{"email":"a@example.com","email_verified":true}"#);
+        let groups = groups_from_verified_id_token(&verified, "email").expect("verified email");
+        assert!(groups.is_user("a@example.com"));
+
+        let unverified = token(r#"{"email":"a@example.com","email_verified":false}"#);
+        assert_eq!(
+            groups_from_verified_id_token(&unverified, "email"),
+            Err(OidcCallbackRejection::Groups)
+        );
+        let missing_flag = token(r#"{"email":"a@example.com"}"#);
+        assert_eq!(
+            groups_from_verified_id_token(&missing_flag, "email"),
+            Err(OidcCallbackRejection::Groups)
+        );
+
+        // email以外のclaimでも単一文字列を受理する。email_verifiedは要求しない。
+        let single = token(r#"{"role":"admin"}"#);
+        let groups = groups_from_verified_id_token(&single, "role").expect("single string claim");
+        assert!(groups.is_user("admin"));
+    }
+
+    /// 空のclient credentialとclaim名、空のアルゴリズム一覧は設定段階で拒否する。
+    #[test]
+    fn configuration_rejects_empty_values() {
+        assert_eq!(
+            OidcConfiguration::new(
+                "https://id.example.test".into(),
+                "".into(),
+                "secret".into(),
+                "https://app.example.test",
+            )
+            .err(),
+            Some(OidcConfigurationError::EmptyCredential)
+        );
+        let configuration = OidcConfiguration::new(
+            "https://id.example.test".into(),
+            "client".into(),
+            "secret".into(),
+            "https://app.example.test",
+        )
+        .expect("valid configuration");
+        assert_eq!(
+            configuration.clone().with_group_claim(" ".into()).err(),
+            Some(OidcConfigurationError::EmptyGroupClaim)
+        );
+        assert_eq!(
+            configuration.with_allowed_algorithms(Vec::new()).err(),
+            Some(OidcConfigurationError::NoAllowedAlgorithm)
         );
     }
 }
