@@ -21,7 +21,7 @@ PKCE、ID tokenの署名・issuer・audience・nonce検証)ですが、次の5�
 * 利用を許可するグループ名``server-users``の定数
 
 また、姉妹サービスの連環(Renkan)がKeishiS/renkan#76でほぼ同型のOIDC実装を持ち、
-security-criticalな検証ロジックを二重に保守する状態が生じていました(Issue #419の評価)。
+security-criticalな検証ロジックを二重に保守する状態が生じていました(Issue \#419の評価)。
 将来のOSS公開を見据えると、特定のIdP(Identity Provider、本人確認を担うサービス)や
 姉妹サービスへの依存を前提にできません。
 
