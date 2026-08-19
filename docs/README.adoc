@@ -74,6 +74,10 @@ Marginalisの文書は、利用者・運用者向けの``user-guide/``と、設�
 |xref:developer-guide/mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]
 |開発者
 |共有Authorization Server crateの更新と検証
+
+|xref:developer-guide/oidc-browser-login-maintenance.adoc#top[共有OIDCログインcrateの保守]
+|開発者
+|共有OIDCログインcrateの更新と検証
 |xref:developer-guide/protocol-regression.adoc#top[ブラウザーとMCPプロトコルの回帰テスト]
 |開発者
 |通信仕様の回帰テストとテストデータ

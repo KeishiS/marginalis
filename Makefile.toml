@@ -192,6 +192,15 @@ bash .github/scripts/test-shared-authorization-server-release.sh
 bash .github/scripts/check-shared-authorization-server.sh
 '''
 
+[tasks.shared-oidc-login]
+description = "Verify the pinned revision, version, and reachability of the shared OIDC login crates"
+script_runner = "@shell"
+script = '''
+set -eu
+bash .github/scripts/test-shared-oidc-login.sh
+bash .github/scripts/check-shared-oidc-login.sh
+'''
+
 [tasks.observability-check]
 description = "Require stable event fields and reject sensitive fields in production logs"
 script_runner = "@shell"
@@ -290,6 +299,7 @@ dependencies = [
   "security-audit",
   "dependency-boundaries",
   "shared-authorization-server",
+  "shared-oidc-login",
   "unused-dependencies",
   "observability-check",
   "production-reachability",

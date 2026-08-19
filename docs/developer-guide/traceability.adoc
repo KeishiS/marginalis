@@ -206,8 +206,8 @@ xref:architecture.adoc#一貫して満たすべき設計条件[アーキテク�
 ``marginalis-sqlite::tests::bibliography_import``の再照合・原子的適用・競合試験、
 ``marginalis-web::http::tests::bibliography_import``、archive往復試験
 |ARCH-AUTHN-001
-|``marginalis-auth-oidc``のgroup claim試験、``marginalis-sqlite::tests::sessions``の検証済み
-identity保持試験、OAuth HTTP結合試験
+|共有crate ``oidc-browser-login``のgroup claim・疑似IdP試験、``marginalis-sqlite::tests::sessions``の
+検証済みidentity保持試験と共有``LoginAttemptStore``契約試験、OAuth HTTP結合試験
 |ARCH-AUTHZ-001
 |``marginalis-sqlite::tests::notes``の所有者・ACL・削除・復元試験、REST・MCP・ブラウザーACL試験
 |ARCH-AUTHZ-002
@@ -232,7 +232,7 @@ identity保持試験、OAuth HTTP結合試験
 CIMD認可・本人境界試験、``marginalis-web::http::tests::oauth``・``rest_notes``の同意と上限管理の
 試験、React設定画面の単体試験
 |ARCH-OIDC-001
-|``marginalis-auth-oidc``のES256限定試験、Kanidm NixOS VM
+|共有crate ``oidc-browser-login``のES256限定とRS256 opt-inの試験、Kanidm NixOS VM
 |ARCH-PROVENANCE-001
 |``marginalis-domain::model``の確認状態試験、``marginalis-sqlite::tests::notes``の来歴・確認状態
 試験、``marginalis-archive::documents``の外部編集試験、REST・MCP・archive契約試験
