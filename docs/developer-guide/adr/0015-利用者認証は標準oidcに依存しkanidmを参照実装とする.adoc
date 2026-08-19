@@ -1,0 +1,72 @@
+= 利用者認証は標準OIDCに依存しKanidmを参照実装とする
+
+[#top]
+* 状態: 採用
+* 日付: 2026-08-19
+* 関連Issue: \#419、\#508、\#509、KeishiS/renkan#111
+* 関連ADR: xref:0008-mcp-authorization-serverの中核を製品から分離する.adoc#top[ADR 0008]、
+xref:0012-共有authorization-serverを独立リポジトリで配布する.adoc#top[ADR 0012]
+
+== 背景
+
+Marginalisの利用者ログインは、OIDC(OpenID Connectの略で、OAuth 2.0の上に本人確認を載せた
+標準仕様)でKanidmへ委ねています。実装の大部分は標準仕様の範囲(discovery、Authorization Code +
+PKCE、ID tokenの署名・issuer・audience・nonce検証)ですが、次の5点がKanidm固有の値として
+コードへ固定されていました。
+
+* 要求scopeへの``groups_name``(Kanidm固有のscope)の追加
+* group所属を読むclaim名``groups``
+* ID token署名アルゴリズムのES256限定
+* token endpointの認証方式``client_secret_post``の固定
+* 利用を許可するグループ名``server-users``の定数
+
+また、姉妹サービスの連環(Renkan)がKeishiS/renkan#76でほぼ同型のOIDC実装を持ち、
+security-criticalな検証ロジックを二重に保守する状態が生じていました(Issue #419の評価)。
+将来のOSS公開を見据えると、特定のIdP(Identity Provider、本人確認を担うサービス)や
+姉妹サービスへの依存を前提にできません。
+
+== 決定
+
+*標準OIDCの範囲だけに依存し、Kanidmは参照実装とする*: 認証はOIDC discovery、Authorization Code +
+PKCE(S256)、ID token検証という標準仕様の範囲で実装します。Kanidm 1.10は要件ではなく
+参照実装とし、結合試験(NixOS VM)の対象として維持します。要件文書の「Kanidmで認証する」という
+指名は「標準OIDC IdPで認証する(参照実装: Kanidm 1.10)」へ改めます。
+
+*IdP固有の値はすべて設定へ昇格し、既定値で現行動作を保つ*: 上記5点を設定項目にします。
+既定値は現行のKanidm向けの値(claim名``groups``、追加scope、ES256、``client_secret_post``、
+グループ名``server-users``)とし、既定のままなら既存配備の動作は変わりません。KeycloakやAuthentik、
+Entra IDなどの標準OIDC IdPは、設定の変更だけで代替できます。
+
+*ID token署名の既定はES256のみとし、他方式はopt-inとする*: 依存crateの既知の問題
+(RUSTSEC-2023-0071、``rsa`` crateのタイミング攻撃)を例外として扱う根拠が「RSAの署名検証を
+使わない」ことにあるため、RS256などの追加は利用者の明示的な設定とします。RS256を有効化する
+配備では、署名検証が公開鍵操作のみである点を含めて例外の妥当性を再評価し、
+xref:../security.adoc#top[セキュリティー方針]の記録を更新してから使います。
+
+*認可はclaim要件1つで判定し、複雑な規則を持たない*: 「設定したclaim(既定``groups``)の値に、
+設定した文字列(既定``server-users``)が含まれるか」だけで利用可否を判定します。claimの値は
+文字列配列に加えて単一文字列も受理し、欠落や型不正は拒否します(fail closed)。グループclaimを
+発行できないIdPのために、要求グループを明示的に空へ設定した場合だけ「このissuerで認証できた
+利用者は全員許可」とし、IdP側でclientの利用者を絞る運用を代替経路にします。複数条件の組合せ式、
+メールドメイン制限、入れ子claimへのパス指定、アプリ内の許可リストは採用しません。認可製品の
+領域であり、本製品の責務を超えるためです。
+
+*OIDC検証の実装はRenkanと共有するIdP非依存crateへ分離する*: ADR 0008/0012と同じ方式
+(独立リポジトリ、Git依存+完全SHA固定、固定一貫性の機械検査、契約試験)で、検証ロジックを
+1箇所にします。共有crateはKanidm・Axum・特定database・製品名へ依存せず、検証済みの
+``(issuer, subject)``とclaimを返すだけにします。Cookie、CSRF、Origin検証などのHTTP境界と、
+利用可否の判定は各製品に残します。段階は\#508(設定昇格)→\#509(分離と切替)→
+KeishiS/renkan#111(Renkan切替)の順で進めます。
+
+== 結果
+
+* 既存のKanidm配備は設定変更なしで動き続けます。他のIdPへの乗り換えは設定の変更だけで
+  できますが、所有者のidentityは``(issuer, subject)``の組で記録されているため、issuerが変わると
+  同じ人でも別の利用者として扱われます。IdP移行時のidentity引き継ぎは本決定の対象外とし、
+  必要になった時点で移行手順を設計します。
+* 署名アルゴリズムの安全性判断(ES256既定)は共有crateの文書とMarginalisのセキュリティー方針の
+  両方に記録され、opt-inの拡張が黙って行われることはありません。
+* KanidmのVM試験は「参照実装との結合試験」として維持し、共有crate自体の試験は疑似IdPで行う
+  ため、IdPを追加してもcrateの試験は増えません。
+* 過度な汎用化(任意の認可規則、複数IdPの同時利用など)は非目標として明記し、
+  ADR 0012と同じく「安全な部分集合を良く実装する」方針を保ちます。

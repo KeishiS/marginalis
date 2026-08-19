@@ -104,6 +104,8 @@ Auth0をMCPのAuthorization Serverに採用]（廃止。ADR 0007で置き換え�
 * xref:developer-guide/adr/0012-共有authorization-serverを独立リポジトリで配布する.adoc#top[0012 共有Authorization Serverを独立リポジトリで配布する]
 * xref:developer-guide/adr/0013-検索投影向けの委任scopeと増分同期.adoc#top[0013 検索投影向けの委任scopeと増分同期]
 * xref:developer-guide/adr/0014-webhook署名secretを平文で保存する.adoc#top[0014 Webhook署名secretを平文で保存する]
+* xref:developer-guide/adr/0015-利用者認証は標準oidcに依存しkanidmを参照実装とする.adoc#top[0015
+利用者認証は標準OIDCに依存しKanidmを参照実装とする]
 
 == 過去の記録と今後の計画
 
