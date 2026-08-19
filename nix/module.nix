@@ -142,7 +142,56 @@ in
         type = types.nullOr types.str;
         default = null;
         example = "/run/secrets/internal-ca.pem";
-        description = "Optional PEM CA certificate for a private Kanidm TLS PKI, used for OIDC discovery and token exchange.";
+        description = "Optional PEM CA certificate for a private IdP TLS PKI (for example a self-hosted Kanidm), used for OIDC discovery and token exchange.";
+      };
+
+      scopes = mkOption {
+        type = types.listOf types.str;
+        default = [
+          "profile"
+          "email"
+          "groups_name"
+        ];
+        example = [ "email" ];
+        description = "Scopes requested in addition to openid. The default targets the Kanidm reference setup; an empty list requests only openid.";
+      };
+
+      groupClaim = mkOption {
+        type = types.str;
+        default = "groups";
+        example = "email";
+        description = "ID token claim consulted for authorization. When set to `email`, the token must also carry `email_verified = true`.";
+      };
+
+      allowedAlgorithms = mkOption {
+        type = types.listOf (
+          types.enum [
+            "ES256"
+            "RS256"
+          ]
+        );
+        default = [ "ES256" ];
+        example = [ "RS256" ];
+        description = "Allowed ID token signing algorithms. Enabling RS256 requires re-evaluating the RUSTSEC-2023-0071 exception documented in ADR 0015.";
+      };
+
+      tokenEndpointAuth = mkOption {
+        type = types.enum [
+          "client_secret_post"
+          "client_secret_basic"
+        ];
+        default = "client_secret_post";
+        description = "Client authentication method for the token endpoint.";
+      };
+
+      allowedClaimValues = mkOption {
+        type = types.listOf types.str;
+        default = [ "server-users" ];
+        example = [
+          "alice@gmail.com"
+          "bob@example.com"
+        ];
+        description = "Users are admitted when the configured claim contains any of these values. An explicit empty list admits every user the issuer authenticates.";
       };
     };
 
@@ -252,6 +301,16 @@ in
         MARGINALIS_OIDC_CLIENT_SECRET_FILE = "%d/oidc-client-secret";
         MARGINALIS_OIDC_CA_CERTIFICATE_FILE =
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
+        MARGINALIS_OIDC_SCOPES =
+          if cfg.oidc.scopes == [ ] then "openid" else lib.concatStringsSep "," cfg.oidc.scopes;
+        MARGINALIS_OIDC_GROUP_CLAIM = cfg.oidc.groupClaim;
+        MARGINALIS_OIDC_ALLOWED_ALGORITHMS = lib.concatStringsSep "," cfg.oidc.allowedAlgorithms;
+        MARGINALIS_OIDC_TOKEN_ENDPOINT_AUTH = cfg.oidc.tokenEndpointAuth;
+        MARGINALIS_OIDC_ALLOWED_CLAIM_VALUES =
+          if cfg.oidc.allowedClaimValues == [ ] then
+            "*"
+          else
+            lib.concatStringsSep "," cfg.oidc.allowedClaimValues;
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_WEBHOOK_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.webhook.allowedHosts;
@@ -324,6 +383,16 @@ in
         MARGINALIS_OIDC_CLIENT_ID = cfg.oidc.clientId;
         MARGINALIS_OIDC_CA_CERTIFICATE_FILE =
           if cfg.oidc.caCertificateFile == null then "" else cfg.oidc.caCertificateFile;
+        MARGINALIS_OIDC_SCOPES =
+          if cfg.oidc.scopes == [ ] then "openid" else lib.concatStringsSep "," cfg.oidc.scopes;
+        MARGINALIS_OIDC_GROUP_CLAIM = cfg.oidc.groupClaim;
+        MARGINALIS_OIDC_ALLOWED_ALGORITHMS = lib.concatStringsSep "," cfg.oidc.allowedAlgorithms;
+        MARGINALIS_OIDC_TOKEN_ENDPOINT_AUTH = cfg.oidc.tokenEndpointAuth;
+        MARGINALIS_OIDC_ALLOWED_CLAIM_VALUES =
+          if cfg.oidc.allowedClaimValues == [ ] then
+            "*"
+          else
+            lib.concatStringsSep "," cfg.oidc.allowedClaimValues;
         MARGINALIS_MCP_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.mcp.allowedOrigins;
         MARGINALIS_MCP_ENABLE = if cfg.mcp.enable then "true" else "false";
         MARGINALIS_WEBHOOK_ALLOWED_HOSTS = lib.concatStringsSep "," cfg.webhook.allowedHosts;

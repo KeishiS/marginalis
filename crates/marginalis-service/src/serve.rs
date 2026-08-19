@@ -15,8 +15,6 @@ use crate::{
     runtime::{SystemClock, SystemRandom},
 };
 
-/// 利用を許可するKanidmのグループ。WebとMCPで同じ値を使う。
-const REQUIRED_USER_GROUP: &str = "server-users";
 /// Webセッションを最終利用から失効させるまでの時間（`REQ-AUTH-007`）。
 const SESSION_IDLE_TIMEOUT_MS: i64 = 24 * 60 * 60 * 1_000;
 /// Webセッションをログインから失効させるまでの時間（`REQ-AUTH-007`）。
@@ -28,11 +26,36 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let database = SqliteDatabase::connect(&configuration.storage.database_url).await?;
     let oidc_configuration = OidcConfiguration::new(
         configuration.oidc.issuer_url.to_string(),
-        configuration.oidc.client_id,
+        configuration.oidc.client_id.clone(),
         secrets.oidc_client_secret,
         configuration.http.base_url.as_str(),
-    )?;
-    let oidc_http_client = kanidm_http_client(
+    )?
+    .with_scopes(configuration.oidc.scopes.clone())
+    .with_group_claim(configuration.oidc.group_claim.clone())?
+    .with_allowed_algorithms(
+        configuration
+            .oidc
+            .allowed_algorithms
+            .iter()
+            .map(|algorithm| match algorithm {
+                crate::config::OidcSigningAlgorithm::Es256 => {
+                    marginalis_auth_oidc::OidcSigningAlgorithm::EcdsaP256Sha256
+                }
+                crate::config::OidcSigningAlgorithm::Rs256 => {
+                    marginalis_auth_oidc::OidcSigningAlgorithm::RsaSsaPkcs1V15Sha256
+                }
+            })
+            .collect(),
+    )?
+    .with_token_endpoint_auth(match configuration.oidc.token_endpoint_auth {
+        crate::config::OidcTokenEndpointAuthMethod::ClientSecretPost => {
+            marginalis_auth_oidc::OidcTokenEndpointAuth::ClientSecretPost
+        }
+        crate::config::OidcTokenEndpointAuthMethod::ClientSecretBasic => {
+            marginalis_auth_oidc::OidcTokenEndpointAuth::ClientSecretBasic
+        }
+    });
+    let oidc_http_client = oidc_provider_http_client(
         configuration.oidc.ca_certificate_file.as_deref(),
         std::time::Duration::from_secs(10),
     )?;
@@ -69,7 +92,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     );
     let oidc = std::sync::Arc::new(OidcAuthenticationApplication::new(
         std::sync::Arc::new(oidc_provider),
-        REQUIRED_USER_GROUP,
+        configuration.oidc.allowed_claim_values.clone(),
     ));
     // すべてのrepository portを同じSQLite adapterが担うため、Arcを1つ作って共有する。
     let storage = std::sync::Arc::new(database.clone());
@@ -309,7 +332,7 @@ async fn shutdown_signal() {
     );
 }
 
-fn kanidm_http_client(
+fn oidc_provider_http_client(
     ca_certificate_file: Option<&Path>,
     timeout: std::time::Duration,
 ) -> Result<reqwest::Client, Box<dyn std::error::Error>> {

@@ -127,16 +127,16 @@ ACL、削除、復元のどの変更でもrevisionの不一致により確認待
 変えない。
 文書書庫からの取り込みでは、書き出し時の本文、所有者、ACLを結び付けたhashと入力を比較し、
 異なる場合に同じrevision更新規則を適用する。
-* *ARCH-AUTHN-001 — OIDC主体の決定*: ``server-users``所属はKanidmの署名検証済みID tokenから決める。
-WebとMCPの同意画面は、同じ``(issuer, subject)``を所有者identityに使用する。
+* *ARCH-AUTHN-001 — OIDC主体の決定*: 利用可否のclaim要件は、IdPの署名検証済みID tokenから
+決める。WebとMCPの同意画面は、同じ``(issuer, subject)``を所有者identityに使用する。
 * *ARCH-SESSION-001 — sessionとlogin attemptの期限*: Web sessionは24時間のsliding idle期限と7日の
 絶対期限を持つ。有効性の検証とidle期限の延長は、
 SQLiteの一つの条件付き更新で行う。読み取り後に同じ遅延transactionを更新へ切り替えず、
 同じsessionへの並行要求をSQLiteの書き込み待機で直列化する。未完了OIDC login attemptは10分で
 失効し、発行時に期限切れ行を削除したうえで同時保留数を1,024件に制限する。
-* *ARCH-OIDC-001 — ID tokenの署名方式*: OIDC ID tokenの署名方式はKanidm 1.10と結合試験で使う
-``ES256``だけを許可する。別の署名方式を追加する場合は xref:security.adoc#top[セキュリティ]の依存脆弱性判断を
-先に更新する。
+* *ARCH-OIDC-001 — ID tokenの署名方式*: OIDC ID tokenの署名方式は、既定では参照実装
+(Kanidm 1.10)と結合試験で使う``ES256``だけを許可する。RS256などの追加は配備側の明示的な
+設定とし、有効化する場合は xref:security.adoc#top[セキュリティ]の依存脆弱性判断を先に更新する。
 * *ARCH-OAUTH-001 — OAuth秘密値の境界*: MarginalisはMCPのclient、認可code、access token、
 refresh tokenをSQLiteで管理する。tokenはhashだけを保存し、秘密値をログやアーカイブへ出力しない。
 MCP clientにKanidm tokenを渡さない。

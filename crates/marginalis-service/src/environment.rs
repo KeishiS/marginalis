@@ -13,6 +13,11 @@ pub(crate) const OIDC_ISSUER_URL: &str = "MARGINALIS_OIDC_ISSUER_URL";
 pub(crate) const OIDC_CLIENT_ID: &str = "MARGINALIS_OIDC_CLIENT_ID";
 pub(crate) const OIDC_CLIENT_SECRET: &str = "MARGINALIS_OIDC_CLIENT_SECRET";
 pub(crate) const OIDC_CA_CERTIFICATE_FILE: &str = "MARGINALIS_OIDC_CA_CERTIFICATE_FILE";
+pub(crate) const OIDC_SCOPES: &str = "MARGINALIS_OIDC_SCOPES";
+pub(crate) const OIDC_GROUP_CLAIM: &str = "MARGINALIS_OIDC_GROUP_CLAIM";
+pub(crate) const OIDC_ALLOWED_ALGORITHMS: &str = "MARGINALIS_OIDC_ALLOWED_ALGORITHMS";
+pub(crate) const OIDC_TOKEN_ENDPOINT_AUTH: &str = "MARGINALIS_OIDC_TOKEN_ENDPOINT_AUTH";
+pub(crate) const OIDC_ALLOWED_CLAIM_VALUES: &str = "MARGINALIS_OIDC_ALLOWED_CLAIM_VALUES";
 pub(crate) const MCP_ENABLE: &str = "MARGINALIS_MCP_ENABLE";
 pub(crate) const MCP_ALLOWED_ORIGINS: &str = "MARGINALIS_MCP_ALLOWED_ORIGINS";
 pub(crate) const WEBHOOK_ALLOWED_HOSTS: &str = "MARGINALIS_WEBHOOK_ALLOWED_HOSTS";
@@ -81,6 +86,32 @@ pub(crate) const VARIABLES: &[Variable] = &[
         name: OIDC_CA_CERTIFICATE_FILE,
         requirement: Requirement::Optional,
         exposure: Exposure::Presence,
+    },
+    Variable {
+        name: OIDC_SCOPES,
+        requirement: Requirement::Optional,
+        exposure: Exposure::Value,
+    },
+    Variable {
+        name: OIDC_GROUP_CLAIM,
+        requirement: Requirement::Optional,
+        exposure: Exposure::Value,
+    },
+    Variable {
+        name: OIDC_ALLOWED_ALGORITHMS,
+        requirement: Requirement::Optional,
+        exposure: Exposure::Value,
+    },
+    Variable {
+        name: OIDC_TOKEN_ENDPOINT_AUTH,
+        requirement: Requirement::Optional,
+        exposure: Exposure::Value,
+    },
+    // 許可値にはメールアドレスなどの個人情報が入り得るため、件数だけを診断へ出す。
+    Variable {
+        name: OIDC_ALLOWED_CLAIM_VALUES,
+        requirement: Requirement::Optional,
+        exposure: Exposure::ElementCount,
     },
     Variable {
         name: MCP_ENABLE,

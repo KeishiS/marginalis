@@ -35,14 +35,18 @@ pub trait IdentityProvider: Send + Sync {
 
 pub struct OidcAuthenticationApplication {
     provider: Arc<dyn IdentityProvider>,
-    user_group: String,
+    /// 利用を許可するclaim値の一覧。いずれか1つに一致すれば許可する。
+    ///
+    /// 空の一覧は「このissuerで認証できた利用者は全員許可」を意味する(ADR 0015)。
+    /// IdP側でclientの利用者を絞る運用のための明示的な設定であり、既定値ではない。
+    allowed_claim_values: Vec<String>,
 }
 
 impl OidcAuthenticationApplication {
-    pub fn new(provider: Arc<dyn IdentityProvider>, user_group: impl Into<String>) -> Self {
+    pub fn new(provider: Arc<dyn IdentityProvider>, allowed_claim_values: Vec<String>) -> Self {
         Self {
             provider,
-            user_group: user_group.into(),
+            allowed_claim_values,
         }
     }
 }
@@ -66,10 +70,11 @@ impl OidcAuthenticationUseCases for OidcAuthenticationApplication {
             .complete_login(&code, &state)
             .await
             .map_err(map_provider_error)?;
-        if !identity
-            .groups
-            .iter()
-            .any(|group| group == &self.user_group)
+        if !self.allowed_claim_values.is_empty()
+            && !identity
+                .groups
+                .iter()
+                .any(|group| self.allowed_claim_values.contains(group))
         {
             return Err(AuthenticationUseCaseError::Rejected);
         }
@@ -83,5 +88,65 @@ fn map_provider_error(error: IdentityProviderError) -> AuthenticationUseCaseErro
     match error {
         IdentityProviderError::Rejected => AuthenticationUseCaseError::Rejected,
         IdentityProviderError::Unavailable => AuthenticationUseCaseError::Unavailable,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FixedProvider {
+        groups: Vec<String>,
+    }
+
+    #[async_trait]
+    impl IdentityProvider for FixedProvider {
+        async fn begin_login(&self) -> Result<String, IdentityProviderError> {
+            Ok("https://id.example.test/authorize".into())
+        }
+
+        async fn complete_login(
+            &self,
+            _code: &str,
+            _state: &str,
+        ) -> Result<ExternalIdentity, IdentityProviderError> {
+            Ok(ExternalIdentity {
+                issuer: "https://id.example.test".into(),
+                subject: "alice".into(),
+                groups: self.groups.clone(),
+            })
+        }
+    }
+
+    fn application(groups: Vec<String>, allowed: Vec<String>) -> OidcAuthenticationApplication {
+        OidcAuthenticationApplication::new(Arc::new(FixedProvider { groups }), allowed)
+    }
+
+    /// 許可値の一覧はいずれか1つに一致すれば許可する。
+    #[tokio::test]
+    async fn any_allowed_claim_value_grants_access() {
+        let allowed = vec!["a@example.com".to_owned(), "b@example.com".to_owned()];
+        let granted = application(vec!["b@example.com".into()], allowed.clone());
+        assert!(granted.complete_login("c".into(), "s".into()).await.is_ok());
+
+        let denied = application(vec!["c@example.com".into()], allowed);
+        assert_eq!(
+            denied.complete_login("c".into(), "s".into()).await.err(),
+            Some(AuthenticationUseCaseError::Rejected)
+        );
+    }
+
+    /// 空の一覧は「issuerで認証できた利用者は全員許可」を意味する(ADR 0015)。
+    #[tokio::test]
+    async fn an_empty_allow_list_permits_every_authenticated_user() {
+        let open = application(vec!["anything".into()], Vec::new());
+        assert!(open.complete_login("c".into(), "s".into()).await.is_ok());
+        let no_groups = application(Vec::new(), Vec::new());
+        assert!(
+            no_groups
+                .complete_login("c".into(), "s".into())
+                .await
+                .is_ok()
+        );
     }
 }
