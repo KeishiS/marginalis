@@ -763,7 +763,7 @@ fn note_json(status: StatusCode, note: Note) -> Response {
         .into_response()
 }
 
-fn note_response(note: Note) -> NoteResponse {
+pub(crate) fn note_response(note: Note) -> NoteResponse {
     NoteResponse {
         note_id: note.note_id().to_string(),
         title: note.title().to_owned(),

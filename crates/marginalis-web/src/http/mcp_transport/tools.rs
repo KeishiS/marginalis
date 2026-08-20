@@ -2,8 +2,7 @@
 
 use marginalis_application::{
     BibliographyApplication, BibliographyUseCaseError, NoteAdvisorySeverity, NoteListQuery,
-    NoteProfile, NoteSyncEntry, NoteSyncPhase, NoteSyncRemovalReason, NoteUseCaseError,
-    NoteUseCases, NoteWritePolicy,
+    NoteProfile, NoteUseCaseError, NoteUseCases, NoteWritePolicy,
 };
 use marginalis_contract::{
     DiagnosticSeverityResponse, McpAddBibliographyItemInput, McpApplyNotePatchInput,
@@ -14,8 +13,7 @@ use marginalis_contract::{
     McpNoteOutlineSection, McpNotePatchOutput, McpNoteProfileAdvisoryRule, McpNoteProfileExample,
     McpNoteProfileLimits, McpNoteProfileNormalization, McpNoteProfileOutput, McpNoteProfileRule,
     McpNoteProfileSyntax, McpNoteRevisionOutput, McpReplaceNoteSourceInput,
-    McpSearchBibliographyInput, McpSyncEntry, McpSyncNotesInput, McpSyncNotesOutput, McpSyncPhase,
-    McpSyncRemovalReason, McpToolName, ProblemResponse,
+    McpSearchBibliographyInput, McpToolName, ProblemResponse,
 };
 use marginalis_domain::{
     Actor, BibliographyItemId, EntityId, Note, NoteCreationSource, NoteDraft, Revision,
@@ -69,7 +67,6 @@ pub(super) fn decode_tool_call(params: Option<serde_json::Value>) -> Result<McpT
 enum McpToolOutput {
     NoteList(McpListNotesOutput),
     NoteTemplateList(McpListNoteTemplatesOutput),
-    NoteSync(McpSyncNotesOutput),
     NoteProfile(Box<McpNoteProfileOutput>),
     Note(McpGetNoteOutput),
     NoteOutline(McpNoteOutlineOutput),
@@ -111,38 +108,6 @@ impl McpToolOutput {
                         "\n- {} — {} (revision {})",
                         note.note_id, note.title, note.revision
                     );
-                }
-                text
-            }
-            Self::NoteSync(output) => {
-                let phase = match output.phase {
-                    McpSyncPhase::Snapshot => "snapshot",
-                    McpSyncPhase::Changes => "changes",
-                };
-                let count = output.entries.len();
-                let mut text = format!(
-                    "Synchronization {phase}: {count} {}; has_more={}; next_cursor={}",
-                    if count == 1 { "entry" } else { "entries" },
-                    output.has_more,
-                    output.next_cursor
-                );
-                for entry in &output.entries {
-                    match entry {
-                        McpSyncEntry::Upsert { note } => {
-                            let _ = write!(
-                                text,
-                                "\n- upsert {} — {} (revision {})",
-                                note.note_id, note.title, note.revision
-                            );
-                        }
-                        McpSyncEntry::Remove { note_id, reason } => {
-                            let reason = match reason {
-                                McpSyncRemovalReason::Deleted => "deleted",
-                                McpSyncRemovalReason::AccessRevoked => "access revoked",
-                            };
-                            let _ = write!(text, "\n- remove {note_id} ({reason})");
-                        }
-                    }
                 }
                 text
             }
@@ -477,7 +442,6 @@ async fn execute_mcp_tool(
         Some(McpToolName::ListNoteTemplates) => {
             list_note_templates_tool(notes, actor, &call.arguments).await
         }
-        Some(McpToolName::SyncNotes) => sync_notes_tool(notes, actor, call.arguments).await,
         Some(McpToolName::GetNoteProfile) => get_note_profile_tool(notes, &call.arguments),
         Some(McpToolName::GetNote) => get_note_tool(notes, actor, call.arguments).await,
         Some(McpToolName::GetNoteOutline) => {
@@ -505,48 +469,6 @@ async fn execute_mcp_tool(
         }
         None => Err(McpToolFailure::UnknownTool),
     }
-}
-
-async fn sync_notes_tool(
-    notes: &dyn NoteUseCases,
-    actor: Actor,
-    arguments: serde_json::Value,
-) -> Result<McpToolOutput, McpToolFailure> {
-    let input = serde_json::from_value::<McpSyncNotesInput>(arguments)
-        .map_err(|_| McpToolFailure::InvalidArguments("sync arguments are invalid"))?;
-    notes
-        .sync_notes(actor, input.cursor, input.limit)
-        .await
-        .map(|page| {
-            McpToolOutput::NoteSync(McpSyncNotesOutput {
-                phase: match page.phase {
-                    NoteSyncPhase::Snapshot => McpSyncPhase::Snapshot,
-                    NoteSyncPhase::Changes => McpSyncPhase::Changes,
-                },
-                entries: page
-                    .entries
-                    .into_iter()
-                    .map(|entry| match entry {
-                        NoteSyncEntry::Upsert(note) => McpSyncEntry::Upsert {
-                            note: note_output(*note),
-                        },
-                        NoteSyncEntry::Remove { note_id, reason } => McpSyncEntry::Remove {
-                            note_id: note_id.to_string(),
-                            reason: match reason {
-                                NoteSyncRemovalReason::Deleted => McpSyncRemovalReason::Deleted,
-                                NoteSyncRemovalReason::AccessRevoked => {
-                                    McpSyncRemovalReason::AccessRevoked
-                                }
-                            },
-                        },
-                    })
-                    .collect(),
-                next_cursor: page.next_cursor,
-                has_more: page.has_more,
-                cursor_expires_at_ms: page.cursor_expires_at.get(),
-            })
-        })
-        .map_err(McpToolFailure::UseCase)
 }
 
 async fn list_notes_tool(

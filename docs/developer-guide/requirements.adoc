@@ -121,9 +121,9 @@ REST・MCP応答には確認者を含めず、作成経路と確認状態で認�
 PKCE S256を使用すること。Protected Resource MetadataとAuthorization Server Metadataを公開し、
 Client ID Metadata Documentを優先すること。resource、scope、redirect URI、認可code、不透明access
 tokenを検証し、認可応答にはAuthorization Serverを識別する``iss``を含めること。
-* *REQ-API-005 — MCP権限範囲*: MCPでは、ノートに読み取り、書き込み、削除、外部検索用同期の
+* *REQ-API-005 — 外部連携の権限範囲*: OAuthで保護する外部連携では、ノートに読み取り、書き込み、削除、外部検索用同期の
 ``scope``を定義し、文献情報に読み取り、書き込み、削除の``scope``を定義すること。対象と操作が
-一致するscopeだけで各toolを許可すること。``scope``は操作の種類だけを
+一致するscopeだけで各MCP toolまたはREST endpointを許可すること。``scope``は操作の種類だけを
 制限し、操作できるノートや文献情報の範囲を広げないこと。利用者全体とクライアント別のscope上限を
 区別し、対応scope、両方の上限、
 クライアントの要求、利用者の同意の共通部分だけを発行すること。利用者は自分の上限だけを変更でき、
@@ -153,13 +153,15 @@ LSP既定のUTF-16 code unitで数えた1始まりの行・列を返すこと。
 codeと対象位置の診断で返すこと。``dry_run``では検証まで行い保存しないこと。適用後の全文には
 全文置換と同じ検証を適用すること。patchの上限は公開JSON Schemaと``get_note_profile``で
 公開すること。全文の置換は``replace_note_source``だけが行い、``update_note``を提供しないこと。
-``sync_notes``はcursorを省略した初期一覧と、それに続く``upsert``・``remove``を一つのcursor系列で
-返すこと。cursorはactorに結び付け、期限切れを型で区別し、共有取消後は古いcursorから本文を
-取得できないこと。削除を示すtombstoneはノートの物理削除後もcursorの有効期間だけ保持すること。
 * *REQ-API-008 — 失敗表現の共通化*: 同じ業務上の失敗に対して、REST APIとMCPが同じ``code``と
 同じ``message``を返すこと。失敗表現は入力と成功出力と同じく公開契約として定義し、``docs/openapi.json``と
 ``docs/mcp-tools.json``へ出力すること。保存内容の破損は一時的な障害と型で区別し、利用者向けの
 応答では区別を開示しないこと。
+* *REQ-API-009 — 外部検索用同期*: ``GET /api/v3/sync/notes``は``notes:sync``を持つOAuth access token
+だけを受理し、cursorを省略した初期一覧と、それに続く``upsert``・``remove``を一つのcursor系列で
+返すこと。cursorはactorに結び付け、期限切れを型で区別し、共有取消後は古いcursorから本文を
+取得できないこと。削除を示すtombstoneはノートの物理削除後もcursorの有効期間だけ保持すること。
+同期契約はOpenAPIから生成し、MCP toolとして提供しないこと。
 * *REQ-UI-001 — React画面*: 一覧、閲覧、編集、版履歴、共有設定、削除済みノート、文献ライブラリ、
 グラフビュー、数式マクロ設定、MCPのアクセス設定、Webhook設定を一つのReactアプリケーションから
 REST APIを利用して提供すること。

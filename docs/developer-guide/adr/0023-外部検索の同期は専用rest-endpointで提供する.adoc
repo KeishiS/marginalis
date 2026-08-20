@@ -1,0 +1,54 @@
+= 外部検索の同期は専用REST endpointで提供する
+
+[#top]
+* 状態: 採用
+* 日付: 2026-08-20
+
+== 背景
+
+ADR 0013では、外部検索用コピーの初期作成と増分更新をMCPの``sync_notes``として提供しました。
+しかし、この処理は利用者やAIが一回の目的に応じて実行するtoolではありません。接続先のserviceが
+cursorを保存し、停止するまで同じ公開契約を繰り返し呼び出すデータ複製です。MCPのJSON-RPCへ載せると、
+対話用toolの一覧、入力schema、応答の人向け説明まで、service間同期の変更に追従させる必要があります。
+
+既存のOAuth Authorization Serverは``notes:sync``の同意、利用者とclientごとのscope上限、tokenの失効を
+すでに一つの境界で扱っています。この認可規則まで通信方法と一緒に分ける必要はありません。
+
+== 決定
+
+外部検索用コピーの同期は``GET /api/v3/sync/notes``で提供します。入力は任意の``cursor``と``limit``、
+応答は初期一覧または変更一覧、``next_cursor``、続きの有無、cursorの期限です。公開型とエラーは
+REST契約の正本からOpenAPIとTypeScriptへ生成します。MCPの``sync_notes``とそのJSON Schemaは削除します。
+
+endpointはBearer tokenだけを受理し、Web session cookieでは利用できません。必要なscopeは
+``notes:sync``だけです。tokenの発行、scope上限、同意、取消、Protected Resource MetadataはMCPと同じ
+外部連携用OAuth resourceを再利用します。これにより、同じ利用者とclientに二組のtoken状態を持たせず、
+認可を取り消したときはMCPと同期RESTの両方を同じtoken family単位で停止できます。
+
+cursor、初期一覧と変更の境界、共有取消後の本文保護、保持期間、archiveからの分離はADR 0013を
+引き続き適用します。SQLiteの変更記録と用途別の派生状態はADR 0022に従います。
+
+== 結果
+
+外部検索serviceは通常のGETとJSONだけで同期でき、MCP clientは対話的なノート操作だけをtool一覧として
+受け取ります。同期RESTはOAuthを無効にした配備でも経路を維持し、``503``で利用不可を返します。
+token欠落・形式不正・失効は``401``、scope不足は``403``、不正なcursorは``400``、期限切れは``410``です。
+
+認可resourceを共有するため、同期だけを別のissuer、client登録規則、失効方針で運用することはできません。
+現時点では同じ利用者が許可する外部連携であり、状態と運用手順を一組に保つ利点を優先します。
+
+== 代替案
+
+*MCP toolを維持する*: 実装変更は不要ですが、対話用toolと継続的な複製の責務が混在するため採用しません。
+
+*同期専用のOAuth resourceを追加する*: tokenの対象は明確になりますが、認可要求の振り分け、metadata、
+scope上限、取消状態を二重に管理します。現在の接続先と運用規模には過剰なため採用しません。
+
+*Web sessionでも同期を許可する*: 手動確認には便利ですが、常駐serviceがbrowser cookieとCSRF tokenを
+保持する誤った接続方法を生むため採用しません。
+
+== 再検討条件
+
+* MCPを使用しない外部連携が増え、公開上のOAuth resource名が接続の妨げになった場合
+* 同期だけを別のissuer、client登録規則、または失効方針で運用する必要が生じた場合
+* cursorによるpullでは満たせない反映時間または通信量の要件が実測された場合

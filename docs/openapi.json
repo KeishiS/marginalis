@@ -134,6 +134,28 @@
           "type": "integer"
         }
       },
+      "SyncCursor": {
+        "description": "直前の応答に含まれるnext_cursor。初回は省略する",
+        "in": "query",
+        "name": "cursor",
+        "required": false,
+        "schema": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "SyncLimit": {
+        "description": "一頁で返す変更件数",
+        "in": "query",
+        "name": "limit",
+        "required": false,
+        "schema": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
       "ToRevision": {
         "in": "query",
         "name": "to_revision",
@@ -194,6 +216,16 @@
           }
         },
         "description": "note or authorization is not visible"
+      },
+      "OAuthAuthenticationRequired": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "OAuth access token is required or invalid"
       },
       "PreconditionRequired": {
         "content": {
@@ -1764,6 +1796,97 @@
         ],
         "type": "object"
       },
+      "NoteSyncEntry": {
+        "description": "外部検索用コピーへ反映する一件の変更。",
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "const": "upsert",
+                "type": "string"
+              },
+              "note": {
+                "$ref": "#/components/schemas/Note"
+              }
+            },
+            "required": [
+              "kind",
+              "note"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "remove",
+                "type": "string"
+              },
+              "note_id": {
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                "type": "string"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/NoteSyncRemovalReason"
+              }
+            },
+            "required": [
+              "kind",
+              "note_id",
+              "reason"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "NoteSyncPage": {
+        "additionalProperties": false,
+        "description": "外部検索用コピーへ反映する一頁。",
+        "properties": {
+          "cursor_expires_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/NoteSyncEntry"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/NoteSyncPhase"
+          }
+        },
+        "required": [
+          "phase",
+          "entries",
+          "next_cursor",
+          "has_more",
+          "cursor_expires_at_ms"
+        ],
+        "type": "object"
+      },
+      "NoteSyncPhase": {
+        "description": "外部検索用コピーへノートを反映するときの段階。",
+        "enum": [
+          "snapshot",
+          "changes"
+        ],
+        "type": "string"
+      },
+      "NoteSyncRemovalReason": {
+        "description": "外部検索用コピーからノートを除く理由。",
+        "enum": [
+          "deleted",
+          "access_revoked"
+        ],
+        "type": "string"
+      },
       "NoteValidationTarget": {
         "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
         "oneOf": [
@@ -2199,6 +2322,13 @@
           "failure"
         ],
         "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "OAuthAccessToken": {
+        "description": "WWW-Authenticateが示すProtected Resource Metadataから取得するOAuth 2.1 access token",
+        "scheme": "bearer",
+        "type": "http"
       }
     }
   },
@@ -3804,6 +3934,66 @@
           }
         },
         "summary": "Read the current identity"
+      }
+    },
+    "/api/v3/sync/notes": {
+      "get": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SyncCursor"
+          },
+          {
+            "$ref": "#/components/parameters/SyncLimit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSyncPage"
+                }
+              }
+            },
+            "description": "one synchronization page"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/OAuthAuthenticationRequired"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the access token does not grant notes:sync"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the synchronization cursor has expired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OAuthAccessToken": []
+          }
+        ],
+        "summary": "Synchronize an external search projection",
+        "x-required-oauth-scope": "notes:sync"
       }
     },
     "/api/v3/web/notes": {

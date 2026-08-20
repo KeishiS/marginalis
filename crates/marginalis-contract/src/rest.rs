@@ -101,6 +101,11 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
     },
     RestRouteContract {
         method: "GET",
+        specification_path: "/api/v3/sync/notes",
+        probe_path: "/api/v3/sync/notes",
+    },
+    RestRouteContract {
+        method: "GET",
         specification_path: "/api/v3/notes/deleted",
         probe_path: "/api/v3/notes/deleted",
     },
@@ -687,6 +692,51 @@ pub struct NoteResponse {
     pub reviewed_at_ms: Option<i64>,
 }
 
+/// 外部検索用コピーへノートを反映するときの段階。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "NoteSyncPhase")]
+pub enum NoteSyncPhaseResponse {
+    Snapshot,
+    Changes,
+}
+
+/// 外部検索用コピーからノートを除く理由。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "NoteSyncRemovalReason")]
+pub enum NoteSyncRemovalReasonResponse {
+    Deleted,
+    AccessRevoked,
+}
+
+/// 外部検索用コピーへ反映する一件の変更。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[schemars(rename = "NoteSyncEntry")]
+pub enum NoteSyncEntryResponse {
+    Upsert {
+        note: NoteResponse,
+    },
+    Remove {
+        #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
+        note_id: String,
+        reason: NoteSyncRemovalReasonResponse,
+    },
+}
+
+/// 外部検索用コピーへ反映する一頁。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteSyncPage")]
+pub struct NoteSyncPageResponse {
+    pub phase: NoteSyncPhaseResponse,
+    pub entries: Vec<NoteSyncEntryResponse>,
+    pub next_cursor: String,
+    pub has_more: bool,
+    pub cursor_expires_at_ms: i64,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "NoteSummary")]
@@ -1176,6 +1226,7 @@ pub(crate) fn component_schemas() -> Value {
     generator.subschema_for::<BibliographyImportApplyInput>();
     generator.subschema_for::<BibliographyImportResultResponse>();
     generator.subschema_for::<NoteResponse>();
+    generator.subschema_for::<NoteSyncPageResponse>();
     generator.subschema_for::<NoteSummaryResponse>();
     generator.subschema_for::<NoteListEntryResponse>();
     generator.subschema_for::<NoteReviewResponse>();
@@ -1230,6 +1281,12 @@ pub fn openapi_document() -> Value {
                     "schema": note_id_schema()},
                 "AttachmentFileName": {"name": "file_name", "in": "query", "required": true,
                     "schema": {"type": "string", "minLength": 1, "maxLength": 200}},
+                "SyncCursor": {"name": "cursor", "in": "query", "required": false,
+                    "schema": {"type": "string", "minLength": 1},
+                    "description": "直前の応答に含まれるnext_cursor。初回は省略する"},
+                "SyncLimit": {"name": "limit", "in": "query", "required": false,
+                    "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50},
+                    "description": "一頁で返す変更件数"},
                 "McpScopeCeilingRevision": {"name": "revision", "in": "query", "required": true,
                     "schema": {"type": "integer", "minimum": 1},
                     "description": "解除する上限のrevision。現在の値と一致しない場合は409を返す"},
@@ -1244,10 +1301,18 @@ pub fn openapi_document() -> Value {
                 "PreconditionRequired": problem_response("If-Match is required"),
                 "BadRequest": problem_response("the request syntax or If-Match value is invalid"),
                 "AuthenticationRequired": problem_response("OIDC session is required"),
+                "OAuthAuthenticationRequired": problem_response("OAuth access token is required or invalid"),
                 "CsrfRejected": problem_response("same-origin or CSRF validation failed"),
                 "Unavailable": problem_response("the service is temporarily unavailable"),
                 "ValidationFailed": problem_response("note input is invalid"),
                 "UnprocessableNote": problem_response("the note input is invalid or cannot be rendered safely")
+            },
+            "securitySchemes": {
+                "OAuthAccessToken": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "description": "WWW-Authenticateが示すProtected Resource Metadataから取得するOAuth 2.1 access token"
+                }
             }
         }
     })
@@ -1337,6 +1402,21 @@ fn rest_paths() -> Value {
                 ("403", response_ref("CsrfRejected")),
                 ("422", response_ref("UnprocessableNote"))
             ]))
+        },
+        "/api/v3/sync/notes": {
+            "get": oauth_operation(
+                "Synchronize an external search projection",
+                &["SyncCursor", "SyncLimit"],
+                "notes:sync",
+                responses(&[
+                    ("200", schema_response("one synchronization page", "NoteSyncPage")),
+                    ("400", response_ref("BadRequest")),
+                    ("401", response_ref("OAuthAuthenticationRequired")),
+                    ("403", problem_response("the access token does not grant notes:sync")),
+                    ("410", problem_response("the synchronization cursor has expired")),
+                    ("503", response_ref("Unavailable"))
+                ])
+            )
         },
         "/api/v3/web/notes": {
             "post": operation("Create a note from the Web UI", &["CsrfToken"], Some("NoteDraft"), responses(&[
@@ -1683,6 +1763,13 @@ fn operation(summary: &str, parameters: &[&str], body: Option<&str>, responses: 
     value
 }
 
+fn oauth_operation(summary: &str, parameters: &[&str], scope: &str, responses: Value) -> Value {
+    let mut value = operation(summary, parameters, None, responses);
+    value["security"] = json!([{"OAuthAccessToken": []}]);
+    value["x-required-oauth-scope"] = json!(scope);
+    value
+}
+
 fn mutation_responses(description: &str) -> Value {
     responses(&[
         ("200", schema_response_with_etag(description, "Note")),
@@ -1806,6 +1893,14 @@ mod tests {
     fn generated_contracts_use_one_api_version_and_conditional_updates() {
         let document = openapi_document();
         assert_eq!(document["info"]["version"], API_VERSION);
+        assert_eq!(
+            document["paths"]["/api/v3/sync/notes"]["get"]["x-required-oauth-scope"],
+            "notes:sync"
+        );
+        assert_eq!(
+            document["components"]["securitySchemes"]["OAuthAccessToken"]["scheme"],
+            "bearer"
+        );
         assert_eq!(
             document["components"]["parameters"]["BibliographyQuery"]["schema"]["maxLength"],
             256

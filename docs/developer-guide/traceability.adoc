@@ -108,16 +108,19 @@ archive往復・旧契約混在拒否・文書書庫の本文とACLの外部編�
 |REQ-API-005
 |ノート・文献scope対応、scope上限の共通部分・revision・選択的失効の単体試験、同意scopeの部分選択・フォーム改変拒否のHTTP試験、
 認可済みclientの本人境界・最終利用・上限変更のSQLite試験、REST・React設定画面試験、初回・段階的scope challengeのprotocol版別結合試験、
-metadata契約試験、``notes:sync``専用scopeと同意文言の試験
+metadata契約試験、同期RESTの``notes:sync``専用scopeと同意文言の試験
 |MCP権限照合、同意scopeの選択、client別上限変更後の再認可、段階的scope追加
 |REQ-API-006
 |RFC 7009・token family失効試験、認可取消APIのHTTP契約試験、認可済みclient管理画面のReact試験と本番到達性検査
 |client接続解除、即時失効
 |REQ-API-007
 |MCP JSON Schema生成差分、MCP HTTP契約試験、AsciiDoc入力規則・HTML描画試験、警告拒否前の永続化防止試験、
-同期の初期一覧・変更境界・actor拘束・期限切れ・共有取消・tombstone保持のSQLite試験、
 patchの厳密適用・dry_run・階層outline・断片取得の単体とHTTP契約の試験
-|client同期・増分適用・全量再同期・参考文献作成・診断修正後の再実行確認、断片取得とpatch更新
+|参考文献作成・診断修正後の再実行確認、断片取得とpatch更新
+|REQ-API-009
+|OpenAPI生成差分、Bearer token・``notes:sync``・失敗応答のHTTP契約試験、
+同期の初期一覧・変更境界・actor拘束・期限切れ・共有取消・tombstone保持のSQLite試験
+|外部検索serviceからの初期同期・増分適用・全量再同期
 |REQ-UI-001
 |React単体試験、ブラウザー試験、設定画面の経路・REST契約試験、経路別chunkと配布物の大きさ検査
 |主要画面

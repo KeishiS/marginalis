@@ -94,14 +94,17 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 認証処理を、認証方式を変更するときにノート出力変換を読み替える必要がありません。
 実行バイナリは``marginalis-service``です。
 
-外部の検索用投影には、通常閲覧とは別の``notes:sync``とMCPの``sync_notes``を公開します。SQLiteは
+外部の検索用投影には、通常閲覧とは別の``notes:sync``と専用REST endpoint
+``GET /api/v3/sync/notes``を公開します。対話的な操作を表すMCP toolへ、継続的なデータ複製を
+混在させません。OAuthのtoken、scope上限、取消はMCPと同じ外部連携用の認可境界を使用します。SQLiteは
 確定した変更を本文のない``domain_changes``へ一度だけ記録し、actorごと・ノートごとの最新状態を
 同期用の索引へ派生させます。ノートとACLの変更、共通変更記録、同期用索引は同じtransactionで確定します。
 初期一覧は開始時の連番を境界として現在の可視ノートを返し、その後は
 境界より後の変更へ移るため、一覧中の更新を取りこぼしません。``upsert``は読取時に現在のアクセス権と
 ノート正本へ結合し、共有取消後に古いcursorから本文を取得できないようにします。cursorはactorに
 結び付けた不透明tokenで、保存するのはhashだけです。採用理由と保持期間は
-xref:adr/0013-検索投影向けの委任scopeと増分同期.adoc#top[検索投影向けの委任scopeと増分同期]に記録しています。
+xref:adr/0013-検索投影向けの委任scopeと増分同期.adoc#top[検索投影向けの委任scopeと増分同期]と
+xref:adr/0023-外部検索の同期は専用rest-endpointで提供する.adoc#top[ADR 0023]に記録しています。
 
 [#一貫して満たすべき設計条件]
 == 一貫して満たすべき設計条件

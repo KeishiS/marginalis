@@ -15,14 +15,15 @@ use axum::{
 
 use marginalis_application::McpAuthenticatedActor;
 
+use super::resource_authorization::{
+    BearerToken, authenticate, authentication_challenge, bearer_token,
+};
 use super::{
     error::HandlerResult,
     mcp_endpoint,
     state::{ApiState, McpEndpoint},
 };
-use authorization::{
-    BearerToken, authenticate, authentication_challenge, bearer_token, validate_mcp_origin,
-};
+use authorization::validate_mcp_origin;
 use jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use protocol::{
     ProtocolEra, ProtocolValidationError, accepts_media_type, content_type_is_json,

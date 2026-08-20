@@ -16,6 +16,8 @@ use tower::ServiceExt;
 mod support;
 use support::*;
 
+mod note_sync;
+
 #[test]
 fn http_observability_classifies_response_outcomes() {
     assert_eq!(http_outcome(StatusCode::OK), "success");

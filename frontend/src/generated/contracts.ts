@@ -270,6 +270,16 @@ export interface NoteSummary {
   title: string;
   updated_at_ms: number;
 }
+export type NoteSyncEntry = { kind: "upsert"; note: Note; } | { kind: "remove"; note_id: string; reason: NoteSyncRemovalReason; };
+export interface NoteSyncPage {
+  cursor_expires_at_ms: number;
+  entries: NoteSyncEntry[];
+  has_more: boolean;
+  next_cursor: string;
+  phase: NoteSyncPhase;
+}
+export type NoteSyncPhase = "snapshot" | "changes";
+export type NoteSyncRemovalReason = "deleted" | "access_revoked";
 export type NoteValidationTarget = { field: "source"; } | { field: "title"; } | { field: "body"; } | { field: "tag"; index: number; } | { field: "tags"; } | { field: "acl_entry"; index: number; };
 export interface NoteView {
   access: NoteAccess;
@@ -1850,6 +1860,97 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "reviewed_at_ms"
     ],
     "type": "object"
+  },
+  "NoteSyncEntry": {
+    "description": "外部検索用コピーへ反映する一件の変更。",
+    "oneOf": [
+      {
+        "properties": {
+          "kind": {
+            "const": "upsert",
+            "type": "string"
+          },
+          "note": {
+            "$ref": "#/components/schemas/Note"
+          }
+        },
+        "required": [
+          "kind",
+          "note"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "kind": {
+            "const": "remove",
+            "type": "string"
+          },
+          "note_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/NoteSyncRemovalReason"
+          }
+        },
+        "required": [
+          "kind",
+          "note_id",
+          "reason"
+        ],
+        "type": "object"
+      }
+    ]
+  },
+  "NoteSyncPage": {
+    "additionalProperties": false,
+    "description": "外部検索用コピーへ反映する一頁。",
+    "properties": {
+      "cursor_expires_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "entries": {
+        "items": {
+          "$ref": "#/components/schemas/NoteSyncEntry"
+        },
+        "type": "array"
+      },
+      "has_more": {
+        "type": "boolean"
+      },
+      "next_cursor": {
+        "type": "string"
+      },
+      "phase": {
+        "$ref": "#/components/schemas/NoteSyncPhase"
+      }
+    },
+    "required": [
+      "phase",
+      "entries",
+      "next_cursor",
+      "has_more",
+      "cursor_expires_at_ms"
+    ],
+    "type": "object"
+  },
+  "NoteSyncPhase": {
+    "description": "外部検索用コピーへノートを反映するときの段階。",
+    "enum": [
+      "snapshot",
+      "changes"
+    ],
+    "type": "string"
+  },
+  "NoteSyncRemovalReason": {
+    "description": "外部検索用コピーからノートを除く理由。",
+    "enum": [
+      "deleted",
+      "access_revoked"
+    ],
+    "type": "string"
   },
   "NoteValidationTarget": {
     "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",

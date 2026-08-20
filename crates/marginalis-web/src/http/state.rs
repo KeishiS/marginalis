@@ -71,6 +71,7 @@ impl McpRegistrationRateLimiter {
     }
 }
 
+/// MCPと外部検索同期が共有するOAuth resource設定。
 pub struct McpEndpoint {
     pub(super) oauth: Arc<dyn McpOAuthUseCases>,
     /// MCP requests that carry `Origin` are restricted to these exact values. Backend and native

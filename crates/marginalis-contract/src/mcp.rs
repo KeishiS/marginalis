@@ -33,7 +33,6 @@ const MAX_PATCH_BYTES: usize = NOTE_POLICY.max_patch_bytes;
 pub enum McpToolName {
     ListNotes,
     ListNoteTemplates,
-    SyncNotes,
     GetNoteProfile,
     GetNote,
     GetNoteOutline,
@@ -52,7 +51,6 @@ impl McpToolName {
         match self {
             Self::ListNotes => "list_notes",
             Self::ListNoteTemplates => "list_note_templates",
-            Self::SyncNotes => "sync_notes",
             Self::GetNoteProfile => "get_note_profile",
             Self::GetNote => "get_note",
             Self::GetNoteOutline => "get_note_outline",
@@ -74,7 +72,6 @@ impl McpToolName {
             | Self::GetNote
             | Self::GetNoteOutline
             | Self::GetNoteFragment => &["notes:read"],
-            Self::SyncNotes => &["notes:sync"],
             Self::GetNoteProfile => &["notes:read", "notes:write"],
             Self::CreateNote | Self::ApplyNotePatch | Self::ReplaceNoteSource => &["notes:write"],
             Self::DeleteNote => &["notes:delete"],
@@ -95,7 +92,6 @@ impl McpToolName {
             | Self::GetNote
             | Self::GetNoteOutline
             | Self::GetNoteFragment => &[&["notes:read"]],
-            Self::SyncNotes => &[&["notes:sync"]],
             Self::GetNoteProfile => &[&["notes:read", "notes:write"]],
             Self::CreateNote | Self::ApplyNotePatch | Self::ReplaceNoteSource => {
                 &[&["notes:write"]]
@@ -115,7 +111,6 @@ impl TryFrom<&str> for McpToolName {
         match value {
             "list_notes" => Ok(Self::ListNotes),
             "list_note_templates" => Ok(Self::ListNoteTemplates),
-            "sync_notes" => Ok(Self::SyncNotes),
             "get_note_profile" => Ok(Self::GetNoteProfile),
             "get_note" => Ok(Self::GetNote),
             "get_note_outline" => Ok(Self::GetNoteOutline),
@@ -306,50 +301,6 @@ pub struct McpListNotesOutput {
 #[serde(deny_unknown_fields)]
 pub struct McpListNoteTemplatesOutput {
     pub templates: Vec<crate::NoteSummaryResponse>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct McpSyncNotesInput {
-    pub cursor: Option<String>,
-    #[schemars(range(min = 1, max = 100))]
-    pub limit: Option<usize>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum McpSyncPhase {
-    Snapshot,
-    Changes,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum McpSyncRemovalReason {
-    Deleted,
-    AccessRevoked,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum McpSyncEntry {
-    Upsert {
-        note: McpGetNoteOutput,
-    },
-    Remove {
-        note_id: String,
-        reason: McpSyncRemovalReason,
-    },
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct McpSyncNotesOutput {
-    pub phase: McpSyncPhase,
-    pub entries: Vec<McpSyncEntry>,
-    pub next_cursor: String,
-    pub has_more: bool,
-    pub cursor_expires_at_ms: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -547,10 +498,6 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
             McpToolName::ListNoteTemplates,
             "List visible notes tagged 'テンプレート' that serve as templates for new notes; read a template body with get_note; requires notes:read",
         ),
-        McpToolContract::new::<McpSyncNotesInput, McpSyncNotesOutput>(
-            McpToolName::SyncNotes,
-            "Synchronize a persistent search projection with a snapshot followed by changes; requires notes:sync",
-        ),
         McpToolContract::new::<McpEmptyInput, McpNoteProfileOutput>(
             McpToolName::GetNoteProfile,
             "Read the current note profile, including advisory rules and the MCP warning policy; requires notes:read or notes:write",
@@ -613,7 +560,7 @@ mod tests {
     #[test]
     fn tool_catalog_has_unique_typed_names_and_closed_input_objects() {
         let contracts = mcp_tool_contracts();
-        assert_eq!(contracts.len(), 14);
+        assert_eq!(contracts.len(), 13);
         assert_eq!(
             contracts
                 .iter()
@@ -668,7 +615,6 @@ mod tests {
         let expected = [
             (McpToolName::ListNotes, &["notes:read"][..]),
             (McpToolName::ListNoteTemplates, &["notes:read"][..]),
-            (McpToolName::SyncNotes, &["notes:sync"][..]),
             (
                 McpToolName::GetNoteProfile,
                 &["notes:read", "notes:write"][..],

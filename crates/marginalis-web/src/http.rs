@@ -12,8 +12,10 @@ mod html;
 mod math_macros;
 mod mcp_scope_ceilings;
 mod mcp_transport;
+mod note_sync;
 pub(crate) mod notes;
 mod oauth;
+mod resource_authorization;
 mod security;
 mod state;
 mod ui;
@@ -57,6 +59,7 @@ use self::{
         replace_client_mcp_scope_ceiling, replace_mcp_scope_ceiling,
     },
     mcp_transport::{mcp_post, mcp_unsupported_method},
+    note_sync::sync_notes,
     notes::{
         compare_note_revisions, create_note, create_web_note, delete_note, delete_note_attachment,
         export_note, list_deleted_notes, list_note_attachments, list_note_revisions, list_notes,
@@ -233,6 +236,7 @@ pub fn router(state: ApiState) -> Router {
                 .layer(DefaultBodyLimit::max(BIBLIOGRAPHY_IMPORT_REQUEST_BYTES)),
         )
         .route("/api/v3/notes", get(list_notes).post(create_note))
+        .route("/api/v3/sync/notes", get(sync_notes))
         .route("/api/v3/web/notes", post(create_web_note))
         .route("/api/v3/notes/deleted", get(list_deleted_notes))
         .route("/api/v3/notes/preview", post(preview_new_note))
