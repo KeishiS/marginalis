@@ -7,6 +7,7 @@ mod maintenance;
 mod oidc;
 mod runtime;
 mod serve;
+mod webhook;
 
 use tracing_subscriber::EnvFilter;
 

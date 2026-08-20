@@ -1,3 +1,5 @@
+//! Webhook HTTP adapterの結合試験。
+
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

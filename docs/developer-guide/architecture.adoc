@@ -168,7 +168,7 @@ SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``ま�
 * *ARCH-HOOK-001 — Webhook eventの生成と配送の境界*: 通知対象のeventは、変更を確定する
 SQLiteの同じtransaction内のtriggerがoutboxへ記録する（transactional outbox）。配送は
 subscriptionごとに先頭のeventだけをlease付きで取得して順序を保ち、HTTP送信は
-``marginalis-webhook-http`` adapterへ隔離する。application層はrepositoryとsenderのportだけへ
+``marginalis-service::webhook``の非公開adapterへ隔離する。application層はrepositoryとsenderのportだけへ
 依存し、ログは配送結果を受け取ったcomposition rootが記録する。
 * *ARCH-HOOK-002 — Webhook送信先の二重検査*: 送信先URLは登録時に構文とIP literalを検査し、
 送信直前にもすべてのDNS解決結果を検査して解決済みaddressへ接続を固定する。どちらも
@@ -228,7 +228,6 @@ crates/
 ├── marginalis-archive         archive形式の型・検証・移行
 ├── marginalis-sqlite          SQLite adapter
 ├── marginalis-web             HTTP adapter
-├── marginalis-webhook-http    Webhook送信adapter（宛先検査・署名・HTTP POST）
 └── marginalis-service         composition rootと実行バイナリ
 
 frontend/
@@ -239,6 +238,9 @@ frontend/
 ``marginalis-service/src/oidc.rs``は、共有OIDCログインcrateをapplication portへ接続する非公開moduleです。
 独立した配布単位や複数の利用元を持たない薄い型写像は、workspace crateを増やさずcomposition rootの
 内部に置きます。
+``marginalis-service/src/webhook.rs``も同じ方針で、Webhook送信portのHTTP実装、宛先の再検査、署名を
+composition rootの内部に置きます。送信規則と再試行手順はapplicationに、配送状態はSQLiteに残すため、
+外部I/Oの境界は維持します。
 
 次の2つのcrateは``crates/``にはなく、完全なcommit SHAで固定した外部依存として取り込みます。
 

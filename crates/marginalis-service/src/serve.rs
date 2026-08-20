@@ -16,6 +16,7 @@ use crate::{
         OidcTokenEndpointAuth, SharedWebSessions,
     },
     runtime::{SystemClock, SystemRandom},
+    webhook::WebhookHttpSender,
 };
 
 pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -127,9 +128,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // 送信adapterは配送workerと購読の所有確認で同じ検査条件を使うため共有する。
     let webhook_allowed_hosts =
         crate::environment::comma_separated(crate::environment::WEBHOOK_ALLOWED_HOSTS);
-    let webhook_sender = std::sync::Arc::new(marginalis_webhook_http::WebhookHttpSender::new(
-        webhook_allowed_hosts.clone(),
-    ));
+    let webhook_sender = std::sync::Arc::new(WebhookHttpSender::new(webhook_allowed_hosts.clone()));
     let webhooks =
         std::sync::Arc::new(marginalis_application::WebhookSubscriptionApplication::new(
             storage.clone(),
@@ -221,7 +220,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// 抜ける。結果のログはここで記録し、application層はログに依存しない。
 fn spawn_webhook_delivery_worker(
     storage: std::sync::Arc<SqliteDatabase>,
-    sender: std::sync::Arc<marginalis_webhook_http::WebhookHttpSender>,
+    sender: std::sync::Arc<WebhookHttpSender>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {

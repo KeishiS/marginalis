@@ -3,6 +3,7 @@
 //! 送信直前に宛先の全addressを解決して特別用途addressを拒否し、解決済みの
 //! addressへ接続を固定する。redirectは追わない。本文と時刻をHMAC-SHA256で
 //! 署名したheaderを付け、応答は状態codeだけで判定して本文は上限まで読み捨てる。
+//! 製品内で利用するのはcomposition rootだけなので、独立crateにはしない。
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -17,15 +18,15 @@ use marginalis_domain::UnixMillis;
 use sha2::Sha256;
 
 /// 送信timeout。公開契約の値。
-pub const WEBHOOK_SEND_TIMEOUT_MS: u64 = 10_000;
+const WEBHOOK_SEND_TIMEOUT_MS: u64 = 10_000;
 /// 応答bodyを読む上限。受信側の巨大な応答で送信workerを塞がない。
-pub const WEBHOOK_RESPONSE_BODY_LIMIT: usize = 64 * 1024;
+const WEBHOOK_RESPONSE_BODY_LIMIT: usize = 64 * 1024;
 
 /// 署名headerの名前。受信側はこの2つで検証する。
-pub const WEBHOOK_TIMESTAMP_HEADER: &str = "x-marginalis-timestamp";
-pub const WEBHOOK_SIGNATURE_HEADER: &str = "x-marginalis-signature";
+const WEBHOOK_TIMESTAMP_HEADER: &str = "x-marginalis-timestamp";
+const WEBHOOK_SIGNATURE_HEADER: &str = "x-marginalis-signature";
 
-pub struct WebhookHttpSender {
+pub(crate) struct WebhookHttpSender {
     /// 管理者が明示した例外host。private networkへの配送を許可し、
     /// 検証環境ではhttpとloopbackも許す。
     allowed_hosts: Vec<String>,
@@ -33,7 +34,7 @@ pub struct WebhookHttpSender {
 }
 
 impl WebhookHttpSender {
-    pub fn new(allowed_hosts: Vec<String>) -> Self {
+    pub(crate) fn new(allowed_hosts: Vec<String>) -> Self {
         Self {
             allowed_hosts,
             timeout: Duration::from_millis(WEBHOOK_SEND_TIMEOUT_MS),
@@ -41,7 +42,8 @@ impl WebhookHttpSender {
     }
 
     /// 送信timeoutを変更する。試験と将来の運用設定で使う。
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+    #[cfg(test)]
+    fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
@@ -111,7 +113,7 @@ impl WebhookHttpSender {
 }
 
 /// 署名の値。`v1=`に続けて、`<時刻>.<本文>`へのHMAC-SHA256を小文字hexで並べる。
-pub fn webhook_signature(secret: &str, sent_at: UnixMillis, body: &str) -> String {
+fn webhook_signature(secret: &str, sent_at: UnixMillis, body: &str) -> String {
     let mut mac =
         Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts keys of every size");
     mac.update(sent_at.get().to_string().as_bytes());

@@ -8,7 +8,6 @@ members = [
     "crates/marginalis-service",
     "crates/marginalis-sqlite",
     "crates/marginalis-web",
-    "crates/marginalis-webhook-http",
     # CI専用の文書検査ツール。製品コードのcrates/とは区別してtools/で管理する。
     "tools/marginalis-documentation",
 ]

@@ -163,10 +163,10 @@ React設定画面の単体試験
 |``marginalis-sqlite``のoutbox・順序・lease・保持試験、``marginalis-application``のbackoff・停止試験
 |受信サーバーでの通知確認
 |REQ-HOOK-004
-|``marginalis-application``のURL検査試験、``marginalis-webhook-http``の宛先検査試験
+|``marginalis-application``のURL検査試験、``marginalis-service::webhook``の宛先検査試験
 |なし
 |REQ-HOOK-005
-|``marginalis-webhook-http``の署名試験
+|``marginalis-service::webhook``の署名試験
 |受信側での署名検証
 |REQ-ACL-001
 |application・SQLite・React試験
@@ -262,7 +262,7 @@ CIMD認可・本人境界試験、``marginalis-web::http::tests::oauth``・``res
 |``marginalis-sqlite::tests::webhooks``のtrigger・順序・lease試験、
 ``marginalis-application::webhooks``のtick試験、``dependency-boundaries``
 |ARCH-HOOK-002
-|``marginalis-application::webhooks``のURL検査試験、``marginalis-webhook-http::tests``の
+|``marginalis-application::webhooks``のURL検査試験、``marginalis-service::webhook::tests``の
 宛先検査・署名・redirect拒否試験
 |===
 
