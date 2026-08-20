@@ -1,9 +1,12 @@
 //! Web sessionと一回限りのOIDC login attemptの永続化。
 
-use std::future::Future;
+use std::{future::Future, time::Duration};
 
 use marginalis_application::{OidcLoginAttempt, OidcLoginAttemptStore};
-use marginalis_domain::{Actor, AuthenticatedSession, UnixMillis, WebSession};
+use marginalis_domain::UnixMillis;
+use oidc_browser_login::session::{
+    AuthenticatedWebSession, Principal, TokenDigest, WebSessionRecord, WebSessionStore,
+};
 use sqlx::{Row, SqlitePool};
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, token::hash_token};
@@ -15,6 +18,15 @@ pub struct SqliteOidcLoginAttemptStore {
     pool: SqlitePool,
 }
 
+/// 共有crateの`WebSessionStore`契約に対するSQLite実装。
+///
+/// keyと保存値は共有crateが計算したSHA-256 digestで、平文tokenも秘密同士の比較も
+/// この層には現れない。失効は行を残したまま`revoked_at_ms`を記録するsoft revoke。
+#[derive(Clone, Debug)]
+pub struct SqliteWebSessionStore {
+    pool: SqlitePool,
+}
+
 impl SqliteDatabase {
     pub fn oidc_login_attempt_store(&self) -> SqliteOidcLoginAttemptStore {
         SqliteOidcLoginAttemptStore {
@@ -22,57 +34,52 @@ impl SqliteDatabase {
         }
     }
 
-    /// Web sessionの不透明値はhashだけを保存する。
-    pub async fn issue_web_session(
+    pub fn web_session_store(&self) -> SqliteWebSessionStore {
+        SqliteWebSessionStore {
+            pool: self.pool.clone(),
+        }
+    }
+}
+
+impl WebSessionStore for SqliteWebSessionStore {
+    type Error = SqliteStoreError;
+
+    async fn issue(
         &self,
-        session: &WebSession,
-        now: UnixMillis,
-    ) -> Result<(), SqliteStoreError> {
-        let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        record: WebSessionRecord,
+        now: oidc_browser_login::UnixMillis,
+    ) -> Result<(), Self::Error> {
         sqlx::query(
             "INSERT INTO web_sessions
              (session_id_hash, csrf_token_hash, issuer, subject,
               issued_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(hash_token(&session.session_id))
-        .bind(hash_token(&session.csrf_token))
-        .bind(session.actor.issuer())
-        .bind(session.actor.subject())
+        .bind(record.session_digest.as_bytes().to_vec())
+        .bind(record.csrf_digest.as_bytes().to_vec())
+        .bind(record.principal.issuer().to_owned())
+        .bind(record.principal.subject().to_owned())
         .bind(now.get())
         .bind(now.get())
-        .bind(session.idle_expires_at.get())
-        .bind(session.absolute_expires_at.get())
-        .execute(&mut *transaction)
+        .bind(record.idle_expires_at.get())
+        .bind(record.absolute_expires_at.get())
+        .execute(&self.pool)
         .await
         .map_err(database_error)?;
-        transaction.commit().await.map_err(database_error)?;
         Ok(())
     }
 
-    /// sessionの期限を検証し、活動中なら絶対期限を上限としてidle期限を延長する。
-    pub async fn lookup_web_session(
+    async fn lookup_and_extend(
         &self,
-        session_id: &str,
-        now: UnixMillis,
-        idle_timeout_ms: i64,
-    ) -> Result<Option<AuthenticatedSession>, SqliteStoreError> {
-        let hash = hash_token(session_id);
-        if idle_timeout_ms <= 0 {
-            sqlx::query(
-                "UPDATE web_sessions SET revoked_at_ms = ? WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
-            )
-            .bind(now.get())
-            .bind(&hash)
-            .execute(&self.pool)
-            .await
-            .map_err(database_error)?;
-            return Ok(None);
-        }
-
+        session_digest: TokenDigest,
+        now: oidc_browser_login::UnixMillis,
+        idle_window: Duration,
+    ) -> Result<Option<AuthenticatedWebSession>, Self::Error> {
+        let digest = session_digest.as_bytes().to_vec();
+        let idle_window_ms = i64::try_from(idle_window.as_millis()).unwrap_or(i64::MAX);
         // 有効性の検証と期限延長を一つの書き込みにまとめる。読み取り後に遅延
         // transactionを更新へ切り替えると、並行要求とのsnapshot競合が即時失敗する。
-        let next_idle_expires_at = now.get().saturating_add(idle_timeout_ms);
+        let next_idle_expires_at = now.get().saturating_add(idle_window_ms);
         let row = sqlx::query(
             "UPDATE web_sessions
              SET last_seen_at_ms = ?,
@@ -85,14 +92,14 @@ impl SqliteDatabase {
         )
         .bind(now.get())
         .bind(next_idle_expires_at)
-        .bind(&hash)
+        .bind(&digest)
         .bind(now.get())
         .bind(now.get())
         .fetch_optional(&self.pool)
         .await
         .map_err(database_error)?;
         if let Some(row) = row {
-            return session_from_row(row).map(Some);
+            return session_from_row(&row).map(Some);
         }
 
         // 期限切れの行を失効済みにして、明示的なcleanup前にも再利用できない状態を残す。
@@ -104,7 +111,7 @@ impl SqliteDatabase {
                AND (idle_expires_at_ms <= ? OR absolute_expires_at_ms <= ?)",
         )
         .bind(now.get())
-        .bind(hash)
+        .bind(digest)
         .bind(now.get())
         .bind(now.get())
         .execute(&self.pool)
@@ -113,34 +120,37 @@ impl SqliteDatabase {
         Ok(None)
     }
 
-    pub async fn validate_web_session_csrf(
+    async fn csrf_digest(
         &self,
-        session_id: &str,
-        csrf_token: &str,
-    ) -> Result<bool, SqliteStoreError> {
-        let exists = sqlx::query_scalar::<_, i64>(
-            "SELECT 1 FROM web_sessions
-             WHERE session_id_hash = ? AND csrf_token_hash = ? AND revoked_at_ms IS NULL",
+        session_digest: TokenDigest,
+    ) -> Result<Option<TokenDigest>, Self::Error> {
+        let stored = sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT csrf_token_hash FROM web_sessions
+             WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
         )
-        .bind(hash_token(session_id))
-        .bind(hash_token(csrf_token))
+        .bind(session_digest.as_bytes().to_vec())
         .fetch_optional(&self.pool)
         .await
-        .map_err(database_error)?
-        .is_some();
-        Ok(exists)
+        .map_err(database_error)?;
+        stored
+            .map(|bytes| {
+                <[u8; 32]>::try_from(bytes.as_slice())
+                    .map(TokenDigest::from_bytes)
+                    .map_err(|_| SqliteStoreError::CorruptData)
+            })
+            .transpose()
     }
 
-    pub async fn revoke_web_session(
+    async fn revoke(
         &self,
-        session_id: &str,
-        now: UnixMillis,
-    ) -> Result<(), SqliteStoreError> {
+        session_digest: TokenDigest,
+        now: oidc_browser_login::UnixMillis,
+    ) -> Result<(), Self::Error> {
         sqlx::query(
             "UPDATE web_sessions SET revoked_at_ms = ? WHERE session_id_hash = ? AND revoked_at_ms IS NULL",
         )
         .bind(now.get())
-        .bind(hash_token(session_id))
+        .bind(session_digest.as_bytes().to_vec())
         .execute(&self.pool)
         .await
         .map_err(database_error)?;
@@ -149,18 +159,18 @@ impl SqliteDatabase {
 }
 
 fn session_from_row(
-    row: sqlx::sqlite::SqliteRow,
-) -> Result<AuthenticatedSession, SqliteStoreError> {
-    Ok(AuthenticatedSession {
-        actor: Actor::try_new(
+    row: &sqlx::sqlite::SqliteRow,
+) -> Result<AuthenticatedWebSession, SqliteStoreError> {
+    Ok(AuthenticatedWebSession {
+        principal: Principal::new(
             row.try_get("issuer").map_err(database_error)?,
             row.try_get("subject").map_err(database_error)?,
         )
         .map_err(|_| SqliteStoreError::CorruptData)?,
-        idle_expires_at: UnixMillis::new(
+        idle_expires_at: oidc_browser_login::UnixMillis::new(
             row.try_get("idle_expires_at_ms").map_err(database_error)?,
         ),
-        absolute_expires_at: UnixMillis::new(
+        absolute_expires_at: oidc_browser_login::UnixMillis::new(
             row.try_get("absolute_expires_at_ms")
                 .map_err(database_error)?,
         ),

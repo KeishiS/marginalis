@@ -34,12 +34,12 @@ const subscription = {
 
 afterEach(() => {
   cleanup();
-  document.cookie = "marginalis_csrf=; Max-Age=0; path=/";
+  document.cookie = "__Host-marginalis_csrf=; Max-Age=0; path=/; Secure";
   vi.unstubAllGlobals();
 });
 
 test("Webhookを登録するとsecretが1回だけ表示され、検証で有効になる", async () => {
-  document.cookie = "marginalis_csrf=test-csrf; path=/";
+  document.cookie = "__Host-marginalis_csrf=test-csrf; path=/; Secure";
   const fetch = vi
     .fn()
     .mockResolvedValueOnce(Response.json([]))

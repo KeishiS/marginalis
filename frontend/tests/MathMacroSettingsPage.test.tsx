@@ -20,7 +20,7 @@ const CONFIG = {
 
 afterEach(() => {
   cleanup();
-  document.cookie = "marginalis_csrf=; Max-Age=0; path=/";
+  document.cookie = "__Host-marginalis_csrf=; Max-Age=0; path=/; Secure";
   vi.unstubAllGlobals();
 });
 
@@ -32,7 +32,7 @@ function settingsResponse(macros: unknown[] = [], revision = 0) {
 }
 
 test("現在のrevisionと編集内容を保存し、保存後のrevisionを採用する", async () => {
-  document.cookie = "marginalis_csrf=test-csrf; path=/";
+  document.cookie = "__Host-marginalis_csrf=test-csrf; path=/; Secure";
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(settingsResponse([], 2))

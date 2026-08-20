@@ -31,7 +31,7 @@ async fn oauth_consent_uses_session_bound_csrf_when_client_context_has_an_opaque
     let mut headers = HeaderMap::new();
     headers.insert(
         header::COOKIE,
-        "marginalis_session=active-session; marginalis_csrf=session-csrf"
+        "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf"
             .parse()
             .expect("cookies"),
     );
@@ -171,7 +171,7 @@ async fn authorization_consent_preserves_an_omitted_redirect_uri() {
             )
             .header(
                 header::COOKIE,
-                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
             )
             .body(Body::empty())
             .expect("request"),
@@ -205,7 +205,7 @@ async fn authorization_consent_uses_the_normal_japanese_ui_on_a_subpath() {
             )
             .header(
                 header::COOKIE,
-                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                "__Secure-marginalis_session=active-session; __Secure-marginalis_csrf=session-csrf",
             )
             .body(Body::empty())
             .expect("request"),
@@ -277,7 +277,7 @@ async fn authorization_consent_shows_the_complete_long_client_id_before_the_disp
             ))
             .header(
                 header::COOKIE,
-                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
             )
             .body(Body::empty())
             .expect("request"),
@@ -310,7 +310,7 @@ async fn authorization_consent_warns_for_loopback_hosts_independently_of_scheme(
                 ))
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .body(Body::empty())
                 .expect("request"),
@@ -354,7 +354,7 @@ async fn authorization_consent_escapes_every_client_supplied_value() {
             Request::get(query)
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .body(Body::empty())
                 .expect("request"),
@@ -387,7 +387,7 @@ async fn authorization_consent_allows_a_requested_scope_subset_or_denies() {
                 )
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .body(Body::empty())
                 .expect("request"),
@@ -411,7 +411,7 @@ async fn authorization_consent_allows_a_requested_scope_subset_or_denies() {
                     .header(header::ORIGIN, "https://example.test")
                     .header(
                         header::COOKIE,
-                        "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                        "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                     )
                     .body(Body::from(format!(
                         "client_id=consent-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope=notes%3Aread%20notes%3Awrite&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&state=opaque-state&csrf_token=session-csrf&consent_signature={signature}{selected}&decision={decision}"
@@ -457,7 +457,7 @@ async fn authorization_consent_withholds_scopes_beyond_the_ceiling() {
             )
             .header(
                 header::COOKIE,
-                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
             )
             .body(Body::empty())
             .expect("request"),
@@ -487,7 +487,7 @@ async fn authorization_rejects_a_request_entirely_beyond_the_ceiling() {
             )
             .header(
                 header::COOKIE,
-                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
             )
             .body(Body::empty())
             .expect("request"),
@@ -523,7 +523,7 @@ async fn authorization_consent_rejects_modified_or_excess_scopes_and_requires_a_
                 ))
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .body(Body::empty())
                 .expect("request"),
@@ -553,7 +553,7 @@ async fn authorization_consent_rejects_modified_or_excess_scopes_and_requires_a_
                     .header(header::ORIGIN, "https://example.test")
                     .header(
                         header::COOKIE,
-                        "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                        "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                     )
                     .body(Body::from(format!(
                         "client_id=consent-client&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&resource=https%3A%2F%2Fexample.test%2Fmcp&scope={scope}&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&csrf_token=session-csrf&consent_signature={signature}{selected}&decision=approve"
@@ -663,7 +663,7 @@ fn revoke_authorization_request(client_id: &str) -> axum::http::request::Builder
         .header("sec-fetch-site", "same-origin")
         .header(
             header::COOKIE,
-            "marginalis_session=active-session; marginalis_csrf=session-csrf",
+            "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
         )
 }
 

@@ -12,6 +12,7 @@ async-trait.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 mcp-authorization-server.workspace = true
+oidc-browser-login.workspace = true
 sqlx.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -21,5 +22,4 @@ sha2.workspace = true
 tokio.workspace = true
 base64.workspace = true
 mcp-authorization-server = { workspace = true, features = ["testkit"] }
-oidc-browser-login.workspace = true
 oidc-browser-login-testkit.workspace = true

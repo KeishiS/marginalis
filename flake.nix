@@ -153,8 +153,8 @@
                 "adocweave-${adocweaveVersion}" = "sha256-YaQz74xNBHwlPT5S2zPTFwJVRcZzs4nZ4Xj+K18QQlw=";
                 "mcp-authorization-server-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
                 "mcp-authorization-server-cimd-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
-                "oidc-browser-login-0.1.0" = "sha256-vWpsG9KZrKod7eYAzzA5TRgnUXL5aWuKMFFEjxJdOlA=";
-                "oidc-browser-login-testkit-0.1.0" = "sha256-vWpsG9KZrKod7eYAzzA5TRgnUXL5aWuKMFFEjxJdOlA=";
+                "oidc-browser-login-0.2.0" = "sha256-Dk5uE7ZzH8zacNbdMSoleb4V8ZBOa75WLGMOCxt2Knc=";
+                "oidc-browser-login-testkit-0.2.0" = "sha256-Dk5uE7ZzH8zacNbdMSoleb4V8ZBOa75WLGMOCxt2Knc=";
               };
             };
             cargoBuildFlags = [

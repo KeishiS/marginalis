@@ -18,7 +18,6 @@ mod notes;
 mod schema;
 mod session;
 mod token;
-mod web_session_repository;
 mod webhooks;
 
 pub use cleanup::AuthStatePurgeCounts;

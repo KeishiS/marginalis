@@ -11,6 +11,7 @@ use marginalis_application::{
     NoteUseCases, OidcAuthenticationUseCases, WebSessionUseCases, WebhookUseCases,
 };
 use mcp_authorization_server::{AuthorizationServerEndpoints, ResourcePolicy};
+use oidc_browser_login::cookie::SessionCookies;
 
 #[derive(Clone)]
 pub struct ApiState {
@@ -21,6 +22,8 @@ pub struct ApiState {
     pub sessions: Arc<dyn WebSessionUseCases>,
     pub oidc: Arc<dyn OidcAuthenticationUseCases>,
     pub cookie_path: String,
+    /// cookie pathから導出したsessionとCSRFのcookie名・属性。
+    pub cookies: SessionCookies,
     pub browser_origin: String,
     pub mcp: Option<Arc<McpEndpoint>>,
     pub webhooks: Option<Arc<dyn WebhookUseCases>>,
@@ -138,6 +141,9 @@ impl ApiState {
         cookie_path: String,
         browser_origin: String,
     ) -> Self {
+        // cookie pathは検証済みbase URLから導出され、常に`/`で始まる。
+        let cookies = SessionCookies::new("marginalis", &cookie_path)
+            .expect("cookie path is derived from a validated base URL");
         Self {
             notes,
             math_macros,
@@ -146,6 +152,7 @@ impl ApiState {
             sessions,
             oidc,
             cookie_path,
+            cookies,
             browser_origin,
             mcp: None,
             webhooks: None,

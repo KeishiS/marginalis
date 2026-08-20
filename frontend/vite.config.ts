@@ -59,6 +59,12 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // __Host-プレフィックスのcookieを試験で設定できるよう、secure contextのURLにする。
+    environmentOptions: {
+      jsdom: {
+        url: "https://marginalis.example.test/",
+      },
+    },
     setupFiles: ["tests/setup.ts"],
   },
 });

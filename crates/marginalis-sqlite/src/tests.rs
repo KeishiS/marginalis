@@ -11,7 +11,6 @@ use marginalis_domain::{
     Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteAccess,
     NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
     NoteReviewTracking, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, ValidatedCslJson,
-    WebSession,
 };
 
 use super::*;

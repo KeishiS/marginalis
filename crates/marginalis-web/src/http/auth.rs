@@ -11,6 +11,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::AuthenticationUseCaseError;
 use marginalis_contract::ProblemCode;
 use marginalis_domain::{Actor, EntityId, NoteId};
+use oidc_browser_login::session::DEFAULT_ABSOLUTE_TIMEOUT;
 use serde::Deserialize;
 
 use super::{
@@ -18,8 +19,6 @@ use super::{
     state::ApiState,
 };
 
-pub(super) const SESSION_COOKIE: &str = "marginalis_session";
-pub(super) const CSRF_COOKIE: &str = "marginalis_csrf";
 pub(super) const RETURN_TO_COOKIE: &str = "marginalis_return_to";
 
 #[derive(Deserialize)]
@@ -76,7 +75,7 @@ pub(super) async fn authenticated_ui_actor(
     state: &ApiState,
     return_to: &str,
 ) -> Result<Actor, Response> {
-    let Some(session_id) = cookie_value(headers, SESSION_COOKIE) else {
+    let Some(session_id) = cookie_value(headers, state.cookies.session_name()) else {
         return Err(login_redirect(state, return_to));
     };
     match state.sessions.authenticate_session(session_id).await {
@@ -158,15 +157,23 @@ pub(super) async fn complete_login(
         .filter(|value| valid_return_to(value, &state.cookie_path))
         .unwrap_or_else(|| state.cookie_path.clone());
     let mut response = Redirect::to(&return_to).into_response();
+    let [session_cookie, csrf_cookie] = state
+        .cookies
+        .issue_headers(
+            &session.session_id,
+            &session.csrf_token,
+            DEFAULT_ABSOLUTE_TIMEOUT,
+        )
+        .map_err(|_| {
+            problem(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ProblemCode::Unavailable,
+                "authentication is unavailable",
+            )
+        })?;
     for value in [
-        format!(
-            "{SESSION_COOKIE}={}; Path={}; Secure; HttpOnly; SameSite=Lax",
-            session.session_id, state.cookie_path
-        ),
-        format!(
-            "{CSRF_COOKIE}={}; Path={}; Secure; SameSite=Lax",
-            session.csrf_token, state.cookie_path
-        ),
+        session_cookie,
+        csrf_cookie,
         format!(
             "{RETURN_TO_COOKIE}=; Path={}; Secure; HttpOnly; SameSite=Lax; Max-Age=0",
             state.cookie_path
@@ -191,24 +198,15 @@ pub(super) async fn logout(
     headers: HeaderMap,
 ) -> HandlerResult<Response> {
     let _actor = authenticated_mutation_actor(&headers, &state).await?;
-    let session_id =
-        cookie_value(&headers, SESSION_COOKIE).expect("authenticated session cookie exists");
+    let session_id = cookie_value(&headers, state.cookies.session_name())
+        .expect("authenticated session cookie exists");
     state
         .sessions
         .revoke_session(session_id)
         .await
         .map_err(authentication_error)?;
     let mut response = StatusCode::NO_CONTENT.into_response();
-    for value in [
-        format!(
-            "{SESSION_COOKIE}=; Path={}; Max-Age=0; Secure; HttpOnly; SameSite=Lax",
-            state.cookie_path
-        ),
-        format!(
-            "{CSRF_COOKIE}=; Path={}; Max-Age=0; Secure; SameSite=Lax",
-            state.cookie_path
-        ),
-    ] {
+    for value in state.cookies.clear_headers() {
         response.headers_mut().append(
             header::SET_COOKIE,
             value.parse().map_err(|_| {
@@ -227,7 +225,7 @@ pub(super) async fn authenticated_actor(
     headers: &HeaderMap,
     state: &ApiState,
 ) -> HandlerResult<Actor> {
-    let session_id = cookie_value(headers, SESSION_COOKIE).ok_or_else(|| {
+    let session_id = cookie_value(headers, state.cookies.session_name()).ok_or_else(|| {
         problem(
             StatusCode::UNAUTHORIZED,
             ProblemCode::AuthenticationRequired,
@@ -255,9 +253,9 @@ pub(super) async fn authenticated_mutation_actor(
 ) -> HandlerResult<Actor> {
     let actor = authenticated_actor(headers, state).await?;
     validate_mutation_origin(headers, state)?;
-    let session_id =
-        cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
-    let csrf_cookie = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
+    let session_id = cookie_value(headers, state.cookies.session_name())
+        .expect("authenticated session cookie exists");
+    let csrf_cookie = cookie_value(headers, state.cookies.csrf_name()).ok_or_else(|| {
         problem(
             StatusCode::FORBIDDEN,
             ProblemCode::CsrfRequired,
@@ -351,9 +349,9 @@ pub(super) async fn authenticated_form_actor(
             "same-origin request is required",
         ));
     }
-    let session_id =
-        cookie_value(headers, SESSION_COOKIE).expect("authenticated session cookie exists");
-    if cookie_value(headers, CSRF_COOKIE).as_deref() != Some(csrf_token)
+    let session_id = cookie_value(headers, state.cookies.session_name())
+        .expect("authenticated session cookie exists");
+    if cookie_value(headers, state.cookies.csrf_name()).as_deref() != Some(csrf_token)
         || !state
             .sessions
             .verify_csrf(session_id, csrf_token.into())

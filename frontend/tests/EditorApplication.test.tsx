@@ -123,7 +123,7 @@ afterEach(() => {
 });
 
 test("完全なAsciiDoc文書を一つの入力として作成する", async () => {
-  document.cookie = "marginalis_csrf=test-csrf";
+  document.cookie = "__Host-marginalis_csrf=test-csrf";
   const fetchMock = vi
     .fn<typeof fetch>()
     .mockResolvedValue(jsonResponse(NOTE, 201));

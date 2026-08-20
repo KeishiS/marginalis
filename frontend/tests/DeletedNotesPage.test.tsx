@@ -19,12 +19,12 @@ const config = {
 
 afterEach(() => {
   cleanup();
-  document.cookie = "marginalis_csrf=; Max-Age=0; path=/";
+  document.cookie = "__Host-marginalis_csrf=; Max-Age=0; path=/; Secure";
   vi.unstubAllGlobals();
 });
 
 test("削除済みノートの保持情報を表示し、確認後に復元する", async () => {
-  document.cookie = "marginalis_csrf=test-csrf; path=/";
+  document.cookie = "__Host-marginalis_csrf=test-csrf; path=/; Secure";
   const future = Date.now() + 2 * 24 * 60 * 60 * 1_000;
   const fetch = vi
     .fn()
