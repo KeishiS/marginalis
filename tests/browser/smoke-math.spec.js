@@ -44,6 +44,7 @@ test("数式を組版したまま執筆とプレビューを切り替える", as
           },
         ],
         diagnostics: [],
+        spans: [],
       }),
     });
   });
@@ -138,6 +139,7 @@ test("許可していないTeX packageを数式から読み込まない", async 
         html: String.raw`<p><code class="math-latex" data-math-language="latexmath" data-math-display="inline">x + \require{html}\href{https://example.test}{y} + \color{red}{z}</code></p>`,
         math_macros: [],
         diagnostics: [],
+        spans: [],
       }),
     });
   });
@@ -183,6 +185,7 @@ test("旧保存値の不正な未使用マクロを除外して安全なマク�
           { name: "def", replacement: "unused", argument_count: 0 },
         ],
         diagnostics: [],
+        spans: [],
       }),
     });
   });

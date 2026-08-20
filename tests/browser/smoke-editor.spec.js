@@ -14,6 +14,7 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
         html: `<div class="preview-content"><p>${escapeHtml(source)}</p></div>`,
         math_macros: [],
         diagnostics: [],
+        spans: [],
       }),
     });
   });
@@ -94,6 +95,7 @@ test("5,000行の文書を編集して保存できる", async ({ page }) => {
         html: '<div class="preview-content"><p>長文プレビュー</p></div>',
         math_macros: [],
         diagnostics: [],
+        spans: [],
       }),
     });
   });
