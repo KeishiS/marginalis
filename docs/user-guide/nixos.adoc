@@ -39,6 +39,31 @@ services.marginalis = {
 /run/current-system/sw/bin/marginalis --version
 ----
 
+== binary cacheからの取得
+
+リリースタグ(``v*``)の検証が成功するたびに、CIがそのタグのx86_64-linuxとaarch64-linuxの
+実行パッケージをbuildしてbinary cache(``keishis.cachix.org``)へpushしています。利用側の
+NixOS設定へ次を追加すると、``nixos-rebuild``はbuildせずclosureの取得だけで更新できます。
+
+[source,nix]
+----
+nix.settings = {
+  substituters = [ "https://keishis.cachix.org" ];
+  trusted-public-keys = [
+    "keishis.cachix.org-1:j3UwGrrgTifYMa9Uo6fyDU8GEJBcorOzrHdkXBXruK4="
+  ];
+};
+----
+
+cacheへ一致(hit)するのは、CIがbuildしたものと同一のderivationだけです。利用側のflakeで
+``inputs.marginalis.inputs.nixpkgs.follows = ...``のようにinputを上書きするとderivationが
+変わり、cacheへ一致しなくなるため、marginalisのflake.lockのまま取り込んでください。
+参照するrevisionはリリースタグを指定します。タグ以外のcommitを指した場合はcacheへ
+一致せず、従来どおり利用側でbuildされます。
+
+古いタグのcacheを手動で消す運用は不要です。同じ内容のstore pathは版をまたいで共有される
+うえ、容量の上限へ達した場合はCachixが利用の古いpathから自動で回収します。
+
 == 秘密情報とデータの保存先
 
 ``clientSecretFile`` は systemd credential として渡され、Nix store に現れてはなりません。内部 CA の
