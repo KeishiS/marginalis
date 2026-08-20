@@ -128,3 +128,76 @@ test("編集欄の数式を組版し、カーソル交差で原文を開示す�
   }
   await expect(mathLine).toContainText("stem:[x^2]");
 });
+
+// admonition・リスト・引用ブロックの行装飾。バイト位置はUTF-8で数える。
+const BLOCK_DOCUMENT =
+  "= 題名\n\nNOTE: 注意です。\n\n* 項目1\n** 項目2\n\n[quote]\n____\n引用文です。\n____\n";
+const BLOCK_SPANS = [
+  {
+    kind: "document_title",
+    span: { start: 0, end: 9, unit: "utf8_byte" },
+    content_span: { start: 2, end: 8, unit: "utf8_byte" },
+    marker_spans: [
+      { start: 0, end: 1, unit: "utf8_byte" },
+      { start: 1, end: 2, unit: "utf8_byte" },
+    ],
+  },
+  {
+    kind: "admonition",
+    span: { start: 10, end: 31, unit: "utf8_byte" },
+    content_span: { start: 16, end: 31, unit: "utf8_byte" },
+    marker_spans: [{ start: 10, end: 15, unit: "utf8_byte" }],
+  },
+  {
+    kind: "list_item",
+    span: { start: 33, end: 42, unit: "utf8_byte" },
+    content_span: { start: 35, end: 42, unit: "utf8_byte" },
+    marker_spans: [
+      { start: 33, end: 34, unit: "utf8_byte" },
+      { start: 34, end: 35, unit: "utf8_byte" },
+    ],
+  },
+  {
+    kind: "list_item",
+    span: { start: 43, end: 53, unit: "utf8_byte" },
+    content_span: { start: 46, end: 53, unit: "utf8_byte" },
+    marker_spans: [
+      { start: 43, end: 45, unit: "utf8_byte" },
+      { start: 45, end: 46, unit: "utf8_byte" },
+    ],
+  },
+  {
+    kind: "quote",
+    span: { start: 55, end: 92, unit: "utf8_byte" },
+    content_span: { start: 68, end: 86, unit: "utf8_byte" },
+    marker_spans: [
+      { start: 55, end: 62, unit: "utf8_byte" },
+      { start: 63, end: 67, unit: "utf8_byte" },
+      { start: 87, end: 91, unit: "utf8_byte" },
+    ],
+  },
+];
+
+test("ブロック要素の行装飾を表示する", async ({ page }) => {
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    const source = (await route.request().postDataJSON()).source;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: "<p>プレビュー</p>",
+        math_macros: [],
+        diagnostics: [],
+        spans: source === BLOCK_DOCUMENT ? BLOCK_SPANS : [],
+      }),
+    });
+  });
+  await page.goto("/notes/new");
+  const editor = page.getByRole("textbox", { name: "AsciiDoc文書" });
+  await expect(editor).toBeFocused();
+  await editor.fill(BLOCK_DOCUMENT);
+
+  await expect(page.locator(".cm-line.lp-block-admonition")).toHaveCount(1);
+  await expect(page.locator(".lp-block-label")).toHaveText("NOTE:");
+  await expect(page.locator(".lp-list-bullet")).toHaveCount(2);
+  await expect(page.locator(".cm-line.lp-block-quote")).toHaveCount(4);
+});
