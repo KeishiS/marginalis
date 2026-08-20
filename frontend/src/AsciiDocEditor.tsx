@@ -43,7 +43,8 @@ import {
   useRef,
 } from "react";
 
-import { type NoteDiagnostic } from "./api";
+import { type NoteDiagnostic, type NoteSourceSpan } from "./api";
+import { livePreview, setLiveSpans, toLiveSpans } from "./editor/livePreview";
 import { canSelectDiagnostic, diagnosticMessage } from "./editorPresentation";
 import { utf8ByteOffsetToTextOffset } from "./textPosition";
 
@@ -55,6 +56,10 @@ export interface AsciiDocEditorHandle {
 interface AsciiDocEditorProps {
   value: string;
   diagnostics: NoteDiagnostic[];
+  /** 現在の本文に対するspan注釈。最新の解析が本文と一致しない間は`null`。 */
+  spans: NoteSourceSpan[] | null;
+  /** 装飾表示の有効・無効。無効時は素の原文を表示する。 */
+  livePreviewEnabled: boolean;
   disabled: boolean;
   labelledBy: string;
   onChange: (value: string) => void;
@@ -71,6 +76,8 @@ export const AsciiDocEditor = forwardRef<
   {
     value,
     diagnostics,
+    spans,
+    livePreviewEnabled,
     disabled,
     labelledBy,
     onChange,
@@ -92,6 +99,8 @@ export const AsciiDocEditor = forwardRef<
   const onSaveRef = useRef(onSave);
   const readOnly = useRef(new Compartment());
   const editable = useRef(new Compartment());
+  const livePreviewConfiguration = useRef(new Compartment());
+  const initialLivePreviewEnabled = useRef(livePreviewEnabled);
 
   useLayoutEffect(() => {
     onChangeRef.current = onChange;
@@ -127,6 +136,9 @@ export const AsciiDocEditor = forwardRef<
           EditorState.tabSize.of(4),
           readOnly.current.of(EditorState.readOnly.of(false)),
           editable.current.of(EditorView.editable.of(true)),
+          livePreviewConfiguration.current.of(
+            initialLivePreviewEnabled.current ? livePreview() : [],
+          ),
           EditorView.contentAttributes.of({
             "aria-labelledby": initialLabel.current,
             "aria-multiline": "true",
@@ -208,6 +220,25 @@ export const AsciiDocEditor = forwardRef<
       ],
     });
   }, [disabled]);
+
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor) return;
+    editor.dispatch({
+      effects: livePreviewConfiguration.current.reconfigure(
+        livePreviewEnabled ? livePreview() : [],
+      ),
+    });
+  }, [livePreviewEnabled]);
+
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor || spans === null) return;
+    // span注釈は解析した本文とだけ整合する。編集欄が既に先へ進んでいる場合は捨て、
+    // 既存の装飾を編集への追従に任せる。
+    if (editor.state.doc.toString() !== value) return;
+    editor.dispatch({ effects: setLiveSpans.of(toLiveSpans(value, spans)) });
+  }, [spans, value, livePreviewEnabled]);
 
   useImperativeHandle(
     forwardedRef,

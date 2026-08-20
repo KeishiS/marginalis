@@ -72,6 +72,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const [isComposing, setIsComposing] = useState(false);
   const [saveToast, setSaveToast] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>("write");
+  const [livePreviewEnabled, setLivePreviewEnabled] = useState(true);
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(baseline),
     [baseline, form],
@@ -276,7 +277,12 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
 
       <form className="editor-form" onSubmit={save} ref={editorForm}>
         <div className="grid gap-3 rounded-md border bg-card p-3 shadow-xs">
-          <EditorViewToolbar mode={viewMode} onModeChange={changeViewMode} />
+          <EditorViewToolbar
+            mode={viewMode}
+            onModeChange={changeViewMode}
+            livePreviewEnabled={livePreviewEnabled}
+            onLivePreviewChange={setLivePreviewEnabled}
+          />
           {config.mode === "create" && (
             <TemplatePicker
               apiBase={config.apiBase}
@@ -295,6 +301,8 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
                 completionSources={completionSources}
                 value={form.source}
                 diagnostics={preview.diagnostics}
+                spans={preview.spans}
+                livePreviewEnabled={livePreviewEnabled}
                 disabled={saving}
                 onChange={changeSource}
                 labelledBy="source-editor-label"
