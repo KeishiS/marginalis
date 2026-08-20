@@ -3,9 +3,13 @@ import { EditorViewMode } from "./viewMode";
 export function EditorViewToolbar({
   mode,
   onModeChange,
+  livePreviewEnabled,
+  onLivePreviewChange,
 }: {
   mode: EditorViewMode;
   onModeChange: (mode: EditorViewMode) => void;
+  livePreviewEnabled: boolean;
+  onLivePreviewChange: (enabled: boolean) => void;
 }) {
   const modes: ReadonlyArray<{ mode: EditorViewMode; label: string }> = [
     { mode: "write", label: "執筆" },
@@ -25,6 +29,16 @@ export function EditorViewToolbar({
             {item.label}
           </button>
         ))}
+      </div>
+      <div className="editor-view-buttons" role="group" aria-label="執筆の表示">
+        <button
+          className="button-segment"
+          type="button"
+          aria-pressed={livePreviewEnabled}
+          onClick={() => onLivePreviewChange(!livePreviewEnabled)}
+        >
+          装飾
+        </button>
       </div>
     </div>
   );

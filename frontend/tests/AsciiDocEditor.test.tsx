@@ -19,6 +19,8 @@ test("日本語IMEの変換状態と保存ショートカットを親へ通知�
     <AsciiDocEditor
       value="= 文書"
       diagnostics={[]}
+      spans={null}
+      livePreviewEnabled={false}
       disabled={false}
       labelledBy="test-editor-label"
       onChange={() => {}}
@@ -113,6 +115,8 @@ function LabelledEditor({
       <AsciiDocEditor
         value={value}
         diagnostics={diagnostics}
+        spans={null}
+        livePreviewEnabled={false}
         disabled={false}
         labelledBy="external-editor-label"
         onChange={onChange}

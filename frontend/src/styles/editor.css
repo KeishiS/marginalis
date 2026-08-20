@@ -75,6 +75,18 @@
 }
 
 .ascii-doc-editor {
+  /*
+   * Live Previewの装飾の大きさ。編集欄の等幅fontを基準に保つため、remのtokenではなく
+   * em基準の局所変数で持つ。
+   */
+  --lp-text-adjusted: 0.75em;
+  --lp-heading-0: 1.6em;
+  --lp-heading-1: 1.4em;
+  --lp-heading-2: 1.25em;
+  --lp-heading-3: 1.15em;
+  --lp-heading-4: 1.05em;
+  --lp-monospace-padding: 0.15em;
+
   min-width: 0;
   overflow: hidden;
 }
@@ -170,6 +182,75 @@
 .preview-heading span {
   color: var(--color-muted-foreground);
   font-size: var(--text-caption);
+}
+
+/*
+ * Live Previewの装飾。span注釈(ADR 0016)から導いたclassで、本文の文字列は変えず
+ * 表示だけを変える。開示中(カーソル交差)も同じmarkが残り、記法文字だけが現れる。
+ */
+.ascii-doc-editor .lp-strong {
+  font-weight: 700;
+}
+
+.ascii-doc-editor .lp-emphasis {
+  font-style: italic;
+}
+
+.ascii-doc-editor .lp-highlight {
+  background: var(--color-editor-selection);
+}
+
+.ascii-doc-editor .lp-subscript {
+  font-size: var(--lp-text-adjusted);
+  vertical-align: sub;
+}
+
+.ascii-doc-editor .lp-superscript {
+  font-size: var(--lp-text-adjusted);
+  vertical-align: super;
+}
+
+.ascii-doc-editor .lp-monospace {
+  background: var(--color-muted);
+  border-radius: var(--radius-sm);
+  padding-inline: var(--lp-monospace-padding);
+}
+
+.ascii-doc-editor .lp-link,
+.ascii-doc-editor .lp-reference {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.ascii-doc-editor .lp-citation {
+  color: var(--color-primary);
+}
+
+.ascii-doc-editor .lp-heading {
+  font-family: var(--font-ui);
+  font-weight: 700;
+}
+
+.ascii-doc-editor .lp-heading-0 {
+  font-size: var(--lp-heading-0);
+}
+
+.ascii-doc-editor .lp-heading-1 {
+  font-size: var(--lp-heading-1);
+}
+
+.ascii-doc-editor .lp-heading-2 {
+  font-size: var(--lp-heading-2);
+}
+
+.ascii-doc-editor .lp-heading-3 {
+  font-size: var(--lp-heading-3);
+}
+
+.ascii-doc-editor .lp-heading-4,
+.ascii-doc-editor .lp-heading-5 {
+  font-size: var(--lp-heading-4);
 }
 
 .editor-actions {

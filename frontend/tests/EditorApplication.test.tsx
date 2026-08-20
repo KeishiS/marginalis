@@ -451,6 +451,18 @@ test("表示を切り替えても入力欄を維持する", async () => {
   await waitFor(() => expect(editor).toHaveFocus());
 });
 
+test("装飾トグルは既定で有効で、押すたびに切り替わる", () => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>());
+  render(<EditorApplication config={CONFIG} />);
+
+  const toggle = screen.getByRole("button", { name: "装飾" });
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+});
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
