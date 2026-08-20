@@ -54,8 +54,6 @@ const fn migration_contract(
 const SUPPORTED_MIGRATION_CONTRACTS: &[MigrationContract] = &[
     // v0.44.0からv0.45.0が書き出した契約。
     migration_contract("marginalis-archive-17", "0.40.1"),
-    // v0.40.0からv0.42.0が書き出した契約(v0.43.0は欠番)。
-    migration_contract("marginalis-archive-17", "0.40.0"),
 ];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -931,6 +929,7 @@ mod tests {
     fn migration_rejects_contracts_older_than_the_support_window() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         for contract in [
+            migration_contract("marginalis-archive-17", "0.40.0"),
             migration_contract("marginalis-archive-17", "0.36.0"),
             migration_contract("marginalis-archive-16", "0.27.0"),
             migration_contract("marginalis-archive-7", "0.11.0"),
