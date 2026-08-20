@@ -10,18 +10,24 @@ use marginalis_domain::{
 
 use super::*;
 
-/// outboxの行を発生順に読む。(event_kind, target_id, revision, event_id)
-async fn outbox_rows(database: &SqliteDatabase) -> Vec<(String, String, i64, String)> {
+/// Webhookへ公開する変更を発生順に読む。(event_kind, target_id, revision, event_id)
+async fn webhook_event_rows(database: &SqliteDatabase) -> Vec<(String, String, i64, String)> {
     sqlx::query_as::<_, (String, String, i64, String)>(
-        "SELECT event_kind, target_id, revision, event_id
-         FROM webhook_outbox_events ORDER BY event_sequence",
+        "SELECT change_kind, target_id, revision, event_id
+         FROM domain_changes
+         WHERE change_kind IN (
+             'note.created', 'note.updated', 'note.deleted', 'note.restored',
+             'bibliography_item.created', 'bibliography_item.updated',
+             'bibliography_item.deleted'
+         )
+         ORDER BY change_sequence",
     )
     .fetch_all(&database.pool)
     .await
-    .expect("outbox query")
+    .expect("webhook event query")
 }
 
-/// 試験用のsubscription行を直接挿入する(管理APIは後続issueで実装する)。
+/// 配送の試験に必要な、有効化済みsubscription行を直接挿入する。
 async fn insert_subscription(
     database: &SqliteDatabase,
     subscription_id: &str,
@@ -44,6 +50,67 @@ async fn insert_subscription(
     .execute(&database.pool)
     .await
     .expect("insert subscription");
+}
+
+/// 一つの変更記録から、検索同期の最新状態とWebhook配送の両方を派生させる。
+#[tokio::test]
+async fn one_change_sequence_drives_sync_and_webhook_delivery() {
+    let database = database().await;
+    let alice = user("alice");
+    insert_subscription(
+        &database,
+        "sub-shared-change",
+        "alice",
+        "active",
+        r#"["note.created"]"#,
+    )
+    .await;
+    let note = note_seed(
+        "0197c9bc-0000-7000-8000-0000000000d1",
+        "alice",
+        "Shared change",
+    )
+    .build();
+    database
+        .create_note(&note, NoteLinks::default())
+        .await
+        .expect("create note");
+
+    let change_sequence = sqlx::query_scalar::<_, i64>(
+        "SELECT change_sequence FROM domain_changes
+         WHERE change_kind = 'note.created' AND target_id = ?",
+    )
+    .bind(note.note_id().to_string())
+    .fetch_one(&database.pool)
+    .await
+    .expect("common change");
+    let sync_sequence = sqlx::query_scalar::<_, i64>(
+        "SELECT change_sequence FROM note_sync_projection
+         WHERE principal_id = ? AND note_id = ?",
+    )
+    .bind(alice.principal_id().get())
+    .bind(note.note_id().to_string())
+    .fetch_one(&database.pool)
+    .await
+    .expect("sync projection");
+    let delivery_sequence = sqlx::query_scalar::<_, i64>(
+        "SELECT event_sequence FROM webhook_deliveries WHERE subscription_id = ?",
+    )
+    .bind("sub-shared-change")
+    .fetch_one(&database.pool)
+    .await
+    .expect("webhook delivery");
+
+    assert_eq!(sync_sequence, change_sequence);
+    assert_eq!(delivery_sequence, change_sequence);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM domain_changes WHERE target_id = ?")
+            .bind(note.note_id().to_string())
+            .fetch_one(&database.pool)
+            .await
+            .expect("change count"),
+        1
+    );
 }
 
 /// ノートの作成、本文更新、削除、復元だけがeventになり、ACLと人手確認の更新、
@@ -142,7 +209,7 @@ async fn note_lifecycle_emits_exactly_one_event_per_confirmed_change() {
         .await
         .expect("restore");
 
-    let rows = outbox_rows(&database).await;
+    let rows = webhook_event_rows(&database).await;
     let kinds: Vec<&str> = rows.iter().map(|row| row.0.as_str()).collect();
     assert_eq!(
         kinds,
@@ -166,7 +233,8 @@ async fn note_lifecycle_emits_exactly_one_event_per_confirmed_change() {
     assert_eq!(ids.len(), rows.len());
     // 所有者はノート作成者のまま変わらない。
     let owners = sqlx::query_scalar::<_, i64>(
-        "SELECT DISTINCT owner_principal_id FROM webhook_outbox_events",
+        "SELECT DISTINCT owner_principal_id FROM domain_changes
+         WHERE change_kind IN ('note.created', 'note.updated', 'note.deleted', 'note.restored')",
     )
     .fetch_all(&database.pool)
     .await
@@ -262,7 +330,7 @@ async fn bibliography_changes_emit_events_for_direct_and_bulk_operations() {
         .await
         .expect("apply import");
 
-    let rows = outbox_rows(&database).await;
+    let rows = webhook_event_rows(&database).await;
     let kinds: Vec<&str> = rows.iter().map(|row| row.0.as_str()).collect();
     assert_eq!(
         kinds,
@@ -448,7 +516,7 @@ async fn claiming_respects_order_lease_and_subscription_state() {
     );
 }
 
-/// 保持期間を過ぎた配送済みeventは消え、未配送が残るeventは保持される。
+/// 配送と同期の異なる保持期間を守り、未配送が残る変更記録は保持する。
 #[tokio::test]
 async fn purging_keeps_undelivered_events_and_removes_expired_ones() {
     let database = database().await;
@@ -481,11 +549,29 @@ async fn purging_keeps_undelivered_events_and_removes_expired_ones() {
 
     let far_future = UnixMillis::new(2_000 + 8 * 24 * 60 * 60 * 1000);
     let removed = database
-        .purge_expired_events(far_future)
+        .purge_expired_deliveries(far_future)
         .await
         .expect("purge");
     assert_eq!(removed, 1);
-    let remaining = outbox_rows(&database).await;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM webhook_deliveries")
+            .fetch_one(&database.pool)
+            .await
+            .expect("delivery count"),
+        1
+    );
+    // 配送済みの変更も同期投影が参照する35日間は共通記録へ残る。
+    let remaining = webhook_event_rows(&database).await;
+    assert_eq!(remaining.len(), 2);
+
+    database
+        .purge_expired_operational_state(
+            UnixMillis::new(2_000 + 36 * 24 * 60 * 60 * 1000),
+            UnixMillis::new(0),
+        )
+        .await
+        .expect("purge sync state");
+    let remaining = webhook_event_rows(&database).await;
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].1, pending.note_id().to_string());
 }

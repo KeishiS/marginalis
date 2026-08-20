@@ -247,7 +247,9 @@ unitは通常serviceと同時に実行せず、``backupDirectory``に
 
 現在のschemaは23です。schema 22から更新する場合は、すべての外部identityを推測でまとめず、
 ``issuer``と``subject``が完全に一致する組ごとに内部principalを作ります。Web session、MCP token、
-同期cursor、Webhook配送状態を含む既存行は、そのprincipalへの参照へ移します。すでにschema 23で
+Webhookのeventと配送状態を含む既存行は、そのprincipalへの参照へ移します。同期用とWebhook用で
+別々だった変更番号を一つへ統合するため、既存の同期cursorと変更索引は移行しません。連環などの
+外部検索用投影は、移行後にcursorを省略した全量同期から再開してください。すでにschema 23で
 未適用のmigrationがない場合は、成功logの``applied_migrations=0``と``backup=none``で何も変更しなかった
 ことを示し、SQLite退避も作りません。schema 22には過去版がないため、各ノートの移行時の現在版を
 ``imported``という変更種別の履歴一件として開始します。存在しない版や変更者は推測しません。

@@ -125,7 +125,7 @@ async fn access_revocation_never_returns_source_and_tombstone_survives_note_purg
         .expect("purge note");
     assert_eq!(
         sqlx::query_scalar::<_, String>(
-            "SELECT reason FROM note_sync_changes WHERE principal_id = ? AND note_id = ?"
+            "SELECT reason FROM note_sync_projection WHERE principal_id = ? AND note_id = ?"
         )
         .bind(alice.principal_id().get())
         .bind(id.to_string())
@@ -134,6 +134,54 @@ async fn access_revocation_never_returns_source_and_tombstone_survives_note_purg
         .expect("tombstone"),
         "deleted"
     );
+}
+
+#[tokio::test]
+async fn shared_note_deletion_tombstone_survives_physical_purge() {
+    let database = database().await;
+    let alice = user("alice");
+    let bob = user("bob");
+    let id = note_id("0197c9bc-0000-7000-8000-000000000083");
+    database
+        .create_note(
+            &note_seed("0197c9bc-0000-7000-8000-000000000083", "alice", "Shared").build(),
+            NoteLinks::default(),
+        )
+        .await
+        .expect("create");
+    database
+        .replace_note_acl(
+            &alice,
+            id,
+            &[acl_entry("bob", NotePermission::Read)],
+            Revision::INITIAL,
+            UnixMillis::new(200),
+        )
+        .await
+        .expect("share");
+
+    database
+        .soft_delete_visible_note(&alice, id, revision(2), UnixMillis::new(300))
+        .await
+        .expect("delete");
+    database
+        .purge_deleted_before(UnixMillis::new(301))
+        .await
+        .expect("purge note");
+
+    for principal_id in [alice.principal_id(), bob.principal_id()] {
+        assert_eq!(
+            sqlx::query_scalar::<_, String>(
+                "SELECT reason FROM note_sync_projection WHERE principal_id = ? AND note_id = ?"
+            )
+            .bind(principal_id.get())
+            .bind(id.to_string())
+            .fetch_one(&database.pool)
+            .await
+            .expect("tombstone"),
+            "deleted"
+        );
+    }
 }
 
 #[tokio::test]

@@ -5,7 +5,7 @@ use marginalis_domain::UnixMillis;
 use crate::{SqliteDatabase, SqliteStoreError, database_error};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct AuthStatePurgeCounts {
+pub struct OperationalStatePurgeCounts {
     pub web_sessions: u64,
     pub oidc_login_attempts: u64,
     pub mcp_access_tokens: u64,
@@ -14,7 +14,7 @@ pub struct AuthStatePurgeCounts {
     pub mcp_client_authorizations: u64,
     pub mcp_clients: u64,
     pub note_sync_cursors: u64,
-    pub note_sync_changes: u64,
+    pub note_sync_projection_entries: u64,
 }
 
 impl SqliteDatabase {
@@ -39,12 +39,13 @@ impl SqliteDatabase {
         Ok(result.rows_affected())
     }
 
-    /// 期限切れ・失効済み認証状態と、参照されない古いMCP clientを一transactionで削除する。
-    pub async fn purge_expired_auth_state(
+    /// 期限切れ・失効済みの認証状態、同期状態、参照されない変更記録とMCP clientを
+    /// 一つのtransactionで削除する。
+    pub async fn purge_expired_operational_state(
         &self,
         now: UnixMillis,
         unused_client_cutoff: UnixMillis,
-    ) -> Result<AuthStatePurgeCounts, SqliteStoreError> {
+    ) -> Result<OperationalStatePurgeCounts, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let web_sessions = sqlx::query(
             "DELETE FROM web_sessions
@@ -165,18 +166,41 @@ impl SqliteDatabase {
                 .await
                 .map_err(database_error)?
                 .rows_affected();
-        let note_sync_changes =
-            sqlx::query("DELETE FROM note_sync_changes WHERE changed_at_ms <= ?")
-                .bind(
-                    now.get()
-                        .saturating_sub(marginalis_application::NOTE_SYNC_CURSOR_RETENTION_MS),
-                )
-                .execute(&mut *transaction)
-                .await
-                .map_err(database_error)?
-                .rows_affected();
+        let sync_horizon = now
+            .get()
+            .saturating_sub(marginalis_application::NOTE_SYNC_CURSOR_RETENTION_MS);
+        let note_sync_projection_entries = sqlx::query(
+            "DELETE FROM note_sync_projection
+             WHERE EXISTS (
+                 SELECT 1 FROM domain_changes change
+                 WHERE change.change_sequence = note_sync_projection.change_sequence
+                   AND change.occurred_at_ms <= ?
+             )",
+        )
+        .bind(sync_horizon)
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?
+        .rows_affected();
+        // 同期投影とWebhook配送のどちらからも参照されない変更記録だけを削除する。
+        sqlx::query(
+            "DELETE FROM domain_changes
+             WHERE occurred_at_ms <= ?
+               AND NOT EXISTS (
+                   SELECT 1 FROM note_sync_projection sync
+                   WHERE sync.change_sequence = domain_changes.change_sequence
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM webhook_deliveries delivery
+                   WHERE delivery.event_sequence = domain_changes.change_sequence
+               )",
+        )
+        .bind(sync_horizon)
+        .execute(&mut *transaction)
+        .await
+        .map_err(database_error)?;
         transaction.commit().await.map_err(database_error)?;
-        Ok(AuthStatePurgeCounts {
+        Ok(OperationalStatePurgeCounts {
             web_sessions,
             oidc_login_attempts,
             mcp_access_tokens,
@@ -185,7 +209,7 @@ impl SqliteDatabase {
             mcp_client_authorizations,
             mcp_clients,
             note_sync_cursors,
-            note_sync_changes,
+            note_sync_projection_entries,
         })
     }
 }

@@ -95,8 +95,9 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 実行バイナリは``marginalis-service``です。
 
 外部の検索用投影には、通常閲覧とは別の``notes:sync``とMCPの``sync_notes``を公開します。SQLiteは
-actorごと・ノートごとの最新変更だけを、本文を含まない連番付き索引へ保存します。ノートとACLの変更は
-索引と同じtransactionで確定します。初期一覧は開始時の連番を境界として現在の可視ノートを返し、その後は
+確定した変更を本文のない``domain_changes``へ一度だけ記録し、actorごと・ノートごとの最新状態を
+同期用の索引へ派生させます。ノートとACLの変更、共通変更記録、同期用索引は同じtransactionで確定します。
+初期一覧は開始時の連番を境界として現在の可視ノートを返し、その後は
 境界より後の変更へ移るため、一覧中の更新を取りこぼしません。``upsert``は読取時に現在のアクセス権と
 ノート正本へ結合し、共有取消後に古いcursorから本文を取得できないようにします。cursorはactorに
 結び付けた不透明tokenで、保存するのはhashだけです。採用理由と保持期間は
@@ -165,11 +166,16 @@ refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family
 複製しない。
 * *ARCH-AUTHZ-002 — 実効アクセス水準*: 実効アクセス水準は``Read < Edit < Manage``の順序で表す。
 SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``または``Edit``を同じ判断表へまとめる。
+* *ARCH-CHANGE-001 — 外部連携向け変更記録*: ノート、ACL、文献項目の確定した変更は、
+SQLiteの同じtransaction内で``domain_changes``へ一度だけ記録する。検索同期の最新状態とWebhook配送は
+この共通記録から派生させ、業務表から用途別の変更表へ重複して記録しない。共通記録は本文、CSL-JSON、
+外部identityを保持せず、同期状態と未配送Webhookのどちらからも参照されなくなった場合だけ削除する。
 * *ARCH-HOOK-001 — Webhook eventの生成と配送の境界*: 通知対象のeventは、変更を確定する
-SQLiteの同じtransaction内のtriggerがoutboxへ記録する（transactional outbox）。配送は
+SQLiteの同じtransaction内で共通変更記録から配送行へ展開する（transactional outbox）。配送は
 subscriptionごとに先頭のeventだけをlease付きで取得して順序を保ち、HTTP送信は
 ``marginalis-service::webhook``の非公開adapterへ隔離する。application層はrepositoryとsenderのportだけへ
-依存し、ログは配送結果を受け取ったcomposition rootが記録する。
+依存し、ログは配送結果を受け取ったcomposition rootが記録する。共通変更記録と用途別の保持期間は
+xref:adr/0022-同期とwebhookは一つの変更記録から派生させる.adoc#top[ADR 0022]に記録する。
 * *ARCH-HOOK-002 — Webhook送信先の二重検査*: 送信先URLは登録時に構文とIP literalを検査し、
 送信直前にもすべてのDNS解決結果を検査して解決済みaddressへ接続を固定する。どちらも
 公開networkのHTTPS（port 443）だけを許可して特別用途address（RFC 6890）を拒否し、

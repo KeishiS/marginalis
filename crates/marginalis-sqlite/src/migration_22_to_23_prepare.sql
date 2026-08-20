@@ -3,7 +3,7 @@
 
 CREATE TEMP TABLE migration22_sequences AS
 SELECT name, seq FROM sqlite_sequence
-WHERE name IN ('note_sync_changes', 'webhook_outbox_events');
+WHERE name = 'webhook_outbox_events';
 
 DROP VIEW note_access;
 

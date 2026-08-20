@@ -47,10 +47,6 @@ INSERT INTO oidc_login_attempts
 SELECT * FROM migration22_oidc_login_attempts;
 INSERT INTO mcp_clients
 SELECT * FROM migration22_mcp_clients;
-UPDATE note_sync_state
-SET next_sequence = (SELECT next_sequence FROM migration22_note_sync_state WHERE singleton = 1)
-WHERE singleton = 1;
-
 INSERT INTO notes (
     note_id, creator_principal_id, title, source, tags_json,
     created_at_ms, updated_at_ms, revision, deleted_at_ms, created_via,
@@ -212,48 +208,34 @@ JOIN migration22_identity_map owner
   ON owner.issuer = subscription.owner_issuer
  AND owner.subject = subscription.owner_subject;
 
--- notes、ACL、文献のcopyで現行triggerが作った派生行を捨て、schema 22の状態をそのまま戻す。
-DELETE FROM note_sync_changes;
+-- notes、ACL、文献のcopyで現行triggerが作った派生行を捨てる。schema 22の同期cursorと
+-- 変更索引は新しい連番へ安全に対応付けられないため移行せず、全量同期から再開させる。
+DELETE FROM note_sync_projection;
 DELETE FROM webhook_deliveries;
-DELETE FROM webhook_outbox_events;
+DELETE FROM domain_changes;
+UPDATE note_sync_state SET latest_note_change_sequence = 0 WHERE singleton = 1;
 
-INSERT INTO note_sync_changes (
-    change_sequence, principal_id, note_id, kind, reason, changed_at_ms
-)
-SELECT change.change_sequence, principal.principal_id, change.note_id,
-       change.kind, change.reason, change.changed_at_ms
-FROM migration22_note_sync_changes change
-JOIN migration22_identity_map principal
-  ON principal.issuer = change.issuer AND principal.subject = change.subject;
-
-INSERT INTO note_sync_cursors (
-    cursor_hash, principal_id, phase, after_note_id, after_sequence,
-    high_watermark, expires_at_ms
-)
-SELECT cursor.cursor_hash, principal.principal_id, cursor.phase, cursor.after_note_id,
-       cursor.after_sequence, cursor.high_watermark, cursor.expires_at_ms
-FROM migration22_note_sync_cursors cursor
-JOIN migration22_identity_map principal
-  ON principal.issuer = cursor.issuer AND principal.subject = cursor.subject;
-
-INSERT INTO webhook_outbox_events (
-    event_sequence, event_id, owner_principal_id, event_kind,
+-- 未配送を含むWebhook eventと配送状態は失わない。同じevent_idと連番を共通変更記録へ移す。
+INSERT INTO domain_changes (
+    change_sequence, event_id, owner_principal_id, affected_principal_id, change_kind,
     target_id, revision, occurred_at_ms
 )
-SELECT event.event_sequence, event.event_id, owner.principal_id, event.event_kind,
+SELECT event.event_sequence, event.event_id, owner.principal_id, NULL, event.event_kind,
        event.target_id, event.revision, event.occurred_at_ms
 FROM migration22_webhook_outbox_events event
 JOIN migration22_identity_map owner
   ON owner.issuer = event.owner_issuer AND owner.subject = event.owner_subject;
 
--- outboxのcopyでもfan-out triggerが動くため、元の配送状態だけを残す。
+-- 共通変更記録のcopyでも同期投影とWebhook fan-outが動く。schema 22の同期状態は
+-- 無効化し、Webhookだけ元の配送状態を残す。
+DELETE FROM note_sync_projection;
+UPDATE note_sync_state SET latest_note_change_sequence = 0 WHERE singleton = 1;
 DELETE FROM webhook_deliveries;
 INSERT INTO webhook_deliveries SELECT * FROM migration22_webhook_deliveries;
 
-DELETE FROM sqlite_sequence
-WHERE name IN ('note_sync_changes', 'webhook_outbox_events');
+DELETE FROM sqlite_sequence WHERE name = 'domain_changes';
 INSERT INTO sqlite_sequence (name, seq)
-SELECT name, seq FROM migration22_sequences;
+SELECT 'domain_changes', seq FROM migration22_sequences;
 
 DROP TABLE migration22_webhook_deliveries;
 DROP TABLE migration22_webhook_outbox_events;

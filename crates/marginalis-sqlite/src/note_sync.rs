@@ -66,7 +66,7 @@ impl SqliteDatabase {
                 after_note_id: None,
                 after_sequence: 0,
                 high_watermark: sqlx::query_scalar(
-                    "SELECT next_sequence FROM note_sync_state WHERE singleton = 1",
+                    "SELECT latest_note_change_sequence FROM note_sync_state WHERE singleton = 1",
                 )
                 .fetch_one(&mut *transaction)
                 .await
@@ -132,7 +132,7 @@ impl SqliteDatabase {
             NoteSyncPhase::Changes => {
                 let rows = sqlx::query(
                     "SELECT change_sequence, note_id, kind, reason
-                     FROM note_sync_changes
+                     FROM note_sync_projection
                      WHERE principal_id = ? AND change_sequence > ?
                      ORDER BY change_sequence LIMIT ?",
                 )

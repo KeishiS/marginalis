@@ -554,6 +554,13 @@ mod tests {
             );
             INSERT INTO note_acl (note_id, issuer, subject, permission)
             VALUES ('note-1', 'https://id.example.test', 'bob', 'read');
+            INSERT INTO note_sync_cursors (
+                cursor_hash, issuer, subject, phase, after_note_id,
+                after_sequence, high_watermark, expires_at_ms
+            ) VALUES (
+                zeroblob(32), 'https://id.example.test', 'alice', 'changes', NULL,
+                1, 1, 1000
+            );
             INSERT INTO bibliography_items (
                 item_id, owner_issuer, owner_subject, citation_key, csl_json,
                 created_at_ms, updated_at_ms, revision
@@ -662,6 +669,31 @@ mod tests {
         assert_eq!(
             delivery,
             ("subscription-1".into(), 20, "delivered".into(), 1)
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM note_sync_projection")
+                .fetch_one(&mut migrated)
+                .await
+                .expect("sync changes"),
+            0,
+            "schema migration requires external projections to start with a fresh snapshot"
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM note_sync_cursors")
+                .fetch_one(&mut migrated)
+                .await
+                .expect("sync cursors"),
+            0,
+            "schema migration invalidates cursors that used the old sequence space"
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM domain_changes WHERE event_id = 'event-1'"
+            )
+            .fetch_one(&mut migrated)
+            .await
+            .expect("preserved webhook change"),
+            1
         );
 
         let fresh_path = directory.join("fresh.sqlite3");

@@ -1104,7 +1104,7 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
     seed_client_scope_ceiling(&database, "alice", "configured-client", "notes:read", 0).await;
     let now_millis = 2 * 24 * 60 * 60 * 1_000;
     let counts = database
-        .purge_expired_auth_state(at(now_millis), at(24 * 60 * 60 * 1_000))
+        .purge_expired_operational_state(at(now_millis), at(24 * 60 * 60 * 1_000))
         .await
         .expect("cleanup");
     assert_eq!(counts.mcp_clients, 1);

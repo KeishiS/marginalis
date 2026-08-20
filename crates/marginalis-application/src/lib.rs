@@ -80,7 +80,7 @@ pub use webhooks::{
     InvalidWebhookDestination, WEBHOOK_BACKOFF_BASE_MS, WEBHOOK_BACKOFF_MAX_MS,
     WEBHOOK_CONTRACT_VERSION, WEBHOOK_DELIVERY_BATCH, WEBHOOK_EVENT_KINDS, WEBHOOK_LEASE_MS,
     WEBHOOK_MAX_ATTEMPTS, WEBHOOK_RETENTION_MS, WebhookDeliveryFailure, WebhookDeliveryRepository,
-    WebhookDeliverySender, WebhookDestination, WebhookOutboxEvent, WebhookPendingDelivery,
+    WebhookDeliverySender, WebhookDestination, WebhookEvent, WebhookPendingDelivery,
     WebhookSubscriptionApplication, WebhookSubscriptionOverview, WebhookSubscriptionRepository,
     WebhookSubscriptionState, WebhookTickOutcome, WebhookUseCaseError, WebhookUseCases,
     WebhookVerificationOutcome, is_public_webhook_address, validate_webhook_destination,

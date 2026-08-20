@@ -1,6 +1,6 @@
 //! Webhook配送のportと、1回分の配送を組み立てるworker。
 //!
-//! 配送の永続状態(outboxとlease)はrepository portが、外部URLへのHTTP送信は
+//! 配送の永続状態（共通変更記録から派生した配送行とlease）はrepository portが、外部URLへのHTTP送信は
 //! sender portが担う。workerは両者を組み合わせて「期限の来た配送を取得し、
 //! 送信し、結果を記録する」1回分(tick)だけを持ち、常駐のループと停止は
 //! composition root(service)が受け持つ。
@@ -26,7 +26,7 @@ pub const WEBHOOK_DELIVERY_BATCH: u32 = 4;
 
 /// 配送するevent。本文やCSL-JSONは含まない。
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WebhookOutboxEvent {
+pub struct WebhookEvent {
     pub event_id: String,
     pub kind: String,
     pub sequence: i64,
@@ -43,7 +43,7 @@ pub struct WebhookPendingDelivery {
     pub secret: String,
     /// 今回を含めない、これまでの試行回数。
     pub attempt_count: u32,
-    pub event: WebhookOutboxEvent,
+    pub event: WebhookEvent,
 }
 
 /// 配送の失敗分類。DBのlast_failureと同じ語彙を使う。
@@ -98,8 +98,8 @@ pub trait WebhookDeliveryRepository: Send + Sync {
         subscription_id: &str,
         disabled_at: UnixMillis,
     ) -> Result<(), StorageError>;
-    /// 保持期間を過ぎた配送済みeventと、参照されなくなったeventを削除する。
-    async fn purge_expired_events(&self, now: UnixMillis) -> Result<u64, StorageError>;
+    /// 保持期間を過ぎた配送済み状態と、どの用途からも参照されない変更記録を削除する。
+    async fn purge_expired_deliveries(&self, now: UnixMillis) -> Result<u64, StorageError>;
 }
 
 /// 外部URLへの送信。実装は送信直前の宛先検査と署名を行う。
@@ -125,7 +125,7 @@ pub trait WebhookDeliverySender: Send + Sync {
 }
 
 /// 受信側へ送るJSON本文。契約はこの形だけを保証する。
-pub fn webhook_delivery_body(event: &WebhookOutboxEvent) -> String {
+pub fn webhook_delivery_body(event: &WebhookEvent) -> String {
     serde_json::json!({
         "contract_version": WEBHOOK_CONTRACT_VERSION,
         "event_id": event.event_id,
@@ -669,7 +669,7 @@ mod tests {
             url: "https://receiver.example.test/hook".into(),
             secret: "secret".into(),
             attempt_count: attempts,
-            event: WebhookOutboxEvent {
+            event: WebhookEvent {
                 event_id: "event-1".into(),
                 kind: "note.created".into(),
                 sequence: 7,
@@ -736,7 +736,7 @@ mod tests {
                 .push(subscription_id.into());
             Ok(())
         }
-        async fn purge_expired_events(&self, _now: UnixMillis) -> Result<u64, StorageError> {
+        async fn purge_expired_deliveries(&self, _now: UnixMillis) -> Result<u64, StorageError> {
             Ok(0)
         }
     }

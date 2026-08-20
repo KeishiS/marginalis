@@ -25,7 +25,7 @@ mod session;
 mod token;
 mod webhooks;
 
-pub use cleanup::AuthStatePurgeCounts;
+pub use cleanup::OperationalStatePurgeCounts;
 pub use diagnostics::SqliteDiagnosticReport;
 pub use identity_maintenance::{
     IdentityMaintenanceError, IdentityMaintenanceReport, IdentityMaintenanceRequest,

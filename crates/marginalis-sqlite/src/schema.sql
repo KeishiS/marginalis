@@ -251,15 +251,43 @@ SELECT note_id, principal_id,
        CASE permission WHEN 'read' THEN 1 WHEN 'edit' THEN 2 END AS access_level
 FROM note_acl;
 
--- 検索用投影へ渡す変更の最新状態。本文は保持せず、読取時に現在の可視ノートへ結合する。
+-- 業務データの確定した変更。同期とWebhook配送はこの一つの記録から派生する。
+-- 本文・CSL-JSON・identityは保持せず、event_idはWebhookの再送でも変わらない。
+CREATE TABLE domain_changes (
+    change_sequence INTEGER PRIMARY KEY AUTOINCREMENT CHECK (change_sequence > 0),
+    event_id TEXT NOT NULL UNIQUE,
+    owner_principal_id INTEGER NOT NULL REFERENCES principals(principal_id),
+    affected_principal_id INTEGER REFERENCES principals(principal_id),
+    change_kind TEXT NOT NULL CHECK (change_kind IN (
+        'note.created', 'note.updated', 'note.deleted', 'note.restored',
+        'note.state_changed', 'note.access_granted', 'note.access_revoked',
+        'bibliography_item.created', 'bibliography_item.updated',
+        'bibliography_item.deleted'
+    )),
+    target_id TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    occurred_at_ms INTEGER NOT NULL,
+    CHECK (
+        (change_kind IN ('note.access_granted', 'note.access_revoked')
+            AND affected_principal_id IS NOT NULL)
+        OR (change_kind NOT IN ('note.access_granted', 'note.access_revoked')
+            AND affected_principal_id IS NULL)
+    )
+) STRICT;
+CREATE INDEX domain_changes_owner_sequence_idx
+ON domain_changes (owner_principal_id, change_sequence);
+
+-- 検索用投影へ渡す、利用者・ノートごとの最新状態。本文は保持せず、読取時に
+-- domain_changesと現在の可視ノートへ結合する。
 CREATE TABLE note_sync_state (
     singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
-    next_sequence INTEGER NOT NULL CHECK (next_sequence >= 0)
+    latest_note_change_sequence INTEGER NOT NULL CHECK (latest_note_change_sequence >= 0)
 ) STRICT;
-INSERT INTO note_sync_state (singleton, next_sequence) VALUES (1, 0);
+INSERT INTO note_sync_state (singleton, latest_note_change_sequence) VALUES (1, 0);
 
-CREATE TABLE note_sync_changes (
-    change_sequence INTEGER PRIMARY KEY AUTOINCREMENT CHECK (change_sequence > 0),
+CREATE TABLE note_sync_projection (
+    change_sequence INTEGER NOT NULL
+        REFERENCES domain_changes(change_sequence) ON DELETE CASCADE,
     principal_id INTEGER NOT NULL REFERENCES principals(principal_id),
     note_id TEXT NOT NULL,
     kind TEXT NOT NULL CHECK (kind IN ('upsert', 'remove')),
@@ -267,11 +295,10 @@ CREATE TABLE note_sync_changes (
         (kind = 'upsert' AND reason IS NULL)
         OR (kind = 'remove' AND reason IN ('deleted', 'access_revoked'))
     ),
-    changed_at_ms INTEGER NOT NULL,
-    UNIQUE (principal_id, note_id)
+    PRIMARY KEY (principal_id, note_id)
 ) STRICT;
-CREATE INDEX note_sync_changes_principal_sequence_idx
-ON note_sync_changes (principal_id, change_sequence);
+CREATE INDEX note_sync_projection_principal_sequence_idx
+ON note_sync_projection (principal_id, change_sequence);
 
 CREATE TABLE note_sync_cursors (
     cursor_hash BLOB PRIMARY KEY NOT NULL CHECK (length(cursor_hash) = 32),
@@ -285,65 +312,98 @@ CREATE TABLE note_sync_cursors (
 ) STRICT;
 CREATE INDEX note_sync_cursors_expiry_idx ON note_sync_cursors (expires_at_ms);
 
-CREATE TRIGGER note_sync_after_note_insert
+-- 業務表の変更は、用途別の表へ重複して書かずdomain_changesへ一度だけ記録する。
+CREATE TRIGGER domain_change_after_note_insert
 AFTER INSERT ON notes
 BEGIN
-    INSERT INTO note_sync_changes (
-        principal_id, note_id, kind, reason, changed_at_ms
-    ) VALUES (NEW.creator_principal_id, NEW.note_id,
-              'upsert', NULL, NEW.updated_at_ms)
-    ON CONFLICT (principal_id, note_id) DO UPDATE SET
-        change_sequence = excluded.change_sequence, kind = excluded.kind,
-        reason = excluded.reason, changed_at_ms = excluded.changed_at_ms;
-    UPDATE note_sync_state SET next_sequence =
-        (SELECT COALESCE(MAX(change_sequence), 0) FROM note_sync_changes) WHERE singleton = 1;
+    INSERT INTO domain_changes (
+        event_id, owner_principal_id, affected_principal_id, change_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (lower(hex(randomblob(16))), NEW.creator_principal_id, NULL,
+              'note.created', NEW.note_id, NEW.revision, NEW.updated_at_ms);
 END;
 
-CREATE TRIGGER note_sync_after_note_update
+CREATE TRIGGER domain_change_after_note_update
 AFTER UPDATE ON notes
 BEGIN
-    INSERT INTO note_sync_changes (
-        principal_id, note_id, kind, reason, changed_at_ms
-    ) SELECT access.principal_id, NEW.note_id,
-             CASE WHEN NEW.deleted_at_ms IS NULL THEN 'upsert' ELSE 'remove' END,
-             CASE WHEN NEW.deleted_at_ms IS NULL THEN NULL ELSE 'deleted' END,
-             NEW.updated_at_ms
-        FROM note_access access WHERE access.note_id = NEW.note_id
-    ON CONFLICT (principal_id, note_id) DO UPDATE SET
-        change_sequence = excluded.change_sequence, kind = excluded.kind,
-        reason = excluded.reason, changed_at_ms = excluded.changed_at_ms;
-    UPDATE note_sync_state SET next_sequence =
-        (SELECT COALESCE(MAX(change_sequence), 0) FROM note_sync_changes) WHERE singleton = 1;
+    INSERT INTO domain_changes (
+        event_id, owner_principal_id, affected_principal_id, change_kind,
+        target_id, revision, occurred_at_ms
+    ) VALUES (
+        lower(hex(randomblob(16))), NEW.creator_principal_id, NULL,
+        CASE
+            WHEN OLD.deleted_at_ms IS NULL AND NEW.deleted_at_ms IS NOT NULL
+                THEN 'note.deleted'
+            WHEN OLD.deleted_at_ms IS NOT NULL AND NEW.deleted_at_ms IS NULL
+                THEN 'note.restored'
+            WHEN NEW.source IS NOT OLD.source THEN 'note.updated'
+            ELSE 'note.state_changed'
+        END,
+        NEW.note_id, NEW.revision, NEW.updated_at_ms
+    );
 END;
 
-CREATE TRIGGER note_sync_after_acl_insert
+CREATE TRIGGER domain_change_after_acl_insert
 AFTER INSERT ON note_acl
 BEGIN
-    INSERT INTO note_sync_changes (
-        principal_id, note_id, kind, reason, changed_at_ms
-    ) SELECT NEW.principal_id, NEW.note_id, 'upsert', NULL,
-             notes.updated_at_ms
-        FROM notes WHERE notes.note_id = NEW.note_id
-    ON CONFLICT (principal_id, note_id) DO UPDATE SET
-        change_sequence = excluded.change_sequence, kind = excluded.kind,
-        reason = excluded.reason, changed_at_ms = excluded.changed_at_ms;
-    UPDATE note_sync_state SET next_sequence =
-        (SELECT COALESCE(MAX(change_sequence), 0) FROM note_sync_changes) WHERE singleton = 1;
+    INSERT INTO domain_changes (
+        event_id, owner_principal_id, affected_principal_id, change_kind,
+        target_id, revision, occurred_at_ms
+    ) SELECT lower(hex(randomblob(16))), notes.creator_principal_id,
+             NEW.principal_id, 'note.access_granted', NEW.note_id,
+             notes.revision, notes.updated_at_ms
+        FROM notes WHERE notes.note_id = NEW.note_id;
 END;
 
-CREATE TRIGGER note_sync_after_acl_delete
+CREATE TRIGGER domain_change_after_acl_delete
 AFTER DELETE ON note_acl
 BEGIN
-    INSERT INTO note_sync_changes (
-        principal_id, note_id, kind, reason, changed_at_ms
-    ) SELECT OLD.principal_id, OLD.note_id,
-             'remove', 'access_revoked', notes.updated_at_ms
-        FROM notes WHERE notes.note_id = OLD.note_id
+    INSERT INTO domain_changes (
+        event_id, owner_principal_id, affected_principal_id, change_kind,
+        target_id, revision, occurred_at_ms
+    ) SELECT lower(hex(randomblob(16))), notes.creator_principal_id,
+             OLD.principal_id, 'note.access_revoked', OLD.note_id,
+             notes.revision, notes.updated_at_ms
+        FROM notes WHERE notes.note_id = OLD.note_id;
+END;
+
+-- ノート自体の変更は、その時点で閲覧できる全利用者の最新同期状態へ反映する。
+CREATE TRIGGER note_sync_after_note_change_insert
+AFTER INSERT ON domain_changes
+WHEN NEW.change_kind IN (
+    'note.created', 'note.updated', 'note.deleted', 'note.restored', 'note.state_changed'
+)
+BEGIN
+    INSERT INTO note_sync_projection (
+        change_sequence, principal_id, note_id, kind, reason
+    ) SELECT NEW.change_sequence, access.principal_id, NEW.target_id,
+             CASE WHEN NEW.change_kind = 'note.deleted' THEN 'remove' ELSE 'upsert' END,
+             CASE WHEN NEW.change_kind = 'note.deleted' THEN 'deleted' ELSE NULL END
+        FROM note_access access WHERE access.note_id = NEW.target_id
     ON CONFLICT (principal_id, note_id) DO UPDATE SET
         change_sequence = excluded.change_sequence, kind = excluded.kind,
-        reason = excluded.reason, changed_at_ms = excluded.changed_at_ms;
-    UPDATE note_sync_state SET next_sequence =
-        (SELECT COALESCE(MAX(change_sequence), 0) FROM note_sync_changes) WHERE singleton = 1;
+        reason = excluded.reason;
+    UPDATE note_sync_state SET latest_note_change_sequence = NEW.change_sequence
+    WHERE singleton = 1;
+END;
+
+-- ACL変更は対象利用者の最新同期状態だけを更新する。
+CREATE TRIGGER note_sync_after_access_change_insert
+AFTER INSERT ON domain_changes
+WHEN NEW.change_kind IN ('note.access_granted', 'note.access_revoked')
+BEGIN
+    INSERT INTO note_sync_projection (
+        change_sequence, principal_id, note_id, kind, reason
+    ) VALUES (
+        NEW.change_sequence, NEW.affected_principal_id, NEW.target_id,
+        CASE WHEN NEW.change_kind = 'note.access_granted' THEN 'upsert' ELSE 'remove' END,
+        CASE WHEN NEW.change_kind = 'note.access_revoked' THEN 'access_revoked' ELSE NULL END
+    )
+    ON CONFLICT (principal_id, note_id) DO UPDATE SET
+        change_sequence = excluded.change_sequence, kind = excluded.kind,
+        reason = excluded.reason;
+    UPDATE note_sync_state SET latest_note_change_sequence = NEW.change_sequence
+    WHERE singleton = 1;
 END;
 
 CREATE TABLE web_sessions (
@@ -482,31 +542,13 @@ CREATE TABLE webhook_subscriptions (
 CREATE INDEX webhook_subscriptions_owner_idx
 ON webhook_subscriptions (owner_principal_id);
 
--- 配送待ちevent(transactional outbox)。データ変更と同じtransactionでトリガが追記する。
--- 本文・CSL-JSON・identityは保持しない。event_idは再送でも変わらない。
-CREATE TABLE webhook_outbox_events (
-    event_sequence INTEGER PRIMARY KEY AUTOINCREMENT CHECK (event_sequence > 0),
-    event_id TEXT NOT NULL UNIQUE,
-    owner_principal_id INTEGER NOT NULL REFERENCES principals(principal_id),
-    event_kind TEXT NOT NULL CHECK (event_kind IN (
-        'note.created', 'note.updated', 'note.deleted', 'note.restored',
-        'bibliography_item.created', 'bibliography_item.updated',
-        'bibliography_item.deleted'
-    )),
-    target_id TEXT NOT NULL,
-    revision INTEGER NOT NULL CHECK (revision > 0),
-    occurred_at_ms INTEGER NOT NULL
-) STRICT;
-CREATE INDEX webhook_outbox_events_owner_idx
-ON webhook_outbox_events (owner_principal_id, event_sequence);
-
 -- subscriptionごとの配送状態。eventの発生時に有効な送信先だけへ展開する。
 -- 同じ送信先へはevent_sequence順に配送し、失敗中は後続を保留する。
 CREATE TABLE webhook_deliveries (
     subscription_id TEXT NOT NULL
         REFERENCES webhook_subscriptions (subscription_id) ON DELETE CASCADE,
     event_sequence INTEGER NOT NULL
-        REFERENCES webhook_outbox_events (event_sequence) ON DELETE CASCADE,
+        REFERENCES domain_changes (change_sequence) ON DELETE CASCADE,
     state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'discarded')),
     attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0),
     next_attempt_at_ms INTEGER NOT NULL,
@@ -521,97 +563,57 @@ CREATE INDEX webhook_deliveries_due_idx
 ON webhook_deliveries (state, next_attempt_at_ms);
 
 -- 有効な送信先のうちevent種別を購読しているものへ、配送行を同じtransactionで展開する。
-CREATE TRIGGER webhook_fan_out_after_event_insert
-AFTER INSERT ON webhook_outbox_events
+CREATE TRIGGER webhook_fan_out_after_change_insert
+AFTER INSERT ON domain_changes
+WHEN NEW.change_kind IN (
+    'note.created', 'note.updated', 'note.deleted', 'note.restored',
+    'bibliography_item.created', 'bibliography_item.updated',
+    'bibliography_item.deleted'
+)
 BEGIN
     INSERT INTO webhook_deliveries (
         subscription_id, event_sequence, state, attempt_count,
         next_attempt_at_ms, lease_expires_at_ms, last_failure, last_attempted_at_ms
     )
-    SELECT s.subscription_id, NEW.event_sequence, 'pending', 0,
+    SELECT s.subscription_id, NEW.change_sequence, 'pending', 0,
            NEW.occurred_at_ms, NULL, NULL, NULL
     FROM webhook_subscriptions s
     WHERE s.owner_principal_id = NEW.owner_principal_id
       AND s.state = 'active'
       AND EXISTS (
           SELECT 1 FROM json_each(s.event_kinds_json)
-          WHERE json_each.value = NEW.event_kind
+          WHERE json_each.value = NEW.change_kind
       );
 END;
 
-CREATE TRIGGER webhook_after_note_insert
-AFTER INSERT ON notes
-BEGIN
-    INSERT INTO webhook_outbox_events (
-        event_id, owner_principal_id, event_kind,
-        target_id, revision, occurred_at_ms
-    ) VALUES (lower(hex(randomblob(16))), NEW.creator_principal_id,
-              'note.created', NEW.note_id, NEW.revision, NEW.updated_at_ms);
-END;
-
--- 本文の変更だけをnote.updatedとする。ACLや人手確認だけのrevision更新では発火しない。
-CREATE TRIGGER webhook_after_note_update
-AFTER UPDATE ON notes
-WHEN OLD.deleted_at_ms IS NULL AND NEW.deleted_at_ms IS NULL
-    AND NEW.source IS NOT OLD.source
-BEGIN
-    INSERT INTO webhook_outbox_events (
-        event_id, owner_principal_id, event_kind,
-        target_id, revision, occurred_at_ms
-    ) VALUES (lower(hex(randomblob(16))), NEW.creator_principal_id,
-              'note.updated', NEW.note_id, NEW.revision, NEW.updated_at_ms);
-END;
-
-CREATE TRIGGER webhook_after_note_delete
-AFTER UPDATE ON notes
-WHEN OLD.deleted_at_ms IS NULL AND NEW.deleted_at_ms IS NOT NULL
-BEGIN
-    INSERT INTO webhook_outbox_events (
-        event_id, owner_principal_id, event_kind,
-        target_id, revision, occurred_at_ms
-    ) VALUES (lower(hex(randomblob(16))), NEW.creator_principal_id,
-              'note.deleted', NEW.note_id, NEW.revision, NEW.updated_at_ms);
-END;
-
-CREATE TRIGGER webhook_after_note_restore
-AFTER UPDATE ON notes
-WHEN OLD.deleted_at_ms IS NOT NULL AND NEW.deleted_at_ms IS NULL
-BEGIN
-    INSERT INTO webhook_outbox_events (
-        event_id, owner_principal_id, event_kind,
-        target_id, revision, occurred_at_ms
-    ) VALUES (lower(hex(randomblob(16))), NEW.creator_principal_id,
-              'note.restored', NEW.note_id, NEW.revision, NEW.updated_at_ms);
-END;
-
-CREATE TRIGGER webhook_after_bibliography_insert
+CREATE TRIGGER domain_change_after_bibliography_insert
 AFTER INSERT ON bibliography_items
 BEGIN
-    INSERT INTO webhook_outbox_events (
-        event_id, owner_principal_id, event_kind,
+    INSERT INTO domain_changes (
+        event_id, owner_principal_id, affected_principal_id, change_kind,
         target_id, revision, occurred_at_ms
-    ) VALUES (lower(hex(randomblob(16))), NEW.owner_principal_id,
+    ) VALUES (lower(hex(randomblob(16))), NEW.owner_principal_id, NULL,
               'bibliography_item.created', NEW.item_id, NEW.revision, NEW.updated_at_ms);
 END;
 
 -- 一括取込でも、実際に内容が変わりrevisionが進んだ項目だけを対象にする。
-CREATE TRIGGER webhook_after_bibliography_update
+CREATE TRIGGER domain_change_after_bibliography_update
 AFTER UPDATE ON bibliography_items
 WHEN NEW.revision != OLD.revision
 BEGIN
-    INSERT INTO webhook_outbox_events (
-        event_id, owner_principal_id, event_kind,
+    INSERT INTO domain_changes (
+        event_id, owner_principal_id, affected_principal_id, change_kind,
         target_id, revision, occurred_at_ms
-    ) VALUES (lower(hex(randomblob(16))), NEW.owner_principal_id,
+    ) VALUES (lower(hex(randomblob(16))), NEW.owner_principal_id, NULL,
               'bibliography_item.updated', NEW.item_id, NEW.revision, NEW.updated_at_ms);
 END;
 
-CREATE TRIGGER webhook_after_bibliography_delete
+CREATE TRIGGER domain_change_after_bibliography_delete
 AFTER DELETE ON bibliography_items
 BEGIN
-    INSERT INTO webhook_outbox_events (
-        event_id, owner_principal_id, event_kind,
+    INSERT INTO domain_changes (
+        event_id, owner_principal_id, affected_principal_id, change_kind,
         target_id, revision, occurred_at_ms
-    ) VALUES (lower(hex(randomblob(16))), OLD.owner_principal_id,
+    ) VALUES (lower(hex(randomblob(16))), OLD.owner_principal_id, NULL,
               'bibliography_item.deleted', OLD.item_id, OLD.revision, OLD.updated_at_ms);
 END;
