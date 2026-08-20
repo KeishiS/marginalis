@@ -197,9 +197,10 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 == バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは``marginalis-archive-17``で、AdocWeave package版``0.41.0``とnote profile版``5``を記録します。
+現行archiveは``marginalis-archive-18``で、AdocWeave package版``0.41.0``とnote profile版``5``を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
-同じ段階で、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と重複も検証します。
+同じ段階で、利用者の代表identityとalias、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と
+重複も検証します。
 本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
 書き込まれることはありません。
 
@@ -252,6 +253,56 @@ unitは通常serviceと同時に実行せず、``backupDirectory``に
 場合は、新しいserviceを停止し、移行後のdatabaseを別名で保全してから、SQLite退避と移行前の
 NixOS generationを組にして戻します。退避のdatabaseだけを新しい実行ファイルと組み合わせると、旧schemaを
 再び拒否するため起動できません。
+
+[[OIDC-issuerの移行]]
+== OIDC issuerの移行
+
+認証サービスを移す場合は、古い``(issuer, subject)``と新しい``(issuer, subject)``を、同じ利用者を表す
+一つのprincipalへ明示的に結び付けます。メールアドレス、表示名、claimの一致から自動では判断しません。
+新しい組は、認証サービスの管理画面または検証済みのID tokenで事前に確認してください。
+
+次の例では、操作前のSQLite全体を権限0600で退避し、新しいidentityをaliasとして追加すると同時に
+代表identityへ変更します。serviceを停止した状態で実行してください。
+
+[source,bash]
+----
+sudo systemctl stop marginalis.service
+sudo -u marginalis env \
+  MARGINALIS_DATABASE_URL=sqlite:/var/lib/marginalis/marginalis.sqlite \
+  marginalis link-identity \
+  --existing-issuer 'https://old-id.example.test' \
+  --existing-subject '<以前のsubject>' \
+  --new-issuer 'https://new-id.example.test' \
+  --new-subject '<新しいsubject>' \
+  --make-primary \
+  --backup-directory /var/lib/marginalis-backups
+----
+
+commandは、既存identityが見つからない場合、二つが同じ場合、または新しいidentityが別のprincipalに属する
+場合に、databaseを変更せず失敗します。入力とdatabaseの事前検査に成功すると、
+``identity-link-<Unix時刻ミリ秒>.sqlite3``を上書きせず作成し、退避の整合性を確認してから一つの
+transactionで結び付けます。ログにはissuer、subject、内部IDを記録しません。
+
+代表identityだけを後から変更する場合は、すでに同じprincipalへ結び付いているidentityを指定します。
+
+[source,bash]
+----
+sudo -u marginalis env \
+  MARGINALIS_DATABASE_URL=sqlite:/var/lib/marginalis/marginalis.sqlite \
+  marginalis set-primary-identity \
+  --issuer 'https://old-id.example.test' \
+  --subject '<以前のsubject>' \
+  --backup-directory /var/lib/marginalis-backups
+----
+
+引き継ぎ後にNixOSのOIDC設定を新しいissuerへ変更し、serviceを起動します。新旧identityはノート、ACL、
+文献、同期、MCPのscope上限と失効を同じ利用者として扱います。既存のWeb sessionとMCP tokenは、発行時に
+認証したidentityを保持します。日次archiveは代表identityとaliasの対応を保存するため、復元後も結び付けを
+保ちます。
+
+serviceを再開する前に切り戻す場合は、変更後のdatabaseを別名で保全してから、commandが作成したSQLite
+退避を戻します。再開後に新しいデータを書き込んだ場合は、その退避を戻すと新しい変更も失われます。
+その場合は``set-primary-identity``で以前のidentityを代表へ戻し、OIDC設定を戻してください。
 
 [[以前のarchiveからの移行]]
 == 以前のarchiveからの移行
@@ -403,13 +454,20 @@ sudo -u marginalis marginalis restore-archive \
 |0.40.1
 |5
 |v0.43.0からv0.45.0
-|v0.46.0以降 → 17 / 0.41.0 / 5
-|直前契約
+|v0.46.0またはv0.47.0 → 17 / 0.41.0 / 5
+|段階移行
 
 |``marginalis-archive-17``
 |0.41.0
 |5
-|v0.46.0以降
+|v0.46.0からv0.47.0
+|次回公開版以降 → 18 / 0.41.0 / 5
+|直前契約
+
+|``marginalis-archive-18``
+|0.41.0
+|5
+|次回公開版以降
 |—
 |現行契約
 |===
@@ -427,8 +485,9 @@ nix build 'github:KeishiS/marginalis/v0.45.0#default' \
 ----
 
 たとえばv0.18.0のarchiveは、この操作で``marginalis-archive-17`` / 0.40.1 / 5へ変換し、その出力を
-現行版の``restore-archive``へ渡します。現行版は直前契約として受理し、
-``marginalis-archive-17`` / 0.41.0 / 5へ変換して復元します。
+v0.46.0またはv0.47.0の``migrate-archive``へ渡します。その出力である
+``marginalis-archive-17`` / 0.41.0 / 5を現行版の``restore-archive``へ渡すと、直前契約として受理し、
+``marginalis-archive-18`` / 0.41.0 / 5へ変換して復元します。
 
 ADR 0018の採用後に保存契約を変更する場合は、直前の公開済み保存契約から新契約への変換を必ず
 同じリリースへ含めます。以後は表の移行経路を順番に辿ることで、契約を1件ずつ持ち上げられます。

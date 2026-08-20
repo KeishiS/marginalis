@@ -178,9 +178,8 @@ redirectへ従わない。例外は運用者が明示したhostに限る。secre
 == 採用済みの保存基盤移行計画
 
 この節は、 xref:adr/0019-利用者の認可は内部principalに結び付けsqliteを前進移行する.adoc#top[ADR 0019]で
-採用した保存基盤の移行計画です。\#548のSQLite前進migration基盤と、\#549のschema 23および
-``PrincipalId``への切替は実装済みです。identityの引き継ぎを行う管理commandと、alias群を失わない
-archive契約は\#550で追加します。
+採用した保存基盤の移行計画です。\#548のSQLite前進migration基盤、\#549のschema 23および
+``PrincipalId``への切替、\#550のidentity引き継ぎcommandとalias群を失わないarchive契約は実装済みです。
 
 移行後は、OIDCの``(issuer, subject)``を公開境界のidentityとして維持しながら、認可と業務データの
 所有者をSQLite内部の``PrincipalId``へ結び付けます。認証に使ったidentityをそのまま返す共有session・
@@ -193,8 +192,9 @@ SQLite schemaは22を基準とする前進migrationへ移します。通常の``
 切戻しに使い、互いに代用しません。
 
 実装順は、\#548のmigration基盤、\#549のschema 23と``PrincipalId``への一括切替、\#550のidentity
-引き継ぎとaliasのarchive往復です。\#549までの実装では、schema 22に現れるidentityを推測でまとめず、
-完全に一致する組ごとに一つのprincipalへ移しています。その後、\#541のノート版履歴と\#540の添付を
+引き継ぎとaliasのarchive往復です。schema 22に現れるidentityは推測でまとめず、完全に一致する組ごとに
+一つのprincipalへ移します。必要な組だけを退避付きの管理commandで明示的に結び付けます。
+その後、\#541のノート版履歴と\#540の添付を
 ``PrincipalId``へ直接結び付けます。
 
 == 検索のサービス境界

@@ -117,7 +117,7 @@ archiveの取り込み互換は直近5マイナー世代に限定する]（廃�
 * xref:developer-guide/adr/0018-archiveは直前の公開済み保存契約からだけ移行する.adoc#top[0018
 archiveは直前の公開済み保存契約からだけ移行する]
 * xref:developer-guide/adr/0019-利用者の認可は内部principalに結び付けsqliteを前進移行する.adoc#top[0019
-利用者の認可は内部principalに結び付けSQLiteを前進移行する]。実装予定: Issue \#548から\#550
+利用者の認可は内部principalに結び付けSQLiteを前進移行する]。Issue \#548から\#550で実装
 
 == 過去の記録と今後の計画
 

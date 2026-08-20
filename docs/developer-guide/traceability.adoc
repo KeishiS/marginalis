@@ -36,6 +36,10 @@ NixOS module・VM試験、archive移行の入力不変・出力非上書き試�
 |``cargo make observability-check``、``marginalis-web::http::tests``のログ安全性試験、
 ``checks.x86_64-linux.kanidm-discovery-vm``
 |event・request IDによる障害診断
+|REQ-OPS-008
+|``marginalis-sqlite::identity_maintenance``の退避・競合拒否・代表identity切替試験、
+``marginalis-service``のCLI試験、NixOS VMのissuer引き継ぎ試験、archive往復試験
+|OIDC issuer移行
 |REQ-DATA-001
 |domain・SQLite・属性環境単体試験
 |アーカイブ照合
@@ -225,7 +229,8 @@ xref:architecture.adoc#一貫して満たすべき設計条件[アーキテク�
 |``marginalis-domain::model``の復元順序試験、SQLite・archiveの復元試験
 |ARCH-IDENTITY-001
 |``marginalis-domain::model``のidentity・``PrincipalId``不変条件、
-``marginalis-sqlite::principal``の同時初回ログイン・未知identity非作成試験、OIDC issuer検査
+``marginalis-sqlite::principal``の同時初回ログイン・未知identity非作成試験、OIDC issuer検査、
+identity引き継ぎ後の認可共有試験、archiveでの代表identity・alias往復試験
 |ARCH-IDENTITY-002
 |``marginalis-domain::model``のUUID v7検査、REST・archive・SQLite復元試験
 |ARCH-OAUTH-001

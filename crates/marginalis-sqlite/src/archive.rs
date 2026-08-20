@@ -4,9 +4,11 @@ use marginalis_application::{
     LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
 };
 use marginalis_domain::{
-    BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission, PrincipalId, PrincipalRef,
+    BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission, Principal, PrincipalId,
+    PrincipalRef,
 };
 use sqlx::Sqlite;
+use std::collections::BTreeMap;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
 
@@ -136,6 +138,59 @@ impl SqliteDatabase {
                 Ok(MathMacroSettingsSnapshot::new(owner, settings))
             })
             .collect::<Result<Vec<_>, SqliteStoreError>>()?;
+        let rows = sqlx::query(
+            "SELECT principal.principal_id, identity.issuer, identity.subject,
+                    identity.is_primary
+             FROM principals principal
+             LEFT JOIN principal_identities identity
+               ON identity.principal_id = principal.principal_id
+             ORDER BY principal.principal_id, identity.is_primary DESC,
+                      identity.issuer, identity.subject",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let mut grouped = BTreeMap::<i64, (Option<Identity>, Vec<Identity>)>::new();
+        for row in rows {
+            use sqlx::Row;
+            let principal_id = row
+                .try_get::<i64, _>("principal_id")
+                .map_err(database_error)?;
+            let issuer = row
+                .try_get::<Option<String>, _>("issuer")
+                .map_err(database_error)?
+                .ok_or(SqliteStoreError::CorruptData)?;
+            let subject = row
+                .try_get::<Option<String>, _>("subject")
+                .map_err(database_error)?
+                .ok_or(SqliteStoreError::CorruptData)?;
+            let is_primary = row
+                .try_get::<Option<i64>, _>("is_primary")
+                .map_err(database_error)?
+                .ok_or(SqliteStoreError::CorruptData)?;
+            let identity =
+                Identity::new(issuer, subject).map_err(|_| SqliteStoreError::CorruptData)?;
+            let (primary, identities) = grouped.entry(principal_id).or_default();
+            if is_primary == 1 {
+                if primary.replace(identity.clone()).is_some() {
+                    return Err(SqliteStoreError::CorruptData);
+                }
+            } else if is_primary != 0 {
+                return Err(SqliteStoreError::CorruptData);
+            }
+            identities.push(identity);
+        }
+        let principals = grouped
+            .into_iter()
+            .map(|(id, (primary, identities))| {
+                Principal::restore(
+                    PrincipalId::new(id).map_err(|_| SqliteStoreError::CorruptData)?,
+                    primary.ok_or(SqliteStoreError::CorruptData)?,
+                    identities,
+                )
+                .map_err(|_| SqliteStoreError::CorruptData)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         transaction.commit().await.map_err(database_error)?;
         LogicalSnapshot::new(notes, note_acl)
             .and_then(|snapshot| {
@@ -146,6 +201,7 @@ impl SqliteDatabase {
                 )
             })
             .and_then(|snapshot| snapshot.with_math_macro_settings(math_macro_settings))
+            .and_then(|snapshot| snapshot.with_principals(principals))
             .map_err(|_| SqliteStoreError::CorruptData)
     }
 
@@ -178,23 +234,8 @@ impl SqliteDatabase {
         if target_has_data {
             return Err(SqliteStoreError::ArchiveTargetNotEmpty);
         }
-        for note in notes {
-            ensure_principal(&mut transaction, note.owner()).await?;
-            if let Some(review) = note.last_review() {
-                ensure_principal(&mut transaction, review.reviewer()).await?;
-            }
-        }
-        for item in plan.snapshot().bibliography_items() {
-            ensure_principal(&mut transaction, item.owner()).await?;
-        }
-        for source in plan.snapshot().bibliography_import_sources() {
-            ensure_principal(&mut transaction, source.owner()).await?;
-        }
-        for entry in plan.snapshot().math_macro_settings() {
-            ensure_principal(&mut transaction, entry.owner()).await?;
-        }
-        for entry in plan.snapshot().note_acl() {
-            ensure_principal(&mut transaction, entry.principal()).await?;
+        for principal in plan.snapshot().principals() {
+            insert_principal(&mut transaction, principal).await?;
         }
         for note in notes {
             insert_note_row(&mut transaction, note).await?;
@@ -393,41 +434,28 @@ async fn insert_note_row(
     Ok(())
 }
 
-async fn ensure_principal(
+async fn insert_principal(
     transaction: &mut sqlx::Transaction<'_, Sqlite>,
-    principal: &PrincipalRef,
+    principal: &Principal,
 ) -> Result<(), SqliteStoreError> {
-    sqlx::query("INSERT OR IGNORE INTO principals (principal_id) VALUES (?)")
+    sqlx::query("INSERT INTO principals (principal_id) VALUES (?)")
         .bind(principal.id().get())
         .execute(&mut **transaction)
         .await
         .map_err(database_error)?;
-    let identity = principal.primary_identity();
-    sqlx::query(
-        "INSERT OR IGNORE INTO principal_identities
-             (principal_id, issuer, subject, is_primary)
-         VALUES (?, ?, ?, 1)",
-    )
-    .bind(principal.id().get())
-    .bind(identity.issuer())
-    .bind(identity.subject())
-    .execute(&mut **transaction)
-    .await
-    .map_err(database_error)?;
-    let valid = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(
-             SELECT 1 FROM principal_identities
-             WHERE principal_id = ? AND issuer = ? AND subject = ? AND is_primary = 1
-         )",
-    )
-    .bind(principal.id().get())
-    .bind(identity.issuer())
-    .bind(identity.subject())
-    .fetch_one(&mut **transaction)
-    .await
-    .map_err(database_error)?;
-    if !valid {
-        return Err(SqliteStoreError::CorruptData);
+    for identity in principal.identities() {
+        sqlx::query(
+            "INSERT INTO principal_identities
+                 (principal_id, issuer, subject, is_primary)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(principal.id().get())
+        .bind(identity.issuer())
+        .bind(identity.subject())
+        .bind(i64::from(identity == principal.primary_identity()))
+        .execute(&mut **transaction)
+        .await
+        .map_err(database_error)?;
     }
     Ok(())
 }

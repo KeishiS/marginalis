@@ -5,6 +5,7 @@ mod bibliography_import_repository;
 mod bibliography_repository;
 mod cleanup;
 mod diagnostics;
+mod identity_maintenance;
 mod math_macro_repository;
 mod mcp;
 mod mcp_oauth_repository;
@@ -24,6 +25,9 @@ mod webhooks;
 
 pub use cleanup::AuthStatePurgeCounts;
 pub use diagnostics::SqliteDiagnosticReport;
+pub use identity_maintenance::{
+    IdentityMaintenanceError, IdentityMaintenanceReport, IdentityMaintenanceRequest,
+};
 pub use migration::{DatabaseMigrationError, DatabaseMigrationReport};
 pub use session::SqliteOidcLoginAttemptStore;
 
@@ -122,6 +126,15 @@ impl SqliteDatabase {
         backup_path: &std::path::Path,
     ) -> Result<DatabaseMigrationReport, DatabaseMigrationError> {
         migration::migrate_database(database_url, backup_path).await
+    }
+
+    /// service停止中に検証済み退避を作成し、外部identityのbindingを明示的に変更する。
+    pub async fn maintain_identity(
+        database_url: &str,
+        backup_path: &std::path::Path,
+        request: IdentityMaintenanceRequest,
+    ) -> Result<IdentityMaintenanceReport, IdentityMaintenanceError> {
+        identity_maintenance::maintain_identity(database_url, backup_path, request).await
     }
 }
 

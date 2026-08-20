@@ -141,6 +141,22 @@ impl Principal {
         &self.reference
     }
 
+    pub const fn id(&self) -> PrincipalId {
+        self.reference.id()
+    }
+
+    pub const fn primary_identity(&self) -> &Identity {
+        self.reference.primary_identity()
+    }
+
+    /// このprincipalへ明示的に結び付いた外部identity。
+    ///
+    /// 代表identityも必ず1件含む。並びは同一性の一部ではないため、公開形式へ出す側が
+    /// 必要な順序へ揃える。
+    pub fn identities(&self) -> &[Identity] {
+        &self.identities
+    }
+
     pub fn contains(&self, identity: &Identity) -> bool {
         self.identities.contains(identity)
     }

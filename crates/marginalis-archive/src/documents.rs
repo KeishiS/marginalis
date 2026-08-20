@@ -523,10 +523,11 @@ pub fn archive_from_documents(
         }
     }
 
-    Ok(Archive {
+    let mut archive = Archive {
         format: crate::ARCHIVE_FORMAT.into(),
         adocweave_package_version: adocweave_package_version.into(),
         note_profile_version: crate::ARCHIVE_NOTE_PROFILE_VERSION,
+        principals: Some(Vec::new()),
         notes,
         note_acl,
         bibliography_items,
@@ -535,8 +536,11 @@ pub fn archive_from_documents(
         bibliography_import_sources: Vec::new(),
         bibliography_import_links: Vec::new(),
         math_macro_settings: Vec::new(),
-    }
-    .canonical())
+    };
+    // 文書形式はalias群を公開しない。文書に現れる各代表identityから、復元用archiveの
+    // 単一identity principalを決定的に再構築する。
+    archive.principals = Some(crate::single_identity_archive_principals(&archive));
+    Ok(archive.canonical())
 }
 
 /// manifestが記録する版が、稼働している版と違うかどうか。

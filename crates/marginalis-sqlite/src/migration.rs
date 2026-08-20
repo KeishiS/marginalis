@@ -54,34 +54,7 @@ async fn migrate_database_with(
     migrations: &[Migration],
     current_version: i64,
 ) -> Result<DatabaseMigrationReport, DatabaseMigrationError> {
-    let options =
-        SqliteConnectOptions::from_str(database_url).map_err(DatabaseMigrationError::Database)?;
-    let database_path = options.get_filename();
-    if !database_path.is_absolute() || !database_path.is_file() {
-        return Err(DatabaseMigrationError::InvalidDatabasePath);
-    }
-    let database_path = database_path
-        .canonicalize()
-        .map_err(DatabaseMigrationError::BackupIo)?;
-    let backup_path = normalized_new_backup_path(backup_path)?;
-    if backup_path == database_path {
-        return Err(DatabaseMigrationError::InvalidBackupPath);
-    }
-
-    let options = options
-        .create_if_missing(false)
-        .read_only(false)
-        .foreign_keys(false)
-        .locking_mode(SqliteLockingMode::Exclusive)
-        .busy_timeout(Duration::from_secs(5));
-    let mut connection = SqliteConnection::connect_with(&options).await?;
-
-    // EXCLUSIVE locking modeで最初のlockを取得し、connectionを閉じるまで保持する。
-    // VACUUM INTOはtransaction内で実行できないため、空transactionでlockだけを確定する。
-    sqlx::query("BEGIN EXCLUSIVE")
-        .execute(&mut connection)
-        .await?;
-    sqlx::query("ROLLBACK").execute(&mut connection).await?;
+    let (mut connection, backup_path) = open_exclusive_database(database_url, backup_path).await?;
 
     let source_history = read_schema_history(&mut connection).await?;
     let applied = validate_schema_history_for(&source_history, migrations, current_version, true)?;
@@ -99,22 +72,14 @@ async fn migrate_database_with(
         });
     }
 
-    let pending_snapshot = PendingSnapshot::create(&backup_path)?;
-    let snapshot_path = pending_snapshot.snapshot_path().to_owned();
-    let snapshot_value = snapshot_path
-        .to_str()
-        .ok_or(DatabaseMigrationError::InvalidBackupPath)?;
-    sqlx::query("VACUUM INTO ?")
-        .bind(snapshot_value)
-        .execute(&mut connection)
-        .await?;
-    std::fs::set_permissions(
-        &snapshot_path,
-        std::fs::Permissions::from_mode(PRIVATE_FILE_MODE),
+    publish_verified_backup(
+        &mut connection,
+        &backup_path,
+        &source_history,
+        migrations,
+        current_version,
     )
-    .map_err(DatabaseMigrationError::BackupIo)?;
-    verify_snapshot(&snapshot_path, &source_history, migrations, current_version).await?;
-    pending_snapshot.publish()?;
+    .await?;
 
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut connection)
@@ -164,6 +129,67 @@ async fn migrate_database_with(
     })
 }
 
+pub(crate) async fn open_exclusive_database(
+    database_url: &str,
+    backup_path: &Path,
+) -> Result<(SqliteConnection, PathBuf), DatabaseMigrationError> {
+    let options =
+        SqliteConnectOptions::from_str(database_url).map_err(DatabaseMigrationError::Database)?;
+    let database_path = options.get_filename();
+    if !database_path.is_absolute() || !database_path.is_file() {
+        return Err(DatabaseMigrationError::InvalidDatabasePath);
+    }
+    let database_path = database_path
+        .canonicalize()
+        .map_err(DatabaseMigrationError::BackupIo)?;
+    let backup_path = normalized_new_backup_path(backup_path)?;
+    if backup_path == database_path {
+        return Err(DatabaseMigrationError::InvalidBackupPath);
+    }
+
+    let options = options
+        .create_if_missing(false)
+        .read_only(false)
+        .foreign_keys(false)
+        .locking_mode(SqliteLockingMode::Exclusive)
+        .busy_timeout(Duration::from_secs(5));
+    let mut connection = SqliteConnection::connect_with(&options).await?;
+
+    // EXCLUSIVE locking modeで最初のlockを取得し、connectionを閉じるまで保持する。
+    // VACUUM INTOはtransaction内で実行できないため、空transactionでlockだけを確定する。
+    sqlx::query("BEGIN EXCLUSIVE")
+        .execute(&mut connection)
+        .await?;
+    sqlx::query("ROLLBACK").execute(&mut connection).await?;
+    Ok((connection, backup_path))
+}
+
+pub(crate) async fn publish_verified_backup(
+    connection: &mut SqliteConnection,
+    backup_path: &Path,
+    source_history: &[i64],
+    migrations: &[Migration],
+    current_version: i64,
+) -> Result<(), DatabaseMigrationError> {
+    let pending_snapshot = PendingSnapshot::create(backup_path)?;
+    let snapshot_path = pending_snapshot.snapshot_path().to_owned();
+    let snapshot_value = snapshot_path
+        .to_str()
+        .ok_or(DatabaseMigrationError::InvalidBackupPath)?;
+    sqlx::query("VACUUM INTO ?")
+        .bind(snapshot_value)
+        .execute(&mut *connection)
+        .await?;
+    std::fs::set_permissions(
+        &snapshot_path,
+        std::fs::Permissions::from_mode(PRIVATE_FILE_MODE),
+    )
+    .map_err(DatabaseMigrationError::BackupIo)?;
+    verify_snapshot(&snapshot_path, source_history, migrations, current_version).await?;
+    pending_snapshot.publish()?;
+    Ok(())
+}
+
 fn normalized_new_backup_path(path: &Path) -> Result<PathBuf, DatabaseMigrationError> {
     if !path.is_absolute() || path.file_name().is_none() {
         return Err(DatabaseMigrationError::InvalidBackupPath);
@@ -186,13 +212,15 @@ fn normalized_new_backup_path(path: &Path) -> Result<PathBuf, DatabaseMigrationE
     ))
 }
 
-async fn read_schema_history(connection: &mut SqliteConnection) -> Result<Vec<i64>, sqlx::Error> {
+pub(crate) async fn read_schema_history(
+    connection: &mut SqliteConnection,
+) -> Result<Vec<i64>, sqlx::Error> {
     sqlx::query_scalar::<_, i64>("SELECT version FROM schema_migrations ORDER BY version ASC")
         .fetch_all(connection)
         .await
 }
 
-async fn verify_database(connection: &mut SqliteConnection) -> Result<(), sqlx::Error> {
+pub(crate) async fn verify_database(connection: &mut SqliteConnection) -> Result<(), sqlx::Error> {
     let integrity = sqlx::query_scalar::<_, String>("PRAGMA quick_check")
         .fetch_all(&mut *connection)
         .await?;

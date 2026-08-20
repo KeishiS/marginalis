@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use marginalis_domain::{
     BibliographyImportLink, BibliographyImportSource, BibliographyItem, Note, NoteId,
-    NotePermission, PrincipalRef,
+    NotePermission, Principal, PrincipalRef,
 };
 
 use crate::{MathMacroSettings, validate_stored_math_macros};
@@ -61,6 +61,7 @@ impl NoteAclSnapshotEntry {
 /// ノートとACLの相互参照を検証した、保存方式に依存しないスナップショット。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LogicalSnapshot {
+    principals: Vec<Principal>,
     notes: Vec<Note>,
     note_acl: Vec<NoteAclSnapshotEntry>,
     bibliography_items: Vec<BibliographyItem>,
@@ -85,6 +86,10 @@ pub enum InvalidSnapshot {
     InvalidBibliographyImportLink { position: usize },
     #[error("math macro settings at position {position} are invalid or duplicated")]
     InvalidMathMacroSettings { position: usize },
+    #[error("principal at position {position} is invalid or duplicated")]
+    InvalidPrincipal { position: usize },
+    #[error("stored data refers to an undeclared or inconsistent principal")]
+    InvalidPrincipalReference,
 }
 
 impl LogicalSnapshot {
@@ -116,14 +121,17 @@ impl LogicalSnapshot {
             }
         }
 
-        Ok(Self {
+        let mut snapshot = Self {
+            principals: Vec::new(),
             notes,
             note_acl,
             bibliography_items: Vec::new(),
             bibliography_import_sources: Vec::new(),
             bibliography_import_links: Vec::new(),
             math_macro_settings: Vec::new(),
-        })
+        };
+        snapshot.include_referenced_principals()?;
+        Ok(snapshot)
     }
 
     /// 文献項目と取込元との対応を、一つの整合性境界として追加する。
@@ -181,6 +189,7 @@ impl LogicalSnapshot {
         self.bibliography_items = bibliography_items;
         self.bibliography_import_sources = bibliography_import_sources;
         self.bibliography_import_links = bibliography_import_links;
+        self.include_referenced_principals()?;
         Ok(self)
     }
 
@@ -220,11 +229,112 @@ impl LogicalSnapshot {
             }
         }
         self.math_macro_settings = settings;
+        self.include_referenced_principals()?;
         Ok(self)
     }
 
     pub fn math_macro_settings(&self) -> &[MathMacroSettingsSnapshot] {
         &self.math_macro_settings
+    }
+
+    /// archiveへ保存し、復元時に再構築するprincipalと外部identityの対応。
+    pub fn principals(&self) -> &[Principal] {
+        &self.principals
+    }
+
+    /// SQLiteなどの正本から取得した完全なprincipal群へ置き換える。
+    ///
+    /// 各業務データが参照するIDと代表identityが一致し、外部identityが複数のprincipalへ
+    /// 重複していない場合だけ受理する。業務データをまだ持たないprincipalも保存できる。
+    pub fn with_principals(mut self, principals: Vec<Principal>) -> Result<Self, InvalidSnapshot> {
+        let mut ids = HashSet::new();
+        let mut identities = HashSet::new();
+        for (index, principal) in principals.iter().enumerate() {
+            if !ids.insert(principal.id())
+                || principal
+                    .identities()
+                    .iter()
+                    .any(|identity| !identities.insert(identity.clone()))
+            {
+                return Err(InvalidSnapshot::InvalidPrincipal {
+                    position: index + 1,
+                });
+            }
+        }
+        self.principals = principals;
+        self.validate_principal_references()?;
+        Ok(self)
+    }
+
+    fn include_referenced_principals(&mut self) -> Result<(), InvalidSnapshot> {
+        let references = self.principal_references();
+        for reference in references {
+            if let Some(principal) = self
+                .principals
+                .iter()
+                .find(|principal| principal.id() == reference.id())
+            {
+                if principal.primary_identity() != reference.primary_identity() {
+                    return Err(InvalidSnapshot::InvalidPrincipalReference);
+                }
+                continue;
+            }
+            if self
+                .principals
+                .iter()
+                .any(|principal| principal.contains(reference.primary_identity()))
+            {
+                return Err(InvalidSnapshot::InvalidPrincipalReference);
+            }
+            self.principals.push(Principal::single(
+                reference.id(),
+                reference.primary_identity().clone(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_principal_references(&self) -> Result<(), InvalidSnapshot> {
+        for reference in self.principal_references() {
+            let Some(principal) = self
+                .principals
+                .iter()
+                .find(|principal| principal.id() == reference.id())
+            else {
+                return Err(InvalidSnapshot::InvalidPrincipalReference);
+            };
+            if principal.primary_identity() != reference.primary_identity() {
+                return Err(InvalidSnapshot::InvalidPrincipalReference);
+            }
+        }
+        Ok(())
+    }
+
+    fn principal_references(&self) -> Vec<PrincipalRef> {
+        let mut references = Vec::new();
+        for note in &self.notes {
+            references.push(note.owner().clone());
+            if let Some(review) = note.last_review() {
+                references.push(review.reviewer().clone());
+            }
+        }
+        references.extend(self.note_acl.iter().map(|entry| entry.principal().clone()));
+        references.extend(
+            self.bibliography_items
+                .iter()
+                .map(|item| item.owner().clone()),
+        );
+        references.extend(
+            self.bibliography_import_sources
+                .iter()
+                .map(|source| source.owner().clone()),
+        );
+        references.extend(
+            self.math_macro_settings
+                .iter()
+                .map(|entry| entry.owner().clone()),
+        );
+        references
     }
 }
 

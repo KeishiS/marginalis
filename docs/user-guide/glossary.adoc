@@ -134,7 +134,7 @@ OAuthの認可を開始したクライアントと、認可コードをトーク
 
 ADR 0019で採用した、同じ利用者に属する一つ以上のOIDC identityをMarginalis内部でまとめる主体です。
 OIDC identityは``issuer``と``subject``の組であり、認証サービスが発行します。principalは、認証サービスを
-移した場合もノートの所有者や権限を同じ利用者へ結び付けるために使います。実装後もコード上の
+移した場合もノートの所有者や権限を同じ利用者へ結び付けるために使います。コード上の
 ``PrincipalId``は外部へ公開せず、REST APIとarchiveでは代表として選んだOIDC identityを使用します。
 
 == REST API

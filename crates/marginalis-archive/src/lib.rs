@@ -15,16 +15,17 @@ use marginalis_domain::{
     BibliographyContentDigest, BibliographyImportLink, BibliographyImportMethod,
     BibliographyImportSource, BibliographyImportSourceId, BibliographyItem, BibliographyItemId,
     EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
-    NoteReviewRecord, NoteReviewTracking, PrincipalId, PrincipalRef, Revision, UnixMillis,
+    NoteReviewRecord, NoteReviewTracking, Principal, PrincipalId, PrincipalRef, Revision,
+    UnixMillis,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// archiveの構造を表す形式名。
 ///
 /// 項目の追加、削除または意味の変更で上げます。AdocWeave package版とnote profile版は
 /// manifestへ別の項目として記録するため、解析器だけが変わった場合は形式名を変えません。
-pub const ARCHIVE_FORMAT: &str = "marginalis-archive-17";
+pub const ARCHIVE_FORMAT: &str = "marginalis-archive-18";
 /// archive内のノートを受理できる入力規則の版。
 ///
 /// 受理する本文が変わったときに上げます。版4までのノートはタグを`:tags:`で並べていました。
@@ -61,9 +62,9 @@ impl MigrationContract {
 ///
 /// サポート方針(ADR 0018): 現行バイナリが変換する旧契約は、この1件だけとする。それより古い
 /// archiveは、対応していた公開済みリリースを使って隣接する契約間を順番に変換する。
-/// v0.44.0からv0.45.0が書き出した契約。
+/// v0.46.0からv0.47.0が書き出した契約。
 const PREVIOUS_MIGRATION_CONTRACT: MigrationContract =
-    migration_contract("marginalis-archive-17", "0.40.1", 5);
+    migration_contract("marginalis-archive-17", "0.41.0", 5);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -71,6 +72,16 @@ pub struct Archive {
     pub format: String,
     pub adocweave_package_version: String,
     pub note_profile_version: u32,
+    /// 内部IDを含まない、代表identityとalias群の対応。
+    ///
+    /// 旧契約では項目自体がなく、現行契約では業務データが空でも空配列を必須とする。
+    /// `Option`はこの契約差を読み分けるためだけに使い、現行archiveは常に`Some`で書き出す。
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_principals",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub principals: Option<Vec<ArchivePrincipal>>,
     pub notes: Vec<ArchiveNote>,
     pub note_acl: Vec<ArchiveAclEntry>,
     #[serde(default)]
@@ -81,6 +92,30 @@ pub struct Archive {
     pub bibliography_import_links: Vec<ArchiveBibliographyImportLink>,
     #[serde(default)]
     pub math_macro_settings: Vec<ArchiveMathMacroSettings>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchivePrincipal {
+    pub primary_issuer: String,
+    pub primary_subject: String,
+    pub aliases: Vec<ArchiveIdentity>,
+}
+
+fn deserialize_optional_principals<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<ArchivePrincipal>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<ArchivePrincipal>::deserialize(deserializer).map(Some)
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveIdentity {
+    pub issuer: String,
+    pub subject: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -179,6 +214,17 @@ impl Archive {
     /// 並べ替えの規則は、SQLiteから書き出すときの`ORDER BY`と同じにする。
     #[must_use]
     pub fn canonical(mut self) -> Self {
+        if let Some(principals) = &mut self.principals {
+            for principal in &mut *principals {
+                principal.aliases.sort_by(|left, right| {
+                    (&left.issuer, &left.subject).cmp(&(&right.issuer, &right.subject))
+                });
+            }
+            principals.sort_by(|left, right| {
+                (&left.primary_issuer, &left.primary_subject)
+                    .cmp(&(&right.primary_issuer, &right.primary_subject))
+            });
+        }
         self.notes.sort_by(|left, right| {
             // note_idは一意であるため、これだけで並びが定まる。
             left.note_id.cmp(&right.note_id)
@@ -215,6 +261,25 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
         format: ARCHIVE_FORMAT.into(),
         adocweave_package_version: content.profile().adocweave_package_version.into(),
         note_profile_version: ARCHIVE_NOTE_PROFILE_VERSION,
+        principals: Some(
+            snapshot
+                .principals()
+                .iter()
+                .map(|principal| ArchivePrincipal {
+                    primary_issuer: principal.primary_identity().issuer().to_owned(),
+                    primary_subject: principal.primary_identity().subject().to_owned(),
+                    aliases: principal
+                        .identities()
+                        .iter()
+                        .filter(|identity| *identity != principal.primary_identity())
+                        .map(|identity| ArchiveIdentity {
+                            issuer: identity.issuer().to_owned(),
+                            subject: identity.subject().to_owned(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        ),
         notes: snapshot
             .notes()
             .iter()
@@ -311,6 +376,7 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
             })
             .collect(),
     }
+    .canonical()
 }
 
 fn encode_digest(digest: BibliographyContentDigest) -> String {
@@ -346,7 +412,8 @@ pub fn validate_archive(
     {
         return Err(ArchiveValidationError);
     }
-    validate_archive_contents(content, archive).map_err(|_| ArchiveValidationError)
+    validate_archive_contents(content, archive, PrincipalEncoding::Declared)
+        .map_err(|_| ArchiveValidationError)
 }
 
 /// 対応する旧archive契約を現行規則で全件再検証し、現行archiveへ変換する。
@@ -356,6 +423,11 @@ pub fn migrate_previous_archive(
 ) -> Result<Archive, ArchiveMigrationError> {
     if !PREVIOUS_MIGRATION_CONTRACT.matches(archive) {
         return Err(ArchiveMigrationError::UnsupportedContract);
+    }
+    if archive.principals.is_some() {
+        // 直前契約にはprincipal群が存在しない。形式名だけを旧契約へ書き換えた入力や、
+        // 新旧の項目を混ぜた入力を受理しない。
+        return Err(ArchiveMigrationError::InvalidPrincipal { position: 1 });
     }
     if let Some((position, _)) = archive
         .notes
@@ -369,16 +441,27 @@ pub fn migrate_previous_archive(
             position: position + 1,
         });
     }
-    let snapshot =
-        validate_archive_contents(content, archive).map_err(ArchiveMigrationError::from)?;
+    let snapshot = validate_archive_contents(content, archive, PrincipalEncoding::Legacy)
+        .map_err(ArchiveMigrationError::from)?;
     Ok(create_archive(content, &snapshot))
+}
+
+#[derive(Clone, Copy)]
+enum PrincipalEncoding {
+    Declared,
+    Legacy,
 }
 
 fn validate_archive_contents(
     content: &dyn NoteContent,
     archive: &Archive,
+    principal_encoding: PrincipalEncoding,
 ) -> Result<LogicalSnapshot, ArchiveContentsError> {
-    let principal_ids = archive_principal_ids(archive);
+    let archive_principals = match principal_encoding {
+        PrincipalEncoding::Declared => declared_archive_principals(archive)?,
+        PrincipalEncoding::Legacy => legacy_archive_principals(archive)?,
+    };
+    let principal_refs = &archive_principals.references;
     let notes = archive
         .notes
         .iter()
@@ -400,13 +483,13 @@ fn validate_archive_contents(
                 .map(NoteId::new)
                 .map_err(|_| invalid_note())?;
             let creator =
-                principal_ref(&principal_ids, &note.creator_issuer, &note.creator_subject)
+                principal_ref(principal_refs, &note.creator_issuer, &note.creator_subject)
                     .map_err(|_| invalid_note())?;
             let revision = Revision::new(note.revision).map_err(|_| invalid_note())?;
             let (created_via, review) = note
                 .provenance
                 .as_ref()
-                .map(|provenance| archive_review(provenance, &creator, &principal_ids))
+                .map(|provenance| archive_review(provenance, &creator, principal_refs))
                 .transpose()
                 .map_err(|_| invalid_note())?
                 .unwrap_or((NoteCreationSource::Unknown, NoteReviewTracking::Unknown));
@@ -443,7 +526,7 @@ fn validate_archive_contents(
                 .map_err(|_| invalid_acl_entry())?;
             Ok(NoteAclSnapshotEntry::new(
                 note_id,
-                principal_ref(&principal_ids, &entry.issuer, &entry.subject)
+                principal_ref(principal_refs, &entry.issuer, &entry.subject)
                     .map_err(|_| invalid_acl_entry())?,
                 entry.permission,
             ))
@@ -462,7 +545,7 @@ fn validate_archive_contents(
                     .parse::<EntityId>()
                     .map(BibliographyItemId::new)
                     .map_err(|_| invalid())?,
-                principal_ref(&principal_ids, &item.owner_issuer, &item.owner_subject)
+                principal_ref(principal_refs, &item.owner_issuer, &item.owner_subject)
                     .map_err(|_| invalid())?,
                 item.citation_key.clone(),
                 serde_json::to_string(&item.csl_json).map_err(|_| invalid())?,
@@ -487,7 +570,7 @@ fn validate_archive_contents(
                     .parse::<EntityId>()
                     .map(BibliographyImportSourceId::new)
                     .map_err(|_| invalid())?,
-                principal_ref(&principal_ids, &source.owner_issuer, &source.owner_subject)
+                principal_ref(principal_refs, &source.owner_issuer, &source.owner_subject)
                     .map_err(|_| invalid())?,
                 source.method,
                 source.display_name.clone(),
@@ -531,7 +614,7 @@ fn validate_archive_contents(
                 position: index + 1,
             };
             Ok(MathMacroSettingsSnapshot::new(
-                principal_ref(&principal_ids, &entry.owner_issuer, &entry.owner_subject)
+                principal_ref(principal_refs, &entry.owner_issuer, &entry.owner_subject)
                     .map_err(|_| invalid())?,
                 MathMacroSettings {
                     macros: entry
@@ -557,6 +640,7 @@ fn validate_archive_contents(
             )
         })
         .and_then(|snapshot| snapshot.with_math_macro_settings(math_macro_settings))
+        .and_then(|snapshot| snapshot.with_principals(archive_principals.principals))
         .map_err(|error| match error {
             InvalidSnapshot::DuplicateNote { position } => ArchiveContentsError::Note { position },
             InvalidSnapshot::InvalidAclEntry { position } => {
@@ -575,13 +659,17 @@ fn validate_archive_contents(
             InvalidSnapshot::InvalidMathMacroSettings { position } => {
                 ArchiveContentsError::MathMacroSettings { position }
             }
+            InvalidSnapshot::InvalidPrincipal { position } => {
+                ArchiveContentsError::Principal { position }
+            }
+            InvalidSnapshot::InvalidPrincipalReference => ArchiveContentsError::Relationships,
         })
 }
 
 fn archive_review(
     provenance: &ArchiveNoteProvenance,
     owner: &PrincipalRef,
-    principal_ids: &BTreeMap<(String, String), PrincipalId>,
+    principal_refs: &BTreeMap<(String, String), PrincipalRef>,
 ) -> Result<(NoteCreationSource, NoteReviewTracking), ()> {
     let review = match (
         provenance.review_tracking_known,
@@ -593,7 +681,7 @@ fn archive_review(
         (false, None, None, None, None) => NoteReviewTracking::Unknown,
         (true, None, None, None, None) => NoteReviewTracking::pending(),
         (true, Some(revision), Some(reviewed_at), Some(issuer), Some(subject)) => {
-            let reviewer = principal_ref(principal_ids, issuer, subject)?;
+            let reviewer = principal_ref(principal_refs, issuer, subject)?;
             if &reviewer != owner {
                 return Err(());
             }
@@ -608,7 +696,46 @@ fn archive_review(
     Ok((provenance.created_via, review))
 }
 
-fn archive_principal_ids(archive: &Archive) -> BTreeMap<(String, String), PrincipalId> {
+struct ArchivePrincipals {
+    principals: Vec<Principal>,
+    references: BTreeMap<(String, String), PrincipalRef>,
+}
+
+fn legacy_archive_principals(archive: &Archive) -> Result<ArchivePrincipals, ArchiveContentsError> {
+    let identities = legacy_identity_keys(archive);
+    let principals = identities
+        .into_iter()
+        .enumerate()
+        .map(
+            |(index, (issuer, subject))| -> Result<_, ArchiveContentsError> {
+                let id = i64::try_from(index + 1).expect("archive identity count fits in i64");
+                Ok(Principal::single(
+                    PrincipalId::new(id).expect("enumerated ID is positive"),
+                    Identity::new(issuer, subject)
+                        .map_err(|_| ArchiveContentsError::Relationships)?,
+                ))
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
+    let references = principals
+        .iter()
+        .map(|principal| {
+            (
+                (
+                    principal.primary_identity().issuer().to_owned(),
+                    principal.primary_identity().subject().to_owned(),
+                ),
+                principal.reference().clone(),
+            )
+        })
+        .collect();
+    Ok(ArchivePrincipals {
+        principals,
+        references,
+    })
+}
+
+fn legacy_identity_keys(archive: &Archive) -> BTreeSet<(String, String)> {
     let mut identities = BTreeSet::new();
     for note in &archive.notes {
         identities.insert((note.creator_issuer.clone(), note.creator_subject.clone()));
@@ -646,33 +773,93 @@ fn archive_principal_ids(archive: &Archive) -> BTreeMap<(String, String), Princi
             .map(|entry| (entry.owner_issuer.clone(), entry.owner_subject.clone())),
     );
     identities
+}
+
+fn single_identity_archive_principals(archive: &Archive) -> Vec<ArchivePrincipal> {
+    legacy_identity_keys(archive)
         .into_iter()
-        .enumerate()
-        .map(|(index, identity)| {
-            let id = i64::try_from(index + 1).expect("archive identity count fits in i64");
-            (
-                identity,
-                PrincipalId::new(id).expect("enumerated ID is positive"),
-            )
+        .map(|(issuer, subject)| ArchivePrincipal {
+            primary_issuer: issuer,
+            primary_subject: subject,
+            aliases: Vec::new(),
         })
         .collect()
 }
 
 fn principal_ref(
-    principal_ids: &BTreeMap<(String, String), PrincipalId>,
+    principal_refs: &BTreeMap<(String, String), PrincipalRef>,
     issuer: &str,
     subject: &str,
 ) -> Result<PrincipalRef, ()> {
-    let identity = Identity::new(issuer.to_owned(), subject.to_owned()).map_err(|_| ())?;
-    let id = principal_ids
+    Identity::new(issuer.to_owned(), subject.to_owned()).map_err(|_| ())?;
+    principal_refs
         .get(&(issuer.to_owned(), subject.to_owned()))
-        .copied()
-        .ok_or(())?;
-    Ok(PrincipalRef::new(id, identity))
+        .cloned()
+        .ok_or(())
+}
+
+fn declared_archive_principals(
+    archive: &Archive,
+) -> Result<ArchivePrincipals, ArchiveContentsError> {
+    let entries = archive
+        .principals
+        .as_ref()
+        .ok_or(ArchiveContentsError::Principal { position: 1 })?;
+    let mut parsed = Vec::with_capacity(entries.len());
+    let mut identities_seen = BTreeSet::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let invalid = || ArchiveContentsError::Principal {
+            position: index + 1,
+        };
+        let primary = Identity::new(entry.primary_issuer.clone(), entry.primary_subject.clone())
+            .map_err(|_| invalid())?;
+        if !identities_seen.insert((primary.issuer().to_owned(), primary.subject().to_owned())) {
+            return Err(invalid());
+        }
+        let mut identities = vec![primary.clone()];
+        for alias in &entry.aliases {
+            let identity = Identity::new(alias.issuer.clone(), alias.subject.clone())
+                .map_err(|_| invalid())?;
+            if !identities_seen
+                .insert((identity.issuer().to_owned(), identity.subject().to_owned()))
+            {
+                return Err(invalid());
+            }
+            identities.push(identity);
+        }
+        parsed.push((primary, identities));
+    }
+    parsed.sort_by(|(left, _), (right, _)| {
+        (left.issuer(), left.subject()).cmp(&(right.issuer(), right.subject()))
+    });
+
+    let mut principals = Vec::with_capacity(parsed.len());
+    let mut references = BTreeMap::new();
+    for (index, (primary, identities)) in parsed.into_iter().enumerate() {
+        let id = i64::try_from(index + 1).map_err(|_| ArchiveContentsError::Relationships)?;
+        let principal = Principal::restore(
+            PrincipalId::new(id).map_err(|_| ArchiveContentsError::Relationships)?,
+            primary.clone(),
+            identities,
+        )
+        .map_err(|_| ArchiveContentsError::Principal {
+            position: index + 1,
+        })?;
+        references.insert(
+            (primary.issuer().to_owned(), primary.subject().to_owned()),
+            principal.reference().clone(),
+        );
+        principals.push(principal);
+    }
+    Ok(ArchivePrincipals {
+        principals,
+        references,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ArchiveContentsError {
+    Principal { position: usize },
     Note { position: usize },
     AclEntry { position: usize },
     BibliographyItem { position: usize },
@@ -686,6 +873,8 @@ enum ArchiveContentsError {
 pub enum ArchiveMigrationError {
     #[error("archive is not a supported migration source")]
     UnsupportedContract,
+    #[error("archive principal at position {position} is invalid")]
+    InvalidPrincipal { position: usize },
     #[error("archive note at position {position} does not satisfy the current note profile")]
     InvalidNote { position: usize },
     #[error("archive ACL entry at position {position} is invalid")]
@@ -705,6 +894,7 @@ pub enum ArchiveMigrationError {
 impl From<ArchiveContentsError> for ArchiveMigrationError {
     fn from(error: ArchiveContentsError) -> Self {
         match error {
+            ArchiveContentsError::Principal { position } => Self::InvalidPrincipal { position },
             ArchiveContentsError::Note { position } => Self::InvalidNote { position },
             ArchiveContentsError::AclEntry { position } => Self::InvalidAclEntry { position },
             ArchiveContentsError::BibliographyItem { position } => {
@@ -803,6 +993,72 @@ mod tests {
         assert_eq!(archive.note_profile_version, ARCHIVE_NOTE_PROFILE_VERSION);
         let restored = validate_archive(&content(), &archive).expect("validate archive");
         assert_eq!(create_archive(&content(), &restored), archive);
+    }
+
+    #[test]
+    fn archive_round_trip_preserves_primary_identity_and_aliases_without_internal_ids() {
+        let old_identity = Identity::new("https://old-id.example.test".into(), "alice".into())
+            .expect("old identity");
+        let new_identity = Identity::new("https://new-id.example.test".into(), "alice-v2".into())
+            .expect("new identity");
+        let principal = Principal::restore(
+            PrincipalId::new(41).expect("principal ID"),
+            new_identity.clone(),
+            vec![old_identity.clone(), new_identity.clone()],
+        )
+        .expect("principal");
+        let snapshot = LogicalSnapshot::new(Vec::new(), Vec::new())
+            .expect("snapshot")
+            .with_principals(vec![principal])
+            .expect("principal snapshot");
+
+        let archive = create_archive(&content(), &snapshot);
+        assert_eq!(
+            archive.principals,
+            Some(vec![ArchivePrincipal {
+                primary_issuer: new_identity.issuer().into(),
+                primary_subject: new_identity.subject().into(),
+                aliases: vec![ArchiveIdentity {
+                    issuer: old_identity.issuer().into(),
+                    subject: old_identity.subject().into(),
+                }],
+            }])
+        );
+        let encoded = serde_json::to_string(&archive).expect("archive JSON");
+        assert!(!encoded.contains("principal_id"));
+        assert!(!encoded.contains("identity_id"));
+
+        let mut null_principals = serde_json::to_value(&archive).expect("archive value");
+        null_principals["principals"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<Archive>(null_principals).is_err());
+
+        let mut missing_aliases = serde_json::to_value(&archive).expect("archive value");
+        missing_aliases["principals"][0]
+            .as_object_mut()
+            .expect("principal object")
+            .remove("aliases");
+        assert!(serde_json::from_value::<Archive>(missing_aliases).is_err());
+
+        let restored = validate_archive(&content(), &archive).expect("validate archive");
+        assert_eq!(create_archive(&content(), &restored), archive);
+
+        let mut duplicated = archive.clone();
+        duplicated
+            .principals
+            .as_mut()
+            .expect("current principal list")
+            .push(ArchivePrincipal {
+                primary_issuer: "https://third-id.example.test".into(),
+                primary_subject: "other".into(),
+                aliases: vec![ArchiveIdentity {
+                    issuer: old_identity.issuer().into(),
+                    subject: old_identity.subject().into(),
+                }],
+            });
+        assert_eq!(
+            validate_archive(&content(), &duplicated),
+            Err(ArchiveValidationError)
+        );
     }
 
     #[test]
@@ -935,18 +1191,15 @@ mod tests {
         );
     }
 
-    /// 形式名が現行と同じでも、AdocWeave package版が違うarchiveは移行の入力として扱う。
-    ///
-    /// 解析器だけが変わった更新では形式名を上げないため、現行かどうかは形式名だけでは
-    /// 決まらない。取り込む前に本文を現行の規則で再検証する必要がある。
+    /// 直前の形式は、本文規則が同じでも現行形式へ移行する。
     #[test]
-    fn the_current_format_with_a_previous_adocweave_version_is_migrated() {
+    fn the_previous_format_with_the_same_note_profile_is_migrated() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let current = create_archive(&content(), &snapshot);
         let mut previous = current.clone();
         stamp_contract(&mut previous, PREVIOUS_MIGRATION_CONTRACT);
-        assert_eq!(previous.format, current.format);
-        assert_ne!(
+        assert_ne!(previous.format, current.format);
+        assert_eq!(
             previous.adocweave_package_version,
             current.adocweave_package_version
         );
@@ -963,6 +1216,9 @@ mod tests {
         archive.format = contract.format.into();
         archive.adocweave_package_version = contract.adocweave_package_version.into();
         archive.note_profile_version = contract.note_profile_version;
+        if contract == PREVIOUS_MIGRATION_CONTRACT {
+            archive.principals = None;
+        }
     }
 
     #[test]

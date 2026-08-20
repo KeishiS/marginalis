@@ -1,5 +1,5 @@
-# 実バイナリーをVMで起動し、health、fail closedなlogin、期限切れ削除、backup、
-# restore-check、診断、旧schema検出までの運用経路を通しで確かめる。
+# 実バイナリーをVMで起動し、health、fail closedなlogin、期限切れ削除、identity引き継ぎ、
+# backup、restore-check、診断、旧schema検出までの運用経路を通しで確かめる。
 {
   pkgs,
   self,
@@ -121,6 +121,33 @@ pkgs.testers.nixosTest {
       "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
       + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000002'\") -eq 1"
     )
+    machine.succeed("systemctl stop marginalis.service")
+    machine.succeed(
+      "runuser -u marginalis -- env "
+      + "MARGINALIS_DATABASE_URL=sqlite:/var/lib/marginalis/marginalis.sqlite "
+      + "/run/current-system/sw/bin/marginalis link-identity "
+      + "--existing-issuer https://id.example.test --existing-subject recent "
+      + "--new-issuer https://replacement-id.example.test --new-subject recent-v2 "
+      + "--make-primary "
+      + "--backup-output /var/lib/marginalis-backups/test/identity-link.sqlite3"
+    )
+    machine.succeed(
+      "test $(stat -c %a /var/lib/marginalis-backups/test/identity-link.sqlite3) = 600; "
+      + "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite \""
+      + "SELECT COUNT(DISTINCT principal_id) FROM principal_identities "
+      + "WHERE (issuer = 'https://id.example.test' AND subject = 'recent') "
+      + "OR (issuer = 'https://replacement-id.example.test' AND subject = 'recent-v2')\") -eq 1; "
+      + "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite \""
+      + "SELECT is_primary FROM principal_identities "
+      + "WHERE issuer = 'https://replacement-id.example.test' AND subject = 'recent-v2'\") -eq 1; "
+      + "test $(sqlite3 /var/lib/marginalis-backups/test/identity-link.sqlite3 \""
+      + "SELECT COUNT(*) FROM principal_identities "
+      + "WHERE issuer = 'https://replacement-id.example.test' AND subject = 'recent-v2'\") -eq 0"
+    )
+    machine.succeed("systemctl start marginalis.service")
+    machine.wait_until_succeeds(
+      "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\"'"
+    )
     machine.succeed("systemctl is-enabled marginalis-purge-expired.timer")
     machine.succeed("systemctl is-enabled marginalis-backup.timer")
     machine.succeed("systemctl is-enabled marginalis-restore-check.timer")
@@ -142,9 +169,13 @@ pkgs.testers.nixosTest {
       "backup=$(find /var/lib/marginalis-backups/test -mindepth 1 -maxdepth 1 -type d); "
       + "test -f \"$backup/COMPLETE\"; "
       + "test -f \"$backup/marginalis-archive.json\"; "
-      + "jq -e '.format == \"marginalis-archive-17\" "
+      + "jq -e '.format == \"marginalis-archive-18\" "
       + "and .adocweave_package_version == \"${adocweaveVersion}\" "
-      + "and .note_profile_version == 5 and (.notes | length == 1)' "
+      + "and .note_profile_version == 5 and (.notes | length == 1) "
+      + "and any(.principals[]; "
+      + ".primary_issuer == \"https://replacement-id.example.test\" "
+      + "and .primary_subject == \"recent-v2\" "
+      + "and any(.aliases[]; .issuer == \"https://id.example.test\" and .subject == \"recent\"))' "
       + "\"$backup/marginalis-archive.json\"; "
       + "test $(stat -c %a \"$backup\") = 700; "
       + "test $(stat -c %a \"$backup/COMPLETE\") = 600; "
@@ -159,7 +190,12 @@ pkgs.testers.nixosTest {
       + "test $(sqlite3 /tmp/restored.sqlite 'SELECT COUNT(*) FROM notes') -eq 1; "
       + "test $(sqlite3 /tmp/restored.sqlite "
       + "\"SELECT COUNT(*) FROM note_details WHERE deleted_at_ms IS NOT NULL AND revision = 1 "
-      + "AND creator_issuer = 'https://id.example.test' AND creator_subject = 'recent'\") -eq 1; "
+      + "AND creator_issuer = 'https://replacement-id.example.test' "
+      + "AND creator_subject = 'recent-v2'\") -eq 1; "
+      + "test $(sqlite3 /tmp/restored.sqlite \""
+      + "SELECT COUNT(DISTINCT principal_id) FROM principal_identities "
+      + "WHERE (issuer = 'https://id.example.test' AND subject = 'recent') "
+      + "OR (issuer = 'https://replacement-id.example.test' AND subject = 'recent-v2')\") -eq 1; "
       + "test $(sqlite3 /tmp/restored.sqlite "
       + "\"SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'note_acl'\") -eq 1"
     )

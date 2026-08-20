@@ -187,6 +187,12 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |SQLite schemaの前進migration
 |``maintenance.database_migration.completed``
 |``maintenance.database_migration.failed``
+|OIDC identityの引き継ぎ
+|``maintenance.identity_link.completed``
+|``maintenance.identity_link.failed``
+|代表identityの変更
+|``maintenance.identity_primary.completed``
+|``maintenance.identity_primary.failed``
 |archive書き出し
 |``maintenance.archive_export.completed``
 |``maintenance.archive_export.failed``
@@ -212,6 +218,10 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |``maintenance.restore_verification.completed``
 |``maintenance.restore_verification.failed``
 |===
+
+identityの引き継ぎと代表identityの変更は、成功時にSQLite退避のpathを記録します。引き継ぎでは
+代表identityも変更したかどうかを``primary_changed``で示します。issuer、subject、``PrincipalId``、
+``identity_id``は成功時と失敗時のどちらにも記録しません。
 
 === Webhook配送
 

@@ -30,13 +30,17 @@ migration履歴の基準22から現行版までを連続した履歴として検
 原因分類をfieldで示すこと。HTTP完了ログはrequest ID、method、queryを除くpath、status、
 latencyを含むこと。Cookie、token、認可code、client secret、利用者identity、ノートの識別子と
 内容、HTTP headerとbodyを記録しないこと。
+* *REQ-OPS-008 — OIDC identityの引き継ぎ*: service停止中の明示的な管理commandで、検証済みのSQLite
+全体退避を確定してから、新しい外部identityを既存principalへ一つのtransactionで結び付けられること。
+代表identityを明示的に変更できること。identityを推測で結び付けず、同じidentity、存在しないidentity、
+別principalに属するidentityを変更せず拒否すること。ログへ外部identityと内部IDを記録しないこと。
 
 == データ管理
 
 * *REQ-DATA-001 — ノート正本*: 利用者が記述した完全なAsciiDoc文書、所有者、時刻、revision、
 削除状態をSQLiteへ保存すること。題名とタグはAsciiDoc文書から導出し、独立した更新入力に
 しないこと。タグは文書headerで出現順に評価した属性環境の最終値から導出すること。
-* *REQ-DATA-002 — 書き出し*: 個別ノートをAsciiDocとして書き出せること。ノート、ACL、
+* *REQ-DATA-002 — 書き出し*: 個別ノートをAsciiDocとして書き出せること。利用者の代表identityとalias、ノート、ACL、
 削除状態、文献ライブラリ、文献情報の取込元と対応情報、数式マクロ設定をJSONアーカイブとして
 書き出し、検証済みアーカイブを空のデータベースへ復元できる
 こと。Webセッション、OIDCログイン試行、MCPクライアントとトークンは対象に含めないこと。
@@ -240,7 +244,8 @@ systemd credentialで渡すこと。
 == 対応する保存形式
 
 * *REQ-FORMAT-001 — 現行形式*: SQLiteスキーマ23と、AdocWeave package版0.41.0を記録した
-``marginalis-archive-17``だけを通常処理で受理すること。``migrate-archive``と``restore-archive``だけは
+``marginalis-archive-18``だけを通常処理で受理すること。archiveは内部principal IDを含めず、代表identityと
+alias群を一意で安定した順序にして保存すること。``migrate-archive``と``restore-archive``だけは
 直前の公開済み保存契約(ADR 0018)だけを移行の入力として受理し、AdocWeave 0.41.0で全件を再検証する
 こと。保存契約はarchive形式、AdocWeave package版、note profile版の組とし、3項目をすべて検査する
 こと。直前より古い契約と、その他の旧形式を現行版だけで移行せず、公開済みの過去リリースを使う
