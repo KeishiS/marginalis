@@ -24,4 +24,10 @@ rm "$work_dir/docs/unclassified.md"
 git -C "$work_dir" add -u
 bash "$script_dir/check-documentation-corpus.sh" "$work_dir" >/dev/null
 
+# .claude/配下のMarkdown(skill定義など)は受理する。
+mkdir -p "$work_dir/.claude/skills/example"
+printf '%s\n' '# skill' >"$work_dir/.claude/skills/example/SKILL.md"
+git -C "$work_dir" add .
+bash "$script_dir/check-documentation-corpus.sh" "$work_dir" >/dev/null
+
 echo "文書分類検査の回帰試験に成功しました。"
