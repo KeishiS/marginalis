@@ -127,7 +127,8 @@ mod tests {
 
     use marginalis_domain::{NoteCreationSource, NoteDraft, NotePermission};
 
-    use crate::{NoteValidationTarget, NoteWritePolicy};
+    use crate::NoteWritePolicy;
+    use marginalis_domain::NoteValidationTarget;
 
     use super::*;
     use crate::notes::test_support::{

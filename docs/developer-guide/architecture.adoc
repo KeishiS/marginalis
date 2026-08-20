@@ -394,6 +394,9 @@ JSONから復元したノート、ACL、保持中の全版、文献項目、取�
 crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
 crate内moduleを使う。各crateの``lib.rs``は公開facade、routerまたはcomposition rootとして、
 実行経路と公開型を短く一覧できる状態に保つ。
+``marginalis-application/src/lib.rs``はmodule宣言と再エクスポートだけを持ち、ノートの公開型と
+``NoteUseCases``は``notes/api.rs``へ置きます。認証とMCPの内向き境界はそれぞれの実装moduleへ、
+保存失敗、時刻、乱数の共通portは``runtime.rs``へ置き、crate rootへ異なる変更理由を集めません。
 
 Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセットの配信を担当し、Reactは
 画面遷移とブラウザー内状態を担当します。RESTのTypeScript型と実行時の応答検査は、

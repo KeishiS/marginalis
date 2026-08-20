@@ -279,7 +279,8 @@ mod tests {
         Revision, UnixMillis,
     };
 
-    use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteValidationTarget};
+    use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity};
+    use marginalis_domain::NoteValidationTarget;
 
     use super::*;
     use crate::notes::test_support::{

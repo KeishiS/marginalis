@@ -10,12 +10,205 @@ use mcp_authorization_server::{
 };
 
 use crate::{
-    Clock, McpAuthenticatedActor, McpAuthorizationClient, McpAuthorizationRequest,
-    McpClientAuthorization, McpClientMetadataResolver, McpEffectiveScopeCeiling, McpOAuthClient,
-    McpOAuthRepository, McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy,
-    McpScopeCeilingRepository, McpScopeCeilingSetting, McpScopeCeilingUseCaseError, McpTokenPair,
-    McpValidatedAuthorizationRequest, PrincipalDirectory, Random, StorageError,
+    Clock, McpAuthorizationClient, McpAuthorizationRequest, McpClientMetadataResolver,
+    McpClientRegistrationMethod, McpOAuthClient, McpOAuthRepository, McpOAuthUseCaseError,
+    McpResourcePolicy, McpTokenPair, McpValidatedAuthorizationRequest, PrincipalDirectory, Random,
+    StorageError,
 };
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpAuthenticatedActor {
+    pub actor: Actor,
+    pub scopes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct McpStoredScopeCeilings {
+    pub principal: Option<McpScopeCeilingSetting>,
+    pub client: Option<McpScopeCeilingSetting>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpScopeCeilingSetting {
+    pub scopes: Vec<String>,
+    pub revision: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpClientAuthorizationRecord<ScopeCeiling> {
+    pub client_id: String,
+    pub display_name: String,
+    pub registration_method: McpClientRegistrationMethod,
+    /// この利用者が当該clientへ同意したことのあるscope。
+    pub granted_scopes: Vec<String>,
+    pub scope_ceiling: ScopeCeiling,
+    pub authorized_at: marginalis_domain::UnixMillis,
+    pub last_used_at: Option<marginalis_domain::UnixMillis>,
+    pub active: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpEffectiveScopeCeiling {
+    pub configured: bool,
+    pub setting: McpScopeCeilingSetting,
+}
+
+pub type McpClientAuthorization = McpClientAuthorizationRecord<McpEffectiveScopeCeiling>;
+/// 保存層では、未設定と明示的な空集合を`Option`で区別する。
+pub type McpStoredClientAuthorization =
+    McpClientAuthorizationRecord<Option<McpScopeCeilingSetting>>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum McpScopeCeilingUseCaseError {
+    #[error("MCP scope ceiling settings are invalid")]
+    Invalid,
+    #[error("MCP scope ceiling settings conflict")]
+    Conflict,
+    #[error("MCP client was not found")]
+    ClientNotFound,
+    #[error("MCP scope ceiling settings are unavailable")]
+    Unavailable,
+    #[error("stored MCP scope ceiling settings are invalid")]
+    CorruptData,
+}
+
+#[async_trait]
+pub trait McpScopeCeilingRepository: Send + Sync {
+    async fn client_authorizations(
+        &self,
+        actor: &Actor,
+        now: marginalis_domain::UnixMillis,
+    ) -> Result<Vec<McpStoredClientAuthorization>, StorageError>;
+
+    async fn principal_scope_ceiling(
+        &self,
+        actor: &Actor,
+    ) -> Result<Option<McpScopeCeilingSetting>, StorageError>;
+
+    async fn scope_ceilings(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+    ) -> Result<McpStoredScopeCeilings, StorageError>;
+
+    async fn replace_principal_scope_ceiling(
+        &self,
+        actor: &Actor,
+        scopes: &[String],
+        expected_revision: i64,
+        now: marginalis_domain::UnixMillis,
+    ) -> Result<McpScopeCeilingSetting, StorageError>;
+
+    /// clientの上限設定を取り除き、未設定へ戻す。
+    ///
+    /// 上限は将来の認可を制限する設定であり、狭めた後に解除できないと復旧できなくなる。
+    async fn delete_client_scope_ceiling(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+        expected_revision: i64,
+        now: marginalis_domain::UnixMillis,
+    ) -> Result<(), StorageError>;
+
+    async fn replace_client_scope_ceiling(
+        &self,
+        actor: &Actor,
+        client_id: &str,
+        scopes: &[String],
+        expected_revision: i64,
+        now: marginalis_domain::UnixMillis,
+    ) -> Result<McpScopeCeilingSetting, StorageError>;
+}
+
+#[async_trait]
+pub trait McpOAuthUseCases: Send + Sync {
+    /// Protected Resource Metadata、challenge、認可、token検証で共有するpolicyを返す。
+    fn resource_policy(&self) -> McpResourcePolicy;
+    async fn register_client(&self, client: McpOAuthClient) -> Result<(), McpOAuthUseCaseError>;
+    async fn resolve_authorization_client(
+        &self,
+        client_id: String,
+        redirect_uri: Option<String>,
+    ) -> Result<McpAuthorizationClient, McpOAuthUseCaseError>;
+    async fn validate_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError>;
+    /// 同じ要求から解決した`resolved`を使い、clientを再取得せず残りの項目を検証する。
+    async fn validate_resolved_authorization_request(
+        &self,
+        request: McpAuthorizationRequest,
+        resolved: McpAuthorizationClient,
+    ) -> Result<McpValidatedAuthorizationRequest, McpOAuthUseCaseError>;
+    /// 同意画面へ表示してよいscopeを、`authorize`と同じscope上限から求める。
+    ///
+    /// 表示だけ上限を無視すると、利用者が許可した権限が黙って削られる。
+    async fn grantable_scopes(
+        &self,
+        actor: Actor,
+        client_id: String,
+        requested: Vec<String>,
+    ) -> Result<Vec<String>, McpOAuthUseCaseError>;
+    async fn authorize(
+        &self,
+        actor: Actor,
+        request: McpValidatedAuthorizationRequest,
+    ) -> Result<String, McpOAuthUseCaseError>;
+    async fn exchange_authorization_code(
+        &self,
+        code: String,
+        client_id: String,
+        redirect_uri: Option<String>,
+        resource_uri: String,
+        verifier: String,
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
+    async fn refresh_access_token(
+        &self,
+        refresh_token: String,
+        client_id: String,
+        resource_uri: String,
+        scopes: Option<Vec<String>>,
+    ) -> Result<McpTokenPair, McpOAuthUseCaseError>;
+    async fn authenticate(
+        &self,
+        token: String,
+        resource_uri: String,
+    ) -> Result<Option<McpAuthenticatedActor>, McpOAuthUseCaseError>;
+    async fn principal_scope_ceiling(
+        &self,
+        actor: Actor,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError>;
+    async fn client_authorizations(
+        &self,
+        actor: Actor,
+    ) -> Result<Vec<McpClientAuthorization>, McpScopeCeilingUseCaseError>;
+    async fn replace_principal_scope_ceiling(
+        &self,
+        actor: Actor,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError>;
+    async fn replace_client_scope_ceiling(
+        &self,
+        actor: Actor,
+        client_id: String,
+        scopes: Vec<String>,
+        expected_revision: i64,
+    ) -> Result<McpScopeCeilingSetting, McpScopeCeilingUseCaseError>;
+    /// clientの上限設定を取り除き、未設定へ戻す。
+    async fn delete_client_scope_ceiling(
+        &self,
+        actor: Actor,
+        client_id: String,
+        expected_revision: i64,
+    ) -> Result<(), McpScopeCeilingUseCaseError>;
+    async fn revoke(&self, actor: Actor, client_id: String) -> Result<(), McpOAuthUseCaseError>;
+    async fn revoke_token(
+        &self,
+        token: String,
+        client_id: String,
+    ) -> Result<(), McpOAuthUseCaseError>;
+}
 
 /// MarginalisのMCP Authorization Server設定。
 const MCP_AUTHORIZATION_CONFIG: AuthorizationServerConfig =

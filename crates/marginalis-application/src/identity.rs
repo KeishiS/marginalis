@@ -1,11 +1,74 @@
 //! 外部identity providerを使うログインの業務処理。
 
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
 use async_trait::async_trait;
-use marginalis_domain::{Actor, Identity, PrincipalRef};
+use marginalis_domain::{
+    Actor, AuthenticatedSession, Identity, PrincipalRef, UnixMillis, WebSession,
+};
 
-use crate::{AuthenticationUseCaseError, OidcAuthenticationUseCases, StorageError};
+use crate::StorageError;
+
+/// OIDC認可requestに一度だけ対応するstate、nonce、PKCE verifier。
+///
+/// stateはadapterでhash保存し、nonceとverifierは短い有効期間だけ保持する。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OidcLoginAttempt {
+    pub state: String,
+    pub nonce: String,
+    pub pkce_verifier: String,
+    pub expires_at: UnixMillis,
+}
+
+pub trait OidcLoginAttemptStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn issue(
+        &self,
+        attempt: OidcLoginAttempt,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn consume(
+        &self,
+        state: String,
+        now: UnixMillis,
+    ) -> impl Future<Output = Result<Option<OidcLoginAttempt>, Self::Error>> + Send;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum AuthenticationUseCaseError {
+    #[error("authentication was rejected")]
+    Rejected,
+    #[error("authentication is unavailable")]
+    Unavailable,
+}
+
+/// Kanidm groupはOIDC login時に検証し、このCookie sessionの有効期間はsnapshotとして固定する。
+#[async_trait]
+pub trait WebSessionUseCases: Send + Sync {
+    async fn authenticate_session(
+        &self,
+        session_id: String,
+    ) -> Result<Option<AuthenticatedSession>, AuthenticationUseCaseError>;
+    async fn verify_csrf(
+        &self,
+        session_id: String,
+        csrf_token: String,
+    ) -> Result<bool, AuthenticationUseCaseError>;
+    async fn issue_session(&self, actor: Actor) -> Result<WebSession, AuthenticationUseCaseError>;
+    async fn revoke_session(&self, session_id: String) -> Result<(), AuthenticationUseCaseError>;
+}
+
+#[async_trait]
+pub trait OidcAuthenticationUseCases: Send + Sync {
+    async fn begin_login(&self) -> Result<String, AuthenticationUseCaseError>;
+    async fn complete_login(
+        &self,
+        code: String,
+        state: String,
+    ) -> Result<Actor, AuthenticationUseCaseError>;
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalIdentity {

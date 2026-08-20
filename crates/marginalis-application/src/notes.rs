@@ -9,6 +9,7 @@ use marginalis_domain::{
 };
 
 mod access_control;
+mod api;
 mod attachments;
 mod citations;
 mod commands;
@@ -21,6 +22,14 @@ mod queries;
 mod reviews;
 mod sync;
 
+pub use api::{
+    NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteListQuery,
+    NotePreview, NoteProfile, NoteProfileAdvisoryRule, NoteProfileExample, NoteProfileLimits,
+    NoteProfileNormalization, NoteProfileRule, NoteProfileSyntax, NoteRenderContext,
+    NoteReviewDetails, NoteSourcePosition, NoteSourceSpan, NoteSourceSpanKind, NoteUseCaseError,
+    NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
+    RelatedNotes, ValidatedNoteDraft,
+};
 pub use commands::NotePatchApplication;
 pub use content::{
     NoteAttachmentQuery, NoteAttachmentResolution, NoteBibliographyEntry, NoteCitationQuery,
@@ -38,9 +47,7 @@ pub use sync::{
 };
 
 use crate::{
-    BibliographyRepository, Clock, MathMacroRepository, NoteAclChange, NoteAclState, NotePreview,
-    NoteProfile, NoteRenderContext, NoteReviewDetails, NoteUseCaseError, NoteUseCases, NoteView,
-    NoteWritePolicy, PrincipalDirectory, Random, RelatedNotes, StorageError,
+    BibliographyRepository, Clock, MathMacroRepository, PrincipalDirectory, Random, StorageError,
 };
 
 /// 可視性を適用してノートを読み取るport。
