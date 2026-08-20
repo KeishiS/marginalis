@@ -251,6 +251,13 @@ frontend/
 composition rootの内部に置きます。送信規則と再試行手順はapplicationに、配送状態はSQLiteに残すため、
 外部I/Oの境界は維持します。
 
+``marginalis-archive``の公開入口は``src/lib.rs``へ限定します。JSONへ直列化する``Archive``の項目は
+crate外から直接変更できず、呼び出し側は``create_archive``、``validate_archive``、
+``migrate_previous_archive``を通して扱います。形式、AdocWeave package版、note profile版、ノート件数など
+運用上必要な情報だけを読み取り用methodで公開します。保存形式と検証順序をHTTPや保守commandへ漏らさず、
+契約変更時の判断をarchive crate内へ閉じ込めます。``documents`` moduleは、可搬な完全backupとは別に、
+他の道具で読める文書出力と再取込だけを担当します。
+
 次の2つのcrateは``crates/``にはなく、完全なcommit SHAで固定した外部依存として取り込みます。
 
 [source,text]
@@ -282,6 +289,10 @@ marginalis-web/src/http/mcp_transport/
 adapterへは依存しない。
 HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのportを実装する。
 ``service``だけが具象的なadapterを選び、application serviceへ接続する。
+HTTP adapterへ渡す``ApiServices``は、ノート、文献、文献取込、数式macro、Web session、OIDC、Webhookを
+必須項目として持ちます。本番で常に構成する依存を``Option``や段階的なbuilderにせず、欠けた機能だけが
+起動後に``503 Service Unavailable``を返す状態を作りません。配備設定で明示的に無効化できるMCP endpoint
+だけを任意項目とし、無効時は関連route自体を公開しません。
 ``cargo make dependency-boundaries``は、すべてのworkspace crateのproduction依存をこの対応へ固定し、
 違反時に期待する依存と実際の依存の差を表示します。新しいcrateまたは依存方向が必要な場合は、
 検査だけを緩めず、この設計と依存表を同じ変更で更新します。

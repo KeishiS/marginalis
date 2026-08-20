@@ -376,7 +376,7 @@ impl Note {
 /// 一つのrevisionが確定した直後の完全なノート状態と、その変更者。
 ///
 /// ACLは現在値だけを認可に使い、過去の共有先identityを履歴閲覧者へ開示しないため、ここには
-/// 含めない。将来の添付参照はrevisionを親とする別の集合として追加する。
+/// 含めない。添付参照もrevisionを親とする別の集合として保存し、この値へbytesや参照集合を混ぜない。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteRevisionSnapshot {
     note: Note,

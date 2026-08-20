@@ -138,16 +138,18 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             webhook_allowed_hosts,
         ));
     let state = marginalis_web::http::ApiState::new(
-        notes.clone(),
-        math_macros,
-        sessions,
-        oidc,
+        marginalis_web::http::ApiServices {
+            notes: notes.clone(),
+            bibliography,
+            bibliography_import,
+            math_macros,
+            sessions,
+            oidc,
+            webhooks,
+        },
         cookie_path,
         configuration.http.base_url.origin().ascii_serialization(),
-    )
-    .with_bibliography(bibliography)
-    .with_bibliography_import(bibliography_import)
-    .with_webhooks(webhooks);
+    );
     let state = if configuration.mcp_enabled {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);

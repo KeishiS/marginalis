@@ -318,7 +318,7 @@ const fn diagnostic_severity_name(severity: DiagnosticSeverityResponse) -> &'sta
 
 pub(super) async fn mcp_tool_call(
     notes: &dyn NoteUseCases,
-    bibliography: Option<&BibliographyApplication>,
+    bibliography: &BibliographyApplication,
     actor: Actor,
     id: serde_json::Value,
     call: McpToolCall,
@@ -433,7 +433,7 @@ impl McpToolFailure {
 /// tool名でツールごとの実装関数へ振り分ける。入力検査と呼出しは各関数が持つ。
 async fn execute_mcp_tool(
     notes: &dyn NoteUseCases,
-    bibliography: Option<&BibliographyApplication>,
+    bibliography: &BibliographyApplication,
     actor: Actor,
     call: McpToolCall,
 ) -> Result<McpToolOutput, McpToolFailure> {
@@ -790,18 +790,13 @@ async fn delete_note_tool(
 }
 
 async fn search_bibliography_tool(
-    bibliography: Option<&BibliographyApplication>,
+    bibliography: &BibliographyApplication,
     actor: Actor,
     arguments: serde_json::Value,
 ) -> Result<McpToolOutput, McpToolFailure> {
     let Ok(input) = serde_json::from_value::<McpSearchBibliographyInput>(arguments) else {
         return Err(McpToolFailure::InvalidArguments(
             "bibliography search arguments are invalid",
-        ));
-    };
-    let Some(bibliography) = bibliography else {
-        return Err(McpToolFailure::Bibliography(
-            BibliographyUseCaseError::Unavailable,
         ));
     };
     bibliography
@@ -816,18 +811,13 @@ async fn search_bibliography_tool(
 }
 
 async fn add_bibliography_item_tool(
-    bibliography: Option<&BibliographyApplication>,
+    bibliography: &BibliographyApplication,
     actor: Actor,
     arguments: serde_json::Value,
 ) -> Result<McpToolOutput, McpToolFailure> {
     let Ok(input) = serde_json::from_value::<McpAddBibliographyItemInput>(arguments) else {
         return Err(McpToolFailure::InvalidArguments(
             "CSL-JSON bibliography arguments are invalid",
-        ));
-    };
-    let Some(bibliography) = bibliography else {
-        return Err(McpToolFailure::Bibliography(
-            BibliographyUseCaseError::Unavailable,
         ));
     };
     bibliography
@@ -838,7 +828,7 @@ async fn add_bibliography_item_tool(
 }
 
 async fn delete_bibliography_item_tool(
-    bibliography: Option<&BibliographyApplication>,
+    bibliography: &BibliographyApplication,
     actor: Actor,
     arguments: serde_json::Value,
 ) -> Result<McpToolOutput, McpToolFailure> {
@@ -853,11 +843,6 @@ async fn delete_bibliography_item_tool(
     let Ok(expected_revision) = Revision::new(input.expected_revision) else {
         return Err(McpToolFailure::InvalidArguments(
             "expected_revision is invalid",
-        ));
-    };
-    let Some(bibliography) = bibliography else {
-        return Err(McpToolFailure::Bibliography(
-            BibliographyUseCaseError::Unavailable,
         ));
     };
     bibliography

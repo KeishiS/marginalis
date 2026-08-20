@@ -6,7 +6,6 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use marginalis_application::BibliographyApplication;
 use marginalis_contract::{BibliographyItemInput, BibliographyItemResponse, ProblemCode};
 use marginalis_domain::{BibliographyItem, BibliographyItemId, EntityId};
 use serde::Deserialize;
@@ -30,8 +29,8 @@ pub(super) async fn search_bibliography(
     headers: HeaderMap,
 ) -> HandlerResult<Json<Vec<BibliographyItemResponse>>> {
     let actor = authenticated_actor(&headers, &state).await?;
-    let bibliography = bibliography(&state)?;
-    let items = bibliography
+    let items = state
+        .bibliography
         .search_bibliography(actor, query.query)
         .await
         .map_err(bibliography_error)?;
@@ -44,7 +43,8 @@ pub(super) async fn add_bibliography_item(
     Json(input): Json<BibliographyItemInput>,
 ) -> HandlerResult<Response> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
-    let item = bibliography(&state)?
+    let item = state
+        .bibliography
         .add_bibliography_item(actor, input.csl_json)
         .await
         .map_err(bibliography_error)?;
@@ -63,7 +63,8 @@ pub(super) async fn delete_bibliography_item(
 ) -> HandlerResult<StatusCode> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let item_id = parse_item_id(item_id)?;
-    bibliography(&state)?
+    state
+        .bibliography
         .delete_bibliography_item(actor, item_id, expected_revision(&headers)?)
         .await
         .map_err(bibliography_error)?;
@@ -78,7 +79,8 @@ pub(super) async fn update_bibliography_item(
 ) -> HandlerResult<Response> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
     let item_id = parse_item_id(item_id)?;
-    let item = bibliography(&state)?
+    let item = state
+        .bibliography
         .update_bibliography_item(actor, item_id, expected_revision(&headers)?, input.csl_json)
         .await
         .map_err(bibliography_error)?;
@@ -101,16 +103,6 @@ pub(super) fn parse_item_id(item_id: String) -> HandlerResult<BibliographyItemId
                 "item_id is invalid",
             )
         })
-}
-
-fn bibliography(state: &ApiState) -> HandlerResult<&BibliographyApplication> {
-    state.bibliography.as_deref().ok_or_else(|| {
-        problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            ProblemCode::Unavailable,
-            "bibliography service is unavailable",
-        )
-    })
 }
 
 fn item_response(item: BibliographyItem) -> BibliographyItemResponse {

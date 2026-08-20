@@ -2,23 +2,28 @@ use super::super::*;
 use async_trait::async_trait;
 use axum::{body::Body, http::Request};
 use marginalis_application::{
-    AuthenticationUseCaseError, MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases,
-    McpAuthenticatedActor, McpAuthorizationClient, McpClientRegistrationMethod, McpOAuthClient,
-    McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingSetting,
-    McpScopeCeilingUseCaseError, McpTokenPair, McpValidatedAuthorizationRequest, NoteAclChange,
-    NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteGraph, NoteGraphNote,
-    NoteGraphQuery, NoteListQuery, NotePreview, NoteProfile, NoteProfileAdvisoryRule,
-    NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax,
-    NoteRenderContext, NoteReviewDetails, NoteSourcePosition, NoteSourceSpan, NoteSourceSpanKind,
-    NoteSyncPage, NoteSyncPhase, NoteUseCaseError, NoteUseCases, NoteValidationCode,
-    NoteValidationDiagnostic, NoteView, NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes,
-    WebSessionUseCases,
+    AuthenticationUseCaseError, BibliographyApplication, BibliographyImportDecision,
+    BibliographyImportInput, BibliographyImportPreview, BibliographyImportResult,
+    BibliographyImportUseCaseError, BibliographyImportUseCases, BibliographyRepository, Clock,
+    MathMacroSettings, MathMacroUseCaseError, MathMacroUseCases, McpAuthenticatedActor,
+    McpAuthorizationClient, McpClientRegistrationMethod, McpOAuthClient, McpOAuthUseCaseError,
+    McpOAuthUseCases, McpResourcePolicy, McpScopeCeilingSetting, McpScopeCeilingUseCaseError,
+    McpTokenPair, McpValidatedAuthorizationRequest, NoteAclChange, NoteAclState,
+    NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteGraph, NoteGraphNote, NoteGraphQuery,
+    NoteListQuery, NotePreview, NoteProfile, NoteProfileAdvisoryRule, NoteProfileExample,
+    NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax, NoteRenderContext,
+    NoteReviewDetails, NoteSourcePosition, NoteSourceSpan, NoteSourceSpanKind, NoteSyncPage,
+    NoteSyncPhase, NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic,
+    NoteView, NoteWritePolicy, OidcAuthenticationUseCases, Random, RelatedNotes, StorageError,
+    WebSessionUseCases, WebhookSubscriptionOverview, WebhookUseCaseError, WebhookUseCases,
+    WebhookVerificationOutcome,
 };
 use marginalis_domain::{
     Actor, AttachmentDraft, AttachmentId, AttachmentMetadata, AuthenticatedSession,
-    DeletedNoteListEntry, Identity, Note, NoteAccess, NoteCreationSource, NoteDraft, NoteId,
-    NoteListEntry, NoteRestore, NoteReviewTracking, NoteSummary, NoteValidationTarget, PrincipalId,
-    PrincipalRef, Revision, StoredAttachment, UnixMillis, Utf8ByteSpan, WebSession,
+    BibliographyImportSource, BibliographyItem, BibliographyItemId, DeletedNoteListEntry, EntityId,
+    Identity, Note, NoteAccess, NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NoteRestore,
+    NoteReviewTracking, NoteSummary, NoteValidationTarget, PrincipalId, PrincipalRef, Revision,
+    StoredAttachment, UnixMillis, Utf8ByteSpan, ValidatedCslJson, WebSession,
 };
 use std::{
     io,
@@ -1519,15 +1524,199 @@ impl McpOAuthUseCases for TestMcpOAuth {
     }
 }
 
+struct UnavailableBibliography;
+
+#[async_trait]
+impl BibliographyRepository for UnavailableBibliography {
+    async fn search_owned_items(
+        &self,
+        _actor: &Actor,
+        _query: &str,
+    ) -> Result<Vec<BibliographyItem>, StorageError> {
+        Err(StorageError::Unavailable)
+    }
+
+    async fn items_by_citation_keys(
+        &self,
+        _owner: &PrincipalRef,
+        _citation_keys: &[String],
+    ) -> Result<Vec<BibliographyItem>, StorageError> {
+        Err(StorageError::Unavailable)
+    }
+
+    async fn create_owned_item(&self, _item: &BibliographyItem) -> Result<(), StorageError> {
+        Err(StorageError::Unavailable)
+    }
+
+    async fn update_owned_item(
+        &self,
+        _actor: &Actor,
+        _item_id: BibliographyItemId,
+        _csl_json: &ValidatedCslJson,
+        _updated_at: UnixMillis,
+        _expected_revision: Revision,
+    ) -> Result<BibliographyItem, StorageError> {
+        Err(StorageError::Unavailable)
+    }
+
+    async fn delete_owned_item(
+        &self,
+        _actor: &Actor,
+        _item_id: BibliographyItemId,
+        _expected_revision: Revision,
+    ) -> Result<(), StorageError> {
+        Err(StorageError::Unavailable)
+    }
+}
+
+struct FixedClock;
+
+impl Clock for FixedClock {
+    fn now(&self) -> UnixMillis {
+        UnixMillis::new(1_000)
+    }
+}
+
+struct FixedRandom;
+
+impl Random for FixedRandom {
+    fn uuid_v7(&self) -> EntityId {
+        "0197c9bc-0000-7000-8000-0000000000ff"
+            .parse()
+            .expect("UUIDv7")
+    }
+
+    fn opaque_token(&self) -> String {
+        "test-token".into()
+    }
+}
+
+struct UnavailableBibliographyImport;
+
+#[async_trait]
+impl BibliographyImportUseCases for UnavailableBibliographyImport {
+    async fn list_bibliography_import_sources(
+        &self,
+        _actor: Actor,
+    ) -> Result<Vec<BibliographyImportSource>, BibliographyImportUseCaseError> {
+        Err(BibliographyImportUseCaseError::Unavailable)
+    }
+
+    async fn preview_bibliography_import(
+        &self,
+        _actor: Actor,
+        _input: BibliographyImportInput,
+    ) -> Result<BibliographyImportPreview, BibliographyImportUseCaseError> {
+        Err(BibliographyImportUseCaseError::Unavailable)
+    }
+
+    async fn apply_bibliography_import(
+        &self,
+        _actor: Actor,
+        _input: BibliographyImportInput,
+        _decisions: Vec<BibliographyImportDecision>,
+        _preview_token: String,
+    ) -> Result<BibliographyImportResult, BibliographyImportUseCaseError> {
+        Err(BibliographyImportUseCaseError::Unavailable)
+    }
+}
+
+struct UnavailableWebhooks;
+
+fn unavailable_webhook<T>() -> Result<T, WebhookUseCaseError> {
+    Err(WebhookUseCaseError::Storage(StorageError::Unavailable))
+}
+
+#[async_trait]
+impl WebhookUseCases for UnavailableWebhooks {
+    async fn list_subscriptions(
+        &self,
+        _actor: &Actor,
+    ) -> Result<Vec<WebhookSubscriptionOverview>, WebhookUseCaseError> {
+        unavailable_webhook()
+    }
+
+    async fn create_subscription(
+        &self,
+        _actor: &Actor,
+        _url: &str,
+        _event_kinds: Vec<String>,
+    ) -> Result<(WebhookSubscriptionOverview, String), WebhookUseCaseError> {
+        unavailable_webhook()
+    }
+
+    async fn verify_subscription(
+        &self,
+        _actor: &Actor,
+        _subscription_id: &str,
+    ) -> Result<WebhookVerificationOutcome, WebhookUseCaseError> {
+        unavailable_webhook()
+    }
+
+    async fn regenerate_secret(
+        &self,
+        _actor: &Actor,
+        _subscription_id: &str,
+    ) -> Result<String, WebhookUseCaseError> {
+        unavailable_webhook()
+    }
+
+    async fn delete_subscription(
+        &self,
+        _actor: &Actor,
+        _subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError> {
+        unavailable_webhook()
+    }
+
+    async fn retry_delivery(
+        &self,
+        _actor: &Actor,
+        _subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError> {
+        unavailable_webhook()
+    }
+
+    async fn discard_delivery(
+        &self,
+        _actor: &Actor,
+        _subscription_id: &str,
+    ) -> Result<(), WebhookUseCaseError> {
+        unavailable_webhook()
+    }
+}
+
+fn default_bibliography() -> Arc<BibliographyApplication> {
+    Arc::new(BibliographyApplication::new(
+        Arc::new(UnavailableBibliography),
+        Arc::new(FixedClock),
+        Arc::new(FixedRandom),
+    ))
+}
+
+pub(super) fn test_api_services(
+    notes: Arc<dyn NoteUseCases>,
+    sessions: Arc<dyn WebSessionUseCases>,
+) -> ApiServices {
+    ApiServices {
+        notes,
+        bibliography: default_bibliography(),
+        bibliography_import: Arc::new(UnavailableBibliographyImport),
+        math_macros: Arc::new(MathMacros),
+        sessions,
+        oidc: Arc::new(Oidc),
+        webhooks: Arc::new(UnavailableWebhooks),
+    }
+}
+
 /// 試験用のrouterを組み立てる。既定から異なる部分だけを指定する。
 ///
 /// 以前は6つのbuilderが`ApiState::new`の同じ組み立てをそれぞれ書いており、共通部分を変更するには
 /// すべてを直す必要があった。
 pub(super) struct TestApp {
     pub(super) notes: Arc<dyn NoteUseCases>,
-    pub(super) bibliography: Option<Arc<marginalis_application::BibliographyApplication>>,
-    pub(super) bibliography_import:
-        Option<Arc<dyn marginalis_application::BibliographyImportUseCases>>,
+    pub(super) bibliography: Arc<BibliographyApplication>,
+    pub(super) bibliography_import: Arc<dyn BibliographyImportUseCases>,
     pub(super) sessions: Arc<dyn WebSessionUseCases>,
     pub(super) cookie_path: String,
     mcp: Option<(&'static str, Vec<String>, Arc<dyn TestMcpAccessTokens>)>,
@@ -1537,8 +1726,8 @@ impl Default for TestApp {
     fn default() -> Self {
         Self {
             notes: Arc::new(Notes),
-            bibliography: None,
-            bibliography_import: None,
+            bibliography: default_bibliography(),
+            bibliography_import: Arc::new(UnavailableBibliographyImport),
             sessions: Arc::new(Sessions),
             cookie_path: "/".into(),
             mcp: None,
@@ -1559,17 +1748,14 @@ impl TestApp {
 
     pub(super) fn bibliography_import(
         mut self,
-        bibliography_import: Arc<dyn marginalis_application::BibliographyImportUseCases>,
+        bibliography_import: Arc<dyn BibliographyImportUseCases>,
     ) -> Self {
-        self.bibliography_import = Some(bibliography_import);
+        self.bibliography_import = bibliography_import;
         self
     }
 
-    pub(super) fn bibliography(
-        mut self,
-        bibliography: Arc<marginalis_application::BibliographyApplication>,
-    ) -> Self {
-        self.bibliography = Some(bibliography);
+    pub(super) fn bibliography(mut self, bibliography: Arc<BibliographyApplication>) -> Self {
+        self.bibliography = bibliography;
         self
     }
 
@@ -1589,22 +1775,10 @@ impl TestApp {
     }
 
     pub(super) fn router(self) -> Router {
-        let state = ApiState::new(
-            self.notes,
-            Arc::new(MathMacros),
-            self.sessions,
-            Arc::new(Oidc),
-            self.cookie_path,
-            "https://example.test".into(),
-        );
-        let state = match self.bibliography_import {
-            Some(bibliography_import) => state.with_bibliography_import(bibliography_import),
-            None => state,
-        };
-        let state = match self.bibliography {
-            Some(bibliography) => state.with_bibliography(bibliography),
-            None => state,
-        };
+        let mut services = test_api_services(self.notes, self.sessions);
+        services.bibliography = self.bibliography;
+        services.bibliography_import = self.bibliography_import;
+        let state = ApiState::new(services, self.cookie_path, "https://example.test".into());
         let state = match self.mcp {
             Some((base_url, allowed_origins, authenticator)) => {
                 let base_url = url::Url::parse(base_url).expect("base URL");

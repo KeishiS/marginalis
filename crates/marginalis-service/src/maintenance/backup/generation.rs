@@ -60,7 +60,7 @@ async fn populate(output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     )?;
     marker.sync_all()?;
     File::open(output)?.sync_all()?;
-    let note_count = archive.notes.len();
+    let note_count = archive.note_count();
     tracing::info!(event = "maintenance.backup.completed", output = %output.display(), note_count, "backup completed");
     Ok(())
 }

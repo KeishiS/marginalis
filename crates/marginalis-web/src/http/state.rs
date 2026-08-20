@@ -15,19 +15,33 @@ use oidc_browser_login::cookie::SessionCookies;
 
 #[derive(Clone)]
 pub struct ApiState {
+    pub(super) notes: Arc<dyn NoteUseCases>,
+    pub(super) bibliography: Arc<BibliographyApplication>,
+    pub(super) bibliography_import: Arc<dyn BibliographyImportUseCases>,
+    pub(super) math_macros: Arc<dyn MathMacroUseCases>,
+    pub(super) sessions: Arc<dyn WebSessionUseCases>,
+    pub(super) oidc: Arc<dyn OidcAuthenticationUseCases>,
+    pub(super) cookie_path: String,
+    /// cookie pathから導出したsessionとCSRFのcookie名・属性。
+    pub(super) cookies: SessionCookies,
+    pub(super) browser_origin: String,
+    pub(super) mcp: Option<Arc<McpEndpoint>>,
+    pub(super) webhooks: Arc<dyn WebhookUseCases>,
+    pub(super) mcp_registration_limiter: McpRegistrationRateLimiter,
+}
+
+/// HTTP adapterが常に利用できるapplication serviceの集合。
+///
+/// 本番で必ず構成する機能を`Option`にすると、起動後に一部のrouteだけが503になる状態を型で
+/// 作れてしまう。任意機能であるMCP endpointだけは[`ApiState`]側で別に保持する。
+pub struct ApiServices {
     pub notes: Arc<dyn NoteUseCases>,
-    pub bibliography: Option<Arc<BibliographyApplication>>,
-    pub bibliography_import: Option<Arc<dyn BibliographyImportUseCases>>,
+    pub bibliography: Arc<BibliographyApplication>,
+    pub bibliography_import: Arc<dyn BibliographyImportUseCases>,
     pub math_macros: Arc<dyn MathMacroUseCases>,
     pub sessions: Arc<dyn WebSessionUseCases>,
     pub oidc: Arc<dyn OidcAuthenticationUseCases>,
-    pub cookie_path: String,
-    /// cookie pathから導出したsessionとCSRFのcookie名・属性。
-    pub cookies: SessionCookies,
-    pub browser_origin: String,
-    pub mcp: Option<Arc<McpEndpoint>>,
-    pub webhooks: Option<Arc<dyn WebhookUseCases>>,
-    pub(super) mcp_registration_limiter: McpRegistrationRateLimiter,
+    pub webhooks: Arc<dyn WebhookUseCases>,
 }
 
 #[derive(Clone)]
@@ -134,29 +148,22 @@ impl McpEndpoint {
 }
 
 impl ApiState {
-    pub fn new(
-        notes: Arc<dyn NoteUseCases>,
-        math_macros: Arc<dyn MathMacroUseCases>,
-        sessions: Arc<dyn WebSessionUseCases>,
-        oidc: Arc<dyn OidcAuthenticationUseCases>,
-        cookie_path: String,
-        browser_origin: String,
-    ) -> Self {
+    pub fn new(services: ApiServices, cookie_path: String, browser_origin: String) -> Self {
         // cookie pathは検証済みbase URLから導出され、常に`/`で始まる。
         let cookies = SessionCookies::new("marginalis", &cookie_path)
             .expect("cookie path is derived from a validated base URL");
         Self {
-            notes,
-            math_macros,
-            bibliography: None,
-            bibliography_import: None,
-            sessions,
-            oidc,
+            notes: services.notes,
+            math_macros: services.math_macros,
+            bibliography: services.bibliography,
+            bibliography_import: services.bibliography_import,
+            sessions: services.sessions,
+            oidc: services.oidc,
             cookie_path,
             cookies,
             browser_origin,
             mcp: None,
-            webhooks: None,
+            webhooks: services.webhooks,
             mcp_registration_limiter: McpRegistrationRateLimiter::new(
                 30,
                 Duration::from_secs(10 * 60),
@@ -166,24 +173,6 @@ impl ApiState {
 
     pub fn with_mcp(mut self, mcp: McpEndpoint) -> Self {
         self.mcp = Some(Arc::new(mcp));
-        self
-    }
-
-    pub fn with_bibliography(mut self, bibliography: Arc<BibliographyApplication>) -> Self {
-        self.bibliography = Some(bibliography);
-        self
-    }
-
-    pub fn with_bibliography_import(
-        mut self,
-        bibliography_import: Arc<dyn BibliographyImportUseCases>,
-    ) -> Self {
-        self.bibliography_import = Some(bibliography_import);
-        self
-    }
-
-    pub fn with_webhooks(mut self, webhooks: Arc<dyn WebhookUseCases>) -> Self {
-        self.webhooks = Some(webhooks);
         self
     }
 }

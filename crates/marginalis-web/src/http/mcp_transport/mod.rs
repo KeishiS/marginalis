@@ -348,7 +348,7 @@ async fn dispatch_mcp_method(
                 Ok(call) => {
                     mcp_tool_call(
                         state.notes.as_ref(),
-                        state.bibliography.as_deref(),
+                        state.bibliography.as_ref(),
                         authenticated.actor,
                         id,
                         call,
@@ -379,7 +379,7 @@ async fn dispatch_mcp_method(
                 Ok(call) => {
                     mcp_tool_call(
                         state.notes.as_ref(),
-                        state.bibliography.as_deref(),
+                        state.bibliography.as_ref(),
                         authenticated.actor,
                         id,
                         call,

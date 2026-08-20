@@ -709,7 +709,7 @@ pub fn archive_from_documents(
     };
     // 文書形式はalias群を公開しない。文書に現れる各代表identityから、復元用archiveの
     // 単一identity principalを決定的に再構築する。
-    archive.principals = Some(crate::single_identity_archive_principals(&archive));
+    archive.principals = Some(crate::archive::single_identity_archive_principals(&archive));
     Ok(archive.canonical())
 }
 

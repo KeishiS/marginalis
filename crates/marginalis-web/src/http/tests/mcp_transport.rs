@@ -1251,10 +1251,7 @@ async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
 #[test]
 fn browser_mutations_require_the_application_origin() {
     let state = ApiState::new(
-        Arc::new(Notes),
-        Arc::new(MathMacros),
-        Arc::new(Sessions),
-        Arc::new(Oidc),
+        test_api_services(Arc::new(Notes), Arc::new(Sessions)),
         "/".into(),
         "https://example.test".into(),
     );
