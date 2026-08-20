@@ -254,11 +254,11 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
 fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let directory = test_directory("archive-migration");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("v0.25.1-archive-13.json");
+    let input = directory.join("v0.42.0-archive-17.json");
     let output = directory.join("current-archive-17.json");
     let previous = serde_json::json!({
-        "format": "marginalis-archive-13",
-        "adocweave_package_version": "0.27.0",
+        "format": "marginalis-archive-17",
+        "adocweave_package_version": "0.40.0",
         "note_profile_version": 5,
         "notes": [
             {
@@ -269,7 +269,15 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
                 "created_at_ms": 1,
                 "updated_at_ms": 2,
                 "revision": 2,
-                "deleted_at_ms": null
+                "deleted_at_ms": null,
+                "provenance": {
+                    "created_via": "web",
+                    "review_tracking_known": true,
+                    "reviewed_revision": null,
+                    "reviewed_at_ms": null,
+                    "reviewer_issuer": null,
+                    "reviewer_subject": null
+                }
             },
             {
                 "note_id": "0197c9bc-0000-7000-8000-000000000002",
@@ -279,7 +287,15 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
                 "created_at_ms": 1,
                 "updated_at_ms": 3,
                 "revision": 1,
-                "deleted_at_ms": 3
+                "deleted_at_ms": 3,
+                "provenance": {
+                    "created_via": "mcp",
+                    "review_tracking_known": true,
+                    "reviewed_revision": null,
+                    "reviewed_at_ms": null,
+                    "reviewer_issuer": null,
+                    "reviewer_subject": null
+                }
             }
         ],
         "note_acl": [{
@@ -345,10 +361,9 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
         migrated["notes"][0]["source"],
         previous["notes"][0]["source"]
     );
-    assert_eq!(migrated["notes"][0]["provenance"]["created_via"], "unknown");
     assert_eq!(
-        migrated["notes"][0]["provenance"]["review_tracking_known"],
-        false
+        migrated["notes"][0]["provenance"], previous["notes"][0]["provenance"],
+        "provenance must be preserved"
     );
 
     let verified = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
@@ -362,7 +377,7 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
         String::from_utf8_lossy(&verified.stderr)
     );
 
-    let invalid_input = directory.join("invalid-v0.25.1-archive-13.json");
+    let invalid_input = directory.join("invalid-v0.42.0-archive-17.json");
     let invalid_output = directory.join("invalid-current-archive-16.json");
     let mut invalid = previous;
     invalid["notes"][0]["source"] = concat!(

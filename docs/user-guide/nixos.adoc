@@ -48,111 +48,11 @@ SQLiteデータベースは``dataDir``（既定値``/var/lib/marginalis``）直�
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、``dataDir``自体をその絶対pathへ
 変更してください。現行のSQLite schema versionは22です。旧versionを起動時に自動移行しません。
 
-schema 20から更新する場合は、v0.36.0の実行環境で``export-archive``を実行し、archive 17を現行の
-``migrate-archive``で再検証してから、空のschema 22へ``import-archive``してください。同期cursorと変更索引、
-MCPの認可状態はarchiveへ含まれないため、外部検索サービスを再認可し、全量同期から再開します。
-
-schema 19から更新する場合は、v0.31.0の実行環境で``export-archive``を実行します。出力したarchive 15を
-現行の``migrate-archive``でarchive 17へ変換し、``verify-restore``で検証してから、新しい版の空の
-``dataDir``へ``import-archive``してください。MCPのclient登録とtokenはarchiveへ含まれないため、更新後に
-クライアントを接続し直します。v0.31.0には文献情報の取込元と対応情報がないため、移行後に最初に
-CSL-JSONを取り込んだ時点から対応を記録します。
-
-schema 18から更新する場合は、v0.30.1の実行環境で``export-archive``を実行します。出力したarchive 14を
-現行の``migrate-archive``でarchive 17へ変換し、``verify-restore``で検証してから、新しい版の空の
-``dataDir``へ``import-archive``してください。旧ノートの作成経路と過去の人手確認状態は推測せず、不明として
-移行します。
-
-schema 17から更新する場合は、更新前に``export-archive``を実行し、現行の``migrate-archive``で
-archive 17へ変換してから、新しい版の空の``dataDir``へ``import-archive``してください。MCPの認可済み
-クライアント、scope上限、tokenはarchiveへ含まれないため、更新後にクライアントを接続し直して
-設定してください。
-
-schema 16から更新する場合も、更新前に``export-archive``を実行し、現行の``migrate-archive``で
-archive 17へ変換してから、新しい版の空の``dataDir``へ``import-archive``してください。MCP clientと
-tokenはarchiveへ含まれないため、更新後に接続し直します。schema 17で追加したscope上限は既定値から
-始まり、更新後に利用者が設定します。
-
-schema 15から更新する場合は、更新前に``export-archive``を実行し、出力したarchive 13を
-``migrate-archive``でarchive 17へ変換してから、新しい版の空の``dataDir``へ``import-archive``します。
-MCP clientとtokenはarchiveへ含まれないため、更新後に接続し直します。
-
-schema 13から更新する場合も、更新前に``export-archive``を実行し、現行の``migrate-archive``で
-archive 17へ変換してから、新しい版の空の``dataDir``へ``import-archive``してください。
-
-v0.21.0以前のschema 12から更新する場合は、更新前の実行環境で``export-archive``を実行し、
-現行の``migrate-archive``でarchive 17へ変換してから、新しい版の空の``dataDir``へ``import-archive``で
-取り込んでください。本文が``cite:``で名指したcitation keyの索引は、取り込みのときに本文から
-作り直します。
-
-v0.22.0以前が作成したarchiveから更新する場合は、``migrate-archive``が必要です。ノートのタグを
-並べる文書属性の名前が``:tags:``から``:marginalis-tags:``へ変わったため、以前の本文をそのまま
-取り込むと未対応の属性として拒否されます。``migrate-archive``は文書headerに並ぶ``:tags:``、
-``:tags!:``、``:!tags:``を新しい名前へ書き換えてから、全ノートを現行の規則で再検証します。本文に
-現れた同じ並びは属性の操作ではないため書き換えません。
-
-[source,bash]
-----
-sudo -u marginalis marginalis migrate-archive \
-  --input /var/lib/marginalis/archive-previous.json \
-  --output /var/lib/marginalis/archive-current.json
-----
-
-schema 10または9から更新する場合は、AdocWeave 0.11.0を使用する旧実行環境でarchive 7を作成し、
-現行の``migrate-archive``でarchive 17へ変換してから、空のschema 22へ取り込んでください。
-この経路では全ノートをAdocWeave 0.41.0の規則で再検証し、題名、タグ、参照索引を再構築します。
-ノート、所有者、削除状態、revision、ノート間参照、共有権限が一致することをCIで検証しています。
-
-切戻す場合はserviceを停止し、更新後に作成したdatabaseを保全してから、更新前に退避した``dataDir``と
-実行環境を組み合わせて戻します。異なる版のserviceを同時に同じdatabaseへ接続してはいけません。
-
-``migrate-archive``が受け取れるのは、archive 7から16までのうち、次の組み合わせで書き出された
-ものだけです。形式、AdocWeave package版、note profile版の3つがすべて一致する必要があります。
-
-[cols="1,1,1",options="header",]
-|===
-|archive形式
-|AdocWeave package版
-|note profile版
-|``marginalis-archive-16``
-|0.27.0
-|5
-|``marginalis-archive-15``
-|0.27.0
-|5
-|``marginalis-archive-14``
-|0.27.0
-|5
-|``marginalis-archive-13``
-|0.27.0
-|5
-|``marginalis-archive-13``
-|0.23.0
-|5
-|``marginalis-archive-13``
-|0.23.0
-|4
-|``marginalis-archive-12``
-|0.22.0
-|4
-|``marginalis-archive-11``
-|0.20.0
-|4
-|``marginalis-archive-10``
-|0.20.0
-|4
-|``marginalis-archive-9``
-|0.19.0
-|4
-|``marginalis-archive-8``
-|0.17.0
-|4
-|``marginalis-archive-7``
-|0.11.0
-|3
-|===
-
-この一覧に無い旧archiveには移行操作を提供しません。
+schema 22より前のdatabaseから更新する場合は、更新前の実行環境で``export-archive``を実行し、
+現行の``migrate-archive``で現行archiveへ変換・検証してから、空のschema 22へ``import-archive``して
+ください。取り込める旧archiveの範囲と手順は<<以前のarchiveからの移行>>を参照してください。
+同期cursorと変更索引、MCPの認可状態、client登録とtokenはarchiveへ含まれないため、更新後に
+外部検索サービスとMCPクライアントを接続し直します。
 
 reverse proxyは``/auth/``、``/api/``、``/mcp``、``/.well-known/``を同一オリジンへ転送します。
 サブパスでは通常endpointの外部prefixをupstreamへ渡す前に除去します。一方、RFC 8414/9728の
@@ -289,65 +189,54 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 ``systemctl status``で確認し、原因を直してから再実行してください。不完全なディレクトリを削除する場合は、
 ``COMPLETE``がないことと対象pathが``backupDirectory``直下であることを運用者が確認します。
 
+[[以前のarchiveからの移行]]
 == 以前のarchiveからの移行
 
-v0.33.0からv0.36.0までが作成したarchive 17、v0.18.0が作成したarchive 11、v0.16.1が作成したarchive 10、
-v0.16.0が作成したarchive 9、v0.15.0が作成したarchive 8は、復元前に現行のarchive 17へ変換します。
-形式名が同じarchive 17を変換するのは、記録しているAdocWeave package版が``0.33.0``または
-``0.36.0``で、現行の``0.41.0``と違うためです。archiveの構造は同じでも、本文を現行の規則で
-再検証してから取り込みます。
-SQLite schema 22には引用の索引、MCP OAuthの状態表、scope上限、同期cursorと変更索引、
-認可済みクライアントの管理情報、数式マクロ設定、ノートの作成経路と人手確認記録、文献情報の取込元と対応情報、
-Webhookの送信先と配送待ちeventがあるため、
-稼働中の旧databaseファイルはそのまま使用できません。archiveを書き出してから変換し、空の
-schema 22へ復元してください。
+取り込みの互換は、**直近5マイナー世代のリリースが書き出した書庫**に限定しています(設計判断は
+ADR 0017を参照)。リリースのたびに、5世代より前へ落ちた契約を受け入れ対象と本節から削除します。
+
+``migrate-archive``が受け取れるのは、次の組で書き出された書庫だけです。形式、AdocWeave package版、
+note profile版の3つがすべて一致する必要があります。
+
+[cols="1,1,1,1",options="header",]
+|===
+|archive形式
+|AdocWeave package版
+|note profile版
+|書き出したリリース
+|``marginalis-archive-17``
+|0.40.1
+|5
+|v0.44.0からv0.45.0
+|``marginalis-archive-17``
+|0.40.0
+|5
+|v0.40.0からv0.42.0
+|===
+
+現行のv0.46.0が書き出す書庫(AdocWeave package版0.41.0)は、変換なしでそのまま
+``import-archive``できます。形式名はarchiveの構造を表し、解析器の版はmanifestの
+``adocweave_package_version``が表します。形式名が同じでも、記録されたAdocWeave package版が
+現行と違う書庫は直接取り込めないため、``migrate-archive``で変換してから取り込みます。
 
 [source,sh]
 ----
 sudo -u marginalis marginalis migrate-archive \
-  --input /srv/marginalis-migration/archive-9.json \
-  --output /srv/marginalis-migration/archive-17.json
+  --input /srv/marginalis-migration/archive-previous.json \
+  --output /srv/marginalis-migration/archive-current.json
 sudo -u marginalis marginalis verify-restore \
-  --input /srv/marginalis-migration/archive-17.json
+  --input /srv/marginalis-migration/archive-current.json
 ----
 
-archive 8を入力にする場合も、出力はarchive 17です。変換では全ノートをAdocWeave 0.41.0で
-再検証します。入力archiveは変更されず、出力先が既に存在する場合は上書きしません。archive形式名は
-archiveの構造を表し、解析器の版はmanifestの``adocweave_package_version``が表します。形式名が
-同じでも、記録されたAdocWeave package版が現行と違うarchiveは直接取り込めないため、
-``migrate-archive``で変換してから取り込みます。
+変換では全ノートを現行のAdocWeaveの規則で再検証します。入力archiveは変更されず、出力先が既に
+存在する場合は上書きしません。失敗した場合のエラーに示す``position``は、archiveの``notes``または
+``note_acl``配列内の1から始まる位置で、本文や識別子は診断へ出力されません。
 
-[[v0100からの移行]]
-== v0.10.0からの移行
-
-v0.10.0のschema 10には、AdocWeave 0.11.0で導出した題名とタグが保存されています。現行版は
-AdocWeave 0.41.0でmetadataを再構築するため、databaseファイルを直接引き継ぎません。
-
-[arabic]
-. v0.10.0のserviceとdatabaseを使ってarchive 7を書き出し、同じ実行環境の
-``validate-archive``と``verify-restore``を実行します。
-. v0.10.0のNixOS generation、``dataDir``、archive 7を削除せずに保全します。
-. 現行版の実行ファイルでarchive 7をarchive 17へ変換します。入力と出力には異なる絶対pathを
-指定してください。入力は変更されず、既存の出力を上書きしません。
-+
-[source,sh]
-----
-sudo -u marginalis <現行版のmarginalis> migrate-archive \
-  --input /srv/marginalis-migration/archive-7.json \
-  --output /srv/marginalis-migration/archive-17.json
-sudo -u marginalis <現行版のmarginalis> verify-restore \
-  --input /srv/marginalis-migration/archive-17.json
-----
-. 移行が失敗した場合はarchive 17を取り込まず、v0.10.0へ戻ります。改行を残す複数行タグや
-header後の属性操作など、現行のAdocWeaveが拒否する記述をv0.10.0で修正し、archive 7の
-書き出しからやり直します。エラーに示された``position``は、
-archiveの``notes``または``note_acl``配列内の1から始まる位置です。診断へ本文や識別子は
-出力されません。
-. 成功したarchive 17を、次節の手順で空のschema 21へ取り込みます。
-
-CIでは、旧実行環境が作成したschema 9のarchive 7にも同じ移行操作を適用し、入力archiveの不変、
-旧archiveの直接取込拒否、schema 21でのノート、ACL、参照、削除状態、revision、数式マクロ設定、来歴と人手確認の一致、archive 17の
-再書き出し一致を検査します。schema 10も同じarchive 7契約を使用するため、移行入口は一つです。
+上の一覧より古い書庫を持ち込む場合は、その書庫へ対応していた過去のリリース
+(https://github.com/KeishiS/marginalis/releases[GitHub Releases]から取得)を一時的な環境で使い、
+``migrate-archive``で当時の現行形式へ変換してから、この一覧に入る形で書き出し直して持ち上げます。
+たとえばv0.8.0が書き出したarchive 7は、v0.45.0の``migrate-archive``で一覧内の組
+(``marginalis-archive-17``、AdocWeave 0.40.1)へ変換できます。
 
 == 他の道具で読める形での取り出し
 
