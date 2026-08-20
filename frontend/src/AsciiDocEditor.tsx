@@ -43,7 +43,11 @@ import {
   useRef,
 } from "react";
 
-import { type NoteDiagnostic, type NoteSourceSpan } from "./api";
+import {
+  type MathMacro,
+  type NoteDiagnostic,
+  type NoteSourceSpan,
+} from "./api";
 import { livePreview, setLiveSpans, toLiveSpans } from "./editor/livePreview";
 import { canSelectDiagnostic, diagnosticMessage } from "./editorPresentation";
 import { utf8ByteOffsetToTextOffset } from "./textPosition";
@@ -58,6 +62,8 @@ interface AsciiDocEditorProps {
   diagnostics: NoteDiagnostic[];
   /** 現在の本文に対するspan注釈。最新の解析が本文と一致しない間は`null`。 */
   spans: NoteSourceSpan[] | null;
+  /** 数式widgetへ局所適用する、ノート所有者の数式マクロ。 */
+  mathMacros: MathMacro[];
   /** 装飾表示の有効・無効。無効時は素の原文を表示する。 */
   livePreviewEnabled: boolean;
   disabled: boolean;
@@ -77,6 +83,7 @@ export const AsciiDocEditor = forwardRef<
     value,
     diagnostics,
     spans,
+    mathMacros,
     livePreviewEnabled,
     disabled,
     labelledBy,
@@ -137,7 +144,9 @@ export const AsciiDocEditor = forwardRef<
           readOnly.current.of(EditorState.readOnly.of(false)),
           editable.current.of(EditorView.editable.of(true)),
           livePreviewConfiguration.current.of(
-            initialLivePreviewEnabled.current ? livePreview() : [],
+            initialLivePreviewEnabled.current
+              ? livePreview({ styleNonce: initialStyleNonce.current })
+              : [],
           ),
           EditorView.contentAttributes.of({
             "aria-labelledby": initialLabel.current,
@@ -226,7 +235,9 @@ export const AsciiDocEditor = forwardRef<
     if (!editor) return;
     editor.dispatch({
       effects: livePreviewConfiguration.current.reconfigure(
-        livePreviewEnabled ? livePreview() : [],
+        livePreviewEnabled
+          ? livePreview({ styleNonce: initialStyleNonce.current })
+          : [],
       ),
     });
   }, [livePreviewEnabled]);
@@ -237,8 +248,13 @@ export const AsciiDocEditor = forwardRef<
     // span注釈は解析した本文とだけ整合する。編集欄が既に先へ進んでいる場合は捨て、
     // 既存の装飾を編集への追従に任せる。
     if (editor.state.doc.toString() !== value) return;
-    editor.dispatch({ effects: setLiveSpans.of(toLiveSpans(value, spans)) });
-  }, [spans, value, livePreviewEnabled]);
+    editor.dispatch({
+      effects: setLiveSpans.of({
+        spans: toLiveSpans(value, spans),
+        mathMacros,
+      }),
+    });
+  }, [spans, value, mathMacros, livePreviewEnabled]);
 
   useImperativeHandle(
     forwardedRef,

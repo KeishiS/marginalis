@@ -20,6 +20,7 @@ test("日本語IMEの変換状態と保存ショートカットを親へ通知�
       value="= 文書"
       diagnostics={[]}
       spans={null}
+      mathMacros={[]}
       livePreviewEnabled={false}
       disabled={false}
       labelledBy="test-editor-label"
@@ -116,6 +117,7 @@ function LabelledEditor({
         value={value}
         diagnostics={diagnostics}
         spans={null}
+        mathMacros={[]}
         livePreviewEnabled={false}
         disabled={false}
         labelledBy="external-editor-label"

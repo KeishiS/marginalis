@@ -66,3 +66,65 @@ test("執筆中の装飾とカーソルによる記法の開示を切り替え�
   await page.getByRole("button", { name: "装飾" }).click();
   await expect(page.locator(".lp-strong")).toHaveText("太字");
 });
+
+// 数式spanの位置。"= 題名\n:stem: latexmath\n\n面積は stem:[x^2] です。" に対する値。
+const MATH_DOCUMENT = "= 題名\n:stem: latexmath\n\n面積は stem:[x^2] です。";
+const MATH_SPANS = [
+  {
+    kind: "document_title",
+    span: { start: 0, end: 9, unit: "utf8_byte" },
+    content_span: { start: 2, end: 8, unit: "utf8_byte" },
+    marker_spans: [
+      { start: 0, end: 1, unit: "utf8_byte" },
+      { start: 1, end: 2, unit: "utf8_byte" },
+    ],
+  },
+  {
+    kind: "document_attribute",
+    span: { start: 9, end: 26, unit: "utf8_byte" },
+  },
+  {
+    kind: "inline_math",
+    span: { start: 37, end: 47, unit: "utf8_byte" },
+    content_span: { start: 43, end: 46, unit: "utf8_byte" },
+    marker_spans: [
+      { start: 37, end: 43, unit: "utf8_byte" },
+      { start: 46, end: 47, unit: "utf8_byte" },
+    ],
+  },
+];
+
+test("編集欄の数式を組版し、カーソル交差で原文を開示する", async ({ page }) => {
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    const source = (await route.request().postDataJSON()).source;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: "<p>プレビュー</p>",
+        math_macros: [],
+        diagnostics: [],
+        spans: source === MATH_DOCUMENT ? MATH_SPANS : [],
+      }),
+    });
+  });
+  await page.goto("/notes/new");
+  const editor = page.getByRole("textbox", { name: "AsciiDoc文書" });
+  await expect(editor).toBeFocused();
+  await editor.fill(MATH_DOCUMENT);
+
+  // MathJaxの読み込みと組版を待つ。組版後はSVGのcontainerが入る。
+  const widget = page.locator(".lp-math");
+  await expect(widget.locator("mjx-container")).toBeVisible({
+    timeout: 10_000,
+  });
+  const mathLine = page.locator(".cm-line", { hasText: "面積は" });
+  await expect(mathLine).not.toContainText("stem:[");
+
+  // 行頭から記法の先頭までカーソルを動かすと原文が現れる。
+  await mathLine.click();
+  await page.keyboard.press("Home");
+  for (let step = 0; step < 4; step += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
+  await expect(mathLine).toContainText("stem:[x^2]");
+});
