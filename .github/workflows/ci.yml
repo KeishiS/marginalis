@@ -76,9 +76,10 @@ jobs:
           nix develop --command cargo make docs-check
           nix develop --command cargo make traceability-check
 
+  # coverageは必須gate(verify)に含まれないため、mainへのpushだけで測定して推移を追う。
   coverage:
     needs: changes
-    if: needs.changes.outputs.docs-only != 'true'
+    if: github.event_name == 'push' && needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -113,6 +114,43 @@ jobs:
         run: nix develop --command cargo make native-check
       - name: Build the aarch64 Linux release package
         run: nix develop --command cargo make release-package-aarch64
+
+  # mainへのpush時にdevShell closureをbinary cacheへpushする。以降のrunでは各jobの
+  # nix developがAdocWeaveのsource buildとtoolchain展開のかわりに取得だけで済む。
+  # PRではsecretを使わない。必須checkには含めない。
+  devshell-cache-x86_64:
+    needs: changes
+    if: github.event_name == 'push' && needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build and push the devShell closure
+        run: |
+          nix develop --profile /tmp/devshell-profile --command true
+          cachix push keishis /tmp/devshell-profile
+
+  devshell-cache-aarch64:
+    needs: changes
+    if: github.event_name == 'push' && needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build and push the devShell closure
+        run: |
+          nix develop --profile /tmp/devshell-profile --command true
+          cachix push keishis /tmp/devshell-profile
 
   verify:
     needs: [changes, verify-core, verify-docs, native-aarch64, browser-smoke]
