@@ -315,6 +315,11 @@ anchor、本文から項目へのlink、項目から本文への戻りlink、番
 
 アーカイブのJSON項目を表す型と、形式の版および移行できる旧契約は``marginalis-archive``に置きます。
 保存形式はAsciiDocの解析とは変更理由が異なるため、独立したcrateにします。
+旧契約は複数件の一覧ではなく、直前に公開した保存契約を表す``PREVIOUS_MIGRATION_CONTRACT``1件だけを
+保持します。保存契約はarchive形式、AdocWeave package版、note profile版の組として比較します。
+それより古いarchiveは、 xref:adr/0018-archiveは直前の公開済み保存契約からだけ移行する.adoc#top[ADR 0018]に
+従い、利用者向け文書に記録した公開済みリリースで段階的に変換します。ADR 0018の採用後に契約を
+変更するリリースには、直前の公開済み保存契約からの変換を必ず含めます。
 
 ``marginalis-archive``はノート本文の再検証を``marginalis-application``の``NoteContent`` portへ委ね、
 具体的な解析器へ依存しません。どの解析器で再検証するかは``marginalis-service``が決めます。

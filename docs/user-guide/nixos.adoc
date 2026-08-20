@@ -218,28 +218,13 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 [[以前のarchiveからの移行]]
 == 以前のarchiveからの移行
 
-取り込みの互換は、**直近5マイナー世代のリリースが書き出した書庫**に限定しています(設計判断は
-ADR 0017を参照)。リリースのたびに、5世代より前へ落ちた契約を受け入れ対象と本節から削除します。
+現行版が直接取り込めるのは、現行の保存契約と、その直前に公開された保存契約だけです(設計判断は
+xref:../developer-guide/adr/0018-archiveは直前の公開済み保存契約からだけ移行する.adoc#top[ADR 0018]を
+参照してください)。保存契約は、archive形式、AdocWeave package版、note profile版の3項目の組です。
+アプリケーションの版が上がっても、この組が変わらなければ同じ保存契約として扱います。
 
-``migrate-archive``が受け取れるのは、次の組で書き出された書庫だけです。形式、AdocWeave package版、
-note profile版の3つがすべて一致する必要があります。
-
-[cols="1,1,1,1",options="header",]
-|===
-|archive形式
-|AdocWeave package版
-|note profile版
-|書き出したリリース
-|``marginalis-archive-17``
-|0.40.1
-|5
-|v0.44.0からv0.45.0
-|===
-
-現行契約(AdocWeave package版0.41.0、v0.46.0以降)の書庫は、変換なしでそのまま
-``import-archive``できます。形式名はarchiveの構造を表し、解析器の版はmanifestの
-``adocweave_package_version``が表します。形式名が同じでも、記録されたAdocWeave package版が
-現行と違う書庫は直接取り込めないため、``migrate-archive``で変換してから取り込みます。
+現行契約のarchiveは変換なしで``import-archive``できます。直前契約のarchiveは、
+``migrate-archive``で現行契約へ変換してから取り込みます。
 
 [source,sh]
 ----
@@ -256,7 +241,7 @@ sudo -u marginalis marginalis verify-restore \
 
 変換・検証・取り込みを一括で行う場合は、``migrate-archive``と``verify-restore``、
 ``import-archive``の3段のかわりに``restore-archive``を使えます。書庫が現行契約ならそのまま、
-上の一覧の旧契約なら変換したうえで、隔離databaseでの復元一致を検証してから
+直前契約なら変換したうえで、隔離databaseでの復元一致を検証してから
 ``MARGINALIS_DATABASE_URL``のdatabaseへ取り込みます。中間ファイルは残りません。
 
 [source,sh]
@@ -265,11 +250,150 @@ sudo -u marginalis marginalis restore-archive \
   --input /srv/marginalis-migration/archive-previous.json
 ----
 
-上の一覧より古い書庫を持ち込む場合は、その書庫へ対応していた過去のリリース
-(https://github.com/KeishiS/marginalis/releases[GitHub Releases]から取得)を一時的な環境で使い、
-``migrate-archive``で当時の現行形式へ変換してから、この一覧に入る形で書き出し直して持ち上げます。
-たとえばv0.8.0が書き出したarchive 7は、v0.45.0の``migrate-archive``で一覧内の組
-(``marginalis-archive-17``、AdocWeave 0.40.1)へ変換できます。
+[[保存契約の履歴]]
+=== 保存契約の履歴
+
+直前契約より古いarchiveは、次の表で現行へ持ち上げるために使うリリースと出力契約を確認します。
+過去の実行環境はhttps://github.com/KeishiS/marginalis/releases[GitHub Releases]から取得します。
+通常運用の秘密情報やネットワークへ接続せず、移行対象のarchiveと出力先だけを渡してください。
+
+表は、現在の3項目を持ち、現行の``migrate-archive``まで段階的な移行経路が続くv0.8.0以降を記録します。
+「採用版」はその契約を書き出したタグの範囲です。v0.43.0はタグだけが作られ、GitHub Releaseは
+公開されていないため、同じ契約を使う最初の公開済みリリースはv0.44.0です。
+
+[cols="1,1,1,2,2,1",options="header",]
+|===
+|archive形式
+|AdocWeave package版
+|note profile版
+|採用版
+|移行に使うリリースと出力契約
+|現行版での扱い
+
+|``marginalis-archive-7``
+|0.11.0
+|3
+|v0.8.0からv0.10.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-8``
+|0.17.0
+|4
+|v0.11.0、v0.12.0、v0.14.0、v0.15.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-9``
+|0.19.0
+|4
+|v0.16.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-10``
+|0.20.0
+|4
+|v0.16.1からv0.17.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-11``
+|0.20.0
+|4
+|v0.18.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-13``
+|0.23.0
+|4
+|v0.19.0からv0.22.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-13``
+|0.27.0
+|5
+|v0.23.0からv0.25.1
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-14``
+|0.27.0
+|5
+|v0.26.0からv0.30.1
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-15``
+|0.27.0
+|5
+|v0.31.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-16``
+|0.27.0
+|5
+|v0.32.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-17``
+|0.33.0
+|5
+|v0.33.0からv0.35.1
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-17``
+|0.36.0
+|5
+|v0.36.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-17``
+|0.40.0
+|5
+|v0.37.0からv0.42.0
+|v0.45.0 → 17 / 0.40.1 / 5
+|段階移行
+
+|``marginalis-archive-17``
+|0.40.1
+|5
+|v0.43.0からv0.45.0
+|v0.46.0以降 → 17 / 0.41.0 / 5
+|直前契約
+
+|``marginalis-archive-17``
+|0.41.0
+|5
+|v0.46.0以降
+|—
+|現行契約
+|===
+
+v0.45.0は、v0.8.0以降の表にある旧契約を``marginalis-archive-17`` / 0.40.1 / 5へ変換できる
+最後の公開版です。Nixでv0.45.0を固定して構築し、入力とは別のファイルへ変換します。
+
+[source,sh]
+----
+nix build 'github:KeishiS/marginalis/v0.45.0#default' \
+  --out-link ./marginalis-v0.45.0
+./marginalis-v0.45.0/bin/marginalis migrate-archive \
+  --input /srv/marginalis-migration/archive-old.json \
+  --output /srv/marginalis-migration/archive-0.40.1.json
+----
+
+たとえばv0.18.0のarchiveは、この操作で``marginalis-archive-17`` / 0.40.1 / 5へ変換し、その出力を
+現行版の``restore-archive``へ渡します。現行版は直前契約として受理し、
+``marginalis-archive-17`` / 0.41.0 / 5へ変換して復元します。
+
+ADR 0018の採用後に保存契約を変更する場合は、直前の公開済み保存契約から新契約への変換を必ず
+同じリリースへ含めます。以後は表の移行経路を順番に辿ることで、契約を1件ずつ持ち上げられます。
 
 == 他の道具で読める形での取り出し
 

@@ -182,7 +182,7 @@ React設定画面の単体試験
 |環境変数宣言の単体試験、起動と診断の判断一致CLI試験、NixOS module評価
 |診断出力確認
 |REQ-FORMAT-001
-|schema・archive拒否、直近5世代の対応契約から現行archiveへの移行試験、サポート外契約の拒否試験
+|schema・archive拒否、直前の公開済み保存契約から現行archiveへの移行試験、それ以外の契約の拒否試験
 |更新前退避
 |REQ-FORMAT-002
 |文書書き出しの構成・ファイル名・削除済み除外・manifest版情報の試験、CLIの権限と上書き拒否の試験

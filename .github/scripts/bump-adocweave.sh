@@ -61,8 +61,8 @@ cat <<GUIDE
 更新が完了しました: v$old_version -> v$new_version
 
 残る手作業:
-  - crates/marginalis-archive/src/lib.rs のSUPPORTED_MIGRATION_CONTRACTSへ
-    旧版の受理行 migration_contract("marginalis-archive-*", "$old_version", ...) を追加し、
-    試験のLATEST_MIGRATION_CONTRACTも旧版へ更新してください。
+  - crates/marginalis-archive/src/lib.rs のPREVIOUS_MIGRATION_CONTRACTを、更新前の
+    archive形式、AdocWeave package版、note profile版の組へ更新してください。
+  - docs/user-guide/nixos.adocの保存契約履歴へ、更新後の契約と採用開始版を追加してください。
   - cargo make verify を実行してください。
 GUIDE
