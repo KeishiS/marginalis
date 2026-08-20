@@ -832,6 +832,58 @@ pub struct NotePreviewResponse {
     pub html: String,
     pub diagnostics: Vec<NoteDiagnosticResponse>,
     pub math_macros: Vec<MathMacroResponse>,
+    /// 編集画面の装飾に使うspan注釈。原文の出現順で、同じ開始位置では外側が先になる。
+    pub spans: Vec<NoteSourceSpanResponse>,
+}
+
+/// 編集画面の装飾に使う、本文中の記法1件の位置。
+///
+/// 範囲は原文のUTF-8バイトオフセットで、診断のspanと同じ数え方を使う。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteSourceSpan")]
+pub struct NoteSourceSpanResponse {
+    pub kind: NoteSourceSpanKindResponse,
+    /// 記法全体が占める範囲。
+    pub span: Utf8ByteSpanResponse,
+    /// 記法文字を除いた、装飾対象の本文部分。区別を持たない記法では省略する。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_span: Option<Utf8ByteSpanResponse>,
+    /// カーソルが離れているときに折り畳める記法文字の範囲。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub marker_spans: Vec<Utf8ByteSpanResponse>,
+    /// 見出しの深さ。`==`が1で、文書題名を除く。見出し以外は省略する。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<u8>,
+}
+
+/// span注釈が区別する記法の種類。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "NoteSourceSpanKind")]
+pub enum NoteSourceSpanKindResponse {
+    DocumentTitle,
+    Heading,
+    DocumentAttribute,
+    Anchor,
+    Strong,
+    Emphasis,
+    Highlight,
+    Subscript,
+    Superscript,
+    Monospace,
+    Link,
+    CrossReference,
+    Citation,
+    InlineMath,
+    MathBlock,
+    SourceBlock,
+    LiteralBlock,
+    Quote,
+    Example,
+    Admonition,
+    Table,
+    ListItem,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]

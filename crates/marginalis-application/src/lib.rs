@@ -278,6 +278,51 @@ pub struct ValidatedNoteDraft {
     pub citation_queries: Vec<NoteCitationQuery>,
     /// 本文のheaderが選んだ引用の表示規則。属性を書かないノートは既定になる。
     pub citation_style: CitationStyle,
+    /// 編集画面の装飾に使うspan注釈。原文の出現順。
+    pub source_spans: Vec<NoteSourceSpan>,
+}
+
+/// 編集画面の装飾に使う、本文中の記法1件の位置。
+///
+/// 範囲は原文のUTF-8バイトオフセットで、診断のspanと同じ数え方を使う。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteSourceSpan {
+    pub kind: NoteSourceSpanKind,
+    /// 記法全体が占める範囲。
+    pub span: Utf8ByteSpan,
+    /// 記法文字を除いた、装飾対象の本文部分。区別を持たない記法では`None`。
+    pub content_span: Option<Utf8ByteSpan>,
+    /// カーソルが離れているときに折り畳める記法文字の範囲。
+    pub marker_spans: Vec<Utf8ByteSpan>,
+    /// 見出しの深さ。`==`が1で、文書題名を除く。見出し以外は`None`。
+    pub level: Option<u8>,
+}
+
+/// span注釈が区別する記法の種類。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoteSourceSpanKind {
+    DocumentTitle,
+    Heading,
+    DocumentAttribute,
+    Anchor,
+    Strong,
+    Emphasis,
+    Highlight,
+    Subscript,
+    Superscript,
+    Monospace,
+    Link,
+    CrossReference,
+    Citation,
+    InlineMath,
+    MathBlock,
+    SourceBlock,
+    LiteralBlock,
+    Quote,
+    Example,
+    Admonition,
+    Table,
+    ListItem,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -285,6 +330,8 @@ pub struct NotePreview {
     pub html: String,
     pub diagnostics: Vec<NoteAdvisoryDiagnostic>,
     pub math_macros: Vec<MathMacro>,
+    /// 編集画面の装飾に使うspan注釈。原文の出現順。
+    pub spans: Vec<NoteSourceSpan>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

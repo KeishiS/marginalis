@@ -10,6 +10,7 @@ mod analysis;
 mod configuration;
 mod policy;
 mod rendering;
+mod spans;
 
 // 版とrevisionはbuild.rsがCargo.lockの解決結果から導出する。手書きの版数を残さない。
 pub const ADOCWEAVE_SOURCE_REVISION: &str = env!("MARGINALIS_ADOCWEAVE_REVISION");

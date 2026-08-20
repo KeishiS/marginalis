@@ -28,6 +28,7 @@ impl NoteApplication {
             reference_queries,
             citation_queries,
             citation_style,
+            source_spans,
         } = validated;
         let note = Note::create(
             note_id,
@@ -68,6 +69,7 @@ impl NoteApplication {
             html,
             diagnostics,
             math_macros,
+            spans: source_spans,
         })
     }
 

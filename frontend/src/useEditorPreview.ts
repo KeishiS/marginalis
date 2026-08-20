@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   MathMacro,
   NoteDiagnostic,
+  NoteSourceSpan,
   Problem,
   previewNewNote,
   previewNoteUpdate,
@@ -12,11 +13,19 @@ export interface EditorPreview {
   html: string;
   mathMacros: MathMacro[];
   diagnostics: NoteDiagnostic[];
+  /**
+   * 現在の本文に対するspan注釈。最新の解析結果が現在の本文と一致しない間は`null`で、
+   * その間の装飾は編集側が既存の装飾を編集へ追従させて保つ。
+   */
+  spans: NoteSourceSpan[] | null;
   loading: boolean;
   problem: Problem | null;
 }
 
-interface EditorPreviewState extends EditorPreview {
+interface EditorPreviewState extends Omit<EditorPreview, "spans"> {
+  spans: NoteSourceSpan[];
+  /** `spans`を解析した本文。取得の失敗や進行中の値と混ざらないよう、成功時だけ更新する。 */
+  spansSource: string | null;
   source: string;
 }
 
@@ -31,6 +40,8 @@ export function useEditorPreview(
     html: "",
     mathMacros: [],
     diagnostics: [],
+    spans: [],
+    spansSource: null,
     loading: false,
     problem: null,
     source: "",
@@ -58,6 +69,8 @@ export function useEditorPreview(
               html: result.html,
               mathMacros: result.math_macros,
               diagnostics: result.diagnostics,
+              spans: result.spans,
+              spansSource: source,
               loading: false,
               problem: null,
               source,
@@ -88,6 +101,7 @@ export function useEditorPreview(
     html: preview.html,
     mathMacros: preview.mathMacros,
     diagnostics: matchesCurrentSource ? preview.diagnostics : [],
+    spans: preview.spansSource === source ? preview.spans : null,
     loading: matchesCurrentSource ? preview.loading : false,
     problem: matchesCurrentSource ? preview.problem : null,
   };

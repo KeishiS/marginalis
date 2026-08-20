@@ -217,6 +217,7 @@ test("既存文書のプレビューを対象ノート付きの経路へ送る",
       jsonResponse({
         html: "<p>既存の本文</p>",
         math_macros: [],
+        spans: [],
         diagnostics: [],
       }),
     );
@@ -333,6 +334,7 @@ test("プレビュー警告を入力欄へ渡して修正後にすぐ取り除�
       jsonResponse({
         html: "<p>この結果はxref:...</p>",
         math_macros: [],
+        spans: [],
         diagnostics: [
           {
             code: "macro-boundary",
@@ -348,6 +350,7 @@ test("プレビュー警告を入力欄へ渡して修正後にすぐ取り除�
       jsonResponse({
         html: "<p>この結果は xref:...</p>",
         math_macros: [],
+        spans: [],
         diagnostics: [],
       }),
     );
@@ -390,6 +393,7 @@ test("プレビュー失敗時も最後に成功した表示を残す", async ()
       jsonResponse({
         html: "<p>成功した表示</p>",
         math_macros: [],
+        spans: [],
         diagnostics: [],
       }),
     )

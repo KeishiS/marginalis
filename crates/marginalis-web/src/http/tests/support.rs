@@ -9,9 +9,10 @@ use marginalis_application::{
     NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteGraph, NoteGraphNote,
     NoteGraphQuery, NoteListQuery, NotePreview, NoteProfile, NoteProfileAdvisoryRule,
     NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileSyntax,
-    NoteRenderContext, NoteReviewDetails, NoteSourcePosition, NoteSyncPage, NoteSyncPhase,
-    NoteUseCaseError, NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView,
-    NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes, WebSessionUseCases,
+    NoteRenderContext, NoteReviewDetails, NoteSourcePosition, NoteSourceSpan, NoteSourceSpanKind,
+    NoteSyncPage, NoteSyncPhase, NoteUseCaseError, NoteUseCases, NoteValidationCode,
+    NoteValidationDiagnostic, NoteView, NoteWritePolicy, OidcAuthenticationUseCases, RelatedNotes,
+    WebSessionUseCases,
 };
 use marginalis_domain::{
     Actor, AuthenticatedSession, DeletedNoteListEntry, Identity, Note, NoteAccess,
@@ -335,6 +336,27 @@ fn test_source_position(source: &str, byte_offset: usize) -> NoteSourcePosition 
     }
 }
 
+/// 題名行だけを写した、決定的なspan注釈を返す。
+pub(super) fn test_spans(source: &str) -> Vec<NoteSourceSpan> {
+    if !source.starts_with("= ") {
+        return Vec::new();
+    }
+    let line_end = source.find('\n').unwrap_or(source.len()) as u32;
+    vec![NoteSourceSpan {
+        kind: NoteSourceSpanKind::DocumentTitle,
+        span: Utf8ByteSpan {
+            start: 0,
+            end: line_end,
+        },
+        content_span: Some(Utf8ByteSpan {
+            start: 2,
+            end: line_end,
+        }),
+        marker_spans: vec![Utf8ByteSpan { start: 0, end: 2 }],
+        level: None,
+    }]
+}
+
 pub(super) fn test_advisories(source: &str) -> Vec<NoteAdvisoryDiagnostic> {
     source.find("xref").map_or_else(Vec::new, |start| {
         vec![
@@ -565,6 +587,7 @@ impl Notes {
                 html: "<article><p>プレビュー</p></article>".into(),
                 math_macros: Vec::new(),
                 diagnostics,
+                spans: test_spans(&draft.source),
             })
         }
     }

@@ -303,6 +303,7 @@ impl NoteContent for AcceptContent {
             reference_queries: Vec::new(),
             citation_queries: Vec::new(),
             citation_style: CitationStyle::default(),
+            source_spans: Vec::new(),
         })
     }
 
@@ -619,6 +620,7 @@ impl NoteContent for CitingContent {
                 position: crate::NoteSourcePosition { line: 1, column: 1 },
             }],
             citation_style: CitationStyle::default(),
+            source_spans: Vec::new(),
         })
     }
 
