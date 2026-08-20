@@ -10,17 +10,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1787198694,
-        "narHash": "sha256-YaQz74xNBHwlPT5S2zPTFwJVRcZzs4nZ4Xj+K18QQlw=",
+        "lastModified": 1787244663,
+        "narHash": "sha256-SoQ+DPhUglU0JZIQ1rzfvz6m+ouUWJRoK79SgYffc5g=",
         "owner": "KeishiS",
         "repo": "adocweave",
-        "rev": "088e50e4952d7857cb4b0748becad2a7e26c874b",
+        "rev": "3c81acf89bce6b9e0c750f2fd26380524a9adfb1",
         "type": "github"
       },
       "original": {
         "owner": "KeishiS",
         "repo": "adocweave",
-        "rev": "088e50e4952d7857cb4b0748becad2a7e26c874b",
+        "rev": "3c81acf89bce6b9e0c750f2fd26380524a9adfb1",
         "type": "github"
       }
     },

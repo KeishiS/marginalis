@@ -198,7 +198,7 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 == バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは``marginalis-archive-18``で、AdocWeave package版``0.41.0``とnote profile版``6``を記録します。
+現行archiveは``marginalis-archive-18``で、AdocWeave package版``0.42.0``とnote profile版``6``を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 同じ段階で、利用者の代表identityとalias、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と
 重複に加え、保持中の全版についてrevisionの連続性、現在版との一致、変更者、AsciiDoc原文も検証します。
@@ -467,11 +467,11 @@ sudo -u marginalis marginalis restore-archive \
 |0.41.0
 |5
 |v0.46.0からv0.47.0
-|次回公開版以降 → 18 / 0.41.0 / 6
+|次回公開版以降 → 18 / 0.42.0 / 6
 |直前契約
 
 |``marginalis-archive-18``
-|0.41.0
+|0.42.0
 |6
 |未公開。次回公開版で初回版を確定
 |—
@@ -498,7 +498,7 @@ nix build 'github:KeishiS/marginalis/v0.45.0#default' \
 たとえばv0.18.0のarchiveは、この操作で``marginalis-archive-17`` / 0.40.1 / 5へ変換し、その出力を
 v0.46.0またはv0.47.0の``migrate-archive``へ渡します。その出力である
 ``marginalis-archive-17`` / 0.41.0 / 5を現行版の``restore-archive``へ渡すと、直前契約として受理し、
-``marginalis-archive-18`` / 0.41.0 / 6へ変換して復元します。
+``marginalis-archive-18`` / 0.42.0 / 6へ変換して復元します。
 
 ADR 0018の採用後に保存契約を変更する場合は、直前の公開済み保存契約から新契約への変換を必ず
 同じリリースへ含めます。以後は表の移行経路を順番に辿ることで、契約を1件ずつ持ち上げられます。

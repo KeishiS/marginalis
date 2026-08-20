@@ -5,6 +5,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+const PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION: &str = "0.41.0";
+
 fn test_directory(purpose: &str) -> std::path::PathBuf {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -496,7 +498,7 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let output = directory.join("current-archive-18.json");
     let previous = serde_json::json!({
         "format": "marginalis-archive-17",
-        "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
+        "adocweave_package_version": PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION,
         "note_profile_version": 5,
         "notes": [
             {
@@ -1394,7 +1396,7 @@ fn restore_archive_migrates_verifies_and_imports_in_one_step() {
     let input = directory.join("v0.47.0-archive-17.json");
     let previous = serde_json::json!({
         "format": "marginalis-archive-17",
-        "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
+        "adocweave_package_version": PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION,
         "note_profile_version": 5,
         "notes": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",

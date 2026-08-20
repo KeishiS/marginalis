@@ -1706,15 +1706,15 @@ mod tests {
         );
     }
 
-    /// 直前の形式は、本文規則が同じでも現行形式へ移行する。
+    /// 直前の公開契約は、形式と解析器の版が変わっていても現行契約へ移行する。
     #[test]
-    fn the_previous_format_with_the_same_note_profile_is_migrated() {
+    fn the_previous_format_and_adocweave_version_are_migrated() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let current = create_archive(&content(), &snapshot);
         let mut previous = current.clone();
         stamp_contract(&mut previous, PREVIOUS_MIGRATION_CONTRACT);
         assert_ne!(previous.format, current.format);
-        assert_eq!(
+        assert_ne!(
             previous.adocweave_package_version,
             current.adocweave_package_version
         );
