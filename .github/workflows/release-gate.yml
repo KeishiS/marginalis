@@ -97,6 +97,47 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
         run: nix develop --command cargo make release-gate-core
 
+  # タグのゲートが成功したら、そのタグの実行パッケージのclosureをbinary cacheへpushする。
+  # デプロイ先はkeishis.cachix.orgをsubstituterに設定し、buildせず取得だけで更新できる。
+  # push対象はリリースタグだけに限定し、cacheの容量とtokenの利用面を抑える。
+  binary-cache-x86_64:
+    if: github.event_name == 'push'
+    needs: release-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup
+      - name: Set up Cachix
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: keishis
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+      - name: Build and push the release closure
+        run: nix build .#default --no-link --print-out-paths | cachix push keishis
+
+  binary-cache-aarch64:
+    if: github.event_name == 'push'
+    needs: release-gate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup
+      - name: Set up Cachix
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: keishis
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+      - name: Build and push the release closure
+        run: nix build .#default --no-link --print-out-paths | cachix push keishis
+
   # タグのプッシュでゲートが成功したら、そのタグの内容から下書きReleaseを作成する。
   # checkoutはタグの内容そのものであり、後からmainが進んでも公開内容は変わらない。
   # Release Notesの記載と公開(--draft=false)は人が行う。
