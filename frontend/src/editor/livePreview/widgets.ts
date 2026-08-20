@@ -54,3 +54,25 @@ export class MathWidget extends WidgetType {
     return false;
   }
 }
+
+/** リスト項目の行頭markerを、深さに応じたビュレットとして表示するwidget。 */
+export class ListBulletWidget extends WidgetType {
+  constructor(private readonly depth: number) {
+    super();
+  }
+
+  override eq(other: ListBulletWidget): boolean {
+    return other.depth === this.depth;
+  }
+
+  override toDOM(): HTMLElement {
+    const element = document.createElement("span");
+    element.className = `lp-list-bullet lp-list-bullet-${this.depth}`;
+    element.textContent = this.depth >= 2 ? "◦" : "•";
+    return element;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}

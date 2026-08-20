@@ -209,6 +209,82 @@ describe("Live Previewの装飾", () => {
     expect(summary[0].from).toBe(doc.length);
   });
 
+  it("引用ブロックの各行を行装飾し、区切り行を淡色にする", () => {
+    const doc = "[quote]\n____\n引用文です。\n____\n";
+    const quote: NoteSourceSpan = {
+      kind: "quote",
+      span: byteSpan(0, 37),
+      content_span: byteSpan(13, 31),
+      marker_spans: [byteSpan(0, 7), byteSpan(8, 12), byteSpan(32, 36)],
+    };
+    const state = stateWithSpans(doc, [quote]);
+    expect(decorationSummary(state)).toEqual([
+      { from: 0, to: 0, kind: "lp-block-quote lp-block-meta" },
+      { from: 8, to: 8, kind: "lp-block-quote lp-block-meta" },
+      { from: 13, to: 13, kind: "lp-block-quote" },
+      { from: 20, to: 20, kind: "lp-block-quote lp-block-meta" },
+    ]);
+  });
+
+  it("admonitionのラベルを強調し、行装飾を掛ける", () => {
+    const doc = "NOTE: 注意です。\n";
+    const admonition: NoteSourceSpan = {
+      kind: "admonition",
+      span: byteSpan(0, 22),
+      content_span: byteSpan(6, 21),
+      marker_spans: [byteSpan(0, 5)],
+    };
+    const state = stateWithSpans(doc, [admonition]);
+    expect(decorationSummary(state)).toEqual([
+      { from: 0, to: 0, kind: "lp-block-admonition" },
+      { from: 0, to: 5, kind: "lp-block-label" },
+    ]);
+  });
+
+  it("リスト項目のmarkerをビュレットへ置き換え、カーソルの行では開示する", () => {
+    const doc = "* 項目1\n** 項目2\n";
+    const items: NoteSourceSpan[] = [
+      {
+        kind: "list_item",
+        span: byteSpan(0, 9),
+        content_span: byteSpan(2, 9),
+        marker_spans: [byteSpan(0, 1), byteSpan(1, 2)],
+      },
+      {
+        kind: "list_item",
+        span: byteSpan(10, 20),
+        content_span: byteSpan(13, 20),
+        marker_spans: [byteSpan(10, 12), byteSpan(12, 13)],
+      },
+    ];
+    // カーソルが末尾(空の3行目)にある間は両方のmarkerが置換される。
+    const state = stateWithSpans(doc, items);
+    expect(decorationSummary(state)).toEqual([
+      { from: 0, to: 1, kind: "widget" },
+      { from: 6, to: 8, kind: "widget" },
+    ]);
+    // 2行目へカーソルを移すと、その行のmarkerだけが開示される。
+    const revealed = state.update({
+      selection: EditorSelection.cursor(9),
+    }).state;
+    expect(decorationSummary(revealed)).toEqual([
+      { from: 0, to: 1, kind: "widget" },
+      { from: 6, to: 8, kind: "lp-list-marker lp-list-marker-2" },
+    ]);
+  });
+
+  it("文書属性の行を淡色の行装飾にする", () => {
+    const doc = "= 題名\n:marginalis-tags: rust\n";
+    const attribute: NoteSourceSpan = {
+      kind: "document_attribute",
+      span: byteSpan(9, 30),
+    };
+    const state = stateWithSpans(doc, [attribute]);
+    expect(decorationSummary(state)).toEqual([
+      { from: 5, to: 5, kind: "lp-doc-attribute" },
+    ]);
+  });
+
   it("IME変換中の入力では装飾を組み立て直さない", () => {
     const initial = stateWithSpans(source, [strongSpan]);
     const composing = initial.update({

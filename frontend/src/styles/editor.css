@@ -246,6 +246,58 @@
   padding: var(--space-1) var(--space-3);
 }
 
+/* ブロック記法の行装飾。折り畳みはせず、背景と左ボーダーで範囲を示す。 */
+.ascii-doc-editor .lp-block-quote,
+.ascii-doc-editor .lp-block-admonition,
+.ascii-doc-editor .lp-block-example {
+  border-inline-start: var(--border-thick) solid var(--color-border);
+  padding-inline-start: var(--space-2);
+}
+
+.ascii-doc-editor .lp-block-admonition {
+  border-inline-start-color: var(--color-primary);
+}
+
+.ascii-doc-editor .lp-block-literal,
+.ascii-doc-editor .lp-block-source,
+.ascii-doc-editor .lp-block-table {
+  background: var(--color-muted);
+}
+
+/* 属性行・区切り行と、`NOTE:`のようなラベル。 */
+.ascii-doc-editor .lp-block-meta {
+  color: var(--color-muted-foreground);
+}
+
+.ascii-doc-editor .lp-block-label {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.ascii-doc-editor .lp-doc-attribute {
+  color: var(--color-muted-foreground);
+}
+
+.ascii-doc-editor .lp-anchor {
+  color: var(--color-muted-foreground);
+}
+
+.ascii-doc-editor .lp-list-marker {
+  color: var(--color-muted-foreground);
+}
+
+.ascii-doc-editor .lp-list-bullet {
+  color: var(--color-primary);
+}
+
+.ascii-doc-editor .lp-list-bullet-2 {
+  padding-inline-start: var(--space-4);
+}
+
+.ascii-doc-editor .lp-list-bullet-3 {
+  padding-inline-start: var(--space-6);
+}
+
 .ascii-doc-editor .lp-heading {
   font-family: var(--font-ui);
   font-weight: 700;
