@@ -1,9 +1,9 @@
 use adocweave::output::diagnostics::Severity;
 use adocweave::output::html::render_with_inputs;
 use adocweave::resolution::{
-    CitationSegment, GeneratedBibliography, GeneratedBibliographyEntry, RenderInputs,
+    CitationSegment, GeneratedBibliography, GeneratedBibliographyEntry, MediaType, RenderInputs,
     ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind, ResolvedCitation,
-    ResolvedReference, ResolverFailure,
+    ResolvedReference, ResolvedResource, ResolverFailure,
 };
 use marginalis_application::{
     NoteBibliographyEntry, NoteCitationResolution, NoteReferenceResolution, NoteRenderInputs,
@@ -74,8 +74,27 @@ pub(crate) fn render_note(
             ))
         })
         .collect::<Result<Vec<_>, RenderError>>()?;
+    let resource_queries = analysis.resource_queries();
+    let resources = inputs
+        .attachments
+        .iter()
+        .map(|resolution| {
+            let query = resource_queries
+                .get(resolution.attachment_index)
+                .ok_or(RenderError)?;
+            let media_type =
+                MediaType::parse(resolution.media_type.as_str()).map_err(|_| RenderError)?;
+            Ok(ResolvedResource::resolved(
+                query.reference.range(),
+                &resolution.href,
+                media_type,
+                Some(u64::try_from(resolution.byte_length).map_err(|_| RenderError)?),
+            ))
+        })
+        .collect::<Result<Vec<_>, RenderError>>()?;
     let mut render_inputs = RenderInputs::default()
         .with_references(references)
+        .with_resources(resources)
         .with_citations(resolved_citations);
     if let Some(bibliography) = generated_bibliography(&analysis, inputs.bibliography) {
         render_inputs = render_inputs.with_generated_bibliography(bibliography);
@@ -161,7 +180,7 @@ fn numbers_count_up_from_one(entries: &[&NoteBibliographyEntry]) -> bool {
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_application::NoteCitationSegment;
+    use marginalis_application::{NoteAttachmentResolution, NoteCitationSegment};
     use marginalis_domain::{
         EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
         NoteReviewTracking, PrincipalId, PrincipalRef, Revision, UnixMillis,
@@ -222,6 +241,32 @@ mod tests {
         assert!(html.contains("<strong>safe</strong>"));
         assert!(html.contains("language-python"));
         assert!(html.contains("href=\"#local\""));
+    }
+
+    #[test]
+    fn an_internal_attachment_renders_only_with_the_resolved_same_origin_url() {
+        let attachment_id = "0197c9bc-0000-7000-8000-0000000000a1";
+        let html = render_note(
+            &note(&format!("image::attachment:{attachment_id}[実験結果]")),
+            NoteRenderInputs {
+                attachments: &[NoteAttachmentResolution {
+                    attachment_index: 0,
+                    href: format!(
+                        "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments/{attachment_id}/content"
+                    ),
+                    media_type: marginalis_domain::AttachmentMediaType::Png,
+                    byte_length: 32,
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("render an authorized attachment");
+
+        assert!(html.contains(&format!("attachments/{attachment_id}/content")));
+        assert!(html.contains("alt=\"実験結果\""));
+        assert!(!html.contains("attachment:"));
+        assert!(!html.contains("http://"));
+        assert!(!html.contains("https://"));
     }
 
     #[test]

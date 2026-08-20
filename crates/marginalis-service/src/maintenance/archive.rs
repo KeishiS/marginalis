@@ -347,7 +347,7 @@ pub(crate) async fn export_documents(
     for file in export
         .files
         .iter()
-        .map(|file| (file.path.as_str(), file.contents.as_bytes()))
+        .map(|file| (file.path.as_str(), file.contents.as_slice()))
         .chain(std::iter::once(("manifest.json", manifest.as_slice())))
     {
         let (path, contents) = file;

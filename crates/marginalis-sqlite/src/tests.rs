@@ -8,10 +8,10 @@ use marginalis_application::{
     StorageError,
 };
 use marginalis_domain::{
-    Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteAccess,
-    NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
-    NoteReviewTracking, PrincipalId, PrincipalRef, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis,
-    ValidatedCslJson,
+    Actor, AttachmentDraft, AttachmentId, BibliographyItem, BibliographyItemId, EntityId, Identity,
+    Note, NoteAccess, NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NotePermission,
+    NoteRestore, NoteReviewTracking, PrincipalId, PrincipalRef, Revision, SOFT_DELETE_RETENTION_MS,
+    UnixMillis, ValidatedCslJson,
 };
 
 use super::*;
@@ -267,6 +267,8 @@ mod schema;
 mod notes;
 
 mod note_history;
+
+mod attachments;
 
 mod note_sync;
 

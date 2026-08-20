@@ -83,9 +83,10 @@ pub(super) fn note_problem(error: NoteUseCaseError) -> ProblemResponse {
         NoteUseCaseError::NotFound => {
             ProblemResponse::new(ProblemCode::NotFound, "note is not available")
         }
-        NoteUseCaseError::Conflict => {
-            ProblemResponse::new(ProblemCode::Conflict, "note revision conflicts")
-        }
+        NoteUseCaseError::Conflict => ProblemResponse::new(
+            ProblemCode::Conflict,
+            "note state conflicts with this operation",
+        ),
         NoteUseCaseError::RetentionExpired => ProblemResponse::new(
             ProblemCode::RetentionExpired,
             "note restoration period has expired",

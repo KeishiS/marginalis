@@ -3,8 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use marginalis_domain::{
-    BibliographyImportLink, BibliographyImportSource, BibliographyItem, Note, NoteId,
-    NotePermission, NoteRevisionKind, NoteRevisionSnapshot, Principal, PrincipalRef,
+    ATTACHMENT_POLICY, AttachmentId, BibliographyImportLink, BibliographyImportSource,
+    BibliographyItem, Note, NoteId, NotePermission, NoteRevisionAttachment, NoteRevisionKind,
+    NoteRevisionSnapshot, Principal, PrincipalRef, StoredAttachment,
 };
 
 use crate::{MathMacroSettings, validate_stored_math_macros};
@@ -64,6 +65,8 @@ pub struct LogicalSnapshot {
     principals: Vec<Principal>,
     notes: Vec<Note>,
     note_revisions: Vec<NoteRevisionSnapshot>,
+    attachments: Vec<StoredAttachment>,
+    note_revision_attachments: Vec<NoteRevisionAttachment>,
     note_acl: Vec<NoteAclSnapshotEntry>,
     bibliography_items: Vec<BibliographyItem>,
     bibliography_import_sources: Vec<BibliographyImportSource>,
@@ -79,6 +82,10 @@ pub enum InvalidSnapshot {
     InvalidAclEntry { position: usize },
     #[error("note revision at position {position} is inconsistent")]
     InvalidNoteRevision { position: usize },
+    #[error("attachment at position {position} is inconsistent")]
+    InvalidAttachment { position: usize },
+    #[error("attachment reference at position {position} is inconsistent")]
+    InvalidAttachmentReference { position: usize },
     #[error("reference at position {position} has no source note")]
     InvalidReference { position: usize },
     #[error("bibliography item at position {position} is duplicated")]
@@ -138,6 +145,8 @@ impl LogicalSnapshot {
             principals: Vec::new(),
             notes,
             note_revisions,
+            attachments: Vec::new(),
+            note_revision_attachments: Vec::new(),
             note_acl,
             bibliography_items: Vec::new(),
             bibliography_import_sources: Vec::new(),
@@ -274,6 +283,91 @@ impl LogicalSnapshot {
         Ok(self)
     }
 
+    pub fn attachments(&self) -> &[StoredAttachment] {
+        &self.attachments
+    }
+
+    pub fn note_revision_attachments(&self) -> &[NoteRevisionAttachment] {
+        &self.note_revision_attachments
+    }
+
+    /// 不変な画像本体と、それを表示する版の対応を一つの整合性境界として追加する。
+    pub fn with_attachments(
+        mut self,
+        mut attachments: Vec<StoredAttachment>,
+        mut references: Vec<NoteRevisionAttachment>,
+    ) -> Result<Self, InvalidSnapshot> {
+        attachments.sort_by_key(|attachment| attachment.metadata().attachment_id().to_string());
+        references.sort_by_key(|reference| {
+            (
+                reference.note_id.to_string(),
+                reference.revision.get(),
+                reference.attachment_id.to_string(),
+            )
+        });
+        let note_ids = self.notes.iter().map(Note::note_id).collect::<HashSet<_>>();
+        let principal_ids = self
+            .principals
+            .iter()
+            .map(Principal::id)
+            .collect::<HashSet<_>>();
+        let revision_keys = self
+            .note_revisions
+            .iter()
+            .map(|entry| (entry.note().note_id(), entry.note().revision().get()))
+            .collect::<HashSet<_>>();
+        let mut attachment_ids = HashSet::<AttachmentId>::new();
+        let mut note_totals = HashMap::<NoteId, (usize, usize)>::new();
+        for (index, attachment) in attachments.iter().enumerate() {
+            let metadata = attachment.metadata();
+            let total = note_totals.entry(metadata.note_id()).or_default();
+            total.0 += 1;
+            total.1 = total.1.checked_add(metadata.byte_length()).ok_or(
+                InvalidSnapshot::InvalidAttachment {
+                    position: index + 1,
+                },
+            )?;
+            if !attachment_ids.insert(metadata.attachment_id())
+                || !note_ids.contains(&metadata.note_id())
+                || !principal_ids.contains(&metadata.created_by().id())
+                || total.0 > ATTACHMENT_POLICY.max_attachments_per_note
+                || total.1 > ATTACHMENT_POLICY.max_bytes_per_note
+            {
+                return Err(InvalidSnapshot::InvalidAttachment {
+                    position: index + 1,
+                });
+            }
+        }
+        let attachment_notes = attachments
+            .iter()
+            .map(|attachment| {
+                (
+                    attachment.metadata().attachment_id(),
+                    attachment.metadata().note_id(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let mut reference_keys = HashSet::new();
+        for (index, reference) in references.iter().enumerate() {
+            if !revision_keys.contains(&(reference.note_id, reference.revision.get()))
+                || attachment_notes.get(&reference.attachment_id) != Some(&reference.note_id)
+                || !reference_keys.insert((
+                    reference.note_id,
+                    reference.revision.get(),
+                    reference.attachment_id,
+                ))
+            {
+                return Err(InvalidSnapshot::InvalidAttachmentReference {
+                    position: index + 1,
+                });
+            }
+        }
+        self.attachments = attachments;
+        self.note_revision_attachments = references;
+        self.include_referenced_principals()?;
+        Ok(self)
+    }
+
     pub fn bibliography_items(&self) -> &[BibliographyItem] {
         &self.bibliography_items
     }
@@ -397,6 +491,11 @@ impl LogicalSnapshot {
                 references.push(review.reviewer().clone());
             }
         }
+        references.extend(
+            self.attachments
+                .iter()
+                .map(|attachment| attachment.metadata().created_by().clone()),
+        );
         references.extend(self.note_acl.iter().map(|entry| entry.principal().clone()));
         references.extend(
             self.bibliography_items

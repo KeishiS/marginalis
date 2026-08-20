@@ -66,6 +66,45 @@ async fn rest_list_forwards_creation_source_and_review_status_filters() {
 }
 
 #[tokio::test]
+async fn attachment_routes_list_metadata_and_reject_active_content_before_storage() {
+    let note_id = "0197c9bc-0000-7000-8000-000000000002";
+    let app = authenticated_app();
+    let listed = app
+        .clone()
+        .oneshot(authenticated_request(&format!(
+            "/api/v3/notes/{note_id}/attachments"
+        )))
+        .await
+        .expect("list attachments");
+    assert_eq!(listed.status(), StatusCode::OK);
+    assert_eq!(
+        to_bytes(listed.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+        "[]"
+    );
+
+    let rejected = app
+        .oneshot(
+            Request::post(format!(
+                "/api/v3/notes/{note_id}/attachments?file_name=figure.svg"
+            ))
+            .header(header::ORIGIN, "https://example.test")
+            .header("sec-fetch-site", "same-origin")
+            .header(
+                header::COOKIE,
+                "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
+            )
+            .header("x-csrf-token", "session-csrf")
+            .body(Body::from("<svg><script>alert(1)</script></svg>"))
+            .expect("request"),
+        )
+        .await
+        .expect("upload response");
+    assert_eq!(rejected.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
 async fn owner_reads_and_marks_the_current_note_revision_as_reviewed() {
     let note_id = "0197c9bc-0000-7000-8000-000000000002";
     let app = authenticated_app();

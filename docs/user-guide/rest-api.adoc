@@ -61,6 +61,15 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |過去版の復元
 |``POST /api/v3/notes/{note_id}/history/{revision}/restore``
 |CSRFトークンと現在版の``If-Match``が必要
+|添付画像の一覧・追加
+|``GET /api/v3/notes/{note_id}/attachments`` / ``POST /api/v3/notes/{note_id}/attachments?file_name=<名前>``
+|追加は``application/octet-stream``の画像本体とCSRFトークンが必要
+|添付画像の取得
+|``GET /api/v3/notes/{note_id}/attachments/{attachment_id}/content``
+|現在のノートACLで認可
+|未参照の添付画像を削除
+|``DELETE /api/v3/notes/{note_id}/attachments/{attachment_id}``
+|編集権限とCSRFトークンが必要。保持中の版が参照する画像は拒否
 |ノート更新
 |``PUT /api/v3/notes/{note_id}``
 |``If-Match``が必要
@@ -100,6 +109,10 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 削除済みノートでは所有者だけが履歴を取得でき、ノート自体を復元するまで過去版の本文を現在版へ
 復元できません。過去版の復元は履歴を上書きせず、選んだ原文を現行の入力規則で再検証して新しい
 revisionを作ります。所有者、ACL、作成日時、作成経路は過去の値へ戻しません。
+
+添付画像はPNG、JPEG、WebPだけを内容から判定して受理し、申告されたMIME typeや拡張子は信用しません。
+本文では同じノートに属する``image::attachment:<attachment_id>[]``だけを参照できます。画像1件は
+8 MiB、一つのノートは32件かつ合計64 MiBまでです。外部URLの取得とSVGは提供しません。
 
 Webhook購読の管理（``/api/v3/webhooks``系）は、署名の検証方法や配送の約束事とあわせて
 xref:webhooks.adoc#top[Webhook通知]で説明します。

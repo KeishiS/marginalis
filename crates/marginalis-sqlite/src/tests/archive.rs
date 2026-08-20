@@ -1,4 +1,5 @@
 use marginalis_application::RestorePlan;
+use marginalis_domain::{AttachmentDraft, AttachmentId};
 
 use super::*;
 
@@ -16,13 +17,38 @@ async fn archive_snapshot_restores_primary_identities_aliases_and_empty_principa
         .create_note(&note, marginalis_application::NoteLinks::default())
         .await
         .expect("create note");
+    let attachment_id = "0197c9bc-0000-7000-8000-0000000000a1"
+        .parse::<AttachmentId>()
+        .expect("attachment ID");
+    let attachment = AttachmentDraft::new(
+        "figure.png".into(),
+        b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01payload".to_vec(),
+    )
+    .expect("image")
+    .into_stored(
+        attachment_id,
+        note.note_id(),
+        UnixMillis::new(150),
+        alice.principal().clone(),
+    );
+    source
+        .create_note_attachment(&alice, &attachment)
+        .await
+        .expect("store attachment");
     source
         .update_visible_note(
             &alice,
             note.note_id(),
             Revision::INITIAL,
-            &draft("archive history", "= archive history\n\nsecond", &[]),
-            marginalis_application::NoteLinks::default(),
+            &draft(
+                "archive history",
+                &format!("= archive history\n\nsecond\n\nimage::attachment:{attachment_id}[]"),
+                &[],
+            ),
+            marginalis_application::NoteLinks {
+                attachment_ids: &[attachment_id],
+                ..marginalis_application::NoteLinks::default()
+            },
             UnixMillis::new(200),
         )
         .await
@@ -62,6 +88,8 @@ async fn archive_snapshot_restores_primary_identities_aliases_and_empty_principa
 
     let snapshot = source.export_archive_snapshot().await.expect("snapshot");
     assert_eq!(snapshot.note_revisions().len(), 2);
+    assert_eq!(snapshot.attachments().len(), 1);
+    assert_eq!(snapshot.note_revision_attachments().len(), 1);
     let alice_group = snapshot
         .principals()
         .iter()

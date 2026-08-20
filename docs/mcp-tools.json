@@ -1296,6 +1296,26 @@
             "applies_after_normalization": {
               "type": "boolean"
             },
+            "max_attachment_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_attachment_bytes_per_note": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_attachment_file_name_characters": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_attachments_per_note": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
             "max_patch_bytes": {
               "description": "`apply_note_patch`が受け取るUnified DiffのUTF-8バイト数の上限。",
               "format": "uint",
@@ -1336,7 +1356,11 @@
             "max_patch_bytes",
             "max_patch_hunks",
             "max_tags",
-            "max_tag_characters"
+            "max_tag_characters",
+            "max_attachment_bytes",
+            "max_attachments_per_note",
+            "max_attachment_bytes_per_note",
+            "max_attachment_file_name_characters"
           ],
           "type": "object"
         },

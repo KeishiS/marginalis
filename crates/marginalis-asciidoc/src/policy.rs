@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use adocweave::preprocess::discover_includes;
 use adocweave::resolution::ReferenceKey;
+use adocweave::resolution::ResourcePurpose;
 use adocweave::semantic::{
     Block, DelimitedContent, Inline, MathLanguage, SemanticNode, VerbatimKind, walk,
 };
@@ -12,10 +13,13 @@ use marginalis_application::{
     NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileRule,
     NoteProfileSyntax, NoteSourcePosition, NoteValidationCode, NoteValidationDiagnostic,
 };
-use marginalis_domain::{NOTE_POLICY, NoteValidationTarget, Utf8ByteSpan};
+use marginalis_domain::{
+    ATTACHMENT_POLICY, AttachmentId, NOTE_POLICY, NoteValidationTarget, Utf8ByteSpan,
+};
 
 use crate::{
-    AUTHORING_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION, configuration::authored_url_policy,
+    AUTHORING_PROFILE_VERSION, PINNED_ADOCWEAVE_PACKAGE_VERSION,
+    configuration::authored_link_url_policy,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -200,6 +204,10 @@ pub fn note_profile() -> NoteProfile {
             max_patch_hunks: NOTE_POLICY.max_patch_hunks,
             max_tags: NOTE_POLICY.max_tags,
             max_tag_characters: NOTE_POLICY.max_tag_characters,
+            max_attachment_bytes: ATTACHMENT_POLICY.max_bytes,
+            max_attachments_per_note: ATTACHMENT_POLICY.max_attachments_per_note,
+            max_attachment_bytes_per_note: ATTACHMENT_POLICY.max_bytes_per_note,
+            max_attachment_file_name_characters: ATTACHMENT_POLICY.max_file_name_characters,
         },
         normalization: NoteProfileNormalization {
             title: vec!["trim", "unicode_nfc"],
@@ -223,6 +231,7 @@ pub fn note_profile() -> NoteProfile {
                 "literal",
                 "source",
                 "math",
+                "internal_attachment_image",
             ],
             common_inlines: vec![
                 "emphasis",
@@ -384,14 +393,20 @@ fn validate_note_content_profile_with(
     analysis: &adocweave::Analysis,
     profile: &NoteContentProfile,
 ) -> Vec<NoteContentError> {
-    let authored_url_policy = authored_url_policy();
+    let authored_url_policy = authored_link_url_policy();
     let mut errors = discover_includes(analysis.source())
         .expect("analysis source must have a representable byte length")
         .into_iter()
         .map(|request| NoteContentError::forbidden(ForbiddenRule::IncludeDirective, request.range))
         .collect::<Vec<_>>();
-    errors.extend(analysis.resource_queries().into_iter().map(|query| {
-        NoteContentError::forbidden(ForbiddenRule::Resource, query.reference.range())
+    errors.extend(analysis.resource_queries().into_iter().filter_map(|query| {
+        let target = query.reference.target();
+        let valid = query.reference.purpose() == ResourcePurpose::Image
+            && target
+                .strip_prefix("attachment:")
+                .is_some_and(|id| id.parse::<AttachmentId>().is_ok());
+        (!valid)
+            .then(|| NoteContentError::forbidden(ForbiddenRule::Resource, query.reference.range()))
     }));
     errors.extend(
         analysis
@@ -630,6 +645,22 @@ mod tests {
             assert!(
                 violations(&source).contains(&expected),
                 "{expected:?}を検出します: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_only_note_scoped_attachment_image_targets() {
+        let valid = format!("{HEADER}image::attachment:0197c9bc-0000-7000-8000-000000000001[]\n");
+        assert!(violations(&valid).is_empty());
+        for invalid in [
+            format!("{HEADER}image::attachment:not-an-id[]\n"),
+            format!("{HEADER}video::attachment:0197c9bc-0000-7000-8000-000000000001[]\n"),
+            format!("{HEADER}image::https://example.test/figure.png[]\n"),
+        ] {
+            assert!(
+                violations(&invalid).contains(&NoteValidationCode::ResourceDisabled),
+                "内部画像以外のresourceを拒否します: {invalid}"
             );
         }
     }

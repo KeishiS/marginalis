@@ -35,7 +35,8 @@ fn current_archive_with_imported_history(mut archive: serde_json::Value) -> serd
                 "reviewed_revision": note["provenance"]["reviewed_revision"],
                 "reviewed_at_ms": note["provenance"]["reviewed_at_ms"],
                 "reviewer_issuer": note["provenance"]["reviewer_issuer"],
-                "reviewer_subject": note["provenance"]["reviewer_subject"]
+                "reviewer_subject": note["provenance"]["reviewer_subject"],
+                "attachment_ids": []
             })
         })
         .collect();
@@ -43,6 +44,10 @@ fn current_archive_with_imported_history(mut archive: serde_json::Value) -> serd
         .as_object_mut()
         .expect("archive object")
         .insert("note_revisions".into(), serde_json::Value::Array(histories));
+    archive
+        .as_object_mut()
+        .expect("archive object")
+        .insert("attachments".into(), serde_json::Value::Array(Vec::new()));
     archive
 }
 
@@ -132,7 +137,7 @@ fn identity_maintenance_links_and_switches_aliases_without_logging_them() {
     let archive = current_archive_with_imported_history(serde_json::json!({
         "format": "marginalis-archive-18",
         "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
-        "note_profile_version": 5,
+        "note_profile_version": 6,
         "principals": [{
             "primary_issuer": old_issuer,
             "primary_subject": old_subject,
@@ -316,7 +321,7 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
         archive_json["adocweave_package_version"],
         marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
     );
-    assert_eq!(archive_json["note_profile_version"], 5);
+    assert_eq!(archive_json["note_profile_version"], 6);
 
     let backup = directory.join("backup");
     let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
@@ -580,7 +585,7 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
         migrated["adocweave_package_version"],
         marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
     );
-    assert_eq!(migrated["note_profile_version"], 5);
+    assert_eq!(migrated["note_profile_version"], 6);
     assert_eq!(migrated["note_revisions"].as_array().map(Vec::len), Some(2));
     assert!(
         migrated["note_revisions"]
@@ -969,7 +974,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let source = current_archive_with_imported_history(serde_json::json!({
         "format": "marginalis-archive-18",
         "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
-        "note_profile_version": 5,
+        "note_profile_version": 6,
         "principals": [{
             "primary_issuer": "https://id.example.test",
             "primary_subject": "alice",
@@ -1113,13 +1118,13 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("manifest.json")).expect("manifest"))
             .expect("manifest JSON");
-    assert_eq!(manifest["format"], "marginalis-documents-2");
+    assert_eq!(manifest["format"], "marginalis-documents-3");
     assert_eq!(manifest["marginalis_version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(
         manifest["adocweave_package_version"],
         marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
     );
-    assert_eq!(manifest["note_profile_version"], 5);
+    assert_eq!(manifest["note_profile_version"], 6);
     assert_eq!(manifest["owners"][0]["subject"], "alice");
     assert_eq!(
         manifest["owners"][0]["notes"][0]["note_id"],
@@ -1188,7 +1193,7 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
     let source = current_archive_with_imported_history(serde_json::json!({
         "format": "marginalis-archive-18",
         "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
-        "note_profile_version": 5,
+        "note_profile_version": 6,
         "principals": [{
             "primary_issuer": "https://id.example.test",
             "primary_subject": "alice",

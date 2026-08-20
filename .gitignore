@@ -3,6 +3,7 @@
 /frontend/dist/
 /frontend/node_modules/
 /test-results/
+/archive-v*.json
 
 .codex/config.toml
 /.pnpm-store/

@@ -95,6 +95,43 @@ CREATE TABLE note_revisions (
 CREATE INDEX note_revisions_changed_by_idx
 ON note_revisions (changed_by_principal_id, changed_at_ms DESC, note_id, revision);
 
+-- 本文へ組み込む前のuploadも保持する、ノートに所属した変更不可の画像。
+CREATE TABLE note_attachments (
+    attachment_id TEXT PRIMARY KEY NOT NULL,
+    note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+    file_name TEXT NOT NULL CHECK (
+        length(file_name) BETWEEN 1 AND 200
+        AND instr(file_name, '/') = 0 AND instr(file_name, char(92)) = 0
+    ),
+    media_type TEXT NOT NULL CHECK (media_type IN (
+        'image/png', 'image/jpeg', 'image/webp'
+    )),
+    byte_length INTEGER NOT NULL CHECK (byte_length BETWEEN 1 AND 8388608),
+    sha256 BLOB NOT NULL CHECK (length(sha256) = 32),
+    content BLOB NOT NULL CHECK (length(content) = byte_length),
+    created_at_ms INTEGER NOT NULL,
+    created_by_principal_id INTEGER NOT NULL REFERENCES principals(principal_id),
+    UNIQUE (note_id, attachment_id)
+) STRICT;
+CREATE INDEX note_attachments_note_idx
+ON note_attachments (note_id, created_at_ms, attachment_id);
+CREATE INDEX note_attachments_creator_idx
+ON note_attachments (created_by_principal_id, created_at_ms, attachment_id);
+
+-- revisionが表示する添付集合。現在版から外れても、履歴が残る間はobjectを保持する。
+CREATE TABLE note_revision_attachments (
+    note_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    attachment_id TEXT NOT NULL,
+    PRIMARY KEY (note_id, revision, attachment_id),
+    FOREIGN KEY (note_id, revision)
+        REFERENCES note_revisions(note_id, revision) ON DELETE CASCADE,
+    FOREIGN KEY (note_id, attachment_id)
+        REFERENCES note_attachments(note_id, attachment_id) ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+CREATE INDEX note_revision_attachments_attachment_idx
+ON note_revision_attachments (note_id, attachment_id, revision);
+
 CREATE TABLE note_references (
     source_note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
     target_note_id TEXT NOT NULL,

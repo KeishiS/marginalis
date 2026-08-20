@@ -148,6 +148,9 @@ patchの厳密適用・dry_run・階層outline・断片取得の単体とHTTP契
 |REQ-UI-010
 |版履歴画面のReact単体試験、REST契約試験、TypeScript実行時検査試験
 |過去版の閲覧、二版の比較、新しい版としての復元
+|REQ-UI-011
+|画像形式・容量検査、SQLite認可・版参照・archive往復試験、REST契約試験、React upload試験
+|画像の選択・ドロップ、プレビュー、未参照画像の削除
 |REQ-HOOK-001
 |``marginalis-application``の購読ユースケース試験、``marginalis-sqlite``の所有境界試験、
 React設定画面の単体試験

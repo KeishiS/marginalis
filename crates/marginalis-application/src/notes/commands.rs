@@ -4,7 +4,10 @@ use marginalis_domain::{Actor, Note, NoteAccess, NoteCreationSource, NoteDraft, 
 
 use crate::{NoteAdvisoryDiagnostic, NoteUseCaseError, NoteWritePolicy, ValidatedNoteDraft};
 
-use super::{NoteApplication, NoteLinks, cited_keys, patch, reference_targets};
+use super::{
+    NoteApplication, NoteLinks, attachment_ids, attachments::rejected_attachment_references,
+    cited_keys, patch, reference_targets,
+};
 
 /// patch適用の結果。応答へ載せる変更量と、warning未満の診断を含む。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,9 +38,13 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans: _,
         } = validated;
+        if !attachment_queries.is_empty() {
+            return Err(rejected_attachment_references(&attachment_queries));
+        }
         // 新規作成では操作している利用者がそのまま作成者になるため、閲覧時の解決先と一致する。
         diagnostics.extend(
             self.citation_resolutions(actor.principal(), &citation_queries, citation_style)
@@ -55,12 +62,14 @@ impl NoteApplication {
         );
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
+        let attachment_ids = attachment_ids(&attachment_queries);
         self.commands
             .create_note(
                 &note,
                 NoteLinks {
                     reference_targets: &reference_targets,
                     cited_keys: &cited_keys,
+                    attachment_ids: &attachment_ids,
                 },
             )
             .await
@@ -85,9 +94,12 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans: _,
         } = validated;
+        self.validate_note_attachment_references(&actor, note_id, &attachment_queries)
+            .await?;
         if !citation_queries.is_empty() {
             // 引用は閲覧時に作成者のライブラリで解決する。共有されたノートを別の利用者が
             // 更新する場合も同じ基準で判定しないと、保存できた引用が表示では解決されない。
@@ -105,6 +117,7 @@ impl NoteApplication {
         reject_warnings(policy, &diagnostics)?;
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
+        let attachment_ids = attachment_ids(&attachment_queries);
         self.commands
             .update_visible_note(
                 &actor,
@@ -114,6 +127,7 @@ impl NoteApplication {
                 NoteLinks {
                     reference_targets: &reference_targets,
                     cited_keys: &cited_keys,
+                    attachment_ids: &attachment_ids,
                 },
                 self.clock.now(),
             )
@@ -165,9 +179,12 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans: _,
         } = validated;
+        self.validate_note_attachment_references(&actor, note_id, &attachment_queries)
+            .await?;
         if !citation_queries.is_empty() {
             // update_noteと同じく、引用は閲覧時の解決先である所有者のライブラリで判定する。
             diagnostics.extend(
@@ -188,6 +205,7 @@ impl NoteApplication {
         }
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
+        let attachment_ids = attachment_ids(&attachment_queries);
         let saved = self
             .commands
             .update_visible_note(
@@ -198,6 +216,7 @@ impl NoteApplication {
                 NoteLinks {
                     reference_targets: &reference_targets,
                     cited_keys: &cited_keys,
+                    attachment_ids: &attachment_ids,
                 },
                 self.clock.now(),
             )

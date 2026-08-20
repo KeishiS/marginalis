@@ -58,11 +58,12 @@ use self::{
     },
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
-        compare_note_revisions, create_note, create_web_note, delete_note, export_note,
-        list_deleted_notes, list_note_revisions, list_notes, mark_note_reviewed, preview_new_note,
-        preview_note_update, read_note, read_note_acl, read_note_graph, read_note_review,
-        read_note_revision, read_note_view, replace_note_acl, restore_note, restore_note_revision,
-        session, update_note,
+        compare_note_revisions, create_note, create_web_note, delete_note, delete_note_attachment,
+        export_note, list_deleted_notes, list_note_attachments, list_note_revisions, list_notes,
+        mark_note_reviewed, preview_new_note, preview_note_update, read_note, read_note_acl,
+        read_note_attachment_content, read_note_graph, read_note_review, read_note_revision,
+        read_note_view, replace_note_acl, restore_note, restore_note_revision, session,
+        update_note, upload_note_attachment,
     },
     oauth::{
         mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
@@ -222,6 +223,22 @@ pub fn router(state: ApiState) -> Router {
             get(read_note).put(update_note).delete(delete_note),
         )
         .route("/api/v3/notes/{note_id}/view", get(read_note_view))
+        .route(
+            "/api/v3/notes/{note_id}/attachments",
+            get(list_note_attachments)
+                .post(upload_note_attachment)
+                .layer(DefaultBodyLimit::max(
+                    marginalis_domain::ATTACHMENT_POLICY.max_bytes,
+                )),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/attachments/{attachment_id}",
+            axum::routing::delete(delete_note_attachment),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/attachments/{attachment_id}/content",
+            get(read_note_attachment_content),
+        )
         .route("/api/v3/notes/{note_id}/history", get(list_note_revisions))
         .route(
             "/api/v3/notes/{note_id}/history/{revision}",

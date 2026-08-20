@@ -271,6 +271,20 @@ const PARSERS: &[(&str, &str, &str, &str, bool)] = &[
         false,
     ),
     (
+        "parseNoteAttachment",
+        "NoteAttachment",
+        "NoteAttachment",
+        "note attachment",
+        false,
+    ),
+    (
+        "parseNoteAttachments",
+        "NoteAttachment",
+        "NoteAttachment",
+        "note attachments",
+        true,
+    ),
+    (
         "parseNoteGraph",
         "NoteGraph",
         "NoteGraph",

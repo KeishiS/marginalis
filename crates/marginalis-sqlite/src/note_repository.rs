@@ -8,8 +8,8 @@ use marginalis_application::{
     StorageError,
 };
 use marginalis_domain::{
-    Actor, DeletedNoteListEntry, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
-    NoteRevisionSummary, Revision, UnixMillis,
+    Actor, AttachmentId, AttachmentMetadata, DeletedNoteListEntry, Note, NoteAclEntry, NoteDraft,
+    NoteId, NoteListEntry, NoteRevisionSummary, Revision, StoredAttachment, UnixMillis,
 };
 
 use crate::SqliteDatabase;
@@ -83,6 +83,27 @@ impl NoteQueryRepository for SqliteDatabase {
         revision: Revision,
     ) -> Result<Option<NoteRevisionView>, StorageError> {
         SqliteDatabase::note_revision(self, actor, note_id, revision)
+            .await
+            .map_err(StorageError::from)
+    }
+
+    async fn list_note_attachments(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<AttachmentMetadata>>, StorageError> {
+        SqliteDatabase::list_note_attachments(self, actor, note_id)
+            .await
+            .map_err(StorageError::from)
+    }
+
+    async fn note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<Option<StoredAttachment>, StorageError> {
+        SqliteDatabase::note_attachment(self, actor, note_id, attachment_id)
             .await
             .map_err(StorageError::from)
     }
@@ -187,6 +208,27 @@ impl NoteCommandRepository for SqliteDatabase {
         SqliteDatabase::restore_owned_deleted_note(self, actor, note_id, expected_revision, now)
             .await
             .map_err(map_restore_error)
+    }
+
+    async fn create_note_attachment(
+        &self,
+        actor: &Actor,
+        attachment: &StoredAttachment,
+    ) -> Result<(), StorageError> {
+        SqliteDatabase::create_note_attachment(self, actor, attachment)
+            .await
+            .map_err(StorageError::from)
+    }
+
+    async fn delete_unused_note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<(), StorageError> {
+        SqliteDatabase::delete_unused_note_attachment(self, actor, note_id, attachment_id)
+            .await
+            .map_err(StorageError::from)
     }
 }
 

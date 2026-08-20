@@ -7,16 +7,18 @@
 
 pub mod documents;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use marginalis_application::{
     InvalidSnapshot, LogicalSnapshot, MathMacro, MathMacroSettings, MathMacroSettingsSnapshot,
     NoteAclSnapshotEntry, NoteContent,
 };
 use marginalis_domain::{
-    BibliographyContentDigest, BibliographyImportLink, BibliographyImportMethod,
-    BibliographyImportSource, BibliographyImportSourceId, BibliographyItem, BibliographyItemId,
-    EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
-    NoteReviewRecord, NoteReviewTracking, NoteRevisionKind, NoteRevisionSnapshot, Principal,
-    PrincipalId, PrincipalRef, Revision, UnixMillis,
+    AttachmentId, AttachmentMediaType, AttachmentMetadata, BibliographyContentDigest,
+    BibliographyImportLink, BibliographyImportMethod, BibliographyImportSource,
+    BibliographyImportSourceId, BibliographyItem, BibliographyItemId, EntityId, Identity, Note,
+    NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore, NoteReviewRecord,
+    NoteReviewTracking, NoteRevisionAttachment, NoteRevisionKind, NoteRevisionSnapshot, Principal,
+    PrincipalId, PrincipalRef, Revision, StoredAttachment, UnixMillis,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,7 +32,7 @@ pub const ARCHIVE_FORMAT: &str = "marginalis-archive-18";
 ///
 /// 受理する本文が変わったときに上げます。版4までのノートはタグを`:tags:`で並べていました。
 /// 版5では独自属性へ接頭辞を付け、`:marginalis-tags:`へ変わっています。
-pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 5;
+pub const ARCHIVE_NOTE_PROFILE_VERSION: u32 = 6;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct MigrationContract {
     format: &'static str,
@@ -90,6 +92,13 @@ pub struct Archive {
         skip_serializing_if = "Option::is_none"
     )]
     pub note_revisions: Option<Vec<ArchiveNoteRevision>>,
+    /// 画像本体。旧契約では項目がなく、現行契約では空配列を含め必須。
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_attachments",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub attachments: Option<Vec<ArchiveAttachment>>,
     pub note_acl: Vec<ArchiveAclEntry>,
     #[serde(default)]
     pub bibliography_items: Vec<ArchiveBibliographyItem>,
@@ -125,6 +134,15 @@ where
     D: Deserializer<'de>,
 {
     Vec::<ArchiveNoteRevision>::deserialize(deserializer).map(Some)
+}
+
+fn deserialize_optional_attachments<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<ArchiveAttachment>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<ArchiveAttachment>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
@@ -176,6 +194,22 @@ pub struct ArchiveNoteRevision {
     pub reviewed_at_ms: Option<i64>,
     pub reviewer_issuer: Option<String>,
     pub reviewer_subject: Option<String>,
+    pub attachment_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveAttachment {
+    pub attachment_id: String,
+    pub note_id: String,
+    pub file_name: String,
+    pub media_type: AttachmentMediaType,
+    pub byte_length: usize,
+    pub sha256: String,
+    pub content_base64: String,
+    pub created_at_ms: i64,
+    pub created_by_issuer: String,
+    pub created_by_subject: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -264,9 +298,15 @@ impl Archive {
             left.note_id.cmp(&right.note_id)
         });
         if let Some(revisions) = &mut self.note_revisions {
+            for revision in &mut *revisions {
+                revision.attachment_ids.sort();
+            }
             revisions.sort_by(|left, right| {
                 (&left.note_id, left.revision).cmp(&(&right.note_id, right.revision))
             });
+        }
+        if let Some(attachments) = &mut self.attachments {
+            attachments.sort_by(|left, right| left.attachment_id.cmp(&right.attachment_id));
         }
         self.note_acl.sort_by(|left, right| {
             (&left.note_id, &left.issuer, &left.subject).cmp(&(
@@ -375,6 +415,44 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
                         .note()
                         .last_review()
                         .map(|review| review.reviewer().primary_identity().subject().to_owned()),
+                    attachment_ids: snapshot
+                        .note_revision_attachments()
+                        .iter()
+                        .filter(|reference| {
+                            reference.note_id == entry.note().note_id()
+                                && reference.revision == entry.note().revision()
+                        })
+                        .map(|reference| reference.attachment_id.to_string())
+                        .collect(),
+                })
+                .collect(),
+        ),
+        attachments: Some(
+            snapshot
+                .attachments()
+                .iter()
+                .map(|attachment| {
+                    let metadata = attachment.metadata();
+                    ArchiveAttachment {
+                        attachment_id: metadata.attachment_id().to_string(),
+                        note_id: metadata.note_id().to_string(),
+                        file_name: metadata.file_name().to_owned(),
+                        media_type: metadata.media_type(),
+                        byte_length: metadata.byte_length(),
+                        sha256: encode_bytes(metadata.sha256()),
+                        content_base64: BASE64.encode(attachment.bytes()),
+                        created_at_ms: metadata.created_at().get(),
+                        created_by_issuer: metadata
+                            .created_by()
+                            .primary_identity()
+                            .issuer()
+                            .to_owned(),
+                        created_by_subject: metadata
+                            .created_by()
+                            .primary_identity()
+                            .subject()
+                            .to_owned(),
+                    }
                 })
                 .collect(),
         ),
@@ -452,9 +530,13 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
 }
 
 fn encode_digest(digest: BibliographyContentDigest) -> String {
+    encode_bytes(digest.as_bytes())
+}
+
+fn encode_bytes(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut encoded = String::with_capacity(64);
-    for byte in digest.as_bytes() {
+    for byte in bytes {
         encoded.push(char::from(HEX[usize::from(byte >> 4)]));
         encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
     }
@@ -462,6 +544,10 @@ fn encode_digest(digest: BibliographyContentDigest) -> String {
 }
 
 fn decode_digest(encoded: &str) -> Option<BibliographyContentDigest> {
+    decode_bytes_32(encoded).map(BibliographyContentDigest::new)
+}
+
+fn decode_bytes_32(encoded: &str) -> Option<[u8; 32]> {
     if encoded.len() != 64 || !encoded.is_ascii() {
         return None;
     }
@@ -469,8 +555,7 @@ fn decode_digest(encoded: &str) -> Option<BibliographyContentDigest> {
     for (index, byte) in digest.iter_mut().enumerate() {
         *byte = u8::from_str_radix(&encoded[index * 2..index * 2 + 2], 16).ok()?;
     }
-    let digest = BibliographyContentDigest::new(digest);
-    (encode_digest(digest) == encoded).then_some(digest)
+    (encode_bytes(&digest) == encoded).then_some(digest)
 }
 
 pub fn validate_archive(
@@ -482,6 +567,7 @@ pub fn validate_archive(
         || archive.note_profile_version != ARCHIVE_NOTE_PROFILE_VERSION
         || archive.notes.iter().any(|note| note.provenance.is_none())
         || archive.note_revisions.is_none()
+        || archive.attachments.is_none()
     {
         return Err(ArchiveValidationError);
     }
@@ -497,7 +583,10 @@ pub fn migrate_previous_archive(
     if !PREVIOUS_MIGRATION_CONTRACT.matches(archive) {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
-    if archive.principals.is_some() || archive.note_revisions.is_some() {
+    if archive.principals.is_some()
+        || archive.note_revisions.is_some()
+        || archive.attachments.is_some()
+    {
         // 直前契約にはprincipal群が存在しない。形式名だけを旧契約へ書き換えた入力や、
         // 新旧の項目を混ぜた入力を受理しない。
         return Err(ArchiveMigrationError::InvalidPrincipal { position: 1 });
@@ -550,6 +639,11 @@ fn validate_archive_contents(
                     tags: Vec::new(),
                 })
                 .map_err(|_| invalid_note())?;
+            if matches!(principal_encoding, PrincipalEncoding::Legacy)
+                && !normalized.attachment_queries.is_empty()
+            {
+                return Err(invalid_note());
+            }
             let note_id = note
                 .note_id
                 .parse::<EntityId>()
@@ -773,6 +867,105 @@ fn validate_archive_contents(
             ))
         })
         .collect::<Result<Vec<_>, ArchiveContentsError>>()?;
+    let attachments = archive
+        .attachments
+        .as_ref()
+        .map(|entries| {
+            entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| {
+                    let invalid = || ArchiveContentsError::Attachment {
+                        position: index + 1,
+                    };
+                    let attachment_id = entry
+                        .attachment_id
+                        .parse::<AttachmentId>()
+                        .map_err(|_| invalid())?;
+                    let note_id = entry
+                        .note_id
+                        .parse::<EntityId>()
+                        .map(NoteId::new)
+                        .map_err(|_| invalid())?;
+                    let created_by = principal_ref(
+                        principal_refs,
+                        &entry.created_by_issuer,
+                        &entry.created_by_subject,
+                    )
+                    .map_err(|_| invalid())?;
+                    let bytes = BASE64
+                        .decode(entry.content_base64.as_bytes())
+                        .map_err(|_| invalid())?;
+                    let metadata = AttachmentMetadata::new(
+                        attachment_id,
+                        note_id,
+                        entry.file_name.clone(),
+                        entry.media_type,
+                        entry.byte_length,
+                        decode_bytes_32(&entry.sha256).ok_or_else(invalid)?,
+                        UnixMillis::new(entry.created_at_ms),
+                        created_by,
+                    )
+                    .map_err(|_| invalid())?;
+                    StoredAttachment::new(metadata, bytes).map_err(|_| invalid())
+                })
+                .collect::<Result<Vec<_>, ArchiveContentsError>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let attachment_references = archive
+        .note_revisions
+        .as_ref()
+        .map(|entries| {
+            entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| {
+                    let invalid = || ArchiveContentsError::AttachmentReference {
+                        position: index + 1,
+                    };
+                    let note_id = entry
+                        .note_id
+                        .parse::<EntityId>()
+                        .map(NoteId::new)
+                        .map_err(|_| invalid())?;
+                    let revision = Revision::new(entry.revision).map_err(|_| invalid())?;
+                    let parsed = content
+                        .validate_draft(NoteDraft {
+                            source: entry.source.clone(),
+                            title: String::new(),
+                            tags: Vec::new(),
+                        })
+                        .map_err(|_| invalid())?;
+                    let mut expected = parsed
+                        .attachment_queries
+                        .iter()
+                        .map(|query| query.attachment_id.to_string())
+                        .collect::<Vec<_>>();
+                    expected.sort();
+                    expected.dedup();
+                    let mut declared = entry.attachment_ids.clone();
+                    declared.sort();
+                    if !declared.windows(2).all(|pair| pair[0] != pair[1]) || declared != expected {
+                        return Err(invalid());
+                    }
+                    entry
+                        .attachment_ids
+                        .iter()
+                        .map(|attachment_id| {
+                            Ok(NoteRevisionAttachment {
+                                note_id,
+                                revision,
+                                attachment_id: attachment_id.parse().map_err(|_| invalid())?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, ArchiveContentsError>>()
+                })
+                .collect::<Result<Vec<_>, ArchiveContentsError>>()
+                .map(|references| references.into_iter().flatten().collect())
+        })
+        .transpose()?
+        .unwrap_or_default();
     let snapshot = LogicalSnapshot::new(notes, note_acl);
     let snapshot = match note_revisions {
         Some(revisions) => snapshot.and_then(|value| value.with_note_revisions(revisions)),
@@ -788,6 +981,7 @@ fn validate_archive_contents(
         })
         .and_then(|snapshot| snapshot.with_math_macro_settings(math_macro_settings))
         .and_then(|snapshot| snapshot.with_principals(archive_principals.principals))
+        .and_then(|snapshot| snapshot.with_attachments(attachments, attachment_references))
         .map_err(|error| match error {
             InvalidSnapshot::DuplicateNote { position } => ArchiveContentsError::Note { position },
             InvalidSnapshot::InvalidAclEntry { position } => {
@@ -795,6 +989,12 @@ fn validate_archive_contents(
             }
             InvalidSnapshot::InvalidNoteRevision { position } => {
                 ArchiveContentsError::NoteRevision { position }
+            }
+            InvalidSnapshot::InvalidAttachment { position } => {
+                ArchiveContentsError::Attachment { position }
+            }
+            InvalidSnapshot::InvalidAttachmentReference { position } => {
+                ArchiveContentsError::AttachmentReference { position }
             }
             InvalidSnapshot::InvalidReference { .. } => ArchiveContentsError::Relationships,
             InvalidSnapshot::InvalidBibliographyItem { position } => {
@@ -922,6 +1122,14 @@ fn legacy_identity_keys(archive: &Archive) -> BTreeSet<(String, String)> {
             .iter()
             .map(|entry| (entry.owner_issuer.clone(), entry.owner_subject.clone())),
     );
+    if let Some(attachments) = &archive.attachments {
+        identities.extend(attachments.iter().map(|attachment| {
+            (
+                attachment.created_by_issuer.clone(),
+                attachment.created_by_subject.clone(),
+            )
+        }));
+    }
     identities
 }
 
@@ -1012,6 +1220,8 @@ enum ArchiveContentsError {
     Principal { position: usize },
     Note { position: usize },
     NoteRevision { position: usize },
+    Attachment { position: usize },
+    AttachmentReference { position: usize },
     AclEntry { position: usize },
     BibliographyItem { position: usize },
     BibliographyImportSource { position: usize },
@@ -1030,6 +1240,10 @@ pub enum ArchiveMigrationError {
     InvalidNote { position: usize },
     #[error("archive note revision at position {position} is invalid")]
     InvalidNoteRevision { position: usize },
+    #[error("archive attachment at position {position} is invalid")]
+    InvalidAttachment { position: usize },
+    #[error("archive attachment reference at position {position} is invalid")]
+    InvalidAttachmentReference { position: usize },
     #[error("archive ACL entry at position {position} is invalid")]
     InvalidAclEntry { position: usize },
     #[error("archive bibliography item at position {position} is invalid")]
@@ -1051,6 +1265,10 @@ impl From<ArchiveContentsError> for ArchiveMigrationError {
             ArchiveContentsError::Note { position } => Self::InvalidNote { position },
             ArchiveContentsError::NoteRevision { position } => {
                 Self::InvalidNoteRevision { position }
+            }
+            ArchiveContentsError::Attachment { position } => Self::InvalidAttachment { position },
+            ArchiveContentsError::AttachmentReference { position } => {
+                Self::InvalidAttachmentReference { position }
             }
             ArchiveContentsError::AclEntry { position } => Self::InvalidAclEntry { position },
             ArchiveContentsError::BibliographyItem { position } => {
@@ -1285,6 +1503,62 @@ mod tests {
     }
 
     #[test]
+    fn archive_round_trip_preserves_attachment_bytes_and_revision_references() {
+        let attachment_id = "0197c9bc-0000-7000-8000-0000000000a1"
+            .parse::<AttachmentId>()
+            .expect("attachment ID");
+        let owner = principal("alice");
+        let note = Note::create(
+            NoteId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
+            ),
+            &owner,
+            content()
+                .validate_draft(NoteDraft {
+                    source: format!("= A title\n\nimage::attachment:{attachment_id}[]"),
+                    title: String::new(),
+                    tags: Vec::new(),
+                })
+                .expect("draft")
+                .draft,
+            UnixMillis::new(10),
+            NoteCreationSource::Web,
+        );
+        let image = marginalis_domain::AttachmentDraft::new(
+            "figure.png".into(),
+            b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01payload".to_vec(),
+        )
+        .expect("image")
+        .into_stored(attachment_id, note.note_id(), UnixMillis::new(9), owner);
+        let snapshot = LogicalSnapshot::new(vec![note.clone()], Vec::new())
+            .expect("snapshot")
+            .with_attachments(
+                vec![image],
+                vec![NoteRevisionAttachment {
+                    note_id: note.note_id(),
+                    revision: note.revision(),
+                    attachment_id,
+                }],
+            )
+            .expect("attachments");
+
+        let archive = create_archive(&content(), &snapshot);
+        assert_eq!(validate_archive(&content(), &archive), Ok(snapshot));
+        assert_eq!(archive.attachments.as_ref().expect("attachments").len(), 1);
+        assert_eq!(
+            archive.note_revisions.as_ref().expect("history")[0].attachment_ids,
+            vec![attachment_id.to_string()]
+        );
+
+        let mut corrupt = archive;
+        corrupt.attachments.as_mut().expect("attachments")[0].content_base64 = "AAAA".into();
+        assert_eq!(
+            validate_archive(&content(), &corrupt),
+            Err(ArchiveValidationError)
+        );
+    }
+
+    #[test]
     fn archive_round_trip_preserves_bibliography_import_baselines() {
         let owner = principal("alice");
         let item = BibliographyItem::create(
@@ -1442,6 +1716,7 @@ mod tests {
         if contract == PREVIOUS_MIGRATION_CONTRACT {
             archive.principals = None;
             archive.note_revisions = None;
+            archive.attachments = None;
         }
     }
 

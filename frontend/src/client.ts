@@ -12,6 +12,7 @@ import {
   type McpScopeCeiling,
   type McpScopeCeilingInput,
   type Note,
+  type NoteAttachment,
   type NoteAclEntry,
   type NoteAclGrant,
   type NoteDraft,
@@ -35,6 +36,8 @@ import {
   parseMcpClientAuthorizations,
   parseMcpScopeCeiling,
   parseNote,
+  parseNoteAttachment,
+  parseNoteAttachments,
   parseNoteAcl,
   parseNoteGraph,
   parseNoteListEntries,
@@ -262,6 +265,42 @@ export async function restoreNoteRevision(
     `${apiBase}/notes/${encodeURIComponent(noteId)}/history/${encodeURIComponent(String(revision))}/restore`,
     mutationRequest("POST", undefined, expectedRevision),
     parseNote,
+  );
+}
+
+export async function listNoteAttachments(
+  apiBase: string,
+  noteId: string,
+  signal?: AbortSignal,
+): Promise<NoteAttachment[]> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/attachments`,
+    { signal },
+    parseNoteAttachments,
+  );
+}
+
+export async function uploadNoteAttachment(
+  apiBase: string,
+  noteId: string,
+  file: File,
+): Promise<NoteAttachment> {
+  const parameters = new URLSearchParams({ file_name: file.name });
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/attachments?${parameters.toString()}`,
+    binaryMutationRequest("POST", file),
+    parseNoteAttachment,
+  );
+}
+
+export async function deleteNoteAttachment(
+  apiBase: string,
+  noteId: string,
+  attachmentId: string,
+): Promise<void> {
+  return requestNoContent(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    binaryMutationRequest("DELETE"),
   );
 }
 
@@ -620,6 +659,21 @@ function mutationRequest(
         : { "if-match": `"rev-${expectedRevision}"` }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  };
+}
+
+function binaryMutationRequest(
+  method: "POST" | "DELETE",
+  body?: BodyInit,
+): RequestInit {
+  const csrfToken =
+    readCookie("__Host-marginalis_csrf") ||
+    readCookie("__Secure-marginalis_csrf");
+  return {
+    method,
+    credentials: "same-origin",
+    headers: { "x-csrf-token": csrfToken },
+    ...(body === undefined ? {} : { body }),
   };
 }
 

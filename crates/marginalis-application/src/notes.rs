@@ -4,11 +4,12 @@ use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, DeletedNoteListEntry, Note, NoteAccess, NoteAclEntry, NoteCreationSource, NoteDraft,
-    NoteId, NoteListEntry, Revision,
+    Actor, AttachmentId, AttachmentMetadata, DeletedNoteListEntry, Note, NoteAccess, NoteAclEntry,
+    NoteCreationSource, NoteDraft, NoteId, NoteListEntry, Revision, StoredAttachment,
 };
 
 mod access_control;
+mod attachments;
 mod citations;
 mod commands;
 mod content;
@@ -22,9 +23,9 @@ mod sync;
 
 pub use commands::NotePatchApplication;
 pub use content::{
-    NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
-    NoteContent, NoteContentError, NoteLinkResolver, NoteOutline, NoteOutlineSection,
-    NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
+    NoteAttachmentQuery, NoteAttachmentResolution, NoteBibliographyEntry, NoteCitationQuery,
+    NoteCitationResolution, NoteCitationSegment, NoteContent, NoteContentError, NoteLinkResolver,
+    NoteOutline, NoteOutlineSection, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
 };
 pub use graph::{
     NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork,
@@ -80,6 +81,17 @@ pub trait NoteQueryRepository: Send + Sync {
         note_id: NoteId,
         revision: Revision,
     ) -> Result<Option<NoteRevisionView>, StorageError>;
+    async fn list_note_attachments(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<AttachmentMetadata>>, StorageError>;
+    async fn note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<Option<StoredAttachment>, StorageError>;
     /// 閲覧できるノートと、それらが引用する文献の関係を1回の読み取りで返す。
     async fn note_graph(
         &self,
@@ -148,6 +160,17 @@ pub trait NoteCommandRepository: Send + Sync {
         expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, StorageError>;
+    async fn create_note_attachment(
+        &self,
+        actor: &Actor,
+        attachment: &StoredAttachment,
+    ) -> Result<(), StorageError>;
+    async fn delete_unused_note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<(), StorageError>;
 }
 
 /// 所有者だけが利用できるACL操作port。
@@ -216,6 +239,17 @@ pub enum NoteSyncRepositoryError {
 pub struct NoteLinks<'a> {
     pub reference_targets: &'a [NoteId],
     pub cited_keys: &'a [String],
+    pub attachment_ids: &'a [AttachmentId],
+}
+
+pub(super) fn attachment_ids(queries: &[NoteAttachmentQuery]) -> Vec<AttachmentId> {
+    let mut ids = queries
+        .iter()
+        .map(|query| query.attachment_id)
+        .collect::<Vec<_>>();
+    ids.sort_by_key(|id| id.to_string());
+    ids.dedup();
+    ids
 }
 
 /// `NoteApplication`が依存するportの束。
@@ -491,6 +525,41 @@ impl NoteUseCases for NoteApplication {
             policy,
         )
         .await
+    }
+
+    async fn upload_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        draft: marginalis_domain::AttachmentDraft,
+    ) -> Result<marginalis_domain::AttachmentMetadata, NoteUseCaseError> {
+        NoteApplication::upload_note_attachment(self, actor, note_id, draft).await
+    }
+
+    async fn list_note_attachments(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<marginalis_domain::AttachmentMetadata>, NoteUseCaseError> {
+        NoteApplication::list_note_attachments(self, actor, note_id).await
+    }
+
+    async fn read_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        attachment_id: marginalis_domain::AttachmentId,
+    ) -> Result<marginalis_domain::StoredAttachment, NoteUseCaseError> {
+        NoteApplication::read_note_attachment(self, actor, note_id, attachment_id).await
+    }
+
+    async fn delete_unused_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        attachment_id: marginalis_domain::AttachmentId,
+    ) -> Result<(), NoteUseCaseError> {
+        NoteApplication::delete_unused_note_attachment(self, actor, note_id, attachment_id).await
     }
 
     async fn preview_new_note(

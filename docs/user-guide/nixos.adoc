@@ -197,10 +197,11 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 == バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは``marginalis-archive-18``で、AdocWeave package版``0.41.0``とnote profile版``5``を記録します。
+現行archiveは``marginalis-archive-18``で、AdocWeave package版``0.41.0``とnote profile版``6``を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 同じ段階で、利用者の代表identityとalias、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と
 重複に加え、保持中の全版についてrevisionの連続性、現在版との一致、変更者、AsciiDoc原文も検証します。
+添付画像は、形式、容量、SHA-256、ノートへの所属、各版の本文が参照する画像集合との一致を検証します。
 本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
 書き込まれることはありません。
 
@@ -463,12 +464,12 @@ sudo -u marginalis marginalis restore-archive \
 |0.41.0
 |5
 |v0.46.0からv0.47.0
-|次回公開版以降 → 18 / 0.41.0 / 5
+|次回公開版以降 → 18 / 0.41.0 / 6
 |直前契約
 
 |``marginalis-archive-18``
 |0.41.0
-|5
+|6
 |未公開。次回公開版で初回版を確定
 |—
 |現行契約
@@ -476,7 +477,8 @@ sudo -u marginalis marginalis restore-archive \
 
 保存契約を変更した開発中の状態は「未公開」と記録します。リリース時には、リリース手順に従って
 この欄を実際の公開版へ置き換えます。したがって、公開済みの各組には必ず初めて書き出した版が
-一つ記録されます。``marginalis-archive-18``は代表identityとalias群に加え、保持中の全版を含みます。
+一つ記録されます。``marginalis-archive-18``は代表identityとalias群、保持中の全版、添付画像のbytesと
+各版の参照集合を含みます。
 
 v0.45.0は、v0.8.0以降の表にある旧契約を``marginalis-archive-17`` / 0.40.1 / 5へ変換できる
 最後の公開版です。Nixでv0.45.0を固定して構築し、入力とは別のファイルへ変換します。
@@ -493,7 +495,7 @@ nix build 'github:KeishiS/marginalis/v0.45.0#default' \
 たとえばv0.18.0のarchiveは、この操作で``marginalis-archive-17`` / 0.40.1 / 5へ変換し、その出力を
 v0.46.0またはv0.47.0の``migrate-archive``へ渡します。その出力である
 ``marginalis-archive-17`` / 0.41.0 / 5を現行版の``restore-archive``へ渡すと、直前契約として受理し、
-``marginalis-archive-18`` / 0.41.0 / 5へ変換して復元します。
+``marginalis-archive-18`` / 0.41.0 / 6へ変換して復元します。
 
 ADR 0018の採用後に保存契約を変更する場合は、直前の公開済み保存契約から新契約への変換を必ず
 同じリリースへ含めます。以後は表の移行経路を順番に辿ることで、契約を1件ずつ持ち上げられます。
@@ -534,9 +536,13 @@ note IDを付けるため衝突しません。削除済み（ソフトデリー�
 hashは含みません。それらを含む復元用の退避には``export-archive``を使用してください。文書書庫を
 取り込んだ後に同じCSL-JSONを指定する場合は、新しい取込元として事前確認します。
 
-``manifest.json``は、各ファイルとnote IDの対応、所有者、日時、revision、タグ、ACLに加えて、
-形式名``marginalis-documents-2``、Marginalisの版、解析に使ったAdocWeave packageの版、ノートの
-受理規則の版、作成経路、人手確認記録、書き出し時の本文・所有者・ACLを結び付けた
+現在版の本文が参照する添付画像は、所有者ごとの``attachments/``へ元のbytesのまま書き出します。
+manifestに記録したバイト数とSHA-256が一致しない画像は取り込みません。過去版だけが参照する画像を含む
+完全な復元には``export-archive``を使用してください。
+
+``manifest.json``は、各ファイルとnote IDの対応、所有者、日時、revision、タグ、ACL、添付画像に加えて、
+形式名``marginalis-documents-3``、Marginalisの版、解析に使ったAdocWeave packageの版、ノートの
+受理規則の版、作成経路、人手確認記録、書き出し時の本文・所有者・ACL・添付画像を結び付けた
 ``state_sha256``を持ちます。版の意味はarchiveと同じです。取り込む側は、稼働しているMarginalisの版と
 比べて再検証や移行が必要かどうかを判断できます。``state_sha256``は外部編集を検出する値であり、
 署名や改ざん防止の機能ではありません。

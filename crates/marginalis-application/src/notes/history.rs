@@ -6,8 +6,8 @@ use similar::TextDiff;
 use crate::{NoteUseCaseError, NoteWritePolicy, ValidatedNoteDraft};
 
 use super::{
-    NoteApplication, NoteLinks, NoteRevisionView, cited_keys, commands::reject_warnings,
-    reference_targets,
+    NoteApplication, NoteLinks, NoteRevisionView, attachment_ids, cited_keys,
+    commands::reject_warnings, reference_targets,
 };
 
 /// 保存せず要求時に生成する、二つのrevision間のUnified Diff。
@@ -94,9 +94,12 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans: _,
         } = validated;
+        self.validate_note_attachment_references(&actor, note_id, &attachment_queries)
+            .await?;
         if !citation_queries.is_empty() {
             let owner = self
                 .read_visible_note(&actor, note_id)
@@ -112,6 +115,7 @@ impl NoteApplication {
         reject_warnings(policy, &diagnostics)?;
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
+        let attachment_ids = attachment_ids(&attachment_queries);
         self.commands
             .restore_visible_note_revision(
                 &actor,
@@ -121,6 +125,7 @@ impl NoteApplication {
                 NoteLinks {
                     reference_targets: &reference_targets,
                     cited_keys: &cited_keys,
+                    attachment_ids: &attachment_ids,
                 },
                 self.clock.now(),
             )

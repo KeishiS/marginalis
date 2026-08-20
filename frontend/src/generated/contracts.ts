@@ -8,6 +8,7 @@ export interface ApplicationConfig {
   search: string;
   styleNonce: string;
 }
+export type AttachmentMediaType = "image/png" | "image/jpeg" | "image/webp";
 export interface BibliographyImportApplyInput {
   decisions: BibliographyImportDecision[];
   items: unknown[];
@@ -148,6 +149,17 @@ export interface NoteAclGrant {
 }
 export interface NoteAclUpdate {
   entries: NoteAclEntry[];
+}
+export interface NoteAttachment {
+  attachment_id: string;
+  byte_length: number;
+  created_at_ms: number;
+  created_by_issuer: string;
+  created_by_subject: string;
+  file_name: string;
+  media_type: AttachmentMediaType;
+  sha256: string;
+  source_target: string;
 }
 export type NoteCreationSource = "web" | "rest" | "mcp" | "unknown";
 export interface NoteDiagnostic {
@@ -355,6 +367,15 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "styleNonce"
     ],
     "type": "object"
+  },
+  "AttachmentMediaType": {
+    "description": "ブラウザーへ能動的な内容として解釈されない、初期対応の静止画像形式。",
+    "enum": [
+      "image/png",
+      "image/jpeg",
+      "image/webp"
+    ],
+    "type": "string"
   },
   "BibliographyImportApplyInput": {
     "additionalProperties": false,
@@ -1142,6 +1163,59 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
     },
     "required": [
       "entries"
+    ],
+    "type": "object"
+  },
+  "NoteAttachment": {
+    "additionalProperties": false,
+    "properties": {
+      "attachment_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "byte_length": {
+        "format": "uint",
+        "maximum": 8388608,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "created_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "created_by_issuer": {
+        "type": "string"
+      },
+      "created_by_subject": {
+        "type": "string"
+      },
+      "file_name": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "media_type": {
+        "$ref": "#/components/schemas/AttachmentMediaType"
+      },
+      "sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "source_target": {
+        "description": "AsciiDoc本文へ挿入する内部画像target。",
+        "type": "string"
+      }
+    },
+    "required": [
+      "attachment_id",
+      "file_name",
+      "media_type",
+      "byte_length",
+      "sha256",
+      "created_at_ms",
+      "created_by_issuer",
+      "created_by_subject",
+      "source_target"
     ],
     "type": "object"
   },
@@ -2387,6 +2461,12 @@ export function parseNoteRevision(value: unknown): NoteRevision {
 }
 export function parseNoteRevisionDiff(value: unknown): NoteRevisionDiff {
   return parseAs<NoteRevisionDiff>(value, "NoteRevisionDiff", "note revision diff");
+}
+export function parseNoteAttachment(value: unknown): NoteAttachment {
+  return parseAs<NoteAttachment>(value, "NoteAttachment", "note attachment");
+}
+export function parseNoteAttachments(value: unknown): NoteAttachment[] {
+  return parseArrayAs<NoteAttachment>(value, "NoteAttachment", "note attachments");
 }
 export function parseNoteGraph(value: unknown): NoteGraph {
   return parseAs<NoteGraph>(value, "NoteGraph", "note graph");

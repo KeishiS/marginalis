@@ -4,8 +4,9 @@ use marginalis_application::{
     LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
 };
 use marginalis_domain::{
-    BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission, NoteRevisionSnapshot,
-    Principal, PrincipalId, PrincipalRef,
+    AttachmentId, BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission,
+    NoteRevisionAttachment, NoteRevisionSnapshot, Principal, PrincipalId, PrincipalRef, Revision,
+    StoredAttachment,
 };
 use sqlx::Sqlite;
 use std::collections::BTreeMap;
@@ -192,6 +193,62 @@ impl SqliteDatabase {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let note_revisions = crate::note_history::all_note_revisions(&mut transaction).await?;
+        let rows = sqlx::query(
+            "SELECT attachment.attachment_id, attachment.note_id,
+                    attachment.file_name, attachment.media_type,
+                    attachment.byte_length, attachment.sha256, attachment.content,
+                    attachment.created_at_ms, attachment.created_by_principal_id,
+                    identity.issuer AS created_by_issuer,
+                    identity.subject AS created_by_subject
+             FROM note_attachments attachment
+             JOIN principal_identities identity
+               ON identity.principal_id = attachment.created_by_principal_id
+              AND identity.is_primary = 1
+             ORDER BY attachment.attachment_id",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let attachments = rows
+            .into_iter()
+            .map(|row| {
+                use sqlx::Row;
+                let bytes = row
+                    .try_get::<Vec<u8>, _>("content")
+                    .map_err(database_error)?;
+                StoredAttachment::new(crate::attachment::metadata_from_row(row)?, bytes)
+                    .map_err(|_| SqliteStoreError::CorruptData)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = sqlx::query(
+            "SELECT note_id, revision, attachment_id
+             FROM note_revision_attachments
+             ORDER BY note_id, revision, attachment_id",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?;
+        let attachment_references = rows
+            .into_iter()
+            .map(|row| {
+                use sqlx::Row;
+                Ok(NoteRevisionAttachment {
+                    note_id: row
+                        .try_get::<String, _>("note_id")
+                        .map_err(database_error)?
+                        .parse::<EntityId>()
+                        .map(NoteId::new)
+                        .map_err(|_| SqliteStoreError::CorruptData)?,
+                    revision: Revision::new(row.try_get("revision").map_err(database_error)?)
+                        .map_err(|_| SqliteStoreError::CorruptData)?,
+                    attachment_id: row
+                        .try_get::<String, _>("attachment_id")
+                        .map_err(database_error)?
+                        .parse::<AttachmentId>()
+                        .map_err(|_| SqliteStoreError::CorruptData)?,
+                })
+            })
+            .collect::<Result<Vec<_>, SqliteStoreError>>()?;
         transaction.commit().await.map_err(database_error)?;
         LogicalSnapshot::new(notes, note_acl)
             .and_then(|snapshot| snapshot.with_note_revisions(note_revisions))
@@ -204,6 +261,7 @@ impl SqliteDatabase {
             })
             .and_then(|snapshot| snapshot.with_math_macro_settings(math_macro_settings))
             .and_then(|snapshot| snapshot.with_principals(principals))
+            .and_then(|snapshot| snapshot.with_attachments(attachments, attachment_references))
             .map_err(|_| SqliteStoreError::CorruptData)
     }
 
@@ -216,6 +274,7 @@ impl SqliteDatabase {
             "SELECT
                 EXISTS(SELECT 1 FROM principals)
                 OR EXISTS(SELECT 1 FROM notes)
+                OR EXISTS(SELECT 1 FROM note_attachments)
                 OR EXISTS(SELECT 1 FROM bibliography_items)
                 OR EXISTS(SELECT 1 FROM bibliography_import_sources)
                 OR EXISTS(SELECT 1 FROM bibliography_import_links)
@@ -242,8 +301,23 @@ impl SqliteDatabase {
         for note in notes {
             insert_note_row(&mut transaction, note).await?;
         }
+        for attachment in plan.snapshot().attachments() {
+            insert_attachment_row(&mut transaction, attachment).await?;
+        }
         for revision in plan.snapshot().note_revisions() {
             insert_note_revision_row(&mut transaction, revision).await?;
+        }
+        for reference in plan.snapshot().note_revision_attachments() {
+            sqlx::query(
+                "INSERT INTO note_revision_attachments (note_id, revision, attachment_id)
+                 VALUES (?, ?, ?)",
+            )
+            .bind(reference.note_id.to_string())
+            .bind(reference.revision.get())
+            .bind(reference.attachment_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
         }
         for item in plan.snapshot().bibliography_items() {
             insert_bibliography_item_row(&mut transaction, item).await?;
@@ -330,6 +404,32 @@ impl SqliteDatabase {
             .map_err(database_error)?;
         transaction.commit().await.map_err(database_error)
     }
+}
+
+async fn insert_attachment_row(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    attachment: &StoredAttachment,
+) -> Result<(), SqliteStoreError> {
+    let metadata = attachment.metadata();
+    sqlx::query(
+        "INSERT INTO note_attachments (
+            attachment_id, note_id, file_name, media_type, byte_length,
+            sha256, content, created_at_ms, created_by_principal_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(metadata.attachment_id().to_string())
+    .bind(metadata.note_id().to_string())
+    .bind(metadata.file_name())
+    .bind(metadata.media_type().as_str())
+    .bind(i64::try_from(metadata.byte_length()).map_err(|_| SqliteStoreError::CorruptData)?)
+    .bind(metadata.sha256().as_slice())
+    .bind(attachment.bytes())
+    .bind(metadata.created_at().get())
+    .bind(metadata.created_by().id().get())
+    .execute(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    Ok(())
 }
 
 async fn insert_bibliography_import_source_row(

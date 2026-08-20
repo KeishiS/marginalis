@@ -2,6 +2,7 @@
 
 use axum::{
     Json,
+    body::Bytes,
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
@@ -12,16 +13,16 @@ use marginalis_application::{
 };
 use marginalis_contract::{
     DeletedNoteListEntryResponse, MathMacroResponse, NoteAclGrantResponse, NoteAclResponse,
-    NoteAclUpdateInput, NoteDraftInput, NoteGraphCitationResponse, NoteGraphNoteResponse,
-    NoteGraphReferenceResponse, NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse,
-    NotePreviewResponse, NoteResponse, NoteReviewResponse, NoteRevisionDiffResponse,
-    NoteRevisionResponse, NoteRevisionSummaryResponse, NoteSourceSpanKindResponse,
-    NoteSourceSpanResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode,
-    RelatedNotesResponse, SessionResponse,
+    NoteAclUpdateInput, NoteAttachmentResponse, NoteDraftInput, NoteGraphCitationResponse,
+    NoteGraphNoteResponse, NoteGraphReferenceResponse, NoteGraphResponse, NoteGraphWorkResponse,
+    NoteListEntryResponse, NotePreviewResponse, NoteResponse, NoteReviewResponse,
+    NoteRevisionDiffResponse, NoteRevisionResponse, NoteRevisionSummaryResponse,
+    NoteSourceSpanKindResponse, NoteSourceSpanResponse, NoteSummaryResponse, NoteViewResponse,
+    ProblemCode, RelatedNotesResponse, SessionResponse,
 };
 use marginalis_domain::{
-    EntityId, MAX_GRAPH_DEPTH, Note, NoteCreationSource, NoteDraft, NoteId, NoteReviewStatus,
-    NoteSummary, Revision,
+    AttachmentDraft, AttachmentId, AttachmentMetadata, EntityId, MAX_GRAPH_DEPTH, Note,
+    NoteCreationSource, NoteDraft, NoteId, NoteReviewStatus, NoteSummary, Revision,
 };
 use serde::Deserialize;
 use std::str::FromStr;
@@ -44,6 +45,11 @@ pub(super) struct NoteListInput {
 pub(super) struct NoteHistoryDiffInput {
     from_revision: i64,
     to_revision: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(super) struct AttachmentUploadInput {
+    file_name: String,
 }
 
 pub(super) async fn session(
@@ -121,6 +127,142 @@ pub(super) async fn read_note(
         .await
         .map_err(note_error)?;
     Ok(note_json(StatusCode::OK, note))
+}
+
+pub(super) async fn list_note_attachments(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> HandlerResult<Json<Vec<NoteAttachmentResponse>>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let attachments = state
+        .notes
+        .list_note_attachments(actor, parse_note_id(&note_id)?)
+        .await
+        .map_err(note_error)?;
+    Ok(Json(
+        attachments
+            .into_iter()
+            .map(note_attachment_response)
+            .collect(),
+    ))
+}
+
+pub(super) async fn upload_note_attachment(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    Query(input): Query<AttachmentUploadInput>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> HandlerResult<(StatusCode, Json<NoteAttachmentResponse>)> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let draft = AttachmentDraft::new(input.file_name, bytes.to_vec()).map_err(|_| {
+        problem(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ProblemCode::ValidationFailed,
+            "attachment must be a supported image within the configured limits",
+        )
+    })?;
+    let attachment = state
+        .notes
+        .upload_note_attachment(actor, parse_note_id(&note_id)?, draft)
+        .await
+        .map_err(note_error)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(note_attachment_response(attachment)),
+    ))
+}
+
+pub(super) async fn delete_note_attachment(
+    State(state): State<ApiState>,
+    Path((note_id, attachment_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> HandlerResult<StatusCode> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    state
+        .notes
+        .delete_unused_note_attachment(
+            actor,
+            parse_note_id(&note_id)?,
+            parse_attachment_id(&attachment_id)?,
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(super) async fn read_note_attachment_content(
+    State(state): State<ApiState>,
+    Path((note_id, attachment_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let attachment = state
+        .notes
+        .read_note_attachment(
+            actor,
+            parse_note_id(&note_id)?,
+            parse_attachment_id(&attachment_id)?,
+        )
+        .await
+        .map_err(note_error)?;
+    let content_type = HeaderValue::from_static(attachment.metadata().media_type().as_str());
+    Ok((
+        [
+            (header::CONTENT_TYPE, content_type),
+            (
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            ),
+            (
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_static("inline"),
+            ),
+            (
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            ),
+        ],
+        attachment.bytes().to_vec(),
+    )
+        .into_response())
+}
+
+fn parse_attachment_id(value: &str) -> HandlerResult<AttachmentId> {
+    value.parse().map_err(|_| {
+        problem(
+            StatusCode::BAD_REQUEST,
+            ProblemCode::InvalidRequest,
+            "attachment_id must be a UUIDv7",
+        )
+    })
+}
+
+fn note_attachment_response(attachment: AttachmentMetadata) -> NoteAttachmentResponse {
+    NoteAttachmentResponse {
+        attachment_id: attachment.attachment_id().to_string(),
+        file_name: attachment.file_name().to_owned(),
+        media_type: attachment.media_type(),
+        byte_length: attachment.byte_length(),
+        sha256: attachment
+            .sha256()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+        created_at_ms: attachment.created_at().get(),
+        created_by_issuer: attachment
+            .created_by()
+            .primary_identity()
+            .issuer()
+            .to_owned(),
+        created_by_subject: attachment
+            .created_by()
+            .primary_identity()
+            .subject()
+            .to_owned(),
+        source_target: format!("attachment:{}", attachment.attachment_id()),
+    }
 }
 
 pub(super) async fn read_note_view(

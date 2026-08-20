@@ -45,7 +45,18 @@ fn allowed_math_languages() -> std::collections::BTreeSet<MathLanguage> {
         .collect()
 }
 
+/// 解析時に受理するURL。内部添付schemeはresource queryへだけ使い、描画URLには使わない。
 pub(crate) fn authored_url_policy() -> AuthoredUrlPolicy {
+    let mut allowed_schemes = allowed_url_schemes();
+    allowed_schemes.insert("attachment".to_owned());
+    AuthoredUrlPolicy {
+        allowed_schemes,
+        allow_relative: false,
+    }
+}
+
+/// 利用者が直接記述する通常のlinkに適用する規則。
+pub(crate) fn authored_link_url_policy() -> AuthoredUrlPolicy {
     AuthoredUrlPolicy {
         allowed_schemes: allowed_url_schemes(),
         allow_relative: false,
@@ -132,7 +143,7 @@ pub(crate) fn render_policy() -> RenderPolicy {
             allowed: allowed_math_languages(),
         },
         resources: ResourceCapabilities {
-            images: false,
+            images: true,
             media: false,
         },
         unresolved_references: UnresolvedReferencePresentation::LabelOnly,
@@ -180,7 +191,7 @@ mod tests {
         assert!(!rendering.active_urls.allow_resolved_relative);
         assert!(rendering.active_urls.allow_resolved_root_relative);
         assert!(!rendering.active_urls.allow_data_uris);
-        assert!(!rendering.resources.images);
+        assert!(rendering.resources.images);
         assert!(!rendering.resources.media);
         assert_eq!(
             rendering.source_languages.unknown,

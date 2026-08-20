@@ -8,10 +8,11 @@ use std::{
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, BibliographyItem, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess,
-    NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewRecord,
-    NoteReviewTracking, NoteRevisionKind, NoteRevisionSnapshot, NoteRevisionSummary, NoteSummary,
-    NoteValidationTarget, PrincipalId, PrincipalRef, Revision, UnixMillis, Utf8ByteSpan,
+    ATTACHMENT_POLICY, Actor, AttachmentId, AttachmentMetadata, BibliographyItem,
+    DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId,
+    NoteListEntry, NoteRestore, NoteReviewRecord, NoteReviewTracking, NoteRevisionKind,
+    NoteRevisionSnapshot, NoteRevisionSummary, NoteSummary, NoteValidationTarget, PrincipalId,
+    PrincipalRef, Revision, StoredAttachment, UnixMillis, Utf8ByteSpan,
 };
 
 use crate::{
@@ -70,6 +71,7 @@ impl NoteSyncRepository for MemoryNotes {
 pub(super) struct MemoryNotes {
     pub(super) notes: Mutex<Vec<Note>>,
     pub(super) histories: Mutex<Vec<NoteRevisionSnapshot>>,
+    pub(super) attachments: Mutex<Vec<StoredAttachment>>,
     pub(super) update_calls: AtomicUsize,
     pub(super) accessible_as: Mutex<Option<NoteAccess>>,
 }
@@ -79,6 +81,7 @@ impl Default for MemoryNotes {
         Self {
             notes: Mutex::new(Vec::new()),
             histories: Mutex::new(Vec::new()),
+            attachments: Mutex::new(Vec::new()),
             update_calls: AtomicUsize::new(0),
             accessible_as: Mutex::new(Some(NoteAccess::Manage)),
         }
@@ -194,6 +197,46 @@ impl NoteQueryRepository for MemoryNotes {
             }))
     }
 
+    async fn list_note_attachments(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<AttachmentMetadata>>, StorageError> {
+        if self.accessible_note(actor, note_id).await?.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(
+            self.attachments
+                .lock()
+                .expect("attachments lock")
+                .iter()
+                .filter(|entry| entry.metadata().note_id() == note_id)
+                .map(|entry| entry.metadata().clone())
+                .collect(),
+        ))
+    }
+
+    async fn note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<Option<StoredAttachment>, StorageError> {
+        if self.accessible_note(actor, note_id).await?.is_none() {
+            return Ok(None);
+        }
+        Ok(self
+            .attachments
+            .lock()
+            .expect("attachments lock")
+            .iter()
+            .find(|entry| {
+                entry.metadata().note_id() == note_id
+                    && entry.metadata().attachment_id() == attachment_id
+            })
+            .cloned())
+    }
+
     async fn note_graph(
         &self,
         _actor: &Actor,
@@ -299,6 +342,63 @@ impl NoteCommandRepository for MemoryNotes {
         _now: UnixMillis,
     ) -> Result<Note, StorageError> {
         Err(StorageError::Unavailable)
+    }
+
+    async fn create_note_attachment(
+        &self,
+        actor: &Actor,
+        attachment: &StoredAttachment,
+    ) -> Result<(), StorageError> {
+        let accessible = self
+            .accessible_note(actor, attachment.metadata().note_id())
+            .await?
+            .filter(|entry| entry.access.allows(NoteAccess::Edit))
+            .ok_or(StorageError::NotFound)?;
+        if accessible.note.deleted_at().is_some() {
+            return Err(StorageError::NotFound);
+        }
+        let mut attachments = self.attachments.lock().expect("attachments lock");
+        let current = attachments
+            .iter()
+            .filter(|entry| entry.metadata().note_id() == accessible.note.note_id())
+            .collect::<Vec<_>>();
+        let total = current
+            .iter()
+            .map(|entry| entry.metadata().byte_length())
+            .sum::<usize>();
+        if current.len() >= ATTACHMENT_POLICY.max_attachments_per_note
+            || total.saturating_add(attachment.metadata().byte_length())
+                > ATTACHMENT_POLICY.max_bytes_per_note
+        {
+            return Err(StorageError::Conflict);
+        }
+        attachments.push(attachment.clone());
+        Ok(())
+    }
+
+    async fn delete_unused_note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<(), StorageError> {
+        let accessible = self
+            .accessible_note(actor, note_id)
+            .await?
+            .filter(|entry| entry.access.allows(NoteAccess::Edit))
+            .ok_or(StorageError::NotFound)?;
+        if accessible.note.deleted_at().is_some() {
+            return Err(StorageError::NotFound);
+        }
+        let mut attachments = self.attachments.lock().expect("attachments lock");
+        let Some(position) = attachments.iter().position(|entry| {
+            entry.metadata().note_id() == note_id
+                && entry.metadata().attachment_id() == attachment_id
+        }) else {
+            return Err(StorageError::NotFound);
+        };
+        attachments.remove(position);
+        Ok(())
     }
 }
 
@@ -410,6 +510,7 @@ impl NoteContent for AcceptContent {
             }],
             reference_queries: Vec::new(),
             citation_queries: Vec::new(),
+            attachment_queries: Vec::new(),
             citation_style: CitationStyle::default(),
             source_spans: Vec::new(),
         })
@@ -421,6 +522,13 @@ impl NoteContent for AcceptContent {
     }
 
     fn citation_queries(&self, _body: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
+        Ok(Vec::new())
+    }
+
+    fn attachment_queries(
+        &self,
+        _body: &str,
+    ) -> Result<Vec<crate::NoteAttachmentQuery>, NoteContentError> {
         Ok(Vec::new())
     }
 
@@ -462,6 +570,10 @@ impl NoteContent for AcceptContent {
                 max_patch_hunks: 1,
                 max_tags: 1,
                 max_tag_characters: 1,
+                max_attachment_bytes: 1,
+                max_attachments_per_note: 1,
+                max_attachment_bytes_per_note: 1,
+                max_attachment_file_name_characters: 1,
             },
             normalization: crate::NoteProfileNormalization {
                 title: Vec::new(),
@@ -780,6 +892,7 @@ impl NoteContent for CitingContent {
                 span: Utf8ByteSpan { start: 0, end: 1 },
                 position: crate::NoteSourcePosition { line: 1, column: 1 },
             }],
+            attachment_queries: Vec::new(),
             citation_style: CitationStyle::default(),
             source_spans: Vec::new(),
         })
@@ -790,6 +903,13 @@ impl NoteContent for CitingContent {
     }
 
     fn citation_queries(&self, _body: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
+        Ok(Vec::new())
+    }
+
+    fn attachment_queries(
+        &self,
+        _body: &str,
+    ) -> Result<Vec<crate::NoteAttachmentQuery>, NoteContentError> {
         Ok(Vec::new())
     }
 

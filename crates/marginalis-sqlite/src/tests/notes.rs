@@ -788,6 +788,7 @@ async fn the_graph_hides_notes_and_edges_the_actor_cannot_see() {
             NoteLinks {
                 reference_targets: &[private.note_id()],
                 cited_keys: &["smith2024".to_owned()],
+                attachment_ids: &[],
             },
         )
         .await
@@ -798,6 +799,7 @@ async fn the_graph_hides_notes_and_edges_the_actor_cannot_see() {
             NoteLinks {
                 reference_targets: &[shared.note_id()],
                 cited_keys: &["tanaka2025".to_owned()],
+                attachment_ids: &[],
             },
         )
         .await
@@ -873,6 +875,7 @@ async fn graph_rejects_semantically_corrupt_bibliography_items() {
             NoteLinks {
                 reference_targets: &[],
                 cited_keys: &["smith2024".to_owned()],
+                attachment_ids: &[],
             },
         )
         .await
@@ -944,6 +947,7 @@ async fn the_graph_answers_at_the_assumed_scale() {
                 NoteLinks {
                     reference_targets: &targets,
                     cited_keys: &cited,
+                    attachment_ids: &[],
                 },
             )
             .await
@@ -989,6 +993,7 @@ async fn graph_search_treats_like_metacharacters_as_text() {
                 NoteLinks {
                     reference_targets: &[],
                     cited_keys: &[],
+                    attachment_ids: &[],
                 },
             )
             .await

@@ -4,8 +4,9 @@
 //! [`marginalis_domain`]の定義を参照する。要求と応答の構造だけをこのmoduleで定義する。
 
 use marginalis_domain::{
-    ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY, NoteAccess, NoteCreationSource,
-    NotePermission, NoteReviewStatus, NoteRevisionKind, NoteValidationTarget, Revision,
+    ATTACHMENT_POLICY, AttachmentMediaType, ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY,
+    NoteAccess, NoteCreationSource, NotePermission, NoteReviewStatus, NoteRevisionKind,
+    NoteValidationTarget, Revision,
 };
 use schemars::{JsonSchema, SchemaGenerator, generate::SchemaSettings};
 use serde::{Deserialize, Serialize};
@@ -212,6 +213,26 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         method: "GET",
         specification_path: "/api/v3/notes/{note_id}/history-diff",
         probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history-diff",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/attachments",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/notes/{note_id}/attachments",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments",
+    },
+    RestRouteContract {
+        method: "DELETE",
+        specification_path: "/api/v3/notes/{note_id}/attachments/{attachment_id}",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments/0197c9bc-0000-7000-8000-000000000002",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/attachments/{attachment_id}/content",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments/0197c9bc-0000-7000-8000-000000000002/content",
     },
     RestRouteContract {
         method: "POST",
@@ -763,6 +784,26 @@ pub struct NoteRevisionDiffResponse {
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteAttachment")]
+pub struct NoteAttachmentResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
+    pub attachment_id: String,
+    #[schemars(length(min = 1, max = 200))]
+    pub file_name: String,
+    pub media_type: AttachmentMediaType,
+    #[schemars(range(min = 1, max = ATTACHMENT_POLICY.max_bytes))]
+    pub byte_length: usize,
+    #[schemars(regex(pattern = "^[0-9a-f]{64}$"))]
+    pub sha256: String,
+    pub created_at_ms: i64,
+    pub created_by_issuer: String,
+    pub created_by_subject: String,
+    /// AsciiDoc本文へ挿入する内部画像target。
+    pub source_target: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 #[schemars(rename = "DeletedNoteListEntry")]
 pub struct DeletedNoteListEntryResponse {
     #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
@@ -1141,6 +1182,7 @@ pub(crate) fn component_schemas() -> Value {
     generator.subschema_for::<NoteRevisionSummaryResponse>();
     generator.subschema_for::<NoteRevisionResponse>();
     generator.subschema_for::<NoteRevisionDiffResponse>();
+    generator.subschema_for::<NoteAttachmentResponse>();
     generator.subschema_for::<DeletedNoteListEntryResponse>();
     generator.subschema_for::<NoteViewResponse>();
     generator.subschema_for::<NoteGraphResponse>();
@@ -1158,7 +1200,7 @@ pub fn openapi_document() -> Value {
             "title": "Marginalis REST API",
             "version": API_VERSION,
             "x-adocweave-package-version": env!("MARGINALIS_ADOCWEAVE_VERSION"),
-            "x-note-profile-version": 17
+            "x-note-profile-version": 18
         },
         "paths": rest_paths(),
         "components": {
@@ -1184,6 +1226,10 @@ pub fn openapi_document() -> Value {
                     "schema": {"type": "integer", "minimum": 1}},
                 "ToRevision": {"name": "to_revision", "in": "query", "required": true,
                     "schema": {"type": "integer", "minimum": 1}},
+                "AttachmentId": {"name": "attachment_id", "in": "path", "required": true,
+                    "schema": note_id_schema()},
+                "AttachmentFileName": {"name": "file_name", "in": "query", "required": true,
+                    "schema": {"type": "string", "minLength": 1, "maxLength": 200}},
                 "McpScopeCeilingRevision": {"name": "revision", "in": "query", "required": true,
                     "schema": {"type": "integer", "minimum": 1},
                     "description": "解除する上限のrevision。現在の値と一致しない場合は409を返す"},
@@ -1470,6 +1516,60 @@ fn rest_paths() -> Value {
                 ("404", response_ref("NotFound")),
                 ("503", response_ref("Unavailable"))
             ]))
+        },
+        "/api/v3/notes/{note_id}/attachments": {
+            "parameters": [parameter_ref("NoteId")],
+            "get": operation("List note attachments", &[], None, responses(&[
+                ("200", array_response("note attachment metadata", "NoteAttachment")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ])),
+            "post": {
+                "summary": "Upload one immutable note image",
+                "parameters": [parameter_ref("AttachmentFileName"), parameter_ref("CsrfToken")],
+                "requestBody": {
+                    "required": true,
+                    "content": {"application/octet-stream": {"schema": {
+                        "type": "string", "format": "binary",
+                        "x-maxBytes": ATTACHMENT_POLICY.max_bytes
+                    }}}
+                },
+                "responses": responses(&[
+                    ("201", schema_response("uploaded note attachment", "NoteAttachment")),
+                    ("401", response_ref("AuthenticationRequired")),
+                    ("403", response_ref("CsrfRejected")),
+                    ("404", response_ref("NotFound")),
+                    ("409", response_ref("Conflict")),
+                    ("422", response_ref("ValidationFailed")),
+                    ("503", response_ref("Unavailable"))
+                ])
+            }
+        },
+        "/api/v3/notes/{note_id}/attachments/{attachment_id}": {
+            "parameters": [parameter_ref("NoteId"), parameter_ref("AttachmentId")],
+            "delete": operation("Delete an unreferenced note attachment", &["CsrfToken"], None, responses(&[
+                ("204", json!({"description": "unreferenced attachment deleted"})),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/attachments/{attachment_id}/content": {
+            "parameters": [parameter_ref("NoteId"), parameter_ref("AttachmentId")],
+            "get": {
+                "summary": "Read one authorized note image",
+                "responses": {
+                    "200": {"description": "image bytes", "content": {
+                        "image/png": {"schema": {"type": "string", "format": "binary"}},
+                        "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                        "image/webp": {"schema": {"type": "string", "format": "binary"}}
+                    }},
+                    "404": response_ref("NotFound"),
+                    "503": response_ref("Unavailable")
+                }
+            }
         },
         "/api/v3/notes/{note_id}/acl": {
             "parameters": [parameter_ref("NoteId")],

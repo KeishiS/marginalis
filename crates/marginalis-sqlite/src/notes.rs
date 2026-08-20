@@ -16,7 +16,10 @@ use marginalis_domain::{
 };
 use sqlx::{QueryBuilder, Row, Sqlite};
 
-use crate::{SqliteDatabase, SqliteStoreError, database_error, note_history::insert_note_revision};
+use crate::{
+    SqliteDatabase, SqliteStoreError, database_error,
+    note_history::{insert_note_revision, replace_note_revision_attachments},
+};
 
 /// ノート復元だけが持つ結果を、SQLite全体の共通エラーから分離する。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -77,6 +80,8 @@ impl SqliteDatabase {
             NoteRevisionKind::Created,
         )
         .await?;
+        replace_note_revision_attachments(&mut transaction, note.note_id(), links.attachment_ids)
+            .await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(())
     }
@@ -290,6 +295,7 @@ impl SqliteDatabase {
         let note = note_from_row(row)?;
         replace_link_rows(&mut transaction, note_id, links).await?;
         insert_note_revision(&mut transaction, note_id, actor.principal_id(), kind).await?;
+        replace_note_revision_attachments(&mut transaction, note_id, links.attachment_ids).await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
     }

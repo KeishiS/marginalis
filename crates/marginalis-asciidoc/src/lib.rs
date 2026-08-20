@@ -1,8 +1,9 @@
 //! SQLite正本のAsciiDoc検証、可搬化、安全なHTML描画を担うadapter。
 
 use marginalis_application::{
-    CitationStyle, NoteCitationQuery, NoteContent, NoteContentError, NoteProfile,
-    NoteReferenceQuery, NoteRenderInputs, NoteValidationDiagnostic, ValidatedNoteDraft,
+    CitationStyle, NoteAttachmentQuery, NoteCitationQuery, NoteContent, NoteContentError,
+    NoteProfile, NoteReferenceQuery, NoteRenderInputs, NoteValidationDiagnostic,
+    ValidatedNoteDraft,
 };
 use marginalis_domain::{Note, NoteDraft};
 
@@ -17,9 +18,8 @@ pub const ADOCWEAVE_SOURCE_REVISION: &str = env!("MARGINALIS_ADOCWEAVE_REVISION"
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = env!("MARGINALIS_ADOCWEAVE_VERSION");
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
 ///
-/// 版17: AdocWeave 0.41.0で、制約付き引用符の境界がCJK文字を単語境界として
-/// 扱うようになり、受理する記法の範囲が広がった。
-pub const AUTHORING_PROFILE_VERSION: u32 = 17;
+/// 版18: 同じノート内の添付画像を`image::attachment:<UUIDv7>[]`で参照できる。
+pub const AUTHORING_PROFILE_VERSION: u32 = 18;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsciiDocNoteContent;
@@ -38,6 +38,13 @@ impl NoteContent for AsciiDocNoteContent {
 
     fn citation_queries(&self, source: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
         analysis::citation_queries(source).map_err(|_| NoteContentError)
+    }
+
+    fn attachment_queries(
+        &self,
+        source: &str,
+    ) -> Result<Vec<NoteAttachmentQuery>, NoteContentError> {
+        analysis::attachment_queries(source).map_err(|_| NoteContentError)
     }
 
     fn citation_style(&self, source: &str) -> Result<CitationStyle, NoteContentError> {

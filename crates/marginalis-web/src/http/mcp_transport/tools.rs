@@ -1028,6 +1028,10 @@ fn note_profile_output(profile: NoteProfile) -> McpNoteProfileOutput {
             max_patch_hunks: profile.limits.max_patch_hunks,
             max_tags: profile.limits.max_tags,
             max_tag_characters: profile.limits.max_tag_characters,
+            max_attachment_bytes: profile.limits.max_attachment_bytes,
+            max_attachments_per_note: profile.limits.max_attachments_per_note,
+            max_attachment_bytes_per_note: profile.limits.max_attachment_bytes_per_note,
+            max_attachment_file_name_characters: profile.limits.max_attachment_file_name_characters,
         },
         normalization: McpNoteProfileNormalization {
             title: profile

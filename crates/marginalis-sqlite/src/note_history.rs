@@ -1,9 +1,9 @@
 //! ノートの版履歴を現在のACLで認可し、完全なsnapshotとして保存する。
 
 use marginalis_domain::{
-    Actor, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore, NoteReviewRecord,
-    NoteReviewTracking, NoteRevisionKind, NoteRevisionSnapshot, NoteRevisionSummary, PrincipalId,
-    PrincipalRef, Revision, UnixMillis,
+    Actor, AttachmentId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
+    NoteReviewRecord, NoteReviewTracking, NoteRevisionKind, NoteRevisionSnapshot,
+    NoteRevisionSummary, PrincipalId, PrincipalRef, Revision, UnixMillis,
 };
 use sqlx::{Row, Sqlite, Transaction};
 
@@ -158,6 +158,61 @@ pub(crate) async fn insert_note_revision(
     .map_err(database_error)?;
     if result.rows_affected() != 1 {
         return Err(SqliteStoreError::CorruptData);
+    }
+    // 本文以外の操作では直前版と同じ参照集合になる。本文を変更する経路は、この後に
+    // `replace_note_revision_attachments`で現在版だけを置き換える。
+    sqlx::query(
+        "INSERT INTO note_revision_attachments (note_id, revision, attachment_id)
+         SELECT history.note_id, history.revision, previous.attachment_id
+         FROM note_revisions history
+         JOIN note_revision_attachments previous
+           ON previous.note_id = history.note_id
+          AND previous.revision = history.revision - 1
+         WHERE history.note_id = ?
+           AND history.revision = (SELECT revision FROM notes WHERE note_id = ?)",
+    )
+    .bind(note_id.to_string())
+    .bind(note_id.to_string())
+    .execute(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    Ok(())
+}
+
+/// 本文解析で確定した添付集合を、現在のrevisionへ原子的に結び付ける。
+pub(crate) async fn replace_note_revision_attachments(
+    transaction: &mut Transaction<'_, Sqlite>,
+    note_id: NoteId,
+    attachment_ids: &[AttachmentId],
+) -> Result<(), SqliteStoreError> {
+    let revision = sqlx::query_scalar::<_, i64>("SELECT revision FROM notes WHERE note_id = ?")
+        .bind(note_id.to_string())
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(database_error)?
+        .ok_or(SqliteStoreError::CorruptData)?;
+    sqlx::query("DELETE FROM note_revision_attachments WHERE note_id = ? AND revision = ?")
+        .bind(note_id.to_string())
+        .bind(revision)
+        .execute(&mut **transaction)
+        .await
+        .map_err(database_error)?;
+    for attachment_id in attachment_ids {
+        let result = sqlx::query(
+            "INSERT INTO note_revision_attachments (note_id, revision, attachment_id)
+             SELECT ?, ?, attachment_id FROM note_attachments
+             WHERE note_id = ? AND attachment_id = ?",
+        )
+        .bind(note_id.to_string())
+        .bind(revision)
+        .bind(note_id.to_string())
+        .bind(attachment_id.to_string())
+        .execute(&mut **transaction)
+        .await
+        .map_err(database_error)?;
+        if result.rows_affected() != 1 {
+            return Err(SqliteStoreError::CorruptData);
+        }
     }
     Ok(())
 }

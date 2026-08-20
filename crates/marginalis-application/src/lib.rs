@@ -6,10 +6,11 @@ use std::future::Future;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, AuthenticatedSession, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess,
-    NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NotePermission,
-    NoteReviewStatus, NoteRevisionSummary, NoteSummary, NoteValidationTarget, Revision, UnixMillis,
-    Utf8ByteSpan, WebSession,
+    Actor, AttachmentDraft, AttachmentId, AttachmentMetadata, AuthenticatedSession,
+    DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteCreationSource,
+    NoteDraft, NoteId, NoteListEntry, NotePermission, NoteReviewStatus, NoteRevisionSummary,
+    NoteSummary, NoteValidationTarget, Revision, StoredAttachment, UnixMillis, Utf8ByteSpan,
+    WebSession,
 };
 pub use mcp_authorization_server::{
     AuthenticatedPrincipal as McpAuthenticatedPrincipal,
@@ -62,10 +63,11 @@ pub use mcp_oauth::McpOAuthApplication;
 pub use notes::{
     AccessibleNote, NOTE_SYNC_CURSOR_RETENTION_MS, NOTE_SYNC_DEFAULT_PAGE_SIZE,
     NOTE_SYNC_MAX_PAGE_SIZE, NoteAclRepository, NoteApplication, NoteApplicationDependencies,
-    NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
-    NoteCommandRepository, NoteContent, NoteContentError, NoteGraph, NoteGraphCitation,
-    NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks,
-    NoteOutline, NoteOutlineSection, NotePatchApplication, NotePatchError, NotePatchOutcome,
+    NoteAttachmentQuery, NoteAttachmentResolution, NoteBibliographyEntry, NoteCitationQuery,
+    NoteCitationResolution, NoteCitationSegment, NoteCommandRepository, NoteContent,
+    NoteContentError, NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery,
+    NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks, NoteOutline,
+    NoteOutlineSection, NotePatchApplication, NotePatchError, NotePatchOutcome,
     NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
     NoteReviewRepository, NoteRevisionDiff, NoteRevisionView, NoteSyncEntry, NoteSyncPage,
     NoteSyncPhase, NoteSyncRemovalReason, NoteSyncRepository, NoteSyncRepositoryError,
@@ -165,6 +167,7 @@ pub enum NoteValidationCode {
     InvalidNoteReference,
     InvalidUrlScheme,
     ResourceDisabled,
+    InvalidAttachmentReference,
     UnsupportedMathLanguage,
     UnsupportedSourceLanguage,
     UnsupportedDocumentAttribute,
@@ -192,6 +195,7 @@ impl NoteValidationCode {
             Self::InvalidNoteReference => "invalid_note_reference",
             Self::InvalidUrlScheme => "invalid_url_scheme",
             Self::ResourceDisabled => "resource_disabled",
+            Self::InvalidAttachmentReference => "invalid_attachment_reference",
             Self::UnsupportedMathLanguage => "unsupported_math_language",
             Self::UnsupportedSourceLanguage => "unsupported_source_language",
             Self::UnsupportedDocumentAttribute => "unsupported_document_attribute",
@@ -273,6 +277,8 @@ pub struct ValidatedNoteDraft {
     pub diagnostics: Vec<NoteAdvisoryDiagnostic>,
     pub reference_queries: Vec<NoteReferenceQuery>,
     pub citation_queries: Vec<NoteCitationQuery>,
+    /// 本文が同じノート内の添付画像へ行う参照。
+    pub attachment_queries: Vec<NoteAttachmentQuery>,
     /// 本文のheaderが選んだ引用の表示規則。属性を書かないノートは既定になる。
     pub citation_style: CitationStyle,
     /// 編集画面の装飾に使うspan注釈。原文の出現順。
@@ -339,6 +345,10 @@ pub struct NoteProfileLimits {
     pub max_patch_hunks: usize,
     pub max_tags: usize,
     pub max_tag_characters: usize,
+    pub max_attachment_bytes: usize,
+    pub max_attachments_per_note: usize,
+    pub max_attachment_bytes_per_note: usize,
+    pub max_attachment_file_name_characters: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -692,6 +702,29 @@ pub trait NoteUseCases: Send + Sync {
         expected_revision: Revision,
         policy: NoteWritePolicy,
     ) -> Result<Note, NoteUseCaseError>;
+    async fn upload_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        draft: AttachmentDraft,
+    ) -> Result<AttachmentMetadata, NoteUseCaseError>;
+    async fn list_note_attachments(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<AttachmentMetadata>, NoteUseCaseError>;
+    async fn read_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<StoredAttachment, NoteUseCaseError>;
+    async fn delete_unused_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<(), NoteUseCaseError>;
     async fn preview_new_note(
         &self,
         actor: Actor,

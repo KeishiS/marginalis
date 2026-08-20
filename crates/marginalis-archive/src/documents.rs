@@ -8,15 +8,17 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    Archive, ArchiveAclEntry, ArchiveBibliographyItem, ArchiveNote, ArchiveNoteProvenance,
+    Archive, ArchiveAclEntry, ArchiveAttachment, ArchiveBibliographyItem, ArchiveNote,
+    ArchiveNoteProvenance,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use marginalis_application::LogicalSnapshot;
-use marginalis_domain::{Identity, Note, NotePermission, UnixMillis};
+use marginalis_domain::{AttachmentMediaType, Identity, Note, NotePermission, UnixMillis};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// この出力の形式名。archiveの版とは別に管理する。
-pub const DOCUMENT_EXPORT_FORMAT: &str = "marginalis-documents-2";
+pub const DOCUMENT_EXPORT_FORMAT: &str = "marginalis-documents-3";
 
 /// ファイル名へ残す題名の最大文字数。
 ///
@@ -35,7 +37,7 @@ pub struct DocumentExport {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DocumentFile {
     pub path: String,
-    pub contents: String,
+    pub contents: Vec<u8>,
 }
 
 /// 出力全体の版情報と、ファイルの対応。
@@ -86,6 +88,21 @@ pub struct DocumentNote {
     pub state_sha256: String,
     pub provenance: ArchiveNoteProvenance,
     pub acl: Vec<DocumentAclEntry>,
+    pub attachments: Vec<DocumentAttachment>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DocumentAttachment {
+    pub file: String,
+    pub attachment_id: String,
+    pub file_name: String,
+    pub media_type: AttachmentMediaType,
+    pub byte_length: usize,
+    pub sha256: String,
+    pub created_at_ms: i64,
+    pub created_by_issuer: String,
+    pub created_by_subject: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -185,7 +202,7 @@ impl<'a> OwnerBuilder<'a> {
                 let file = format!("{directory}/notes/{}", note_file_name(note));
                 files.push(DocumentFile {
                     path: file.clone(),
-                    contents: note.source().to_owned(),
+                    contents: note.source().as_bytes().to_vec(),
                 });
                 let acl = snapshot
                     .note_acl()
@@ -195,6 +212,51 @@ impl<'a> OwnerBuilder<'a> {
                         issuer: entry.principal().primary_identity().issuer().to_owned(),
                         subject: entry.principal().primary_identity().subject().to_owned(),
                         permission: entry.permission(),
+                    })
+                    .collect::<Vec<_>>();
+                let attachments = snapshot
+                    .note_revision_attachments()
+                    .iter()
+                    .filter(|reference| {
+                        reference.note_id == note.note_id() && reference.revision == note.revision()
+                    })
+                    .map(|reference| {
+                        let attachment = snapshot
+                            .attachments()
+                            .iter()
+                            .find(|attachment| {
+                                attachment.metadata().attachment_id() == reference.attachment_id
+                            })
+                            .expect("snapshot attachment reference is valid");
+                        let metadata = attachment.metadata();
+                        let attachment_file = format!(
+                            "{directory}/attachments/{}-{}",
+                            metadata.attachment_id(),
+                            named_or_unnamed(metadata.file_name())
+                        );
+                        files.push(DocumentFile {
+                            path: attachment_file.clone(),
+                            contents: attachment.bytes().to_vec(),
+                        });
+                        DocumentAttachment {
+                            file: attachment_file,
+                            attachment_id: metadata.attachment_id().to_string(),
+                            file_name: metadata.file_name().to_owned(),
+                            media_type: metadata.media_type(),
+                            byte_length: metadata.byte_length(),
+                            sha256: encode_sha256(metadata.sha256()),
+                            created_at_ms: metadata.created_at().get(),
+                            created_by_issuer: metadata
+                                .created_by()
+                                .primary_identity()
+                                .issuer()
+                                .to_owned(),
+                            created_by_subject: metadata
+                                .created_by()
+                                .primary_identity()
+                                .subject()
+                                .to_owned(),
+                        }
                     })
                     .collect::<Vec<_>>();
                 DocumentNote {
@@ -210,6 +272,7 @@ impl<'a> OwnerBuilder<'a> {
                         self.identity.subject(),
                         note.source().as_bytes(),
                         &acl,
+                        &attachments,
                     ),
                     provenance: ArchiveNoteProvenance {
                         created_via: note.created_via(),
@@ -224,6 +287,7 @@ impl<'a> OwnerBuilder<'a> {
                         }),
                     },
                     acl,
+                    attachments,
                 }
             })
             .collect();
@@ -231,7 +295,7 @@ impl<'a> OwnerBuilder<'a> {
         let bibliography_file = format!("{directory}/bibliography.json");
         files.push(DocumentFile {
             path: bibliography_file.clone(),
-            contents: csl_json_array(&self.bibliography),
+            contents: csl_json_array(&self.bibliography).into_bytes(),
         });
 
         DocumentOwner {
@@ -260,6 +324,7 @@ fn note_state_sha256(
     owner_subject: &str,
     source: &[u8],
     acl: &[DocumentAclEntry],
+    attachments: &[DocumentAttachment],
 ) -> String {
     let mut hasher = Sha256::new();
     update_hash_component(&mut hasher, owner_issuer.as_bytes());
@@ -281,7 +346,37 @@ fn note_state_sha256(
             NotePermission::Edit => 2,
         }]);
     }
+    let mut attachments = attachments.iter().collect::<Vec<_>>();
+    attachments.sort_by(|left, right| left.attachment_id.cmp(&right.attachment_id));
+    for attachment in attachments {
+        for value in [
+            attachment.attachment_id.as_bytes(),
+            attachment.file_name.as_bytes(),
+            attachment.media_type.as_str().as_bytes(),
+            attachment.sha256.as_bytes(),
+            attachment.created_by_issuer.as_bytes(),
+            attachment.created_by_subject.as_bytes(),
+        ] {
+            update_hash_component(&mut hasher, value);
+        }
+        hasher.update(
+            u64::try_from(attachment.byte_length)
+                .unwrap_or(u64::MAX)
+                .to_be_bytes(),
+        );
+        hasher.update(attachment.created_at_ms.to_be_bytes());
+    }
     format!("{:x}", hasher.finalize())
+}
+
+fn encode_sha256(digest: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(64);
+    for byte in digest {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 
 fn update_hash_component(hasher: &mut Sha256, value: &[u8]) {
@@ -398,6 +493,8 @@ pub enum DocumentImportError {
     UnsupportedFormat,
     #[error("note at position {position} has no file in the archive")]
     MissingNoteFile { position: usize },
+    #[error("note attachment at position {position} has no file in the archive")]
+    MissingAttachmentFile { position: usize },
     #[error("bibliography file for owner at position {position} is missing")]
     MissingBibliographyFile { position: usize },
     #[error("note file at position {position} is not valid UTF-8")]
@@ -428,6 +525,8 @@ pub fn archive_from_documents(
     let mut notes = Vec::new();
     let mut note_acl = Vec::new();
     let mut bibliography_items = Vec::new();
+    let mut attachments = Vec::new();
+    let mut attachment_ids_by_note = BTreeMap::<String, Vec<String>>::new();
     let mut note_position = 0;
 
     for (owner_index, owner) in manifest.owners.iter().enumerate() {
@@ -449,8 +548,49 @@ pub fn archive_from_documents(
                     position: note_position,
                 });
             }
+            for attachment in &note.attachments {
+                let attachment_bytes = files.get(&attachment.file).ok_or(
+                    DocumentImportError::MissingAttachmentFile {
+                        position: note_position,
+                    },
+                )?;
+                let actual_sha256 = format!("{:x}", Sha256::digest(attachment_bytes));
+                if attachment_bytes.len() != attachment.byte_length
+                    || !is_canonical_sha256(&attachment.sha256)
+                    || actual_sha256 != attachment.sha256
+                {
+                    return Err(DocumentImportError::InvalidManifestEntry {
+                        position: note_position,
+                    });
+                }
+                attachments.push(ArchiveAttachment {
+                    attachment_id: attachment.attachment_id.clone(),
+                    note_id: note.note_id.clone(),
+                    file_name: attachment.file_name.clone(),
+                    media_type: attachment.media_type,
+                    byte_length: attachment.byte_length,
+                    sha256: attachment.sha256.clone(),
+                    content_base64: BASE64.encode(attachment_bytes),
+                    created_at_ms: attachment.created_at_ms,
+                    created_by_issuer: attachment.created_by_issuer.clone(),
+                    created_by_subject: attachment.created_by_subject.clone(),
+                });
+            }
+            attachment_ids_by_note.insert(
+                note.note_id.clone(),
+                note.attachments
+                    .iter()
+                    .map(|attachment| attachment.attachment_id.clone())
+                    .collect(),
+            );
             let state_changed = note.state_sha256
-                != note_state_sha256(&owner.issuer, &owner.subject, contents, &note.acl);
+                != note_state_sha256(
+                    &owner.issuer,
+                    &owner.subject,
+                    contents,
+                    &note.acl,
+                    &note.attachments,
+                );
             let (updated_at_ms, revision) = if state_changed {
                 let revision = note.revision.checked_add(1).ok_or(
                     DocumentImportError::InvalidManifestEntry {
@@ -544,6 +684,10 @@ pub fn archive_from_documents(
                 reviewed_at_ms: provenance.reviewed_at_ms,
                 reviewer_issuer: provenance.reviewer_issuer.clone(),
                 reviewer_subject: provenance.reviewer_subject.clone(),
+                attachment_ids: attachment_ids_by_note
+                    .get(&note.note_id)
+                    .cloned()
+                    .unwrap_or_default(),
             }
         })
         .collect();
@@ -554,6 +698,7 @@ pub fn archive_from_documents(
         principals: Some(Vec::new()),
         notes,
         note_revisions: Some(note_revisions),
+        attachments: Some(attachments),
         note_acl,
         bibliography_items,
         // 文書書庫は復元用ではなく、外部編集した本文とCSL-JSONを読み戻す形式である。
@@ -581,8 +726,9 @@ mod tests {
     use std::str::FromStr;
 
     use marginalis_domain::{
-        BibliographyItem, BibliographyItemId, EntityId, NoteCreationSource, NoteId, NoteRestore,
-        NoteReviewRecord, NoteReviewTracking, PrincipalId, PrincipalRef, Revision, UnixMillis,
+        AttachmentDraft, AttachmentId, BibliographyItem, BibliographyItemId, EntityId,
+        NoteCreationSource, NoteId, NoteRestore, NoteReviewRecord, NoteReviewTracking,
+        NoteRevisionAttachment, PrincipalId, PrincipalRef, Revision, UnixMillis,
     };
 
     use super::*;
@@ -678,7 +824,7 @@ mod tests {
         export
             .files
             .iter()
-            .map(|file| (file.path.clone(), file.contents.clone().into_bytes()))
+            .map(|file| (file.path.clone(), file.contents.clone()))
             .collect()
     }
 
@@ -829,7 +975,7 @@ mod tests {
             .iter()
             .find(|file| file.path.ends_with(".adoc"))
             .expect("note file");
-        assert_eq!(source.contents, "= 題名\n\n本文");
+        assert_eq!(source.contents, "= 題名\n\n本文".as_bytes());
 
         let bibliography = export
             .files
@@ -837,7 +983,7 @@ mod tests {
             .find(|file| file.path.ends_with("bibliography.json"))
             .expect("bibliography file");
         let values: Vec<serde_json::Value> =
-            serde_json::from_str(&bibliography.contents).expect("CSL-JSON array");
+            serde_json::from_slice(&bibliography.contents).expect("CSL-JSON array");
         assert_eq!(values.len(), 1);
         assert_eq!(values[0]["id"], "smith2024");
         // Marginalis固有の項目を足さない。
@@ -863,7 +1009,7 @@ mod tests {
         let files = export
             .files
             .iter()
-            .map(|file| (file.path.clone(), file.contents.as_bytes().to_vec()))
+            .map(|file| (file.path.clone(), file.contents.clone()))
             .collect::<BTreeMap<_, _>>();
 
         let archive =
@@ -877,6 +1023,83 @@ mod tests {
         assert_eq!(archive.notes[0].creator_subject, "alice");
         assert_eq!(archive.bibliography_items[0].citation_key, "smith2024");
         assert_eq!(archive.bibliography_items[0].csl_json["title"], "Example");
+    }
+
+    #[test]
+    fn current_revision_attachments_round_trip_as_binary_document_files() {
+        let attachment_id = "0197c9bc-0000-7000-8000-0000000000a1"
+            .parse::<AttachmentId>()
+            .expect("attachment ID");
+        let note = Note::restore(NoteRestore {
+            note_id: NoteId::new(
+                EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
+            ),
+            owner: principal("alice"),
+            draft: marginalis_domain::NoteDraft {
+                title: "顕微鏡像".into(),
+                source: format!("= 顕微鏡像\n\nimage::attachment:{attachment_id}[]"),
+                tags: vec!["研究".into()],
+            },
+            created_at: UnixMillis::new(1000),
+            updated_at: UnixMillis::new(2000),
+            revision: Revision::INITIAL,
+            deleted_at: None,
+            created_via: NoteCreationSource::Rest,
+            review: NoteReviewTracking::pending(),
+        })
+        .expect("note with image");
+        let bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01payload".to_vec();
+        let attachment = AttachmentDraft::new("result.png".into(), bytes.clone())
+            .expect("image")
+            .into_stored(
+                attachment_id,
+                note.note_id(),
+                UnixMillis::new(1500),
+                principal("alice"),
+            );
+        let snapshot = LogicalSnapshot::new(vec![note.clone()], Vec::new())
+            .expect("snapshot")
+            .with_attachments(
+                vec![attachment],
+                vec![NoteRevisionAttachment {
+                    note_id: note.note_id(),
+                    revision: note.revision(),
+                    attachment_id,
+                }],
+            )
+            .expect("snapshot with attachment");
+
+        let exported = export(&snapshot);
+        let attachment_manifest = &exported.manifest.owners[0].notes[0].attachments[0];
+        assert_eq!(attachment_manifest.file_name, "result.png");
+        assert_eq!(
+            exported
+                .files
+                .iter()
+                .find(|file| file.path == attachment_manifest.file)
+                .expect("binary attachment file")
+                .contents,
+            bytes
+        );
+
+        let rebuilt = archive_from_documents(
+            &exported.manifest,
+            &exported_files(&exported),
+            "0.23.0",
+            UnixMillis::new(5000),
+        )
+        .expect("rebuild archive with attachment");
+        assert_eq!(rebuilt.attachments.as_ref().expect("attachments").len(), 1);
+        assert_eq!(
+            rebuilt.note_revisions.as_ref().expect("history")[0].attachment_ids,
+            vec![attachment_id.to_string()]
+        );
+        assert_eq!(
+            BASE64
+                .decode(&rebuilt.attachments.as_ref().expect("attachments")[0].content_base64)
+                .expect("base64"),
+            bytes
+        );
     }
 
     /// 本文を書き換えた場合はrevisionを進め、以前の人手確認を現在の版へ引き継がない。
@@ -895,7 +1118,7 @@ mod tests {
         let mut files = export
             .files
             .iter()
-            .map(|file| (file.path.clone(), file.contents.as_bytes().to_vec()))
+            .map(|file| (file.path.clone(), file.contents.clone()))
             .collect::<BTreeMap<_, _>>();
         let path = export.manifest.owners[0].notes[0].file.clone();
         files.insert(path, "= 書き換えた題名\n\n別の本文".as_bytes().to_vec());
@@ -988,7 +1211,7 @@ mod tests {
         let files = export
             .files
             .iter()
-            .map(|file| (file.path.clone(), file.contents.as_bytes().to_vec()))
+            .map(|file| (file.path.clone(), file.contents.clone()))
             .collect::<BTreeMap<_, _>>();
 
         let mut without_note = files.clone();

@@ -27,6 +27,7 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans,
         } = validated;
@@ -47,6 +48,9 @@ impl NoteApplication {
         let citations = self
             .citation_resolutions(owner, &citation_queries, citation_style)
             .await?;
+        let attachments = self
+            .resolve_note_attachments(actor, note_id, &attachment_queries, context)
+            .await?;
         let html = self
             .content
             .render(
@@ -55,6 +59,7 @@ impl NoteApplication {
                     references: &resolutions,
                     citations: &citations.resolutions,
                     bibliography: &citations.entries,
+                    attachments: &attachments,
                 },
             )
             .map_err(|_| NoteUseCaseError::RenderFailed)?;
@@ -131,6 +136,11 @@ impl NoteApplication {
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
+        if !validated.attachment_queries.is_empty() {
+            return Err(super::attachments::rejected_attachment_references(
+                &validated.attachment_queries,
+            ));
+        }
         self.render_preview(
             &actor,
             NoteId::new(self.random.uuid_v7()),
@@ -244,6 +254,22 @@ impl NoteApplication {
         let citations = self
             .citation_resolutions(snapshot.note.owner(), &citation_queries, citation_style)
             .await?;
+        let attachment_queries = self
+            .content
+            .attachment_queries(snapshot.note.source())
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let attachments = self
+            .resolve_note_attachments(
+                &actor,
+                snapshot.note.note_id(),
+                &attachment_queries,
+                &context,
+            )
+            .await
+            .map_err(|error| match error {
+                NoteUseCaseError::Validation(_) => NoteUseCaseError::CorruptData,
+                other => other,
+            })?;
         let html = self
             .content
             .render(
@@ -252,6 +278,7 @@ impl NoteApplication {
                     references: &resolutions,
                     citations: &citations.resolutions,
                     bibliography: &citations.entries,
+                    attachments: &attachments,
                 },
             )
             .map_err(|_| NoteUseCaseError::RenderFailed)?;

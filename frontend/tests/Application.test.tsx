@@ -420,7 +420,7 @@ describe("Application", () => {
         new Response(
           JSON.stringify({
             code: "conflict",
-            message: "note revision conflicts",
+            message: "note state conflicts with this operation",
           }),
           { status: 409, headers: { "content-type": "application/json" } },
         ),

@@ -486,6 +486,10 @@ pub struct McpNoteProfileLimits {
     pub max_patch_hunks: usize,
     pub max_tags: usize,
     pub max_tag_characters: usize,
+    pub max_attachment_bytes: usize,
+    pub max_attachments_per_note: usize,
+    pub max_attachment_bytes_per_note: usize,
+    pub max_attachment_file_name_characters: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]

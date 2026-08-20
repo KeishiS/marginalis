@@ -37,6 +37,7 @@ import {
 } from "./editor/completion";
 import { EditorViewToolbar } from "./editor/EditorViewToolbar";
 import { TemplatePicker } from "./editor/TemplatePicker";
+import { AttachmentPanel } from "./editor/AttachmentPanel";
 import { EditorViewMode } from "./editor/viewMode";
 import { PreviewPanel } from "./editor/PreviewPanel";
 import { ProblemMessage } from "./editor/ProblemMessage";
@@ -73,6 +74,10 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
   const [saveToast, setSaveToast] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>("write");
   const [livePreviewEnabled, setLivePreviewEnabled] = useState(true);
+  const [droppedFiles, setDroppedFiles] = useState<{
+    files: File[];
+    sequence: number;
+  }>({ files: [], sequence: 0 });
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(baseline),
     [baseline, form],
@@ -292,6 +297,14 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
             />
           )}
         </div>
+        <AttachmentPanel
+          apiBase={config.apiBase}
+          noteId={revision === null ? null : noteId}
+          disabled={saving}
+          filesToUpload={droppedFiles.files}
+          uploadSequence={droppedFiles.sequence}
+          onInsert={(source) => sourceEditor.current?.insertText(source)}
+        />
         <div className="editor-workspace" data-view-mode={viewMode}>
           <div className="editor-source-pane">
             <div className="source-editor-field">
@@ -309,6 +322,15 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
                 labelledBy="source-editor-label"
                 onCompositionChange={setIsComposing}
                 onSave={() => editorForm.current?.requestSubmit()}
+                onFilesDropped={
+                  revision === null
+                    ? undefined
+                    : (files) =>
+                        setDroppedFiles((current) => ({
+                          files,
+                          sequence: current.sequence + 1,
+                        }))
+                }
                 styleNonce={config.styleNonce}
               />
             </div>

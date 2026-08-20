@@ -194,8 +194,8 @@ SQLite schemaは22を基準とする前進migrationへ移します。通常の``
 実装順は、\#548のmigration基盤、\#549のschema 23と``PrincipalId``への一括切替、\#550のidentity
 引き継ぎとaliasのarchive往復です。schema 22に現れるidentityは推測でまとめず、完全に一致する組ごとに
 一つのprincipalへ移します。必要な組だけを退避付きの管理commandで明示的に結び付けます。
-\#541のノート版履歴は、各版の変更者を``PrincipalId``へ直接結び付ける形で実装済みです。\#540の添付は、
-履歴の``(note_id, revision)``を世代管理の基準として追加します。
+\#541のノート版履歴は、各版の変更者を``PrincipalId``へ直接結び付ける形で実装済みです。\#540の添付も、
+不変な画像本体をSQLiteへ保存し、履歴の``(note_id, revision)``へ参照集合を結び付ける形で実装済みです。
 
 == 検索のサービス境界
 

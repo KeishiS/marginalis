@@ -15,10 +15,10 @@ use marginalis_application::{
     WebSessionUseCases,
 };
 use marginalis_domain::{
-    Actor, AuthenticatedSession, DeletedNoteListEntry, Identity, Note, NoteAccess,
-    NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewTracking,
-    NoteSummary, NoteValidationTarget, PrincipalId, PrincipalRef, Revision, UnixMillis,
-    Utf8ByteSpan, WebSession,
+    Actor, AttachmentDraft, AttachmentId, AttachmentMetadata, AuthenticatedSession,
+    DeletedNoteListEntry, Identity, Note, NoteAccess, NoteCreationSource, NoteDraft, NoteId,
+    NoteListEntry, NoteRestore, NoteReviewTracking, NoteSummary, NoteValidationTarget, PrincipalId,
+    PrincipalRef, Revision, StoredAttachment, UnixMillis, Utf8ByteSpan, WebSession,
 };
 use std::{
     io,
@@ -232,6 +232,41 @@ macro_rules! implement_note_use_cases {
                     return Err(NoteUseCaseError::Conflict);
                 }
                 Ok(note)
+            }
+
+            async fn upload_note_attachment(
+                &self,
+                _actor: Actor,
+                _note_id: NoteId,
+                _draft: AttachmentDraft,
+            ) -> Result<AttachmentMetadata, NoteUseCaseError> {
+                Err(NoteUseCaseError::Unavailable)
+            }
+
+            async fn list_note_attachments(
+                &self,
+                _actor: Actor,
+                _note_id: NoteId,
+            ) -> Result<Vec<AttachmentMetadata>, NoteUseCaseError> {
+                Ok(Vec::new())
+            }
+
+            async fn read_note_attachment(
+                &self,
+                _actor: Actor,
+                _note_id: NoteId,
+                _attachment_id: AttachmentId,
+            ) -> Result<StoredAttachment, NoteUseCaseError> {
+                Err(NoteUseCaseError::NotFound)
+            }
+
+            async fn delete_unused_note_attachment(
+                &self,
+                _actor: Actor,
+                _note_id: NoteId,
+                _attachment_id: AttachmentId,
+            ) -> Result<(), NoteUseCaseError> {
+                Err(NoteUseCaseError::NotFound)
             }
 
             async fn preview_new_note(
@@ -763,6 +798,10 @@ impl Notes {
                 max_patch_hunks: 100,
                 max_tags: 50,
                 max_tag_characters: 64,
+                max_attachment_bytes: 8_388_608,
+                max_attachments_per_note: 32,
+                max_attachment_bytes_per_note: 67_108_864,
+                max_attachment_file_name_characters: 200,
             },
             normalization: NoteProfileNormalization {
                 title: vec!["trim", "unicode_nfc"],
