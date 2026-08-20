@@ -12,7 +12,7 @@ use marginalis_contract::{
 };
 use marginalis_domain::Utf8ByteSpan;
 
-fn span_response(span: Utf8ByteSpan) -> Utf8ByteSpanResponse {
+pub(super) fn span_response(span: Utf8ByteSpan) -> Utf8ByteSpanResponse {
     Utf8ByteSpanResponse {
         start: span.start,
         end: span.end,

@@ -36,6 +36,7 @@ impl NoteApplication {
             reference_queries,
             citation_queries,
             citation_style,
+            source_spans: _,
         } = validated;
         // 新規作成では操作している利用者がそのまま作成者になるため、閲覧時の解決先と一致する。
         diagnostics.extend(
@@ -85,6 +86,7 @@ impl NoteApplication {
             reference_queries,
             citation_queries,
             citation_style,
+            source_spans: _,
         } = validated;
         if !citation_queries.is_empty() {
             // 引用は閲覧時に作成者のライブラリで解決する。共有されたノートを別の利用者が
@@ -164,6 +166,7 @@ impl NoteApplication {
             reference_queries,
             citation_queries,
             citation_style,
+            source_spans: _,
         } = validated;
         if !citation_queries.is_empty() {
             // update_noteと同じく、引用は閲覧時の解決先である所有者のライブラリで判定する。

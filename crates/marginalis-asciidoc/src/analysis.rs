@@ -210,6 +210,7 @@ pub(crate) fn validate_draft(
     let mut title = String::new();
     let mut tags = BTreeMap::new();
     let mut citation_style = CitationStyle::default();
+    let mut source_spans = Vec::new();
     if draft.source.len() > NOTE_POLICY.max_source_bytes {
         errors.push(diagnostic(
             NoteValidationCode::SourceTooLarge,
@@ -219,6 +220,7 @@ pub(crate) fn validate_draft(
     } else {
         match adocweave::Engine::new(analysis_options()).analyze(&draft.source) {
             Ok(analysis) => {
+                source_spans = crate::spans::source_spans_from_analysis(&analysis);
                 let reference_analysis = reference_queries_from_analysis(&analysis);
                 reference_queries = reference_analysis.queries;
                 citation_queries = citation_queries_from_analysis(&analysis);
@@ -394,6 +396,7 @@ pub(crate) fn validate_draft(
             reference_queries,
             citation_queries,
             citation_style,
+            source_spans,
         })
     } else {
         Err(errors)

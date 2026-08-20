@@ -8,6 +8,7 @@ test.beforeEach(async ({ page }) => {
         html: "<p>プレビュー</p>",
         math_macros: [],
         diagnostics: [],
+        spans: [],
       }),
     });
   });

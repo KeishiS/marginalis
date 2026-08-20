@@ -201,6 +201,7 @@ export interface NotePreview {
   diagnostics: NoteDiagnostic[];
   html: string;
   math_macros: MathMacro[];
+  spans: NoteSourceSpan[];
 }
 export interface NoteReview {
   current_revision: number;
@@ -216,6 +217,14 @@ export interface NoteSourcePosition {
   column: number;
   line: number;
 }
+export interface NoteSourceSpan {
+  content_span?: Utf8ByteSpan | null;
+  kind: NoteSourceSpanKind;
+  level?: number | null;
+  marker_spans?: Utf8ByteSpan[];
+  span: Utf8ByteSpan;
+}
+export type NoteSourceSpanKind = "document_title" | "heading" | "document_attribute" | "anchor" | "strong" | "emphasis" | "highlight" | "subscript" | "superscript" | "monospace" | "link" | "cross_reference" | "citation" | "inline_math" | "math_block" | "source_block" | "literal_block" | "quote" | "example" | "admonition" | "table" | "list_item";
 export interface NoteSummary {
   created_via: NoteCreationSource;
   note_id: string;
@@ -1392,12 +1401,20 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
           "$ref": "#/components/schemas/MathMacro"
         },
         "type": "array"
+      },
+      "spans": {
+        "description": "編集画面の装飾に使うspan注釈。原文の出現順で、同じ開始位置では外側が先になる。",
+        "items": {
+          "$ref": "#/components/schemas/NoteSourceSpan"
+        },
+        "type": "array"
       }
     },
     "required": [
       "html",
       "diagnostics",
-      "math_macros"
+      "math_macros",
+      "spans"
     ],
     "type": "object"
   },
@@ -1483,6 +1500,80 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "column"
     ],
     "type": "object"
+  },
+  "NoteSourceSpan": {
+    "additionalProperties": false,
+    "description": "編集画面の装飾に使う、本文中の記法1件の位置。\n\n範囲は原文のUTF-8バイトオフセットで、診断のspanと同じ数え方を使う。",
+    "properties": {
+      "content_span": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Utf8ByteSpan"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "記法文字を除いた、装飾対象の本文部分。区別を持たない記法では省略する。"
+      },
+      "kind": {
+        "$ref": "#/components/schemas/NoteSourceSpanKind"
+      },
+      "level": {
+        "description": "見出しの深さ。`==`が1で、文書題名を除く。見出し以外は省略する。",
+        "format": "uint8",
+        "maximum": 255,
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "marker_spans": {
+        "description": "カーソルが離れているときに折り畳める記法文字の範囲。",
+        "items": {
+          "$ref": "#/components/schemas/Utf8ByteSpan"
+        },
+        "type": "array"
+      },
+      "span": {
+        "$ref": "#/components/schemas/Utf8ByteSpan",
+        "description": "記法全体が占める範囲。"
+      }
+    },
+    "required": [
+      "kind",
+      "span"
+    ],
+    "type": "object"
+  },
+  "NoteSourceSpanKind": {
+    "description": "span注釈が区別する記法の種類。",
+    "enum": [
+      "document_title",
+      "heading",
+      "document_attribute",
+      "anchor",
+      "strong",
+      "emphasis",
+      "highlight",
+      "subscript",
+      "superscript",
+      "monospace",
+      "link",
+      "cross_reference",
+      "citation",
+      "inline_math",
+      "math_block",
+      "source_block",
+      "literal_block",
+      "quote",
+      "example",
+      "admonition",
+      "table",
+      "list_item"
+    ],
+    "type": "string"
   },
   "NoteSummary": {
     "additionalProperties": false,

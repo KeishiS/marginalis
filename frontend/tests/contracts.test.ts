@@ -140,8 +140,33 @@ describe("生成済みREST応答検査", () => {
           message: "warning",
         },
       ],
+      spans: [
+        {
+          kind: "strong",
+          span: { start: 20, end: 30, unit: "utf8_byte" },
+          content_span: { start: 22, end: 28, unit: "utf8_byte" },
+          marker_spans: [
+            { start: 20, end: 22, unit: "utf8_byte" },
+            { start: 28, end: 30, unit: "utf8_byte" },
+          ],
+        },
+        {
+          kind: "heading",
+          span: { start: 40, end: 50, unit: "utf8_byte" },
+          level: 1,
+        },
+      ],
     };
     expect(parseNotePreview(preview).diagnostics).toHaveLength(1);
+    expect(parseNotePreview(preview).spans).toHaveLength(2);
+    expect(() =>
+      parseNotePreview({
+        ...preview,
+        spans: [
+          { kind: "unknown", span: { start: 0, end: 1, unit: "utf8_byte" } },
+        ],
+      }),
+    ).toThrow();
     expect(() =>
       parseNotePreview({
         ...preview,

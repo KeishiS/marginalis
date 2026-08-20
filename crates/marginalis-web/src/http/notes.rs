@@ -14,8 +14,9 @@ use marginalis_contract::{
     DeletedNoteListEntryResponse, MathMacroResponse, NoteAclGrantResponse, NoteAclResponse,
     NoteAclUpdateInput, NoteDraftInput, NoteGraphCitationResponse, NoteGraphNoteResponse,
     NoteGraphReferenceResponse, NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse,
-    NotePreviewResponse, NoteResponse, NoteReviewResponse, NoteSummaryResponse, NoteViewResponse,
-    ProblemCode, RelatedNotesResponse, SessionResponse,
+    NotePreviewResponse, NoteResponse, NoteReviewResponse, NoteSourceSpanKindResponse,
+    NoteSourceSpanResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode,
+    RelatedNotesResponse, SessionResponse,
 };
 use marginalis_domain::{
     EntityId, MAX_GRAPH_DEPTH, Note, NoteCreationSource, NoteDraft, NoteId, NoteReviewStatus,
@@ -250,7 +251,50 @@ fn preview_response(preview: marginalis_application::NotePreview) -> Json<NotePr
             .into_iter()
             .map(super::error::advisory_response)
             .collect(),
+        spans: preview
+            .spans
+            .into_iter()
+            .map(source_span_response)
+            .collect(),
     })
+}
+
+fn source_span_response(span: marginalis_application::NoteSourceSpan) -> NoteSourceSpanResponse {
+    use marginalis_application::NoteSourceSpanKind;
+    NoteSourceSpanResponse {
+        kind: match span.kind {
+            NoteSourceSpanKind::DocumentTitle => NoteSourceSpanKindResponse::DocumentTitle,
+            NoteSourceSpanKind::Heading => NoteSourceSpanKindResponse::Heading,
+            NoteSourceSpanKind::DocumentAttribute => NoteSourceSpanKindResponse::DocumentAttribute,
+            NoteSourceSpanKind::Anchor => NoteSourceSpanKindResponse::Anchor,
+            NoteSourceSpanKind::Strong => NoteSourceSpanKindResponse::Strong,
+            NoteSourceSpanKind::Emphasis => NoteSourceSpanKindResponse::Emphasis,
+            NoteSourceSpanKind::Highlight => NoteSourceSpanKindResponse::Highlight,
+            NoteSourceSpanKind::Subscript => NoteSourceSpanKindResponse::Subscript,
+            NoteSourceSpanKind::Superscript => NoteSourceSpanKindResponse::Superscript,
+            NoteSourceSpanKind::Monospace => NoteSourceSpanKindResponse::Monospace,
+            NoteSourceSpanKind::Link => NoteSourceSpanKindResponse::Link,
+            NoteSourceSpanKind::CrossReference => NoteSourceSpanKindResponse::CrossReference,
+            NoteSourceSpanKind::Citation => NoteSourceSpanKindResponse::Citation,
+            NoteSourceSpanKind::InlineMath => NoteSourceSpanKindResponse::InlineMath,
+            NoteSourceSpanKind::MathBlock => NoteSourceSpanKindResponse::MathBlock,
+            NoteSourceSpanKind::SourceBlock => NoteSourceSpanKindResponse::SourceBlock,
+            NoteSourceSpanKind::LiteralBlock => NoteSourceSpanKindResponse::LiteralBlock,
+            NoteSourceSpanKind::Quote => NoteSourceSpanKindResponse::Quote,
+            NoteSourceSpanKind::Example => NoteSourceSpanKindResponse::Example,
+            NoteSourceSpanKind::Admonition => NoteSourceSpanKindResponse::Admonition,
+            NoteSourceSpanKind::Table => NoteSourceSpanKindResponse::Table,
+            NoteSourceSpanKind::ListItem => NoteSourceSpanKindResponse::ListItem,
+        },
+        span: super::error::span_response(span.span),
+        content_span: span.content_span.map(super::error::span_response),
+        marker_spans: span
+            .marker_spans
+            .into_iter()
+            .map(super::error::span_response)
+            .collect(),
+        level: span.level,
+    }
 }
 
 pub(super) async fn update_note(
