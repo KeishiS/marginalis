@@ -51,7 +51,9 @@ https://github.com/microsoft/monaco-editor#browser-support[Monaco Editorの対�
 影響します。必要な編集機能と引き換えにこの増加を受け入れ、600,000バイトを継続検査の上限とします。
 
 CodeMirrorの公式AsciiDoc構文拡張は採用しません。初期実装ではプレーンテキストとして扱い、
-不完全な構文色分けとAdocWeaveの解析結果が食い違う状態を避けます。
+不完全な構文色分けとAdocWeaveの解析結果が食い違う状態を避けます。その後の編集欄の装飾は、
+ブラウザー内の解析ではなくAdocWeaveのspan注釈から導いています
+( xref:0016-編集画面の装飾はadocweaveのspan注釈から導く.adoc#top[ADR 0016]を参照)。
 
 == 再検討条件
 
