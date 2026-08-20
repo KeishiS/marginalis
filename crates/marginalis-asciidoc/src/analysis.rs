@@ -473,7 +473,8 @@ mod tests {
 
     #[test]
     fn monospace_boundary_is_a_non_blocking_warning() {
-        let source = "= 調査結果\n\n本文は`code`です。";
+        // ラテン文字が隣接する制約付きmonospaceは境界が無効で、警告になる。
+        let source = "= 調査結果\n\nsee the `file`s here.";
         let validated = validate_draft(NoteDraft {
             source: source.into(),
             title: String::new(),
@@ -487,7 +488,7 @@ mod tests {
             .expect("monospace boundary warning");
         assert_eq!(warning.severity, NoteAdvisorySeverity::Warning);
 
-        let corrected = source.replace("`code`", "``code``");
+        let corrected = source.replace("`file`", "``file``");
         let validated = validate_draft(NoteDraft {
             source: corrected,
             title: String::new(),
@@ -497,6 +498,20 @@ mod tests {
         assert!(
             validated
                 .diagnostics
+                .iter()
+                .all(|item| item.code != "monospace-boundary")
+        );
+
+        // CJK文字の隣接は単語境界として扱われ、警告なしで受理される
+        // (AdocWeave 0.41.0、adocweave#576)。
+        let cjk = validate_draft(NoteDraft {
+            source: "= 調査結果\n\n本文は`code`です。".into(),
+            title: String::new(),
+            tags: Vec::new(),
+        })
+        .expect("CJK adjacency is a valid boundary");
+        assert!(
+            cjk.diagnostics
                 .iter()
                 .all(|item| item.code != "monospace-boundary")
         );

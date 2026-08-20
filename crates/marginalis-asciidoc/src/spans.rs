@@ -350,15 +350,14 @@ mod tests {
 
     #[test]
     fn inline_markup_reports_content_and_foldable_markers() {
-        // 日本語の地の文では制約付き記法がCJK隣接で認識されないため(adocweave#576)、
-        // 非制約記法で書く。
-        let source = "= 題名\n\n**太字**と__強調__と``等幅``を含みます。\n";
+        // 制約付き記法は、CJK文字の隣接でも認識される(adocweave#576、0.41.0で対応)。
+        let source = "= 題名\n\n*太字*と_強調_と`等幅`を含みます。\n";
         let spans = spans_of(source);
         let strong = spans
             .iter()
             .find(|item| item.kind == NoteSourceSpanKind::Strong)
             .expect("strong span");
-        assert_eq!(slice(source, strong.span), "**太字**");
+        assert_eq!(slice(source, strong.span), "*太字*");
         assert_eq!(
             slice(source, strong.content_span.expect("本文部分")),
             "太字"
@@ -368,7 +367,7 @@ mod tests {
             .iter()
             .map(|span| slice(source, *span))
             .collect();
-        assert_eq!(markers, ["**", "**"]);
+        assert_eq!(markers, ["*", "*"]);
         assert!(
             spans
                 .iter()
