@@ -83,8 +83,9 @@ if [[ "$source_root" == "crates" ]]; then
     '/^\/\/ observability-event-catalog:start$/,/^\/\/ observability-event-catalog:end$/p' \
     "$event_catalog" >"$documented_catalog"
 
-  # 共有Authorization Serverは外部crateだが、同じプロセスへ組み込むため運用者は同じjournalで
-  # そのeventを見る。実装がMarginalisの外にあってもevent一覧との一致を確認する。
+  # 共有Authorization Serverと共有OIDCログインは外部crateだが、同じプロセスへ組み込むため
+  # 運用者は同じjournalでそのeventを見る。実装がMarginalisの外にあってもevent一覧との一致を
+  # 確認する。
   embedded_sources=()
   while IFS= read -r manifest; do
     [[ -n "$manifest" ]] || continue
@@ -99,11 +100,12 @@ if [[ "$source_root" == "crates" ]]; then
     cargo metadata --locked --format-version 1 |
       jq -r '.packages[]
         | select(.name == "mcp-authorization-server"
-          or .name == "mcp-authorization-server-cimd")
+          or .name == "mcp-authorization-server-cimd"
+          or .name == "oidc-browser-login")
         | .manifest_path'
   )
-  if [[ "${#embedded_sources[@]}" -ne 2 ]]; then
-    echo "組み込む共有Authorization Server crateが2件見つかりません。" >&2
+  if [[ "${#embedded_sources[@]}" -ne 3 ]]; then
+    echo "組み込む共有crate(AS 2件とOIDCログイン1件)が見つかりません。" >&2
     status=1
   fi
 

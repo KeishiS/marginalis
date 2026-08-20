@@ -51,15 +51,16 @@ AsciiDoc engine、HTTP serverを起動する必要がありません。
 ``NOTE_POLICY``には含めず``marginalis-asciidoc``の定数に置きます。版の正本は``Cargo.toml``のrevisionと
 ``Cargo.lock``の解決結果で、``cargo make adocweave-version-check``が定数、``flake.nix``、textlint plugin、
 生成済みOpenAPIなどリポジトリ内の参照との一致を検査します。
-``marginalis-auth-oidc``は外部identity provider portを実装し、OIDC discovery・code exchange・
-ID token検証を担当します。利用を許可する``server-users``所属の判断はapplicationが担当します。
+``marginalis-auth-oidc``は外部identity provider portの薄いadapterです。OIDC discovery・
+code exchange・ID token検証の本体は、共有crate ``oidc-browser-login``が担当します(ADR 0015)。
+設定した許可claim値との照合による利用可否の判断はapplicationが担当します。
 MCP用OAuthの製品非依存の型、resourceとscopeのpolicy、PKCEとredirect URIの検査は
 ``mcp-authorization-server``が定義します。認可、token発行、refresh token rotation、失効の状態遷移と
 原子的な永続化portも同じcrateが所有します。``marginalis-sqlite``はそのportを実装し、client、認可code、
 token hashを既存schemaへ保存します。``marginalis-application``は検証済みの利用者identityを製品非依存の
 主体へ変換して、scopeとノート操作の対応を保ちます。詳しい境界は
 xref:adr/0008-mcp-authorization-serverの中核を製品から分離する.adoc#top[ADR 0008]に記録しています。利用者の
-ログインはWeb UIと同じKanidm OIDCを使います。CIMDの外部取得とcacheは、HTTP clientへ依存するadapter
+ログインはWeb UIと同じ標準OIDC IdP(参照実装はKanidm)を使います。CIMDの外部取得とcacheは、HTTP clientへ依存するadapter
 ``mcp-authorization-server-cimd``へ分け、中核crateにnetwork依存を持ち込みません。
 
 この2つのcrateはMarginalisのworkspaceには含まれません。専用リポジトリ
@@ -70,6 +71,13 @@ SQLite adapter、HTTP endpoint、同意画面、利用者とclient別のscope上
 Marginalisに残ります。版とrevisionの固定、Nixの取得ハッシュ、依存方向は
 ``cargo make shared-authorization-server``が確認します。採用理由と責務の分担は
 xref:adr/0012-共有authorization-serverを独立リポジトリで配布する.adoc#top[ADR 0012]に記録しています。
+
+利用者ログインのOIDC検証も同じ方式で共有します。中核の``oidc-browser-login``と試験用の
+``oidc-browser-login-testkit``は専用リポジトリ
+https://github.com/KeishiS/oidc-browser-login[KeishiS/oidc-browser-login]で保守し、Marginalisは完全な
+commit SHAを固定したGit依存として取り込みます。Cookie、CSRF、sessionなどのHTTP境界はMarginalisに
+残ります。固定、到達性、testkitの混入は``cargo make shared-oidc-login``が確認します。方針は
+xref:adr/0015-利用者認証は標準oidcに依存しkanidmを参照実装とする.adoc#top[ADR 0015]に記録しています。
 利用者とMCPクライアントのscope上限は別のSQLite行として保存し、認可codeの発行前に両方を適用します。
 利用者はWeb UIから自分の上限だけを変更できます。上限を狭める保存処理は、新しい上限を超える認可codeと
 token familyの失効まで同じtransactionで行います。設定主体と既定値は
@@ -189,7 +197,7 @@ crates/
 ├── marginalis-application     use case実装と内向き・外向きport
 ├── marginalis-asciidoc        AsciiDoc検証・描画
 ├── marginalis-archive         archive形式の型・検証・移行
-├── marginalis-auth-oidc       Kanidm OIDC adapter
+├── marginalis-auth-oidc       OIDCログインadapter（共有crateへの写像）
 ├── marginalis-sqlite          SQLite adapter
 ├── marginalis-web             HTTP adapter
 ├── marginalis-webhook-http    Webhook送信adapter（宛先検査・署名・HTTP POST）

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 共有Authorization Serverの2 crateは、独立リポジトリから固定revisionで取得する外部依存です。
-# workspace内のcrateではありませんが、設計上の層に属するため依存表へ含めて検査します。
-shared_crates='["mcp-authorization-server","mcp-authorization-server-cimd"]'
+# 共有Authorization Serverの2 crateと共有OIDCログインは、独立リポジトリから固定revisionで
+# 取得する外部依存です。workspace内のcrateではありませんが、設計上の層に属するため依存表へ
+# 含めて検査します。
+shared_crates='["mcp-authorization-server","mcp-authorization-server-cimd","oidc-browser-login"]'
 
 temporary_directory=$(mktemp -d)
 trap 'rm -rf "$temporary_directory"' EXIT
@@ -46,7 +47,7 @@ else
 marginalis-application: marginalis-domain, mcp-authorization-server
 marginalis-archive: marginalis-application, marginalis-domain
 marginalis-asciidoc: marginalis-application, marginalis-domain
-marginalis-auth-oidc: marginalis-application, marginalis-domain
+marginalis-auth-oidc: marginalis-application, marginalis-domain, oidc-browser-login
 marginalis-contract: marginalis-domain
 marginalis-documentation:
 marginalis-domain:

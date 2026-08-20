@@ -1,491 +1,93 @@
-//! OIDC provider接続の設定境界。HTTP handlerやSQLiteへは依存しない。
-
-use std::{collections::BTreeSet, sync::Arc};
+//! 共有crate `oidc-browser-login`をMarginalisのapplication portへ接続する薄いadapter。
+//!
+//! OIDCの検証本体(Authorization Code + PKCE、ID tokenの署名・issuer・audience・nonce検証、
+//! fail closedのclaim読み取り)は共有crateが担う(ADR 0015)。このcrateが行うのは、
+//! 時刻・乱数・login attempt保存の各portの型写像と、`IdentityProvider` portの実装だけ。
 
 use async_trait::async_trait;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use marginalis_application::{
     Clock, ExternalIdentity, IdentityProvider, IdentityProviderError, OidcLoginAttempt,
     OidcLoginAttemptStore, Random,
 };
 use marginalis_domain::UnixMillis;
-pub use openidconnect::core::CoreJwsSigningAlgorithm as OidcSigningAlgorithm;
-use openidconnect::{
-    AuthType, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
-    EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, Scope, TokenResponse,
-    core::{CoreAuthenticationFlow, CoreClient, CoreJwsSigningAlgorithm, CoreProviderMetadata},
-    reqwest,
+use oidc_browser_login::{CallbackError, LazyOidcLogin};
+pub use oidc_browser_login::{
+    DiscoveryError as OidcDiscoveryError, OidcLogin as OidcAuthentication,
+    OidcSettings as OidcConfiguration, OidcSigningAlgorithm,
+    SettingsError as OidcConfigurationError, TokenEndpointAuth as OidcTokenEndpointAuth, reqwest,
 };
-use serde::Deserialize;
-use url::Url;
 
-const MAX_ID_TOKEN_BYTES: usize = 16 * 1024;
-const MAX_GROUPS_PER_ID_TOKEN: usize = 128;
-const MAX_GROUP_NAME_BYTES: usize = 256;
+/// Marginalisの時刻portを共有crateの時刻portへ写す。
+struct SharedClock<T>(T);
 
-fn allowed_id_token_algorithms(
-    allowed: &[CoreJwsSigningAlgorithm],
-    supported: &[CoreJwsSigningAlgorithm],
-) -> Vec<CoreJwsSigningAlgorithm> {
-    allowed
-        .iter()
-        .filter(|algorithm| supported.contains(algorithm))
-        .cloned()
-        .collect()
-}
-
-/// token endpointへのclient認証方式。
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum OidcTokenEndpointAuth {
-    /// 既定。credentialをPOST本文で送る(`client_secret_post`)。
-    #[default]
-    ClientSecretPost,
-    /// credentialをAuthorizationヘッダーで送る(`client_secret_basic`)。
-    ClientSecretBasic,
-}
-
-#[derive(Clone)]
-pub struct OidcConfiguration {
-    issuer_url: IssuerUrl,
-    client_id: ClientId,
-    client_secret: ClientSecret,
-    redirect_url: RedirectUrl,
-    cookie_path: String,
-    scopes: Vec<String>,
-    group_claim: String,
-    allowed_algorithms: Vec<CoreJwsSigningAlgorithm>,
-    token_endpoint_auth: OidcTokenEndpointAuth,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum OidcConfigurationError {
-    #[error("OIDC issuer URL is invalid")]
-    InvalidIssuerUrl,
-    #[error("Base URL must be an absolute HTTPS URL")]
-    InvalidBaseUrl,
-    #[error("OIDC client credentials must not be empty")]
-    EmptyCredential,
-    #[error("OIDC group claim name must not be empty")]
-    EmptyGroupClaim,
-    #[error("at least one ID token signing algorithm must be allowed")]
-    NoAllowedAlgorithm,
-}
-
-impl OidcConfiguration {
-    /// 既定はKanidm 1.10を参照実装とする値(ADR 0015)。他のIdPは`with_*`で調整する。
-    pub fn new(
-        issuer_url: String,
-        client_id: String,
-        client_secret: String,
-        base_url: &str,
-    ) -> Result<Self, OidcConfigurationError> {
-        let issuer_url = validate_issuer_url(issuer_url)?;
-        if client_id.trim().is_empty() || client_secret.trim().is_empty() {
-            return Err(OidcConfigurationError::EmptyCredential);
-        }
-        let redirect_url = callback_url(base_url)?;
-        let cookie_path = cookie_path(base_url)?;
-        Ok(Self {
-            issuer_url,
-            client_id: ClientId::new(client_id),
-            client_secret: ClientSecret::new(client_secret),
-            redirect_url,
-            cookie_path,
-            scopes: vec!["profile".into(), "email".into(), "groups_name".into()],
-            group_claim: "groups".into(),
-            allowed_algorithms: vec![CoreJwsSigningAlgorithm::EcdsaP256Sha256],
-            token_endpoint_auth: OidcTokenEndpointAuth::default(),
-        })
-    }
-
-    /// `openid`以外に要求する追加scope。既定は参照実装向けのprofile/email/groups_name。
-    pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
-        self.scopes = scopes;
-        self
-    }
-
-    /// group所属を読むclaim名。既定は`groups`。
-    pub fn with_group_claim(mut self, claim: String) -> Result<Self, OidcConfigurationError> {
-        if claim.trim().is_empty() {
-            return Err(OidcConfigurationError::EmptyGroupClaim);
-        }
-        self.group_claim = claim;
-        Ok(self)
-    }
-
-    /// 許可するID token署名アルゴリズム。既定はES256のみ(ADR 0015)。
-    pub fn with_allowed_algorithms(
-        mut self,
-        algorithms: Vec<CoreJwsSigningAlgorithm>,
-    ) -> Result<Self, OidcConfigurationError> {
-        if algorithms.is_empty() {
-            return Err(OidcConfigurationError::NoAllowedAlgorithm);
-        }
-        self.allowed_algorithms = algorithms;
-        Ok(self)
-    }
-
-    pub fn with_token_endpoint_auth(mut self, auth: OidcTokenEndpointAuth) -> Self {
-        self.token_endpoint_auth = auth;
-        self
-    }
-
-    pub fn issuer_url(&self) -> &IssuerUrl {
-        &self.issuer_url
-    }
-    pub fn client_id(&self) -> &ClientId {
-        &self.client_id
-    }
-    pub fn client_secret(&self) -> &ClientSecret {
-        &self.client_secret
-    }
-    pub fn redirect_url(&self) -> &RedirectUrl {
-        &self.redirect_url
-    }
-    pub fn cookie_path(&self) -> &str {
-        &self.cookie_path
-    }
-    pub fn group_claim(&self) -> &str {
-        &self.group_claim
+impl<T: Clock> oidc_browser_login::Clock for SharedClock<T> {
+    fn now(&self) -> oidc_browser_login::UnixMillis {
+        oidc_browser_login::UnixMillis::new(self.0.now().get())
     }
 }
 
-fn validate_issuer_url(value: String) -> Result<IssuerUrl, OidcConfigurationError> {
-    let url = Url::parse(&value).map_err(|_| OidcConfigurationError::InvalidIssuerUrl)?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(OidcConfigurationError::InvalidIssuerUrl);
-    }
-    IssuerUrl::new(value).map_err(|_| OidcConfigurationError::InvalidIssuerUrl)
-}
+/// Marginalisの乱数portを共有crateの乱数portへ写す。
+struct SharedEntropy<R>(R);
 
-fn callback_url(base_url: &str) -> Result<RedirectUrl, OidcConfigurationError> {
-    let mut url = Url::parse(base_url).map_err(|_| OidcConfigurationError::InvalidBaseUrl)?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(OidcConfigurationError::InvalidBaseUrl);
-    }
-    let base_path = url.path().trim_end_matches('/');
-    url.set_path(&format!("{base_path}/auth/oidc/callback"));
-    RedirectUrl::new(url.into()).map_err(|_| OidcConfigurationError::InvalidBaseUrl)
-}
-
-fn cookie_path(base_url: &str) -> Result<String, OidcConfigurationError> {
-    let url = Url::parse(base_url).map_err(|_| OidcConfigurationError::InvalidBaseUrl)?;
-    let path = url.path().trim_end_matches('/');
-    Ok(if path.is_empty() {
-        "/".into()
-    } else {
-        path.into()
-    })
-}
-
-/// Discovery済みの外部OIDCクライアント。
-pub type DiscoveredOidcClient = CoreClient<
-    EndpointSet,
-    EndpointNotSet,
-    EndpointNotSet,
-    EndpointNotSet,
-    EndpointMaybeSet,
-    EndpointMaybeSet,
->;
-
-/// OIDC providerとの通信を担うadapter。
-///
-/// SQLiteやHTTP frameworkには依存せず、login attemptとidentityの永続化はapplication portを
-/// 通じて行う。
-#[derive(Clone)]
-pub struct OidcAuthentication {
-    client: DiscoveredOidcClient,
-    http_client: reqwest::Client,
-    cookie_path: String,
-    scopes: Vec<String>,
-    group_claim: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum OidcDiscoveryError {
-    #[error("OIDC HTTP client could not be initialized")]
-    HttpClient,
-    #[error("OIDC Discovery failed")]
-    Discovery,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OidcLoginStartError {
-    Store,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OidcCallbackError {
-    Rejected(OidcCallbackRejection),
-    Unavailable,
-}
-
-/// OAuth callbackの安全に記録できる失敗段階。token、code、stateなどの値は含めない。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OidcCallbackRejection {
-    State,
-    CodeExchange,
-    MissingIdToken,
-    Claims,
-    Identity,
-    Groups,
-}
-
-impl OidcCallbackError {
-    pub const fn diagnostic_stage(self) -> &'static str {
-        match self {
-            Self::Rejected(OidcCallbackRejection::State) => "state",
-            Self::Rejected(OidcCallbackRejection::CodeExchange) => "code-exchange",
-            Self::Rejected(OidcCallbackRejection::MissingIdToken) => "missing-id-token",
-            Self::Rejected(OidcCallbackRejection::Claims) => "id-token-claims",
-            Self::Rejected(OidcCallbackRejection::Identity) => "identity",
-            Self::Rejected(OidcCallbackRejection::Groups) => "groups",
-            Self::Unavailable => "storage",
-        }
+impl<R: Random> oidc_browser_login::Entropy for SharedEntropy<R> {
+    fn opaque_token(&self) -> String {
+        self.0.opaque_token()
     }
 }
 
-/// 署名・issuer・audience・nonceを検証済みのID tokenから得たKanidm group所属。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifiedOidcGroups {
-    groups: BTreeSet<String>,
-}
+/// Marginalisのlogin attempt保存portを共有crateの保存portへ写す。
+struct SharedAttempts<A>(A);
 
-/// v0.3 login callbackでのみ返す、署名検証済みOIDC identityとKanidm group claim。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifiedOidcIdentity {
-    pub issuer: String,
-    pub subject: String,
-    pub groups: VerifiedOidcGroups,
-}
+impl<A: OidcLoginAttemptStore> oidc_browser_login::LoginAttemptStore for SharedAttempts<A> {
+    type Error = A::Error;
 
-impl VerifiedOidcGroups {
-    pub fn is_user(&self, user_group: &str) -> bool {
-        self.groups.contains(user_group)
-    }
-
-    pub fn into_names(self) -> Vec<String> {
-        self.groups.into_iter().collect()
-    }
-}
-
-#[derive(Deserialize)]
-struct GroupClaimPayload {
-    #[serde(flatten)]
-    claims: serde_json::Map<String, serde_json::Value>,
-}
-
-/// 検証済みID tokenのpayloadから、設定したclaim名のgroup所属を読む。
-///
-/// この関数はJWTの署名検証をしない。必ず`IdToken::claims`の成功後にだけ呼び出す。claimの値は
-/// 文字列配列に加えて単一の文字列も受理する(IdPにより単数で発行されるため)。claimが欠落、
-/// それ以外の型、空のgroup名を含む場合はfail closedで拒否する。claim名が`email`の場合は、
-/// 未検証のメールアドレスを認可の根拠にしないため`email_verified`がtrueであることも要求する。
-fn groups_from_verified_id_token(
-    id_token: &str,
-    group_claim: &str,
-) -> Result<VerifiedOidcGroups, OidcCallbackRejection> {
-    if group_claim.is_empty() || id_token.len() > MAX_ID_TOKEN_BYTES {
-        return Err(OidcCallbackRejection::Groups);
-    }
-    let payload = id_token
-        .split('.')
-        .nth(1)
-        .ok_or(OidcCallbackRejection::Groups)?;
-    let payload = URL_SAFE_NO_PAD
-        .decode(payload)
-        .map_err(|_| OidcCallbackRejection::Groups)?;
-    let payload = serde_json::from_slice::<GroupClaimPayload>(&payload)
-        .map_err(|_| OidcCallbackRejection::Groups)?;
-    if group_claim == "email"
-        && payload
-            .claims
-            .get("email_verified")
-            .and_then(serde_json::Value::as_bool)
-            != Some(true)
-    {
-        return Err(OidcCallbackRejection::Groups);
-    }
-    let claim = payload
-        .claims
-        .get(group_claim)
-        .ok_or(OidcCallbackRejection::Groups)?;
-    let single = std::slice::from_ref(claim);
-    let values: &[serde_json::Value] = match claim {
-        serde_json::Value::Array(values) => values,
-        serde_json::Value::String(_) => single,
-        _ => return Err(OidcCallbackRejection::Groups),
-    };
-    if values.len() > MAX_GROUPS_PER_ID_TOKEN {
-        return Err(OidcCallbackRejection::Groups);
-    }
-    let mut groups = BTreeSet::new();
-    for value in values {
-        let value = value
-            .as_str()
-            .filter(|value| !value.trim().is_empty() && value.len() <= MAX_GROUP_NAME_BYTES)
-            .ok_or(OidcCallbackRejection::Groups)?;
-        groups.insert(value.to_owned());
-    }
-    Ok(VerifiedOidcGroups { groups })
-}
-
-impl OidcAuthentication {
-    pub async fn discover(configuration: &OidcConfiguration) -> Result<Self, OidcDiscoveryError> {
-        let http_client = reqwest::ClientBuilder::new()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .map_err(|_| OidcDiscoveryError::HttpClient)?;
-        Self::discover_with_http_client(configuration, http_client).await
-    }
-
-    /// Discoveryとtoken exchangeに使うHTTP clientを明示する。内部CAを使う配備では、
-    /// 呼出し側が検証済みPEMをroot certificateとして追加したclientを渡す。
-    pub async fn discover_with_http_client(
-        configuration: &OidcConfiguration,
-        http_client: reqwest::Client,
-    ) -> Result<Self, OidcDiscoveryError> {
-        let metadata =
-            CoreProviderMetadata::discover_async(configuration.issuer_url().clone(), &http_client)
-                .await
-                .map_err(|_| OidcDiscoveryError::Discovery)?;
-        let signing_algorithms = allowed_id_token_algorithms(
-            &configuration.allowed_algorithms,
-            metadata.id_token_signing_alg_values_supported(),
-        );
-        if signing_algorithms.is_empty() {
-            return Err(OidcDiscoveryError::Discovery);
-        }
-        let metadata = metadata.set_id_token_signing_alg_values_supported(signing_algorithms);
-        Ok(Self {
-            client: CoreClient::from_provider_metadata(
-                metadata,
-                configuration.client_id().clone(),
-                Some(configuration.client_secret().clone()),
-            )
-            .set_auth_type(match configuration.token_endpoint_auth {
-                OidcTokenEndpointAuth::ClientSecretPost => AuthType::RequestBody,
-                OidcTokenEndpointAuth::ClientSecretBasic => AuthType::BasicAuth,
-            })
-            .set_redirect_uri(configuration.redirect_url().clone()),
-            http_client,
-            cookie_path: configuration.cookie_path().into(),
-            scopes: configuration.scopes.clone(),
-            group_claim: configuration.group_claim.clone(),
-        })
-    }
-
-    pub fn cookie_path(&self) -> &str {
-        &self.cookie_path
-    }
-
-    pub async fn begin_login<Attempts, Entropy, Time>(
+    async fn issue(
         &self,
-        attempts: &Attempts,
-        entropy: &Entropy,
-        clock: &Time,
-    ) -> Result<String, OidcLoginStartError>
-    where
-        Attempts: OidcLoginAttemptStore,
-        Entropy: Random,
-        Time: Clock,
-    {
-        let now = clock.now();
-        let pending = OidcLoginAttempt {
-            state: entropy.opaque_token(),
-            nonce: entropy.opaque_token(),
-            pkce_verifier: entropy.opaque_token(),
-            expires_at: UnixMillis::new(now.get() + 10 * 60 * 1_000),
-        };
-        attempts
-            .issue(pending.clone(), now)
-            .await
-            .map_err(|_| OidcLoginStartError::Store)?;
-        let verifier = PkceCodeVerifier::new(pending.pkce_verifier);
-        let challenge = PkceCodeChallenge::from_code_verifier_sha256(&verifier);
-        let state = pending.state;
-        let nonce = pending.nonce;
-        let (url, _, _) = self
-            .client
-            .authorize_url(
-                CoreAuthenticationFlow::AuthorizationCode,
-                move || CsrfToken::new(state),
-                move || Nonce::new(nonce),
+        attempt: oidc_browser_login::LoginAttempt,
+        now: oidc_browser_login::UnixMillis,
+    ) -> Result<(), Self::Error> {
+        self.0
+            .issue(
+                OidcLoginAttempt {
+                    state: attempt.state,
+                    nonce: attempt.nonce,
+                    pkce_verifier: attempt.pkce_verifier,
+                    expires_at: UnixMillis::new(attempt.expires_at.get()),
+                },
+                UnixMillis::new(now.get()),
             )
-            .set_pkce_challenge(challenge)
-            // openidはライブラリが常に付与する。追加分は設定から渡す(既定は参照実装向けの値)。
-            .add_scopes(self.scopes.iter().cloned().map(Scope::new))
-            .url();
-        Ok(url.into())
+            .await
     }
 
-    /// 各adapterを明示的に受け取ることで、OIDC crateを永続化実装から独立させる。
-    #[allow(clippy::too_many_arguments)]
-    pub async fn complete_login<Attempts, Time>(
+    async fn consume(
         &self,
-        attempts: &Attempts,
-        clock: &Time,
-        code: &str,
-        state: &str,
-    ) -> Result<VerifiedOidcIdentity, OidcCallbackError>
-    where
-        Attempts: OidcLoginAttemptStore,
-        Time: Clock,
-    {
-        let pending = attempts
-            .consume(state.to_owned(), clock.now())
-            .await
-            .map_err(|_| OidcCallbackError::Unavailable)?
-            .ok_or(OidcCallbackError::Rejected(OidcCallbackRejection::State))?;
-        let token = self
-            .client
-            .exchange_code(AuthorizationCode::new(code.to_owned()))
-            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?
-            .set_pkce_verifier(PkceCodeVerifier::new(pending.pkce_verifier))
-            .request_async(&self.http_client)
-            .await
-            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::CodeExchange))?;
-        let id_token = token.id_token().ok_or(OidcCallbackError::Rejected(
-            OidcCallbackRejection::MissingIdToken,
-        ))?;
-        let claims = id_token
-            .claims(&self.client.id_token_verifier(), &Nonce::new(pending.nonce))
-            .map_err(|_| OidcCallbackError::Rejected(OidcCallbackRejection::Claims))?;
-        let groups = groups_from_verified_id_token(&id_token.to_string(), &self.group_claim)
-            .map_err(OidcCallbackError::Rejected)?;
-        Ok(VerifiedOidcIdentity {
-            issuer: claims.issuer().as_str().to_owned(),
-            subject: claims.subject().as_str().to_owned(),
-            groups,
-        })
+        state: String,
+        now: oidc_browser_login::UnixMillis,
+    ) -> Result<Option<oidc_browser_login::LoginAttempt>, Self::Error> {
+        Ok(self
+            .0
+            .consume(state, UnixMillis::new(now.get()))
+            .await?
+            .map(|attempt| oidc_browser_login::LoginAttempt {
+                state: attempt.state,
+                nonce: attempt.nonce,
+                pkce_verifier: attempt.pkce_verifier,
+                expires_at: oidc_browser_login::UnixMillis::new(attempt.expires_at.get()),
+            }))
     }
 }
 
-/// OIDC通信とlogin attempt保存をapplicationのidentity provider portへ接続するadapter。
+/// 共有crateのOIDCログインをapplicationのidentity provider portへ接続するadapter。
 pub struct OidcIdentityProvider<Attempts, Time, Entropy> {
-    attempts: Attempts,
-    clock: Time,
-    random: Entropy,
-    configuration: OidcConfiguration,
-    http_client: reqwest::Client,
-    discovered: Arc<tokio::sync::RwLock<Option<OidcAuthentication>>>,
+    login: LazyOidcLogin<SharedAttempts<Attempts>, SharedClock<Time>, SharedEntropy<Entropy>>,
 }
 
-impl<Attempts, Time, Entropy> OidcIdentityProvider<Attempts, Time, Entropy> {
+impl<Attempts, Time, Entropy> OidcIdentityProvider<Attempts, Time, Entropy>
+where
+    Attempts: OidcLoginAttemptStore,
+    Time: Clock,
+    Entropy: Random,
+{
     pub fn new(
         attempts: Attempts,
         clock: Time,
@@ -495,38 +97,15 @@ impl<Attempts, Time, Entropy> OidcIdentityProvider<Attempts, Time, Entropy> {
         discovered: Option<OidcAuthentication>,
     ) -> Self {
         Self {
-            attempts,
-            clock,
-            random,
-            configuration,
-            http_client,
-            discovered: Arc::new(tokio::sync::RwLock::new(discovered)),
+            login: LazyOidcLogin::new(
+                SharedAttempts(attempts),
+                SharedClock(clock),
+                SharedEntropy(random),
+                configuration,
+                http_client,
+                discovered,
+            ),
         }
-    }
-
-    async fn oidc(&self) -> Result<OidcAuthentication, IdentityProviderError> {
-        if let Some(oidc) = self.discovered.read().await.clone() {
-            return Ok(oidc);
-        }
-        let oidc = OidcAuthentication::discover_with_http_client(
-            &self.configuration,
-            self.http_client.clone(),
-        )
-        .await
-        .map_err(|_| {
-            tracing::warn!(
-                event = "oidc.discovery.failed",
-                reason = "unavailable",
-                "OIDC discovery retry failed"
-            );
-            IdentityProviderError::Unavailable
-        })?;
-        tracing::info!(
-            event = "oidc.discovery.completed",
-            "OIDC discovery succeeded"
-        );
-        let mut discovered = self.discovered.write().await;
-        Ok(discovered.get_or_insert(oidc).clone())
     }
 }
 
@@ -538,9 +117,8 @@ where
     Entropy: Random + Send + Sync,
 {
     async fn begin_login(&self) -> Result<String, IdentityProviderError> {
-        self.oidc()
-            .await?
-            .begin_login(&self.attempts, &self.random, &self.clock)
+        self.login
+            .begin_login()
             .await
             .map_err(|_| IdentityProviderError::Unavailable)
     }
@@ -550,171 +128,18 @@ where
         code: &str,
         state: &str,
     ) -> Result<ExternalIdentity, IdentityProviderError> {
-        let identity = self
-            .oidc()
-            .await?
-            .complete_login(&self.attempts, &self.clock, code, state)
-            .await
-            .map_err(|error| match error {
-                OidcCallbackError::Rejected(_) => IdentityProviderError::Rejected,
-                OidcCallbackError::Unavailable => IdentityProviderError::Unavailable,
-            })?;
+        let identity =
+            self.login
+                .complete_login(code, state)
+                .await
+                .map_err(|error| match error {
+                    CallbackError::Rejected(_) => IdentityProviderError::Rejected,
+                    CallbackError::Unavailable => IdentityProviderError::Unavailable,
+                })?;
         Ok(ExternalIdentity {
             issuer: identity.issuer,
             subject: identity.subject,
             groups: identity.groups.into_names(),
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn preserves_base_subpath() {
-        let config = OidcConfiguration::new(
-            "https://id.example.test".into(),
-            "client".into(),
-            "secret".into(),
-            "https://example.test/app/",
-        )
-        .expect("config");
-        assert_eq!(
-            config.redirect_url().as_str(),
-            "https://example.test/app/auth/oidc/callback"
-        );
-        assert_eq!(config.cookie_path(), "/app");
-    }
-
-    #[test]
-    fn issuer_requires_an_absolute_https_url_without_ambiguous_components() {
-        for issuer in [
-            "http://id.example.test",
-            "https://user@id.example.test",
-            "https://id.example.test?tenant=one",
-            "https://id.example.test#configuration",
-            "/relative",
-        ] {
-            assert!(matches!(
-                OidcConfiguration::new(
-                    issuer.into(),
-                    "client".into(),
-                    "secret".into(),
-                    "https://example.test/",
-                ),
-                Err(OidcConfigurationError::InvalidIssuerUrl)
-            ));
-        }
-    }
-
-    #[test]
-    fn parses_a_configured_group_claim_after_token_verification() {
-        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#);
-        let payload = URL_SAFE_NO_PAD.encode(r#"{"groups":["server-users"]}"#);
-        let token = format!("{header}.{payload}.signature");
-        let groups = groups_from_verified_id_token(&token, "groups").expect("groups");
-        assert!(groups.is_user("server-users"));
-    }
-
-    #[test]
-    fn rejects_missing_or_non_string_group_claims() {
-        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#);
-        let payload = URL_SAFE_NO_PAD.encode(r#"{"groups":["server-users",3]}"#);
-        let token = format!("{header}.{payload}.signature");
-        assert_eq!(
-            groups_from_verified_id_token(&token, "groups"),
-            Err(OidcCallbackRejection::Groups)
-        );
-    }
-
-    /// 既定の許可一覧(ES256のみ)は、providerがRS256しか出さない場合に空へ縮退する。
-    #[test]
-    fn id_token_algorithms_are_limited_to_the_allowed_list() {
-        let default_allowed = [CoreJwsSigningAlgorithm::EcdsaP256Sha256];
-        assert_eq!(
-            allowed_id_token_algorithms(
-                &default_allowed,
-                &[
-                    CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
-                    CoreJwsSigningAlgorithm::EcdsaP256Sha256,
-                    CoreJwsSigningAlgorithm::HmacSha256,
-                ]
-            ),
-            vec![CoreJwsSigningAlgorithm::EcdsaP256Sha256]
-        );
-        assert!(
-            allowed_id_token_algorithms(
-                &default_allowed,
-                &[CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256]
-            )
-            .is_empty()
-        );
-        // RS256をopt-inした場合だけ交差に現れる。
-        assert_eq!(
-            allowed_id_token_algorithms(
-                &[
-                    CoreJwsSigningAlgorithm::EcdsaP256Sha256,
-                    CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
-                ],
-                &[CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256]
-            ),
-            vec![CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256]
-        );
-    }
-
-    /// claimの単一文字列は1件の集合として受理し、emailで認可する場合はemail_verifiedを要求する。
-    #[test]
-    fn email_claims_require_verification_and_accept_single_strings() {
-        let token = |payload: &str| format!("h.{}.s", URL_SAFE_NO_PAD.encode(payload));
-
-        let verified = token(r#"{"email":"a@example.com","email_verified":true}"#);
-        let groups = groups_from_verified_id_token(&verified, "email").expect("verified email");
-        assert!(groups.is_user("a@example.com"));
-
-        let unverified = token(r#"{"email":"a@example.com","email_verified":false}"#);
-        assert_eq!(
-            groups_from_verified_id_token(&unverified, "email"),
-            Err(OidcCallbackRejection::Groups)
-        );
-        let missing_flag = token(r#"{"email":"a@example.com"}"#);
-        assert_eq!(
-            groups_from_verified_id_token(&missing_flag, "email"),
-            Err(OidcCallbackRejection::Groups)
-        );
-
-        // email以外のclaimでも単一文字列を受理する。email_verifiedは要求しない。
-        let single = token(r#"{"role":"admin"}"#);
-        let groups = groups_from_verified_id_token(&single, "role").expect("single string claim");
-        assert!(groups.is_user("admin"));
-    }
-
-    /// 空のclient credentialとclaim名、空のアルゴリズム一覧は設定段階で拒否する。
-    #[test]
-    fn configuration_rejects_empty_values() {
-        assert_eq!(
-            OidcConfiguration::new(
-                "https://id.example.test".into(),
-                "".into(),
-                "secret".into(),
-                "https://app.example.test",
-            )
-            .err(),
-            Some(OidcConfigurationError::EmptyCredential)
-        );
-        let configuration = OidcConfiguration::new(
-            "https://id.example.test".into(),
-            "client".into(),
-            "secret".into(),
-            "https://app.example.test",
-        )
-        .expect("valid configuration");
-        assert_eq!(
-            configuration.clone().with_group_claim(" ".into()).err(),
-            Some(OidcConfigurationError::EmptyGroupClaim)
-        );
-        assert_eq!(
-            configuration.with_allowed_algorithms(Vec::new()).err(),
-            Some(OidcConfigurationError::NoAllowedAlgorithm)
-        );
     }
 }

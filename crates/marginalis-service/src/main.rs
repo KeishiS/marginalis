@@ -174,7 +174,7 @@ async fn main() {
 
 fn initialize_tracing() {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,marginalis_auth_oidc=info"));
+        .unwrap_or_else(|_| EnvFilter::new("info,oidc_browser_login=info"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
