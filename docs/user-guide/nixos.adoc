@@ -74,8 +74,9 @@ SQLiteデータベースは``dataDir``（既定値``/var/lib/marginalis``）直�
 変更してください。現行のSQLite schema versionは22です。旧versionを起動時に自動移行しません。
 
 schema 22より前のdatabaseから更新する場合は、更新前の実行環境で``export-archive``を実行し、
-現行の``migrate-archive``で現行archiveへ変換・検証してから、空のschema 22へ``import-archive``して
-ください。取り込める旧archiveの範囲と手順は<<以前のarchiveからの移行>>を参照してください。
+その書庫を現行の``restore-archive``で空のschema 22へ取り込んでください。``restore-archive``は
+変換・隔離databaseでの復元検証・取り込みを一括で行います。取り込める旧archiveの範囲は
+<<以前のarchiveからの移行>>を参照してください。
 同期cursorと変更索引、MCPの認可状態、client登録とtokenはarchiveへ含まれないため、更新後に
 外部検索サービスとMCPクライアントを接続し直します。
 
@@ -256,6 +257,17 @@ sudo -u marginalis marginalis verify-restore \
 変換では全ノートを現行のAdocWeaveの規則で再検証します。入力archiveは変更されず、出力先が既に
 存在する場合は上書きしません。失敗した場合のエラーに示す``position``は、archiveの``notes``または
 ``note_acl``配列内の1から始まる位置で、本文や識別子は診断へ出力されません。
+
+変換・検証・取り込みを一括で行う場合は、``migrate-archive``と``verify-restore``、
+``import-archive``の3段のかわりに``restore-archive``を使えます。書庫が現行契約ならそのまま、
+上の一覧の旧契約なら変換したうえで、隔離databaseでの復元一致を検証してから
+``MARGINALIS_DATABASE_URL``のdatabaseへ取り込みます。中間ファイルは残りません。
+
+[source,sh]
+----
+sudo -u marginalis marginalis restore-archive \
+  --input /srv/marginalis-migration/archive-previous.json
+----
 
 上の一覧より古い書庫を持ち込む場合は、その書庫へ対応していた過去のリリース
 (https://github.com/KeishiS/marginalis/releases[GitHub Releases]から取得)を一時的な環境で使い、

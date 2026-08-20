@@ -1122,3 +1122,140 @@ fn run_marginalis(command: &[&str], path: &std::path::Path, database_url: &str, 
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn restore_archive_migrates_verifies_and_imports_in_one_step() {
+    let directory = test_directory("restore-archive");
+    fs::create_dir(&directory).expect("test directory");
+    let input = directory.join("v0.42.0-archive-17.json");
+    let previous = serde_json::json!({
+        "format": "marginalis-archive-17",
+        "adocweave_package_version": "0.40.0",
+        "note_profile_version": 5,
+        "notes": [{
+            "note_id": "0197c9bc-0000-7000-8000-000000000001",
+            "creator_issuer": "https://id.example.test",
+            "creator_subject": "alice",
+            "source": "= Note\n:marginalis-tags: research\n\nbody",
+            "created_at_ms": 1,
+            "updated_at_ms": 2,
+            "revision": 2,
+            "deleted_at_ms": null,
+            "provenance": {
+                "created_via": "web",
+                "review_tracking_known": true,
+                "reviewed_revision": null,
+                "reviewed_at_ms": null,
+                "reviewer_issuer": null,
+                "reviewer_subject": null
+            }
+        }],
+        "note_acl": []
+    });
+    let input_bytes = serde_json::to_vec_pretty(&previous).expect("previous archive");
+    fs::write(&input, &input_bytes).expect("write previous archive");
+    let database_url = format!(
+        "sqlite://{}?mode=rwc",
+        directory.join("restored.sqlite").display()
+    );
+
+    // 旧契約の書庫を、変換・隔離検証・取り込みまで一括で行う。
+    let restored = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["restore-archive", "--input"])
+        .arg(&input)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("restore archive");
+    assert!(
+        restored.status.success(),
+        "restore failed: {}",
+        String::from_utf8_lossy(&restored.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&restored.stderr).contains("maintenance.archive_restore.completed")
+    );
+    assert_eq!(fs::read(&input).expect("unchanged input"), input_bytes);
+
+    // 取り込み済みdatabaseから現行契約でexportでき、内容が引き継がれている。
+    let exported = directory.join("current-archive.json");
+    let export = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["export-archive", "--output"])
+        .arg(&exported)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("export restored archive");
+    assert!(
+        export.status.success(),
+        "export failed: {}",
+        String::from_utf8_lossy(&export.stderr)
+    );
+    let current: serde_json::Value =
+        serde_json::from_slice(&fs::read(&exported).expect("read export")).expect("export JSON");
+    assert_eq!(current["format"], "marginalis-archive-17");
+    assert_eq!(
+        current["adocweave_package_version"],
+        marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
+    );
+    assert_eq!(
+        current["notes"][0]["source"],
+        previous["notes"][0]["source"]
+    );
+
+    // 現行契約の書庫は変換なしで取り込める。
+    let second_database_url = format!(
+        "sqlite://{}?mode=rwc",
+        directory.join("restored-second.sqlite").display()
+    );
+    let passthrough = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["restore-archive", "--input"])
+        .arg(&exported)
+        .env("MARGINALIS_DATABASE_URL", &second_database_url)
+        .output()
+        .expect("restore current archive");
+    assert!(
+        passthrough.status.success(),
+        "passthrough restore failed: {}",
+        String::from_utf8_lossy(&passthrough.stderr)
+    );
+
+    // 既存データがあるdatabaseへの取り込みは失敗する。
+    let repeated = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["restore-archive", "--input"])
+        .arg(&input)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("repeat restore");
+    assert!(!repeated.status.success());
+    assert!(
+        String::from_utf8_lossy(&repeated.stderr).contains("maintenance.archive_restore.failed")
+    );
+
+    // 対応外の契約は、契約識別子とサポート方針を示して拒否する。
+    let unsupported_input = directory.join("unsupported-archive-16.json");
+    let mut unsupported = previous;
+    unsupported["format"] = "marginalis-archive-16".into();
+    unsupported["adocweave_package_version"] = "0.27.0".into();
+    fs::write(
+        &unsupported_input,
+        serde_json::to_vec_pretty(&unsupported).expect("unsupported archive"),
+    )
+    .expect("write unsupported archive");
+    let rejected = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["restore-archive", "--input"])
+        .arg(&unsupported_input)
+        .env(
+            "MARGINALIS_DATABASE_URL",
+            format!(
+                "sqlite://{}?mode=rwc",
+                directory.join("never-created.sqlite").display()
+            ),
+        )
+        .output()
+        .expect("reject unsupported archive");
+    assert!(!rejected.status.success());
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert!(stderr.contains("marginalis-archive-16/0.27.0/5"));
+    assert!(stderr.contains("直近5マイナー世代"));
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}

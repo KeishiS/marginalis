@@ -199,6 +199,9 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |archive取り込み
 |``maintenance.archive_import.completed``
 |``maintenance.archive_import.failed``
+|archive一括復元(変換・検証・取り込み)
+|``maintenance.archive_restore.completed``
+|``maintenance.archive_restore.failed``
 |archive検証
 |``maintenance.archive_validation.completed``
 |``maintenance.archive_validation.failed``
