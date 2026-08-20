@@ -73,7 +73,7 @@ function decorationSummary(state: EditorState) {
     summary.push({
       from: iterator.from,
       to: iterator.to,
-      kind: spec.class ?? "replace",
+      kind: spec.class ?? (spec.widget ? "widget" : "replace"),
     });
     iterator.next();
   }
@@ -85,10 +85,14 @@ function stateWithSpans(doc: string, spans: NoteSourceSpan[]) {
     doc,
     // 既定のカーソル位置0はspanの先端に接触して開示になるため、本文の末尾へ置く。
     selection: EditorSelection.cursor(doc.length),
-    extensions: [livePreview()],
+    extensions: [livePreview({ styleNonce: "test-style-nonce" })],
   });
-  return state.update({ effects: setLiveSpans.of(toLiveSpans(doc, spans)) })
-    .state;
+  return state.update({
+    effects: setLiveSpans.of({
+      spans: toLiveSpans(doc, spans),
+      mathMacros: [],
+    }),
+  }).state;
 }
 
 describe("Live Previewの装飾", () => {
@@ -164,6 +168,45 @@ describe("Live Previewの装飾", () => {
     expect(decorationSummary(onLine)).toEqual([
       { from: 0, to: 0, kind: "lp-heading lp-heading-1" },
     ]);
+  });
+
+  it("インライン数式はカーソル外でwidgetになり、交差で原文を開示する", () => {
+    // "面積は stem:[\pi r^2] です。" のstem部分。バイト位置はUTF-8で数える。
+    const doc = "面積は stem:[\\pi r^2] です。";
+    const inlineMath: NoteSourceSpan = {
+      kind: "inline_math",
+      span: byteSpan(10, 24),
+      content_span: byteSpan(16, 23),
+      marker_spans: [byteSpan(10, 16), byteSpan(23, 24)],
+    };
+    const state = stateWithSpans(doc, [inlineMath]);
+    const away = state.update({
+      selection: EditorSelection.cursor(0),
+    }).state;
+    const summary = decorationSummary(away);
+    expect(summary).toHaveLength(1);
+    expect(summary[0].kind).toBe("widget");
+    const revealed = away.update({
+      selection: EditorSelection.cursor(8),
+    }).state;
+    expect(decorationSummary(revealed)).toEqual([
+      { from: 4, to: 18, kind: "lp-math-source" },
+    ]);
+  });
+
+  it("ブロック数式は原文の直後へ組版widgetを併記する", () => {
+    const doc = "[latexmath]\n++++\nE = mc^2\n++++\n";
+    const mathBlock: NoteSourceSpan = {
+      kind: "math_block",
+      span: byteSpan(0, 31),
+      content_span: byteSpan(17, 26),
+      marker_spans: [byteSpan(0, 12), byteSpan(12, 17)],
+    };
+    const state = stateWithSpans(doc, [mathBlock]);
+    const summary = decorationSummary(state);
+    expect(summary).toHaveLength(1);
+    expect(summary[0].kind).toBe("widget");
+    expect(summary[0].from).toBe(doc.length);
   });
 
   it("IME変換中の入力では装飾を組み立て直さない", () => {

@@ -1,14 +1,19 @@
 import { StateEffect, StateField, Transaction } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
 
+import { MathMacro } from "../../api";
 import { buildDecorations } from "./decorations";
 import { LiveSpan } from "./spans";
 
-/** サーバー解析の結果で、保持しているspan注釈を丸ごと置き換える。 */
-export const setLiveSpans = StateEffect.define<readonly LiveSpan[]>();
+/** サーバー解析の結果で、保持しているspan注釈と数式マクロを丸ごと置き換える。 */
+export const setLiveSpans = StateEffect.define<{
+  spans: readonly LiveSpan[];
+  mathMacros: readonly MathMacro[];
+}>();
 
 interface LivePreviewValue {
   spans: readonly LiveSpan[];
+  mathMacros: readonly MathMacro[];
   decorations: DecorationSet;
 }
 
@@ -21,10 +26,11 @@ interface LivePreviewValue {
  */
 export const livePreviewField = StateField.define<LivePreviewValue>({
   create() {
-    return { spans: [], decorations: Decoration.none };
+    return { spans: [], mathMacros: [], decorations: Decoration.none };
   },
   update(value, transaction) {
     let spans = value.spans;
+    let mathMacros = value.mathMacros;
     let changed = false;
     if (transaction.docChanged) {
       spans = mapSpans(spans, transaction);
@@ -32,7 +38,8 @@ export const livePreviewField = StateField.define<LivePreviewValue>({
     }
     for (const effect of transaction.effects) {
       if (effect.is(setLiveSpans)) {
-        spans = effect.value;
+        spans = effect.value.spans;
+        mathMacros = effect.value.mathMacros;
         changed = true;
       }
     }
@@ -40,11 +47,12 @@ export const livePreviewField = StateField.define<LivePreviewValue>({
       return value;
     }
     if (isComposingInput(transaction)) {
-      return { spans, decorations: value.decorations };
+      return { spans, mathMacros, decorations: value.decorations };
     }
     return {
       spans,
-      decorations: buildDecorations(transaction.state, spans),
+      mathMacros,
+      decorations: buildDecorations(transaction.state, spans, mathMacros),
     };
   },
   provide: (field) =>

@@ -227,6 +227,25 @@
   color: var(--color-primary);
 }
 
+.ascii-doc-editor .lp-math-source {
+  color: var(--color-muted-foreground);
+}
+
+/* 組版前は数式の原文を淡色で示し、組版後はSVGがそのまま入る。 */
+.ascii-doc-editor .lp-math[data-math-status="pending"] {
+  color: var(--color-muted-foreground);
+}
+
+.ascii-doc-editor .lp-math[data-math-status="failed"] {
+  color: var(--color-destructive);
+  text-decoration: underline wavy;
+}
+
+.ascii-doc-editor .lp-math-block {
+  overflow-x: auto;
+  padding: var(--space-1) var(--space-3);
+}
+
 .ascii-doc-editor .lp-heading {
   font-family: var(--font-ui);
   font-weight: 700;

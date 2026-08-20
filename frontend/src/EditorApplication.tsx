@@ -302,6 +302,7 @@ export function EditorApplication({ config }: { config: EditorConfig }) {
                 value={form.source}
                 diagnostics={preview.diagnostics}
                 spans={preview.spans}
+                mathMacros={preview.mathMacros}
                 livePreviewEnabled={livePreviewEnabled}
                 disabled={saving}
                 onChange={changeSource}
