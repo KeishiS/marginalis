@@ -28,7 +28,7 @@ async function actorContext(browser, session, csrf) {
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   await context.addCookies([
     {
-      name: "marginalis_session",
+      name: "__Secure-marginalis_session",
       value: session,
       domain: "marginalis.example.test",
       path: "/marginalis",
@@ -36,7 +36,7 @@ async function actorContext(browser, session, csrf) {
       sameSite: "Lax",
     },
     {
-      name: "marginalis_csrf",
+      name: "__Secure-marginalis_csrf",
       value: csrf,
       domain: "marginalis.example.test",
       path: "/marginalis",

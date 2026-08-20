@@ -22,7 +22,7 @@ async fn rest_and_web_creation_routes_assign_their_server_side_sources() {
                     .header("sec-fetch-site", "same-origin")
                     .header(
                         header::COOKIE,
-                        "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                        "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                     )
                     .header("x-csrf-token", "session-csrf")
                     .body(Body::from(r#"{"source":"= 題名\n\n本文"}"#))
@@ -89,7 +89,7 @@ async fn owner_reads_and_marks_the_current_note_revision_as_reviewed() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .header(header::IF_MATCH, "\"rev-3\"")
@@ -140,7 +140,7 @@ async fn expired_restoration_returns_gone_with_a_stable_problem_code() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .header(header::IF_MATCH, "\"rev-99\"")
@@ -167,7 +167,7 @@ async fn owner_can_read_and_replace_math_macros() {
                 .uri("/api/v3/math-macros")
                 .header(
                     "cookie",
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .body(Body::empty())
                 .expect("request"),
@@ -189,7 +189,7 @@ async fn owner_can_read_and_replace_math_macros() {
                 .header("content-type", "application/json")
                 .header(
                     "cookie",
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .header("origin", "https://example.test")
@@ -259,7 +259,7 @@ async fn owner_can_read_and_replace_their_mcp_scope_ceiling() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::from(
@@ -327,7 +327,7 @@ async fn owner_can_list_and_restrict_their_mcp_client_authorizations() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::from(
@@ -362,7 +362,7 @@ async fn owner_can_clear_one_mcp_client_scope_ceiling() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::empty())
@@ -408,7 +408,7 @@ async fn rest_validation_returns_the_shared_diagnostic_contract() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::from(r#"{"source":"本文だけ"}"#))
@@ -436,7 +436,7 @@ async fn rest_mutations_require_one_strong_revision_etag() {
             .header("sec-fetch-site", "same-origin")
             .header(
                 header::COOKIE,
-                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
             )
             .header("x-csrf-token", "session-csrf");
         if let Some(value) = if_match {
@@ -468,7 +468,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::from(
@@ -494,7 +494,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::from(r#"{"source":"= 更新\n\n本文"}"#))
@@ -510,7 +510,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
                 .header("content-type", "application/json")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .body(Body::from(r#"{"source":"= 更新\n\n本文"}"#))
                 .expect("request"),
@@ -527,7 +527,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::from(
@@ -559,7 +559,7 @@ async fn preview_uses_the_shared_validation_and_safe_rendering_contract() {
                 .header("sec-fetch-site", "same-origin")
                 .header(
                     header::COOKIE,
-                    "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
                 )
                 .header("x-csrf-token", "session-csrf")
                 .body(Body::from(r#"{"source":"本文"}"#))

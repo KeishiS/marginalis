@@ -28,8 +28,8 @@ adocweave = { git = "https://github.com/KeishiS/adocweave.git", rev = "088e50e49
 mcp-authorization-server = { version = "=0.1.0", git = "https://github.com/KeishiS/mcp-authorization-server.git", rev = "555224bd869576249ee36d082960858ea8d0618b" }
 mcp-authorization-server-cimd = { version = "=0.1.0", git = "https://github.com/KeishiS/mcp-authorization-server.git", rev = "555224bd869576249ee36d082960858ea8d0618b" }
 # 共有OIDCログインの2 crateも同じリポジトリの同じcommitから取得します(ADR 0015)。
-oidc-browser-login = { version = "=0.1.0", git = "https://github.com/KeishiS/oidc-browser-login.git", rev = "909e851b44369674ebc49644075746c1ab00d356" }
-oidc-browser-login-testkit = { version = "=0.1.0", git = "https://github.com/KeishiS/oidc-browser-login.git", rev = "909e851b44369674ebc49644075746c1ab00d356" }
+oidc-browser-login = { version = "=0.2.0", git = "https://github.com/KeishiS/oidc-browser-login.git", rev = "bc8161483e29f525ef54fe5cb74bb6928d8659a9", features = ["session", "cookie"] }
+oidc-browser-login-testkit = { version = "=0.2.0", git = "https://github.com/KeishiS/oidc-browser-login.git", rev = "bc8161483e29f525ef54fe5cb74bb6928d8659a9", features = ["session"] }
 unicode-normalization = "0.1.25"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
 tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }

@@ -1612,8 +1612,12 @@ pub(super) fn ui_app(notes: Vec<Note>, render_fails: bool, cookie_path: &str) ->
 }
 
 pub(super) fn authenticated_request(uri: &str) -> Request<Body> {
+    // cookie名はcookie pathで変わるため、rootとサブパスの両方の名前を送る。
     Request::get(uri)
-        .header(header::COOKIE, "marginalis_session=active-session")
+        .header(
+            header::COOKIE,
+            "__Host-marginalis_session=active-session; __Secure-marginalis_session=active-session",
+        )
         .body(Body::empty())
         .expect("request")
 }

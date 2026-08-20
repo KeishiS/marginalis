@@ -259,7 +259,7 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   await page.setViewportSize({ width: 1600, height: 900 });
 
   await page.evaluate(() => {
-    document.cookie = "marginalis_csrf=browser-csrf; path=/";
+    document.cookie = "__Host-marginalis_csrf=browser-csrf; path=/; Secure";
   });
   const deleteButton = page.getByRole("button", { name: "削除", exact: true });
   await deleteButton.click();

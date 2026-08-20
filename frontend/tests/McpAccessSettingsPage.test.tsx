@@ -33,12 +33,12 @@ const authorization = {
 
 afterEach(() => {
   cleanup();
-  document.cookie = "marginalis_csrf=; Max-Age=0; path=/";
+  document.cookie = "__Host-marginalis_csrf=; Max-Age=0; path=/; Secure";
   vi.unstubAllGlobals();
 });
 
 test("認可済みクライアントのscopeを制限し、確認後に接続を取り消す", async () => {
-  document.cookie = "marginalis_csrf=test-csrf; path=/";
+  document.cookie = "__Host-marginalis_csrf=test-csrf; path=/; Secure";
   const fetch = vi
     .fn()
     .mockResolvedValueOnce(
@@ -106,7 +106,7 @@ test("認可済みクライアントのscopeを制限し、確認後に接続を
 });
 
 test("同意していないscopeも上限へ選べ、設定した上限を解除できる", async () => {
-  document.cookie = "marginalis_csrf=test-csrf; path=/";
+  document.cookie = "__Host-marginalis_csrf=test-csrf; path=/; Secure";
   const configured = {
     ...authorization,
     scope_ceiling_configured: true,

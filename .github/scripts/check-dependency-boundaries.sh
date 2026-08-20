@@ -52,8 +52,8 @@ marginalis-contract: marginalis-domain
 marginalis-documentation:
 marginalis-domain:
 marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web, marginalis-webhook-http, mcp-authorization-server-cimd
-marginalis-sqlite: marginalis-application, marginalis-domain, mcp-authorization-server
-marginalis-web: marginalis-application, marginalis-contract, marginalis-domain, mcp-authorization-server
+marginalis-sqlite: marginalis-application, marginalis-domain, mcp-authorization-server, oidc-browser-login
+marginalis-web: marginalis-application, marginalis-contract, marginalis-domain, mcp-authorization-server, oidc-browser-login
 marginalis-webhook-http: marginalis-application, marginalis-domain
 EOF
 fi
@@ -99,7 +99,10 @@ while IFS=$'\t' read -r package dependency; do
   esac
 done <"$external_dependencies"
 
-if [[ -z "$metadata_input" ]] && cargo tree -p marginalis-web -e normal --prefix none --format '{p}' |
+# 共有OIDCログインcrateはweb層がsession use-caseとcookie規則のために使うことを許可します。
+# その内部依存(openidconnect、reqwest)は上流リポジトリのCIが管理するため、subtreeを検査から
+# 除外し、web層が別経路でこれらへ依存しないことだけを確かめます。
+if [[ -z "$metadata_input" ]] && cargo tree -p marginalis-web -e normal --prune oidc-browser-login --prefix none --format '{p}' |
   awk '{ print $1 }' |
   grep -E '^(marginalis-(sqlite|asciidoc|auth-oidc)|sqlx|adocweave|openidconnect|reqwest)$' >/dev/null; then
   echo "HTTP transportのproduction依存へ具象adapterが混入しています。" >&2

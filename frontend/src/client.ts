@@ -543,7 +543,10 @@ function mutationRequest(
   body?: unknown,
   expectedRevision?: number,
 ): RequestInit {
-  const csrfToken = readCookie("marginalis_csrf");
+  // cookie名はcookie pathで変わる(/は__Host-、サブパスは__Secure-)ため両方を探す。
+  const csrfToken =
+    readCookie("__Host-marginalis_csrf") ||
+    readCookie("__Secure-marginalis_csrf");
   return {
     method,
     credentials: "same-origin",

@@ -29,7 +29,8 @@ async function login(page) {
 async function csrfToken(context) {
   const cookie = (await context.cookies()).find(
     ({ name, domain }) =>
-      name === "marginalis_csrf" && domain === "marginalis.example.test",
+      name === "__Secure-marginalis_csrf" &&
+      domain === "marginalis.example.test",
   );
   expect(cookie).toBeTruthy();
   return cookie.value;

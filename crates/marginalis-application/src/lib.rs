@@ -35,7 +35,6 @@ mod identity;
 mod math_macros;
 mod mcp_oauth;
 mod notes;
-mod session;
 mod snapshot;
 mod webhooks;
 
@@ -70,7 +69,6 @@ pub use notes::{
     NoteReviewRepository, NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason,
     NoteSyncRepository, NoteSyncRepositoryError, NoteViewSnapshot, apply_note_patch,
 };
-pub use session::{SessionRepositoryError, WebSessionApplication, WebSessionRepository};
 pub use snapshot::{
     InvalidSnapshot, LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
 };
@@ -140,12 +138,6 @@ pub trait OidcLoginAttemptStore: Send + Sync {
         state: String,
         now: UnixMillis,
     ) -> impl Future<Output = Result<Option<OidcLoginAttempt>, Self::Error>> + Send;
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SessionLifetime {
-    pub idle_timeout_ms: i64,
-    pub absolute_timeout_ms: i64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

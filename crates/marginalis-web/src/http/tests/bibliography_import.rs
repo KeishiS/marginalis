@@ -139,11 +139,11 @@ fn authenticated_json_request(
             .header("sec-fetch-site", "same-origin")
             .header(
                 header::COOKIE,
-                "marginalis_session=active-session; marginalis_csrf=session-csrf",
+                "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
             )
             .header("x-csrf-token", "session-csrf");
     } else {
-        request = request.header(header::COOKIE, "marginalis_session=active-session");
+        request = request.header(header::COOKIE, "__Host-marginalis_session=active-session");
     }
     request.body(Body::from(body.to_string())).expect("request")
 }

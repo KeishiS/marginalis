@@ -1439,6 +1439,7 @@ dependencies = [
  "marginalis-contract",
  "marginalis-domain",
  "mcp-authorization-server",
+ "oidc-browser-login",
  "rand 0.8.7",
  "serde",
  "serde_json",
@@ -1635,13 +1636,15 @@ dependencies = [
 
 [[package]]
 name = "oidc-browser-login"
-version = "0.1.0"
-source = "git+https://github.com/KeishiS/oidc-browser-login.git?rev=909e851b44369674ebc49644075746c1ab00d356#909e851b44369674ebc49644075746c1ab00d356"
+version = "0.2.0"
+source = "git+https://github.com/KeishiS/oidc-browser-login.git?rev=bc8161483e29f525ef54fe5cb74bb6928d8659a9#bc8161483e29f525ef54fe5cb74bb6928d8659a9"
 dependencies = [
  "base64 0.22.1",
  "openidconnect",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "subtle",
  "thiserror 2.0.19",
  "tokio",
  "tracing",
@@ -1650,8 +1653,8 @@ dependencies = [
 
 [[package]]
 name = "oidc-browser-login-testkit"
-version = "0.1.0"
-source = "git+https://github.com/KeishiS/oidc-browser-login.git?rev=909e851b44369674ebc49644075746c1ab00d356#909e851b44369674ebc49644075746c1ab00d356"
+version = "0.2.0"
+source = "git+https://github.com/KeishiS/oidc-browser-login.git?rev=bc8161483e29f525ef54fe5cb74bb6928d8659a9#bc8161483e29f525ef54fe5cb74bb6928d8659a9"
 dependencies = [
  "jsonwebtoken",
  "oidc-browser-login",

@@ -192,7 +192,7 @@ fn mutation(
         .header("sec-fetch-site", "same-origin")
         .header(
             header::COOKIE,
-            "marginalis_session=active-session; marginalis_csrf=session-csrf",
+            "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
         )
         .header("x-csrf-token", "session-csrf");
     if let Some(revision) = revision {
@@ -310,7 +310,7 @@ async fn rest_bibliography_enforces_authentication_csrf_and_error_mapping() {
         .oneshot(
             Request::post("/api/v3/bibliography")
                 .header(header::CONTENT_TYPE, "application/json")
-                .header(header::COOKIE, "marginalis_session=active-session")
+                .header(header::COOKIE, "__Host-marginalis_session=active-session")
                 .body(Body::from(r#"{"csl_json":{"id":"smith","type":"book"}}"#))
                 .unwrap(),
         )

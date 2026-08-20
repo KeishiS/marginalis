@@ -27,7 +27,7 @@ const provenance = {
 
 afterEach(() => {
   cleanup();
-  document.cookie = "marginalis_csrf=; Max-Age=0; path=/";
+  document.cookie = "__Host-marginalis_csrf=; Max-Age=0; path=/; Secure";
   vi.unstubAllGlobals();
 });
 
@@ -67,7 +67,7 @@ describe("Application", () => {
   });
 
   it("利用者全体のMCP scope上限を保存できる", async () => {
-    document.cookie = "marginalis_csrf=test-csrf; path=/";
+    document.cookie = "__Host-marginalis_csrf=test-csrf; path=/; Secure";
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -388,7 +388,7 @@ describe("Application", () => {
   });
 
   it("revision競合では内容を残して再読み込みを案内する", async () => {
-    document.cookie = "marginalis_csrf=test-csrf; path=/";
+    document.cookie = "__Host-marginalis_csrf=test-csrf; path=/; Secure";
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(
@@ -453,7 +453,7 @@ describe("Application", () => {
   });
 
   it("所有者が現在の版を確認済みにする", async () => {
-    document.cookie = "marginalis_csrf=test-csrf; path=/";
+    document.cookie = "__Host-marginalis_csrf=test-csrf; path=/; Secure";
     const noteId = "0197c9bc-0000-7000-8000-000000000001";
     const fetch = vi
       .fn()

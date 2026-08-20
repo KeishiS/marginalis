@@ -1,70 +1,105 @@
+use std::time::Duration;
+
+use oidc_browser_login::{
+    UnixMillis as SharedUnixMillis,
+    session::{Principal, TokenDigest, WebSessionRecord, WebSessionStore},
+};
+
 use super::*;
+
+fn session_record(
+    session: &str,
+    csrf: &str,
+    subject: &str,
+    idle_expires_at_ms: i64,
+    absolute_expires_at_ms: i64,
+) -> WebSessionRecord {
+    WebSessionRecord {
+        session_digest: TokenDigest::of(session),
+        csrf_digest: TokenDigest::of(csrf),
+        principal: Principal::new(ISSUER.into(), subject.into()).expect("valid test principal"),
+        idle_expires_at: SharedUnixMillis::new(idle_expires_at_ms),
+        absolute_expires_at: SharedUnixMillis::new(absolute_expires_at_ms),
+    }
+}
 
 #[tokio::test]
 async fn sessions_retain_the_validated_identity() {
     let database = database().await;
-    let session = WebSession {
-        session_id: "session-token".into(),
-        csrf_token: "csrf-token".into(),
-        actor: actor("https://id.example.test", "alice"),
-        idle_expires_at: UnixMillis::new(1_000),
-        absolute_expires_at: UnixMillis::new(2_000),
-    };
-    database
-        .issue_web_session(&session, UnixMillis::new(100))
+    let store = database.web_session_store();
+    store
+        .issue(
+            session_record("session-token", "csrf-token", "alice", 1_000, 2_000),
+            SharedUnixMillis::new(100),
+        )
         .await
         .expect("issue session");
-    assert!(
-        database
-            .validate_web_session_csrf("session-token", "csrf-token")
-            .await
-            .expect("csrf query")
-    );
-    assert!(
-        !database
-            .validate_web_session_csrf("session-token", "wrong")
-            .await
-            .expect("csrf query")
-    );
-    let authenticated = database
-        .lookup_web_session("session-token", UnixMillis::new(200), 900)
+    let stored_csrf = store
+        .csrf_digest(TokenDigest::of("session-token"))
+        .await
+        .expect("csrf query")
+        .expect("stored csrf digest");
+    assert!(stored_csrf.constant_time_eq(&TokenDigest::of("csrf-token")));
+    assert!(!stored_csrf.constant_time_eq(&TokenDigest::of("wrong")));
+    let authenticated = store
+        .lookup_and_extend(
+            TokenDigest::of("session-token"),
+            SharedUnixMillis::new(200),
+            Duration::from_millis(900),
+        )
         .await
         .expect("lookup")
         .expect("active session");
-    assert_eq!(authenticated.idle_expires_at, UnixMillis::new(1_100));
+    assert_eq!(authenticated.principal.subject(), "alice");
+    assert_eq!(authenticated.idle_expires_at, SharedUnixMillis::new(1_100));
     assert_eq!(
-        database
-            .lookup_web_session("session-token", UnixMillis::new(1_050), 900)
+        store
+            .lookup_and_extend(
+                TokenDigest::of("session-token"),
+                SharedUnixMillis::new(1_050),
+                Duration::from_millis(900),
+            )
             .await
             .expect("sliding lookup")
             .expect("activity extends the session")
             .idle_expires_at,
-        UnixMillis::new(1_950)
+        SharedUnixMillis::new(1_950)
     );
     assert_eq!(
-        database
-            .lookup_web_session("session-token", UnixMillis::new(1_900), 900)
+        store
+            .lookup_and_extend(
+                TokenDigest::of("session-token"),
+                SharedUnixMillis::new(1_900),
+                Duration::from_millis(900),
+            )
             .await
             .expect("absolute cap lookup")
             .expect("session remains active before the absolute limit")
             .idle_expires_at,
-        UnixMillis::new(2_000)
+        SharedUnixMillis::new(2_000)
     );
-    assert_eq!(
-        database
-            .lookup_web_session("session-token", UnixMillis::new(2_000), 900)
-            .await,
-        Ok(None)
+    assert!(
+        store
+            .lookup_and_extend(
+                TokenDigest::of("session-token"),
+                SharedUnixMillis::new(2_000),
+                Duration::from_millis(900),
+            )
+            .await
+            .expect("expired lookup")
+            .is_none()
     );
-    let replacement = WebSession {
-        session_id: "replacement-session".into(),
-        csrf_token: "replacement-csrf".into(),
-        actor: session.actor,
-        idle_expires_at: UnixMillis::new(3_000),
-        absolute_expires_at: UnixMillis::new(4_000),
-    };
-    database
-        .issue_web_session(&replacement, UnixMillis::new(2_100))
+    store
+        .issue(
+            session_record(
+                "replacement-session",
+                "replacement-csrf",
+                "alice",
+                3_000,
+                4_000,
+            ),
+            SharedUnixMillis::new(2_100),
+        )
         .await
         .expect("issue replacement session");
     let counts = database
@@ -79,6 +114,15 @@ async fn sessions_retain_the_validated_identity() {
             .expect("session count"),
         1
     );
+}
+
+/// SQLiteのsession storeが共有crateの`WebSessionStore`契約と交換可能なことを確かめる。
+#[tokio::test]
+async fn web_session_store_satisfies_the_shared_contract() {
+    oidc_browser_login_testkit::check_web_session_store_contract(|| async {
+        database().await.web_session_store()
+    })
+    .await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -102,16 +146,17 @@ async fn concurrent_session_lookups_extend_one_session_without_snapshot_failures
     let database = SqliteDatabase::connect(&database_url)
         .await
         .expect("schema initialization succeeds");
-    database
-        .issue_web_session(
-            &WebSession {
-                session_id: "shared-session-token".into(),
-                csrf_token: "shared-csrf-token".into(),
-                actor: actor("https://id.example.test", "alice"),
-                idle_expires_at: UnixMillis::new(1_000),
-                absolute_expires_at: UnixMillis::new(10_000),
-            },
-            UnixMillis::new(100),
+    let store = database.web_session_store();
+    store
+        .issue(
+            session_record(
+                "shared-session-token",
+                "shared-csrf-token",
+                "alice",
+                1_000,
+                10_000,
+            ),
+            SharedUnixMillis::new(100),
         )
         .await
         .expect("issue shared session");
@@ -120,12 +165,16 @@ async fn concurrent_session_lookups_extend_one_session_without_snapshot_failures
     let barrier = Arc::new(Barrier::new(LOOKUP_COUNT));
     let mut lookups = Vec::with_capacity(LOOKUP_COUNT);
     for _ in 0..LOOKUP_COUNT {
-        let database = database.clone();
+        let store = store.clone();
         let barrier = Arc::clone(&barrier);
         lookups.push(tokio::spawn(async move {
             barrier.wait().await;
-            database
-                .lookup_web_session("shared-session-token", UnixMillis::new(200), 1_000)
+            store
+                .lookup_and_extend(
+                    TokenDigest::of("shared-session-token"),
+                    SharedUnixMillis::new(200),
+                    Duration::from_millis(1_000),
+                )
                 .await
         }));
     }
@@ -135,7 +184,7 @@ async fn concurrent_session_lookups_extend_one_session_without_snapshot_failures
             .expect("lookup task completes")
             .expect("concurrent lookup succeeds")
             .expect("session remains active");
-        assert_eq!(session.idle_expires_at, UnixMillis::new(1_200));
+        assert_eq!(session.idle_expires_at, SharedUnixMillis::new(1_200));
     }
 
     database.pool.close().await;

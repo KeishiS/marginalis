@@ -14,10 +14,7 @@ use marginalis_contract::ProblemCode;
 use marginalis_domain::Actor;
 
 use super::super::{
-    auth::{
-        CSRF_COOKIE, SESSION_COOKIE, authenticated_actor, authenticated_form_actor, cookie_value,
-        external_path,
-    },
+    auth::{authenticated_actor, authenticated_form_actor, cookie_value, external_path},
     error::{HandlerResult, problem},
     mcp_endpoint,
     state::{ApiState, McpEndpoint},
@@ -289,7 +286,7 @@ async fn mcp_authorize_request(
             "invalid_scope",
         ));
     }
-    let csrf = cookie_value(headers, CSRF_COOKIE).ok_or_else(|| {
+    let csrf = cookie_value(headers, state.cookies.csrf_name()).ok_or_else(|| {
         problem(
             StatusCode::FORBIDDEN,
             ProblemCode::CsrfRequired,
@@ -297,7 +294,8 @@ async fn mcp_authorize_request(
         )
         .into_response()
     })?;
-    let session_id = cookie_value(headers, SESSION_COOKIE).expect("authenticated session exists");
+    let session_id =
+        cookie_value(headers, state.cookies.session_name()).expect("authenticated session exists");
     Ok(consent_page(
         state,
         &input,
@@ -418,7 +416,8 @@ async fn mcp_authorize_consent_inner(
     let actor = authenticated_form_actor(&headers, &state, &form.csrf_token)
         .await
         .map_err(|error| error.into_response())?;
-    let session_id = cookie_value(&headers, SESSION_COOKIE).expect("authenticated session exists");
+    let session_id =
+        cookie_value(&headers, state.cookies.session_name()).expect("authenticated session exists");
     let state_value = form.state.as_deref().filter(|value| !value.is_empty());
     let input = McpAuthorizeInput {
         response_type: Some("code".into()),

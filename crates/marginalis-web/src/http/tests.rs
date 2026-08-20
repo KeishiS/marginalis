@@ -39,7 +39,7 @@ fn observability_logs_safe_http_and_mcp_results() {
                 Request::get(format!(
                     "/api/v3/notes/{note_id}?search=must-not-be-logged"
                 ))
-                .header(header::COOKIE, "marginalis_session=secret-cookie")
+                .header(header::COOKIE, "__Host-marginalis_session=secret-cookie")
                 .body(Body::empty())
                 .expect("request"),
             )

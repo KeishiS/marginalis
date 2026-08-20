@@ -2,7 +2,7 @@
 
 use marginalis_application::{
     Clock, McpOAuthApplication, McpResourcePolicy, NoteApplication, NoteApplicationDependencies,
-    OidcAuthenticationApplication, WebSessionApplication,
+    OidcAuthenticationApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
 use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
@@ -14,11 +14,6 @@ use crate::{
     config::ServerConfig,
     runtime::{SystemClock, SystemRandom},
 };
-
-/// Webセッションを最終利用から失効させるまでの時間（`REQ-AUTH-007`）。
-const SESSION_IDLE_TIMEOUT_MS: i64 = 24 * 60 * 60 * 1_000;
-/// Webセッションをログインから失効させるまでの時間（`REQ-AUTH-007`）。
-const SESSION_ABSOLUTE_TIMEOUT_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 
 pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     verify_runtime_package_version()?;
@@ -96,14 +91,11 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     ));
     // すべてのrepository portを同じSQLite adapterが担うため、Arcを1つ作って共有する。
     let storage = std::sync::Arc::new(database.clone());
-    let sessions = std::sync::Arc::new(WebSessionApplication::new(
-        storage.clone(),
-        std::sync::Arc::new(SystemClock),
-        std::sync::Arc::new(SystemRandom),
-        marginalis_application::SessionLifetime {
-            idle_timeout_ms: SESSION_IDLE_TIMEOUT_MS,
-            absolute_timeout_ms: SESSION_ABSOLUTE_TIMEOUT_MS,
-        },
+    // session期限は共有crateの既定(idle 24時間/絶対7日、REQ-AUTH-007)を使う。
+    let sessions = std::sync::Arc::new(marginalis_auth_oidc::SharedWebSessions::new(
+        database.web_session_store(),
+        SystemClock,
+        SystemRandom,
     ));
     let notes = std::sync::Arc::new(NoteApplication::new(
         NoteApplicationDependencies::with_storage(
