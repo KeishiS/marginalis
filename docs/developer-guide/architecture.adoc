@@ -222,8 +222,6 @@ Marginalisのノート一覧にはタグと更新日による絞り込みを残�
 
 * *PostgreSQL*: 複数ホスト、高可用性、復旧目標、代表負荷などの
 xref:adr/0002-sqliteを正本として維持する.adoc#再検討条件[再検討条件]が実測で成立した場合だけ再検討します。
-* *添付Resource*: 保存先、MIME type、容量、認可、バックアップを一つの公開契約として
-定義できる場合に再検討します。
 
 == ソース配置
 
@@ -250,6 +248,10 @@ frontend/
 ``marginalis-service/src/webhook.rs``も同じ方針で、Webhook送信portのHTTP実装、宛先の再検査、署名を
 composition rootの内部に置きます。送信規則と再試行手順はapplicationに、配送状態はSQLiteに残すため、
 外部I/Oの境界は維持します。
+``marginalis-application::webhooks``は購読操作の公開facadeです。再試行とleaseを扱う配送状態機械は
+``delivery``、SSRFを防ぐ送信先URLとaddressの規則は``destination``という非公開moduleへ分けます。
+購読画面の変更から配送順序やnetwork境界の規則を読み分けられる一方、SQLiteとserviceが参照する公開APIは
+facadeに集約します。
 
 ``marginalis-archive``の公開入口は``src/lib.rs``へ限定します。JSONへ直列化する``Archive``の項目は
 crate外から直接変更できず、呼び出し側は``create_archive``、``validate_archive``、
