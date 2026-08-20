@@ -127,6 +127,13 @@ pkgs.testers.nixosTest {
       + "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
       + "\"SELECT COUNT(*) FROM note_revisions WHERE note_id = '019f0000-0000-7000-8000-000000000002'\") -eq 1"
     )
+    machine.succeed(
+      "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
+      + "\"SELECT COUNT(*) FROM note_attachments WHERE attachment_id = '019f0000-0000-7000-8000-000000000011'\") -eq 0; "
+      + "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
+      + "\"SELECT COUNT(*) FROM note_attachments WHERE attachment_id IN "
+      + "('019f0000-0000-7000-8000-000000000012', '019f0000-0000-7000-8000-000000000013')\") -eq 2"
+    )
     machine.succeed("systemctl stop marginalis.service")
     machine.succeed(
       "runuser -u marginalis -- env "
@@ -178,10 +185,14 @@ pkgs.testers.nixosTest {
       + "jq -e '.format == \"marginalis-archive-18\" "
       + "and .adocweave_package_version == \"${adocweaveVersion}\" "
       + "and .note_profile_version == 6 and (.notes | length == 1) "
-      + "and (.attachments | length == 0) "
+      + "and (.attachments | map(.attachment_id) | sort) == "
+      + "[\"019f0000-0000-7000-8000-000000000012\", "
+      + "\"019f0000-0000-7000-8000-000000000013\"] "
       + "and (.note_revisions | length == 1) "
       + "and .note_revisions[0].kind == \"imported\" "
       + "and .note_revisions[0].revision == .notes[0].revision "
+      + "and .note_revisions[0].attachment_ids == "
+      + "[\"019f0000-0000-7000-8000-000000000012\"] "
       + "and any(.principals[]; "
       + ".primary_issuer == \"https://replacement-id.example.test\" "
       + "and .primary_subject == \"recent-v2\" "

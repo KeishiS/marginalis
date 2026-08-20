@@ -177,8 +177,9 @@ xref:../developer-guide/observability.adoc#top[ログと障害診断]を参照�
 
 == 定期処理
 
-* ``marginalis-purge-expired.timer`` は毎日実行され、30 日を超えたソフトデリート済みノートと、
-期限切れ・失効済みのWeb/OIDC認証状態、MCPの認可codeとtoken、参照されない古いclientを削除します。
+* ``marginalis-purge-expired.timer`` は毎日実行され、30 日を超えたソフトデリート済みノートと、どの版からも
+参照されないまま30日を超えた添付画像を削除します。期限切れ・失効済みのWeb/OIDC認証状態、MCPの認可codeと
+token、参照されない古いclientも削除します。
 保持期間の7日を過ぎた配送済み・破棄済みのWebhook配送記録も同時に削除します。
 * ``backupDirectory``を設定すると``marginalis-backup.timer``が毎日実行されます。単一のSQLite read
 transactionからsnapshotを取得するため、HTTP serviceを停止しません。

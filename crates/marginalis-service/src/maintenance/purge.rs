@@ -2,12 +2,14 @@
 
 use crate::{config::StorageConfig, runtime::SystemClock};
 use marginalis_application::Clock;
-use marginalis_domain::{SOFT_DELETE_RETENTION_MS, UnixMillis};
+use marginalis_domain::{
+    SOFT_DELETE_RETENTION_MS, UNREFERENCED_ATTACHMENT_RETENTION_MS, UnixMillis,
+};
 use marginalis_sqlite::SqliteDatabase;
 
 const UNUSED_MCP_CLIENT_RETENTION_MS: i64 = 24 * 60 * 60 * 1_000;
 
-/// 保持期限を過ぎたnoteと一時的な認証状態を物理削除する。
+/// 保持期限を過ぎたnote、未参照の添付画像、一時的な認証状態を物理削除する。
 pub(crate) async fn purge_expired() -> Result<(), Box<dyn std::error::Error>> {
     purge_expired_state().await
 }
@@ -18,6 +20,13 @@ async fn purge_expired_state() -> Result<(), Box<dyn std::error::Error>> {
     let now = SystemClock.now();
     let note_cutoff = UnixMillis::new(now.get().saturating_sub(SOFT_DELETE_RETENTION_MS));
     let note_count = database.purge_deleted_before(note_cutoff).await?;
+    let attachment_cutoff = UnixMillis::new(
+        now.get()
+            .saturating_sub(UNREFERENCED_ATTACHMENT_RETENTION_MS),
+    );
+    let unreferenced_attachment_count = database
+        .purge_unreferenced_note_attachments_before(attachment_cutoff)
+        .await?;
     let webhook_events =
         marginalis_application::WebhookDeliveryRepository::purge_expired_events(&database, now)
             .await?;
@@ -33,6 +42,7 @@ async fn purge_expired_state() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(
         event = "maintenance.purge.completed",
         note_count,
+        unreferenced_attachment_count,
         web_sessions = auth_counts.web_sessions,
         oidc_login_attempts = auth_counts.oidc_login_attempts,
         mcp_access_credentials = access_credentials,
@@ -44,6 +54,7 @@ async fn purge_expired_state() -> Result<(), Box<dyn std::error::Error>> {
         note_sync_changes = auth_counts.note_sync_changes,
         webhook_events,
         note_cutoff_ms = note_cutoff.get(),
+        attachment_cutoff_ms = attachment_cutoff.get(),
         "purged expired persisted state"
     );
     Ok(())

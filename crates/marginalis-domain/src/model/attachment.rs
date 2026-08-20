@@ -29,6 +29,12 @@ pub const ATTACHMENT_POLICY: AttachmentPolicy = AttachmentPolicy {
     max_file_name_characters: 200,
 };
 
+/// どの版からも参照されないuploadを保持する期間。
+///
+/// 保存前の編集が中断してもノートの容量上限を永久に消費しないよう、日次保守処理が
+/// この期間を過ぎたobjectだけを削除する。版から一度でも参照されたobjectには適用しない。
+pub const UNREFERENCED_ATTACHMENT_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AttachmentId(EntityId);
 

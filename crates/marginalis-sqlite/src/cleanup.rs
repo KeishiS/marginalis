@@ -1,4 +1,4 @@
-//! 期限切れの認証状態を、発行経路から独立して物理削除する。
+//! 期限切れの添付画像、認証状態、同期状態を物理削除する。
 
 use marginalis_domain::UnixMillis;
 
@@ -18,6 +18,27 @@ pub struct AuthStatePurgeCounts {
 }
 
 impl SqliteDatabase {
+    /// 保持期限を過ぎ、どの版からも参照されない添付画像を削除する。
+    pub async fn purge_unreferenced_note_attachments_before(
+        &self,
+        cutoff: UnixMillis,
+    ) -> Result<u64, SqliteStoreError> {
+        let result = sqlx::query(
+            "DELETE FROM note_attachments AS attachment
+             WHERE attachment.created_at_ms < ?
+               AND NOT EXISTS (
+                    SELECT 1 FROM note_revision_attachments AS reference
+                    WHERE reference.note_id = attachment.note_id
+                      AND reference.attachment_id = attachment.attachment_id
+               )",
+        )
+        .bind(cutoff.get())
+        .execute(&self.pool)
+        .await
+        .map_err(database_error)?;
+        Ok(result.rows_affected())
+    }
+
     /// 期限切れ・失効済み認証状態と、参照されない古いMCP clientを一transactionで削除する。
     pub async fn purge_expired_auth_state(
         &self,
