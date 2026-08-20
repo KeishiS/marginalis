@@ -19,6 +19,7 @@ enum Command {
     ImportDocuments,
     MigrateArchive,
     ImportArchive,
+    RestoreArchive,
     ValidateArchive,
     VerifyRestore,
     VerifyLatestBackup,
@@ -38,6 +39,7 @@ impl Command {
             Some("import-documents") => Self::ImportDocuments,
             Some("migrate-archive") => Self::MigrateArchive,
             Some("import-archive") => Self::ImportArchive,
+            Some("restore-archive") => Self::RestoreArchive,
             Some("validate-archive") => Self::ValidateArchive,
             Some("verify-restore") => Self::VerifyRestore,
             Some("verify-latest-backup") => Self::VerifyLatestBackup,
@@ -94,6 +96,12 @@ impl Command {
             Self::ImportArchive => tracing::error!(
                 event = "maintenance.archive_import.failed",
                 command = "import-archive",
+                error = %error,
+                "Marginalis command terminated"
+            ),
+            Self::RestoreArchive => tracing::error!(
+                event = "maintenance.archive_restore.failed",
+                command = "restore-archive",
                 error = %error,
                 "Marginalis command terminated"
             ),
@@ -159,6 +167,7 @@ async fn main() {
         Command::ImportDocuments => maintenance::import_documents(arguments).await,
         Command::MigrateArchive => maintenance::migrate_archive(arguments).await,
         Command::ImportArchive => maintenance::import_archive(arguments).await,
+        Command::RestoreArchive => maintenance::restore_archive(arguments).await,
         Command::ValidateArchive => maintenance::validate_archive(arguments).await,
         Command::VerifyRestore => maintenance::verify_restore(arguments).await,
         Command::VerifyLatestBackup => maintenance::verify_latest_backup(arguments).await,

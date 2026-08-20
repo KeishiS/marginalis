@@ -105,6 +105,60 @@ pub(crate) async fn import_archive(
     Ok(())
 }
 
+/// 変換・検証・取り込みを一括で行う。
+///
+/// 書庫が現行契約ならそのまま、対応する旧契約なら現行規則で全件再検証して変換したうえで、
+/// 隔離databaseでの復元一致を検証し、指定databaseへ一transactionで取り込む。入力ファイルは
+/// 変更せず、中間ファイルも残さない。既存データがあるdatabaseへの取り込みは失敗する。
+pub(crate) async fn restore_archive(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let input = required_absolute_file_argument(&mut arguments, "--input")?;
+    let file = File::open(&input)?;
+    let source: Archive = serde_json::from_reader(file)?;
+
+    // 現行契約はそのまま受理し、対応する旧契約だけを変換する。どちらでもない場合は、
+    // 書庫の契約識別子(秘密情報ではない)と現行値を示して次の一手へ誘導する。
+    let (archive, migrated) = if validate_archive_contract(&AsciiDocNoteContent, &source).is_ok() {
+        (source, false)
+    } else {
+        let migrated = migrate_previous_archive(&AsciiDocNoteContent, &source).map_err(|error| {
+            format!(
+                "{error}: archive contract {}/{}/{} is not the current {}/{}/{} nor a supported \
+                 migration source (直近5マイナー世代のみ対応。より古い書庫は対応していた過去の\
+                 リリースで変換してください)",
+                source.format,
+                source.adocweave_package_version,
+                source.note_profile_version,
+                marginalis_archive::ARCHIVE_FORMAT,
+                AsciiDocNoteContent.profile().adocweave_package_version,
+                marginalis_archive::ARCHIVE_NOTE_PROFILE_VERSION,
+            )
+        })?;
+        (migrated, true)
+    };
+    let snapshot = validate_archive_contract(&AsciiDocNoteContent, &archive)?;
+    let validated = ValidatedArchive {
+        archive,
+        plan: restore_plan(snapshot)?,
+    };
+    verify_archive_in_isolated_database(&validated).await?;
+
+    let configuration = StorageConfig::from_environment()?;
+    SqliteDatabase::connect(&configuration.database_url)
+        .await?
+        .restore(&validated.plan)
+        .await?;
+    tracing::info!(
+        event = "maintenance.archive_restore.completed",
+        input = %input.display(),
+        migrated,
+        note_count = validated.archive.notes.len(),
+        "restored archive"
+    );
+    Ok(())
+}
+
 /// archiveのformat、全ノート、所有者、削除状態、revisionを読み取り専用で検証する。
 pub(crate) async fn validate_archive(
     mut arguments: impl Iterator<Item = String>,
