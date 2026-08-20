@@ -16,10 +16,10 @@ xref:adr/0015-利用者認証は標準oidcに依存しkanidmを参照実装と�
 含めません。ルート``Cargo.toml``の``[workspace.dependencies]``で、版と40桁の完全なcommit SHAを一度だけ
 宣言します。branch名やtag名は依存指定に使いません。
 
-中核は``marginalis-auth-oidc``(OIDC検証とsession use-caseへの接続)、``marginalis-sqlite``
-(feature ``session``の保存port実装)、``marginalis-web``(feature ``cookie``の名前・属性)が
-production依存として使います。testkitは契約試験のためのdev-dependencyに限定し、疑似IdPと
-試験用鍵を製品バイナリーへ含めません。
+中核は``marginalis-service``の非公開OIDC adapter(OIDC検証とsession use-caseへの接続)、
+``marginalis-sqlite``(feature ``session``の保存port実装)、``marginalis-web``
+(feature ``cookie``の名前・属性)がproduction依存として使います。testkitは契約試験のための
+dev-dependencyに限定し、疑似IdPと試験用鍵を製品バイナリーへ含めません。
 
 Nixでは``flake.nix``の``cargoLock.outputHashes``へ、2 crate分の取得ハッシュを追加します。revisionの
 正本は``Cargo.lock``であり、flake inputは追加しません。

@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod environment;
 mod maintenance;
+mod oidc;
 mod runtime;
 mod serve;
 

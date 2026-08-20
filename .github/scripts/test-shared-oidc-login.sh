@@ -14,17 +14,10 @@ jq -n \
   --arg declaration "$declaration" \
   --arg package_source "$package_source" '
 {
-  workspace_members: ["service", "auth-oidc", "sqlite"],
+  workspace_members: ["service", "sqlite"],
   packages: [
     {
       id: "service", name: "marginalis-service", version: "0.44.0",
-      source: null, license: "MIT OR Apache-2.0",
-      dependencies: [
-        {name: "marginalis-auth-oidc", kind: null, req: "*", source: null, path: "/w/auth-oidc"}
-      ]
-    },
-    {
-      id: "auth-oidc", name: "marginalis-auth-oidc", version: "0.44.0",
       source: null, license: "MIT OR Apache-2.0",
       dependencies: [
         {name: "oidc-browser-login", kind: null, req: "=0.1.0", source: $declaration}
@@ -49,8 +42,7 @@ jq -n \
   ],
   resolve: {
     nodes: [
-      {id: "service", deps: [{pkg: "auth-oidc", dep_kinds: [{kind: null}]}]},
-      {id: "auth-oidc", deps: [{pkg: "core", dep_kinds: [{kind: null}]}]},
+      {id: "service", deps: [{pkg: "core", dep_kinds: [{kind: null}]}]},
       {id: "sqlite", deps: [
         {pkg: "core", dep_kinds: [{kind: "dev"}]},
         {pkg: "testkit", dep_kinds: [{kind: "dev"}]}
@@ -80,7 +72,7 @@ reject() {
 }
 
 # 版を範囲指定へ緩めた場合
-jq '(.packages[] | select(.id == "auth-oidc") | .dependencies[0] | .req) = "^0.1"' \
+jq '(.packages[] | select(.id == "service") | .dependencies[0] | .req) = "^0.1"' \
   "$work_dir/good.json" >"$work_dir/bad.json"
 reject "版の範囲指定"
 
@@ -92,13 +84,13 @@ reject "revisionの不一致"
 
 # revisionが短縮形の場合
 jq --arg source "git+https://github.com/KeishiS/oidc-browser-login.git?rev=1111111" \
-  '(.packages[] | select(.id == "auth-oidc") | .dependencies[0] | .source) = $source' \
+  '(.packages[] | select(.id == "service") | .dependencies[0] | .source) = $source' \
   "$work_dir/good.json" >"$work_dir/bad.json"
 reject "短縮revision"
 
 # 別リポジトリを指す場合
 jq --arg source "git+https://example.test/oidc-browser-login.git?rev=$revision" \
-  '(.packages[] | select(.id == "auth-oidc") | .dependencies[0] | .source) = $source' \
+  '(.packages[] | select(.id == "service") | .dependencies[0] | .source) = $source' \
   "$work_dir/good.json" >"$work_dir/bad.json"
 reject "別リポジトリ"
 
@@ -136,7 +128,7 @@ jq '(.resolve.nodes[] | select(.id == "service") | .deps[0] | .dep_kinds) = [{ki
 reject "本番依存からの到達不能"
 
 # testkitが本番依存から到達できる場合
-jq '(.resolve.nodes[] | select(.id == "auth-oidc") | .deps) +=
+jq '(.resolve.nodes[] | select(.id == "service") | .deps) +=
   [{pkg: "testkit", dep_kinds: [{kind: null}]}]' \
   "$work_dir/good.json" >"$work_dir/bad.json"
 reject "本番依存からのtestkit到達"

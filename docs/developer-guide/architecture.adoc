@@ -51,9 +51,10 @@ AsciiDoc engine、HTTP serverを起動する必要がありません。
 ``NOTE_POLICY``には含めず``marginalis-asciidoc``の定数に置きます。版の正本は``Cargo.toml``のrevisionと
 ``Cargo.lock``の解決結果で、``cargo make adocweave-version-check``が定数、``flake.nix``、textlint plugin、
 生成済みOpenAPIなどリポジトリ内の参照との一致を検査します。
-``marginalis-auth-oidc``は外部identity provider portの薄いadapterです。OIDC discovery・
-code exchange・ID token検証の本体は、共有crate ``oidc-browser-login``が担当します(ADR 0015)。
-設定した許可claim値との照合による利用可否の判断はapplicationが担当します。
+``marginalis-service::oidc``は、外部identity provider portと共有crateの型を写す非公開adapterです。
+OIDC discovery・code exchange・ID token検証の本体は、共有crate ``oidc-browser-login``が担当します
+(ADR 0015)。型写像はMarginalis内で再利用せず、composition rootだけが具象的な共有crateを選ぶため、
+独立crateにはしません。設定した許可claim値との照合による利用可否の判断はapplicationが担当します。
 MCP用OAuthの製品非依存の型、resourceとscopeのpolicy、PKCEとredirect URIの検査は
 ``mcp-authorization-server``が定義します。認可、token発行、refresh token rotation、失効の状態遷移と
 原子的な永続化portも同じcrateが所有します。``marginalis-sqlite``はそのportを実装し、client、認可code、
@@ -225,7 +226,6 @@ crates/
 ├── marginalis-application     use case実装と内向き・外向きport
 ├── marginalis-asciidoc        AsciiDoc検証・描画
 ├── marginalis-archive         archive形式の型・検証・移行
-├── marginalis-auth-oidc       OIDCログインadapter（共有crateへの写像）
 ├── marginalis-sqlite          SQLite adapter
 ├── marginalis-web             HTTP adapter
 ├── marginalis-webhook-http    Webhook送信adapter（宛先検査・署名・HTTP POST）
@@ -235,6 +235,10 @@ frontend/
 ├── src                        React・TypeScriptの実装
 └── tests                      ブラウザーに依存しないUI試験
 ----
+
+``marginalis-service/src/oidc.rs``は、共有OIDCログインcrateをapplication portへ接続する非公開moduleです。
+独立した配布単位や複数の利用元を持たない薄い型写像は、workspace crateを増やさずcomposition rootの
+内部に置きます。
 
 次の2つのcrateは``crates/``にはなく、完全なcommit SHAで固定した外部依存として取り込みます。
 

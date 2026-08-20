@@ -5,13 +5,16 @@ use marginalis_application::{
     OidcAuthenticationApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
-use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
 use marginalis_sqlite::SqliteDatabase;
 use mcp_authorization_server_cimd::HttpClientMetadataResolver;
 use std::path::Path;
 
 use crate::{
     config::ServerConfig,
+    oidc::{
+        OidcAuthentication, OidcConfiguration, OidcIdentityProvider, OidcSigningAlgorithm,
+        OidcTokenEndpointAuth, SharedWebSessions,
+    },
     runtime::{SystemClock, SystemRandom},
 };
 
@@ -33,21 +36,19 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .allowed_algorithms
             .iter()
             .map(|algorithm| match algorithm {
-                crate::config::OidcSigningAlgorithm::Es256 => {
-                    marginalis_auth_oidc::OidcSigningAlgorithm::EcdsaP256Sha256
-                }
+                crate::config::OidcSigningAlgorithm::Es256 => OidcSigningAlgorithm::EcdsaP256Sha256,
                 crate::config::OidcSigningAlgorithm::Rs256 => {
-                    marginalis_auth_oidc::OidcSigningAlgorithm::RsaSsaPkcs1V15Sha256
+                    OidcSigningAlgorithm::RsaSsaPkcs1V15Sha256
                 }
             })
             .collect(),
     )?
     .with_token_endpoint_auth(match configuration.oidc.token_endpoint_auth {
         crate::config::OidcTokenEndpointAuthMethod::ClientSecretPost => {
-            marginalis_auth_oidc::OidcTokenEndpointAuth::ClientSecretPost
+            OidcTokenEndpointAuth::ClientSecretPost
         }
         crate::config::OidcTokenEndpointAuthMethod::ClientSecretBasic => {
-            marginalis_auth_oidc::OidcTokenEndpointAuth::ClientSecretBasic
+            OidcTokenEndpointAuth::ClientSecretBasic
         }
     });
     let oidc_http_client = oidc_provider_http_client(
@@ -93,7 +94,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         configuration.oidc.allowed_claim_values.clone(),
     ));
     // session期限は共有crateの既定(idle 24時間/絶対7日、REQ-AUTH-007)を使う。
-    let sessions = std::sync::Arc::new(marginalis_auth_oidc::SharedWebSessions::new(
+    let sessions = std::sync::Arc::new(SharedWebSessions::new(
         database.web_session_store(),
         SystemClock,
         SystemRandom,

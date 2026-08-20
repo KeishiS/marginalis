@@ -1341,16 +1341,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "marginalis-auth-oidc"
-version = "0.47.0"
-dependencies = [
- "async-trait",
- "marginalis-application",
- "marginalis-domain",
- "oidc-browser-login",
-]
-
-[[package]]
 name = "marginalis-contract"
 version = "0.47.0"
 dependencies = [
@@ -1385,19 +1375,20 @@ dependencies = [
 name = "marginalis-service"
 version = "0.47.0"
 dependencies = [
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "liblzma",
  "marginalis-application",
  "marginalis-archive",
  "marginalis-asciidoc",
- "marginalis-auth-oidc",
  "marginalis-contract",
  "marginalis-domain",
  "marginalis-sqlite",
  "marginalis-web",
  "marginalis-webhook-http",
  "mcp-authorization-server-cimd",
+ "oidc-browser-login",
  "rand 0.8.7",
  "reqwest",
  "serde",

@@ -47,7 +47,6 @@ actual=$(
 expected='marginalis-application
 marginalis-archive
 marginalis-asciidoc
-marginalis-auth-oidc
 marginalis-contract
 marginalis-domain
 marginalis-service

@@ -372,7 +372,7 @@ async fn issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_li
 }
 
 /// SQLiteのlogin attempt storeが、共有crateの`LoginAttemptStore`契約と交換可能なことを
-/// testkitの契約試験で確かめる。wrapperはmarginalis-auth-oidcのport写像と同じ変換を行う。
+/// testkitの契約試験で確かめる。wrapperはserviceのOIDC adapterと同じ変換を行う。
 #[tokio::test]
 async fn oidc_login_attempt_store_satisfies_the_shared_contract() {
     struct SharedStore<A>(A);
