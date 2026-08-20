@@ -12,6 +12,7 @@ import {
   type McpScopeCeiling,
   type McpScopeCeilingInput,
   type Note,
+  type NoteAttachment,
   type NoteAclEntry,
   type NoteAclGrant,
   type NoteDraft,
@@ -19,6 +20,9 @@ import {
   type NoteListEntry,
   type NotePreview,
   type NoteReview,
+  type NoteRevision,
+  type NoteRevisionDiff,
+  type NoteRevisionSummary,
   type NoteView,
   type Problem,
   parseBibliographyImportPreview,
@@ -32,11 +36,16 @@ import {
   parseMcpClientAuthorizations,
   parseMcpScopeCeiling,
   parseNote,
+  parseNoteAttachment,
+  parseNoteAttachments,
   parseNoteAcl,
   parseNoteGraph,
   parseNoteListEntries,
   parseNotePreview,
   parseNoteReview,
+  parseNoteRevision,
+  parseNoteRevisionDiff,
+  parseNoteRevisionSummaries,
   parseNoteView,
   parseProblem,
   parseWebhookSecret,
@@ -200,6 +209,98 @@ export async function readNoteView(
     `${apiBase}/notes/${encodeURIComponent(noteId)}/view`,
     { signal },
     parseNoteView,
+  );
+}
+
+export async function listNoteRevisions(
+  apiBase: string,
+  noteId: string,
+  signal?: AbortSignal,
+): Promise<NoteRevisionSummary[]> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/history`,
+    { signal },
+    parseNoteRevisionSummaries,
+  );
+}
+
+export async function readNoteRevision(
+  apiBase: string,
+  noteId: string,
+  revision: number,
+  signal?: AbortSignal,
+): Promise<NoteRevision> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/history/${encodeURIComponent(String(revision))}`,
+    { signal },
+    parseNoteRevision,
+  );
+}
+
+export async function compareNoteRevisions(
+  apiBase: string,
+  noteId: string,
+  fromRevision: number,
+  toRevision: number,
+  signal?: AbortSignal,
+): Promise<NoteRevisionDiff> {
+  const parameters = new URLSearchParams({
+    from_revision: String(fromRevision),
+    to_revision: String(toRevision),
+  });
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/history-diff?${parameters.toString()}`,
+    { signal },
+    parseNoteRevisionDiff,
+  );
+}
+
+export async function restoreNoteRevision(
+  apiBase: string,
+  noteId: string,
+  revision: number,
+  expectedRevision: number,
+): Promise<Note> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/history/${encodeURIComponent(String(revision))}/restore`,
+    mutationRequest("POST", undefined, expectedRevision),
+    parseNote,
+  );
+}
+
+export async function listNoteAttachments(
+  apiBase: string,
+  noteId: string,
+  signal?: AbortSignal,
+): Promise<NoteAttachment[]> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/attachments`,
+    { signal },
+    parseNoteAttachments,
+  );
+}
+
+export async function uploadNoteAttachment(
+  apiBase: string,
+  noteId: string,
+  file: File,
+): Promise<NoteAttachment> {
+  const parameters = new URLSearchParams({ file_name: file.name });
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/attachments?${parameters.toString()}`,
+    binaryMutationRequest("POST", file),
+    parseNoteAttachment,
+  );
+}
+
+export async function deleteNoteAttachment(
+  apiBase: string,
+  noteId: string,
+  attachmentId: string,
+): Promise<void> {
+  return requestNoContent(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    binaryMutationRequest("DELETE"),
   );
 }
 
@@ -558,6 +659,21 @@ function mutationRequest(
         : { "if-match": `"rev-${expectedRevision}"` }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  };
+}
+
+function binaryMutationRequest(
+  method: "POST" | "DELETE",
+  body?: BodyInit,
+): RequestInit {
+  const csrfToken =
+    readCookie("__Host-marginalis_csrf") ||
+    readCookie("__Secure-marginalis_csrf");
+  return {
+    method,
+    credentials: "same-origin",
+    headers: { "x-csrf-token": csrfToken },
+    ...(body === undefined ? {} : { body }),
   };
 }
 

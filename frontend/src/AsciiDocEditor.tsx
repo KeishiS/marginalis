@@ -55,6 +55,7 @@ import { utf8ByteOffsetToTextOffset } from "./textPosition";
 export interface AsciiDocEditorHandle {
   focus: () => void;
   selectRange: (anchor: number, head: number) => void;
+  insertText: (text: string) => void;
 }
 
 interface AsciiDocEditorProps {
@@ -71,6 +72,7 @@ interface AsciiDocEditorProps {
   onChange: (value: string) => void;
   onCompositionChange: (composing: boolean) => void;
   onSave: () => void;
+  onFilesDropped?: (files: File[]) => void;
   styleNonce: string;
   completionSources?: CompletionSource[];
 }
@@ -90,6 +92,7 @@ export const AsciiDocEditor = forwardRef<
     onChange,
     onCompositionChange,
     onSave,
+    onFilesDropped,
     styleNonce,
     completionSources,
   },
@@ -104,6 +107,7 @@ export const AsciiDocEditor = forwardRef<
   const onChangeRef = useRef(onChange);
   const onCompositionChangeRef = useRef(onCompositionChange);
   const onSaveRef = useRef(onSave);
+  const onFilesDroppedRef = useRef(onFilesDropped);
   const readOnly = useRef(new Compartment());
   const editable = useRef(new Compartment());
   const livePreviewConfiguration = useRef(new Compartment());
@@ -113,7 +117,8 @@ export const AsciiDocEditor = forwardRef<
     onChangeRef.current = onChange;
     onCompositionChangeRef.current = onCompositionChange;
     onSaveRef.current = onSave;
-  }, [onChange, onCompositionChange, onSave]);
+    onFilesDroppedRef.current = onFilesDropped;
+  }, [onChange, onCompositionChange, onSave, onFilesDropped]);
 
   useLayoutEffect(() => {
     const parent = container.current;
@@ -177,6 +182,14 @@ export const AsciiDocEditor = forwardRef<
             compositionend: () => {
               queueMicrotask(() => onCompositionChangeRef.current(false));
               return false;
+            },
+            drop: (event) => {
+              const files = Array.from(event.dataTransfer?.files ?? []);
+              if (files.length === 0 || !onFilesDroppedRef.current)
+                return false;
+              event.preventDefault();
+              onFilesDroppedRef.current(files);
+              return true;
             },
           }),
           EditorView.updateListener.of((update) => {
@@ -272,6 +285,16 @@ export const AsciiDocEditor = forwardRef<
         editor.dispatch({
           selection: range,
           effects: EditorView.scrollIntoView(range, { y: "center" }),
+        });
+        editor.focus();
+      },
+      insertText(text) {
+        const editor = view.current;
+        if (!editor) return;
+        const range = editor.state.selection.main;
+        editor.dispatch({
+          changes: { from: range.from, to: range.to, insert: text },
+          selection: { anchor: range.from + text.length },
         });
         editor.focus();
       },

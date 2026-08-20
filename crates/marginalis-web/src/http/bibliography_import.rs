@@ -7,7 +7,7 @@ use axum::{
 };
 use marginalis_application::{
     BibliographyImportClassification, BibliographyImportDecision, BibliographyImportDecisionKind,
-    BibliographyImportInput, BibliographyImportSourceSelection, BibliographyImportUseCases,
+    BibliographyImportInput, BibliographyImportSourceSelection,
 };
 use marginalis_contract::{
     BibliographyImportApplyInput, BibliographyImportCandidateResponse,
@@ -33,7 +33,8 @@ pub(super) async fn list_bibliography_import_sources(
     headers: HeaderMap,
 ) -> HandlerResult<Json<Vec<BibliographyImportSourceResponse>>> {
     let actor = authenticated_actor(&headers, &state).await?;
-    let sources = bibliography_import(&state)?
+    let sources = state
+        .bibliography_import
         .list_bibliography_import_sources(actor)
         .await
         .map_err(bibliography_import_error)?;
@@ -47,7 +48,8 @@ pub(super) async fn preview_bibliography_import(
 ) -> HandlerResult<Json<BibliographyImportPreviewResponse>> {
     let actor = authenticated_actor(&headers, &state).await?;
     let input = import_input(input.source, input.items)?;
-    let preview = bibliography_import(&state)?
+    let preview = state
+        .bibliography_import
         .preview_bibliography_import(actor, input)
         .await
         .map_err(bibliography_import_error)?;
@@ -101,7 +103,8 @@ pub(super) async fn apply_bibliography_import(
             })
         })
         .collect::<HandlerResult<Vec<_>>>()?;
-    let result = bibliography_import(&state)?
+    let result = state
+        .bibliography_import
         .apply_bibliography_import(actor, import_input, decisions, input.preview_token)
         .await
         .map_err(bibliography_import_error)?;
@@ -195,16 +198,6 @@ fn parse_source_id(source_id: String) -> HandlerResult<BibliographyImportSourceI
                 "source_id is invalid",
             )
         })
-}
-
-fn bibliography_import(state: &ApiState) -> HandlerResult<&dyn BibliographyImportUseCases> {
-    state.bibliography_import.as_deref().ok_or_else(|| {
-        problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            ProblemCode::Unavailable,
-            "bibliography import service is unavailable",
-        )
-    })
 }
 
 fn source_response(source: BibliographyImportSource) -> BibliographyImportSourceResponse {

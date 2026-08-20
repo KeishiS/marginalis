@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use marginalis_domain::{BibliographyItem, Identity, NoteValidationTarget};
+use marginalis_domain::{BibliographyItem, NoteValidationTarget, PrincipalRef};
 
 use crate::{CitationStyle, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteUseCaseError};
 
@@ -22,7 +22,7 @@ impl NoteApplication {
     /// 解決できたkeyだけが参考文献一覧へ並び、同じ文献を何度引用しても項目は1つになる。
     pub(super) async fn citation_resolutions(
         &self,
-        owner: &Identity,
+        owner: &PrincipalRef,
         queries: &[NoteCitationQuery],
         style: CitationStyle,
     ) -> Result<ResolvedCitations, NoteUseCaseError> {
@@ -169,13 +169,13 @@ fn unknown_citation_diagnostics(
 mod tests {
     use std::sync::Arc;
 
-    use marginalis_domain::{Identity, Utf8ByteSpan};
+    use marginalis_domain::Utf8ByteSpan;
 
     use crate::{CitationStyle, NoteAdvisorySeverity};
 
     use super::*;
     use crate::notes::test_support::{
-        AcceptContent, MemoryNotes, NoMathMacros, OneItemLibrary, note_application,
+        AcceptContent, MemoryNotes, NoMathMacros, OneItemLibrary, note_application, principal,
     };
 
     /// 番号で示すスタイルは、本文での初出順に通し番号を振る。
@@ -367,7 +367,7 @@ mod tests {
             Some(Utf8ByteSpan { start: 10, end: 40 })
         );
 
-        let other = Identity::new("https://id.example.test".into(), "bob".into()).expect("owner");
+        let other = principal("bob", 2);
         let resolved = application
             .citation_resolutions(&other, &queries, CitationStyle::default())
             .await

@@ -239,16 +239,20 @@ mod tests {
             .execute(&pool)
             .await
             .expect("disable foreign keys for corruption fixture");
-        sqlx::query("UPDATE schema_migrations SET version = 1")
+        sqlx::query("DELETE FROM schema_migrations")
+            .execute(&pool)
+            .await
+            .expect("old schema fixture");
+        sqlx::query("INSERT INTO schema_migrations (version) VALUES (1)")
             .execute(&pool)
             .await
             .expect("old schema fixture");
         sqlx::query(
             "INSERT INTO mcp_authorization_codes \
              (code_hash, client_id, redirect_uri, redirect_uri_was_supplied, resource_uri, \
-              issuer, subject, scopes, code_challenge, expires_at_ms) \
+              principal_id, authenticated_identity_id, scopes, code_challenge, expires_at_ms) \
              VALUES (x'00', 'missing-client', 'https://client.example.test/callback', 1, \
-              'https://marginalis.example.test/mcp', 'https://id.example.test', 'alice', \
+              'https://marginalis.example.test/mcp', 1, 1, \
               'notes:read', 'challenge', 1000)",
         )
         .execute(&pool)
@@ -261,7 +265,7 @@ mod tests {
         assert!(!report.schema.ok);
         assert_eq!(report.schema.actual, Some(1));
         assert!(!report.foreign_keys.ok);
-        assert_eq!(report.foreign_keys.actual, Some(1));
+        assert!(report.foreign_keys.actual.is_some_and(|count| count >= 1));
         assert!(report.failures.is_empty());
         assert_eq!(report.error, None);
     }

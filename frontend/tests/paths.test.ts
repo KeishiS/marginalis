@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   accessPath,
+  historyPath,
   canonicalSearch,
   deletedNotesPath,
   editPath,
@@ -29,6 +30,7 @@ describe("画面URLの組み立て", () => {
     expect(notePath(messy, "1")).toBe(`/notes/1${expected}`);
     expect(editPath(messy, "1")).toBe(`/notes/1/edit${expected}`);
     expect(accessPath(messy, "1")).toBe(`/notes/1/access${expected}`);
+    expect(historyPath(messy, "1")).toBe(`/notes/1/history${expected}`);
   });
 
   /// 以前は編集画面だけが生の値を連結しており、閲覧画面と異なるURLになりえた。

@@ -71,10 +71,10 @@ Kanidm を使う場合は ``caCertificateFile`` に PEM trust anchor を指定�
 に適用します。
 SQLiteデータベースは``dataDir``（既定値``/var/lib/marginalis``）直下の``marginalis.sqlite``に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、``dataDir``自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは22です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは23です。旧versionを起動時に自動移行しません。
 
 schema 22より前のdatabaseから更新する場合は、更新前の実行環境で``export-archive``を実行し、
-その書庫を現行の``restore-archive``で空のschema 22へ取り込んでください。``restore-archive``は
+その書庫を現行の``restore-archive``で空のschema 23へ取り込んでください。``restore-archive``は
 変換・隔離databaseでの復元検証・取り込みを一括で行います。取り込める旧archiveの範囲は
 <<以前のarchiveからの移行>>を参照してください。
 同期cursorと変更索引、MCPの認可状態、client登録とtokenはarchiveへ含まれないため、更新後に
@@ -177,8 +177,9 @@ xref:../developer-guide/observability.adoc#top[ログと障害診断]を参照�
 
 == 定期処理
 
-* ``marginalis-purge-expired.timer`` は毎日実行され、30 日を超えたソフトデリート済みノートと、
-期限切れ・失効済みのWeb/OIDC認証状態、MCPの認可codeとtoken、参照されない古いclientを削除します。
+* ``marginalis-purge-expired.timer`` は毎日実行され、30 日を超えたソフトデリート済みノートと、どの版からも
+参照されないまま30日を超えた添付画像を削除します。期限切れ・失効済みのWeb/OIDC認証状態、MCPの認可codeと
+token、参照されない古いclientも削除します。
 保持期間の7日を過ぎた配送済み・破棄済みのWebhook配送記録も同時に削除します。
 * ``backupDirectory``を設定すると``marginalis-backup.timer``が毎日実行されます。単一のSQLite read
 transactionからsnapshotを取得するため、HTTP serviceを停止しません。
@@ -197,9 +198,11 @@ SQLiteの一時領域を確保してください。必要量の目安は、正�
 == バックアップの確認
 
 archive単体の検証と、隔離復元の検証を手動で実行できます。どちらもノート本文を標準出力やlogへ出しません。
-現行archiveは``marginalis-archive-17``で、AdocWeave package版``0.41.0``とnote profile版``5``を記録します。
+現行archiveは``marginalis-archive-18``で、AdocWeave package版``0.41.0``とnote profile版``6``を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
-同じ段階で、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と重複も検証します。
+同じ段階で、利用者の代表identityとalias、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と
+重複に加え、保持中の全版についてrevisionの連続性、現在版との一致、変更者、AsciiDoc原文も検証します。
+添付画像は、形式、容量、SHA-256、ノートへの所属、各版の本文が参照する画像集合との一致を検証します。
 本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
 書き込まれることはありません。
 
@@ -242,13 +245,69 @@ unitは通常serviceと同時に実行せず、``backupDirectory``に
 退避を永続的に確定できた後だけ、すべての必要なmigrationを1つのtransactionで適用します。
 容量不足、退避先の重複、履歴の欠番、schema 22より前の版の場合はdatabaseを変更せず失敗します。
 
-現在のschemaは22で、未適用のmigrationはありません。その場合は成功logの
-``applied_migrations=0``と``backup=none``で何も変更しなかったことを示し、SQLite退避も作りません。
+現在のschemaは23です。schema 22から更新する場合は、すべての外部identityを推測でまとめず、
+``issuer``と``subject``が完全に一致する組ごとに内部principalを作ります。Web session、MCP token、
+Webhookのeventと配送状態を含む既存行は、そのprincipalへの参照へ移します。同期用とWebhook用で
+別々だった変更番号を一つへ統合するため、既存の同期cursorと変更索引は移行しません。連環などの
+外部検索用投影は、移行後にcursorを省略した全量同期から再開してください。すでにschema 23で
+未適用のmigrationがない場合は、成功logの``applied_migrations=0``と``backup=none``で何も変更しなかった
+ことを示し、SQLite退避も作りません。schema 22には過去版がないため、各ノートの移行時の現在版を
+``imported``という変更種別の履歴一件として開始します。存在しない版や変更者は推測しません。
 
 移行後は``marginalis-diagnose.service``、HTTP health、OIDC login、MCP認可を確認します。切戻しが必要な
 場合は、新しいserviceを停止し、移行後のdatabaseを別名で保全してから、SQLite退避と移行前の
 NixOS generationを組にして戻します。退避のdatabaseだけを新しい実行ファイルと組み合わせると、旧schemaを
 再び拒否するため起動できません。
+
+[[OIDC-issuerの移行]]
+== OIDC issuerの移行
+
+認証サービスを移す場合は、古い``(issuer, subject)``と新しい``(issuer, subject)``を、同じ利用者を表す
+一つのprincipalへ明示的に結び付けます。メールアドレス、表示名、claimの一致から自動では判断しません。
+新しい組は、認証サービスの管理画面または検証済みのID tokenで事前に確認してください。
+
+次の例では、操作前のSQLite全体を権限0600で退避し、新しいidentityをaliasとして追加すると同時に
+代表identityへ変更します。serviceを停止した状態で実行してください。
+
+[source,bash]
+----
+sudo systemctl stop marginalis.service
+sudo -u marginalis env \
+  MARGINALIS_DATABASE_URL=sqlite:/var/lib/marginalis/marginalis.sqlite \
+  marginalis link-identity \
+  --existing-issuer 'https://old-id.example.test' \
+  --existing-subject '<以前のsubject>' \
+  --new-issuer 'https://new-id.example.test' \
+  --new-subject '<新しいsubject>' \
+  --make-primary \
+  --backup-directory /var/lib/marginalis-backups
+----
+
+commandは、既存identityが見つからない場合、二つが同じ場合、または新しいidentityが別のprincipalに属する
+場合に、databaseを変更せず失敗します。入力とdatabaseの事前検査に成功すると、
+``identity-link-<Unix時刻ミリ秒>.sqlite3``を上書きせず作成し、退避の整合性を確認してから一つの
+transactionで結び付けます。ログにはissuer、subject、内部IDを記録しません。
+
+代表identityだけを後から変更する場合は、すでに同じprincipalへ結び付いているidentityを指定します。
+
+[source,bash]
+----
+sudo -u marginalis env \
+  MARGINALIS_DATABASE_URL=sqlite:/var/lib/marginalis/marginalis.sqlite \
+  marginalis set-primary-identity \
+  --issuer 'https://old-id.example.test' \
+  --subject '<以前のsubject>' \
+  --backup-directory /var/lib/marginalis-backups
+----
+
+引き継ぎ後にNixOSのOIDC設定を新しいissuerへ変更し、serviceを起動します。新旧identityはノート、ACL、
+文献、同期、MCPのscope上限と失効を同じ利用者として扱います。既存のWeb sessionとMCP tokenは、発行時に
+認証したidentityを保持します。日次archiveは代表identityとaliasの対応を保存するため、復元後も結び付けを
+保ちます。
+
+serviceを再開する前に切り戻す場合は、変更後のdatabaseを別名で保全してから、commandが作成したSQLite
+退避を戻します。再開後に新しいデータを書き込んだ場合は、その退避を戻すと新しい変更も失われます。
+その場合は``set-primary-identity``で以前のidentityを代表へ戻し、OIDC設定を戻してください。
 
 [[以前のarchiveからの移行]]
 == 以前のarchiveからの移行
@@ -293,7 +352,8 @@ sudo -u marginalis marginalis restore-archive \
 通常運用の秘密情報やネットワークへ接続せず、移行対象のarchiveと出力先だけを渡してください。
 
 表は、現在の3項目を持ち、現行の``migrate-archive``まで段階的な移行経路が続くv0.8.0以降を記録します。
-「採用版」はその契約を書き出したタグの範囲です。v0.43.0はタグだけが作られ、GitHub Releaseは
+「初回・採用版」は、その3項目の組を初めて書き出した公開版と、その後に同じ組を書き出したタグの
+範囲です。これにより、archive内の3項目から移行に必要な実行版を選べます。v0.43.0はタグだけが作られ、GitHub Releaseは
 公開されていないため、同じ契約を使う最初の公開済みリリースはv0.44.0です。
 
 [cols="1,1,1,2,2,1",options="header",]
@@ -301,7 +361,7 @@ sudo -u marginalis marginalis restore-archive \
 |archive形式
 |AdocWeave package版
 |note profile版
-|採用版
+|初回・採用版
 |移行に使うリリースと出力契約
 |現行版での扱い
 
@@ -400,16 +460,28 @@ sudo -u marginalis marginalis restore-archive \
 |0.40.1
 |5
 |v0.43.0からv0.45.0
-|v0.46.0以降 → 17 / 0.41.0 / 5
-|直前契約
+|v0.46.0またはv0.47.0 → 17 / 0.41.0 / 5
+|段階移行
 
 |``marginalis-archive-17``
 |0.41.0
 |5
-|v0.46.0以降
+|v0.46.0からv0.47.0
+|次回公開版以降 → 18 / 0.41.0 / 6
+|直前契約
+
+|``marginalis-archive-18``
+|0.41.0
+|6
+|未公開。次回公開版で初回版を確定
 |—
 |現行契約
 |===
+
+保存契約を変更した開発中の状態は「未公開」と記録します。リリース時には、リリース手順に従って
+この欄を実際の公開版へ置き換えます。したがって、公開済みの各組には必ず初めて書き出した版が
+一つ記録されます。``marginalis-archive-18``は代表identityとalias群、保持中の全版、添付画像のbytesと
+各版の参照集合を含みます。
 
 v0.45.0は、v0.8.0以降の表にある旧契約を``marginalis-archive-17`` / 0.40.1 / 5へ変換できる
 最後の公開版です。Nixでv0.45.0を固定して構築し、入力とは別のファイルへ変換します。
@@ -424,8 +496,9 @@ nix build 'github:KeishiS/marginalis/v0.45.0#default' \
 ----
 
 たとえばv0.18.0のarchiveは、この操作で``marginalis-archive-17`` / 0.40.1 / 5へ変換し、その出力を
-現行版の``restore-archive``へ渡します。現行版は直前契約として受理し、
-``marginalis-archive-17`` / 0.41.0 / 5へ変換して復元します。
+v0.46.0またはv0.47.0の``migrate-archive``へ渡します。その出力である
+``marginalis-archive-17`` / 0.41.0 / 5を現行版の``restore-archive``へ渡すと、直前契約として受理し、
+``marginalis-archive-18`` / 0.41.0 / 6へ変換して復元します。
 
 ADR 0018の採用後に保存契約を変更する場合は、直前の公開済み保存契約から新契約への変換を必ず
 同じリリースへ含めます。以後は表の移行経路を順番に辿ることで、契約を1件ずつ持ち上げられます。
@@ -466,9 +539,13 @@ note IDを付けるため衝突しません。削除済み（ソフトデリー�
 hashは含みません。それらを含む復元用の退避には``export-archive``を使用してください。文書書庫を
 取り込んだ後に同じCSL-JSONを指定する場合は、新しい取込元として事前確認します。
 
-``manifest.json``は、各ファイルとnote IDの対応、所有者、日時、revision、タグ、ACLに加えて、
-形式名``marginalis-documents-2``、Marginalisの版、解析に使ったAdocWeave packageの版、ノートの
-受理規則の版、作成経路、人手確認記録、書き出し時の本文・所有者・ACLを結び付けた
+現在版の本文が参照する添付画像は、所有者ごとの``attachments/``へ元のbytesのまま書き出します。
+manifestに記録したバイト数とSHA-256が一致しない画像は取り込みません。過去版だけが参照する画像を含む
+完全な復元には``export-archive``を使用してください。
+
+``manifest.json``は、各ファイルとnote IDの対応、所有者、日時、revision、タグ、ACL、添付画像に加えて、
+形式名``marginalis-documents-3``、Marginalisの版、解析に使ったAdocWeave packageの版、ノートの
+受理規則の版、作成経路、人手確認記録、書き出し時の本文・所有者・ACL・添付画像を結び付けた
 ``state_sha256``を持ちます。版の意味はarchiveと同じです。取り込む側は、稼働しているMarginalisの版と
 比べて再検証や移行が必要かどうかを判断できます。``state_sha256``は外部編集を検出する値であり、
 署名や改ざん防止の機能ではありません。

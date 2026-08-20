@@ -5,14 +5,18 @@ use marginalis_application::{
     OidcAuthenticationApplication,
 };
 use marginalis_asciidoc::{AsciiDocNoteContent, verify_runtime_package_version};
-use marginalis_auth_oidc::{OidcAuthentication, OidcConfiguration, OidcIdentityProvider};
 use marginalis_sqlite::SqliteDatabase;
 use mcp_authorization_server_cimd::HttpClientMetadataResolver;
 use std::path::Path;
 
 use crate::{
     config::ServerConfig,
+    oidc::{
+        OidcAuthentication, OidcConfiguration, OidcIdentityProvider, OidcSigningAlgorithm,
+        OidcTokenEndpointAuth, SharedWebSessions,
+    },
     runtime::{SystemClock, SystemRandom},
+    webhook::WebhookHttpSender,
 };
 
 pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,21 +37,19 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .allowed_algorithms
             .iter()
             .map(|algorithm| match algorithm {
-                crate::config::OidcSigningAlgorithm::Es256 => {
-                    marginalis_auth_oidc::OidcSigningAlgorithm::EcdsaP256Sha256
-                }
+                crate::config::OidcSigningAlgorithm::Es256 => OidcSigningAlgorithm::EcdsaP256Sha256,
                 crate::config::OidcSigningAlgorithm::Rs256 => {
-                    marginalis_auth_oidc::OidcSigningAlgorithm::RsaSsaPkcs1V15Sha256
+                    OidcSigningAlgorithm::RsaSsaPkcs1V15Sha256
                 }
             })
             .collect(),
     )?
     .with_token_endpoint_auth(match configuration.oidc.token_endpoint_auth {
         crate::config::OidcTokenEndpointAuthMethod::ClientSecretPost => {
-            marginalis_auth_oidc::OidcTokenEndpointAuth::ClientSecretPost
+            OidcTokenEndpointAuth::ClientSecretPost
         }
         crate::config::OidcTokenEndpointAuthMethod::ClientSecretBasic => {
-            marginalis_auth_oidc::OidcTokenEndpointAuth::ClientSecretBasic
+            OidcTokenEndpointAuth::ClientSecretBasic
         }
     });
     let oidc_http_client = oidc_provider_http_client(
@@ -85,17 +87,19 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         oidc_http_client,
         oidc,
     );
-    let oidc = std::sync::Arc::new(OidcAuthenticationApplication::new(
-        std::sync::Arc::new(oidc_provider),
-        configuration.oidc.allowed_claim_values.clone(),
-    ));
     // すべてのrepository portを同じSQLite adapterが担うため、Arcを1つ作って共有する。
     let storage = std::sync::Arc::new(database.clone());
+    let oidc = std::sync::Arc::new(OidcAuthenticationApplication::new(
+        std::sync::Arc::new(oidc_provider),
+        storage.clone(),
+        configuration.oidc.allowed_claim_values.clone(),
+    ));
     // session期限は共有crateの既定(idle 24時間/絶対7日、REQ-AUTH-007)を使う。
-    let sessions = std::sync::Arc::new(marginalis_auth_oidc::SharedWebSessions::new(
+    let sessions = std::sync::Arc::new(SharedWebSessions::new(
         database.web_session_store(),
         SystemClock,
         SystemRandom,
+        storage.clone(),
     ));
     let notes = std::sync::Arc::new(NoteApplication::new(
         NoteApplicationDependencies::with_storage(
@@ -104,6 +108,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             std::sync::Arc::new(marginalis_web::http::HttpNoteLinkResolver),
             std::sync::Arc::new(SystemClock),
             std::sync::Arc::new(SystemRandom),
+            configuration.oidc.issuer_url.to_string(),
         ),
     ));
     let bibliography = std::sync::Arc::new(marginalis_application::BibliographyApplication::new(
@@ -123,9 +128,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // 送信adapterは配送workerと購読の所有確認で同じ検査条件を使うため共有する。
     let webhook_allowed_hosts =
         crate::environment::comma_separated(crate::environment::WEBHOOK_ALLOWED_HOSTS);
-    let webhook_sender = std::sync::Arc::new(marginalis_webhook_http::WebhookHttpSender::new(
-        webhook_allowed_hosts.clone(),
-    ));
+    let webhook_sender = std::sync::Arc::new(WebhookHttpSender::new(webhook_allowed_hosts.clone()));
     let webhooks =
         std::sync::Arc::new(marginalis_application::WebhookSubscriptionApplication::new(
             storage.clone(),
@@ -135,16 +138,18 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             webhook_allowed_hosts,
         ));
     let state = marginalis_web::http::ApiState::new(
-        notes.clone(),
-        math_macros,
-        sessions,
-        oidc,
+        marginalis_web::http::ApiServices {
+            notes: notes.clone(),
+            bibliography,
+            bibliography_import,
+            math_macros,
+            sessions,
+            oidc,
+            webhooks,
+        },
         cookie_path,
         configuration.http.base_url.origin().ascii_serialization(),
-    )
-    .with_bibliography(bibliography)
-    .with_bibliography_import(bibliography_import)
-    .with_webhooks(webhooks);
+    );
     let state = if configuration.mcp_enabled {
         let resource_uri =
             marginalis_web::http::McpEndpoint::resource_uri_for(&configuration.http.base_url);
@@ -165,6 +170,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let endpoint = marginalis_web::http::McpEndpoint::new(
             std::sync::Arc::new(
                 McpOAuthApplication::new(
+                    storage.clone(),
                     storage.clone(),
                     storage.clone(),
                     std::sync::Arc::new(SystemClock),
@@ -216,7 +222,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// 抜ける。結果のログはここで記録し、application層はログに依存しない。
 fn spawn_webhook_delivery_worker(
     storage: std::sync::Arc<SqliteDatabase>,
-    sender: std::sync::Arc<marginalis_webhook_http::WebhookHttpSender>,
+    sender: std::sync::Arc<WebhookHttpSender>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {

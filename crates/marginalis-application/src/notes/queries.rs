@@ -14,7 +14,7 @@ impl NoteApplication {
         actor: Actor,
         query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
-        self.queries
+        self.notes
             .list_visible_notes(&actor, &query)
             .await
             .map_err(NoteUseCaseError::from)
@@ -46,7 +46,7 @@ impl NoteApplication {
         &self,
         actor: Actor,
     ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError> {
-        self.queries
+        self.notes
             .list_owned_deleted_notes(&actor)
             .await
             .map_err(NoteUseCaseError::from)
@@ -124,11 +124,11 @@ fn source_fragment(source: &str, start_line: usize, end_line: usize) -> Option<S
 mod tests {
     use std::sync::Arc;
 
-    use marginalis_domain::{Actor, NOTE_TEMPLATE_TAG, NoteCreationSource, NoteDraft};
+    use marginalis_domain::{NOTE_TEMPLATE_TAG, NoteCreationSource, NoteDraft};
 
     use crate::NoteWritePolicy;
     use crate::notes::test_support::{
-        AcceptContent, EmptyLibrary, MemoryNotes, NoMathMacros, note_application,
+        AcceptContent, EmptyLibrary, MemoryNotes, NoMathMacros, actor, note_application,
     };
 
     use super::source_fragment;
@@ -143,8 +143,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
         for (title, tags) in [
             ("実験記録の雛形", vec![NOTE_TEMPLATE_TAG.to_owned()]),
             ("通常のノート", vec!["研究".to_owned()]),

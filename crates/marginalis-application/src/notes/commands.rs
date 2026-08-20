@@ -4,7 +4,10 @@ use marginalis_domain::{Actor, Note, NoteAccess, NoteCreationSource, NoteDraft, 
 
 use crate::{NoteAdvisoryDiagnostic, NoteUseCaseError, NoteWritePolicy, ValidatedNoteDraft};
 
-use super::{NoteApplication, NoteLinks, cited_keys, patch, reference_targets};
+use super::{
+    NoteApplication, NoteLinks, attachment_ids, attachments::rejected_attachment_references,
+    cited_keys, patch, reference_targets,
+};
 
 /// patch適用の結果。応答へ載せる変更量と、warning未満の診断を含む。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,12 +38,16 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans: _,
         } = validated;
+        if !attachment_queries.is_empty() {
+            return Err(rejected_attachment_references(&attachment_queries));
+        }
         // 新規作成では操作している利用者がそのまま作成者になるため、閲覧時の解決先と一致する。
         diagnostics.extend(
-            self.citation_resolutions(actor.identity(), &citation_queries, citation_style)
+            self.citation_resolutions(actor.principal(), &citation_queries, citation_style)
                 .await?
                 .diagnostics,
         );
@@ -48,19 +55,21 @@ impl NoteApplication {
         let now = self.clock.now();
         let note = Note::create(
             NoteId::new(self.random.uuid_v7()),
-            actor.identity(),
+            actor.principal(),
             draft,
             now,
             created_via,
         );
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
-        self.commands
+        let attachment_ids = attachment_ids(&attachment_queries);
+        self.notes
             .create_note(
                 &note,
                 NoteLinks {
                     reference_targets: &reference_targets,
                     cited_keys: &cited_keys,
+                    attachment_ids: &attachment_ids,
                 },
             )
             .await
@@ -85,9 +94,12 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans: _,
         } = validated;
+        self.validate_note_attachment_references(&actor, note_id, &attachment_queries)
+            .await?;
         if !citation_queries.is_empty() {
             // 引用は閲覧時に作成者のライブラリで解決する。共有されたノートを別の利用者が
             // 更新する場合も同じ基準で判定しないと、保存できた引用が表示では解決されない。
@@ -105,7 +117,8 @@ impl NoteApplication {
         reject_warnings(policy, &diagnostics)?;
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
-        self.commands
+        let attachment_ids = attachment_ids(&attachment_queries);
+        self.notes
             .update_visible_note(
                 &actor,
                 note_id,
@@ -114,6 +127,7 @@ impl NoteApplication {
                 NoteLinks {
                     reference_targets: &reference_targets,
                     cited_keys: &cited_keys,
+                    attachment_ids: &attachment_ids,
                 },
                 self.clock.now(),
             )
@@ -137,7 +151,7 @@ impl NoteApplication {
         dry_run: bool,
     ) -> Result<NotePatchApplication, NoteUseCaseError> {
         let accessible = self
-            .queries
+            .notes
             .accessible_note(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -165,9 +179,12 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans: _,
         } = validated;
+        self.validate_note_attachment_references(&actor, note_id, &attachment_queries)
+            .await?;
         if !citation_queries.is_empty() {
             // update_noteと同じく、引用は閲覧時の解決先である所有者のライブラリで判定する。
             diagnostics.extend(
@@ -188,8 +205,9 @@ impl NoteApplication {
         }
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
+        let attachment_ids = attachment_ids(&attachment_queries);
         let saved = self
-            .commands
+            .notes
             .update_visible_note(
                 &actor,
                 note_id,
@@ -198,6 +216,7 @@ impl NoteApplication {
                 NoteLinks {
                     reference_targets: &reference_targets,
                     cited_keys: &cited_keys,
+                    attachment_ids: &attachment_ids,
                 },
                 self.clock.now(),
             )
@@ -218,7 +237,7 @@ impl NoteApplication {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
-        self.commands
+        self.notes
             .soft_delete_visible_note(&actor, note_id, expected_revision, self.clock.now())
             .await
             .map_err(NoteUseCaseError::from)
@@ -230,7 +249,7 @@ impl NoteApplication {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
-        self.commands
+        self.notes
             .restore_owned_deleted_note(&actor, note_id, expected_revision, self.clock.now())
             .await
             .map_err(NoteUseCaseError::from)
@@ -256,16 +275,17 @@ mod tests {
     use std::sync::{Arc, atomic::Ordering};
 
     use marginalis_domain::{
-        Actor, EntityId, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
-        NoteReviewTracking, Revision, UnixMillis,
+        EntityId, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore, NoteReviewTracking,
+        Revision, UnixMillis,
     };
 
-    use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteValidationTarget};
+    use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity};
+    use marginalis_domain::NoteValidationTarget;
 
     use super::*;
     use crate::notes::test_support::{
         AcceptContent, CitingContent, EmptyLibrary, MemoryNotes, NoMathMacros, OneItemLibrary,
-        OwnerMathMacros, note_application,
+        OwnerMathMacros, actor, note_application,
     };
 
     #[tokio::test]
@@ -277,8 +297,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let created = application
             .create_note(
@@ -294,7 +313,7 @@ mod tests {
             .await
             .expect("create note");
 
-        assert_eq!(created.creator_subject(), "alice");
+        assert_eq!(created.owner().primary_identity().subject(), "alice");
         assert_eq!(created.revision().get(), 1);
         assert_eq!(created.created_via(), NoteCreationSource::Rest);
         assert_eq!(
@@ -345,8 +364,7 @@ mod tests {
             Arc::new(OneItemLibrary),
             Arc::new(OwnerMathMacros),
         );
-        let editor =
-            Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");
+        let editor = actor("bob", 2);
         let draft = NoteDraft {
             source: "= 共有されたノート\n\n本文 cite:[smith2024]".into(),
             title: "共有されたノート".into(),
@@ -389,8 +407,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
         let draft = NoteDraft {
             source: "= Warning\n\nbody".into(),
             title: "Warning".into(),
@@ -479,8 +496,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let applied = application
             .apply_note_patch(
@@ -518,8 +534,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let error = application
             .apply_note_patch(
@@ -547,8 +562,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let error = application
             .apply_note_patch(
@@ -575,8 +589,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let error = application
             .apply_note_patch(
@@ -612,8 +625,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");
+        let actor = actor("bob", 2);
 
         let error = application
             .apply_note_patch(
@@ -640,8 +652,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         // repository stubは条件付き更新でUnavailableを返すため、失敗の分類で
         // 保存経路まで到達したことが分かる。

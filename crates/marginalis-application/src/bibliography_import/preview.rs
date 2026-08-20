@@ -57,8 +57,14 @@ pub(super) fn import_state_token(
 
     if let Some(source) = &state.source {
         hash_component(&mut hasher, source.source_id().to_string().as_bytes());
-        hash_component(&mut hasher, source.owner().issuer().as_bytes());
-        hash_component(&mut hasher, source.owner().subject().as_bytes());
+        hash_component(
+            &mut hasher,
+            source.owner().primary_identity().issuer().as_bytes(),
+        );
+        hash_component(
+            &mut hasher,
+            source.owner().primary_identity().subject().as_bytes(),
+        );
         hash_component(
             &mut hasher,
             match source.method() {

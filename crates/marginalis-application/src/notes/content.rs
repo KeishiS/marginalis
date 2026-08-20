@@ -1,6 +1,6 @@
 //! 文書adapterとの境界で受け渡す型とport。
 
-use marginalis_domain::{Note, NoteDraft, NoteId, Utf8ByteSpan};
+use marginalis_domain::{AttachmentId, AttachmentMediaType, Note, NoteDraft, NoteId, Utf8ByteSpan};
 
 use crate::{
     CitationStyle, NoteProfile, NoteRenderContext, NoteSourcePosition, NoteValidationDiagnostic,
@@ -13,6 +13,24 @@ pub struct NoteReferenceQuery {
     pub reference_index: usize,
     pub target_note_id: NoteId,
     pub anchor: Option<String>,
+}
+
+/// AsciiDocの画像macroが参照する、同じノート内の添付ID。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NoteAttachmentQuery {
+    pub attachment_index: usize,
+    pub attachment_id: AttachmentId,
+    pub span: Utf8ByteSpan,
+    pub position: NoteSourcePosition,
+}
+
+/// 保存済み添付を同一originの取得URLへ解決した表示入力。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteAttachmentResolution {
+    pub attachment_index: usize,
+    pub href: String,
+    pub media_type: AttachmentMediaType,
+    pub byte_length: usize,
 }
 
 /// 認可と外部URLの解決を終えたノート参照。
@@ -81,6 +99,7 @@ pub struct NoteRenderInputs<'a> {
     pub references: &'a [NoteReferenceResolution],
     pub citations: &'a [NoteCitationResolution],
     pub bibliography: &'a [NoteBibliographyEntry],
+    pub attachments: &'a [NoteAttachmentResolution],
 }
 
 /// 本文を省いた文書の構成。長文ノートから読む範囲を選ぶために使う。
@@ -119,6 +138,7 @@ pub trait NoteContent: Send + Sync {
     ) -> Result<ValidatedNoteDraft, Vec<NoteValidationDiagnostic>>;
     fn reference_queries(&self, body: &str) -> Result<Vec<NoteReferenceQuery>, NoteContentError>;
     fn citation_queries(&self, body: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError>;
+    fn attachment_queries(&self, body: &str) -> Result<Vec<NoteAttachmentQuery>, NoteContentError>;
     /// 本文のheaderが選んだ引用の表示規則を返す。
     ///
     /// 保存済みのノートを表示するときは下書きの検証結果が手元にないため、本文から読み直す。
@@ -132,12 +152,21 @@ pub trait NoteContent: Send + Sync {
     fn profile(&self) -> NoteProfile;
 }
 
-/// HTTPの配置方式に依存するノートURLを組み立てるport。
+/// HTTPの配置方式に依存するノートと添付画像のURLを組み立てるport。
 pub trait NoteLinkResolver: Send + Sync {
+    /// ノート閲覧画面へのURL。
     fn href(
         &self,
         context: &NoteRenderContext,
         note_id: NoteId,
         anchor: Option<&str>,
+    ) -> Option<String>;
+
+    /// 認可付きの添付画像取得URL。
+    fn attachment_href(
+        &self,
+        context: &NoteRenderContext,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
     ) -> Option<String>;
 }

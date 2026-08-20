@@ -16,6 +16,41 @@ fn test_directory(purpose: &str) -> std::path::PathBuf {
     ))
 }
 
+fn current_archive_with_imported_history(mut archive: serde_json::Value) -> serde_json::Value {
+    let histories = archive["notes"]
+        .as_array()
+        .expect("archive notes")
+        .iter()
+        .map(|note| {
+            serde_json::json!({
+                "note_id": note["note_id"],
+                "revision": note["revision"],
+                "changed_at_ms": note["updated_at_ms"],
+                "changed_by_issuer": note["creator_issuer"],
+                "changed_by_subject": note["creator_subject"],
+                "kind": "imported",
+                "source": note["source"],
+                "deleted_at_ms": note["deleted_at_ms"],
+                "review_tracking_known": note["provenance"]["review_tracking_known"],
+                "reviewed_revision": note["provenance"]["reviewed_revision"],
+                "reviewed_at_ms": note["provenance"]["reviewed_at_ms"],
+                "reviewer_issuer": note["provenance"]["reviewer_issuer"],
+                "reviewer_subject": note["provenance"]["reviewer_subject"],
+                "attachment_ids": []
+            })
+        })
+        .collect();
+    archive
+        .as_object_mut()
+        .expect("archive object")
+        .insert("note_revisions".into(), serde_json::Value::Array(histories));
+    archive
+        .as_object_mut()
+        .expect("archive object")
+        .insert("attachments".into(), serde_json::Value::Array(Vec::new()));
+    archive
+}
+
 #[test]
 fn version_flags_report_the_packaged_version() {
     for flag in ["--version", "-V"] {
@@ -80,10 +115,174 @@ fn database_migration_of_the_current_schema_is_a_logged_no_op() {
     );
     let stderr = String::from_utf8(migrated.stderr).expect("UTF-8 stderr");
     assert!(stderr.contains("event=\"maintenance.database_migration.completed\""));
-    assert!(stderr.contains("from_schema=22"));
-    assert!(stderr.contains("to_schema=22"));
+    assert!(stderr.contains("from_schema=23"));
+    assert!(stderr.contains("to_schema=23"));
     assert!(stderr.contains("applied_migrations=0"));
     assert!(!backup.exists());
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
+#[test]
+fn identity_maintenance_links_and_switches_aliases_without_logging_them() {
+    let directory = test_directory("identity-maintenance");
+    fs::create_dir(&directory).expect("test directory");
+    let database = directory.join("marginalis.sqlite3");
+    let database_url = format!("sqlite://{}?mode=rwc", database.display());
+    let seed = directory.join("seed.json");
+    let old_issuer = "https://old-id.example.test";
+    let old_subject = "private-alice";
+    let new_issuer = "https://new-id.example.test";
+    let new_subject = "private-alice-v2";
+    let archive = current_archive_with_imported_history(serde_json::json!({
+        "format": "marginalis-archive-18",
+        "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
+        "note_profile_version": 6,
+        "principals": [{
+            "primary_issuer": old_issuer,
+            "primary_subject": old_subject,
+            "aliases": []
+        }, {
+            "primary_issuer": "https://id.example.test",
+            "primary_subject": "bob",
+            "aliases": []
+        }],
+        "notes": [],
+        "note_acl": [],
+        "bibliography_items": [],
+        "bibliography_import_sources": [],
+        "bibliography_import_links": [],
+        "math_macro_settings": []
+    }));
+    fs::write(&seed, serde_json::to_vec_pretty(&archive).unwrap()).expect("seed archive");
+    run_marginalis(
+        &["import-archive", "--input"],
+        &seed,
+        &database_url,
+        "seed identity database",
+    );
+
+    let link_backup = directory.join("identity-link.sqlite3");
+    let linked = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args([
+            "link-identity",
+            "--existing-issuer",
+            old_issuer,
+            "--existing-subject",
+            old_subject,
+            "--new-issuer",
+            new_issuer,
+            "--new-subject",
+            new_subject,
+            "--make-primary",
+            "--backup-output",
+        ])
+        .arg(&link_backup)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("link identity");
+    assert!(
+        linked.status.success(),
+        "identity link failed: {}",
+        String::from_utf8_lossy(&linked.stderr)
+    );
+    assert!(linked.stdout.is_empty());
+    let link_log = String::from_utf8(linked.stderr).expect("UTF-8 log");
+    assert!(link_log.contains("maintenance.identity_link.completed"));
+    for private_value in [
+        old_issuer,
+        old_subject,
+        new_issuer,
+        new_subject,
+        "principal_id",
+    ] {
+        assert!(!link_log.contains(private_value));
+    }
+    assert_eq!(
+        fs::metadata(&link_backup)
+            .expect("link backup")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+
+    let linked_archive = directory.join("linked.json");
+    run_marginalis(
+        &["export-archive", "--output"],
+        &linked_archive,
+        &database_url,
+        "export linked identities",
+    );
+    let linked_json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&linked_archive).unwrap()).unwrap();
+    assert_eq!(linked_json["principals"][1]["primary_issuer"], new_issuer);
+    assert_eq!(linked_json["principals"][1]["primary_subject"], new_subject);
+    assert_eq!(
+        linked_json["principals"][1]["aliases"][0]["issuer"],
+        old_issuer
+    );
+    assert_eq!(
+        linked_json["principals"][1]["aliases"][0]["subject"],
+        old_subject
+    );
+
+    let primary_backup = directory.join("identity-primary.sqlite3");
+    let switched = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args([
+            "set-primary-identity",
+            "--issuer",
+            old_issuer,
+            "--subject",
+            old_subject,
+            "--backup-output",
+        ])
+        .arg(&primary_backup)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("switch primary identity");
+    assert!(
+        switched.status.success(),
+        "primary switch failed: {}",
+        String::from_utf8_lossy(&switched.stderr)
+    );
+    let switch_log = String::from_utf8(switched.stderr).expect("UTF-8 log");
+    assert!(switch_log.contains("maintenance.identity_primary.completed"));
+    for private_value in [
+        old_issuer,
+        old_subject,
+        new_issuer,
+        new_subject,
+        "principal_id",
+    ] {
+        assert!(!switch_log.contains(private_value));
+    }
+    assert!(primary_backup.is_file());
+
+    let conflict_backup = directory.join("identity-conflict.sqlite3");
+    let conflict = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args([
+            "link-identity",
+            "--existing-issuer",
+            old_issuer,
+            "--existing-subject",
+            old_subject,
+            "--new-issuer",
+            "https://id.example.test",
+            "--new-subject",
+            "bob",
+            "--backup-output",
+        ])
+        .arg(&conflict_backup)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("reject conflicting identity");
+    assert!(!conflict.status.success());
+    assert!(!conflict_backup.exists());
+    let conflict_log = String::from_utf8(conflict.stderr).expect("UTF-8 log");
+    for private_value in [old_issuer, old_subject, "https://id.example.test", "bob"] {
+        assert!(!conflict_log.contains(private_value));
+    }
 
     fs::remove_dir_all(&directory).expect("remove test directory");
 }
@@ -117,12 +316,12 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
     );
     let archive_json: serde_json::Value =
         serde_json::from_slice(&fs::read(&archive).expect("read archive")).expect("archive JSON");
-    assert_eq!(archive_json["format"], "marginalis-archive-17");
+    assert_eq!(archive_json["format"], "marginalis-archive-18");
     assert_eq!(
         archive_json["adocweave_package_version"],
         marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
     );
-    assert_eq!(archive_json["note_profile_version"], 5);
+    assert_eq!(archive_json["note_profile_version"], 6);
 
     let backup = directory.join("backup");
     let result = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
@@ -293,11 +492,11 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
 fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let directory = test_directory("archive-migration");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("v0.45.0-archive-17.json");
-    let output = directory.join("current-archive-17.json");
+    let input = directory.join("v0.47.0-archive-17.json");
+    let output = directory.join("current-archive-18.json");
     let previous = serde_json::json!({
         "format": "marginalis-archive-17",
-        "adocweave_package_version": "0.40.1",
+        "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
         "note_profile_version": 5,
         "notes": [
             {
@@ -381,12 +580,20 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let migrated: serde_json::Value =
         serde_json::from_slice(&fs::read(&output).expect("read migration output"))
             .expect("migrated JSON");
-    assert_eq!(migrated["format"], "marginalis-archive-17");
+    assert_eq!(migrated["format"], "marginalis-archive-18");
     assert_eq!(
         migrated["adocweave_package_version"],
         marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
     );
-    assert_eq!(migrated["note_profile_version"], 5);
+    assert_eq!(migrated["note_profile_version"], 6);
+    assert_eq!(migrated["note_revisions"].as_array().map(Vec::len), Some(2));
+    assert!(
+        migrated["note_revisions"]
+            .as_array()
+            .expect("note revisions")
+            .iter()
+            .all(|revision| revision["kind"] == "imported")
+    );
     assert_eq!(migrated["math_macro_settings"], serde_json::json!([]));
     assert_eq!(
         migrated["bibliography_import_sources"],
@@ -626,7 +833,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 22);
+    assert_eq!(report["database"]["schema"]["actual"], 23);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
     assert!(!String::from_utf8_lossy(&healthy.stderr).contains("must-not-be-reported"));
 
@@ -764,10 +971,19 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let database = directory.join("marginalis.sqlite3");
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
-    let source = serde_json::json!({
-        "format": "marginalis-archive-17",
+    let source = current_archive_with_imported_history(serde_json::json!({
+        "format": "marginalis-archive-18",
         "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
-        "note_profile_version": 5,
+        "note_profile_version": 6,
+        "principals": [{
+            "primary_issuer": "https://id.example.test",
+            "primary_subject": "alice",
+            "aliases": []
+        }, {
+            "primary_issuer": "https://id.example.test",
+            "primary_subject": "bob",
+            "aliases": []
+        }],
         "notes": [
             {
                 "note_id": "0197c9bc-0000-7000-8000-000000000001",
@@ -819,7 +1035,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
         "bibliography_import_sources": [],
         "bibliography_import_links": [],
         "math_macro_settings": []
-    });
+    }));
     fs::write(
         &archive,
         serde_json::to_vec_pretty(&source).expect("archive JSON"),
@@ -902,13 +1118,13 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("manifest.json")).expect("manifest"))
             .expect("manifest JSON");
-    assert_eq!(manifest["format"], "marginalis-documents-2");
+    assert_eq!(manifest["format"], "marginalis-documents-3");
     assert_eq!(manifest["marginalis_version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(
         manifest["adocweave_package_version"],
         marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
     );
-    assert_eq!(manifest["note_profile_version"], 5);
+    assert_eq!(manifest["note_profile_version"], 6);
     assert_eq!(manifest["owners"][0]["subject"], "alice");
     assert_eq!(
         manifest["owners"][0]["notes"][0]["note_id"],
@@ -974,10 +1190,19 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
     let database = directory.join("marginalis.sqlite3");
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
-    let source = serde_json::json!({
-        "format": "marginalis-archive-17",
+    let source = current_archive_with_imported_history(serde_json::json!({
+        "format": "marginalis-archive-18",
         "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
-        "note_profile_version": 5,
+        "note_profile_version": 6,
+        "principals": [{
+            "primary_issuer": "https://id.example.test",
+            "primary_subject": "alice",
+            "aliases": []
+        }, {
+            "primary_issuer": "https://id.example.test",
+            "primary_subject": "bob",
+            "aliases": []
+        }],
         // 所有者を2人にし、note IDが所有者をまたいで交互に並ぶようにする。書き出しは所有者ごとに
         // ノートをまとめるため、この並びは取り込み側で読む順とsnapshotの順を食い違わせる。
         "notes": [{
@@ -1052,7 +1277,7 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
         "bibliography_import_sources": [],
         "bibliography_import_links": [],
         "math_macro_settings": []
-    });
+    }));
     let archive_bytes = serde_json::to_vec_pretty(&source).expect("archive JSON");
     fs::write(&archive, &archive_bytes).expect("write archive");
     run_marginalis(
@@ -1166,10 +1391,10 @@ fn run_marginalis(command: &[&str], path: &std::path::Path, database_url: &str, 
 fn restore_archive_migrates_verifies_and_imports_in_one_step() {
     let directory = test_directory("restore-archive");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("v0.45.0-archive-17.json");
+    let input = directory.join("v0.47.0-archive-17.json");
     let previous = serde_json::json!({
         "format": "marginalis-archive-17",
-        "adocweave_package_version": "0.40.1",
+        "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
         "note_profile_version": 5,
         "notes": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",
@@ -1230,13 +1455,20 @@ fn restore_archive_migrates_verifies_and_imports_in_one_step() {
     );
     let current: serde_json::Value =
         serde_json::from_slice(&fs::read(&exported).expect("read export")).expect("export JSON");
-    assert_eq!(current["format"], "marginalis-archive-17");
+    assert_eq!(current["format"], "marginalis-archive-18");
     assert_eq!(
         current["adocweave_package_version"],
         marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
     );
     assert_eq!(
         current["notes"][0]["source"],
+        previous["notes"][0]["source"]
+    );
+    assert_eq!(current["note_revisions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(current["note_revisions"][0]["revision"], 2);
+    assert_eq!(current["note_revisions"][0]["kind"], "imported");
+    assert_eq!(
+        current["note_revisions"][0]["source"],
         previous["notes"][0]["source"]
     );
 

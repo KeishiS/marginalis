@@ -59,6 +59,11 @@ export function accessPath(context: PathContext, noteId: string): string {
   return withSearch(context, `/notes/${noteId}/access`);
 }
 
+/** ノートの版履歴画面のURL。 */
+export function historyPath(context: PathContext, noteId: string): string {
+  return withSearch(context, `/notes/${noteId}/history`);
+}
+
 /**
  * グラフビューのURL。ノートを指定すると、そのノートを起点にした範囲を開く。
  *

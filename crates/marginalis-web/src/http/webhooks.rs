@@ -2,42 +2,31 @@
 //!
 //! secretは登録と再生成の応答でだけ返し、一覧や失敗応答には含めない。
 
-use std::sync::Arc;
-
 use axum::{
     Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
-use marginalis_application::{WebhookUseCases, WebhookVerificationOutcome};
+use marginalis_application::WebhookVerificationOutcome;
 use marginalis_contract::{
-    ProblemCode, WebhookDeliveryFailureReason, WebhookDisabledReason, WebhookEventKind,
-    WebhookSecretResponse, WebhookSubscriptionCreatedResponse, WebhookSubscriptionInput,
-    WebhookSubscriptionResponse, WebhookSubscriptionState, WebhookVerificationResponse,
+    WebhookDeliveryFailureReason, WebhookDisabledReason, WebhookEventKind, WebhookSecretResponse,
+    WebhookSubscriptionCreatedResponse, WebhookSubscriptionInput, WebhookSubscriptionResponse,
+    WebhookSubscriptionState, WebhookVerificationResponse,
 };
 
 use super::{
     auth::{authenticated_actor, authenticated_mutation_actor},
-    error::{HandlerResult, problem, webhook_error},
+    error::{HandlerResult, webhook_error},
     state::ApiState,
 };
-
-fn webhook_use_cases(state: &ApiState) -> HandlerResult<&Arc<dyn WebhookUseCases>> {
-    state.webhooks.as_ref().ok_or_else(|| {
-        problem(
-            StatusCode::NOT_FOUND,
-            ProblemCode::NotFound,
-            "webhooks are not available",
-        )
-    })
-}
 
 pub(super) async fn list_webhooks(
     State(state): State<ApiState>,
     headers: HeaderMap,
 ) -> HandlerResult<Json<Vec<WebhookSubscriptionResponse>>> {
     let actor = authenticated_actor(&headers, &state).await?;
-    let subscriptions = webhook_use_cases(&state)?
+    let subscriptions = state
+        .webhooks
         .list_subscriptions(&actor)
         .await
         .map_err(webhook_error)?;
@@ -60,7 +49,8 @@ pub(super) async fn create_webhook(
         .iter()
         .map(|kind| event_kind_value(*kind).to_owned())
         .collect();
-    let (subscription, secret) = webhook_use_cases(&state)?
+    let (subscription, secret) = state
+        .webhooks
         .create_subscription(&actor, &input.url, event_kinds)
         .await
         .map_err(webhook_error)?;
@@ -79,7 +69,8 @@ pub(super) async fn verify_webhook(
     headers: HeaderMap,
 ) -> HandlerResult<Json<WebhookVerificationResponse>> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
-    let outcome = webhook_use_cases(&state)?
+    let outcome = state
+        .webhooks
         .verify_subscription(&actor, &subscription_id)
         .await
         .map_err(webhook_error)?;
@@ -101,7 +92,8 @@ pub(super) async fn regenerate_webhook_secret(
     headers: HeaderMap,
 ) -> HandlerResult<Json<WebhookSecretResponse>> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
-    let secret = webhook_use_cases(&state)?
+    let secret = state
+        .webhooks
         .regenerate_secret(&actor, &subscription_id)
         .await
         .map_err(webhook_error)?;
@@ -114,7 +106,8 @@ pub(super) async fn delete_webhook(
     headers: HeaderMap,
 ) -> HandlerResult<StatusCode> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
-    webhook_use_cases(&state)?
+    state
+        .webhooks
         .delete_subscription(&actor, &subscription_id)
         .await
         .map_err(webhook_error)?;
@@ -127,7 +120,8 @@ pub(super) async fn retry_webhook_delivery(
     headers: HeaderMap,
 ) -> HandlerResult<StatusCode> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
-    webhook_use_cases(&state)?
+    state
+        .webhooks
         .retry_delivery(&actor, &subscription_id)
         .await
         .map_err(webhook_error)?;
@@ -140,7 +134,8 @@ pub(super) async fn discard_webhook_delivery(
     headers: HeaderMap,
 ) -> HandlerResult<StatusCode> {
     let actor = authenticated_mutation_actor(&headers, &state).await?;
-    webhook_use_cases(&state)?
+    state
+        .webhooks
         .discard_delivery(&actor, &subscription_id)
         .await
         .map_err(webhook_error)?;

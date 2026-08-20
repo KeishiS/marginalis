@@ -66,6 +66,45 @@ async fn rest_list_forwards_creation_source_and_review_status_filters() {
 }
 
 #[tokio::test]
+async fn attachment_routes_list_metadata_and_reject_active_content_before_storage() {
+    let note_id = "0197c9bc-0000-7000-8000-000000000002";
+    let app = authenticated_app();
+    let listed = app
+        .clone()
+        .oneshot(authenticated_request(&format!(
+            "/api/v3/notes/{note_id}/attachments"
+        )))
+        .await
+        .expect("list attachments");
+    assert_eq!(listed.status(), StatusCode::OK);
+    assert_eq!(
+        to_bytes(listed.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+        "[]"
+    );
+
+    let rejected = app
+        .oneshot(
+            Request::post(format!(
+                "/api/v3/notes/{note_id}/attachments?file_name=figure.svg"
+            ))
+            .header(header::ORIGIN, "https://example.test")
+            .header("sec-fetch-site", "same-origin")
+            .header(
+                header::COOKIE,
+                "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
+            )
+            .header("x-csrf-token", "session-csrf")
+            .body(Body::from("<svg><script>alert(1)</script></svg>"))
+            .expect("request"),
+        )
+        .await
+        .expect("upload response");
+    assert_eq!(rejected.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
 async fn owner_reads_and_marks_the_current_note_revision_as_reviewed() {
     let note_id = "0197c9bc-0000-7000-8000-000000000002";
     let app = authenticated_app();
@@ -129,6 +168,68 @@ async fn deleted_note_list_exposes_only_the_owner_projection() {
             "revision": 2
         }])
     );
+}
+
+#[tokio::test]
+async fn note_history_routes_return_typed_metadata_snapshot_diff_and_restore() {
+    let note_id = "0197c9bc-0000-7000-8000-000000000002";
+    let app = authenticated_app();
+    let list = app
+        .clone()
+        .oneshot(authenticated_request(&format!(
+            "/api/v3/notes/{note_id}/history"
+        )))
+        .await
+        .expect("history response");
+    assert_eq!(list.status(), StatusCode::OK);
+    let body = to_bytes(list.into_body(), usize::MAX).await.expect("body");
+    let history: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(history[0]["revision"], 3);
+    assert_eq!(history[0]["kind"], "imported");
+    assert_eq!(history[0]["changed_by_subject"], "alice");
+    assert!(history[0].get("source").is_none());
+
+    let revision = app
+        .clone()
+        .oneshot(authenticated_request(&format!(
+            "/api/v3/notes/{note_id}/history/3"
+        )))
+        .await
+        .expect("revision response");
+    assert_eq!(revision.status(), StatusCode::OK);
+    let body = to_bytes(revision.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let revision: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(revision["note"]["revision"], 3);
+    assert_eq!(revision["access"], "manage");
+
+    let diff = app
+        .clone()
+        .oneshot(authenticated_request(&format!(
+            "/api/v3/notes/{note_id}/history-diff?from_revision=3&to_revision=3"
+        )))
+        .await
+        .expect("diff response");
+    assert_eq!(diff.status(), StatusCode::OK);
+
+    let restored = app
+        .oneshot(
+            Request::post(format!("/api/v3/notes/{note_id}/history/3/restore"))
+                .header(header::ORIGIN, "https://example.test")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::COOKIE,
+                    "__Host-marginalis_session=active-session; __Host-marginalis_csrf=session-csrf",
+                )
+                .header("x-csrf-token", "session-csrf")
+                .header(header::IF_MATCH, "\"rev-3\"")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("restore response");
+    assert_eq!(restored.status(), StatusCode::OK);
 }
 
 #[tokio::test]

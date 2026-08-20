@@ -181,7 +181,7 @@ fn scope_description(scope: &str) -> &'static str {
         ),
         "notes:delete" => "delete_noteでノートを削除します。",
         "notes:sync" => concat!(
-            "sync_notesで、閲覧できるノートの本文と変更を外部の検索用コピーへ継続的に同期します。",
+            "専用REST APIで、閲覧できるノートの本文と変更を外部の検索用コピーへ継続的に同期します。",
             "許可を取り消しても、Marginalisから外部に保存済みのコピーは削除できません。"
         ),
         "bibliography:read" => "search_bibliographyで文献情報を検索します。",

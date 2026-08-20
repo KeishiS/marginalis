@@ -3,24 +3,25 @@
 use std::collections::{HashMap, HashSet};
 
 use marginalis_domain::{
-    BibliographyImportLink, BibliographyImportSource, BibliographyItem, Identity, Note, NoteId,
-    NotePermission,
+    ATTACHMENT_POLICY, AttachmentId, BibliographyImportLink, BibliographyImportSource,
+    BibliographyItem, Note, NoteId, NotePermission, NoteRevisionAttachment, NoteRevisionKind,
+    NoteRevisionSnapshot, Principal, PrincipalRef, StoredAttachment,
 };
 
 use crate::{MathMacroSettings, validate_stored_math_macros};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MathMacroSettingsSnapshot {
-    owner: Identity,
+    owner: PrincipalRef,
     settings: MathMacroSettings,
 }
 
 impl MathMacroSettingsSnapshot {
-    pub const fn new(owner: Identity, settings: MathMacroSettings) -> Self {
+    pub const fn new(owner: PrincipalRef, settings: MathMacroSettings) -> Self {
         Self { owner, settings }
     }
 
-    pub const fn owner(&self) -> &Identity {
+    pub const fn owner(&self) -> &PrincipalRef {
         &self.owner
     }
 
@@ -32,15 +33,15 @@ impl MathMacroSettingsSnapshot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclSnapshotEntry {
     note_id: NoteId,
-    identity: Identity,
+    principal: PrincipalRef,
     permission: NotePermission,
 }
 
 impl NoteAclSnapshotEntry {
-    pub const fn new(note_id: NoteId, identity: Identity, permission: NotePermission) -> Self {
+    pub const fn new(note_id: NoteId, principal: PrincipalRef, permission: NotePermission) -> Self {
         Self {
             note_id,
-            identity,
+            principal,
             permission,
         }
     }
@@ -49,8 +50,8 @@ impl NoteAclSnapshotEntry {
         self.note_id
     }
 
-    pub const fn identity(&self) -> &Identity {
-        &self.identity
+    pub const fn principal(&self) -> &PrincipalRef {
+        &self.principal
     }
 
     pub const fn permission(&self) -> NotePermission {
@@ -61,7 +62,11 @@ impl NoteAclSnapshotEntry {
 /// ノートとACLの相互参照を検証した、保存方式に依存しないスナップショット。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LogicalSnapshot {
+    principals: Vec<Principal>,
     notes: Vec<Note>,
+    note_revisions: Vec<NoteRevisionSnapshot>,
+    attachments: Vec<StoredAttachment>,
+    note_revision_attachments: Vec<NoteRevisionAttachment>,
     note_acl: Vec<NoteAclSnapshotEntry>,
     bibliography_items: Vec<BibliographyItem>,
     bibliography_import_sources: Vec<BibliographyImportSource>,
@@ -75,6 +80,12 @@ pub enum InvalidSnapshot {
     DuplicateNote { position: usize },
     #[error("ACL entry at position {position} is inconsistent")]
     InvalidAclEntry { position: usize },
+    #[error("note revision at position {position} is inconsistent")]
+    InvalidNoteRevision { position: usize },
+    #[error("attachment at position {position} is inconsistent")]
+    InvalidAttachment { position: usize },
+    #[error("attachment reference at position {position} is inconsistent")]
+    InvalidAttachmentReference { position: usize },
     #[error("reference at position {position} has no source note")]
     InvalidReference { position: usize },
     #[error("bibliography item at position {position} is duplicated")]
@@ -85,6 +96,10 @@ pub enum InvalidSnapshot {
     InvalidBibliographyImportLink { position: usize },
     #[error("math macro settings at position {position} are invalid or duplicated")]
     InvalidMathMacroSettings { position: usize },
+    #[error("principal at position {position} is invalid or duplicated")]
+    InvalidPrincipal { position: usize },
+    #[error("stored data refers to an undeclared or inconsistent principal")]
+    InvalidPrincipalReference,
 }
 
 impl LogicalSnapshot {
@@ -109,22 +124,37 @@ impl LogicalSnapshot {
             let Some(note) = notes.iter().find(|note| note.note_id() == entry.note_id) else {
                 return Err(invalid_entry);
             };
-            if entry.identity.issuer() != note.creator_issuer()
-                || entry.identity == *note.owner()
-                || !acl_keys.insert((entry.note_id, entry.identity.clone()))
+            if entry.principal == *note.owner()
+                || !acl_keys.insert((entry.note_id, entry.principal.clone()))
             {
                 return Err(invalid_entry);
             }
         }
 
-        Ok(Self {
+        let note_revisions = notes
+            .iter()
+            .map(|note| {
+                NoteRevisionSnapshot::new(
+                    note.clone(),
+                    note.owner().clone(),
+                    NoteRevisionKind::Imported,
+                )
+            })
+            .collect();
+        let mut snapshot = Self {
+            principals: Vec::new(),
             notes,
+            note_revisions,
+            attachments: Vec::new(),
+            note_revision_attachments: Vec::new(),
             note_acl,
             bibliography_items: Vec::new(),
             bibliography_import_sources: Vec::new(),
             bibliography_import_links: Vec::new(),
             math_macro_settings: Vec::new(),
-        })
+        };
+        snapshot.include_referenced_principals()?;
+        Ok(snapshot)
     }
 
     /// 文献項目と取込元との対応を、一つの整合性境界として追加する。
@@ -182,6 +212,7 @@ impl LogicalSnapshot {
         self.bibliography_items = bibliography_items;
         self.bibliography_import_sources = bibliography_import_sources;
         self.bibliography_import_links = bibliography_import_links;
+        self.include_referenced_principals()?;
         Ok(self)
     }
 
@@ -191,6 +222,150 @@ impl LogicalSnapshot {
 
     pub fn note_acl(&self) -> &[NoteAclSnapshotEntry] {
         &self.note_acl
+    }
+
+    /// 各ノートの保持中の全revision。履歴導入前の入力では`new`が現行版の基準点を作る。
+    pub fn note_revisions(&self) -> &[NoteRevisionSnapshot] {
+        &self.note_revisions
+    }
+
+    pub fn with_note_revisions(
+        mut self,
+        mut revisions: Vec<NoteRevisionSnapshot>,
+    ) -> Result<Self, InvalidSnapshot> {
+        revisions.sort_by(|left, right| {
+            left.note()
+                .note_id()
+                .to_string()
+                .cmp(&right.note().note_id().to_string())
+                .then_with(|| left.note().revision().cmp(&right.note().revision()))
+        });
+        let mut keys = HashSet::new();
+        for (index, entry) in revisions.iter().enumerate() {
+            let invalid = InvalidSnapshot::InvalidNoteRevision {
+                position: index + 1,
+            };
+            let Some(current) = self
+                .notes
+                .iter()
+                .find(|note| note.note_id() == entry.note().note_id())
+            else {
+                return Err(invalid);
+            };
+            let historical = entry.note();
+            if !keys.insert((historical.note_id(), historical.revision().get()))
+                || historical.owner() != current.owner()
+                || historical.created_at() != current.created_at()
+                || historical.created_via() != current.created_via()
+                || historical.revision() > current.revision()
+            {
+                return Err(invalid);
+            }
+        }
+        for current in &self.notes {
+            let history = revisions
+                .iter()
+                .filter(|entry| entry.note().note_id() == current.note_id())
+                .collect::<Vec<_>>();
+            let Some(latest) = history.last() else {
+                return Err(InvalidSnapshot::InvalidNoteRevision { position: 1 });
+            };
+            if latest.note() != current
+                || history.windows(2).any(|pair| {
+                    pair[1].note().revision().get() != pair[0].note().revision().get() + 1
+                })
+            {
+                return Err(InvalidSnapshot::InvalidNoteRevision { position: 1 });
+            }
+        }
+        self.note_revisions = revisions;
+        self.include_referenced_principals()?;
+        Ok(self)
+    }
+
+    pub fn attachments(&self) -> &[StoredAttachment] {
+        &self.attachments
+    }
+
+    pub fn note_revision_attachments(&self) -> &[NoteRevisionAttachment] {
+        &self.note_revision_attachments
+    }
+
+    /// 不変な画像本体と、それを表示する版の対応を一つの整合性境界として追加する。
+    pub fn with_attachments(
+        mut self,
+        mut attachments: Vec<StoredAttachment>,
+        mut references: Vec<NoteRevisionAttachment>,
+    ) -> Result<Self, InvalidSnapshot> {
+        attachments.sort_by_key(|attachment| attachment.metadata().attachment_id().to_string());
+        references.sort_by_key(|reference| {
+            (
+                reference.note_id.to_string(),
+                reference.revision.get(),
+                reference.attachment_id.to_string(),
+            )
+        });
+        let note_ids = self.notes.iter().map(Note::note_id).collect::<HashSet<_>>();
+        let principal_ids = self
+            .principals
+            .iter()
+            .map(Principal::id)
+            .collect::<HashSet<_>>();
+        let revision_keys = self
+            .note_revisions
+            .iter()
+            .map(|entry| (entry.note().note_id(), entry.note().revision().get()))
+            .collect::<HashSet<_>>();
+        let mut attachment_ids = HashSet::<AttachmentId>::new();
+        let mut note_totals = HashMap::<NoteId, (usize, usize)>::new();
+        for (index, attachment) in attachments.iter().enumerate() {
+            let metadata = attachment.metadata();
+            let total = note_totals.entry(metadata.note_id()).or_default();
+            total.0 += 1;
+            total.1 = total.1.checked_add(metadata.byte_length()).ok_or(
+                InvalidSnapshot::InvalidAttachment {
+                    position: index + 1,
+                },
+            )?;
+            if !attachment_ids.insert(metadata.attachment_id())
+                || !note_ids.contains(&metadata.note_id())
+                || !principal_ids.contains(&metadata.created_by().id())
+                || total.0 > ATTACHMENT_POLICY.max_attachments_per_note
+                || total.1 > ATTACHMENT_POLICY.max_bytes_per_note
+            {
+                return Err(InvalidSnapshot::InvalidAttachment {
+                    position: index + 1,
+                });
+            }
+        }
+        let attachment_notes = attachments
+            .iter()
+            .map(|attachment| {
+                (
+                    attachment.metadata().attachment_id(),
+                    attachment.metadata().note_id(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let mut reference_keys = HashSet::new();
+        for (index, reference) in references.iter().enumerate() {
+            if !revision_keys.contains(&(reference.note_id, reference.revision.get()))
+                || attachment_notes.get(&reference.attachment_id) != Some(&reference.note_id)
+                || !reference_keys.insert((
+                    reference.note_id,
+                    reference.revision.get(),
+                    reference.attachment_id,
+                ))
+            {
+                return Err(InvalidSnapshot::InvalidAttachmentReference {
+                    position: index + 1,
+                });
+            }
+        }
+        self.attachments = attachments;
+        self.note_revision_attachments = references;
+        self.include_referenced_principals()?;
+        Ok(self)
     }
 
     pub fn bibliography_items(&self) -> &[BibliographyItem] {
@@ -221,11 +396,123 @@ impl LogicalSnapshot {
             }
         }
         self.math_macro_settings = settings;
+        self.include_referenced_principals()?;
         Ok(self)
     }
 
     pub fn math_macro_settings(&self) -> &[MathMacroSettingsSnapshot] {
         &self.math_macro_settings
+    }
+
+    /// archiveへ保存し、復元時に再構築するprincipalと外部identityの対応。
+    pub fn principals(&self) -> &[Principal] {
+        &self.principals
+    }
+
+    /// SQLiteなどの正本から取得した完全なprincipal群へ置き換える。
+    ///
+    /// 各業務データが参照するIDと代表identityが一致し、外部identityが複数のprincipalへ
+    /// 重複していない場合だけ受理する。業務データをまだ持たないprincipalも保存できる。
+    pub fn with_principals(mut self, principals: Vec<Principal>) -> Result<Self, InvalidSnapshot> {
+        let mut ids = HashSet::new();
+        let mut identities = HashSet::new();
+        for (index, principal) in principals.iter().enumerate() {
+            if !ids.insert(principal.id())
+                || principal
+                    .identities()
+                    .iter()
+                    .any(|identity| !identities.insert(identity.clone()))
+            {
+                return Err(InvalidSnapshot::InvalidPrincipal {
+                    position: index + 1,
+                });
+            }
+        }
+        self.principals = principals;
+        self.validate_principal_references()?;
+        Ok(self)
+    }
+
+    fn include_referenced_principals(&mut self) -> Result<(), InvalidSnapshot> {
+        let references = self.principal_references();
+        for reference in references {
+            if let Some(principal) = self
+                .principals
+                .iter()
+                .find(|principal| principal.id() == reference.id())
+            {
+                if principal.primary_identity() != reference.primary_identity() {
+                    return Err(InvalidSnapshot::InvalidPrincipalReference);
+                }
+                continue;
+            }
+            if self
+                .principals
+                .iter()
+                .any(|principal| principal.contains(reference.primary_identity()))
+            {
+                return Err(InvalidSnapshot::InvalidPrincipalReference);
+            }
+            self.principals.push(Principal::single(
+                reference.id(),
+                reference.primary_identity().clone(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_principal_references(&self) -> Result<(), InvalidSnapshot> {
+        for reference in self.principal_references() {
+            let Some(principal) = self
+                .principals
+                .iter()
+                .find(|principal| principal.id() == reference.id())
+            else {
+                return Err(InvalidSnapshot::InvalidPrincipalReference);
+            };
+            if principal.primary_identity() != reference.primary_identity() {
+                return Err(InvalidSnapshot::InvalidPrincipalReference);
+            }
+        }
+        Ok(())
+    }
+
+    fn principal_references(&self) -> Vec<PrincipalRef> {
+        let mut references = Vec::new();
+        for note in &self.notes {
+            references.push(note.owner().clone());
+            if let Some(review) = note.last_review() {
+                references.push(review.reviewer().clone());
+            }
+        }
+        for revision in &self.note_revisions {
+            references.push(revision.changed_by().clone());
+            if let Some(review) = revision.note().last_review() {
+                references.push(review.reviewer().clone());
+            }
+        }
+        references.extend(
+            self.attachments
+                .iter()
+                .map(|attachment| attachment.metadata().created_by().clone()),
+        );
+        references.extend(self.note_acl.iter().map(|entry| entry.principal().clone()));
+        references.extend(
+            self.bibliography_items
+                .iter()
+                .map(|item| item.owner().clone()),
+        );
+        references.extend(
+            self.bibliography_import_sources
+                .iter()
+                .map(|source| source.owner().clone()),
+        );
+        references.extend(
+            self.math_macro_settings
+                .iter()
+                .map(|entry| entry.owner().clone()),
+        );
+        references
     }
 }
 
@@ -301,7 +588,8 @@ mod tests {
     use marginalis_domain::{
         BibliographyContentDigest, BibliographyImportLink, BibliographyImportSource,
         BibliographyImportSourceId, BibliographyItem, BibliographyItemId, EntityId, Identity,
-        NoteCreationSource, NoteDraft, NoteRestore, NoteReviewTracking, Revision, UnixMillis,
+        NoteCreationSource, NoteDraft, NoteRestore, NoteReviewTracking, PrincipalId, PrincipalRef,
+        Revision, UnixMillis,
     };
 
     use super::*;
@@ -311,8 +599,7 @@ mod tests {
             note_id: NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
-            owner: Identity::new("https://id.example.test".into(), "alice".into())
-                .expect("valid owner"),
+            owner: principal("alice", 1),
             draft: NoteDraft {
                 title: "Title".into(),
                 source: "Body".into(),
@@ -331,7 +618,7 @@ mod tests {
     #[test]
     fn snapshot_rejects_dangling_duplicate_and_owner_acl_entries() {
         let note = note();
-        let bob = Identity::new("https://id.example.test".into(), "bob".into()).expect("identity");
+        let bob = principal("bob", 2);
         let read = NoteAclSnapshotEntry::new(note.note_id(), bob, NotePermission::Read);
         assert!(LogicalSnapshot::new(vec![note.clone()], vec![read.clone()]).is_ok());
         assert_eq!(
@@ -386,8 +673,7 @@ mod tests {
 
     #[test]
     fn snapshot_accepts_legacy_tex_unsafe_macro_for_display_boundary_filtering() {
-        let owner = Identity::new("https://id.example.test".into(), "alice".into())
-            .expect("alice identity");
+        let owner = principal("alice", 1);
         let settings = MathMacroSettingsSnapshot::new(
             owner,
             MathMacroSettings {
@@ -409,10 +695,8 @@ mod tests {
 
     #[test]
     fn snapshot_rejects_dangling_and_cross_owner_bibliography_import_links() {
-        let alice = Identity::new("https://id.example.test".into(), "alice".into())
-            .expect("alice identity");
-        let bob =
-            Identity::new("https://id.example.test".into(), "bob".into()).expect("bob identity");
+        let alice = principal("alice", 1);
+        let bob = principal("bob", 2);
         let item_id = BibliographyItemId::new(
             EntityId::from_str("0197c9bc-0000-7000-8000-0000000000b1").expect("UUIDv7"),
         );
@@ -451,5 +735,12 @@ mod tests {
             base.with_bibliography_data(vec![item], vec![wrong_owner_source], vec![link],),
             Err(InvalidSnapshot::InvalidBibliographyImportLink { position: 1 })
         );
+    }
+
+    fn principal(subject: &str, id: i64) -> PrincipalRef {
+        PrincipalRef::new(
+            PrincipalId::new(id).expect("ID"),
+            Identity::new("https://id.example.test".into(), subject.into()).expect("identity"),
+        )
     }
 }

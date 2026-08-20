@@ -4,30 +4,42 @@ use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, DeletedNoteListEntry, Note, NoteAccess, NoteAclEntry, NoteCreationSource, NoteDraft,
-    NoteId, NoteListEntry, Revision,
+    Actor, AttachmentId, AttachmentMetadata, DeletedNoteListEntry, Note, NoteAccess, NoteAclEntry,
+    NoteCreationSource, NoteDraft, NoteId, NoteListEntry, Revision, StoredAttachment,
 };
 
 mod access_control;
+mod api;
+mod attachments;
 mod citations;
 mod commands;
 mod content;
 mod graph;
+mod history;
 mod patch;
 mod presentation;
 mod queries;
 mod reviews;
 mod sync;
 
+pub use api::{
+    NoteAclChange, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteListQuery,
+    NotePreview, NoteProfile, NoteProfileAdvisoryRule, NoteProfileExample, NoteProfileLimits,
+    NoteProfileNormalization, NoteProfileRule, NoteProfileSyntax, NoteRenderContext,
+    NoteReviewDetails, NoteSourcePosition, NoteSourceSpan, NoteSourceSpanKind, NoteUseCaseError,
+    NoteUseCases, NoteValidationCode, NoteValidationDiagnostic, NoteView, NoteWritePolicy,
+    RelatedNotes, ValidatedNoteDraft,
+};
 pub use commands::NotePatchApplication;
 pub use content::{
-    NoteBibliographyEntry, NoteCitationQuery, NoteCitationResolution, NoteCitationSegment,
-    NoteContent, NoteContentError, NoteLinkResolver, NoteOutline, NoteOutlineSection,
-    NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
+    NoteAttachmentQuery, NoteAttachmentResolution, NoteBibliographyEntry, NoteCitationQuery,
+    NoteCitationResolution, NoteCitationSegment, NoteContent, NoteContentError, NoteLinkResolver,
+    NoteOutline, NoteOutlineSection, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
 };
 pub use graph::{
     NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork,
 };
+pub use history::NoteRevisionDiff;
 pub use patch::{NotePatchError, NotePatchOutcome, apply_note_patch};
 pub use sync::{
     NOTE_SYNC_CURSOR_RETENTION_MS, NOTE_SYNC_DEFAULT_PAGE_SIZE, NOTE_SYNC_MAX_PAGE_SIZE,
@@ -35,9 +47,7 @@ pub use sync::{
 };
 
 use crate::{
-    BibliographyRepository, Clock, MathMacroRepository, NoteAclChange, NoteAclState, NotePreview,
-    NoteProfile, NoteRenderContext, NoteReviewDetails, NoteUseCaseError, NoteUseCases, NoteView,
-    NoteWritePolicy, Random, RelatedNotes, StorageError,
+    BibliographyRepository, Clock, MathMacroRepository, PrincipalDirectory, Random, StorageError,
 };
 
 /// 可視性を適用してノートを読み取るport。
@@ -67,6 +77,28 @@ pub trait NoteQueryRepository: Send + Sync {
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Option<NoteViewSnapshot>, StorageError>;
+    async fn list_note_revisions(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<marginalis_domain::NoteRevisionSummary>>, StorageError>;
+    async fn note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<Option<NoteRevisionView>, StorageError>;
+    async fn list_note_attachments(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<AttachmentMetadata>>, StorageError>;
+    async fn note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<Option<StoredAttachment>, StorageError>;
     /// 閲覧できるノートと、それらが引用する文献の関係を1回の読み取りで返す。
     async fn note_graph(
         &self,
@@ -90,12 +122,29 @@ pub struct NoteViewSnapshot {
     pub related: RelatedNotes,
 }
 
+/// 現在のACLで認可した過去版と、現在の利用者に対する実効アクセス水準。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteRevisionView {
+    pub revision: marginalis_domain::NoteRevisionSnapshot,
+    pub access: NoteAccess,
+}
+
 /// 認可、revision、削除状態を一つのtransactionへ拘束する変更port。
 #[async_trait]
 pub trait NoteCommandRepository: Send + Sync {
     async fn create_note(&self, note: &Note, links: NoteLinks<'_>) -> Result<(), StorageError>;
     #[allow(clippy::too_many_arguments)]
     async fn update_visible_note(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        draft: &NoteDraft,
+        links: NoteLinks<'_>,
+        now: marginalis_domain::UnixMillis,
+    ) -> Result<Note, StorageError>;
+    #[allow(clippy::too_many_arguments)]
+    async fn restore_visible_note_revision(
         &self,
         actor: &Actor,
         note_id: NoteId,
@@ -118,6 +167,17 @@ pub trait NoteCommandRepository: Send + Sync {
         expected_revision: Revision,
         now: marginalis_domain::UnixMillis,
     ) -> Result<Note, StorageError>;
+    async fn create_note_attachment(
+        &self,
+        actor: &Actor,
+        attachment: &StoredAttachment,
+    ) -> Result<(), StorageError>;
+    async fn delete_unused_note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<(), StorageError>;
 }
 
 /// 所有者だけが利用できるACL操作port。
@@ -168,6 +228,28 @@ pub trait NoteSyncRepository: Send + Sync {
     ) -> Result<NoteSyncPage, NoteSyncRepositoryError>;
 }
 
+/// ノートの読み取り、変更、ACL、人手確認、外部連携を同じ保存実装へ拘束するport。
+///
+/// 機能ごとの小さなinterfaceはSQLite実装を読みやすく保つために分ける。一方、applicationへは
+/// 一つのtrait objectとして注入し、読み取りと変更で異なるデータベースを誤って組み合わせられないようにする。
+pub trait NoteRepository:
+    NoteQueryRepository
+    + NoteCommandRepository
+    + NoteAclRepository
+    + NoteReviewRepository
+    + NoteSyncRepository
+{
+}
+
+impl<T> NoteRepository for T where
+    T: NoteQueryRepository
+        + NoteCommandRepository
+        + NoteAclRepository
+        + NoteReviewRepository
+        + NoteSyncRepository
+{
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum NoteSyncRepositoryError {
     #[error("sync cursor is invalid")]
@@ -186,24 +268,33 @@ pub enum NoteSyncRepositoryError {
 pub struct NoteLinks<'a> {
     pub reference_targets: &'a [NoteId],
     pub cited_keys: &'a [String],
+    pub attachment_ids: &'a [AttachmentId],
+}
+
+pub(super) fn attachment_ids(queries: &[NoteAttachmentQuery]) -> Vec<AttachmentId> {
+    let mut ids = queries
+        .iter()
+        .map(|query| query.attachment_id)
+        .collect::<Vec<_>>();
+    ids.sort_by_key(|id| id.to_string());
+    ids.dedup();
+    ids
 }
 
 /// `NoteApplication`が依存するportの束。
 ///
-/// 同じ型のArcを位置引数で並べると、repositoryを取り違えても型検査で気づけない。
-/// fieldの名前で結び付けを固定する。
+/// ノート操作には一つの`NoteRepository`だけを持たせ、その他の独立した責務は名前付きfieldで
+/// 結び付ける。本番向けの組み立ては`with_storage`だけを公開する。
 pub struct NoteApplicationDependencies {
-    pub queries: Arc<dyn NoteQueryRepository>,
-    pub commands: Arc<dyn NoteCommandRepository>,
-    pub access_control: Arc<dyn NoteAclRepository>,
-    pub reviews: Arc<dyn NoteReviewRepository>,
-    pub sync: Arc<dyn NoteSyncRepository>,
-    pub content: Arc<dyn NoteContent>,
-    pub bibliography: Arc<dyn BibliographyRepository>,
-    pub math_macros: Arc<dyn MathMacroRepository>,
-    pub links: Arc<dyn NoteLinkResolver>,
-    pub clock: Arc<dyn Clock>,
-    pub random: Arc<dyn Random>,
+    notes: Arc<dyn NoteRepository>,
+    content: Arc<dyn NoteContent>,
+    bibliography: Arc<dyn BibliographyRepository>,
+    math_macros: Arc<dyn MathMacroRepository>,
+    principals: Arc<dyn PrincipalDirectory>,
+    acl_issuer: String,
+    links: Arc<dyn NoteLinkResolver>,
+    clock: Arc<dyn Clock>,
+    random: Arc<dyn Random>,
 }
 
 impl NoteApplicationDependencies {
@@ -216,26 +307,22 @@ impl NoteApplicationDependencies {
         links: Arc<dyn NoteLinkResolver>,
         clock: Arc<dyn Clock>,
         random: Arc<dyn Random>,
+        acl_issuer: String,
     ) -> Self
     where
-        S: NoteQueryRepository
-            + NoteCommandRepository
-            + NoteAclRepository
-            + NoteReviewRepository
-            + NoteSyncRepository
+        S: NoteRepository
             + BibliographyRepository
             + MathMacroRepository
+            + PrincipalDirectory
             + 'static,
     {
         Self {
-            queries: storage.clone(),
-            commands: storage.clone(),
-            access_control: storage.clone(),
-            reviews: storage.clone(),
-            sync: storage.clone(),
+            notes: storage.clone(),
             content,
             bibliography: storage.clone(),
             math_macros: storage.clone(),
+            principals: storage.clone(),
+            acl_issuer,
             links,
             clock,
             random,
@@ -245,14 +332,12 @@ impl NoteApplicationDependencies {
 
 /// transportへ公開するノート操作のapplication service。
 pub struct NoteApplication {
-    queries: Arc<dyn NoteQueryRepository>,
-    commands: Arc<dyn NoteCommandRepository>,
-    access_control: Arc<dyn NoteAclRepository>,
-    reviews: Arc<dyn NoteReviewRepository>,
-    sync: Arc<dyn NoteSyncRepository>,
+    notes: Arc<dyn NoteRepository>,
     content: Arc<dyn NoteContent>,
     bibliography: Arc<dyn BibliographyRepository>,
     math_macros: Arc<dyn MathMacroRepository>,
+    principals: Arc<dyn PrincipalDirectory>,
+    acl_issuer: String,
     links: Arc<dyn NoteLinkResolver>,
     clock: Arc<dyn Clock>,
     random: Arc<dyn Random>,
@@ -261,14 +346,12 @@ pub struct NoteApplication {
 impl NoteApplication {
     pub fn new(dependencies: NoteApplicationDependencies) -> Self {
         Self {
-            queries: dependencies.queries,
-            commands: dependencies.commands,
-            access_control: dependencies.access_control,
-            reviews: dependencies.reviews,
-            sync: dependencies.sync,
+            notes: dependencies.notes,
             content: dependencies.content,
             bibliography: dependencies.bibliography,
             math_macros: dependencies.math_macros,
+            principals: dependencies.principals,
+            acl_issuer: dependencies.acl_issuer,
             links: dependencies.links,
             clock: dependencies.clock,
             random: dependencies.random,
@@ -280,7 +363,7 @@ impl NoteApplication {
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Note, NoteUseCaseError> {
-        self.queries
+        self.notes
             .accessible_note(actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -404,6 +487,88 @@ impl NoteUseCases for NoteApplication {
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         NoteApplication::restore_note(self, actor, note_id, expected_revision).await
+    }
+
+    async fn list_note_revisions(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<marginalis_domain::NoteRevisionSummary>, NoteUseCaseError> {
+        NoteApplication::list_note_revisions(self, actor, note_id).await
+    }
+
+    async fn read_note_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<NoteRevisionView, NoteUseCaseError> {
+        NoteApplication::read_note_revision(self, actor, note_id, revision).await
+    }
+
+    async fn compare_note_revisions(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        from_revision: Revision,
+        to_revision: Revision,
+    ) -> Result<NoteRevisionDiff, NoteUseCaseError> {
+        NoteApplication::compare_note_revisions(self, actor, note_id, from_revision, to_revision)
+            .await
+    }
+
+    async fn restore_note_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Revision,
+        expected_revision: Revision,
+        policy: NoteWritePolicy,
+    ) -> Result<Note, NoteUseCaseError> {
+        NoteApplication::restore_note_revision(
+            self,
+            actor,
+            note_id,
+            revision,
+            expected_revision,
+            policy,
+        )
+        .await
+    }
+
+    async fn upload_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        draft: marginalis_domain::AttachmentDraft,
+    ) -> Result<marginalis_domain::AttachmentMetadata, NoteUseCaseError> {
+        NoteApplication::upload_note_attachment(self, actor, note_id, draft).await
+    }
+
+    async fn list_note_attachments(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<marginalis_domain::AttachmentMetadata>, NoteUseCaseError> {
+        NoteApplication::list_note_attachments(self, actor, note_id).await
+    }
+
+    async fn read_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        attachment_id: marginalis_domain::AttachmentId,
+    ) -> Result<marginalis_domain::StoredAttachment, NoteUseCaseError> {
+        NoteApplication::read_note_attachment(self, actor, note_id, attachment_id).await
+    }
+
+    async fn delete_unused_note_attachment(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        attachment_id: marginalis_domain::AttachmentId,
+    ) -> Result<(), NoteUseCaseError> {
+        NoteApplication::delete_unused_note_attachment(self, actor, note_id, attachment_id).await
     }
 
     async fn preview_new_note(

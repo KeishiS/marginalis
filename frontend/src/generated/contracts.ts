@@ -8,6 +8,7 @@ export interface ApplicationConfig {
   search: string;
   styleNonce: string;
 }
+export type AttachmentMediaType = "image/png" | "image/jpeg" | "image/webp";
 export interface BibliographyImportApplyInput {
   decisions: BibliographyImportDecision[];
   items: unknown[];
@@ -137,6 +138,7 @@ export interface NoteAcl {
   entries: NoteAclGrant[];
 }
 export interface NoteAclEntry {
+  issuer: string;
   permission: NotePermission;
   subject: string;
 }
@@ -147,6 +149,17 @@ export interface NoteAclGrant {
 }
 export interface NoteAclUpdate {
   entries: NoteAclEntry[];
+}
+export interface NoteAttachment {
+  attachment_id: string;
+  byte_length: number;
+  created_at_ms: number;
+  created_by_issuer: string;
+  created_by_subject: string;
+  file_name: string;
+  media_type: AttachmentMediaType;
+  sha256: string;
+  source_target: string;
 }
 export type NoteCreationSource = "web" | "rest" | "mcp" | "unknown";
 export interface NoteDiagnostic {
@@ -213,6 +226,27 @@ export interface NoteReview {
   status: NoteReviewStatus;
 }
 export type NoteReviewStatus = "unknown" | "pending" | "reviewed";
+export interface NoteRevision {
+  access: NoteAccess;
+  changed_by_issuer: string;
+  changed_by_subject: string;
+  deleted_at_ms: number | null;
+  kind: NoteRevisionKind;
+  note: Note;
+}
+export interface NoteRevisionDiff {
+  from_revision: number;
+  to_revision: number;
+  unified_diff: string;
+}
+export type NoteRevisionKind = "created" | "content_updated" | "acl_updated" | "reviewed" | "deleted" | "restored" | "history_restored" | "imported";
+export interface NoteRevisionSummary {
+  changed_at_ms: number;
+  changed_by_issuer: string;
+  changed_by_subject: string;
+  kind: NoteRevisionKind;
+  revision: number;
+}
 export interface NoteSourcePosition {
   column: number;
   line: number;
@@ -236,6 +270,16 @@ export interface NoteSummary {
   title: string;
   updated_at_ms: number;
 }
+export type NoteSyncEntry = { kind: "upsert"; note: Note; } | { kind: "remove"; note_id: string; reason: NoteSyncRemovalReason; };
+export interface NoteSyncPage {
+  cursor_expires_at_ms: number;
+  entries: NoteSyncEntry[];
+  has_more: boolean;
+  next_cursor: string;
+  phase: NoteSyncPhase;
+}
+export type NoteSyncPhase = "snapshot" | "changes";
+export type NoteSyncRemovalReason = "deleted" | "access_revoked";
 export type NoteValidationTarget = { field: "source"; } | { field: "title"; } | { field: "body"; } | { field: "tag"; index: number; } | { field: "tags"; } | { field: "acl_entry"; index: number; };
 export interface NoteView {
   access: NoteAccess;
@@ -333,6 +377,15 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "styleNonce"
     ],
     "type": "object"
+  },
+  "AttachmentMediaType": {
+    "description": "ブラウザーへ能動的な内容として解釈されない、初期対応の静止画像形式。",
+    "enum": [
+      "image/png",
+      "image/jpeg",
+      "image/webp"
+    ],
+    "type": "string"
   },
   "BibliographyImportApplyInput": {
     "additionalProperties": false,
@@ -1067,6 +1120,9 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
   "NoteAclEntry": {
     "additionalProperties": false,
     "properties": {
+      "issuer": {
+        "type": "string"
+      },
       "permission": {
         "$ref": "#/components/schemas/NotePermission"
       },
@@ -1077,6 +1133,7 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       }
     },
     "required": [
+      "issuer",
       "subject",
       "permission"
     ],
@@ -1116,6 +1173,59 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
     },
     "required": [
       "entries"
+    ],
+    "type": "object"
+  },
+  "NoteAttachment": {
+    "additionalProperties": false,
+    "properties": {
+      "attachment_id": {
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "type": "string"
+      },
+      "byte_length": {
+        "format": "uint",
+        "maximum": 8388608,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "created_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "created_by_issuer": {
+        "type": "string"
+      },
+      "created_by_subject": {
+        "type": "string"
+      },
+      "file_name": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "media_type": {
+        "$ref": "#/components/schemas/AttachmentMediaType"
+      },
+      "sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "source_target": {
+        "description": "AsciiDoc本文へ挿入する内部画像target。",
+        "type": "string"
+      }
+    },
+    "required": [
+      "attachment_id",
+      "file_name",
+      "media_type",
+      "byte_length",
+      "sha256",
+      "created_at_ms",
+      "created_by_issuer",
+      "created_by_subject",
+      "source_target"
     ],
     "type": "object"
   },
@@ -1481,6 +1591,122 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
     ],
     "type": "string"
   },
+  "NoteRevision": {
+    "additionalProperties": false,
+    "description": "一つのrevisionが確定した直後のノート状態。",
+    "properties": {
+      "access": {
+        "$ref": "#/components/schemas/NoteAccess"
+      },
+      "changed_by_issuer": {
+        "type": "string"
+      },
+      "changed_by_subject": {
+        "type": "string"
+      },
+      "deleted_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "kind": {
+        "$ref": "#/components/schemas/NoteRevisionKind"
+      },
+      "note": {
+        "$ref": "#/components/schemas/Note"
+      }
+    },
+    "required": [
+      "note",
+      "access",
+      "deleted_at_ms",
+      "changed_by_issuer",
+      "changed_by_subject",
+      "kind"
+    ],
+    "type": "object"
+  },
+  "NoteRevisionDiff": {
+    "additionalProperties": false,
+    "description": "二つのrevisionのAsciiDoc原文から要求時に生成した行単位の差分。",
+    "properties": {
+      "from_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "to_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "unified_diff": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "from_revision",
+      "to_revision",
+      "unified_diff"
+    ],
+    "type": "object"
+  },
+  "NoteRevisionKind": {
+    "description": "ノートのrevisionを生じさせた操作。\n\n本文に差がないACL変更や確認操作も、競合検出では同じrevisionを進めるため履歴へ残す。",
+    "oneOf": [
+      {
+        "enum": [
+          "created",
+          "content_updated",
+          "acl_updated",
+          "reviewed",
+          "deleted",
+          "restored",
+          "history_restored"
+        ],
+        "type": "string"
+      },
+      {
+        "const": "imported",
+        "description": "履歴導入前の現行版または旧archiveから作った基準点。",
+        "type": "string"
+      }
+    ]
+  },
+  "NoteRevisionSummary": {
+    "additionalProperties": false,
+    "description": "本文を含まない一つのrevision情報。",
+    "properties": {
+      "changed_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "changed_by_issuer": {
+        "type": "string"
+      },
+      "changed_by_subject": {
+        "type": "string"
+      },
+      "kind": {
+        "$ref": "#/components/schemas/NoteRevisionKind"
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "revision",
+      "changed_at_ms",
+      "changed_by_issuer",
+      "changed_by_subject",
+      "kind"
+    ],
+    "type": "object"
+  },
   "NoteSourcePosition": {
     "additionalProperties": false,
     "properties": {
@@ -1634,6 +1860,97 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       "reviewed_at_ms"
     ],
     "type": "object"
+  },
+  "NoteSyncEntry": {
+    "description": "外部検索用コピーへ反映する一件の変更。",
+    "oneOf": [
+      {
+        "properties": {
+          "kind": {
+            "const": "upsert",
+            "type": "string"
+          },
+          "note": {
+            "$ref": "#/components/schemas/Note"
+          }
+        },
+        "required": [
+          "kind",
+          "note"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "kind": {
+            "const": "remove",
+            "type": "string"
+          },
+          "note_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/NoteSyncRemovalReason"
+          }
+        },
+        "required": [
+          "kind",
+          "note_id",
+          "reason"
+        ],
+        "type": "object"
+      }
+    ]
+  },
+  "NoteSyncPage": {
+    "additionalProperties": false,
+    "description": "外部検索用コピーへ反映する一頁。",
+    "properties": {
+      "cursor_expires_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "entries": {
+        "items": {
+          "$ref": "#/components/schemas/NoteSyncEntry"
+        },
+        "type": "array"
+      },
+      "has_more": {
+        "type": "boolean"
+      },
+      "next_cursor": {
+        "type": "string"
+      },
+      "phase": {
+        "$ref": "#/components/schemas/NoteSyncPhase"
+      }
+    },
+    "required": [
+      "phase",
+      "entries",
+      "next_cursor",
+      "has_more",
+      "cursor_expires_at_ms"
+    ],
+    "type": "object"
+  },
+  "NoteSyncPhase": {
+    "description": "外部検索用コピーへノートを反映するときの段階。",
+    "enum": [
+      "snapshot",
+      "changes"
+    ],
+    "type": "string"
+  },
+  "NoteSyncRemovalReason": {
+    "description": "外部検索用コピーからノートを除く理由。",
+    "enum": [
+      "deleted",
+      "access_revoked"
+    ],
+    "type": "string"
   },
   "NoteValidationTarget": {
     "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
@@ -2236,6 +2553,21 @@ export function parseDeletedNoteListEntries(value: unknown): DeletedNoteListEntr
 }
 export function parseNoteReview(value: unknown): NoteReview {
   return parseAs<NoteReview>(value, "NoteReview", "note review");
+}
+export function parseNoteRevisionSummaries(value: unknown): NoteRevisionSummary[] {
+  return parseArrayAs<NoteRevisionSummary>(value, "NoteRevisionSummary", "note revision summaries");
+}
+export function parseNoteRevision(value: unknown): NoteRevision {
+  return parseAs<NoteRevision>(value, "NoteRevision", "note revision");
+}
+export function parseNoteRevisionDiff(value: unknown): NoteRevisionDiff {
+  return parseAs<NoteRevisionDiff>(value, "NoteRevisionDiff", "note revision diff");
+}
+export function parseNoteAttachment(value: unknown): NoteAttachment {
+  return parseAs<NoteAttachment>(value, "NoteAttachment", "note attachment");
+}
+export function parseNoteAttachments(value: unknown): NoteAttachment[] {
+  return parseArrayAs<NoteAttachment>(value, "NoteAttachment", "note attachments");
 }
 export function parseNoteGraph(value: unknown): NoteGraph {
   return parseAs<NoteGraph>(value, "NoteGraph", "note graph");

@@ -222,8 +222,7 @@ async fn rendered_note_view_api_returns_related_note_metadata() {
                     .parse()
                     .expect("note ID"),
             ),
-            owner: Identity::new("https://id.example.test".into(), "alice".into())
-                .expect("valid owner"),
+            owner: test_principal("https://id.example.test", "alice"),
             draft: NoteDraft {
                 title: format!("関連ノート{index}"),
                 source: "本文".into(),

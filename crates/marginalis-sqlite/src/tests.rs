@@ -8,9 +8,10 @@ use marginalis_application::{
     StorageError,
 };
 use marginalis_domain::{
-    Actor, BibliographyItem, BibliographyItemId, EntityId, Identity, Note, NoteAccess,
-    NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
-    NoteReviewTracking, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis, ValidatedCslJson,
+    Actor, AttachmentDraft, AttachmentId, BibliographyItem, BibliographyItemId, EntityId, Identity,
+    Note, NoteAccess, NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NotePermission,
+    NoteRestore, NoteReviewTracking, PrincipalId, PrincipalRef, Revision, SOFT_DELETE_RETENTION_MS,
+    UnixMillis, ValidatedCslJson,
 };
 
 use super::*;
@@ -19,19 +20,92 @@ use super::*;
 const ISSUER: &str = "https://id.example.test";
 
 /// schema初期化済みのin-memory databaseへ接続する。
-async fn database() -> SqliteDatabase {
+pub(crate) async fn database() -> SqliteDatabase {
+    let database = empty_database().await;
+    for issuer in [ISSUER, "https://other-id.example.test"] {
+        for subject in [
+            "alice",
+            "bob",
+            "charlie",
+            "administrator",
+            "owner",
+            "reader",
+            "outsider",
+        ] {
+            let principal_id = test_principal_id(issuer, subject).get();
+            sqlx::query("INSERT INTO principals (principal_id) VALUES (?)")
+                .bind(principal_id)
+                .execute(&database.pool)
+                .await
+                .expect("test principal");
+            sqlx::query(
+                "INSERT INTO principal_identities
+                     (principal_id, issuer, subject, is_primary)
+                 VALUES (?, ?, ?, 1)",
+            )
+            .bind(principal_id)
+            .bind(issuer)
+            .bind(subject)
+            .execute(&database.pool)
+            .await
+            .expect("test identity");
+        }
+    }
+    database
+}
+
+async fn empty_database() -> SqliteDatabase {
     SqliteDatabase::connect("sqlite::memory:")
         .await
         .expect("in-memory database with initialized schema")
 }
 
 fn actor(issuer: &str, subject: &str) -> Actor {
-    Actor::try_new(issuer.into(), subject.into()).expect("valid test actor")
+    Actor::for_single_identity(
+        test_principal_id(issuer, subject),
+        Identity::new(issuer.into(), subject.into()).expect("valid test actor"),
+    )
+}
+
+fn test_principal_id(issuer: &str, subject: &str) -> PrincipalId {
+    let hash = issuer
+        .bytes()
+        .chain([0])
+        .chain(subject.bytes())
+        .fold(1_u64, |hash, byte| {
+            hash.wrapping_mul(1_099_511_628_211)
+                .wrapping_add(byte.into())
+        });
+    PrincipalId::new((hash & i64::MAX as u64).max(1) as i64).expect("positive principal ID")
 }
 
 /// 既定issuerの利用者。
 fn user(subject: &str) -> Actor {
     actor(ISSUER, subject)
+}
+
+/// 既存principalへ非primary identityを追加し、そのidentityで認証したActorを返す。
+async fn add_alias(
+    database: &SqliteDatabase,
+    principal: &Actor,
+    issuer: &str,
+    subject: &str,
+) -> Actor {
+    sqlx::query(
+        "INSERT INTO principal_identities (principal_id, issuer, subject, is_primary)
+         VALUES (?, ?, ?, 0)",
+    )
+    .bind(principal.principal_id().get())
+    .bind(issuer)
+    .bind(subject)
+    .execute(&database.pool)
+    .await
+    .expect("test alias");
+    let identity = Identity::new(issuer.into(), subject.into()).expect("valid test alias");
+    marginalis_application::PrincipalDirectory::resolve(database, &identity)
+        .await
+        .expect("resolve alias")
+        .expect("stored alias")
 }
 
 /// 既定issuerのIdentity。所有者やACLの指定に使う。
@@ -40,8 +114,7 @@ fn identity(subject: &str) -> Identity {
 }
 
 fn principal(issuer: &str, subject: &str) -> marginalis_application::McpPrincipal {
-    let actor = actor(issuer, subject);
-    marginalis_application::McpPrincipal::new(actor.issuer().into(), actor.subject().into())
+    marginalis_application::McpPrincipal::new(issuer.into(), subject.into())
 }
 
 fn revision(value: i64) -> Revision {
@@ -62,13 +135,16 @@ fn draft(title: &str, source: &str, tags: &[&str]) -> NoteDraft {
 
 /// 既定issuerの対象者に対するACL entry。
 fn acl_entry(subject: &str, permission: NotePermission) -> NoteAclEntry {
-    NoteAclEntry::new(identity(subject), permission)
+    NoteAclEntry::new(
+        PrincipalRef::new(test_principal_id(ISSUER, subject), identity(subject)),
+        permission,
+    )
 }
 
 fn bibliography_item(id_hex: &str, owner: &Actor, key: &str, csl_json: &str) -> BibliographyItem {
     BibliographyItem::create(
         BibliographyItemId::new(EntityId::from_str(id_hex).expect("v7 bibliography item ID")),
-        owner.identity(),
+        owner.principal(),
         validated_csl_json(key, csl_json),
         UnixMillis::new(100),
     )
@@ -84,7 +160,7 @@ fn validated_csl_json(key: &str, csl_json: &str) -> ValidatedCslJson {
 /// `= <title>`とする。異なる値が必要な試験だけがbuilder風のmethodで上書きする。
 struct NoteSeed {
     note_id: NoteId,
-    owner: Identity,
+    owner: PrincipalRef,
     title: String,
     source: String,
     tags: Vec<String>,
@@ -93,7 +169,10 @@ struct NoteSeed {
 fn note_seed(id_hex: &str, owner_subject: &str, title: &str) -> NoteSeed {
     NoteSeed {
         note_id: note_id(id_hex),
-        owner: identity(owner_subject),
+        owner: PrincipalRef::new(
+            test_principal_id(ISSUER, owner_subject),
+            identity(owner_subject),
+        ),
         title: title.into(),
         source: format!("= {title}\n\n本文"),
         tags: Vec::new(),
@@ -142,12 +221,12 @@ impl SqliteDatabase {
         include_deleted: bool,
     ) -> Result<Option<Note>, SqliteStoreError> {
         let row = if include_deleted {
-            sqlx::query("SELECT * FROM notes WHERE note_id = ?")
+            sqlx::query("SELECT * FROM note_details WHERE note_id = ?")
                 .bind(note_id.to_string())
                 .fetch_optional(&self.pool)
                 .await
         } else {
-            sqlx::query("SELECT * FROM notes WHERE note_id = ? AND deleted_at_ms IS NULL")
+            sqlx::query("SELECT * FROM note_details WHERE note_id = ? AND deleted_at_ms IS NULL")
                 .bind(note_id.to_string())
                 .fetch_optional(&self.pool)
                 .await
@@ -187,6 +266,10 @@ mod schema;
 
 mod notes;
 
+mod note_history;
+
+mod attachments;
+
 mod note_sync;
 
 mod bibliography;
@@ -200,3 +283,5 @@ mod sessions;
 mod oauth;
 
 mod webhooks;
+
+mod archive;

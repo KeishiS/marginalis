@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use marginalis_domain::{Actor, Identity};
+use marginalis_domain::{Actor, PrincipalRef};
 
 use crate::StorageError;
 
@@ -54,11 +54,14 @@ impl From<StorageError> for MathMacroUseCaseError {
 
 #[async_trait]
 pub trait MathMacroRepository: Send + Sync {
-    async fn read_math_macros(&self, owner: &Identity) -> Result<MathMacroSettings, StorageError>;
+    async fn read_math_macros(
+        &self,
+        owner: &PrincipalRef,
+    ) -> Result<MathMacroSettings, StorageError>;
 
     async fn replace_math_macros(
         &self,
-        owner: &Identity,
+        owner: &PrincipalRef,
         macros: &[MathMacro],
         expected_revision: i64,
     ) -> Result<MathMacroSettings, StorageError>;
@@ -96,7 +99,7 @@ impl MathMacroUseCases for MathMacroApplication {
         actor: Actor,
     ) -> Result<MathMacroSettings, MathMacroUseCaseError> {
         self.repository
-            .read_math_macros(actor.identity())
+            .read_math_macros(actor.principal())
             .await
             .map_err(MathMacroUseCaseError::from)
     }
@@ -112,7 +115,7 @@ impl MathMacroUseCases for MathMacroApplication {
             return Err(MathMacroUseCaseError::Invalid);
         }
         self.repository
-            .replace_math_macros(actor.identity(), &macros, expected_revision)
+            .replace_math_macros(actor.principal(), &macros, expected_revision)
             .await
             .map_err(MathMacroUseCaseError::from)
     }

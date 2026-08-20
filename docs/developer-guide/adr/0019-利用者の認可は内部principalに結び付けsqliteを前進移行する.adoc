@@ -1,7 +1,7 @@
 = 利用者の認可は内部principalに結び付けSQLiteを前進移行する
 
 [#top]
-* 状態: 採用。実装予定はIssue \#548から\#550
+* 状態: 採用。Issue \#548から\#550で実装
 * 日付: 2026-08-20
 * 関連Issue: \#546、\#547、\#548、\#549、\#550
 * 関連ADR: xref:0002-sqliteを正本として維持する.adoc#top[ADR 0002]、
@@ -124,9 +124,9 @@ SQLite tableを作り直すmigrationでは、``defer_foreign_keys``へ依存し�
 schema migration前のSQLite退避は、同じホストで失敗前の状態へ戻すため、sessionやtokenを含むdatabase全体を
 保存します。用途、内容、保持期間が異なるため、一方を他方の代用にしません。
 
-=== 実装順
+=== 実装経過
 
-変更は次の順に分けます。
+変更は次の順に実装しました。
 
 . \#548で退避、migration履歴、保守command、手動NixOS serviceを追加します。現行schemaは22のままにし、
   通常の起動動作を変えません。
@@ -134,7 +134,8 @@ schema migration前のSQLite退避は、同じホストで失敗前の状態へ�
   trigger、共有認証adapterを一つの整合した変更として切り替えます。外部identityと``PrincipalId``を
   認可条件として混在させる中間schemaは公開しません。
 . \#550でidentityの引き継ぎcommand、代表identityの変更、alias群のarchive往復を追加します。
-. その後に\#541の版履歴と\#540の添付を``PrincipalId``へ直接結び付けます。
+. \#541で版履歴の変更者を``PrincipalId``へ直接結び付けます。\#540の添付は版履歴を世代管理の
+  基準として追加します。
 
 == 帰結
 

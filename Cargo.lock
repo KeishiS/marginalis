@@ -1309,6 +1309,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "similar",
  "thiserror 2.0.19",
  "tokio",
  "url",
@@ -1318,6 +1319,7 @@ dependencies = [
 name = "marginalis-archive"
 version = "0.47.0"
 dependencies = [
+ "base64 0.22.1",
  "marginalis-application",
  "marginalis-asciidoc",
  "marginalis-domain",
@@ -1336,16 +1338,6 @@ dependencies = [
  "marginalis-domain",
  "thiserror 2.0.19",
  "unicode-normalization",
-]
-
-[[package]]
-name = "marginalis-auth-oidc"
-version = "0.47.0"
-dependencies = [
- "async-trait",
- "marginalis-application",
- "marginalis-domain",
- "oidc-browser-login",
 ]
 
 [[package]]
@@ -1372,7 +1364,9 @@ dependencies = [
  "schemars 1.2.2",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.19",
+ "unicode-normalization",
  "url",
  "uuid",
 ]
@@ -1381,23 +1375,25 @@ dependencies = [
 name = "marginalis-service"
 version = "0.47.0"
 dependencies = [
+ "async-trait",
  "axum",
  "base64 0.22.1",
+ "hmac",
  "liblzma",
  "marginalis-application",
  "marginalis-archive",
  "marginalis-asciidoc",
- "marginalis-auth-oidc",
  "marginalis-contract",
  "marginalis-domain",
  "marginalis-sqlite",
  "marginalis-web",
- "marginalis-webhook-http",
  "mcp-authorization-server-cimd",
+ "oidc-browser-login",
  "rand 0.8.7",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tar",
  "thiserror 2.0.19",
  "time",
@@ -1452,21 +1448,6 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "marginalis-webhook-http"
-version = "0.47.0"
-dependencies = [
- "async-trait",
- "axum",
- "hmac",
- "marginalis-application",
- "marginalis-domain",
- "reqwest",
- "sha2 0.10.9",
- "tokio",
- "url",
 ]
 
 [[package]]
@@ -2502,6 +2483,12 @@ dependencies = [
  "digest 0.10.7",
  "rand_core 0.6.4",
 ]
+
+[[package]]
+name = "similar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "simple_asn1"

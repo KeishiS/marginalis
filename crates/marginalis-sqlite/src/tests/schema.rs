@@ -54,21 +54,25 @@ async fn initialization_rejects_the_previous_schema_version() {
     assert!(
         error
             .to_string()
-            .contains("unsupported database schema history [21]; expected [22]")
+            .contains("unsupported database schema history [21]; expected [22, 23]")
     );
 }
 
 #[test]
 fn schema_history_rejects_gaps_future_versions_and_invalid_plans() {
-    assert!(validate_schema_history(&[22], MIGRATIONS, false).is_ok());
+    assert!(validate_schema_history(&[22], MIGRATIONS, false).is_err());
+    assert!(validate_schema_history(&[22], MIGRATIONS, true).is_ok());
+    assert!(validate_schema_history(&[22, 23], MIGRATIONS, false).is_ok());
     assert!(validate_schema_history(&[22, 24], MIGRATIONS, true).is_err());
-    assert!(validate_schema_history(&[22, 23], MIGRATIONS, true).is_err());
+    assert!(validate_schema_history(&[22, 23, 24], MIGRATIONS, true).is_err());
     assert!(validate_schema_history(&[], MIGRATIONS, true).is_err());
 
     let gap = [Migration {
         from: 22,
         to: 24,
         sql: "SELECT 1;",
+        rebuild_current_schema: false,
+        copy_sql: "",
     }];
     assert!(expected_schema_history_for(&gap, 24).is_err());
 }

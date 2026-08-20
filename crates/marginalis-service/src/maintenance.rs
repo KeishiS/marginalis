@@ -3,6 +3,7 @@
 mod archive;
 mod backup;
 mod diagnostics;
+mod identity;
 mod migration;
 mod purge;
 
@@ -12,6 +13,7 @@ pub(crate) use archive::{
 };
 pub(crate) use backup::{backup, prune_backups, verify_latest_backup};
 pub(crate) use diagnostics::diagnose;
+pub(crate) use identity::{link_identity, set_primary_identity};
 pub(crate) use migration::migrate_database;
 pub(crate) use purge::purge_expired;
 

@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, BibliographyItem, BibliographyItemId, Identity, Revision, UnixMillis, ValidatedCslJson,
+    Actor, BibliographyItem, BibliographyItemId, PrincipalRef, Revision, UnixMillis,
+    ValidatedCslJson,
 };
 use serde_json::Value;
 
@@ -58,7 +59,7 @@ pub trait BibliographyRepository: Send + Sync {
     /// 所有者のidentityを受け取る。呼び出し側は、閲覧できるノートの描画にだけ使う。
     async fn items_by_citation_keys(
         &self,
-        owner: &Identity,
+        owner: &PrincipalRef,
         citation_keys: &[String],
     ) -> Result<Vec<BibliographyItem>, StorageError>;
 
@@ -125,7 +126,7 @@ impl BibliographyApplication {
             .map_err(|_| BibliographyUseCaseError::InvalidCslJson)?;
         let item = BibliographyItem::create(
             BibliographyItemId::new(self.random.uuid_v7()),
-            actor.identity(),
+            actor.principal(),
             validated,
             self.clock.now(),
         );

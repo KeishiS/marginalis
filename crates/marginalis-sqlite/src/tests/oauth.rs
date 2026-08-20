@@ -209,11 +209,10 @@ async fn seed_principal_scope_ceiling(
 ) {
     sqlx::query(
         "INSERT INTO mcp_principal_scope_ceilings
-             (issuer, subject, scopes, revision, updated_at_ms)
-         VALUES (?, ?, ?, 1, ?)",
+             (principal_id, scopes, revision, updated_at_ms)
+         VALUES (?, ?, 1, ?)",
     )
-    .bind(ISSUER)
-    .bind(subject)
+    .bind(user(subject).principal_id().get())
     .bind(scopes)
     .bind(updated_at)
     .execute(&database.pool)
@@ -231,11 +230,10 @@ async fn seed_client_scope_ceiling(
 ) {
     sqlx::query(
         "INSERT INTO mcp_client_scope_ceilings
-             (issuer, subject, client_id, scopes, revision, updated_at_ms)
-         VALUES (?, ?, ?, ?, 1, ?)",
+             (principal_id, client_id, scopes, revision, updated_at_ms)
+         VALUES (?, ?, ?, 1, ?)",
     )
-    .bind(ISSUER)
-    .bind(subject)
+    .bind(user(subject).principal_id().get())
     .bind(client_id)
     .bind(scopes)
     .bind(updated_at)
@@ -273,6 +271,7 @@ fn resource_policy() -> McpResourcePolicy {
 /// application層を決定的な時刻と乱数でSQLiteの実装へ結線する。
 fn oauth_application(database: &SqliteDatabase) -> McpOAuthApplication {
     McpOAuthApplication::new(
+        Arc::new(database.clone()),
         Arc::new(database.clone()),
         Arc::new(database.clone()),
         Arc::new(FixedClock(1_000)),
@@ -385,7 +384,10 @@ async fn client_id_metadata_document_clients_complete_the_authorization_flow() {
         .await
         .expect("authentication")
         .expect("authenticated actor");
-    assert_eq!(authenticated.actor.subject(), "alice");
+    assert_eq!(
+        authenticated.actor.authenticated_identity().subject(),
+        "alice"
+    );
     assert_eq!(authenticated.scopes, vec!["notes:read"]);
     assert_eq!(
         application
@@ -432,6 +434,161 @@ async fn scope_ceilings_are_bound_to_the_principal_and_client() {
             .expect("other principal scope ceilings"),
         McpStoredScopeCeilings::default(),
         "別の利用者の設定は共有しない"
+    );
+}
+
+#[tokio::test]
+async fn aliases_share_mcp_authorization_ceilings_and_revocation() {
+    let database = database().await;
+    let primary = user("alice");
+    let alias = add_alias(
+        &database,
+        &primary,
+        "https://replacement-id.example.test",
+        "alice-after-migration",
+    )
+    .await;
+    let client = oauth_client("identity-migration-client", "Identity migration client");
+    database
+        .upsert_mcp_client(&client, UnixMillis::new(0))
+        .await
+        .expect("client");
+
+    let alias_grant = McpAuthorizationGrant {
+        principal: principal(
+            alias.authenticated_identity().issuer(),
+            alias.authenticated_identity().subject(),
+        ),
+        client_id: client.client_id.clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
+        resource_uri: RESOURCE_URI.into(),
+        scopes: vec!["notes:read".into(), "notes:write".into()],
+    };
+    issue_code(
+        &database,
+        "alias-code",
+        &client,
+        McpClientRegistrationMethod::Dynamic,
+        &alias_grant,
+        2_000,
+        0,
+    )
+    .await;
+    let mut alias_exchange =
+        code_exchange("alias-code", &alias_grant, "alias-access", "alias-refresh");
+    alias_exchange.access_expires_at = UnixMillis::new(2_000);
+    alias_exchange.refresh_expires_at = UnixMillis::new(3_000);
+    exchange(&database, alias_exchange, 1)
+        .await
+        .expect("alias grant");
+
+    let stored = authenticate(&database, "alias-access", &alias_grant, 2)
+        .await
+        .expect("stored alias principal");
+    assert_eq!(
+        stored.principal.issuer(),
+        alias.authenticated_identity().issuer()
+    );
+    assert_eq!(
+        stored.principal.subject(),
+        alias.authenticated_identity().subject()
+    );
+    let authenticated = oauth_application(&database)
+        .authenticate("alias-access", RESOURCE_URI)
+        .await
+        .expect("application authentication")
+        .expect("active alias token");
+    assert_eq!(authenticated.actor.principal_id(), primary.principal_id());
+    assert_eq!(
+        authenticated.actor.authenticated_identity(),
+        alias.authenticated_identity()
+    );
+
+    let bob_grant = McpAuthorizationGrant {
+        principal: principal(ISSUER, "bob"),
+        client_id: client.client_id.clone(),
+        redirect_uri: McpResolvedRedirectUri::Supplied(client.redirect_uris[0].clone()),
+        resource_uri: RESOURCE_URI.into(),
+        scopes: vec!["notes:read".into()],
+    };
+    issue_code(
+        &database,
+        "bob-code",
+        &client,
+        McpClientRegistrationMethod::Dynamic,
+        &bob_grant,
+        2_000,
+        0,
+    )
+    .await;
+    let mut bob_exchange = code_exchange("bob-code", &bob_grant, "bob-access", "bob-refresh");
+    bob_exchange.access_expires_at = UnixMillis::new(2_000);
+    bob_exchange.refresh_expires_at = UnixMillis::new(3_000);
+    exchange(&database, bob_exchange, 1)
+        .await
+        .expect("bob grant");
+
+    database
+        .replace_principal_scope_ceiling(&primary, &["notes:read".into()], 0, at(3))
+        .await
+        .expect("restrict primary principal");
+    assert!(
+        authenticate(&database, "alias-access", &alias_grant, 4)
+            .await
+            .is_none(),
+        "primary identityからの上限変更はalias発行tokenにも適用する"
+    );
+    assert!(
+        authenticate(&database, "bob-access", &bob_grant, 4)
+            .await
+            .is_some(),
+        "別principalのtokenは失効しない"
+    );
+
+    let alias_read_grant = McpAuthorizationGrant {
+        scopes: vec!["notes:read".into()],
+        ..alias_grant
+    };
+    issue_code(
+        &database,
+        "alias-read-code",
+        &client,
+        McpClientRegistrationMethod::Dynamic,
+        &alias_read_grant,
+        2_000,
+        5,
+    )
+    .await;
+    let mut alias_read_exchange = code_exchange(
+        "alias-read-code",
+        &alias_read_grant,
+        "alias-read-access",
+        "alias-read-refresh",
+    );
+    alias_read_exchange.access_expires_at = UnixMillis::new(2_000);
+    alias_read_exchange.refresh_expires_at = UnixMillis::new(3_000);
+    exchange(&database, alias_read_exchange, 6)
+        .await
+        .expect("alias read grant");
+    database
+        .revoke_mcp_client_tokens(
+            primary.authenticated_identity().issuer(),
+            primary.authenticated_identity().subject(),
+            &client.client_id,
+            UnixMillis::new(7),
+        )
+        .await
+        .expect("revoke through primary identity");
+    assert!(
+        authenticate(&database, "alias-read-access", &alias_read_grant, 8)
+            .await
+            .is_none(),
+        "primary identityからの失効はalias発行tokenにも適用する"
+    );
+    assert!(
+        authenticate(&database, "bob-access", &bob_grant, 8)
+            .await
+            .is_some()
     );
 }
 
@@ -538,8 +695,8 @@ async fn client_authorizations_are_owner_scoped_and_record_use_and_revocation() 
 
     database
         .revoke_mcp_client_tokens(
-            alice.issuer(),
-            alice.subject(),
+            alice.authenticated_identity().issuer(),
+            alice.authenticated_identity().subject(),
             &client.client_id,
             UnixMillis::new(18),
         )
@@ -746,7 +903,7 @@ async fn replacing_scope_ceilings_is_revision_guarded_and_revokes_existing_grant
 }
 
 #[tokio::test]
-async fn schema_contains_oauth_tables_bound_to_kanidm_subjects() {
+async fn schema_contains_oauth_tables_bound_to_principals() {
     let database = database().await;
     for table in [
         "mcp_clients",
@@ -947,7 +1104,7 @@ async fn explicit_auth_cleanup_prunes_stale_unreferenced_clients() {
     seed_client_scope_ceiling(&database, "alice", "configured-client", "notes:read", 0).await;
     let now_millis = 2 * 24 * 60 * 60 * 1_000;
     let counts = database
-        .purge_expired_auth_state(at(now_millis), at(24 * 60 * 60 * 1_000))
+        .purge_expired_operational_state(at(now_millis), at(24 * 60 * 60 * 1_000))
         .await
         .expect("cleanup");
     assert_eq!(counts.mcp_clients, 1);

@@ -2,12 +2,14 @@
 
 use marginalis_application::NoteAclState;
 use marginalis_domain::{
-    Actor, Identity, Note, NoteAccess, NoteAclEntry, NoteId, NotePermission, Revision, UnixMillis,
+    Actor, Identity, Note, NoteAccess, NoteAclEntry, NoteId, NotePermission, NoteRevisionKind,
+    PrincipalId, PrincipalRef, Revision, UnixMillis,
 };
 use sqlx::Row;
 
 use crate::{
     SqliteDatabase, SqliteStoreError, database_error,
+    note_history::insert_note_revision,
     notes::{classify_failed_mutation, note_from_row, note_row, require_active_note_access},
 };
 
@@ -20,8 +22,11 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         require_active_note_access(&mut transaction, actor, note_id, NoteAccess::Manage).await?;
         let rows = sqlx::query(
-            "SELECT issuer, subject, permission FROM note_acl
-             WHERE note_id = ? ORDER BY issuer, subject",
+            "SELECT acl.principal_id, identity.issuer, identity.subject, acl.permission
+             FROM note_acl acl
+             JOIN principal_identities identity
+               ON identity.principal_id = acl.principal_id AND identity.is_primary = 1
+             WHERE acl.note_id = ? ORDER BY identity.issuer, identity.subject",
         )
         .bind(note_id.to_string())
         .fetch_all(&mut *transaction)
@@ -44,7 +49,13 @@ impl SqliteDatabase {
                     row.try_get("subject").map_err(database_error)?,
                 )
                 .map_err(|_| SqliteStoreError::CorruptData)?;
-                Ok(NoteAclEntry::new(identity, permission))
+                let principal_id =
+                    PrincipalId::new(row.try_get("principal_id").map_err(database_error)?)
+                        .map_err(|_| SqliteStoreError::CorruptData)?;
+                Ok(NoteAclEntry::new(
+                    PrincipalRef::new(principal_id, identity),
+                    permission,
+                ))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let revision = Revision::new(
@@ -74,14 +85,13 @@ impl SqliteDatabase {
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
-                             AND access.issuer = ? AND access.subject = ?
+                             AND access.principal_id = ?
                              AND access.access_level >= 3)",
         )
         .bind(updated_at.get())
         .bind(note_id.to_string())
         .bind(expected_revision.get())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -99,11 +109,10 @@ impl SqliteDatabase {
             .map_err(database_error)?;
         for entry in entries {
             sqlx::query(
-                "INSERT INTO note_acl (note_id, issuer, subject, permission) VALUES (?, ?, ?, ?)",
+                "INSERT INTO note_acl (note_id, principal_id, permission) VALUES (?, ?, ?)",
             )
             .bind(note_id.to_string())
-            .bind(entry.identity().issuer())
-            .bind(entry.identity().subject())
+            .bind(entry.principal().id().get())
             .bind(match entry.permission() {
                 NotePermission::Read => "read",
                 NotePermission::Edit => "edit",
@@ -113,6 +122,13 @@ impl SqliteDatabase {
             .map_err(database_error)?;
         }
         let note = note_from_row(note_row(&mut transaction, note_id).await?)?;
+        insert_note_revision(
+            &mut transaction,
+            note_id,
+            actor.principal_id(),
+            NoteRevisionKind::AclUpdated,
+        )
+        .await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
     }

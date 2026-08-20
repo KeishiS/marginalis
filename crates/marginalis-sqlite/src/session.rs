@@ -3,13 +3,16 @@
 use std::{future::Future, time::Duration};
 
 use marginalis_application::{OidcLoginAttempt, OidcLoginAttemptStore};
-use marginalis_domain::UnixMillis;
+use marginalis_domain::{Identity, UnixMillis};
 use oidc_browser_login::session::{
     AuthenticatedWebSession, Principal, TokenDigest, WebSessionRecord, WebSessionStore,
 };
 use sqlx::{Row, SqlitePool};
 
-use crate::{SqliteDatabase, SqliteStoreError, database_error, token::hash_token};
+use crate::{
+    SqliteDatabase, SqliteStoreError, database_error, principal::resolve_or_create,
+    token::hash_token,
+};
 
 const MAX_PENDING_OIDC_LOGIN_ATTEMPTS: i64 = 1_024;
 
@@ -49,24 +52,36 @@ impl WebSessionStore for SqliteWebSessionStore {
         record: WebSessionRecord,
         now: oidc_browser_login::UnixMillis,
     ) -> Result<(), Self::Error> {
+        let identity = Identity::new(
+            record.principal.issuer().to_owned(),
+            record.principal.subject().to_owned(),
+        )
+        .map_err(|_| SqliteStoreError::CorruptData)?;
+        let database = SqliteDatabase {
+            pool: self.pool.clone(),
+        };
+        let (actor, identity_id) = resolve_or_create(&database, identity)
+            .await
+            .map_err(storage_to_store_error)?;
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
         sqlx::query(
             "INSERT INTO web_sessions
-             (session_id_hash, csrf_token_hash, issuer, subject,
+             (session_id_hash, csrf_token_hash, principal_id, authenticated_identity_id,
               issued_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(record.session_digest.as_bytes().to_vec())
         .bind(record.csrf_digest.as_bytes().to_vec())
-        .bind(record.principal.issuer().to_owned())
-        .bind(record.principal.subject().to_owned())
+        .bind(actor.principal_id().get())
+        .bind(identity_id)
         .bind(now.get())
         .bind(now.get())
         .bind(record.idle_expires_at.get())
         .bind(record.absolute_expires_at.get())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
-        Ok(())
+        transaction.commit().await.map_err(database_error)
     }
 
     async fn lookup_and_extend(
@@ -80,6 +95,7 @@ impl WebSessionStore for SqliteWebSessionStore {
         // 有効性の検証と期限延長を一つの書き込みにまとめる。読み取り後に遅延
         // transactionを更新へ切り替えると、並行要求とのsnapshot競合が即時失敗する。
         let next_idle_expires_at = now.get().saturating_add(idle_window_ms);
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let row = sqlx::query(
             "UPDATE web_sessions
              SET last_seen_at_ms = ?,
@@ -88,18 +104,24 @@ impl WebSessionStore for SqliteWebSessionStore {
                AND revoked_at_ms IS NULL
                AND idle_expires_at_ms > ?
                AND absolute_expires_at_ms > ?
-             RETURNING issuer, subject, idle_expires_at_ms, absolute_expires_at_ms",
+             RETURNING authenticated_identity_id, idle_expires_at_ms, absolute_expires_at_ms",
         )
         .bind(now.get())
         .bind(next_idle_expires_at)
         .bind(&digest)
         .bind(now.get())
         .bind(now.get())
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(database_error)?;
         if let Some(row) = row {
-            return session_from_row(&row).map(Some);
+            let identity_id = row
+                .try_get("authenticated_identity_id")
+                .map_err(database_error)?;
+            let principal = principal_from_identity_id(&mut transaction, identity_id).await?;
+            let session = session_from_row(&row, principal)?;
+            transaction.commit().await.map_err(database_error)?;
+            return Ok(Some(session));
         }
 
         // 期限切れの行を失効済みにして、明示的なcleanup前にも再利用できない状態を残す。
@@ -114,9 +136,10 @@ impl WebSessionStore for SqliteWebSessionStore {
         .bind(digest)
         .bind(now.get())
         .bind(now.get())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
+        transaction.commit().await.map_err(database_error)?;
         Ok(None)
     }
 
@@ -160,13 +183,10 @@ impl WebSessionStore for SqliteWebSessionStore {
 
 fn session_from_row(
     row: &sqlx::sqlite::SqliteRow,
+    principal: Principal,
 ) -> Result<AuthenticatedWebSession, SqliteStoreError> {
     Ok(AuthenticatedWebSession {
-        principal: Principal::new(
-            row.try_get("issuer").map_err(database_error)?,
-            row.try_get("subject").map_err(database_error)?,
-        )
-        .map_err(|_| SqliteStoreError::CorruptData)?,
+        principal,
         idle_expires_at: oidc_browser_login::UnixMillis::new(
             row.try_get("idle_expires_at_ms").map_err(database_error)?,
         ),
@@ -175,6 +195,30 @@ fn session_from_row(
                 .map_err(database_error)?,
         ),
     })
+}
+
+async fn principal_from_identity_id(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    identity_id: i64,
+) -> Result<Principal, SqliteStoreError> {
+    let row = sqlx::query("SELECT issuer, subject FROM principal_identities WHERE identity_id = ?")
+        .bind(identity_id)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(database_error)?
+        .ok_or(SqliteStoreError::CorruptData)?;
+    Principal::new(
+        row.try_get("issuer").map_err(database_error)?,
+        row.try_get("subject").map_err(database_error)?,
+    )
+    .map_err(|_| SqliteStoreError::CorruptData)
+}
+
+fn storage_to_store_error(error: marginalis_application::StorageError) -> SqliteStoreError {
+    match error {
+        marginalis_application::StorageError::CorruptData => SqliteStoreError::CorruptData,
+        _ => SqliteStoreError::Database(error.to_string()),
+    }
 }
 
 impl OidcLoginAttemptStore for SqliteOidcLoginAttemptStore {

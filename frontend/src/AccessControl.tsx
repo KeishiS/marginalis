@@ -42,6 +42,7 @@ export function AccessControl({
   const {
     status,
     entries,
+    issuer,
     subject,
     permission,
     revision: currentRevision,
@@ -94,7 +95,8 @@ export function AccessControl({
       const note = await replaceNoteAcl(
         apiBase,
         noteId,
-        currentEntries.map(({ subject, permission }) => ({
+        currentEntries.map(({ issuer, subject, permission }) => ({
+          issuer,
           subject,
           permission,
         })),
@@ -124,16 +126,18 @@ export function AccessControl({
         共有設定
       </h2>
       <p className="m-0 max-w-2xl text-muted-foreground">
-        同じ認証基盤の利用者subjectを正確に入力してください。
+        共有先のOIDC issuerとsubjectを正確に入力してください。
       </p>
       <ul className="m-0 grid list-none gap-3 p-0">
         {currentEntries.map((entry) => (
           <li
-            key={entry.subject}
+            key={`${entry.issuer}\u0000${entry.subject}`}
             className="flex flex-col items-stretch justify-between gap-4 rounded-sm bg-muted p-3 min-[60rem]:flex-row min-[60rem]:items-center"
           >
             <span className="flex min-w-0 flex-wrap items-center gap-3">
-              <code className="[overflow-wrap:anywhere]">{entry.subject}</code>
+              <code className="[overflow-wrap:anywhere]">
+                {entry.issuer} / {entry.subject}
+              </code>
               <Badge variant="secondary">
                 {entry.permission === "edit" ? "閲覧・編集" : "閲覧"}
               </Badge>
@@ -144,7 +148,11 @@ export function AccessControl({
               size="sm"
               disabled={status === "saving"}
               onClick={() =>
-                dispatch({ type: "remove", subject: entry.subject })
+                dispatch({
+                  type: "remove",
+                  issuer: entry.issuer,
+                  subject: entry.subject,
+                })
               }
             >
               削除
@@ -159,6 +167,16 @@ export function AccessControl({
         className="flex flex-wrap items-end gap-3 border-t pt-4"
         onSubmit={add}
       >
+        <label className="grid flex-[1_1_20rem] gap-1 text-sm font-semibold">
+          OIDC issuer
+          <Input
+            disabled={status === "saving"}
+            value={issuer}
+            onChange={(event) =>
+              dispatch({ type: "issuer", value: event.target.value })
+            }
+          />
+        </label>
         <label className="grid flex-[1_1_20rem] gap-1 text-sm font-semibold">
           利用者subject
           <Input

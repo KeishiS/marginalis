@@ -49,6 +49,27 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |閲覧画面取得
 |``GET /api/v3/notes/{note_id}/view``
 |正本、権限、描画HTML、関連概要の一貫した組
+|版履歴一覧
+|``GET /api/v3/notes/{note_id}/history``
+|本文を含まない版、変更時刻、変更者、変更種別の一覧
+|過去版取得
+|``GET /api/v3/notes/{note_id}/history/{revision}``
+|選択した版のAsciiDoc原文と現在の実効アクセス水準
+|版の比較
+|``GET /api/v3/notes/{note_id}/history-diff?from_revision=<版>&to_revision=<版>``
+|要求時に生成する行単位のUnified Diff
+|過去版の復元
+|``POST /api/v3/notes/{note_id}/history/{revision}/restore``
+|CSRFトークンと現在版の``If-Match``が必要
+|添付画像の一覧・追加
+|``GET /api/v3/notes/{note_id}/attachments`` / ``POST /api/v3/notes/{note_id}/attachments?file_name=<名前>``
+|追加は``application/octet-stream``の画像本体とCSRFトークンが必要
+|添付画像の取得
+|``GET /api/v3/notes/{note_id}/attachments/{attachment_id}/content``
+|現在のノートACLで認可
+|未参照の添付画像を削除
+|``DELETE /api/v3/notes/{note_id}/attachments/{attachment_id}``
+|編集権限とCSRFトークンが必要。保持中の版が参照する画像は拒否
 |ノート更新
 |``PUT /api/v3/notes/{note_id}``
 |``If-Match``が必要
@@ -83,6 +104,16 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |``DELETE /api/v3/mcp-authorizations/{client_id}/scope-ceiling?revision=<現在のrevision>``
 |CSRFトークンが必要。未設定へ戻し、既存の接続は維持する
 |===
+
+版履歴の認可には現在のACLを使います。共有を取り消された利用者は以前に読めた版も取得できません。
+削除済みノートでは所有者だけが履歴を取得でき、ノート自体を復元するまで過去版の本文を現在版へ
+復元できません。過去版の復元は履歴を上書きせず、選んだ原文を現行の入力規則で再検証して新しい
+revisionを作ります。所有者、ACL、作成日時、作成経路は過去の値へ戻しません。
+
+添付画像はPNG、JPEG、WebPだけを内容から判定して受理し、申告されたMIME typeや拡張子は信用しません。
+本文では同じノートに属する``image::attachment:<attachment_id>[]``だけを参照できます。画像1件は
+8 MiB、一つのノートは32件かつ合計64 MiBまでです。外部URLの取得とSVGは提供しません。どの版からも
+参照されない画像は明示的に削除でき、参照されないまま30日を超えると日次保守処理が削除します。
 
 Webhook購読の管理（``/api/v3/webhooks``系）は、署名の検証方法や配送の約束事とあわせて
 xref:webhooks.adoc#top[Webhook通知]で説明します。
@@ -189,7 +220,7 @@ TeX packageは``base``、``ams``、``newcommand``、``textmacros``、``noundefin
 }
 ----
 
-通常利用者は、自身が作成したノートと、同じ発行者内でACLにより共有されたノートを操作できます。
+通常利用者は、自身が作成したノートと、ACLにより自身のprincipalへ共有されたノートを操作できます。
 ``read``は閲覧、``edit``は閲覧と内容の更新を許可します。ACL管理と削除・復元は所有者だけが
 実行できます。権限のないノートは、存在を推測できないよう、HTTP状態コード
 ``404``と``code: "not_found"``を返します。
@@ -222,7 +253,9 @@ MCPではHTTPヘッダーを使わないため、変更ツールの型付き引�
 それぞれ1を引きます。UTF-8位置を使うLSPクライアントや範囲選択には``span``を使用します。
 AdocWeave由来の診断では、AdocWeaveの安定した
 ``code``をそのまま使用します。画面の日本語表示は英語の``message``ではなく``code``から決定します。
-ACLの対象が不正、重複、または所有者自身である場合は、対象を``acl_entry``とその添字で示します。
+ACLの共有先はOIDC ``issuer``と``subject``の両方で指定します。新しい共有先の``issuer``は、現在
+設定しているOIDC issuerと完全に一致する必要があります。対象が不正、重複、または所有者自身である
+場合は、対象を``acl_entry``とその添字で示します。
 
 [source,json]
 ----

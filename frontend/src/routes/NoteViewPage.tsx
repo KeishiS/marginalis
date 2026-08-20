@@ -22,6 +22,7 @@ import {
   editPath,
   externalPath,
   graphPath,
+  historyPath,
   listNoticePath,
   notePath,
 } from "../paths";
@@ -194,6 +195,9 @@ export function NoteViewPage({
               <a href={editPath(config, noteId)}>編集</a>
             </Button>
           )}
+          <Button variant="outline" asChild>
+            <a href={historyPath(config, noteId)}>版履歴</a>
+          </Button>
           {view.access === "manage" && (
             <>
               {(review?.status ?? view.note.review_status) !== "reviewed" && (

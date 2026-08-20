@@ -1,10 +1,12 @@
 //! Marginalisの現行データモデルに限定したSQLite adapter。
 
 mod archive;
+mod attachment;
 mod bibliography_import_repository;
 mod bibliography_repository;
 mod cleanup;
 mod diagnostics;
+mod identity_maintenance;
 mod math_macro_repository;
 mod mcp;
 mod mcp_oauth_repository;
@@ -12,17 +14,22 @@ mod mcp_scope_ceiling_repository;
 mod migration;
 mod note_acl;
 mod note_graph;
+mod note_history;
 mod note_repository;
 mod note_reviews;
 mod note_sync;
 mod notes;
+mod principal;
 mod schema;
 mod session;
 mod token;
 mod webhooks;
 
-pub use cleanup::AuthStatePurgeCounts;
+pub use cleanup::OperationalStatePurgeCounts;
 pub use diagnostics::SqliteDiagnosticReport;
+pub use identity_maintenance::{
+    IdentityMaintenanceError, IdentityMaintenanceReport, IdentityMaintenanceRequest,
+};
 pub use migration::{DatabaseMigrationError, DatabaseMigrationReport};
 pub use session::SqliteOidcLoginAttemptStore;
 
@@ -121,6 +128,15 @@ impl SqliteDatabase {
         backup_path: &std::path::Path,
     ) -> Result<DatabaseMigrationReport, DatabaseMigrationError> {
         migration::migrate_database(database_url, backup_path).await
+    }
+
+    /// service停止中に検証済み退避を作成し、外部identityのbindingを明示的に変更する。
+    pub async fn maintain_identity(
+        database_url: &str,
+        backup_path: &std::path::Path,
+        request: IdentityMaintenanceRequest,
+    ) -> Result<IdentityMaintenanceReport, IdentityMaintenanceError> {
+        identity_maintenance::maintain_identity(database_url, backup_path, request).await
     }
 }
 

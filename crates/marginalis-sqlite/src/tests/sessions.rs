@@ -103,7 +103,7 @@ async fn sessions_retain_the_validated_identity() {
         .await
         .expect("issue replacement session");
     let counts = database
-        .purge_expired_auth_state(UnixMillis::new(2_100), UnixMillis::new(0))
+        .purge_expired_operational_state(UnixMillis::new(2_100), UnixMillis::new(0))
         .await
         .expect("explicit session cleanup");
     assert_eq!(counts.web_sessions, 1);
@@ -114,6 +114,68 @@ async fn sessions_retain_the_validated_identity() {
             .expect("session count"),
         1
     );
+}
+
+#[tokio::test]
+async fn session_issued_with_an_alias_restores_that_alias_for_the_same_principal() {
+    let database = database().await;
+    let primary = user("alice");
+    let alias = add_alias(
+        &database,
+        &primary,
+        "https://replacement-id.example.test",
+        "alice-after-migration",
+    )
+    .await;
+    assert_eq!(alias.principal_id(), primary.principal_id());
+
+    let store = database.web_session_store();
+    let record = WebSessionRecord {
+        session_digest: TokenDigest::of("alias-session-token"),
+        csrf_digest: TokenDigest::of("alias-csrf-token"),
+        principal: Principal::new(
+            alias.authenticated_identity().issuer().into(),
+            alias.authenticated_identity().subject().into(),
+        )
+        .expect("valid alias principal"),
+        idle_expires_at: SharedUnixMillis::new(1_000),
+        absolute_expires_at: SharedUnixMillis::new(2_000),
+    };
+    store
+        .issue(record, SharedUnixMillis::new(100))
+        .await
+        .expect("issue alias session");
+
+    let authenticated = store
+        .lookup_and_extend(
+            TokenDigest::of("alias-session-token"),
+            SharedUnixMillis::new(200),
+            Duration::from_millis(100),
+        )
+        .await
+        .expect("lookup alias session")
+        .expect("active alias session");
+    assert_eq!(
+        authenticated.principal.issuer(),
+        alias.authenticated_identity().issuer()
+    );
+    assert_eq!(
+        authenticated.principal.subject(),
+        alias.authenticated_identity().subject()
+    );
+
+    let restored_identity = marginalis_domain::Identity::new(
+        authenticated.principal.issuer().into(),
+        authenticated.principal.subject().into(),
+    )
+    .expect("stored identity");
+    let restored_actor =
+        marginalis_application::PrincipalDirectory::resolve(&database, &restored_identity)
+            .await
+            .expect("resolve stored identity")
+            .expect("known alias");
+    assert_eq!(restored_actor.principal_id(), primary.principal_id());
+    assert_eq!(restored_actor.authenticated_identity(), &restored_identity);
 }
 
 /// SQLiteのsession storeが共有crateの`WebSessionStore`契約と交換可能なことを確かめる。
@@ -248,7 +310,7 @@ async fn explicit_auth_cleanup_removes_expired_rows_without_new_issuance() {
         None
     );
     let counts = database
-        .purge_expired_auth_state(UnixMillis::new(1_000), UnixMillis::new(0))
+        .purge_expired_operational_state(UnixMillis::new(1_000), UnixMillis::new(0))
         .await
         .expect("explicit cleanup");
     assert_eq!(counts.oidc_login_attempts, 1);
@@ -310,7 +372,7 @@ async fn issuing_login_attempt_reclaims_expired_capacity_before_enforcing_the_li
 }
 
 /// SQLiteのlogin attempt storeが、共有crateの`LoginAttemptStore`契約と交換可能なことを
-/// testkitの契約試験で確かめる。wrapperはmarginalis-auth-oidcのport写像と同じ変換を行う。
+/// testkitの契約試験で確かめる。wrapperはserviceのOIDC adapterと同じ変換を行う。
 #[tokio::test]
 async fn oidc_login_attempt_store_satisfies_the_shared_contract() {
     struct SharedStore<A>(A);

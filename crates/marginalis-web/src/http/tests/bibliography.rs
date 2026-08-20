@@ -2,7 +2,9 @@ use super::*;
 use marginalis_application::{
     BibliographyApplication, BibliographyRepository, Clock, Random, StorageError,
 };
-use marginalis_domain::{BibliographyItem, BibliographyItemId, EntityId, ValidatedCslJson};
+use marginalis_domain::{
+    BibliographyItem, BibliographyItemId, EntityId, PrincipalRef, ValidatedCslJson,
+};
 
 #[derive(Default)]
 struct Library {
@@ -25,14 +27,14 @@ impl BibliographyRepository for Library {
             .lock()
             .expect("items lock")
             .iter()
-            .filter(|item| item.owner() == actor.identity() && item.csl_json().contains(query))
+            .filter(|item| item.owner() == actor.principal() && item.csl_json().contains(query))
             .cloned()
             .collect())
     }
 
     async fn items_by_citation_keys(
         &self,
-        owner: &Identity,
+        owner: &PrincipalRef,
         citation_keys: &[String],
     ) -> Result<Vec<BibliographyItem>, StorageError> {
         Ok(self
@@ -69,7 +71,7 @@ impl BibliographyRepository for Library {
         let mut items = self.items.lock().expect("items lock");
         let Some(position) = items
             .iter()
-            .position(|item| item.item_id() == item_id && item.owner() == actor.identity())
+            .position(|item| item.item_id() == item_id && item.owner() == actor.principal())
         else {
             return Err(StorageError::NotFound);
         };
@@ -80,7 +82,7 @@ impl BibliographyRepository for Library {
         let revision = Revision::new(current.revision().get() + 1).expect("next revision");
         let updated = BibliographyItem::restore(
             item_id,
-            actor.identity().clone(),
+            actor.principal().clone(),
             csl_json.citation_key().into(),
             csl_json.encoded().into(),
             current.created_at(),
@@ -101,7 +103,7 @@ impl BibliographyRepository for Library {
         let mut items = self.items.lock().expect("items lock");
         let Some(position) = items
             .iter()
-            .position(|item| item.item_id() == item_id && item.owner() == actor.identity())
+            .position(|item| item.item_id() == item_id && item.owner() == actor.principal())
         else {
             return Err(StorageError::NotFound);
         };

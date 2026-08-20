@@ -12,8 +12,10 @@ mod html;
 mod math_macros;
 mod mcp_scope_ceilings;
 mod mcp_transport;
+mod note_sync;
 pub(crate) mod notes;
 mod oauth;
+mod resource_authorization;
 mod security;
 mod state;
 mod ui;
@@ -22,7 +24,7 @@ mod webhooks;
 #[cfg(test)]
 mod tests;
 
-pub use state::{ApiState, InvalidMcpEndpoint, McpEndpoint};
+pub use state::{ApiServices, ApiState, InvalidMcpEndpoint, McpEndpoint};
 pub use ui::browser_smoke_shell;
 
 use super::{RequestId, assign_request_id};
@@ -57,11 +59,14 @@ use self::{
         replace_client_mcp_scope_ceiling, replace_mcp_scope_ceiling,
     },
     mcp_transport::{mcp_post, mcp_unsupported_method},
+    note_sync::sync_notes,
     notes::{
-        create_note, create_web_note, delete_note, export_note, list_deleted_notes, list_notes,
+        compare_note_revisions, create_note, create_web_note, delete_note, delete_note_attachment,
+        export_note, list_deleted_notes, list_note_attachments, list_note_revisions, list_notes,
         mark_note_reviewed, preview_new_note, preview_note_update, read_note, read_note_acl,
-        read_note_graph, read_note_review, read_note_view, replace_note_acl, restore_note, session,
-        update_note,
+        read_note_attachment_content, read_note_graph, read_note_review, read_note_revision,
+        read_note_view, replace_note_acl, restore_note, restore_note_revision, session,
+        update_note, upload_note_attachment,
     },
     oauth::{
         mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
@@ -85,7 +90,7 @@ pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
 // 8 MiBのCSL-JSON配列に、取込元と最大1,000件分の選択を加えたJSON envelopeを受け取る。
 const BIBLIOGRAPHY_IMPORT_REQUEST_BYTES: usize = 9 * 1024 * 1024;
 
-/// 配備先のサブパスを保ったノートURLを生成するHTTP adapter。
+/// 配備先のサブパスを保ったノートと添付画像のURLを生成するHTTP adapter。
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HttpNoteLinkResolver;
 
@@ -96,26 +101,45 @@ impl marginalis_application::NoteLinkResolver for HttpNoteLinkResolver {
         note_id: marginalis_domain::NoteId,
         anchor: Option<&str>,
     ) -> Option<String> {
-        let prefix = &context.note_path_prefix;
-        if !prefix.starts_with('/') || prefix.starts_with("//") || prefix.contains(['?', '#']) {
-            return None;
-        }
-        let prefix = prefix.trim_end_matches('/');
-        let path = format!("{prefix}/{note_id}");
-        let mut url = url::Url::parse("https://marginalis.invalid")
-            .ok()?
-            .join(&path)
-            .ok()?;
-        if url.path() != path {
-            return None;
-        }
-        url.set_fragment(anchor);
-        Some(
-            url.as_str()
-                .strip_prefix("https://marginalis.invalid")?
-                .to_owned(),
+        resource_href(context, &format!("/notes/{note_id}"), anchor)
+    }
+
+    fn attachment_href(
+        &self,
+        context: &marginalis_application::NoteRenderContext,
+        note_id: marginalis_domain::NoteId,
+        attachment_id: marginalis_domain::AttachmentId,
+    ) -> Option<String> {
+        resource_href(
+            context,
+            &format!("/api/v3/notes/{note_id}/attachments/{attachment_id}/content"),
+            None,
         )
     }
+}
+
+fn resource_href(
+    context: &marginalis_application::NoteRenderContext,
+    resource_path: &str,
+    anchor: Option<&str>,
+) -> Option<String> {
+    let path = auth::external_path(&context.base_path, resource_path);
+    if !path.starts_with('/') || path.starts_with("//") || path.contains(['?', '#']) {
+        return None;
+    }
+    let mut url = url::Url::parse("https://marginalis.invalid")
+        .ok()?
+        .join(&path)
+        .ok()?;
+    if url.path() != path {
+        return None;
+    }
+    url.set_fragment(anchor);
+    Some(
+        url.as_str()
+            .strip_prefix("https://marginalis.invalid")?
+            .to_owned(),
+    )
 }
 
 pub fn router(state: ApiState) -> Router {
@@ -131,6 +155,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/notes/new", get(create_note_page))
         .route("/notes/{note_id}/edit", get(edit_note_page))
         .route("/notes/{note_id}/access", get(access_note_page))
+        .route("/notes/{note_id}/history", get(view_note))
         .route("/notes/{note_id}", get(view_note))
         // 配布物の名前を書き並べず、ビルド時に作った表から引く。分割読み込みでchunkが増えても
         // 経路の追加を忘れて配信されない、という失敗が起きない。
@@ -211,6 +236,7 @@ pub fn router(state: ApiState) -> Router {
                 .layer(DefaultBodyLimit::max(BIBLIOGRAPHY_IMPORT_REQUEST_BYTES)),
         )
         .route("/api/v3/notes", get(list_notes).post(create_note))
+        .route("/api/v3/sync/notes", get(sync_notes))
         .route("/api/v3/web/notes", post(create_web_note))
         .route("/api/v3/notes/deleted", get(list_deleted_notes))
         .route("/api/v3/notes/preview", post(preview_new_note))
@@ -220,6 +246,35 @@ pub fn router(state: ApiState) -> Router {
             get(read_note).put(update_note).delete(delete_note),
         )
         .route("/api/v3/notes/{note_id}/view", get(read_note_view))
+        .route(
+            "/api/v3/notes/{note_id}/attachments",
+            get(list_note_attachments)
+                .post(upload_note_attachment)
+                .layer(DefaultBodyLimit::max(
+                    marginalis_domain::ATTACHMENT_POLICY.max_bytes,
+                )),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/attachments/{attachment_id}",
+            axum::routing::delete(delete_note_attachment),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/attachments/{attachment_id}/content",
+            get(read_note_attachment_content),
+        )
+        .route("/api/v3/notes/{note_id}/history", get(list_note_revisions))
+        .route(
+            "/api/v3/notes/{note_id}/history/{revision}",
+            get(read_note_revision),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/history/{revision}/restore",
+            post(restore_note_revision),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/history-diff",
+            get(compare_note_revisions),
+        )
         .route("/api/v3/notes/{note_id}/restore", post(restore_note))
         .route(
             "/api/v3/notes/{note_id}/acl",

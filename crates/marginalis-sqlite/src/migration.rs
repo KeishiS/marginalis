@@ -1,6 +1,8 @@
 //! 検証済みSQLite退避を伴う、明示的な前進migration。
 
-use crate::schema::{MIGRATIONS, Migration, SCHEMA_VERSION, validate_schema_history_for};
+use crate::schema::{
+    INITIAL_SCHEMA, MIGRATIONS, Migration, SCHEMA_VERSION, validate_schema_history_for,
+};
 use sqlx::{
     Connection, SqliteConnection,
     sqlite::{SqliteConnectOptions, SqliteLockingMode},
@@ -52,34 +54,7 @@ async fn migrate_database_with(
     migrations: &[Migration],
     current_version: i64,
 ) -> Result<DatabaseMigrationReport, DatabaseMigrationError> {
-    let options =
-        SqliteConnectOptions::from_str(database_url).map_err(DatabaseMigrationError::Database)?;
-    let database_path = options.get_filename();
-    if !database_path.is_absolute() || !database_path.is_file() {
-        return Err(DatabaseMigrationError::InvalidDatabasePath);
-    }
-    let database_path = database_path
-        .canonicalize()
-        .map_err(DatabaseMigrationError::BackupIo)?;
-    let backup_path = normalized_new_backup_path(backup_path)?;
-    if backup_path == database_path {
-        return Err(DatabaseMigrationError::InvalidBackupPath);
-    }
-
-    let options = options
-        .create_if_missing(false)
-        .read_only(false)
-        .foreign_keys(false)
-        .locking_mode(SqliteLockingMode::Exclusive)
-        .busy_timeout(Duration::from_secs(5));
-    let mut connection = SqliteConnection::connect_with(&options).await?;
-
-    // EXCLUSIVE locking modeで最初のlockを取得し、connectionを閉じるまで保持する。
-    // VACUUM INTOはtransaction内で実行できないため、空transactionでlockだけを確定する。
-    sqlx::query("BEGIN EXCLUSIVE")
-        .execute(&mut connection)
-        .await?;
-    sqlx::query("ROLLBACK").execute(&mut connection).await?;
+    let (mut connection, backup_path) = open_exclusive_database(database_url, backup_path).await?;
 
     let source_history = read_schema_history(&mut connection).await?;
     let applied = validate_schema_history_for(&source_history, migrations, current_version, true)?;
@@ -97,22 +72,14 @@ async fn migrate_database_with(
         });
     }
 
-    let pending_snapshot = PendingSnapshot::create(&backup_path)?;
-    let snapshot_path = pending_snapshot.snapshot_path().to_owned();
-    let snapshot_value = snapshot_path
-        .to_str()
-        .ok_or(DatabaseMigrationError::InvalidBackupPath)?;
-    sqlx::query("VACUUM INTO ?")
-        .bind(snapshot_value)
-        .execute(&mut connection)
-        .await?;
-    std::fs::set_permissions(
-        &snapshot_path,
-        std::fs::Permissions::from_mode(PRIVATE_FILE_MODE),
+    publish_verified_backup(
+        &mut connection,
+        &backup_path,
+        &source_history,
+        migrations,
+        current_version,
     )
-    .map_err(DatabaseMigrationError::BackupIo)?;
-    verify_snapshot(&snapshot_path, &source_history, migrations, current_version).await?;
-    pending_snapshot.publish()?;
+    .await?;
 
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut connection)
@@ -122,6 +89,14 @@ async fn migrate_database_with(
         sqlx::raw_sql(migration.sql)
             .execute(&mut *transaction)
             .await?;
+        if migration.rebuild_current_schema {
+            sqlx::raw_sql(INITIAL_SCHEMA)
+                .execute(&mut *transaction)
+                .await?;
+            sqlx::raw_sql(migration.copy_sql)
+                .execute(&mut *transaction)
+                .await?;
+        }
         sqlx::query("INSERT INTO schema_migrations (version) VALUES (?)")
             .bind(migration.to)
             .execute(&mut *transaction)
@@ -154,6 +129,67 @@ async fn migrate_database_with(
     })
 }
 
+pub(crate) async fn open_exclusive_database(
+    database_url: &str,
+    backup_path: &Path,
+) -> Result<(SqliteConnection, PathBuf), DatabaseMigrationError> {
+    let options =
+        SqliteConnectOptions::from_str(database_url).map_err(DatabaseMigrationError::Database)?;
+    let database_path = options.get_filename();
+    if !database_path.is_absolute() || !database_path.is_file() {
+        return Err(DatabaseMigrationError::InvalidDatabasePath);
+    }
+    let database_path = database_path
+        .canonicalize()
+        .map_err(DatabaseMigrationError::BackupIo)?;
+    let backup_path = normalized_new_backup_path(backup_path)?;
+    if backup_path == database_path {
+        return Err(DatabaseMigrationError::InvalidBackupPath);
+    }
+
+    let options = options
+        .create_if_missing(false)
+        .read_only(false)
+        .foreign_keys(false)
+        .locking_mode(SqliteLockingMode::Exclusive)
+        .busy_timeout(Duration::from_secs(5));
+    let mut connection = SqliteConnection::connect_with(&options).await?;
+
+    // EXCLUSIVE locking modeで最初のlockを取得し、connectionを閉じるまで保持する。
+    // VACUUM INTOはtransaction内で実行できないため、空transactionでlockだけを確定する。
+    sqlx::query("BEGIN EXCLUSIVE")
+        .execute(&mut connection)
+        .await?;
+    sqlx::query("ROLLBACK").execute(&mut connection).await?;
+    Ok((connection, backup_path))
+}
+
+pub(crate) async fn publish_verified_backup(
+    connection: &mut SqliteConnection,
+    backup_path: &Path,
+    source_history: &[i64],
+    migrations: &[Migration],
+    current_version: i64,
+) -> Result<(), DatabaseMigrationError> {
+    let pending_snapshot = PendingSnapshot::create(backup_path)?;
+    let snapshot_path = pending_snapshot.snapshot_path().to_owned();
+    let snapshot_value = snapshot_path
+        .to_str()
+        .ok_or(DatabaseMigrationError::InvalidBackupPath)?;
+    sqlx::query("VACUUM INTO ?")
+        .bind(snapshot_value)
+        .execute(&mut *connection)
+        .await?;
+    std::fs::set_permissions(
+        &snapshot_path,
+        std::fs::Permissions::from_mode(PRIVATE_FILE_MODE),
+    )
+    .map_err(DatabaseMigrationError::BackupIo)?;
+    verify_snapshot(&snapshot_path, source_history, migrations, current_version).await?;
+    pending_snapshot.publish()?;
+    Ok(())
+}
+
 fn normalized_new_backup_path(path: &Path) -> Result<PathBuf, DatabaseMigrationError> {
     if !path.is_absolute() || path.file_name().is_none() {
         return Err(DatabaseMigrationError::InvalidBackupPath);
@@ -176,13 +212,15 @@ fn normalized_new_backup_path(path: &Path) -> Result<PathBuf, DatabaseMigrationE
     ))
 }
 
-async fn read_schema_history(connection: &mut SqliteConnection) -> Result<Vec<i64>, sqlx::Error> {
+pub(crate) async fn read_schema_history(
+    connection: &mut SqliteConnection,
+) -> Result<Vec<i64>, sqlx::Error> {
     sqlx::query_scalar::<_, i64>("SELECT version FROM schema_migrations ORDER BY version ASC")
         .fetch_all(connection)
         .await
 }
 
-async fn verify_database(connection: &mut SqliteConnection) -> Result<(), sqlx::Error> {
+pub(crate) async fn verify_database(connection: &mut SqliteConnection) -> Result<(), sqlx::Error> {
     let integrity = sqlx::query_scalar::<_, String>("PRAGMA quick_check")
         .fetch_all(&mut *connection)
         .await?;
@@ -314,16 +352,22 @@ mod tests {
     use sqlx::Executor as _;
     use std::fs;
 
+    const SCHEMA_22: &str = include_str!("tests/schema_22.sql");
+
     const TEST_MIGRATIONS: &[Migration] = &[
         Migration {
             from: 22,
             to: 23,
             sql: "ALTER TABLE migration_fixture ADD COLUMN migrated_value TEXT NOT NULL DEFAULT 'first';",
+            rebuild_current_schema: false,
+            copy_sql: "",
         },
         Migration {
             from: 23,
             to: 24,
             sql: "UPDATE migration_fixture SET migrated_value = 'second';",
+            rebuild_current_schema: false,
+            copy_sql: "",
         },
     ];
 
@@ -443,6 +487,8 @@ mod tests {
             from: 22,
             to: 23,
             sql: "ALTER TABLE migration_fixture ADD COLUMN temporary_value TEXT; SELECT missing FROM nowhere;",
+            rebuild_current_schema: false,
+            copy_sql: "",
         }];
 
         migrate_database_with(&database_url, &backup, &failing, 23)
@@ -469,6 +515,218 @@ mod tests {
             .expect("migration can be retried with a new backup path");
         assert_eq!(retried.applied_migrations, 2);
         assert!(retry_backup.is_file());
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[tokio::test]
+    async fn schema_22_data_is_rebuilt_as_the_same_schema_created_fresh_at_23() {
+        let (directory, database, backup) = test_paths("schema-22-to-23");
+        let options = SqliteConnectOptions::new()
+            .filename(&database)
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let mut connection = SqliteConnection::connect_with(&options)
+            .await
+            .expect("schema 22 connection");
+        sqlx::query("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY NOT NULL) STRICT")
+            .execute(&mut connection)
+            .await
+            .expect("schema history");
+        sqlx::query("INSERT INTO schema_migrations (version) VALUES (22)")
+            .execute(&mut connection)
+            .await
+            .expect("baseline history");
+        sqlx::raw_sql(SCHEMA_22)
+            .execute(&mut connection)
+            .await
+            .expect("schema 22");
+        sqlx::raw_sql(
+            r#"
+            INSERT INTO notes (
+                note_id, creator_issuer, creator_subject, title, source, tags_json,
+                created_at_ms, updated_at_ms, revision, deleted_at_ms, created_via,
+                review_tracking_known, reviewed_revision, reviewed_at_ms,
+                reviewer_issuer, reviewer_subject
+            ) VALUES (
+                'note-1', 'https://id.example.test', 'alice', '題名', '= 題名', '[]',
+                1, 2, 1, NULL, 'web', 1, 1, 2,
+                'https://id.example.test', 'alice'
+            );
+            INSERT INTO note_acl (note_id, issuer, subject, permission)
+            VALUES ('note-1', 'https://id.example.test', 'bob', 'read');
+            INSERT INTO note_sync_cursors (
+                cursor_hash, issuer, subject, phase, after_note_id,
+                after_sequence, high_watermark, expires_at_ms
+            ) VALUES (
+                zeroblob(32), 'https://id.example.test', 'alice', 'changes', NULL,
+                1, 1, 1000
+            );
+            INSERT INTO bibliography_items (
+                item_id, owner_issuer, owner_subject, citation_key, csl_json,
+                created_at_ms, updated_at_ms, revision
+            ) VALUES (
+                'item-1', 'https://id.example.test', 'alice', 'smith2026',
+                '{"id":"smith2026","type":"book"}', 1, 2, 1
+            );
+            INSERT INTO math_macro_settings (owner_issuer, owner_subject, macros_json, revision)
+            VALUES ('https://id.example.test', 'alice', '[]', 1);
+            INSERT INTO web_sessions (
+                session_id_hash, csrf_token_hash, issuer, subject, issued_at_ms,
+                last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms, revoked_at_ms
+            ) VALUES (X'01', X'02', 'https://id.example.test', 'alice', 1, 2, 3, 4, NULL);
+            INSERT INTO mcp_clients (
+                client_id, display_name, redirect_uris_json, registration_method, registered_at_ms
+            ) VALUES ('client-1', 'Client', '[]', 'dynamic', 1);
+            INSERT INTO mcp_access_tokens (
+                token_hash, client_id, resource_uri, issuer, subject, scopes,
+                expires_at_ms, revoked_at_ms, last_used_at_ms, token_family_id
+            ) VALUES (
+                X'03', 'client-1', 'https://app.example.test/mcp',
+                'https://id.example.test', 'alice', 'notes:read', 10, NULL, NULL,
+                zeroblob(32)
+            );
+            INSERT INTO webhook_subscriptions (
+                subscription_id, owner_issuer, owner_subject, url, secret,
+                event_kinds_json, state, disabled_reason, created_at_ms, updated_at_ms, revision
+            ) VALUES (
+                'subscription-1', 'https://id.example.test', 'alice',
+                'https://receiver.example.test/hook', 'secret', '["note.created"]',
+                'active', NULL, 1, 1, 1
+            );
+            INSERT INTO webhook_outbox_events (
+                event_sequence, event_id, owner_issuer, owner_subject, event_kind,
+                target_id, revision, occurred_at_ms
+            ) VALUES (
+                20, 'event-1', 'https://id.example.test', 'alice',
+                'note.created', 'note-1', 1, 2
+            );
+            UPDATE webhook_deliveries SET state = 'delivered', attempt_count = 1,
+                last_attempted_at_ms = 3 WHERE event_sequence = 20;
+            "#,
+        )
+        .execute(&mut connection)
+        .await
+        .expect("representative schema 22 data");
+        connection.close().await.expect("close schema 22");
+
+        let report = migrate_database(&format!("sqlite:{}", database.display()), &backup)
+            .await
+            .expect("migrate schema 22");
+        assert_eq!((report.from_version, report.to_version), (22, 23));
+
+        let mut migrated = SqliteConnection::connect_with(
+            &SqliteConnectOptions::new()
+                .filename(&database)
+                .create_if_missing(false)
+                .foreign_keys(true),
+        )
+        .await
+        .expect("migrated database");
+        let identities = sqlx::query_as::<_, (i64, String, String)>(
+            "SELECT principal_id, issuer, subject FROM principal_identities ORDER BY principal_id",
+        )
+        .fetch_all(&mut migrated)
+        .await
+        .expect("principal identities");
+        assert_eq!(
+            identities,
+            vec![
+                (1, "https://id.example.test".into(), "alice".into()),
+                (2, "https://id.example.test".into(), "bob".into()),
+            ]
+        );
+        let note_owner = sqlx::query_as::<_, (i64, Option<i64>)>(
+            "SELECT creator_principal_id, reviewer_principal_id FROM notes WHERE note_id = 'note-1'",
+        )
+        .fetch_one(&mut migrated)
+        .await
+        .expect("migrated note");
+        assert_eq!(note_owner, (1, Some(1)));
+        let note_history = sqlx::query_as::<_, (String, i64, i64, String, String)>(
+            "SELECT note_id, revision, changed_by_principal_id, change_kind, source \
+             FROM note_revisions ORDER BY note_id, revision",
+        )
+        .fetch_all(&mut migrated)
+        .await
+        .expect("migrated note history");
+        assert_eq!(
+            note_history,
+            vec![("note-1".into(), 1, 1, "imported".into(), "= 題名".into(),)]
+        );
+        let session_identity = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT principal_id, authenticated_identity_id FROM web_sessions",
+        )
+        .fetch_one(&mut migrated)
+        .await
+        .expect("migrated session");
+        assert_eq!(session_identity, (1, 1));
+        let delivery = sqlx::query_as::<_, (String, i64, String, i64)>(
+            "SELECT subscription_id, event_sequence, state, attempt_count FROM webhook_deliveries",
+        )
+        .fetch_one(&mut migrated)
+        .await
+        .expect("migrated delivery");
+        assert_eq!(
+            delivery,
+            ("subscription-1".into(), 20, "delivered".into(), 1)
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM note_sync_projection")
+                .fetch_one(&mut migrated)
+                .await
+                .expect("sync changes"),
+            0,
+            "schema migration requires external projections to start with a fresh snapshot"
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM note_sync_cursors")
+                .fetch_one(&mut migrated)
+                .await
+                .expect("sync cursors"),
+            0,
+            "schema migration invalidates cursors that used the old sequence space"
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM domain_changes WHERE event_id = 'event-1'"
+            )
+            .fetch_one(&mut migrated)
+            .await
+            .expect("preserved webhook change"),
+            1
+        );
+
+        let fresh_path = directory.join("fresh.sqlite3");
+        let mut fresh = SqliteConnection::connect_with(
+            &SqliteConnectOptions::new()
+                .filename(&fresh_path)
+                .create_if_missing(true)
+                .foreign_keys(true),
+        )
+        .await
+        .expect("fresh connection");
+        sqlx::query("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY NOT NULL) STRICT")
+            .execute(&mut fresh)
+            .await
+            .expect("fresh history table");
+        sqlx::raw_sql(INITIAL_SCHEMA)
+            .execute(&mut fresh)
+            .await
+            .expect("fresh schema");
+        let schema_query = "SELECT type, name, sql FROM sqlite_schema \
+                            WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name";
+        let migrated_schema = sqlx::query_as::<_, (String, String, Option<String>)>(schema_query)
+            .fetch_all(&mut migrated)
+            .await
+            .expect("migrated schema objects");
+        let fresh_schema = sqlx::query_as::<_, (String, String, Option<String>)>(schema_query)
+            .fetch_all(&mut fresh)
+            .await
+            .expect("fresh schema objects");
+        assert_eq!(migrated_schema, fresh_schema);
+
+        migrated.close().await.expect("close migrated database");
+        fresh.close().await.expect("close fresh database");
         fs::remove_dir_all(directory).expect("remove test directory");
     }
 

@@ -4,8 +4,9 @@
 //! [`marginalis_domain`]の定義を参照する。要求と応答の構造だけをこのmoduleで定義する。
 
 use marginalis_domain::{
-    ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY, NoteAccess, NoteCreationSource,
-    NotePermission, NoteReviewStatus, NoteValidationTarget, Revision,
+    ATTACHMENT_POLICY, AttachmentMediaType, ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY,
+    NoteAccess, NoteCreationSource, NotePermission, NoteReviewStatus, NoteRevisionKind,
+    NoteValidationTarget, Revision,
 };
 use schemars::{JsonSchema, SchemaGenerator, generate::SchemaSettings};
 use serde::{Deserialize, Serialize};
@@ -97,6 +98,11 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         method: "GET",
         specification_path: "/api/v3/notes",
         probe_path: "/api/v3/notes",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/sync/notes",
+        probe_path: "/api/v3/sync/notes",
     },
     RestRouteContract {
         method: "GET",
@@ -192,6 +198,46 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         method: "GET",
         specification_path: "/api/v3/notes/{note_id}/view",
         probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/view",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/history",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/history/{revision}",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history/1",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/notes/{note_id}/history/{revision}/restore",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history/1/restore",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/history-diff",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history-diff",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/attachments",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/notes/{note_id}/attachments",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments",
+    },
+    RestRouteContract {
+        method: "DELETE",
+        specification_path: "/api/v3/notes/{note_id}/attachments/{attachment_id}",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments/0197c9bc-0000-7000-8000-000000000002",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/attachments/{attachment_id}/content",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/attachments/0197c9bc-0000-7000-8000-000000000002/content",
     },
     RestRouteContract {
         method: "POST",
@@ -646,6 +692,51 @@ pub struct NoteResponse {
     pub reviewed_at_ms: Option<i64>,
 }
 
+/// 外部検索用コピーへノートを反映するときの段階。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "NoteSyncPhase")]
+pub enum NoteSyncPhaseResponse {
+    Snapshot,
+    Changes,
+}
+
+/// 外部検索用コピーからノートを除く理由。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "NoteSyncRemovalReason")]
+pub enum NoteSyncRemovalReasonResponse {
+    Deleted,
+    AccessRevoked,
+}
+
+/// 外部検索用コピーへ反映する一件の変更。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[schemars(rename = "NoteSyncEntry")]
+pub enum NoteSyncEntryResponse {
+    Upsert {
+        note: NoteResponse,
+    },
+    Remove {
+        #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
+        note_id: String,
+        reason: NoteSyncRemovalReasonResponse,
+    },
+}
+
+/// 外部検索用コピーへ反映する一頁。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteSyncPage")]
+pub struct NoteSyncPageResponse {
+    pub phase: NoteSyncPhaseResponse,
+    pub entries: Vec<NoteSyncEntryResponse>,
+    pub next_cursor: String,
+    pub has_more: bool,
+    pub cursor_expires_at_ms: i64,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "NoteSummary")]
@@ -699,6 +790,66 @@ pub struct NoteReviewResponse {
     #[schemars(required)]
     #[schemars(transform = nullable)]
     pub reviewer_subject: Option<String>,
+}
+
+/// 本文を含まない一つのrevision情報。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteRevisionSummary")]
+pub struct NoteRevisionSummaryResponse {
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub revision: i64,
+    pub changed_at_ms: i64,
+    pub changed_by_issuer: String,
+    pub changed_by_subject: String,
+    pub kind: NoteRevisionKind,
+}
+
+/// 一つのrevisionが確定した直後のノート状態。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteRevision")]
+pub struct NoteRevisionResponse {
+    pub note: NoteResponse,
+    pub access: NoteAccess,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    pub deleted_at_ms: Option<i64>,
+    pub changed_by_issuer: String,
+    pub changed_by_subject: String,
+    pub kind: NoteRevisionKind,
+}
+
+/// 二つのrevisionのAsciiDoc原文から要求時に生成した行単位の差分。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteRevisionDiff")]
+pub struct NoteRevisionDiffResponse {
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub from_revision: i64,
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub to_revision: i64,
+    pub unified_diff: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteAttachment")]
+pub struct NoteAttachmentResponse {
+    #[schemars(regex(pattern = ENTITY_ID_PATTERN))]
+    pub attachment_id: String,
+    #[schemars(length(min = 1, max = 200))]
+    pub file_name: String,
+    pub media_type: AttachmentMediaType,
+    #[schemars(range(min = 1, max = ATTACHMENT_POLICY.max_bytes))]
+    pub byte_length: usize,
+    #[schemars(regex(pattern = "^[0-9a-f]{64}$"))]
+    pub sha256: String,
+    pub created_at_ms: i64,
+    pub created_by_issuer: String,
+    pub created_by_subject: String,
+    /// AsciiDoc本文へ挿入する内部画像target。
+    pub source_target: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -796,6 +947,7 @@ pub struct NoteGraphCitationResponse {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "NoteAclEntry")]
 pub struct NoteAclEntryInput {
+    pub issuer: String,
     #[schemars(length(min = 1, max = 1024))]
     pub subject: String,
     pub permission: NotePermission,
@@ -1074,9 +1226,14 @@ pub(crate) fn component_schemas() -> Value {
     generator.subschema_for::<BibliographyImportApplyInput>();
     generator.subschema_for::<BibliographyImportResultResponse>();
     generator.subschema_for::<NoteResponse>();
+    generator.subschema_for::<NoteSyncPageResponse>();
     generator.subschema_for::<NoteSummaryResponse>();
     generator.subschema_for::<NoteListEntryResponse>();
     generator.subschema_for::<NoteReviewResponse>();
+    generator.subschema_for::<NoteRevisionSummaryResponse>();
+    generator.subschema_for::<NoteRevisionResponse>();
+    generator.subschema_for::<NoteRevisionDiffResponse>();
+    generator.subschema_for::<NoteAttachmentResponse>();
     generator.subschema_for::<DeletedNoteListEntryResponse>();
     generator.subschema_for::<NoteViewResponse>();
     generator.subschema_for::<NoteGraphResponse>();
@@ -1094,7 +1251,7 @@ pub fn openapi_document() -> Value {
             "title": "Marginalis REST API",
             "version": API_VERSION,
             "x-adocweave-package-version": env!("MARGINALIS_ADOCWEAVE_VERSION"),
-            "x-note-profile-version": 17
+            "x-note-profile-version": 18
         },
         "paths": rest_paths(),
         "components": {
@@ -1114,6 +1271,22 @@ pub fn openapi_document() -> Value {
                     "schema": {"$ref": "#/components/schemas/NoteCreationSource"}},
                 "ReviewStatus": {"name": "review_status", "in": "query", "required": false,
                     "schema": {"$ref": "#/components/schemas/NoteReviewStatus"}},
+                "Revision": {"name": "revision", "in": "path", "required": true,
+                    "schema": {"type": "integer", "minimum": 1}},
+                "FromRevision": {"name": "from_revision", "in": "query", "required": true,
+                    "schema": {"type": "integer", "minimum": 1}},
+                "ToRevision": {"name": "to_revision", "in": "query", "required": true,
+                    "schema": {"type": "integer", "minimum": 1}},
+                "AttachmentId": {"name": "attachment_id", "in": "path", "required": true,
+                    "schema": note_id_schema()},
+                "AttachmentFileName": {"name": "file_name", "in": "query", "required": true,
+                    "schema": {"type": "string", "minLength": 1, "maxLength": 200}},
+                "SyncCursor": {"name": "cursor", "in": "query", "required": false,
+                    "schema": {"type": "string", "minLength": 1},
+                    "description": "直前の応答に含まれるnext_cursor。初回は省略する"},
+                "SyncLimit": {"name": "limit", "in": "query", "required": false,
+                    "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50},
+                    "description": "一頁で返す変更件数"},
                 "McpScopeCeilingRevision": {"name": "revision", "in": "query", "required": true,
                     "schema": {"type": "integer", "minimum": 1},
                     "description": "解除する上限のrevision。現在の値と一致しない場合は409を返す"},
@@ -1128,10 +1301,18 @@ pub fn openapi_document() -> Value {
                 "PreconditionRequired": problem_response("If-Match is required"),
                 "BadRequest": problem_response("the request syntax or If-Match value is invalid"),
                 "AuthenticationRequired": problem_response("OIDC session is required"),
+                "OAuthAuthenticationRequired": problem_response("OAuth access token is required or invalid"),
                 "CsrfRejected": problem_response("same-origin or CSRF validation failed"),
                 "Unavailable": problem_response("the service is temporarily unavailable"),
                 "ValidationFailed": problem_response("note input is invalid"),
                 "UnprocessableNote": problem_response("the note input is invalid or cannot be rendered safely")
+            },
+            "securitySchemes": {
+                "OAuthAccessToken": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "description": "WWW-Authenticateが示すProtected Resource Metadataから取得するOAuth 2.1 access token"
+                }
             }
         }
     })
@@ -1221,6 +1402,21 @@ fn rest_paths() -> Value {
                 ("403", response_ref("CsrfRejected")),
                 ("422", response_ref("UnprocessableNote"))
             ]))
+        },
+        "/api/v3/sync/notes": {
+            "get": oauth_operation(
+                "Synchronize an external search projection",
+                &["SyncCursor", "SyncLimit"],
+                "notes:sync",
+                responses(&[
+                    ("200", schema_response("one synchronization page", "NoteSyncPage")),
+                    ("400", response_ref("BadRequest")),
+                    ("401", response_ref("OAuthAuthenticationRequired")),
+                    ("403", problem_response("the access token does not grant notes:sync")),
+                    ("410", problem_response("the synchronization cursor has expired")),
+                    ("503", response_ref("Unavailable"))
+                ])
+            )
         },
         "/api/v3/web/notes": {
             "post": operation("Create a note from the Web UI", &["CsrfToken"], Some("NoteDraft"), responses(&[
@@ -1371,6 +1567,90 @@ fn rest_paths() -> Value {
                 ("422", response_ref("ValidationFailed"))
             ]))
         },
+        "/api/v3/notes/{note_id}/history": {
+            "parameters": [parameter_ref("NoteId")],
+            "get": operation("List visible note revisions without source", &[], None, responses(&[
+                ("200", array_response("note revision summaries", "NoteRevisionSummary")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/history/{revision}": {
+            "parameters": [parameter_ref("NoteId"), parameter_ref("Revision")],
+            "get": operation("Read one visible note revision", &[], None, responses(&[
+                ("200", schema_response("note revision", "NoteRevision")),
+                ("400", response_ref("BadRequest")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/history/{revision}/restore": {
+            "parameters": [parameter_ref("NoteId"), parameter_ref("Revision")],
+            "post": operation("Restore historical source as a new revision", &["CsrfToken", "IfMatch"], None, mutation_responses("note restored from history"))
+        },
+        "/api/v3/notes/{note_id}/history-diff": {
+            "parameters": [parameter_ref("NoteId")],
+            "get": operation("Compare two visible note revisions", &["FromRevision", "ToRevision"], None, responses(&[
+                ("200", schema_response("line-oriented Unified Diff", "NoteRevisionDiff")),
+                ("400", response_ref("BadRequest")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/attachments": {
+            "parameters": [parameter_ref("NoteId")],
+            "get": operation("List note attachments", &[], None, responses(&[
+                ("200", array_response("note attachment metadata", "NoteAttachment")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ])),
+            "post": {
+                "summary": "Upload one immutable note image",
+                "parameters": [parameter_ref("AttachmentFileName"), parameter_ref("CsrfToken")],
+                "requestBody": {
+                    "required": true,
+                    "content": {"application/octet-stream": {"schema": {
+                        "type": "string", "format": "binary",
+                        "x-maxBytes": ATTACHMENT_POLICY.max_bytes
+                    }}}
+                },
+                "responses": responses(&[
+                    ("201", schema_response("uploaded note attachment", "NoteAttachment")),
+                    ("401", response_ref("AuthenticationRequired")),
+                    ("403", response_ref("CsrfRejected")),
+                    ("404", response_ref("NotFound")),
+                    ("409", response_ref("Conflict")),
+                    ("422", response_ref("ValidationFailed")),
+                    ("503", response_ref("Unavailable"))
+                ])
+            }
+        },
+        "/api/v3/notes/{note_id}/attachments/{attachment_id}": {
+            "parameters": [parameter_ref("NoteId"), parameter_ref("AttachmentId")],
+            "delete": operation("Delete an unreferenced note attachment", &["CsrfToken"], None, responses(&[
+                ("204", json!({"description": "unreferenced attachment deleted"})),
+                ("401", response_ref("AuthenticationRequired")),
+                ("403", response_ref("CsrfRejected")),
+                ("404", response_ref("NotFound")),
+                ("409", response_ref("Conflict")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/attachments/{attachment_id}/content": {
+            "parameters": [parameter_ref("NoteId"), parameter_ref("AttachmentId")],
+            "get": {
+                "summary": "Read one authorized note image",
+                "responses": {
+                    "200": {"description": "image bytes", "content": {
+                        "image/png": {"schema": {"type": "string", "format": "binary"}},
+                        "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                        "image/webp": {"schema": {"type": "string", "format": "binary"}}
+                    }},
+                    "404": response_ref("NotFound"),
+                    "503": response_ref("Unavailable")
+                }
+            }
+        },
         "/api/v3/notes/{note_id}/acl": {
             "parameters": [parameter_ref("NoteId")],
             "get": operation("Read note ACL", &[], None, responses(&[
@@ -1480,6 +1760,13 @@ fn operation(summary: &str, parameters: &[&str], body: Option<&str>, responses: 
             "content": {"application/json": {"schema": {"$ref": format!("#/components/schemas/{schema}")}}}
         });
     }
+    value
+}
+
+fn oauth_operation(summary: &str, parameters: &[&str], scope: &str, responses: Value) -> Value {
+    let mut value = operation(summary, parameters, None, responses);
+    value["security"] = json!([{"OAuthAccessToken": []}]);
+    value["x-required-oauth-scope"] = json!(scope);
     value
 }
 
@@ -1606,6 +1893,14 @@ mod tests {
     fn generated_contracts_use_one_api_version_and_conditional_updates() {
         let document = openapi_document();
         assert_eq!(document["info"]["version"], API_VERSION);
+        assert_eq!(
+            document["paths"]["/api/v3/sync/notes"]["get"]["x-required-oauth-scope"],
+            "notes:sync"
+        );
+        assert_eq!(
+            document["components"]["securitySchemes"]["OAuthAccessToken"]["scheme"],
+            "bearer"
+        );
         assert_eq!(
             document["components"]["parameters"]["BibliographyQuery"]["schema"]["maxLength"],
             256

@@ -5,7 +5,7 @@ use core::{fmt, str::FromStr};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{EntityId, Identity, Revision, UnixMillis};
+use super::{EntityId, PrincipalRef, Revision, UnixMillis};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct NoteId(EntityId);
@@ -29,7 +29,7 @@ impl fmt::Display for NoteId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Note {
     note_id: NoteId,
-    owner: Identity,
+    owner: PrincipalRef,
     title: String,
     source: String,
     tags: Vec<String>,
@@ -95,6 +95,60 @@ pub enum NoteReviewStatus {
     Reviewed,
 }
 
+/// ノートのrevisionを生じさせた操作。
+///
+/// 本文に差がないACL変更や確認操作も、競合検出では同じrevisionを進めるため履歴へ残す。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteRevisionKind {
+    Created,
+    ContentUpdated,
+    AclUpdated,
+    Reviewed,
+    Deleted,
+    Restored,
+    HistoryRestored,
+    /// 履歴導入前の現行版または旧archiveから作った基準点。
+    Imported,
+}
+
+impl NoteRevisionKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::ContentUpdated => "content_updated",
+            Self::AclUpdated => "acl_updated",
+            Self::Reviewed => "reviewed",
+            Self::Deleted => "deleted",
+            Self::Restored => "restored",
+            Self::HistoryRestored => "history_restored",
+            Self::Imported => "imported",
+        }
+    }
+}
+
+impl FromStr for NoteRevisionKind {
+    type Err = InvalidNoteRevisionKind;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "created" => Ok(Self::Created),
+            "content_updated" => Ok(Self::ContentUpdated),
+            "acl_updated" => Ok(Self::AclUpdated),
+            "reviewed" => Ok(Self::Reviewed),
+            "deleted" => Ok(Self::Deleted),
+            "restored" => Ok(Self::Restored),
+            "history_restored" => Ok(Self::HistoryRestored),
+            "imported" => Ok(Self::Imported),
+            _ => Err(InvalidNoteRevisionKind),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("note revision kind is invalid")]
+pub struct InvalidNoteRevisionKind;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("note review status is invalid")]
 pub struct InvalidNoteReviewStatus;
@@ -127,11 +181,11 @@ impl FromStr for NoteReviewStatus {
 pub struct NoteReviewRecord {
     revision: Revision,
     reviewed_at: UnixMillis,
-    reviewer: Identity,
+    reviewer: PrincipalRef,
 }
 
 impl NoteReviewRecord {
-    pub const fn new(revision: Revision, reviewed_at: UnixMillis, reviewer: Identity) -> Self {
+    pub const fn new(revision: Revision, reviewed_at: UnixMillis, reviewer: PrincipalRef) -> Self {
         Self {
             revision,
             reviewed_at,
@@ -147,7 +201,7 @@ impl NoteReviewRecord {
         self.reviewed_at
     }
 
-    pub const fn reviewer(&self) -> &Identity {
+    pub const fn reviewer(&self) -> &PrincipalRef {
         &self.reviewer
     }
 }
@@ -194,7 +248,7 @@ impl NoteReviewTracking {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteRestore {
     pub note_id: NoteId,
-    pub owner: Identity,
+    pub owner: PrincipalRef,
     pub draft: NoteDraft,
     pub created_at: UnixMillis,
     pub updated_at: UnixMillis,
@@ -207,7 +261,7 @@ pub struct NoteRestore {
 impl Note {
     pub fn create(
         note_id: NoteId,
-        owner: &Identity,
+        owner: &PrincipalRef,
         draft: NoteDraft,
         created_at: UnixMillis,
         created_via: NoteCreationSource,
@@ -270,16 +324,8 @@ impl Note {
         self.note_id
     }
 
-    pub const fn owner(&self) -> &Identity {
+    pub const fn owner(&self) -> &PrincipalRef {
         &self.owner
-    }
-
-    pub fn creator_issuer(&self) -> &str {
-        self.owner.issuer()
-    }
-
-    pub fn creator_subject(&self) -> &str {
-        self.owner.subject()
     }
 
     pub fn title(&self) -> &str {
@@ -324,6 +370,63 @@ impl Note {
 
     pub const fn review_tracking_known(&self) -> bool {
         matches!(self.review, NoteReviewTracking::Tracked { .. })
+    }
+}
+
+/// 一つのrevisionが確定した直後の完全なノート状態と、その変更者。
+///
+/// ACLは現在値だけを認可に使い、過去の共有先identityを履歴閲覧者へ開示しないため、ここには
+/// 含めない。添付参照もrevisionを親とする別の集合として保存し、この値へbytesや参照集合を混ぜない。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteRevisionSnapshot {
+    note: Note,
+    changed_by: PrincipalRef,
+    kind: NoteRevisionKind,
+}
+
+impl NoteRevisionSnapshot {
+    pub const fn new(note: Note, changed_by: PrincipalRef, kind: NoteRevisionKind) -> Self {
+        Self {
+            note,
+            changed_by,
+            kind,
+        }
+    }
+
+    pub const fn note(&self) -> &Note {
+        &self.note
+    }
+
+    pub const fn changed_by(&self) -> &PrincipalRef {
+        &self.changed_by
+    }
+
+    pub const fn kind(&self) -> NoteRevisionKind {
+        self.kind
+    }
+
+    pub const fn changed_at(&self) -> UnixMillis {
+        self.note.updated_at()
+    }
+}
+
+/// 履歴一覧に返す、本文を含まないrevision情報。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteRevisionSummary {
+    pub revision: Revision,
+    pub changed_at: UnixMillis,
+    pub changed_by: PrincipalRef,
+    pub kind: NoteRevisionKind,
+}
+
+impl From<&NoteRevisionSnapshot> for NoteRevisionSummary {
+    fn from(snapshot: &NoteRevisionSnapshot) -> Self {
+        Self {
+            revision: snapshot.note().revision(),
+            changed_at: snapshot.changed_at(),
+            changed_by: snapshot.changed_by().clone(),
+            kind: snapshot.kind(),
+        }
     }
 }
 
@@ -396,20 +499,20 @@ pub enum NotePermission {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclEntry {
-    identity: Identity,
+    principal: PrincipalRef,
     permission: NotePermission,
 }
 
 impl NoteAclEntry {
-    pub const fn new(identity: Identity, permission: NotePermission) -> Self {
+    pub const fn new(principal: PrincipalRef, permission: NotePermission) -> Self {
         Self {
-            identity,
+            principal,
             permission,
         }
     }
 
-    pub const fn identity(&self) -> &Identity {
-        &self.identity
+    pub const fn principal(&self) -> &PrincipalRef {
+        &self.principal
     }
 
     pub const fn permission(&self) -> NotePermission {
@@ -466,13 +569,19 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::model::InvalidRevision;
+    use crate::model::{Identity, InvalidRevision, PrincipalId};
+
+    fn owner() -> PrincipalRef {
+        PrincipalRef::new(
+            PrincipalId::new(1).expect("principal ID"),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+        )
+    }
 
     #[test]
     fn note_restoration_enforces_revision_and_time_ordering() {
         let note_id = NoteId::new(EntityId::try_from_uuid(Uuid::now_v7()).expect("UUIDv7"));
-        let owner =
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner");
+        let owner = owner();
         let restore = |created_at, updated_at, revision, deleted_at: Option<i64>| {
             Note::restore(NoteRestore {
                 note_id,
@@ -506,8 +615,7 @@ mod tests {
 
     #[test]
     fn review_status_distinguishes_unknown_pending_current_and_stale() {
-        let owner =
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner");
+        let owner = owner();
         let current = Revision::new(3).expect("revision");
 
         assert_eq!(

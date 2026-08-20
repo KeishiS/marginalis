@@ -127,10 +127,12 @@ templateを``path``として記録します。未一致の経路は``<unmatched>
 |``mcp.oauth.client_metadata.throttled``
 |Client ID Metadata Documentの取得が回数上限に達したこと
 |``mcp.authentication.failed``
-|access tokenの拒否
-|``mcp.authentication.unavailable``
+|MCP requestでのaccess tokenの欠落または形式不正
+|``oauth.resource.authentication.failed``
+|OAuthで保護したMCPまたは同期RESTでのaccess tokenの拒否
+|``oauth.resource.authentication.unavailable``
 |SQLiteによるtoken検証の障害
-|``mcp.authorization.failed``
+|``oauth.resource.authorization.failed``
 |検証済みtokenのscope不足
 |``mcp.protocol.selected``
 |固定した``protocol_era``、対応済み``protocol_version``、``method``によるmodern/legacy経路の選択
@@ -187,6 +189,12 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |SQLite schemaの前進migration
 |``maintenance.database_migration.completed``
 |``maintenance.database_migration.failed``
+|OIDC identityの引き継ぎ
+|``maintenance.identity_link.completed``
+|``maintenance.identity_link.failed``
+|代表identityの変更
+|``maintenance.identity_primary.completed``
+|``maintenance.identity_primary.failed``
 |archive書き出し
 |``maintenance.archive_export.completed``
 |``maintenance.archive_export.failed``
@@ -212,6 +220,10 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |``maintenance.restore_verification.completed``
 |``maintenance.restore_verification.failed``
 |===
+
+identityの引き継ぎと代表identityの変更は、成功時にSQLite退避のpathを記録します。引き継ぎでは
+代表identityも変更したかどうかを``primary_changed``で示します。issuer、subject、``PrincipalId``、
+``identity_id``は成功時と失敗時のどちらにも記録しません。
 
 === Webhook配送
 

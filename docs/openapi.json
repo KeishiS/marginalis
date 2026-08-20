@@ -1,6 +1,26 @@
 {
   "components": {
     "parameters": {
+      "AttachmentFileName": {
+        "in": "query",
+        "name": "file_name",
+        "required": true,
+        "schema": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "AttachmentId": {
+        "in": "path",
+        "name": "attachment_id",
+        "required": true,
+        "schema": {
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "type": "string"
+        }
+      },
       "BibliographyQuery": {
         "description": "citation key、題名、著者、DOIのいずれかにこの語を含む文献だけへ絞る",
         "in": "query",
@@ -26,6 +46,15 @@
         "schema": {
           "minLength": 1,
           "type": "string"
+        }
+      },
+      "FromRevision": {
+        "in": "query",
+        "name": "from_revision",
+        "required": true,
+        "schema": {
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "GraphDepth": {
@@ -95,6 +124,46 @@
         "schema": {
           "$ref": "#/components/schemas/NoteReviewStatus"
         }
+      },
+      "Revision": {
+        "in": "path",
+        "name": "revision",
+        "required": true,
+        "schema": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "SyncCursor": {
+        "description": "直前の応答に含まれるnext_cursor。初回は省略する",
+        "in": "query",
+        "name": "cursor",
+        "required": false,
+        "schema": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "SyncLimit": {
+        "description": "一頁で返す変更件数",
+        "in": "query",
+        "name": "limit",
+        "required": false,
+        "schema": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "ToRevision": {
+        "in": "query",
+        "name": "to_revision",
+        "required": true,
+        "schema": {
+          "minimum": 1,
+          "type": "integer"
+        }
       }
     },
     "responses": {
@@ -147,6 +216,16 @@
           }
         },
         "description": "note or authorization is not visible"
+      },
+      "OAuthAuthenticationRequired": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "OAuth access token is required or invalid"
       },
       "PreconditionRequired": {
         "content": {
@@ -233,6 +312,15 @@
           "styleNonce"
         ],
         "type": "object"
+      },
+      "AttachmentMediaType": {
+        "description": "ブラウザーへ能動的な内容として解釈されない、初期対応の静止画像形式。",
+        "enum": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "type": "string"
       },
       "BibliographyImportApplyInput": {
         "additionalProperties": false,
@@ -967,6 +1055,9 @@
       "NoteAclEntry": {
         "additionalProperties": false,
         "properties": {
+          "issuer": {
+            "type": "string"
+          },
           "permission": {
             "$ref": "#/components/schemas/NotePermission"
           },
@@ -977,6 +1068,7 @@
           }
         },
         "required": [
+          "issuer",
           "subject",
           "permission"
         ],
@@ -1016,6 +1108,59 @@
         },
         "required": [
           "entries"
+        ],
+        "type": "object"
+      },
+      "NoteAttachment": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "byte_length": {
+            "format": "uint",
+            "maximum": 8388608,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "created_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_by_issuer": {
+            "type": "string"
+          },
+          "created_by_subject": {
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "media_type": {
+            "$ref": "#/components/schemas/AttachmentMediaType"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "source_target": {
+            "description": "AsciiDoc本文へ挿入する内部画像target。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachment_id",
+          "file_name",
+          "media_type",
+          "byte_length",
+          "sha256",
+          "created_at_ms",
+          "created_by_issuer",
+          "created_by_subject",
+          "source_target"
         ],
         "type": "object"
       },
@@ -1381,6 +1526,122 @@
         ],
         "type": "string"
       },
+      "NoteRevision": {
+        "additionalProperties": false,
+        "description": "一つのrevisionが確定した直後のノート状態。",
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/NoteAccess"
+          },
+          "changed_by_issuer": {
+            "type": "string"
+          },
+          "changed_by_subject": {
+            "type": "string"
+          },
+          "deleted_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NoteRevisionKind"
+          },
+          "note": {
+            "$ref": "#/components/schemas/Note"
+          }
+        },
+        "required": [
+          "note",
+          "access",
+          "deleted_at_ms",
+          "changed_by_issuer",
+          "changed_by_subject",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "NoteRevisionDiff": {
+        "additionalProperties": false,
+        "description": "二つのrevisionのAsciiDoc原文から要求時に生成した行単位の差分。",
+        "properties": {
+          "from_revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "to_revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "unified_diff": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_revision",
+          "to_revision",
+          "unified_diff"
+        ],
+        "type": "object"
+      },
+      "NoteRevisionKind": {
+        "description": "ノートのrevisionを生じさせた操作。\n\n本文に差がないACL変更や確認操作も、競合検出では同じrevisionを進めるため履歴へ残す。",
+        "oneOf": [
+          {
+            "enum": [
+              "created",
+              "content_updated",
+              "acl_updated",
+              "reviewed",
+              "deleted",
+              "restored",
+              "history_restored"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "imported",
+            "description": "履歴導入前の現行版または旧archiveから作った基準点。",
+            "type": "string"
+          }
+        ]
+      },
+      "NoteRevisionSummary": {
+        "additionalProperties": false,
+        "description": "本文を含まない一つのrevision情報。",
+        "properties": {
+          "changed_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "changed_by_issuer": {
+            "type": "string"
+          },
+          "changed_by_subject": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NoteRevisionKind"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "changed_at_ms",
+          "changed_by_issuer",
+          "changed_by_subject",
+          "kind"
+        ],
+        "type": "object"
+      },
       "NoteSourcePosition": {
         "additionalProperties": false,
         "properties": {
@@ -1534,6 +1795,97 @@
           "reviewed_at_ms"
         ],
         "type": "object"
+      },
+      "NoteSyncEntry": {
+        "description": "外部検索用コピーへ反映する一件の変更。",
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "const": "upsert",
+                "type": "string"
+              },
+              "note": {
+                "$ref": "#/components/schemas/Note"
+              }
+            },
+            "required": [
+              "kind",
+              "note"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "remove",
+                "type": "string"
+              },
+              "note_id": {
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                "type": "string"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/NoteSyncRemovalReason"
+              }
+            },
+            "required": [
+              "kind",
+              "note_id",
+              "reason"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "NoteSyncPage": {
+        "additionalProperties": false,
+        "description": "外部検索用コピーへ反映する一頁。",
+        "properties": {
+          "cursor_expires_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/NoteSyncEntry"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/NoteSyncPhase"
+          }
+        },
+        "required": [
+          "phase",
+          "entries",
+          "next_cursor",
+          "has_more",
+          "cursor_expires_at_ms"
+        ],
+        "type": "object"
+      },
+      "NoteSyncPhase": {
+        "description": "外部検索用コピーへノートを反映するときの段階。",
+        "enum": [
+          "snapshot",
+          "changes"
+        ],
+        "type": "string"
+      },
+      "NoteSyncRemovalReason": {
+        "description": "外部検索用コピーからノートを除く理由。",
+        "enum": [
+          "deleted",
+          "access_revoked"
+        ],
+        "type": "string"
       },
       "NoteValidationTarget": {
         "description": "入力上の問題が、ノート入力のどの部分にあるかを示す位置。\n\nREST、MCP、Web UIで同じ表現を使用する。`field`を判別子とし、`tag`と`acl_entry`は\n対象の添字を伴う。",
@@ -1971,13 +2323,20 @@
         ],
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "OAuthAccessToken": {
+        "description": "WWW-Authenticateが示すProtected Resource Metadataから取得するOAuth 2.1 access token",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
     "title": "Marginalis REST API",
     "version": "v3",
     "x-adocweave-package-version": "0.41.0",
-    "x-note-profile-version": 17
+    "x-note-profile-version": 18
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2994,6 +3353,331 @@
         "summary": "Replace note ACL"
       }
     },
+    "/api/v3/notes/{note_id}/attachments": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NoteAttachment"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "note attachment metadata"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "List note attachments"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AttachmentFileName"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string",
+                "x-maxBytes": 8388608
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteAttachment"
+                }
+              }
+            },
+            "description": "uploaded note attachment"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Upload one immutable note image"
+      }
+    },
+    "/api/v3/notes/{note_id}/attachments/{attachment_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "unreferenced attachment deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CsrfRejected"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Delete an unreferenced note attachment"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        },
+        {
+          "$ref": "#/components/parameters/AttachmentId"
+        }
+      ]
+    },
+    "/api/v3/notes/{note_id}/attachments/{attachment_id}/content": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "image bytes"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Read one authorized note image"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        },
+        {
+          "$ref": "#/components/parameters/AttachmentId"
+        }
+      ]
+    },
+    "/api/v3/notes/{note_id}/history": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NoteRevisionSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "note revision summaries"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "List visible note revisions without source"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        }
+      ]
+    },
+    "/api/v3/notes/{note_id}/history-diff": {
+      "get": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FromRevision"
+          },
+          {
+            "$ref": "#/components/parameters/ToRevision"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteRevisionDiff"
+                }
+              }
+            },
+            "description": "line-oriented Unified Diff"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Compare two visible note revisions"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        }
+      ]
+    },
+    "/api/v3/notes/{note_id}/history/{revision}": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteRevision"
+                }
+              }
+            },
+            "description": "note revision"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Read one visible note revision"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        },
+        {
+          "$ref": "#/components/parameters/Revision"
+        }
+      ]
+    },
+    "/api/v3/notes/{note_id}/history/{revision}/restore": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        },
+        {
+          "$ref": "#/components/parameters/Revision"
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            },
+            "description": "note restored from history",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableNote"
+          },
+          "428": {
+            "$ref": "#/components/responses/PreconditionRequired"
+          }
+        },
+        "summary": "Restore historical source as a new revision"
+      }
+    },
     "/api/v3/notes/{note_id}/preview": {
       "parameters": [
         {
@@ -3250,6 +3934,66 @@
           }
         },
         "summary": "Read the current identity"
+      }
+    },
+    "/api/v3/sync/notes": {
+      "get": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SyncCursor"
+          },
+          {
+            "$ref": "#/components/parameters/SyncLimit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSyncPage"
+                }
+              }
+            },
+            "description": "one synchronization page"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/OAuthAuthenticationRequired"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the access token does not grant notes:sync"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the synchronization cursor has expired"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OAuthAccessToken": []
+          }
+        ],
+        "summary": "Synchronize an external search projection",
+        "x-required-oauth-scope": "notes:sync"
       }
     },
     "/api/v3/web/notes": {

@@ -41,6 +41,7 @@ vi.mock("../src/AsciiDocEditor", async () => {
       forwardedRef: React.ForwardedRef<{
         focus: () => void;
         selectRange: (anchor: number, head: number) => void;
+        insertText: (text: string) => void;
         setScrollRatio: () => void;
       }>,
     ) {
@@ -56,8 +57,14 @@ vi.mock("../src/AsciiDocEditor", async () => {
             input.current?.setSelectionRange(anchor, head);
           },
           setScrollRatio() {},
+          insertText(text) {
+            if (!input.current) return;
+            const start = input.current.selectionStart;
+            const end = input.current.selectionEnd;
+            onChange(`${value.slice(0, start)}${text}${value.slice(end)}`);
+          },
         }),
-        [],
+        [onChange, value],
       );
       return (
         <textarea
@@ -148,6 +155,7 @@ test("キーボード保存の成功を右上の通知で伝える", async () =>
   const fetchMock = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(jsonResponse(NOTE, 201))
+    .mockResolvedValueOnce(jsonResponse([]))
     .mockResolvedValueOnce(
       jsonResponse({ code: "internal_error", message: "failed" }, 500),
     );
@@ -164,7 +172,7 @@ test("キーボード保存の成功を右上の通知で伝える", async () =>
     "aria-live",
     "polite",
   );
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(screen.getByText("変更は保存されています。")).toHaveAttribute(
     "role",
     "status",
@@ -183,6 +191,7 @@ test("既存文書を読み込み、更新番号を付けて保存する", async
   const fetchMock = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(jsonResponse(NOTE))
+    .mockResolvedValueOnce(jsonResponse([]))
     .mockResolvedValueOnce(
       jsonResponse({ ...NOTE, source: updatedSource, revision: 4 }),
     );
@@ -199,8 +208,15 @@ test("既存文書を読み込み、更新番号を付けて保存する", async
   fireEvent.change(editor, { target: { value: updatedSource } });
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-  expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.some((call) => call[1]?.method === "PUT")).toBe(
+      true,
+    ),
+  );
+  const updateCall = fetchMock.mock.calls.find(
+    (call) => call[1]?.method === "PUT",
+  );
+  expect(updateCall?.[1]).toEqual(
     expect.objectContaining({
       method: "PUT",
       body: JSON.stringify({ source: updatedSource }),
@@ -213,6 +229,7 @@ test("既存文書のプレビューを対象ノート付きの経路へ送る",
   const fetchMock = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(jsonResponse(NOTE))
+    .mockResolvedValueOnce(jsonResponse([]))
     .mockResolvedValueOnce(
       jsonResponse({
         html: "<p>既存の本文</p>",
@@ -227,7 +244,13 @@ test("既存文書のプレビューを対象ノート付きの経路へ送る",
       config={{ ...CONFIG, mode: "edit", noteId: NOTE.note_id }}
     />,
   );
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        String(call[0]).endsWith(`/${NOTE.note_id}/preview`),
+      ),
+    ).toBe(true),
+  );
 
   expect(fetchMock).toHaveBeenCalledWith(
     `/marginalis/api/v3/notes/${NOTE.note_id}/preview`,
@@ -249,6 +272,7 @@ test("競合時も編集中の完全な文書を維持する", async () => {
   const fetchMock = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(jsonResponse(NOTE))
+    .mockResolvedValueOnce(jsonResponse([]))
     .mockResolvedValueOnce(
       jsonResponse({ code: "conflict", message: "conflict" }, 409),
     )

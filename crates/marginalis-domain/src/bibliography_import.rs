@@ -4,7 +4,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BibliographyItemId, EntityId, Identity, Revision, UnixMillis};
+use crate::{BibliographyItemId, EntityId, PrincipalRef, Revision, UnixMillis};
 
 pub const MAX_BIBLIOGRAPHY_IMPORT_SOURCE_NAME_CHARACTERS: usize = 128;
 pub const MAX_BIBLIOGRAPHY_EXTERNAL_ITEM_ID_BYTES: usize = 128;
@@ -40,7 +40,7 @@ pub enum BibliographyImportMethod {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BibliographyImportSource {
     source_id: BibliographyImportSourceId,
-    owner: Identity,
+    owner: PrincipalRef,
     method: BibliographyImportMethod,
     display_name: String,
     revision: Revision,
@@ -55,7 +55,7 @@ pub struct InvalidBibliographyImportSource;
 impl BibliographyImportSource {
     pub fn create(
         source_id: BibliographyImportSourceId,
-        owner: &Identity,
+        owner: &PrincipalRef,
         display_name: String,
         imported_at: UnixMillis,
     ) -> Result<Self, InvalidBibliographyImportSource> {
@@ -75,7 +75,7 @@ impl BibliographyImportSource {
     #[allow(clippy::too_many_arguments)]
     pub fn restore(
         source_id: BibliographyImportSourceId,
-        owner: Identity,
+        owner: PrincipalRef,
         method: BibliographyImportMethod,
         display_name: String,
         revision: Revision,
@@ -99,7 +99,7 @@ impl BibliographyImportSource {
         self.source_id
     }
 
-    pub const fn owner(&self) -> &Identity {
+    pub const fn owner(&self) -> &PrincipalRef {
         &self.owner
     }
 
@@ -215,6 +215,14 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
+    use crate::{Identity, PrincipalId};
+
+    fn owner() -> PrincipalRef {
+        PrincipalRef::new(
+            PrincipalId::new(1).expect("principal ID"),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("identity"),
+        )
+    }
 
     fn source_id() -> BibliographyImportSourceId {
         BibliographyImportSourceId::new(
@@ -224,8 +232,7 @@ mod tests {
 
     #[test]
     fn source_rejects_empty_name_and_time_before_creation() {
-        let owner =
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("identity");
+        let owner = owner();
         assert!(
             BibliographyImportSource::restore(
                 source_id(),
@@ -241,7 +248,7 @@ mod tests {
         assert!(
             BibliographyImportSource::create(
                 source_id(),
-                &Identity::new("https://id.example.test".into(), "alice".into()).expect("identity"),
+                &owner,
                 " Zo\ttero ".into(),
                 UnixMillis::new(10),
             )

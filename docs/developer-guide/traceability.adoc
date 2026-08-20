@@ -25,7 +25,8 @@
 |OIDC結合試験、Kanidm VM
 |ログイン
 |REQ-OPS-005
-|``marginalis-sqlite::migration``の履歴・退避権限・順序・rollback試験、CLI試験、
+|``marginalis-sqlite::migration``の履歴・退避権限・順序・rollback・schema 22から23への
+全状態移行と新規schemaとの構造一致試験、CLI試験、
 NixOS module・VM試験、archive移行の入力不変・出力非上書き試験
 |更新前のSQLite退避と切戻し
 |REQ-OPS-006
@@ -35,18 +36,23 @@ NixOS module・VM試験、archive移行の入力不変・出力非上書き試�
 |``cargo make observability-check``、``marginalis-web::http::tests``のログ安全性試験、
 ``checks.x86_64-linux.kanidm-discovery-vm``
 |event・request IDによる障害診断
+|REQ-OPS-008
+|``marginalis-sqlite::identity_maintenance``の退避・競合拒否・代表identity切替試験、
+``marginalis-service``のCLI試験、NixOS VMのissuer引き継ぎ試験、archive往復試験
+|OIDC issuer移行
 |REQ-DATA-001
 |domain・SQLite・属性環境単体試験
 |アーカイブ照合
 |REQ-DATA-002
-|archive・CLI試験
+|archiveの全版・変更者・identity alias往復試験、SQLite隔離復元試験、CLI試験
 |隔離復元
 |REQ-DATA-003
 |AsciiDoc単体試験
 |なし
 |REQ-DATA-004
-|schema検査
-|なし
+|domainの履歴型試験、SQLiteの全変更経路・現在ACL・削除・物理削除・schema 22移行試験、
+applicationの行単位diff・現行規則による復元試験、REST・OpenAPI契約試験、archive往復試験
+|版の閲覧、比較、復元
 |REQ-DATA-005
 |SQLite認可・参照試験、ブラウザー試験
 |非開示確認
@@ -102,16 +108,19 @@ archive往復・旧契約混在拒否・文書書庫の本文とACLの外部編�
 |REQ-API-005
 |ノート・文献scope対応、scope上限の共通部分・revision・選択的失効の単体試験、同意scopeの部分選択・フォーム改変拒否のHTTP試験、
 認可済みclientの本人境界・最終利用・上限変更のSQLite試験、REST・React設定画面試験、初回・段階的scope challengeのprotocol版別結合試験、
-metadata契約試験、``notes:sync``専用scopeと同意文言の試験
+metadata契約試験、同期RESTの``notes:sync``専用scopeと同意文言の試験
 |MCP権限照合、同意scopeの選択、client別上限変更後の再認可、段階的scope追加
 |REQ-API-006
 |RFC 7009・token family失効試験、認可取消APIのHTTP契約試験、認可済みclient管理画面のReact試験と本番到達性検査
 |client接続解除、即時失効
 |REQ-API-007
 |MCP JSON Schema生成差分、MCP HTTP契約試験、AsciiDoc入力規則・HTML描画試験、警告拒否前の永続化防止試験、
-同期の初期一覧・変更境界・actor拘束・期限切れ・共有取消・tombstone保持のSQLite試験、
 patchの厳密適用・dry_run・階層outline・断片取得の単体とHTTP契約の試験
-|client同期・増分適用・全量再同期・参考文献作成・診断修正後の再実行確認、断片取得とpatch更新
+|参考文献作成・診断修正後の再実行確認、断片取得とpatch更新
+|REQ-API-009
+|OpenAPI生成差分、Bearer token・``notes:sync``・失敗応答のHTTP契約試験、
+同期の初期一覧・変更境界・actor拘束・期限切れ・共有取消・tombstone保持のSQLite試験
+|外部検索serviceからの初期同期・増分適用・全量再同期
 |REQ-UI-001
 |React単体試験、ブラウザー試験、設定画面の経路・REST契約試験、経路別chunkと配布物の大きさ検査
 |主要画面
@@ -139,21 +148,28 @@ patchの厳密適用・dry_run・階層outline・断片取得の単体とHTTP契
 |REQ-UI-009
 |span注釈の写像・オフセット変換・装飾状態の単体試験、カーソル開示と装飾切替のブラウザー試験
 |装飾表示、記法の開示、装飾の無効化
+|REQ-UI-010
+|版履歴画面のReact単体試験、REST契約試験、TypeScript実行時検査試験
+|過去版の閲覧、二版の比較、新しい版としての復元
+|REQ-UI-011
+|画像形式・容量検査、SQLite認可・版参照・未参照uploadの期限切れ削除・archive往復試験、REST契約試験、
+React upload試験、NixOS VMの日次保守試験
+|画像の選択・ドロップ、プレビュー、未参照画像の削除
 |REQ-HOOK-001
 |``marginalis-application``の購読ユースケース試験、``marginalis-sqlite``の所有境界試験、
 React設定画面の単体試験
 |設定画面からの登録、検証、削除
 |REQ-HOOK-002
-|``marginalis-application``の配送本文試験、``marginalis-sqlite``のoutbox trigger試験
+|``marginalis-application``の配送本文試験、``marginalis-sqlite``の共通変更記録・派生trigger試験
 |なし
 |REQ-HOOK-003
-|``marginalis-sqlite``のoutbox・順序・lease・保持試験、``marginalis-application``のbackoff・停止試験
+|``marginalis-sqlite``の共通変更記録・配送順序・lease・保持試験、``marginalis-application``のbackoff・停止試験
 |受信サーバーでの通知確認
 |REQ-HOOK-004
-|``marginalis-application``のURL検査試験、``marginalis-webhook-http``の宛先検査試験
+|``marginalis-application``のURL検査試験、``marginalis-service::webhook``の宛先検査試験
 |なし
 |REQ-HOOK-005
-|``marginalis-webhook-http``の署名試験
+|``marginalis-service::webhook``の署名試験
 |受信側での署名検証
 |REQ-ACL-001
 |application・SQLite・React試験
@@ -171,7 +187,7 @@ React設定画面の単体試験
 |SQLiteスナップショット試験、REST契約試験
 |閲覧整合性
 |REQ-LIFE-001
-|SQLite所有者境界・保持期限・ACL維持試験、REST契約試験、React単体試験、ブラウザー試験、保守CLI・NixOS VM
+|SQLite所有者境界・保持期限・ACL維持・履歴cascade試験、REST契約試験、React単体試験、ブラウザー試験、保守CLI・NixOS VM
 |削除・復元
 |REQ-API-008
 |REST・MCP失敗一致試験、MCP失敗出力schema生成差分
@@ -223,7 +239,9 @@ xref:architecture.adoc#一貫して満たすべき設計条件[アーキテク�
 |ARCH-DOMAIN-001
 |``marginalis-domain::model``の復元順序試験、SQLite・archiveの復元試験
 |ARCH-IDENTITY-001
-|``marginalis-domain::model``の識別子検査試験、OIDC issuer検査
+|``marginalis-domain::model``のidentity・``PrincipalId``不変条件、
+``marginalis-sqlite::principal``の同時初回ログイン・未知identity非作成試験、OIDC issuer検査、
+identity引き継ぎ後の認可共有試験、archiveでの代表identity・alias往復試験
 |ARCH-IDENTITY-002
 |``marginalis-domain::model``のUUID v7検査、REST・archive・SQLite復元試験
 |ARCH-OAUTH-001
@@ -243,11 +261,14 @@ CIMD認可・本人境界試験、``marginalis-web::http::tests::oauth``・``res
 |ARCH-SESSION-001
 |``marginalis-sqlite::tests::sessions``の期限・並行延長・login attempt上限試験と、
 共有``WebSessionStore``契約試験
+|ARCH-CHANGE-001
+|``marginalis-sqlite::tests::webhooks``の共通変更記録・同期投影・Webhook配送の派生試験、
+``marginalis-sqlite::tests::note_sync``の共有・削除・物理削除後の状態保持試験、schema移行・archive復元試験
 |ARCH-HOOK-001
 |``marginalis-sqlite::tests::webhooks``のtrigger・順序・lease試験、
 ``marginalis-application::webhooks``のtick試験、``dependency-boundaries``
 |ARCH-HOOK-002
-|``marginalis-application::webhooks``のURL検査試験、``marginalis-webhook-http::tests``の
+|``marginalis-application::webhooks``のURL検査試験、``marginalis-service::webhook::tests``の
 宛先検査・署名・redirect拒否試験
 |===
 

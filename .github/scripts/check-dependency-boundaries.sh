@@ -47,14 +47,12 @@ else
 marginalis-application: marginalis-domain, mcp-authorization-server
 marginalis-archive: marginalis-application, marginalis-domain
 marginalis-asciidoc: marginalis-application, marginalis-domain
-marginalis-auth-oidc: marginalis-application, marginalis-domain, oidc-browser-login
 marginalis-contract: marginalis-domain
 marginalis-documentation:
 marginalis-domain:
-marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-auth-oidc, marginalis-domain, marginalis-sqlite, marginalis-web, marginalis-webhook-http, mcp-authorization-server-cimd
+marginalis-service: marginalis-application, marginalis-archive, marginalis-asciidoc, marginalis-domain, marginalis-sqlite, marginalis-web, mcp-authorization-server-cimd, oidc-browser-login
 marginalis-sqlite: marginalis-application, marginalis-domain, mcp-authorization-server, oidc-browser-login
 marginalis-web: marginalis-application, marginalis-contract, marginalis-domain, mcp-authorization-server, oidc-browser-login
-marginalis-webhook-http: marginalis-application, marginalis-domain
 EOF
 fi
 
@@ -104,7 +102,7 @@ done <"$external_dependencies"
 # 除外し、web層が別経路でこれらへ依存しないことだけを確かめます。
 if [[ -z "$metadata_input" ]] && cargo tree -p marginalis-web -e normal --prune oidc-browser-login --prefix none --format '{p}' |
   awk '{ print $1 }' |
-  grep -E '^(marginalis-(sqlite|asciidoc|auth-oidc)|sqlx|adocweave|openidconnect|reqwest)$' >/dev/null; then
+  grep -E '^(marginalis-(sqlite|asciidoc)|sqlx|adocweave|openidconnect|reqwest)$' >/dev/null; then
   echo "HTTP transportのproduction依存へ具象adapterが混入しています。" >&2
   exit 1
 fi

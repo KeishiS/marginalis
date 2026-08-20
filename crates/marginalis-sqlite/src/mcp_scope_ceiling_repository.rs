@@ -25,19 +25,16 @@ impl McpScopeCeilingRepository for SqliteDatabase {
                     ceilings.revision AS ceiling_revision,
                     (authorizations.revoked_at_ms IS NULL AND (
                         EXISTS(SELECT 1 FROM mcp_authorization_codes AS codes
-                               WHERE codes.issuer = authorizations.issuer
-                                 AND codes.subject = authorizations.subject
+                               WHERE codes.principal_id = authorizations.principal_id
                                  AND codes.client_id = authorizations.client_id
                                  AND codes.consumed_at_ms IS NULL AND codes.expires_at_ms > ?)
                         OR EXISTS(SELECT 1 FROM mcp_access_tokens AS access_tokens
-                                  WHERE access_tokens.issuer = authorizations.issuer
-                                    AND access_tokens.subject = authorizations.subject
+                                  WHERE access_tokens.principal_id = authorizations.principal_id
                                     AND access_tokens.client_id = authorizations.client_id
                                     AND access_tokens.revoked_at_ms IS NULL
                                     AND access_tokens.expires_at_ms > ?)
                         OR EXISTS(SELECT 1 FROM mcp_refresh_tokens AS refresh_tokens
-                                  WHERE refresh_tokens.issuer = authorizations.issuer
-                                    AND refresh_tokens.subject = authorizations.subject
+                                  WHERE refresh_tokens.principal_id = authorizations.principal_id
                                     AND refresh_tokens.client_id = authorizations.client_id
                                     AND refresh_tokens.rotated_at_ms IS NULL
                                     AND refresh_tokens.revoked_at_ms IS NULL
@@ -46,17 +43,15 @@ impl McpScopeCeilingRepository for SqliteDatabase {
              FROM mcp_client_authorizations AS authorizations
              JOIN mcp_clients AS clients ON clients.client_id = authorizations.client_id
              LEFT JOIN mcp_client_scope_ceilings AS ceilings
-                    ON ceilings.issuer = authorizations.issuer
-                   AND ceilings.subject = authorizations.subject
+                    ON ceilings.principal_id = authorizations.principal_id
                    AND ceilings.client_id = authorizations.client_id
-             WHERE authorizations.issuer = ? AND authorizations.subject = ?
+             WHERE authorizations.principal_id = ?
              ORDER BY authorizations.authorized_at_ms DESC, clients.client_id ASC",
         )
         .bind(now.get())
         .bind(now.get())
         .bind(now.get())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_all(&self.pool)
         .await
         .map_err(crate::storage_error)?;
@@ -69,10 +64,9 @@ impl McpScopeCeilingRepository for SqliteDatabase {
     ) -> Result<Option<McpScopeCeilingSetting>, StorageError> {
         sqlx::query(
             "SELECT scopes, revision FROM mcp_principal_scope_ceilings
-             WHERE issuer = ? AND subject = ?",
+             WHERE principal_id = ?",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_optional(&self.pool)
         .await
         .map_err(crate::storage_error)?
@@ -88,10 +82,9 @@ impl McpScopeCeilingRepository for SqliteDatabase {
         let principal = self.principal_scope_ceiling(actor).await?;
         let client = sqlx::query(
             "SELECT scopes, revision FROM mcp_client_scope_ceilings
-             WHERE issuer = ? AND subject = ? AND client_id = ?",
+             WHERE principal_id = ? AND client_id = ?",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(client_id)
         .fetch_optional(&self.pool)
         .await
@@ -132,10 +125,9 @@ impl McpScopeCeilingRepository for SqliteDatabase {
         // 解除は上限を広げる操作なので、既存の認可やtokenは失効させない。
         let deleted = sqlx::query(
             "DELETE FROM mcp_client_scope_ceilings
-             WHERE issuer = ? AND subject = ? AND client_id = ? AND revision = ?",
+             WHERE principal_id = ? AND client_id = ? AND revision = ?",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(client_id)
         .bind(expected_revision)
         .execute(&mut *transaction)
@@ -262,12 +254,11 @@ async fn replace_principal_setting(
     if expected_revision == 0 {
         let result = sqlx::query(
             "INSERT INTO mcp_principal_scope_ceilings
-                 (issuer, subject, scopes, revision, updated_at_ms)
-             VALUES (?, ?, ?, 1, ?)
-             ON CONFLICT (issuer, subject) DO NOTHING",
+                 (principal_id, scopes, revision, updated_at_ms)
+             VALUES (?, ?, 1, ?)
+             ON CONFLICT (principal_id) DO NOTHING",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(encoded)
         .bind(now.get())
         .execute(&mut **transaction)
@@ -281,13 +272,12 @@ async fn replace_principal_setting(
     sqlx::query_scalar::<_, i64>(
         "UPDATE mcp_principal_scope_ceilings
          SET scopes = ?, revision = revision + 1, updated_at_ms = ?
-         WHERE issuer = ? AND subject = ? AND revision = ?
+         WHERE principal_id = ? AND revision = ?
          RETURNING revision",
     )
     .bind(encoded)
     .bind(now.get())
-    .bind(actor.issuer())
-    .bind(actor.subject())
+    .bind(actor.principal_id().get())
     .bind(expected_revision)
     .fetch_optional(&mut **transaction)
     .await
@@ -305,10 +295,9 @@ async fn authorized_client(
 ) -> Result<(), StorageError> {
     sqlx::query_scalar::<_, String>(
         "SELECT granted_scopes FROM mcp_client_authorizations
-         WHERE issuer = ? AND subject = ? AND client_id = ?",
+         WHERE principal_id = ? AND client_id = ?",
     )
-    .bind(actor.issuer())
-    .bind(actor.subject())
+    .bind(actor.principal_id().get())
     .bind(client_id)
     .fetch_optional(&mut **transaction)
     .await
@@ -329,12 +318,11 @@ async fn replace_client_setting(
     if expected_revision == 0 {
         let result = sqlx::query(
             "INSERT INTO mcp_client_scope_ceilings
-                 (issuer, subject, client_id, scopes, revision, updated_at_ms)
-             VALUES (?, ?, ?, ?, 1, ?)
-             ON CONFLICT (issuer, subject, client_id) DO NOTHING",
+                 (principal_id, client_id, scopes, revision, updated_at_ms)
+             VALUES (?, ?, ?, 1, ?)
+             ON CONFLICT (principal_id, client_id) DO NOTHING",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(client_id)
         .bind(encoded)
         .bind(now.get())
@@ -349,13 +337,12 @@ async fn replace_client_setting(
     sqlx::query_scalar::<_, i64>(
         "UPDATE mcp_client_scope_ceilings
          SET scopes = ?, revision = revision + 1, updated_at_ms = ?
-         WHERE issuer = ? AND subject = ? AND client_id = ? AND revision = ?
+         WHERE principal_id = ? AND client_id = ? AND revision = ?
          RETURNING revision",
     )
     .bind(encoded)
     .bind(now.get())
-    .bind(actor.issuer())
-    .bind(actor.subject())
+    .bind(actor.principal_id().get())
     .bind(client_id)
     .bind(expected_revision)
     .fetch_optional(&mut **transaction)
@@ -373,14 +360,12 @@ async fn invalidate_excess_grants(
 ) -> Result<(), StorageError> {
     let code_query = if client_id.is_some() {
         "SELECT code_hash, scopes FROM mcp_authorization_codes
-         WHERE issuer = ? AND subject = ? AND client_id = ? AND consumed_at_ms IS NULL"
+         WHERE principal_id = ? AND client_id = ? AND consumed_at_ms IS NULL"
     } else {
         "SELECT code_hash, scopes FROM mcp_authorization_codes
-         WHERE issuer = ? AND subject = ? AND consumed_at_ms IS NULL"
+         WHERE principal_id = ? AND consumed_at_ms IS NULL"
     };
-    let mut code_query = sqlx::query(code_query)
-        .bind(actor.issuer())
-        .bind(actor.subject());
+    let mut code_query = sqlx::query(code_query).bind(actor.principal_id().get());
     if let Some(client_id) = client_id {
         code_query = code_query.bind(client_id);
     }
@@ -407,24 +392,22 @@ async fn invalidate_excess_grants(
 
     let family_query = if client_id.is_some() {
         "SELECT token_family_id, scopes FROM mcp_access_tokens
-         WHERE issuer = ? AND subject = ? AND client_id = ? AND revoked_at_ms IS NULL
+         WHERE principal_id = ? AND client_id = ? AND revoked_at_ms IS NULL
          UNION
          SELECT token_family_id, scopes FROM mcp_refresh_tokens
-         WHERE issuer = ? AND subject = ? AND client_id = ? AND revoked_at_ms IS NULL"
+         WHERE principal_id = ? AND client_id = ? AND revoked_at_ms IS NULL"
     } else {
         "SELECT token_family_id, scopes FROM mcp_access_tokens
-         WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL
+         WHERE principal_id = ? AND revoked_at_ms IS NULL
          UNION
          SELECT token_family_id, scopes FROM mcp_refresh_tokens
-         WHERE issuer = ? AND subject = ? AND revoked_at_ms IS NULL"
+         WHERE principal_id = ? AND revoked_at_ms IS NULL"
     };
-    let mut family_query = sqlx::query(family_query)
-        .bind(actor.issuer())
-        .bind(actor.subject());
+    let mut family_query = sqlx::query(family_query).bind(actor.principal_id().get());
     if let Some(client_id) = client_id {
         family_query = family_query.bind(client_id);
     }
-    family_query = family_query.bind(actor.issuer()).bind(actor.subject());
+    family_query = family_query.bind(actor.principal_id().get());
     if let Some(client_id) = client_id {
         family_query = family_query.bind(client_id);
     }

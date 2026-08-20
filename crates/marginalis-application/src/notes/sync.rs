@@ -49,7 +49,7 @@ impl NoteApplication {
             return Err(NoteUseCaseError::InvalidSyncLimit);
         }
         let next_cursor = self.random.opaque_token();
-        self.sync
+        self.notes
             .sync_notes(
                 &actor,
                 cursor.as_deref(),

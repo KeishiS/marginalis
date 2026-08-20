@@ -4,8 +4,10 @@ mod cli;
 mod config;
 mod environment;
 mod maintenance;
+mod oidc;
 mod runtime;
 mod serve;
+mod webhook;
 
 use tracing_subscriber::EnvFilter;
 
@@ -15,6 +17,8 @@ enum Command {
     Diagnose,
     PurgeExpired,
     MigrateDatabase,
+    LinkIdentity,
+    SetPrimaryIdentity,
     ExportArchive,
     ExportDocuments,
     ImportDocuments,
@@ -36,6 +40,8 @@ impl Command {
             Some("diagnose") => Self::Diagnose,
             Some("purge-expired") => Self::PurgeExpired,
             Some("migrate-database") => Self::MigrateDatabase,
+            Some("link-identity") => Self::LinkIdentity,
+            Some("set-primary-identity") => Self::SetPrimaryIdentity,
             Some("export-archive") => Self::ExportArchive,
             Some("export-documents") => Self::ExportDocuments,
             Some("import-documents") => Self::ImportDocuments,
@@ -74,6 +80,18 @@ impl Command {
             Self::MigrateDatabase => tracing::error!(
                 event = "maintenance.database_migration.failed",
                 command = "migrate-database",
+                error = %error,
+                "Marginalis command terminated"
+            ),
+            Self::LinkIdentity => tracing::error!(
+                event = "maintenance.identity_link.failed",
+                command = "link-identity",
+                error = %error,
+                "Marginalis command terminated"
+            ),
+            Self::SetPrimaryIdentity => tracing::error!(
+                event = "maintenance.identity_primary.failed",
+                command = "set-primary-identity",
                 error = %error,
                 "Marginalis command terminated"
             ),
@@ -171,6 +189,8 @@ async fn main() {
         Command::Diagnose => Err(cli::USAGE.into()),
         Command::PurgeExpired => maintenance::purge_expired().await,
         Command::MigrateDatabase => maintenance::migrate_database(arguments).await,
+        Command::LinkIdentity => maintenance::link_identity(arguments).await,
+        Command::SetPrimaryIdentity => maintenance::set_primary_identity(arguments).await,
         Command::ExportArchive => maintenance::export_archive(arguments).await,
         Command::ExportDocuments => maintenance::export_documents(arguments).await,
         Command::ImportDocuments => maintenance::import_documents(arguments).await,

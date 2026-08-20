@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use adocweave::output::diagnostics::Severity;
 use adocweave::resolution::ReferenceKey;
 use marginalis_application::{
-    CitationStyle, NoteAdvisorySeverity, NoteCitationQuery, NoteReferenceQuery, NoteValidationCode,
-    NoteValidationDiagnostic, ValidatedNoteDraft,
+    CitationStyle, NoteAdvisorySeverity, NoteAttachmentQuery, NoteCitationQuery,
+    NoteReferenceQuery, NoteValidationCode, NoteValidationDiagnostic, ValidatedNoteDraft,
 };
 use marginalis_domain::{
-    CITATION_STYLE_DOCUMENT_ATTRIBUTE, EntityId, NOTE_POLICY, NoteDraft, NoteId,
+    AttachmentId, CITATION_STYLE_DOCUMENT_ATTRIBUTE, EntityId, NOTE_POLICY, NoteDraft, NoteId,
     NoteValidationTarget, TAGS_DOCUMENT_ATTRIBUTE, Utf8ByteSpan,
 };
 use unicode_normalization::UnicodeNormalization;
@@ -88,6 +88,38 @@ pub(crate) fn citation_queries(source: &str) -> Result<Vec<NoteCitationQuery>, R
     Ok(citation_queries_from_analysis(&analyze_valid_source(
         source,
     )?))
+}
+
+pub(crate) fn attachment_queries(source: &str) -> Result<Vec<NoteAttachmentQuery>, RenderError> {
+    Ok(attachment_queries_from_analysis(&analyze_valid_source(
+        source,
+    )?))
+}
+
+fn attachment_queries_from_analysis(analysis: &adocweave::Analysis) -> Vec<NoteAttachmentQuery> {
+    analysis
+        .resource_queries()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(attachment_index, query)| {
+            query
+                .reference
+                .target()
+                .strip_prefix("attachment:")?
+                .parse::<AttachmentId>()
+                .ok()
+                .map(|attachment_id| NoteAttachmentQuery {
+                    attachment_index,
+                    attachment_id,
+                    span: span(query.reference.target_range()),
+                    position: source_position(
+                        analysis.source_document(),
+                        span(query.reference.target_range()),
+                    )
+                    .expect("AdocWeave resource ranges are valid source positions"),
+                })
+        })
+        .collect()
 }
 
 pub(crate) fn citation_style(source: &str) -> Result<CitationStyle, RenderError> {
@@ -207,6 +239,7 @@ pub(crate) fn validate_draft(
     let mut advisories = Vec::new();
     let mut reference_queries = Vec::new();
     let mut citation_queries = Vec::new();
+    let mut attachment_queries = Vec::new();
     let mut title = String::new();
     let mut tags = BTreeMap::new();
     let mut citation_style = CitationStyle::default();
@@ -224,6 +257,7 @@ pub(crate) fn validate_draft(
                 let reference_analysis = reference_queries_from_analysis(&analysis);
                 reference_queries = reference_analysis.queries;
                 citation_queries = citation_queries_from_analysis(&analysis);
+                attachment_queries = attachment_queries_from_analysis(&analysis);
                 errors.extend(
                     reference_analysis
                         .invalid_spans
@@ -395,6 +429,7 @@ pub(crate) fn validate_draft(
             diagnostics: advisories,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans,
         })

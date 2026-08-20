@@ -25,7 +25,7 @@ const SCOPE_DESCRIPTIONS: Record<string, string> = {
   "notes:write":
     "作成・更新: create_note、apply_note_patch、replace_note_source、get_note_profile",
   "notes:delete": "削除: delete_note",
-  "notes:sync": "外部検索用コピーとの継続同期: sync_notes",
+  "notes:sync": "外部検索用コピーとの継続同期: REST API",
   "bibliography:read": "閲覧: search_bibliography",
   "bibliography:write": "作成: add_bibliography_item",
   "bibliography:delete": "削除: delete_bibliography_item",

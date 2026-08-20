@@ -3,13 +3,11 @@ members = [
     "crates/marginalis-asciidoc",
     "crates/marginalis-application",
     "crates/marginalis-archive",
-    "crates/marginalis-auth-oidc",
     "crates/marginalis-contract",
     "crates/marginalis-domain",
     "crates/marginalis-service",
     "crates/marginalis-sqlite",
     "crates/marginalis-web",
-    "crates/marginalis-webhook-http",
     # CI専用の文書検査ツール。製品コードのcrates/とは区別してtools/で管理する。
     "tools/marginalis-documentation",
 ]
@@ -48,6 +46,7 @@ reqwest = { version = "0.12.28", default-features = false, features = ["json", "
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 schemars = "1.2.2"
+similar = "2.7.0"
 tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.6.6", features = ["trace"] }
 tar = "0.4.46"

@@ -24,7 +24,7 @@ fn item_id() -> BibliographyItemId {
 fn source(owner: &Actor) -> BibliographyImportSource {
     BibliographyImportSource::create(
         source_id(),
-        owner.identity(),
+        owner.principal(),
         "Zotero".into(),
         UnixMillis::new(100),
     )
@@ -34,7 +34,7 @@ fn source(owner: &Actor) -> BibliographyImportSource {
 fn item(owner: &Actor) -> BibliographyItem {
     BibliographyItem::create(
         item_id(),
-        owner.identity(),
+        owner.principal(),
         validated_csl_json(
             "smith2024",
             r#"{"id":"smith2024","type":"book","title":"Before"}"#,
@@ -266,7 +266,7 @@ async fn an_unrelated_library_change_invalidates_the_whole_preview() {
         BibliographyItemId::new(
             EntityId::from_str("0197c9bc-0000-7000-8000-0000000000c3").expect("UUIDv7"),
         ),
-        alice.identity(),
+        alice.principal(),
         validated_csl_json("unrelated", r#"{"id":"unrelated","type":"book"}"#),
         UnixMillis::new(150),
     );
@@ -387,7 +387,7 @@ async fn archive_snapshot_restores_import_sources_links_and_baselines() {
     assert_eq!(snapshot.bibliography_import_sources().len(), 1);
     assert_eq!(snapshot.bibliography_import_links().len(), 1);
 
-    let restored = super::database().await;
+    let restored = super::empty_database().await;
     let plan = RestorePlan::new(snapshot.clone(), Vec::new(), Vec::new()).expect("restore plan");
     restored.restore(&plan).await.expect("restore");
     assert_eq!(

@@ -8,42 +8,59 @@ use std::{
 
 use async_trait::async_trait;
 use marginalis_domain::{
-    Actor, BibliographyItem, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess,
-    NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewRecord,
-    NoteReviewTracking, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
+    ATTACHMENT_POLICY, Actor, AttachmentId, AttachmentMetadata, BibliographyItem,
+    DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteAclEntry, NoteDraft, NoteId,
+    NoteListEntry, NoteRestore, NoteReviewRecord, NoteReviewTracking, NoteRevisionKind,
+    NoteRevisionSnapshot, NoteRevisionSummary, NoteSummary, NoteValidationTarget, PrincipalId,
+    PrincipalRef, Revision, StoredAttachment, UnixMillis, Utf8ByteSpan,
 };
 
 use crate::{
     BibliographyRepository, CitationStyle, Clock, MathMacro, MathMacroRepository,
     MathMacroSettings, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile,
-    NoteRenderContext, NoteValidationDiagnostic, Random, StorageError, ValidatedNoteDraft,
+    NoteRenderContext, NoteValidationDiagnostic, PrincipalDirectory, Random, StorageError,
+    ValidatedNoteDraft,
 };
 
 use super::{
     AccessibleNote, NoteAclRepository, NoteApplication, NoteApplicationDependencies,
     NoteCitationQuery, NoteCommandRepository, NoteContent, NoteContentError, NoteGraph,
     NoteGraphQuery, NoteLinkResolver, NoteLinks, NoteQueryRepository, NoteReferenceQuery,
-    NoteRenderInputs, NoteReviewRepository, NoteSyncPage, NoteSyncRepository,
+    NoteRenderInputs, NoteReviewRepository, NoteRevisionView, NoteSyncPage, NoteSyncRepository,
     NoteSyncRepositoryError, NoteViewSnapshot,
 };
 
-/// 決定的なclockと乱数を使い、repository4種を同じ`MemoryNotes`が担う試験用のservice。
+/// 決定的なclockと乱数を使い、ノート保存の全機能を同じ`MemoryNotes`が担う試験用service。
 pub(super) fn note_application(
     repository: &Arc<MemoryNotes>,
     content: Arc<dyn NoteContent>,
     bibliography: Arc<dyn BibliographyRepository>,
     math_macros: Arc<dyn MathMacroRepository>,
 ) -> NoteApplication {
-    NoteApplication::new(NoteApplicationDependencies {
-        queries: repository.clone(),
-        commands: repository.clone(),
-        access_control: repository.clone(),
-        reviews: repository.clone(),
-        sync: repository.clone(),
+    note_application_with_links(
+        repository,
         content,
         bibliography,
         math_macros,
-        links: Arc::new(NoLinks),
+        Arc::new(NoLinks),
+    )
+}
+
+pub(super) fn note_application_with_links(
+    repository: &Arc<MemoryNotes>,
+    content: Arc<dyn NoteContent>,
+    bibliography: Arc<dyn BibliographyRepository>,
+    math_macros: Arc<dyn MathMacroRepository>,
+    links: Arc<dyn NoteLinkResolver>,
+) -> NoteApplication {
+    NoteApplication::new(NoteApplicationDependencies {
+        notes: repository.clone(),
+        content,
+        bibliography,
+        math_macros,
+        links,
+        principals: Arc::new(TestPrincipalDirectory),
+        acl_issuer: "https://id.example.test".into(),
         clock: Arc::new(FixedClock),
         random: Arc::new(FixedRandom),
     })
@@ -65,6 +82,8 @@ impl NoteSyncRepository for MemoryNotes {
 
 pub(super) struct MemoryNotes {
     pub(super) notes: Mutex<Vec<Note>>,
+    pub(super) histories: Mutex<Vec<NoteRevisionSnapshot>>,
+    pub(super) attachments: Mutex<Vec<StoredAttachment>>,
     pub(super) update_calls: AtomicUsize,
     pub(super) accessible_as: Mutex<Option<NoteAccess>>,
 }
@@ -73,6 +92,8 @@ impl Default for MemoryNotes {
     fn default() -> Self {
         Self {
             notes: Mutex::new(Vec::new()),
+            histories: Mutex::new(Vec::new()),
+            attachments: Mutex::new(Vec::new()),
             update_calls: AtomicUsize::new(0),
             accessible_as: Mutex::new(Some(NoteAccess::Manage)),
         }
@@ -144,6 +165,90 @@ impl NoteQueryRepository for MemoryNotes {
         Ok(None)
     }
 
+    async fn list_note_revisions(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<NoteRevisionSummary>>, StorageError> {
+        let visible = self.accessible_note(actor, note_id).await?.is_some();
+        if !visible {
+            return Ok(None);
+        }
+        let mut revisions = self
+            .histories
+            .lock()
+            .expect("history lock")
+            .iter()
+            .filter(|entry| entry.note().note_id() == note_id)
+            .map(NoteRevisionSummary::from)
+            .collect::<Vec<_>>();
+        revisions.sort_by_key(|entry| std::cmp::Reverse(entry.revision));
+        Ok((!revisions.is_empty()).then_some(revisions))
+    }
+
+    async fn note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<Option<NoteRevisionView>, StorageError> {
+        let access = *self.accessible_as.lock().expect("access lock");
+        if self.accessible_note(actor, note_id).await?.is_none() {
+            return Ok(None);
+        }
+        Ok(self
+            .histories
+            .lock()
+            .expect("history lock")
+            .iter()
+            .find(|entry| entry.note().note_id() == note_id && entry.note().revision() == revision)
+            .cloned()
+            .map(|revision| NoteRevisionView {
+                revision,
+                access: access.expect("visible history has access"),
+            }))
+    }
+
+    async fn list_note_attachments(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<AttachmentMetadata>>, StorageError> {
+        if self.accessible_note(actor, note_id).await?.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(
+            self.attachments
+                .lock()
+                .expect("attachments lock")
+                .iter()
+                .filter(|entry| entry.metadata().note_id() == note_id)
+                .map(|entry| entry.metadata().clone())
+                .collect(),
+        ))
+    }
+
+    async fn note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<Option<StoredAttachment>, StorageError> {
+        if self.accessible_note(actor, note_id).await?.is_none() {
+            return Ok(None);
+        }
+        Ok(self
+            .attachments
+            .lock()
+            .expect("attachments lock")
+            .iter()
+            .find(|entry| {
+                entry.metadata().note_id() == note_id
+                    && entry.metadata().attachment_id() == attachment_id
+            })
+            .cloned())
+    }
+
     async fn note_graph(
         &self,
         _actor: &Actor,
@@ -157,6 +262,14 @@ impl NoteQueryRepository for MemoryNotes {
 impl NoteCommandRepository for MemoryNotes {
     async fn create_note(&self, note: &Note, _links: NoteLinks<'_>) -> Result<(), StorageError> {
         self.notes.lock().expect("notes lock").push(note.clone());
+        self.histories
+            .lock()
+            .expect("history lock")
+            .push(NoteRevisionSnapshot::new(
+                note.clone(),
+                note.owner().clone(),
+                NoteRevisionKind::Created,
+            ));
         Ok(())
     }
 
@@ -171,6 +284,56 @@ impl NoteCommandRepository for MemoryNotes {
     ) -> Result<Note, StorageError> {
         self.update_calls.fetch_add(1, Ordering::Relaxed);
         Err(StorageError::Unavailable)
+    }
+
+    async fn restore_visible_note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        draft: &NoteDraft,
+        links: NoteLinks<'_>,
+        now: UnixMillis,
+    ) -> Result<Note, StorageError> {
+        let _ = links;
+        let mut notes = self.notes.lock().expect("notes lock");
+        let current = notes
+            .iter_mut()
+            .find(|note| note.note_id() == note_id)
+            .ok_or(StorageError::NotFound)?;
+        if current.revision() != expected_revision {
+            return Err(StorageError::Conflict);
+        }
+        let next_revision =
+            Revision::new(current.revision().get() + 1).map_err(|_| StorageError::CorruptData)?;
+        let review = if current.review_tracking_known() {
+            NoteReviewTracking::tracked(current.last_review().cloned())
+        } else {
+            NoteReviewTracking::Unknown
+        };
+        let restored = Note::restore(NoteRestore {
+            note_id,
+            owner: current.owner().clone(),
+            draft: draft.clone(),
+            created_at: current.created_at(),
+            updated_at: now,
+            revision: next_revision,
+            deleted_at: None,
+            created_via: current.created_via(),
+            review,
+        })
+        .map_err(|_| StorageError::CorruptData)?;
+        *current = restored.clone();
+        drop(notes);
+        self.histories
+            .lock()
+            .expect("history lock")
+            .push(NoteRevisionSnapshot::new(
+                restored.clone(),
+                actor.principal().clone(),
+                NoteRevisionKind::HistoryRestored,
+            ));
+        Ok(restored)
     }
 
     async fn soft_delete_visible_note(
@@ -191,6 +354,63 @@ impl NoteCommandRepository for MemoryNotes {
         _now: UnixMillis,
     ) -> Result<Note, StorageError> {
         Err(StorageError::Unavailable)
+    }
+
+    async fn create_note_attachment(
+        &self,
+        actor: &Actor,
+        attachment: &StoredAttachment,
+    ) -> Result<(), StorageError> {
+        let accessible = self
+            .accessible_note(actor, attachment.metadata().note_id())
+            .await?
+            .filter(|entry| entry.access.allows(NoteAccess::Edit))
+            .ok_or(StorageError::NotFound)?;
+        if accessible.note.deleted_at().is_some() {
+            return Err(StorageError::NotFound);
+        }
+        let mut attachments = self.attachments.lock().expect("attachments lock");
+        let current = attachments
+            .iter()
+            .filter(|entry| entry.metadata().note_id() == accessible.note.note_id())
+            .collect::<Vec<_>>();
+        let total = current
+            .iter()
+            .map(|entry| entry.metadata().byte_length())
+            .sum::<usize>();
+        if current.len() >= ATTACHMENT_POLICY.max_attachments_per_note
+            || total.saturating_add(attachment.metadata().byte_length())
+                > ATTACHMENT_POLICY.max_bytes_per_note
+        {
+            return Err(StorageError::Conflict);
+        }
+        attachments.push(attachment.clone());
+        Ok(())
+    }
+
+    async fn delete_unused_note_attachment(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
+    ) -> Result<(), StorageError> {
+        let accessible = self
+            .accessible_note(actor, note_id)
+            .await?
+            .filter(|entry| entry.access.allows(NoteAccess::Edit))
+            .ok_or(StorageError::NotFound)?;
+        if accessible.note.deleted_at().is_some() {
+            return Err(StorageError::NotFound);
+        }
+        let mut attachments = self.attachments.lock().expect("attachments lock");
+        let Some(position) = attachments.iter().position(|entry| {
+            entry.metadata().note_id() == note_id
+                && entry.metadata().attachment_id() == attachment_id
+        }) else {
+            return Err(StorageError::NotFound);
+        };
+        attachments.remove(position);
+        Ok(())
     }
 }
 
@@ -230,7 +450,7 @@ impl NoteReviewRepository for MemoryNotes {
             .await?
             .filter(|accessible| {
                 accessible.access == NoteAccess::Manage
-                    && accessible.note.owner() == actor.identity()
+                    && accessible.note.owner() == actor.principal()
                     && accessible.note.deleted_at().is_none()
             })
             .map(|accessible| accessible.note)
@@ -266,7 +486,7 @@ impl NoteReviewRepository for MemoryNotes {
             review: NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
                 next_revision,
                 reviewed_at,
-                actor.identity().clone(),
+                actor.principal().clone(),
             ))),
         })
         .map_err(|_| StorageError::CorruptData)?;
@@ -302,6 +522,7 @@ impl NoteContent for AcceptContent {
             }],
             reference_queries: Vec::new(),
             citation_queries: Vec::new(),
+            attachment_queries: Vec::new(),
             citation_style: CitationStyle::default(),
             source_spans: Vec::new(),
         })
@@ -313,6 +534,13 @@ impl NoteContent for AcceptContent {
     }
 
     fn citation_queries(&self, _body: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
+        Ok(Vec::new())
+    }
+
+    fn attachment_queries(
+        &self,
+        _body: &str,
+    ) -> Result<Vec<crate::NoteAttachmentQuery>, NoteContentError> {
         Ok(Vec::new())
     }
 
@@ -354,6 +582,10 @@ impl NoteContent for AcceptContent {
                 max_patch_hunks: 1,
                 max_tags: 1,
                 max_tag_characters: 1,
+                max_attachment_bytes: 1,
+                max_attachments_per_note: 1,
+                max_attachment_bytes_per_note: 1,
+                max_attachment_file_name_characters: 1,
             },
             normalization: crate::NoteProfileNormalization {
                 title: Vec::new(),
@@ -398,6 +630,53 @@ impl Random for FixedRandom {
     }
 }
 
+pub(super) fn identity(subject: &str) -> Identity {
+    Identity::new("https://id.example.test".into(), subject.into()).expect("valid identity")
+}
+
+pub(super) fn principal(subject: &str, id: i64) -> PrincipalRef {
+    PrincipalRef::new(
+        PrincipalId::new(id).expect("positive principal ID"),
+        identity(subject),
+    )
+}
+
+pub(super) fn actor(subject: &str, id: i64) -> Actor {
+    Actor::for_single_identity(
+        PrincipalId::new(id).expect("positive principal ID"),
+        identity(subject),
+    )
+}
+
+pub(super) struct TestPrincipalDirectory;
+
+#[async_trait]
+impl PrincipalDirectory for TestPrincipalDirectory {
+    async fn resolve_or_create_verified(&self, identity: Identity) -> Result<Actor, StorageError> {
+        Ok(Actor::for_single_identity(
+            PrincipalId::new(1).expect("ID"),
+            identity,
+        ))
+    }
+
+    async fn resolve(&self, identity: &Identity) -> Result<Option<Actor>, StorageError> {
+        Ok(Some(Actor::for_single_identity(
+            PrincipalId::new(1).expect("ID"),
+            identity.clone(),
+        )))
+    }
+
+    async fn resolve_or_create_acl_target(
+        &self,
+        identity: Identity,
+    ) -> Result<PrincipalRef, StorageError> {
+        Ok(PrincipalRef::new(
+            PrincipalId::new(2).expect("ID"),
+            identity,
+        ))
+    }
+}
+
 /// 引用のないノートだけを扱う試験用の文献ライブラリ。
 pub(super) struct EmptyLibrary;
 
@@ -413,7 +692,7 @@ impl BibliographyRepository for EmptyLibrary {
 
     async fn items_by_citation_keys(
         &self,
-        _owner: &Identity,
+        _owner: &PrincipalRef,
         _citation_keys: &[String],
     ) -> Result<Vec<BibliographyItem>, StorageError> {
         Ok(Vec::new())
@@ -455,19 +734,31 @@ impl NoteLinkResolver for NoLinks {
     ) -> Option<String> {
         None
     }
+
+    fn attachment_href(
+        &self,
+        _context: &NoteRenderContext,
+        _note_id: NoteId,
+        _attachment_id: AttachmentId,
+    ) -> Option<String> {
+        None
+    }
 }
 
 pub(super) struct NoMathMacros;
 
 #[async_trait]
 impl MathMacroRepository for NoMathMacros {
-    async fn read_math_macros(&self, _owner: &Identity) -> Result<MathMacroSettings, StorageError> {
+    async fn read_math_macros(
+        &self,
+        _owner: &PrincipalRef,
+    ) -> Result<MathMacroSettings, StorageError> {
         Ok(MathMacroSettings::default())
     }
 
     async fn replace_math_macros(
         &self,
-        _owner: &Identity,
+        _owner: &PrincipalRef,
         _macros: &[MathMacro],
         _expected_revision: i64,
     ) -> Result<MathMacroSettings, StorageError> {
@@ -479,7 +770,10 @@ pub(super) struct OwnerMathMacros;
 
 #[async_trait]
 impl MathMacroRepository for OwnerMathMacros {
-    async fn read_math_macros(&self, owner: &Identity) -> Result<MathMacroSettings, StorageError> {
+    async fn read_math_macros(
+        &self,
+        owner: &PrincipalRef,
+    ) -> Result<MathMacroSettings, StorageError> {
         Ok(MathMacroSettings {
             macros: (owner == &OneItemLibrary::owner())
                 .then(|| MathMacro {
@@ -495,7 +789,7 @@ impl MathMacroRepository for OwnerMathMacros {
 
     async fn replace_math_macros(
         &self,
-        _owner: &Identity,
+        _owner: &PrincipalRef,
         _macros: &[MathMacro],
         _expected_revision: i64,
     ) -> Result<MathMacroSettings, StorageError> {
@@ -507,8 +801,8 @@ impl MathMacroRepository for OwnerMathMacros {
 pub(super) struct OneItemLibrary;
 
 impl OneItemLibrary {
-    pub(super) fn owner() -> Identity {
-        Identity::new("https://id.example.test".into(), "alice".into()).expect("owner")
+    pub(super) fn owner() -> PrincipalRef {
+        principal("alice", 1)
     }
 
     fn item() -> BibliographyItem {
@@ -561,7 +855,7 @@ impl BibliographyRepository for OneItemLibrary {
 
     async fn items_by_citation_keys(
         &self,
-        owner: &Identity,
+        owner: &PrincipalRef,
         citation_keys: &[String],
     ) -> Result<Vec<BibliographyItem>, StorageError> {
         if owner != &Self::owner() {
@@ -619,6 +913,7 @@ impl NoteContent for CitingContent {
                 span: Utf8ByteSpan { start: 0, end: 1 },
                 position: crate::NoteSourcePosition { line: 1, column: 1 },
             }],
+            attachment_queries: Vec::new(),
             citation_style: CitationStyle::default(),
             source_spans: Vec::new(),
         })
@@ -629,6 +924,13 @@ impl NoteContent for CitingContent {
     }
 
     fn citation_queries(&self, _body: &str) -> Result<Vec<NoteCitationQuery>, NoteContentError> {
+        Ok(Vec::new())
+    }
+
+    fn attachment_queries(
+        &self,
+        _body: &str,
+    ) -> Result<Vec<crate::NoteAttachmentQuery>, NoteContentError> {
         Ok(Vec::new())
     }
 

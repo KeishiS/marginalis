@@ -3,10 +3,12 @@
 //! 共通の識別子と版番号をこのファイルで定義し、ノート、文献、identityの各系統は
 //! 子moduleへ分ける。公開名はすべて`marginalis_domain`直下から変わらない。
 
+mod attachment;
 mod bibliography;
 mod identity;
 mod note;
 
+pub use attachment::*;
 pub use bibliography::*;
 pub use identity::*;
 pub use note::*;

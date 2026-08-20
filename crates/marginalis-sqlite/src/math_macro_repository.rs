@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use marginalis_application::{
     MathMacro, MathMacroRepository, MathMacroSettings, StorageError, validate_stored_math_macros,
 };
-use marginalis_domain::Identity;
+use marginalis_domain::PrincipalRef;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
@@ -18,13 +18,15 @@ pub(crate) struct StoredMathMacro {
 
 #[async_trait]
 impl MathMacroRepository for SqliteDatabase {
-    async fn read_math_macros(&self, owner: &Identity) -> Result<MathMacroSettings, StorageError> {
+    async fn read_math_macros(
+        &self,
+        owner: &PrincipalRef,
+    ) -> Result<MathMacroSettings, StorageError> {
         let row = sqlx::query(
             "SELECT macros_json, revision FROM math_macro_settings
-             WHERE owner_issuer = ? AND owner_subject = ?",
+             WHERE owner_principal_id = ?",
         )
-        .bind(owner.issuer())
-        .bind(owner.subject())
+        .bind(owner.id().get())
         .fetch_optional(&self.pool)
         .await
         .map_err(storage_error)?;
@@ -33,7 +35,7 @@ impl MathMacroRepository for SqliteDatabase {
 
     async fn replace_math_macros(
         &self,
-        owner: &Identity,
+        owner: &PrincipalRef,
         macros: &[MathMacro],
         expected_revision: i64,
     ) -> Result<MathMacroSettings, StorageError> {
@@ -50,12 +52,11 @@ impl MathMacroRepository for SqliteDatabase {
         let revision = if expected_revision == 0 {
             let result = sqlx::query(
                 "INSERT INTO math_macro_settings (
-                    owner_issuer, owner_subject, macros_json, revision
-                 ) VALUES (?, ?, ?, 1)
-                 ON CONFLICT (owner_issuer, owner_subject) DO NOTHING",
+                    owner_principal_id, macros_json, revision
+                 ) VALUES (?, ?, 1)
+                 ON CONFLICT (owner_principal_id) DO NOTHING",
             )
-            .bind(owner.issuer())
-            .bind(owner.subject())
+            .bind(owner.id().get())
             .bind(&encoded)
             .execute(&mut *transaction)
             .await
@@ -68,12 +69,11 @@ impl MathMacroRepository for SqliteDatabase {
             let row = sqlx::query(
                 "UPDATE math_macro_settings
                  SET macros_json = ?, revision = revision + 1
-                 WHERE owner_issuer = ? AND owner_subject = ? AND revision = ?
+                 WHERE owner_principal_id = ? AND revision = ?
                  RETURNING revision",
             )
             .bind(&encoded)
-            .bind(owner.issuer())
-            .bind(owner.subject())
+            .bind(owner.id().get())
             .bind(expected_revision)
             .fetch_optional(&mut *transaction)
             .await

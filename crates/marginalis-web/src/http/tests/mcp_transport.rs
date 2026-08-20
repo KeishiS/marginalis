@@ -329,35 +329,6 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert!(text.contains("1 visible note"));
     assert!(text.contains("同期ノート (revision 3)"));
 
-    let synchronized = mcp_app()
-        .oneshot(
-            Request::post("/mcp")
-                .header("content-type", "application/json")
-                .header(header::ACCEPT, "application/json, text/event-stream")
-                .header(header::AUTHORIZATION, "Bearer sync-token")
-                .body(Body::from(
-                    r#"{"jsonrpc":"2.0","id":"sync","method":"tools/call","params":{"name":"sync_notes","arguments":{"limit":100}}}"#,
-                ))
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(synchronized.status(), StatusCode::OK);
-    let body = to_bytes(synchronized.into_body(), usize::MAX)
-        .await
-        .expect("response body");
-    let synchronized: serde_json::Value = serde_json::from_slice(&body).expect("JSON-RPC response");
-    let output: marginalis_contract::McpSyncNotesOutput =
-        serde_json::from_value(synchronized["result"]["structuredContent"].clone())
-            .expect("typed sync output");
-    assert_eq!(output.phase, marginalis_contract::McpSyncPhase::Snapshot);
-    assert_eq!(output.next_cursor, "next-sync-cursor");
-    let text = synchronized["result"]["content"][0]["text"]
-        .as_str()
-        .expect("text");
-    assert!(text.contains("Synchronization snapshot"));
-    assert!(text.contains("next-sync-cursor"));
-
     let request = Request::post("/mcp")
         .header("content-type", "application/json")
         .header(header::ACCEPT, "application/json, text/event-stream")
@@ -498,27 +469,6 @@ async fn mcp_bearer_scheme_is_case_insensitive_and_scope_failures_are_forbidden(
                 value.contains("error=\"insufficient_scope\"")
                     && value.contains("scope=\"notes:read notes:write\"")
             })
-    );
-
-    let read_scope_for_sync = Request::post("/mcp")
-        .header("content-type", "application/json")
-        .header(header::ACCEPT, "application/json, text/event-stream")
-        .header(header::AUTHORIZATION, "Bearer read-token")
-        .body(Body::from(
-            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"sync_notes","arguments":{}}}"#,
-        ))
-        .expect("request");
-    let denied = mcp_app()
-        .oneshot(read_scope_for_sync)
-        .await
-        .expect("response");
-    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
-    assert!(
-        denied
-            .headers()
-            .get(header::WWW_AUTHENTICATE)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.contains("scope=\"notes:read notes:sync\""))
     );
 
     let write_only_profile = Request::post("/mcp")
@@ -1301,10 +1251,7 @@ async fn mcp_accepts_configured_browser_origins_and_rejects_others() {
 #[test]
 fn browser_mutations_require_the_application_origin() {
     let state = ApiState::new(
-        Arc::new(Notes),
-        Arc::new(MathMacros),
-        Arc::new(Sessions),
-        Arc::new(Oidc),
+        test_api_services(Arc::new(Notes), Arc::new(Sessions)),
         "/".into(),
         "https://example.test".into(),
     );
@@ -1353,7 +1300,7 @@ async fn update_note_is_gone_and_partial_tools_are_listed() {
         .iter()
         .map(|tool| tool["name"].as_str().expect("tool name"))
         .collect();
-    assert_eq!(names.len(), 14);
+    assert_eq!(names.len(), 13);
     for name in [
         "get_note_outline",
         "get_note_fragment",
@@ -1364,6 +1311,7 @@ async fn update_note_is_gone_and_partial_tools_are_listed() {
         assert!(names.contains(&name), "{name}が一覧にあります");
     }
     assert!(!names.contains(&"update_note"));
+    assert!(!names.contains(&"sync_notes"));
 
     let removed = Request::post("/mcp")
         .header("content-type", "application/json")

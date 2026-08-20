@@ -46,7 +46,7 @@ pub(crate) async fn export_archive(
         return Err("written archive does not match the database snapshot".into());
     }
     pending.commit()?;
-    tracing::info!(event = "maintenance.archive_export.completed", output = %output.display(), note_count = archive.notes.len(), "exported archive");
+    tracing::info!(event = "maintenance.archive_export.completed", output = %output.display(), note_count = archive.note_count(), "exported archive");
     Ok(())
 }
 
@@ -84,7 +84,7 @@ pub(crate) async fn migrate_archive(
         event = "maintenance.archive_migration.completed",
         input = %input.display(),
         output = %output.display(),
-        note_count = written.archive.notes.len(),
+        note_count = written.archive.note_count(),
         "migrated archive"
     );
     Ok(())
@@ -141,7 +141,7 @@ pub(crate) async fn restore_archive(
         event = "maintenance.archive_restore.completed",
         input = %input.display(),
         migrated,
-        note_count = validated.archive.notes.len(),
+        note_count = validated.archive.note_count(),
         "restored archive"
     );
     Ok(())
@@ -155,9 +155,9 @@ fn migrate_from_previous_contract(source: &Archive) -> Result<Archive, Box<dyn s
              current {}/{}/{} nor the previous published storage contract \
              (直前の公開済み保存契約だけに対応しています。より古い書庫は対応していた過去の\
              リリースで段階的に変換してください)",
-            source.format,
-            source.adocweave_package_version,
-            source.note_profile_version,
+            source.format(),
+            source.adocweave_package_version(),
+            source.note_profile_version(),
             marginalis_archive::ARCHIVE_FORMAT,
             AsciiDocNoteContent.profile().adocweave_package_version,
             marginalis_archive::ARCHIVE_NOTE_PROFILE_VERSION,
@@ -177,7 +177,7 @@ pub(crate) async fn validate_archive(
     tracing::info!(
         event = "maintenance.archive_validation.completed",
         input = %input.display(),
-        note_count = validated.archive.notes.len(),
+        note_count = validated.archive.note_count(),
         "validated archive"
     );
     Ok(())
@@ -193,7 +193,7 @@ pub(crate) async fn verify_restore(
     tracing::info!(
         event = "maintenance.restore_verification.completed",
         input = %input.display(),
-        note_count = validated.archive.notes.len(),
+        note_count = validated.archive.note_count(),
         "verified isolated archive restore"
     );
     Ok(())
@@ -347,7 +347,7 @@ pub(crate) async fn export_documents(
     for file in export
         .files
         .iter()
-        .map(|file| (file.path.as_str(), file.contents.as_bytes()))
+        .map(|file| (file.path.as_str(), file.contents.as_slice()))
         .chain(std::iter::once(("manifest.json", manifest.as_slice())))
     {
         let (path, contents) = file;
@@ -483,7 +483,7 @@ pub(crate) async fn import_documents(
     tracing::info!(
         event = "maintenance.document_import.completed",
         input = %input.display(),
-        note_count = validated.archive.notes.len(),
+        note_count = validated.archive.note_count(),
         revalidated,
         "imported documents"
     );

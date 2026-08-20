@@ -51,9 +51,10 @@ AsciiDoc engine、HTTP serverを起動する必要がありません。
 ``NOTE_POLICY``には含めず``marginalis-asciidoc``の定数に置きます。版の正本は``Cargo.toml``のrevisionと
 ``Cargo.lock``の解決結果で、``cargo make adocweave-version-check``が定数、``flake.nix``、textlint plugin、
 生成済みOpenAPIなどリポジトリ内の参照との一致を検査します。
-``marginalis-auth-oidc``は外部identity provider portの薄いadapterです。OIDC discovery・
-code exchange・ID token検証の本体は、共有crate ``oidc-browser-login``が担当します(ADR 0015)。
-設定した許可claim値との照合による利用可否の判断はapplicationが担当します。
+``marginalis-service::oidc``は、外部identity provider portと共有crateの型を写す非公開adapterです。
+OIDC discovery・code exchange・ID token検証の本体は、共有crate ``oidc-browser-login``が担当します
+(ADR 0015)。型写像はMarginalis内で再利用せず、composition rootだけが具象的な共有crateを選ぶため、
+独立crateにはしません。設定した許可claim値との照合による利用可否の判断はapplicationが担当します。
 MCP用OAuthの製品非依存の型、resourceとscopeのpolicy、PKCEとredirect URIの検査は
 ``mcp-authorization-server``が定義します。認可、token発行、refresh token rotation、失効の状態遷移と
 原子的な永続化portも同じcrateが所有します。``marginalis-sqlite``はそのportを実装し、client、認可code、
@@ -93,13 +94,17 @@ Streamable HTTPの入口、Bearer tokenとscopeの検証、初期化と通信条
 認証処理を、認証方式を変更するときにノート出力変換を読み替える必要がありません。
 実行バイナリは``marginalis-service``です。
 
-外部の検索用投影には、通常閲覧とは別の``notes:sync``とMCPの``sync_notes``を公開します。SQLiteは
-actorごと・ノートごとの最新変更だけを、本文を含まない連番付き索引へ保存します。ノートとACLの変更は
-索引と同じtransactionで確定します。初期一覧は開始時の連番を境界として現在の可視ノートを返し、その後は
+外部の検索用投影には、通常閲覧とは別の``notes:sync``と専用REST endpoint
+``GET /api/v3/sync/notes``を公開します。対話的な操作を表すMCP toolへ、継続的なデータ複製を
+混在させません。OAuthのtoken、scope上限、取消はMCPと同じ外部連携用の認可境界を使用します。SQLiteは
+確定した変更を本文のない``domain_changes``へ一度だけ記録し、actorごと・ノートごとの最新状態を
+同期用の索引へ派生させます。ノートとACLの変更、共通変更記録、同期用索引は同じtransactionで確定します。
+初期一覧は開始時の連番を境界として現在の可視ノートを返し、その後は
 境界より後の変更へ移るため、一覧中の更新を取りこぼしません。``upsert``は読取時に現在のアクセス権と
 ノート正本へ結合し、共有取消後に古いcursorから本文を取得できないようにします。cursorはactorに
 結び付けた不透明tokenで、保存するのはhashだけです。採用理由と保持期間は
-xref:adr/0013-検索投影向けの委任scopeと増分同期.adoc#top[検索投影向けの委任scopeと増分同期]に記録しています。
+xref:adr/0013-検索投影向けの委任scopeと増分同期.adoc#top[検索投影向けの委任scopeと増分同期]と
+xref:adr/0023-外部検索の同期は専用rest-endpointで提供する.adoc#top[ADR 0023]に記録しています。
 
 [#一貫して満たすべき設計条件]
 == 一貫して満たすべき設計条件
@@ -111,19 +116,21 @@ xref:adr/0013-検索投影向けの委任scopeと増分同期.adoc#top[検索投
 取込元、対応情報、所有者の全文献項目と現在値を照合する。一致しない場合は保存を始めず競合として
 拒否する。文献項目、取込元、外部項目との対応情報は、そのtransactionでまとめて更新する。
 外部項目が入力から消えたことを削除の指示として扱わない。
-* *ARCH-AUTHZ-001 — ノートの所有権とACL*: 通常利用者は、作成者の``(issuer, subject)``が自身の
-identityと一致するノートを所有する。同じ``issuer``の個人subjectへ付与されたACLの``read``は閲覧、
-``edit``は閲覧と本文更新を許可する。
+* *ARCH-AUTHZ-001 — ノートの所有権とACL*: 通常利用者は、自身の``PrincipalId``と作成者の
+``PrincipalId``が一致するノートを所有する。個人principalへ付与されたACLの``read``は閲覧、
+``edit``は閲覧と本文更新を許可する。外部identityは入口でprincipalへ一度だけ解決し、SQLの認可条件へ
+``issuer``と``subject``を重ねて持ち込まない。
 所有者は変更不能であり、ACL変更と削除・復元は所有者だけに許可する。サーバー全体の管理者権限や、
 ACLを迂回して全ノートを閲覧する権限は設けない。
-* *ARCH-IDENTITY-001 — 利用者identity*: identityは``(issuer, subject)``で識別する。アプリケーションは
+* *ARCH-IDENTITY-001 — 利用者identityとprincipal*: 外部identityは``(issuer, subject)``で識別し、
+認可と業務データの所有者はSQLite内部の``PrincipalId``で識別する。アプリケーションは
 ローカルpassword、root、登録ポリシーを持たない。``issuer``はuserinfo、query、fragment、制御文字を
 含まない絶対HTTP(S) URL、``subject``は空でなく制御文字を含まない値とし、長さ上限をdomainで
 一元検証する。
 * *ARCH-IDENTITY-002 — 永続的な識別子*: ノートなどの永続的な識別子にはUUIDv7だけを受理する。
 文字列、JSON、データベースからの復元を含むすべての入力経路で同じ検査を行い、検査を省略する
 公開constructorは設けない。
-* *ARCH-DOMAIN-001 — ノートの不変条件*: ``Note``は検証済みの所有者identityと正の値だけを表す
+* *ARCH-DOMAIN-001 — ノートの不変条件*: ``Note``は検証済みの所有者principalと正の値だけを表す
 ``Revision``を保持し、作成日時から更新日時までの順序、削除日時の範囲を生成時と復元時に検査する。
 フィールドを直接変更する公開APIは設けない。
 SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
@@ -138,7 +145,8 @@ ACL、削除、復元のどの変更でもrevisionの不一致により確認待
 文書書庫からの取り込みでは、書き出し時の本文、所有者、ACLを結び付けたhashと入力を比較し、
 異なる場合に同じrevision更新規則を適用する。
 * *ARCH-AUTHN-001 — OIDC主体の決定*: 利用可否のclaim要件は、IdPの署名検証済みID tokenから
-決める。WebとMCPの同意画面は、同じ``(issuer, subject)``を所有者identityに使用する。
+決める。WebとMCPの同意画面で確認した``(issuer, subject)``は同じ``PrincipalId``へ解決し、
+認可へ使用する。
 * *ARCH-SESSION-001 — sessionとlogin attemptの期限*: Web sessionは24時間のsliding idle期限と7日の
 絶対期限を持つ(共有crateの既定値)。有効性の検証とidle期限の延長は、
 SQLiteの一つの条件付き更新で行う。読み取り後に同じ遅延transactionを更新へ切り替えず、
@@ -161,11 +169,16 @@ refresh tokenの消費と次のtoken pair発行、再利用検知とtoken family
 複製しない。
 * *ARCH-AUTHZ-002 — 実効アクセス水準*: 実効アクセス水準は``Read < Edit < Manage``の順序で表す。
 SQLiteの``note_access``投影が、所有者の``Manage``とACLの``Read``または``Edit``を同じ判断表へまとめる。
+* *ARCH-CHANGE-001 — 外部連携向け変更記録*: ノート、ACL、文献項目の確定した変更は、
+SQLiteの同じtransaction内で``domain_changes``へ一度だけ記録する。検索同期の最新状態とWebhook配送は
+この共通記録から派生させ、業務表から用途別の変更表へ重複して記録しない。共通記録は本文、CSL-JSON、
+外部identityを保持せず、同期状態と未配送Webhookのどちらからも参照されなくなった場合だけ削除する。
 * *ARCH-HOOK-001 — Webhook eventの生成と配送の境界*: 通知対象のeventは、変更を確定する
-SQLiteの同じtransaction内のtriggerがoutboxへ記録する（transactional outbox）。配送は
+SQLiteの同じtransaction内で共通変更記録から配送行へ展開する（transactional outbox）。配送は
 subscriptionごとに先頭のeventだけをlease付きで取得して順序を保ち、HTTP送信は
-``marginalis-webhook-http`` adapterへ隔離する。application層はrepositoryとsenderのportだけへ
-依存し、ログは配送結果を受け取ったcomposition rootが記録する。
+``marginalis-service::webhook``の非公開adapterへ隔離する。application層はrepositoryとsenderのportだけへ
+依存し、ログは配送結果を受け取ったcomposition rootが記録する。共通変更記録と用途別の保持期間は
+xref:adr/0022-同期とwebhookは一つの変更記録から派生させる.adoc#top[ADR 0022]に記録する。
 * *ARCH-HOOK-002 — Webhook送信先の二重検査*: 送信先URLは登録時に構文とIP literalを検査し、
 送信直前にもすべてのDNS解決結果を検査して解決済みaddressへ接続を固定する。どちらも
 公開networkのHTTPS（port 443）だけを許可して特別用途address（RFC 6890）を拒否し、
@@ -175,10 +188,8 @@ redirectへ従わない。例外は運用者が明示したhostに限る。secre
 == 採用済みの保存基盤移行計画
 
 この節は、 xref:adr/0019-利用者の認可は内部principalに結び付けsqliteを前進移行する.adoc#top[ADR 0019]で
-採用した保存基盤の移行計画です。\#548のSQLite前進migration基盤は実装済みです。
-principalへの切替はまだ実装していないため、\#549と\#550が完了するまでは、上の
-``ARCH-IDENTITY-001``、``ARCH-AUTHZ-001``と xref:requirements.adoc#top[現行要件]を現在の動作として
-優先します。
+採用した保存基盤の移行計画です。\#548のSQLite前進migration基盤、\#549のschema 23および
+``PrincipalId``への切替、\#550のidentity引き継ぎcommandとalias群を失わないarchive契約は実装済みです。
 
 移行後は、OIDCの``(issuer, subject)``を公開境界のidentityとして維持しながら、認可と業務データの
 所有者をSQLite内部の``PrincipalId``へ結び付けます。認証に使ったidentityをそのまま返す共有session・
@@ -191,8 +202,10 @@ SQLite schemaは22を基準とする前進migrationへ移します。通常の``
 切戻しに使い、互いに代用しません。
 
 実装順は、\#548のmigration基盤、\#549のschema 23と``PrincipalId``への一括切替、\#550のidentity
-引き継ぎとaliasのarchive往復です。外部identityと``PrincipalId``を認可条件として混在させる中間schemaは
-公開しません。その後、\#541のノート版履歴と\#540の添付を``PrincipalId``へ直接結び付けます。
+引き継ぎとaliasのarchive往復です。schema 22に現れるidentityは推測でまとめず、完全に一致する組ごとに
+一つのprincipalへ移します。必要な組だけを退避付きの管理commandで明示的に結び付けます。
+\#541のノート版履歴は、各版の変更者を``PrincipalId``へ直接結び付ける形で実装済みです。\#540の添付も、
+不変な画像本体をSQLiteへ保存し、履歴の``(note_id, revision)``へ参照集合を結び付ける形で実装済みです。
 
 == 検索のサービス境界
 
@@ -209,8 +222,6 @@ Marginalisのノート一覧にはタグと更新日による絞り込みを残�
 
 * *PostgreSQL*: 複数ホスト、高可用性、復旧目標、代表負荷などの
 xref:adr/0002-sqliteを正本として維持する.adoc#再検討条件[再検討条件]が実測で成立した場合だけ再検討します。
-* *添付Resource*: 保存先、MIME type、容量、認可、バックアップを一つの公開契約として
-定義できる場合に再検討します。
 
 == ソース配置
 
@@ -222,16 +233,32 @@ crates/
 ├── marginalis-application     use case実装と内向き・外向きport
 ├── marginalis-asciidoc        AsciiDoc検証・描画
 ├── marginalis-archive         archive形式の型・検証・移行
-├── marginalis-auth-oidc       OIDCログインadapter（共有crateへの写像）
 ├── marginalis-sqlite          SQLite adapter
 ├── marginalis-web             HTTP adapter
-├── marginalis-webhook-http    Webhook送信adapter（宛先検査・署名・HTTP POST）
 └── marginalis-service         composition rootと実行バイナリ
 
 frontend/
 ├── src                        React・TypeScriptの実装
 └── tests                      ブラウザーに依存しないUI試験
 ----
+
+``marginalis-service/src/oidc.rs``は、共有OIDCログインcrateをapplication portへ接続する非公開moduleです。
+独立した配布単位や複数の利用元を持たない薄い型写像は、workspace crateを増やさずcomposition rootの
+内部に置きます。
+``marginalis-service/src/webhook.rs``も同じ方針で、Webhook送信portのHTTP実装、宛先の再検査、署名を
+composition rootの内部に置きます。送信規則と再試行手順はapplicationに、配送状態はSQLiteに残すため、
+外部I/Oの境界は維持します。
+``marginalis-application::webhooks``は購読操作の公開facadeです。再試行とleaseを扱う配送状態機械は
+``delivery``、SSRFを防ぐ送信先URLとaddressの規則は``destination``という非公開moduleへ分けます。
+購読画面の変更から配送順序やnetwork境界の規則を読み分けられる一方、SQLiteとserviceが参照する公開APIは
+facadeに集約します。
+
+``marginalis-archive``の公開入口は``src/lib.rs``へ限定します。JSONへ直列化する``Archive``の項目は
+crate外から直接変更できず、呼び出し側は``create_archive``、``validate_archive``、
+``migrate_previous_archive``を通して扱います。形式、AdocWeave package版、note profile版、ノート件数など
+運用上必要な情報だけを読み取り用methodで公開します。保存形式と検証順序をHTTPや保守commandへ漏らさず、
+契約変更時の判断をarchive crate内へ閉じ込めます。``documents`` moduleは、可搬な完全backupとは別に、
+他の道具で読める文書出力と再取込だけを担当します。
 
 次の2つのcrateは``crates/``にはなく、完全なcommit SHAで固定した外部依存として取り込みます。
 
@@ -264,6 +291,10 @@ marginalis-web/src/http/mcp_transport/
 adapterへは依存しない。
 HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのportを実装する。
 ``service``だけが具象的なadapterを選び、application serviceへ接続する。
+HTTP adapterへ渡す``ApiServices``は、ノート、文献、文献取込、数式macro、Web session、OIDC、Webhookを
+必須項目として持ちます。本番で常に構成する依存を``Option``や段階的なbuilderにせず、欠けた機能だけが
+起動後に``503 Service Unavailable``を返す状態を作りません。配備設定で明示的に無効化できるMCP endpoint
+だけを任意項目とし、無効時は関連route自体を公開しません。
 ``cargo make dependency-boundaries``は、すべてのworkspace crateのproduction依存をこの対応へ固定し、
 違反時に期待する依存と実際の依存の差を表示します。新しいcrateまたは依存方向が必要な場合は、
 検査だけを緩めず、この設計と依存表を同じ変更で更新します。
@@ -274,11 +305,10 @@ HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのpor
 閲覧画面は``NoteUseCases::read_note_view``だけを呼び出し、ノート、実効アクセス水準、描画HTML、
 関連概要を個別の問い合わせから組み立てません。試験用adapterもこの境界を直接実装し、実際には
 存在しない分割問い合わせを模倣しません。
-applicationから永続化へ要求する外向きportは、読み取りの``NoteQueryRepository``、原子的な変更の
-``NoteCommandRepository``、ACL操作の``NoteAclRepository``、所有者とrevisionを原子的に検査する
-``NoteReviewRepository``に分けます。具象的には同じSQLite adapterがこれらを実装しますが、application serviceは
-用途ごとに必要なportだけを受け取ります。組み立ては``NoteApplicationDependencies``へ名前付きで束ね、
-同じ型のrepositoryを取り違えないようにします。
+applicationからノートの永続化へ要求する外向きportは、読み取り、原子的な変更、ACL操作、
+人手確認、外部検索用同期の小さなインターフェースに分けます。``NoteRepository``はこれらを一つの
+保存境界へ束ね、application serviceには一つの保存実装だけを注入します。これにより、読み取りと
+変更で異なるデータベースを誤って組み合わせず、具体的なSQLiteの型にも依存しません。
 すべてのrepository portは共通の失敗理由``StorageError``
 （``NotFound``、``Conflict``、``RetentionExpired``、``CorruptData``、``Unavailable``）を返し、
 系統ごとの意味づけはユースケース層のエラー型への写像が決めます。
@@ -292,6 +322,13 @@ domainとapplicationの値を観測目的で公開し直さず、利用者identi
 ノートの正本は、文書題名、``:marginalis-tags:``などの文書属性、本文を含む完全なAsciiDoc文書
 です。題名とタグは保存時にAdocWeaveで解析し、一覧と検索に使う投影としてSQLiteへ同時に
 保存します。APIから題名やタグだけを独立して更新する経路は設けません。
+
+現在のノートを更新するすべての操作は、確定後の完全な状態を``note_revisions``へ同じtransactionで
+追記します。履歴は差分の連鎖にせず、差分は選択した二つの原文から要求時に生成します。通常のノートでは
+現在の``note_access``、削除済みノートでは現在の所有者を閲覧条件とし、過去のACLは履歴へ保存しません。
+過去版の復元は原文だけを現行の``NoteContent``で再検証し、現在の所有者、ACL、作成情報を維持した
+新しいrevisionとして保存します。詳しい判断は
+xref:adr/0020-ノートの版履歴は完全な状態を追記して保存する.adoc#top[ADR 0020]を参照してください。
 
 文書headerへ書ける属性の名前は``NOTE_POLICY.allowed_document_attributes``が正本で、入力検査と
 ``get_note_profile``の広告の両方をここから導きます。Marginalisが独自に決めた属性の名前は
@@ -348,15 +385,18 @@ anchor、本文から項目へのlink、項目から本文への戻りlink、番
 archiveへ記録するAdocWeave packageの版も、注入した``NoteContent``の profileから取得します。記録値と
 実際に検証した解析器が食い違わないためで、同じ版を二か所へ書きません。
 
-JSONから復元したノート、ACL、文献項目、取込元、外部項目との対応、数式マクロ設定は、
+JSONから復元したノート、ACL、保持中の全版、文献項目、取込元、外部項目との対応、数式マクロ設定は、
 ``marginalis-application``の``LogicalSnapshot``で識別子の重複、参照先、所有者境界、取込時revisionを
-一度だけ検証します。本文から再構築する参照索引も検証した``RestorePlan``だけをSQLite adapterへ
+一度だけ検証します。履歴は版の重複と連続性、現在版との一致、変更者を検査します。本文から再構築する参照索引も検証した``RestorePlan``だけをSQLite adapterへ
 渡します。これにより、ドメイン型を外部形式へ直接公開せず、SQLite adapterはJSON形式やAsciiDocの
 解析方法に依存しません。
 
 crateは独立した依存境界または再利用単位にだけ使い、HTTP handlerやSQLite tableごとの整理には
 crate内moduleを使う。各crateの``lib.rs``は公開facade、routerまたはcomposition rootとして、
 実行経路と公開型を短く一覧できる状態に保つ。
+``marginalis-application/src/lib.rs``はmodule宣言と再エクスポートだけを持ち、ノートの公開型と
+``NoteUseCases``は``notes/api.rs``へ置きます。認証とMCPの内向き境界はそれぞれの実装moduleへ、
+保存失敗、時刻、乱数の共通portは``runtime.rs``へ置き、crate rootへ異なる変更理由を集めません。
 
 Web UIでは、Rustが認証、認可、初期HTML、REST API、静的アセットの配信を担当し、Reactは
 画面遷移とブラウザー内状態を担当します。RESTのTypeScript型と実行時の応答検査は、

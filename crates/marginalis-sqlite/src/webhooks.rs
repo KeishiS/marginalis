@@ -1,9 +1,9 @@
-//! Webhook配送状態の永続化。outboxの取得、結果の記録、保持期限の削除。
+//! 共通の変更記録から派生したWebhook配送状態の永続化。
 
 use async_trait::async_trait;
 use marginalis_application::{
     StorageError, WEBHOOK_RETENTION_MS, WebhookDeliveryFailure, WebhookDeliveryRepository,
-    WebhookOutboxEvent, WebhookPendingDelivery, WebhookSubscriptionOverview,
+    WebhookEvent, WebhookPendingDelivery, WebhookSubscriptionOverview,
     WebhookSubscriptionRepository, WebhookSubscriptionState,
 };
 use marginalis_domain::{Actor, UnixMillis};
@@ -66,10 +66,11 @@ impl WebhookDeliveryRepository for SqliteDatabase {
         for (subscription_id, event_sequence) in claimed {
             let row = sqlx::query(
                 "SELECT s.url, s.secret, d.attempt_count,
-                        e.event_id, e.event_kind, e.target_id, e.revision, e.occurred_at_ms
+                        e.event_id, e.change_kind AS event_kind,
+                        e.target_id, e.revision, e.occurred_at_ms
                  FROM webhook_deliveries d
                  JOIN webhook_subscriptions s ON s.subscription_id = d.subscription_id
-                 JOIN webhook_outbox_events e ON e.event_sequence = d.event_sequence
+                 JOIN domain_changes e ON e.change_sequence = d.event_sequence
                  WHERE d.subscription_id = ? AND d.event_sequence = ?",
             )
             .bind(&subscription_id)
@@ -82,7 +83,7 @@ impl WebhookDeliveryRepository for SqliteDatabase {
                 url: row.get("url"),
                 secret: row.get("secret"),
                 attempt_count: u32::try_from(row.get::<i64, _>("attempt_count")).unwrap_or(0),
-                event: WebhookOutboxEvent {
+                event: WebhookEvent {
                     event_id: row.get("event_id"),
                     kind: row.get("event_kind"),
                     sequence: event_sequence,
@@ -163,12 +164,12 @@ impl WebhookDeliveryRepository for SqliteDatabase {
         Ok(())
     }
 
-    async fn purge_expired_events(&self, now: UnixMillis) -> Result<u64, StorageError> {
+    async fn purge_expired_deliveries(&self, now: UnixMillis) -> Result<u64, StorageError> {
         let horizon = now.get().saturating_sub(WEBHOOK_RETENTION_MS);
         let mut transaction = self.pool.begin().await.map_err(storage_error)?;
-        // 保持期間を過ぎた配送済み・破棄済みの配送行を先に消し、どこからも
-        // 参照されなくなった古いeventを消す。未配送が残るeventは保持する。
-        sqlx::query(
+        // 保持期間を過ぎた配送済み・破棄済みの配送行を先に消す。共通の変更記録は、
+        // 同期投影からも参照されていない場合だけ消す。未配送が残る変更は保持する。
+        let deliveries = sqlx::query(
             "DELETE FROM webhook_deliveries
              WHERE state IN ('delivered', 'discarded') AND last_attempted_at_ms <= ?",
         )
@@ -176,12 +177,21 @@ impl WebhookDeliveryRepository for SqliteDatabase {
         .execute(&mut *transaction)
         .await
         .map_err(storage_error)?;
-        let events = sqlx::query(
-            "DELETE FROM webhook_outbox_events
+        sqlx::query(
+            "DELETE FROM domain_changes
              WHERE occurred_at_ms <= ?
+               AND change_kind IN (
+                   'note.created', 'note.updated', 'note.deleted', 'note.restored',
+                   'bibliography_item.created', 'bibliography_item.updated',
+                   'bibliography_item.deleted'
+               )
                AND NOT EXISTS (
                    SELECT 1 FROM webhook_deliveries d
-                   WHERE d.event_sequence = webhook_outbox_events.event_sequence
+                   WHERE d.event_sequence = domain_changes.change_sequence
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM note_sync_projection sync
+                   WHERE sync.change_sequence = domain_changes.change_sequence
                )",
         )
         .bind(horizon)
@@ -189,7 +199,7 @@ impl WebhookDeliveryRepository for SqliteDatabase {
         .await
         .map_err(storage_error)?;
         transaction.commit().await.map_err(storage_error)?;
-        Ok(events.rows_affected())
+        Ok(deliveries.rows_affected())
     }
 }
 
@@ -215,11 +225,10 @@ impl WebhookSubscriptionRepository for SqliteDatabase {
                      WHERE d.subscription_id = s.subscription_id AND d.state = 'pending')
                         AS pending_count
              FROM webhook_subscriptions s
-             WHERE s.owner_issuer = ? AND s.owner_subject = ?
+             WHERE s.owner_principal_id = ?
              ORDER BY s.created_at_ms, s.subscription_id",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_all(&self.pool)
         .await
         .map_err(storage_error)?;
@@ -265,13 +274,12 @@ impl WebhookSubscriptionRepository for SqliteDatabase {
             serde_json::to_string(event_kinds).map_err(|_| StorageError::CorruptData)?;
         sqlx::query(
             "INSERT INTO webhook_subscriptions (
-                 subscription_id, owner_issuer, owner_subject, url, secret, event_kinds_json,
+                 subscription_id, owner_principal_id, url, secret, event_kinds_json,
                  state, created_at_ms, updated_at_ms, revision
-             ) VALUES (?, ?, ?, ?, ?, ?, 'pending_challenge', ?, ?, 1)",
+             ) VALUES (?, ?, ?, ?, ?, 'pending_challenge', ?, ?, 1)",
         )
         .bind(subscription_id)
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(url)
         .bind(secret)
         .bind(event_kinds_json)
@@ -290,11 +298,10 @@ impl WebhookSubscriptionRepository for SqliteDatabase {
     ) -> Result<Option<(String, String)>, StorageError> {
         let row = sqlx::query(
             "SELECT url, secret FROM webhook_subscriptions
-             WHERE subscription_id = ? AND owner_issuer = ? AND owner_subject = ?",
+             WHERE subscription_id = ? AND owner_principal_id = ?",
         )
         .bind(subscription_id)
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_optional(&self.pool)
         .await
         .map_err(storage_error)?;
@@ -311,12 +318,11 @@ impl WebhookSubscriptionRepository for SqliteDatabase {
             "UPDATE webhook_subscriptions
              SET state = 'active', disabled_reason = NULL, updated_at_ms = ?,
                  revision = revision + 1
-             WHERE subscription_id = ? AND owner_issuer = ? AND owner_subject = ?",
+             WHERE subscription_id = ? AND owner_principal_id = ?",
         )
         .bind(now.get())
         .bind(subscription_id)
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .execute(&self.pool)
         .await
         .map_err(storage_error)?;
@@ -330,11 +336,10 @@ impl WebhookSubscriptionRepository for SqliteDatabase {
     ) -> Result<bool, StorageError> {
         let deleted = sqlx::query(
             "DELETE FROM webhook_subscriptions
-             WHERE subscription_id = ? AND owner_issuer = ? AND owner_subject = ?",
+             WHERE subscription_id = ? AND owner_principal_id = ?",
         )
         .bind(subscription_id)
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .execute(&self.pool)
         .await
         .map_err(storage_error)?;
@@ -351,13 +356,12 @@ impl WebhookSubscriptionRepository for SqliteDatabase {
         let updated = sqlx::query(
             "UPDATE webhook_subscriptions
              SET secret = ?, updated_at_ms = ?, revision = revision + 1
-             WHERE subscription_id = ? AND owner_issuer = ? AND owner_subject = ?",
+             WHERE subscription_id = ? AND owner_principal_id = ?",
         )
         .bind(secret)
         .bind(now.get())
         .bind(subscription_id)
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .execute(&self.pool)
         .await
         .map_err(storage_error)?;
@@ -373,11 +377,10 @@ impl WebhookSubscriptionRepository for SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(storage_error)?;
         let owned = sqlx::query(
             "SELECT 1 FROM webhook_subscriptions
-             WHERE subscription_id = ? AND owner_issuer = ? AND owner_subject = ?",
+             WHERE subscription_id = ? AND owner_principal_id = ?",
         )
         .bind(subscription_id)
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_optional(&mut *transaction)
         .await
         .map_err(storage_error)?;
@@ -426,11 +429,10 @@ impl WebhookSubscriptionRepository for SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(storage_error)?;
         let owned = sqlx::query(
             "SELECT 1 FROM webhook_subscriptions
-             WHERE subscription_id = ? AND owner_issuer = ? AND owner_subject = ?",
+             WHERE subscription_id = ? AND owner_principal_id = ?",
         )
         .bind(subscription_id)
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_optional(&mut *transaction)
         .await
         .map_err(storage_error)?;

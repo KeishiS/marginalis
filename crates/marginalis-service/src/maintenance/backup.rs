@@ -25,7 +25,7 @@ pub(crate) async fn verify_latest_backup(
     tracing::info!(
         event = "maintenance.backup_verification.completed",
         generation = %latest.file_name().and_then(|name| name.to_str()).unwrap_or("<invalid>"),
-        note_count = archive.archive.notes.len(),
+        note_count = archive.archive.note_count(),
         "verified latest backup generation"
     );
     Ok(())

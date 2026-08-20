@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use marginalis_domain::{
-    Actor, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteSummary,
+    Actor, Note, NoteCreationSource, NoteDraft, NoteId, NoteSummary, PrincipalRef,
 };
 
 use crate::{NotePreview, NoteProfile, NoteRenderContext, NoteUseCaseError, ValidatedNoteDraft};
@@ -18,7 +18,7 @@ impl NoteApplication {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        owner: &Identity,
+        owner: &PrincipalRef,
         validated: ValidatedNoteDraft,
         context: &NoteRenderContext,
     ) -> Result<NotePreview, NoteUseCaseError> {
@@ -27,6 +27,7 @@ impl NoteApplication {
             mut diagnostics,
             reference_queries,
             citation_queries,
+            attachment_queries,
             citation_style,
             source_spans,
         } = validated;
@@ -39,13 +40,16 @@ impl NoteApplication {
         );
         let target_ids = reference_targets(&reference_queries);
         let targets = self
-            .queries
+            .notes
             .visible_notes_by_id(actor, &target_ids)
             .await
             .map_err(NoteUseCaseError::from)?;
         let resolutions = self.reference_resolutions(&targets, context, &reference_queries)?;
         let citations = self
             .citation_resolutions(owner, &citation_queries, citation_style)
+            .await?;
+        let attachments = self
+            .resolve_note_attachments(actor, note_id, &attachment_queries, context)
             .await?;
         let html = self
             .content
@@ -55,6 +59,7 @@ impl NoteApplication {
                     references: &resolutions,
                     citations: &citations.resolutions,
                     bibliography: &citations.entries,
+                    attachments: &attachments,
                 },
             )
             .map_err(|_| NoteUseCaseError::RenderFailed)?;
@@ -131,10 +136,15 @@ impl NoteApplication {
             .content
             .validate_draft(draft)
             .map_err(NoteUseCaseError::Validation)?;
+        if !validated.attachment_queries.is_empty() {
+            return Err(super::attachments::rejected_attachment_references(
+                &validated.attachment_queries,
+            ));
+        }
         self.render_preview(
             &actor,
             NoteId::new(self.random.uuid_v7()),
-            actor.identity(),
+            actor.principal(),
             validated,
             &context,
         )
@@ -149,7 +159,7 @@ impl NoteApplication {
         context: NoteRenderContext,
     ) -> Result<NotePreview, NoteUseCaseError> {
         let accessible = self
-            .queries
+            .notes
             .accessible_note(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -185,7 +195,7 @@ impl NoteApplication {
         query: NoteGraphQuery,
     ) -> Result<NoteGraph, NoteUseCaseError> {
         let graph = self
-            .queries
+            .notes
             .note_graph(&actor, &query)
             .await
             .map_err(NoteUseCaseError::from)?;
@@ -220,7 +230,7 @@ impl NoteApplication {
         context: NoteRenderContext,
     ) -> Result<crate::NoteView, NoteUseCaseError> {
         let mut snapshot = self
-            .queries
+            .notes
             .note_view_snapshot(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -244,6 +254,22 @@ impl NoteApplication {
         let citations = self
             .citation_resolutions(snapshot.note.owner(), &citation_queries, citation_style)
             .await?;
+        let attachment_queries = self
+            .content
+            .attachment_queries(snapshot.note.source())
+            .map_err(|_| NoteUseCaseError::Unavailable)?;
+        let attachments = self
+            .resolve_note_attachments(
+                &actor,
+                snapshot.note.note_id(),
+                &attachment_queries,
+                &context,
+            )
+            .await
+            .map_err(|error| match error {
+                NoteUseCaseError::Validation(_) => NoteUseCaseError::CorruptData,
+                other => other,
+            })?;
         let html = self
             .content
             .render(
@@ -252,6 +278,7 @@ impl NoteApplication {
                     references: &resolutions,
                     citations: &citations.resolutions,
                     bibliography: &citations.entries,
+                    attachments: &attachments,
                 },
             )
             .map_err(|_| NoteUseCaseError::RenderFailed)?;
@@ -285,7 +312,7 @@ mod tests {
     use std::sync::{Arc, atomic::Ordering};
 
     use marginalis_domain::{
-        Actor, EntityId, Note, NoteAccess, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
+        EntityId, Note, NoteAccess, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
         NoteReviewTracking, Revision, UnixMillis,
     };
 
@@ -294,7 +321,7 @@ mod tests {
     use super::*;
     use crate::notes::test_support::{
         AcceptContent, CitingContent, EmptyLibrary, MemoryNotes, NoMathMacros, OneItemLibrary,
-        OwnerMathMacros, note_application,
+        OwnerMathMacros, actor, note_application,
     };
 
     #[test]
@@ -331,8 +358,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
         let draft = NoteDraft {
             source: "= Warning\n\nbody".into(),
             title: "Warning".into(),
@@ -344,7 +370,7 @@ mod tests {
                 actor.clone(),
                 draft.clone(),
                 NoteRenderContext {
-                    note_path_prefix: "/api/v3/notes".into(),
+                    base_path: "/".into(),
                 },
             )
             .await
@@ -403,8 +429,7 @@ mod tests {
             Arc::new(OneItemLibrary),
             Arc::new(OwnerMathMacros),
         );
-        let editor =
-            Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");
+        let editor = actor("bob", 2);
         let draft = NoteDraft {
             source: "= 共有されたノート\n\n本文 cite:[smith2024]".into(),
             title: "共有されたノート".into(),
@@ -417,7 +442,7 @@ mod tests {
                 note_id,
                 draft.clone(),
                 NoteRenderContext {
-                    note_path_prefix: "/notes".into(),
+                    base_path: "/".into(),
                 },
             )
             .await
@@ -433,7 +458,7 @@ mod tests {
                     note_id,
                     draft,
                     NoteRenderContext {
-                        note_path_prefix: "/notes".into(),
+                        base_path: "/".into(),
                     },
                 )
                 .await,
