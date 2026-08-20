@@ -130,6 +130,13 @@ REST APIの接続先、入力、出力、エラーなどをJSONまたはYAMLで�
 OAuthの認可を開始したクライアントと、認可コードをトークンへ交換するクライアントが同じである
 ことを確認する仕組みです。認可コードを第三者に取得された場合の不正利用を防ぎます。
 
+== principal
+
+ADR 0019で採用した、同じ利用者に属する一つ以上のOIDC identityをMarginalis内部でまとめる主体です。
+OIDC identityは``issuer``と``subject``の組であり、認証サービスが発行します。principalは、認証サービスを
+移した場合もノートの所有者や権限を同じ利用者へ結び付けるために使います。実装後もコード上の
+``PrincipalId``は外部へ公開せず、REST APIとarchiveでは代表として選んだOIDC identityを使用します。
+
 == REST API
 
 HTTPを使ってノートの取得や更新などを行う接続方法です。MarginalisのREST APIは``/api/v3``以下で

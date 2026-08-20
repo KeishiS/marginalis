@@ -1,0 +1,169 @@
+= 利用者の認可は内部principalに結び付けSQLiteを前進移行する
+
+[#top]
+* 状態: 採用。実装予定はIssue \#548から\#550
+* 日付: 2026-08-20
+* 関連Issue: \#546、\#547、\#548、\#549、\#550
+* 関連ADR: xref:0002-sqliteを正本として維持する.adoc#top[ADR 0002]、
+xref:0015-利用者認証は標準oidcに依存しkanidmを参照実装とする.adoc#top[ADR 0015]、
+xref:0018-archiveは直前の公開済み保存契約からだけ移行する.adoc#top[ADR 0018]
+
+== 背景
+
+現行のMarginalisは、OIDC（OpenID Connect）で検証した``issuer``と``subject``の組を利用者の
+identityとして扱います。この組はノート、ACL、文献ライブラリ、同期、Web session、MCP認可、
+Webhookなど17のSQLite tableへ直接保存されています。認可をSQLiteの問い合わせ内で完結できる
+一方、同じ比較と索引が広い範囲へ重複しています。
+
+OIDCのissuerを変更すると、同じ人でも別の利用者になります。保存済みのすべてのidentityを書き換える
+方法は、失敗時の一部更新、MCPのscope上限やtoken失効の漏れ、archiveとの不一致を招きます。今後
+ノートの版履歴へ変更者を記録すると、書き換える対象はさらに増えます。
+
+また、現行版はSQLite schema 22以外を起動時に拒否します。schemaを変更するときは、更新前の版で
+論理archiveを書き出し、現行版の空databaseへ復元します。archiveへ含めないWeb session、MCPのclient・
+token、同期cursor、Webhook配送状態は引き継がれません。論理データの災害復旧と、同じSQLite
+databaseを新しいschemaへ更新する処理が同じ経路になっています。
+
+== 用語
+
+この決定では、次の値を区別します。
+
+* *外部identity*: OIDC IdPが発行し、Marginalisが検証した``(issuer, subject)``の組
+* *principal*: 同じ利用者に属する一つ以上の外部identityを、Marginalis内部でまとめる主体
+* *``PrincipalId``*: principalをdatabaseと業務規則で識別する非公開ID
+* *``identity_id``*: 外部identityの保存行を参照する非公開ID
+* *代表identity*: principalの所有者や共有先を公開APIとarchiveへ表すために選んだ外部identity
+
+``PrincipalId``と``identity_id``は、REST、MCP、archive、ログへ出しません。
+
+== 決定
+
+=== 認可の正本
+
+*認可と業務データの所有者は``PrincipalId``へ結び付けます*。domainの``Actor``は、取り違えを
+コンパイル時に防ぐ専用型の``PrincipalId``と、今回の認証に使った外部identityを持ちます。
+ノート、ACL、文献、数式マクロ、同期、MCPのscope上限と失効、Webhookは``PrincipalId``を比較します。
+外部identityだけを持つ``Actor``や、任意の``PrincipalId``とidentityを組み合わせられる公開constructorは
+設けません。
+
+``PrincipalId``と``identity_id``は、正のSQLite``INTEGER PRIMARY KEY``を専用のdomain型で包みます。
+単一SQLite内だけで使い、外部へ渡さず、別databaseとの併合もしないため、UUIDは使いません。SQLiteが
+割り当てる整数を使うことで、生成用の乱数portと文字列表現を増やさず、schema 22からも安定した順序で
+対応を作れます。
+
+SQLiteには``principals``と``principal_identities``を置きます。``(issuer, subject)``は全体で一意とし、
+一つの外部identityを複数のprincipalへ結び付けません。各principalには代表identityを必ず1件だけ持たせ、
+部分一意索引と同じtransaction内の検査でこの条件を保ちます。principalとidentityを自動削除する
+処理やaliasを解除する操作はこの決定では提供せず、内部IDを再利用しません。
+
+共有crate ``oidc-browser-login``と``mcp-authorization-server``は、session、認可code、tokenの発行時に
+受け取った外部identityと同じ値を返す契約です。そのため、Web sessionとMCPの認可code・access token・
+refresh tokenは、認可用の``PrincipalId``に加えて、発行時の外部identityを復元する``identity_id``を
+補助参照として保存します。代表identityへの置換は行いません。client認可、scope上限、token familyの
+失効は``PrincipalId``へ結び付け、別のaliasから上限や失効を迂回できないようにします。
+
+=== principalの作成と解決
+
+applicationには、外部identityとprincipalの対応を扱う``PrincipalDirectory`` portを置きます。呼出元の
+信頼水準を混同しないよう、次の操作を分けます。
+
+* OIDCの署名、nonce、issuer、audienceと利用可否claimをすべて検証した後の、identityの検索または初回作成
+* Web sessionまたはMCP tokenに保存したidentityの検索だけを行う復元
+* 所有者がACLへ指定した、まだログインしていない同一issuerのidentityの登録
+* archiveが持つ代表identityとalias群からの、空databaseへのprincipal再構築
+
+sessionとtokenの復元で未知のidentityを自動作成しません。利用可否claimを拒否したログインでもprincipalを
+作りません。ACL入力は本人確認ではなく共有先の指定であるため、OIDCで検証した初回ログインと異なる操作名に
+します。後から本人が同じ外部identityでログインした場合は、既存principalを解決します。
+
+ACLの公開入力は``subject``だけでなく、完全な``issuer``と``subject``を要求します。新しく共有するidentityの
+``issuer``は、現在設定しているOIDC issuerと一致させます。保存時は共有先を``PrincipalId``へ解決し、
+所有者のどのaliasを指定してもACL行として保存しません。issuer移行中に既存ACLの代表identityが古いissuerを
+指していても、保存済みのアクセス権は``PrincipalId``で維持します。
+
+外部identityのalias追加と代表identityの変更は、service停止中の明示的な管理commandだけに許可します。
+email、表示名、claimの一致から自動的に結び付けません。すでに別のprincipalへ属するidentityは変更せず
+拒否します。
+
+=== 公開形式とarchive
+
+公開APIで所有者、確認者、ACL共有先を表す場合は、principalの代表identityを使います。Web sessionとMCPの
+認証結果は、共有crateの契約どおり今回の認証に使ったidentityを返します。二つの用途を同じ選択規則に
+しません。
+
+archiveには内部IDを保存せず、代表identityとalias群の対応を保存します。復元先では新しい内部IDを割り当て、
+同じ対応を再構築します。これにより、内部IDの生成方法を公開契約にせず、issuer引き継ぎも災害復旧後に
+維持できます。archive契約の変更と直前契約からの変換はADR 0018に従います。
+
+=== SQLite schemaの前進移行
+
+*schema 22を前進migrationの基準とします*。以後のmigrationは版順の静的な一覧としてsourceに残し、
+``schema_migrations``の全履歴が基準から現行まで連続していることを検査します。未来の版、22より古い版、
+欠番、重複はdatabaseを変更せず拒否します。schema 22より前のdatabaseは、対応する過去リリースとarchiveを
+使って先に基準へ移します。downgradeは提供しません。
+
+``serve``は旧schemaを暗黙に変更しません。service停止中に明示的な``migrate-database``を実行します。
+NixOS moduleは自動起動しないoneshot serviceを提供し、通常serviceと同時に実行しません。backupやpurgeなど
+ほかの保守処理が動いている場合は、SQLiteの排他取得に失敗した時点で変更せず終了します。
+
+``migrate-database``は、対応する旧schemaであることを読み取りで確認してから次の順序で処理します。
+
+. 非公開の一時directoryへSQLiteの一貫したsnapshotを作成します。WALに確定済みの内容も含めます。
+. 退避側の権限を0600にし、``PRAGMA quick_check``と``PRAGMA foreign_key_check``を実行します。
+. 退避を利用者が指定した絶対pathへ上書きせず、親directoryも含めて耐久的に確定します。
+. 排他接続で``PRAGMA foreign_keys=OFF``にしてから一つのtransactionを開始し、必要なmigrationを版順に
+  すべて適用します。
+. transaction内で``quick_check``、外部キー違反0件、migration履歴と現行schemaを検査してから確定します。
+. ``foreign_keys=ON``へ戻し、同じ検査をもう一度行います。
+
+SQLite tableを作り直すmigrationでは、``defer_foreign_keys``へ依存しません。tableの削除と名前変更後に
+遅延違反の内部状態が残り、外部キー違反が0件でも確定に失敗する組合せを避けるためです。途中で失敗した
+場合はDDLと履歴の更新を同じtransactionで取り消します。退避を確定できない場合はmigrationを始めません。
+
+日次backupのarchiveは、秘密状態を除いた論理データを検証し、災害復旧や別環境への移設に使います。
+schema migration前のSQLite退避は、同じホストで失敗前の状態へ戻すため、sessionやtokenを含むdatabase全体を
+保存します。用途、内容、保持期間が異なるため、一方を他方の代用にしません。
+
+=== 実装順
+
+変更は次の順に分けます。
+
+. \#548で退避、migration履歴、保守command、手動NixOS serviceを追加します。現行schemaは22のままにし、
+  通常の起動動作を変えません。
+. \#549でschema 22から23へのmigration、``PrincipalId``、``PrincipalDirectory``、17 tableの参照、view、
+  trigger、共有認証adapterを一つの整合した変更として切り替えます。外部identityと``PrincipalId``を
+  認可条件として混在させる中間schemaは公開しません。
+. \#550でidentityの引き継ぎcommand、代表identityの変更、alias群のarchive往復を追加します。
+. その後に\#541の版履歴と\#540の添付を``PrincipalId``へ直接結び付けます。
+
+== 帰結
+
+IdPのissuerを移しても、業務データの所有者IDを書き換えずに同じ利用者へ結び付けられます。identityを
+比較するSQL、索引、triggerをprincipal参照へ集約でき、版履歴や添付を後から追加するときも外部identityの
+移行対象を増やしません。
+
+一方、schema 23への変更は広い範囲を一度に切り替える必要があります。固定したschema 22 fixtureに17 tableの
+代表データを保存し、移行後の構造、認可、共有crateの保存契約を検査します。identity引き継ぎは管理者の
+明示操作を要し、自動化による誤結合より運用手順を優先します。
+
+== 代替案
+
+=== 外部identityを業務データの識別子として維持
+
+現行実装の変更は不要ですが、issuer移行で同じ人を別利用者として扱い、今後追加する履歴と添付にも
+identity列と移行処理が広がります。採用しません。
+
+=== 外部identityの一致から内部IDを決定的に生成
+
+初回作成は簡単ですが、issuerを変更すると内部IDも変わります。複数identityを同じ利用者へ結び付ける
+目的を満たさないため、採用しません。
+
+=== 起動時の自動schema migration
+
+更新操作は減りますが、通常起動がdatabaseを予告なく変更し、退避先、空き容量、切戻しの判断を
+service起動へ混ぜます。失敗時の操作も分かりにくくなるため、採用しません。
+
+=== schema変更ごとにarchiveから空databaseへ復元
+
+論理データを現行規則で再検証できますが、archive対象外のsession、MCP認可、同期cursor、Webhook配送状態を
+失います。schema変更とarchive契約変更の理由も結び付くため、通常のschema更新には採用しません。
