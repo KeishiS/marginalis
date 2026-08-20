@@ -254,11 +254,11 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
 fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let directory = test_directory("archive-migration");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("v0.42.0-archive-17.json");
+    let input = directory.join("v0.45.0-archive-17.json");
     let output = directory.join("current-archive-17.json");
     let previous = serde_json::json!({
         "format": "marginalis-archive-17",
-        "adocweave_package_version": "0.40.0",
+        "adocweave_package_version": "0.40.1",
         "note_profile_version": 5,
         "notes": [
             {
@@ -377,7 +377,7 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
         String::from_utf8_lossy(&verified.stderr)
     );
 
-    let invalid_input = directory.join("invalid-v0.42.0-archive-17.json");
+    let invalid_input = directory.join("invalid-v0.45.0-archive-17.json");
     let invalid_output = directory.join("invalid-current-archive-16.json");
     let mut invalid = previous;
     invalid["notes"][0]["source"] = concat!(
@@ -1127,10 +1127,10 @@ fn run_marginalis(command: &[&str], path: &std::path::Path, database_url: &str, 
 fn restore_archive_migrates_verifies_and_imports_in_one_step() {
     let directory = test_directory("restore-archive");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("v0.42.0-archive-17.json");
+    let input = directory.join("v0.45.0-archive-17.json");
     let previous = serde_json::json!({
         "format": "marginalis-archive-17",
-        "adocweave_package_version": "0.40.0",
+        "adocweave_package_version": "0.40.1",
         "note_profile_version": 5,
         "notes": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",

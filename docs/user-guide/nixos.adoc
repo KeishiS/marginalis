@@ -234,13 +234,9 @@ note profile版の3つがすべて一致する必要があります。
 |0.40.1
 |5
 |v0.44.0からv0.45.0
-|``marginalis-archive-17``
-|0.40.0
-|5
-|v0.40.0からv0.42.0
 |===
 
-現行のv0.46.0が書き出す書庫(AdocWeave package版0.41.0)は、変換なしでそのまま
+現行契約(AdocWeave package版0.41.0、v0.46.0以降)の書庫は、変換なしでそのまま
 ``import-archive``できます。形式名はarchiveの構造を表し、解析器の版はmanifestの
 ``adocweave_package_version``が表します。形式名が同じでも、記録されたAdocWeave package版が
 現行と違う書庫は直接取り込めないため、``migrate-archive``で変換してから取り込みます。
