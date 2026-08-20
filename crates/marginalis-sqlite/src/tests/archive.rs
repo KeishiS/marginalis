@@ -107,6 +107,22 @@ async fn archive_snapshot_restores_primary_identities_aliases_and_empty_principa
     let target = empty_database().await;
     target.restore(&plan).await.expect("restore snapshot");
     assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM note_sync_changes")
+            .fetch_one(&target.pool)
+            .await
+            .expect("sync change count"),
+        0,
+        "archive復元は検索投影の変更索引を引き継ぎません"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM webhook_outbox_events")
+            .fetch_one(&target.pool)
+            .await
+            .expect("webhook outbox count"),
+        0,
+        "archive復元中のtriggerが作った通知を残しません"
+    );
+    assert_eq!(
         target
             .export_archive_snapshot()
             .await

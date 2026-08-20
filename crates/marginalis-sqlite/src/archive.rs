@@ -388,8 +388,9 @@ impl SqliteDatabase {
             .await
             .map_err(database_error)?;
         }
-        // 同期cursorと変更索引は外部投影の一時状態であり、archiveへ含めない。
-        // 復元中にtriggerが作った変更も捨て、外部clientには新しい全量同期を要求する。
+        // 同期cursor・変更索引とWebhook outbox・配送状態は運用中の一時状態であり、
+        // archiveへ含めない。復元中にtriggerが作った行も捨て、外部clientには
+        // 新しい全量同期を要求し、Webhookは復元後に登録された変更から再開する。
         sqlx::query("DELETE FROM note_sync_cursors")
             .execute(&mut *transaction)
             .await
@@ -399,6 +400,14 @@ impl SqliteDatabase {
             .await
             .map_err(database_error)?;
         sqlx::query("UPDATE note_sync_state SET next_sequence = 0 WHERE singleton = 1")
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        sqlx::query("DELETE FROM webhook_deliveries")
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        sqlx::query("DELETE FROM webhook_outbox_events")
             .execute(&mut *transaction)
             .await
             .map_err(database_error)?;
