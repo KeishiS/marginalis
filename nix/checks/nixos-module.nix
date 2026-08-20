@@ -22,6 +22,7 @@ let
         system.stateVersion = "25.11";
         services.marginalis = {
           enable = true;
+          backupDirectory = "/var/lib/marginalis-backups/test";
           openFirewall = true;
           baseUrl = "https://marginalis.example.test";
           oidc = {
@@ -42,6 +43,21 @@ assert evaluated.config.systemd.services.marginalis.environment.MARGINALIS_MCP_E
 assert
   evaluated.config.systemd.services.marginalis-diagnose.environment.MARGINALIS_MCP_ENABLE == "true";
 assert evaluated.config.systemd.services.marginalis-diagnose.serviceConfig.ProtectKernelTunables;
+assert evaluated.config.systemd.services.marginalis-migrate-database.wantedBy == [ ];
+assert
+  evaluated.config.systemd.services.marginalis-migrate-database.conflicts == [
+    "marginalis.service"
+  ];
+assert
+  evaluated.config.systemd.services.marginalis-migrate-database.serviceConfig.RestrictAddressFamilies
+  == [
+    "AF_UNIX"
+  ];
+assert
+  evaluated.config.systemd.services.marginalis-migrate-database.serviceConfig.ReadWritePaths == [
+    "/var/lib/marginalis"
+    "/var/lib/marginalis-backups/test"
+  ];
 assert builtins.elem evaluated.config.services.marginalis.package
   evaluated.config.environment.systemPackages;
 assert

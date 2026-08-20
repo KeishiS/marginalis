@@ -184,6 +184,9 @@ CIMDの各eventには、固定値の``reason``と取得先の``client_host``を�
 |backup世代整理
 |``maintenance.backup_prune.completed``
 |``maintenance.backup_prune.failed``
+|SQLite schemaの前進migration
+|``maintenance.database_migration.completed``
+|``maintenance.database_migration.failed``
 |archive書き出し
 |``maintenance.archive_export.completed``
 |``maintenance.archive_export.failed``

@@ -50,6 +50,45 @@ fn unknown_command_is_normalized_before_logging() {
 }
 
 #[test]
+fn database_migration_of_the_current_schema_is_a_logged_no_op() {
+    let directory = test_directory("database-migration-current");
+    fs::create_dir(&directory).expect("test directory");
+    let database = directory.join("marginalis.sqlite3");
+    let database_url = format!("sqlite://{}?mode=rwc", database.display());
+    let archive = directory.join("initialize.json");
+    let backup = directory.join("database-migration.sqlite3");
+
+    let initialize = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["export-archive", "--output"])
+        .arg(&archive)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("initialize database");
+    assert!(initialize.status.success());
+
+    let migrated = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["migrate-database", "--output"])
+        .arg(&backup)
+        .env("MARGINALIS_DATABASE_URL", &database_url)
+        .output()
+        .expect("run database migration");
+
+    assert!(
+        migrated.status.success(),
+        "migration failed: {}",
+        String::from_utf8_lossy(&migrated.stderr)
+    );
+    let stderr = String::from_utf8(migrated.stderr).expect("UTF-8 stderr");
+    assert!(stderr.contains("event=\"maintenance.database_migration.completed\""));
+    assert!(stderr.contains("from_schema=22"));
+    assert!(stderr.contains("to_schema=22"));
+    assert!(stderr.contains("applied_migrations=0"));
+    assert!(!backup.exists());
+
+    fs::remove_dir_all(&directory).expect("remove test directory");
+}
+
+#[test]
 fn archive_commands_create_private_outputs_without_relying_on_umask() {
     let directory = test_directory("permissions");
     fs::create_dir(&directory).expect("test directory");

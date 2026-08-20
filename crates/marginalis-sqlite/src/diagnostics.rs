@@ -7,7 +7,7 @@ use sqlx::{
 };
 use std::{str::FromStr, time::Duration};
 
-use crate::schema::SCHEMA_VERSION;
+use crate::schema::{MIGRATIONS, SCHEMA_VERSION, validate_schema_history};
 
 #[derive(Debug, Serialize)]
 pub struct SqliteDiagnosticReport {
@@ -62,9 +62,9 @@ async fn connect_read_only(database_url: &str) -> Result<SqlitePool, sqlx::Error
 }
 
 async fn inspect(pool: &SqlitePool) -> SqliteDiagnosticReport {
-    let version =
-        sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")
-            .fetch_one(pool)
+    let history =
+        sqlx::query_scalar::<_, i64>("SELECT version FROM schema_migrations ORDER BY version ASC")
+            .fetch_all(pool)
             .await;
     let integrity = sqlx::query("PRAGMA quick_check")
         .fetch_all(pool)
@@ -79,7 +79,7 @@ async fn inspect(pool: &SqlitePool) -> SqliteDiagnosticReport {
         .await
         .map(|rows| rows.len() as i64);
     let failures = [
-        ("schema", version.as_ref().err()),
+        ("schema", history.as_ref().err()),
         ("integrity", integrity.as_ref().err()),
         ("foreign_keys", foreign_keys.as_ref().err()),
     ]
@@ -91,8 +91,10 @@ async fn inspect(pool: &SqlitePool) -> SqliteDiagnosticReport {
     SqliteDiagnosticReport {
         available: true,
         schema: DiagnosticCheck {
-            ok: version.as_ref().is_ok_and(|value| *value == SCHEMA_VERSION),
-            actual: version.ok(),
+            ok: history
+                .as_ref()
+                .is_ok_and(|history| validate_schema_history(history, MIGRATIONS, false).is_ok()),
+            actual: history.ok().and_then(|history| history.last().copied()),
             expected: Some(SCHEMA_VERSION),
         },
         integrity: DiagnosticCheck {
@@ -327,7 +329,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("unsupported database schema version 5")
+                .contains("unsupported database schema history [5]")
         );
         assert_eq!(persisted_state(&database), original);
 

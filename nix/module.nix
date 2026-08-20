@@ -405,6 +405,32 @@ in
       };
     };
 
+    # schema変更が必要なときだけ管理者が起動する。通常serviceを停止し、
+    # 検証済みSQLite退避をbackupDirectoryへ確定した後に前進migrationする。
+    systemd.services.marginalis-migrate-database = mkIf (cfg.backupDirectory != null) {
+      description = "Migrate the Marginalis SQLite database explicitly";
+      conflicts = [ "marginalis.service" ];
+      environment = {
+        RUST_LOG = cfg.logFilter;
+        MARGINALIS_DATABASE_URL = "sqlite:${cfg.dataDir}/marginalis.sqlite";
+      };
+      serviceConfig =
+        localServiceConfig
+        // {
+          Type = "oneshot";
+          ExecStart = "${cfg.package}/bin/marginalis migrate-database --directory ${lib.escapeShellArg cfg.backupDirectory}";
+          WorkingDirectory = cfg.dataDir;
+          ReadWritePaths = [
+            cfg.dataDir
+            cfg.backupDirectory
+          ];
+        }
+        // optionalAttrs (cfg.dataDir == "/var/lib/marginalis") {
+          StateDirectory = "marginalis";
+          StateDirectoryMode = "0750";
+        };
+    };
+
     # archive exportは一つのSQLite read transactionを使うため、HTTP serverを止めずに一貫した
     # snapshotを取得できる。検証済み世代の作成に成功した後だけ保持処理を実行する。
     systemd.services.marginalis-backup = mkIf (cfg.backupDirectory != null) {

@@ -9,6 +9,7 @@ mod math_macro_repository;
 mod mcp;
 mod mcp_oauth_repository;
 mod mcp_scope_ceiling_repository;
+mod migration;
 mod note_acl;
 mod note_graph;
 mod note_repository;
@@ -22,6 +23,7 @@ mod webhooks;
 
 pub use cleanup::AuthStatePurgeCounts;
 pub use diagnostics::SqliteDiagnosticReport;
+pub use migration::{DatabaseMigrationError, DatabaseMigrationReport};
 pub use session::SqliteOidcLoginAttemptStore;
 
 use crate::schema::initialize_or_validate_schema;
@@ -111,6 +113,14 @@ impl SqliteDatabase {
     /// databaseを変更せず、利用可否、schema、整合性を検査する。
     pub async fn diagnose(database_url: &str) -> SqliteDiagnosticReport {
         diagnostics::diagnose(database_url).await
+    }
+
+    /// service停止中にSQLite全体を退避し、対応する前進migrationを適用する。
+    pub async fn migrate(
+        database_url: &str,
+        backup_path: &std::path::Path,
+    ) -> Result<DatabaseMigrationReport, DatabaseMigrationError> {
+        migration::migrate_database(database_url, backup_path).await
     }
 }
 
