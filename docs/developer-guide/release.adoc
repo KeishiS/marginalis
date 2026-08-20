@@ -9,12 +9,14 @@
 [arabic]
 . Cargo workspaceの版を上げ、``cargo make verify``の成功を確認して版上げのPull Requestを
 作成します。版とNix packageの整合は``verify``内の``release-metadata``が検査します。
-. 外部のGit依存が意図した公開版を指していることを確認します。``cargo make shared-authorization-server``が、
-共有Authorization Serverの2 crateについて、版が同じであること、同じリポジトリの40桁の完全SHAから取得して
-いること、``Cargo.lock``の取得元が宣言と一致すること、``flake.nix``に取得ハッシュがあることを検査します。
-指しているSHAが上流の公開済みタグに対応することの確認は
-xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]のタグ解決手順に
-従います。上流の未公開コミットや、タグが付いていないコミットを指したまま公開しません。
+. 外部のGit依存が意図した公開版を指していることを確認します。``cargo make shared-authorization-server``と
+``cargo make shared-oidc-login``が、それぞれの共有crateについて、版が同じであること、同じリポジトリの
+40桁の完全SHAから取得していること、``Cargo.lock``の取得元が宣言と一致すること、``flake.nix``に取得
+ハッシュがあることを検査します。共有Authorization Serverが指すSHAが上流の公開済みタグに対応することの
+確認は xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]のタグ解決手順に
+従い、上流の未公開コミットや、タグが付いていないコミットを指したまま公開しません。共有OIDCログインは
+上流がまだ版のタグを公開していないため、指しているSHAが上流``main``の履歴に含まれることを確認します
+(xref:oidc-browser-login-maintenance.adoc#top[共有OIDCログインcrateの保守])。
 . xref:acceptance.adoc#top[受入基準]の人手受入を実施し、実施日、結果、失敗または未実施の項目が
 ある場合の判断をリリース用Pull Requestへ記載します。
 . 必須チェックの成功を確認し、 xref:development.adoc#top[GitHubを使う開発手順]のマージ方式で
