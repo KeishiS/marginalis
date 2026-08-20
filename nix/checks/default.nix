@@ -5,20 +5,10 @@
   self,
   system,
   nixpkgs,
-  rustPlatform,
   version,
   adocweaveVersion,
 }:
 {
-  schema9-archive-migration = import ./schema9-archive-migration.nix {
-    inherit
-      pkgs
-      self
-      system
-      rustPlatform
-      adocweaveVersion
-      ;
-  };
   nixos-module = import ./nixos-module.nix {
     inherit
       pkgs

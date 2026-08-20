@@ -110,6 +110,10 @@ Auth0をMCPのAuthorization Serverに採用]（廃止。ADR 0007で置き換え�
 * xref:developer-guide/adr/0014-webhook署名secretを平文で保存する.adoc#top[0014 Webhook署名secretを平文で保存する]
 * xref:developer-guide/adr/0015-利用者認証は標準oidcに依存しkanidmを参照実装とする.adoc#top[0015
 利用者認証は標準OIDCに依存しKanidmを参照実装とする]
+* xref:developer-guide/adr/0016-編集画面の装飾はadocweaveのspan注釈から導く.adoc#top[0016
+編集画面の装飾はAdocWeaveのspan注釈から導く]
+* xref:developer-guide/adr/0017-archiveの取り込み互換は直近5マイナー世代に限定する.adoc#top[0017
+archiveの取り込み互換は直近5マイナー世代に限定する]
 
 == 過去の記録と今後の計画
 

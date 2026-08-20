@@ -194,7 +194,6 @@
               version
               adocweaveVersion
               ;
-            rustPlatform = rustPlatformFor pkgs;
           }
         )
       );
