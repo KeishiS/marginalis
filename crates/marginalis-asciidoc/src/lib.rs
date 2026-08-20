@@ -16,7 +16,10 @@ mod spans;
 pub const ADOCWEAVE_SOURCE_REVISION: &str = env!("MARGINALIS_ADOCWEAVE_REVISION");
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = env!("MARGINALIS_ADOCWEAVE_VERSION");
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
-pub const AUTHORING_PROFILE_VERSION: u32 = 16;
+///
+/// 版17: AdocWeave 0.41.0で、制約付き引用符の境界がCJK文字を単語境界として
+/// 扱うようになり、受理する記法の範囲が広がった。
+pub const AUTHORING_PROFILE_VERSION: u32 = 17;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsciiDocNoteContent;

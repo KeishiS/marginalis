@@ -54,7 +54,7 @@ ADRを追加する場合は``docs/developer-guide/adr/NNNN-短い名称.adoc``�
 （ https://github.com/KeishiS/marginalis/issues/334[Issue \#334]で移行済み）。
 新しいMarkdown文書は追加しません。
 
-AsciiDoc文書はAdocWeave v0.40.1のstrict profileで解析し、local targetを検査します。文書間の``xref``は
+AsciiDoc文書はAdocWeave v0.41.0のstrict profileで解析し、local targetを検査します。文書間の``xref``は
 参照先の``.adoc``と明示IDを指定します。明示IDの存在はAdocWeaveの構造化公開APIを使用する
 ``marginalis-documentation`` crateで検査します。traceabilityの表も、同じ公開APIが返す
 ``Table``、``TableRow``、``TableCell``から読み取ります。AsciiDocの構文規則は専用scriptへ書き写しません。自然文は

@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "adocweave"
-version = "0.40.1"
-source = "git+https://github.com/KeishiS/adocweave.git?rev=0b97d24adc3ad241011621933cd6400ad17bba74#0b97d24adc3ad241011621933cd6400ad17bba74"
+version = "0.41.0"
+source = "git+https://github.com/KeishiS/adocweave.git?rev=088e50e4952d7857cb4b0748becad2a7e26c874b#088e50e4952d7857cb4b0748becad2a7e26c874b"
 dependencies = [
  "serde",
  "serde_json",
