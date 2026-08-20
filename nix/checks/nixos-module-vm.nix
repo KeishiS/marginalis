@@ -25,6 +25,12 @@ let
         test "$3" = "/var/lib/marginalis-backups/test"
         exit 0
       fi
+      if [ "''${1-}" = "migrate-database" ]; then
+        test "$2" = "--directory"
+        test "$3" = "/var/lib/marginalis-backups/test"
+        touch "$3/migration-completed"
+        exit 0
+      fi
       test -s "$MARGINALIS_OIDC_CLIENT_SECRET_FILE"
       touch "$PWD/service-started"
       exec sleep infinity
@@ -65,6 +71,11 @@ pkgs.testers.nixosTest {
     machine.succeed("test -f /var/lib/marginalis-backups/test/backup-created")
     machine.succeed("test -f /var/lib/marginalis-backups/test/prune-completed")
     machine.succeed("systemctl start marginalis-restore-check.service")
+    machine.fail("systemctl is-enabled --quiet marginalis-migrate-database.service")
+    machine.succeed("systemctl start marginalis-migrate-database.service")
+    machine.succeed("test -f /var/lib/marginalis-backups/test/migration-completed")
+    machine.succeed("systemctl start marginalis.service")
+    machine.wait_for_unit("marginalis.service")
     machine.succeed("systemctl is-enabled marginalis-backup.timer")
     machine.succeed("systemctl is-enabled marginalis-restore-check.timer")
     machine.succeed("systemctl is-active marginalis.service")

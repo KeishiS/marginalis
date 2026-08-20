@@ -14,6 +14,7 @@ enum Command {
     Serve,
     Diagnose,
     PurgeExpired,
+    MigrateDatabase,
     ExportArchive,
     ExportDocuments,
     ImportDocuments,
@@ -34,6 +35,7 @@ impl Command {
             None | Some("serve") => Self::Serve,
             Some("diagnose") => Self::Diagnose,
             Some("purge-expired") => Self::PurgeExpired,
+            Some("migrate-database") => Self::MigrateDatabase,
             Some("export-archive") => Self::ExportArchive,
             Some("export-documents") => Self::ExportDocuments,
             Some("import-documents") => Self::ImportDocuments,
@@ -66,6 +68,12 @@ impl Command {
             Self::PurgeExpired => tracing::error!(
                 event = "maintenance.purge.failed",
                 command = "purge-expired",
+                error = %error,
+                "Marginalis command terminated"
+            ),
+            Self::MigrateDatabase => tracing::error!(
+                event = "maintenance.database_migration.failed",
+                command = "migrate-database",
                 error = %error,
                 "Marginalis command terminated"
             ),
@@ -162,6 +170,7 @@ async fn main() {
         Command::Diagnose if arguments.next().is_none() => maintenance::diagnose().await,
         Command::Diagnose => Err(cli::USAGE.into()),
         Command::PurgeExpired => maintenance::purge_expired().await,
+        Command::MigrateDatabase => maintenance::migrate_database(arguments).await,
         Command::ExportArchive => maintenance::export_archive(arguments).await,
         Command::ExportDocuments => maintenance::export_documents(arguments).await,
         Command::ImportDocuments => maintenance::import_documents(arguments).await,

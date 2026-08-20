@@ -25,8 +25,9 @@
 |OIDC結合試験、Kanidm VM
 |ログイン
 |REQ-OPS-005
-|旧schema拒否、archive移行の入力不変・出力非上書き・安全な失敗位置試験
-|更新前退避
+|``marginalis-sqlite::migration``の履歴・退避権限・順序・rollback試験、CLI試験、
+NixOS module・VM試験、archive移行の入力不変・出力非上書き試験
+|更新前のSQLite退避と切戻し
 |REQ-OPS-006
 |SQLiteファイル診断・CLI秘密情報非記録試験、NixOS VM反復診断・ファイル不変性試験
 |障害診断

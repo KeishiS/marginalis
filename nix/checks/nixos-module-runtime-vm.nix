@@ -53,6 +53,21 @@ pkgs.testers.nixosTest {
     machine.succeed(
       "journalctl -u marginalis.service -o cat | grep -Fq 'webhook.worker.started'"
     )
+    machine.fail("systemctl is-enabled --quiet marginalis-migrate-database.service")
+    machine.succeed("systemctl start marginalis-migrate-database.service")
+    machine.succeed(
+      "journalctl -u marginalis-migrate-database.service -o cat | "
+      + "grep -F 'maintenance.database_migration.completed' | "
+      + "grep -F 'from_schema=22' | grep -F 'to_schema=22' | grep -Fq 'applied_migrations=0'"
+    )
+    machine.succeed(
+      "! find /var/lib/marginalis-backups/test -maxdepth 1 -type f "
+      + "-name 'database-migration-*.sqlite3' -print -quit | grep -q ."
+    )
+    machine.succeed("systemctl start marginalis.service")
+    machine.wait_until_succeeds(
+      "curl -fsS http://127.0.0.1:3000/api/v3/health | jq -e '.status == \"ok\"'"
+    )
     machine.succeed(
       "test $(curl --max-time 15 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/oidc/login) = 503"
     )
@@ -206,7 +221,7 @@ pkgs.testers.nixosTest {
     machine.execute("systemctl start marginalis.service")
     machine.wait_until_succeeds(
       "timeout 5s journalctl --no-pager -u marginalis.service -o cat | "
-      + "grep -F 'unsupported database schema version 5; expected 22'"
+      + "grep -F 'unsupported database schema history [5]; expected [22]'"
     )
     machine.succeed("systemctl stop marginalis.service")
     machine.succeed(

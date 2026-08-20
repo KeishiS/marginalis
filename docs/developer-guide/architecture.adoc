@@ -175,7 +175,8 @@ redirectへ従わない。例外は運用者が明示したhostに限る。secre
 == 採用済みの保存基盤移行計画
 
 この節は、 xref:adr/0019-利用者の認可は内部principalに結び付けsqliteを前進移行する.adoc#top[ADR 0019]で
-採用し、まだ実装していない次期schemaへの移行計画です。\#548から\#550が完了するまでは、上の
+採用した保存基盤の移行計画です。\#548のSQLite前進migration基盤は実装済みです。
+principalへの切替はまだ実装していないため、\#549と\#550が完了するまでは、上の
 ``ARCH-IDENTITY-001``、``ARCH-AUTHZ-001``と xref:requirements.adoc#top[現行要件]を現在の動作として
 優先します。
 
@@ -445,6 +446,7 @@ marginalis-web/src/http/
 
 marginalis-sqlite/src/
 ├── schema.rs        schema検証
+├── migration.rs     SQLite退避と前進migration
 ├── session.rs       Web/OIDC session
 ├── notes.rs         noteと所有者認可
 ├── note_graph.rs    ノートと引用文献の関係図の読み取り

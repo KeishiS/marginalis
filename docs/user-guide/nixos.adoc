@@ -79,6 +79,7 @@ schema 22より前のdatabaseから更新する場合は、更新前の実行環
 <<以前のarchiveからの移行>>を参照してください。
 同期cursorと変更索引、MCPの認可状態、client登録とtokenはarchiveへ含まれないため、更新後に
 外部検索サービスとMCPクライアントを接続し直します。
+schema 22以降の更新は<<SQLite-schemaの更新>>の手順でSQLite全体を退避してから前進migrationします。
 
 reverse proxyは``/auth/``、``/api/``、``/mcp``、``/.well-known/``を同一オリジンへ転送します。
 サブパスでは通常endpointの外部prefixをupstreamへ渡す前に除去します。一方、RFC 8414/9728の
@@ -214,6 +215,40 @@ backup作成または検証が失敗した場合、保持処理は実行され�
 保持処理が検出した場合も削除前に失敗します。容量不足、権限、mount状態、SQLite errorを上記journalと
 ``systemctl status``で確認し、原因を直してから再実行してください。不完全なディレクトリを削除する場合は、
 ``COMPLETE``がないことと対象pathが``backupDirectory``直下であることを運用者が確認します。
+
+[[SQLite-schemaの更新]]
+== SQLite schemaの更新
+
+schema 22以降は、日次archiveから空のdatabaseを作り直すのではなく、``migrate-database``で既存の
+SQLite databaseを次のschemaへ進めます。このcommandはWeb session、MCP token、同期cursor、
+Webhook配送状態を含むSQLite全体を退避するため、論理データだけを持つ日次archiveと目的が
+異なります。
+
+``marginalis-migrate-database.service``は``backupDirectory``を設定した場合だけ利用でき、自動起動
+しません。リリースノートがschema migrationを指示したときは、次の順で実行します。
+
+[source,bash]
+----
+sudo systemctl stop marginalis.service
+sudo nixos-rebuild switch --flake <利用中のflake>
+sudo systemctl start marginalis-migrate-database.service
+sudo journalctl -u marginalis-migrate-database.service -o cat -n 50
+sudo systemctl start marginalis.service
+----
+
+unitは通常serviceと同時に実行せず、``backupDirectory``に
+``database-migration-<Unix時刻ミリ秒>.sqlite3``を上書きせず作成します。退避にはWAL内の
+確定済みデータも含みます。権限0600、SQLiteの整合性、外部キーとschema履歴を検査し、
+退避を永続的に確定できた後だけ、すべての必要なmigrationを1つのtransactionで適用します。
+容量不足、退避先の重複、履歴の欠番、schema 22より前の版の場合はdatabaseを変更せず失敗します。
+
+現在のschemaは22で、未適用のmigrationはありません。その場合は成功logの
+``applied_migrations=0``と``backup=none``で何も変更しなかったことを示し、SQLite退避も作りません。
+
+移行後は``marginalis-diagnose.service``、HTTP health、OIDC login、MCP認可を確認します。切戻しが必要な
+場合は、新しいserviceを停止し、移行後のdatabaseを別名で保全してから、SQLite退避と移行前の
+NixOS generationを組にして戻します。退避のdatabaseだけを新しい実行ファイルと組み合わせると、旧schemaを
+再び拒否するため起動できません。
 
 [[以前のarchiveからの移行]]
 == 以前のarchiveからの移行

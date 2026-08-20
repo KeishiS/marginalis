@@ -3,6 +3,7 @@
 mod archive;
 mod backup;
 mod diagnostics;
+mod migration;
 mod purge;
 
 pub(crate) use archive::{
@@ -11,6 +12,7 @@ pub(crate) use archive::{
 };
 pub(crate) use backup::{backup, prune_backups, verify_latest_backup};
 pub(crate) use diagnostics::diagnose;
+pub(crate) use migration::migrate_database;
 pub(crate) use purge::purge_expired;
 
 use std::{
