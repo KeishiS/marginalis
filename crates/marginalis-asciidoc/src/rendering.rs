@@ -335,6 +335,18 @@ mod tests {
     }
 
     #[test]
+    fn authored_block_roles_are_not_exposed_as_html_classes() {
+        let html = render_note(
+            &note(".Example\n[.private]\n====\nbody\n===="),
+            NoteRenderInputs::default(),
+        )
+        .expect("render");
+
+        assert!(html.contains("body"));
+        assert!(!html.contains("role-private"));
+    }
+
+    #[test]
     fn published_bibliography_example_validates_and_renders_bidirectional_links() {
         let profile = crate::policy::note_profile();
         assert!(profile.syntax.common_blocks.contains(&"bibliography"));

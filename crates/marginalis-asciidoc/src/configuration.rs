@@ -4,7 +4,7 @@ use adocweave::output::diagnostics::{
     LintRuleId, MACRO_BOUNDARY, MONOSPACE_BOUNDARY, RuleSettings, Severity, lint_rule,
 };
 use adocweave::output::html::{
-    MathLanguagePolicy, RenderPolicy, ResourceCapabilities, SourceLanguagePolicy,
+    MathLanguagePolicy, RenderPolicy, ResourceCapabilities, RolePolicy, SourceLanguagePolicy,
     UnknownSourceLanguage, UnresolvedReferencePresentation,
 };
 use adocweave::resolution::{ActiveUrlPolicy, AuthoredUrlPolicy};
@@ -146,6 +146,9 @@ pub(crate) fn render_policy() -> RenderPolicy {
             images: true,
             media: false,
         },
+        // roleは利用者が書くclass名である。Marginalisはrole別のCSS契約を公開していないため、
+        // HTMLへ渡す名前を空集合に固定する。
+        roles: RolePolicy::default(),
         unresolved_references: UnresolvedReferencePresentation::LabelOnly,
         ..RenderPolicy::default()
     }
@@ -193,6 +196,7 @@ mod tests {
         assert!(!rendering.active_urls.allow_data_uris);
         assert!(rendering.resources.images);
         assert!(!rendering.resources.media);
+        assert!(rendering.roles.allowed.is_empty());
         assert_eq!(
             rendering.source_languages.unknown,
             UnknownSourceLanguage::Diagnostic
