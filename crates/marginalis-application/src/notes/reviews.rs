@@ -12,7 +12,7 @@ impl NoteApplication {
         actor: Actor,
         note_id: NoteId,
     ) -> Result<NoteReviewDetails, NoteUseCaseError> {
-        self.reviews
+        self.notes
             .read_owned_note_review(&actor, note_id)
             .await
             .map(review_details)
@@ -25,7 +25,7 @@ impl NoteApplication {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<NoteReviewDetails, NoteUseCaseError> {
-        self.reviews
+        self.notes
             .mark_owned_note_reviewed(&actor, note_id, expected_revision, self.clock.now())
             .await
             .map(review_details)

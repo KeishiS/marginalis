@@ -18,7 +18,7 @@ impl NoteApplication {
         actor: Actor,
         note_id: NoteId,
     ) -> Result<NoteAclState, NoteUseCaseError> {
-        self.access_control
+        self.notes
             .read_note_acl(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)
@@ -66,7 +66,7 @@ impl NoteApplication {
             }
             grants.push(NoteAclEntry::new(principal, entry.permission));
         }
-        self.access_control
+        self.notes
             .replace_note_acl(
                 &actor,
                 note_id,

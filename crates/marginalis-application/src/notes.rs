@@ -221,6 +221,28 @@ pub trait NoteSyncRepository: Send + Sync {
     ) -> Result<NoteSyncPage, NoteSyncRepositoryError>;
 }
 
+/// ノートの読み取り、変更、ACL、人手確認、外部連携を同じ保存実装へ拘束するport。
+///
+/// 機能ごとの小さなinterfaceはSQLite実装を読みやすく保つために分ける。一方、applicationへは
+/// 一つのtrait objectとして注入し、読み取りと変更で異なるデータベースを誤って組み合わせられないようにする。
+pub trait NoteRepository:
+    NoteQueryRepository
+    + NoteCommandRepository
+    + NoteAclRepository
+    + NoteReviewRepository
+    + NoteSyncRepository
+{
+}
+
+impl<T> NoteRepository for T where
+    T: NoteQueryRepository
+        + NoteCommandRepository
+        + NoteAclRepository
+        + NoteReviewRepository
+        + NoteSyncRepository
+{
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum NoteSyncRepositoryError {
     #[error("sync cursor is invalid")]
@@ -254,22 +276,18 @@ pub(super) fn attachment_ids(queries: &[NoteAttachmentQuery]) -> Vec<AttachmentI
 
 /// `NoteApplication`が依存するportの束。
 ///
-/// 同じ型のArcを位置引数で並べると、repositoryを取り違えても型検査で気づけない。
-/// fieldの名前で結び付けを固定する。
+/// ノート操作には一つの`NoteRepository`だけを持たせ、その他の独立した責務は名前付きfieldで
+/// 結び付ける。本番向けの組み立ては`with_storage`だけを公開する。
 pub struct NoteApplicationDependencies {
-    pub queries: Arc<dyn NoteQueryRepository>,
-    pub commands: Arc<dyn NoteCommandRepository>,
-    pub access_control: Arc<dyn NoteAclRepository>,
-    pub reviews: Arc<dyn NoteReviewRepository>,
-    pub sync: Arc<dyn NoteSyncRepository>,
-    pub content: Arc<dyn NoteContent>,
-    pub bibliography: Arc<dyn BibliographyRepository>,
-    pub math_macros: Arc<dyn MathMacroRepository>,
-    pub principals: Arc<dyn PrincipalDirectory>,
-    pub acl_issuer: String,
-    pub links: Arc<dyn NoteLinkResolver>,
-    pub clock: Arc<dyn Clock>,
-    pub random: Arc<dyn Random>,
+    notes: Arc<dyn NoteRepository>,
+    content: Arc<dyn NoteContent>,
+    bibliography: Arc<dyn BibliographyRepository>,
+    math_macros: Arc<dyn MathMacroRepository>,
+    principals: Arc<dyn PrincipalDirectory>,
+    acl_issuer: String,
+    links: Arc<dyn NoteLinkResolver>,
+    clock: Arc<dyn Clock>,
+    random: Arc<dyn Random>,
 }
 
 impl NoteApplicationDependencies {
@@ -285,22 +303,14 @@ impl NoteApplicationDependencies {
         acl_issuer: String,
     ) -> Self
     where
-        S: NoteQueryRepository
-            + NoteCommandRepository
-            + NoteAclRepository
-            + NoteReviewRepository
-            + NoteSyncRepository
+        S: NoteRepository
             + BibliographyRepository
             + MathMacroRepository
             + PrincipalDirectory
             + 'static,
     {
         Self {
-            queries: storage.clone(),
-            commands: storage.clone(),
-            access_control: storage.clone(),
-            reviews: storage.clone(),
-            sync: storage.clone(),
+            notes: storage.clone(),
             content,
             bibliography: storage.clone(),
             math_macros: storage.clone(),
@@ -315,11 +325,7 @@ impl NoteApplicationDependencies {
 
 /// transportへ公開するノート操作のapplication service。
 pub struct NoteApplication {
-    queries: Arc<dyn NoteQueryRepository>,
-    commands: Arc<dyn NoteCommandRepository>,
-    access_control: Arc<dyn NoteAclRepository>,
-    reviews: Arc<dyn NoteReviewRepository>,
-    sync: Arc<dyn NoteSyncRepository>,
+    notes: Arc<dyn NoteRepository>,
     content: Arc<dyn NoteContent>,
     bibliography: Arc<dyn BibliographyRepository>,
     math_macros: Arc<dyn MathMacroRepository>,
@@ -333,11 +339,7 @@ pub struct NoteApplication {
 impl NoteApplication {
     pub fn new(dependencies: NoteApplicationDependencies) -> Self {
         Self {
-            queries: dependencies.queries,
-            commands: dependencies.commands,
-            access_control: dependencies.access_control,
-            reviews: dependencies.reviews,
-            sync: dependencies.sync,
+            notes: dependencies.notes,
             content: dependencies.content,
             bibliography: dependencies.bibliography,
             math_macros: dependencies.math_macros,
@@ -354,7 +356,7 @@ impl NoteApplication {
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Note, NoteUseCaseError> {
-        self.queries
+        self.notes
             .accessible_note(actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?

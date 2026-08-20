@@ -24,7 +24,7 @@ impl NoteApplication {
         actor: Actor,
         note_id: NoteId,
     ) -> Result<Vec<NoteRevisionSummary>, NoteUseCaseError> {
-        self.queries
+        self.notes
             .list_note_revisions(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -37,7 +37,7 @@ impl NoteApplication {
         note_id: NoteId,
         revision: Revision,
     ) -> Result<NoteRevisionView, NoteUseCaseError> {
-        self.queries
+        self.notes
             .note_revision(&actor, note_id, revision)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -116,7 +116,7 @@ impl NoteApplication {
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
         let attachment_ids = attachment_ids(&attachment_queries);
-        self.commands
+        self.notes
             .restore_visible_note_revision(
                 &actor,
                 note_id,

@@ -63,7 +63,7 @@ impl NoteApplication {
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
         let attachment_ids = attachment_ids(&attachment_queries);
-        self.commands
+        self.notes
             .create_note(
                 &note,
                 NoteLinks {
@@ -118,7 +118,7 @@ impl NoteApplication {
         let reference_targets = reference_targets(&reference_queries);
         let cited_keys = cited_keys(&citation_queries);
         let attachment_ids = attachment_ids(&attachment_queries);
-        self.commands
+        self.notes
             .update_visible_note(
                 &actor,
                 note_id,
@@ -151,7 +151,7 @@ impl NoteApplication {
         dry_run: bool,
     ) -> Result<NotePatchApplication, NoteUseCaseError> {
         let accessible = self
-            .queries
+            .notes
             .accessible_note(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -207,7 +207,7 @@ impl NoteApplication {
         let cited_keys = cited_keys(&citation_queries);
         let attachment_ids = attachment_ids(&attachment_queries);
         let saved = self
-            .commands
+            .notes
             .update_visible_note(
                 &actor,
                 note_id,
@@ -237,7 +237,7 @@ impl NoteApplication {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
-        self.commands
+        self.notes
             .soft_delete_visible_note(&actor, note_id, expected_revision, self.clock.now())
             .await
             .map_err(NoteUseCaseError::from)
@@ -249,7 +249,7 @@ impl NoteApplication {
         note_id: NoteId,
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
-        self.commands
+        self.notes
             .restore_owned_deleted_note(&actor, note_id, expected_revision, self.clock.now())
             .await
             .map_err(NoteUseCaseError::from)

@@ -19,7 +19,7 @@ impl NoteApplication {
         draft: AttachmentDraft,
     ) -> Result<AttachmentMetadata, NoteUseCaseError> {
         let accessible = self
-            .queries
+            .notes
             .accessible_note(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -34,7 +34,7 @@ impl NoteApplication {
             self.clock.now(),
             actor.principal().clone(),
         );
-        self.commands
+        self.notes
             .create_note_attachment(&actor, &attachment)
             .await
             .map_err(NoteUseCaseError::from)?;
@@ -46,7 +46,7 @@ impl NoteApplication {
         actor: Actor,
         note_id: NoteId,
     ) -> Result<Vec<AttachmentMetadata>, NoteUseCaseError> {
-        self.queries
+        self.notes
             .list_note_attachments(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -59,7 +59,7 @@ impl NoteApplication {
         note_id: NoteId,
         attachment_id: AttachmentId,
     ) -> Result<StoredAttachment, NoteUseCaseError> {
-        self.queries
+        self.notes
             .note_attachment(&actor, note_id, attachment_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -72,7 +72,7 @@ impl NoteApplication {
         note_id: NoteId,
         attachment_id: AttachmentId,
     ) -> Result<(), NoteUseCaseError> {
-        self.commands
+        self.notes
             .delete_unused_note_attachment(&actor, note_id, attachment_id)
             .await
             .map_err(NoteUseCaseError::from)
@@ -129,7 +129,7 @@ impl NoteApplication {
             return Ok(HashMap::new());
         }
         let metadata = self
-            .queries
+            .notes
             .list_note_attachments(actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?

@@ -40,7 +40,7 @@ impl NoteApplication {
         );
         let target_ids = reference_targets(&reference_queries);
         let targets = self
-            .queries
+            .notes
             .visible_notes_by_id(actor, &target_ids)
             .await
             .map_err(NoteUseCaseError::from)?;
@@ -159,7 +159,7 @@ impl NoteApplication {
         context: NoteRenderContext,
     ) -> Result<NotePreview, NoteUseCaseError> {
         let accessible = self
-            .queries
+            .notes
             .accessible_note(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?
@@ -195,7 +195,7 @@ impl NoteApplication {
         query: NoteGraphQuery,
     ) -> Result<NoteGraph, NoteUseCaseError> {
         let graph = self
-            .queries
+            .notes
             .note_graph(&actor, &query)
             .await
             .map_err(NoteUseCaseError::from)?;
@@ -230,7 +230,7 @@ impl NoteApplication {
         context: NoteRenderContext,
     ) -> Result<crate::NoteView, NoteUseCaseError> {
         let mut snapshot = self
-            .queries
+            .notes
             .note_view_snapshot(&actor, note_id)
             .await
             .map_err(NoteUseCaseError::from)?

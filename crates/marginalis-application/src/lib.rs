@@ -69,9 +69,9 @@ pub use notes::{
     NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks, NoteOutline,
     NoteOutlineSection, NotePatchApplication, NotePatchError, NotePatchOutcome,
     NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
-    NoteReviewRepository, NoteRevisionDiff, NoteRevisionView, NoteSyncEntry, NoteSyncPage,
-    NoteSyncPhase, NoteSyncRemovalReason, NoteSyncRepository, NoteSyncRepositoryError,
-    NoteViewSnapshot, apply_note_patch,
+    NoteRepository, NoteReviewRepository, NoteRevisionDiff, NoteRevisionView, NoteSyncEntry,
+    NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason, NoteSyncRepository,
+    NoteSyncRepositoryError, NoteViewSnapshot, apply_note_patch,
 };
 pub use snapshot::{
     InvalidSnapshot, LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,

@@ -283,11 +283,10 @@ HTTP、SQLite、AsciiDocは互いに依存せず、それぞれapplicationのpor
 閲覧画面は``NoteUseCases::read_note_view``だけを呼び出し、ノート、実効アクセス水準、描画HTML、
 関連概要を個別の問い合わせから組み立てません。試験用adapterもこの境界を直接実装し、実際には
 存在しない分割問い合わせを模倣しません。
-applicationから永続化へ要求する外向きportは、読み取りの``NoteQueryRepository``、原子的な変更の
-``NoteCommandRepository``、ACL操作の``NoteAclRepository``、所有者とrevisionを原子的に検査する
-``NoteReviewRepository``に分けます。具象的には同じSQLite adapterがこれらを実装しますが、application serviceは
-用途ごとに必要なportだけを受け取ります。組み立ては``NoteApplicationDependencies``へ名前付きで束ね、
-同じ型のrepositoryを取り違えないようにします。
+applicationからノートの永続化へ要求する外向きportは、読み取り、原子的な変更、ACL操作、
+人手確認、外部検索用同期の小さなインターフェースに分けます。``NoteRepository``はこれらを一つの
+保存境界へ束ね、application serviceには一つの保存実装だけを注入します。これにより、読み取りと
+変更で異なるデータベースを誤って組み合わせず、具体的なSQLiteの型にも依存しません。
 すべてのrepository portは共通の失敗理由``StorageError``
 （``NotFound``、``Conflict``、``RetentionExpired``、``CorruptData``、``Unavailable``）を返し、
 系統ごとの意味づけはユースケース層のエラー型への写像が決めます。

@@ -30,7 +30,7 @@ use super::{
     NoteSyncRepositoryError, NoteViewSnapshot,
 };
 
-/// 決定的なclockと乱数を使い、repository4種を同じ`MemoryNotes`が担う試験用のservice。
+/// 決定的なclockと乱数を使い、ノート保存の全機能を同じ`MemoryNotes`が担う試験用service。
 pub(super) fn note_application(
     repository: &Arc<MemoryNotes>,
     content: Arc<dyn NoteContent>,
@@ -54,11 +54,7 @@ pub(super) fn note_application_with_links(
     links: Arc<dyn NoteLinkResolver>,
 ) -> NoteApplication {
     NoteApplication::new(NoteApplicationDependencies {
-        queries: repository.clone(),
-        commands: repository.clone(),
-        access_control: repository.clone(),
-        reviews: repository.clone(),
-        sync: repository.clone(),
+        notes: repository.clone(),
         content,
         bibliography,
         math_macros,

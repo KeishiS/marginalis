@@ -14,7 +14,7 @@ impl NoteApplication {
         actor: Actor,
         query: NoteListQuery,
     ) -> Result<Vec<NoteListEntry>, NoteUseCaseError> {
-        self.queries
+        self.notes
             .list_visible_notes(&actor, &query)
             .await
             .map_err(NoteUseCaseError::from)
@@ -46,7 +46,7 @@ impl NoteApplication {
         &self,
         actor: Actor,
     ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError> {
-        self.queries
+        self.notes
             .list_owned_deleted_notes(&actor)
             .await
             .map_err(NoteUseCaseError::from)
