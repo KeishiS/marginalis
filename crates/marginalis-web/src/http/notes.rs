@@ -14,7 +14,8 @@ use marginalis_contract::{
     DeletedNoteListEntryResponse, MathMacroResponse, NoteAclGrantResponse, NoteAclResponse,
     NoteAclUpdateInput, NoteDraftInput, NoteGraphCitationResponse, NoteGraphNoteResponse,
     NoteGraphReferenceResponse, NoteGraphResponse, NoteGraphWorkResponse, NoteListEntryResponse,
-    NotePreviewResponse, NoteResponse, NoteReviewResponse, NoteSourceSpanKindResponse,
+    NotePreviewResponse, NoteResponse, NoteReviewResponse, NoteRevisionDiffResponse,
+    NoteRevisionResponse, NoteRevisionSummaryResponse, NoteSourceSpanKindResponse,
     NoteSourceSpanResponse, NoteSummaryResponse, NoteViewResponse, ProblemCode,
     RelatedNotesResponse, SessionResponse,
 };
@@ -37,6 +38,12 @@ pub(super) type NoteInput = NoteDraftInput;
 pub(super) struct NoteListInput {
     created_via: Option<NoteCreationSource>,
     review_status: Option<NoteReviewStatus>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub(super) struct NoteHistoryDiffInput {
+    from_revision: i64,
+    to_revision: i64,
 }
 
 pub(super) async fn session(
@@ -139,6 +146,119 @@ pub(super) async fn read_note_view(
         Json(note_view_response(view)),
     )
         .into_response())
+}
+
+pub(super) async fn list_note_revisions(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    headers: HeaderMap,
+) -> HandlerResult<Json<Vec<NoteRevisionSummaryResponse>>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let revisions = state
+        .notes
+        .list_note_revisions(actor, parse_note_id(&note_id)?)
+        .await
+        .map_err(note_error)?;
+    Ok(Json(
+        revisions
+            .into_iter()
+            .map(|revision| NoteRevisionSummaryResponse {
+                revision: revision.revision.get(),
+                changed_at_ms: revision.changed_at.get(),
+                changed_by_issuer: revision.changed_by.primary_identity().issuer().to_owned(),
+                changed_by_subject: revision.changed_by.primary_identity().subject().to_owned(),
+                kind: revision.kind,
+            })
+            .collect(),
+    ))
+}
+
+pub(super) async fn read_note_revision(
+    State(state): State<ApiState>,
+    Path((note_id, revision)): Path<(String, i64)>,
+    headers: HeaderMap,
+) -> HandlerResult<Json<NoteRevisionResponse>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let revision = state
+        .notes
+        .read_note_revision(actor, parse_note_id(&note_id)?, parse_revision(revision)?)
+        .await
+        .map_err(note_error)?;
+    Ok(Json(note_revision_response(revision)))
+}
+
+pub(super) async fn compare_note_revisions(
+    State(state): State<ApiState>,
+    Path(note_id): Path<String>,
+    Query(input): Query<NoteHistoryDiffInput>,
+    headers: HeaderMap,
+) -> HandlerResult<Json<NoteRevisionDiffResponse>> {
+    let actor = authenticated_actor(&headers, &state).await?;
+    let diff = state
+        .notes
+        .compare_note_revisions(
+            actor,
+            parse_note_id(&note_id)?,
+            parse_revision(input.from_revision)?,
+            parse_revision(input.to_revision)?,
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(Json(NoteRevisionDiffResponse {
+        from_revision: diff.from_revision.get(),
+        to_revision: diff.to_revision.get(),
+        unified_diff: diff.unified_diff,
+    }))
+}
+
+pub(super) async fn restore_note_revision(
+    State(state): State<ApiState>,
+    Path((note_id, revision)): Path<(String, i64)>,
+    headers: HeaderMap,
+) -> HandlerResult<Response> {
+    let actor = authenticated_mutation_actor(&headers, &state).await?;
+    let note = state
+        .notes
+        .restore_note_revision(
+            actor,
+            parse_note_id(&note_id)?,
+            parse_revision(revision)?,
+            expected_revision(&headers)?,
+            NoteWritePolicy::AllowAdvisories,
+        )
+        .await
+        .map_err(note_error)?;
+    Ok(note_json(StatusCode::OK, note))
+}
+
+fn note_revision_response(view: marginalis_application::NoteRevisionView) -> NoteRevisionResponse {
+    let revision = view.revision;
+    let deleted_at_ms = revision.note().deleted_at().map(|value| value.get());
+    let changed_by_issuer = revision.changed_by().primary_identity().issuer().to_owned();
+    let changed_by_subject = revision
+        .changed_by()
+        .primary_identity()
+        .subject()
+        .to_owned();
+    let kind = revision.kind();
+    NoteRevisionResponse {
+        note: note_response(revision.note().clone()),
+        access: view.access,
+        deleted_at_ms,
+        changed_by_issuer,
+        changed_by_subject,
+        kind,
+    }
+}
+
+fn parse_revision(value: i64) -> HandlerResult<Revision> {
+    Revision::new(value).map_err(|_| {
+        problem(
+            StatusCode::BAD_REQUEST,
+            ProblemCode::InvalidRequest,
+            "revision must be a positive integer",
+        )
+    })
 }
 
 pub(super) async fn create_note(

@@ -1,9 +1,10 @@
 //! 所有者によるノートの人手確認のSQLite transaction。
 
-use marginalis_domain::{Actor, Note, NoteAccess, NoteId, Revision, UnixMillis};
+use marginalis_domain::{Actor, Note, NoteAccess, NoteId, NoteRevisionKind, Revision, UnixMillis};
 
 use crate::{
     SqliteDatabase, SqliteStoreError, database_error,
+    note_history::insert_note_revision,
     notes::{classify_failed_mutation, note_from_row, note_row, require_active_note_access},
 };
 
@@ -61,6 +62,13 @@ impl SqliteDatabase {
             return Err(error);
         }
         let note = note_from_row(note_row(&mut transaction, note_id).await?)?;
+        insert_note_revision(
+            &mut transaction,
+            note_id,
+            actor.principal_id(),
+            NoteRevisionKind::Reviewed,
+        )
+        .await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
     }

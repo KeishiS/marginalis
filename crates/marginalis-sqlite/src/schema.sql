@@ -63,6 +63,38 @@ LEFT JOIN principal_identities reviewer_identity
   ON reviewer_identity.principal_id = notes.reviewer_principal_id
  AND reviewer_identity.is_primary = 1;
 
+-- revisionが確定した直後の完全なノート状態。差分は要求時にsource同士から生成する。
+-- 現在のACLだけを履歴の認可へ使い、過去の共有先identityは保存しない。
+CREATE TABLE note_revisions (
+    note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    changed_at_ms INTEGER NOT NULL,
+    changed_by_principal_id INTEGER NOT NULL REFERENCES principals(principal_id),
+    change_kind TEXT NOT NULL CHECK (change_kind IN (
+        'created', 'content_updated', 'acl_updated', 'reviewed', 'deleted',
+        'restored', 'history_restored', 'imported'
+    )),
+    title TEXT NOT NULL,
+    source TEXT NOT NULL,
+    tags_json TEXT NOT NULL CHECK (json_valid(tags_json)),
+    deleted_at_ms INTEGER,
+    review_tracking_known INTEGER NOT NULL CHECK (review_tracking_known IN (0, 1)),
+    reviewed_revision INTEGER CHECK (reviewed_revision > 0),
+    reviewed_at_ms INTEGER,
+    reviewer_principal_id INTEGER REFERENCES principals(principal_id),
+    CHECK (
+        (reviewed_revision IS NULL AND reviewed_at_ms IS NULL
+            AND reviewer_principal_id IS NULL)
+        OR
+        (review_tracking_known = 1 AND reviewed_revision IS NOT NULL
+            AND reviewed_revision <= revision
+            AND reviewed_at_ms <= changed_at_ms)
+    ),
+    PRIMARY KEY (note_id, revision)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX note_revisions_changed_by_idx
+ON note_revisions (changed_by_principal_id, changed_at_ms DESC, note_id, revision);
+
 CREATE TABLE note_references (
     source_note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
     target_note_id TEXT NOT NULL,

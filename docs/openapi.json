@@ -28,6 +28,15 @@
           "type": "string"
         }
       },
+      "FromRevision": {
+        "in": "query",
+        "name": "from_revision",
+        "required": true,
+        "schema": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
       "GraphDepth": {
         "description": "起点から辿る線の本数。originを指定した場合だけ使う。既定は1",
         "in": "query",
@@ -94,6 +103,24 @@
         "required": false,
         "schema": {
           "$ref": "#/components/schemas/NoteReviewStatus"
+        }
+      },
+      "Revision": {
+        "in": "path",
+        "name": "revision",
+        "required": true,
+        "schema": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "ToRevision": {
+        "in": "query",
+        "name": "to_revision",
+        "required": true,
+        "schema": {
+          "minimum": 1,
+          "type": "integer"
         }
       }
     },
@@ -1384,6 +1411,122 @@
           "reviewed"
         ],
         "type": "string"
+      },
+      "NoteRevision": {
+        "additionalProperties": false,
+        "description": "一つのrevisionが確定した直後のノート状態。",
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/NoteAccess"
+          },
+          "changed_by_issuer": {
+            "type": "string"
+          },
+          "changed_by_subject": {
+            "type": "string"
+          },
+          "deleted_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NoteRevisionKind"
+          },
+          "note": {
+            "$ref": "#/components/schemas/Note"
+          }
+        },
+        "required": [
+          "note",
+          "access",
+          "deleted_at_ms",
+          "changed_by_issuer",
+          "changed_by_subject",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "NoteRevisionDiff": {
+        "additionalProperties": false,
+        "description": "二つのrevisionのAsciiDoc原文から要求時に生成した行単位の差分。",
+        "properties": {
+          "from_revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "to_revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "unified_diff": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_revision",
+          "to_revision",
+          "unified_diff"
+        ],
+        "type": "object"
+      },
+      "NoteRevisionKind": {
+        "description": "ノートのrevisionを生じさせた操作。\n\n本文に差がないACL変更や確認操作も、競合検出では同じrevisionを進めるため履歴へ残す。",
+        "oneOf": [
+          {
+            "enum": [
+              "created",
+              "content_updated",
+              "acl_updated",
+              "reviewed",
+              "deleted",
+              "restored",
+              "history_restored"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "imported",
+            "description": "履歴導入前の現行版または旧archiveから作った基準点。",
+            "type": "string"
+          }
+        ]
+      },
+      "NoteRevisionSummary": {
+        "additionalProperties": false,
+        "description": "本文を含まない一つのrevision情報。",
+        "properties": {
+          "changed_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "changed_by_issuer": {
+            "type": "string"
+          },
+          "changed_by_subject": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NoteRevisionKind"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "changed_at_ms",
+          "changed_by_issuer",
+          "changed_by_subject",
+          "kind"
+        ],
+        "type": "object"
       },
       "NoteSourcePosition": {
         "additionalProperties": false,
@@ -2996,6 +3139,165 @@
           }
         },
         "summary": "Replace note ACL"
+      }
+    },
+    "/api/v3/notes/{note_id}/history": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NoteRevisionSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "note revision summaries"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "List visible note revisions without source"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        }
+      ]
+    },
+    "/api/v3/notes/{note_id}/history-diff": {
+      "get": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FromRevision"
+          },
+          {
+            "$ref": "#/components/parameters/ToRevision"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteRevisionDiff"
+                }
+              }
+            },
+            "description": "line-oriented Unified Diff"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Compare two visible note revisions"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        }
+      ]
+    },
+    "/api/v3/notes/{note_id}/history/{revision}": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteRevision"
+                }
+              }
+            },
+            "description": "note revision"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "summary": "Read one visible note revision"
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        },
+        {
+          "$ref": "#/components/parameters/Revision"
+        }
+      ]
+    },
+    "/api/v3/notes/{note_id}/history/{revision}/restore": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NoteId"
+        },
+        {
+          "$ref": "#/components/parameters/Revision"
+        }
+      ],
+      "post": {
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            },
+            "description": "note restored from history",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableNote"
+          },
+          "428": {
+            "$ref": "#/components/responses/PreconditionRequired"
+          }
+        },
+        "summary": "Restore historical source as a new revision"
       }
     },
     "/api/v3/notes/{note_id}/preview": {

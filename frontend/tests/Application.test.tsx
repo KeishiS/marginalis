@@ -243,6 +243,10 @@ describe("Application", () => {
       expect(screen.getByRole("link", { name: "編集" })).toBeInTheDocument(),
     );
     expect(screen.getByRole("link", { name: "共有設定" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "版履歴" })).toHaveAttribute(
+      "href",
+      "/marginalis/notes/0197c9bc-0000-7000-8000-000000000001/history",
+    );
     const deleteButton = screen.getByRole("button", { name: "削除" });
     expect(
       screen.getByText("0197c9bc-0000-7000-8000-000000000001"),

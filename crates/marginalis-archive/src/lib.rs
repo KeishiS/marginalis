@@ -15,8 +15,8 @@ use marginalis_domain::{
     BibliographyContentDigest, BibliographyImportLink, BibliographyImportMethod,
     BibliographyImportSource, BibliographyImportSourceId, BibliographyItem, BibliographyItemId,
     EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
-    NoteReviewRecord, NoteReviewTracking, Principal, PrincipalId, PrincipalRef, Revision,
-    UnixMillis,
+    NoteReviewRecord, NoteReviewTracking, NoteRevisionKind, NoteRevisionSnapshot, Principal,
+    PrincipalId, PrincipalRef, Revision, UnixMillis,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -83,6 +83,13 @@ pub struct Archive {
     )]
     pub principals: Option<Vec<ArchivePrincipal>>,
     pub notes: Vec<ArchiveNote>,
+    /// 保持中の全revision。旧契約では項目がなく、現行契約では空配列を含め必須。
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_note_revisions",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub note_revisions: Option<Vec<ArchiveNoteRevision>>,
     pub note_acl: Vec<ArchiveAclEntry>,
     #[serde(default)]
     pub bibliography_items: Vec<ArchiveBibliographyItem>,
@@ -111,6 +118,15 @@ where
     Vec::<ArchivePrincipal>::deserialize(deserializer).map(Some)
 }
 
+fn deserialize_optional_note_revisions<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<ArchiveNoteRevision>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<ArchiveNoteRevision>::deserialize(deserializer).map(Some)
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveIdentity {
@@ -137,6 +153,24 @@ pub struct ArchiveNote {
 #[serde(deny_unknown_fields)]
 pub struct ArchiveNoteProvenance {
     pub created_via: NoteCreationSource,
+    pub review_tracking_known: bool,
+    pub reviewed_revision: Option<i64>,
+    pub reviewed_at_ms: Option<i64>,
+    pub reviewer_issuer: Option<String>,
+    pub reviewer_subject: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveNoteRevision {
+    pub note_id: String,
+    pub revision: i64,
+    pub changed_at_ms: i64,
+    pub changed_by_issuer: String,
+    pub changed_by_subject: String,
+    pub kind: NoteRevisionKind,
+    pub source: String,
+    pub deleted_at_ms: Option<i64>,
     pub review_tracking_known: bool,
     pub reviewed_revision: Option<i64>,
     pub reviewed_at_ms: Option<i64>,
@@ -229,6 +263,11 @@ impl Archive {
             // note_idは一意であるため、これだけで並びが定まる。
             left.note_id.cmp(&right.note_id)
         });
+        if let Some(revisions) = &mut self.note_revisions {
+            revisions.sort_by(|left, right| {
+                (&left.note_id, left.revision).cmp(&(&right.note_id, right.revision))
+            });
+        }
         self.note_acl.sort_by(|left, right| {
             (&left.note_id, &left.issuer, &left.subject).cmp(&(
                 &right.note_id,
@@ -306,6 +345,39 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
                 }),
             })
             .collect(),
+        note_revisions: Some(
+            snapshot
+                .note_revisions()
+                .iter()
+                .map(|entry| ArchiveNoteRevision {
+                    note_id: entry.note().note_id().to_string(),
+                    revision: entry.note().revision().get(),
+                    changed_at_ms: entry.changed_at().get(),
+                    changed_by_issuer: entry.changed_by().primary_identity().issuer().to_owned(),
+                    changed_by_subject: entry.changed_by().primary_identity().subject().to_owned(),
+                    kind: entry.kind(),
+                    source: entry.note().source().to_owned(),
+                    deleted_at_ms: entry.note().deleted_at().map(UnixMillis::get),
+                    review_tracking_known: entry.note().review_tracking_known(),
+                    reviewed_revision: entry
+                        .note()
+                        .last_review()
+                        .map(|review| review.revision().get()),
+                    reviewed_at_ms: entry
+                        .note()
+                        .last_review()
+                        .map(|review| review.reviewed_at().get()),
+                    reviewer_issuer: entry
+                        .note()
+                        .last_review()
+                        .map(|review| review.reviewer().primary_identity().issuer().to_owned()),
+                    reviewer_subject: entry
+                        .note()
+                        .last_review()
+                        .map(|review| review.reviewer().primary_identity().subject().to_owned()),
+                })
+                .collect(),
+        ),
         note_acl: snapshot
             .note_acl()
             .iter()
@@ -409,6 +481,7 @@ pub fn validate_archive(
         || archive.adocweave_package_version != content.profile().adocweave_package_version
         || archive.note_profile_version != ARCHIVE_NOTE_PROFILE_VERSION
         || archive.notes.iter().any(|note| note.provenance.is_none())
+        || archive.note_revisions.is_none()
     {
         return Err(ArchiveValidationError);
     }
@@ -424,7 +497,7 @@ pub fn migrate_previous_archive(
     if !PREVIOUS_MIGRATION_CONTRACT.matches(archive) {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
-    if archive.principals.is_some() {
+    if archive.principals.is_some() || archive.note_revisions.is_some() {
         // 直前契約にはprincipal群が存在しない。形式名だけを旧契約へ書き換えた入力や、
         // 新旧の項目を混ぜた入力を受理しない。
         return Err(ArchiveMigrationError::InvalidPrincipal { position: 1 });
@@ -511,6 +584,75 @@ fn validate_archive_contents(
             .map_err(|_| invalid_note())
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let note_revisions = archive
+        .note_revisions
+        .as_ref()
+        .map(|entries| {
+            entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| {
+                    let invalid = || ArchiveContentsError::NoteRevision {
+                        position: index + 1,
+                    };
+                    let note_id = entry
+                        .note_id
+                        .parse::<EntityId>()
+                        .map(NoteId::new)
+                        .map_err(|_| invalid())?;
+                    let current = notes
+                        .iter()
+                        .find(|note| note.note_id() == note_id)
+                        .ok_or_else(invalid)?;
+                    let normalized = content
+                        .validate_draft(NoteDraft {
+                            source: entry.source.clone(),
+                            title: String::new(),
+                            tags: Vec::new(),
+                        })
+                        .map_err(|_| invalid())?;
+                    let (_, review) = archive_review(
+                        &ArchiveNoteProvenance {
+                            created_via: current.created_via(),
+                            review_tracking_known: entry.review_tracking_known,
+                            reviewed_revision: entry.reviewed_revision,
+                            reviewed_at_ms: entry.reviewed_at_ms,
+                            reviewer_issuer: entry.reviewer_issuer.clone(),
+                            reviewer_subject: entry.reviewer_subject.clone(),
+                        },
+                        current.owner(),
+                        principal_refs,
+                    )
+                    .map_err(|_| invalid())?;
+                    let historical = Note::restore(NoteRestore {
+                        note_id,
+                        owner: current.owner().clone(),
+                        draft: NoteDraft {
+                            title: normalized.draft.title,
+                            source: entry.source.clone(),
+                            tags: normalized.draft.tags,
+                        },
+                        created_at: current.created_at(),
+                        updated_at: UnixMillis::new(entry.changed_at_ms),
+                        revision: Revision::new(entry.revision).map_err(|_| invalid())?,
+                        deleted_at: entry.deleted_at_ms.map(UnixMillis::new),
+                        created_via: current.created_via(),
+                        review,
+                    })
+                    .map_err(|_| invalid())?;
+                    let changed_by = principal_ref(
+                        principal_refs,
+                        &entry.changed_by_issuer,
+                        &entry.changed_by_subject,
+                    )
+                    .map_err(|_| invalid())?;
+                    Ok(NoteRevisionSnapshot::new(
+                        historical, changed_by, entry.kind,
+                    ))
+                })
+                .collect::<Result<Vec<_>, ArchiveContentsError>>()
+        })
+        .transpose()?;
     let note_acl = archive
         .note_acl
         .iter()
@@ -631,7 +773,12 @@ fn validate_archive_contents(
             ))
         })
         .collect::<Result<Vec<_>, ArchiveContentsError>>()?;
-    LogicalSnapshot::new(notes, note_acl)
+    let snapshot = LogicalSnapshot::new(notes, note_acl);
+    let snapshot = match note_revisions {
+        Some(revisions) => snapshot.and_then(|value| value.with_note_revisions(revisions)),
+        None => snapshot,
+    };
+    snapshot
         .and_then(|snapshot| {
             snapshot.with_bibliography_data(
                 bibliography_items,
@@ -645,6 +792,9 @@ fn validate_archive_contents(
             InvalidSnapshot::DuplicateNote { position } => ArchiveContentsError::Note { position },
             InvalidSnapshot::InvalidAclEntry { position } => {
                 ArchiveContentsError::AclEntry { position }
+            }
+            InvalidSnapshot::InvalidNoteRevision { position } => {
+                ArchiveContentsError::NoteRevision { position }
             }
             InvalidSnapshot::InvalidReference { .. } => ArchiveContentsError::Relationships,
             InvalidSnapshot::InvalidBibliographyItem { position } => {
@@ -861,6 +1011,7 @@ fn declared_archive_principals(
 enum ArchiveContentsError {
     Principal { position: usize },
     Note { position: usize },
+    NoteRevision { position: usize },
     AclEntry { position: usize },
     BibliographyItem { position: usize },
     BibliographyImportSource { position: usize },
@@ -877,6 +1028,8 @@ pub enum ArchiveMigrationError {
     InvalidPrincipal { position: usize },
     #[error("archive note at position {position} does not satisfy the current note profile")]
     InvalidNote { position: usize },
+    #[error("archive note revision at position {position} is invalid")]
+    InvalidNoteRevision { position: usize },
     #[error("archive ACL entry at position {position} is invalid")]
     InvalidAclEntry { position: usize },
     #[error("archive bibliography item at position {position} is invalid")]
@@ -896,6 +1049,9 @@ impl From<ArchiveContentsError> for ArchiveMigrationError {
         match error {
             ArchiveContentsError::Principal { position } => Self::InvalidPrincipal { position },
             ArchiveContentsError::Note { position } => Self::InvalidNote { position },
+            ArchiveContentsError::NoteRevision { position } => {
+                Self::InvalidNoteRevision { position }
+            }
             ArchiveContentsError::AclEntry { position } => Self::InvalidAclEntry { position },
             ArchiveContentsError::BibliographyItem { position } => {
                 Self::InvalidBibliographyItem { position }
@@ -1039,6 +1195,10 @@ mod tests {
             .remove("aliases");
         assert!(serde_json::from_value::<Archive>(missing_aliases).is_err());
 
+        let mut null_revisions = serde_json::to_value(&archive).expect("archive value");
+        null_revisions["note_revisions"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<Archive>(null_revisions).is_err());
+
         let restored = validate_archive(&content(), &archive).expect("validate archive");
         assert_eq!(create_archive(&content(), &restored), archive);
 
@@ -1057,6 +1217,69 @@ mod tests {
             });
         assert_eq!(
             validate_archive(&content(), &duplicated),
+            Err(ArchiveValidationError)
+        );
+    }
+
+    #[test]
+    fn archive_round_trip_preserves_every_note_revision_and_changed_by() {
+        let first = note();
+        let editor = principal("bob");
+        let second = Note::restore(NoteRestore {
+            note_id: first.note_id(),
+            owner: first.owner().clone(),
+            draft: content()
+                .validate_draft(NoteDraft {
+                    source: "= A title\n:marginalis-tags: Research\n\nsecond body".into(),
+                    title: String::new(),
+                    tags: Vec::new(),
+                })
+                .expect("second draft")
+                .draft,
+            created_at: first.created_at(),
+            updated_at: UnixMillis::new(10),
+            revision: Revision::new(2).expect("revision"),
+            deleted_at: None,
+            created_via: first.created_via(),
+            review: NoteReviewTracking::pending(),
+        })
+        .expect("second revision");
+        let revisions = vec![
+            NoteRevisionSnapshot::new(
+                first.clone(),
+                first.owner().clone(),
+                NoteRevisionKind::Created,
+            ),
+            NoteRevisionSnapshot::new(second.clone(), editor, NoteRevisionKind::ContentUpdated),
+        ];
+        let snapshot = LogicalSnapshot::new(vec![second], Vec::new())
+            .expect("snapshot")
+            .with_note_revisions(revisions)
+            .expect("history");
+
+        let archive = create_archive(&content(), &snapshot);
+        assert_eq!(
+            archive
+                .note_revisions
+                .as_ref()
+                .expect("current history")
+                .len(),
+            2
+        );
+        assert_eq!(
+            archive.note_revisions.as_ref().expect("history")[1].changed_by_subject,
+            "bob"
+        );
+        assert_eq!(validate_archive(&content(), &archive), Ok(snapshot));
+
+        let mut missing_history = serde_json::to_value(&archive).expect("archive value");
+        missing_history
+            .as_object_mut()
+            .expect("archive object")
+            .remove("note_revisions");
+        let decoded: Archive = serde_json::from_value(missing_history).expect("legacy shape");
+        assert_eq!(
+            validate_archive(&content(), &decoded),
             Err(ArchiveValidationError)
         );
     }
@@ -1218,6 +1441,7 @@ mod tests {
         archive.note_profile_version = contract.note_profile_version;
         if contract == PREVIOUS_MIGRATION_CONTRACT {
             archive.principals = None;
+            archive.note_revisions = None;
         }
     }
 

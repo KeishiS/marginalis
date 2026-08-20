@@ -16,6 +16,36 @@ fn test_directory(purpose: &str) -> std::path::PathBuf {
     ))
 }
 
+fn current_archive_with_imported_history(mut archive: serde_json::Value) -> serde_json::Value {
+    let histories = archive["notes"]
+        .as_array()
+        .expect("archive notes")
+        .iter()
+        .map(|note| {
+            serde_json::json!({
+                "note_id": note["note_id"],
+                "revision": note["revision"],
+                "changed_at_ms": note["updated_at_ms"],
+                "changed_by_issuer": note["creator_issuer"],
+                "changed_by_subject": note["creator_subject"],
+                "kind": "imported",
+                "source": note["source"],
+                "deleted_at_ms": note["deleted_at_ms"],
+                "review_tracking_known": note["provenance"]["review_tracking_known"],
+                "reviewed_revision": note["provenance"]["reviewed_revision"],
+                "reviewed_at_ms": note["provenance"]["reviewed_at_ms"],
+                "reviewer_issuer": note["provenance"]["reviewer_issuer"],
+                "reviewer_subject": note["provenance"]["reviewer_subject"]
+            })
+        })
+        .collect();
+    archive
+        .as_object_mut()
+        .expect("archive object")
+        .insert("note_revisions".into(), serde_json::Value::Array(histories));
+    archive
+}
+
 #[test]
 fn version_flags_report_the_packaged_version() {
     for flag in ["--version", "-V"] {
@@ -99,7 +129,7 @@ fn identity_maintenance_links_and_switches_aliases_without_logging_them() {
     let old_subject = "private-alice";
     let new_issuer = "https://new-id.example.test";
     let new_subject = "private-alice-v2";
-    let archive = serde_json::json!({
+    let archive = current_archive_with_imported_history(serde_json::json!({
         "format": "marginalis-archive-18",
         "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
         "note_profile_version": 5,
@@ -118,7 +148,7 @@ fn identity_maintenance_links_and_switches_aliases_without_logging_them() {
         "bibliography_import_sources": [],
         "bibliography_import_links": [],
         "math_macro_settings": []
-    });
+    }));
     fs::write(&seed, serde_json::to_vec_pretty(&archive).unwrap()).expect("seed archive");
     run_marginalis(
         &["import-archive", "--input"],
@@ -551,6 +581,14 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
         marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION
     );
     assert_eq!(migrated["note_profile_version"], 5);
+    assert_eq!(migrated["note_revisions"].as_array().map(Vec::len), Some(2));
+    assert!(
+        migrated["note_revisions"]
+            .as_array()
+            .expect("note revisions")
+            .iter()
+            .all(|revision| revision["kind"] == "imported")
+    );
     assert_eq!(migrated["math_macro_settings"], serde_json::json!([]));
     assert_eq!(
         migrated["bibliography_import_sources"],
@@ -928,7 +966,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
     let database = directory.join("marginalis.sqlite3");
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
-    let source = serde_json::json!({
+    let source = current_archive_with_imported_history(serde_json::json!({
         "format": "marginalis-archive-18",
         "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
         "note_profile_version": 5,
@@ -992,7 +1030,7 @@ fn document_export_writes_asciidoc_and_csl_json_with_a_versioned_manifest() {
         "bibliography_import_sources": [],
         "bibliography_import_links": [],
         "math_macro_settings": []
-    });
+    }));
     fs::write(
         &archive,
         serde_json::to_vec_pretty(&source).expect("archive JSON"),
@@ -1147,7 +1185,7 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
     let database = directory.join("marginalis.sqlite3");
     let database_url = format!("sqlite://{}?mode=rwc", database.display());
     let archive = directory.join("archive.json");
-    let source = serde_json::json!({
+    let source = current_archive_with_imported_history(serde_json::json!({
         "format": "marginalis-archive-18",
         "adocweave_package_version": marginalis_asciidoc::PINNED_ADOCWEAVE_PACKAGE_VERSION,
         "note_profile_version": 5,
@@ -1234,7 +1272,7 @@ fn document_import_revalidates_and_restores_into_an_empty_database() {
         "bibliography_import_sources": [],
         "bibliography_import_links": [],
         "math_macro_settings": []
-    });
+    }));
     let archive_bytes = serde_json::to_vec_pretty(&source).expect("archive JSON");
     fs::write(&archive, &archive_bytes).expect("write archive");
     run_marginalis(
@@ -1419,6 +1457,13 @@ fn restore_archive_migrates_verifies_and_imports_in_one_step() {
     );
     assert_eq!(
         current["notes"][0]["source"],
+        previous["notes"][0]["source"]
+    );
+    assert_eq!(current["note_revisions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(current["note_revisions"][0]["revision"], 2);
+    assert_eq!(current["note_revisions"][0]["kind"], "imported");
+    assert_eq!(
+        current["note_revisions"][0]["source"],
         previous["notes"][0]["source"]
     );
 

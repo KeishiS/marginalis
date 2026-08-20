@@ -194,8 +194,8 @@ SQLite schemaは22を基準とする前進migrationへ移します。通常の``
 実装順は、\#548のmigration基盤、\#549のschema 23と``PrincipalId``への一括切替、\#550のidentity
 引き継ぎとaliasのarchive往復です。schema 22に現れるidentityは推測でまとめず、完全に一致する組ごとに
 一つのprincipalへ移します。必要な組だけを退避付きの管理commandで明示的に結び付けます。
-その後、\#541のノート版履歴と\#540の添付を
-``PrincipalId``へ直接結び付けます。
+\#541のノート版履歴は、各版の変更者を``PrincipalId``へ直接結び付ける形で実装済みです。\#540の添付は、
+履歴の``(note_id, revision)``を世代管理の基準として追加します。
 
 == 検索のサービス境界
 
@@ -296,6 +296,13 @@ domainとapplicationの値を観測目的で公開し直さず、利用者identi
 です。題名とタグは保存時にAdocWeaveで解析し、一覧と検索に使う投影としてSQLiteへ同時に
 保存します。APIから題名やタグだけを独立して更新する経路は設けません。
 
+現在のノートを更新するすべての操作は、確定後の完全な状態を``note_revisions``へ同じtransactionで
+追記します。履歴は差分の連鎖にせず、差分は選択した二つの原文から要求時に生成します。通常のノートでは
+現在の``note_access``、削除済みノートでは現在の所有者を閲覧条件とし、過去のACLは履歴へ保存しません。
+過去版の復元は原文だけを現行の``NoteContent``で再検証し、現在の所有者、ACL、作成情報を維持した
+新しいrevisionとして保存します。詳しい判断は
+xref:adr/0020-ノートの版履歴は完全な状態を追記して保存する.adoc#top[ADR 0020]を参照してください。
+
 文書headerへ書ける属性の名前は``NOTE_POLICY.allowed_document_attributes``が正本で、入力検査と
 ``get_note_profile``の広告の両方をここから導きます。Marginalisが独自に決めた属性の名前は
 ``marginalis-``で始めます。AsciiDocの言語仕様は独自属性の命名規則を定めていないため、
@@ -351,9 +358,9 @@ anchor、本文から項目へのlink、項目から本文への戻りlink、番
 archiveへ記録するAdocWeave packageの版も、注入した``NoteContent``の profileから取得します。記録値と
 実際に検証した解析器が食い違わないためで、同じ版を二か所へ書きません。
 
-JSONから復元したノート、ACL、文献項目、取込元、外部項目との対応、数式マクロ設定は、
+JSONから復元したノート、ACL、保持中の全版、文献項目、取込元、外部項目との対応、数式マクロ設定は、
 ``marginalis-application``の``LogicalSnapshot``で識別子の重複、参照先、所有者境界、取込時revisionを
-一度だけ検証します。本文から再構築する参照索引も検証した``RestorePlan``だけをSQLite adapterへ
+一度だけ検証します。履歴は版の重複と連続性、現在版との一致、変更者を検査します。本文から再構築する参照索引も検証した``RestorePlan``だけをSQLite adapterへ
 渡します。これにより、ドメイン型を外部形式へ直接公開せず、SQLite adapterはJSON形式やAsciiDocの
 解析方法に依存しません。
 

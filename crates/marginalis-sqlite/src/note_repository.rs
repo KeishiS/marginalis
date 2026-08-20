@@ -4,11 +4,12 @@ use async_trait::async_trait;
 use marginalis_application::{
     AccessibleNote, NoteAclRepository, NoteAclState, NoteCommandRepository, NoteGraph,
     NoteGraphQuery, NoteLinks, NoteListQuery, NoteQueryRepository, NoteReviewRepository,
-    NoteSyncPage, NoteSyncRepository, NoteSyncRepositoryError, NoteViewSnapshot, StorageError,
+    NoteRevisionView, NoteSyncPage, NoteSyncRepository, NoteSyncRepositoryError, NoteViewSnapshot,
+    StorageError,
 };
 use marginalis_domain::{
-    Actor, DeletedNoteListEntry, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry, Revision,
-    UnixMillis,
+    Actor, DeletedNoteListEntry, Note, NoteAclEntry, NoteDraft, NoteId, NoteListEntry,
+    NoteRevisionSummary, Revision, UnixMillis,
 };
 
 use crate::SqliteDatabase;
@@ -65,6 +66,27 @@ impl NoteQueryRepository for SqliteDatabase {
             .map_err(StorageError::from)
     }
 
+    async fn list_note_revisions(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<NoteRevisionSummary>>, StorageError> {
+        SqliteDatabase::list_note_revisions(self, actor, note_id)
+            .await
+            .map_err(StorageError::from)
+    }
+
+    async fn note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<Option<NoteRevisionView>, StorageError> {
+        SqliteDatabase::note_revision(self, actor, note_id, revision)
+            .await
+            .map_err(StorageError::from)
+    }
+
     async fn note_graph(
         &self,
         actor: &Actor,
@@ -109,6 +131,28 @@ impl NoteCommandRepository for SqliteDatabase {
         now: UnixMillis,
     ) -> Result<Note, StorageError> {
         SqliteDatabase::update_visible_note(
+            self,
+            actor,
+            note_id,
+            expected_revision,
+            draft,
+            links,
+            now,
+        )
+        .await
+        .map_err(StorageError::from)
+    }
+
+    async fn restore_visible_note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        draft: &NoteDraft,
+        links: NoteLinks<'_>,
+        now: UnixMillis,
+    ) -> Result<Note, StorageError> {
+        SqliteDatabase::restore_visible_note_revision(
             self,
             actor,
             note_id,

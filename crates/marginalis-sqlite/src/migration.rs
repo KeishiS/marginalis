@@ -635,6 +635,17 @@ mod tests {
         .await
         .expect("migrated note");
         assert_eq!(note_owner, (1, Some(1)));
+        let note_history = sqlx::query_as::<_, (String, i64, i64, String, String)>(
+            "SELECT note_id, revision, changed_by_principal_id, change_kind, source \
+             FROM note_revisions ORDER BY note_id, revision",
+        )
+        .fetch_all(&mut migrated)
+        .await
+        .expect("migrated note history");
+        assert_eq!(
+            note_history,
+            vec![("note-1".into(), 1, 1, "imported".into(), "= 題名".into(),)]
+        );
         let session_identity = sqlx::query_as::<_, (i64, i64)>(
             "SELECT principal_id, authenticated_identity_id FROM web_sessions",
         )

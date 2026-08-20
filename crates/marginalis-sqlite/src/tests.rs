@@ -266,6 +266,8 @@ mod schema;
 
 mod notes;
 
+mod note_history;
+
 mod note_sync;
 
 mod bibliography;

@@ -121,6 +121,12 @@ pkgs.testers.nixosTest {
       "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
       + "\"SELECT COUNT(*) FROM notes WHERE note_id = '019f0000-0000-7000-8000-000000000002'\") -eq 1"
     )
+    machine.succeed(
+      "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
+      + "\"SELECT COUNT(*) FROM note_revisions WHERE note_id = '019f0000-0000-7000-8000-000000000001'\") -eq 0; "
+      + "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
+      + "\"SELECT COUNT(*) FROM note_revisions WHERE note_id = '019f0000-0000-7000-8000-000000000002'\") -eq 1"
+    )
     machine.succeed("systemctl stop marginalis.service")
     machine.succeed(
       "runuser -u marginalis -- env "
@@ -172,6 +178,9 @@ pkgs.testers.nixosTest {
       + "jq -e '.format == \"marginalis-archive-18\" "
       + "and .adocweave_package_version == \"${adocweaveVersion}\" "
       + "and .note_profile_version == 5 and (.notes | length == 1) "
+      + "and (.note_revisions | length == 1) "
+      + "and .note_revisions[0].kind == \"imported\" "
+      + "and .note_revisions[0].revision == .notes[0].revision "
       + "and any(.principals[]; "
       + ".primary_issuer == \"https://replacement-id.example.test\" "
       + "and .primary_subject == \"recent-v2\" "
@@ -188,6 +197,7 @@ pkgs.testers.nixosTest {
       + "${self.packages.${system}.default}/bin/marginalis import-archive "
       + "--input \"$backup/marginalis-archive.json\"; "
       + "test $(sqlite3 /tmp/restored.sqlite 'SELECT COUNT(*) FROM notes') -eq 1; "
+      + "test $(sqlite3 /tmp/restored.sqlite 'SELECT COUNT(*) FROM note_revisions') -eq 1; "
       + "test $(sqlite3 /tmp/restored.sqlite "
       + "\"SELECT COUNT(*) FROM note_details WHERE deleted_at_ms IS NOT NULL AND revision = 1 "
       + "AND creator_issuer = 'https://replacement-id.example.test' "

@@ -250,6 +250,27 @@ const PARSERS: &[(&str, &str, &str, &str, bool)] = &[
         false,
     ),
     (
+        "parseNoteRevisionSummaries",
+        "NoteRevisionSummary",
+        "NoteRevisionSummary",
+        "note revision summaries",
+        true,
+    ),
+    (
+        "parseNoteRevision",
+        "NoteRevision",
+        "NoteRevision",
+        "note revision",
+        false,
+    ),
+    (
+        "parseNoteRevisionDiff",
+        "NoteRevisionDiff",
+        "NoteRevisionDiff",
+        "note revision diff",
+        false,
+    ),
+    (
         "parseNoteGraph",
         "NoteGraph",
         "NoteGraph",

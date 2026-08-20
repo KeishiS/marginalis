@@ -4,8 +4,8 @@ use marginalis_application::{
     LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
 };
 use marginalis_domain::{
-    BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission, Principal, PrincipalId,
-    PrincipalRef,
+    BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission, NoteRevisionSnapshot,
+    Principal, PrincipalId, PrincipalRef,
 };
 use sqlx::Sqlite;
 use std::collections::BTreeMap;
@@ -191,8 +191,10 @@ impl SqliteDatabase {
                 .map_err(|_| SqliteStoreError::CorruptData)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let note_revisions = crate::note_history::all_note_revisions(&mut transaction).await?;
         transaction.commit().await.map_err(database_error)?;
         LogicalSnapshot::new(notes, note_acl)
+            .and_then(|snapshot| snapshot.with_note_revisions(note_revisions))
             .and_then(|snapshot| {
                 snapshot.with_bibliography_data(
                     bibliography_items,
@@ -239,6 +241,9 @@ impl SqliteDatabase {
         }
         for note in notes {
             insert_note_row(&mut transaction, note).await?;
+        }
+        for revision in plan.snapshot().note_revisions() {
+            insert_note_revision_row(&mut transaction, revision).await?;
         }
         for item in plan.snapshot().bibliography_items() {
             insert_bibliography_item_row(&mut transaction, item).await?;
@@ -421,6 +426,42 @@ async fn insert_note_row(
     .bind(note.revision().get())
     .bind(note.deleted_at().map(marginalis_domain::UnixMillis::get))
     .bind(note.created_via().as_str())
+    .bind(i64::from(note.review_tracking_known()))
+    .bind(note.last_review().map(|review| review.revision().get()))
+    .bind(note.last_review().map(|review| review.reviewed_at().get()))
+    .bind(
+        note.last_review()
+            .map(|review| review.reviewer().id().get()),
+    )
+    .execute(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    Ok(())
+}
+
+async fn insert_note_revision_row(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    revision: &NoteRevisionSnapshot,
+) -> Result<(), SqliteStoreError> {
+    let note = revision.note();
+    let tags_json =
+        serde_json::to_string(note.tags()).map_err(|_| SqliteStoreError::CorruptData)?;
+    sqlx::query(
+        "INSERT INTO note_revisions (
+            note_id, revision, changed_at_ms, changed_by_principal_id, change_kind,
+            title, source, tags_json, deleted_at_ms, review_tracking_known,
+            reviewed_revision, reviewed_at_ms, reviewer_principal_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(note.note_id().to_string())
+    .bind(note.revision().get())
+    .bind(revision.changed_at().get())
+    .bind(revision.changed_by().id().get())
+    .bind(revision.kind().as_str())
+    .bind(note.title())
+    .bind(note.source())
+    .bind(tags_json)
+    .bind(note.deleted_at().map(marginalis_domain::UnixMillis::get))
     .bind(i64::from(note.review_tracking_known()))
     .bind(note.last_review().map(|review| review.revision().get()))
     .bind(note.last_review().map(|review| review.reviewed_at().get()))

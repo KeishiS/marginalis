@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use marginalis_domain::{
     BibliographyImportLink, BibliographyImportSource, BibliographyItem, Note, NoteId,
-    NotePermission, Principal, PrincipalRef,
+    NotePermission, NoteRevisionKind, NoteRevisionSnapshot, Principal, PrincipalRef,
 };
 
 use crate::{MathMacroSettings, validate_stored_math_macros};
@@ -63,6 +63,7 @@ impl NoteAclSnapshotEntry {
 pub struct LogicalSnapshot {
     principals: Vec<Principal>,
     notes: Vec<Note>,
+    note_revisions: Vec<NoteRevisionSnapshot>,
     note_acl: Vec<NoteAclSnapshotEntry>,
     bibliography_items: Vec<BibliographyItem>,
     bibliography_import_sources: Vec<BibliographyImportSource>,
@@ -76,6 +77,8 @@ pub enum InvalidSnapshot {
     DuplicateNote { position: usize },
     #[error("ACL entry at position {position} is inconsistent")]
     InvalidAclEntry { position: usize },
+    #[error("note revision at position {position} is inconsistent")]
+    InvalidNoteRevision { position: usize },
     #[error("reference at position {position} has no source note")]
     InvalidReference { position: usize },
     #[error("bibliography item at position {position} is duplicated")]
@@ -121,9 +124,20 @@ impl LogicalSnapshot {
             }
         }
 
+        let note_revisions = notes
+            .iter()
+            .map(|note| {
+                NoteRevisionSnapshot::new(
+                    note.clone(),
+                    note.owner().clone(),
+                    NoteRevisionKind::Imported,
+                )
+            })
+            .collect();
         let mut snapshot = Self {
             principals: Vec::new(),
             notes,
+            note_revisions,
             note_acl,
             bibliography_items: Vec::new(),
             bibliography_import_sources: Vec::new(),
@@ -199,6 +213,65 @@ impl LogicalSnapshot {
 
     pub fn note_acl(&self) -> &[NoteAclSnapshotEntry] {
         &self.note_acl
+    }
+
+    /// 各ノートの保持中の全revision。履歴導入前の入力では`new`が現行版の基準点を作る。
+    pub fn note_revisions(&self) -> &[NoteRevisionSnapshot] {
+        &self.note_revisions
+    }
+
+    pub fn with_note_revisions(
+        mut self,
+        mut revisions: Vec<NoteRevisionSnapshot>,
+    ) -> Result<Self, InvalidSnapshot> {
+        revisions.sort_by(|left, right| {
+            left.note()
+                .note_id()
+                .to_string()
+                .cmp(&right.note().note_id().to_string())
+                .then_with(|| left.note().revision().cmp(&right.note().revision()))
+        });
+        let mut keys = HashSet::new();
+        for (index, entry) in revisions.iter().enumerate() {
+            let invalid = InvalidSnapshot::InvalidNoteRevision {
+                position: index + 1,
+            };
+            let Some(current) = self
+                .notes
+                .iter()
+                .find(|note| note.note_id() == entry.note().note_id())
+            else {
+                return Err(invalid);
+            };
+            let historical = entry.note();
+            if !keys.insert((historical.note_id(), historical.revision().get()))
+                || historical.owner() != current.owner()
+                || historical.created_at() != current.created_at()
+                || historical.created_via() != current.created_via()
+                || historical.revision() > current.revision()
+            {
+                return Err(invalid);
+            }
+        }
+        for current in &self.notes {
+            let history = revisions
+                .iter()
+                .filter(|entry| entry.note().note_id() == current.note_id())
+                .collect::<Vec<_>>();
+            let Some(latest) = history.last() else {
+                return Err(InvalidSnapshot::InvalidNoteRevision { position: 1 });
+            };
+            if latest.note() != current
+                || history.windows(2).any(|pair| {
+                    pair[1].note().revision().get() != pair[0].note().revision().get() + 1
+                })
+            {
+                return Err(InvalidSnapshot::InvalidNoteRevision { position: 1 });
+            }
+        }
+        self.note_revisions = revisions;
+        self.include_referenced_principals()?;
+        Ok(self)
     }
 
     pub fn bibliography_items(&self) -> &[BibliographyItem] {
@@ -315,6 +388,12 @@ impl LogicalSnapshot {
         for note in &self.notes {
             references.push(note.owner().clone());
             if let Some(review) = note.last_review() {
+                references.push(review.reviewer().clone());
+            }
+        }
+        for revision in &self.note_revisions {
+            references.push(revision.changed_by().clone());
+            if let Some(review) = revision.note().last_review() {
                 references.push(review.reviewer().clone());
             }
         }

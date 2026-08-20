@@ -167,6 +167,73 @@ macro_rules! implement_note_use_cases {
                 <$type>::restore_note(self, actor, note_id, expected_revision).await
             }
 
+            async fn list_note_revisions(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+            ) -> Result<Vec<marginalis_domain::NoteRevisionSummary>, NoteUseCaseError> {
+                let note = <$type>::read_note(self, actor.clone(), note_id).await?;
+                Ok(vec![marginalis_domain::NoteRevisionSummary {
+                    revision: note.revision(),
+                    changed_at: note.updated_at(),
+                    changed_by: actor.principal().clone(),
+                    kind: marginalis_domain::NoteRevisionKind::Imported,
+                }])
+            }
+
+            async fn read_note_revision(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                revision: Revision,
+            ) -> Result<marginalis_application::NoteRevisionView, NoteUseCaseError> {
+                let note = <$type>::read_note(self, actor.clone(), note_id).await?;
+                if note.revision() != revision {
+                    return Err(NoteUseCaseError::NotFound);
+                }
+                Ok(marginalis_application::NoteRevisionView {
+                    revision: marginalis_domain::NoteRevisionSnapshot::new(
+                        note,
+                        actor.principal().clone(),
+                        marginalis_domain::NoteRevisionKind::Imported,
+                    ),
+                    access: NoteAccess::Manage,
+                })
+            }
+
+            async fn compare_note_revisions(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                from_revision: Revision,
+                to_revision: Revision,
+            ) -> Result<marginalis_application::NoteRevisionDiff, NoteUseCaseError> {
+                let note = <$type>::read_note(self, actor, note_id).await?;
+                if note.revision() != from_revision || note.revision() != to_revision {
+                    return Err(NoteUseCaseError::NotFound);
+                }
+                Ok(marginalis_application::NoteRevisionDiff {
+                    from_revision,
+                    to_revision,
+                    unified_diff: String::new(),
+                })
+            }
+
+            async fn restore_note_revision(
+                &self,
+                actor: Actor,
+                note_id: NoteId,
+                revision: Revision,
+                expected_revision: Revision,
+                _policy: NoteWritePolicy,
+            ) -> Result<Note, NoteUseCaseError> {
+                let note = <$type>::read_note(self, actor, note_id).await?;
+                if note.revision() != revision || note.revision() != expected_revision {
+                    return Err(NoteUseCaseError::Conflict);
+                }
+                Ok(note)
+            }
+
             async fn preview_new_note(
                 &self,
                 actor: Actor,

@@ -134,7 +134,8 @@ schema migration前のSQLite退避は、同じホストで失敗前の状態へ�
   trigger、共有認証adapterを一つの整合した変更として切り替えます。外部identityと``PrincipalId``を
   認可条件として混在させる中間schemaは公開しません。
 . \#550でidentityの引き継ぎcommand、代表identityの変更、alias群のarchive往復を追加します。
-. その後に\#541の版履歴と\#540の添付を``PrincipalId``へ直接結び付けます。
+. \#541で版履歴の変更者を``PrincipalId``へ直接結び付けます。\#540の添付は版履歴を世代管理の
+  基準として追加します。
 
 == 帰結
 

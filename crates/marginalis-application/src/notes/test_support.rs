@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use marginalis_domain::{
     Actor, BibliographyItem, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess,
     NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewRecord,
-    NoteReviewTracking, NoteSummary, NoteValidationTarget, PrincipalId, PrincipalRef, Revision,
-    UnixMillis, Utf8ByteSpan,
+    NoteReviewTracking, NoteRevisionKind, NoteRevisionSnapshot, NoteRevisionSummary, NoteSummary,
+    NoteValidationTarget, PrincipalId, PrincipalRef, Revision, UnixMillis, Utf8ByteSpan,
 };
 
 use crate::{
@@ -25,7 +25,7 @@ use super::{
     AccessibleNote, NoteAclRepository, NoteApplication, NoteApplicationDependencies,
     NoteCitationQuery, NoteCommandRepository, NoteContent, NoteContentError, NoteGraph,
     NoteGraphQuery, NoteLinkResolver, NoteLinks, NoteQueryRepository, NoteReferenceQuery,
-    NoteRenderInputs, NoteReviewRepository, NoteSyncPage, NoteSyncRepository,
+    NoteRenderInputs, NoteReviewRepository, NoteRevisionView, NoteSyncPage, NoteSyncRepository,
     NoteSyncRepositoryError, NoteViewSnapshot,
 };
 
@@ -69,6 +69,7 @@ impl NoteSyncRepository for MemoryNotes {
 
 pub(super) struct MemoryNotes {
     pub(super) notes: Mutex<Vec<Note>>,
+    pub(super) histories: Mutex<Vec<NoteRevisionSnapshot>>,
     pub(super) update_calls: AtomicUsize,
     pub(super) accessible_as: Mutex<Option<NoteAccess>>,
 }
@@ -77,6 +78,7 @@ impl Default for MemoryNotes {
     fn default() -> Self {
         Self {
             notes: Mutex::new(Vec::new()),
+            histories: Mutex::new(Vec::new()),
             update_calls: AtomicUsize::new(0),
             accessible_as: Mutex::new(Some(NoteAccess::Manage)),
         }
@@ -148,6 +150,50 @@ impl NoteQueryRepository for MemoryNotes {
         Ok(None)
     }
 
+    async fn list_note_revisions(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<NoteRevisionSummary>>, StorageError> {
+        let visible = self.accessible_note(actor, note_id).await?.is_some();
+        if !visible {
+            return Ok(None);
+        }
+        let mut revisions = self
+            .histories
+            .lock()
+            .expect("history lock")
+            .iter()
+            .filter(|entry| entry.note().note_id() == note_id)
+            .map(NoteRevisionSummary::from)
+            .collect::<Vec<_>>();
+        revisions.sort_by_key(|entry| std::cmp::Reverse(entry.revision));
+        Ok((!revisions.is_empty()).then_some(revisions))
+    }
+
+    async fn note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<Option<NoteRevisionView>, StorageError> {
+        let access = *self.accessible_as.lock().expect("access lock");
+        if self.accessible_note(actor, note_id).await?.is_none() {
+            return Ok(None);
+        }
+        Ok(self
+            .histories
+            .lock()
+            .expect("history lock")
+            .iter()
+            .find(|entry| entry.note().note_id() == note_id && entry.note().revision() == revision)
+            .cloned()
+            .map(|revision| NoteRevisionView {
+                revision,
+                access: access.expect("visible history has access"),
+            }))
+    }
+
     async fn note_graph(
         &self,
         _actor: &Actor,
@@ -161,6 +207,14 @@ impl NoteQueryRepository for MemoryNotes {
 impl NoteCommandRepository for MemoryNotes {
     async fn create_note(&self, note: &Note, _links: NoteLinks<'_>) -> Result<(), StorageError> {
         self.notes.lock().expect("notes lock").push(note.clone());
+        self.histories
+            .lock()
+            .expect("history lock")
+            .push(NoteRevisionSnapshot::new(
+                note.clone(),
+                note.owner().clone(),
+                NoteRevisionKind::Created,
+            ));
         Ok(())
     }
 
@@ -175,6 +229,56 @@ impl NoteCommandRepository for MemoryNotes {
     ) -> Result<Note, StorageError> {
         self.update_calls.fetch_add(1, Ordering::Relaxed);
         Err(StorageError::Unavailable)
+    }
+
+    async fn restore_visible_note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        draft: &NoteDraft,
+        links: NoteLinks<'_>,
+        now: UnixMillis,
+    ) -> Result<Note, StorageError> {
+        let _ = links;
+        let mut notes = self.notes.lock().expect("notes lock");
+        let current = notes
+            .iter_mut()
+            .find(|note| note.note_id() == note_id)
+            .ok_or(StorageError::NotFound)?;
+        if current.revision() != expected_revision {
+            return Err(StorageError::Conflict);
+        }
+        let next_revision =
+            Revision::new(current.revision().get() + 1).map_err(|_| StorageError::CorruptData)?;
+        let review = if current.review_tracking_known() {
+            NoteReviewTracking::tracked(current.last_review().cloned())
+        } else {
+            NoteReviewTracking::Unknown
+        };
+        let restored = Note::restore(NoteRestore {
+            note_id,
+            owner: current.owner().clone(),
+            draft: draft.clone(),
+            created_at: current.created_at(),
+            updated_at: now,
+            revision: next_revision,
+            deleted_at: None,
+            created_via: current.created_via(),
+            review,
+        })
+        .map_err(|_| StorageError::CorruptData)?;
+        *current = restored.clone();
+        drop(notes);
+        self.histories
+            .lock()
+            .expect("history lock")
+            .push(NoteRevisionSnapshot::new(
+                restored.clone(),
+                actor.principal().clone(),
+                NoteRevisionKind::HistoryRestored,
+            ));
+        Ok(restored)
     }
 
     async fn soft_delete_visible_note(

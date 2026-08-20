@@ -95,6 +95,60 @@ pub enum NoteReviewStatus {
     Reviewed,
 }
 
+/// ノートのrevisionを生じさせた操作。
+///
+/// 本文に差がないACL変更や確認操作も、競合検出では同じrevisionを進めるため履歴へ残す。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteRevisionKind {
+    Created,
+    ContentUpdated,
+    AclUpdated,
+    Reviewed,
+    Deleted,
+    Restored,
+    HistoryRestored,
+    /// 履歴導入前の現行版または旧archiveから作った基準点。
+    Imported,
+}
+
+impl NoteRevisionKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::ContentUpdated => "content_updated",
+            Self::AclUpdated => "acl_updated",
+            Self::Reviewed => "reviewed",
+            Self::Deleted => "deleted",
+            Self::Restored => "restored",
+            Self::HistoryRestored => "history_restored",
+            Self::Imported => "imported",
+        }
+    }
+}
+
+impl FromStr for NoteRevisionKind {
+    type Err = InvalidNoteRevisionKind;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "created" => Ok(Self::Created),
+            "content_updated" => Ok(Self::ContentUpdated),
+            "acl_updated" => Ok(Self::AclUpdated),
+            "reviewed" => Ok(Self::Reviewed),
+            "deleted" => Ok(Self::Deleted),
+            "restored" => Ok(Self::Restored),
+            "history_restored" => Ok(Self::HistoryRestored),
+            "imported" => Ok(Self::Imported),
+            _ => Err(InvalidNoteRevisionKind),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("note revision kind is invalid")]
+pub struct InvalidNoteRevisionKind;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("note review status is invalid")]
 pub struct InvalidNoteReviewStatus;
@@ -316,6 +370,63 @@ impl Note {
 
     pub const fn review_tracking_known(&self) -> bool {
         matches!(self.review, NoteReviewTracking::Tracked { .. })
+    }
+}
+
+/// 一つのrevisionが確定した直後の完全なノート状態と、その変更者。
+///
+/// ACLは現在値だけを認可に使い、過去の共有先identityを履歴閲覧者へ開示しないため、ここには
+/// 含めない。将来の添付参照はrevisionを親とする別の集合として追加する。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteRevisionSnapshot {
+    note: Note,
+    changed_by: PrincipalRef,
+    kind: NoteRevisionKind,
+}
+
+impl NoteRevisionSnapshot {
+    pub const fn new(note: Note, changed_by: PrincipalRef, kind: NoteRevisionKind) -> Self {
+        Self {
+            note,
+            changed_by,
+            kind,
+        }
+    }
+
+    pub const fn note(&self) -> &Note {
+        &self.note
+    }
+
+    pub const fn changed_by(&self) -> &PrincipalRef {
+        &self.changed_by
+    }
+
+    pub const fn kind(&self) -> NoteRevisionKind {
+        self.kind
+    }
+
+    pub const fn changed_at(&self) -> UnixMillis {
+        self.note.updated_at()
+    }
+}
+
+/// 履歴一覧に返す、本文を含まないrevision情報。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteRevisionSummary {
+    pub revision: Revision,
+    pub changed_at: UnixMillis,
+    pub changed_by: PrincipalRef,
+    pub kind: NoteRevisionKind,
+}
+
+impl From<&NoteRevisionSnapshot> for NoteRevisionSummary {
+    fn from(snapshot: &NoteRevisionSnapshot) -> Self {
+        Self {
+            revision: snapshot.note().revision(),
+            changed_at: snapshot.changed_at(),
+            changed_by: snapshot.changed_by().clone(),
+            kind: snapshot.kind(),
+        }
     }
 }
 

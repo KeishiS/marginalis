@@ -58,10 +58,11 @@ use self::{
     },
     mcp_transport::{mcp_post, mcp_unsupported_method},
     notes::{
-        create_note, create_web_note, delete_note, export_note, list_deleted_notes, list_notes,
-        mark_note_reviewed, preview_new_note, preview_note_update, read_note, read_note_acl,
-        read_note_graph, read_note_review, read_note_view, replace_note_acl, restore_note, session,
-        update_note,
+        compare_note_revisions, create_note, create_web_note, delete_note, export_note,
+        list_deleted_notes, list_note_revisions, list_notes, mark_note_reviewed, preview_new_note,
+        preview_note_update, read_note, read_note_acl, read_note_graph, read_note_review,
+        read_note_revision, read_note_view, replace_note_acl, restore_note, restore_note_revision,
+        session, update_note,
     },
     oauth::{
         mcp_authorize, mcp_authorize_consent, mcp_authorize_post, mcp_register_client,
@@ -131,6 +132,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/notes/new", get(create_note_page))
         .route("/notes/{note_id}/edit", get(edit_note_page))
         .route("/notes/{note_id}/access", get(access_note_page))
+        .route("/notes/{note_id}/history", get(view_note))
         .route("/notes/{note_id}", get(view_note))
         // 配布物の名前を書き並べず、ビルド時に作った表から引く。分割読み込みでchunkが増えても
         // 経路の追加を忘れて配信されない、という失敗が起きない。
@@ -220,6 +222,19 @@ pub fn router(state: ApiState) -> Router {
             get(read_note).put(update_note).delete(delete_note),
         )
         .route("/api/v3/notes/{note_id}/view", get(read_note_view))
+        .route("/api/v3/notes/{note_id}/history", get(list_note_revisions))
+        .route(
+            "/api/v3/notes/{note_id}/history/{revision}",
+            get(read_note_revision),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/history/{revision}/restore",
+            post(restore_note_revision),
+        )
+        .route(
+            "/api/v3/notes/{note_id}/history-diff",
+            get(compare_note_revisions),
+        )
         .route("/api/v3/notes/{note_id}/restore", post(restore_note))
         .route(
             "/api/v3/notes/{note_id}/acl",

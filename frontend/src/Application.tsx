@@ -41,6 +41,11 @@ const DeletedNotesPage = lazy(() =>
     default: module.DeletedNotesPage,
   })),
 );
+const NoteHistoryPage = lazy(() =>
+  import("./routes/NoteHistoryPage").then((module) => ({
+    default: module.NoteHistoryPage,
+  })),
+);
 
 // 起動設定の形は`marginalis-contract`が定めます。ここでは再定義せず再公開します。
 export type { ApplicationConfig };
@@ -51,6 +56,7 @@ type Route =
   | { kind: "view"; noteId: string }
   | { kind: "edit"; noteId: string }
   | { kind: "access"; noteId: string }
+  | { kind: "history"; noteId: string }
   | { kind: "bibliography" }
   | { kind: "graph" }
   | { kind: "settings" }
@@ -73,6 +79,14 @@ export function Application({ config }: { config: ApplicationConfig }) {
       return <EditorRoute config={config} mode="edit" noteId={route.noteId} />;
     case "access":
       return <AccessPage config={config} noteId={route.noteId} />;
+    case "history":
+      return (
+        <Suspense
+          fallback={<StatusMessage>版履歴を読み込んでいます。</StatusMessage>}
+        >
+          <NoteHistoryPage config={config} noteId={route.noteId} />
+        </Suspense>
+      );
     case "bibliography":
       return <BibliographyPage config={config} />;
     case "graph":
@@ -161,10 +175,13 @@ function parseRoute(pathname: string): Route {
   if (pathname === "/settings/webhooks") return { kind: "webhook-settings" };
   if (pathname === "/notes/deleted") return { kind: "deleted-notes" };
   if (pathname === "/notes/new") return { kind: "create" };
-  const match = pathname.match(/^\/notes\/([^/]+)(?:\/(edit|access))?$/);
+  const match = pathname.match(
+    /^\/notes\/([^/]+)(?:\/(edit|access|history))?$/,
+  );
   if (!match) return { kind: "not-found" };
   const noteId = decodeURIComponent(match[1]);
   if (match[2] === "edit") return { kind: "edit", noteId };
   if (match[2] === "access") return { kind: "access", noteId };
+  if (match[2] === "history") return { kind: "history", noteId };
   return { kind: "view", noteId };
 }

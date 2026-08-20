@@ -200,7 +200,7 @@ archive単体の検証と、隔離復元の検証を手動で実行できます�
 現行archiveは``marginalis-archive-18``で、AdocWeave package版``0.41.0``とnote profile版``5``を記録します。
 形式またはいずれかの版が実行中のMarginalisと一致しないarchiveは、databaseを変更する前に拒否されます。
 同じ段階で、利用者の代表identityとalias、ノートの識別子、所有者、revision、日時、本文、ACLの参照先と
-重複も検証します。
+重複に加え、保持中の全版についてrevisionの連続性、現在版との一致、変更者、AsciiDoc原文も検証します。
 本文から参照索引を再構築した後に復元計画が確定するため、検証に失敗した内容の一部だけがdatabaseへ
 書き込まれることはありません。
 
@@ -247,7 +247,8 @@ unitは通常serviceと同時に実行せず、``backupDirectory``に
 ``issuer``と``subject``が完全に一致する組ごとに内部principalを作ります。Web session、MCP token、
 同期cursor、Webhook配送状態を含む既存行は、そのprincipalへの参照へ移します。すでにschema 23で
 未適用のmigrationがない場合は、成功logの``applied_migrations=0``と``backup=none``で何も変更しなかった
-ことを示し、SQLite退避も作りません。
+ことを示し、SQLite退避も作りません。schema 22には過去版がないため、各ノートの移行時の現在版を
+``imported``という変更種別の履歴一件として開始します。存在しない版や変更者は推測しません。
 
 移行後は``marginalis-diagnose.service``、HTTP health、OIDC login、MCP認可を確認します。切戻しが必要な
 場合は、新しいserviceを停止し、移行後のdatabaseを別名で保全してから、SQLite退避と移行前の
@@ -347,7 +348,8 @@ sudo -u marginalis marginalis restore-archive \
 通常運用の秘密情報やネットワークへ接続せず、移行対象のarchiveと出力先だけを渡してください。
 
 表は、現在の3項目を持ち、現行の``migrate-archive``まで段階的な移行経路が続くv0.8.0以降を記録します。
-「採用版」はその契約を書き出したタグの範囲です。v0.43.0はタグだけが作られ、GitHub Releaseは
+「初回・採用版」は、その3項目の組を初めて書き出した公開版と、その後に同じ組を書き出したタグの
+範囲です。これにより、archive内の3項目から移行に必要な実行版を選べます。v0.43.0はタグだけが作られ、GitHub Releaseは
 公開されていないため、同じ契約を使う最初の公開済みリリースはv0.44.0です。
 
 [cols="1,1,1,2,2,1",options="header",]
@@ -355,7 +357,7 @@ sudo -u marginalis marginalis restore-archive \
 |archive形式
 |AdocWeave package版
 |note profile版
-|採用版
+|初回・採用版
 |移行に使うリリースと出力契約
 |現行版での扱い
 
@@ -467,10 +469,14 @@ sudo -u marginalis marginalis restore-archive \
 |``marginalis-archive-18``
 |0.41.0
 |5
-|次回公開版以降
+|未公開。次回公開版で初回版を確定
 |—
 |現行契約
 |===
+
+保存契約を変更した開発中の状態は「未公開」と記録します。リリース時には、リリース手順に従って
+この欄を実際の公開版へ置き換えます。したがって、公開済みの各組には必ず初めて書き出した版が
+一つ記録されます。``marginalis-archive-18``は代表identityとalias群に加え、保持中の全版を含みます。
 
 v0.45.0は、v0.8.0以降の表にある旧契約を``marginalis-archive-17`` / 0.40.1 / 5へ変換できる
 最後の公開版です。Nixでv0.45.0を固定して構築し、入力とは別のファイルへ変換します。

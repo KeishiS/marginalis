@@ -11,12 +11,12 @@ use marginalis_application::{
 use marginalis_domain::{
     Actor, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteCreationSource,
     NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewRecord, NoteReviewStatus,
-    NoteReviewTracking, NoteSummary, PrincipalId, PrincipalRef, Revision, SOFT_DELETE_RETENTION_MS,
-    UnixMillis,
+    NoteReviewTracking, NoteRevisionKind, NoteSummary, PrincipalId, PrincipalRef, Revision,
+    SOFT_DELETE_RETENTION_MS, UnixMillis,
 };
 use sqlx::{QueryBuilder, Row, Sqlite};
 
-use crate::{SqliteDatabase, SqliteStoreError, database_error};
+use crate::{SqliteDatabase, SqliteStoreError, database_error, note_history::insert_note_revision};
 
 /// ノート復元だけが持つ結果を、SQLite全体の共通エラーから分離する。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,6 +70,13 @@ impl SqliteDatabase {
         .await
         .map_err(database_error)?;
         replace_link_rows(&mut transaction, note.note_id(), links).await?;
+        insert_note_revision(
+            &mut transaction,
+            note.note_id(),
+            note.owner().id(),
+            NoteRevisionKind::Created,
+        )
+        .await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(())
     }
@@ -201,6 +208,50 @@ impl SqliteDatabase {
         links: NoteLinks<'_>,
         updated_at: UnixMillis,
     ) -> Result<Note, SqliteStoreError> {
+        self.update_visible_note_with_kind(
+            actor,
+            note_id,
+            expected_revision,
+            draft,
+            links,
+            updated_at,
+            NoteRevisionKind::ContentUpdated,
+        )
+        .await
+    }
+
+    pub(crate) async fn restore_visible_note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        draft: &NoteDraft,
+        links: NoteLinks<'_>,
+        updated_at: UnixMillis,
+    ) -> Result<Note, SqliteStoreError> {
+        self.update_visible_note_with_kind(
+            actor,
+            note_id,
+            expected_revision,
+            draft,
+            links,
+            updated_at,
+            NoteRevisionKind::HistoryRestored,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn update_visible_note_with_kind(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        draft: &NoteDraft,
+        links: NoteLinks<'_>,
+        updated_at: UnixMillis,
+        kind: NoteRevisionKind,
+    ) -> Result<Note, SqliteStoreError> {
         let tags_json =
             serde_json::to_string(&draft.tags).map_err(|_| SqliteStoreError::CorruptData)?;
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
@@ -238,6 +289,7 @@ impl SqliteDatabase {
             .map_err(database_error)?;
         let note = note_from_row(row)?;
         replace_link_rows(&mut transaction, note_id, links).await?;
+        insert_note_revision(&mut transaction, note_id, actor.principal_id(), kind).await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
     }
@@ -278,6 +330,13 @@ impl SqliteDatabase {
         }
         let row = note_row(&mut transaction, note_id).await?;
         let note = note_from_row(row)?;
+        insert_note_revision(
+            &mut transaction,
+            note_id,
+            actor.principal_id(),
+            NoteRevisionKind::Deleted,
+        )
+        .await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
     }
@@ -322,6 +381,13 @@ impl SqliteDatabase {
         }
         let row = note_row(&mut transaction, note_id).await?;
         let note = note_from_row(row)?;
+        insert_note_revision(
+            &mut transaction,
+            note_id,
+            actor.principal_id(),
+            NoteRevisionKind::Restored,
+        )
+        .await?;
         transaction.commit().await.map_err(database_error)?;
         Ok(note)
     }
@@ -605,7 +671,7 @@ const fn access_level(access: NoteAccess) -> i64 {
     }
 }
 
-fn access_from_level(level: i64) -> Result<NoteAccess, SqliteStoreError> {
+pub(crate) fn access_from_level(level: i64) -> Result<NoteAccess, SqliteStoreError> {
     match level {
         1 => Ok(NoteAccess::Read),
         2 => Ok(NoteAccess::Edit),

@@ -19,6 +19,9 @@ import {
   type NoteListEntry,
   type NotePreview,
   type NoteReview,
+  type NoteRevision,
+  type NoteRevisionDiff,
+  type NoteRevisionSummary,
   type NoteView,
   type Problem,
   parseBibliographyImportPreview,
@@ -37,6 +40,9 @@ import {
   parseNoteListEntries,
   parseNotePreview,
   parseNoteReview,
+  parseNoteRevision,
+  parseNoteRevisionDiff,
+  parseNoteRevisionSummaries,
   parseNoteView,
   parseProblem,
   parseWebhookSecret,
@@ -200,6 +206,62 @@ export async function readNoteView(
     `${apiBase}/notes/${encodeURIComponent(noteId)}/view`,
     { signal },
     parseNoteView,
+  );
+}
+
+export async function listNoteRevisions(
+  apiBase: string,
+  noteId: string,
+  signal?: AbortSignal,
+): Promise<NoteRevisionSummary[]> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/history`,
+    { signal },
+    parseNoteRevisionSummaries,
+  );
+}
+
+export async function readNoteRevision(
+  apiBase: string,
+  noteId: string,
+  revision: number,
+  signal?: AbortSignal,
+): Promise<NoteRevision> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/history/${encodeURIComponent(String(revision))}`,
+    { signal },
+    parseNoteRevision,
+  );
+}
+
+export async function compareNoteRevisions(
+  apiBase: string,
+  noteId: string,
+  fromRevision: number,
+  toRevision: number,
+  signal?: AbortSignal,
+): Promise<NoteRevisionDiff> {
+  const parameters = new URLSearchParams({
+    from_revision: String(fromRevision),
+    to_revision: String(toRevision),
+  });
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/history-diff?${parameters.toString()}`,
+    { signal },
+    parseNoteRevisionDiff,
+  );
+}
+
+export async function restoreNoteRevision(
+  apiBase: string,
+  noteId: string,
+  revision: number,
+  expectedRevision: number,
+): Promise<Note> {
+  return requestJson(
+    `${apiBase}/notes/${encodeURIComponent(noteId)}/history/${encodeURIComponent(String(revision))}/restore`,
+    mutationRequest("POST", undefined, expectedRevision),
+    parseNote,
   );
 }
 

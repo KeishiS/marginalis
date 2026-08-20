@@ -214,6 +214,27 @@ export interface NoteReview {
   status: NoteReviewStatus;
 }
 export type NoteReviewStatus = "unknown" | "pending" | "reviewed";
+export interface NoteRevision {
+  access: NoteAccess;
+  changed_by_issuer: string;
+  changed_by_subject: string;
+  deleted_at_ms: number | null;
+  kind: NoteRevisionKind;
+  note: Note;
+}
+export interface NoteRevisionDiff {
+  from_revision: number;
+  to_revision: number;
+  unified_diff: string;
+}
+export type NoteRevisionKind = "created" | "content_updated" | "acl_updated" | "reviewed" | "deleted" | "restored" | "history_restored" | "imported";
+export interface NoteRevisionSummary {
+  changed_at_ms: number;
+  changed_by_issuer: string;
+  changed_by_subject: string;
+  kind: NoteRevisionKind;
+  revision: number;
+}
 export interface NoteSourcePosition {
   column: number;
   line: number;
@@ -1486,6 +1507,122 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
     ],
     "type": "string"
   },
+  "NoteRevision": {
+    "additionalProperties": false,
+    "description": "一つのrevisionが確定した直後のノート状態。",
+    "properties": {
+      "access": {
+        "$ref": "#/components/schemas/NoteAccess"
+      },
+      "changed_by_issuer": {
+        "type": "string"
+      },
+      "changed_by_subject": {
+        "type": "string"
+      },
+      "deleted_at_ms": {
+        "format": "int64",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "kind": {
+        "$ref": "#/components/schemas/NoteRevisionKind"
+      },
+      "note": {
+        "$ref": "#/components/schemas/Note"
+      }
+    },
+    "required": [
+      "note",
+      "access",
+      "deleted_at_ms",
+      "changed_by_issuer",
+      "changed_by_subject",
+      "kind"
+    ],
+    "type": "object"
+  },
+  "NoteRevisionDiff": {
+    "additionalProperties": false,
+    "description": "二つのrevisionのAsciiDoc原文から要求時に生成した行単位の差分。",
+    "properties": {
+      "from_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "to_revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      },
+      "unified_diff": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "from_revision",
+      "to_revision",
+      "unified_diff"
+    ],
+    "type": "object"
+  },
+  "NoteRevisionKind": {
+    "description": "ノートのrevisionを生じさせた操作。\n\n本文に差がないACL変更や確認操作も、競合検出では同じrevisionを進めるため履歴へ残す。",
+    "oneOf": [
+      {
+        "enum": [
+          "created",
+          "content_updated",
+          "acl_updated",
+          "reviewed",
+          "deleted",
+          "restored",
+          "history_restored"
+        ],
+        "type": "string"
+      },
+      {
+        "const": "imported",
+        "description": "履歴導入前の現行版または旧archiveから作った基準点。",
+        "type": "string"
+      }
+    ]
+  },
+  "NoteRevisionSummary": {
+    "additionalProperties": false,
+    "description": "本文を含まない一つのrevision情報。",
+    "properties": {
+      "changed_at_ms": {
+        "format": "int64",
+        "type": "integer"
+      },
+      "changed_by_issuer": {
+        "type": "string"
+      },
+      "changed_by_subject": {
+        "type": "string"
+      },
+      "kind": {
+        "$ref": "#/components/schemas/NoteRevisionKind"
+      },
+      "revision": {
+        "format": "int64",
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "revision",
+      "changed_at_ms",
+      "changed_by_issuer",
+      "changed_by_subject",
+      "kind"
+    ],
+    "type": "object"
+  },
   "NoteSourcePosition": {
     "additionalProperties": false,
     "properties": {
@@ -2241,6 +2378,15 @@ export function parseDeletedNoteListEntries(value: unknown): DeletedNoteListEntr
 }
 export function parseNoteReview(value: unknown): NoteReview {
   return parseAs<NoteReview>(value, "NoteReview", "note review");
+}
+export function parseNoteRevisionSummaries(value: unknown): NoteRevisionSummary[] {
+  return parseArrayAs<NoteRevisionSummary>(value, "NoteRevisionSummary", "note revision summaries");
+}
+export function parseNoteRevision(value: unknown): NoteRevision {
+  return parseAs<NoteRevision>(value, "NoteRevision", "note revision");
+}
+export function parseNoteRevisionDiff(value: unknown): NoteRevisionDiff {
+  return parseAs<NoteRevisionDiff>(value, "NoteRevisionDiff", "note revision diff");
 }
 export function parseNoteGraph(value: unknown): NoteGraph {
   return parseAs<NoteGraph>(value, "NoteGraph", "note graph");

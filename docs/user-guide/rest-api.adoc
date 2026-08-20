@@ -49,6 +49,18 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |閲覧画面取得
 |``GET /api/v3/notes/{note_id}/view``
 |正本、権限、描画HTML、関連概要の一貫した組
+|版履歴一覧
+|``GET /api/v3/notes/{note_id}/history``
+|本文を含まない版、変更時刻、変更者、変更種別の一覧
+|過去版取得
+|``GET /api/v3/notes/{note_id}/history/{revision}``
+|選択した版のAsciiDoc原文と現在の実効アクセス水準
+|版の比較
+|``GET /api/v3/notes/{note_id}/history-diff?from_revision=<版>&to_revision=<版>``
+|要求時に生成する行単位のUnified Diff
+|過去版の復元
+|``POST /api/v3/notes/{note_id}/history/{revision}/restore``
+|CSRFトークンと現在版の``If-Match``が必要
 |ノート更新
 |``PUT /api/v3/notes/{note_id}``
 |``If-Match``が必要
@@ -83,6 +95,11 @@ Web UIからREST APIを利用する場合は、OIDCログイン時に発行し�
 |``DELETE /api/v3/mcp-authorizations/{client_id}/scope-ceiling?revision=<現在のrevision>``
 |CSRFトークンが必要。未設定へ戻し、既存の接続は維持する
 |===
+
+版履歴の認可には現在のACLを使います。共有を取り消された利用者は以前に読めた版も取得できません。
+削除済みノートでは所有者だけが履歴を取得でき、ノート自体を復元するまで過去版の本文を現在版へ
+復元できません。過去版の復元は履歴を上書きせず、選んだ原文を現行の入力規則で再検証して新しい
+revisionを作ります。所有者、ACL、作成日時、作成経路は過去の値へ戻しません。
 
 Webhook購読の管理（``/api/v3/webhooks``系）は、署名の検証方法や配送の約束事とあわせて
 xref:webhooks.adoc#top[Webhook通知]で説明します。

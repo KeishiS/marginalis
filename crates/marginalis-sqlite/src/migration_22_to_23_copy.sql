@@ -66,6 +66,18 @@ JOIN migration22_identity_map creator
 LEFT JOIN migration22_identity_map reviewer
   ON reviewer.issuer = n.reviewer_issuer AND reviewer.subject = n.reviewer_subject;
 
+-- 履歴導入前のDBには変更者を復元できる情報がない。現行版を所有者による基準点として
+-- 一件だけ保存し、過去の操作を推測しない。
+INSERT INTO note_revisions (
+    note_id, revision, changed_at_ms, changed_by_principal_id, change_kind,
+    title, source, tags_json, deleted_at_ms, review_tracking_known,
+    reviewed_revision, reviewed_at_ms, reviewer_principal_id
+)
+SELECT note_id, revision, updated_at_ms, creator_principal_id, 'imported',
+       title, source, tags_json, deleted_at_ms, review_tracking_known,
+       reviewed_revision, reviewed_at_ms, reviewer_principal_id
+FROM notes;
+
 INSERT INTO note_references SELECT * FROM migration22_note_references;
 INSERT INTO note_citations SELECT * FROM migration22_note_citations;
 

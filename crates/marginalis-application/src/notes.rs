@@ -13,6 +13,7 @@ mod citations;
 mod commands;
 mod content;
 mod graph;
+mod history;
 mod patch;
 mod presentation;
 mod queries;
@@ -28,6 +29,7 @@ pub use content::{
 pub use graph::{
     NoteGraph, NoteGraphCitation, NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork,
 };
+pub use history::NoteRevisionDiff;
 pub use patch::{NotePatchError, NotePatchOutcome, apply_note_patch};
 pub use sync::{
     NOTE_SYNC_CURSOR_RETENTION_MS, NOTE_SYNC_DEFAULT_PAGE_SIZE, NOTE_SYNC_MAX_PAGE_SIZE,
@@ -67,6 +69,17 @@ pub trait NoteQueryRepository: Send + Sync {
         actor: &Actor,
         note_id: NoteId,
     ) -> Result<Option<NoteViewSnapshot>, StorageError>;
+    async fn list_note_revisions(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+    ) -> Result<Option<Vec<marginalis_domain::NoteRevisionSummary>>, StorageError>;
+    async fn note_revision(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<Option<NoteRevisionView>, StorageError>;
     /// 閲覧できるノートと、それらが引用する文献の関係を1回の読み取りで返す。
     async fn note_graph(
         &self,
@@ -90,12 +103,29 @@ pub struct NoteViewSnapshot {
     pub related: RelatedNotes,
 }
 
+/// 現在のACLで認可した過去版と、現在の利用者に対する実効アクセス水準。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteRevisionView {
+    pub revision: marginalis_domain::NoteRevisionSnapshot,
+    pub access: NoteAccess,
+}
+
 /// 認可、revision、削除状態を一つのtransactionへ拘束する変更port。
 #[async_trait]
 pub trait NoteCommandRepository: Send + Sync {
     async fn create_note(&self, note: &Note, links: NoteLinks<'_>) -> Result<(), StorageError>;
     #[allow(clippy::too_many_arguments)]
     async fn update_visible_note(
+        &self,
+        actor: &Actor,
+        note_id: NoteId,
+        expected_revision: Revision,
+        draft: &NoteDraft,
+        links: NoteLinks<'_>,
+        now: marginalis_domain::UnixMillis,
+    ) -> Result<Note, StorageError>;
+    #[allow(clippy::too_many_arguments)]
+    async fn restore_visible_note_revision(
         &self,
         actor: &Actor,
         note_id: NoteId,
@@ -414,6 +444,53 @@ impl NoteUseCases for NoteApplication {
         expected_revision: Revision,
     ) -> Result<Note, NoteUseCaseError> {
         NoteApplication::restore_note(self, actor, note_id, expected_revision).await
+    }
+
+    async fn list_note_revisions(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<marginalis_domain::NoteRevisionSummary>, NoteUseCaseError> {
+        NoteApplication::list_note_revisions(self, actor, note_id).await
+    }
+
+    async fn read_note_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<NoteRevisionView, NoteUseCaseError> {
+        NoteApplication::read_note_revision(self, actor, note_id, revision).await
+    }
+
+    async fn compare_note_revisions(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        from_revision: Revision,
+        to_revision: Revision,
+    ) -> Result<NoteRevisionDiff, NoteUseCaseError> {
+        NoteApplication::compare_note_revisions(self, actor, note_id, from_revision, to_revision)
+            .await
+    }
+
+    async fn restore_note_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Revision,
+        expected_revision: Revision,
+        policy: NoteWritePolicy,
+    ) -> Result<Note, NoteUseCaseError> {
+        NoteApplication::restore_note_revision(
+            self,
+            actor,
+            note_id,
+            revision,
+            expected_revision,
+            policy,
+        )
+        .await
     }
 
     async fn preview_new_note(

@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use marginalis_domain::{
     Actor, AuthenticatedSession, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess,
     NoteAclEntry, NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NotePermission,
-    NoteReviewStatus, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
-    WebSession,
+    NoteReviewStatus, NoteRevisionSummary, NoteSummary, NoteValidationTarget, Revision, UnixMillis,
+    Utf8ByteSpan, WebSession,
 };
 pub use mcp_authorization_server::{
     AuthenticatedPrincipal as McpAuthenticatedPrincipal,
@@ -67,8 +67,9 @@ pub use notes::{
     NoteGraphNote, NoteGraphQuery, NoteGraphReference, NoteGraphWork, NoteLinkResolver, NoteLinks,
     NoteOutline, NoteOutlineSection, NotePatchApplication, NotePatchError, NotePatchOutcome,
     NoteQueryRepository, NoteReferenceQuery, NoteReferenceResolution, NoteRenderInputs,
-    NoteReviewRepository, NoteSyncEntry, NoteSyncPage, NoteSyncPhase, NoteSyncRemovalReason,
-    NoteSyncRepository, NoteSyncRepositoryError, NoteViewSnapshot, apply_note_patch,
+    NoteReviewRepository, NoteRevisionDiff, NoteRevisionView, NoteSyncEntry, NoteSyncPage,
+    NoteSyncPhase, NoteSyncRemovalReason, NoteSyncRepository, NoteSyncRepositoryError,
+    NoteViewSnapshot, apply_note_patch,
 };
 pub use snapshot::{
     InvalidSnapshot, LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
@@ -664,6 +665,32 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
         note_id: NoteId,
         expected_revision: Revision,
+    ) -> Result<Note, NoteUseCaseError>;
+    async fn list_note_revisions(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+    ) -> Result<Vec<NoteRevisionSummary>, NoteUseCaseError>;
+    async fn read_note_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<NoteRevisionView, NoteUseCaseError>;
+    async fn compare_note_revisions(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        from_revision: Revision,
+        to_revision: Revision,
+    ) -> Result<notes::NoteRevisionDiff, NoteUseCaseError>;
+    async fn restore_note_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Revision,
+        expected_revision: Revision,
+        policy: NoteWritePolicy,
     ) -> Result<Note, NoteUseCaseError>;
     async fn preview_new_note(
         &self,

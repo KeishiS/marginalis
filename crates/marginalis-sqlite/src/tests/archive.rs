@@ -6,6 +6,27 @@ use super::*;
 async fn archive_snapshot_restores_primary_identities_aliases_and_empty_principals() {
     let source = database().await;
     let alice = user("alice");
+    let note = note_seed(
+        "0197c9bc-0000-7000-8000-000000000091",
+        "alice",
+        "archive history",
+    )
+    .build();
+    source
+        .create_note(&note, marginalis_application::NoteLinks::default())
+        .await
+        .expect("create note");
+    source
+        .update_visible_note(
+            &alice,
+            note.note_id(),
+            Revision::INITIAL,
+            &draft("archive history", "= archive history\n\nsecond", &[]),
+            marginalis_application::NoteLinks::default(),
+            UnixMillis::new(200),
+        )
+        .await
+        .expect("update note");
     let alias = Identity::new(
         "https://replacement-id.example.test".into(),
         "alice-after-migration".into(),
@@ -40,6 +61,7 @@ async fn archive_snapshot_restores_primary_identities_aliases_and_empty_principa
     transaction.commit().await.expect("commit identity change");
 
     let snapshot = source.export_archive_snapshot().await.expect("snapshot");
+    assert_eq!(snapshot.note_revisions().len(), 2);
     let alice_group = snapshot
         .principals()
         .iter()

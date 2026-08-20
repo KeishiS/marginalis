@@ -44,14 +44,15 @@ NixOS module・VM試験、archive移行の入力不変・出力非上書き試�
 |domain・SQLite・属性環境単体試験
 |アーカイブ照合
 |REQ-DATA-002
-|archive・CLI試験
+|archiveの全版・変更者・identity alias往復試験、SQLite隔離復元試験、CLI試験
 |隔離復元
 |REQ-DATA-003
 |AsciiDoc単体試験
 |なし
 |REQ-DATA-004
-|schema検査
-|なし
+|domainの履歴型試験、SQLiteの全変更経路・現在ACL・削除・物理削除・schema 22移行試験、
+applicationの行単位diff・現行規則による復元試験、REST・OpenAPI契約試験、archive往復試験
+|版の閲覧、比較、復元
 |REQ-DATA-005
 |SQLite認可・参照試験、ブラウザー試験
 |非開示確認
@@ -144,6 +145,9 @@ patchの厳密適用・dry_run・階層outline・断片取得の単体とHTTP契
 |REQ-UI-009
 |span注釈の写像・オフセット変換・装飾状態の単体試験、カーソル開示と装飾切替のブラウザー試験
 |装飾表示、記法の開示、装飾の無効化
+|REQ-UI-010
+|版履歴画面のReact単体試験、REST契約試験、TypeScript実行時検査試験
+|過去版の閲覧、二版の比較、新しい版としての復元
 |REQ-HOOK-001
 |``marginalis-application``の購読ユースケース試験、``marginalis-sqlite``の所有境界試験、
 React設定画面の単体試験
@@ -176,7 +180,7 @@ React設定画面の単体試験
 |SQLiteスナップショット試験、REST契約試験
 |閲覧整合性
 |REQ-LIFE-001
-|SQLite所有者境界・保持期限・ACL維持試験、REST契約試験、React単体試験、ブラウザー試験、保守CLI・NixOS VM
+|SQLite所有者境界・保持期限・ACL維持・履歴cascade試験、REST契約試験、React単体試験、ブラウザー試験、保守CLI・NixOS VM
 |削除・復元
 |REQ-API-008
 |REST・MCP失敗一致試験、MCP失敗出力schema生成差分

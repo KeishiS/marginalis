@@ -523,12 +523,37 @@ pub fn archive_from_documents(
         }
     }
 
+    let note_revisions = notes
+        .iter()
+        .map(|note| {
+            let provenance = note
+                .provenance
+                .as_ref()
+                .expect("document import always records note provenance");
+            crate::ArchiveNoteRevision {
+                note_id: note.note_id.clone(),
+                revision: note.revision,
+                changed_at_ms: note.updated_at_ms,
+                changed_by_issuer: note.creator_issuer.clone(),
+                changed_by_subject: note.creator_subject.clone(),
+                kind: marginalis_domain::NoteRevisionKind::Imported,
+                source: note.source.clone(),
+                deleted_at_ms: note.deleted_at_ms,
+                review_tracking_known: provenance.review_tracking_known,
+                reviewed_revision: provenance.reviewed_revision,
+                reviewed_at_ms: provenance.reviewed_at_ms,
+                reviewer_issuer: provenance.reviewer_issuer.clone(),
+                reviewer_subject: provenance.reviewer_subject.clone(),
+            }
+        })
+        .collect();
     let mut archive = Archive {
         format: crate::ARCHIVE_FORMAT.into(),
         adocweave_package_version: adocweave_package_version.into(),
         note_profile_version: crate::ARCHIVE_NOTE_PROFILE_VERSION,
         principals: Some(Vec::new()),
         notes,
+        note_revisions: Some(note_revisions),
         note_acl,
         bibliography_items,
         // 文書書庫は復元用ではなく、外部編集した本文とCSL-JSONを読み戻す形式である。

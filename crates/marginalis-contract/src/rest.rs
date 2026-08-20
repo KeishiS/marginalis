@@ -5,7 +5,7 @@
 
 use marginalis_domain::{
     ENTITY_ID_PATTERN, MAX_GRAPH_DEPTH, NOTE_POLICY, NoteAccess, NoteCreationSource,
-    NotePermission, NoteReviewStatus, NoteValidationTarget, Revision,
+    NotePermission, NoteReviewStatus, NoteRevisionKind, NoteValidationTarget, Revision,
 };
 use schemars::{JsonSchema, SchemaGenerator, generate::SchemaSettings};
 use serde::{Deserialize, Serialize};
@@ -192,6 +192,26 @@ pub const REST_ROUTE_CONTRACTS: &[RestRouteContract] = &[
         method: "GET",
         specification_path: "/api/v3/notes/{note_id}/view",
         probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/view",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/history",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/history/{revision}",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history/1",
+    },
+    RestRouteContract {
+        method: "POST",
+        specification_path: "/api/v3/notes/{note_id}/history/{revision}/restore",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history/1/restore",
+    },
+    RestRouteContract {
+        method: "GET",
+        specification_path: "/api/v3/notes/{note_id}/history-diff",
+        probe_path: "/api/v3/notes/0197c9bc-0000-7000-8000-000000000001/history-diff",
     },
     RestRouteContract {
         method: "POST",
@@ -701,6 +721,46 @@ pub struct NoteReviewResponse {
     pub reviewer_subject: Option<String>,
 }
 
+/// 本文を含まない一つのrevision情報。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteRevisionSummary")]
+pub struct NoteRevisionSummaryResponse {
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub revision: i64,
+    pub changed_at_ms: i64,
+    pub changed_by_issuer: String,
+    pub changed_by_subject: String,
+    pub kind: NoteRevisionKind,
+}
+
+/// 一つのrevisionが確定した直後のノート状態。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteRevision")]
+pub struct NoteRevisionResponse {
+    pub note: NoteResponse,
+    pub access: NoteAccess,
+    #[schemars(required)]
+    #[schemars(transform = nullable)]
+    pub deleted_at_ms: Option<i64>,
+    pub changed_by_issuer: String,
+    pub changed_by_subject: String,
+    pub kind: NoteRevisionKind,
+}
+
+/// 二つのrevisionのAsciiDoc原文から要求時に生成した行単位の差分。
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "NoteRevisionDiff")]
+pub struct NoteRevisionDiffResponse {
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub from_revision: i64,
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub to_revision: i64,
+    pub unified_diff: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "DeletedNoteListEntry")]
@@ -1078,6 +1138,9 @@ pub(crate) fn component_schemas() -> Value {
     generator.subschema_for::<NoteSummaryResponse>();
     generator.subschema_for::<NoteListEntryResponse>();
     generator.subschema_for::<NoteReviewResponse>();
+    generator.subschema_for::<NoteRevisionSummaryResponse>();
+    generator.subschema_for::<NoteRevisionResponse>();
+    generator.subschema_for::<NoteRevisionDiffResponse>();
     generator.subschema_for::<DeletedNoteListEntryResponse>();
     generator.subschema_for::<NoteViewResponse>();
     generator.subschema_for::<NoteGraphResponse>();
@@ -1115,6 +1178,12 @@ pub fn openapi_document() -> Value {
                     "schema": {"$ref": "#/components/schemas/NoteCreationSource"}},
                 "ReviewStatus": {"name": "review_status", "in": "query", "required": false,
                     "schema": {"$ref": "#/components/schemas/NoteReviewStatus"}},
+                "Revision": {"name": "revision", "in": "path", "required": true,
+                    "schema": {"type": "integer", "minimum": 1}},
+                "FromRevision": {"name": "from_revision", "in": "query", "required": true,
+                    "schema": {"type": "integer", "minimum": 1}},
+                "ToRevision": {"name": "to_revision", "in": "query", "required": true,
+                    "schema": {"type": "integer", "minimum": 1}},
                 "McpScopeCeilingRevision": {"name": "revision", "in": "query", "required": true,
                     "schema": {"type": "integer", "minimum": 1},
                     "description": "解除する上限のrevision。現在の値と一致しない場合は409を返す"},
@@ -1370,6 +1439,36 @@ fn rest_paths() -> Value {
                 ("200", schema_response_with_etag("rendered note view", "NoteView")),
                 ("404", response_ref("NotFound")),
                 ("422", response_ref("ValidationFailed"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/history": {
+            "parameters": [parameter_ref("NoteId")],
+            "get": operation("List visible note revisions without source", &[], None, responses(&[
+                ("200", array_response("note revision summaries", "NoteRevisionSummary")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/history/{revision}": {
+            "parameters": [parameter_ref("NoteId"), parameter_ref("Revision")],
+            "get": operation("Read one visible note revision", &[], None, responses(&[
+                ("200", schema_response("note revision", "NoteRevision")),
+                ("400", response_ref("BadRequest")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
+            ]))
+        },
+        "/api/v3/notes/{note_id}/history/{revision}/restore": {
+            "parameters": [parameter_ref("NoteId"), parameter_ref("Revision")],
+            "post": operation("Restore historical source as a new revision", &["CsrfToken", "IfMatch"], None, mutation_responses("note restored from history"))
+        },
+        "/api/v3/notes/{note_id}/history-diff": {
+            "parameters": [parameter_ref("NoteId")],
+            "get": operation("Compare two visible note revisions", &["FromRevision", "ToRevision"], None, responses(&[
+                ("200", schema_response("line-oriented Unified Diff", "NoteRevisionDiff")),
+                ("400", response_ref("BadRequest")),
+                ("404", response_ref("NotFound")),
+                ("503", response_ref("Unavailable"))
             ]))
         },
         "/api/v3/notes/{note_id}/acl": {
