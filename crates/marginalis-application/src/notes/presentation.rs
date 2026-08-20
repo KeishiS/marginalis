@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use marginalis_domain::{
-    Actor, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteSummary,
+    Actor, Note, NoteCreationSource, NoteDraft, NoteId, NoteSummary, PrincipalRef,
 };
 
 use crate::{NotePreview, NoteProfile, NoteRenderContext, NoteUseCaseError, ValidatedNoteDraft};
@@ -18,7 +18,7 @@ impl NoteApplication {
         &self,
         actor: &Actor,
         note_id: NoteId,
-        owner: &Identity,
+        owner: &PrincipalRef,
         validated: ValidatedNoteDraft,
         context: &NoteRenderContext,
     ) -> Result<NotePreview, NoteUseCaseError> {
@@ -134,7 +134,7 @@ impl NoteApplication {
         self.render_preview(
             &actor,
             NoteId::new(self.random.uuid_v7()),
-            actor.identity(),
+            actor.principal(),
             validated,
             &context,
         )
@@ -285,7 +285,7 @@ mod tests {
     use std::sync::{Arc, atomic::Ordering};
 
     use marginalis_domain::{
-        Actor, EntityId, Note, NoteAccess, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
+        EntityId, Note, NoteAccess, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
         NoteReviewTracking, Revision, UnixMillis,
     };
 
@@ -294,7 +294,7 @@ mod tests {
     use super::*;
     use crate::notes::test_support::{
         AcceptContent, CitingContent, EmptyLibrary, MemoryNotes, NoMathMacros, OneItemLibrary,
-        OwnerMathMacros, note_application,
+        OwnerMathMacros, actor, note_application,
     };
 
     #[test]
@@ -331,8 +331,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
         let draft = NoteDraft {
             source: "= Warning\n\nbody".into(),
             title: "Warning".into(),
@@ -403,8 +402,7 @@ mod tests {
             Arc::new(OneItemLibrary),
             Arc::new(OwnerMathMacros),
         );
-        let editor =
-            Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");
+        let editor = actor("bob", 2);
         let draft = NoteDraft {
             source: "= 共有されたノート\n\n本文 cite:[smith2024]".into(),
             title: "共有されたノート".into(),

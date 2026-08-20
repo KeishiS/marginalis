@@ -3,6 +3,7 @@ import { NoteAclEntry, NotePermission } from "./api";
 export interface AccessControlState {
   status: "loading" | "ready" | "saving";
   entries: NoteAclEntry[] | null;
+  issuer: string;
   subject: string;
   permission: NotePermission;
   revision: number;
@@ -13,10 +14,11 @@ export interface AccessControlState {
 export type AccessControlAction =
   | { type: "loading" }
   | { type: "loaded"; entries: NoteAclEntry[]; revision: number }
+  | { type: "issuer"; value: string }
   | { type: "subject"; value: string }
   | { type: "permission"; value: NotePermission }
   | { type: "add" }
-  | { type: "remove"; subject: string }
+  | { type: "remove"; issuer: string; subject: string }
   | { type: "save-started" }
   | { type: "saved"; revision: number }
   | { type: "error"; message: string };
@@ -27,6 +29,7 @@ export function initialAccessControlState(
   return {
     status: "loading",
     entries: null,
+    issuer: "",
     subject: "",
     permission: "read",
     revision,
@@ -56,24 +59,30 @@ export function accessControlReducer(
         revision: action.revision,
         error: "",
       };
+    case "issuer":
+      return { ...state, issuer: action.value };
     case "subject":
       return { ...state, subject: action.value };
     case "permission":
       return { ...state, permission: action.value };
     case "add": {
+      const issuer = state.issuer.trim();
       const subject = state.subject.trim();
-      if (!subject || state.entries === null) {
+      if (!issuer || !subject || state.entries === null) {
         return {
           ...state,
-          error: "共有する利用者のsubjectを入力してください。",
+          error: "共有する利用者のissuerとsubjectを入力してください。",
         };
       }
       return {
         ...state,
         entries: [
-          ...state.entries.filter((entry) => entry.subject !== subject),
-          { subject, permission: state.permission },
+          ...state.entries.filter(
+            (entry) => entry.issuer !== issuer || entry.subject !== subject,
+          ),
+          { issuer, subject, permission: state.permission },
         ],
+        issuer: "",
         subject: "",
         error: "",
         notice: "未保存の共有設定があります。",
@@ -83,8 +92,11 @@ export function accessControlReducer(
       return {
         ...state,
         entries:
-          state.entries?.filter((entry) => entry.subject !== action.subject) ??
-          null,
+          state.entries?.filter(
+            (entry) =>
+              entry.issuer !== action.issuer ||
+              entry.subject !== action.subject,
+          ) ?? null,
         notice: "未保存の共有設定があります。",
       };
     case "save-started":

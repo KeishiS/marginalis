@@ -85,17 +85,19 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         oidc_http_client,
         oidc,
     );
-    let oidc = std::sync::Arc::new(OidcAuthenticationApplication::new(
-        std::sync::Arc::new(oidc_provider),
-        configuration.oidc.allowed_claim_values.clone(),
-    ));
     // すべてのrepository portを同じSQLite adapterが担うため、Arcを1つ作って共有する。
     let storage = std::sync::Arc::new(database.clone());
+    let oidc = std::sync::Arc::new(OidcAuthenticationApplication::new(
+        std::sync::Arc::new(oidc_provider),
+        storage.clone(),
+        configuration.oidc.allowed_claim_values.clone(),
+    ));
     // session期限は共有crateの既定(idle 24時間/絶対7日、REQ-AUTH-007)を使う。
     let sessions = std::sync::Arc::new(marginalis_auth_oidc::SharedWebSessions::new(
         database.web_session_store(),
         SystemClock,
         SystemRandom,
+        storage.clone(),
     ));
     let notes = std::sync::Arc::new(NoteApplication::new(
         NoteApplicationDependencies::with_storage(
@@ -104,6 +106,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
             std::sync::Arc::new(marginalis_web::http::HttpNoteLinkResolver),
             std::sync::Arc::new(SystemClock),
             std::sync::Arc::new(SystemRandom),
+            configuration.oidc.issuer_url.to_string(),
         ),
     ));
     let bibliography = std::sync::Arc::new(marginalis_application::BibliographyApplication::new(
@@ -165,6 +168,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let endpoint = marginalis_web::http::McpEndpoint::new(
             std::sync::Arc::new(
                 McpOAuthApplication::new(
+                    storage.clone(),
                     storage.clone(),
                     storage.clone(),
                     std::sync::Arc::new(SystemClock),

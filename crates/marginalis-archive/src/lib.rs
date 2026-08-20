@@ -15,9 +15,10 @@ use marginalis_domain::{
     BibliographyContentDigest, BibliographyImportLink, BibliographyImportMethod,
     BibliographyImportSource, BibliographyImportSourceId, BibliographyItem, BibliographyItemId,
     EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NotePermission, NoteRestore,
-    NoteReviewRecord, NoteReviewTracking, Revision, UnixMillis,
+    NoteReviewRecord, NoteReviewTracking, PrincipalId, PrincipalRef, Revision, UnixMillis,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// archiveの構造を表す形式名。
 ///
@@ -219,8 +220,8 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
             .iter()
             .map(|note| ArchiveNote {
                 note_id: note.note_id().to_string(),
-                creator_issuer: note.creator_issuer().to_owned(),
-                creator_subject: note.creator_subject().to_owned(),
+                creator_issuer: note.owner().primary_identity().issuer().to_owned(),
+                creator_subject: note.owner().primary_identity().subject().to_owned(),
                 source: note.source().to_owned(),
                 created_at_ms: note.created_at().get(),
                 updated_at_ms: note.updated_at().get(),
@@ -233,10 +234,10 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
                     reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
                     reviewer_issuer: note
                         .last_review()
-                        .map(|review| review.reviewer().issuer().to_owned()),
+                        .map(|review| review.reviewer().primary_identity().issuer().to_owned()),
                     reviewer_subject: note
                         .last_review()
-                        .map(|review| review.reviewer().subject().to_owned()),
+                        .map(|review| review.reviewer().primary_identity().subject().to_owned()),
                 }),
             })
             .collect(),
@@ -245,8 +246,8 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
             .iter()
             .map(|entry| ArchiveAclEntry {
                 note_id: entry.note_id().to_string(),
-                issuer: entry.identity().issuer().to_owned(),
-                subject: entry.identity().subject().to_owned(),
+                issuer: entry.principal().primary_identity().issuer().to_owned(),
+                subject: entry.principal().primary_identity().subject().to_owned(),
                 permission: entry.permission(),
             })
             .collect(),
@@ -255,8 +256,8 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
             .iter()
             .map(|item| ArchiveBibliographyItem {
                 item_id: item.item_id().to_string(),
-                owner_issuer: item.owner().issuer().to_owned(),
-                owner_subject: item.owner().subject().to_owned(),
+                owner_issuer: item.owner().primary_identity().issuer().to_owned(),
+                owner_subject: item.owner().primary_identity().subject().to_owned(),
                 citation_key: item.citation_key().to_owned(),
                 csl_json: serde_json::from_str(item.csl_json())
                     .expect("snapshot CSL-JSON is valid"),
@@ -270,8 +271,8 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
             .iter()
             .map(|source| ArchiveBibliographyImportSource {
                 source_id: source.source_id().to_string(),
-                owner_issuer: source.owner().issuer().to_owned(),
-                owner_subject: source.owner().subject().to_owned(),
+                owner_issuer: source.owner().primary_identity().issuer().to_owned(),
+                owner_subject: source.owner().primary_identity().subject().to_owned(),
                 method: source.method(),
                 display_name: source.display_name().to_owned(),
                 revision: source.revision().get(),
@@ -294,8 +295,8 @@ pub fn create_archive(content: &dyn NoteContent, snapshot: &LogicalSnapshot) -> 
             .math_macro_settings()
             .iter()
             .map(|entry| ArchiveMathMacroSettings {
-                owner_issuer: entry.owner().issuer().to_owned(),
-                owner_subject: entry.owner().subject().to_owned(),
+                owner_issuer: entry.owner().primary_identity().issuer().to_owned(),
+                owner_subject: entry.owner().primary_identity().subject().to_owned(),
                 macros: entry
                     .settings()
                     .macros
@@ -377,6 +378,7 @@ fn validate_archive_contents(
     content: &dyn NoteContent,
     archive: &Archive,
 ) -> Result<LogicalSnapshot, ArchiveContentsError> {
+    let principal_ids = archive_principal_ids(archive);
     let notes = archive
         .notes
         .iter()
@@ -397,13 +399,14 @@ fn validate_archive_contents(
                 .parse::<EntityId>()
                 .map(NoteId::new)
                 .map_err(|_| invalid_note())?;
-            let creator = Identity::new(note.creator_issuer.clone(), note.creator_subject.clone())
-                .map_err(|_| invalid_note())?;
+            let creator =
+                principal_ref(&principal_ids, &note.creator_issuer, &note.creator_subject)
+                    .map_err(|_| invalid_note())?;
             let revision = Revision::new(note.revision).map_err(|_| invalid_note())?;
             let (created_via, review) = note
                 .provenance
                 .as_ref()
-                .map(|provenance| archive_review(provenance, &creator))
+                .map(|provenance| archive_review(provenance, &creator, &principal_ids))
                 .transpose()
                 .map_err(|_| invalid_note())?
                 .unwrap_or((NoteCreationSource::Unknown, NoteReviewTracking::Unknown));
@@ -440,7 +443,7 @@ fn validate_archive_contents(
                 .map_err(|_| invalid_acl_entry())?;
             Ok(NoteAclSnapshotEntry::new(
                 note_id,
-                Identity::new(entry.issuer.clone(), entry.subject.clone())
+                principal_ref(&principal_ids, &entry.issuer, &entry.subject)
                     .map_err(|_| invalid_acl_entry())?,
                 entry.permission,
             ))
@@ -459,7 +462,7 @@ fn validate_archive_contents(
                     .parse::<EntityId>()
                     .map(BibliographyItemId::new)
                     .map_err(|_| invalid())?,
-                Identity::new(item.owner_issuer.clone(), item.owner_subject.clone())
+                principal_ref(&principal_ids, &item.owner_issuer, &item.owner_subject)
                     .map_err(|_| invalid())?,
                 item.citation_key.clone(),
                 serde_json::to_string(&item.csl_json).map_err(|_| invalid())?,
@@ -484,7 +487,7 @@ fn validate_archive_contents(
                     .parse::<EntityId>()
                     .map(BibliographyImportSourceId::new)
                     .map_err(|_| invalid())?,
-                Identity::new(source.owner_issuer.clone(), source.owner_subject.clone())
+                principal_ref(&principal_ids, &source.owner_issuer, &source.owner_subject)
                     .map_err(|_| invalid())?,
                 source.method,
                 source.display_name.clone(),
@@ -528,7 +531,7 @@ fn validate_archive_contents(
                 position: index + 1,
             };
             Ok(MathMacroSettingsSnapshot::new(
-                Identity::new(entry.owner_issuer.clone(), entry.owner_subject.clone())
+                principal_ref(&principal_ids, &entry.owner_issuer, &entry.owner_subject)
                     .map_err(|_| invalid())?,
                 MathMacroSettings {
                     macros: entry
@@ -577,7 +580,8 @@ fn validate_archive_contents(
 
 fn archive_review(
     provenance: &ArchiveNoteProvenance,
-    owner: &Identity,
+    owner: &PrincipalRef,
+    principal_ids: &BTreeMap<(String, String), PrincipalId>,
 ) -> Result<(NoteCreationSource, NoteReviewTracking), ()> {
     let review = match (
         provenance.review_tracking_known,
@@ -589,7 +593,7 @@ fn archive_review(
         (false, None, None, None, None) => NoteReviewTracking::Unknown,
         (true, None, None, None, None) => NoteReviewTracking::pending(),
         (true, Some(revision), Some(reviewed_at), Some(issuer), Some(subject)) => {
-            let reviewer = Identity::new(issuer.to_owned(), subject.to_owned()).map_err(|_| ())?;
+            let reviewer = principal_ref(principal_ids, issuer, subject)?;
             if &reviewer != owner {
                 return Err(());
             }
@@ -602,6 +606,69 @@ fn archive_review(
         _ => return Err(()),
     };
     Ok((provenance.created_via, review))
+}
+
+fn archive_principal_ids(archive: &Archive) -> BTreeMap<(String, String), PrincipalId> {
+    let mut identities = BTreeSet::new();
+    for note in &archive.notes {
+        identities.insert((note.creator_issuer.clone(), note.creator_subject.clone()));
+        if let Some(provenance) = &note.provenance
+            && let (Some(issuer), Some(subject)) = (
+                provenance.reviewer_issuer.as_ref(),
+                provenance.reviewer_subject.as_ref(),
+            )
+        {
+            identities.insert((issuer.clone(), subject.clone()));
+        }
+    }
+    identities.extend(
+        archive
+            .note_acl
+            .iter()
+            .map(|entry| (entry.issuer.clone(), entry.subject.clone())),
+    );
+    identities.extend(
+        archive
+            .bibliography_items
+            .iter()
+            .map(|item| (item.owner_issuer.clone(), item.owner_subject.clone())),
+    );
+    identities.extend(
+        archive
+            .bibliography_import_sources
+            .iter()
+            .map(|source| (source.owner_issuer.clone(), source.owner_subject.clone())),
+    );
+    identities.extend(
+        archive
+            .math_macro_settings
+            .iter()
+            .map(|entry| (entry.owner_issuer.clone(), entry.owner_subject.clone())),
+    );
+    identities
+        .into_iter()
+        .enumerate()
+        .map(|(index, identity)| {
+            let id = i64::try_from(index + 1).expect("archive identity count fits in i64");
+            (
+                identity,
+                PrincipalId::new(id).expect("enumerated ID is positive"),
+            )
+        })
+        .collect()
+}
+
+fn principal_ref(
+    principal_ids: &BTreeMap<(String, String), PrincipalId>,
+    issuer: &str,
+    subject: &str,
+) -> Result<PrincipalRef, ()> {
+    let identity = Identity::new(issuer.to_owned(), subject.to_owned()).map_err(|_| ())?;
+    let id = principal_ids
+        .get(&(issuer.to_owned(), subject.to_owned()))
+        .copied()
+        .ok_or(())?;
+    Ok(PrincipalRef::new(id, identity))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -675,12 +742,24 @@ mod tests {
         AsciiDocNoteContent
     }
 
+    fn principal(subject: &str) -> PrincipalRef {
+        let id = match subject {
+            "alice" => 1,
+            "bob" => 2,
+            _ => 3,
+        };
+        PrincipalRef::new(
+            PrincipalId::new(id).expect("ID"),
+            Identity::new("https://id.example.test".into(), subject.into()).expect("identity"),
+        )
+    }
+
     fn note() -> Note {
         Note::create(
             NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
-            &Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            &principal("alice"),
             content()
                 .validate_draft(NoteDraft {
                     source: "= A title\n:marginalis-tags: Research\n\nsafe body".into(),
@@ -697,7 +776,7 @@ mod tests {
     #[test]
     fn archive_round_trip_preserves_notes_acl_and_math_macros() {
         let note = note();
-        let reader = Identity::new(note.creator_issuer().into(), "reader".into()).expect("reader");
+        let reader = principal("reader");
         let snapshot = LogicalSnapshot::new(
             vec![note.clone()],
             vec![NoteAclSnapshotEntry::new(
@@ -722,12 +801,13 @@ mod tests {
         let archive = create_archive(&content(), &snapshot);
         assert_eq!(archive.format, ARCHIVE_FORMAT);
         assert_eq!(archive.note_profile_version, ARCHIVE_NOTE_PROFILE_VERSION);
-        assert_eq!(validate_archive(&content(), &archive), Ok(snapshot));
+        let restored = validate_archive(&content(), &archive).expect("validate archive");
+        assert_eq!(create_archive(&content(), &restored), archive);
     }
 
     #[test]
     fn archive_round_trip_preserves_bibliography_import_baselines() {
-        let owner = Identity::new("https://id.example.test".into(), "alice".into()).expect("owner");
+        let owner = principal("alice");
         let item = BibliographyItem::create(
             BibliographyItemId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-0000000000b1").expect("UUIDv7"),
@@ -800,7 +880,7 @@ mod tests {
             NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000002").expect("UUIDv7"),
             ),
-            &Identity::new("https://id.example.test".into(), "bob".into()).expect("owner"),
+            &principal("bob"),
             content()
                 .validate_draft(NoteDraft {
                     source: "= Another title\n\nsafe body".into(),
@@ -812,7 +892,7 @@ mod tests {
             UnixMillis::new(0),
             NoteCreationSource::Rest,
         );
-        let reader = Identity::new(first.creator_issuer().into(), "reader".into()).expect("reader");
+        let reader = principal("reader");
         let snapshot = LogicalSnapshot::new(
             vec![first.clone(), second.clone()],
             vec![

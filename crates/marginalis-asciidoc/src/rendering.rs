@@ -164,17 +164,24 @@ mod tests {
     use marginalis_application::NoteCitationSegment;
     use marginalis_domain::{
         EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
-        NoteReviewTracking, Revision, UnixMillis,
+        NoteReviewTracking, PrincipalId, PrincipalRef, Revision, UnixMillis,
     };
 
     use super::*;
+
+    fn owner() -> PrincipalRef {
+        PrincipalRef::new(
+            PrincipalId::new(1).expect("ID"),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+        )
+    }
 
     fn note(body: &str) -> Note {
         Note::restore(NoteRestore {
             note_id: NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
-            owner: Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            owner: owner(),
             draft: NoteDraft {
                 title: "A title".into(),
                 source: format!("= A title\n\n{body}"),
@@ -326,7 +333,7 @@ mod tests {
             note_id: NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000003").expect("UUIDv7"),
             ),
-            owner: Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            owner: owner(),
             draft,
             created_at: UnixMillis::new(0),
             updated_at: UnixMillis::new(1),

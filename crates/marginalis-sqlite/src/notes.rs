@@ -11,7 +11,8 @@ use marginalis_application::{
 use marginalis_domain::{
     Actor, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess, NoteCreationSource,
     NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewRecord, NoteReviewStatus,
-    NoteReviewTracking, NoteSummary, Revision, SOFT_DELETE_RETENTION_MS, UnixMillis,
+    NoteReviewTracking, NoteSummary, PrincipalId, PrincipalRef, Revision, SOFT_DELETE_RETENTION_MS,
+    UnixMillis,
 };
 use sqlx::{QueryBuilder, Row, Sqlite};
 
@@ -42,15 +43,14 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         sqlx::query(
             "INSERT INTO notes (
-                note_id, creator_issuer, creator_subject, title, source, tags_json,
+                note_id, creator_principal_id, title, source, tags_json,
                 created_at_ms, updated_at_ms, revision, deleted_at_ms, created_via,
                 review_tracking_known, reviewed_revision, reviewed_at_ms,
-                reviewer_issuer, reviewer_subject
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                reviewer_principal_id
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(note.note_id().to_string())
-        .bind(note.creator_issuer())
-        .bind(note.creator_subject())
+        .bind(note.owner().id().get())
         .bind(note.title())
         .bind(note.source())
         .bind(tags_json)
@@ -62,8 +62,10 @@ impl SqliteDatabase {
         .bind(i64::from(note.review_tracking_known()))
         .bind(note.last_review().map(|review| review.revision().get()))
         .bind(note.last_review().map(|review| review.reviewed_at().get()))
-        .bind(note.last_review().map(|review| review.reviewer().issuer()))
-        .bind(note.last_review().map(|review| review.reviewer().subject()))
+        .bind(
+            note.last_review()
+                .map(|review| review.reviewer().id().get()),
+        )
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -79,15 +81,14 @@ impl SqliteDatabase {
         note_id: NoteId,
     ) -> Result<Option<AccessibleNote>, SqliteStoreError> {
         let row = sqlx::query(
-            "SELECT notes.*, access.access_level
-             FROM notes
-             JOIN note_access access ON access.note_id = notes.note_id
-             WHERE notes.note_id = ? AND notes.deleted_at_ms IS NULL
-               AND access.issuer = ? AND access.subject = ?",
+            "SELECT note_details.*, access.access_level
+             FROM note_details
+             JOIN note_access access ON access.note_id = note_details.note_id
+             WHERE note_details.note_id = ? AND note_details.deleted_at_ms IS NULL
+               AND access.principal_id = ?",
         )
         .bind(note_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_optional(&self.pool)
         .await
         .map_err(database_error)?;
@@ -111,8 +112,8 @@ impl SqliteDatabase {
             return Ok(Vec::new());
         }
         let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT *
-             FROM notes
+            "SELECT notes.*
+             FROM note_details notes
              WHERE deleted_at_ms IS NULL AND note_id IN (",
         );
         let mut separated = query.separated(", ");
@@ -122,11 +123,9 @@ impl SqliteDatabase {
         separated.push_unseparated(
             ") AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
-                             AND access.issuer = ",
+                             AND access.principal_id = ",
         );
-        separated.push_bind_unseparated(actor.issuer());
-        separated.push_unseparated(" AND access.subject = ");
-        separated.push_bind_unseparated(actor.subject());
+        separated.push_bind_unseparated(actor.principal_id().get());
         separated.push_unseparated(") ORDER BY note_id");
         query
             .build()
@@ -151,21 +150,20 @@ impl SqliteDatabase {
              FROM notes
              JOIN note_access access ON access.note_id = notes.note_id
              WHERE notes.deleted_at_ms IS NULL
-               AND access.issuer = ? AND access.subject = ?
-               AND (?3 IS NULL OR notes.created_via = ?3)
+               AND access.principal_id = ?
+               AND (?2 IS NULL OR notes.created_via = ?2)
                AND (
-                    ?4 IS NULL
-                    OR (?4 = 'unknown' AND notes.review_tracking_known = 0)
-                    OR (?4 = 'pending' AND notes.review_tracking_known = 1
+                    ?3 IS NULL
+                    OR (?3 = 'unknown' AND notes.review_tracking_known = 0)
+                    OR (?3 = 'pending' AND notes.review_tracking_known = 1
                         AND (notes.reviewed_revision IS NULL
                             OR notes.reviewed_revision != notes.revision))
-                    OR (?4 = 'reviewed' AND notes.review_tracking_known = 1
+                    OR (?3 = 'reviewed' AND notes.review_tracking_known = 1
                         AND notes.reviewed_revision = notes.revision)
                )
              ORDER BY notes.updated_at_ms DESC, notes.note_id ASC",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(query.created_via.map(NoteCreationSource::as_str))
         .bind(query.review_status.map(NoteReviewStatus::as_str))
         .fetch_all(&self.pool)
@@ -183,11 +181,10 @@ impl SqliteDatabase {
             "SELECT note_id, title, deleted_at_ms, revision
              FROM notes
              WHERE deleted_at_ms IS NOT NULL
-               AND creator_issuer = ? AND creator_subject = ?
+               AND creator_principal_id = ?
              ORDER BY deleted_at_ms DESC, note_id ASC",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_all(&self.pool)
         .await
         .map_err(database_error)?;
@@ -214,7 +211,7 @@ impl SqliteDatabase {
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
-                             AND access.issuer = ? AND access.subject = ?
+                             AND access.principal_id = ?
                              AND access.access_level >= 2)",
         )
         .bind(&draft.title)
@@ -223,8 +220,7 @@ impl SqliteDatabase {
         .bind(updated_at.get())
         .bind(note_id.to_string())
         .bind(expected_revision.get())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -235,7 +231,7 @@ impl SqliteDatabase {
             transaction.rollback().await.map_err(database_error)?;
             return Err(error);
         }
-        let row = sqlx::query("SELECT * FROM notes WHERE note_id = ?")
+        let row = sqlx::query("SELECT * FROM note_details WHERE note_id = ?")
             .bind(note_id.to_string())
             .fetch_one(&mut *transaction)
             .await
@@ -262,15 +258,14 @@ impl SqliteDatabase {
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
-                             AND access.issuer = ? AND access.subject = ?
+                             AND access.principal_id = ?
                              AND access.access_level >= 3)",
         )
         .bind(deleted_at.get())
         .bind(deleted_at.get())
         .bind(note_id.to_string())
         .bind(expected_revision.get())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -303,14 +298,13 @@ impl SqliteDatabase {
                  revision = revision + 1
              WHERE note_id = ? AND revision = ?
                AND deleted_at_ms IS NOT NULL AND deleted_at_ms >= ?
-               AND creator_issuer = ? AND creator_subject = ?",
+               AND creator_principal_id = ?",
         )
         .bind(restored_at.get())
         .bind(note_id.to_string())
         .bind(expected_revision.get())
         .bind(retention_cutoff)
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -353,15 +347,14 @@ impl SqliteDatabase {
     ) -> Result<Option<NoteViewSnapshot>, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let row = sqlx::query(
-            "SELECT notes.*, access.access_level
-             FROM notes
-             JOIN note_access access ON access.note_id = notes.note_id
-             WHERE notes.note_id = ? AND notes.deleted_at_ms IS NULL
-               AND access.issuer = ? AND access.subject = ?",
+            "SELECT note_details.*, access.access_level
+             FROM note_details
+             JOIN note_access access ON access.note_id = note_details.note_id
+             WHERE note_details.note_id = ? AND note_details.deleted_at_ms IS NULL
+               AND access.principal_id = ?",
         )
         .bind(note_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_optional(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -377,16 +370,15 @@ impl SqliteDatabase {
         let reference_targets = sqlx::query(
             "SELECT target.*
              FROM note_references reference
-             JOIN notes target ON target.note_id = reference.target_note_id
+             JOIN note_details target ON target.note_id = reference.target_note_id
              WHERE reference.source_note_id = ? AND target.deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = target.note_id
-                             AND access.issuer = ? AND access.subject = ?)
+                             AND access.principal_id = ?)
              ORDER BY target.note_id",
         )
         .bind(note_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_all(&mut *transaction)
         .await
         .map_err(database_error)?
@@ -403,12 +395,11 @@ impl SqliteDatabase {
              WHERE reference.target_note_id = ? AND source.deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = source.note_id
-                             AND access.issuer = ? AND access.subject = ?)
+                             AND access.principal_id = ?)
              ORDER BY source.updated_at_ms DESC, source.note_id ASC",
         )
         .bind(note_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_all(&mut *transaction)
         .await
         .map_err(database_error)?
@@ -548,12 +539,11 @@ pub(crate) async fn require_active_note_access(
          WHERE note_id = ? AND deleted_at_ms IS NULL
            AND EXISTS (SELECT 1 FROM note_access access
                        WHERE access.note_id = notes.note_id
-                         AND access.issuer = ? AND access.subject = ?
+                         AND access.principal_id = ?
                          AND access.access_level >= ?)";
     let visible = sqlx::query_scalar::<_, i64>(query)
         .bind(note_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(access_level(required))
         .fetch_optional(&mut **transaction)
         .await
@@ -585,11 +575,10 @@ async fn classify_failed_restore(
         "SELECT revision, deleted_at_ms
          FROM notes
          WHERE note_id = ? AND deleted_at_ms IS NOT NULL
-           AND creator_issuer = ? AND creator_subject = ?",
+           AND creator_principal_id = ?",
     )
     .bind(note_id.to_string())
-    .bind(actor.issuer())
-    .bind(actor.subject())
+    .bind(actor.principal_id().get())
     .fetch_optional(&mut **transaction)
     .await
     .map_err(database_error)?;
@@ -629,7 +618,7 @@ pub(crate) async fn note_row(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     note_id: NoteId,
 ) -> Result<sqlx::sqlite::SqliteRow, SqliteStoreError> {
-    sqlx::query("SELECT * FROM notes WHERE note_id = ?")
+    sqlx::query("SELECT * FROM note_details WHERE note_id = ?")
         .bind(note_id.to_string())
         .fetch_one(&mut **transaction)
         .await
@@ -647,11 +636,19 @@ pub(crate) fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Note, Sqlite
         .try_get::<String, _>("tags_json")
         .map_err(database_error)?;
     let tags = serde_json::from_str(&tags_json).map_err(|_| SqliteStoreError::CorruptData)?;
-    let owner = Identity::new(
+    let owner_identity = Identity::new(
         row.try_get("creator_issuer").map_err(database_error)?,
         row.try_get("creator_subject").map_err(database_error)?,
     )
     .map_err(|_| SqliteStoreError::CorruptData)?;
+    let owner = PrincipalRef::new(
+        PrincipalId::new(
+            row.try_get("creator_principal_id")
+                .map_err(database_error)?,
+        )
+        .map_err(|_| SqliteStoreError::CorruptData)?,
+        owner_identity,
+    );
     let review_tracking_known = row
         .try_get::<i64, _>("review_tracking_known")
         .map_err(database_error)?;
@@ -671,18 +668,26 @@ pub(crate) fn note_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Note, Sqlite
     let reviewer_subject = row
         .try_get::<Option<String>, _>("reviewer_subject")
         .map_err(database_error)?;
+    let reviewer_principal_id = row
+        .try_get::<Option<i64>, _>("reviewer_principal_id")
+        .map_err(database_error)?
+        .map(PrincipalId::new)
+        .transpose()
+        .map_err(|_| SqliteStoreError::CorruptData)?;
     let review = match (
         review_tracking_known,
         reviewed_revision,
         reviewed_at,
         reviewer_issuer,
         reviewer_subject,
+        reviewer_principal_id,
     ) {
-        (0, None, None, None, None) => NoteReviewTracking::Unknown,
-        (1, None, None, None, None) => NoteReviewTracking::pending(),
-        (1, Some(revision), Some(reviewed_at), Some(issuer), Some(subject)) => {
-            let reviewer =
+        (0, None, None, None, None, None) => NoteReviewTracking::Unknown,
+        (1, None, None, None, None, None) => NoteReviewTracking::pending(),
+        (1, Some(revision), Some(reviewed_at), Some(issuer), Some(subject), Some(id)) => {
+            let reviewer_identity =
                 Identity::new(issuer, subject).map_err(|_| SqliteStoreError::CorruptData)?;
+            let reviewer = PrincipalRef::new(id, reviewer_identity);
             NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
                 revision,
                 reviewed_at,

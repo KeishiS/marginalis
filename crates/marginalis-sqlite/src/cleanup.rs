@@ -100,20 +100,17 @@ impl SqliteDatabase {
              WHERE COALESCE(authorizations.last_used_at_ms, authorizations.authorized_at_ms) < ?
                AND NOT EXISTS (
                    SELECT 1 FROM mcp_authorization_codes
-                   WHERE issuer = authorizations.issuer
-                     AND subject = authorizations.subject
+                   WHERE principal_id = authorizations.principal_id
                      AND client_id = authorizations.client_id
                )
                AND NOT EXISTS (
                    SELECT 1 FROM mcp_access_tokens
-                   WHERE issuer = authorizations.issuer
-                     AND subject = authorizations.subject
+                   WHERE principal_id = authorizations.principal_id
                      AND client_id = authorizations.client_id
                )
                AND NOT EXISTS (
                    SELECT 1 FROM mcp_refresh_tokens
-                   WHERE issuer = authorizations.issuer
-                     AND subject = authorizations.subject
+                   WHERE principal_id = authorizations.principal_id
                      AND client_id = authorizations.client_id
                )",
         )

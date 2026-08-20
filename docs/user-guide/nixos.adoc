@@ -71,10 +71,10 @@ Kanidm を使う場合は ``caCertificateFile`` に PEM trust anchor を指定�
 に適用します。
 SQLiteデータベースは``dataDir``（既定値``/var/lib/marginalis``）直下の``marginalis.sqlite``に固定します。
 任意のdatabase URLは指定できません。正本を別volumeへ置く場合は、``dataDir``自体をその絶対pathへ
-変更してください。現行のSQLite schema versionは22です。旧versionを起動時に自動移行しません。
+変更してください。現行のSQLite schema versionは23です。旧versionを起動時に自動移行しません。
 
 schema 22より前のdatabaseから更新する場合は、更新前の実行環境で``export-archive``を実行し、
-その書庫を現行の``restore-archive``で空のschema 22へ取り込んでください。``restore-archive``は
+その書庫を現行の``restore-archive``で空のschema 23へ取り込んでください。``restore-archive``は
 変換・隔離databaseでの復元検証・取り込みを一括で行います。取り込める旧archiveの範囲は
 <<以前のarchiveからの移行>>を参照してください。
 同期cursorと変更索引、MCPの認可状態、client登録とtokenはarchiveへ含まれないため、更新後に
@@ -242,8 +242,11 @@ unitは通常serviceと同時に実行せず、``backupDirectory``に
 退避を永続的に確定できた後だけ、すべての必要なmigrationを1つのtransactionで適用します。
 容量不足、退避先の重複、履歴の欠番、schema 22より前の版の場合はdatabaseを変更せず失敗します。
 
-現在のschemaは22で、未適用のmigrationはありません。その場合は成功logの
-``applied_migrations=0``と``backup=none``で何も変更しなかったことを示し、SQLite退避も作りません。
+現在のschemaは23です。schema 22から更新する場合は、すべての外部identityを推測でまとめず、
+``issuer``と``subject``が完全に一致する組ごとに内部principalを作ります。Web session、MCP token、
+同期cursor、Webhook配送状態を含む既存行は、そのprincipalへの参照へ移します。すでにschema 23で
+未適用のmigrationがない場合は、成功logの``applied_migrations=0``と``backup=none``で何も変更しなかった
+ことを示し、SQLite退避も作りません。
 
 移行後は``marginalis-diagnose.service``、HTTP health、OIDC login、MCP認可を確認します。切戻しが必要な
 場合は、新しいserviceを停止し、移行後のdatabaseを別名で保全してから、SQLite退避と移行前の

@@ -3,9 +3,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use marginalis_domain::{Actor, Identity};
+use marginalis_domain::{Actor, Identity, PrincipalRef};
 
-use crate::{AuthenticationUseCaseError, OidcAuthenticationUseCases};
+use crate::{AuthenticationUseCaseError, OidcAuthenticationUseCases, StorageError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalIdentity {
@@ -33,8 +33,25 @@ pub trait IdentityProvider: Send + Sync {
     ) -> Result<ExternalIdentity, IdentityProviderError>;
 }
 
+/// 外部identityを内部principalへ安全に対応付ける永続化port。
+#[async_trait]
+pub trait PrincipalDirectory: Send + Sync {
+    /// 検証済みOIDCログインを既存principalへ解決し、初回だけ作成する。
+    async fn resolve_or_create_verified(&self, identity: Identity) -> Result<Actor, StorageError>;
+
+    /// sessionまたはtokenの保存値を既存principalへ解決する。未知のidentityは作成しない。
+    async fn resolve(&self, identity: &Identity) -> Result<Option<Actor>, StorageError>;
+
+    /// 現在のOIDC issuerに属するACL共有先を解決し、未登録なら作成する。
+    async fn resolve_or_create_acl_target(
+        &self,
+        identity: Identity,
+    ) -> Result<PrincipalRef, StorageError>;
+}
+
 pub struct OidcAuthenticationApplication {
     provider: Arc<dyn IdentityProvider>,
+    principals: Arc<dyn PrincipalDirectory>,
     /// 利用を許可するclaim値の一覧。いずれか1つに一致すれば許可する。
     ///
     /// 空の一覧は「このissuerで認証できた利用者は全員許可」を意味する(ADR 0015)。
@@ -43,9 +60,14 @@ pub struct OidcAuthenticationApplication {
 }
 
 impl OidcAuthenticationApplication {
-    pub fn new(provider: Arc<dyn IdentityProvider>, allowed_claim_values: Vec<String>) -> Self {
+    pub fn new(
+        provider: Arc<dyn IdentityProvider>,
+        principals: Arc<dyn PrincipalDirectory>,
+        allowed_claim_values: Vec<String>,
+    ) -> Self {
         Self {
             provider,
+            principals,
             allowed_claim_values,
         }
     }
@@ -80,7 +102,10 @@ impl OidcAuthenticationUseCases for OidcAuthenticationApplication {
         }
         let actor_identity = Identity::new(identity.issuer, identity.subject)
             .map_err(|_| AuthenticationUseCaseError::Rejected)?;
-        Ok(Actor::new(actor_identity))
+        self.principals
+            .resolve_or_create_verified(actor_identity)
+            .await
+            .map_err(|_| AuthenticationUseCaseError::Unavailable)
     }
 }
 
@@ -93,10 +118,43 @@ fn map_provider_error(error: IdentityProviderError) -> AuthenticationUseCaseErro
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use marginalis_domain::PrincipalId;
+
     use super::*;
 
     struct FixedProvider {
         groups: Vec<String>,
+    }
+
+    struct FixedDirectory {
+        creates: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl PrincipalDirectory for FixedDirectory {
+        async fn resolve_or_create_verified(
+            &self,
+            identity: Identity,
+        ) -> Result<Actor, StorageError> {
+            self.creates.fetch_add(1, Ordering::Relaxed);
+            Ok(Actor::for_single_identity(
+                PrincipalId::new(1).expect("ID"),
+                identity,
+            ))
+        }
+
+        async fn resolve(&self, _identity: &Identity) -> Result<Option<Actor>, StorageError> {
+            unreachable!("login completion does not restore a session")
+        }
+
+        async fn resolve_or_create_acl_target(
+            &self,
+            _identity: Identity,
+        ) -> Result<PrincipalRef, StorageError> {
+            unreachable!("login completion does not change an ACL")
+        }
     }
 
     #[async_trait]
@@ -119,7 +177,22 @@ mod tests {
     }
 
     fn application(groups: Vec<String>, allowed: Vec<String>) -> OidcAuthenticationApplication {
-        OidcAuthenticationApplication::new(Arc::new(FixedProvider { groups }), allowed)
+        application_with_directory(groups, allowed).0
+    }
+
+    fn application_with_directory(
+        groups: Vec<String>,
+        allowed: Vec<String>,
+    ) -> (OidcAuthenticationApplication, Arc<FixedDirectory>) {
+        let directory = Arc::new(FixedDirectory {
+            creates: AtomicUsize::new(0),
+        });
+        let application = OidcAuthenticationApplication::new(
+            Arc::new(FixedProvider { groups }),
+            directory.clone(),
+            allowed,
+        );
+        (application, directory)
     }
 
     /// 許可値の一覧はいずれか1つに一致すれば許可する。
@@ -148,5 +221,18 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn a_rejected_allow_list_does_not_create_a_principal() {
+        let (application, directory) =
+            application_with_directory(vec!["not-allowed".into()], vec!["allowed".into()]);
+        assert_eq!(
+            application
+                .complete_login("code".into(), "state".into())
+                .await,
+            Err(AuthenticationUseCaseError::Rejected)
+        );
+        assert_eq!(directory.creates.load(Ordering::Relaxed), 0);
     }
 }

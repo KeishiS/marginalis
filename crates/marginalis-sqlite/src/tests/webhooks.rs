@@ -31,15 +31,14 @@ async fn insert_subscription(
 ) {
     sqlx::query(
         "INSERT INTO webhook_subscriptions (
-             subscription_id, owner_issuer, owner_subject, url, secret,
+             subscription_id, owner_principal_id, url, secret,
              event_kinds_json, state, disabled_reason,
              created_at_ms, updated_at_ms, revision
-         ) VALUES (?, ?, ?, 'https://receiver.example.test/hook', 'test-secret',
+         ) VALUES (?, ?, 'https://receiver.example.test/hook', 'test-secret',
                    ?, ?, NULL, 0, 0, 1)",
     )
     .bind(subscription_id)
-    .bind(ISSUER)
-    .bind(subject)
+    .bind(user(subject).principal_id().get())
     .bind(event_kinds_json)
     .bind(state)
     .execute(&database.pool)
@@ -109,7 +108,7 @@ async fn note_lifecycle_emits_exactly_one_event_per_confirmed_change() {
             &alice,
             id,
             &[NoteAclEntry::new(
-                bob.identity().clone(),
+                bob.principal().clone(),
                 NotePermission::Edit,
             )],
             revision(2),
@@ -166,13 +165,13 @@ async fn note_lifecycle_emits_exactly_one_event_per_confirmed_change() {
     ids.dedup();
     assert_eq!(ids.len(), rows.len());
     // 所有者はノート作成者のまま変わらない。
-    let owners = sqlx::query_as::<_, (String, String)>(
-        "SELECT DISTINCT owner_issuer, owner_subject FROM webhook_outbox_events",
+    let owners = sqlx::query_scalar::<_, i64>(
+        "SELECT DISTINCT owner_principal_id FROM webhook_outbox_events",
     )
     .fetch_all(&database.pool)
     .await
     .expect("owner query");
-    assert_eq!(owners, vec![(ISSUER.to_string(), "alice".to_string())]);
+    assert_eq!(owners, vec![alice.principal_id().get()]);
 }
 
 /// 文献項目の直接操作と一括取込が、確定した作成・更新・削除ごとに1件のeventになる。
@@ -185,7 +184,7 @@ async fn bibliography_changes_emit_events_for_direct_and_bulk_operations() {
     );
     let item = BibliographyItem::create(
         item_id,
-        alice.identity(),
+        alice.principal(),
         validated_csl_json(
             "smith2024",
             r#"{"id":"smith2024","type":"article-journal","title":"Example"}"#,
@@ -216,7 +215,7 @@ async fn bibliography_changes_emit_events_for_direct_and_bulk_operations() {
         BibliographyItemId::new(
             EntityId::from_str("0197c9bc-0000-7000-8000-0000000000f2").expect("v7 item ID"),
         ),
-        alice.identity(),
+        alice.principal(),
         validated_csl_json(
             "tanaka2025",
             r#"{"id":"tanaka2025","type":"book","title":"Imported"}"#,
@@ -232,7 +231,7 @@ async fn bibliography_changes_emit_events_for_direct_and_bulk_operations() {
                         EntityId::from_str("0197c9bc-0000-7000-8000-0000000000f3")
                             .expect("v7 source ID"),
                     ),
-                    alice.identity(),
+                    alice.principal(),
                     "Zotero".into(),
                     UnixMillis::new(300),
                 )

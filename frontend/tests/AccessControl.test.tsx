@@ -16,7 +16,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("subjectと権限を指定して共有設定を保存する", async () => {
+test("issuer、subject、権限を指定して共有設定を保存する", async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(
@@ -57,11 +57,14 @@ test("subjectと権限を指定して共有設定を保存する", async () => {
     />,
   );
   fireEvent.change(
-    await screen.findByRole("textbox", { name: "利用者subject" }),
+    await screen.findByRole("textbox", { name: "OIDC issuer" }),
     {
-      target: { value: "reader-subject" },
+      target: { value: "https://id.example.test" },
     },
   );
+  fireEvent.change(screen.getByRole("textbox", { name: "利用者subject" }), {
+    target: { value: "reader-subject" },
+  });
   fireEvent.change(screen.getByRole("combobox", { name: "権限" }), {
     target: { value: "edit" },
   });
@@ -71,7 +74,13 @@ test("subjectと権限を指定して共有設定を保存する", async () => {
   await screen.findByText("共有設定を保存しました。");
   const request = fetchMock.mock.calls[1]?.[1] as RequestInit;
   expect(JSON.parse(String(request.body))).toEqual({
-    entries: [{ subject: "reader-subject", permission: "edit" }],
+    entries: [
+      {
+        issuer: "https://id.example.test",
+        subject: "reader-subject",
+        permission: "edit",
+      },
+    ],
   });
   expect(request.headers).toEqual(
     expect.objectContaining({ "if-match": '"rev-1"' }),

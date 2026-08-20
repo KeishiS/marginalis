@@ -19,6 +19,61 @@ fn graph_note(id: &str, title: &str) -> Note {
 }
 
 #[tokio::test]
+async fn every_identity_alias_uses_the_same_owner_and_acl_permissions() {
+    let database = database().await;
+    let note = note_seed(
+        "0197c9bc-0000-7000-8000-000000000099",
+        "alice",
+        "Alias access",
+    )
+    .build();
+    database
+        .create_note(&note, NoteLinks::default())
+        .await
+        .expect("create note");
+    let alice = user("alice");
+    let alice_alias = Identity::new(
+        "https://replacement-id.example.test".into(),
+        "alice-new".into(),
+    )
+    .expect("alias");
+    sqlx::query(
+        "INSERT INTO principal_identities (principal_id, issuer, subject, is_primary)
+         VALUES (?, ?, ?, 0)",
+    )
+    .bind(alice.principal_id().get())
+    .bind(alice_alias.issuer())
+    .bind(alice_alias.subject())
+    .execute(&database.pool)
+    .await
+    .expect("insert alias");
+    let alias_actor = marginalis_application::PrincipalDirectory::resolve(&database, &alice_alias)
+        .await
+        .expect("resolve alias")
+        .expect("known alias");
+    assert_eq!(
+        snapshot_access(&database, &alias_actor, note.note_id()).await,
+        Ok(Some(NoteAccess::Manage))
+    );
+
+    assert!(
+        database
+            .replace_note_acl(
+                &alias_actor,
+                note.note_id(),
+                &[NoteAclEntry::new(
+                    alias_actor.principal().clone(),
+                    NotePermission::Read,
+                )],
+                Revision::INITIAL,
+                UnixMillis::new(2),
+            )
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn single_source_updates_and_purges_notes_transactionally() {
     let database = database().await;
     let note_id = note_id("0197c9bc-0000-7000-8000-000000000001");
@@ -196,7 +251,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .expect("store ACL");
     database
         .replace_math_macros(
-            alice.identity(),
+            alice.principal(),
             &[MathMacro {
                 name: "bm".into(),
                 replacement: r"\boldsymbol{#1}".into(),
@@ -212,7 +267,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
         .expect("export snapshot");
     let plan = RestorePlan::new(snapshot.clone(), vec![(note_id, note_id)], Vec::new())
         .expect("valid restore plan");
-    let imported_database = super::database().await;
+    let imported_database = super::empty_database().await;
     imported_database
         .restore(&plan)
         .await
@@ -340,7 +395,7 @@ async fn single_source_updates_and_purges_notes_transactionally() {
     assert_eq!(graph.citations.len(), 1);
     assert_eq!(graph.works[0].title.as_deref(), Some("Preserved work"));
     let macros = database
-        .read_math_macros(alice.identity())
+        .read_math_macros(alice.principal())
         .await
         .expect("restored owner macros");
     assert_eq!(macros.macros[0].name, "bm");
@@ -436,23 +491,7 @@ async fn note_access_levels_follow_one_decision_table_and_acl_failures_roll_back
         Err(SqliteStoreError::NotFound)
     );
 
-    let invalid_cross_issuer = NoteAclEntry::new(
-        Identity::new("https://other-id.example.test".into(), "reader".into())
-            .expect("other issuer"),
-        NotePermission::Edit,
-    );
-    assert!(
-        database
-            .replace_note_acl(
-                &owner,
-                note_id,
-                &[invalid_cross_issuer],
-                changed.revision(),
-                UnixMillis::new(130),
-            )
-            .await
-            .is_err()
-    );
+    // issuer制限は設定値を持つapplication境界で検査する。SQLiteは解決済みprincipalだけを扱う。
     let unchanged = database
         .accessible_note(&owner, note_id)
         .await
@@ -514,7 +553,7 @@ async fn provenance_filters_and_review_state_follow_the_current_revision() {
     let note_id = note_id("0197c9bc-0000-7000-8000-000000000021");
     let note = Note::create(
         note_id,
-        owner.identity(),
+        owner.principal(),
         draft("確認対象", "= 確認対象\n\n本文", &["調査"]),
         UnixMillis::new(100),
         NoteCreationSource::Rest,
@@ -655,7 +694,7 @@ async fn provenance_filters_and_review_state_follow_the_current_revision() {
         .expect("change bibliography");
     database
         .replace_math_macros(
-            owner.identity(),
+            owner.principal(),
             &[MathMacro {
                 name: "bm".into(),
                 replacement: r"\boldsymbol{#1}".into(),

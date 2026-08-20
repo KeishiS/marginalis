@@ -58,11 +58,40 @@ pkgs.testers.nixosTest {
     machine.succeed(
       "journalctl -u marginalis-migrate-database.service -o cat | "
       + "grep -F 'maintenance.database_migration.completed' | "
-      + "grep -F 'from_schema=22' | grep -F 'to_schema=22' | grep -Fq 'applied_migrations=0'"
+      + "grep -F 'from_schema=23' | grep -F 'to_schema=23' | grep -Fq 'applied_migrations=0'"
     )
     machine.succeed(
       "! find /var/lib/marginalis-backups/test -maxdepth 1 -type f "
       + "-name 'database-migration-*.sqlite3' -print -quit | grep -q ."
+    )
+    machine.succeed("systemctl stop marginalis.service")
+    machine.succeed("rm -f /var/lib/marginalis/marginalis.sqlite*")
+    machine.succeed(
+      "sqlite3 /var/lib/marginalis/marginalis.sqlite "
+      + "'CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY NOT NULL) STRICT; "
+      + "INSERT INTO schema_migrations (version) VALUES (22)'"
+    )
+    machine.succeed(
+      "sqlite3 /var/lib/marginalis/marginalis.sqlite "
+      + "< ${../../crates/marginalis-sqlite/src/tests/schema_22.sql}"
+    )
+    machine.succeed(
+      "chown marginalis:marginalis /var/lib/marginalis/marginalis.sqlite && "
+      + "chmod 0600 /var/lib/marginalis/marginalis.sqlite"
+    )
+    machine.succeed("systemctl start marginalis-migrate-database.service")
+    machine.succeed(
+      "journalctl -u marginalis-migrate-database.service -o cat | "
+      + "grep -F 'maintenance.database_migration.completed' | "
+      + "grep -F 'from_schema=22' | grep -F 'to_schema=23' | grep -Fq 'applied_migrations=1'"
+    )
+    machine.succeed(
+      "backup=$(find /var/lib/marginalis-backups/test -maxdepth 1 -type f "
+      + "-name 'database-migration-*.sqlite3'); "
+      + "test -f \"$backup\"; test $(stat -c %a \"$backup\") = 600; "
+      + "test $(sqlite3 \"$backup\" 'SELECT MAX(version) FROM schema_migrations') -eq 22; "
+      + "test $(sqlite3 /var/lib/marginalis/marginalis.sqlite "
+      + "'SELECT MAX(version) FROM schema_migrations') -eq 23"
     )
     machine.succeed("systemctl start marginalis.service")
     machine.wait_until_succeeds(
@@ -129,7 +158,7 @@ pkgs.testers.nixosTest {
       + "--input \"$backup/marginalis-archive.json\"; "
       + "test $(sqlite3 /tmp/restored.sqlite 'SELECT COUNT(*) FROM notes') -eq 1; "
       + "test $(sqlite3 /tmp/restored.sqlite "
-      + "\"SELECT COUNT(*) FROM notes WHERE deleted_at_ms IS NOT NULL AND revision = 1 "
+      + "\"SELECT COUNT(*) FROM note_details WHERE deleted_at_ms IS NOT NULL AND revision = 1 "
       + "AND creator_issuer = 'https://id.example.test' AND creator_subject = 'recent'\") -eq 1; "
       + "test $(sqlite3 /tmp/restored.sqlite "
       + "\"SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'note_acl'\") -eq 1"
@@ -188,13 +217,14 @@ pkgs.testers.nixosTest {
     machine.succeed("systemctl stop marginalis.service")
     machine.succeed(
       "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
-      + "'PRAGMA journal_mode=DELETE; UPDATE schema_migrations SET version = 1'"
+      + "'PRAGMA journal_mode=DELETE; DELETE FROM schema_migrations; "
+      + "INSERT INTO schema_migrations (version) VALUES (1)'"
     )
     machine.fail("systemctl start marginalis-diagnose.service")
     machine.succeed(
       "journalctl -u marginalis-diagnose.service -o cat | "
       + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
-      + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 22'"
+      + "'.database.schema.ok == false and .database.schema.actual == 1 and .database.schema.expected == 23'"
     )
     machine.succeed(
       "runuser -u marginalis -- sqlite3 /var/lib/marginalis/marginalis.sqlite "
@@ -221,7 +251,7 @@ pkgs.testers.nixosTest {
     machine.execute("systemctl start marginalis.service")
     machine.wait_until_succeeds(
       "timeout 5s journalctl --no-pager -u marginalis.service -o cat | "
-      + "grep -F 'unsupported database schema history [5]; expected [22]'"
+      + "grep -F 'unsupported database schema history [5]; expected [22, 23]'"
     )
     machine.succeed("systemctl stop marginalis.service")
     machine.succeed(
@@ -238,7 +268,7 @@ pkgs.testers.nixosTest {
           + "grep '^{\"status\":\"failed\"' | tail -1 | jq -e "
           + "'.database.schema.ok == false "
           + "and .database.schema.actual == 5 "
-          + "and .database.schema.expected == 22 "
+          + "and .database.schema.expected == 23 "
           + "and .database.integrity.ok "
           + "and .database.integrity.actual == \"ok\" "
           + "and .database.foreign_keys.ok "

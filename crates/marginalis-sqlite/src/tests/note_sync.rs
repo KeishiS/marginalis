@@ -125,10 +125,9 @@ async fn access_revocation_never_returns_source_and_tombstone_survives_note_purg
         .expect("purge note");
     assert_eq!(
         sqlx::query_scalar::<_, String>(
-            "SELECT reason FROM note_sync_changes WHERE issuer = ? AND subject = ? AND note_id = ?"
+            "SELECT reason FROM note_sync_changes WHERE principal_id = ? AND note_id = ?"
         )
-        .bind(alice.issuer())
-        .bind(alice.subject())
+        .bind(alice.principal_id().get())
         .bind(id.to_string())
         .fetch_one(&database.pool)
         .await

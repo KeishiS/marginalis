@@ -35,24 +35,21 @@ impl SqliteDatabase {
              SET review_tracking_known = 1,
                  reviewed_revision = revision + 1,
                  reviewed_at_ms = ?,
-                 reviewer_issuer = ?,
-                 reviewer_subject = ?,
+                 reviewer_principal_id = ?,
                  updated_at_ms = ?,
                  revision = revision + 1
              WHERE note_id = ? AND revision = ? AND deleted_at_ms IS NULL
                AND EXISTS (SELECT 1 FROM note_access access
                            WHERE access.note_id = notes.note_id
-                             AND access.issuer = ? AND access.subject = ?
+                             AND access.principal_id = ?
                              AND access.access_level >= 3)",
         )
         .bind(reviewed_at.get())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(reviewed_at.get())
         .bind(note_id.to_string())
         .bind(expected_revision.get())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;

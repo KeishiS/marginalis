@@ -1,6 +1,8 @@
 //! 検証済みSQLite退避を伴う、明示的な前進migration。
 
-use crate::schema::{MIGRATIONS, Migration, SCHEMA_VERSION, validate_schema_history_for};
+use crate::schema::{
+    INITIAL_SCHEMA, MIGRATIONS, Migration, SCHEMA_VERSION, validate_schema_history_for,
+};
 use sqlx::{
     Connection, SqliteConnection,
     sqlite::{SqliteConnectOptions, SqliteLockingMode},
@@ -122,6 +124,14 @@ async fn migrate_database_with(
         sqlx::raw_sql(migration.sql)
             .execute(&mut *transaction)
             .await?;
+        if migration.rebuild_current_schema {
+            sqlx::raw_sql(INITIAL_SCHEMA)
+                .execute(&mut *transaction)
+                .await?;
+            sqlx::raw_sql(migration.copy_sql)
+                .execute(&mut *transaction)
+                .await?;
+        }
         sqlx::query("INSERT INTO schema_migrations (version) VALUES (?)")
             .bind(migration.to)
             .execute(&mut *transaction)
@@ -314,16 +324,22 @@ mod tests {
     use sqlx::Executor as _;
     use std::fs;
 
+    const SCHEMA_22: &str = include_str!("tests/schema_22.sql");
+
     const TEST_MIGRATIONS: &[Migration] = &[
         Migration {
             from: 22,
             to: 23,
             sql: "ALTER TABLE migration_fixture ADD COLUMN migrated_value TEXT NOT NULL DEFAULT 'first';",
+            rebuild_current_schema: false,
+            copy_sql: "",
         },
         Migration {
             from: 23,
             to: 24,
             sql: "UPDATE migration_fixture SET migrated_value = 'second';",
+            rebuild_current_schema: false,
+            copy_sql: "",
         },
     ];
 
@@ -443,6 +459,8 @@ mod tests {
             from: 22,
             to: 23,
             sql: "ALTER TABLE migration_fixture ADD COLUMN temporary_value TEXT; SELECT missing FROM nowhere;",
+            rebuild_current_schema: false,
+            copy_sql: "",
         }];
 
         migrate_database_with(&database_url, &backup, &failing, 23)
@@ -469,6 +487,175 @@ mod tests {
             .expect("migration can be retried with a new backup path");
         assert_eq!(retried.applied_migrations, 2);
         assert!(retry_backup.is_file());
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[tokio::test]
+    async fn schema_22_data_is_rebuilt_as_the_same_schema_created_fresh_at_23() {
+        let (directory, database, backup) = test_paths("schema-22-to-23");
+        let options = SqliteConnectOptions::new()
+            .filename(&database)
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let mut connection = SqliteConnection::connect_with(&options)
+            .await
+            .expect("schema 22 connection");
+        sqlx::query("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY NOT NULL) STRICT")
+            .execute(&mut connection)
+            .await
+            .expect("schema history");
+        sqlx::query("INSERT INTO schema_migrations (version) VALUES (22)")
+            .execute(&mut connection)
+            .await
+            .expect("baseline history");
+        sqlx::raw_sql(SCHEMA_22)
+            .execute(&mut connection)
+            .await
+            .expect("schema 22");
+        sqlx::raw_sql(
+            r#"
+            INSERT INTO notes (
+                note_id, creator_issuer, creator_subject, title, source, tags_json,
+                created_at_ms, updated_at_ms, revision, deleted_at_ms, created_via,
+                review_tracking_known, reviewed_revision, reviewed_at_ms,
+                reviewer_issuer, reviewer_subject
+            ) VALUES (
+                'note-1', 'https://id.example.test', 'alice', '題名', '= 題名', '[]',
+                1, 2, 1, NULL, 'web', 1, 1, 2,
+                'https://id.example.test', 'alice'
+            );
+            INSERT INTO note_acl (note_id, issuer, subject, permission)
+            VALUES ('note-1', 'https://id.example.test', 'bob', 'read');
+            INSERT INTO bibliography_items (
+                item_id, owner_issuer, owner_subject, citation_key, csl_json,
+                created_at_ms, updated_at_ms, revision
+            ) VALUES (
+                'item-1', 'https://id.example.test', 'alice', 'smith2026',
+                '{"id":"smith2026","type":"book"}', 1, 2, 1
+            );
+            INSERT INTO math_macro_settings (owner_issuer, owner_subject, macros_json, revision)
+            VALUES ('https://id.example.test', 'alice', '[]', 1);
+            INSERT INTO web_sessions (
+                session_id_hash, csrf_token_hash, issuer, subject, issued_at_ms,
+                last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms, revoked_at_ms
+            ) VALUES (X'01', X'02', 'https://id.example.test', 'alice', 1, 2, 3, 4, NULL);
+            INSERT INTO mcp_clients (
+                client_id, display_name, redirect_uris_json, registration_method, registered_at_ms
+            ) VALUES ('client-1', 'Client', '[]', 'dynamic', 1);
+            INSERT INTO mcp_access_tokens (
+                token_hash, client_id, resource_uri, issuer, subject, scopes,
+                expires_at_ms, revoked_at_ms, last_used_at_ms, token_family_id
+            ) VALUES (
+                X'03', 'client-1', 'https://app.example.test/mcp',
+                'https://id.example.test', 'alice', 'notes:read', 10, NULL, NULL,
+                zeroblob(32)
+            );
+            INSERT INTO webhook_subscriptions (
+                subscription_id, owner_issuer, owner_subject, url, secret,
+                event_kinds_json, state, disabled_reason, created_at_ms, updated_at_ms, revision
+            ) VALUES (
+                'subscription-1', 'https://id.example.test', 'alice',
+                'https://receiver.example.test/hook', 'secret', '["note.created"]',
+                'active', NULL, 1, 1, 1
+            );
+            INSERT INTO webhook_outbox_events (
+                event_sequence, event_id, owner_issuer, owner_subject, event_kind,
+                target_id, revision, occurred_at_ms
+            ) VALUES (
+                20, 'event-1', 'https://id.example.test', 'alice',
+                'note.created', 'note-1', 1, 2
+            );
+            UPDATE webhook_deliveries SET state = 'delivered', attempt_count = 1,
+                last_attempted_at_ms = 3 WHERE event_sequence = 20;
+            "#,
+        )
+        .execute(&mut connection)
+        .await
+        .expect("representative schema 22 data");
+        connection.close().await.expect("close schema 22");
+
+        let report = migrate_database(&format!("sqlite:{}", database.display()), &backup)
+            .await
+            .expect("migrate schema 22");
+        assert_eq!((report.from_version, report.to_version), (22, 23));
+
+        let mut migrated = SqliteConnection::connect_with(
+            &SqliteConnectOptions::new()
+                .filename(&database)
+                .create_if_missing(false)
+                .foreign_keys(true),
+        )
+        .await
+        .expect("migrated database");
+        let identities = sqlx::query_as::<_, (i64, String, String)>(
+            "SELECT principal_id, issuer, subject FROM principal_identities ORDER BY principal_id",
+        )
+        .fetch_all(&mut migrated)
+        .await
+        .expect("principal identities");
+        assert_eq!(
+            identities,
+            vec![
+                (1, "https://id.example.test".into(), "alice".into()),
+                (2, "https://id.example.test".into(), "bob".into()),
+            ]
+        );
+        let note_owner = sqlx::query_as::<_, (i64, Option<i64>)>(
+            "SELECT creator_principal_id, reviewer_principal_id FROM notes WHERE note_id = 'note-1'",
+        )
+        .fetch_one(&mut migrated)
+        .await
+        .expect("migrated note");
+        assert_eq!(note_owner, (1, Some(1)));
+        let session_identity = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT principal_id, authenticated_identity_id FROM web_sessions",
+        )
+        .fetch_one(&mut migrated)
+        .await
+        .expect("migrated session");
+        assert_eq!(session_identity, (1, 1));
+        let delivery = sqlx::query_as::<_, (String, i64, String, i64)>(
+            "SELECT subscription_id, event_sequence, state, attempt_count FROM webhook_deliveries",
+        )
+        .fetch_one(&mut migrated)
+        .await
+        .expect("migrated delivery");
+        assert_eq!(
+            delivery,
+            ("subscription-1".into(), 20, "delivered".into(), 1)
+        );
+
+        let fresh_path = directory.join("fresh.sqlite3");
+        let mut fresh = SqliteConnection::connect_with(
+            &SqliteConnectOptions::new()
+                .filename(&fresh_path)
+                .create_if_missing(true)
+                .foreign_keys(true),
+        )
+        .await
+        .expect("fresh connection");
+        sqlx::query("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY NOT NULL) STRICT")
+            .execute(&mut fresh)
+            .await
+            .expect("fresh history table");
+        sqlx::raw_sql(INITIAL_SCHEMA)
+            .execute(&mut fresh)
+            .await
+            .expect("fresh schema");
+        let schema_query = "SELECT type, name, sql FROM sqlite_schema \
+                            WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name";
+        let migrated_schema = sqlx::query_as::<_, (String, String, Option<String>)>(schema_query)
+            .fetch_all(&mut migrated)
+            .await
+            .expect("migrated schema objects");
+        let fresh_schema = sqlx::query_as::<_, (String, String, Option<String>)>(schema_query)
+            .fetch_all(&mut fresh)
+            .await
+            .expect("fresh schema objects");
+        assert_eq!(migrated_schema, fresh_schema);
+
+        migrated.close().await.expect("close migrated database");
+        fresh.close().await.expect("close fresh database");
         fs::remove_dir_all(directory).expect("remove test directory");
     }
 

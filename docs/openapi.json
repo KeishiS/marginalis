@@ -967,6 +967,9 @@
       "NoteAclEntry": {
         "additionalProperties": false,
         "properties": {
+          "issuer": {
+            "type": "string"
+          },
           "permission": {
             "$ref": "#/components/schemas/NotePermission"
           },
@@ -977,6 +980,7 @@
           }
         },
         "required": [
+          "issuer",
           "subject",
           "permission"
         ],

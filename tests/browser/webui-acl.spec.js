@@ -69,9 +69,12 @@ test("ACLは所有者、閲覧者、編集者、対象外利用者の境界を�
   await page.getByRole("link", { name: "閲覧画面へ戻る" }).click();
   await page.getByRole("link", { name: "共有設定" }).click();
 
+  const issuer = page.getByRole("textbox", { name: "OIDC issuer" });
   const subject = page.getByRole("textbox", { name: "利用者subject" });
+  await issuer.fill("https://id.example.test:8443/oauth2/openid/marginalis");
   await subject.fill("reader-subject");
   await page.getByRole("button", { name: "共有先を追加" }).click();
+  await issuer.fill("https://id.example.test:8443/oauth2/openid/marginalis");
   await subject.fill("editor-subject");
   await page.getByRole("combobox", { name: "権限" }).selectOption("edit");
   await page.getByRole("button", { name: "共有先を追加" }).click();

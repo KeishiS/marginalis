@@ -41,7 +41,7 @@ fn review_details(note: Note) -> NoteReviewDetails {
         status: note.review_status(),
         reviewed_revision: last_review.map(|review| review.revision()),
         reviewed_at: last_review.map(|review| review.reviewed_at()),
-        reviewer: last_review.map(|review| review.reviewer().clone()),
+        reviewer: last_review.map(|review| review.reviewer().primary_identity().clone()),
     }
 }
 
@@ -49,12 +49,12 @@ fn review_details(note: Note) -> NoteReviewDetails {
 mod tests {
     use std::sync::Arc;
 
-    use marginalis_domain::{Actor, NoteCreationSource, NoteDraft, NoteReviewStatus, Revision};
+    use marginalis_domain::{NoteCreationSource, NoteDraft, NoteReviewStatus, Revision};
 
     use crate::NoteWritePolicy;
 
     use crate::notes::test_support::{
-        AcceptContent, EmptyLibrary, MemoryNotes, NoMathMacros, note_application,
+        AcceptContent, EmptyLibrary, MemoryNotes, NoMathMacros, actor, note_application,
     };
 
     #[tokio::test]
@@ -66,8 +66,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
         let note = application
             .create_note(
                 actor.clone(),
@@ -100,7 +99,10 @@ mod tests {
             reviewed.reviewed_at.map(|time| time.get()),
             Some(1_700_000_000_000)
         );
-        assert_eq!(reviewed.reviewer.as_ref(), Some(actor.identity()));
+        assert_eq!(
+            reviewed.reviewer.as_ref(),
+            Some(actor.principal().primary_identity())
+        );
 
         assert_eq!(
             application

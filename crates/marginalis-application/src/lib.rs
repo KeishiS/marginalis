@@ -50,6 +50,7 @@ pub use bibliography_import::{
 pub use citation::CitationStyle;
 pub use identity::{
     ExternalIdentity, IdentityProvider, IdentityProviderError, OidcAuthenticationApplication,
+    PrincipalDirectory,
 };
 pub use math_macros::{
     MAX_MATH_MACRO_ARGUMENTS, MAX_MATH_MACRO_NAME_CHARACTERS,
@@ -168,6 +169,7 @@ pub enum NoteValidationCode {
     UnsupportedDocumentAttribute,
     PreprocessorDirectiveDisabled,
     UnsupportedCitationStyle,
+    InvalidAclIssuer,
     InvalidAclSubject,
     DuplicateAclSubject,
     OwnerInAcl,
@@ -194,6 +196,7 @@ impl NoteValidationCode {
             Self::UnsupportedDocumentAttribute => "unsupported_document_attribute",
             Self::PreprocessorDirectiveDisabled => "preprocessor_directive_disabled",
             Self::UnsupportedCitationStyle => "unsupported_citation_style",
+            Self::InvalidAclIssuer => "invalid_acl_issuer",
             Self::InvalidAclSubject => "invalid_acl_subject",
             Self::DuplicateAclSubject => "duplicate_acl_subject",
             Self::OwnerInAcl => "owner_in_acl",
@@ -203,6 +206,7 @@ impl NoteValidationCode {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclChange {
+    pub issuer: String,
     pub subject: String,
     pub permission: NotePermission,
 }

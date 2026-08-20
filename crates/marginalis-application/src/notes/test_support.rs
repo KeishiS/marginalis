@@ -10,13 +10,15 @@ use async_trait::async_trait;
 use marginalis_domain::{
     Actor, BibliographyItem, DeletedNoteListEntry, EntityId, Identity, Note, NoteAccess,
     NoteAclEntry, NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewRecord,
-    NoteReviewTracking, NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan,
+    NoteReviewTracking, NoteSummary, NoteValidationTarget, PrincipalId, PrincipalRef, Revision,
+    UnixMillis, Utf8ByteSpan,
 };
 
 use crate::{
     BibliographyRepository, CitationStyle, Clock, MathMacro, MathMacroRepository,
     MathMacroSettings, NoteAclState, NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile,
-    NoteRenderContext, NoteValidationDiagnostic, Random, StorageError, ValidatedNoteDraft,
+    NoteRenderContext, NoteValidationDiagnostic, PrincipalDirectory, Random, StorageError,
+    ValidatedNoteDraft,
 };
 
 use super::{
@@ -44,6 +46,8 @@ pub(super) fn note_application(
         bibliography,
         math_macros,
         links: Arc::new(NoLinks),
+        principals: Arc::new(TestPrincipalDirectory),
+        acl_issuer: "https://id.example.test".into(),
         clock: Arc::new(FixedClock),
         random: Arc::new(FixedRandom),
     })
@@ -230,7 +234,7 @@ impl NoteReviewRepository for MemoryNotes {
             .await?
             .filter(|accessible| {
                 accessible.access == NoteAccess::Manage
-                    && accessible.note.owner() == actor.identity()
+                    && accessible.note.owner() == actor.principal()
                     && accessible.note.deleted_at().is_none()
             })
             .map(|accessible| accessible.note)
@@ -266,7 +270,7 @@ impl NoteReviewRepository for MemoryNotes {
             review: NoteReviewTracking::tracked(Some(NoteReviewRecord::new(
                 next_revision,
                 reviewed_at,
-                actor.identity().clone(),
+                actor.principal().clone(),
             ))),
         })
         .map_err(|_| StorageError::CorruptData)?;
@@ -398,6 +402,53 @@ impl Random for FixedRandom {
     }
 }
 
+pub(super) fn identity(subject: &str) -> Identity {
+    Identity::new("https://id.example.test".into(), subject.into()).expect("valid identity")
+}
+
+pub(super) fn principal(subject: &str, id: i64) -> PrincipalRef {
+    PrincipalRef::new(
+        PrincipalId::new(id).expect("positive principal ID"),
+        identity(subject),
+    )
+}
+
+pub(super) fn actor(subject: &str, id: i64) -> Actor {
+    Actor::for_single_identity(
+        PrincipalId::new(id).expect("positive principal ID"),
+        identity(subject),
+    )
+}
+
+pub(super) struct TestPrincipalDirectory;
+
+#[async_trait]
+impl PrincipalDirectory for TestPrincipalDirectory {
+    async fn resolve_or_create_verified(&self, identity: Identity) -> Result<Actor, StorageError> {
+        Ok(Actor::for_single_identity(
+            PrincipalId::new(1).expect("ID"),
+            identity,
+        ))
+    }
+
+    async fn resolve(&self, identity: &Identity) -> Result<Option<Actor>, StorageError> {
+        Ok(Some(Actor::for_single_identity(
+            PrincipalId::new(1).expect("ID"),
+            identity.clone(),
+        )))
+    }
+
+    async fn resolve_or_create_acl_target(
+        &self,
+        identity: Identity,
+    ) -> Result<PrincipalRef, StorageError> {
+        Ok(PrincipalRef::new(
+            PrincipalId::new(2).expect("ID"),
+            identity,
+        ))
+    }
+}
+
 /// 引用のないノートだけを扱う試験用の文献ライブラリ。
 pub(super) struct EmptyLibrary;
 
@@ -413,7 +464,7 @@ impl BibliographyRepository for EmptyLibrary {
 
     async fn items_by_citation_keys(
         &self,
-        _owner: &Identity,
+        _owner: &PrincipalRef,
         _citation_keys: &[String],
     ) -> Result<Vec<BibliographyItem>, StorageError> {
         Ok(Vec::new())
@@ -461,13 +512,16 @@ pub(super) struct NoMathMacros;
 
 #[async_trait]
 impl MathMacroRepository for NoMathMacros {
-    async fn read_math_macros(&self, _owner: &Identity) -> Result<MathMacroSettings, StorageError> {
+    async fn read_math_macros(
+        &self,
+        _owner: &PrincipalRef,
+    ) -> Result<MathMacroSettings, StorageError> {
         Ok(MathMacroSettings::default())
     }
 
     async fn replace_math_macros(
         &self,
-        _owner: &Identity,
+        _owner: &PrincipalRef,
         _macros: &[MathMacro],
         _expected_revision: i64,
     ) -> Result<MathMacroSettings, StorageError> {
@@ -479,7 +533,10 @@ pub(super) struct OwnerMathMacros;
 
 #[async_trait]
 impl MathMacroRepository for OwnerMathMacros {
-    async fn read_math_macros(&self, owner: &Identity) -> Result<MathMacroSettings, StorageError> {
+    async fn read_math_macros(
+        &self,
+        owner: &PrincipalRef,
+    ) -> Result<MathMacroSettings, StorageError> {
         Ok(MathMacroSettings {
             macros: (owner == &OneItemLibrary::owner())
                 .then(|| MathMacro {
@@ -495,7 +552,7 @@ impl MathMacroRepository for OwnerMathMacros {
 
     async fn replace_math_macros(
         &self,
-        _owner: &Identity,
+        _owner: &PrincipalRef,
         _macros: &[MathMacro],
         _expected_revision: i64,
     ) -> Result<MathMacroSettings, StorageError> {
@@ -507,8 +564,8 @@ impl MathMacroRepository for OwnerMathMacros {
 pub(super) struct OneItemLibrary;
 
 impl OneItemLibrary {
-    pub(super) fn owner() -> Identity {
-        Identity::new("https://id.example.test".into(), "alice".into()).expect("owner")
+    pub(super) fn owner() -> PrincipalRef {
+        principal("alice", 1)
     }
 
     fn item() -> BibliographyItem {
@@ -561,7 +618,7 @@ impl BibliographyRepository for OneItemLibrary {
 
     async fn items_by_citation_keys(
         &self,
-        owner: &Identity,
+        owner: &PrincipalRef,
         citation_keys: &[String],
     ) -> Result<Vec<BibliographyItem>, StorageError> {
         if owner != &Self::owner() {

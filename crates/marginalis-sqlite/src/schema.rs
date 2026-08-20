@@ -3,8 +3,8 @@
 use sqlx::SqlitePool;
 
 pub(crate) const BASELINE_SCHEMA_VERSION: i64 = 22;
-pub(crate) const SCHEMA_VERSION: i64 = 22;
-const INITIAL_SCHEMA: &str = include_str!("schema.sql");
+pub(crate) const SCHEMA_VERSION: i64 = 23;
+pub(crate) const INITIAL_SCHEMA: &str = include_str!("schema.sql");
 
 /// 公開済みschema間の前進migration。
 ///
@@ -14,10 +14,18 @@ pub(crate) struct Migration {
     pub(crate) from: i64,
     pub(crate) to: i64,
     pub(crate) sql: &'static str,
+    pub(crate) rebuild_current_schema: bool,
+    pub(crate) copy_sql: &'static str,
 }
 
 // schema 22は前進migrationの基準。最初の変更は#549で22から23へ進める。
-pub(crate) const MIGRATIONS: &[Migration] = &[];
+pub(crate) const MIGRATIONS: &[Migration] = &[Migration {
+    from: 22,
+    to: 23,
+    sql: include_str!("migration_22_to_23_prepare.sql"),
+    rebuild_current_schema: true,
+    copy_sql: include_str!("migration_22_to_23_copy.sql"),
+}];
 
 pub(crate) fn expected_schema_history(migrations: &[Migration]) -> Result<Vec<i64>, sqlx::Error> {
     expected_schema_history_for(migrations, SCHEMA_VERSION)

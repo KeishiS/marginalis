@@ -123,15 +123,15 @@ pub fn create_document_export(
             continue;
         }
         owners
-            .entry(owner_key(note.owner()))
-            .or_insert_with(|| OwnerBuilder::new(note.owner()))
+            .entry(owner_key(note.owner().primary_identity()))
+            .or_insert_with(|| OwnerBuilder::new(note.owner().primary_identity()))
             .notes
             .push(note);
     }
     for item in snapshot.bibliography_items() {
         owners
-            .entry(owner_key(item.owner()))
-            .or_insert_with(|| OwnerBuilder::new(item.owner()))
+            .entry(owner_key(item.owner().primary_identity()))
+            .or_insert_with(|| OwnerBuilder::new(item.owner().primary_identity()))
             .bibliography
             .push(item);
     }
@@ -192,8 +192,8 @@ impl<'a> OwnerBuilder<'a> {
                     .iter()
                     .filter(|entry| entry.note_id() == note.note_id())
                     .map(|entry| DocumentAclEntry {
-                        issuer: entry.identity().issuer().to_owned(),
-                        subject: entry.identity().subject().to_owned(),
+                        issuer: entry.principal().primary_identity().issuer().to_owned(),
+                        subject: entry.principal().primary_identity().subject().to_owned(),
                         permission: entry.permission(),
                     })
                     .collect::<Vec<_>>();
@@ -218,10 +218,10 @@ impl<'a> OwnerBuilder<'a> {
                         reviewed_at_ms: note.last_review().map(|review| review.reviewed_at().get()),
                         reviewer_issuer: note
                             .last_review()
-                            .map(|review| review.reviewer().issuer().to_owned()),
-                        reviewer_subject: note
-                            .last_review()
-                            .map(|review| review.reviewer().subject().to_owned()),
+                            .map(|review| review.reviewer().primary_identity().issuer().to_owned()),
+                        reviewer_subject: note.last_review().map(|review| {
+                            review.reviewer().primary_identity().subject().to_owned()
+                        }),
                     },
                     acl,
                 }
@@ -553,7 +553,7 @@ mod tests {
 
     use marginalis_domain::{
         BibliographyItem, BibliographyItemId, EntityId, NoteCreationSource, NoteId, NoteRestore,
-        NoteReviewRecord, NoteReviewTracking, Revision, UnixMillis,
+        NoteReviewRecord, NoteReviewTracking, PrincipalId, PrincipalRef, Revision, UnixMillis,
     };
 
     use super::*;
@@ -562,10 +562,19 @@ mod tests {
         Identity::new("https://id.example.test".into(), subject.into()).expect("owner")
     }
 
+    fn principal(subject: &str) -> PrincipalRef {
+        let id = match subject {
+            "alice" => 1,
+            "bob" => 2,
+            _ => 3,
+        };
+        PrincipalRef::new(PrincipalId::new(id).expect("ID"), identity(subject))
+    }
+
     fn note(id: &str, title: &str, owner: &str, deleted: bool) -> Note {
         Note::restore(NoteRestore {
             note_id: NoteId::new(EntityId::from_str(id).expect("UUIDv7")),
-            owner: identity(owner),
+            owner: principal(owner),
             draft: marginalis_domain::NoteDraft {
                 title: title.into(),
                 source: format!("= {title}\n\n本文"),
@@ -582,7 +591,7 @@ mod tests {
     }
 
     fn reviewed_note(id: &str, title: &str, owner: &str) -> Note {
-        let owner = identity(owner);
+        let owner = principal(owner);
         Note::restore(NoteRestore {
             note_id: NoteId::new(EntityId::from_str(id).expect("UUIDv7")),
             owner: owner.clone(),
@@ -610,7 +619,7 @@ mod tests {
             BibliographyItemId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-0000000000a1").expect("UUIDv7"),
             ),
-            &identity(owner),
+            &principal(owner),
             marginalis_domain::ValidatedCslJson::new(
                 &serde_json::json!({ "id": citation_key, "type": "book", "title": "Example" }),
             )
@@ -626,7 +635,7 @@ mod tests {
     fn identified_item(id: &str, citation_key: &str, owner: &str) -> BibliographyItem {
         BibliographyItem::create(
             BibliographyItemId::new(EntityId::from_str(id).expect("UUIDv7")),
-            &identity(owner),
+            &principal(owner),
             marginalis_domain::ValidatedCslJson::new(
                 &serde_json::json!({ "id": citation_key, "type": "book", "title": "Example" }),
             )
@@ -912,7 +921,7 @@ mod tests {
             vec![note.clone()],
             vec![marginalis_application::NoteAclSnapshotEntry::new(
                 note.note_id(),
-                identity("bob"),
+                principal("bob"),
                 NotePermission::Read,
             )],
         )

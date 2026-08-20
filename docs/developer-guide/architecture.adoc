@@ -111,19 +111,21 @@ xref:adr/0013-検索投影向けの委任scopeと増分同期.adoc#top[検索投
 取込元、対応情報、所有者の全文献項目と現在値を照合する。一致しない場合は保存を始めず競合として
 拒否する。文献項目、取込元、外部項目との対応情報は、そのtransactionでまとめて更新する。
 外部項目が入力から消えたことを削除の指示として扱わない。
-* *ARCH-AUTHZ-001 — ノートの所有権とACL*: 通常利用者は、作成者の``(issuer, subject)``が自身の
-identityと一致するノートを所有する。同じ``issuer``の個人subjectへ付与されたACLの``read``は閲覧、
-``edit``は閲覧と本文更新を許可する。
+* *ARCH-AUTHZ-001 — ノートの所有権とACL*: 通常利用者は、自身の``PrincipalId``と作成者の
+``PrincipalId``が一致するノートを所有する。個人principalへ付与されたACLの``read``は閲覧、
+``edit``は閲覧と本文更新を許可する。外部identityは入口でprincipalへ一度だけ解決し、SQLの認可条件へ
+``issuer``と``subject``を重ねて持ち込まない。
 所有者は変更不能であり、ACL変更と削除・復元は所有者だけに許可する。サーバー全体の管理者権限や、
 ACLを迂回して全ノートを閲覧する権限は設けない。
-* *ARCH-IDENTITY-001 — 利用者identity*: identityは``(issuer, subject)``で識別する。アプリケーションは
+* *ARCH-IDENTITY-001 — 利用者identityとprincipal*: 外部identityは``(issuer, subject)``で識別し、
+認可と業務データの所有者はSQLite内部の``PrincipalId``で識別する。アプリケーションは
 ローカルpassword、root、登録ポリシーを持たない。``issuer``はuserinfo、query、fragment、制御文字を
 含まない絶対HTTP(S) URL、``subject``は空でなく制御文字を含まない値とし、長さ上限をdomainで
 一元検証する。
 * *ARCH-IDENTITY-002 — 永続的な識別子*: ノートなどの永続的な識別子にはUUIDv7だけを受理する。
 文字列、JSON、データベースからの復元を含むすべての入力経路で同じ検査を行い、検査を省略する
 公開constructorは設けない。
-* *ARCH-DOMAIN-001 — ノートの不変条件*: ``Note``は検証済みの所有者identityと正の値だけを表す
+* *ARCH-DOMAIN-001 — ノートの不変条件*: ``Note``は検証済みの所有者principalと正の値だけを表す
 ``Revision``を保持し、作成日時から更新日時までの順序、削除日時の範囲を生成時と復元時に検査する。
 フィールドを直接変更する公開APIは設けない。
 SQLite行とarchive JSONからの復元も同じconstructorを通し、不整合を各adapterで重複して
@@ -138,7 +140,8 @@ ACL、削除、復元のどの変更でもrevisionの不一致により確認待
 文書書庫からの取り込みでは、書き出し時の本文、所有者、ACLを結び付けたhashと入力を比較し、
 異なる場合に同じrevision更新規則を適用する。
 * *ARCH-AUTHN-001 — OIDC主体の決定*: 利用可否のclaim要件は、IdPの署名検証済みID tokenから
-決める。WebとMCPの同意画面は、同じ``(issuer, subject)``を所有者identityに使用する。
+決める。WebとMCPの同意画面で確認した``(issuer, subject)``は同じ``PrincipalId``へ解決し、
+認可へ使用する。
 * *ARCH-SESSION-001 — sessionとlogin attemptの期限*: Web sessionは24時間のsliding idle期限と7日の
 絶対期限を持つ(共有crateの既定値)。有効性の検証とidle期限の延長は、
 SQLiteの一つの条件付き更新で行う。読み取り後に同じ遅延transactionを更新へ切り替えず、
@@ -175,10 +178,9 @@ redirectへ従わない。例外は運用者が明示したhostに限る。secre
 == 採用済みの保存基盤移行計画
 
 この節は、 xref:adr/0019-利用者の認可は内部principalに結び付けsqliteを前進移行する.adoc#top[ADR 0019]で
-採用した保存基盤の移行計画です。\#548のSQLite前進migration基盤は実装済みです。
-principalへの切替はまだ実装していないため、\#549と\#550が完了するまでは、上の
-``ARCH-IDENTITY-001``、``ARCH-AUTHZ-001``と xref:requirements.adoc#top[現行要件]を現在の動作として
-優先します。
+採用した保存基盤の移行計画です。\#548のSQLite前進migration基盤と、\#549のschema 23および
+``PrincipalId``への切替は実装済みです。identityの引き継ぎを行う管理commandと、alias群を失わない
+archive契約は\#550で追加します。
 
 移行後は、OIDCの``(issuer, subject)``を公開境界のidentityとして維持しながら、認可と業務データの
 所有者をSQLite内部の``PrincipalId``へ結び付けます。認証に使ったidentityをそのまま返す共有session・
@@ -191,8 +193,9 @@ SQLite schemaは22を基準とする前進migrationへ移します。通常の``
 切戻しに使い、互いに代用しません。
 
 実装順は、\#548のmigration基盤、\#549のschema 23と``PrincipalId``への一括切替、\#550のidentity
-引き継ぎとaliasのarchive往復です。外部identityと``PrincipalId``を認可条件として混在させる中間schemaは
-公開しません。その後、\#541のノート版履歴と\#540の添付を``PrincipalId``へ直接結び付けます。
+引き継ぎとaliasのarchive往復です。\#549までの実装では、schema 22に現れるidentityを推測でまとめず、
+完全に一致する組ごとに一つのprincipalへ移しています。その後、\#541のノート版履歴と\#540の添付を
+``PrincipalId``へ直接結び付けます。
 
 == 検索のサービス境界
 

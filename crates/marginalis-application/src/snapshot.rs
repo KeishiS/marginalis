@@ -3,24 +3,24 @@
 use std::collections::{HashMap, HashSet};
 
 use marginalis_domain::{
-    BibliographyImportLink, BibliographyImportSource, BibliographyItem, Identity, Note, NoteId,
-    NotePermission,
+    BibliographyImportLink, BibliographyImportSource, BibliographyItem, Note, NoteId,
+    NotePermission, PrincipalRef,
 };
 
 use crate::{MathMacroSettings, validate_stored_math_macros};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MathMacroSettingsSnapshot {
-    owner: Identity,
+    owner: PrincipalRef,
     settings: MathMacroSettings,
 }
 
 impl MathMacroSettingsSnapshot {
-    pub const fn new(owner: Identity, settings: MathMacroSettings) -> Self {
+    pub const fn new(owner: PrincipalRef, settings: MathMacroSettings) -> Self {
         Self { owner, settings }
     }
 
-    pub const fn owner(&self) -> &Identity {
+    pub const fn owner(&self) -> &PrincipalRef {
         &self.owner
     }
 
@@ -32,15 +32,15 @@ impl MathMacroSettingsSnapshot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclSnapshotEntry {
     note_id: NoteId,
-    identity: Identity,
+    principal: PrincipalRef,
     permission: NotePermission,
 }
 
 impl NoteAclSnapshotEntry {
-    pub const fn new(note_id: NoteId, identity: Identity, permission: NotePermission) -> Self {
+    pub const fn new(note_id: NoteId, principal: PrincipalRef, permission: NotePermission) -> Self {
         Self {
             note_id,
-            identity,
+            principal,
             permission,
         }
     }
@@ -49,8 +49,8 @@ impl NoteAclSnapshotEntry {
         self.note_id
     }
 
-    pub const fn identity(&self) -> &Identity {
-        &self.identity
+    pub const fn principal(&self) -> &PrincipalRef {
+        &self.principal
     }
 
     pub const fn permission(&self) -> NotePermission {
@@ -109,9 +109,8 @@ impl LogicalSnapshot {
             let Some(note) = notes.iter().find(|note| note.note_id() == entry.note_id) else {
                 return Err(invalid_entry);
             };
-            if entry.identity.issuer() != note.creator_issuer()
-                || entry.identity == *note.owner()
-                || !acl_keys.insert((entry.note_id, entry.identity.clone()))
+            if entry.principal == *note.owner()
+                || !acl_keys.insert((entry.note_id, entry.principal.clone()))
             {
                 return Err(invalid_entry);
             }
@@ -301,7 +300,8 @@ mod tests {
     use marginalis_domain::{
         BibliographyContentDigest, BibliographyImportLink, BibliographyImportSource,
         BibliographyImportSourceId, BibliographyItem, BibliographyItemId, EntityId, Identity,
-        NoteCreationSource, NoteDraft, NoteRestore, NoteReviewTracking, Revision, UnixMillis,
+        NoteCreationSource, NoteDraft, NoteRestore, NoteReviewTracking, PrincipalId, PrincipalRef,
+        Revision, UnixMillis,
     };
 
     use super::*;
@@ -311,8 +311,7 @@ mod tests {
             note_id: NoteId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000001").expect("UUIDv7"),
             ),
-            owner: Identity::new("https://id.example.test".into(), "alice".into())
-                .expect("valid owner"),
+            owner: principal("alice", 1),
             draft: NoteDraft {
                 title: "Title".into(),
                 source: "Body".into(),
@@ -331,7 +330,7 @@ mod tests {
     #[test]
     fn snapshot_rejects_dangling_duplicate_and_owner_acl_entries() {
         let note = note();
-        let bob = Identity::new("https://id.example.test".into(), "bob".into()).expect("identity");
+        let bob = principal("bob", 2);
         let read = NoteAclSnapshotEntry::new(note.note_id(), bob, NotePermission::Read);
         assert!(LogicalSnapshot::new(vec![note.clone()], vec![read.clone()]).is_ok());
         assert_eq!(
@@ -386,8 +385,7 @@ mod tests {
 
     #[test]
     fn snapshot_accepts_legacy_tex_unsafe_macro_for_display_boundary_filtering() {
-        let owner = Identity::new("https://id.example.test".into(), "alice".into())
-            .expect("alice identity");
+        let owner = principal("alice", 1);
         let settings = MathMacroSettingsSnapshot::new(
             owner,
             MathMacroSettings {
@@ -409,10 +407,8 @@ mod tests {
 
     #[test]
     fn snapshot_rejects_dangling_and_cross_owner_bibliography_import_links() {
-        let alice = Identity::new("https://id.example.test".into(), "alice".into())
-            .expect("alice identity");
-        let bob =
-            Identity::new("https://id.example.test".into(), "bob".into()).expect("bob identity");
+        let alice = principal("alice", 1);
+        let bob = principal("bob", 2);
         let item_id = BibliographyItemId::new(
             EntityId::from_str("0197c9bc-0000-7000-8000-0000000000b1").expect("UUIDv7"),
         );
@@ -451,5 +447,12 @@ mod tests {
             base.with_bibliography_data(vec![item], vec![wrong_owner_source], vec![link],),
             Err(InvalidSnapshot::InvalidBibliographyImportLink { position: 1 })
         );
+    }
+
+    fn principal(subject: &str, id: i64) -> PrincipalRef {
+        PrincipalRef::new(
+            PrincipalId::new(id).expect("ID"),
+            Identity::new("https://id.example.test".into(), subject.into()).expect("identity"),
+        )
     }
 }

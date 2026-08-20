@@ -7,8 +7,8 @@ use axum::{
 use marginalis_application::NoteListQuery;
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
-    Actor, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore, NoteReviewTracking,
-    Revision, UnixMillis,
+    Actor, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore, NoteReviewTracking, Revision,
+    UnixMillis,
 };
 use std::sync::Mutex;
 use tower::ServiceExt;

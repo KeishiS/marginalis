@@ -45,8 +45,8 @@ pub(super) async fn session(
 ) -> HandlerResult<Json<SessionResponse>> {
     let actor = authenticated_actor(&headers, &state).await?;
     Ok(Json(SessionResponse {
-        issuer: actor.issuer().to_owned(),
-        subject: actor.subject().to_owned(),
+        issuer: actor.authenticated_identity().issuer().to_owned(),
+        subject: actor.authenticated_identity().subject().to_owned(),
     }))
 }
 
@@ -338,8 +338,8 @@ pub(super) async fn read_note_acl(
             .entries
             .into_iter()
             .map(|entry| NoteAclGrantResponse {
-                issuer: entry.identity().issuer().to_owned(),
-                subject: entry.identity().subject().to_owned(),
+                issuer: entry.principal().primary_identity().issuer().to_owned(),
+                subject: entry.principal().primary_identity().subject().to_owned(),
                 permission: entry.permission(),
             })
             .collect(),
@@ -363,6 +363,7 @@ pub(super) async fn replace_note_acl(
                 .entries
                 .into_iter()
                 .map(|entry| NoteAclChange {
+                    issuer: entry.issuer,
                     subject: entry.subject,
                     permission: entry.permission,
                 })

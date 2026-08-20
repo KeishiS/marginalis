@@ -35,15 +35,14 @@ impl SqliteDatabase {
              FROM notes
              JOIN note_access access ON access.note_id = notes.note_id
              WHERE notes.deleted_at_ms IS NULL
-               AND access.issuer = ? AND access.subject = ?
-               AND (?3 IS NULL
-                    OR lower(notes.title) LIKE ?3 ESCAPE '!'
-                    OR lower(notes.source) LIKE ?3 ESCAPE '!'
-                    OR lower(notes.tags_json) LIKE ?3 ESCAPE '!')
+               AND access.principal_id = ?
+               AND (?2 IS NULL
+                    OR lower(notes.title) LIKE ?2 ESCAPE '!'
+                    OR lower(notes.source) LIKE ?2 ESCAPE '!'
+                    OR lower(notes.tags_json) LIKE ?2 ESCAPE '!')
              ORDER BY notes.note_id ASC",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(text.as_deref())
         .fetch_all(&mut *transaction)
         .await
@@ -64,16 +63,14 @@ impl SqliteDatabase {
              JOIN note_access target_access ON target_access.note_id = reference.target_note_id
              JOIN notes source_note ON source_note.note_id = reference.source_note_id
              JOIN notes target_note ON target_note.note_id = reference.target_note_id
-             WHERE source_access.issuer = ? AND source_access.subject = ?
-               AND target_access.issuer = ? AND target_access.subject = ?
+             WHERE source_access.principal_id = ?
+               AND target_access.principal_id = ?
                AND source_note.deleted_at_ms IS NULL
                AND target_note.deleted_at_ms IS NULL
              ORDER BY reference.source_note_id ASC, reference.target_note_id ASC",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
+        .bind(actor.principal_id().get())
         .fetch_all(&mut *transaction)
         .await
         .map_err(database_error)?;
@@ -81,18 +78,16 @@ impl SqliteDatabase {
         let citations = sqlx::query(
             "SELECT citation.source_note_id, citation.citation_key,
                     (SELECT item.csl_json FROM bibliography_items item
-                      WHERE item.owner_issuer = source_note.creator_issuer
-                        AND item.owner_subject = source_note.creator_subject
+                      WHERE item.owner_principal_id = source_note.creator_principal_id
                         AND item.citation_key = citation.citation_key) AS csl_json
              FROM note_citations citation
              JOIN notes source_note ON source_note.note_id = citation.source_note_id
              JOIN note_access access ON access.note_id = citation.source_note_id
-             WHERE access.issuer = ? AND access.subject = ?
+             WHERE access.principal_id = ?
                AND source_note.deleted_at_ms IS NULL
              ORDER BY citation.source_note_id ASC, citation.citation_key ASC",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_all(&mut *transaction)
         .await
         .map_err(database_error)?;

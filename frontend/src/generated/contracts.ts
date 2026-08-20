@@ -137,6 +137,7 @@ export interface NoteAcl {
   entries: NoteAclGrant[];
 }
 export interface NoteAclEntry {
+  issuer: string;
   permission: NotePermission;
   subject: string;
 }
@@ -1067,6 +1068,9 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
   "NoteAclEntry": {
     "additionalProperties": false,
     "properties": {
+      "issuer": {
+        "type": "string"
+      },
       "permission": {
         "$ref": "#/components/schemas/NotePermission"
       },
@@ -1077,6 +1081,7 @@ export const CONTRACT_SCHEMAS: Record<string, unknown> = {
       }
     },
     "required": [
+      "issuer",
       "subject",
       "permission"
     ],

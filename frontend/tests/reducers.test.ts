@@ -99,11 +99,21 @@ describe("accessControlReducer", () => {
     ).toBe("ready");
   });
 
-  it("同じsubjectの権限を重複させず置換する", () => {
+  it("同じissuerとsubjectの権限を重複させず置換する", () => {
     let state = accessControlReducer(initialAccessControlState(1), {
       type: "loaded",
-      entries: [{ subject: "reader", permission: "read" }],
+      entries: [
+        {
+          issuer: "https://id.example.test",
+          subject: "reader",
+          permission: "read",
+        },
+      ],
       revision: 1,
+    });
+    state = accessControlReducer(state, {
+      type: "issuer",
+      value: "https://id.example.test",
     });
     state = accessControlReducer(state, { type: "subject", value: "reader" });
     state = accessControlReducer(state, {
@@ -111,6 +121,12 @@ describe("accessControlReducer", () => {
       value: "edit",
     });
     state = accessControlReducer(state, { type: "add" });
-    expect(state.entries).toEqual([{ subject: "reader", permission: "edit" }]);
+    expect(state.entries).toEqual([
+      {
+        issuer: "https://id.example.test",
+        subject: "reader",
+        permission: "edit",
+      },
+    ]);
   });
 });

@@ -796,6 +796,7 @@ pub struct NoteGraphCitationResponse {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "NoteAclEntry")]
 pub struct NoteAclEntryInput {
+    pub issuer: String,
     #[schemars(length(min = 1, max = 1024))]
     pub subject: String,
     pub permission: NotePermission,

@@ -904,7 +904,11 @@ mod tests {
     }
 
     fn actor() -> Actor {
-        Actor::try_new("https://idp.example.test/".into(), "owner-1".into()).expect("actor")
+        Actor::for_single_identity(
+            marginalis_domain::PrincipalId::new(1).expect("ID"),
+            marginalis_domain::Identity::new("https://idp.example.test/".into(), "owner-1".into())
+                .expect("identity"),
+        )
     }
 
     fn overview(

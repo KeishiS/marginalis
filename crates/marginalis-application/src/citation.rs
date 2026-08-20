@@ -277,7 +277,9 @@ fn non_empty(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use marginalis_domain::{BibliographyItemId, EntityId, Identity, UnixMillis};
+    use marginalis_domain::{
+        BibliographyItemId, EntityId, Identity, PrincipalId, PrincipalRef, UnixMillis,
+    };
     use std::str::FromStr;
 
     use super::*;
@@ -294,7 +296,10 @@ mod tests {
             BibliographyItemId::new(
                 EntityId::from_str("0197c9bc-0000-7000-8000-000000000010").expect("UUIDv7"),
             ),
-            &Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            &PrincipalRef::new(
+                PrincipalId::new(1).expect("ID"),
+                Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+            ),
             marginalis_domain::ValidatedCslJson::new(&csl).expect("valid CSL-JSON"),
             UnixMillis::new(0),
         )

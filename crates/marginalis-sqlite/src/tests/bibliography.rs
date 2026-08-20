@@ -10,7 +10,7 @@ async fn bibliography_is_private_unique_and_revision_guarded() {
     );
     let item = BibliographyItem::create(
         item_id,
-        alice.identity(),
+        alice.principal(),
         validated_csl_json(
             "smith2024",
             r#"{"id":"smith2024","type":"article-journal","title":"Example"}"#,
@@ -102,7 +102,7 @@ async fn citation_keys_are_read_only_from_the_named_owner() {
         BibliographyItemId::new(
             EntityId::from_str("0197c9bc-0000-7000-8000-000000000094").expect("v7 item ID"),
         ),
-        alice.identity(),
+        alice.principal(),
         validated_csl_json(
             "smith2024",
             r#"{"id":"smith2024","type":"article-journal","title":"Alice の登録"}"#,
@@ -113,7 +113,7 @@ async fn citation_keys_are_read_only_from_the_named_owner() {
         BibliographyItemId::new(
             EntityId::from_str("0197c9bc-0000-7000-8000-000000000095").expect("v7 item ID"),
         ),
-        bob.identity(),
+        bob.principal(),
         validated_csl_json(
             "tanaka2025",
             r#"{"id":"tanaka2025","type":"book","title":"Bob の登録"}"#,
@@ -130,21 +130,21 @@ async fn citation_keys_are_read_only_from_the_named_owner() {
     let keys = ["smith2024".to_owned(), "tanaka2025".to_owned()];
     assert_eq!(
         database
-            .items_by_citation_keys(alice.identity(), &keys)
+            .items_by_citation_keys(alice.principal(), &keys)
             .await
             .expect("owner lookup"),
         vec![alice_item]
     );
     assert!(
         database
-            .items_by_citation_keys(alice.identity(), &[])
+            .items_by_citation_keys(alice.principal(), &[])
             .await
             .expect("empty lookup")
             .is_empty()
     );
     assert!(
         database
-            .items_by_citation_keys(alice.identity(), &["unknown".to_owned()])
+            .items_by_citation_keys(alice.principal(), &["unknown".to_owned()])
             .await
             .expect("unknown key lookup")
             .is_empty()
@@ -169,7 +169,7 @@ async fn bibliography_search_treats_like_metacharacters_as_text() {
     ] {
         let item = BibliographyItem::create(
             BibliographyItemId::new(EntityId::from_str(id).expect("v7 item ID")),
-            alice.identity(),
+            alice.principal(),
             ValidatedCslJson::new(&serde_json::json!({
                 "id": key, "type": "book", "title": title
             }))

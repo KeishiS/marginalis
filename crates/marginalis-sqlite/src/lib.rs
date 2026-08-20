@@ -16,6 +16,7 @@ mod note_repository;
 mod note_reviews;
 mod note_sync;
 mod notes;
+mod principal;
 mod schema;
 mod session;
 mod token;

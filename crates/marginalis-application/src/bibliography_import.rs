@@ -336,7 +336,7 @@ impl BibliographyImportUseCases for BibliographyImportApplication {
             (BibliographyImportSourceSelection::New { display_name }, None) => {
                 BibliographyImportSource::create(
                     BibliographyImportSourceId::new(self.random.uuid_v7()),
-                    actor.identity(),
+                    actor.principal(),
                     display_name.trim().to_owned(),
                     imported_at,
                 )
@@ -394,7 +394,9 @@ fn validate_import_input(
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{BibliographyContentDigest, EntityId, Identity};
+    use marginalis_domain::{
+        BibliographyContentDigest, EntityId, Identity, PrincipalId, PrincipalRef,
+    };
 
     use super::*;
 
@@ -410,8 +412,11 @@ mod tests {
         )
     }
 
-    fn owner() -> Identity {
-        Identity::new("https://id.example.test".into(), "alice".into()).expect("identity")
+    fn owner() -> PrincipalRef {
+        PrincipalRef::new(
+            PrincipalId::new(1).expect("ID"),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("identity"),
+        )
     }
 
     fn source() -> BibliographyImportSource {

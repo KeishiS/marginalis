@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use marginalis_domain::Actor;
+use marginalis_domain::{Actor, Identity};
 use mcp_authorization_server::{
     AuthorizationServer, AuthorizationServerConfig, Clock as AuthorizationClock, Principal,
     Random as AuthorizationRandom, ScopeCeilings, Timestamp,
@@ -14,7 +14,7 @@ use crate::{
     McpClientAuthorization, McpClientMetadataResolver, McpEffectiveScopeCeiling, McpOAuthClient,
     McpOAuthRepository, McpOAuthUseCaseError, McpOAuthUseCases, McpResourcePolicy,
     McpScopeCeilingRepository, McpScopeCeilingSetting, McpScopeCeilingUseCaseError, McpTokenPair,
-    McpValidatedAuthorizationRequest, Random, StorageError,
+    McpValidatedAuthorizationRequest, PrincipalDirectory, Random, StorageError,
 };
 
 /// MarginalisのMCP Authorization Server設定。
@@ -44,6 +44,7 @@ impl AuthorizationRandom for RandomAdapter {
 pub struct McpOAuthApplication {
     authorization_server: AuthorizationServer,
     scope_ceiling_repository: Arc<dyn McpScopeCeilingRepository>,
+    principals: Arc<dyn PrincipalDirectory>,
     clock: Arc<dyn Clock>,
 }
 
@@ -51,6 +52,7 @@ impl McpOAuthApplication {
     pub fn new(
         repository: Arc<dyn McpOAuthRepository>,
         scope_ceiling_repository: Arc<dyn McpScopeCeilingRepository>,
+        principals: Arc<dyn PrincipalDirectory>,
         clock: Arc<dyn Clock>,
         random: Arc<dyn Random>,
         resource_policy: McpResourcePolicy,
@@ -65,6 +67,7 @@ impl McpOAuthApplication {
                 MCP_AUTHORIZATION_CONFIG,
             ),
             scope_ceiling_repository,
+            principals,
             clock,
         }
     }
@@ -328,11 +331,17 @@ impl McpOAuthApplication {
         else {
             return Ok(None);
         };
-        let actor = Actor::try_new(
+        let identity = Identity::new(
             authenticated.principal.issuer().into(),
             authenticated.principal.subject().into(),
         )
         .map_err(|_| McpOAuthUseCaseError::Unavailable)?;
+        let actor = self
+            .principals
+            .resolve(&identity)
+            .await
+            .map_err(|_| McpOAuthUseCaseError::Unavailable)?
+            .ok_or(McpOAuthUseCaseError::Unavailable)?;
         Ok(Some(McpAuthenticatedActor {
             actor,
             scopes: authenticated.scopes,
@@ -380,7 +389,8 @@ fn effective_scope_ceiling(
 }
 
 fn principal(actor: &Actor) -> Principal {
-    Principal::new(actor.issuer().into(), actor.subject().into())
+    let identity = actor.authenticated_identity();
+    Principal::new(identity.issuer().into(), identity.subject().into())
 }
 
 fn map_scope_ceiling_repository_error(error: StorageError) -> McpScopeCeilingUseCaseError {

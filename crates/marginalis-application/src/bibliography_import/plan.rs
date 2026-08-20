@@ -300,7 +300,9 @@ fn link(
 mod tests {
     use std::str::FromStr;
 
-    use marginalis_domain::{BibliographyImportSourceId, EntityId, Identity};
+    use marginalis_domain::{
+        BibliographyImportSourceId, EntityId, Identity, PrincipalId, PrincipalRef,
+    };
 
     use super::*;
     use crate::bibliography_import::BibliographyImportSourceSelection;
@@ -317,8 +319,11 @@ mod tests {
         }
     }
 
-    fn owner() -> Identity {
-        Identity::new("https://id.example.test".into(), "alice".into()).expect("owner")
+    fn owner() -> PrincipalRef {
+        PrincipalRef::new(
+            PrincipalId::new(1).expect("ID"),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("owner"),
+        )
     }
 
     fn source() -> BibliographyImportSource {

@@ -3,7 +3,7 @@
 use core::fmt;
 use serde_json::Value;
 
-use super::{EntityId, Identity, Revision, UnixMillis};
+use super::{EntityId, PrincipalRef, Revision, UnixMillis};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BibliographyItemId(EntityId);
@@ -27,7 +27,7 @@ impl fmt::Display for BibliographyItemId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BibliographyItem {
     item_id: BibliographyItemId,
-    owner: Identity,
+    owner: PrincipalRef,
     citation_key: String,
     csl_json: String,
     created_at: UnixMillis,
@@ -131,7 +131,7 @@ impl InvalidBibliographyItem {
 impl BibliographyItem {
     pub fn create(
         item_id: BibliographyItemId,
-        owner: &Identity,
+        owner: &PrincipalRef,
         csl_json: ValidatedCslJson,
         created_at: UnixMillis,
     ) -> Self {
@@ -149,7 +149,7 @@ impl BibliographyItem {
     #[allow(clippy::too_many_arguments)]
     pub fn restore(
         item_id: BibliographyItemId,
-        owner: Identity,
+        owner: PrincipalRef,
         citation_key: String,
         csl_json: String,
         created_at: UnixMillis,
@@ -175,7 +175,7 @@ impl BibliographyItem {
         self.item_id
     }
 
-    pub const fn owner(&self) -> &Identity {
+    pub const fn owner(&self) -> &PrincipalRef {
         &self.owner
     }
 
@@ -240,10 +240,14 @@ fn valid_identifier(value: &str, maximum_bytes: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Identity, PrincipalId};
 
     #[test]
     fn restored_item_requires_valid_matching_csl_json() {
-        let owner = Identity::new("https://issuer.example".into(), "alice".into()).unwrap();
+        let owner = PrincipalRef::new(
+            PrincipalId::new(1).unwrap(),
+            Identity::new("https://issuer.example".into(), "alice".into()).unwrap(),
+        );
         let item_id =
             BibliographyItemId::new("0197c9bc-0000-7000-8000-000000000001".parse().unwrap());
         let restore = |citation_key: &str, csl_json: &str| {

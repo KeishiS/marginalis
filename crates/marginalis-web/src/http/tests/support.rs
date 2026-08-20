@@ -17,7 +17,8 @@ use marginalis_application::{
 use marginalis_domain::{
     Actor, AuthenticatedSession, DeletedNoteListEntry, Identity, Note, NoteAccess,
     NoteCreationSource, NoteDraft, NoteId, NoteListEntry, NoteRestore, NoteReviewTracking,
-    NoteSummary, NoteValidationTarget, Revision, UnixMillis, Utf8ByteSpan, WebSession,
+    NoteSummary, NoteValidationTarget, PrincipalId, PrincipalRef, Revision, UnixMillis,
+    Utf8ByteSpan, WebSession,
 };
 use std::{
     io,
@@ -26,6 +27,24 @@ use std::{
 use tracing_subscriber::fmt::MakeWriter;
 
 // テストから使うfake実装、harness、log捕捉。テスト本体はtests.rsと配下のsubmoduleへ置く。
+
+pub(super) fn test_identity(issuer: &str, subject: &str) -> Identity {
+    Identity::new(issuer.into(), subject.into()).expect("valid identity")
+}
+
+pub(super) fn test_principal(issuer: &str, subject: &str) -> PrincipalRef {
+    PrincipalRef::new(
+        PrincipalId::new(1).expect("positive principal ID"),
+        test_identity(issuer, subject),
+    )
+}
+
+pub(super) fn test_actor(issuer: &str, subject: &str) -> Actor {
+    Actor::for_single_identity(
+        PrincipalId::new(1).expect("positive principal ID"),
+        test_identity(issuer, subject),
+    )
+}
 
 macro_rules! implement_note_use_cases {
     ($type:ty) => {
@@ -223,7 +242,8 @@ macro_rules! implement_note_use_cases {
                     status: note.review_status(),
                     reviewed_revision: last_review.map(|review| review.revision()),
                     reviewed_at: last_review.map(|review| review.reviewed_at()),
-                    reviewer: last_review.map(|review| review.reviewer().clone()),
+                    reviewer: last_review
+                        .map(|review| review.reviewer().primary_identity().clone()),
                 })
             }
 
@@ -241,7 +261,7 @@ macro_rules! implement_note_use_cases {
                     status: marginalis_domain::NoteReviewStatus::Reviewed,
                     reviewed_revision: Some(reviewed_revision),
                     reviewed_at: Some(UnixMillis::new(3)),
-                    reviewer: Some(actor.identity().clone()),
+                    reviewer: Some(actor.authenticated_identity().clone()),
                 })
             }
 
@@ -1009,8 +1029,7 @@ impl WebSessionUseCases for ActiveSessions {
     ) -> Result<Option<AuthenticatedSession>, AuthenticationUseCaseError> {
         Ok(
             (session_id == "active-session").then(|| AuthenticatedSession {
-                actor: Actor::try_new("https://id.example.test".into(), "alice".into())
-                    .expect("valid actor"),
+                actor: test_actor("https://id.example.test", "alice"),
                 idle_expires_at: UnixMillis::new(i64::MAX - 1),
                 absolute_expires_at: UnixMillis::new(i64::MAX),
             }),
@@ -1083,8 +1102,7 @@ impl TestMcpAccessTokens for TestMcpAuthenticator {
                 | "sync-token"
         ) && resource_uri.ends_with("/mcp"))
         .then(|| McpAuthenticatedActor {
-            actor: Actor::try_new("https://kanidm.example.test".into(), "alice".into())
-                .expect("valid actor"),
+            actor: test_actor("https://kanidm.example.test", "alice"),
             scopes: match token.as_str() {
                 "read-token" | "external-token" => vec!["notes:read".into()],
                 "write-token" => vec!["notes:write".into()],
@@ -1557,8 +1575,7 @@ pub(super) fn ui_note(title: &str) -> Note {
                 .parse()
                 .expect("note ID"),
         ),
-        owner: Identity::new("https://id.example.test".into(), "alice".into())
-            .expect("valid owner"),
+        owner: test_principal("https://id.example.test", "alice"),
         draft: NoteDraft {
             title: title.into(),
             source: "本文".into(),
@@ -1581,8 +1598,7 @@ pub(super) fn mcp_note() -> Note {
                 .parse()
                 .expect("note ID"),
         ),
-        owner: Identity::new("https://id.example.test".into(), "alice".into())
-            .expect("valid owner"),
+        owner: test_principal("https://id.example.test", "alice"),
         draft: NoteDraft {
             title: "同期ノート".into(),
             source: "= 同期ノート\n:marginalis-tags: 同期, 試験\n\n本文".into(),

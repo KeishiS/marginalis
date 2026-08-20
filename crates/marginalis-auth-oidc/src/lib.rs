@@ -7,9 +7,9 @@
 use async_trait::async_trait;
 use marginalis_application::{
     AuthenticationUseCaseError, Clock, ExternalIdentity, IdentityProvider, IdentityProviderError,
-    OidcLoginAttempt, OidcLoginAttemptStore, Random, WebSessionUseCases,
+    OidcLoginAttempt, OidcLoginAttemptStore, PrincipalDirectory, Random, WebSessionUseCases,
 };
-use marginalis_domain::{Actor, AuthenticatedSession, UnixMillis, WebSession};
+use marginalis_domain::{Actor, AuthenticatedSession, Identity, UnixMillis, WebSession};
 use oidc_browser_login::{
     CallbackError, LazyOidcLogin,
     session::{Principal, SessionLifetime, WebSessionStore, WebSessions},
@@ -153,6 +153,7 @@ where
 /// 期限は共有crateの既定(idle 24時間/絶対7日)を使う。
 pub struct SharedWebSessions<Store, Time, Entropy> {
     sessions: WebSessions<Store, SharedClock<Time>, SharedEntropy<Entropy>>,
+    principals: std::sync::Arc<dyn PrincipalDirectory>,
 }
 
 impl<Store, Time, Entropy> SharedWebSessions<Store, Time, Entropy>
@@ -161,7 +162,12 @@ where
     Time: Clock,
     Entropy: Random,
 {
-    pub fn new(store: Store, clock: Time, random: Entropy) -> Self {
+    pub fn new(
+        store: Store,
+        clock: Time,
+        random: Entropy,
+        principals: std::sync::Arc<dyn PrincipalDirectory>,
+    ) -> Self {
         Self {
             sessions: WebSessions::new(
                 store,
@@ -169,12 +175,13 @@ where
                 SharedEntropy(random),
                 SessionLifetime::default(),
             ),
+            principals,
         }
     }
 }
 
-fn actor_from_principal(principal: &Principal) -> Result<Actor, AuthenticationUseCaseError> {
-    Actor::try_new(
+fn identity_from_principal(principal: &Principal) -> Result<Identity, AuthenticationUseCaseError> {
+    Identity::new(
         principal.issuer().to_owned(),
         principal.subject().to_owned(),
     )
@@ -201,7 +208,12 @@ where
             return Ok(None);
         };
         Ok(Some(AuthenticatedSession {
-            actor: actor_from_principal(&session.principal)?,
+            actor: self
+                .principals
+                .resolve(&identity_from_principal(&session.principal)?)
+                .await
+                .map_err(|_| AuthenticationUseCaseError::Unavailable)?
+                .ok_or(AuthenticationUseCaseError::Unavailable)?,
             idle_expires_at: UnixMillis::new(session.idle_expires_at.get()),
             absolute_expires_at: UnixMillis::new(session.absolute_expires_at.get()),
         }))
@@ -219,7 +231,8 @@ where
     }
 
     async fn issue_session(&self, actor: Actor) -> Result<WebSession, AuthenticationUseCaseError> {
-        let principal = Principal::new(actor.issuer().to_owned(), actor.subject().to_owned())
+        let identity = actor.authenticated_identity();
+        let principal = Principal::new(identity.issuer().to_owned(), identity.subject().to_owned())
             .map_err(|_| AuthenticationUseCaseError::Rejected)?;
         let issued = self
             .sessions

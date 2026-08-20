@@ -5,7 +5,7 @@ use core::{fmt, str::FromStr};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{EntityId, Identity, Revision, UnixMillis};
+use super::{EntityId, PrincipalRef, Revision, UnixMillis};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct NoteId(EntityId);
@@ -29,7 +29,7 @@ impl fmt::Display for NoteId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Note {
     note_id: NoteId,
-    owner: Identity,
+    owner: PrincipalRef,
     title: String,
     source: String,
     tags: Vec<String>,
@@ -127,11 +127,11 @@ impl FromStr for NoteReviewStatus {
 pub struct NoteReviewRecord {
     revision: Revision,
     reviewed_at: UnixMillis,
-    reviewer: Identity,
+    reviewer: PrincipalRef,
 }
 
 impl NoteReviewRecord {
-    pub const fn new(revision: Revision, reviewed_at: UnixMillis, reviewer: Identity) -> Self {
+    pub const fn new(revision: Revision, reviewed_at: UnixMillis, reviewer: PrincipalRef) -> Self {
         Self {
             revision,
             reviewed_at,
@@ -147,7 +147,7 @@ impl NoteReviewRecord {
         self.reviewed_at
     }
 
-    pub const fn reviewer(&self) -> &Identity {
+    pub const fn reviewer(&self) -> &PrincipalRef {
         &self.reviewer
     }
 }
@@ -194,7 +194,7 @@ impl NoteReviewTracking {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteRestore {
     pub note_id: NoteId,
-    pub owner: Identity,
+    pub owner: PrincipalRef,
     pub draft: NoteDraft,
     pub created_at: UnixMillis,
     pub updated_at: UnixMillis,
@@ -207,7 +207,7 @@ pub struct NoteRestore {
 impl Note {
     pub fn create(
         note_id: NoteId,
-        owner: &Identity,
+        owner: &PrincipalRef,
         draft: NoteDraft,
         created_at: UnixMillis,
         created_via: NoteCreationSource,
@@ -270,16 +270,8 @@ impl Note {
         self.note_id
     }
 
-    pub const fn owner(&self) -> &Identity {
+    pub const fn owner(&self) -> &PrincipalRef {
         &self.owner
-    }
-
-    pub fn creator_issuer(&self) -> &str {
-        self.owner.issuer()
-    }
-
-    pub fn creator_subject(&self) -> &str {
-        self.owner.subject()
     }
 
     pub fn title(&self) -> &str {
@@ -396,20 +388,20 @@ pub enum NotePermission {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteAclEntry {
-    identity: Identity,
+    principal: PrincipalRef,
     permission: NotePermission,
 }
 
 impl NoteAclEntry {
-    pub const fn new(identity: Identity, permission: NotePermission) -> Self {
+    pub const fn new(principal: PrincipalRef, permission: NotePermission) -> Self {
         Self {
-            identity,
+            principal,
             permission,
         }
     }
 
-    pub const fn identity(&self) -> &Identity {
-        &self.identity
+    pub const fn principal(&self) -> &PrincipalRef {
+        &self.principal
     }
 
     pub const fn permission(&self) -> NotePermission {
@@ -466,13 +458,19 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::model::InvalidRevision;
+    use crate::model::{Identity, InvalidRevision, PrincipalId};
+
+    fn owner() -> PrincipalRef {
+        PrincipalRef::new(
+            PrincipalId::new(1).expect("principal ID"),
+            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner"),
+        )
+    }
 
     #[test]
     fn note_restoration_enforces_revision_and_time_ordering() {
         let note_id = NoteId::new(EntityId::try_from_uuid(Uuid::now_v7()).expect("UUIDv7"));
-        let owner =
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner");
+        let owner = owner();
         let restore = |created_at, updated_at, revision, deleted_at: Option<i64>| {
             Note::restore(NoteRestore {
                 note_id,
@@ -506,8 +504,7 @@ mod tests {
 
     #[test]
     fn review_status_distinguishes_unknown_pending_current_and_stale() {
-        let owner =
-            Identity::new("https://id.example.test".into(), "alice".into()).expect("valid owner");
+        let owner = owner();
         let current = Revision::new(3).expect("revision");
 
         assert_eq!(

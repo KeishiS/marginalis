@@ -37,7 +37,7 @@ pub use sync::{
 use crate::{
     BibliographyRepository, Clock, MathMacroRepository, NoteAclChange, NoteAclState, NotePreview,
     NoteProfile, NoteRenderContext, NoteReviewDetails, NoteUseCaseError, NoteUseCases, NoteView,
-    NoteWritePolicy, Random, RelatedNotes, StorageError,
+    NoteWritePolicy, PrincipalDirectory, Random, RelatedNotes, StorageError,
 };
 
 /// 可視性を適用してノートを読み取るport。
@@ -201,6 +201,8 @@ pub struct NoteApplicationDependencies {
     pub content: Arc<dyn NoteContent>,
     pub bibliography: Arc<dyn BibliographyRepository>,
     pub math_macros: Arc<dyn MathMacroRepository>,
+    pub principals: Arc<dyn PrincipalDirectory>,
+    pub acl_issuer: String,
     pub links: Arc<dyn NoteLinkResolver>,
     pub clock: Arc<dyn Clock>,
     pub random: Arc<dyn Random>,
@@ -216,6 +218,7 @@ impl NoteApplicationDependencies {
         links: Arc<dyn NoteLinkResolver>,
         clock: Arc<dyn Clock>,
         random: Arc<dyn Random>,
+        acl_issuer: String,
     ) -> Self
     where
         S: NoteQueryRepository
@@ -225,6 +228,7 @@ impl NoteApplicationDependencies {
             + NoteSyncRepository
             + BibliographyRepository
             + MathMacroRepository
+            + PrincipalDirectory
             + 'static,
     {
         Self {
@@ -236,6 +240,8 @@ impl NoteApplicationDependencies {
             content,
             bibliography: storage.clone(),
             math_macros: storage.clone(),
+            principals: storage.clone(),
+            acl_issuer,
             links,
             clock,
             random,
@@ -253,6 +259,8 @@ pub struct NoteApplication {
     content: Arc<dyn NoteContent>,
     bibliography: Arc<dyn BibliographyRepository>,
     math_macros: Arc<dyn MathMacroRepository>,
+    principals: Arc<dyn PrincipalDirectory>,
+    acl_issuer: String,
     links: Arc<dyn NoteLinkResolver>,
     clock: Arc<dyn Clock>,
     random: Arc<dyn Random>,
@@ -269,6 +277,8 @@ impl NoteApplication {
             content: dependencies.content,
             bibliography: dependencies.bibliography,
             math_macros: dependencies.math_macros,
+            principals: dependencies.principals,
+            acl_issuer: dependencies.acl_issuer,
             links: dependencies.links,
             clock: dependencies.clock,
             random: dependencies.random,

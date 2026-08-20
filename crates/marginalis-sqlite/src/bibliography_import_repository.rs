@@ -10,7 +10,7 @@ use marginalis_application::{
 use marginalis_domain::{
     Actor, BibliographyContentDigest, BibliographyImportLink, BibliographyImportMethod,
     BibliographyImportSource, BibliographyImportSourceId, BibliographyItemId, EntityId, Identity,
-    Revision, UnixMillis,
+    PrincipalId, PrincipalRef, Revision, UnixMillis,
 };
 use sqlx::{Row, Sqlite, Transaction};
 
@@ -23,14 +23,13 @@ impl BibliographyImportRepository for SqliteDatabase {
         actor: &Actor,
     ) -> Result<Vec<BibliographyImportSource>, StorageError> {
         let rows = sqlx::query(
-            "SELECT source_id, owner_issuer, owner_subject, method, display_name, revision,
+            "SELECT source_id, owner_principal_id, owner_issuer, owner_subject, method, display_name, revision,
                     created_at_ms, last_imported_at_ms
-             FROM bibliography_import_sources
-             WHERE owner_issuer = ? AND owner_subject = ?
+             FROM bibliography_import_source_details
+             WHERE owner_principal_id = ?
              ORDER BY last_imported_at_ms DESC, source_id",
         )
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_all(&self.pool)
         .await
         .map_err(storage_error)?;
@@ -53,7 +52,7 @@ impl BibliographyImportRepository for SqliteDatabase {
         actor: &Actor,
         commit: BibliographyImportCommit,
     ) -> Result<BibliographyImportResult, StorageError> {
-        if commit.source.owner() != actor.identity() {
+        if commit.source.owner() != actor.principal() {
             return Err(StorageError::NotFound);
         }
         if !commit_is_consistent(&commit) {
@@ -80,18 +79,17 @@ impl BibliographyImportRepository for SqliteDatabase {
         for mutation in &commit.mutations {
             match mutation {
                 BibliographyImportItemMutation::Create { item, link } => {
-                    if item.owner() != actor.identity() {
+                    if item.owner() != actor.principal() {
                         return Err(StorageError::NotFound);
                     }
                     sqlx::query(
                         "INSERT INTO bibliography_items (
-                            item_id, owner_issuer, owner_subject, citation_key, csl_json,
+                            item_id, owner_principal_id, citation_key, csl_json,
                             created_at_ms, updated_at_ms, revision
-                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                         ) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     )
                     .bind(item.item_id().to_string())
-                    .bind(actor.issuer())
-                    .bind(actor.subject())
+                    .bind(actor.principal_id().get())
                     .bind(item.citation_key())
                     .bind(item.csl_json())
                     .bind(item.created_at().get())
@@ -113,14 +111,13 @@ impl BibliographyImportRepository for SqliteDatabase {
                     let result = sqlx::query(
                         "UPDATE bibliography_items
                          SET csl_json = ?, updated_at_ms = ?, revision = revision + 1
-                         WHERE item_id = ? AND owner_issuer = ? AND owner_subject = ?
+                         WHERE item_id = ? AND owner_principal_id = ?
                            AND revision = ?",
                     )
                     .bind(csl_json.encoded())
                     .bind(updated_at.get())
                     .bind(item_id.to_string())
-                    .bind(actor.issuer())
-                    .bind(actor.subject())
+                    .bind(actor.principal_id().get())
                     .bind(expected_revision.get())
                     .execute(&mut *transaction)
                     .await
@@ -137,12 +134,11 @@ impl BibliographyImportRepository for SqliteDatabase {
                 } => {
                     let exists = sqlx::query_scalar::<_, i64>(
                         "SELECT COUNT(*) FROM bibliography_items
-                         WHERE item_id = ? AND owner_issuer = ? AND owner_subject = ?
+                         WHERE item_id = ? AND owner_principal_id = ?
                            AND revision = ?",
                     )
                     .bind(link.item_id().to_string())
-                    .bind(actor.issuer())
-                    .bind(actor.subject())
+                    .bind(actor.principal_id().get())
                     .bind(expected_revision.get())
                     .fetch_one(&mut *transaction)
                     .await
@@ -209,14 +205,13 @@ async fn load_state_in_transaction(
 ) -> Result<BibliographyImportState, StorageError> {
     let source = if let Some(source_id) = source_id {
         sqlx::query(
-            "SELECT source_id, owner_issuer, owner_subject, method, display_name, revision,
+            "SELECT source_id, owner_principal_id, owner_issuer, owner_subject, method, display_name, revision,
                     created_at_ms, last_imported_at_ms
-             FROM bibliography_import_sources
-             WHERE source_id = ? AND owner_issuer = ? AND owner_subject = ?",
+             FROM bibliography_import_source_details
+             WHERE source_id = ? AND owner_principal_id = ?",
         )
         .bind(source_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_optional(&mut **transaction)
         .await
         .map_err(storage_error)?
@@ -230,12 +225,11 @@ async fn load_state_in_transaction(
             "SELECT source_id, external_item_id, item_id, imported_digest,
                     imported_item_revision
              FROM bibliography_import_links
-             WHERE source_id = ? AND owner_issuer = ? AND owner_subject = ?
+             WHERE source_id = ? AND owner_principal_id = ?
              ORDER BY external_item_id",
         )
         .bind(source_id.to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .fetch_all(&mut **transaction)
         .await
         .map_err(storage_error)?;
@@ -246,14 +240,13 @@ async fn load_state_in_transaction(
         Vec::new()
     };
     let rows = sqlx::query(
-        "SELECT item_id, owner_issuer, owner_subject, citation_key, csl_json,
+        "SELECT item_id, owner_principal_id, owner_issuer, owner_subject, citation_key, csl_json,
                 created_at_ms, updated_at_ms, revision
-         FROM bibliography_items
-         WHERE owner_issuer = ? AND owner_subject = ?
+         FROM bibliography_item_details
+         WHERE owner_principal_id = ?
          ORDER BY item_id",
     )
-    .bind(actor.issuer())
-    .bind(actor.subject())
+    .bind(actor.principal_id().get())
     .fetch_all(&mut **transaction)
     .await
     .map_err(storage_error)?;
@@ -291,12 +284,11 @@ async fn persist_source(
         let result = sqlx::query(
             "UPDATE bibliography_import_sources
              SET last_imported_at_ms = ?, revision = revision + 1
-             WHERE source_id = ? AND owner_issuer = ? AND owner_subject = ? AND revision = ?",
+             WHERE source_id = ? AND owner_principal_id = ? AND revision = ?",
         )
         .bind(commit.imported_at.get())
         .bind(commit.source.source_id().to_string())
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(expected_revision.get())
         .execute(&mut **transaction)
         .await
@@ -312,13 +304,12 @@ async fn persist_source(
     }
     sqlx::query(
         "INSERT INTO bibliography_import_sources (
-            source_id, owner_issuer, owner_subject, method, display_name, revision,
+            source_id, owner_principal_id, method, display_name, revision,
             created_at_ms, last_imported_at_ms
-         ) VALUES (?, ?, ?, 'csl_json_file', ?, 1, ?, ?)",
+         ) VALUES (?, ?, 'csl_json_file', ?, 1, ?, ?)",
     )
     .bind(commit.source.source_id().to_string())
-    .bind(actor.issuer())
-    .bind(actor.subject())
+    .bind(actor.principal_id().get())
     .bind(commit.source.display_name())
     .bind(commit.source.created_at().get())
     .bind(commit.imported_at.get())
@@ -335,21 +326,19 @@ async fn persist_link(
 ) -> Result<(), StorageError> {
     let result = sqlx::query(
         "INSERT INTO bibliography_import_links (
-            source_id, external_item_id, item_id, owner_issuer, owner_subject,
+            source_id, external_item_id, item_id, owner_principal_id,
             imported_digest, imported_item_revision
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (source_id, external_item_id) DO UPDATE SET
             imported_digest = excluded.imported_digest,
             imported_item_revision = excluded.imported_item_revision
          WHERE bibliography_import_links.item_id = excluded.item_id
-           AND bibliography_import_links.owner_issuer = excluded.owner_issuer
-           AND bibliography_import_links.owner_subject = excluded.owner_subject",
+           AND bibliography_import_links.owner_principal_id = excluded.owner_principal_id",
     )
     .bind(link.source_id().to_string())
     .bind(link.external_item_id())
     .bind(link.item_id().to_string())
-    .bind(actor.issuer())
-    .bind(actor.subject())
+    .bind(actor.principal_id().get())
     .bind(link.imported_digest().as_bytes().as_slice())
     .bind(link.imported_item_revision().get())
     .execute(&mut **transaction)
@@ -373,13 +362,18 @@ pub(crate) fn decode_source(
         "csl_json_file" => BibliographyImportMethod::CslJsonFile,
         _ => return Err(StorageError::CorruptData),
     };
+    let identity = Identity::new(
+        row.try_get("owner_issuer").map_err(corrupt)?,
+        row.try_get("owner_subject").map_err(corrupt)?,
+    )
+    .map_err(corrupt)?;
+    let owner = PrincipalRef::new(
+        PrincipalId::new(row.try_get("owner_principal_id").map_err(corrupt)?).map_err(corrupt)?,
+        identity,
+    );
     BibliographyImportSource::restore(
         source_id,
-        Identity::new(
-            row.try_get("owner_issuer").map_err(corrupt)?,
-            row.try_get("owner_subject").map_err(corrupt)?,
-        )
-        .map_err(corrupt)?,
+        owner,
         method,
         row.try_get("display_name").map_err(corrupt)?,
         Revision::new(row.try_get("revision").map_err(corrupt)?).map_err(corrupt)?,

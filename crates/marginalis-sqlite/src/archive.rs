@@ -3,7 +3,9 @@
 use marginalis_application::{
     LogicalSnapshot, MathMacroSettingsSnapshot, NoteAclSnapshotEntry, RestorePlan,
 };
-use marginalis_domain::{BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission};
+use marginalis_domain::{
+    BibliographyItem, EntityId, Identity, Note, NoteId, NotePermission, PrincipalId, PrincipalRef,
+};
 use sqlx::Sqlite;
 
 use crate::{SqliteDatabase, SqliteStoreError, database_error, notes::note_from_row};
@@ -12,7 +14,7 @@ impl SqliteDatabase {
     /// SQLite正本のノートとACLを同じ読み取りtransactionから取り出す。
     pub async fn export_archive_snapshot(&self) -> Result<LogicalSnapshot, SqliteStoreError> {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        let rows = sqlx::query("SELECT * FROM notes ORDER BY note_id ASC")
+        let rows = sqlx::query("SELECT * FROM note_details ORDER BY note_id ASC")
             .fetch_all(&mut *transaction)
             .await
             .map_err(database_error)?;
@@ -21,8 +23,12 @@ impl SqliteDatabase {
             .map(note_from_row)
             .collect::<Result<Vec<_>, _>>()?;
         let rows = sqlx::query(
-            "SELECT note_id, issuer, subject, permission
-             FROM note_acl ORDER BY note_id, issuer, subject",
+            "SELECT acl.note_id, acl.principal_id, identity.issuer, identity.subject,
+                    acl.permission
+             FROM note_acl acl
+             JOIN principal_identities identity
+               ON identity.principal_id = acl.principal_id AND identity.is_primary = 1
+             ORDER BY acl.note_id, identity.issuer, identity.subject",
         )
         .fetch_all(&mut *transaction)
         .await
@@ -48,19 +54,23 @@ impl SqliteDatabase {
                 };
                 Ok(NoteAclSnapshotEntry::new(
                     note_id,
-                    Identity::new(
-                        row.try_get("issuer").map_err(database_error)?,
-                        row.try_get("subject").map_err(database_error)?,
-                    )
-                    .map_err(|_| SqliteStoreError::CorruptData)?,
+                    PrincipalRef::new(
+                        PrincipalId::new(row.try_get("principal_id").map_err(database_error)?)
+                            .map_err(|_| SqliteStoreError::CorruptData)?,
+                        Identity::new(
+                            row.try_get("issuer").map_err(database_error)?,
+                            row.try_get("subject").map_err(database_error)?,
+                        )
+                        .map_err(|_| SqliteStoreError::CorruptData)?,
+                    ),
                     permission,
                 ))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let rows = sqlx::query(
-            "SELECT item_id, owner_issuer, owner_subject, citation_key, csl_json,
+            "SELECT item_id, owner_principal_id, owner_issuer, owner_subject, citation_key, csl_json,
                     created_at_ms, updated_at_ms, revision
-             FROM bibliography_items ORDER BY item_id",
+             FROM bibliography_item_details ORDER BY item_id",
         )
         .fetch_all(&mut *transaction)
         .await
@@ -71,9 +81,9 @@ impl SqliteDatabase {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| SqliteStoreError::CorruptData)?;
         let rows = sqlx::query(
-            "SELECT source_id, owner_issuer, owner_subject, method, display_name, revision,
+            "SELECT source_id, owner_principal_id, owner_issuer, owner_subject, method, display_name, revision,
                     created_at_ms, last_imported_at_ms
-             FROM bibliography_import_sources ORDER BY source_id",
+             FROM bibliography_import_source_details ORDER BY source_id",
         )
         .fetch_all(&mut *transaction)
         .await
@@ -97,8 +107,12 @@ impl SqliteDatabase {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| SqliteStoreError::CorruptData)?;
         let rows = sqlx::query(
-            "SELECT owner_issuer, owner_subject, macros_json, revision
-             FROM math_macro_settings ORDER BY owner_issuer, owner_subject",
+            "SELECT settings.owner_principal_id, identity.issuer AS owner_issuer,
+                    identity.subject AS owner_subject, settings.macros_json, settings.revision
+             FROM math_macro_settings settings
+             JOIN principal_identities identity
+               ON identity.principal_id = settings.owner_principal_id AND identity.is_primary = 1
+             ORDER BY identity.issuer, identity.subject",
         )
         .fetch_all(&mut *transaction)
         .await
@@ -107,11 +121,16 @@ impl SqliteDatabase {
             .into_iter()
             .map(|row| {
                 use sqlx::Row;
-                let owner = Identity::new(
+                let identity = Identity::new(
                     row.try_get("owner_issuer").map_err(database_error)?,
                     row.try_get("owner_subject").map_err(database_error)?,
                 )
                 .map_err(|_| SqliteStoreError::CorruptData)?;
+                let owner = PrincipalRef::new(
+                    PrincipalId::new(row.try_get("owner_principal_id").map_err(database_error)?)
+                        .map_err(|_| SqliteStoreError::CorruptData)?,
+                    identity,
+                );
                 let settings = crate::math_macro_repository::decode_settings(row)
                     .map_err(|_| SqliteStoreError::CorruptData)?;
                 Ok(MathMacroSettingsSnapshot::new(owner, settings))
@@ -137,7 +156,8 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error)?;
         let target_has_data = sqlx::query_scalar::<_, bool>(
             "SELECT
-                EXISTS(SELECT 1 FROM notes)
+                EXISTS(SELECT 1 FROM principals)
+                OR EXISTS(SELECT 1 FROM notes)
                 OR EXISTS(SELECT 1 FROM bibliography_items)
                 OR EXISTS(SELECT 1 FROM bibliography_import_sources)
                 OR EXISTS(SELECT 1 FROM bibliography_import_links)
@@ -157,6 +177,24 @@ impl SqliteDatabase {
         .map_err(database_error)?;
         if target_has_data {
             return Err(SqliteStoreError::ArchiveTargetNotEmpty);
+        }
+        for note in notes {
+            ensure_principal(&mut transaction, note.owner()).await?;
+            if let Some(review) = note.last_review() {
+                ensure_principal(&mut transaction, review.reviewer()).await?;
+            }
+        }
+        for item in plan.snapshot().bibliography_items() {
+            ensure_principal(&mut transaction, item.owner()).await?;
+        }
+        for source in plan.snapshot().bibliography_import_sources() {
+            ensure_principal(&mut transaction, source.owner()).await?;
+        }
+        for entry in plan.snapshot().math_macro_settings() {
+            ensure_principal(&mut transaction, entry.owner()).await?;
+        }
+        for entry in plan.snapshot().note_acl() {
+            ensure_principal(&mut transaction, entry.principal()).await?;
         }
         for note in notes {
             insert_note_row(&mut transaction, note).await?;
@@ -186,11 +224,10 @@ impl SqliteDatabase {
             .map_err(|_| SqliteStoreError::CorruptData)?;
             sqlx::query(
                 "INSERT INTO math_macro_settings (
-                    owner_issuer, owner_subject, macros_json, revision
-                 ) VALUES (?, ?, ?, ?)",
+                    owner_principal_id, macros_json, revision
+                 ) VALUES (?, ?, ?)",
             )
-            .bind(entry.owner().issuer())
-            .bind(entry.owner().subject())
+            .bind(entry.owner().id().get())
             .bind(encoded)
             .bind(entry.settings().revision)
             .execute(&mut *transaction)
@@ -219,11 +256,10 @@ impl SqliteDatabase {
         }
         for entry in plan.snapshot().note_acl() {
             sqlx::query(
-                "INSERT INTO note_acl (note_id, issuer, subject, permission) VALUES (?, ?, ?, ?)",
+                "INSERT INTO note_acl (note_id, principal_id, permission) VALUES (?, ?, ?)",
             )
             .bind(entry.note_id().to_string())
-            .bind(entry.identity().issuer())
-            .bind(entry.identity().subject())
+            .bind(entry.principal().id().get())
             .bind(match entry.permission() {
                 NotePermission::Read => "read",
                 NotePermission::Edit => "edit",
@@ -256,13 +292,12 @@ async fn insert_bibliography_import_source_row(
 ) -> Result<(), SqliteStoreError> {
     sqlx::query(
         "INSERT INTO bibliography_import_sources (
-            source_id, owner_issuer, owner_subject, method, display_name, revision,
+            source_id, owner_principal_id, method, display_name, revision,
             created_at_ms, last_imported_at_ms
-         ) VALUES (?, ?, ?, 'csl_json_file', ?, ?, ?, ?)",
+         ) VALUES (?, ?, 'csl_json_file', ?, ?, ?, ?)",
     )
     .bind(source.source_id().to_string())
-    .bind(source.owner().issuer())
-    .bind(source.owner().subject())
+    .bind(source.owner().id().get())
     .bind(source.display_name())
     .bind(source.revision().get())
     .bind(source.created_at().get())
@@ -279,10 +314,10 @@ async fn insert_bibliography_import_link_row(
 ) -> Result<(), SqliteStoreError> {
     sqlx::query(
         "INSERT INTO bibliography_import_links (
-            source_id, external_item_id, item_id, owner_issuer, owner_subject,
+            source_id, external_item_id, item_id, owner_principal_id,
             imported_digest, imported_item_revision
          )
-         SELECT ?, ?, ?, source.owner_issuer, source.owner_subject, ?, ?
+         SELECT ?, ?, ?, source.owner_principal_id, ?, ?
          FROM bibliography_import_sources source
          WHERE source.source_id = ?",
     )
@@ -304,13 +339,12 @@ async fn insert_bibliography_item_row(
 ) -> Result<(), SqliteStoreError> {
     sqlx::query(
         "INSERT INTO bibliography_items (
-            item_id, owner_issuer, owner_subject, citation_key, csl_json,
+            item_id, owner_principal_id, citation_key, csl_json,
             created_at_ms, updated_at_ms, revision
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(item.item_id().to_string())
-    .bind(item.owner().issuer())
-    .bind(item.owner().subject())
+    .bind(item.owner().id().get())
     .bind(item.citation_key())
     .bind(item.csl_json())
     .bind(item.created_at().get())
@@ -330,15 +364,14 @@ async fn insert_note_row(
         serde_json::to_string(note.tags()).map_err(|_| SqliteStoreError::CorruptData)?;
     sqlx::query(
         "INSERT INTO notes (
-            note_id, creator_issuer, creator_subject, title, source, tags_json,
+            note_id, creator_principal_id, title, source, tags_json,
             created_at_ms, updated_at_ms, revision, deleted_at_ms, created_via,
             review_tracking_known, reviewed_revision, reviewed_at_ms,
-            reviewer_issuer, reviewer_subject
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            reviewer_principal_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(note.note_id().to_string())
-    .bind(note.creator_issuer())
-    .bind(note.creator_subject())
+    .bind(note.owner().id().get())
     .bind(note.title())
     .bind(note.source())
     .bind(tags_json)
@@ -350,10 +383,51 @@ async fn insert_note_row(
     .bind(i64::from(note.review_tracking_known()))
     .bind(note.last_review().map(|review| review.revision().get()))
     .bind(note.last_review().map(|review| review.reviewed_at().get()))
-    .bind(note.last_review().map(|review| review.reviewer().issuer()))
-    .bind(note.last_review().map(|review| review.reviewer().subject()))
+    .bind(
+        note.last_review()
+            .map(|review| review.reviewer().id().get()),
+    )
     .execute(&mut **transaction)
     .await
     .map_err(database_error)?;
+    Ok(())
+}
+
+async fn ensure_principal(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    principal: &PrincipalRef,
+) -> Result<(), SqliteStoreError> {
+    sqlx::query("INSERT OR IGNORE INTO principals (principal_id) VALUES (?)")
+        .bind(principal.id().get())
+        .execute(&mut **transaction)
+        .await
+        .map_err(database_error)?;
+    let identity = principal.primary_identity();
+    sqlx::query(
+        "INSERT OR IGNORE INTO principal_identities
+             (principal_id, issuer, subject, is_primary)
+         VALUES (?, ?, ?, 1)",
+    )
+    .bind(principal.id().get())
+    .bind(identity.issuer())
+    .bind(identity.subject())
+    .execute(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    let valid = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+             SELECT 1 FROM principal_identities
+             WHERE principal_id = ? AND issuer = ? AND subject = ? AND is_primary = 1
+         )",
+    )
+    .bind(principal.id().get())
+    .bind(identity.issuer())
+    .bind(identity.subject())
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(database_error)?;
+    if !valid {
+        return Err(SqliteStoreError::CorruptData);
+    }
     Ok(())
 }

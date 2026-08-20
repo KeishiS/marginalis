@@ -40,7 +40,7 @@ impl NoteApplication {
         } = validated;
         // 新規作成では操作している利用者がそのまま作成者になるため、閲覧時の解決先と一致する。
         diagnostics.extend(
-            self.citation_resolutions(actor.identity(), &citation_queries, citation_style)
+            self.citation_resolutions(actor.principal(), &citation_queries, citation_style)
                 .await?
                 .diagnostics,
         );
@@ -48,7 +48,7 @@ impl NoteApplication {
         let now = self.clock.now();
         let note = Note::create(
             NoteId::new(self.random.uuid_v7()),
-            actor.identity(),
+            actor.principal(),
             draft,
             now,
             created_via,
@@ -256,8 +256,8 @@ mod tests {
     use std::sync::{Arc, atomic::Ordering};
 
     use marginalis_domain::{
-        Actor, EntityId, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
-        NoteReviewTracking, Revision, UnixMillis,
+        EntityId, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore, NoteReviewTracking,
+        Revision, UnixMillis,
     };
 
     use crate::{NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteValidationTarget};
@@ -265,7 +265,7 @@ mod tests {
     use super::*;
     use crate::notes::test_support::{
         AcceptContent, CitingContent, EmptyLibrary, MemoryNotes, NoMathMacros, OneItemLibrary,
-        OwnerMathMacros, note_application,
+        OwnerMathMacros, actor, note_application,
     };
 
     #[tokio::test]
@@ -277,8 +277,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let created = application
             .create_note(
@@ -294,7 +293,7 @@ mod tests {
             .await
             .expect("create note");
 
-        assert_eq!(created.creator_subject(), "alice");
+        assert_eq!(created.owner().primary_identity().subject(), "alice");
         assert_eq!(created.revision().get(), 1);
         assert_eq!(created.created_via(), NoteCreationSource::Rest);
         assert_eq!(
@@ -345,8 +344,7 @@ mod tests {
             Arc::new(OneItemLibrary),
             Arc::new(OwnerMathMacros),
         );
-        let editor =
-            Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");
+        let editor = actor("bob", 2);
         let draft = NoteDraft {
             source: "= 共有されたノート\n\n本文 cite:[smith2024]".into(),
             title: "共有されたノート".into(),
@@ -389,8 +387,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
         let draft = NoteDraft {
             source: "= Warning\n\nbody".into(),
             title: "Warning".into(),
@@ -479,8 +476,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let applied = application
             .apply_note_patch(
@@ -518,8 +514,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let error = application
             .apply_note_patch(
@@ -547,8 +542,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let error = application
             .apply_note_patch(
@@ -575,8 +569,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         let error = application
             .apply_note_patch(
@@ -612,8 +605,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "bob".into()).expect("valid actor");
+        let actor = actor("bob", 2);
 
         let error = application
             .apply_note_patch(
@@ -640,8 +632,7 @@ mod tests {
             Arc::new(EmptyLibrary),
             Arc::new(NoMathMacros),
         );
-        let actor =
-            Actor::try_new("https://id.example.test".into(), "alice".into()).expect("valid actor");
+        let actor = actor("alice", 1);
 
         // repository stubは条件付き更新でUnavailableを返すため、失敗の分類で
         // 保存経路まで到達したことが分かる。

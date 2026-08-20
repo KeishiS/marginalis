@@ -80,8 +80,8 @@ fn database_migration_of_the_current_schema_is_a_logged_no_op() {
     );
     let stderr = String::from_utf8(migrated.stderr).expect("UTF-8 stderr");
     assert!(stderr.contains("event=\"maintenance.database_migration.completed\""));
-    assert!(stderr.contains("from_schema=22"));
-    assert!(stderr.contains("to_schema=22"));
+    assert!(stderr.contains("from_schema=23"));
+    assert!(stderr.contains("to_schema=23"));
     assert!(stderr.contains("applied_migrations=0"));
     assert!(!backup.exists());
 
@@ -626,7 +626,7 @@ fn diagnose_reports_a_healthy_database_as_json_without_secrets() {
     let report: serde_json::Value =
         serde_json::from_slice(&healthy.stdout).expect("diagnostic JSON");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["database"]["schema"]["actual"], 22);
+    assert_eq!(report["database"]["schema"]["actual"], 23);
     assert!(!String::from_utf8_lossy(&healthy.stdout).contains("must-not-be-reported"));
     assert!(!String::from_utf8_lossy(&healthy.stderr).contains("must-not-be-reported"));
 

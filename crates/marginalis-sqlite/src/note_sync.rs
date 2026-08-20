@@ -27,7 +27,7 @@ impl SqliteDatabase {
         let mut transaction = self.pool.begin().await.map_err(database_error_as_storage)?;
         let state = if let Some(cursor) = cursor {
             let row = sqlx::query(
-                "SELECT issuer, subject, phase, after_note_id, after_sequence,
+                "SELECT principal_id, phase, after_note_id, after_sequence,
                         high_watermark, expires_at_ms
                  FROM note_sync_cursors WHERE cursor_hash = ?",
             )
@@ -38,9 +38,8 @@ impl SqliteDatabase {
             let Some(row) = row else {
                 return Err(NoteSyncRepositoryError::InvalidCursor);
             };
-            let issuer: String = row.try_get("issuer").map_err(corrupt)?;
-            let subject: String = row.try_get("subject").map_err(corrupt)?;
-            if issuer != actor.issuer() || subject != actor.subject() {
+            let principal_id: i64 = row.try_get("principal_id").map_err(corrupt)?;
+            if principal_id != actor.principal_id().get() {
                 return Err(NoteSyncRepositoryError::InvalidCursor);
             }
             let expires_at: i64 = row.try_get("expires_at_ms").map_err(corrupt)?;
@@ -79,15 +78,14 @@ impl SqliteDatabase {
         let (entries, has_more, next_state) = match state.phase {
             NoteSyncPhase::Snapshot => {
                 let rows = sqlx::query(
-                    "SELECT notes.* FROM notes
+                    "SELECT notes.* FROM note_details notes
                      JOIN note_access access ON access.note_id = notes.note_id
                      WHERE notes.deleted_at_ms IS NULL
-                       AND access.issuer = ? AND access.subject = ?
-                       AND (?3 IS NULL OR notes.note_id > ?3)
-                     ORDER BY notes.note_id LIMIT ?4",
+                       AND access.principal_id = ?
+                       AND (?2 IS NULL OR notes.note_id > ?2)
+                     ORDER BY notes.note_id LIMIT ?3",
                 )
-                .bind(actor.issuer())
-                .bind(actor.subject())
+                .bind(actor.principal_id().get())
                 .bind(state.after_note_id.as_deref())
                 .bind((limit + 1) as i64)
                 .fetch_all(&mut *transaction)
@@ -135,11 +133,10 @@ impl SqliteDatabase {
                 let rows = sqlx::query(
                     "SELECT change_sequence, note_id, kind, reason
                      FROM note_sync_changes
-                     WHERE issuer = ? AND subject = ? AND change_sequence > ?
+                     WHERE principal_id = ? AND change_sequence > ?
                      ORDER BY change_sequence LIMIT ?",
                 )
-                .bind(actor.issuer())
-                .bind(actor.subject())
+                .bind(actor.principal_id().get())
                 .bind(state.after_sequence)
                 .bind((limit + 1) as i64)
                 .fetch_all(&mut *transaction)
@@ -156,14 +153,13 @@ impl SqliteDatabase {
                     let kind: String = row.try_get("kind").map_err(corrupt)?;
                     let entry = if kind == "upsert" {
                         let note_row = sqlx::query(
-                            "SELECT notes.* FROM notes JOIN note_access access
+                            "SELECT notes.* FROM note_details notes JOIN note_access access
                              ON access.note_id = notes.note_id
                              WHERE notes.note_id = ? AND notes.deleted_at_ms IS NULL
-                               AND access.issuer = ? AND access.subject = ?",
+                               AND access.principal_id = ?",
                         )
                         .bind(note_id.to_string())
-                        .bind(actor.issuer())
-                        .bind(actor.subject())
+                        .bind(actor.principal_id().get())
                         .fetch_optional(&mut *transaction)
                         .await
                         .map_err(database_error_as_storage)?;
@@ -220,13 +216,12 @@ impl SqliteDatabase {
 
         sqlx::query(
             "INSERT INTO note_sync_cursors (
-                cursor_hash, issuer, subject, phase, after_note_id, after_sequence,
+                cursor_hash, principal_id, phase, after_note_id, after_sequence,
                 high_watermark, expires_at_ms
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(hash_token(next_cursor))
-        .bind(actor.issuer())
-        .bind(actor.subject())
+        .bind(actor.principal_id().get())
         .bind(match next_state.phase {
             NoteSyncPhase::Snapshot => "snapshot",
             NoteSyncPhase::Changes => "changes",
