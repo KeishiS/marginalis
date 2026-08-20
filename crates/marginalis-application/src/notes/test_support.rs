@@ -37,6 +37,22 @@ pub(super) fn note_application(
     bibliography: Arc<dyn BibliographyRepository>,
     math_macros: Arc<dyn MathMacroRepository>,
 ) -> NoteApplication {
+    note_application_with_links(
+        repository,
+        content,
+        bibliography,
+        math_macros,
+        Arc::new(NoLinks),
+    )
+}
+
+pub(super) fn note_application_with_links(
+    repository: &Arc<MemoryNotes>,
+    content: Arc<dyn NoteContent>,
+    bibliography: Arc<dyn BibliographyRepository>,
+    math_macros: Arc<dyn MathMacroRepository>,
+    links: Arc<dyn NoteLinkResolver>,
+) -> NoteApplication {
     NoteApplication::new(NoteApplicationDependencies {
         queries: repository.clone(),
         commands: repository.clone(),
@@ -46,7 +62,7 @@ pub(super) fn note_application(
         content,
         bibliography,
         math_macros,
-        links: Arc::new(NoLinks),
+        links,
         principals: Arc::new(TestPrincipalDirectory),
         acl_issuer: "https://id.example.test".into(),
         clock: Arc::new(FixedClock),
@@ -719,6 +735,15 @@ impl NoteLinkResolver for NoLinks {
         _context: &NoteRenderContext,
         _note_id: NoteId,
         _anchor: Option<&str>,
+    ) -> Option<String> {
+        None
+    }
+
+    fn attachment_href(
+        &self,
+        _context: &NoteRenderContext,
+        _note_id: NoteId,
+        _attachment_id: AttachmentId,
     ) -> Option<String> {
         None
     }

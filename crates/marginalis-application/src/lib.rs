@@ -564,10 +564,13 @@ pub trait McpScopeCeilingRepository: Send + Sync {
     ) -> Result<McpScopeCeilingSetting, StorageError>;
 }
 
-/// HTML内のノート参照へ付与するtransport固有の公開パス。
+/// HTML内のノート参照と添付画像へ付与するtransport固有URLの基点。
+///
+/// application層はWeb UIとREST APIの経路構成を知らず、`NoteLinkResolver`が
+/// この基点へ各対象の経路を加える。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteRenderContext {
-    pub note_path_prefix: String,
+    pub base_path: String,
 }
 
 /// 閲覧中のノートと明示的な参照で直接つながる、現在の利用者に可視なノート。

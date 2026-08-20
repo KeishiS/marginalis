@@ -88,25 +88,24 @@ impl NoteApplication {
         let metadata = self
             .attachment_metadata_by_id(actor, note_id, queries)
             .await?;
-        Ok(queries
+        queries
             .iter()
             .map(|query| {
                 let entry = metadata
                     .get(&query.attachment_id)
                     .expect("validated attachment query has metadata");
-                NoteAttachmentResolution {
+                let href = self
+                    .links
+                    .attachment_href(context, note_id, entry.attachment_id())
+                    .ok_or(NoteUseCaseError::Unavailable)?;
+                Ok(NoteAttachmentResolution {
                     attachment_index: query.attachment_index,
-                    href: format!(
-                        "{}/{}/attachments/{}/content",
-                        context.note_path_prefix.trim_end_matches('/'),
-                        note_id,
-                        entry.attachment_id()
-                    ),
+                    href,
                     media_type: entry.media_type(),
                     byte_length: entry.byte_length(),
-                }
+                })
             })
-            .collect())
+            .collect()
     }
 
     pub(super) async fn validate_note_attachment_references(
@@ -174,4 +173,107 @@ pub(super) fn rejected_attachment_references(queries: &[NoteAttachmentQuery]) ->
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use marginalis_domain::{
+        AttachmentDraft, AttachmentId, NoteCreationSource, NoteDraft, NoteId, Utf8ByteSpan,
+    };
+
+    use crate::{NoteLinkResolver, NoteRenderContext, NoteSourcePosition, NoteWritePolicy};
+
+    use super::super::test_support::{
+        AcceptContent, EmptyLibrary, MemoryNotes, NoMathMacros, actor, note_application_with_links,
+    };
+    use super::*;
+
+    struct RoutedLinks;
+
+    impl NoteLinkResolver for RoutedLinks {
+        fn href(
+            &self,
+            _context: &NoteRenderContext,
+            _note_id: NoteId,
+            _anchor: Option<&str>,
+        ) -> Option<String> {
+            None
+        }
+
+        fn attachment_href(
+            &self,
+            context: &NoteRenderContext,
+            note_id: NoteId,
+            attachment_id: AttachmentId,
+        ) -> Option<String> {
+            Some(format!(
+                "{}/api/v3/notes/{note_id}/attachments/{attachment_id}/content",
+                context.base_path.trim_end_matches('/')
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn attachment_resolution_uses_the_transport_link_port() {
+        let repository = Arc::new(MemoryNotes::default());
+        let application = note_application_with_links(
+            &repository,
+            Arc::new(AcceptContent::default()),
+            Arc::new(EmptyLibrary),
+            Arc::new(NoMathMacros),
+            Arc::new(RoutedLinks),
+        );
+        let actor = actor("alice", 1);
+        let note = application
+            .create_note(
+                actor.clone(),
+                NoteDraft {
+                    title: "図".into(),
+                    source: "= 図".into(),
+                    tags: Vec::new(),
+                },
+                NoteWritePolicy::AllowAdvisories,
+                NoteCreationSource::Web,
+            )
+            .await
+            .expect("create note");
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01".to_vec();
+        png.extend_from_slice(b"payload");
+        let attachment = application
+            .upload_note_attachment(
+                actor.clone(),
+                note.note_id(),
+                AttachmentDraft::new("figure.png".into(), png).expect("valid image"),
+            )
+            .await
+            .expect("upload attachment");
+
+        let resolved = application
+            .resolve_note_attachments(
+                &actor,
+                note.note_id(),
+                &[NoteAttachmentQuery {
+                    attachment_index: 0,
+                    attachment_id: attachment.attachment_id(),
+                    span: Utf8ByteSpan { start: 0, end: 1 },
+                    position: NoteSourcePosition { line: 1, column: 1 },
+                }],
+                &NoteRenderContext {
+                    base_path: "/knowledge".into(),
+                },
+            )
+            .await
+            .expect("resolve attachment");
+
+        assert_eq!(
+            resolved[0].href,
+            format!(
+                "/knowledge/api/v3/notes/{}/attachments/{}/content",
+                note.note_id(),
+                attachment.attachment_id()
+            )
+        );
+    }
 }

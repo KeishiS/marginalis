@@ -4,11 +4,11 @@ use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, HeaderValue, Request},
 };
-use marginalis_application::NoteListQuery;
+use marginalis_application::{NoteLinkResolver, NoteListQuery, NoteRenderContext};
 use marginalis_contract::McpNoteMutationOutput;
 use marginalis_domain::{
-    Actor, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore, NoteReviewTracking, Revision,
-    UnixMillis,
+    Actor, AttachmentId, EntityId, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
+    NoteReviewTracking, Revision, UnixMillis,
 };
 use std::sync::Mutex;
 use tower::ServiceExt;
@@ -22,6 +22,55 @@ fn http_observability_classifies_response_outcomes() {
     assert_eq!(http_outcome(StatusCode::FOUND), "success");
     assert_eq!(http_outcome(StatusCode::NOT_FOUND), "rejected");
     assert_eq!(http_outcome(StatusCode::SERVICE_UNAVAILABLE), "failure");
+}
+
+#[test]
+fn rendered_resource_links_use_their_actual_ui_and_api_routes() {
+    let note_id = NoteId::new(
+        "0197c9bc-0000-7000-8000-000000000001"
+            .parse::<EntityId>()
+            .expect("UUIDv7"),
+    );
+    let attachment_id = "0197c9bc-0000-7000-8000-000000000002"
+        .parse::<AttachmentId>()
+        .expect("UUIDv7");
+    let resolver = HttpNoteLinkResolver;
+    let root = NoteRenderContext {
+        base_path: "/".into(),
+    };
+    assert_eq!(
+        resolver.href(&root, note_id, Some("section")),
+        Some(format!("/notes/{note_id}#section"))
+    );
+    assert_eq!(
+        resolver.attachment_href(&root, note_id, attachment_id),
+        Some(format!(
+            "/api/v3/notes/{note_id}/attachments/{attachment_id}/content"
+        ))
+    );
+
+    let nested = NoteRenderContext {
+        base_path: "/knowledge".into(),
+    };
+    assert_eq!(
+        resolver.href(&nested, note_id, None),
+        Some(format!("/knowledge/notes/{note_id}"))
+    );
+    assert_eq!(
+        resolver.attachment_href(&nested, note_id, attachment_id),
+        Some(format!(
+            "/knowledge/api/v3/notes/{note_id}/attachments/{attachment_id}/content"
+        ))
+    );
+
+    let invalid = NoteRenderContext {
+        base_path: "//outside.example".into(),
+    };
+    assert_eq!(resolver.href(&invalid, note_id, None), None);
+    assert_eq!(
+        resolver.attachment_href(&invalid, note_id, attachment_id),
+        None
+    );
 }
 
 #[test]

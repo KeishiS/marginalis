@@ -291,9 +291,41 @@ test("Web UI creates, previews, edits, and resolves a revision conflict", async 
   await source.fill(
     `= 競合後に保存する題名\n:marginalis-tags: 受入試験, 日本語\n\nxref:note:${targetId}[参照先へ]`,
   );
+
+  // 実サーバーへ画像をuploadし、サブパスを含む認可付きREST URLが
+  // Live Previewと保存後の閲覧画面の双方で使われることを確認する。
+  const onePixelPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "figure.png",
+    mimeType: "image/png",
+    buffer: onePixelPng,
+  });
+  await expect(page.getByText("figure.png", { exact: true })).toBeVisible();
+  await expect(source).toContainText(/image::attachment:[0-9a-f-]{36}\[\]/);
+  await page.getByRole("button", { name: "プレビュー" }).click();
+  const previewImage = page.locator(".preview-content img");
+  await expect(previewImage).toHaveCount(1);
+  await expect(previewImage).toHaveAttribute(
+    "src",
+    new RegExp(
+      `^/marginalis/api/v3/notes/${noteId}/attachments/[0-9a-f-]{36}/content$`,
+    ),
+  );
+  await expect
+    .poll(() => previewImage.evaluate((image) => image.naturalWidth))
+    .toBe(1);
+  await page.getByRole("button", { name: "執筆" }).click();
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("保存しました。")).toBeVisible();
   await page.getByRole("link", { name: "閲覧画面へ戻る" }).click();
+  const renderedImage = page.locator(".rendered-content img");
+  await expect(renderedImage).toHaveCount(1);
+  await expect
+    .poll(() => renderedImage.evaluate((image) => image.naturalWidth))
+    .toBe(1);
   const relatedNotes = page.getByRole("complementary", { name: "関連ノート" });
   await expect(relatedNotes).toContainText("参照先ノート");
   await relatedNotes.getByRole("link", { name: "参照先ノート" }).click();

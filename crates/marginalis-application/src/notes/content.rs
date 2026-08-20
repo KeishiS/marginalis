@@ -152,12 +152,21 @@ pub trait NoteContent: Send + Sync {
     fn profile(&self) -> NoteProfile;
 }
 
-/// HTTPの配置方式に依存するノートURLを組み立てるport。
+/// HTTPの配置方式に依存するノートと添付画像のURLを組み立てるport。
 pub trait NoteLinkResolver: Send + Sync {
+    /// ノート閲覧画面へのURL。
     fn href(
         &self,
         context: &NoteRenderContext,
         note_id: NoteId,
         anchor: Option<&str>,
+    ) -> Option<String>;
+
+    /// 認可付きの添付画像取得URL。
+    fn attachment_href(
+        &self,
+        context: &NoteRenderContext,
+        note_id: NoteId,
+        attachment_id: AttachmentId,
     ) -> Option<String>;
 }

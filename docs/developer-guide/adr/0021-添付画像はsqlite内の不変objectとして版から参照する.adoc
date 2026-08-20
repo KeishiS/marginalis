@@ -51,8 +51,10 @@ archive、30日間の削除保持と画像の生存期間を別々に管理す�
 
 本文では``image::attachment:<attachment_id>[]``だけを内部画像として受理します。``attachment_id``はUUIDv7で、
 画像は同じ``note_id``に属していなければなりません。ブラウザーはこの記法を解析せず、AdocWeaveが返す
-resource queryをサーバーが解決します。描画時にはACLを検査する同一originの取得URL、保存済みMIME type、
-バイト数をAdocWeaveへ渡します。
+resource queryをサーバーが解決します。描画時にはACLを検査する
+``/api/v3/notes/<note_id>/attachments/<attachment_id>/content``、保存済みMIME type、バイト数を
+AdocWeaveへ渡します。配備先のサブパスはHTTP adapterが加えます。ノート閲覧画面の``/notes/<note_id>``と
+添付画像のREST APIを同じ接頭辞として扱いません。
 
 本文を保存するtransactionで、解析結果の添付IDがすべて同じノートに存在することを再確認し、新しいrevisionの
 参照集合として保存します。ACL変更、人手確認、削除、削除からの復元は、直前の参照集合を新しいrevisionへ

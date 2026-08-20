@@ -277,7 +277,7 @@ pub(super) async fn read_note_view(
             actor,
             parse_note_id(&note_id)?,
             NoteRenderContext {
-                note_path_prefix: super::auth::external_path(&state.cookie_path, "/notes"),
+                base_path: state.cookie_path.clone(),
             },
         )
         .await
@@ -465,7 +465,7 @@ pub(super) async fn preview_new_note(
                 tags: Vec::new(),
             },
             NoteRenderContext {
-                note_path_prefix: super::auth::external_path(&state.cookie_path, "/notes"),
+                base_path: state.cookie_path.clone(),
             },
         )
         .await
@@ -491,7 +491,7 @@ pub(super) async fn preview_note_update(
                 tags: Vec::new(),
             },
             NoteRenderContext {
-                note_path_prefix: super::auth::external_path(&state.cookie_path, "/notes"),
+                base_path: state.cookie_path.clone(),
             },
         )
         .await

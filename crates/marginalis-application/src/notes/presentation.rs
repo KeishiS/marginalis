@@ -370,7 +370,7 @@ mod tests {
                 actor.clone(),
                 draft.clone(),
                 NoteRenderContext {
-                    note_path_prefix: "/api/v3/notes".into(),
+                    base_path: "/".into(),
                 },
             )
             .await
@@ -442,7 +442,7 @@ mod tests {
                 note_id,
                 draft.clone(),
                 NoteRenderContext {
-                    note_path_prefix: "/notes".into(),
+                    base_path: "/".into(),
                 },
             )
             .await
@@ -458,7 +458,7 @@ mod tests {
                     note_id,
                     draft,
                     NoteRenderContext {
-                        note_path_prefix: "/notes".into(),
+                        base_path: "/".into(),
                     },
                 )
                 .await,

@@ -87,7 +87,7 @@ pub const OPENAPI_DOCUMENT: &str = include_str!("../../../docs/openapi.json");
 // 8 MiBのCSL-JSON配列に、取込元と最大1,000件分の選択を加えたJSON envelopeを受け取る。
 const BIBLIOGRAPHY_IMPORT_REQUEST_BYTES: usize = 9 * 1024 * 1024;
 
-/// 配備先のサブパスを保ったノートURLを生成するHTTP adapter。
+/// 配備先のサブパスを保ったノートと添付画像のURLを生成するHTTP adapter。
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HttpNoteLinkResolver;
 
@@ -98,26 +98,45 @@ impl marginalis_application::NoteLinkResolver for HttpNoteLinkResolver {
         note_id: marginalis_domain::NoteId,
         anchor: Option<&str>,
     ) -> Option<String> {
-        let prefix = &context.note_path_prefix;
-        if !prefix.starts_with('/') || prefix.starts_with("//") || prefix.contains(['?', '#']) {
-            return None;
-        }
-        let prefix = prefix.trim_end_matches('/');
-        let path = format!("{prefix}/{note_id}");
-        let mut url = url::Url::parse("https://marginalis.invalid")
-            .ok()?
-            .join(&path)
-            .ok()?;
-        if url.path() != path {
-            return None;
-        }
-        url.set_fragment(anchor);
-        Some(
-            url.as_str()
-                .strip_prefix("https://marginalis.invalid")?
-                .to_owned(),
+        resource_href(context, &format!("/notes/{note_id}"), anchor)
+    }
+
+    fn attachment_href(
+        &self,
+        context: &marginalis_application::NoteRenderContext,
+        note_id: marginalis_domain::NoteId,
+        attachment_id: marginalis_domain::AttachmentId,
+    ) -> Option<String> {
+        resource_href(
+            context,
+            &format!("/api/v3/notes/{note_id}/attachments/{attachment_id}/content"),
+            None,
         )
     }
+}
+
+fn resource_href(
+    context: &marginalis_application::NoteRenderContext,
+    resource_path: &str,
+    anchor: Option<&str>,
+) -> Option<String> {
+    let path = auth::external_path(&context.base_path, resource_path);
+    if !path.starts_with('/') || path.starts_with("//") || path.contains(['?', '#']) {
+        return None;
+    }
+    let mut url = url::Url::parse("https://marginalis.invalid")
+        .ok()?
+        .join(&path)
+        .ok()?;
+    if url.path() != path {
+        return None;
+    }
+    url.set_fragment(anchor);
+    Some(
+        url.as_str()
+            .strip_prefix("https://marginalis.invalid")?
+            .to_owned(),
+    )
 }
 
 pub fn router(state: ApiState) -> Router {
