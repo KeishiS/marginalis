@@ -172,6 +172,27 @@ subscriptionごとに先頭のeventだけをlease付きで取得して順序を�
 redirectへ従わない。例外は運用者が明示したhostに限る。secretは作成・再生成の応答だけへ返し、
 ログと通常の取得応答へ出さない。
 
+== 採用済みの保存基盤移行計画
+
+この節は、 xref:adr/0019-利用者の認可は内部principalに結び付けsqliteを前進移行する.adoc#top[ADR 0019]で
+採用し、まだ実装していない次期schemaへの移行計画です。\#548から\#550が完了するまでは、上の
+``ARCH-IDENTITY-001``、``ARCH-AUTHZ-001``と xref:requirements.adoc#top[現行要件]を現在の動作として
+優先します。
+
+移行後は、OIDCの``(issuer, subject)``を公開境界のidentityとして維持しながら、認可と業務データの
+所有者をSQLite内部の``PrincipalId``へ結び付けます。認証に使ったidentityをそのまま返す共有session・
+MCP crateの契約には非公開の``identity_id``を使い、公開APIとarchiveには代表identityを使います。
+aliasを追加しても、MCPのscope上限と失効を含むすべての認可は同じ``PrincipalId``へ適用します。
+
+SQLite schemaは22を基準とする前進migrationへ移します。通常の``serve``は旧schemaを変更せず、service
+停止中の明示的な保守commandだけが、秘密状態を含むSQLite全体の検証済み退避を確定してから、必要な
+変更を一つのtransactionで適用します。日次archiveは災害復旧と移設、SQLite退避はschema移行失敗時の
+切戻しに使い、互いに代用しません。
+
+実装順は、\#548のmigration基盤、\#549のschema 23と``PrincipalId``への一括切替、\#550のidentity
+引き継ぎとaliasのarchive往復です。外部identityと``PrincipalId``を認可条件として混在させる中間schemaは
+公開しません。その後、\#541のノート版履歴と\#540の添付を``PrincipalId``へ直接結び付けます。
+
 == 検索のサービス境界
 
 全文検索、意味検索、検索索引、順位付けはMarginalisへ実装せず、
