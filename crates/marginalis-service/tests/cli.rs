@@ -1255,7 +1255,23 @@ fn restore_archive_migrates_verifies_and_imports_in_one_step() {
     assert!(!rejected.status.success());
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert!(stderr.contains("marginalis-archive-16/0.27.0/5"));
-    assert!(stderr.contains("直近5マイナー世代"));
+    assert!(stderr.contains("直前の公開済み保存契約"));
+    assert!(stderr.contains("段階的に変換"));
+
+    let unsupported_output = directory.join("unsupported-current-archive.json");
+    let rejected = Command::new(env!("CARGO_BIN_EXE_marginalis-service"))
+        .args(["migrate-archive", "--input"])
+        .arg(&unsupported_input)
+        .arg("--output")
+        .arg(&unsupported_output)
+        .output()
+        .expect("reject unsupported archive migration");
+    assert!(!rejected.status.success());
+    assert!(!unsupported_output.exists());
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert!(stderr.contains("marginalis-archive-16/0.27.0/5"));
+    assert!(stderr.contains("直前の公開済み保存契約"));
+    assert!(stderr.contains("段階的に変換"));
 
     fs::remove_dir_all(&directory).expect("remove test directory");
 }

@@ -113,7 +113,9 @@ Auth0をMCPのAuthorization Serverに採用]（廃止。ADR 0007で置き換え�
 * xref:developer-guide/adr/0016-編集画面の装飾はadocweaveのspan注釈から導く.adoc#top[0016
 編集画面の装飾はAdocWeaveのspan注釈から導く]
 * xref:developer-guide/adr/0017-archiveの取り込み互換は直近5マイナー世代に限定する.adoc#top[0017
-archiveの取り込み互換は直近5マイナー世代に限定する]
+archiveの取り込み互換は直近5マイナー世代に限定する]（廃止。ADR 0018で置き換え）
+* xref:developer-guide/adr/0018-archiveは直前の公開済み保存契約からだけ移行する.adoc#top[0018
+archiveは直前の公開済み保存契約からだけ移行する]
 
 == 過去の記録と今後の計画
 

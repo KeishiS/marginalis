@@ -9,9 +9,11 @@
 [arabic]
 . Cargo workspaceの版を上げ、``cargo make verify``の成功を確認して版上げのPull Requestを
 作成します。版とNix packageの整合は``verify``内の``release-metadata``が検査します。あわせて、
-archiveの取り込み互換(xref:adr/0017-archiveの取り込み互換は直近5マイナー世代に限定する.adoc#top[ADR 0017])
-に従い、5世代より前へ落ちた契約を``SUPPORTED_MIGRATION_CONTRACTS``と利用者向け文書から
-削除します。
+archiveの保存契約が直前の公開版から変わるかを確認します。契約が変わる場合は、
+xref:adr/0018-archiveは直前の公開済み保存契約からだけ移行する.adoc#top[ADR 0018]に従い、
+``PREVIOUS_MIGRATION_CONTRACT``を直前の公開済み保存契約へ更新し、その契約からの変換試験、
+xref:../user-guide/nixos.adoc#保存契約の履歴[保存契約の履歴]、移行例を同じ変更で更新します。
+契約が変わらない場合は、アプリケーションの版だけを理由に直前契約を変更しません。
 . 外部のGit依存が意図した公開版を指していることを確認します。``cargo make shared-authorization-server``と
 ``cargo make shared-oidc-login``が、それぞれの共有crateについて、版が同じであること、同じリポジトリの
 40桁の完全SHAから取得していること、``Cargo.lock``の取得元が宣言と一致すること、``flake.nix``に取得

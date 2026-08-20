@@ -9,7 +9,7 @@ use liblzma::write::XzEncoder;
 use marginalis_application::{Clock as _, NoteContent as _};
 use marginalis_application::{LogicalSnapshot, RestorePlan};
 use marginalis_archive::{
-    Archive, create_archive,
+    Archive, ArchiveMigrationError, create_archive,
     documents::{
         DocumentManifest, archive_from_documents, create_document_export, requires_revalidation,
     },
@@ -63,7 +63,7 @@ pub(crate) async fn migrate_archive(
         .into());
     }
     let previous: Archive = serde_json::from_reader(File::open(&input)?)?;
-    let migrated = migrate_previous_archive(&AsciiDocNoteContent, &previous)?;
+    let migrated = migrate_from_previous_contract(&previous)?;
     let snapshot = validate_archive_contract(&AsciiDocNoteContent, &migrated)?;
     let validated = ValidatedArchive {
         archive: migrated,
@@ -122,19 +122,7 @@ pub(crate) async fn restore_archive(
     let (archive, migrated) = if validate_archive_contract(&AsciiDocNoteContent, &source).is_ok() {
         (source, false)
     } else {
-        let migrated = migrate_previous_archive(&AsciiDocNoteContent, &source).map_err(|error| {
-            format!(
-                "{error}: archive contract {}/{}/{} is not the current {}/{}/{} nor a supported \
-                 migration source (直近5マイナー世代のみ対応。より古い書庫は対応していた過去の\
-                 リリースで変換してください)",
-                source.format,
-                source.adocweave_package_version,
-                source.note_profile_version,
-                marginalis_archive::ARCHIVE_FORMAT,
-                AsciiDocNoteContent.profile().adocweave_package_version,
-                marginalis_archive::ARCHIVE_NOTE_PROFILE_VERSION,
-            )
-        })?;
+        let migrated = migrate_from_previous_contract(&source)?;
         (migrated, true)
     };
     let snapshot = validate_archive_contract(&AsciiDocNoteContent, &archive)?;
@@ -157,6 +145,26 @@ pub(crate) async fn restore_archive(
         "restored archive"
     );
     Ok(())
+}
+
+fn migrate_from_previous_contract(source: &Archive) -> Result<Archive, Box<dyn std::error::Error>> {
+    match migrate_previous_archive(&AsciiDocNoteContent, source) {
+        Ok(archive) => Ok(archive),
+        Err(ArchiveMigrationError::UnsupportedContract) => Err(format!(
+            "archive is not a supported migration source: archive contract {}/{}/{} is not the \
+             current {}/{}/{} nor the previous published storage contract \
+             (直前の公開済み保存契約だけに対応しています。より古い書庫は対応していた過去の\
+             リリースで段階的に変換してください)",
+            source.format,
+            source.adocweave_package_version,
+            source.note_profile_version,
+            marginalis_archive::ARCHIVE_FORMAT,
+            AsciiDocNoteContent.profile().adocweave_package_version,
+            marginalis_archive::ARCHIVE_NOTE_PROFILE_VERSION,
+        )
+        .into()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// archiveのformat、全ノート、所有者、削除状態、revisionを読み取り専用で検証する。
