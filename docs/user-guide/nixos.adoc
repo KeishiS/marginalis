@@ -473,7 +473,7 @@ sudo -u marginalis marginalis restore-archive \
 |``marginalis-archive-18``
 |0.42.0
 |6
-|未公開。次回公開版で初回版を確定
+|v0.48.0
 |—
 |現行契約
 |===
