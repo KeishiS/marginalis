@@ -190,7 +190,7 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |（ゲートのため単体の再実行なし）
 |集約stepの標準出力
 |``release-candidate``
-|未公開の版で、``main``のcommitから公開するassetとRelease Notes、digestを固定した候補を作成
+|``main``のcommitから、公開するassetとRelease Notes、digestを固定した候補を作成
 |``bash .github/scripts/release-candidate.sh generate candidate "$(git rev-parse HEAD)"``
 |``release-candidate`` artifactと``release-candidate.json``
 |===
