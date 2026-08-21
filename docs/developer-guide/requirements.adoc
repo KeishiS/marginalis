@@ -261,10 +261,10 @@ systemd credentialで渡すこと。
 
 == 対応する保存形式
 
-* *REQ-FORMAT-001 — 現行形式*: SQLiteスキーマ23と、AdocWeave package版0.42.0を記録した
+* *REQ-FORMAT-001 — 現行形式*: SQLiteスキーマ23と、AdocWeave package版0.43.0を記録した
 ``marginalis-archive-18``だけを通常処理で受理すること。archiveは内部principal IDを含めず、代表identityと
 alias群を一意で安定した順序にし、保持中の全版、添付画像、各版の添付参照集合を保存すること。``migrate-archive``と``restore-archive``だけは
-直前の公開済み保存契約(ADR 0018)だけを移行の入力として受理し、AdocWeave 0.42.0で全件を再検証する
+直前の公開済み保存契約(ADR 0018)だけを移行の入力として受理し、AdocWeave 0.43.0で全件を再検証する
 こと。保存契約はarchive形式、AdocWeave package版、note profile版の組とし、3項目をすべて検査する
 こと。直前より古い契約と、その他の旧形式を現行版だけで移行せず、公開済みの過去リリースを使う
 段階的な移行経路を利用者向け文書へ記録すること。今後の契約変更には、直前の公開済み保存契約から

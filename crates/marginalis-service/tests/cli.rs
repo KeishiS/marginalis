@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION: &str = "0.41.0";
+const PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION: &str = "0.42.0";
 
 fn test_directory(purpose: &str) -> std::path::PathBuf {
     let unique = SystemTime::now()
@@ -494,12 +494,21 @@ fn archive_commands_create_private_outputs_without_relying_on_umask() {
 fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
     let directory = test_directory("archive-migration");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("v0.47.0-archive-17.json");
+    let input = directory.join("v0.48.0-archive-18.json");
     let output = directory.join("current-archive-18.json");
-    let previous = serde_json::json!({
-        "format": "marginalis-archive-17",
+    let previous = current_archive_with_imported_history(serde_json::json!({
+        "format": "marginalis-archive-18",
         "adocweave_package_version": PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION,
-        "note_profile_version": 5,
+        "note_profile_version": 6,
+        "principals": [{
+            "primary_issuer": "https://id.example.test",
+            "primary_subject": "alice",
+            "aliases": []
+        }, {
+            "primary_issuer": "https://id.example.test",
+            "primary_subject": "bob",
+            "aliases": []
+        }],
         "notes": [
             {
                 "note_id": "0197c9bc-0000-7000-8000-000000000001",
@@ -553,8 +562,11 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
             "created_at_ms": 1,
             "updated_at_ms": 2,
             "revision": 1
-        }]
-    });
+        }],
+        "bibliography_import_sources": [],
+        "bibliography_import_links": [],
+        "math_macro_settings": []
+    }));
     let input_bytes = serde_json::to_vec_pretty(&previous).expect("previous archive");
     fs::write(&input, &input_bytes).expect("write previous archive");
 
@@ -625,14 +637,15 @@ fn archive_migration_revalidates_all_notes_and_preserves_the_input() {
         String::from_utf8_lossy(&verified.stderr)
     );
 
-    let invalid_input = directory.join("invalid-v0.45.0-archive-17.json");
-    let invalid_output = directory.join("invalid-current-archive-16.json");
+    let invalid_input = directory.join("invalid-v0.48.0-archive-18.json");
+    let invalid_output = directory.join("invalid-current-archive-18.json");
     let mut invalid = previous;
-    invalid["notes"][0]["source"] = concat!(
+    let invalid_source = concat!(
         "= Note\n:marginalis-tags: research, + \\",
         "\n  rust\n\nbody"
-    )
-    .into();
+    );
+    invalid["notes"][0]["source"] = invalid_source.into();
+    invalid["note_revisions"][0]["source"] = invalid_source.into();
     fs::write(
         &invalid_input,
         serde_json::to_vec_pretty(&invalid).expect("invalid previous archive"),
@@ -1393,11 +1406,16 @@ fn run_marginalis(command: &[&str], path: &std::path::Path, database_url: &str, 
 fn restore_archive_migrates_verifies_and_imports_in_one_step() {
     let directory = test_directory("restore-archive");
     fs::create_dir(&directory).expect("test directory");
-    let input = directory.join("v0.47.0-archive-17.json");
-    let previous = serde_json::json!({
-        "format": "marginalis-archive-17",
+    let input = directory.join("v0.48.0-archive-18.json");
+    let previous = current_archive_with_imported_history(serde_json::json!({
+        "format": "marginalis-archive-18",
         "adocweave_package_version": PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION,
-        "note_profile_version": 5,
+        "note_profile_version": 6,
+        "principals": [{
+            "primary_issuer": "https://id.example.test",
+            "primary_subject": "alice",
+            "aliases": []
+        }],
         "notes": [{
             "note_id": "0197c9bc-0000-7000-8000-000000000001",
             "creator_issuer": "https://id.example.test",
@@ -1416,8 +1434,12 @@ fn restore_archive_migrates_verifies_and_imports_in_one_step() {
                 "reviewer_subject": null
             }
         }],
-        "note_acl": []
-    });
+        "note_acl": [],
+        "bibliography_items": [],
+        "bibliography_import_sources": [],
+        "bibliography_import_links": [],
+        "math_macro_settings": []
+    }));
     let input_bytes = serde_json::to_vec_pretty(&previous).expect("previous archive");
     fs::write(&input, &input_bytes).expect("write previous archive");
     let database_url = format!(
@@ -1508,6 +1530,7 @@ fn restore_archive_migrates_verifies_and_imports_in_one_step() {
     let mut unsupported = previous;
     unsupported["format"] = "marginalis-archive-16".into();
     unsupported["adocweave_package_version"] = "0.27.0".into();
+    unsupported["note_profile_version"] = 5.into();
     fs::write(
         &unsupported_input,
         serde_json::to_vec_pretty(&unsupported).expect("unsupported archive"),
