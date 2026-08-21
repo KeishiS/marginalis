@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       docs-only: ${{ steps.classify.outputs.docs-only }}
+      unpublished-version: ${{ steps.candidate.outputs.unpublished-version }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,6 +44,19 @@ jobs:
 
           docs_only="$(bash .github/scripts/classify-ci-change.sh "$base" "$GITHUB_SHA")"
           echo "docs-only=$docs_only" >>"$GITHUB_OUTPUT"
+      # release-manifest.jsonが宣言する版がまだ公開されていなければ、この後のjobが
+      # release candidateを作る。公開済みの版では候補を作らず、同じtagを二度公開しない。
+      - name: Detect an unpublished release version
+        id: candidate
+        run: |
+          set -euo pipefail
+          version="$(jq -er .packageVersion release-manifest.json)"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+            unpublished=false
+          else
+            unpublished=true
+          fi
+          echo "unpublished-version=$unpublished" >>"$GITHUB_OUTPUT"
 
   verify-core:
     needs: changes
@@ -259,3 +273,31 @@ jobs:
           else
             test "$VM_RESULT" = success
           fi
+
+  # 未公開の版では、検証を通ったmainのcommitからrelease candidateを作る。候補は公開する
+  # assetとRelease Notes、source commitとdigestを固定した集合で、stable release workflowが
+  # 作り直さずにそのまま公開する。ここで作られていないcommitは公開できない。
+  release-candidate:
+    needs: [changes, verify, nixos-e2e]
+    if: >-
+      github.event_name == 'push' &&
+      needs.changes.outputs.unpublished-version == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and verify the release candidate
+        run: |
+          set -euo pipefail
+          bash .github/scripts/release-candidate.sh generate candidate "$GITHUB_SHA"
+          bash .github/scripts/release-candidate.sh verify candidate "$GITHUB_SHA"
+      - name: Upload the release candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 14

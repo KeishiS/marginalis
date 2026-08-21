@@ -16,8 +16,8 @@
   必要なレビューを得るまで実際のマージは行われない。マージ方式の理由と操作は
   [GitHubを使う開発手順](docs/developer-guide/development.adoc)に従う。
 - `main`との衝突は`main`を作業ブランチへマージして解消する。force pushで履歴を書き換えない。
-- リリースタグは、リリース用Pull Requestが`main`へマージされ、
-  対象コミットでリリースゲートが成功した後に作成する。
+- リリースタグとGitHub Releaseは公開workflowだけが作成する。人はタグを作成もpushもせず、
+  `main`の先端SHAを指定して公開workflowを実行する。
 - 機能の修正、改善、追加ではIssueテンプレートに現在と理想の動作例を記載する。
 
 詳細な手順は[GitHubを使う開発手順](docs/developer-guide/development.adoc)に従う。

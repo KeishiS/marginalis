@@ -6,10 +6,61 @@
 正本とし、リポジトリ内には蓄積しません。受入の確認項目は xref:acceptance.adoc#top[受入基準]を
 参照してください。
 
+== 公開の考え方
+
+公開は、検証済みの``main``のcommitを、そのcommitのままタグとGitHub Releaseへ昇格する形で
+行います。人が行う操作は、リリース用Pull Requestを``main``へマージすることと、
+``main``の先端SHAを指定して公開workflowを一度実行することの二つだけです。タグの作成、
+Release Notesの転記、下書きの公開は、いずれもworkflowが行います。
+
+公開の入力は、``main``のCIが作る「release candidate」です。candidateは、公開するasset、
+Release Notesの本文、source commit、各fileのsizeとSHA-256を一つに固定した集合で、
+公開workflowはこれを作り直さずにそのまま使います。これにより、検証した内容と公開した内容が
+同じであることを、人の確認に頼らず保証します。
+
+公開する版とその入力は``release-manifest.json``が宣言します。この宣言、Cargo workspaceの版、
+``release/notes.md``の内容が食い違う場合は、``cargo make verify``に含まれる検査が拒否します。
+
+[cols="1,1",options="header",]
+|===
+|状態
+|次へ進む条件
+
+|リリース用Pull Request
+|版、``release-manifest.json``、``release/notes.md``、移行と切戻しの手順、人手受入の結果が
+確定し、必須チェックが成功する
+
+|``main``のcommit
+|``verify``と``nixos-e2e``が成功し、``release-candidate`` jobが候補を作る
+
+|release candidate
+|人が``main``の先端SHAを指定して``release-dispatch``を実行する
+
+|公開済みRelease
+|workflowがタグ、attestation、asset、Release Notesを一度に作り、stableとして公開する
+|===
+
+== リリース用Pull Request
+
 [arabic]
-. Cargo workspaceの版を上げ、``cargo make verify``の成功を確認して版上げのPull Requestを
-作成します。版とNix packageの整合は``verify``内の``release-metadata``が検査します。あわせて、
-archiveの保存契約が直前の公開版から変わるかを確認します。契約が変わる場合は、
+. Cargo workspaceの版を上げ、``release-manifest.json``の``packageVersion``を同じ版に合わせます。
+toolchainを更新した場合は``rustVersion``と``nodeVersion``も同じ変更で合わせます。
+. ``release/notes.md``へ、公開する版のRelease Notesを記述します。題名を``# Marginalis v<版>``
+とし、次の見出しをこの順で書きます。見出しだけを置いて本文を空にはできません。
++
+[source,markdown]
+----
+## 主な変更
+## 対応環境
+## 公開契約と破壊的変更
+## v<版>への移行
+## 更新とロールバック
+## 既知の制約
+## 配布物の検証
+----
++
+この内容がそのままGitHub ReleaseのNotesになります。公開後に転記する作業はありません。
+. archiveの保存契約が直前の公開版から変わるかを確認します。契約が変わる場合は、
 xref:adr/0018-archiveは直前の公開済み保存契約からだけ移行する.adoc#top[ADR 0018]に従い、
 ``PREVIOUS_MIGRATION_CONTRACT``を直前の公開済み保存契約へ更新し、その契約からの変換試験、
 xref:../user-guide/nixos.adoc#保存契約の履歴[保存契約の履歴]、移行例を同じ変更で更新します。
@@ -25,46 +76,74 @@ xref:../user-guide/nixos.adoc#保存契約の履歴[保存契約の履歴]、移
 従い、上流の未公開コミットや、タグが付いていないコミットを指したまま公開しません。共有OIDCログインは
 上流がまだ版のタグを公開していないため、指しているSHAが上流``main``の履歴に含まれることを確認します
 (xref:oidc-browser-login-maintenance.adoc#top[共有OIDCログインcrateの保守])。
+. 公開前の自動検証をローカルで実行します。
++
+[source,sh]
+----
+cargo make release-check
+----
++
+``release-check``は``verify``、カバレッジ、すべてのNixOS VM E2E、配布用Nix packageの構築、
+ブラウザー検査をまとめて実行します。
 . xref:acceptance.adoc#top[受入基準]の人手受入を実施し、実施日、結果、失敗または未実施の項目が
 ある場合の判断をリリース用Pull Requestへ記載します。
 . 必須チェックの成功を確認し、 xref:development.adoc#top[GitHubを使う開発手順]のマージ方式で
 Pull Requestを``main``へマージします。
-. ``main``の先端で``release-gate``ワークフローを手動実行します。``release_tag``には作成予定の
-タグを入力し、検証の成功を確認します。
-. 検証した``main``の先端へリリースタグを作成してプッシュし、タグのプッシュで再実行される
-``release-gate``も成功することを確認します。タグ起点の検証はタグの内容そのものに対して
-行われるため、実行中に別のPull Requestが``main``へマージされても失敗しません(タグが
-``main``上のcommitであることは検証されます)。
-. タグのプッシュで実行された``release-gate``が成功すると、``draft-release``ジョブが同じタグの
-内容から下書きのGitHub Releaseを自動作成します。公開した版の機械可読な契約を取得できるように、
-対象タグに記録された``docs/openapi.json``と``docs/mcp-tools.json``が同名のassetとして下書きへ
-添付されます。作業treeのファイルは使わないため、タグの検証後に``main``が進んでも公開内容は
-変わりません。下書きの作成を確認し、Release Notesへ変更内容、互換性への影響、必要な場合は
-データの移行手順を記載します。
+
+== 候補の確認と公開
+
+[arabic]
+. マージ後の``main``のCIが成功し、``release-candidate`` jobが候補を作ったことを確認します。
+候補は``release-candidate``という名前のartifactで、公開するassetとRelease Notesの本文、
+source commitとdigestを記録した``release-candidate.json``を含みます。
 +
 [source,sh]
 ----
-release_tag=v<MAJOR>.<MINOR>.<PATCH>
-gh release edit "$release_tag" --notes-file <Release Notesのファイル>
+gh run list --branch main --workflow ci.yml --limit 1
 ----
-. 下書きの``isDraft``が``true``であり、``assets``に``openapi.json``と``mcp-tools.json``だけが
-それぞれ一つずつ含まれることを確認します。不足や重複がある場合は公開せず、下書きを修正します。
+. ``main``の先端を取得し、そのSHAを指定して公開workflowを実行します。指定したSHAが先端と
+異なる場合、workflowは何も変更せずに失敗します。公開までは``main``へ別のPull Requestを
+マージしないでください。
 +
 [source,sh]
 ----
-test "$(gh release view "$release_tag" --json isDraft,assets \
-  --jq '(.isDraft == true) and (([.assets[].name] | sort) == ["mcp-tools.json", "openapi.json"])')" = true
+git fetch upstream main
+candidate_sha=$(git rev-parse upstream/main)
+gh workflow run release-dispatch.yml --ref main --field candidate_sha="$candidate_sha"
 ----
-. Release Notesとassetの確認後に、下書きを公開します。
+. workflowの成功を確認します。workflowは、候補の再検証、公開assetへのGitHub Artifact
+Attestationの付与、注釈付きタグの作成、非公開の下書きの作成、asset集合の検査、stableとしての
+公開までを一つの実行で行います。公開後に、同じcommitのNix packageのclosureをx86_64と
+aarch64のbinary cacheへpushします。
 +
 [source,sh]
 ----
-gh release edit "$release_tag" --draft=false
+gh run watch "$(gh run list --workflow release-dispatch.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+----
+. 公開されたReleaseのURLと、添付されたassetを確認します。
+
+== 失敗したときの扱い
+
+タグを作る前に失敗した場合は、原因を取り除いたうえで同じ候補に対して``release-dispatch``を
+もう一度実行できます。``main``が進んでいる場合は、新しい先端で候補が作り直されるため、
+そのSHAを指定します。
+
+タグを作ったあとに問題が見つかった場合は、タグとReleaseを作り直しません。公開済みのタグは
+rulesetで削除と付替えを禁止しています。修正は新しいpatch版として公開します。
+
+binary cacheへのpushだけが失敗した場合は、公開したReleaseはそのままで、該当のjobだけを
+再実行します。
+
+[source,sh]
+----
+gh run rerun <run ID> --failed
 ----
 
-パッチ版は予定へ固定せず、各通常版の公開後に、互換性を変えない不具合や移行手順の修正が必要に
-なった場合だけ公開します。リリースを中止する場合は、タグとGitHub Releaseを作成せず、必要な修正を
-通常のPull Requestとして続けます。過去の版の変更内容と移行手順はGitHub Releasesを、v0.36.0以前の記録は各タグ上の
+リリースを中止する場合は、公開workflowを実行せず、必要な修正を通常のPull Requestとして
+続けます。パッチ版は予定へ固定せず、各通常版の公開後に、互換性を変えない不具合や移行手順の
+修正が必要になった場合だけ公開します。
+
+過去の版の変更内容と移行手順はGitHub Releasesを、v0.36.0以前の記録は各タグ上の
 ``CHANGELOG.adoc``と``docs/acceptance-results/``を参照してください。
 
 日次バックアップ、30世代の保持、四半期の復元確認については

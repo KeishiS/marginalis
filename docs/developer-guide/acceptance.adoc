@@ -8,7 +8,8 @@ xref:traceability.adoc#top[要件と検証の対応表]を参照してくださ�
 
 == 自動検証
 
-Pull Requestと公開前の``release-gate``で次を確認します。
+Pull Requestと``main``、および公開前の``cargo make release-check``で次を確認します。
+``main``でこれらが成功したcommitだけがrelease candidateになり、公開の対象になります。
 
 * React・TypeScriptの整形、静的解析、型検査、単体試験、依存監査、配布ビルド
 * Rustの整形、静的解析、単体・結合試験、依存監査

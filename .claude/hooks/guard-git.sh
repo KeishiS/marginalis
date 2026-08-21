@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Claude CodeのPreToolUse hook。規約で禁止しているgit操作を実行前に拒否します。
 # stdinのJSONからBashコマンドを読み取り、違反時はexit 2(block)で理由をstderrへ返します。
-# 対象: mainへの直接push、force push、リリースタグ(v*)の削除push。
+# 対象: mainへの直接push、force push、リリースタグ(v*)のpush。
 set -euo pipefail
 
 command=$(jq -r '.tool_input.command // empty' 2>/dev/null || true)
@@ -40,6 +40,7 @@ while IFS= read -r segment; do
         if [[ "$delete_seen" == 1 ]]; then
           deny "リリースタグの削除pushは禁止されています(protect-release-tags)。"
         fi
+        deny "リリースタグは公開workflowだけが作成します。mainの先端SHAを指定してrelease-dispatchを実行してください。"
         ;;
     esac
   done
