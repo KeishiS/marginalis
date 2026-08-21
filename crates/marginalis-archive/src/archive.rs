@@ -62,9 +62,9 @@ impl MigrationContract {
 ///
 /// サポート方針(ADR 0018): 現行バイナリが変換する旧契約は、この1件だけとする。それより古い
 /// archiveは、対応していた公開済みリリースを使って隣接する契約間を順番に変換する。
-/// v0.46.0からv0.47.0が書き出した契約。
+/// v0.48.0が書き出した契約で、現行契約とはAdocWeave package版だけが異なる。
 const PREVIOUS_MIGRATION_CONTRACT: MigrationContract =
-    migration_contract("marginalis-archive-17", "0.41.0", 5);
+    migration_contract("marginalis-archive-18", "0.42.0", 6);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -589,8 +589,7 @@ pub fn validate_archive(
     {
         return Err(ArchiveValidationError);
     }
-    validate_archive_contents(content, archive, PrincipalEncoding::Declared)
-        .map_err(|_| ArchiveValidationError)
+    validate_archive_contents(content, archive).map_err(|_| ArchiveValidationError)
 }
 
 /// 対応する旧archive契約を現行規則で全件再検証し、現行archiveへ変換する。
@@ -601,12 +600,12 @@ pub fn migrate_previous_archive(
     if !PREVIOUS_MIGRATION_CONTRACT.matches(archive) {
         return Err(ArchiveMigrationError::UnsupportedContract);
     }
-    if archive.principals.is_some()
-        || archive.note_revisions.is_some()
-        || archive.attachments.is_some()
+    if archive.principals.is_none()
+        || archive.note_revisions.is_none()
+        || archive.attachments.is_none()
     {
-        // 直前契約にはprincipal群が存在しない。形式名だけを旧契約へ書き換えた入力や、
-        // 新旧の項目を混ぜた入力を受理しない。
+        // 直前契約は代表identityとalias群、版履歴、添付を必ず含む。契約identityだけを
+        // 書き換えたより古いarchiveや、項目を落とした入力を受理しない。
         return Err(ArchiveMigrationError::InvalidPrincipal { position: 1 });
     }
     if let Some((position, _)) = archive
@@ -621,26 +620,16 @@ pub fn migrate_previous_archive(
             position: position + 1,
         });
     }
-    let snapshot = validate_archive_contents(content, archive, PrincipalEncoding::Legacy)
-        .map_err(ArchiveMigrationError::from)?;
+    let snapshot =
+        validate_archive_contents(content, archive).map_err(ArchiveMigrationError::from)?;
     Ok(create_archive(content, &snapshot))
-}
-
-#[derive(Clone, Copy)]
-enum PrincipalEncoding {
-    Declared,
-    Legacy,
 }
 
 fn validate_archive_contents(
     content: &dyn NoteContent,
     archive: &Archive,
-    principal_encoding: PrincipalEncoding,
 ) -> Result<LogicalSnapshot, ArchiveContentsError> {
-    let archive_principals = match principal_encoding {
-        PrincipalEncoding::Declared => declared_archive_principals(archive)?,
-        PrincipalEncoding::Legacy => legacy_archive_principals(archive)?,
-    };
+    let archive_principals = declared_archive_principals(archive)?;
     let principal_refs = &archive_principals.references;
     let notes = archive
         .notes
@@ -657,11 +646,6 @@ fn validate_archive_contents(
                     tags: Vec::new(),
                 })
                 .map_err(|_| invalid_note())?;
-            if matches!(principal_encoding, PrincipalEncoding::Legacy)
-                && !normalized.attachment_queries.is_empty()
-            {
-                return Err(invalid_note());
-            }
             let note_id = note
                 .note_id
                 .parse::<EntityId>()
@@ -1067,40 +1051,6 @@ fn archive_review(
 struct ArchivePrincipals {
     principals: Vec<Principal>,
     references: BTreeMap<(String, String), PrincipalRef>,
-}
-
-fn legacy_archive_principals(archive: &Archive) -> Result<ArchivePrincipals, ArchiveContentsError> {
-    let identities = legacy_identity_keys(archive);
-    let principals = identities
-        .into_iter()
-        .enumerate()
-        .map(
-            |(index, (issuer, subject))| -> Result<_, ArchiveContentsError> {
-                let id = i64::try_from(index + 1).expect("archive identity count fits in i64");
-                Ok(Principal::single(
-                    PrincipalId::new(id).expect("enumerated ID is positive"),
-                    Identity::new(issuer, subject)
-                        .map_err(|_| ArchiveContentsError::Relationships)?,
-                ))
-            },
-        )
-        .collect::<Result<Vec<_>, _>>()?;
-    let references = principals
-        .iter()
-        .map(|principal| {
-            (
-                (
-                    principal.primary_identity().issuer().to_owned(),
-                    principal.primary_identity().subject().to_owned(),
-                ),
-                principal.reference().clone(),
-            )
-        })
-        .collect();
-    Ok(ArchivePrincipals {
-        principals,
-        references,
-    })
 }
 
 fn legacy_identity_keys(archive: &Archive) -> BTreeSet<(String, String)> {
@@ -1706,14 +1656,14 @@ mod tests {
         );
     }
 
-    /// 直前の公開契約は、形式と解析器の版が変わっていても現行契約へ移行する。
+    /// 直前の公開契約は、解析器の版だけが変わっていても現行契約へ移行する。
     #[test]
-    fn the_previous_format_and_adocweave_version_are_migrated() {
+    fn the_previous_adocweave_version_is_migrated() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let current = create_archive(&content(), &snapshot);
         let mut previous = current.clone();
         stamp_contract(&mut previous, PREVIOUS_MIGRATION_CONTRACT);
-        assert_ne!(previous.format, current.format);
+        assert_eq!(previous.format, current.format);
         assert_ne!(
             previous.adocweave_package_version,
             current.adocweave_package_version
@@ -1727,15 +1677,13 @@ mod tests {
     }
 
     /// archiveの契約identityを、指定した過去の組へ書き換える。
+    ///
+    /// 直前の公開契約は現行契約と同じ項目を持ち、AdocWeave package版だけが異なる。
+    /// そのため書き換えるのは契約identityの三つ組だけである。
     fn stamp_contract(archive: &mut Archive, contract: MigrationContract) {
         archive.format = contract.format.into();
         archive.adocweave_package_version = contract.adocweave_package_version.into();
         archive.note_profile_version = contract.note_profile_version;
-        if contract == PREVIOUS_MIGRATION_CONTRACT {
-            archive.principals = None;
-            archive.note_revisions = None;
-            archive.attachments = None;
-        }
     }
 
     #[test]
@@ -1771,8 +1719,8 @@ mod tests {
     fn migration_rejects_contracts_other_than_the_previous_one() {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         for contract in [
+            migration_contract("marginalis-archive-17", "0.41.0", 5),
             migration_contract("marginalis-archive-17", "0.40.1", 4),
-            migration_contract("marginalis-archive-17", "0.40.0", 5),
             migration_contract("marginalis-archive-17", "0.36.0", 5),
             migration_contract("marginalis-archive-16", "0.27.0", 5),
             migration_contract("marginalis-archive-7", "0.11.0", 3),
@@ -1792,12 +1740,41 @@ mod tests {
         let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
         let mut previous = create_archive(&content(), &snapshot);
         stamp_contract(&mut previous, PREVIOUS_MIGRATION_CONTRACT);
-        previous.notes[0].source =
-            "= A title\n:source-language: rust\n:marginalis-tags: {source-language}\n\nbody".into();
+        let source =
+            "= A title\n:source-language: rust\n:marginalis-tags: {source-language}\n\nbody";
+        previous.notes[0].source = source.into();
+        // 現在版の本文は最新の版履歴と一致する必要がある。両方を同じ本文へそろえる。
+        let revisions = previous.note_revisions.as_mut().expect("版履歴");
+        revisions
+            .iter_mut()
+            .max_by_key(|revision| revision.revision)
+            .expect("最新の版")
+            .source = source.into();
 
         let migrated = migrate_previous_archive(&content(), &previous).expect("migrated archive");
         let validated = validate_archive(&content(), &migrated).expect("current archive");
         assert_eq!(validated.notes()[0].tags(), ["rust"]);
+    }
+
+    /// 契約identityだけを直前契約へ書き換えた、項目の足りない古いarchiveは受理しない。
+    #[test]
+    fn migration_rejects_an_archive_without_the_previous_contract_items() {
+        let snapshot = LogicalSnapshot::new(vec![note()], Vec::new()).expect("snapshot");
+        let complete = create_archive(&content(), &snapshot);
+        for drop_item in [
+            |archive: &mut Archive| archive.principals = None,
+            |archive: &mut Archive| archive.note_revisions = None,
+            |archive: &mut Archive| archive.attachments = None,
+        ] {
+            let mut incomplete = complete.clone();
+            stamp_contract(&mut incomplete, PREVIOUS_MIGRATION_CONTRACT);
+            drop_item(&mut incomplete);
+
+            assert_eq!(
+                migrate_previous_archive(&content(), &incomplete),
+                Err(ArchiveMigrationError::InvalidPrincipal { position: 1 })
+            );
+        }
     }
 
     #[test]

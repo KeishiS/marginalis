@@ -85,16 +85,8 @@ fn collect_block(block: &Block, spans: &mut Vec<NoteSourceSpan>) {
             marker_spans: Vec::new(),
             level: None,
         }),
-        Block::Source(source) => spans.push(NoteSourceSpan {
-            kind: NoteSourceSpanKind::SourceBlock,
-            span: span(source.range),
-            content_span: Some(span(source.content_range)),
-            marker_spans: non_empty_spans([
-                Some(source.attribute_range),
-                Some(source.delimiter_range),
-            ]),
-            level: None,
-        }),
+        // source blockはlisting blockとして現れ、``[source,rust]``の属性行は直前の
+        // block attribute行になる。装飾の対象は属性行と区切り記号の両方である。
         Block::Verbatim(verbatim) => spans.push(NoteSourceSpan {
             kind: match verbatim.kind {
                 VerbatimKind::Source(_) => NoteSourceSpanKind::SourceBlock,
@@ -102,7 +94,13 @@ fn collect_block(block: &Block, spans: &mut Vec<NoteSourceSpan>) {
             },
             span: span(verbatim.range),
             content_span: Some(span(verbatim.content_range)),
-            marker_spans: non_empty_spans([Some(verbatim.delimiter_range)]),
+            marker_spans: non_empty_spans([
+                match &verbatim.kind {
+                    VerbatimKind::Source(source) => Some(source.attribute_range),
+                    VerbatimKind::Listing | VerbatimKind::Literal => None,
+                },
+                Some(verbatim.delimiter_range),
+            ]),
             level: None,
         }),
         Block::Math(math) => spans.push(NoteSourceSpan {
@@ -449,6 +447,24 @@ mod tests {
         assert_eq!(
             slice(source, source_block.content_span.expect("コード本文")).trim(),
             "fn main() {}"
+        );
+        // 属性行と区切り記号の両方を装飾の対象にする。
+        let markers: Vec<_> = source_block
+            .marker_spans
+            .iter()
+            .map(|span| slice(source, *span).trim_end())
+            .collect();
+        assert!(markers.contains(&"[source,rust]"), "markers: {markers:?}");
+        assert!(markers.contains(&"----"), "markers: {markers:?}");
+
+        let math_block = spans
+            .iter()
+            .find(|item| item.kind == NoteSourceSpanKind::MathBlock)
+            .expect("math block span");
+        assert_eq!(
+            math_block.marker_spans.len(),
+            source_block.marker_spans.len(),
+            "属性行を持つblockの装飾対象は同じ数にする"
         );
     }
 

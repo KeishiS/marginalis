@@ -346,6 +346,20 @@ mod tests {
         assert!(!html.contains("role-private"));
     }
 
+    /// 題を持つlisting blockは、題をcaptionとして描画に残す。
+    #[test]
+    fn a_titled_listing_block_keeps_its_title() {
+        let html = render_note(
+            &note(".用例\n----\nfn main() {}\n----"),
+            NoteRenderInputs::default(),
+        )
+        .expect("render");
+
+        assert!(html.contains("<figcaption"), "html: {html}");
+        assert!(html.contains("用例"), "html: {html}");
+        assert!(html.contains("fn main() {}"));
+    }
+
     #[test]
     fn published_bibliography_example_validates_and_renders_bidirectional_links() {
         let profile = crate::policy::note_profile();

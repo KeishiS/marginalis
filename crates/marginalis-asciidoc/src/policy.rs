@@ -447,14 +447,6 @@ fn validate_note_content_profile_with(
                 math.range,
             ));
         }
-        SemanticNode::Block(Block::Source(source)) => {
-            errors.extend(unsupported_source_language(
-                profile,
-                source.language.as_deref(),
-                source.language_range,
-                source.attribute_range,
-            ));
-        }
         SemanticNode::Block(Block::Verbatim(block)) => {
             if let VerbatimKind::Source(source) = &block.kind {
                 errors.extend(unsupported_source_language(
