@@ -1,22 +1,18 @@
-# Marginalis v0.48.0
+# Marginalis v0.49.0
 
 ## 主な変更
 
-### 版履歴と復元
+### AdocWeave 0.43.0
 
-ノートの各版について、本文、変更者、添付画像の参照を完全な状態として追記保存するようになりました。Web UIとREST APIから版の一覧、任意の二版の行単位差分、過去版の内容を新しいrevisionとして復元する操作を利用できます。復元しても過去の履歴は書き換えません。
+AsciiDocの解析と描画をAdocWeave 0.43.0へ更新しました。題を持つlisting block(`----`)とliteral block(`....`)は`figure`と`figcaption`で描画するようになり、題が閲覧画面から失われなくなりました。Marginalisが受理する入力規則の範囲は変えていません。
 
-### 添付画像
+編集画面では、`[source,rust]`のような属性行を、直前のblock attribute行として区切り記号と同じ装飾の対象に含めるようになりました。
 
-PNG、JPEG、WebP画像をノートへアップロードし、編集画面へのドラッグ＆ドロップ、Live Preview、閲覧画面での表示を利用できます。画像は上限付きのSQLite BLOBとして保存し、取得時にはノートと同じACLを検査します。SVG、HTML、外部URLの代理取得、汎用ファイル保存は対象外です。
+### 公開手順の自動化
 
-### 利用者identityの引き継ぎ
+リリースの公開方式を、検証済みの`main`のcommitをそのままタグとGitHub Releaseへ昇格する形へ変更しました。`main`のCIが、公開するasset、Release Notesの本文、source commit、各fileのSHA-256を固定した候補を作り、公開workflowがそれを作り直さずに公開します。この版から、タグとGitHub Releaseは人ではなくworkflowが作成します。
 
-保存済みデータの所有者と認可を、OIDCの`issuer`と`subject`そのものではなく、内部principalへ結び付けるようになりました。管理者は、確認済みの新しいOIDC identityを既存principalのaliasとして明示的に結び付け、代表identityを切り替えられます。自動的な同一人物の推定は行いません。
-
-### 同期とWebhook
-
-ノート、ACL、文献情報の変更を一つの`domain_changes`へ記録し、外部検索向け同期とWebhookを同じtransactionから派生させるようにしました。
+利用者から見た配布物は変わりません。公開する`openapi.json`と`mcp-tools.json`は、タグ上の同名ファイルとbyte単位で同じ内容であることをworkflowが検査し、GitHub Artifact Attestationを付与します。
 
 ## 対応環境
 
@@ -26,43 +22,43 @@ Rust 1.97.1とNode.js 22.23.1で構築しています。実行環境へこれら
 
 ## 公開契約と破壊的変更
 
-MCPの`sync_notes` toolを削除し、同じ`notes:sync` scopeで認可する`GET /api/v3/sync/notes`へ移しました。外部検索向けの投影を実装している場合は、呼び出し先をこのREST endpointへ変更してください。
-
-AsciiDocの解析と描画をAdocWeave 0.42.0へ更新しました。Marginalisが受理する入力規則の範囲は変えていません。利用者が指定した任意のblock roleはHTML classへ出力しません。
+REST APIとMCPの経路、要求と応答の形は変更していません。`openapi.json`が記録するAdocWeave package版が`0.43.0`になります。
 
 ### archive保存契約
 
-v0.48.0が初めて書き出す現行契約は、次の組です。
+v0.49.0が初めて書き出す現行契約は、次の組です。
 
 - `marginalis-archive-18`
-- AdocWeave package 0.42.0
+- AdocWeave package 0.43.0
 - note profile 6
 
-現行archiveは、代表identityとalias群、保持中の全ノート版、添付画像のbytesと各版の参照を含みます。v0.46.0またはv0.47.0が書き出した直前契約`marginalis-archive-17 / AdocWeave 0.41.0 / note profile 5`は、v0.48.0の`restore-archive`で現行契約へ変換して復元できます。さらに古いarchiveは、利用者ガイドの保存契約表に従い、対応する過去版で契約を一つずつ進めてください。
+**移行元として受理するarchiveが変わります。** `migrate-archive`と`restore-archive`が受理する旧契約は、v0.48.0が書き出した`marginalis-archive-18` / 0.42.0 / 6だけになりました。v0.47.0以前が書き出したarchiveは、この版だけでは復元できません。利用者ガイドの保存契約の履歴に従い、対応する公開版で契約を一つずつ持ち上げてから渡してください。
 
-## v0.48.0への移行
+新旧の契約は記録する項目が同じで、AdocWeave package版だけが異なります。移行では全ノートを0.43.0で再検証し、代表identityとalias群、保持中の全版、添付画像を引き継ぎます。
 
-この版はSQLite schema 23を使用します。v0.47.0のschema 22は通常起動時に自動移行されないため、`backupDirectory`を設定したNixOS環境では次の順で明示的に更新してください。
+## v0.49.0への移行
+
+この版はSQLite schema 23を使用します。v0.48.0と同じschemaのため、データベースの移行は不要です。NixOS環境では通常どおり更新してください。
 
 ```sh
-sudo systemctl stop marginalis.service
 sudo nixos-rebuild switch --flake <利用中のflake>
-sudo systemctl start marginalis-migrate-database.service
-sudo journalctl -u marginalis-migrate-database.service -o cat -n 50
-sudo systemctl start marginalis.service
 ```
 
-`marginalis-migrate-database.service`は、Web session、MCP token、Webhook配送状態を含むSQLite全体の退避を`backupDirectory`へ作り、権限、SQLiteの整合性、外部キー、schema履歴を検査してから、一つのtransactionでschema 22から23へ進めます。移行後は`marginalis-diagnose.service`、HTTP health、OIDC login、MCP認可を確認してください。
+更新後は`marginalis-diagnose.service`、HTTP health、OIDC login、MCP認可を確認してください。
 
-同期用とWebhook用で分かれていた変更番号を統合するため、既存の同期cursorと変更索引は移行しません。Renkanなどの外部検索用投影は、移行後にcursorを省略した全量同期から再開してください。
+保管しているarchiveがv0.47.0以前のものである場合は、この版へ更新する前に、v0.48.0で`marginalis-archive-18` / 0.42.0 / 6へ変換して保管し直すことを推奨します。
 
 ## 更新とロールバック
 
-切戻しでは、新しいserviceを停止し、移行後のdatabaseを別名で保全してから、移行時に作られたSQLite退避と移行前のNixOS generationを組にして戻します。旧schemaの退避をv0.48.0の実行ファイルと組み合わせても起動できません。
+切戻しでは、新しいserviceを停止し、移行前のNixOS generationへ戻します。schemaを変更していないため、データベースの入れ替えは不要です。
+
+v0.49.0が書き出したarchiveは、v0.48.0では現行契約として受理されません。切戻し後に復元が必要な場合は、切戻し前に取得したv0.48.0のarchiveを使ってください。
 
 ## 既知の制約
 
 添付できるのは画像だけで、汎用のファイル保存には対応していません。同一人物の自動推定を行わないため、利用者のOIDC identityが変わった場合は管理者がaliasを明示的に結び付ける必要があります。
+
+公開前の人手受入は、配備した環境での画面操作と外部MCPクライアントの確認を対象としています。この版では自動検証だけを実施しているため、配備後に実環境での確認を行ってください。
 
 ## 配布物の検証
 
@@ -72,4 +68,4 @@ sudo systemctl start marginalis.service
 gh attestation verify openapi.json --repo KeishiS/marginalis
 ```
 
-自動検証では、Kanidmログイン、ブラウザー操作、ACL、MCP認可、Webhook、schema移行、archive復元を確認しています。配備後は、実際に使用する外部MCPクライアント、最新の実archiveを用いた隔離復元、外部Webhook受信サーバーでも受入確認することを推奨します。
+自動検証では、Kanidmログイン、ブラウザー操作、ACL、MCP認可、Webhook、schema検査、archiveの移行と復元を確認しています。配備後は、実際に使用する外部MCPクライアント、最新の実archiveを用いた隔離復元、外部Webhook受信サーバーでも受入確認することを推奨します。
