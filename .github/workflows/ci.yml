@@ -264,13 +264,20 @@ jobs:
   # source commitとdigestを固定した集合で、stable release workflowが作り直さずにそのまま
   # 公開する。ここで作られていないcommitは公開できない。
   #
-  # 公開済みの版かどうかで作成を分けない。判定を別jobの出力へ渡すと、条件が一度でも
-  # 想定と違う値になったときに候補が作られず、公開できないcommitが静かに増える。候補の
-  # 作成自体は軽く、公開してよいかはstable release workflowのreadinessがtagとReleaseの
-  # 不在で判定する。
+  # 公開済みの版かどうかで作成を分けない。候補の作成自体は軽く、公開してよいかは
+  # stable release workflowのreadinessがtagとReleaseの不在で判定する。
+  #
+  # 条件に`always()`が必要である。ゲートjobの`verify`は`verify-core`と`verify-docs`を
+  # 集約し、変更分類に応じて必ずどちらかが省略される。`always()`がないと、この省略が
+  # `verify`を越えて伝わり、`verify`が成功していてもこのjobが省略される。省略を越えて
+  # 実行したうえで、必要なゲートの成功をこのjob自身が確かめる。
   release-candidate:
     needs: [changes, verify, nixos-e2e]
-    if: github.event_name == 'push'
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      needs.verify.result == 'success' &&
+      needs.nixos-e2e.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
