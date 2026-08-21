@@ -56,10 +56,12 @@ jobs:
 
           # 公開できるかは、run全体ではなく候補を作るjobの結果で判定する。公開内容に
           # 影響しないjobの失敗で公開が止まらず、候補が作られていないcommitは通らない。
+          #
+          # 絞り込みはURLのquery stringで渡す。ghはfield指定があるとmethodをPOSTへ
+          # 切り替えるため、`-f`で渡すとこの読み取り専用のendpointが404になる。
           runs="$(
             gh api --paginate \
-              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-              -f branch=main -f event=push -f head_sha="$CANDIDATE_SHA" \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&head_sha=$CANDIDATE_SHA" \
               --jq '.workflow_runs[] | [.id, .head_sha, .head_branch, .event] | @tsv' |
             while IFS=$'\t' read -r id head_sha head_branch event; do
               conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" \
