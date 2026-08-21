@@ -1,0 +1,171 @@
+name: Stable release
+
+# 検証済みのmain候補を、そのcommitのままtagとGitHub Releaseへ昇格する。人が行う操作は、
+# 現在のmainの先端SHAを指定してこのworkflowを一度実行することだけで、tagの作成、
+# Release Notesの転記、下書きの公開は行わない。tag作成前に失敗した場合は、同じ候補で
+# そのまま再実行できる。tag作成後に問題が見つかった場合は、tagを変えず新しいpatch版で直す。
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "公開するmainの先端commit(40桁のSHA)"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+
+jobs:
+  # 公開可否は読み取りだけで判定する。指定commitがmainの先端であること、同じcommitで
+  # 候補作成が成功していること、tagとReleaseがまだないことを確かめ、公開する候補を確定する。
+  readiness:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      candidate_sha: ${{ steps.readiness.outputs.candidate_sha }}
+      run_id: ${{ steps.readiness.outputs.run_id }}
+      tag: ${{ steps.readiness.outputs.tag }}
+    steps:
+      - name: Check out the dispatched main tip
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Resolve the release candidate
+        id: readiness
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(jq -er .packageVersion release-manifest.json)"
+          tag="v$version"
+
+          tag_exists=true
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1 || tag_exists=false
+          release_exists=true
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" >/dev/null 2>&1 || release_exists=false
+
+          # 公開できるかは、run全体ではなく候補を作るjobの結果で判定する。公開内容に
+          # 影響しないjobの失敗で公開が止まらず、候補が作られていないcommitは通らない。
+          runs="$(
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f branch=main -f event=push -f head_sha="$CANDIDATE_SHA" \
+              --jq '.workflow_runs[] | [.id, .head_sha, .head_branch, .event] | @tsv' |
+            while IFS=$'\t' read -r id head_sha head_branch event; do
+              conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" \
+                --jq '[.jobs[] | select(.name == "release-candidate") | .conclusion]
+                  | first // "missing"')"
+              jq -n --argjson id "$id" --arg headSha "$head_sha" \
+                --arg headBranch "$head_branch" --arg event "$event" \
+                --arg candidateConclusion "$conclusion" \
+                '{
+                  id: $id,
+                  headSha: $headSha,
+                  headBranch: $headBranch,
+                  event: $event,
+                  candidateConclusion: $candidateConclusion
+                }'
+            done | jq -s '.'
+          )"
+
+          jq -n \
+            --arg ref "$GITHUB_REF" \
+            --arg candidateSha "$CANDIDATE_SHA" \
+            --arg dispatchSha "$DISPATCH_SHA" \
+            --arg version "$version" \
+            --argjson tagExists "$tag_exists" \
+            --argjson releaseExists "$release_exists" \
+            --argjson runs "$runs" \
+            '{
+              ref: $ref,
+              candidateSha: $candidateSha,
+              dispatchSha: $dispatchSha,
+              version: $version,
+              tagExists: $tagExists,
+              releaseExists: $releaseExists,
+              runs: $runs
+            }' |
+            bash .github/scripts/check-release-readiness.sh >>"$GITHUB_OUTPUT"
+
+  # 候補は作り直さず、mainのCIが作ったartifactをそのまま取り出して再検証する。検証は候補の
+  # bytesと公開するcommitの内容を突き合わせるため、両者が食い違ったまま先へ進まない。
+  reuse-candidate:
+    needs: readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the release candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.readiness.outputs.candidate_sha }}
+          persist-credentials: false
+      - name: Download the release candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-candidate
+          path: candidate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.readiness.outputs.run_id }}
+      - name: Verify the reused candidate
+        env:
+          CANDIDATE_SHA: ${{ needs.readiness.outputs.candidate_sha }}
+        run: bash .github/scripts/release-candidate.sh verify candidate "$CANDIDATE_SHA"
+      - name: Hand the candidate to the publish job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [readiness, reuse-candidate]
+    uses: ./.github/workflows/release-publish.yml
+    with:
+      candidate_sha: ${{ needs.readiness.outputs.candidate_sha }}
+      tag: ${{ needs.readiness.outputs.tag }}
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+
+  # 公開後に、同じcommitのNix packageのruntime closureをbinary cacheへpushする。デプロイ先は
+  # substituterを設定するだけで、source buildせずに更新できる。ここが失敗しても公開済みの
+  # ReleaseとtagはそのままでよいCPUごとのjobであり、失敗したjobだけを再実行すればよい。
+  binary-cache:
+    needs: [readiness, publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out the published commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.readiness.outputs.candidate_sha }}
+          persist-credentials: false
+      - name: Set up Nix
+        uses: ./.github/actions/setup
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build and push the release closure
+        env:
+          NIX_SYSTEM: ${{ matrix.system }}
+        run: nix build ".#packages.$NIX_SYSTEM.default" --no-link --print-out-paths | cachix push keishis

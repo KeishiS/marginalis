@@ -73,7 +73,8 @@ description = "Validate GitHub Actions workflow syntax"
 command = "actionlint"
 args = [
   ".github/workflows/ci.yml",
-  ".github/workflows/release-gate.yml",
+  ".github/workflows/release-dispatch.yml",
+  ".github/workflows/release-publish.yml",
   ".github/workflows/security-audit.yml",
   ".github/workflows/shared-authorization-server-release.yml",
 ]
@@ -160,13 +161,27 @@ bash .github/scripts/test-release-metadata.sh
 bash .github/scripts/check-release-metadata.sh
 '''
 
-[tasks.release-gate-core]
-description = "Run release checks that do not require an interactive browser"
-dependencies = ["verify", "coverage", "release-metadata", "nix-release-check", "release-package"]
+[tasks.release-manifest]
+description = "Verify the release manifest, release notes, and release candidate contract"
+script_runner = "@shell"
+script = '''
+set -eu
+bash .github/scripts/test-release-manifest.sh
+bash .github/scripts/check-release-manifest.sh --with-runtime-toolchain
+bash .github/scripts/test-release-candidate.sh
+bash .github/scripts/test-release-readiness.sh
+'''
 
-[tasks.release-gate]
-description = "Run every automated gate required before a release"
-dependencies = ["release-gate-core", "browser-smoke", "browser-editor-firefox"]
+[tasks.release-check]
+description = "Run every automated gate required before publishing a release"
+dependencies = [
+  "verify",
+  "coverage",
+  "nix-release-check",
+  "release-package",
+  "browser-smoke",
+  "browser-editor-firefox",
+]
 
 [tasks.unused-dependencies]
 description = "Reject dependencies that are declared but never used"
@@ -312,6 +327,7 @@ dependencies = [
   "protocol-regression-assets",
   "flake-check",
   "release-metadata",
+  "release-manifest",
 ]
 
 [tasks.ci-verify]
@@ -367,6 +383,12 @@ dependencies = ["ci-verify", "ci-early", "ci-coverage", "ci-nixos-e2e"]
 
 [tasks.pre-push]
 description = "Run every GitHub Actions validation required before pushing code"
+alias = "ci"
+
+# 3製品で共通の外向きtask名。ほかはfmt、fmt-check、verify、security-audit、release-checkで、
+# いずれも同じ意味で使う。
+[tasks.acceptance]
+description = "Run every automated acceptance suite"
 alias = "ci"
 
 [tasks.frontend-install]

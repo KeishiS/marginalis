@@ -30,4 +30,10 @@ printf '%s\n' '# skill' >"$work_dir/.claude/skills/example/SKILL.md"
 git -C "$work_dir" add .
 bash "$script_dir/check-documentation-corpus.sh" "$work_dir" >/dev/null
 
+# GitHub Releaseへそのまま公開するrelease/notes.mdは受理する。
+mkdir -p "$work_dir/release"
+printf '%s\n' '# Marginalis v1.2.3' >"$work_dir/release/notes.md"
+git -C "$work_dir" add .
+bash "$script_dir/check-documentation-corpus.sh" "$work_dir" >/dev/null
+
 echo "文書分類検査の回帰試験に成功しました。"

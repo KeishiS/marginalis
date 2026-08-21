@@ -1,0 +1,144 @@
+name: Release publish
+
+# 確定した候補から、attestation、注釈付きtag、非公開の下書き、asset添付、asset集合の検査、
+# stable公開までを一つのjobで行う。途中で失敗した場合は下書きを削除し、公開済みのReleaseを
+# 中途半端な状態で残さない。tagはこのworkflowだけが作り、人は作成もpushもしない。
+
+on:
+  workflow_call:
+    inputs:
+      candidate_sha:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+permissions:
+  attestations: write
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the release candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - name: Download the release candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-candidate
+          path: candidate
+      - name: Verify the immutable release input
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$RELEASE_TAG" = "v$(jq -er .packageVersion release-manifest.json)"
+          bash .github/scripts/check-release-manifest.sh
+          bash .github/scripts/release-candidate.sh verify candidate "$CANDIDATE_SHA"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "tagはすでに存在します: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "GitHub Releaseはすでに存在します: $RELEASE_TAG" >&2
+            exit 1
+          fi
+      # 公開するのはmanifestが宣言したassetだけで、候補に含まれるRelease Notesの原文と
+      # 候補metadataはReleaseへ添付しない。
+      - name: Collect the declared public assets
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          while IFS= read -r name; do
+            cp -- "candidate/$name" "assets/$name"
+          done < <(jq -r '.assets[].name' release-manifest.json)
+      - name: Attest the public assets
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: assets/*
+      - name: Create the immutable annotated tag
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag_object="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f tag="$RELEASE_TAG" \
+            -f message="Marginalis $RELEASE_TAG" \
+            -f object="$CANDIDATE_SHA" \
+            -f type=commit)"
+          tag_sha="$(jq -er .sha <<<"$tag_object")"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" \
+            -f sha="$tag_sha" >/dev/null
+      - name: Create and verify the private draft
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Release Notesの題名はReleaseの題として表示するため、本文からは取り除く。
+          body="$(sed '1{/^# /d}' candidate/notes.md | sed '1{/^$/d}')"
+          draft="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+            -f tag_name="$RELEASE_TAG" \
+            -f name="$RELEASE_TAG" \
+            -f body="$body" \
+            -F draft=true \
+            -F prerelease=false)"
+          release_id="$(jq -er .id <<<"$draft")"
+          upload_url="$(jq -er .upload_url <<<"$draft")"
+          upload_url="${upload_url%%\{*}"
+          test -n "$upload_url"
+          echo "release-id=$release_id" >>"$GITHUB_OUTPUT"
+          for file in assets/*; do
+            gh api --method POST \
+              --header 'Content-Type: application/octet-stream' \
+              --input "$file" \
+              "$upload_url?name=${file##*/}" >/dev/null
+          done
+          expected="$(jq -r '.assets[].name' release-manifest.json | LC_ALL=C sort)"
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            --jq '.assets[].name' | LC_ALL=C sort)"
+          if [ "$expected" != "$actual" ]; then
+            echo "下書きのasset集合が宣言と一致しません。" >&2
+            diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
+            exit 1
+          fi
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.draft.outputs.release-id }}
+        run: |
+          set -euo pipefail
+          result="$(gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false)"
+          test "$(jq -r .draft <<<"$result")" = false
+          test "$(jq -r .prerelease <<<"$result")" = false
+      - name: Remove the incomplete draft
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.draft.outputs.release-id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RELEASE_ID" ]; then
+            echo "下書きが作られていないため、後始末は不要です。"
+            exit 0
+          fi
+          draft="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" 2>/dev/null || echo '{}')"
+          if [ "$(jq -r '.draft // false' <<<"$draft")" = true ]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
+          fi
