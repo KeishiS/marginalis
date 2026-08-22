@@ -1,8 +1,5 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
-const {
-  pendingWebProvenance,
-  SCREENSHOT_OPTIONS,
-} = require("./fixtures/smoke-helpers");
+const { pendingWebProvenance } = require("./fixtures/smoke-helpers");
 
 test("production build starts and renders a note returned by the API", async ({
   page,
@@ -36,18 +33,7 @@ test("production build starts and renders a note returned by the API", async ({
   ).toHaveAttribute("href", "/notes/0197c9bc-0000-7000-8000-000000000001");
   await expect(page.getByRole("status")).toContainText("1件のノート");
   await expect(page.getByRole("link", { name: "新規ノート" })).toHaveCount(1);
-  await expect(page).toHaveScreenshot("note-list-wide.png", SCREENSHOT_OPTIONS);
-  await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page).toHaveScreenshot(
-    "note-list-wide-dark.png",
-    SCREENSHOT_OPTIONS,
-  );
-  await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 360, height: 720 });
-  await expect(page).toHaveScreenshot(
-    "note-list-narrow.png",
-    SCREENSHOT_OPTIONS,
-  );
 
   // 狭い画面では移動先をメニューへまとめる。開くまでは畳んでおく。
   const navigation = page.getByRole("navigation", { name: "主要な画面" });

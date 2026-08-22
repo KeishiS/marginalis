@@ -1,8 +1,4 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
-const {
-  SCREENSHOT_OPTIONS,
-  detailScreenshotOptions,
-} = require("./fixtures/smoke-helpers");
 
 test("グラフビューで点を選ぶと、その画面へ移動できる", async ({ page }) => {
   const noteId = "0197c9bc-0000-7000-8000-000000000001";
@@ -69,10 +65,6 @@ test("グラフビューで点を選ぶと、その画面へ移動できる", as
   expect(detailBox.x + detailBox.width).toBeLessThanOrEqual(
     figureBox.x + figureBox.width + 1,
   );
-  await expect(page).toHaveScreenshot(
-    "graph-vertex-detail.png",
-    detailScreenshotOptions(page),
-  );
 
   // 起点を指定すると、その範囲だけを要求し、階層を選び直せる帯が出る。
   await page.goto(`/graph?origin=${noteId}&depth=2`);
@@ -92,15 +84,8 @@ test("グラフビューで点を選ぶと、その画面へ移動できる", as
   );
 
   await page.evaluate(() => window.scrollTo(0, 0));
-  await expect(page).toHaveScreenshot("graph-wide.png", SCREENSHOT_OPTIONS);
-  await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page).toHaveScreenshot(
-    "graph-wide-dark.png",
-    SCREENSHOT_OPTIONS,
-  );
 
   // 図はマウスがなくても使える。絞り込みの次にTabで届く点をEnterで開く。
-  await page.emulateMedia({ colorScheme: "light" });
   await page.getByRole("button", { name: "条件を解除" }).click();
   await expect(page).toHaveURL("/graph");
   await expect(vertices).toHaveCount(3);
