@@ -40,7 +40,7 @@ Issue 314では、独立リポジトリ、crate registry、固定したGit depen
 
 *2つのcrateは同じ版と同じcommitで取り込む*: 中核とCIMD adapterは同じworkspaceで開発し、常に同じ版番号を
 持ちます。Marginalisのルート``Cargo.toml``で版とrevisionを一度だけ宣言し、各crateはworkspace依存として
-参照します。この一致は``cargo make shared-authorization-server``が機械的に確認します。
+参照します。この一致は``cargo make pinned-git-crates``が機械的に確認します。
 
 *crates.ioへは公開しない*: 公開APIが安定するまでは``publish = false``を維持します。registryへ出すと、
 互換性と保守期間の約束が公開APIの安定より先に生じます。公開の可否は、第2の利用側が実際に動いてから

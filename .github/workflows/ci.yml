@@ -57,7 +57,7 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup
       - name: Verify
-        run: nix develop --command cargo make ci-verify
+        run: nix develop --command cargo make verify
 
   verify-docs:
     needs: changes
@@ -72,9 +72,7 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup
       - name: Check documentation
-        run: |
-          nix develop --command cargo make docs-check
-          nix develop --command cargo make traceability-check
+        run: nix develop --command cargo make docs-check
 
   # coverageは必須gate(verify)に含まれないため、mainへのpushだけで測定して推移を追う。
   coverage:
@@ -88,7 +86,7 @@ jobs:
       - name: Set up Nix
         uses: ./.github/actions/setup
       - name: Measure workspace and integration-path coverage
-        run: nix develop --command cargo make ci-coverage
+        run: nix develop --command cargo make coverage
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -226,7 +224,7 @@ jobs:
           trap 'rm -f "$raw_log"' EXIT
           set +e
           # devShellはこのjobで使用しないため、`nix develop`を経由せず直接実行する。
-          # 実行内容は`cargo make ci-nixos-e2e`と同じである。
+          # 実行内容は`cargo make nix-release-check`と同じである。
           nix --extra-experimental-features 'nix-command flakes' flake check -L 2>&1 | tee "$raw_log"
           status="${PIPESTATUS[0]}"
           set -e

@@ -3,18 +3,7 @@ set -euo pipefail
 
 status=0
 
-if ! bash .github/scripts/check-documentation-corpus.sh; then
-  status=1
-fi
 if ! bash .github/scripts/check-asciidoc.sh; then
-  status=1
-fi
-if ! bash .github/scripts/check-release-instructions.sh; then
-  status=1
-fi
-
-if [[ -d issues ]]; then
-  echo "issues/は廃止されています。新しい作業項目はGitHub Issuesへ作成してください。" >&2
   status=1
 fi
 

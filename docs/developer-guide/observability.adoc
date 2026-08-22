@@ -45,8 +45,11 @@ templateを``path``として記録します。未一致の経路は``<unmatched>
 
 * Cookie、Bearer token、OIDCの認可code、state、nonce、PKCE verifier、client secret
 * ID tokenとaccess tokenのclaim値、利用者の``issuer``と``subject``
-* ノート本文、ノートID、題名、タグ、検索語
+* ノート本文、題名、タグ、検索語
 * HTTP requestとresponseのheaderおよびbody
+
+ノートのUUIDである``note_id``は、本文でも秘密情報でもないため記録できます。単一ホストの運用では、
+ログとデータベースが同じ信頼境界にあり、どのノートで失敗したかを追えることの利点が上回ります。
 
 認証・認可の失敗は値そのものではなく、``token-format``、``standard-claims``、
 ``insufficient-scope``などの``reason``で区別します。ログをIssueまたはPull Requestへ添付する場合も、

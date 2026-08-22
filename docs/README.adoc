@@ -65,9 +65,6 @@ Marginalisの文書は、利用者・運用者向けの``user-guide/``と、設�
 |xref:developer-guide/requirements.adoc#top[要件定義]
 |システム責任者・開発者
 |現行の確定要件
-|xref:developer-guide/traceability.adoc#top[要件と検証の対応表]
-|開発者・受入担当者
-|要件IDと検証階層の対応
 |xref:developer-guide/architecture.adoc#top[アーキテクチャ]
 |開発者
 |コンポーネントの責務と、一貫して満たすべき設計条件

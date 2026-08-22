@@ -34,7 +34,10 @@ done < <(
     "${production_globs[@]}"
 )
 
-forbidden_field='(?:[A-Za-z0-9_]*(?:token|cookie|authorization_code|client_secret|note_id|header|origin)[A-Za-z0-9_]*|issuer|[A-Za-z0-9_]+_issuer|subject|[A-Za-z0-9_]+_subject|title|[A-Za-z0-9_]+_title|tags|[A-Za-z0-9_]+_tags|source|[A-Za-z0-9_]+_source|body|[A-Za-z0-9_]+_body|query|[A-Za-z0-9_]+_query|search|[A-Za-z0-9_]+_search|sec_fetch_site)'
+# 禁止するのは秘密情報、利用者identity、ノート本文から導出した値、HTTP headerとbodyである。
+# ノートのUUIDである``note_id``は、本文でも秘密情報でもなく、単一ホストの運用で障害を追う
+# 手掛かりになるため記録してよい。
+forbidden_field='(?:[A-Za-z0-9_]*(?:token|cookie|authorization_code|client_secret|header|origin)[A-Za-z0-9_]*|issuer|[A-Za-z0-9_]+_issuer|subject|[A-Za-z0-9_]+_subject|title|[A-Za-z0-9_]+_title|tags|[A-Za-z0-9_]+_tags|source|[A-Za-z0-9_]+_source|body|[A-Za-z0-9_]+_body|query|[A-Za-z0-9_]+_query|search|[A-Za-z0-9_]+_search|sec_fetch_site)'
 tracing_macro='(?:trace|debug|info|warn|error|span|trace_span|debug_span|info_span|warn_span|error_span)'
 
 if rg -n -U --pcre2 \

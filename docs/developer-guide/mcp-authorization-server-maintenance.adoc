@@ -62,26 +62,18 @@ Marginalisが所有し続けるのは、Kanidmで確認した主体の受け渡�
 SQLite schemaとarchive形式はMarginalis側の契約です。上流crateを整理したことだけを理由に変更せず、
 変更が必要な場合は通常のdatabase・archive移行手順を別に設計します。
 
-== 新しい通常Releaseの検出
+== 新しい通常Releaseの確認
 
-GitHub Actionsの``Shared Authorization Server release check``を毎週実行し、上流の最新の通常Releaseと、
-Marginalisが固定する版およびcommit SHAを比較します。draftとprereleaseは更新対象から除外します。
-Releaseの注釈付きタグをtag objectとcommitの順に解決するため、同じ版のタグが別のcommitを指す場合も
-差異として検出します。
-
-差異を検出すると、Releaseごとに一つのIssueを作成します。同じIssueがopenである間は重複して作成しません。
-更新を保留する場合は、そのIssueへ理由と再確認時期を記録し、openのまま維持します。更新を取り込んだ
-Pull RequestからIssueをcloseします。保留中に別の通常Releaseが公開された場合は、そのReleaseについて
-別のIssueを作成するため、新しい判断を見落としません。
-
-GitHub APIへ接続できない場合や、通常Release、注釈付きタグ、対象commitを検査できない場合はworkflowを
-失敗させます。この失敗を「更新あり」としてIssue化しないため、一時的な通信障害と版の差異を区別できます。
-ローカルで現在の状態を確認する場合は、GitHub CLIで認証した環境から次を実行します。
+上流リポジトリはMarginalisと同じ開発者が保守するため、新しいRelease の公開はその作業の中で分かります。
+定期的に照合するworkflowは置かず、更新を取り込むときに上流の最新Releaseを直接確認します。
 
 [source,sh]
 ----
-bash .github/scripts/check-shared-authorization-server-release.sh
+gh release view --repo KeishiS/mcp-authorization-server --json tagName,isDraft,isPrerelease
 ----
+
+draftとprereleaseは取り込みの対象にしません。取り込みを保留する場合は、理由と再確認時期をIssueへ
+記録します。
 
 == 固定revisionの更新手順
 
@@ -99,7 +91,7 @@ gh api repos/KeishiS/mcp-authorization-server/git/ref/tags/<tag> --jq '.object.s
 . ``cargo check --workspace``を実行して``Cargo.lock``を更新します。
 . ``flake.nix``の``cargoLock.outputHashes``のkeyとハッシュを更新します。keyは``<crate名>-<版>``です。
 正しいハッシュは``nix build .#default``の失敗メッセージが示します。
-. ``cargo make shared-authorization-server``を実行し、版、URL、revision、到達性、ライセンス、
+. ``cargo make pinned-git-crates``を実行し、版、URL、revision、到達性、ライセンス、
 ``testkit``の混入、Nixのハッシュを確認します。
 . ``cargo make verify``と``cargo make pre-push``を実行します。
 . 上流の公開APIが変わった場合は、Marginalis側の呼び出しとSQLite adapterを同じPull Requestで更新します。

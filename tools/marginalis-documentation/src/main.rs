@@ -11,8 +11,6 @@ use std::path::{Component, Path, PathBuf};
 use adocweave::semantic::{Inline, ReferenceDestination, ReferenceTargetKind, SemanticNode, walk};
 use adocweave::{AnalysisOptions, Engine};
 
-mod table_rows;
-
 fn main() {
     if let Err(error) = run(env::args().skip(1)) {
         eprintln!("{error}");
@@ -24,7 +22,6 @@ fn run(arguments: impl Iterator<Item = String>) -> Result<(), String> {
     let mut arguments = arguments;
     match arguments.next().as_deref() {
         Some("check-xrefs") => check_xrefs(arguments),
-        Some("extract-table-rows") => table_rows::run(arguments),
         _ => Err(usage()),
     }
 }
@@ -32,8 +29,7 @@ fn run(arguments: impl Iterator<Item = String>) -> Result<(), String> {
 fn usage() -> String {
     concat!(
         "使用方法:\n",
-        "  marginalis-documentation check-xrefs --project-root ROOT DOCUMENT...\n",
-        "  marginalis-documentation extract-table-rows --columns COUNT --input DOCUMENT",
+        "  marginalis-documentation check-xrefs --project-root ROOT DOCUMENT...",
     )
     .to_owned()
 }
