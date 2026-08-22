@@ -102,7 +102,7 @@ in
 
     backupRetention = mkOption {
       type = types.ints.positive;
-      default = 30;
+      default = 7;
       description = "Number of verified successful backup generations to retain. Incomplete and unrecognized entries are never counted or removed.";
     };
 

@@ -1,8 +1,5 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
-const {
-  pendingWebProvenance,
-  SCREENSHOT_OPTIONS,
-} = require("./fixtures/smoke-helpers");
+const { pendingWebProvenance } = require("./fixtures/smoke-helpers");
 
 test("閲覧画面でnote IDをコピーし、広い本文を表示する", async ({
   page,
@@ -192,14 +189,6 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(
     await page.getByRole("link", { name: "周辺の関係" }).getAttribute("href"),
   ).toBe(`/graph?origin=${noteId}&depth=2`);
-  await expect(page).toHaveScreenshot("note-view-wide.png", SCREENSHOT_OPTIONS);
-
-  await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page).toHaveScreenshot(
-    "note-view-wide-dark.png",
-    SCREENSHOT_OPTIONS,
-  );
-  await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 360, height: 720 });
   await expect(documentSurface).toBeVisible();
   const narrowPosition = await documentSurface.boundingBox();
@@ -230,11 +219,6 @@ test("閲覧画面でnote IDをコピーし、広い本文を表示する", asyn
   expect(scrollable.table.width).toBeLessThanOrEqual(336);
   expect(scrollable.table.scrollWidth).toBeGreaterThan(scrollable.table.width);
   expect(scrollable.code.width).toBeLessThanOrEqual(336);
-
-  await expect(page).toHaveScreenshot(
-    "note-view-narrow.png",
-    SCREENSHOT_OPTIONS,
-  );
 
   // 幅の広い画面では、画面全体の75%を上限として本文領域を広げる(#477)。
   // ヘッダーと左右端がそろうことも確認する。

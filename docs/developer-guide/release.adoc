@@ -68,8 +68,8 @@ xref:../user-guide/nixos.adoc#保存契約の履歴[保存契約の履歴]、移
 置き換えます。これにより、archive形式、AdocWeave package版、note profile版の各組を初めて
 書き出した公開版を表から判断できる状態にします。
 契約が変わらない場合は、アプリケーションの版だけを理由に直前契約を変更しません。
-. 外部のGit依存が意図した公開版を指していることを確認します。``cargo make shared-authorization-server``と
-``cargo make shared-oidc-login``が、それぞれの共有crateについて、版が同じであること、同じリポジトリの
+. 外部のGit依存が意図した公開版を指していることを確認します。``cargo make pinned-git-crates``が、
+共有Authorization Serverと共有OIDCログインの双方について、版が同じであること、同じリポジトリの
 40桁の完全SHAから取得していること、``Cargo.lock``の取得元が宣言と一致すること、``flake.nix``に取得
 ハッシュがあることを検査します。共有Authorization Serverが指すSHAが上流の公開済みタグに対応することの
 確認は xref:mcp-authorization-server-maintenance.adoc#top[MCP Authorization Serverの保守]のタグ解決手順に
@@ -146,5 +146,5 @@ gh run rerun <run ID> --failed
 過去の版の変更内容と移行手順はGitHub Releasesを、v0.36.0以前の記録は各タグ上の
 ``CHANGELOG.adoc``と``docs/acceptance-results/``を参照してください。
 
-日次バックアップ、30世代の保持、四半期の復元確認については
+日次バックアップ、世代の保持、四半期の復元確認については
 xref:../user-guide/nixos.adoc#top[NixOSでの運用]を参照してください。

@@ -28,7 +28,7 @@ Nixでは``flake.nix``の``cargoLock.outputHashes``へ、2 crate分の取得ハ�
 
 上流リポジトリは、ID tokenの検証順序、claim読み取りのfail closed条件、署名アルゴリズムの制限、
 疑似IdPによる全経路試験をCIで検証します。Marginalisが検証するのは、固定した版・URL・SHA・Nixの
-ハッシュ(``cargo make shared-oidc-login``)、SQLite adapterが共有``LoginAttemptStore``契約を満たすこと
+ハッシュ(``cargo make pinned-git-crates``)、SQLite adapterが共有``LoginAttemptStore``契約を満たすこと
 (``marginalis-sqlite::tests::sessions``)、既定設定でのKanidm実機ログイン(NixOS VM試験)です。
 
 Cookieの発行、CSRF、Origin検査、session管理、許可claim値との照合による利用可否の判断は、従来どおり
@@ -42,7 +42,7 @@ Marginalis側の責務です。
 . ``cargo check --workspace``を実行して``Cargo.lock``を更新します。
 . ``flake.nix``の``cargoLock.outputHashes``のkeyとハッシュを更新します。keyは``<crate名>-<版>``です。
 正しいハッシュは``nix build .#default``の失敗メッセージが示します。
-. ``cargo make shared-oidc-login``を実行し、版、URL、revision、到達性、ライセンス、testkitの混入、
+. ``cargo make pinned-git-crates``を実行し、版、URL、revision、到達性、ライセンス、testkitの混入、
 Nixのハッシュを確認します。
 . ``cargo make verify``と``cargo make pre-push``を実行します。
 . 上流の公開APIまたは検証動作が変わった場合は、Marginalis側のadapterと関連文書を同じ

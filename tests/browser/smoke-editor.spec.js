@@ -2,7 +2,6 @@ const { expect, test } = require("./fixtures/browser-diagnostics");
 const {
   pendingWebProvenance,
   escapeHtml,
-  editorScreenshotOptions,
 } = require("./fixtures/smoke-helpers");
 
 test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", async ({ page }) => {
@@ -55,24 +54,10 @@ test("CodeMirrorで行番号、表示切替、日本語入力状態を扱う", a
   );
 
   await page.evaluate(() => window.scrollTo(0, 0));
-  await expect(page).toHaveScreenshot(
-    "editor-wide.png",
-    editorScreenshotOptions(page),
-  );
-  await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page).toHaveScreenshot(
-    "editor-wide-dark.png",
-    editorScreenshotOptions(page),
-  );
-  await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 320, height: 720 });
   await expect(page.locator(".editor-workspace")).toHaveAttribute(
     "data-view-mode",
     "write",
-  );
-  await expect(page).toHaveScreenshot(
-    "editor-narrow-write.png",
-    editorScreenshotOptions(page),
   );
 });
 

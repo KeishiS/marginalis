@@ -16,7 +16,7 @@ let
         test "$2" = "--directory"
         test "$3" = "/var/lib/marginalis-backups/test"
         test "$4" = "--keep"
-        test "$5" = "30"
+        test "$5" = "7"
         touch "$3/prune-completed"
         exit 0
       fi

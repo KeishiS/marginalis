@@ -26,12 +26,11 @@ Release Notesの転記、下書きの公開は行いません。
    patchのままにせずminorを上げる)とあわせてユーザーへ提示する。
 2. **剪定と外部依存**: ADR 0017に従い、5マイナー世代より前へ落ちたarchive契約を
    `SUPPORTED_MIGRATION_CONTRACTS`と`docs/user-guide/nixos.adoc`から削除する(該当があれば
-   版上げPRに含める)。共有crateの固定は`cargo make shared-authorization-server`と
-   `cargo make shared-oidc-login`で確認し、指しているSHAが上流の公開済み内容であることを
-   各保守文書の手順で確かめる。
+   版上げPRに含める)。共有crateの固定は`cargo make pinned-git-crates`で確認し、指している
+   SHAが上流の公開済み内容であることを各保守文書の手順で確かめる。
 3. **版上げPR**: workspace版と`release-manifest.json`の`packageVersion`を同じ版へ上げ、
    `release/notes.md`へ今回のRelease Notesを記述する。必須見出しと本文の有無は
-   `cargo make verify`(内部の`release-manifest`)が検査する。**Release Notesの本文は
+   `cargo make verify`(内部の`release-contract`)が検査する。**Release Notesの本文は
    ユーザーへ提示して承認を得てから**PRへ含める。公開前の完全なゲートは
    `cargo make release-check`で確認し、PR本文へ変更目的・外部依存の確認・人手受入の判断・
    実行した検証を記載して、auto-merge(squash)を設定しマージ完了を監視する。

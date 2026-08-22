@@ -70,7 +70,7 @@ https://github.com/KeishiS/mcp-authorization-server[KeishiS/mcp-authorization-se
 従来どおりMarginalisの同じプロセスへlibraryとして組み込みます。別のserviceやportは増えません。
 SQLite adapter、HTTP endpoint、同意画面、利用者とclient別のscope上限、MCP toolとscopeの対応は
 Marginalisに残ります。版とrevisionの固定、Nixの取得ハッシュ、依存方向は
-``cargo make shared-authorization-server``が確認します。採用理由と責務の分担は
+``cargo make pinned-git-crates``が確認します。採用理由と責務の分担は
 xref:adr/0012-共有authorization-serverを独立リポジトリで配布する.adoc#top[ADR 0012]に記録しています。
 
 利用者ログインのOIDC検証も同じ方式で共有します。中核の``oidc-browser-login``と試験用の
@@ -79,7 +79,7 @@ https://github.com/KeishiS/oidc-browser-login[KeishiS/oidc-browser-login]で保�
 commit SHAを固定したGit依存として取り込みます。Web session管理(発行・検証・CSRF照合・失効)は
 共有crateのfeature ``session``、cookieの名前と属性の規則はfeature ``cookie``を使います。CSRF tokenの
 照合は保存済みdigestとの定数時間比較としてcrate内に集約され、保存portは秘密の比較を行いません。
-Cookieの送受信、Origin検査などのHTTP境界はMarginalisに残ります。固定、到達性、testkitの混入は``cargo make shared-oidc-login``が確認します。方針は
+Cookieの送受信、Origin検査などのHTTP境界はMarginalisに残ります。固定、到達性、testkitの混入は``cargo make pinned-git-crates``が確認します。方針は
 xref:adr/0015-利用者認証は標準oidcに依存しkanidmを参照実装とする.adoc#top[ADR 0015]に記録しています。
 利用者とMCPクライアントのscope上限は別のSQLite行として保存し、認可codeの発行前に両方を適用します。
 利用者はWeb UIから自分の上限だけを変更できます。上限を狭める保存処理は、新しい上限を超える認可codeと

@@ -1,10 +1,13 @@
 = 現行要件
 
 [#top]
-この文書は、現在のMarginalisが提供する機能と運用上の前提を定めます。各要件の識別子は、設計、
-試験、受入の対応を追跡するために固定します。検証先は xref:traceability.adoc#top[要件と検証の対応表]、
-実装方法は xref:architecture.adoc#top[アーキテクチャ]、REST APIの入出力は
+この文書は、現在のMarginalisが提供する機能と運用上の前提を定めます。各要件の識別子は、
+設計判断や試験から要件を指すために固定します。実装方法は
+xref:architecture.adoc#top[アーキテクチャ]、REST APIの入出力は
 link:../openapi.json[OpenAPI]を参照してください。
+
+要件と個々の試験の対応表は維持しません。表の各行を人手で書き写す作業に対して、得られる保証が
+見合わないためです。ある要件をどの試験が確認するかは、要件IDでソースを検索して調べます。
 
 == 想定する運用環境
 
@@ -28,8 +31,8 @@ migration履歴の基準22から現行版までを連続した履歴として検
 区別できる検査名、失敗分類、SQLite result codeを、ノート本文や秘密情報を含めずに報告すること。
 * *REQ-OPS-007 — 構造化ログ*: productionログは安定した``event``で処理を識別し、結果と判定可能な
 原因分類をfieldで示すこと。HTTP完了ログはrequest ID、method、queryを除くpath、status、
-latencyを含むこと。Cookie、token、認可code、client secret、利用者identity、ノートの識別子と
-内容、HTTP headerとbodyを記録しないこと。
+latencyを含むこと。Cookie、token、認可code、client secret、利用者identity、ノートの内容、
+HTTP headerとbodyを記録しないこと。
 * *REQ-OPS-008 — OIDC identityの引き継ぎ*: service停止中の明示的な管理commandで、検証済みのSQLite
 全体退避を確定してから、新しい外部identityを既存principalへ一つのtransactionで結び付けられること。
 代表identityを明示的に変更できること。identityを推測で結び付けず、同じidentity、存在しないidentity、

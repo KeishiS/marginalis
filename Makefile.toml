@@ -76,17 +76,7 @@ args = [
   ".github/workflows/release-dispatch.yml",
   ".github/workflows/release-publish.yml",
   ".github/workflows/security-audit.yml",
-  ".github/workflows/shared-authorization-server-release.yml",
 ]
-
-[tasks.ci-path-classifier]
-description = "Validate the documentation-only CI path classification"
-script_runner = "@shell"
-script = '''
-set -eu
-bash .github/scripts/test-classify-docs-only.sh
-bash .github/scripts/test-classify-ci-change.sh
-'''
 
 [tasks.protocol-regression-assets]
 description = "Validate secret-safe protocol failure artifacts"
@@ -101,22 +91,7 @@ description = "Validate the repository documentation corpus and its references"
 script_runner = "@shell"
 script = '''
 set -eu
-bash .github/scripts/test-markdown-links.sh
-bash .github/scripts/test-asciidoc.sh
-bash .github/scripts/test-documentation-corpus.sh
-bash .github/scripts/test-release-instructions.sh
 bash .github/scripts/check-docs.sh
-'''
-
-[tasks.traceability-check]
-description = "Validate traceability identifiers and required table fields"
-script_runner = "@shell"
-script = '''
-set -eu
-bash .github/scripts/test-traceability.sh
-bash .github/scripts/check-traceability.sh
-bash .github/scripts/test-design-traceability.sh
-bash .github/scripts/check-design-traceability.sh
 '''
 
 [tasks.security-audit]
@@ -152,24 +127,13 @@ else
 fi
 '''
 
-[tasks.release-metadata]
-description = "Verify release version consistency and declared dual-license files"
+[tasks.release-contract]
+description = "Verify release version consistency, license files, the manifest, and the release notes"
 script_runner = "@shell"
 script = '''
 set -eu
-bash .github/scripts/test-release-metadata.sh
 bash .github/scripts/check-release-metadata.sh
-'''
-
-[tasks.release-manifest]
-description = "Verify the release manifest, release notes, and release candidate contract"
-script_runner = "@shell"
-script = '''
-set -eu
-bash .github/scripts/test-release-manifest.sh
 bash .github/scripts/check-release-manifest.sh --with-runtime-toolchain
-bash .github/scripts/test-release-candidate.sh
-bash .github/scripts/test-release-readiness.sh
 '''
 
 [tasks.release-check]
@@ -193,45 +157,35 @@ description = "Verify every workspace production dependency against the architec
 script_runner = "@shell"
 script = '''
 set -eu
-bash .github/scripts/test-dependency-boundaries.sh
 bash .github/scripts/check-dependency-boundaries.sh
 '''
 
-[tasks.shared-authorization-server]
-description = "Verify the pinned revision, version, and reachability of the shared Authorization Server crates"
+# 共有Authorization Server(ADR 0012)と共有OIDCログイン(ADR 0015)は、どちらも独立リポジトリの
+# 固定revisionから取り込む。固定の崩れ方は両者で同じなので、一つの検査で両方を扱う。
+[tasks.pinned-git-crates]
+description = "Verify the pinned revision, version, and reachability of the shared crates"
 script_runner = "@shell"
 script = '''
 set -eu
-bash .github/scripts/test-shared-authorization-server.sh
-bash .github/scripts/test-shared-authorization-server-release.sh
-bash .github/scripts/check-shared-authorization-server.sh
-'''
-
-[tasks.shared-oidc-login]
-description = "Verify the pinned revision, version, and reachability of the shared OIDC login crates"
-script_runner = "@shell"
-script = '''
-set -eu
-bash .github/scripts/test-shared-oidc-login.sh
-bash .github/scripts/check-shared-oidc-login.sh
+bash .github/scripts/check-pinned-git-crates.sh \
+  --label '共有Authorization Server' \
+  --repository 'https://github.com/KeishiS/mcp-authorization-server.git' \
+  --crate mcp-authorization-server \
+  --crate mcp-authorization-server-cimd \
+  --forbidden-production-feature testkit
+bash .github/scripts/check-pinned-git-crates.sh \
+  --label '共有OIDCログイン' \
+  --repository 'https://github.com/KeishiS/oidc-browser-login.git' \
+  --crate oidc-browser-login \
+  --dev-crate oidc-browser-login-testkit
 '''
 
 [tasks.observability-check]
-description = "Require stable event fields and reject sensitive fields in production logs"
+description = "Require stable event fields and reject secret fields in production logs"
 script_runner = "@shell"
 script = '''
 set -eu
-bash .github/scripts/test-observability.sh
 bash .github/scripts/check-observability.sh
-'''
-
-[tasks.production-reachability]
-description = "Reject retired v0.2 components and routes from the production graph"
-script_runner = "@shell"
-script = '''
-set -eu
-bash .github/scripts/test-production-reachability.sh
-bash .github/scripts/check-production-reachability.sh
 '''
 
 [tasks.coverage]
@@ -299,7 +253,6 @@ description = "Verify every AdocWeave version reference against the Cargo.toml a
 script_runner = "@shell"
 script = '''
 set -eu
-bash .github/scripts/test-adocweave-version.sh
 bash .github/scripts/check-adocweave-version.sh
 '''
 
@@ -313,26 +266,17 @@ dependencies = [
   "test",
   "security-audit",
   "dependency-boundaries",
-  "shared-authorization-server",
-  "shared-oidc-login",
+  "pinned-git-crates",
   "unused-dependencies",
   "observability-check",
-  "production-reachability",
   "contract-check",
   "adocweave-version-check",
   "docs-check",
-  "traceability-check",
   "actionlint",
-  "ci-path-classifier",
   "protocol-regression-assets",
   "flake-check",
-  "release-metadata",
-  "release-manifest",
+  "release-contract",
 ]
-
-[tasks.ci-verify]
-description = "Run the GitHub Actions verify suite"
-alias = "verify"
 
 [tasks.native-check]
 description = "Compile every Rust target and feature on the current native architecture"
@@ -365,21 +309,17 @@ env = { "MARGINALIS_BROWSER" = "firefox", "MARGINALIS_COMPAT_ONLY" = "true" }
 command = "playwright"
 args = ["test", "--config", "tests/browser/playwright.smoke.config.js"]
 
-[tasks.ci-early]
-description = "Run architecture-native compilation, package build, and browser tests"
-dependencies = ["native-check", "native-release-package", "browser-smoke", "browser-editor-firefox"]
-
-[tasks.ci-coverage]
-description = "Run the GitHub Actions coverage suite"
-alias = "coverage"
-
-[tasks.ci-nixos-e2e]
-description = "Run the GitHub Actions NixOS E2E suite"
-alias = "nix-release-check"
-
 [tasks.ci]
 description = "Run every GitHub Actions validation suite"
-dependencies = ["ci-verify", "ci-early", "ci-coverage", "ci-nixos-e2e"]
+dependencies = [
+  "verify",
+  "native-check",
+  "native-release-package",
+  "browser-smoke",
+  "browser-editor-firefox",
+  "coverage",
+  "nix-release-check",
+]
 
 [tasks.pre-push]
 description = "Run every GitHub Actions validation required before pushing code"

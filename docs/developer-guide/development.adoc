@@ -92,9 +92,8 @@ git switch -c agent/<種別>/<目的>
 nix develop --command cargo make pre-push
 ----
 +
-``pre-push``はGitHub Actionsの``ci-verify``、``ci-early``、``ci-coverage``、
-``ci-nixos-e2e``をまとめて実行し、通常検証、現在のCPU上でのnativeコンパイル、
-軽量ブラウザー試験、カバレッジ測定、すべてのNixOS VM E2Eテストを確認します。
+``pre-push``はGitHub Actionsが実行する検証をまとめて実行し、通常検証、現在のCPU上での
+nativeコンパイル、軽量ブラウザー試験、カバレッジ測定、すべてのNixOS VM E2Eテストを確認します。
 aarch64 Linux上では配布用Nix packageも構築します。別のCPUではこのnative構築を省略するため、
 Pull Requestでは集約チェック``verify``が``native-aarch64``の成功を必須にします。
 ``cargo make``をタスク名なしで実行した場合も同じ検証を行います。
@@ -140,7 +139,8 @@ CIでは、包括的なNixOS VMと並列に、早期検出用の二つの検査�
 +
 これらは包括的なNixOS VMと依存関係を持たせず並列実行します。そのため、正常時の完了時刻を
 遅らせず、CPU固有のコンパイル失敗や画面の基本回帰をVMの完了前に確認できます。
-認証、認可、サブパス、TLS、永続化を含む統合動作は、引き続き``cargo make ci-nixos-e2e``が検査します。
+認証、認可、サブパス、TLS、永続化を含む統合動作は、引き続き``cargo make nix-release-check``が
+検査します。
 +
 coverageの対象と解釈は xref:coverage.adoc#top[本番到達性とカバレッジ]を参照してください。
 +
@@ -159,11 +159,11 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |path分類stepの標準出力
 |``verify-core``
 |整形、静的解析、単体・結合試験、依存・ログ・公開契約・文書・Nix評価
-|``cargo make ci-verify``
+|``cargo make verify``
 |失敗したtask名と標準出力
 |``verify-docs``
-|文書だけの変更での文書と追跡表の検査
-|``cargo make docs-check``と``cargo make traceability-check``
+|文書だけの変更での文書検査
+|``cargo make docs-check``
 |失敗したtask名と標準出力
 |``verify``
 |変更分類に応じて``verify-core``、``native-aarch64``、``browser-smoke``、または``verify-docs``の成功を集約
@@ -171,19 +171,19 @@ CI jobの責務とローカルでの再実行方法は次のとおりです。jo
 |集約stepの標準出力
 |``coverage``
 |workspaceと統合経路のcoverage測定
-|``cargo make ci-coverage``
+|``cargo make coverage``
 |``coverage-*`` artifactの概要とJSON
 |``native-aarch64``
 |aarch64 Linux上の全Rust target・featureとNix packageの構築
 |aarch64 Linux上で``cargo make native-check``と``cargo make release-package-aarch64``
 |CargoとNixの診断
 |``browser-smoke``
-|production用Web UIの起動、主要操作、固定画像、ChromiumとFirefoxの編集欄互換性、ブラウザー例外
+|production用Web UIの起動、主要操作、ChromiumとFirefoxの編集欄互換性、ブラウザー例外
 |``cargo make browser-smoke``と``cargo make browser-editor-firefox``
 |失敗時の``browser-smoke-failure-*`` artifactにscreenshotとtrace
 |``nixos-e2e-vm``
 |Nix package、module、TLS、Kanidm、内蔵OAuth、永続化、保守unit
-|``cargo make ci-nixos-e2e``
+|``cargo make nix-release-check``
 |試験実行失敗時の``nixos-e2e-failure-*`` artifactに、秘密情報を除去したrunner出力
 |``nixos-e2e``
 |文書だけの変更を除き``nixos-e2e-vm``の成功を集約
@@ -206,7 +206,7 @@ push時だけに限り、Pull Requestは読み取りだけを行います。既�
 読めるため、Pull Requestもこれを利用できます。``flake.nix``、``flake.lock``、``Cargo.lock``、
 ``nix/``配下のいずれかを変更した場合はcacheに一致せず、従来と同じ時間がかかります。
 このjobはdevShellを使用しないため、CIでは``nix develop``を経由せず``nix flake check -L``を直接
-実行します。実行内容はローカルの``cargo make ci-nixos-e2e``と同じです。
+実行します。実行内容はローカルの``cargo make nix-release-check``と同じです。
 +
 GitHub Actionsのartifactは試験環境のデータだけを含みます。実環境のログ、token、Cookie、
 ノート本文を追加しません。NixOS E2Eのrunner出力は、保存前に秘密情報を除去して検査します。
@@ -246,14 +246,11 @@ nix develop --command cargo test -p marginalis-web http::tests::mcp_transport
 [source,sh]
 ----
 nix develop --command cargo make docs-check
-nix develop --command cargo make traceability-check
 ----
 +
-``docs-check``は空白とローカルリンクを検査します。``traceability-check``は要件IDと設計条件IDの
-過不足・重複、および検証先の空欄を形式検査します。検証内容が要件や設計条件を十分に確認するかは、
-要件、設計、試験の変更時にレビューします。アーキテクチャの「一貫して満たすべき設計条件」を変更する場合は、
-条件を直接確認する試験と xref:traceability.adoc#design-verification[要件と検証の対応表]も同じ変更で
-更新します。
+``docs-check``は空白、ローカルリンク、AsciiDocの構造と自然文を検査します。要件や設計条件を
+変更する場合は、その条件を直接確認する試験も同じ変更で更新します。要件IDと試験の対応表は
+維持しません（ xref:requirements.adoc#top[現行要件]）。
 +
 CIは変更pathを判定し、文書だけのPull Requestでは``verify``を文書検査へ縮退し、
 ``coverage``とNixOS VMの実行を省略します。プログラムが参照する公開仕様
@@ -261,7 +258,7 @@ CIは変更pathを判定し、文書だけのPull Requestでは``verify``を文�
 ``Makefile.toml``、Nix、Rust、公開仕様その他のファイルを同時に変更した場合は、通常の検証を
 すべて実行します。この判定規則は
 ``.github/scripts/classify-ci-change.sh``と、その入力を判定する
-``.github/scripts/classify-docs-only.sh``に集約し、``cargo make verify``から境界例を検査します。
+``.github/scripts/classify-docs-only.sh``に集約します。
 +
 新しい作業項目はGitHub Issuesへ作成します。リポジトリ内にIssueファイルを追加しません。
 v0.5.0以前のローカルIssueとの対応は``v0.36.0``タグ上の``docs/issue-migration.adoc``を参照してください。

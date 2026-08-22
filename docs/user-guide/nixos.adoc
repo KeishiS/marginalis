@@ -15,7 +15,6 @@ services.marginalis = {
   baseUrl = "https://notes.example.test/marginalis";
   listenAddress = "127.0.0.1:3000";
   backupDirectory = "/srv/marginalis-backups";
-  backupRetention = 30;
   restoreCheck.enable = true;
   oidc = {
     issuerUrl = "https://id.example.test/oauth2/openid/marginalis";
@@ -185,14 +184,16 @@ token、参照されない古いclientも削除します。
 transactionからsnapshotを取得するため、HTTP serviceを停止しません。
 * 成功世代は``backup-<Unix時刻ミリ秒>``というディレクトリで、``marginalis-archive.json``と
 ``COMPLETE``を含みます。archiveの検証が完了するまで``COMPLETE``は作成されません。
-* ``backupRetention``は検証済み成功世代の保持数で、既定値は30です。保持処理は
+* ``backupRetention``は検証済み成功世代の保持数で、既定値は7です。日次バックアップなので
+1週間分にあたります。より長い履歴が必要な場合は、この値を増やすよりも、保存媒体側のsnapshotや
+off-site複製で世代を持つほうが、容量と復元性の両面で扱いやすくなります。保持処理は
 ``backupDirectory``を正規化し、その直下にある既定名・marker・archiveをすべて検証できた世代だけを
 対象にします。不完全な世代、symlink、運用者が置いたファイルは数えず、削除もしません。
 * ``restoreCheck.enable = true``を明示すると、最新成功世代を隔離した空の一時databaseへ復元して
 再exportとの論理一致を調べる``marginalis-restore-check.timer``が有効になります。既定scheduleは
 各四半期の最初の土曜日3時です。``restoreCheck.calendar``で変更できます。
 
-保存媒体のsnapshot、off-site複製、暗号化はhost側で構成します。30世代に加え、復元用の一時databaseと
+保存媒体のsnapshot、off-site複製、暗号化はhost側で構成します。保持世代に加え、復元用の一時databaseと
 SQLiteの一時領域を確保してください。必要量の目安は、正本と最大archiveの合計に作業余裕を加えた容量です。
 
 == バックアップの確認
