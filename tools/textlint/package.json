@@ -8,7 +8,7 @@
     "test": "node --test"
   },
   "devDependencies": {
-    "@adocweave/textlint-plugin-asciidoc": "https://github.com/KeishiS/adocweave/releases/download/v0.43.0/adocweave-textlint-plugin-asciidoc-0.43.0.tgz",
+    "@adocweave/textlint-plugin-asciidoc": "0.47.0",
     "@textlint/kernel": "15.8.0",
     "@textlint/types": "15.8.0",
     "textlint": "15.8.0",

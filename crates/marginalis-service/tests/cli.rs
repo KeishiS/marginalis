@@ -5,7 +5,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION: &str = "0.42.0";
+/// 直前の公開済み保存契約が記録するAdocWeave package版。
+///
+/// `marginalis_archive`のPREVIOUS_MIGRATION_CONTRACTと同じ値でなければならない。AdocWeaveの
+/// 固定を動かすときは、両方を同じ変更で更新する。
+const PREVIOUS_PUBLISHED_ADOCWEAVE_VERSION: &str = "0.43.0";
 
 fn test_directory(purpose: &str) -> std::path::PathBuf {
     let unique = SystemTime::now()
