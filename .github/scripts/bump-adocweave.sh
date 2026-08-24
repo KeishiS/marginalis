@@ -1,21 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# AdocWeaveの固定を新しい版へ一括更新します。
+# AdocWeaveの固定を新しい版へ更新します。
 #
-#   使い方: bash .github/scripts/bump-adocweave.sh <commit SHA(40桁)>
+#   使い方: bash .github/scripts/bump-adocweave.sh <ライブラリのcommit SHA(40桁)> [textlint用Processorの版]
 #
-# 正本(Cargo.tomlのrevとCargo.lockの解決結果)を更新すると、Rust定数とOpenAPIの版は
-# build.rsが導出するため、このスクリプトはそれ以外の機械的に決まる参照を追随させます。
+# AdocWeaveは製品ごとに版を分けて公開します。ライブラリとtextlint用Processorの版は一致しない
+# ため、それぞれを別の引数で指定します。textlintの版を省略した場合は、その更新を行いません。
+#
+# 正本(Cargo.tomlのrevとCargo.lockの解決結果)を更新すると、Rust定数とOpenAPIの版はbuild.rsが
+# 導出するため、このスクリプトはそれ以外の機械的に決まる参照を追随させます。
 #   - flake.nixのinput URL・cargoLock.outputHashesのハッシュ・flake.lock
-#   - tools/textlintのplugin tarball URLとlockfile
-#   - 文書中の現行版の表記
+#   - tools/textlintのplugin版とlockfile
 #   - 生成済みのOpenAPI(x-adocweave-package-version)
-# archiveの移行契約(旧版の受理行)は履歴の追加が必要なため、最後に案内します。
+#
+# 文書中の版表記は書き換えません。docs/user-guide/nixos.adocには保存契約の履歴表があり、過去の
+# 契約が使うAdocWeave版が並んでいます。旧版の文字列を一括置換すると、現行版の説明だけでなく
+# 履歴の行まで書き換わります。最後に、旧版を含む行を一覧で示すので、現行版を指す箇所だけを
+# 更新してください。archiveの移行契約も履歴の追加が必要なため、同じく案内します。
 
 revision="${1:-}"
+textlint_version="${2:-}"
 if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "使い方: bash .github/scripts/bump-adocweave.sh <commit SHA(40桁)>" >&2
+  echo "使い方: bash .github/scripts/bump-adocweave.sh <ライブラリのcommit SHA(40桁)> [textlint用Processorの版]" >&2
+  exit 1
+fi
+if [[ -n "$textlint_version" && ! "$textlint_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "textlint用Processorの版はMAJOR.MINOR.PATCHで指定してください: $textlint_version" >&2
   exit 1
 fi
 
@@ -26,43 +37,47 @@ if [[ -z "$old_revision" || -z "$old_version" ]]; then
   exit 1
 fi
 
-echo "1/6 Cargo.tomlのrevを更新してCargo.lockを解決します。"
+echo "1/5 Cargo.tomlのrevを更新してCargo.lockを解決します。"
 perl -pi -e "s/$old_revision/$revision/" Cargo.toml
 cargo update -p adocweave
 new_version=$(sed -n '/name = "adocweave"/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
-echo "    v$old_version ($old_revision) -> v$new_version ($revision)"
+echo "    ライブラリ v$old_version ($old_revision) -> v$new_version ($revision)"
 
-echo "2/6 flake.nixのinputとハッシュ、flake.lockを更新します。"
+echo "2/5 flake.nixのinputとハッシュ、flake.lockを更新します。"
 new_hash=$(nix flake prefetch "github:KeishiS/adocweave/$revision" --json | jq -r .hash)
 old_hash=$(sed -En 's/.*"adocweave-\$\{adocweaveVersion\}" = "([^"]+)";/\1/p' flake.nix)
 # ハッシュには/が含まれるため、置換の区切りへ{}を使う。
 perl -pi -e "s{\Q$old_revision\E}{$revision}; s{\Q$old_hash\E}{$new_hash}" flake.nix
 nix flake lock --update-input adocweave
 
-echo "3/6 textlint pluginのtarball URLとlockfileを更新します。"
-perl -pi -e "s/\Qv$old_version\E/v$new_version/g; s/\Qasciidoc-$old_version.tgz\E/asciidoc-$new_version.tgz/g" \
-  tools/textlint/package.json
-(cd tools/textlint && npm install --no-audit --no-fund >/dev/null)
+if [[ -n "$textlint_version" ]]; then
+  echo "3/5 textlint用Processorをv${textlint_version}へ更新します。"
+  (cd tools/textlint &&
+    npm install --save-exact --save-dev --no-audit --no-fund \
+      "@adocweave/textlint-plugin-asciidoc@${textlint_version}" >/dev/null)
+else
+  echo "3/5 textlint用Processorの版指定がないため、更新を省略します。"
+fi
 
-echo "4/6 文書中の現行版の表記を更新します。"
-perl -pi -e "s/\Q$old_version\E/$new_version/g" \
-  docs/user-guide/nixos.adoc \
-  docs/developer-guide/requirements.adoc \
-  docs/developer-guide/documentation.adoc
-
-echo "5/6 契約の生成物を更新します。"
+echo "4/5 契約の生成物を更新します。"
 cargo run --quiet -p marginalis-contract --bin generate
 
-echo "6/6 一貫性を検査します。"
+echo "5/5 一貫性を検査します。"
 bash .github/scripts/check-adocweave-version.sh
 
-cat <<GUIDE
+echo
+echo "更新が完了しました: ライブラリ v$old_version -> v$new_version"
+echo
+echo "旧版($old_version)を含む文書の行です。現行版を指す箇所だけを更新してください。"
+echo "保存契約の履歴表にある過去の契約は、そのまま残します。"
+rg --line-number --fixed-strings "$old_version" docs || echo "  (該当なし)"
 
-更新が完了しました: v$old_version -> v$new_version
+cat <<'GUIDE'
 
 残る手作業:
-  - crates/marginalis-archive/src/lib.rs のPREVIOUS_MIGRATION_CONTRACTを、更新前の
+  - crates/marginalis-archive/src/archive.rs のPREVIOUS_MIGRATION_CONTRACTを、更新前の
     archive形式、AdocWeave package版、note profile版の組へ更新してください。
-  - docs/user-guide/nixos.adocの保存契約履歴へ、更新後の契約と採用開始版を追加してください。
+  - docs/user-guide/nixos.adocの保存契約履歴へ、更新後の契約を新しい行として追加し、
+    直前契約と段階移行の欄を繰り上げてください。
   - cargo make verify を実行してください。
 GUIDE
