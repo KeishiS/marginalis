@@ -46,7 +46,8 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-      pnpmFor = pkgs: pkgs.pnpm_11.override { nodejs-slim = pkgs.nodejs-slim_22; };
+      # AdocWeaveのtextlint用Processorが要求するNode.js 24.19.0以上へ揃える。
+      pnpmFor = pkgs: pkgs.pnpm_11.override { nodejs-slim = pkgs.nodejs-slim_24; };
       # Cargo manifestが宣言する最低Rust版を、開発環境と配布buildでも使用する。
       rustToolchainFor =
         pkgs:
@@ -99,7 +100,7 @@
               hash = "sha256-5mT5jwLmeeA8tTgaNB6REjKvqR4+1r3CtTPbNeH1tmk=";
             };
             nativeBuildInputs = [
-              pkgs.nodejs_22
+              pkgs.nodejs_24
               pkgs.pnpmConfigHook
               pnpm
             ];
@@ -232,7 +233,7 @@
               lld
               nix
               nixfmt
-              nodejs_22
+              nodejs_24
               pnpm
               noto-fonts-cjk-sans
               playwright-driver.browsers
