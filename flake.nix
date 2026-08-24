@@ -7,7 +7,7 @@
     inputs.nixpkgs.follows = "nixpkgs";
   };
   inputs.adocweave = {
-    url = "github:KeishiS/adocweave/53f7d4df1cb768cd8912009e80e75b63cafc58b6";
+    url = "github:KeishiS/adocweave/f45bcd41199e6cb6471fe760ab51883751ba76b7";
     inputs.nixpkgs.follows = "nixpkgs";
     inputs.rust-overlay.follows = "rust-overlay";
   };
@@ -151,7 +151,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-${adocweaveVersion}" = "sha256-gIgyVEmUe9kWWsb0nS38eKVfISj13HeNNmcQiegzOnw=";
+                "adocweave-${adocweaveVersion}" = "sha256-QlqWAlkHL00wU5OOrUHmwdBjsY4WRcq7rFNypaquJg0=";
                 "mcp-authorization-server-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
                 "mcp-authorization-server-cimd-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
                 "oidc-browser-login-0.2.0" = "sha256-Dk5uE7ZzH8zacNbdMSoleb4V8ZBOa75WLGMOCxt2Knc=";
@@ -202,45 +202,45 @@
       devShells = forAllSystems (
         system:
         let
-          pkgs = (pkgsFor system).extend adocweave.overlays.default;
+          pkgs = pkgsFor system;
           pnpm = pnpmFor pkgs;
           rustToolchain = rustToolchainFor pkgs;
-          # AdocWeaveはmacOS向けCLIも配布しているが、Nix packageの公開先は
-          # Linuxに限定されている。移行期間中の文書検査を全開発環境で同じに
-          # するため、同じderivationを対応済みのUnix環境でも評価する。
-          adocweavePackage = pkgs.adocweave.overrideAttrs (previous: {
-            meta = previous.meta // {
-              platforms = pkgs.lib.platforms.unix;
-            };
-          });
+          # AdocWeaveはNix packageの公開先をLinuxに限定している。0.47.0でoverlayと
+          # 製品別のpackage属性が廃止され、他のsystem向けにderivationを組み立てる
+          # 手段がなくなったため、Linux以外のdevShellにはCLIを含めない。文書検査
+          # (cargo make docs-check)はLinuxで実行する。
+          adocweaveCli = pkgs.lib.optionals (adocweave.packages ? ${system}) [
+            adocweave.packages.${system}.default
+          ];
         in
         {
           default = pkgs.mkShell {
-            packages = with pkgs; [
-              curl
-              actionlint
-              adocweavePackage
-              cargo-audit
-              cargo-machete
-              cargo-llvm-cov
-              dejavu_fonts
-              fontconfig
-              rustToolchain
-              cargo-make
-              git
-              gh
-              jq
-              lld
-              nix
-              nixfmt
-              nodejs_24
-              pnpm
-              noto-fonts-cjk-sans
-              playwright-driver.browsers
-              playwright-test
-              ripgrep
-              sqlite
-            ];
+            packages =
+              adocweaveCli
+              ++ (with pkgs; [
+                curl
+                actionlint
+                cargo-audit
+                cargo-machete
+                cargo-llvm-cov
+                dejavu_fonts
+                fontconfig
+                rustToolchain
+                cargo-make
+                git
+                gh
+                jq
+                lld
+                nix
+                nixfmt
+                nodejs_24
+                pnpm
+                noto-fonts-cjk-sans
+                playwright-driver.browsers
+                playwright-test
+                ripgrep
+                sqlite
+              ]);
 
             RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
             FONTCONFIG_FILE = "${pkgs.fontconfig.out}/etc/fonts/fonts.conf";

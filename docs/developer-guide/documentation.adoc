@@ -55,7 +55,12 @@ ADRを追加する場合は``docs/developer-guide/adr/NNNN-短い名称.adoc``�
 Markdownを機械的に禁止する検査は置きません。エージェント設定やGitHub Releaseの本文など、
 形式が外部から決まる文書はMarkdownのままにします。
 
-AsciiDoc文書はAdocWeave v0.43.0のstrict profileで解析し、local targetを検査します。文書間の``xref``は
+AdocWeaveは製品(ライブラリ、CLI、Language Server、textlint用Processor、WebAssembly、browser)ごとに
+版を分けて公開します。製品間で版は一致しないため、「AdocWeaveの版」を単一の数字として扱いません。
+Marginalisが固定するのはRustライブラリとtextlint用Processorで、CLIはライブラリと同じrevisionから
+Nixが構築します。固定の一貫性は``cargo make adocweave-version-check``が検査します。
+
+AsciiDoc文書はAdocWeave v0.47.0のstrict profileで解析し、local targetを検査します。文書間の``xref``は
 参照先の``.adoc``と明示IDを指定します。明示IDの存在はAdocWeaveの構造化公開APIを使用する
 ``marginalis-documentation`` crateで検査します。AsciiDocの構文規則は専用scriptへ書き写しません。自然文は
 同じ版のtextlint Processorに同梱されたWebAssemblyで解析し、source blockやinline codeを校正対象から

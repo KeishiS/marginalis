@@ -38,7 +38,7 @@ if [[ -z "$old_revision" || -z "$old_version" ]]; then
 fi
 
 echo "1/5 Cargo.tomlのrevを更新してCargo.lockを解決します。"
-perl -pi -e "s/$old_revision/$revision/" Cargo.toml
+sed -i "s/$old_revision/$revision/" Cargo.toml
 cargo update -p adocweave
 new_version=$(sed -n '/name = "adocweave"/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
 echo "    ライブラリ v$old_version ($old_revision) -> v$new_version ($revision)"
@@ -46,8 +46,9 @@ echo "    ライブラリ v$old_version ($old_revision) -> v$new_version ($revis
 echo "2/5 flake.nixのinputとハッシュ、flake.lockを更新します。"
 new_hash=$(nix flake prefetch "github:KeishiS/adocweave/$revision" --json | jq -r .hash)
 old_hash=$(sed -En 's/.*"adocweave-\$\{adocweaveVersion\}" = "([^"]+)";/\1/p' flake.nix)
-# ハッシュには/が含まれるため、置換の区切りへ{}を使う。
-perl -pi -e "s{\Q$old_revision\E}{$revision}; s{\Q$old_hash\E}{$new_hash}" flake.nix
+# Nixのハッシュはbase64で/を含むため、置換の区切りへ|を使う。base64と16進SHAはどちらも
+# |を含まないので、区切りが値と衝突することはない。
+sed -i "s|$old_revision|$revision|; s|$old_hash|$new_hash|" flake.nix
 nix flake lock --update-input adocweave
 
 if [[ -n "$textlint_version" ]]; then

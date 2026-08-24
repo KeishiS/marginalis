@@ -252,6 +252,10 @@ nix develop --command cargo make docs-check
 変更する場合は、その条件を直接確認する試験も同じ変更で更新します。要件IDと試験の対応表は
 維持しません（ xref:requirements.adoc#top[現行要件]）。
 +
+``docs-check``はLinuxで実行します。AdocWeaveはNix packageの公開先をLinuxに限定しており、
+macOSの開発環境にはCLIが入りません。macOSで作業する場合は、文書の検査をCIまたはLinux環境で
+行ってください。ほかのtaskはどの開発環境でも実行できます。
++
 CIは変更pathを判定し、文書だけのPull Requestでは``verify``を文書検査へ縮退し、
 ``coverage``とNixOS VMの実行を省略します。プログラムが参照する公開仕様
 ``docs/openapi.json``と``docs/mcp-tools.json``は、この省略対象に含めません。``.github/**``、
