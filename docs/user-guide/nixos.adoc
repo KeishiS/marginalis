@@ -488,7 +488,7 @@ sudo -u marginalis marginalis restore-archive \
 |``marginalis-archive-18``
 |0.47.0
 |6
-|未公開
+|v0.50.0
 |—
 |現行契約
 |===
