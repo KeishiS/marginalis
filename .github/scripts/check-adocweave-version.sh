@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# AdocWeaveの固定の正本は次の2箇所です。
-#   revision: ルートCargo.tomlの[workspace.dependencies]にあるadocweave宣言のrev
-#   版: そのrevisionからCargo.lockが解決したadocweave packageのversion
-# この検査は、リポジトリ内に散在する参照が正本と一致していることを確かめます。
+# AdocWeaveは製品(ライブラリ、CLI、Language Server、textlint用Processor、WebAssembly、browser)
+# ごとに版を分けて公開します。製品間で版は一致しません。Marginalisが固定するのは次の2製品です。
+#
+#   Rustライブラリ:
+#     revision: ルートCargo.tomlの[workspace.dependencies]にあるadocweave宣言のrev
+#     版: そのrevisionからCargo.lockが解決したadocweave packageのversion
+#     このrevisionからNixがCLIも構築するため、CLIの版は別に固定しません。
+#   textlint用Processor:
+#     版: tools/textlint/package.jsonの宣言と、package-lock.jsonの解決結果
+#
+# この検査は、リポジトリ内に散在する参照がそれぞれの正本と一致していることを確かめます。
+# 二つの製品の版をたがいに導出しません。
 # flake.nixのcargoLock.outputHashesの鍵と、nix/checks/配下の移行検査が期待する版は
 # Cargo.lockから導出するため、grepによる照合の対象はここに列挙した参照だけです。
 
@@ -67,17 +75,38 @@ grep -Fq "url = \"github:KeishiS/adocweave/$expected_revision\";" flake.nix ||
 grep -Fq '"adocweave-${adocweaveVersion}"' flake.nix ||
   fail "flake.nixのcargoLock.outputHashesの鍵をCargo.lock由来のadocweaveVersionから導出してください。"
 
-# 5. textlint pluginのtarball URLを照合します。lockfileの解決結果も同じURLでなければ
-#    なりません。
-plugin_url="https://github.com/KeishiS/adocweave/releases/download/v$expected_version/adocweave-textlint-plugin-asciidoc-$expected_version.tgz"
-jq -e --arg url "$plugin_url" \
-  '.devDependencies["@adocweave/textlint-plugin-asciidoc"] == $url' \
-  tools/textlint/package.json >/dev/null ||
-  fail "tools/textlint/package.json のplugin URLが正本の版と一致しません。"
-jq -e --arg url "$plugin_url" \
-  '.packages["node_modules/@adocweave/textlint-plugin-asciidoc"].resolved == $url' \
+# 5. textlint用Processorの固定を検査します。
+#
+#    AdocWeaveは製品ごとに版を分けており、textlint用Processorの版はRustライブラリの版と
+#    一致しません。したがってライブラリ版からProcessorの版を導出できません。ここでは
+#    宣言そのものから版を読み取り、範囲指定ではなく一点に固定されていること、および
+#    lockfileが同じ版へ解決していることだけを確かめます。
+#
+#    宣言はnpmの完全一致指定(例: "0.47.0")か、GitHub Releaseのtarball URLのどちらかです。
+plugin_package='@adocweave/textlint-plugin-asciidoc'
+plugin_spec=$(jq -er --arg name "$plugin_package" '.devDependencies[$name]' \
+  tools/textlint/package.json) ||
+  fail "tools/textlint/package.json に ${plugin_package} の宣言がありません。"
+
+plugin_tarball=''
+if [[ "$plugin_spec" =~ ^([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+  plugin_version="${BASH_REMATCH[1]}"
+elif [[ "$plugin_spec" =~ /adocweave-textlint-plugin-asciidoc-([0-9]+\.[0-9]+\.[0-9]+)\.tgz$ ]]; then
+  plugin_version="${BASH_REMATCH[1]}"
+  plugin_tarball="$plugin_spec"
+else
+  fail "${plugin_package} をMAJOR.MINOR.PATCHの完全一致か、版を含むtarball URLで固定してください: ${plugin_spec}"
+fi
+
+locked=".packages[\"node_modules/${plugin_package}\"]"
+jq -e --arg version "$plugin_version" "$locked.version == \$version" \
   tools/textlint/package-lock.json >/dev/null ||
-  fail "tools/textlint/package-lock.json のplugin解決先が正本の版と一致しません。"
+  fail "tools/textlint/package-lock.json の ${plugin_package} が ${plugin_version} へ解決していません。"
+if [[ -n "$plugin_tarball" ]]; then
+  jq -e --arg url "$plugin_tarball" "$locked.resolved == \$url" \
+    tools/textlint/package-lock.json >/dev/null ||
+    fail "tools/textlint/package-lock.json のplugin取得元が宣言と一致しません: ${plugin_tarball}"
+fi
 
 # 6. 生成済みのOpenAPIとその生成元を照合します。
 jq -e --arg version "$expected_version" \
@@ -112,4 +141,4 @@ if grep -Eq 'WASM_API_VERSION|PINNED_CONTRACTS|CONTRACT_VERSION|contractVersion'
   fail "撤去済みのAdocWeave版識別子が $library に残っています。"
 fi
 
-echo "AdocWeaveの版とrevisionの一致を確認しました: v${expected_version} ${expected_revision}"
+echo "AdocWeaveの固定を確認しました: ライブラリ v${expected_version} ${expected_revision}、textlint用Processor v${plugin_version}"
