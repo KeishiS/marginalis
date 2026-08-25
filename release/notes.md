@@ -1,78 +1,50 @@
-# Marginalis v0.50.0
+# Marginalis v0.50.1
 
 ## 主な変更
 
-### AdocWeave 0.47.0
+### NixOS構成の評価時に表示される警告の解消
 
-AsciiDocの解析と描画をAdocWeave 0.47.0へ更新しました。Marginalisが受理する入力規則と、ノートの描画結果は変えていません。この更新にともない、archiveが記録するAdocWeave package版が`0.47.0`になります。詳しくは「公開契約と破壊的変更」を参照してください。
+MarginalisのNixOSモジュールを取り込んだ構成を評価したときに表示されていた、`stdenv.isLinux`と`stdenv.isDarwin`の非推奨警告を解消しました。
 
-AdocWeaveは、この版から製品ごとに版を分けて公開する方式になりました。Marginalisが取り込むのはRustライブラリとtextlint用Processorで、どちらも0.47.0です。
+`rust-overlay`を非推奨属性の参照が修正されたcommitへ更新し、Marginalis自身のLinux判定も`stdenv.hostPlatform.isLinux`を使うようにしました。Rust toolchainの版は変えていません。
 
-### バックアップの既定保持世代
+### NixOS仮想環境試験の証明書検証の安定化
 
-`services.marginalis.backupRetention`の既定値を30から7へ変更しました。日次バックアップなので1週間分にあたります。**この設定を明示していない配備では、更新後の最初の保持処理で成功世代が7件まで減ります。** 移行の手順を必ず確認してください。
-
-想定する運用規模(利用者10名程度、ノート約1,000件)に対して30世代は容量の要求が大きく、より長い履歴が必要な場合は保存媒体側のsnapshotやoff-site複製で持つほうが、容量と復元性の両面で扱いやすいと判断しました。
-
-### 構造化ログ
-
-ノートのUUIDである`note_id`をログへ記録できるようにしました。単一ホストの運用ではログとデータベースが同じ信頼境界にあり、どのノートで失敗したかを追えることの利点が上回るためです。Cookie、token、認可code、client secret、利用者identity、ノート本文、題名、タグ、検索語、HTTP headerとbodyを記録しない規則は変えていません。
+KanidmとWeb UIを組み合わせる仮想環境試験で、PlaywrightのAPI要求にもテスト用private CAを明示するようにしました。証明書検証を無効にせず、ブラウザーとAPI要求が同じCAを使うことを確認します。製品のTLS設定や利用者向け設定は変わりません。
 
 ## 対応環境
 
 x86_64とaarch64のLinuxで動作するNixOSモジュールとして配布します。利用者認証には標準のOIDC IdPが必要で、参照実装はKanidmです。Web UIはChromiumとFirefoxの最新版で確認しています。
 
-Rust 1.97.1とNode.js 24.19.0で構築しています。実行環境へこれらを用意する必要はありません。Node.jsは前の版の22.23.1から上がりました。
+Rust 1.97.1とNode.js 24.19.0で構築しています。実行環境へこれらを用意する必要はありません。
 
 ## 公開契約と破壊的変更
 
-REST APIとMCPの経路、要求と応答の形は変更していません。`openapi.json`が記録するAdocWeave package版が`0.47.0`になります。
+REST API、MCP、SQLite schema、archive保存契約はv0.50.0から変更していません。
 
-### archive保存契約
-
-v0.50.0が初めて書き出す現行契約は、次の組です。
+この版が書き出すarchiveは、v0.50.0が初めて採用した次の契約です。
 
 - `marginalis-archive-18`
 - AdocWeave package 0.47.0
 - note profile 6
 
-**移行元として受理するarchiveが変わります。** `migrate-archive`と`restore-archive`が受理する旧契約は、v0.49.0が書き出した`marginalis-archive-18` / 0.43.0 / 6だけになりました。v0.48.0以前が書き出したarchiveは、この版だけでは復元できません。利用者ガイドの保存契約の履歴に従い、対応する公開版で契約を一つずつ持ち上げてから渡してください。
+`migrate-archive`と`restore-archive`が受理する旧契約も、v0.49.0が書き出した`marginalis-archive-18` / 0.43.0 / 6のままです。
 
-新旧の契約は記録する項目が同じで、AdocWeave package版だけが異なります。移行では全ノートを0.47.0で再検証し、代表identityとalias群、保持中の全版、添付画像を引き継ぎます。
+## v0.50.1への移行
 
-### バックアップの保持世代
+この版はSQLite schema 23を使用します。v0.50.0と同じschemaのため、データベースの移行は不要です。
 
-`backupRetention`の既定値が30から7へ変わります。設定を明示している配備は影響を受けません。明示していない配備では保持数が減るため、更新前に「v0.50.0への移行」を確認してください。
-
-## v0.50.0への移行
-
-この版はSQLite schema 23を使用します。v0.49.0と同じschemaのため、データベースの移行は不要です。
-
-**更新前に、バックアップの保持世代を確認してください。** `backupRetention`を明示していない配備では、更新後の最初の`marginalis-backup.service`の実行で、検証済み成功世代が新しい既定値の7件まで削除されます。削除した世代は戻せません。これまでどおり30世代を保持する場合は、更新と同じ変更で明示してください。
-
-```nix
-services.marginalis.backupRetention = 30;
-```
-
-保持数を減らしてよい場合でも、更新前に最新のarchiveを別の保存先へ複製しておくことを推奨します。
-
-確認したうえで、NixOS環境では通常どおり更新してください。
+NixOS環境では通常どおり更新してください。
 
 ```sh
 sudo nixos-rebuild switch --flake <利用中のflake>
 ```
 
-更新後は`marginalis-diagnose.service`、HTTP health、OIDC login、MCP認可を確認してください。
-
-保管しているarchiveがv0.48.0以前のものである場合は、この版へ更新する前に、v0.49.0で`marginalis-archive-18` / 0.43.0 / 6へ変換して保管し直すことを推奨します。
+更新後は`marginalis-diagnose.service`、HTTP health、OIDC login、MCP認可を確認してください。v0.49.0以前から更新する場合は、途中の版に固有の移行条件も各Release Notesで確認してください。
 
 ## 更新とロールバック
 
-切戻しでは、新しいserviceを停止し、移行前のNixOS generationへ戻します。schemaを変更していないため、データベースの入れ替えは不要です。
-
-**保持処理で削除したバックアップ世代は、切戻しでは戻りません。** `backupRetention`の既定値変更による削除は、NixOS generationを戻しても復元されないため、更新前の確認が切戻し手段の代わりにはなりません。
-
-v0.50.0が書き出したarchiveは、v0.49.0では現行契約として受理されません。切戻し後に復元が必要な場合は、切戻し前に取得したv0.49.0のarchiveを使ってください。
+切戻しでは、新しいserviceを停止し、移行前のNixOS generationへ戻します。schemaと保存契約を変更していないため、v0.50.0へ戻す場合はデータベースやarchiveの入れ替えは不要です。
 
 ## 既知の制約
 
