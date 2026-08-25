@@ -8,6 +8,10 @@ MarginalisのNixOSモジュールを取り込んだ構成を評価したとき�
 
 `rust-overlay`を非推奨属性の参照が修正されたcommitへ更新し、Marginalis自身のLinux判定も`stdenv.hostPlatform.isLinux`を使うようにしました。Rust toolchainの版は変えていません。
 
+### NixOS仮想環境試験の証明書検証の安定化
+
+KanidmとWeb UIを組み合わせる仮想環境試験で、PlaywrightのAPI要求にもテスト用private CAを明示するようにしました。証明書検証を無効にせず、ブラウザーとAPI要求が同じCAを使うことを確認します。製品のTLS設定や利用者向け設定は変わりません。
+
 ## 対応環境
 
 x86_64とaarch64のLinuxで動作するNixOSモジュールとして配布します。利用者認証には標準のOIDC IdPが必要で、参照実装はKanidmです。Web UIはChromiumとFirefoxの最新版で確認しています。
