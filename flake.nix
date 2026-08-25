@@ -185,7 +185,7 @@
           pkgs = pkgsFor system;
         in
         # NixOS VMを使う検査はLinuxに限る。検査の定義はnix/checks/へ責務単位で分割する。
-        pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
+        pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
           import ./nix/checks {
             inherit
               pkgs
