@@ -26,7 +26,8 @@
 
 NixOS VM試験``kanidm-discovery-vm``は実Kanidm 1.10、private CA、nginx TLS、``/marginalis``
 subpathを構築します。TLS越しのmetadata discoveryとlogin開始を検証し、サブパス復帰用Cookieと
-Kanidmへの遷移先を確認します。OIDC nonceとstateはCookieではなくサーバー側へ保持します。
+Kanidmへの遷移先を確認します。Web UI試験では、ブラウザーとPlaywrightのAPI要求の両方が
+同じprivate CAで証明書を検証します。OIDC nonceとstateはCookieではなくサーバー側へ保持します。
 
 ``mcp-authorization-vm``はNixOS moduleで内蔵Authorization Serverを有効にし、metadata、認可endpoint、
 MCP endpointが同じbase URLで公開されることを検証します。
