@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use adocweave::output::diagnostics::Severity;
-use adocweave::resolution::ReferenceKey;
+use adocweave_core::output::diagnostics::Severity;
+use adocweave_core::resolution::ReferenceKey;
 use marginalis_application::{
     CitationStyle, NoteAdvisorySeverity, NoteAttachmentQuery, NoteCitationQuery,
     NoteReferenceQuery, NoteValidationCode, NoteValidationDiagnostic, ValidatedNoteDraft,
@@ -19,8 +19,8 @@ use crate::policy::{
     validate_note_content_profile,
 };
 
-pub(crate) fn analyze_valid_source(source: &str) -> Result<adocweave::Analysis, RenderError> {
-    let analysis = adocweave::Engine::new(analysis_options())
+pub(crate) fn analyze_valid_source(source: &str) -> Result<adocweave_core::Analysis, RenderError> {
+    let analysis = adocweave_core::Engine::new(analysis_options())
         .analyze(source)
         .map_err(|_| RenderError)?;
     if analysis
@@ -59,7 +59,7 @@ struct ReferenceQueryAnalysis {
     invalid_spans: Vec<Utf8ByteSpan>,
 }
 
-fn reference_queries_from_analysis(analysis: &adocweave::Analysis) -> ReferenceQueryAnalysis {
+fn reference_queries_from_analysis(analysis: &adocweave_core::Analysis) -> ReferenceQueryAnalysis {
     let mut result = ReferenceQueryAnalysis::default();
     for (reference_index, query) in analysis.reference_queries().into_iter().enumerate() {
         if let ReferenceKey::Scheme {
@@ -96,7 +96,9 @@ pub(crate) fn attachment_queries(source: &str) -> Result<Vec<NoteAttachmentQuery
     )?))
 }
 
-fn attachment_queries_from_analysis(analysis: &adocweave::Analysis) -> Vec<NoteAttachmentQuery> {
+fn attachment_queries_from_analysis(
+    analysis: &adocweave_core::Analysis,
+) -> Vec<NoteAttachmentQuery> {
     analysis
         .resource_queries()
         .into_iter()
@@ -130,7 +132,7 @@ pub(crate) fn citation_style(source: &str) -> Result<CitationStyle, RenderError>
 ///
 /// 属性を書かないノートは既定の規則になる。許可しない値は入力検査が拒否するため、ここへ
 /// 到達する値は正本の一覧にあるものだけである。
-fn citation_style_from_analysis(analysis: &adocweave::Analysis) -> CitationStyle {
+fn citation_style_from_analysis(analysis: &adocweave_core::Analysis) -> CitationStyle {
     analysis
         .attribute_environment()
         .final_values()
@@ -143,7 +145,7 @@ fn citation_style_from_analysis(analysis: &adocweave::Analysis) -> CitationStyle
 ///
 /// AdocWeaveは位置引数をcitation key、名前付き引数を引用の補足として返す。Marginalisは
 /// `locator`だけを引用へ添える値として扱い、他の名前付き引数は表示に使わない。
-fn citation_queries_from_analysis(analysis: &adocweave::Analysis) -> Vec<NoteCitationQuery> {
+fn citation_queries_from_analysis(analysis: &adocweave_core::Analysis) -> Vec<NoteCitationQuery> {
     analysis
         .citations()
         .into_iter()
@@ -171,7 +173,7 @@ fn citation_queries_from_analysis(analysis: &adocweave::Analysis) -> Vec<NoteCit
 /// 見出しはAdocWeaveの構造投影から読み、行番号は診断と同じ位置変換を使う。文書題名は
 /// ノートのtitleが別に持つため、一覧から除く。
 pub(crate) fn outline(source: &str) -> Result<marginalis_application::NoteOutline, RenderError> {
-    use adocweave::semantic::SectionKind;
+    use adocweave_core::semantic::SectionKind;
 
     let analysis = analyze_valid_source(source)?;
     let document = analysis.source_document();
@@ -251,7 +253,7 @@ pub(crate) fn validate_draft(
             None,
         ));
     } else {
-        match adocweave::Engine::new(analysis_options()).analyze(&draft.source) {
+        match adocweave_core::Engine::new(analysis_options()).analyze(&draft.source) {
             Ok(analysis) => {
                 source_spans = crate::spans::source_spans_from_analysis(&analysis);
                 let reference_analysis = reference_queries_from_analysis(&analysis);
@@ -274,7 +276,7 @@ pub(crate) fn validate_draft(
                     .reference_targets()
                     .iter()
                     .find(|target| {
-                        target.kind == adocweave::semantic::ReferenceTargetKind::DocumentTitle
+                        target.kind == adocweave_core::semantic::ReferenceTargetKind::DocumentTitle
                     })
                     .map(|target| target.label.trim().nfc().collect::<String>())
                     .unwrap_or_default();
@@ -399,7 +401,7 @@ pub(crate) fn validate_draft(
             )),
         }
     }
-    if let Ok(document) = adocweave::text::SourceDocument::new(&draft.source) {
+    if let Ok(document) = adocweave_core::text::SourceDocument::new(&draft.source) {
         for item in &mut errors {
             if item.target == NoteValidationTarget::Source {
                 item.position = source_position(

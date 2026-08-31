@@ -3,17 +3,19 @@
 //! 装飾の判断に必要な種類と範囲だけを写し、地の文や装飾しない記法は返さない。
 //! 範囲の数え方は診断と同じ、原文のUTF-8バイトオフセットである。
 
-use adocweave::semantic::{
+use adocweave_core::semantic::{
     Block, DelimitedBlockKind, DelimitedPresentation, HeadingKind, Inline, InlineLiteralKind,
     InlineStyle, SemanticNode, StandardMacroKind, VerbatimKind, walk,
 };
-use adocweave::text::TextRange;
+use adocweave_core::text::TextRange;
 use marginalis_application::{NoteSourceSpan, NoteSourceSpanKind};
 use marginalis_domain::Utf8ByteSpan;
 
 use crate::policy::span;
 
-pub(crate) fn source_spans_from_analysis(analysis: &adocweave::Analysis) -> Vec<NoteSourceSpan> {
+pub(crate) fn source_spans_from_analysis(
+    analysis: &adocweave_core::Analysis,
+) -> Vec<NoteSourceSpan> {
     let mut spans = Vec::new();
     walk(analysis.document(), |node| match node {
         SemanticNode::Block(block) => collect_block(block, &mut spans),

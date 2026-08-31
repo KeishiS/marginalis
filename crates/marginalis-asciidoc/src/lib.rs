@@ -87,7 +87,7 @@ pub struct PackageVersionMismatch {
 }
 
 pub fn verify_runtime_package_version() -> Result<(), PackageVersionMismatch> {
-    let actual = adocweave::VERSION;
+    let actual = adocweave_core::VERSION;
     if actual == PINNED_ADOCWEAVE_PACKAGE_VERSION {
         Ok(())
     } else {

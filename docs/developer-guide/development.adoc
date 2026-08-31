@@ -42,13 +42,13 @@ Web UIの操作部品にはshadcn/uiを使用します。新しいcomponentは�
 
 AdocWeaveを新しい版へ固定し直す場合は、一括更新スクリプトを使います。固定の正本はルート
 ``Cargo.toml``の``rev``宣言とそれを解決した``Cargo.lock``で、Rust定数とOpenAPIの版は
-build時に``Cargo.lock``から導出されます。スクリプトはNixのinputとハッシュ、textlint plugin、
-文書の版表記、契約の生成物を追随させます。残る手作業はarchive移行契約への旧版の受理行の
-追加だけで、必要な内容はスクリプトが最後に案内します。
+build時に``Cargo.lock``から導出されます。スクリプトはNixのinputとハッシュ、指定した場合の
+textlint用Processor、契約の生成物を追随させます。文書の版表記とarchive移行契約は、過去の
+保存契約を誤って書き換えないよう人が更新し、必要な内容はスクリプトが最後に案内します。
 
 [source,sh]
 ----
-bash .github/scripts/bump-adocweave.sh <commit SHA>
+bash .github/scripts/bump-adocweave.sh <commit SHA> [textlint用Processorの版]
 ----
 
 ``gh auth status``で、操作対象のGitHubアカウントとホストを確認してください。認証情報や

@@ -8,8 +8,10 @@ use std::env;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use adocweave::semantic::{Inline, ReferenceDestination, ReferenceTargetKind, SemanticNode, walk};
-use adocweave::{AnalysisOptions, Engine};
+use adocweave_core::semantic::{
+    Inline, ReferenceDestination, ReferenceTargetKind, SemanticNode, walk,
+};
+use adocweave_core::{AnalysisOptions, Engine};
 
 fn main() {
     if let Err(error) = run(env::args().skip(1)) {

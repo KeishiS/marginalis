@@ -3,10 +3,10 @@ set -euo pipefail
 
 # AdocWeaveの固定を新しい版へ更新します。
 #
-#   使い方: bash .github/scripts/bump-adocweave.sh <ライブラリのcommit SHA(40桁)> [textlint用Processorの版]
+#   使い方: bash .github/scripts/bump-adocweave.sh <adocweave-coreのcommit SHA(40桁)> [textlint用Processorの版]
 #
-# AdocWeaveは製品ごとに版を分けて公開します。ライブラリとtextlint用Processorの版は一致しない
-# ため、それぞれを別の引数で指定します。textlintの版を省略した場合は、その更新を行いません。
+# Native製品とRustライブラリは同じ版で公開されます。textlint用Processorだけは独立した版を
+# 持つため、別の引数で指定します。textlintの版を省略した場合は、その更新を行いません。
 #
 # 正本(Cargo.tomlのrevとCargo.lockの解決結果)を更新すると、Rust定数とOpenAPIの版はbuild.rsが
 # 導出するため、このスクリプトはそれ以外の機械的に決まる参照を追随させます。
@@ -22,7 +22,7 @@ set -euo pipefail
 revision="${1:-}"
 textlint_version="${2:-}"
 if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "使い方: bash .github/scripts/bump-adocweave.sh <ライブラリのcommit SHA(40桁)> [textlint用Processorの版]" >&2
+  echo "使い方: bash .github/scripts/bump-adocweave.sh <adocweave-coreのcommit SHA(40桁)> [textlint用Processorの版]" >&2
   exit 1
 fi
 if [[ -n "$textlint_version" && ! "$textlint_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -30,8 +30,8 @@ if [[ -n "$textlint_version" && ! "$textlint_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+
   exit 1
 fi
 
-old_revision=$(sed -En 's/^adocweave *= *\{.*rev = "([0-9a-f]{40})".*/\1/p' Cargo.toml)
-old_version=$(sed -n '/name = "adocweave"/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
+old_revision=$(sed -En 's/^adocweave-core *= *\{.*rev = "([0-9a-f]{40})".*/\1/p' Cargo.toml)
+old_version=$(sed -n '/name = "adocweave-core"/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
 if [[ -z "$old_revision" || -z "$old_version" ]]; then
   echo "現在の固定をCargo.tomlとCargo.lockから読み取れません。" >&2
   exit 1
@@ -39,13 +39,13 @@ fi
 
 echo "1/5 Cargo.tomlのrevを更新してCargo.lockを解決します。"
 sed -i "s/$old_revision/$revision/" Cargo.toml
-cargo update -p adocweave
-new_version=$(sed -n '/name = "adocweave"/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
+cargo update -p adocweave-core
+new_version=$(sed -n '/name = "adocweave-core"/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
 echo "    ライブラリ v$old_version ($old_revision) -> v$new_version ($revision)"
 
 echo "2/5 flake.nixのinputとハッシュ、flake.lockを更新します。"
 new_hash=$(nix flake prefetch "github:KeishiS/adocweave/$revision" --json | jq -r .hash)
-old_hash=$(sed -En 's/.*"adocweave-\$\{adocweaveVersion\}" = "([^"]+)";/\1/p' flake.nix)
+old_hash=$(sed -En 's/.*"adocweave-core-\$\{adocweaveVersion\}" = "([^"]+)";/\1/p' flake.nix)
 # Nixのハッシュはbase64で/を含むため、置換の区切りへ|を使う。base64と16進SHAはどちらも
 # |を含まないので、区切りが値と衝突することはない。
 sed -i "s|$old_revision|$revision|; s|$old_hash|$new_hash|" flake.nix

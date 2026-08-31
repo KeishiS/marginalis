@@ -15,21 +15,21 @@ fn main() {
     println!("cargo:rustc-env=MARGINALIS_ADOCWEAVE_REVISION={revision}");
 }
 
-/// Cargo.lockのadocweave packageから、versionとgit revisionを読み取る。
+/// Cargo.lockのadocweave-core packageから、versionとgit revisionを読み取る。
 ///
 /// 依存を増やさないため、TOML parserではなく`[[package]]`区切りの文字列処理で読む。
 /// Cargo.lockの形式が変わって読めない場合はbuildを失敗させ、静かな不一致を残さない。
 fn adocweave_resolution(lock: &str) -> (String, String) {
     let package = lock
         .split("[[package]]")
-        .find(|block| block.contains("name = \"adocweave\""))
-        .expect("Cargo.lockにadocweave packageがある");
+        .find(|block| block.contains("name = \"adocweave-core\""))
+        .expect("Cargo.lockにadocweave-core packageがある");
     let field = |name: &str| {
         package
             .lines()
             .find_map(|line| line.strip_prefix(&format!("{name} = \"")))
             .and_then(|rest| rest.strip_suffix('"'))
-            .unwrap_or_else(|| panic!("adocweave packageに{name}がある"))
+            .unwrap_or_else(|| panic!("adocweave-core packageに{name}がある"))
             .to_owned()
     };
     let source = field("source");
@@ -39,6 +39,6 @@ fn adocweave_resolution(lock: &str) -> (String, String) {
         .filter(|revision| {
             revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit())
         })
-        .expect("adocweaveのsourceが完全SHAのgit固定である");
+        .expect("adocweave-coreのsourceが完全SHAのgit固定である");
     (field("version"), revision)
 }
