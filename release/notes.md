@@ -1,16 +1,20 @@
-# Marginalis v0.50.1
+# Marginalis v0.51.0
 
 ## 主な変更
 
-### NixOS構成の評価時に表示される警告の解消
+### AdocWeave v0.57.0への更新
 
-MarginalisのNixOSモジュールを取り込んだ構成を評価したときに表示されていた、`stdenv.isLinux`と`stdenv.isDarwin`の非推奨警告を解消しました。
+ノート本文の検証、HTML描画、編集画面の装飾、開発文書の検査に使うAdocWeaveをv0.57.0へ更新しました。
 
-`rust-overlay`を非推奨属性の参照が修正されたcommitへ更新し、Marginalis自身のLinux判定も`stdenv.hostPlatform.isLinux`を使うようにしました。Rust toolchainの版は変えていません。
+上流の公開構成に合わせ、Rustライブラリは`adocweave-core`を使用します。Marginalisが使用している解析・意味モデル・HTML描画APIは維持されており、ノートの入力規則を表すnote profile版は6のままです。AdocWeaveのtextlint用Processorは0.54.0へ更新しました。
 
-### NixOS仮想環境試験の証明書検証の安定化
+AdocWeave CLIの`--local-targets`廃止へ追随し、`--project-root`によるリポジトリ内参照の検査を継続します。利用者向けのMarginalisコマンドは変わりません。
 
-KanidmとWeb UIを組み合わせる仮想環境試験で、PlaywrightのAPI要求にもテスト用private CAを明示するようにしました。証明書検証を無効にせず、ブラウザーとAPI要求が同じCAを使うことを確認します。製品のTLS設定や利用者向け設定は変わりません。
+### 依存固定と移行経路の更新
+
+AdocWeaveの公開commit、Cargo依存、Nix input、textlint用Processorをそれぞれ完全な版へ固定し、相互の不一致を検査します。公開取り下げ済みだった間接依存`chacha20 0.10.1`は0.10.2へ更新しました。
+
+保存契約の履歴には、AdocWeave package版0.57.0の組を初めて採用したMarginalis版としてv0.51.0を記録しました。直前の公開済み保存契約からだけ変換する方針は変わりません。
 
 ## 対応環境
 
@@ -20,19 +24,19 @@ Rust 1.97.1とNode.js 24.19.0で構築しています。実行環境へこれら
 
 ## 公開契約と破壊的変更
 
-REST API、MCP、SQLite schema、archive保存契約はv0.50.0から変更していません。
+REST API、MCP、SQLite schema、note profile版はv0.50.1から変更していません。
 
-この版が書き出すarchiveは、v0.50.0が初めて採用した次の契約です。
+この版が書き出すarchiveは、次の保存契約を使います。
 
 - `marginalis-archive-18`
-- AdocWeave package 0.47.0
+- AdocWeave package 0.57.0
 - note profile 6
 
-`migrate-archive`と`restore-archive`が受理する旧契約も、v0.49.0が書き出した`marginalis-archive-18` / 0.43.0 / 6のままです。
+`migrate-archive`と`restore-archive`が直接受理する旧契約は、v0.50.0とv0.50.1が書き出した`marginalis-archive-18` / 0.47.0 / 6です。さらに古いarchiveは、NixOS運用文書の保存契約履歴に記録した公開済みリリースを順番に使ってください。
 
-## v0.50.1への移行
+## v0.51.0への移行
 
-この版はSQLite schema 23を使用します。v0.50.0と同じschemaのため、データベースの移行は不要です。
+この版はSQLite schema 23を使用します。v0.50.1と同じschemaのため、データベースの移行コマンドは不要です。
 
 NixOS環境では通常どおり更新してください。
 
@@ -40,11 +44,20 @@ NixOS環境では通常どおり更新してください。
 sudo nixos-rebuild switch --flake <利用中のflake>
 ```
 
-更新後は`marginalis-diagnose.service`、HTTP health、OIDC login、MCP認可を確認してください。v0.49.0以前から更新する場合は、途中の版に固有の移行条件も各Release Notesで確認してください。
+v0.50.0またはv0.50.1が書き出したarchiveを復元する場合は、v0.51.0の`restore-archive`へ直接渡せます。入力を変更せず、0.57.0の規則で全ノートを再検証し、隔離データベースで復元結果を照合してから取り込みます。
+
+```sh
+sudo -u marginalis marginalis restore-archive \
+  --input /srv/marginalis-migration/archive-v0.50.1.json
+```
+
+更新後は`marginalis-diagnose.service`、HTTP health、OIDC login、MCP認可、既存ノートの表示を確認してください。
 
 ## 更新とロールバック
 
-切戻しでは、新しいserviceを停止し、移行前のNixOS generationへ戻します。schemaと保存契約を変更していないため、v0.50.0へ戻す場合はデータベースやarchiveの入れ替えは不要です。
+更新前に通常のバックアップを完了させてください。問題がある場合はMarginalisを停止し、v0.50.1を使用していたNixOS generationへ戻します。SQLite schemaは同じため、更新後にノートや認可状態を変更していなければ、データベースの変換は不要です。
+
+更新後にデータを変更した場合や、v0.57.0で新たに受理される記法を保存した場合は、切戻し先で内容を検証できるとは限りません。更新前のデータベースsnapshotまたはarchiveとv0.50.1を組にして戻してください。v0.51.0が書き出した0.57.0契約のarchiveをv0.50.1は直接受理しません。
 
 ## 既知の制約
 
@@ -52,7 +65,7 @@ sudo nixos-rebuild switch --flake <利用中のflake>
 
 AdocWeaveがNix packageの公開先をLinuxに限定しているため、macOSの開発環境ではAsciiDoc文書の検査(`cargo make docs-check`)を実行できません。運用と利用には影響しません。
 
-公開前の人手受入は、配備した環境での画面操作と外部MCPクライアントの確認を対象としています。この版では自動検証だけを実施しているため、配備後に実環境での確認を行ってください。
+公開前の人手受入は、公開済みv0.50.1の実行物で書き出したarchiveの移行・隔離復元と、Nix packageの起動確認を対象としました。実配備先でのOIDC login、外部MCPクライアント、Webhook受信は公開後に確認してください。
 
 ## 配布物の検証
 
@@ -62,4 +75,4 @@ AdocWeaveがNix packageの公開先をLinuxに限定しているため、macOS�
 gh attestation verify openapi.json --repo KeishiS/marginalis
 ```
 
-自動検証では、Kanidmログイン、ブラウザー操作、ACL、MCP認可、Webhook、schema検査、archiveの移行と復元を確認しています。配備後は、実際に使用する外部MCPクライアント、最新の実archiveを用いた隔離復元、外部Webhook受信サーバーでも受入確認することを推奨します。
+自動検証では、AdocWeaveの固定、ノート検証・描画、Kanidm login、ブラウザー操作、ACL、MCP認可、Webhook、schema検査、archiveの移行と復元を確認しています。配備後は、実際に使用する外部MCPクライアント、最新の実archiveを用いた隔離復元、外部Webhook受信サーバーでも受入確認することを推奨します。
