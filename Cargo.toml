@@ -20,7 +20,7 @@ rust-version = "1.97.1"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-adocweave = { git = "https://github.com/KeishiS/adocweave.git", rev = "f45bcd41199e6cb6471fe760ab51883751ba76b7", package = "adocweave" }
+adocweave-core = { git = "https://github.com/KeishiS/adocweave.git", rev = "c6148739a7a57baf7d5d27214fd7c215b379d9d8", package = "adocweave-core" }
 # 共有Authorization Serverの2 crateは同じリポジトリの同じcommitから取得します。
 # 版とrevisionはここだけで決め、各crateはworkspace依存として参照します。
 mcp-authorization-server = { version = "=0.1.0", git = "https://github.com/KeishiS/mcp-authorization-server.git", rev = "555224bd869576249ee36d082960858ea8d0618b" }

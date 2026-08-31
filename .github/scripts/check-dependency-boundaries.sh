@@ -80,16 +80,16 @@ jq -r --argjson shared "$shared_crates" '
 while IFS=$'\t' read -r package dependency; do
   case "$package:$dependency" in
     marginalis-domain:axum | marginalis-domain:sqlx | marginalis-domain:reqwest | \
-      marginalis-domain:adocweave | marginalis-domain:openidconnect | \
+      marginalis-domain:adocweave-core | marginalis-domain:openidconnect | \
       marginalis-domain:oauth2 | marginalis-domain:tower | marginalis-domain:tower-http | \
       marginalis-application:axum | marginalis-application:sqlx | \
-      marginalis-application:reqwest | marginalis-application:adocweave | \
+      marginalis-application:reqwest | marginalis-application:adocweave-core | \
       marginalis-application:openidconnect | marginalis-application:oauth2 | \
       marginalis-application:tower | marginalis-application:tower-http | \
       marginalis-contract:axum | marginalis-contract:sqlx | marginalis-contract:reqwest | \
-      marginalis-contract:adocweave | marginalis-contract:openidconnect | \
+      marginalis-contract:adocweave-core | marginalis-contract:openidconnect | \
       marginalis-contract:oauth2 | marginalis-contract:tower | marginalis-contract:tower-http | \
-      marginalis-web:sqlx | marginalis-web:adocweave | marginalis-web:openidconnect | \
+      marginalis-web:sqlx | marginalis-web:adocweave-core | marginalis-web:openidconnect | \
       marginalis-web:oauth2 | marginalis-web:reqwest)
       echo "内側の層またはHTTP transportへ具象adapter依存が混入しています: $package -> $dependency" >&2
       exit 1
@@ -102,7 +102,7 @@ done <"$external_dependencies"
 # 除外し、web層が別経路でこれらへ依存しないことだけを確かめます。
 if [[ -z "$metadata_input" ]] && cargo tree -p marginalis-web -e normal --prune oidc-browser-login --prefix none --format '{p}' |
   awk '{ print $1 }' |
-  grep -E '^(marginalis-(sqlite|asciidoc)|sqlx|adocweave|openidconnect|reqwest)$' >/dev/null; then
+  grep -E '^(marginalis-(sqlite|asciidoc)|sqlx|adocweave-core|openidconnect|reqwest)$' >/dev/null; then
   echo "HTTP transportのproduction依存へ具象adapterが混入しています。" >&2
   exit 1
 fi

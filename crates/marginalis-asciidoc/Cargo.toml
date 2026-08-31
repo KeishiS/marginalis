@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 thiserror.workspace = true
-adocweave.workspace = true
+adocweave-core.workspace = true
 marginalis-application = { path = "../marginalis-application" }
 marginalis-domain = { path = "../marginalis-domain" }
 unicode-normalization.workspace = true

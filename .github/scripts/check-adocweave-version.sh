@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# AdocWeaveは製品(ライブラリ、CLI、Language Server、textlint用Processor、WebAssembly、browser)
-# ごとに版を分けて公開します。製品間で版は一致しません。Marginalisが固定するのは次の2製品です。
+# AdocWeaveのNative製品とRustライブラリは同じ版で公開され、textlint用Processorは独立した版を
+# 持ちます。Marginalisが固定するのは次の2製品です。
 #
 #   Rustライブラリ:
-#     revision: ルートCargo.tomlの[workspace.dependencies]にあるadocweave宣言のrev
-#     版: そのrevisionからCargo.lockが解決したadocweave packageのversion
+#     revision: ルートCargo.tomlの[workspace.dependencies]にあるadocweave-core宣言のrev
+#     版: そのrevisionからCargo.lockが解決したadocweave-core packageのversion
 #     このrevisionからNixがCLIも構築するため、CLIの版は別に固定しません。
 #   textlint用Processor:
 #     版: tools/textlint/package.jsonの宣言と、package-lock.jsonの解決結果
@@ -37,8 +37,8 @@ fail() {
 }
 
 # 1. 正本のrevisionをルートCargo.tomlから読み取ります。
-declaration=$(grep -E '^adocweave *= *\{' Cargo.toml) ||
-  fail "ルートCargo.tomlにadocweaveのworkspace依存宣言が見つかりません。"
+declaration=$(grep -E '^adocweave-core *= *\{' Cargo.toml) ||
+  fail "ルートCargo.tomlにadocweave-coreのworkspace依存宣言が見つかりません。"
 expected_revision=$(printf '%s\n' "$declaration" | sed -En 's/.*rev = "([0-9a-f]+)".*/\1/p')
 if [[ ! "$expected_revision" =~ ^[0-9a-f]{40}$ ]]; then
   fail "AdocWeaveのrevisionを40桁の完全SHAで固定してください: ${expected_revision:-（宣言なし）}"
@@ -46,9 +46,9 @@ fi
 
 # 2. Cargo.lockの解決結果が正本のrevisionを指すことを確かめ、正本の版を読み取ります。
 expected_version=$(jq -er --arg revision "$expected_revision" '
-  [.packages[] | select(.name == "adocweave")] as $resolved
+  [.packages[] | select(.name == "adocweave-core")] as $resolved
   | if ($resolved | length) != 1 then
-      error("adocweave packageの解決結果が1件ではありません")
+      error("adocweave-core packageの解決結果が1件ではありません")
     elif (($resolved[0].source // "") | contains("rev=" + $revision) | not)
       or (($resolved[0].source // "") | endswith("#" + $revision) | not) then
       error("解決されたrevisionがCargo.tomlの宣言と一致しません")
@@ -72,13 +72,13 @@ test -f crates/marginalis-asciidoc/build.rs ||
 #    いることを確かめます。ハッシュ値そのものの正しさはNixのbuildが検証します。
 grep -Fq "url = \"github:KeishiS/adocweave/$expected_revision\";" flake.nix ||
   fail "flake.nixのadocweave inputが正本のrevisionと一致しません。"
-grep -Fq '"adocweave-${adocweaveVersion}"' flake.nix ||
+grep -Fq '"adocweave-core-${adocweaveVersion}"' flake.nix ||
   fail "flake.nixのcargoLock.outputHashesの鍵をCargo.lock由来のadocweaveVersionから導出してください。"
 
 # 5. textlint用Processorの固定を検査します。
 #
-#    AdocWeaveは製品ごとに版を分けており、textlint用Processorの版はRustライブラリの版と
-#    一致しません。したがってライブラリ版からProcessorの版を導出できません。ここでは
+#    textlint用Processorの版はRustライブラリの版と一致しません。したがってライブラリ版から
+#    Processorの版を導出できません。ここでは
 #    宣言そのものから版を読み取り、範囲指定ではなく一点に固定されていること、および
 #    lockfileが同じ版へ解決していることだけを確かめます。
 #
@@ -129,7 +129,7 @@ fi
 # 8. 固定したrevisionがconformance fixtureを同梱していることを確かめます。
 adocweave_manifest=$(jq -r --arg version "$expected_version" '
   .packages[]
-  | select(.name == "adocweave" and .version == $version)
+  | select(.name == "adocweave-core" and .version == $version)
   | .manifest_path
 ' "$metadata")
 test -f "$(dirname "$adocweave_manifest")/conformance/cases.json" ||

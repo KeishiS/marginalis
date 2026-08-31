@@ -12,7 +12,6 @@ while IFS= read -r -d '' source; do
   documents+=("$source")
   if ! adocweave check \
     --fail-on warning \
-    --local-targets \
     --project-root . \
     "$source"; then
     status=1

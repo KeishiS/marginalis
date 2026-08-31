@@ -1,13 +1,13 @@
 use std::collections::BTreeSet;
 
-use adocweave::preprocess::discover_includes;
-use adocweave::resolution::ReferenceKey;
-use adocweave::resolution::ResourcePurpose;
-use adocweave::semantic::{
+use adocweave_core::preprocess::discover_includes;
+use adocweave_core::resolution::ReferenceKey;
+use adocweave_core::resolution::ResourcePurpose;
+use adocweave_core::semantic::{
     Block, DelimitedContent, Inline, MathLanguage, SemanticNode, VerbatimKind, walk,
 };
-use adocweave::text::TextRange;
-use adocweave::text::{PositionEncoding, SourceDocument, TextSize};
+use adocweave_core::text::TextRange;
+use adocweave_core::text::{PositionEncoding, SourceDocument, TextSize};
 use marginalis_application::{
     NoteAdvisoryDiagnostic, NoteAdvisorySeverity, NoteProfile, NoteProfileAdvisoryRule,
     NoteProfileExample, NoteProfileLimits, NoteProfileNormalization, NoteProfileRule,
@@ -266,21 +266,21 @@ pub fn note_profile() -> NoteProfile {
                 description: rule.message(),
             })
             .collect(),
-        advisory_rules: adocweave::output::diagnostics::LINT_RULES
+        advisory_rules: adocweave_core::output::diagnostics::LINT_RULES
             .iter()
             .filter_map(|descriptor| {
                 let settings = analysis.diagnostics.lint.rule(descriptor.id);
                 let severity = match (settings.enabled, settings.severity) {
-                    (true, adocweave::output::diagnostics::Severity::Warning) => {
+                    (true, adocweave_core::output::diagnostics::Severity::Warning) => {
                         NoteAdvisorySeverity::Warning
                     }
-                    (true, adocweave::output::diagnostics::Severity::Information) => {
+                    (true, adocweave_core::output::diagnostics::Severity::Information) => {
                         NoteAdvisorySeverity::Information
                     }
-                    (true, adocweave::output::diagnostics::Severity::Hint) => {
+                    (true, adocweave_core::output::diagnostics::Severity::Hint) => {
                         NoteAdvisorySeverity::Hint
                     }
-                    (false, _) | (true, adocweave::output::diagnostics::Severity::Error) => {
+                    (false, _) | (true, adocweave_core::output::diagnostics::Severity::Error) => {
                         return None;
                     }
                 };
@@ -364,7 +364,7 @@ impl Default for NoteContentProfile {
 }
 
 pub(crate) fn validate_note_content_profile(
-    analysis: &adocweave::Analysis,
+    analysis: &adocweave_core::Analysis,
 ) -> Vec<NoteContentError> {
     validate_note_content_profile_with(analysis, &NoteContentProfile::default())
 }
@@ -390,7 +390,7 @@ fn unsupported_source_language(
 }
 
 fn validate_note_content_profile_with(
-    analysis: &adocweave::Analysis,
+    analysis: &adocweave_core::Analysis,
     profile: &NoteContentProfile,
 ) -> Vec<NoteContentError> {
     let authored_url_policy = authored_link_url_policy();
@@ -543,7 +543,7 @@ mod tests {
     /// `analyze_valid_source`は禁止規則を検出した時点で失敗するため、ここでは同じ設定で
     /// 解析だけを行い、規則の判定結果を取り出す。
     fn violations(source: &str) -> Vec<NoteValidationCode> {
-        let analysis = adocweave::Engine::new(crate::configuration::analysis_options())
+        let analysis = adocweave_core::Engine::new(crate::configuration::analysis_options())
             .analyze(source)
             .expect("構文として解析できる入力");
         validate_note_content_profile(&analysis)
@@ -723,12 +723,12 @@ mod tests {
         );
         assert_eq!(profile.profile_version, AUTHORING_PROFILE_VERSION);
         let effective = crate::configuration::analysis_options();
-        let expected = adocweave::output::diagnostics::LINT_RULES
+        let expected = adocweave_core::output::diagnostics::LINT_RULES
             .iter()
             .filter(|descriptor| {
                 let settings = effective.diagnostics.lint.rule(descriptor.id);
                 settings.enabled
-                    && settings.severity != adocweave::output::diagnostics::Severity::Error
+                    && settings.severity != adocweave_core::output::diagnostics::Severity::Error
             })
             .map(|descriptor| descriptor.id.as_str())
             .collect::<Vec<_>>();

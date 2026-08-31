@@ -1,15 +1,15 @@
 //! Marginalis note profileで使うAdocWeave設定の単一正本。
 
-use adocweave::output::diagnostics::{
+use adocweave_core::output::diagnostics::{
     LintRuleId, MACRO_BOUNDARY, MONOSPACE_BOUNDARY, RuleSettings, Severity, lint_rule,
 };
-use adocweave::output::html::{
+use adocweave_core::output::html::{
     MathLanguagePolicy, RenderPolicy, ResourceCapabilities, RolePolicy, SourceLanguagePolicy,
     UnknownSourceLanguage, UnresolvedReferencePresentation,
 };
-use adocweave::resolution::{ActiveUrlPolicy, AuthoredUrlPolicy};
-use adocweave::semantic::MathLanguage;
-use adocweave::{
+use adocweave_core::resolution::{ActiveUrlPolicy, AuthoredUrlPolicy};
+use adocweave_core::semantic::MathLanguage;
+use adocweave_core::{
     AnalysisLimits, AnalysisOptions, DiagnosticProfile, OutputLimits, SyntaxMode, SyntaxOptions,
     semantic::ExternalAttributes,
 };
@@ -166,7 +166,7 @@ pub(crate) fn html_is_within_output_limits(html: &str, limits: &OutputLimits) ->
 
 #[cfg(test)]
 mod tests {
-    use adocweave::output::diagnostics::{
+    use adocweave_core::output::diagnostics::{
         ASCIIDOC_FILE_LINK, MACRO_BOUNDARY, MONOSPACE_BOUNDARY, NON_ASCIIDOC_XREF,
     };
 

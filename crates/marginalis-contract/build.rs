@@ -12,12 +12,12 @@ fn main() {
     let lock = std::fs::read_to_string(&lock_path).expect("ワークスペースのCargo.lockを読める");
     let package = lock
         .split("[[package]]")
-        .find(|block| block.contains("name = \"adocweave\""))
-        .expect("Cargo.lockにadocweave packageがある");
+        .find(|block| block.contains("name = \"adocweave-core\""))
+        .expect("Cargo.lockにadocweave-core packageがある");
     let version = package
         .lines()
         .find_map(|line| line.strip_prefix("version = \""))
         .and_then(|rest| rest.strip_suffix('"'))
-        .expect("adocweave packageにversionがある");
+        .expect("adocweave-core packageにversionがある");
     println!("cargo:rustc-env=MARGINALIS_ADOCWEAVE_VERSION={version}");
 }

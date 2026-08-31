@@ -7,7 +7,7 @@
     inputs.nixpkgs.follows = "nixpkgs";
   };
   inputs.adocweave = {
-    url = "github:KeishiS/adocweave/f45bcd41199e6cb6471fe760ab51883751ba76b7";
+    url = "github:KeishiS/adocweave/c6148739a7a57baf7d5d27214fd7c215b379d9d8";
     inputs.nixpkgs.follows = "nixpkgs";
     inputs.rust-overlay.follows = "rust-overlay";
   };
@@ -36,7 +36,7 @@
       # AdocWeaveの版の正本はCargo.lockの解決結果とする。cargoLock.outputHashesの鍵と
       # checksの期待値をここから導出し、版の直書きを残さない。
       adocweaveVersion =
-        (nixpkgs.lib.findFirst (package: package.name == "adocweave") null
+        (nixpkgs.lib.findFirst (package: package.name == "adocweave-core") null
           (builtins.fromTOML (builtins.readFile ./Cargo.lock)).package
         ).version;
       forAllSystems = nixpkgs.lib.genAttrs systems;
@@ -151,7 +151,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "adocweave-${adocweaveVersion}" = "sha256-QlqWAlkHL00wU5OOrUHmwdBjsY4WRcq7rFNypaquJg0=";
+                "adocweave-core-${adocweaveVersion}" = "sha256-DK6bu92eAH2nUmiz5ZEkB+yrjjNQungMb/815tKtab0=";
                 "mcp-authorization-server-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
                 "mcp-authorization-server-cimd-0.1.0" = "sha256-pXrn8DUKm6Y4/8MCWeojVs3+w6eTQMjoBiv1OFNZUh8=";
                 "oidc-browser-login-0.2.0" = "sha256-Dk5uE7ZzH8zacNbdMSoleb4V8ZBOa75WLGMOCxt2Knc=";
@@ -205,10 +205,8 @@
           pkgs = pkgsFor system;
           pnpm = pnpmFor pkgs;
           rustToolchain = rustToolchainFor pkgs;
-          # AdocWeaveはNix packageの公開先をLinuxに限定している。0.47.0でoverlayと
-          # 製品別のpackage属性が廃止され、他のsystem向けにderivationを組み立てる
-          # 手段がなくなったため、Linux以外のdevShellにはCLIを含めない。文書検査
-          # (cargo make docs-check)はLinuxで実行する。
+          # AdocWeaveはNix packageの公開先をLinuxに限定している。Linux以外のdevShellには
+          # CLIを含めず、文書検査(cargo make docs-check)はLinuxで実行する。
           adocweaveCli = pkgs.lib.optionals (adocweave.packages ? ${system}) [
             adocweave.packages.${system}.default
           ];

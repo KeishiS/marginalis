@@ -1,6 +1,6 @@
-use adocweave::output::diagnostics::Severity;
-use adocweave::output::html::render_with_inputs;
-use adocweave::resolution::{
+use adocweave_core::output::diagnostics::Severity;
+use adocweave_core::output::html::render_with_inputs;
+use adocweave_core::resolution::{
     CitationSegment, GeneratedBibliography, GeneratedBibliographyEntry, MediaType, RenderInputs,
     ResolutionFailureKind, ResolutionNotice, ResolutionNoticeKind, ResolvedCitation,
     ResolvedReference, ResolvedResource, ResolverFailure,
@@ -127,7 +127,7 @@ fn citation_segments(resolution: &NoteCitationResolution) -> Vec<CitationSegment
 /// 本文が同じcitation keyの項目を既に定義している場合は、生成した項目を重ねない。
 /// 同じanchorが二つあると文書として成り立たず、著者が書いた記述を優先すべきためである。
 fn generated_bibliography(
-    analysis: &adocweave::Analysis,
+    analysis: &adocweave_core::Analysis,
     entries: &[NoteBibliographyEntry],
 ) -> Option<GeneratedBibliography> {
     let defined = analysis

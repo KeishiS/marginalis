@@ -62,7 +62,7 @@ impl MigrationContract {
 ///
 /// サポート方針(ADR 0018): 現行バイナリが変換する旧契約は、この1件だけとする。それより古い
 /// archiveは、対応していた公開済みリリースを使って隣接する契約間を順番に変換する。
-/// v0.49.0が書き出した契約で、現行契約とはAdocWeave package版だけが異なる。
+/// v0.50.0とv0.50.1が書き出した契約で、現行契約とはAdocWeave package版だけが異なる。
 ///
 /// この値は直前の**公開済み**版が書き出した組でなければならない。現行契約のAdocWeave版は
 /// build.rsがCargo.lockから導出するため固定を更新すると自動で追随するが、この定数は追随しない。
@@ -70,7 +70,7 @@ impl MigrationContract {
 /// archiveを組み立てるため、値が古いままでも成功する。AdocWeaveの固定を動かすときは、
 /// 必ずこの定数も同じ変更で見直すこと。
 const PREVIOUS_MIGRATION_CONTRACT: MigrationContract =
-    migration_contract("marginalis-archive-18", "0.43.0", 6);
+    migration_contract("marginalis-archive-18", "0.47.0", 6);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
