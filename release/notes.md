@@ -1,20 +1,14 @@
-# Marginalis v0.51.0
+# Marginalis v0.52.0
 
 ## 主な変更
 
-### AdocWeave v0.57.0への更新
+### MCPからの過去revision取得
 
-ノート本文の検証、HTML描画、編集画面の装飾、開発文書の検査に使うAdocWeaveをv0.57.0へ更新しました。
+MCPの`get_note`、`get_note_outline`、`get_note_fragment`で、保持中の過去revisionを指定できるようにしました。正の`revision`を省略した場合は、従来どおり現在版を返します。
 
-上流の公開構成に合わせ、Rustライブラリは`adocweave-core`を使用します。Marginalisが使用している解析・意味モデル・HTML描画APIは維持されており、ノートの入力規則を表すnote profile版は6のままです。AdocWeaveのtextlint用Processorは0.54.0へ更新しました。
+長いノートでは、`get_note_outline`と`get_note_fragment`へ同じ`revision`を渡すことで、過去版の見出し構造を確認してから必要な行だけを取得できます。過去版の閲覧にも現在のACLを適用し、存在しないrevisionと閲覧できないノートはどちらも`not_found`を返します。
 
-AdocWeave CLIの`--local-targets`廃止へ追随し、`--project-root`によるリポジトリ内参照の検査を継続します。利用者向けのMarginalisコマンドは変わりません。
-
-### 依存固定と移行経路の更新
-
-AdocWeaveの公開commit、Cargo依存、Nix input、textlint用Processorをそれぞれ完全な版へ固定し、相互の不一致を検査します。公開取り下げ済みだった間接依存`chacha20 0.10.1`は0.10.2へ更新しました。
-
-保存契約の履歴には、AdocWeave package版0.57.0の組を初めて採用したMarginalis版としてv0.51.0を記録しました。直前の公開済み保存契約からだけ変換する方針は変わりません。
+`get_note_fragment`の`expected_revision`は、現在版を取得する間に更新が起きていないことを確認する入力です。過去版を選ぶ`revision`とは役割が異なるため、両方を同時に指定した要求は引数エラーとして拒否します。
 
 ## 対応環境
 
@@ -24,55 +18,48 @@ Rust 1.97.1とNode.js 24.19.0で構築しています。実行環境へこれら
 
 ## 公開契約と破壊的変更
 
-REST API、MCP、SQLite schema、note profile版はv0.50.1から変更していません。
+MCP契約の`get_note`、`get_note_outline`、`get_note_fragment`へ、省略可能で1以上の`revision`を追加しました。既存の要求は変更せずに受理します。`get_note_fragment`で`revision`と`expected_revision`を同時に指定する要求は受理しません。
 
-この版が書き出すarchiveは、次の保存契約を使います。
+REST API、SQLite schema、archive形式、AdocWeave package版、note profile版はv0.51.0から変更していません。この版が書き出すarchiveの保存契約は、v0.51.0と同じ次の組です。
 
 - `marginalis-archive-18`
 - AdocWeave package 0.57.0
 - note profile 6
 
-`migrate-archive`と`restore-archive`が直接受理する旧契約は、v0.50.0とv0.50.1が書き出した`marginalis-archive-18` / 0.47.0 / 6です。さらに古いarchiveは、NixOS運用文書の保存契約履歴に記録した公開済みリリースを順番に使ってください。
+保存契約が変わらないため、`migrate-archive`が直接受理する直前契約も変更していません。
 
-## v0.51.0への移行
+## v0.52.0への移行
 
-この版はSQLite schema 23を使用します。v0.50.1と同じschemaのため、データベースの移行コマンドは不要です。
-
-NixOS環境では通常どおり更新してください。
+この版はv0.51.0と同じSQLite schema 23を使用します。データベースとarchiveの移行コマンドは不要です。NixOS環境では通常どおり更新してください。
 
 ```sh
 sudo nixos-rebuild switch --flake <利用中のflake>
 ```
 
-v0.50.0またはv0.50.1が書き出したarchiveを復元する場合は、v0.51.0の`restore-archive`へ直接渡せます。入力を変更せず、0.57.0の規則で全ノートを再検証し、隔離データベースで復元結果を照合してから取り込みます。
-
-```sh
-sudo -u marginalis marginalis restore-archive \
-  --input /srv/marginalis-migration/archive-v0.50.1.json
-```
-
-更新後は`marginalis-diagnose.service`、HTTP health、OIDC login、MCP認可、既存ノートの表示を確認してください。
+更新後は`marginalis-diagnose.service`、HTTP health、OIDC login、既存ノートの表示を確認してください。MCPクライアントでは、revisionを省略した従来の取得と、保存済みrevisionを指定した全文・見出し・断片の取得を確認してください。
 
 ## 更新とロールバック
 
-更新前に通常のバックアップを完了させてください。問題がある場合はMarginalisを停止し、v0.50.1を使用していたNixOS generationへ戻します。SQLite schemaは同じため、更新後にノートや認可状態を変更していなければ、データベースの変換は不要です。
+更新前に通常のバックアップを完了させてください。問題がある場合はMarginalisを停止し、v0.51.0を使用していたNixOS generationへ戻します。SQLite schemaとarchive保存契約は同じため、データベースの変換は不要です。
 
-更新後にデータを変更した場合や、v0.57.0で新たに受理される記法を保存した場合は、切戻し先で内容を検証できるとは限りません。更新前のデータベースsnapshotまたはarchiveとv0.50.1を組にして戻してください。v0.51.0が書き出した0.57.0契約のarchiveをv0.50.1は直接受理しません。
+v0.52.0で追加した`revision`をMCP要求へ指定しているクライアントは、v0.51.0へ戻す前にその入力を取り除いてください。現在版だけを取得する既存のMCP要求は、そのまま利用できます。
 
 ## 既知の制約
 
+MCPはrevision番号を指定した取得に対応しますが、履歴の一覧、二つの版の差分、過去版への復元は提供しません。取得するrevision番号は、現在版の応答や利用者が保持している更新結果から指定してください。
+
+削除済みノートの履歴は、ノート自体を現在のACLで閲覧できないためMCPから取得できません。存在しないrevisionと閲覧できないノートを応答から区別することもできません。
+
 添付できるのは画像だけで、汎用のファイル保存には対応していません。同一人物の自動推定を行わないため、利用者のOIDC identityが変わった場合は管理者がaliasを明示的に結び付ける必要があります。
 
-AdocWeaveがNix packageの公開先をLinuxに限定しているため、macOSの開発環境ではAsciiDoc文書の検査(`cargo make docs-check`)を実行できません。運用と利用には影響しません。
-
-公開前の人手受入は、公開済みv0.50.1の実行物で書き出したarchiveの移行・隔離復元と、Nix packageの起動確認を対象としました。実配備先でのOIDC login、外部MCPクライアント、Webhook受信は公開後に確認してください。
+公開前の受入では、生成したMCP契約、MCP transportの結合試験、v0.52.0のNix packageを確認しました。結合試験では、同じ過去revisionの全文・見出し・断片、現在版の既存動作、ACLによる不可視化、存在しないrevision、排他的な入力の拒否を確認しています。実配備先でのOIDC login、外部MCPクライアント、Webhook受信は公開後に確認してください。
 
 ## 配布物の検証
 
 機械可読な公開契約として、`openapi.json`と`mcp-tools.json`をこのReleaseへ添付しています。いずれもタグ上の同名ファイルとbyte単位で同じ内容で、GitHub Artifact Attestationを付与しています。次のコマンドで、assetが本リポジトリのworkflowから作られたことを確認できます。
 
 ```sh
-gh attestation verify openapi.json --repo KeishiS/marginalis
+gh attestation verify mcp-tools.json --repo KeishiS/marginalis
 ```
 
-自動検証では、AdocWeaveの固定、ノート検証・描画、Kanidm login、ブラウザー操作、ACL、MCP認可、Webhook、schema検査、archiveの移行と復元を確認しています。配備後は、実際に使用する外部MCPクライアント、最新の実archiveを用いた隔離復元、外部Webhook受信サーバーでも受入確認することを推奨します。
+自動検証では、ノート検証・描画、Kanidm login、ブラウザー操作、ACL、MCP認可、Webhook、schema検査、archiveの移行と復元を確認しています。配備後は、実際に使用する外部MCPクライアント、最新の実archiveを用いた隔離復元、外部Webhook受信サーバーでも受入確認することを推奨します。
