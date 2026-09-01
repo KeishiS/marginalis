@@ -47,7 +47,13 @@ export const livePreviewField = StateField.define<LivePreviewValue>({
       return value;
     }
     if (isComposingInput(transaction)) {
-      return { spans, mathMacros, decorations: value.decorations };
+      return {
+        spans,
+        mathMacros,
+        // IME変換中は構文から装飾を組み立て直さない。ただし変更前の座標を残すと、
+        // 文書前方への入力で後方の無関係な文字へ装飾が掛かるため、位置だけは追従させる。
+        decorations: value.decorations.map(transaction.changes),
+      };
     }
     return {
       spans,

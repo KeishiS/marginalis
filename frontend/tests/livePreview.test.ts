@@ -299,4 +299,36 @@ describe("Live Previewの装飾", () => {
       { from: 4, to: 6, kind: "replace" },
     ]);
   });
+
+  it("IME変換中も変更より後ろの装飾位置を本文へ追従させる", () => {
+    const doc = `前文\n\n${source}`;
+    const prefixBytes = new TextEncoder().encode("前文\n\n").length;
+    const shiftedStrongSpan: NoteSourceSpan = {
+      ...strongSpan,
+      span: byteSpan(
+        prefixBytes + strongSpan.span.start,
+        prefixBytes + strongSpan.span.end,
+      ),
+      content_span: byteSpan(
+        prefixBytes + (strongSpan.content_span?.start ?? 0),
+        prefixBytes + (strongSpan.content_span?.end ?? 0),
+      ),
+      marker_spans: (strongSpan.marker_spans ?? []).map((marker) =>
+        byteSpan(prefixBytes + marker.start, prefixBytes + marker.end),
+      ),
+    };
+    const initial = stateWithSpans(doc, [shiftedStrongSpan]);
+    const composing = initial.update({
+      changes: { from: 0, insert: "か" },
+      selection: EditorSelection.cursor(1),
+      userEvent: "input.type.compose",
+    }).state;
+
+    expect(decorationSummary(composing)).toEqual([
+      { from: 5, to: 7, kind: "replace" },
+      { from: 7, to: 9, kind: "lp-strong" },
+      { from: 9, to: 11, kind: "replace" },
+    ]);
+    expect(composing.doc.sliceString(5, 11)).toBe("**太字**");
+  });
 });
