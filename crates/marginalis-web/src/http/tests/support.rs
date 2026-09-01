@@ -89,8 +89,9 @@ macro_rules! implement_note_use_cases {
                 &self,
                 actor: Actor,
                 note_id: NoteId,
+                revision: Option<Revision>,
             ) -> Result<(Note, marginalis_application::NoteOutline), NoteUseCaseError> {
-                <$type>::read_note_outline(self, actor, note_id).await
+                <$type>::read_note_outline(self, actor, note_id, revision).await
             }
 
             async fn read_note_fragment(
@@ -99,6 +100,7 @@ macro_rules! implement_note_use_cases {
                 note_id: NoteId,
                 start_line: usize,
                 end_line: usize,
+                revision: Option<Revision>,
                 expected_revision: Option<Revision>,
             ) -> Result<(Note, String), NoteUseCaseError> {
                 <$type>::read_note_fragment(
@@ -107,6 +109,7 @@ macro_rules! implement_note_use_cases {
                     note_id,
                     start_line,
                     end_line,
+                    revision,
                     expected_revision,
                 )
                 .await
@@ -192,18 +195,7 @@ macro_rules! implement_note_use_cases {
                 note_id: NoteId,
                 revision: Revision,
             ) -> Result<marginalis_application::NoteRevisionView, NoteUseCaseError> {
-                let note = <$type>::read_note(self, actor.clone(), note_id).await?;
-                if note.revision() != revision {
-                    return Err(NoteUseCaseError::NotFound);
-                }
-                Ok(marginalis_application::NoteRevisionView {
-                    revision: marginalis_domain::NoteRevisionSnapshot::new(
-                        note,
-                        actor.principal().clone(),
-                        marginalis_domain::NoteRevisionKind::Imported,
-                    ),
-                    access: NoteAccess::Manage,
-                })
+                <$type>::read_note_revision(self, actor, note_id, revision).await
             }
 
             async fn compare_note_revisions(
@@ -587,13 +579,41 @@ impl Notes {
         }
     }
 
+    pub(super) async fn read_note_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<marginalis_application::NoteRevisionView, NoteUseCaseError> {
+        let note = mcp_note_revision(revision.get()).ok_or(NoteUseCaseError::NotFound)?;
+        if note.note_id() != note_id {
+            return Err(NoteUseCaseError::NotFound);
+        }
+        Ok(marginalis_application::NoteRevisionView {
+            revision: marginalis_domain::NoteRevisionSnapshot::new(
+                note,
+                actor.principal().clone(),
+                marginalis_domain::NoteRevisionKind::ContentUpdated,
+            ),
+            access: NoteAccess::Manage,
+        })
+    }
+
     /// 実物のoutlineはAsciiDoc解析を要するため、行数だけを計算した空の構成を返す。
     pub(super) async fn read_note_outline(
         &self,
         actor: Actor,
         note_id: NoteId,
+        revision: Option<Revision>,
     ) -> Result<(Note, marginalis_application::NoteOutline), NoteUseCaseError> {
-        let note = Notes::read_note(self, actor, note_id).await?;
+        let note = match revision {
+            Some(revision) => Notes::read_note_revision(self, actor, note_id, revision)
+                .await?
+                .revision
+                .note()
+                .clone(),
+            None => Notes::read_note(self, actor, note_id).await?,
+        };
         let line_count = note.source().lines().count();
         Ok((
             note,
@@ -610,9 +630,17 @@ impl Notes {
         note_id: NoteId,
         start_line: usize,
         end_line: usize,
+        revision: Option<Revision>,
         expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError> {
-        let note = Notes::read_note(self, actor, note_id).await?;
+        let note = match revision {
+            Some(revision) => Notes::read_note_revision(self, actor, note_id, revision)
+                .await?
+                .revision
+                .note()
+                .clone(),
+            None => Notes::read_note(self, actor, note_id).await?,
+        };
         if expected_revision.is_some_and(|expected| note.revision() != expected) {
             return Err(NoteUseCaseError::Conflict);
         }
@@ -852,6 +880,7 @@ impl UiNotes {
         &self,
         _actor: Actor,
         _note_id: NoteId,
+        _revision: Option<Revision>,
     ) -> Result<(Note, marginalis_application::NoteOutline), NoteUseCaseError> {
         Err(NoteUseCaseError::NotFound)
     }
@@ -862,6 +891,7 @@ impl UiNotes {
         _note_id: NoteId,
         _start_line: usize,
         _end_line: usize,
+        _revision: Option<Revision>,
         _expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError> {
         Err(NoteUseCaseError::NotFound)
@@ -930,6 +960,26 @@ impl UiNotes {
             .find(|note| note.note_id() == note_id)
             .cloned()
             .ok_or(NoteUseCaseError::NotFound)
+    }
+
+    pub(super) async fn read_note_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Revision,
+    ) -> Result<marginalis_application::NoteRevisionView, NoteUseCaseError> {
+        let note = UiNotes::read_note(self, actor.clone(), note_id).await?;
+        if note.revision() != revision {
+            return Err(NoteUseCaseError::NotFound);
+        }
+        Ok(marginalis_application::NoteRevisionView {
+            revision: marginalis_domain::NoteRevisionSnapshot::new(
+                note,
+                actor.principal().clone(),
+                marginalis_domain::NoteRevisionKind::Imported,
+            ),
+            access: NoteAccess::Manage,
+        })
     }
 
     pub(super) async fn create_note(
@@ -1872,6 +1922,23 @@ pub(super) fn ui_note(title: &str) -> Note {
 }
 
 pub(super) fn mcp_note() -> Note {
+    mcp_note_revision(3).expect("current MCP note")
+}
+
+fn mcp_note_revision(revision: i64) -> Option<Note> {
+    let (source, tags, updated_at) = match revision {
+        2 => (
+            "= 同期ノート\n:marginalis-tags: 同期\n\n過去の本文",
+            vec!["同期".into()],
+            1_500,
+        ),
+        3 => (
+            "= 同期ノート\n:marginalis-tags: 同期, 試験\n\n本文",
+            vec!["同期".into(), "試験".into()],
+            2_000,
+        ),
+        _ => return None,
+    };
     Note::restore(NoteRestore {
         note_id: NoteId::new(
             "0197c9bc-0000-7000-8000-000000000002"
@@ -1881,17 +1948,17 @@ pub(super) fn mcp_note() -> Note {
         owner: test_principal("https://id.example.test", "alice"),
         draft: NoteDraft {
             title: "同期ノート".into(),
-            source: "= 同期ノート\n:marginalis-tags: 同期, 試験\n\n本文".into(),
-            tags: vec!["同期".into(), "試験".into()],
+            source: source.into(),
+            tags,
         },
         created_at: UnixMillis::new(1_000),
-        updated_at: UnixMillis::new(2_000),
-        revision: Revision::new(3).expect("revision"),
+        updated_at: UnixMillis::new(updated_at),
+        revision: Revision::new(revision).expect("revision"),
         deleted_at: None,
         created_via: NoteCreationSource::Mcp,
         review: NoteReviewTracking::pending(),
     })
-    .expect("consistent note")
+    .ok()
 }
 
 pub(super) fn ui_app(notes: Vec<Note>, render_fails: bool, cookie_path: &str) -> Router {

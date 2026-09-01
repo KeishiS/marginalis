@@ -173,6 +173,10 @@ pub struct McpEmptyInput {}
 pub struct McpGetNoteInput {
     #[schemars(regex(pattern = NOTE_ID_PATTERN))]
     pub note_id: String,
+    /// 取得する保存済みrevision。省略した場合は現在版を返す。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub revision: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -199,6 +203,10 @@ pub struct McpReplaceNoteSourceInput {
 pub struct McpGetNoteOutlineInput {
     #[schemars(regex(pattern = NOTE_ID_PATTERN))]
     pub note_id: String,
+    /// 見出し構造を取得する保存済みrevision。省略した場合は現在版を返す。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub revision: Option<i64>,
 }
 
 /// 行範囲は両端を含む1始まり。範囲は`get_note_outline`で確認する。
@@ -211,6 +219,11 @@ pub struct McpGetNoteFragmentInput {
     pub start_line: usize,
     #[schemars(range(min = 1))]
     pub end_line: usize,
+    /// 原文断片を取得する保存済みrevision。省略した場合は現在版を返す。
+    /// `expected_revision`とは同時に指定できない。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = MINIMUM_REVISION))]
+    pub revision: Option<i64>,
     /// `get_note_outline`で得たrevision。指定した場合、現在のrevisionと異なると
     /// 本文を返さず競合として拒否する。行範囲の根拠が古くないことを確かめられる。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -504,15 +517,15 @@ pub fn mcp_tool_contracts() -> Vec<McpToolContract> {
         ),
         McpToolContract::new::<McpGetNoteInput, McpGetNoteOutput>(
             McpToolName::GetNote,
-            "Read one visible note in full; for long notes prefer get_note_outline and get_note_fragment; requires notes:read",
+            "Read one visible note in full, optionally at a retained revision; omit revision to read the current version; for long notes prefer get_note_outline and get_note_fragment; requires notes:read",
         ),
         McpToolContract::new::<McpGetNoteOutlineInput, McpNoteOutlineOutput>(
             McpToolName::GetNoteOutline,
-            "Read the heading hierarchy and inclusive 1-based line ranges of a note without its body, to choose which range to read next; requires notes:read",
+            "Read the heading hierarchy and inclusive 1-based line ranges of a note without its body, optionally at a retained revision, to choose which range to read next; omit revision to read the current version; requires notes:read",
         ),
         McpToolContract::new::<McpGetNoteFragmentInput, McpNoteFragmentOutput>(
             McpToolName::GetNoteFragment,
-            "Read the verbatim AsciiDoc source of an inclusive 1-based line range; pass the revision from get_note_outline as expected_revision so a concurrent update is rejected as a conflict instead of returning lines the outline no longer describes; requires notes:read",
+            "Read the verbatim AsciiDoc source of an inclusive 1-based line range, optionally at a retained revision; omit revision to read the current version; for the current version, pass the revision from get_note_outline as expected_revision so a concurrent update is rejected as a conflict; revision and expected_revision are mutually exclusive; requires notes:read",
         ),
         McpToolContract::new::<McpCreateNoteInput, McpNoteRevisionOutput>(
             McpToolName::CreateNote,
@@ -722,6 +735,24 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn note_read_inputs_offer_an_optional_positive_revision() {
+        for input_schema in [
+            schema::<McpGetNoteInput>(),
+            schema::<McpGetNoteOutlineInput>(),
+            schema::<McpGetNoteFragmentInput>(),
+        ] {
+            assert_eq!(input_schema["properties"]["revision"]["minimum"], 1);
+            assert!(
+                !input_schema["required"]
+                    .as_array()
+                    .expect("required fields")
+                    .iter()
+                    .any(|field| field == "revision")
+            );
+        }
     }
 
     #[test]

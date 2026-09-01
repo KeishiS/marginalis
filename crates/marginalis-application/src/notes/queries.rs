@@ -63,8 +63,9 @@ impl NoteApplication {
         &self,
         actor: Actor,
         note_id: NoteId,
+        revision: Option<Revision>,
     ) -> Result<(Note, NoteOutline), NoteUseCaseError> {
-        let note = self.read_visible_note(&actor, note_id).await?;
+        let note = self.read_note_at_revision(actor, note_id, revision).await?;
         let outline = self
             .content
             .outline(note.source())
@@ -83,15 +84,33 @@ impl NoteApplication {
         note_id: NoteId,
         start_line: usize,
         end_line: usize,
+        revision: Option<Revision>,
         expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError> {
-        let note = self.read_visible_note(&actor, note_id).await?;
+        let note = self.read_note_at_revision(actor, note_id, revision).await?;
         if expected_revision.is_some_and(|expected| note.revision() != expected) {
             return Err(NoteUseCaseError::Conflict);
         }
         let fragment = source_fragment(note.source(), start_line, end_line)
             .ok_or(NoteUseCaseError::InvalidLineRange)?;
         Ok((note, fragment))
+    }
+
+    async fn read_note_at_revision(
+        &self,
+        actor: Actor,
+        note_id: NoteId,
+        revision: Option<Revision>,
+    ) -> Result<Note, NoteUseCaseError> {
+        match revision {
+            Some(revision) => Ok(self
+                .read_note_revision(actor, note_id, revision)
+                .await?
+                .revision
+                .note()
+                .clone()),
+            None => self.read_visible_note(&actor, note_id).await,
+        }
     }
 }
 
@@ -124,7 +143,10 @@ fn source_fragment(source: &str, start_line: usize, end_line: usize) -> Option<S
 mod tests {
     use std::sync::Arc;
 
-    use marginalis_domain::{NOTE_TEMPLATE_TAG, NoteCreationSource, NoteDraft};
+    use marginalis_domain::{
+        NOTE_TEMPLATE_TAG, Note, NoteCreationSource, NoteDraft, NoteRestore, NoteReviewTracking,
+        NoteRevisionKind, NoteRevisionSnapshot, Revision, UnixMillis,
+    };
 
     use crate::NoteWritePolicy;
     use crate::notes::test_support::{
@@ -198,5 +220,77 @@ mod tests {
         assert_eq!(source_fragment(source, 2, 1), None);
         assert_eq!(source_fragment(source, 1, 3), None);
         assert_eq!(source_fragment("", 1, 1), None);
+    }
+
+    #[tokio::test]
+    async fn outline_and_fragment_can_read_the_same_historical_revision() {
+        let repository = Arc::new(MemoryNotes::default());
+        let application = note_application(
+            &repository,
+            Arc::new(AcceptContent::default()),
+            Arc::new(EmptyLibrary),
+            Arc::new(NoMathMacros),
+        );
+        let alice = actor("alice", 1);
+        let historical = application
+            .create_note(
+                alice.clone(),
+                NoteDraft {
+                    title: "履歴".into(),
+                    source: "= 履歴\n\n過去の本文\n".into(),
+                    tags: Vec::new(),
+                },
+                NoteWritePolicy::AllowAdvisories,
+                NoteCreationSource::Web,
+            )
+            .await
+            .expect("create note");
+        let current = Note::restore(NoteRestore {
+            note_id: historical.note_id(),
+            owner: historical.owner().clone(),
+            draft: NoteDraft {
+                title: "履歴".into(),
+                source: "= 履歴\n\n現在の本文\n追記\n".into(),
+                tags: Vec::new(),
+            },
+            created_at: historical.created_at(),
+            updated_at: UnixMillis::new(historical.updated_at().get() + 1),
+            revision: Revision::new(2).expect("revision"),
+            deleted_at: None,
+            created_via: historical.created_via(),
+            review: NoteReviewTracking::pending(),
+        })
+        .expect("current note");
+        repository
+            .histories
+            .lock()
+            .expect("history lock")
+            .push(NoteRevisionSnapshot::new(
+                current.clone(),
+                alice.principal().clone(),
+                NoteRevisionKind::ContentUpdated,
+            ));
+        repository.notes.lock().expect("notes lock")[0] = current;
+
+        let (outlined, outline) = application
+            .read_note_outline(alice.clone(), historical.note_id(), Some(Revision::INITIAL))
+            .await
+            .expect("historical outline");
+        assert_eq!(outlined.revision(), Revision::INITIAL);
+        assert_eq!(outline.line_count, 3);
+
+        let (fragmented, fragment) = application
+            .read_note_fragment(
+                alice,
+                historical.note_id(),
+                3,
+                3,
+                Some(Revision::INITIAL),
+                None,
+            )
+            .await
+            .expect("historical fragment");
+        assert_eq!(fragmented.revision(), Revision::INITIAL);
+        assert_eq!(fragment, "過去の本文\n");
     }
 }

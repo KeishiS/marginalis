@@ -1337,7 +1337,7 @@
   },
   {
     "name": "get_note",
-    "description": "Read one visible note in full; for long notes prefer get_note_outline and get_note_fragment; requires notes:read",
+    "description": "Read one visible note in full, optionally at a retained revision; omit revision to read the current version; for long notes prefer get_note_outline and get_note_fragment; requires notes:read",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -1345,6 +1345,15 @@
         "note_id": {
           "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
           "type": "string"
+        },
+        "revision": {
+          "description": "取得する保存済みrevision。省略した場合は現在版を返す。",
+          "format": "int64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1699,7 +1708,7 @@
   },
   {
     "name": "get_note_outline",
-    "description": "Read the heading hierarchy and inclusive 1-based line ranges of a note without its body, to choose which range to read next; requires notes:read",
+    "description": "Read the heading hierarchy and inclusive 1-based line ranges of a note without its body, optionally at a retained revision, to choose which range to read next; omit revision to read the current version; requires notes:read",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -1707,6 +1716,15 @@
         "note_id": {
           "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
           "type": "string"
+        },
+        "revision": {
+          "description": "見出し構造を取得する保存済みrevision。省略した場合は現在版を返す。",
+          "format": "int64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
@@ -2059,7 +2077,7 @@
   },
   {
     "name": "get_note_fragment",
-    "description": "Read the verbatim AsciiDoc source of an inclusive 1-based line range; pass the revision from get_note_outline as expected_revision so a concurrent update is rejected as a conflict instead of returning lines the outline no longer describes; requires notes:read",
+    "description": "Read the verbatim AsciiDoc source of an inclusive 1-based line range, optionally at a retained revision; omit revision to read the current version; for the current version, pass the revision from get_note_outline as expected_revision so a concurrent update is rejected as a conflict; revision and expected_revision are mutually exclusive; requires notes:read",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -2082,6 +2100,15 @@
         "note_id": {
           "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
           "type": "string"
+        },
+        "revision": {
+          "description": "原文断片を取得する保存済みrevision。省略した場合は現在版を返す。\n`expected_revision`とは同時に指定できない。",
+          "format": "int64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "start_line": {
           "format": "uint",

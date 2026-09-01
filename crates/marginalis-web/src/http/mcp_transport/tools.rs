@@ -552,11 +552,16 @@ async fn get_note_tool(
     let Some(note_id) = parse_note_id(&input.note_id).ok() else {
         return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
     };
-    notes
-        .read_note(actor, note_id)
-        .await
-        .map(|note| McpToolOutput::Note(note_output(note)))
-        .map_err(McpToolFailure::UseCase)
+    let revision = parse_optional_revision(input.revision, "revision is invalid")?;
+    let note = match revision {
+        Some(revision) => notes
+            .read_note_revision(actor, note_id, revision)
+            .await
+            .map(|view| view.revision.note().clone()),
+        None => notes.read_note(actor, note_id).await,
+    }
+    .map_err(McpToolFailure::UseCase)?;
+    Ok(McpToolOutput::Note(note_output(note)))
 }
 
 fn note_output(note: Note) -> McpGetNoteOutput {
@@ -613,8 +618,9 @@ async fn get_note_outline_tool(
     let Some(note_id) = parse_note_id(&input.note_id).ok() else {
         return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
     };
+    let revision = parse_optional_revision(input.revision, "revision is invalid")?;
     notes
-        .read_note_outline(actor, note_id)
+        .read_note_outline(actor, note_id, revision)
         .await
         .map(|(note, outline)| {
             McpToolOutput::NoteOutline(McpNoteOutlineOutput {
@@ -651,23 +657,21 @@ async fn get_note_fragment_tool(
     let Some(note_id) = parse_note_id(&input.note_id).ok() else {
         return Err(McpToolFailure::InvalidArguments("note_id is invalid"));
     };
-    let expected_revision = match input.expected_revision {
-        None => None,
-        Some(revision) => match Revision::new(revision) {
-            Ok(revision) => Some(revision),
-            Err(_) => {
-                return Err(McpToolFailure::InvalidArguments(
-                    "expected_revision is invalid",
-                ));
-            }
-        },
-    };
+    if input.revision.is_some() && input.expected_revision.is_some() {
+        return Err(McpToolFailure::InvalidArguments(
+            "revision and expected_revision are mutually exclusive",
+        ));
+    }
+    let revision = parse_optional_revision(input.revision, "revision is invalid")?;
+    let expected_revision =
+        parse_optional_revision(input.expected_revision, "expected_revision is invalid")?;
     notes
         .read_note_fragment(
             actor,
             note_id,
             input.start_line,
             input.end_line,
+            revision,
             expected_revision,
         )
         .await
@@ -681,6 +685,17 @@ async fn get_note_fragment_tool(
             })
         })
         .map_err(McpToolFailure::UseCase)
+}
+
+fn parse_optional_revision(
+    value: Option<i64>,
+    invalid_message: &'static str,
+) -> Result<Option<Revision>, McpToolFailure> {
+    value
+        .map(|revision| {
+            Revision::new(revision).map_err(|_| McpToolFailure::InvalidArguments(invalid_message))
+        })
+        .transpose()
 }
 
 async fn apply_note_patch_tool(

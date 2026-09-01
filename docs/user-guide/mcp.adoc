@@ -73,8 +73,15 @@ redirect URIの登録が1件だけなら、認可要求では``redirect_uri``を
 ``notes:read``だけを持つtokenで``search_bibliography``を呼び出すと、``bibliography:read``を示す
 ``403 insufficient_scope``を返します。
 
-``list_notes``と``get_note``は、ノートを最初に保存した入口を表す``created_via``と、現在のrevisionに対する
-``review_status``を返します。``list_notes``では、これらの値による完全一致の絞り込みも指定できます。
+``list_notes``と、revisionを省略した``get_note``は、ノートを最初に保存した入口を表す``created_via``と、
+現在のrevisionに対する``review_status``を返します。``list_notes``では、これらの値による完全一致の
+絞り込みも指定できます。
+
+``get_note``へ正の``revision``を指定すると、保持中のその版を取得できます。長文では
+``get_note_outline``と``get_note_fragment``の両方へ同じ``revision``を指定すると、その版の構成を
+確認してから必要な行だけを取得できます。省略時はいずれも現在版を返します。履歴の閲覧可否は現在の
+ACLに従い、存在しない版と閲覧できないノートはどちらも``not_found``になるため、不可視な履歴の存在を
+応答から判別できません。
 
 ノートの作成では、``list_note_templates``が「テンプレート」タグの付いた閲覧できるノートの概要を
 返します。作成する内容に沿うテンプレートがある場合は、``get_note``で本文を取得し、その構造を
@@ -117,6 +124,9 @@ MCPの初期化応答と``add_bibliography_item``のtool説明にも、一括取
   更新されていた場合に、古い行範囲の本文を返さず``conflict``として拒否します。省略した場合は
   現在の本文を返すため、応答のrevisionをoutlineの値と比較し、異なればoutlineから取り直して
   ください。
+. 過去版を読む場合は、``get_note_outline``と``get_note_fragment``へ同じ``revision``を指定します。
+  過去版は変更されないため``expected_revision``は不要です。過去版を選ぶ``revision``と、現在版の
+  競合を検出する``expected_revision``を同時に指定すると、引数エラーになります。
 . ``apply_note_patch``で、変更箇所だけをUnified Diffとして送ります。
 
 ``apply_note_patch``のpatchは、``--- a/note.adoc``と``+++ b/note.adoc``のfile headerを持つ
@@ -301,7 +311,8 @@ ChatGPT、Claude Code、Codex CLIごとに、同じ利用者と試験用ノー�
 ``list_notes``で両方を絞り込めることも確認します。「テンプレート」タグを付けたノートが
 ``list_note_templates``に現れることを確認します。``get_note_outline``で見出しと行範囲を取得し、
 ``get_note_fragment``へoutlineのrevisionを``expected_revision``として渡して、選んだ範囲の原文だけが
-返ることを確認します。``apply_note_patch``を呼び出し、
+返ることを確認します。さらにノートを一度更新し、更新前のrevisionを``get_note``、``get_note_outline``、
+``get_note_fragment``へ指定して、三つが同じ過去版を返すことを確認します。``apply_note_patch``を呼び出し、
 ``notes:read notes:write``を示す追加認可が始まることを確認します。
 . 一度は追加認可を拒否し、更新できず、元のread tokenで閲覧を続けられることを確認します。再度実行して
 ``notes:write``にも同意し、新しいtokenで更新できることを確認します。
