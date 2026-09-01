@@ -67,6 +67,41 @@ test("執筆中の装飾とカーソルによる記法の開示を切り替え�
   await expect(page.locator(".lp-strong")).toHaveText("太字");
 });
 
+test("IME変換入力中も後方の装飾を同じ記法へ追従させる", async ({
+  context,
+  page,
+}) => {
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    const source = (await route.request().postDataJSON()).source;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: "<p>プレビュー</p>",
+        math_macros: [],
+        diagnostics: [],
+        spans: source === DOCUMENT ? SPANS : [],
+      }),
+    });
+  });
+  await page.goto("/notes/new");
+  const editor = page.getByRole("textbox", { name: "AsciiDoc文書" });
+  await editor.fill(DOCUMENT);
+  const strong = page.locator(".lp-strong");
+  await expect(strong).toHaveText("太字");
+
+  await editor.press("Control+Home");
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Input.imeSetComposition", {
+    text: "か",
+    selectionStart: 1,
+    selectionEnd: 1,
+  });
+
+  // 変換中は新しい解析結果を待たず、既存の装飾位置だけが入力へ追従する。
+  await expect(strong).toHaveText("太字");
+  await cdp.detach();
+});
+
 // 数式spanの位置。"= 題名\n:stem: latexmath\n\n面積は stem:[x^2] です。" に対する値。
 const MATH_DOCUMENT = "= 題名\n:stem: latexmath\n\n面積は stem:[x^2] です。";
 const MATH_SPANS = [
