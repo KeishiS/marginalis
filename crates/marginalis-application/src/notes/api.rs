@@ -384,20 +384,24 @@ pub trait NoteUseCases: Send + Sync {
         actor: Actor,
     ) -> Result<Vec<DeletedNoteListEntry>, NoteUseCaseError>;
     async fn read_note(&self, actor: Actor, note_id: NoteId) -> Result<Note, NoteUseCaseError>;
-    /// ノート本文を返さず、見出しの階層と行範囲を返す。
+    /// ノート本文を返さず、指定した保存済みrevisionの見出しの階層と行範囲を返す。
+    /// `revision`を省略した場合は現在版を返す。
     async fn read_note_outline(
         &self,
         actor: Actor,
         note_id: NoteId,
+        revision: Option<Revision>,
     ) -> Result<(Note, super::NoteOutline), NoteUseCaseError>;
-    /// 指定した行範囲(両端を含む1始まり)のAsciiDoc原文断片を返す。
-    /// `expected_revision`を指定した場合、現在のrevisionと異なると本文を返さず競合として拒否する。
+    /// 指定した保存済みrevisionから、行範囲(両端を含む1始まり)のAsciiDoc原文断片を返す。
+    /// `revision`を省略した場合は現在版を返す。現在版へ`expected_revision`を指定した場合、
+    /// revisionが異なると本文を返さず競合として拒否する。
     async fn read_note_fragment(
         &self,
         actor: Actor,
         note_id: NoteId,
         start_line: usize,
         end_line: usize,
+        revision: Option<Revision>,
         expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError>;
     /// 保存済み原文へUnified Diffを厳密に適用する。dry runでは検証まで行い保存しない。

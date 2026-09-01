@@ -548,10 +548,10 @@ impl NoteContent for AcceptContent {
         Ok(CitationStyle::default())
     }
 
-    fn outline(&self, _body: &str) -> Result<crate::NoteOutline, NoteContentError> {
+    fn outline(&self, body: &str) -> Result<crate::NoteOutline, NoteContentError> {
         Ok(crate::NoteOutline {
             sections: Vec::new(),
-            line_count: 0,
+            line_count: body.lines().count(),
         })
     }
 

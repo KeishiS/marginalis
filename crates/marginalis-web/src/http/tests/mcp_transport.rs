@@ -1473,6 +1473,132 @@ async fn outline_and_fragment_read_without_the_full_source() {
     );
 }
 
+/// 三つの読み取りtoolは、同じ保存済みrevisionの全文、outline、断片を返す。
+#[tokio::test]
+async fn note_read_tools_return_the_requested_historical_revision() {
+    for (id, name, arguments) in [
+        (
+            1,
+            "get_note",
+            serde_json::json!({
+                "note_id": "0197c9bc-0000-7000-8000-000000000002",
+                "revision": 2
+            }),
+        ),
+        (
+            2,
+            "get_note_outline",
+            serde_json::json!({
+                "note_id": "0197c9bc-0000-7000-8000-000000000002",
+                "revision": 2
+            }),
+        ),
+        (
+            3,
+            "get_note_fragment",
+            serde_json::json!({
+                "note_id": "0197c9bc-0000-7000-8000-000000000002",
+                "revision": 2,
+                "start_line": 4,
+                "end_line": 4
+            }),
+        ),
+    ] {
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, "Bearer read-token")
+            .body(Body::from(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments}
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        let response = mcp_app().oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let response: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+        let structured = &response["result"]["structuredContent"];
+        assert_eq!(structured["revision"], 2, "{name}");
+        match name {
+            "get_note" => assert!(
+                structured["source"]
+                    .as_str()
+                    .unwrap()
+                    .contains("過去の本文")
+            ),
+            "get_note_outline" => assert_eq!(structured["line_count"], 4),
+            "get_note_fragment" => assert_eq!(structured["fragment"], "過去の本文\n"),
+            _ => unreachable!(),
+        }
+    }
+
+    // 過去版の選択と現在版の競合検出は意味が異なるため、同時指定を拒否する。
+    let request = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, "Bearer read-token")
+        .body(Body::from(
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_note_fragment","arguments":{"note_id":"0197c9bc-0000-7000-8000-000000000002","revision":2,"expected_revision":2,"start_line":4,"end_line":4}}}"#,
+        ))
+        .expect("request");
+    let response = mcp_app().oneshot(request).await.expect("response");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let rejected: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(rejected["error"]["code"], -32602);
+    assert_eq!(
+        rejected["error"]["message"],
+        "revision and expected_revision are mutually exclusive"
+    );
+
+    // 存在しないrevisionと閲覧できないノートは同じnot_foundとして扱う。
+    for (id, arguments) in [
+        (
+            5,
+            serde_json::json!({
+                "note_id": "0197c9bc-0000-7000-8000-000000000002",
+                "revision": 1
+            }),
+        ),
+        (
+            6,
+            serde_json::json!({
+                "note_id": "0197c9bc-0000-7000-8000-000000000003",
+                "revision": 2
+            }),
+        ),
+    ] {
+        let request = Request::post("/mcp")
+            .header("content-type", "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, "Bearer read-token")
+            .body(Body::from(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "method": "tools/call",
+                    "params": {"name": "get_note", "arguments": arguments}
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        let response = mcp_app().oneshot(request).await.expect("response");
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let response: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+        assert_eq!(response["result"]["structuredContent"]["code"], "not_found");
+    }
+}
+
 /// fragmentはoutlineで得たrevisionを根拠として渡せ、食い違いは本文を返さず競合になる。
 #[tokio::test]
 async fn fragment_rejects_a_stale_expected_revision_without_returning_lines() {

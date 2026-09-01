@@ -406,8 +406,9 @@ impl NoteUseCases for NoteApplication {
         &self,
         actor: Actor,
         note_id: NoteId,
+        revision: Option<Revision>,
     ) -> Result<(Note, NoteOutline), NoteUseCaseError> {
-        NoteApplication::read_note_outline(self, actor, note_id).await
+        NoteApplication::read_note_outline(self, actor, note_id, revision).await
     }
 
     async fn read_note_fragment(
@@ -416,6 +417,7 @@ impl NoteUseCases for NoteApplication {
         note_id: NoteId,
         start_line: usize,
         end_line: usize,
+        revision: Option<Revision>,
         expected_revision: Option<Revision>,
     ) -> Result<(Note, String), NoteUseCaseError> {
         NoteApplication::read_note_fragment(
@@ -424,6 +426,7 @@ impl NoteUseCases for NoteApplication {
             note_id,
             start_line,
             end_line,
+            revision,
             expected_revision,
         )
         .await

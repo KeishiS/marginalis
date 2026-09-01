@@ -140,7 +140,9 @@ tokenを検証し、認可応答にはAuthorization Serverを識別する``iss``
 失効すること。
 * *REQ-API-007 — MCP tool契約*: ``list_notes``は可視ノートのID、題名、タグ、更新日時、revision、
 作成経路、人手確認状態を返し、作成経路と人手確認状態による完全一致の絞り込みを受け付けること。
-``get_note``も同じ更新情報を返すこと。``list_note_templates``は、テンプレート識別タグの付いた
+``get_note``も同じ更新情報を返し、任意の保存済みrevisionを指定できること。revisionを省略した場合は
+現在版を返し、指定した版が存在しない場合と現在のACLで閲覧できない場合を区別しないこと。
+``list_note_templates``は、テンプレート識別タグの付いた
 可視ノートの概要だけを返すこと。``get_note_profile``は、本文と参考文献を相互に移動できる
 完全なAsciiDoc文書例、文献情報を推測しない注意事項、実効advisory規則と重大度、MCPではwarningを
 含む書き込みを拒否する方針を返すこと。``structuredContent``は公開契約型、``text``は同じ結果から
@@ -148,10 +150,11 @@ tokenを検証し、認可応答にはAuthorization Serverを識別する``iss``
 ``create_note``と書き込みtoolは警告を含む入力を変更前に拒否し、重大度と位置を保った診断を
 ``advisories_rejected``と``isError: true``のtool結果として返すこと。診断位置はUTF-8 byte spanに加え、
 LSP既定のUTF-16 code unitで数えた1始まりの行・列を返すこと。
-``get_note_outline``は本文を返さず、見出しの深さ・題名・原文に明示されたアンカー・1始まりで
+``get_note_outline``は任意の保存済みrevisionについて本文を返さず、見出しの深さ・題名・原文に明示されたアンカー・1始まりで
 両端を含む行範囲（子節を含む階層範囲）と総行数を返すこと。アンカーを推測して生成しないこと。
-``get_note_fragment``は指定した行範囲のAsciiDoc原文を要約や変換なしで返し、範囲外の指定を
-拒否すること。``apply_note_patch``は単一ファイルのUnified Diffを厳密に適用すること。
+``get_note_fragment``は任意の保存済みrevisionから指定した行範囲のAsciiDoc原文を要約や変換なしで返し、
+範囲外の指定を拒否すること。過去版を選ぶ``revision``と現在版の競合を検出する``expected_revision``は
+同時に受理しないこと。``apply_note_patch``は単一ファイルのUnified Diffを厳密に適用すること。
 ``expected_revision``の一致とhunkの完全一致を要求し、位置の再探索を行わず、拒否は機械可読な
 codeと対象位置の診断で返すこと。``dry_run``では検証まで行い保存しないこと。適用後の全文には
 全文置換と同じ検証を適用すること。patchの上限は公開JSON Schemaと``get_note_profile``で
