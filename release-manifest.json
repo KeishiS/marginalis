@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "product": "marginalis",
-  "packageVersion": "0.52.1",
+  "packageVersion": "0.53.0",
   "rustVersion": "1.97.1",
   "nodeVersion": "24.19.0",
   "releaseNotes": "release/notes.md",
