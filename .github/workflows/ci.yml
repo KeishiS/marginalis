@@ -74,6 +74,18 @@ jobs:
       - name: Check documentation
         run: nix develop --command cargo make docs-check
 
+  dependency-review:
+    needs: changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Review changed dependencies
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime, development, unknown
+
   # coverageは必須gate(verify)に含まれないため、mainへのpushだけで測定して推移を追う。
   coverage:
     needs: changes
@@ -151,7 +163,7 @@ jobs:
           cachix push keishis /tmp/devshell-profile
 
   verify:
-    needs: [changes, verify-core, verify-docs, native-aarch64, browser-smoke]
+    needs: [changes, verify-core, verify-docs, dependency-review, native-aarch64, browser-smoke]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -161,15 +173,13 @@ jobs:
           DOCS_RESULT: ${{ needs.verify-docs.result }}
           NATIVE_RESULT: ${{ needs.native-aarch64.result }}
           BROWSER_RESULT: ${{ needs.browser-smoke.result }}
+          DEPENDENCY_RESULT: ${{ needs.dependency-review.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "$DOCS_ONLY" = true ]; then
-            test "$DOCS_RESULT" = success
-          else
-            test "$CORE_RESULT" = success
-            test "$NATIVE_RESULT" = success
-            test "$BROWSER_RESULT" = success
-          fi
+          bash .github/scripts/check-ci-gate.sh \
+            "$EVENT_NAME" "$DOCS_ONLY" "$CORE_RESULT" "$DOCS_RESULT" \
+            "$NATIVE_RESULT" "$BROWSER_RESULT" "$DEPENDENCY_RESULT"
 
   browser-smoke:
     needs: changes
