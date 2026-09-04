@@ -33,15 +33,13 @@ fi
 cargo run --quiet --locked -p marginalis-documentation -- \
   check-xrefs --project-root . "${documents[@]}"
 
-# lockfileとNode.jsの版が前回の導入時から変わらない限り、npm ciと脆弱性監査の
-# ネットワークアクセスを省略する。CIのrunnerはnode_modulesを持たずに始まるため、
-# CIでは毎回導入と監査を行う。
+# lockfileとNode.jsの版が前回の導入時から変わらない限り、npm ciのネットワークアクセスを
+# 省略する。最新情報を取得する脆弱性監査は、再現可能な文書検査と分けてsecurity-auditで行う。
 textlint_root=tools/textlint
 stamp_file="$textlint_root/node_modules/.marginalis-install-stamp"
 stamp_value="$(node --version) $(sha256sum "$textlint_root/package-lock.json" | cut -d' ' -f1)"
 if [[ ! -f "$stamp_file" || "$(cat "$stamp_file")" != "$stamp_value" ]]; then
   npm ci --ignore-scripts --prefix "$textlint_root" >/dev/null
-  npm audit --audit-level=high --prefix "$textlint_root" >/dev/null
   printf '%s' "$stamp_value" >"$stamp_file"
 fi
 npm test --silent --prefix "$textlint_root"
