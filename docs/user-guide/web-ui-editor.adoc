@@ -149,13 +149,13 @@ uploadが成功すると、入力位置へ``image::attachment:<attachment_id>[]`
 [.proof]
 .証明
 --
-二つの単位元 stem:[e]、stem:[e'] に対して stem:[e=e\cdot e'=e'] です。
+二つの単位元 stem:[e]、 stem:[e'] に対して stem:[e=e\cdot e'=e'] です。
 --
 
 [#cor-example.corollary]
 .系 {counter:statement-number}
 --
-<<thm-identity-unique>>から従います。
+<<thm-identity-unique>> から従います。
 --
 ----
 

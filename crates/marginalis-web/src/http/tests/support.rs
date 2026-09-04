@@ -821,6 +821,9 @@ impl Notes {
     pub(super) fn note_profile(&self) -> NoteProfile {
         const BIBLIOGRAPHY_GUIDANCE: &str = "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.";
         const BIBLIOGRAPHY_EXAMPLE: &str = "= 先行研究の整理\n:marginalis-tags: 文献, 研究\n\nSmithらは、対象の手法が有効だと報告しています <<smith2024>>。\n\n[bibliography]\n== 参考文献\n\n* [[[smith2024]]] Smith, A. et al. _Example Paper_. Example Journal, 2024. https://doi.org/10.1234/replace-with-doi[DOI]";
+        const MATHEMATICAL_GUIDANCE: &str =
+            "Use a titled AsciiDoc open block and assign exactly one mathematical role.";
+        const MATHEMATICAL_EXAMPLE: &str = "[#result.definition]\n.定義 1\n--\n本文。\n--";
         NoteProfile {
             profile_version: 6,
             adocweave_package_version: "0.23.0",
@@ -851,7 +854,7 @@ impl Notes {
                 title_forbidden: vec!["empty"],
                 tag_forbidden: vec!["empty"],
             },
-            authoring_guidance: vec![BIBLIOGRAPHY_GUIDANCE],
+            authoring_guidance: vec![BIBLIOGRAPHY_GUIDANCE, MATHEMATICAL_GUIDANCE],
             allowed_source_languages: vec!["rust"],
             forbidden_rules: Vec::new(),
             advisory_rules: vec![NoteProfileAdvisoryRule {
@@ -859,11 +862,18 @@ impl Notes {
                 description: "インラインマクロ境界の不足",
                 severity: NoteAdvisorySeverity::Warning,
             }],
-            examples: vec![NoteProfileExample {
-                kind: "bibliography",
-                description: "Complete document with a bibliography entry and an in-text reference",
-                body: BIBLIOGRAPHY_EXAMPLE,
-            }],
+            examples: vec![
+                NoteProfileExample {
+                    kind: "bibliography",
+                    description: "Complete document with a bibliography entry and an in-text reference",
+                    body: BIBLIOGRAPHY_EXAMPLE,
+                },
+                NoteProfileExample {
+                    kind: "mathematical_statements",
+                    description: "Mathematical open block",
+                    body: MATHEMATICAL_EXAMPLE,
+                },
+            ],
         }
     }
 }

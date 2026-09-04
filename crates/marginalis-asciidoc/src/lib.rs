@@ -18,8 +18,8 @@ pub const ADOCWEAVE_SOURCE_REVISION: &str = env!("MARGINALIS_ADOCWEAVE_REVISION"
 pub const PINNED_ADOCWEAVE_PACKAGE_VERSION: &str = env!("MARGINALIS_ADOCWEAVE_VERSION");
 /// MCPとOpenAPIで公開する、入力規則と執筆支援情報の版。
 ///
-/// 版19: 数学文書用のblock roleをHTML描画と執筆支援で利用できる。
-pub const AUTHORING_PROFILE_VERSION: u32 = 19;
+/// 版20: 数学文書用blockの記述規則と完全な例をMCPの執筆支援へ追加する。
+pub const AUTHORING_PROFILE_VERSION: u32 = 20;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsciiDocNoteContent;

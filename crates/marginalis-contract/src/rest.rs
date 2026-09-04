@@ -1251,7 +1251,7 @@ pub fn openapi_document() -> Value {
             "title": "Marginalis REST API",
             "version": API_VERSION,
             "x-adocweave-package-version": env!("MARGINALIS_ADOCWEAVE_VERSION"),
-            "x-note-profile-version": 19
+            "x-note-profile-version": 20
         },
         "paths": rest_paths(),
         "components": {
