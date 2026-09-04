@@ -845,6 +845,7 @@ impl Notes {
                 common_inlines: Vec::new(),
                 source_language_optional: true,
                 allowed_math_languages: vec!["latexmath"],
+                allowed_mathematical_block_roles: vec!["definition", "proof"],
                 allowed_document_attributes: vec!["marginalis-tags", "sectnums"],
                 allowed_citation_styles: vec!["author-year"],
                 title_forbidden: vec!["empty"],

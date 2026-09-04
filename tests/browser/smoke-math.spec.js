@@ -1,4 +1,116 @@
 const { expect, test } = require("./fixtures/browser-diagnostics");
+const { pendingWebProvenance } = require("./fixtures/smoke-helpers");
+
+const mathematicalBlocksHtml = String.raw`
+  <div id="definition" class="open role-definition"><div class="title">定義 1（群）</div><p>集合 <code class="math-latex" data-math-language="latexmath" data-math-display="inline">G</code> を定義します。</p></div>
+  <div class="open role-proposition"><div class="title">命題 2</div><p>命題です。</p></div>
+  <div class="open role-lemma"><div class="title">補題 3</div><p>補題です。</p></div>
+  <div id="theorem" class="open role-theorem"><div class="title">定理 4</div><p>定理です。</p></div>
+  <div class="open role-corollary"><div class="title">系 5</div><p><a href="#theorem">定理 4</a>から従います。</p></div>
+  <div class="open role-proof"><div class="title">証明</div><p>証明です。</p></div>
+  <p class="role-theorem">open blockではない段落です。</p>`;
+
+test("数学文書用ブロックの範囲を閲覧画面とプレビューで示す", async ({
+  page,
+}) => {
+  const noteId = "0197c9bc-0000-7000-8000-000000000001";
+  await page.route(`**/api/v3/notes/${noteId}/view`, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        note: {
+          note_id: noteId,
+          title: "代数学のノート",
+          source: "= 代数学のノート",
+          tags: [],
+          created_at_ms: 1,
+          updated_at_ms: 1,
+          revision: 1,
+          ...pendingWebProvenance,
+        },
+        access: "manage",
+        math_macros: [],
+        html: mathematicalBlocksHtml,
+        related: { outgoing: [], incoming: [] },
+      }),
+    });
+  });
+
+  await page.goto(`/notes/${noteId}`);
+  const blocks = page.locator(".rendered-content .open[class*='role-']");
+  await expect(blocks).toHaveCount(6);
+  await expect(page.locator(".rendered-content mjx-container")).toBeVisible();
+  await expect(
+    page.locator(".rendered-content .role-corollary a[href='#theorem']"),
+  ).toHaveText("定理 4");
+
+  const lightAppearance = await page.evaluate(() => {
+    const read = (selector) => {
+      const style = getComputedStyle(document.querySelector(selector));
+      return {
+        background: style.backgroundColor,
+        borderBottom: Number.parseFloat(style.borderBottomWidth),
+        borderLeft: Number.parseFloat(style.borderLeftWidth),
+        borderRight: Number.parseFloat(style.borderRightWidth),
+        borderTop: Number.parseFloat(style.borderTopWidth),
+      };
+    };
+    return {
+      blocks: [
+        ...document.querySelectorAll(".rendered-content .open[class*='role-']"),
+      ].map((element) =>
+        read(
+          `.${[...element.classList].find((name) => name.startsWith("role-"))}`,
+        ),
+      ),
+      paragraph: read(".rendered-content p.role-theorem"),
+      proofBorderStyle: getComputedStyle(
+        document.querySelector(".rendered-content .open.role-proof"),
+      ).borderTopStyle,
+      proofEnd: getComputedStyle(
+        document.querySelector(".rendered-content .open.role-proof"),
+        "::after",
+      ).content,
+    };
+  });
+  for (const block of lightAppearance.blocks) {
+    expect(block.borderTop).toBeGreaterThan(0);
+    expect(block.borderBottom).toBeGreaterThan(0);
+    expect(block.borderLeft).toBeGreaterThan(0);
+    expect(block.borderRight).toBeGreaterThan(0);
+  }
+  expect(lightAppearance.proofBorderStyle).toBe("dashed");
+  expect(lightAppearance.proofEnd).toContain("□");
+  expect(lightAppearance.paragraph.borderTop).toBe(0);
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  const darkBackground = await page
+    .locator(".rendered-content .open.role-definition")
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(darkBackground).not.toBe(lightAppearance.blocks[0].background);
+
+  await page.route("**/api/v3/notes/preview", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: mathematicalBlocksHtml,
+        math_macros: [],
+        diagnostics: [],
+        spans: [],
+      }),
+    });
+  });
+  await page.goto("/notes/new");
+  await page.getByRole("button", { name: "執筆" }).click();
+  await page
+    .getByRole("textbox", { name: "AsciiDoc文書" })
+    .fill("= 代数学のノート\n\n[.theorem]\n--\n本文\n--");
+  await page.getByRole("button", { name: "プレビュー" }).click();
+  await expect(
+    page.locator(".preview-content .open[class*='role-']"),
+  ).toHaveCount(6);
+  await expect(page.locator(".preview-content .open.role-proof")).toBeVisible();
+});
 
 test("数式を組版したまま執筆とプレビューを切り替える", async ({ page }) => {
   const fontRequests = [];

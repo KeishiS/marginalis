@@ -267,6 +267,10 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
         serde_json::from_value(profile["result"]["structuredContent"].clone())
             .expect("typed profile output");
     assert_eq!(
+        profile_output.syntax.allowed_mathematical_block_roles,
+        ["definition", "proof"]
+    );
+    assert_eq!(
         profile_output.authoring_guidance,
         [
             "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata."

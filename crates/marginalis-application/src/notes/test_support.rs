@@ -596,6 +596,7 @@ impl NoteContent for AcceptContent {
                 common_inlines: Vec::new(),
                 source_language_optional: true,
                 allowed_math_languages: Vec::new(),
+                allowed_mathematical_block_roles: Vec::new(),
                 allowed_document_attributes: Vec::new(),
                 allowed_citation_styles: Vec::new(),
                 title_forbidden: Vec::new(),
