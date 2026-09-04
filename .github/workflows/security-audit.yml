@@ -21,5 +21,5 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Nix
         uses: ./.github/actions/setup
-      - name: Audit locked Rust and frontend dependencies
+      - name: Audit locked Rust, frontend, and documentation-tool dependencies
         run: nix develop --command cargo make security-audit
