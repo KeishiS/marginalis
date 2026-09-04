@@ -1043,6 +1043,13 @@
               },
               "type": "array"
             },
+            "allowed_mathematical_block_roles": {
+              "description": "HTML描画へ残し、数学文書用の表示を適用するblock role。",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "common_blocks": {
               "items": {
                 "type": "string"
@@ -1076,6 +1083,7 @@
             "common_inlines",
             "source_language_optional",
             "allowed_math_languages",
+            "allowed_mathematical_block_roles",
             "allowed_document_attributes",
             "allowed_citation_styles",
             "title_forbidden",

@@ -45,6 +45,15 @@ fn allowed_math_languages() -> std::collections::BTreeSet<MathLanguage> {
         .collect()
 }
 
+/// [`NOTE_POLICY`]がHTML描画へ残すblock roleをAdocWeaveの表現へ変換する。
+fn allowed_mathematical_block_roles() -> std::collections::BTreeSet<String> {
+    NOTE_POLICY
+        .allowed_mathematical_block_roles
+        .iter()
+        .map(|role| (*role).to_owned())
+        .collect()
+}
+
 /// 解析時に受理するURL。内部添付schemeはresource queryへだけ使い、描画URLには使わない。
 pub(crate) fn authored_url_policy() -> AuthoredUrlPolicy {
     let mut allowed_schemes = allowed_url_schemes();
@@ -146,9 +155,12 @@ pub(crate) fn render_policy() -> RenderPolicy {
             images: true,
             media: false,
         },
-        // roleは利用者が書くclass名である。Marginalisはrole別のCSS契約を公開していないため、
-        // HTMLへ渡す名前を空集合に固定する。
-        roles: RolePolicy::default(),
+        // roleは利用者が書くclass名である。画面側が表示規則を持つ数学文書用の名前だけを残し、
+        // それ以外は従来どおり診断なしで除く。
+        roles: RolePolicy {
+            allowed: allowed_mathematical_block_roles(),
+            ..RolePolicy::default()
+        },
         unresolved_references: UnresolvedReferencePresentation::LabelOnly,
         ..RenderPolicy::default()
     }
@@ -196,7 +208,14 @@ mod tests {
         assert!(!rendering.active_urls.allow_data_uris);
         assert!(rendering.resources.images);
         assert!(!rendering.resources.media);
-        assert!(rendering.roles.allowed.is_empty());
+        assert_eq!(
+            rendering.roles.allowed,
+            NOTE_POLICY
+                .allowed_mathematical_block_roles
+                .iter()
+                .map(|role| (*role).to_owned())
+                .collect()
+        );
         assert_eq!(
             rendering.source_languages.unknown,
             UnknownSourceLanguage::Diagnostic

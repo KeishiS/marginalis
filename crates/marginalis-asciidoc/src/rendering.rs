@@ -182,7 +182,7 @@ mod tests {
 
     use marginalis_application::{NoteAttachmentResolution, NoteCitationSegment};
     use marginalis_domain::{
-        EntityId, Identity, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
+        EntityId, Identity, NOTE_POLICY, Note, NoteCreationSource, NoteDraft, NoteId, NoteRestore,
         NoteReviewTracking, PrincipalId, PrincipalRef, Revision, UnixMillis,
     };
 
@@ -335,15 +335,39 @@ mod tests {
     }
 
     #[test]
-    fn authored_block_roles_are_not_exposed_as_html_classes() {
+    fn only_allowed_mathematical_block_roles_are_exposed_as_html_classes() {
         let html = render_note(
-            &note(".Example\n[.private]\n====\nbody\n===="),
+            &note(
+                ":stem: latexmath\n\n[#definition.definition.private]\n.定義 {counter:statement-number}\n--\nstem:[G]を定義します。\n--\n\n[.proposition]\n.命題 {counter:statement-number}\n--\n命題です。\n--\n\n[.lemma]\n.補題 {counter:statement-number}\n--\n補題です。\n--\n\n[#theorem.theorem]\n.定理 {counter:statement-number}\n--\n定理です。\n--\n\n[.corollary]\n.系 {counter:statement-number}\n--\n<<theorem>>から従います。\n--\n\n[.proof]\n.証明\n--\n証明です。\n--",
+            ),
             NoteRenderInputs::default(),
         )
         .expect("render");
 
-        assert!(html.contains("body"));
+        for role in NOTE_POLICY.allowed_mathematical_block_roles {
+            assert!(
+                html.contains(&format!("role-{role}")),
+                "missing role {role}: {html}"
+            );
+        }
+        assert!(html.contains("id=\"definition\""), "html: {html}");
+        assert!(html.contains("href=\"#theorem\""), "html: {html}");
+        assert!(html.contains("定義 1"), "html: {html}");
+        assert!(html.contains("定理 4"), "html: {html}");
+        assert!(html.contains("系 5"), "html: {html}");
+        assert!(html.contains("class=\"math-latex\""), "html: {html}");
         assert!(!html.contains("role-private"));
+    }
+
+    /// roleの許可はHTML classを安全に残すための規則であり、特定のblock構文へ入力を制限しない。
+    /// 数学文書用の枠はCSSでopen blockへ限定する。
+    #[test]
+    fn allowed_roles_on_other_blocks_remain_explicit_without_changing_the_block_kind() {
+        let html = render_note(&note("[.theorem]\n段落です。"), NoteRenderInputs::default())
+            .expect("render");
+
+        assert!(html.contains("<p class=\"role-theorem\">段落です。</p>"));
+        assert!(!html.contains("class=\"open"));
     }
 
     /// 題を持つlisting blockは、題をcaptionとして描画に残す。

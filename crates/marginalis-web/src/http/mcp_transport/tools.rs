@@ -140,9 +140,10 @@ impl McpToolOutput {
                 );
                 let _ = write!(
                     text,
-                    "\nAllowed source languages: {}.\nAllowed math languages: {}.\nAllowed document attributes: {}.\nAllowed citation styles: {}.",
+                    "\nAllowed source languages: {}.\nAllowed math languages: {}.\nAllowed mathematical block roles: {}.\nAllowed document attributes: {}.\nAllowed citation styles: {}.",
                     output.allowed_source_languages.join(", "),
                     output.syntax.allowed_math_languages.join(", "),
+                    output.syntax.allowed_mathematical_block_roles.join(", "),
                     output.syntax.allowed_document_attributes.join(", "),
                     output.syntax.allowed_citation_styles.join(", "),
                 );
@@ -986,6 +987,12 @@ fn note_profile_output(profile: NoteProfile) -> McpNoteProfileOutput {
             allowed_math_languages: profile
                 .syntax
                 .allowed_math_languages
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            allowed_mathematical_block_roles: profile
+                .syntax
+                .allowed_mathematical_block_roles
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),

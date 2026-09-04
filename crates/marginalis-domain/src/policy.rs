@@ -27,6 +27,11 @@ pub struct NotePolicy {
     pub allowed_source_languages: &'static [&'static str],
     /// 数式で指定できる言語。
     pub allowed_math_languages: &'static [&'static str],
+    /// HTMLのclassとして描画へ残す、数学文書用のblock role。
+    ///
+    /// 入力したroleは利用者が指定するclass名になるため、画面側が表示規則を持つ名前だけを
+    /// HTMLへ残します。HTML描画と`get_note_profile`の案内はこの一覧から導きます。
+    pub allowed_mathematical_block_roles: &'static [&'static str],
     /// 本文に記述できるリンクのURLスキーム。
     pub allowed_url_schemes: &'static [&'static str],
     /// 文書headerへ書ける文書属性の名前。
@@ -91,6 +96,14 @@ pub const NOTE_POLICY: NotePolicy = NotePolicy {
         "text",
     ],
     allowed_math_languages: &["latexmath"],
+    allowed_mathematical_block_roles: &[
+        "definition",
+        "proposition",
+        "lemma",
+        "theorem",
+        "corollary",
+        "proof",
+    ],
     allowed_url_schemes: &["http", "https"],
     allowed_document_attributes: &[
         TAGS_DOCUMENT_ATTRIBUTE,

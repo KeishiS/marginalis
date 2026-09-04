@@ -212,6 +212,129 @@
 }
 
 /*
+ * 数学文書用のroleは、open blockの表示だけを変える。AdocWeaveはroleを段落などにも
+ * 付けられるため、role名だけをselectorにすると意図しない要素まで枠で囲んでしまう。
+ *
+ * 6種類の共通構造はここに集約し、種類ごとの差はaccent色へ限定する。題名と四辺の枠で
+ * 種類と範囲を示すため、色を見分けにくい場合もブロックの開始と終了が分かる。
+ */
+.rendered-content
+  .open:is(
+    .role-definition,
+    .role-proposition,
+    .role-lemma,
+    .role-theorem,
+    .role-corollary,
+    .role-proof
+  ) {
+  --mathematical-block-accent: var(--color-primary);
+
+  background: color-mix(
+    in srgb,
+    var(--mathematical-block-accent) 6%,
+    var(--color-card)
+  );
+  border: var(--border-thin) solid
+    color-mix(
+      in srgb,
+      var(--mathematical-block-accent) 50%,
+      var(--color-border)
+    );
+  border-inline-start-width: var(--border-thick);
+  border-radius: var(--radius-sm);
+  margin-block: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+}
+
+.rendered-content
+  .open:is(
+    .role-definition,
+    .role-proposition,
+    .role-lemma,
+    .role-theorem,
+    .role-corollary,
+    .role-proof
+  )
+  > .title {
+  color: var(--mathematical-block-accent);
+  font-family: var(--font-ui);
+  font-weight: 700;
+  line-height: 1.5;
+  margin-block-end: var(--space-3);
+}
+
+.rendered-content
+  .open:is(
+    .role-definition,
+    .role-proposition,
+    .role-lemma,
+    .role-theorem,
+    .role-corollary,
+    .role-proof
+  )
+  > :first-child {
+  margin-block-start: 0;
+}
+
+.rendered-content
+  .open:is(
+    .role-definition,
+    .role-proposition,
+    .role-lemma,
+    .role-theorem,
+    .role-corollary,
+    .role-proof
+  )
+  > :last-child {
+  margin-block-end: 0;
+}
+
+.rendered-content .open.role-definition {
+  --mathematical-block-accent: var(--color-primary);
+}
+
+.rendered-content .open.role-proposition {
+  --mathematical-block-accent: var(--color-secondary-foreground);
+}
+
+.rendered-content .open.role-lemma {
+  --mathematical-block-accent: var(--color-success);
+}
+
+.rendered-content .open.role-theorem {
+  --mathematical-block-accent: color-mix(
+    in srgb,
+    var(--color-primary) 70%,
+    var(--color-foreground)
+  );
+
+  border-block-width: calc(var(--border-thin) * 2);
+}
+
+.rendered-content .open.role-corollary {
+  --mathematical-block-accent: var(--color-warning);
+}
+
+.rendered-content .open.role-proof {
+  --mathematical-block-accent: var(--color-muted-foreground);
+
+  border-style: dashed;
+  border-inline-start-style: solid;
+}
+
+/* 証明終了記号は表示だけに加え、原文や文書内検索には含めない。 */
+.rendered-content .open.role-proof::after {
+  color: var(--mathematical-block-accent);
+  content: "□";
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  line-height: 1;
+  margin-block-start: var(--space-3);
+  text-align: end;
+}
+
+/*
  * 表はコードブロックと同じく、要素の内側で横スクロールする。表そのものでは、列の幅を保ったまま
  * 器の幅で頭打ちにできないため、外側の枠をスクロールさせる。枠は描画後にWeb UIが足す。
  */

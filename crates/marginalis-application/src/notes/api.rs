@@ -242,6 +242,8 @@ pub struct NoteProfileSyntax {
     pub common_inlines: Vec<&'static str>,
     pub source_language_optional: bool,
     pub allowed_math_languages: Vec<&'static str>,
+    /// HTML描画へ残し、数学文書用の表示を適用するblock role。
+    pub allowed_mathematical_block_roles: Vec<&'static str>,
     /// 文書headerへ書ける文書属性の名前。入力検査と同じ一覧から導きます。
     pub allowed_document_attributes: Vec<&'static str>,
     /// 引用の表示スタイルとして選べる値。先頭が既定です。

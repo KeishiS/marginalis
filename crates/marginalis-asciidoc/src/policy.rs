@@ -248,6 +248,7 @@ pub fn note_profile() -> NoteProfile {
             ],
             source_language_optional: true,
             allowed_math_languages: NOTE_POLICY.allowed_math_languages.to_vec(),
+            allowed_mathematical_block_roles: NOTE_POLICY.allowed_mathematical_block_roles.to_vec(),
             allowed_document_attributes: NOTE_POLICY.allowed_document_attributes.to_vec(),
             allowed_citation_styles: NOTE_POLICY.allowed_citation_styles.to_vec(),
             title_forbidden: vec!["empty", "line_feed", "carriage_return"],
@@ -720,6 +721,10 @@ mod tests {
         assert_eq!(
             profile.syntax.allowed_math_languages,
             NOTE_POLICY.allowed_math_languages.to_vec()
+        );
+        assert_eq!(
+            profile.syntax.allowed_mathematical_block_roles,
+            NOTE_POLICY.allowed_mathematical_block_roles.to_vec()
         );
         assert_eq!(profile.profile_version, AUTHORING_PROFILE_VERSION);
         let effective = crate::configuration::analysis_options();

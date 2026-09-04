@@ -100,6 +100,68 @@ uploadが成功すると、入力位置へ``image::attachment:<attachment_id>[]`
 画像は、その版を再現するため個別には削除できません。ノートを削除しても30日間の復元期間中は保持し、
 期限後にノートを完全削除すると全版と画像を一括して削除します。
 
+=== 数学文書の定義、定理、証明
+
+定義、命題、補題、定理、系、証明は、open blockへ数学文書用の``role``と題名を付けて記述できます。
+プレビューと閲覧画面ではブロック全体を枠で囲み、題名、線、余白で本文との境界を示します。証明は
+破線の枠になり、末尾へ証明終了記号が表示されます。この記号は表示だけに加えるため、AsciiDoc原文には
+入りません。
+
+[cols="1,1",options="header",]
+|===
+|種類
+|role
+|定義
+|``definition``
+|命題
+|``proposition``
+|補題
+|``lemma``
+|定理
+|``theorem``
+|系
+|``corollary``
+|証明
+|``proof``
+|===
+
+次の例では、定義と定理、系が一つの``statement-number``を共有します。カウンタは最初の
+``{counter:statement-number}``から1で始まるため、``:statement-number: 0``という文書属性は書きません。
+別の値から始める場合は、最初の箇所を``{counter:statement-number:5}``のように記述します。
+
+[source,adoc]
+----
+= 代数学のノート
+:stem: latexmath
+
+[#def-group.definition]
+.定義 {counter:statement-number}（群）
+--
+集合 stem:[G] と演算 stem:[\cdot] が群の公理を満たすとき、組 stem:[(G,\cdot)] を群と呼びます。
+--
+
+[#thm-identity-unique.theorem]
+.定理 {counter:statement-number}（単位元の一意性）
+--
+群の単位元は一意です。
+--
+
+[.proof]
+.証明
+--
+二つの単位元 stem:[e]、stem:[e'] に対して stem:[e=e\cdot e'=e'] です。
+--
+
+[#cor-example.corollary]
+.系 {counter:statement-number}
+--
+<<thm-identity-unique>>から従います。
+--
+----
+
+数学文書用の表示はopen blockへ適用します。一つのblockには上のroleを一種類だけ指定し、種類が文章でも
+分かる題名を付けてください。任意のroleを画面のCSS classとして使うことはできません。
+
 == 解析とプレビュー
 
 CodeMirrorはAsciiDoc文書を文字列として編集します。AsciiDocの正しさをブラウザー内で独自に
