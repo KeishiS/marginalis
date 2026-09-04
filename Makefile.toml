@@ -78,6 +78,14 @@ args = [
   ".github/workflows/security-audit.yml",
 ]
 
+[tasks.ci-gate-contract]
+description = "Verify the CI aggregation rules for Pull Requests and main pushes"
+script_runner = "@shell"
+script = '''
+set -eu
+bash .github/scripts/test-ci-gate.sh
+'''
+
 [tasks.protocol-regression-assets]
 description = "Validate secret-safe protocol failure artifacts"
 script_runner = "@shell"
@@ -95,10 +103,19 @@ bash .github/scripts/check-docs.sh
 '''
 
 [tasks.security-audit]
-description = "Check Cargo.lock against the current RustSec advisory database"
-dependencies = ["frontend-security-audit"]
+description = "Check every locked dependency against the current advisory databases"
+dependencies = ["frontend-security-audit", "textlint-security-audit"]
 command = "cargo"
 args = ["audit", "--deny", "warnings", "--ignore", "RUSTSEC-2023-0071"]
+
+[tasks.textlint-security-audit]
+description = "Check locked documentation-tool dependencies for known vulnerabilities"
+script_runner = "@shell"
+script = '''
+set -eu
+npm ci --ignore-scripts --prefix tools/textlint
+npm audit --audit-level=high --prefix tools/textlint
+'''
 
 [tasks.nix-release-check]
 description = "Build and run every Nix flake check, including all NixOS VM E2E tests"
@@ -140,6 +157,7 @@ bash .github/scripts/check-release-manifest.sh --with-runtime-toolchain
 description = "Run every automated gate required before publishing a release"
 dependencies = [
   "verify",
+  "security-audit",
   "coverage",
   "nix-release-check",
   "release-package",
@@ -264,7 +282,6 @@ dependencies = [
   "check",
   "clippy",
   "test",
-  "security-audit",
   "dependency-boundaries",
   "pinned-git-crates",
   "unused-dependencies",
@@ -273,6 +290,7 @@ dependencies = [
   "adocweave-version-check",
   "docs-check",
   "actionlint",
+  "ci-gate-contract",
   "protocol-regression-assets",
   "flake-check",
   "release-contract",
@@ -449,5 +467,5 @@ echo "self-hosted Web fonts: ${font_bytes}/${maximum_font_bytes} bytes"
 '''
 
 [tasks.frontend-verify]
-description = "Run frontend formatting, analysis, tests, audit, and build"
-dependencies = ["frontend-format-check", "frontend-lint", "browser-tests-lint", "frontend-lint-css", "frontend-typecheck", "frontend-test", "frontend-security-audit", "frontend-build", "frontend-bundle-size"]
+description = "Run frontend formatting, analysis, tests, and build"
+dependencies = ["frontend-format-check", "frontend-lint", "browser-tests-lint", "frontend-lint-css", "frontend-typecheck", "frontend-test", "frontend-build", "frontend-bundle-size"]

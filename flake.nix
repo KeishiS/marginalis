@@ -97,7 +97,7 @@
               src = ./frontend;
               inherit pnpm;
               fetcherVersion = 4;
-              hash = "sha256-5mT5jwLmeeA8tTgaNB6REjKvqR4+1r3CtTPbNeH1tmk=";
+              hash = "sha256-g+/y0yAPdb8naYnTL6yYpbQ7Fz/WsVVtfIkBGp3+Mic=";
             };
             nativeBuildInputs = [
               pkgs.nodejs_24
