@@ -359,6 +359,29 @@ mod tests {
         assert!(!html.contains("role-private"));
     }
 
+    #[test]
+    fn published_mathematical_statement_example_is_rendered_with_boundaries_and_references() {
+        let example = crate::policy::note_profile()
+            .examples
+            .into_iter()
+            .find(|example| example.kind == "mathematical_statements")
+            .expect("数学文書用blockの公開例");
+        let html = render_note(&note(example.body), NoteRenderInputs::default())
+            .expect("公開例を描画する");
+
+        for role in ["definition", "theorem", "corollary", "proof"] {
+            assert!(
+                html.contains(&format!("role-{role}")),
+                "{role}の表示用classがありません: {html}"
+            );
+        }
+        assert!(html.contains("id=\"thm-identity-unique\""));
+        assert!(html.contains("href=\"#thm-identity-unique\""));
+        assert!(html.contains("定義 1"));
+        assert!(html.contains("定理 2"));
+        assert!(html.contains("系 3"));
+    }
+
     /// roleの許可はHTML classを安全に残すための規則であり、特定のblock構文へ入力を制限しない。
     /// 数学文書用の枠はCSSでopen blockへ限定する。
     #[test]

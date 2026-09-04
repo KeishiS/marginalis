@@ -144,7 +144,8 @@ tokenを検証し、認可応答にはAuthorization Serverを識別する``iss``
 現在版を返し、指定した版が存在しない場合と現在のACLで閲覧できない場合を区別しないこと。
 ``list_note_templates``は、テンプレート識別タグの付いた
 可視ノートの概要だけを返すこと。``get_note_profile``は、本文と参考文献を相互に移動できる
-完全なAsciiDoc文書例、文献情報を推測しない注意事項、実効advisory規則と重大度、MCPではwarningを
+完全なAsciiDoc文書例に加え、数学文書用blockの種類と``role``の対応、open blockへの指定方法、題名、
+番号、anchor、xref、証明終了記号の扱いが分かる完全な文書例を返すこと。文献情報を推測しない注意事項、実効advisory規則と重大度、MCPではwarningを
 含む書き込みを拒否する方針を返すこと。``structuredContent``は公開契約型、``text``は同じ結果から
 組み立てた人とモデル向けの説明とし、不可視なノートの存在や属性を開示しないこと。
 ``create_note``と書き込みtoolは警告を含む入力を変更前に拒否し、重大度と位置を保った診断を

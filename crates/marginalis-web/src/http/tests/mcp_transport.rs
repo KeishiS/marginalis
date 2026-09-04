@@ -260,7 +260,8 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert_eq!(
         profile["result"]["structuredContent"]["authoring_guidance"],
         serde_json::json!([
-            "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata."
+            "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.",
+            "Use a titled AsciiDoc open block and assign exactly one mathematical role."
         ])
     );
     let profile_output: marginalis_contract::McpNoteProfileOutput =
@@ -273,7 +274,8 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert_eq!(
         profile_output.authoring_guidance,
         [
-            "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata."
+            "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.",
+            "Use a titled AsciiDoc open block and assign exactly one mathematical role."
         ]
     );
     assert!(profile_output.warnings_reject_write);
@@ -293,6 +295,12 @@ async fn mcp_requires_a_bearer_token_and_serves_the_tool_catalog() {
     assert!(text.contains("Allowed source languages: rust"));
     assert!(text.contains("Examples:"));
     assert!(text.contains("bibliography — Complete document"));
+    assert!(text.contains("Use a titled AsciiDoc open block"));
+    assert!(text.contains("mathematical_statements — Mathematical open block"));
+    assert_eq!(
+        profile["result"]["structuredContent"]["examples"][1]["body"],
+        "[#result.definition]\n.定義 1\n--\n本文。\n--"
+    );
 
     let request = Request::post("/mcp")
         .header("content-type", "application/json")

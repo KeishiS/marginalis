@@ -53,6 +53,10 @@ const FORBIDDEN_RULES: &[ForbiddenRule] = &[
     ForbiddenRule::UnsupportedSourceLanguage,
 ];
 
+const MATHEMATICAL_BLOCK_GUIDANCE: &str = "For mathematical statements, use a titled AsciiDoc open block delimited by -- and assign exactly one role in [.<role>] or [#<anchor>.<role>]. Role mapping: definition=定義, proposition=命題, lemma=補題, theorem=定理, corollary=系, proof=証明. Add a human-readable block title on the next metadata line, for example .定理 {counter:statement-number}（題名）.";
+const MATHEMATICAL_BLOCK_NUMBERING_GUIDANCE: &str = "Definitions, propositions, lemmas, theorems, and corollaries can share an AsciiDoc counter such as {counter:statement-number}; use an explicit anchor and <<anchor>> for cross-references. The proof role normally has the title .証明 and no counter. Marginalis adds the proof-ending symbol only when rendering, so do not put that symbol in the AsciiDoc source.";
+const MATHEMATICAL_BLOCK_EXAMPLE: &str = "= 代数学のノート\n:stem: latexmath\n\n[#def-group.definition]\n.定義 {counter:statement-number}（群）\n--\n集合 stem:[G] と演算 stem:[\\cdot] が群の公理を満たすとき、組 stem:[(G,\\cdot)] を群と呼びます。\n--\n\n[#thm-identity-unique.theorem]\n.定理 {counter:statement-number}（単位元の一意性）\n--\n群の単位元は一意です。\n--\n\n[.proof]\n.証明\n--\n二つの単位元 stem:[e]、 stem:[e'] に対して stem:[e=e\\cdot e'=e'] です。\n--\n\n[#cor-example.corollary]\n.系 {counter:statement-number}\n--\n<<thm-identity-unique>> から従います。\n--";
+
 impl ForbiddenRule {
     const fn code(self) -> NoteValidationCode {
         match self {
@@ -255,6 +259,8 @@ pub fn note_profile() -> NoteProfile {
             tag_forbidden: vec!["empty", "comma", "line_feed", "carriage_return"],
         },
         authoring_guidance: vec![
+            MATHEMATICAL_BLOCK_GUIDANCE,
+            MATHEMATICAL_BLOCK_NUMBERING_GUIDANCE,
             "Use bibliographic metadata supplied by the user or an identified source. Never invent or infer authors, titles, publication years, DOIs, or other bibliographic metadata.",
             "A cite: macro names citation keys held by the bibliography library of the user who wrote the note. Register the item before citing it; an unregistered key is reported as a warning and is shown as the bare key.",
             "The reference list is built when the note is displayed, from the cited items only. Do not write a [bibliography] section for items that cite: already names.",
@@ -293,6 +299,11 @@ pub fn note_profile() -> NoteProfile {
             })
             .collect(),
         examples: vec![
+            NoteProfileExample {
+                kind: "mathematical_statements",
+                description: "Complete document with a definition, theorem, proof, shared numbering, anchors, and a corollary cross-reference",
+                body: MATHEMATICAL_BLOCK_EXAMPLE,
+            },
             NoteProfileExample {
                 kind: "document_attributes",
                 description: "Header attributes that control the rendered display",
@@ -533,10 +544,51 @@ mod tests {
                 .collect::<Vec<_>>();
             assert!(
                 advisories.is_empty(),
-                "{}の例に診断が付きます: {advisories:?}",
-                example.kind
+                "{}の例に診断が付きます: {:?}",
+                example.kind,
+                validated.diagnostics
             );
         }
+    }
+
+    /// 数学文書用blockの案内が、許可するroleの正本と対応した完全な例を公開する。
+    #[test]
+    fn mathematical_block_guidance_covers_the_advertised_roles() {
+        let profile = note_profile();
+        let guidance = profile.authoring_guidance.join("\n");
+        let expected_roles = [
+            ("definition", "定義"),
+            ("proposition", "命題"),
+            ("lemma", "補題"),
+            ("theorem", "定理"),
+            ("corollary", "系"),
+            ("proof", "証明"),
+        ];
+
+        assert_eq!(
+            profile.syntax.allowed_mathematical_block_roles,
+            expected_roles.map(|(role, _)| role)
+        );
+        for (role, label) in expected_roles {
+            assert!(
+                guidance.contains(&format!("{role}={label}")),
+                "{role}と{label}の対応が案内にありません"
+            );
+        }
+        assert!(guidance.contains("AsciiDoc open block"));
+        assert!(guidance.contains("exactly one role"));
+        assert!(guidance.contains("proof-ending symbol only when rendering"));
+
+        let example = profile
+            .examples
+            .iter()
+            .find(|example| example.kind == "mathematical_statements")
+            .expect("数学文書用blockの公開例");
+        assert!(example.body.starts_with("= 代数学のノート\n"));
+        assert!(example.body.contains("[#thm-identity-unique.theorem]"));
+        assert!(example.body.contains("[.proof]"));
+        assert!(example.body.contains("[#cor-example.corollary]"));
+        assert!(example.body.contains("<<thm-identity-unique>>"));
     }
 
     /// 固定入力を解析し、禁止規則の検出結果をcodeの一覧として返す。
