@@ -1,59 +1,45 @@
 ---
 name: release
-description: Marginalisのリリースをrelease.adocに従って段階実行し、各段の完了条件を検証してから公開する
+description: Marginalisの版更新、公開候補の確認、安定版公開、失敗した公開処理の再開に使用します。
 ---
 
-# Marginalisのリリース実行
+# Marginalisのリリース
 
-手順の正本は`docs/developer-guide/release.adoc`です。まずそれを読み、以下の運用知を重ねて
-順に実行してください。矛盾がある場合はrelease.adocを優先し、このskillの更新を提案してください。
+最初に、リポジトリルートの`docs/developer-guide/release.adoc`を全文読みます。
+同文書を手順の正本とし、受入項目は`docs/developer-guide/acceptance.adoc`で確認します。
+版番号、契約、asset集合、コマンドの詳細はここへ複製しません。
 
-公開は、検証済みの`main`のcommitをそのままtagとReleaseへ昇格する方式です。人が行うのは、
-版上げPRのマージと、`main`の先端SHAを指定した公開workflowの実行だけです。tagの作成、
-Release Notesの転記、下書きの公開は行いません。
+## 作業範囲
 
-## 全体の禁止事項
+ユーザーが依頼した範囲と既に得た承認に従います。版更新だけの依頼から公開を推定しません。
+公開まで依頼されている場合、Release Notesの追加承認を一律に求めず、PR上で内容と検証を
+確認できる状態にして進めます。実配備先での人手受入は、自動検証の成功から実施済みと推定せず、
+未実施の項目と公開可否の判断をPRへ記録します。
 
-- **版上げPRのマージから公開workflowの成功まで、他のPRをマージしない。** mainが進むと
-  指定したSHAが先端でなくなり、workflowが公開を拒否します。
-- `git tag`や`gh release create`などでtagとReleaseを手作業で作らない。
-- リリースタグとGitHub Releaseを削除しない(protect-release-tagsにより不可)。
+## 判断と確認
 
-## 手順
+1. 対象リポジトリ、作業ツリー、最新の公開版、`main`の差分とCI、関連する未完了PRを確認します。
+   無関係なopen PRがあるだけで停止せず、公開対象と競合する変更がないか判断します。
+2. 版更新とRelease NotesをPRへまとめます。archiveの保存契約が変わる場合は、
+   リリース手順が指定する直前契約と「保存契約の履歴」を更新します。
+   MCPの執筆支援情報の版とarchiveの保存契約の版を混同しません。
+3. 所定の検証後、squash方式のauto-mergeを設定します。PRのチェック成功とマージ完了を
+   別々に確認し、マージコミットの完全SHAを記録します。
+4. そのSHAの`main` CIと`release-candidate`の成功を確認します。PRでは候補が省略されるため、
+   PRの成功だけでは公開へ進みません。公開直前にリモートの`main`先端を再取得し、
+   候補SHAと一致することを確認します。公開完了までは他のPRをマージしません。
+5. 対象リポジトリを`--repo KeishiS/marginalis`で明示し、公開workflowへ完全SHAを渡します。
+   開始したrun IDを記録して監視します。タグとReleaseはworkflowだけが作成します。
+6. workflow、安定版の公開状態、宣言されたasset集合、タグが指すコミット、両CPU向けcacheの
+   結果を確認します。attestationの存在確認と署名の検証は区別して報告します。
 
-1. **事前確認**: `git fetch`のうえで、open PRが0件、mainの最新CIが成功していることを確認する。
-   最新タグからmainまでの差分を要約し、次版番号の判断(featがあればminorを上げる。破壊的変更も
-   patchのままにせずminorを上げる)とあわせてユーザーへ提示する。
-2. **剪定と外部依存**: ADR 0017に従い、5マイナー世代より前へ落ちたarchive契約を
-   `SUPPORTED_MIGRATION_CONTRACTS`と`docs/user-guide/nixos.adoc`から削除する(該当があれば
-   版上げPRに含める)。共有crateの固定は`cargo make pinned-git-crates`で確認し、指している
-   SHAが上流の公開済み内容であることを各保守文書の手順で確かめる。
-3. **版上げPR**: workspace版と`release-manifest.json`の`packageVersion`を同じ版へ上げ、
-   `release/notes.md`へ今回のRelease Notesを記述する。必須見出しと本文の有無は
-   `cargo make verify`(内部の`release-contract`)が検査する。**Release Notesの本文は
-   ユーザーへ提示して承認を得てから**PRへ含める。公開前の完全なゲートは
-   `cargo make release-check`で確認し、PR本文へ変更目的・外部依存の確認・人手受入の判断・
-   実行した検証を記載して、auto-merge(squash)を設定しマージ完了を監視する。
-4. **候補の確認**: マージ後のmainのCIが成功し、`release-candidate` jobが候補artifactを
-   作ったことを確認する。infra起因の失敗であれば`gh run rerun <run-id> --failed`で再実行する
-   (コード起因ならリリースを中止して修正へ戻る)。
-5. **公開**: `git fetch upstream main`のうえで先端SHAを取得し、そのSHAを指定して
-   `gh workflow run release-dispatch.yml --ref main --field candidate_sha="$candidate_sha"`を
-   一度だけ実行する。workflowはSHAが先端であること、同じSHAの候補が成功していること、
-   tagとReleaseがないことを検査してから、tag、attestation、asset、Release Notesを作って公開する。
-6. **確認**: workflowの成功、公開されたReleaseのURL、assetが`openapi.json`と`mcp-tools.json`の
-   ちょうど2件であることを確認してユーザーへ報告する。`binary-cache` jobだけが失敗した場合は、
-   公開はそのままで該当jobを再実行する。
-7. **事後処理**: ローカルの作業ブランチを削除し、mainを更新する。関連するメモリーが
-   あれば公開済みの旨を反映する。
+## 待機と失敗時の再開
 
-## 監視の型
+`gh pr checks <PR> --repo KeishiS/marginalis --watch`と
+`gh run watch <run ID> --repo KeishiS/marginalis --exit-status`で監視します。
+チェック終了後はPRの`state`と`mergeCommit`も確認します。実行環境の継続可能なセッションを使い、
+待機中も進捗を伝えます。
 
-マージやCIの完了待ちは、sleepの繰り返しではなくbackgroundのwatcherを使います。
-
-```sh
-until state=$(gh pr view <PR> --json state --jq .state); [ "$state" = "MERGED" ]; do
-  failed=$(gh pr checks <PR> | awk '$2=="fail"'); [ -n "$failed" ] && { echo "$failed"; exit 1; }
-  sleep 180
-done
-```
+失敗した場合は、ログとタグ・Releaseの実在を確認してからリリース手順の再開条件に従います。
+原因を確認しない自動再試行や、タグの付け替え・削除は行いません。
+完了後は未コミット変更を確認してローカル`main`を追従させ、利用者のデータや他の作業を保全します。

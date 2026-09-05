@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## 作業の入口
+
+- 最初に[参加案内](CONTRIBUTING.adoc)を読みます。本リポジトリには`CONTRIBUTING.md`ではなく
+  `CONTRIBUTING.adoc`があります。
+- 調査前に作業ツリーと関連Issueを確認し、変更は`agent/<種別>/<目的>`ブランチで管理します。
+- 検証コマンドは[開発手順](docs/developer-guide/development.adoc)を正本とします。
+  開発コマンドはNix環境で、`gh`は直接実行します。
+- リリース作業では[release skill](.claude/skills/release/SKILL.md)を読みます。
+  自動検出されない環境でも、このパスから参照できます。
+- 指示や設定の更新時は[エージェント向け設定](docs/developer-guide/development.adoc#agent-configuration)を確認します。
+
 ## 文書の執筆
 
 - リポジトリ固有の用語は[用語集](docs/user-guide/glossary.adoc)に従う。新しい用語を導入する場合は、既存の
