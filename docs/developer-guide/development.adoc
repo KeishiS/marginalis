@@ -54,6 +54,29 @@ bash .github/scripts/bump-adocweave.sh <commit SHA> [textlint用Processorの版]
 アクセストークンをコマンド、ログ、Issue、Pull Requestへ記録してはいけません。
 本書では、GitHub上の本リポジトリを指すGitリモート名を``upstream``とします。
 
+[#agent-configuration]
+== エージェント向け設定
+
+``AGENTS.md``は参加案内、開発手順、リリース手順への入口です。手順を変更した場合は、
+参照元の指示も確認します。リリース用skillの正本は``.claude/skills/release/SKILL.md``です。
+Codexなどで自動検出されない場合も、``AGENTS.md``が示すパスから読みます。
+製品の版、保存契約、公開assetの一覧はskillへ複製せず、リリース手順とmanifestを参照します。
+
+``.codex/rules/commands.rules``は一部のコマンドに対する補助規則です。Git変更操作、
+任意のコマンドを実行できる``nix develop``、別製品のテストを包括的に許可しません。
+個々の操作は利用者の依頼と実行環境の承認規則に従います。規則を変更した場合は、
+``codex execpolicy check --rules .codex/rules/commands.rules git status --short``などで
+実際の判断を確認します。すべてのshell表現を検査できる仕組みではありません。
+
+``.claude/settings.json``のhookはClaude CodeのBash操作だけに適用されます。
+``.claude/hooks/guard-git.sh``は単純なpushの誤操作を検出する補助であり、引用符、変数、
+alias、すべてのrefspecを解釈するGit認可の仕組みではありません。Codexには適用されません。
+``main``への直接pushと公開タグの変更は、GitHubの保護規則と開発・公開手順でも制限します。
+
+``.codex/config.toml``はGit管理対象外の実行環境設定です。別ファイルへのリンクの場合は、
+リンク先の所有者と用途を確認し、リポジトリの変更として書き換えません。モデル、認証情報、
+外部接続先を共有の指示や設定へ転記しません。
+
 == ブランチとPull Request
 
 ``main``は保護ブランチです。ローカル・GitHubのどちらでも直接pushせず、すべての変更を
